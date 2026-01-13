@@ -34,7 +34,7 @@
         },
         {
           "type": "mrkdwn",
-          "text": "*Impact*\nevents_fact table was stale. Downstream analytics delayed until ingestion completes."
+          "text": "*Impact*\nevents_fact table was stale."
         }
       ]
     },
@@ -45,7 +45,7 @@
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*\ud83d\udccb Recommended Actions*\n\u2022 [HIGH] Rerun or fix the Nextflow finalize step to write the _SUCCESS marker\n\u2022 [CRITICAL] Fix IAM permissions for s3:PutObject on the processed bucket"
+        "text": "*\ud83d\udccb Recommended Actions*\n\u2022 [HIGH] Rerun Nextflow finalize step\n\u2022 [CRITICAL] Fix IAM permissions for s3:PutObject"
       }
     },
     {
@@ -53,7 +53,7 @@
       "elements": [
         {
           "type": "mrkdwn",
-          "text": "\ud83e\udd16 Investigation completed in 0.0s | 4 hypotheses tested | 6 steps executed"
+          "text": "\ud83e\udd16 Investigation completed in 1.1s | 4 hypotheses tested | 6 steps executed"
         }
       ]
     }

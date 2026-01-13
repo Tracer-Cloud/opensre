@@ -1,0 +1,17 @@
+🚨 *Incident Resolved: DataFreshnessSLABreach*
+
+*Severity:* critical
+*Affected:* events_fact
+
+*Root Cause:*
+The Nextflow finalize step failed due to S3 AccessDenied error. The IAM role is missing s3:PutObject permission, which prevented the _SUCCESS marker from being written. Service B loader is blocked.
+
+*Evidence:*
+• S3 _SUCCESS marker: Missing
+• Nextflow finalize: FAILED
+
+*Confidence:* 95%
+
+*Recommended Actions:*
+1. [CRITICAL] Fix IAM permissions for s3:PutObject
+2. [HIGH] Rerun Nextflow finalize step

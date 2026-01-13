@@ -32,7 +32,7 @@
     {
       "source": "warehouse",
       "tool": "get_loader_status",
-      "finding": "Loader status: WAITING",
+      "finding": "Loader: WAITING",
       "supports_root_cause": false
     },
     {
@@ -54,24 +54,24 @@
       "Nextflow",
       "Service B Loader"
     ],
-    "description": "events_fact table was stale. Downstream analytics delayed until ingestion completes."
+    "description": "events_fact table was stale."
   },
   "recommended_actions": [
     {
-      "action": "Rerun or fix the Nextflow finalize step to write the _SUCCESS marker",
+      "action": "Rerun Nextflow finalize step",
       "priority": "high",
       "automated": true
     },
     {
-      "action": "Fix IAM permissions for s3:PutObject on the processed bucket",
+      "action": "Fix IAM permissions for s3:PutObject",
       "priority": "critical",
       "automated": false
     }
   ],
   "investigation": {
-    "duration_seconds": 0.006052,
+    "duration_seconds": 1.062059,
     "steps_executed": 6,
     "hypotheses_tested": 4
   },
-  "generated_at": "2026-01-13T00:39:58.787142"
+  "generated_at": "2026-01-13T00:42:41.454467"
 }
