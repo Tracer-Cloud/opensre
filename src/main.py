@@ -48,7 +48,7 @@ Last warehouse update: 00:13 UTC
 Upstream run: nextflow/run_2026-01-13T00:00Z
 Loader: service-b
 """
-    console.print(Panel(raw_alert, title="Incoming Alert (Slack)", border_style="red"))
+    console.print(Panel(raw_alert, title="Incoming Grafana Alert (Slack Channel)", border_style="red"))
     console.print("[dim]Agent triggered automatically...[/dim]\n")
 
     # Run the graph

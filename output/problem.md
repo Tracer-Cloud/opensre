@@ -1,39 +1,31 @@
-# RCA — events_fact freshness incident
+# Incident Report: events_fact Freshness SLA Breach
 
-**Analyzed by:** pipeline-agent
-**Detected:** 02:13 UTC
-**Confidence:** 0.95
+## Summary
+• Nextflow pipeline processed data successfully (events_processed.parquet exists)
+• Pipeline failed at finalization due to S3 AccessDenied error
+• IAM role lacks s3:PutObject permission for _SUCCESS marker creation
+• Downstream systems interpret missing _SUCCESS marker as failed/incomplete job
 
-## Conclusion
+## Evidence
 
-• Pipeline processed data successfully and created output parquet file
-• Finalize step failed due to S3 AccessDenied error when writing _SUCCESS marker
-• IAM role lacks s3:PutObject permission for _SUCCESS file in S3 bucket
-• Downstream systems can't detect job completion, triggering SLA breach alert
+### S3 State
+- Bucket: `tracer-processed-data`
+- Prefix: `events/2026-01-13/`
+- `_SUCCESS` marker: **missing**
 
-## Evidence Chain
+### Nextflow Pipeline
+- Pipeline: `events-etl`
+- Finalize status: `FAILED`
 
-| Check | Result |
-|-------|--------|
-| Raw input file | Present in S3 |
-| Processed output | `events_processed.parquet` written |
-| Nextflow finalize | FAILED after 5 retries |
-| `_SUCCESS` marker | Missing |
-| Service B loader | Running, blocked on `_SUCCESS` |
+## Root Cause Analysis
+Confidence: 95%
 
-## Actions
+• Nextflow pipeline processed data successfully (events_processed.parquet exists)
+• Pipeline failed at finalization due to S3 AccessDenied error
+• IAM role lacks s3:PutObject permission for _SUCCESS marker creation
+• Downstream systems interpret missing _SUCCESS marker as failed/incomplete job
 
-1. Grant Nextflow role `s3:PutObject` on `tracer-processed-data/events/2026-01-13/_SUCCESS`
-2. Rerun Nextflow finalize step
-
-## Logs
-
-```
-2026-01-13 00:05:01 INFO  Starting finalize step
-2026-01-13 00:05:02 INFO  Verifying output file exists: events_processed.parquet
-2026-01-13 00:05:03 INFO  Output file verified successfully
-2026-01-13 00:05:04 INFO  Attempting to write _SUCCESS marker
-2026-01-13 00:05:05 ERROR S3 PutObject failed: AccessDenied
-2026-01-13 00:05:05 ERROR IAM role missing s3:PutObject permission for tracer-processed-data/events/2026-01-13/_SUCCESS
-2026-01-13 00:10:00 ERROR Finalize step failed after 5 retries
-```
+## Recommended Actions
+1. Grant Nextflow IAM role `s3:PutObject` permission on the `_SUCCESS` path
+2. Rerun the Nextflow finalize step
+3. Monitor Service B loader for successful pickup

@@ -1,13 +1,12 @@
-RCA — events_fact freshness incident
-
+🧠 *RCA — events_fact freshness incident*
 Analyzed by: pipeline-agent
 Detected: 02:13 UTC
 
 *Conclusion*
-• Pipeline processed data successfully and created output parquet file
-• Finalize step failed due to S3 AccessDenied error when writing _SUCCESS marker
-• IAM role lacks s3:PutObject permission for _SUCCESS file in S3 bucket
-• Downstream systems can't detect job completion, triggering SLA breach alert
+• Nextflow pipeline processed data successfully (events_processed.parquet exists)
+• Pipeline failed at finalization due to S3 AccessDenied error
+• IAM role lacks s3:PutObject permission for _SUCCESS marker creation
+• Downstream systems interpret missing _SUCCESS marker as failed/incomplete job
 
 *Evidence chain*
 • Raw input file present in S3
