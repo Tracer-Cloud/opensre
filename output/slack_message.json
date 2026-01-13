@@ -1,0 +1,61 @@
+{
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "\ud83d\udd34 Incident Investigation Complete",
+        "emoji": true
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*DataFreshnessSLABreach: events_fact freshness breach*\nTable events_fact has not been updated in over 2 hours"
+      }
+    },
+    {
+      "type": "divider"
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*\ud83d\udd0d Root Cause* (confidence: 90%)\nThe Nextflow finalize step failed due to S3 permission denied error, which prevented the _SUCCESS marker from being written. This blocked Service B from loading data into the warehouse."
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Affected Systems*\nevents_fact, Nextflow, Service B Loader"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Impact*\nevents_fact table was stale. Downstream analytics delayed until ingestion completes."
+        }
+      ]
+    },
+    {
+      "type": "divider"
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*\ud83d\udccb Recommended Actions*\n\u2022 [HIGH] Rerun or fix the Nextflow finalize step to write the _SUCCESS marker\n\u2022 [CRITICAL] Fix IAM permissions for s3:PutObject on the processed bucket"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "\ud83e\udd16 Investigation completed in 0.0s | 4 hypotheses tested | 6 steps executed"
+        }
+      ]
+    }
+  ]
+}

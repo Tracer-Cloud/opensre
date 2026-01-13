@@ -1,0 +1,77 @@
+{
+  "incident_id": "abc123def456",
+  "title": "DataFreshnessSLABreach: events_fact freshness breach",
+  "severity": "critical",
+  "detected_at": "2026-01-13T02:13:00+00:00",
+  "root_cause": {
+    "description": "The Nextflow finalize step failed due to S3 permission denied error, which prevented the _SUCCESS marker from being written. This blocked Service B from loading data into the warehouse.",
+    "confidence": 0.9,
+    "hypothesis": "Output marker missing"
+  },
+  "hypotheses_evaluated": {
+    "confirmed": "Output marker missing",
+    "rejected": [
+      "Nextflow transform failed",
+      "Service B loader crashed",
+      "Upstream data missing"
+    ]
+  },
+  "evidence": [
+    {
+      "source": "s3",
+      "tool": "list_s3_files",
+      "finding": "Output files: Found 1 file(s) in s3://tracer-processed-data/events/2026-01-13/",
+      "supports_root_cause": false
+    },
+    {
+      "source": "nextflow",
+      "tool": "get_step_status",
+      "finding": "Transform step: COMPLETED",
+      "supports_root_cause": false
+    },
+    {
+      "source": "warehouse",
+      "tool": "get_loader_status",
+      "finding": "Loader status: WAITING",
+      "supports_root_cause": false
+    },
+    {
+      "source": "s3",
+      "tool": "check_success_marker",
+      "finding": "_SUCCESS marker: MISSING",
+      "supports_root_cause": true
+    },
+    {
+      "source": "nextflow",
+      "tool": "get_step_status",
+      "finding": "Finalize step: FAILED",
+      "supports_root_cause": true
+    }
+  ],
+  "impact": {
+    "affected_systems": [
+      "events_fact",
+      "Nextflow",
+      "Service B Loader"
+    ],
+    "description": "events_fact table was stale. Downstream analytics delayed until ingestion completes."
+  },
+  "recommended_actions": [
+    {
+      "action": "Rerun or fix the Nextflow finalize step to write the _SUCCESS marker",
+      "priority": "high",
+      "automated": true
+    },
+    {
+      "action": "Fix IAM permissions for s3:PutObject on the processed bucket",
+      "priority": "critical",
+      "automated": false
+    }
+  ],
+  "investigation": {
+    "duration_seconds": 0.006052,
+    "steps_executed": 6,
+    "hypotheses_tested": 4
+  },
+  "generated_at": "2026-01-13T00:39:58.787142"
+}
