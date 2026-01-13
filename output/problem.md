@@ -1,10 +1,10 @@
 # Incident Report: events_fact Freshness SLA Breach
 
 ## Summary
-• Nextflow pipeline processed data successfully (events_processed.parquet exists)
-• Pipeline failed at finalization due to S3 AccessDenied error
-• IAM role lacks s3:PutObject permission for _SUCCESS marker creation
-• Downstream systems interpret missing _SUCCESS marker as failed/incomplete job
+• Pipeline processed data successfully and created output parquet file
+• Finalize step failed when attempting to write _SUCCESS marker to S3
+• IAM role lacks s3:PutObject permission for _SUCCESS marker path
+• Downstream systems cannot detect job completion without _SUCCESS marker
 
 ## Evidence
 
@@ -20,10 +20,10 @@
 ## Root Cause Analysis
 Confidence: 95%
 
-• Nextflow pipeline processed data successfully (events_processed.parquet exists)
-• Pipeline failed at finalization due to S3 AccessDenied error
-• IAM role lacks s3:PutObject permission for _SUCCESS marker creation
-• Downstream systems interpret missing _SUCCESS marker as failed/incomplete job
+• Pipeline processed data successfully and created output parquet file
+• Finalize step failed when attempting to write _SUCCESS marker to S3
+• IAM role lacks s3:PutObject permission for _SUCCESS marker path
+• Downstream systems cannot detect job completion without _SUCCESS marker
 
 ## Recommended Actions
 1. Grant Nextflow IAM role `s3:PutObject` permission on the `_SUCCESS` path

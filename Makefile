@@ -8,13 +8,9 @@ install:
 	python3 -m venv .venv
 	$(PIP) install -r requirements.txt
 
-# Run the demo (loads .env for API keys)
+# Run the demo (loads .env for API keys via python-dotenv)
 demo:
-	@if [ -f .env ]; then \
-		ANTHROPIC_API_KEY=$$(grep '^ANTHROPIC_API_KEY=' .env | cut -d= -f2) $(PYTHON) -m src.main; \
-	else \
-		$(PYTHON) -m src.main; \
-	fi
+	$(PYTHON) -m src.main
 
 # Run tests
 test:

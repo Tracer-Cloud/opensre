@@ -7,17 +7,29 @@ LangGraph state machine:
 Two external context calls, deterministic decision, no network except optional LLM.
 """
 
-import json
+# Load environment variables FIRST, before any other imports
+import os
 from pathlib import Path
-
 from dotenv import load_dotenv
+
+# Load .env from project root
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=env_path, override=True)
+
+# Verify API key is set
+if not os.getenv("ANTHROPIC_API_KEY"):
+    import sys
+    print("ERROR: ANTHROPIC_API_KEY not found in environment or .env file", file=sys.stderr)
+    print(f"Please create a .env file at {env_path} with:", file=sys.stderr)
+    print("ANTHROPIC_API_KEY=your_api_key_here", file=sys.stderr)
+    sys.exit(1)
+
+import json
 from rich.console import Console
 from rich.panel import Panel
 
 from src.models.alert import GrafanaAlertPayload, normalize_grafana_alert
 from src.agent.graph import run_investigation
-
-load_dotenv()
 console = Console()
 
 
