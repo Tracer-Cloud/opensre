@@ -1,29 +1,33 @@
-# Incident Report: DataFreshnessSLABreach
+# RCA — events_fact freshness incident
 
-## Summary
-- **Severity:** critical
-- **Affected Table:** events_fact
-- **Confidence:** 95%
+**Analyzed by:** pipeline-agent
+**Detected:** 02:13 UTC
+**Confidence:** 0.95
 
-## Root Cause
-The Nextflow finalize step failed due to S3 AccessDenied error. The IAM role is missing s3:PutObject permission, which prevented the _SUCCESS marker from being written. Service B loader is blocked.
+## Conclusion
 
-## Evidence Collected
+• Pipeline processed data successfully and created output parquet file
+• Finalize step failed due to S3 AccessDenied error when writing _SUCCESS marker
+• IAM role lacks s3:PutObject permission for _SUCCESS file in S3 bucket
+• Downstream systems can't detect job completion, triggering SLA breach alert
 
-### S3 Check
-- _SUCCESS marker exists: False
-- Files in output prefix: 1
+## Evidence Chain
 
-### Nextflow Check
-- Finalize step status: FAILED
-- Logs available: True
+| Check | Result |
+|-------|--------|
+| Raw input file | Present in S3 |
+| Processed output | `events_processed.parquet` written |
+| Nextflow finalize | FAILED after 5 retries |
+| `_SUCCESS` marker | Missing |
+| Service B loader | Running, blocked on `_SUCCESS` |
 
-## Recommended Actions
-1. **[CRITICAL]** Fix IAM permissions for s3:PutObject on tracer-processed-data bucket
-2. **[HIGH]** Rerun Nextflow finalize step to write _SUCCESS marker
-3. **[MEDIUM]** Add alerting on IAM permission failures
+## Actions
+
+1. Grant Nextflow role `s3:PutObject` on `tracer-processed-data/events/2026-01-13/_SUCCESS`
+2. Rerun Nextflow finalize step
 
 ## Logs
+
 ```
 2026-01-13 00:05:01 INFO  Starting finalize step
 2026-01-13 00:05:02 INFO  Verifying output file exists: events_processed.parquet

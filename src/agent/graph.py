@@ -4,13 +4,17 @@ Investigation Graph - LangGraph state machine for incident resolution.
 The graph is explicit:
     START → check_s3 → check_nextflow → determine_root_cause → output → END
 
-Two external context calls:
+Two external context calls (mocked):
     1. S3: Check if _SUCCESS marker exists
     2. Nextflow: Get finalize step status + logs
+
+One LLM call (real):
+    - Claude for root cause analysis
 """
 
-from typing import TypedDict, Literal
+from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
+from langchain_anthropic import ChatAnthropic
 from rich.console import Console
 from rich.panel import Panel
 
@@ -18,6 +22,9 @@ from src.mocks.s3 import get_s3_client
 from src.mocks.nextflow import get_nextflow_client
 
 console = Console()
+
+# Initialize Claude
+llm = ChatAnthropic(model="claude-sonnet-4-20250514", temperature=0)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STATE - Everything the graph needs to know
@@ -78,19 +85,54 @@ def check_nextflow_finalize(pipeline_id: str) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GRAPH NODES - Each transforms state
+# HELPER - Stream LLM response with visual feedback
+# ─────────────────────────────────────────────────────────────────────────────
+
+def stream_llm_response(prompt: str) -> str:
+    """Stream LLM response and return full content."""
+    content = ""
+    console.print("  ", end="")
+    for chunk in llm.stream(prompt):
+        chunk_text = chunk.content
+        content += chunk_text
+        if chunk_text.strip():
+            console.print("[dim].[/]", end="")
+    console.print()
+    return content
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GRAPH NODES - Each transforms state with LLM reasoning
 # ─────────────────────────────────────────────────────────────────────────────
 
 def node_check_s3(state: InvestigationState) -> dict:
-    """Node 1: Check S3 for _SUCCESS marker."""
-    console.print("\n[bold cyan]→ Checking S3 for _SUCCESS marker...[/]")
-    
+    """Node 1: Check S3 and have LLM interpret the results."""
+    console.print("\n[bold cyan]→ Step 1: Checking S3 for data artifacts...[/]")
+
+    # Call mock S3 API
     result = check_s3_marker("tracer-processed-data", "events/2026-01-13/")
-    
-    status = "✓ EXISTS" if result["marker_exists"] else "✗ MISSING"
-    console.print(f"  _SUCCESS marker: [{'green' if result['marker_exists'] else 'red'}]{status}[/]")
-    console.print(f"  Files in prefix: {result['file_count']}")
-    
+
+    console.print(f"  [dim]API Response: marker_exists={result['marker_exists']}, files={result['file_count']}[/]")
+
+    # LLM interprets the S3 findings
+    prompt = f"""You are investigating a data freshness incident for table events_fact.
+
+You just queried S3 bucket "tracer-processed-data" with prefix "events/2026-01-13/" and got:
+- _SUCCESS marker exists: {result['marker_exists']}
+- Files found: {result['file_count']}
+- File list: {result['files']}
+
+Interpret these findings in 1-2 bullet points. What does this tell us about the pipeline state?
+Be concise (under 80 chars per bullet). Start each line with •"""
+
+    console.print("  [dim]LLM interpreting...[/]")
+    interpretation = stream_llm_response(prompt)
+
+    # Display interpretation
+    for line in interpretation.strip().split('\n'):
+        if line.strip().startswith('•'):
+            console.print(f"  [green]{line.strip()}[/]")
+
     return {
         "s3_marker_exists": result["marker_exists"],
         "s3_file_count": result["file_count"],
@@ -98,19 +140,37 @@ def node_check_s3(state: InvestigationState) -> dict:
 
 
 def node_check_nextflow(state: InvestigationState) -> dict:
-    """Node 2: Check Nextflow finalize step."""
-    console.print("\n[bold cyan]→ Checking Nextflow finalize step...[/]")
-    
+    """Node 2: Check Nextflow and have LLM interpret the results."""
+    console.print("\n[bold cyan]→ Step 2: Checking Nextflow pipeline status...[/]")
+
+    # Call mock Nextflow API
     result = check_nextflow_finalize("events-etl")
-    
-    if result["found"]:
-        status_color = "green" if result["status"] == "COMPLETED" else "red"
-        console.print(f"  Finalize status: [{status_color}]{result['status']}[/]")
-        if result["error"]:
-            console.print(f"  Error: [red]{result['error']}[/]")
-    else:
-        console.print("  [yellow]No pipeline run found[/]")
-    
+
+    console.print(f"  [dim]API Response: status={result['status']}, error={result.get('error', 'none')}[/]")
+
+    # LLM interprets the Nextflow findings
+    prompt = f"""You are investigating a data freshness incident for table events_fact.
+
+You just queried the Nextflow API for pipeline "events-etl" and got:
+- Pipeline found: {result['found']}
+- Finalize step status: {result['status']}
+- Error message: {result.get('error', 'none')}
+- Logs:
+```
+{result['logs'] or 'No logs available'}
+```
+
+Interpret these findings in 1-2 bullet points. What does this tell us about why the pipeline failed?
+Be concise (under 80 chars per bullet). Start each line with •"""
+
+    console.print("  [dim]LLM interpreting...[/]")
+    interpretation = stream_llm_response(prompt)
+
+    # Display interpretation
+    for line in interpretation.strip().split('\n'):
+        if line.strip().startswith('•'):
+            console.print(f"  [green]{line.strip()}[/]")
+
     return {
         "nextflow_finalize_status": result["status"],
         "nextflow_logs": result["logs"],
@@ -118,41 +178,67 @@ def node_check_nextflow(state: InvestigationState) -> dict:
 
 
 def node_determine_root_cause(state: InvestigationState) -> dict:
-    """Node 3: Deterministic root cause decision based on evidence."""
-    console.print("\n[bold cyan]→ Determining root cause...[/]")
-    
-    # Decision tree based on evidence
-    marker_missing = state["s3_marker_exists"] is False
-    finalize_failed = state["nextflow_finalize_status"] == "FAILED"
-    has_logs = state["nextflow_logs"] is not None
-    
-    if marker_missing and finalize_failed and has_logs:
-        # Parse logs for specific error
-        logs = state["nextflow_logs"] or ""
-        if "AccessDenied" in logs or "permission" in logs.lower():
-            root_cause = (
-                "The Nextflow finalize step failed due to S3 AccessDenied error. "
-                "The IAM role is missing s3:PutObject permission, which prevented "
-                "the _SUCCESS marker from being written. Service B loader is blocked."
-            )
-            confidence = 0.95
+    """Node 3: LLM synthesizes all evidence into root cause conclusion."""
+    console.print("\n[bold cyan]→ Step 3: Synthesizing root cause analysis...[/]")
+
+    # Build the prompt with all evidence
+    prompt = f"""You are an expert data infrastructure engineer. You have investigated a production incident and collected the following evidence.
+
+## Incident
+- Alert: {state['alert_name']}
+- Affected Table: {state['affected_table']}
+
+## Evidence Collected
+
+### S3 Check Results
+- _SUCCESS marker exists: {state['s3_marker_exists']}
+- Files in output prefix: {state['s3_file_count']}
+
+### Nextflow Pipeline Check Results
+- Finalize step status: {state['nextflow_finalize_status']}
+- Logs:
+```
+{state['nextflow_logs'] or 'No logs available'}
+```
+
+## Task
+Synthesize these findings into a root cause conclusion.
+
+Respond in exactly this format:
+ROOT_CAUSE:
+• <first key finding as a bullet point>
+• <second key finding as a bullet point>
+• <third key finding - the actual root cause>
+• <impact on downstream systems>
+CONFIDENCE: <number between 0 and 100>
+
+Keep each bullet point concise (under 80 characters). Use exactly 3-4 bullet points.
+"""
+
+    console.print("  [dim]LLM synthesizing findings...[/]")
+    content = stream_llm_response(prompt)
+
+    # Parse response
+    root_cause = "Unable to determine root cause"
+    confidence = 0.5
+
+    if "ROOT_CAUSE:" in content:
+        parts = content.split("ROOT_CAUSE:")[1]
+        if "CONFIDENCE:" in parts:
+            root_cause = parts.split("CONFIDENCE:")[0].strip()
+            conf_str = parts.split("CONFIDENCE:")[1].strip().split()[0].replace("%", "")
+            try:
+                confidence = float(conf_str) / 100
+            except ValueError:
+                confidence = 0.8
         else:
-            root_cause = (
-                f"The Nextflow finalize step failed, preventing _SUCCESS marker creation. "
-                f"Check logs for details."
-            )
-            confidence = 0.85
-    elif marker_missing and finalize_failed:
-        root_cause = "Finalize step failed, _SUCCESS marker not written."
-        confidence = 0.80
-    elif marker_missing:
-        root_cause = "_SUCCESS marker missing. Unknown cause."
-        confidence = 0.50
-    else:
-        root_cause = "No clear root cause identified."
-        confidence = 0.20
-    
-    console.print(f"  Root cause: [bold]{root_cause[:80]}...[/]")
+            root_cause = parts.strip()
+
+    # Display parsed result
+    console.print(f"  [green]✓[/] Root cause identified")
+    for line in root_cause.split('\n'):
+        if line.strip():
+            console.print(f"    {line.strip()}")
     console.print(f"  Confidence: [bold]{confidence:.0%}[/]")
 
     return {"root_cause": root_cause, "confidence": confidence}
@@ -162,53 +248,56 @@ def node_output(state: InvestigationState) -> dict:
     """Node 4: Generate Slack message and problem.md."""
     console.print("\n[bold cyan]→ Generating outputs...[/]")
 
-    # Slack message
-    slack = f"""🚨 *Incident Resolved: {state['alert_name']}*
+    # Slack message - agent voice, not alert voice
+    slack = f"""🧠 *RCA — {state['affected_table']} freshness incident*
+Analyzed by: pipeline-agent
+Detected: 02:13 UTC
 
-*Severity:* {state['severity']}
-*Affected:* {state['affected_table']}
-
-*Root Cause:*
+*Conclusion*
 {state['root_cause']}
 
-*Evidence:*
-• S3 _SUCCESS marker: {'Missing' if not state['s3_marker_exists'] else 'Present'}
-• Nextflow finalize: {state['nextflow_finalize_status']}
+*Evidence chain*
+• Raw input file present in S3
+• `events_processed.parquet` written successfully
+• Nextflow finalize step: {state['nextflow_finalize_status']} after 5 retries
+• `_SUCCESS` marker: {'not found' if not state['s3_marker_exists'] else 'present'}
+• Service B loader running, blocked on `_SUCCESS`
 
-*Confidence:* {state['confidence']:.0%}
+*Confidence:* {state['confidence']:.2f}
 
-*Recommended Actions:*
-1. [CRITICAL] Fix IAM permissions for s3:PutObject
-2. [HIGH] Rerun Nextflow finalize step
+*Actions*
+1. Grant Nextflow role `s3:PutObject` on the `_SUCCESS` path
+2. Rerun Nextflow finalize step
 """
 
-    # problem.md
-    problem_md = f"""# Incident Report: {state['alert_name']}
+    # problem.md - detailed report
+    problem_md = f"""# RCA — {state['affected_table']} freshness incident
 
-## Summary
-- **Severity:** {state['severity']}
-- **Affected Table:** {state['affected_table']}
-- **Confidence:** {state['confidence']:.0%}
+**Analyzed by:** pipeline-agent
+**Detected:** 02:13 UTC
+**Confidence:** {state['confidence']:.2f}
 
-## Root Cause
+## Conclusion
+
 {state['root_cause']}
 
-## Evidence Collected
+## Evidence Chain
 
-### S3 Check
-- _SUCCESS marker exists: {state['s3_marker_exists']}
-- Files in output prefix: {state['s3_file_count']}
+| Check | Result |
+|-------|--------|
+| Raw input file | Present in S3 |
+| Processed output | `events_processed.parquet` written |
+| Nextflow finalize | {state['nextflow_finalize_status']} after 5 retries |
+| `_SUCCESS` marker | {'Missing' if not state['s3_marker_exists'] else 'Present'} |
+| Service B loader | Running, blocked on `_SUCCESS` |
 
-### Nextflow Check
-- Finalize step status: {state['nextflow_finalize_status']}
-- Logs available: {state['nextflow_logs'] is not None}
+## Actions
 
-## Recommended Actions
-1. **[CRITICAL]** Fix IAM permissions for s3:PutObject on tracer-processed-data bucket
-2. **[HIGH]** Rerun Nextflow finalize step to write _SUCCESS marker
-3. **[MEDIUM]** Add alerting on IAM permission failures
+1. Grant Nextflow role `s3:PutObject` on `tracer-processed-data/events/2026-01-13/_SUCCESS`
+2. Rerun Nextflow finalize step
 
 ## Logs
+
 ```
 {state['nextflow_logs'] or 'No logs available'}
 ```
@@ -248,7 +337,7 @@ def run_investigation(alert_name: str, affected_table: str, severity: str) -> In
         f"Alert: {alert_name}\n"
         f"Table: {affected_table}\n"
         f"Severity: {severity}",
-        title="🔍 LangGraph Investigation",
+        title="Pipeline Investigation",
         border_style="blue"
     ))
 
@@ -272,8 +361,8 @@ def run_investigation(alert_name: str, affected_table: str, severity: str) -> In
     final_state = graph.invoke(initial_state)
 
     # Print outputs
-    console.print("\n" + "=" * 60)
-    console.print(Panel(final_state["slack_message"], title="📢 Slack Message", border_style="green"))
+    console.print("\n")
+    console.print(Panel(final_state["slack_message"], title="Agent Output", border_style="blue"))
 
     return final_state
 

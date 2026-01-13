@@ -32,21 +32,24 @@ def load_sample_alert() -> GrafanaAlertPayload:
 def main():
     """Run the LangGraph incident resolution demo."""
     console.print("\n")
-    console.print(Panel(
-        "[bold blue]Agentic AI for Data Pipeline Incident Resolution[/bold blue]\n\n"
-        "LangGraph state machine: START → check_s3 → check_nextflow → root_cause → output → END\n"
-        "• Two external calls (S3 + Nextflow)\n"
-        "• Deterministic root cause decision\n"
-        "• Outputs: Slack message + problem.md",
-        title="🚀 LANGGRAPH DEMO",
-        border_style="blue"
-    ))
 
     # Load alert
-    console.print("\n[bold]Loading Grafana Alert...[/bold]")
     grafana_payload = load_sample_alert()
     alert = normalize_grafana_alert(grafana_payload)
-    console.print(f"   Alert: {alert.alert_name} | Severity: {alert.severity} | Table: {alert.affected_table}")
+
+    # Show the raw incoming Slack alert (what triggers the agent)
+    raw_alert = """🚨 *events_fact freshness SLA breached*
+Env: prod
+Detected: 02:13 UTC
+
+No new rows for 2h 0m (SLA 30m)
+Last warehouse update: 00:13 UTC
+
+Upstream run: nextflow/run_2026-01-13T00:00Z
+Loader: service-b
+"""
+    console.print(Panel(raw_alert, title="Incoming Alert (Slack)", border_style="red"))
+    console.print("[dim]Agent triggered automatically...[/dim]\n")
 
     # Run the graph
     final_state = run_investigation(
@@ -70,10 +73,11 @@ def main():
     console.print(f"[green]✓[/green] Saved: {slack_path}")
 
     # Summary
+    console.print()
     console.print(Panel(
         f"[bold]Root Cause:[/bold] {final_state['root_cause']}\n\n"
         f"[bold]Confidence:[/bold] {final_state['confidence']:.0%}",
-        title="✅ DONE",
+        title="Root Cause Analysis (RCA) Report -> Sent Via Webhook API",
         border_style="green"
     ))
 
