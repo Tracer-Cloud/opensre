@@ -1,20 +1,21 @@
-# Agentic AI for Data Pipeline Incident Resolution
+# Data Pipeline Incident Resolution
 
-> **Data Engineering Meetup Demo** - Demonstrating how AI agents can autonomously investigate production incidents across your entire data stack.
+Data Engineering Meetup Demo - Automated investigation and root cause analysis for production data pipeline incidents.
 
-## 🎯 What This Demo Shows
+## Overview
 
-An AI agent that:
-1. **Receives a Grafana alert** about a warehouse freshness SLA breach
-2. **Investigates across systems** - S3, Nextflow, warehouse
-3. **Tests hypotheses in parallel** - structured, evidence-based reasoning
-4. **Produces actionable RCA** - root cause + evidence + fix recommendation
+This system demonstrates automated incident investigation across a data stack:
 
-## 🏗️ Architecture
+1. Receives Grafana alerts for warehouse freshness SLA breaches
+2. Investigates across multiple systems (S3, Nextflow, warehouse)
+3. Tests hypotheses using structured, evidence-based reasoning
+4. Produces actionable root cause analysis with evidence and fix recommendations
+
+## Architecture
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Grafana   │────▶│  AI Agent    │────▶│   Slack     │
+│   Grafana   │────▶│  Agent       │────▶│   Slack     │
 │   Alert     │     │  (LangChain) │     │   Report    │
 └─────────────┘     └──────────────┘     └─────────────┘
                            │
@@ -26,24 +27,24 @@ An AI agent that:
               └──────────┘  └──────────┘
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
-# 1. Install dependencies
+# Install dependencies
 make install
 
-# 2. Set up environment (add your OpenAI API key)
+# Set up environment (add your OpenAI API key)
 cp .env.example .env
 # Edit .env and add OPENAI_API_KEY
 
-# 3. Run the demo
+# Run the demo
 make demo
 
-# 4. Run tests
+# Run tests
 make test
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 ├── src/
@@ -70,47 +71,53 @@ make test
 └── README.md
 ```
 
-## 🎪 Demo Scenario
+## Demo Scenario
 
-**The incident**: `events_fact` table freshness SLA breached at 02:13
+**Incident**: `events_fact` table freshness SLA breached at 02:13
 
-**What the agent discovers**:
-1. ✅ Raw input file exists in S3
-2. ✅ Nextflow transformation completed successfully
-3. ❌ Nextflow finalize step failed
-4. ❌ `_SUCCESS` marker missing
-5. ⏳ Service B loader waiting for `_SUCCESS`
-6. ⏳ Warehouse table not updated
+**Investigation findings**:
+
+1. Raw input file exists in S3
+2. Nextflow transformation completed successfully
+3. Nextflow finalize step failed
+4. `_SUCCESS` marker missing
+5. Service B loader waiting for `_SUCCESS`
+6. Warehouse table not updated
 
 **Root cause**: Nextflow finalize step did not write the `_SUCCESS` marker, blocking downstream ingestion.
 
-## 📚 Key Code Examples
+## Key Components
 
-### 1. Investigation Loop (`src/agent/investigation.py`)
-The LangChain agent loop that takes alerts, proposes hypotheses, calls tools, and updates state.
+### Investigation Loop (`src/agent/investigation.py`)
 
-### 2. Hypothesis Model (`src/models/hypothesis.py`)
+LangChain agent loop that processes alerts, proposes hypotheses, calls tools, and updates state.
+
+### Hypothesis Model (`src/models/hypothesis.py`)
+
 Pydantic schema for structured hypothesis tracking with evidence requirements.
 
-### 3. Alert Ingestion (`src/models/alert.py`)
-Normalizes Grafana alert payloads into clean internal incident objects.
+### Alert Ingestion (`src/models/alert.py`)
 
-### 4. Context Connectors (`src/tools/`)
+Normalizes Grafana alert payloads into internal incident objects.
+
+### Context Connectors (`src/tools/`)
+
 Functions that fetch context from S3, Nextflow, and the warehouse.
 
-### 5. Evidence-Backed Report (`src/agent/report_generator.py`)
+### Report Generator (`src/agent/report_generator.py`)
+
 Assembles root cause, evidence, and recommended fix into actionable output.
 
-## 🔧 Requirements
+## Requirements
 
 - Python 3.11+
-- OpenAI API key (for LLM reasoning)
+- OpenAI API key
 
-## 📖 Related Resources
+## Related Resources
 
 - [AI Agents for Prod: Full Stack Analysis (Resolve AI)](https://www.youtube.com/watch?v=ApR-unlYQqk)
 - Tracer Cloud - [tracercloud.io](https://tracercloud.io)
 
 ---
 
-**Built for the Data Engineering Meetup 2026** | Tracer Cloud
+Built for the Data Engineering Meetup 2026 | Tracer Cloud
