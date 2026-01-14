@@ -39,7 +39,7 @@ def node_check_s3(state: InvestigationState) -> dict:
     render_step_header(1, "Checking S3 for data artifacts...")
     
     # Tool call
-    result = check_s3_marker("tracer-processed-data", "events/2026-01-13/")
+    result = check_s3_marker("tracer-logs", "events/2026-01-13/")
     render_api_response("S3", f"marker_exists={result.marker_exists}, files={result.file_count}")
     
     # LLM interpretation

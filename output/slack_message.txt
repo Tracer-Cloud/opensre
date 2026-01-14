@@ -3,10 +3,10 @@ Analyzed by: pipeline-agent
 Detected: 02:13 UTC
 
 *Conclusion*
-• Pipeline processed data successfully and created output parquet file
-• Finalize step failed when attempting to write _SUCCESS marker to S3
-• IAM role lacks s3:PutObject permission for _SUCCESS marker path
-• Downstream systems cannot detect job completion without _SUCCESS marker
+• Pipeline successfully processed data and created output parquet file
+• Finalize step failed due to S3 AccessDenied when writing _SUCCESS marker
+• IAM role lacks s3:PutObject permission for _SUCCESS file in S3 path
+• Downstream systems cannot detect completion, triggering freshness SLA breach
 
 *Evidence chain*
 • Raw input file present in S3

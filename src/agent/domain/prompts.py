@@ -11,7 +11,7 @@ def s3_interpretation_prompt(result: S3CheckResult) -> str:
     """Build prompt for interpreting S3 check results."""
     return f"""You are investigating a data freshness incident for table events_fact.
 
-You just queried S3 bucket "tracer-processed-data" with prefix "events/2026-01-13/" and got:
+You just queried S3 bucket "tracer-logs" with prefix "events/2026-01-13/" and got:
 - _SUCCESS marker exists: {result.marker_exists}
 - Files found: {result.file_count}
 - File list: {result.files}

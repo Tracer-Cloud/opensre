@@ -21,7 +21,7 @@ def list_s3_files(bucket: str, prefix: str) -> dict:
     - Success markers (_SUCCESS files)
     
     Args:
-        bucket: The S3 bucket name (e.g., 'tracer-raw-data', 'tracer-processed-data')
+        bucket: The S3 bucket name (e.g., 'tracer-logs')
         prefix: The prefix to filter files (e.g., 'events/2026-01-13/')
     
     Returns:

@@ -13,8 +13,8 @@ Scenario:
 from datetime import datetime, timezone
 
 # S3 Mock Data
-S3_RAW_BUCKET = "tracer-raw-data"
-S3_PROCESSED_BUCKET = "tracer-processed-data"
+S3_RAW_BUCKET = "tracer-logs"
+S3_PROCESSED_BUCKET = "tracer-logs"
 S3_DATE = "2026-01-13"
 
 S3_RAW_FILES = [
@@ -83,7 +83,7 @@ NEXTFLOW_LOGS = {
 2026-01-13 00:05:03 INFO  Output file verified successfully
 2026-01-13 00:05:04 INFO  Attempting to write _SUCCESS marker
 2026-01-13 00:05:05 ERROR S3 PutObject failed: AccessDenied
-2026-01-13 00:05:05 ERROR IAM role missing s3:PutObject permission for tracer-processed-data/events/2026-01-13/_SUCCESS
+2026-01-13 00:05:05 ERROR IAM role missing s3:PutObject permission for tracer-logs/events/2026-01-13/_SUCCESS
 2026-01-13 00:10:00 ERROR Finalize step failed after 5 retries
 """.strip()
 }
@@ -105,7 +105,7 @@ LOADER_STATUS = {
         "loader_name": "events_loader",
         "status": "WAITING",
         "target_table": "events_fact",
-        "waiting_for": "_SUCCESS marker at s3://tracer-processed-data/events/2026-01-13/_SUCCESS",
+        "waiting_for": "_SUCCESS marker at s3://tracer-logs/events/2026-01-13/_SUCCESS",
         "last_check": datetime(2026, 1, 13, 2, 10, 0, tzinfo=timezone.utc),
         "checks_since_last_success": 24,
     }

@@ -49,7 +49,7 @@ def format_problem_md(ctx: ReportContext) -> str:
 ## Evidence
 
 ### S3 State
-- Bucket: `tracer-processed-data`
+- Bucket: `tracer-logs`
 - Prefix: `events/2026-01-13/`
 - `_SUCCESS` marker: {'present' if ctx['s3_marker_exists'] else '**missing**'}
 

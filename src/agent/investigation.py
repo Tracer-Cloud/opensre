@@ -134,19 +134,19 @@ class InvestigationAgent:
 
     def _check_s3_output(self, h: Hypothesis):
         """Check if processed output files exist."""
-        r = list_s3_files.invoke({"bucket": "tracer-processed-data", "prefix": "events/2026-01-13/"})
+        r = list_s3_files.invoke({"bucket": "tracer-logs", "prefix": "events/2026-01-13/"})
         h.evidence.append(Evidence(source="s3", tool_used="list_s3_files", finding=f"Output files: {r['message']}", supports_hypothesis=(r["count"] == 0), raw_data=r))
         self.log(f"   ✓ S3 check: {r['message']}")
 
     def _check_s3_raw(self, h: Hypothesis):
         """Check if raw input files exist."""
-        r = list_s3_files.invoke({"bucket": "tracer-raw-data", "prefix": "events/2026-01-13/"})
+        r = list_s3_files.invoke({"bucket": "tracer-logs", "prefix": "events/2026-01-13/"})
         h.evidence.append(Evidence(source="s3", tool_used="list_s3_files", finding=f"Raw input files: {r['message']}", supports_hypothesis=(r["count"] == 0), raw_data=r))
         self.log(f"   ✓ Raw data: {r['message']}")
 
     def _check_success_marker(self, h: Hypothesis):
         """Check if _SUCCESS marker exists."""
-        r = check_success_marker.invoke({"bucket": "tracer-processed-data", "prefix": "events/2026-01-13/"})
+        r = check_success_marker.invoke({"bucket": "tracer-logs", "prefix": "events/2026-01-13/"})
         missing = not r["success_marker_exists"]
         h.evidence.append(Evidence(source="s3", tool_used="check_success_marker", finding=f"_SUCCESS marker: {'MISSING' if missing else 'EXISTS'}", supports_hypothesis=missing, raw_data=r))
         self.log(f"   ✓ Success marker: {r['message']}")
