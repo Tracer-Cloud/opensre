@@ -2,9 +2,10 @@
 
 from src.agent.infrastructure.clients import (
     S3CheckResult,
-    NextflowCheckResult,
+    TracerRunResult,
+    TracerTaskResult,
     get_s3_client,
-    get_nextflow_client,
+    get_tracer_client,
 )
 from src.agent.infrastructure.llm import (
     RootCauseResult,
@@ -16,9 +17,10 @@ from src.agent.infrastructure.llm import (
 
 __all__ = [
     "S3CheckResult",
-    "NextflowCheckResult",
+    "TracerRunResult",
+    "TracerTaskResult",
     "get_s3_client",
-    "get_nextflow_client",
+    "get_tracer_client",
     "RootCauseResult",
     "InterpretationResult",
     "stream_completion",

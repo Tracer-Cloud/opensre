@@ -1,22 +1,28 @@
-🧠 *RCA — events_fact freshness incident*
+[RCA] events_fact freshness incident
 Analyzed by: pipeline-agent
 Detected: 02:13 UTC
 
 *Conclusion*
-• Pipeline successfully processed data and created output parquet file
-• Finalize step failed due to S3 AccessDenied when writing _SUCCESS marker
-• IAM role lacks s3:PutObject permission for _SUCCESS file in S3 path
-• Downstream systems cannot detect completion, triggering freshness SLA breach
+* Pipeline aws_batch_tests (velvet-bear-910) failed after 43.6 minutes
+* AWS Batch job failed with OutOfMemoryError: Container killed due to memory usage
+* Job exceeded 700GB RAM allocation on g6e.24xlarge instance
+* Missing _SUCCESS marker prevented events_fact table updates, causing SLA breach
 
-*Evidence chain*
-• Raw input file present in S3
-• `events_processed.parquet` written successfully
-• Nextflow finalize step: FAILED after 5 retries
-• `_SUCCESS` marker: not found
-• Service B loader running, blocked on `_SUCCESS`
+*Evidence from Tracer*
+* Pipeline: aws_batch_tests
+* Run: velvet-bear-910
+* Status: Failed [FAILED]
+* User: michele@tracer.cloud
+* Team: Oncology
+* Cost: $12.58
+* Instance: g6e.24xlarge
+* Max RAM: 710.7 GB
+* Failure Reason: OutOfMemoryError: Container killed due to memory usage
+* S3 _SUCCESS marker: not found
 
 *Confidence:* 0.95
 
-*Actions*
-1. Grant Nextflow role `s3:PutObject` on the `_SUCCESS` path
-2. Rerun Nextflow finalize step
+*Recommended Actions*
+1. Review failed job in Tracer dashboard
+2. Increase memory allocation - job killed due to OutOfMemoryError: Container killed due to memory usage
+3. Rerun pipeline after fixing issues

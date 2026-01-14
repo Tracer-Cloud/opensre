@@ -74,7 +74,8 @@ def parse_bullets(response: str) -> InterpretationResult:
     bullets = []
     for line in response.strip().split('\n'):
         line = line.strip()
-        if line.startswith('•'):
+        # Support both * and - bullet formats
+        if line.startswith('*') or line.startswith('-'):
             bullets.append(line)
     return InterpretationResult(bullets=bullets, raw=response)
 

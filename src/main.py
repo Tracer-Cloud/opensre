@@ -2,9 +2,9 @@
 Main entry point for the incident resolution demo.
 
 LangGraph state machine:
-    START → check_s3 → check_nextflow → determine_root_cause → output → END
+    START -> check_s3 -> check_tracer -> determine_root_cause -> output -> END
 
-Two external context calls, deterministic decision, no network except optional LLM.
+Uses Tracer API for pipeline data, LLM for analysis.
 """
 
 # Load environment variables FIRST, before any other imports
@@ -50,15 +50,14 @@ def main():
     alert = normalize_grafana_alert(grafana_payload)
 
     # Show the raw incoming Slack alert (what triggers the agent)
-    raw_alert = """🚨 *events_fact freshness SLA breached*
+    raw_alert = """[ALERT] events_fact freshness SLA breached
 Env: prod
 Detected: 02:13 UTC
 
 No new rows for 2h 0m (SLA 30m)
 Last warehouse update: 00:13 UTC
 
-Upstream run: nextflow/run_2026-01-13T00:00Z
-Loader: service-b
+Upstream pipeline run pending investigation
 """
     console.print(Panel(raw_alert, title="Incoming Grafana Alert (Slack Channel)", border_style="red"))
     console.print("[dim]Agent triggered automatically...[/dim]\n")
@@ -77,12 +76,12 @@ Loader: service-b
     # problem.md
     md_path = output_dir / "problem.md"
     md_path.write_text(final_state["problem_md"])
-    console.print(f"\n[green]✓[/green] Saved: {md_path}")
+    console.print(f"\n[green][OK][/green] Saved: {md_path}")
 
     # slack_message.txt
     slack_path = output_dir / "slack_message.txt"
     slack_path.write_text(final_state["slack_message"])
-    console.print(f"[green]✓[/green] Saved: {slack_path}")
+    console.print(f"[green][OK][/green] Saved: {slack_path}")
 
     # Summary
     console.print()

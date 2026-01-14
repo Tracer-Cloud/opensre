@@ -77,44 +77,34 @@ class Hypothesis(BaseModel):
 # Pre-defined hypothesis templates for the demo scenario
 HYPOTHESIS_TEMPLATES = [
     {
-        "id": "h1_transform_failed",
-        "name": "Nextflow transform failed",
-        "description": "The Nextflow transformation step failed, preventing output file creation",
+        "id": "h1_task_failed",
+        "name": "Pipeline task failed",
+        "description": "A pipeline task failed with non-zero exit code",
         "evidence_needed": [
-            "Check if output file exists in S3",
-            "Check Nextflow transform step status",
+            "Check Tracer for failed tasks",
+            "Get task exit codes and error messages",
         ],
-        "tools_to_use": ["list_s3_files", "get_step_status"],
+        "tools_to_use": ["get_tracer_run", "get_tracer_tasks"],
     },
     {
-        "id": "h2_loader_crashed",
-        "name": "Service B loader crashed",
-        "description": "The data loader (Service B) crashed and is not running",
+        "id": "h2_output_missing",
+        "name": "Output files missing",
+        "description": "Expected output files were not created by the pipeline",
         "evidence_needed": [
-            "Check loader status",
-            "Verify loader is running",
+            "Check files created during pipeline run",
+            "Verify expected outputs exist",
         ],
-        "tools_to_use": ["get_loader_status"],
+        "tools_to_use": ["get_tracer_files"],
     },
     {
-        "id": "h3_success_marker_missing",
-        "name": "Output marker missing",
-        "description": "The _SUCCESS marker was not written, blocking downstream ingestion",
+        "id": "h3_resource_exhaustion",
+        "name": "Resource exhaustion",
+        "description": "Pipeline failed due to running out of memory or CPU",
         "evidence_needed": [
-            "Check if _SUCCESS marker exists",
-            "Check if output file exists",
-            "Check Nextflow finalize step status",
+            "Check pipeline resource usage",
+            "Look for OOM or resource-related errors",
         ],
-        "tools_to_use": ["check_success_marker", "list_s3_files", "get_step_status"],
-    },
-    {
-        "id": "h4_upstream_missing",
-        "name": "Upstream data missing",
-        "description": "The raw input data was never written by the upstream service",
-        "evidence_needed": [
-            "Check if raw input file exists in S3",
-        ],
-        "tools_to_use": ["list_s3_files"],
+        "tools_to_use": ["get_tracer_run", "get_tracer_tasks"],
     },
 ]
 

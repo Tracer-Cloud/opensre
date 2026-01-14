@@ -1,12 +1,8 @@
-"""Agent core - investigation loop and report generation."""
+"""Agent core - LangGraph investigation and report generation."""
 
-from src.agent.investigation import InvestigationAgent
-from src.agent.report_generator import generate_report, generate_slack_message, generate_problem_md
+from src.agent.graph import run_investigation
 
 __all__ = [
-    "InvestigationAgent",
-    "generate_report",
-    "generate_slack_message",
-    "generate_problem_md",
+    "run_investigation",
 ]
 
