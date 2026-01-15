@@ -163,3 +163,33 @@ def render_error(message: str):
     """Render an error message."""
     console.print(f"[red bold][ERROR][/] {message}")
 
+
+def render_hypothesis_header():
+    """Render the hypothesis generation header."""
+    console.print("\n[bold magenta]─── Hypothesis Generation ───[/]")
+
+
+def render_hypotheses(hypotheses: list[dict]):
+    """Render the list of proposed hypotheses."""
+    console.print("[bold]Proposed hypotheses to investigate:[/]\n")
+    for i, h in enumerate(hypotheses, 1):
+        console.print(f"  [cyan]H{i}[/] [bold]{h['name']}[/]")
+        console.print(f"      {h['description']}")
+        console.print(f"      [dim]Tools: {', '.join(h['tools_to_use'])}[/]")
+        console.print()
+
+
+def render_hypothesis_testing(hypothesis_name: str):
+    """Render header for testing a specific hypothesis."""
+    console.print(f"\n[bold yellow]─── Testing Hypothesis: {hypothesis_name} ───[/]")
+
+
+def render_hypothesis_result(hypothesis_name: str, status: str, confidence: float):
+    """Render the result of testing a hypothesis."""
+    if status == "confirmed":
+        console.print(f"  [green bold][CONFIRMED][/] {hypothesis_name} (confidence: {confidence:.0%})")
+    elif status == "rejected":
+        console.print(f"  [red][REJECTED][/] {hypothesis_name}")
+    else:
+        console.print(f"  [yellow][INCONCLUSIVE][/] {hypothesis_name}")
+

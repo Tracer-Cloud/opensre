@@ -69,6 +69,14 @@ Upstream pipeline run pending investigation
         severity=alert.severity,
     )
 
+    # Show RCA Report (combined output)
+    console.print("\n")
+    console.print(Panel(
+        final_state["slack_message"],
+        title="RCA Report",
+        border_style="green"
+    ))
+
     # Save outputs
     output_dir = Path(__file__).parent.parent / "output"
     output_dir.mkdir(exist_ok=True)
@@ -76,21 +84,12 @@ Upstream pipeline run pending investigation
     # problem.md
     md_path = output_dir / "problem.md"
     md_path.write_text(final_state["problem_md"])
-    console.print(f"\n[green][OK][/green] Saved: {md_path}")
+    console.print(f"[green][OK][/green] Saved: {md_path}")
 
     # slack_message.txt
     slack_path = output_dir / "slack_message.txt"
     slack_path.write_text(final_state["slack_message"])
     console.print(f"[green][OK][/green] Saved: {slack_path}")
-
-    # Summary
-    console.print()
-    console.print(Panel(
-        f"[bold]Root Cause:[/bold] {final_state['root_cause']}\n\n"
-        f"[bold]Confidence:[/bold] {final_state['confidence']:.0%}",
-        title="Root Cause Analysis (RCA) Report -> Sent Via Webhook API",
-        border_style="green"
-    ))
 
 
 if __name__ == "__main__":

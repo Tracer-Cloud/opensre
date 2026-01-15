@@ -15,6 +15,9 @@ class InvestigationState(TypedDict, total=False):
     affected_table: str
     severity: str
     
+    # Hypotheses - proposed before investigation
+    hypotheses: list[dict[str, Any]]
+    
     # Evidence - from tool calls
     s3_marker_exists: bool
     s3_file_count: int

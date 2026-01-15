@@ -1,10 +1,10 @@
 # Incident Report: events_fact Freshness SLA Breach
 
 ## Summary
-* Pipeline aws_batch_tests (velvet-bear-910) failed after 43.6 minutes
-* AWS Batch job failed with OutOfMemoryError: Container killed due to memory usage
-* Job exceeded 700GB RAM allocation on g6e.24xlarge instance
-* Missing _SUCCESS marker prevented events_fact table updates, causing SLA breach
+* Pipeline aws_batch_tests failed after 43.6 minutes of execution
+* AWS Batch job terminated due to OutOfMemoryError exceeding 700GB limit
+* STAR_PARABRICKS_S27 job consumed all available memory on g6e.24xlarge
+* Missing _SUCCESS marker caused events_fact table freshness SLA breach
 
 ## Evidence from Tracer
 
@@ -31,10 +31,10 @@
 ## Root Cause Analysis
 Confidence: 95%
 
-* Pipeline aws_batch_tests (velvet-bear-910) failed after 43.6 minutes
-* AWS Batch job failed with OutOfMemoryError: Container killed due to memory usage
-* Job exceeded 700GB RAM allocation on g6e.24xlarge instance
-* Missing _SUCCESS marker prevented events_fact table updates, causing SLA breach
+* Pipeline aws_batch_tests failed after 43.6 minutes of execution
+* AWS Batch job terminated due to OutOfMemoryError exceeding 700GB limit
+* STAR_PARABRICKS_S27 job consumed all available memory on g6e.24xlarge
+* Missing _SUCCESS marker caused events_fact table freshness SLA breach
 
 ## Recommended Actions
 1. Review failed job in Tracer dashboard at https://staging.tracer.cloud

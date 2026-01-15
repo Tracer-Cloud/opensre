@@ -31,16 +31,53 @@ from src.agent.presentation.render import (
     render_bullets,
     render_root_cause_complete,
     render_generating_outputs,
+    render_hypothesis_header,
+    render_hypotheses,
+    render_hypothesis_testing,
+    render_hypothesis_result,
 )
 from src.agent.presentation.report import format_slack_message, format_problem_md, ReportContext
 
+# Hypothesis model
+from src.models.hypothesis import HYPOTHESIS_TEMPLATES
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Node: Check S3
+# Node: Propose Hypotheses
+# ─────────────────────────────────────────────────────────────────────────────
+
+def node_propose_hypotheses(state: InvestigationState) -> dict:
+    """Propose hypotheses to investigate based on the alert."""
+    render_hypothesis_header()
+    
+    # For this demo, we use predefined hypothesis templates
+    # In production, this could use LLM to generate hypotheses dynamically
+    hypotheses = [
+        {
+            "id": h["id"],
+            "name": h["name"],
+            "description": h["description"],
+            "tools_to_use": h["tools_to_use"],
+            "status": "pending",
+            "confidence": 0.0,
+        }
+        for h in HYPOTHESIS_TEMPLATES
+    ]
+    
+    render_hypotheses(hypotheses)
+    
+    return {
+        "hypotheses": hypotheses,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Node: Execute Hypotheses (Check S3, Tracer, Batch Jobs)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def node_check_s3(state: InvestigationState) -> dict:
-    """Check S3 and interpret results with LLM."""
+    """Check S3 and interpret results with LLM (tests H2: Output files missing)."""
+    render_hypothesis_testing("H2: Output files missing")
     render_step_header(1, "Checking S3 for data artifacts...")
     
     # Tool call
@@ -68,7 +105,8 @@ def node_check_s3(state: InvestigationState) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def node_check_tracer(state: InvestigationState) -> dict:
-    """Check Tracer for pipeline run, tasks, and AWS Batch jobs."""
+    """Check Tracer for pipeline run, tasks, and AWS Batch jobs (tests H1 and H3)."""
+    render_hypothesis_testing("H1: Pipeline task failed / H3: Resource exhaustion")
     render_step_header(2, "Fetching pipeline run from Tracer...")
     
     # Get pipeline run from batch-runs endpoint

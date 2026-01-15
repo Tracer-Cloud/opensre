@@ -2,7 +2,7 @@
 Investigation Graph - Thin orchestrator for the LangGraph state machine.
 
 The graph is explicit:
-    START -> check_s3 -> check_tracer -> determine_root_cause -> output -> END
+    START -> propose_hypotheses -> check_s3 -> check_tracer -> determine_root_cause -> output -> END
 
 Layered architecture:
     - infrastructure/: External clients (S3, Tracer) and LLM
@@ -19,6 +19,7 @@ from src.agent.domain.state import InvestigationState
 
 # Nodes (orchestration)
 from src.agent.nodes import (
+    node_propose_hypotheses,
     node_check_s3,
     node_check_tracer,
     node_determine_root_cause,
@@ -26,7 +27,7 @@ from src.agent.nodes import (
 )
 
 # Presentation layer
-from src.agent.presentation.render import render_investigation_start, render_agent_output
+from src.agent.presentation.render import render_investigation_start
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -38,14 +39,19 @@ def build_graph() -> StateGraph:
     graph = StateGraph(InvestigationState)
 
     # Add nodes
+    graph.add_node("propose_hypotheses", node_propose_hypotheses)
     graph.add_node("check_s3", node_check_s3)
     graph.add_node("check_tracer", node_check_tracer)
     graph.add_node("determine_root_cause", node_determine_root_cause)
     graph.add_node("output", node_output)
 
     # Add edges (linear flow)
-    graph.add_edge(START, "check_s3")
+    # 1. Propose hypotheses first
+    graph.add_edge(START, "propose_hypotheses")
+    # 2. Execute hypothesis tests
+    graph.add_edge("propose_hypotheses", "check_s3")
     graph.add_edge("check_s3", "check_tracer")
+    # 3. Analyze results and output
     graph.add_edge("check_tracer", "determine_root_cause")
     graph.add_edge("determine_root_cause", "output")
     graph.add_edge("output", END)
@@ -63,13 +69,13 @@ def run_investigation(alert_name: str, affected_table: str, severity: str) -> In
         "alert_name": alert_name,
         "affected_table": affected_table,
         "severity": severity,
+        "hypotheses": [],
         "s3_marker_exists": False,
         "s3_file_count": 0,
         "tracer_run_found": False,
         "tracer_run_id": None,
         "tracer_pipeline_name": None,
         "tracer_run_status": None,
-        "tracer_health_status": None,
         "tracer_run_time_seconds": 0,
         "tracer_total_tasks": 0,
         "tracer_failed_tasks": 0,
@@ -82,9 +88,6 @@ def run_investigation(alert_name: str, affected_table: str, severity: str) -> In
 
     # Run the graph
     final_state = graph.invoke(initial_state)
-
-    # Print outputs
-    render_agent_output(final_state["slack_message"])
 
     return final_state
 
