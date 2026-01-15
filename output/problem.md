@@ -1,10 +1,12 @@
 # Incident Report: events_fact Freshness SLA Breach
 
+> **View Investigation in Tracer:** [https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe](https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe)
+
 ## Summary
 * Pipeline aws_batch_tests failed after 43.6 minutes of execution
-* AWS Batch job terminated due to OutOfMemoryError exceeding 700GB limit
-* STAR_PARABRICKS_S27 job consumed all available memory on g6e.24xlarge
-* Missing _SUCCESS marker caused events_fact table freshness SLA breach
+* AWS Batch job killed due to OutOfMemoryError despite 700GB RAM allocation
+* Container memory usage exceeded available resources on g6e.24xlarge instance
+* Missing _SUCCESS marker caused DataFreshnessSLABreach for events_fact table
 
 ## Evidence from Tracer
 
@@ -32,12 +34,12 @@
 Confidence: 95%
 
 * Pipeline aws_batch_tests failed after 43.6 minutes of execution
-* AWS Batch job terminated due to OutOfMemoryError exceeding 700GB limit
-* STAR_PARABRICKS_S27 job consumed all available memory on g6e.24xlarge
-* Missing _SUCCESS marker caused events_fact table freshness SLA breach
+* AWS Batch job killed due to OutOfMemoryError despite 700GB RAM allocation
+* Container memory usage exceeded available resources on g6e.24xlarge instance
+* Missing _SUCCESS marker caused DataFreshnessSLABreach for events_fact table
 
 ## Recommended Actions
-1. Review failed job in Tracer dashboard at https://staging.tracer.cloud
+1. [View failed job in Tracer dashboard](https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe)
 2. **Increase memory allocation** - job was killed due to OutOfMemoryError
 3. Consider using a larger instance type with more RAM
 4. Rerun pipeline after fixing resource allocation

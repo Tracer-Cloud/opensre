@@ -35,6 +35,9 @@ def format_slack_message(ctx: ReportContext) -> str:
     if ctx.get("batch_failure_reason"):
         batch_info = f"* Failure Reason: {ctx['batch_failure_reason']}\n"
     
+    # Tracer investigation link
+    tracer_link = "https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe"
+    
     return f"""[RCA] {ctx['affected_table']} freshness incident
 Analyzed by: pipeline-agent
 Detected: 02:13 UTC
@@ -55,6 +58,9 @@ Detected: 02:13 UTC
 
 *Confidence:* {ctx['confidence']:.2f}
 
+*View Investigation:*
+{tracer_link}
+
 *Recommended Actions*
 1. Review failed job in Tracer dashboard
 2. {'Increase memory allocation - job killed due to ' + ctx.get('batch_failure_reason', 'OOM') if ctx.get('batch_failure_reason') and 'memory' in ctx.get('batch_failure_reason', '').lower() else 'Check AWS Batch logs for error details'}
@@ -67,6 +73,9 @@ def format_problem_md(ctx: ReportContext) -> str:
     status = ctx.get('tracer_run_status', 'unknown')
     is_failed = status.lower() == 'failed' if status else False
     
+    # Tracer investigation link
+    tracer_link = "https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe"
+    
     batch_section = ""
     if ctx.get("batch_failure_reason"):
         batch_section = f"""
@@ -76,6 +85,8 @@ def format_problem_md(ctx: ReportContext) -> str:
 """
     
     return f"""# Incident Report: {ctx['affected_table']} Freshness SLA Breach
+
+> **View Investigation in Tracer:** [{tracer_link}]({tracer_link})
 
 ## Summary
 {ctx['root_cause']}
@@ -104,7 +115,7 @@ Confidence: {ctx['confidence']:.0%}
 {ctx['root_cause']}
 
 ## Recommended Actions
-1. Review failed job in Tracer dashboard at https://staging.tracer.cloud
+1. [View failed job in Tracer dashboard]({tracer_link})
 2. {'**Increase memory allocation** - job was killed due to OutOfMemoryError' if ctx.get('batch_failure_reason') and 'memory' in ctx.get('batch_failure_reason', '').lower() else 'Check AWS Batch logs for error details'}
 3. Consider using a larger instance type with more RAM
 4. Rerun pipeline after fixing resource allocation
