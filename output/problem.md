@@ -3,10 +3,10 @@
 > **View Investigation in Tracer:** [https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe](https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe)
 
 ## Summary
-* Pipeline aws_batch_tests failed after 43.6 minutes of execution
-* AWS Batch job killed due to OutOfMemoryError despite 700GB RAM allocation
-* Container memory usage exceeded available resources on g6e.24xlarge instance
-* Missing _SUCCESS marker caused DataFreshnessSLABreach for events_fact table
+* Pipeline aws_batch_tests (velvet-bear-910) failed after 43.6 minutes
+* STAR_PARABRICKS_S27 job killed due to OutOfMemoryError exceeding 700GB limit
+* Memory-intensive genomics workload exceeded g6e.24xlarge instance capacity
+* Missing _SUCCESS marker prevented events_fact table updates causing SLA breach
 
 ## Evidence from Tracer
 
@@ -33,10 +33,10 @@
 ## Root Cause Analysis
 Confidence: 95%
 
-* Pipeline aws_batch_tests failed after 43.6 minutes of execution
-* AWS Batch job killed due to OutOfMemoryError despite 700GB RAM allocation
-* Container memory usage exceeded available resources on g6e.24xlarge instance
-* Missing _SUCCESS marker caused DataFreshnessSLABreach for events_fact table
+* Pipeline aws_batch_tests (velvet-bear-910) failed after 43.6 minutes
+* STAR_PARABRICKS_S27 job killed due to OutOfMemoryError exceeding 700GB limit
+* Memory-intensive genomics workload exceeded g6e.24xlarge instance capacity
+* Missing _SUCCESS marker prevented events_fact table updates causing SLA breach
 
 ## Recommended Actions
 1. [View failed job in Tracer dashboard](https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe)
