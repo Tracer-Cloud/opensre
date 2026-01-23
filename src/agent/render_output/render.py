@@ -129,7 +129,7 @@ def render_bullets(bullets: list[str], is_error: bool = False):
 
 def render_root_cause_complete(bullets: list[str], confidence: float):
     """Render root cause completion."""
-    console.print(f"  [green bold][ROOT CAUSE IDENTIFIED][/]")
+    console.print("  [green bold][ROOT CAUSE IDENTIFIED][/]")
     for bullet in bullets:
         # Color code based on content
         if any(word in bullet.lower() for word in ["fail", "error", "killed", "oom", "denied"]):
