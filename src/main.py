@@ -42,11 +42,6 @@ def load_sample_alert() -> GrafanaAlertPayload:
 from langsmith import traceable
 
 @traceable
-def main(alert: GrafanaAlertPayload) -> dict:
-    """
-    Run the incident resolution agent.
-
-
 def main():
     """Run the LangGraph incident resolution demo."""
     console.print("\n")
