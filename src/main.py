@@ -30,6 +30,7 @@ from rich.panel import Panel
 
 from src.models.alert import GrafanaAlertPayload, normalize_grafana_alert
 from src.agent.graph import run_investigation
+<<<<<<< Updated upstream
 console = Console()
 
 
@@ -39,6 +40,14 @@ def load_sample_alert() -> GrafanaAlertPayload:
     with open(fixture_path) as f:
         data = json.load(f)
     return GrafanaAlertPayload(**data)
+=======
+from langsmith import traceable
+
+@traceable
+def main(alert: GrafanaAlertPayload) -> dict:
+    """
+    Run the incident resolution agent.
+>>>>>>> Stashed changes
 
 
 def main():
