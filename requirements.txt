@@ -3,6 +3,7 @@ langchain>=0.3.0
 langchain-openai>=1.0.0
 langchain-anthropic>=1.3.0
 langgraph>=1.0.0
+langsmith>=0.1.0  # LangSmith tracing and observability
 
 # Data validation
 pydantic>=2.0.0
