@@ -20,7 +20,7 @@ from src.agent.infrastructure.clients import TracerRunResult, TracerTaskResult, 
 from src.agent.infrastructure.llm import stream_completion, parse_bullets, parse_root_cause
 
 # Presentation layer
-from src.agent.presentation.render import (
+from src.agent.render_output.render import (
     render_step_header,
     render_api_response,
     render_tracer_run_details,
@@ -36,7 +36,7 @@ from src.agent.presentation.render import (
     render_hypothesis_testing,
     render_hypothesis_result,
 )
-from src.agent.presentation.report import format_slack_message, format_problem_md, ReportContext
+from src.agent.render_output.report import format_slack_message, format_problem_md, ReportContext
 
 # Hypothesis model
 from src.models.hypothesis import HYPOTHESIS_TEMPLATES

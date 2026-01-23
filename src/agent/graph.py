@@ -1,21 +1,6 @@
-"""
-Investigation Graph - Thin orchestrator for the LangGraph state machine.
-
-The graph is explicit:
-    START -> propose_hypotheses -> check_s3 -> check_tracer -> determine_root_cause -> output -> END
-
-Layered architecture:
-    - infrastructure/: External clients (S3, Tracer) and LLM
-    - domain/: State, prompts, and pure tools
-    - presentation/: UI rendering and report formatting
-    - nodes.py: Node orchestration
-    - graph.py: Graph definition (this file)
-"""
-
 from langgraph.graph import StateGraph, START, END
-
-# Domain layer
 from src.agent.domain.state import InvestigationState
+from src.agent.state import make_initial_state
 
 # Nodes (orchestration)
 from src.agent.nodes import (
@@ -27,7 +12,7 @@ from src.agent.nodes import (
 )
 
 # Presentation layer
-from src.agent.presentation.render import render_investigation_start
+from src.agent.render_output.render import render_investigation_start
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -65,26 +50,7 @@ def run_investigation(alert_name: str, affected_table: str, severity: str) -> In
 
     graph = build_graph()
 
-    initial_state: InvestigationState = {
-        "alert_name": alert_name,
-        "affected_table": affected_table,
-        "severity": severity,
-        "hypotheses": [],
-        "s3_marker_exists": False,
-        "s3_file_count": 0,
-        "tracer_run_found": False,
-        "tracer_run_id": None,
-        "tracer_pipeline_name": None,
-        "tracer_run_status": None,
-        "tracer_run_time_seconds": 0,
-        "tracer_total_tasks": 0,
-        "tracer_failed_tasks": 0,
-        "tracer_failed_task_details": [],
-        "root_cause": "",
-        "confidence": 0.0,
-        "slack_message": "",
-        "problem_md": "",
-    }
+    initial_state = make_initial_state(alert_name, affected_table, severity)
 
     # Run the graph
     final_state = graph.invoke(initial_state)

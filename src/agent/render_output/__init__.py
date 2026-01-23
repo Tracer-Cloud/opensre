@@ -1,6 +1,6 @@
 """Presentation layer - UI rendering and report formatting."""
 
-from src.agent.presentation.render import (
+from src.agent.render_output.render import (
     console,
     render_investigation_start,
     render_step_header,
@@ -14,7 +14,7 @@ from src.agent.presentation.render import (
     render_agent_output,
     render_saved_file,
 )
-from src.agent.presentation.report import (
+from src.agent.render_output.report import (
     ReportContext,
     format_slack_message,
     format_problem_md,
