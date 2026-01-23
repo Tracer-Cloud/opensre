@@ -17,18 +17,18 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # Initialize runtime before any other imports
-from config import init_runtime
+from config import init_runtime  # noqa: E402
 init_runtime()
 
-import json
-from rich.console import Console
-from rich.panel import Panel
-from langsmith import traceable
+import json  # noqa: E402
+from rich.console import Console  # noqa: E402
+from rich.panel import Panel  # noqa: E402
+from langsmith import traceable  # noqa: E402
 
-from src.models.alert import GrafanaAlertPayload, normalize_grafana_alert
-from src.agent.graph import build_graph
-from src.agent.domain.state import make_initial_state
-from src.agent.render_output.render import (
+from src.models.alert import GrafanaAlertPayload, normalize_grafana_alert  # noqa: E402
+from src.agent.graph import build_graph  # noqa: E402
+from src.agent.domain.state import make_initial_state  # noqa: E402
+from src.agent.render_output.render import (  # noqa: E402
     render_investigation_start,
     render_root_cause_complete,
 )
@@ -81,7 +81,7 @@ def render_evidence(evidence: dict):
     # S3 evidence
     if "s3" in evidence:
         s3 = evidence["s3"]
-        console.print(f"\n[bold cyan]→ S3 Storage Check[/]")
+        console.print("\n[bold cyan]→ S3 Storage Check[/]")
         if s3.get("error"):
             console.print(f"  [red]Error: {s3['error']}[/]")
         else:
@@ -95,9 +95,9 @@ def render_evidence(evidence: dict):
     # Pipeline run evidence
     if "pipeline_run" in evidence:
         run = evidence["pipeline_run"]
-        console.print(f"\n[bold cyan]→ Tracer Pipeline Status[/]")
+        console.print("\n[bold cyan]→ Tracer Pipeline Status[/]")
         if not run.get("found"):
-            console.print(f"  [yellow]No recent pipeline runs found[/]")
+            console.print("  [yellow]No recent pipeline runs found[/]")
         else:
             status = run.get("status", "Unknown")
             status_color = "red bold" if status.lower() == "failed" else "green"
@@ -111,9 +111,9 @@ def render_evidence(evidence: dict):
     # Batch jobs evidence
     if "batch_jobs" in evidence:
         batch = evidence["batch_jobs"]
-        console.print(f"\n[bold cyan]→ AWS Batch Jobs[/]")
+        console.print("\n[bold cyan]→ AWS Batch Jobs[/]")
         if not batch.get("found"):
-            console.print(f"  [yellow]No AWS Batch jobs found[/]")
+            console.print("  [yellow]No AWS Batch jobs found[/]")
         else:
             console.print(f"  [dim]Total jobs:[/] {batch.get('total_jobs', 0)}")
             console.print(f"  [dim]Succeeded:[/] [green]{batch.get('succeeded_jobs', 0)}[/]")

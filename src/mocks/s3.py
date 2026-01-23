@@ -1,6 +1,5 @@
 """Mock S3 client for the demo."""
 
-from datetime import datetime
 from typing import Optional
 from src.mocks.mock_data import (
     S3_RAW_BUCKET,

@@ -11,13 +11,13 @@ For the demo with Rich console output, use: python examples/run_demo.py
 from config import init_runtime
 init_runtime()
 
-import argparse
-import json
-import sys
-from langsmith import traceable
+import argparse  # noqa: E402
+import json  # noqa: E402
+import sys  # noqa: E402
+from langsmith import traceable  # noqa: E402
 
-from src.models.alert import GrafanaAlertPayload, normalize_grafana_alert
-from src.agent.graph import run_investigation
+from src.models.alert import GrafanaAlertPayload, normalize_grafana_alert  # noqa: E402
+from src.agent.graph import run_investigation  # noqa: E402
 
 
 @traceable
