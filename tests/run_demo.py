@@ -2,8 +2,10 @@
 """
 Demo runner for the incident resolution agent.
 
-This script preserves the exact console output format for the demo.
+This script provides the Rich console output for the demo.
 Run with: python tests/run_demo.py
+
+Note: Rendering is done here, not in the core runner (run_investigation is pure).
 """
 
 # Add project root to path FIRST
@@ -24,6 +26,7 @@ from langsmith import traceable
 
 from src.models.alert import GrafanaAlertPayload, normalize_grafana_alert
 from src.agent.graph import run_investigation
+from src.agent.render_output.render import render_investigation_start
 
 console = Console()
 
@@ -51,7 +54,7 @@ def load_sample_alert() -> GrafanaAlertPayload:
 
 @traceable
 def run_demo():
-    """Run the LangGraph incident resolution demo with exact output formatting."""
+    """Run the LangGraph incident resolution demo with Rich console output."""
     console.print("\n")
 
     # Load alert from test fixture
@@ -66,7 +69,14 @@ def run_demo():
     ))
     console.print("[dim]Agent triggered automatically...[/dim]\n")
 
-    # Run the graph
+    # Render investigation start (demo-only rendering)
+    render_investigation_start(
+        alert.alert_name,
+        alert.affected_table or "events_fact",
+        alert.severity,
+    )
+
+    # Run the graph (pure: inputs in, state out)
     final_state = run_investigation(
         alert_name=alert.alert_name,
         affected_table=alert.affected_table or "events_fact",

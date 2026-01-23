@@ -57,12 +57,12 @@ Proposed hypotheses to investigate:
 
 → Step 99: Synthesizing root cause analysis...
   LLM interpreting...
-.................................
+...........................
   [ROOT CAUSE IDENTIFIED]
-    * AWS Batch job failed due to OutOfMemoryError despite 710.7GB available RAM
-    * Pipeline completed without _SUCCESS marker indicating incomplete processing
-    * Data freshness SLA breached for events_fact table due to failed upstream job
-    * Downstream systems unable to refresh with latest event data
+    * AWS Batch job exceeded 710.7GB RAM limit causing OutOfMemoryError
+    * Pipeline failed without creating S3 _SUCCESS marker file
+    * Incomplete data processing left events_fact table stale
+    * Downstream systems triggered DataFreshnessSLABreach alert
   Confidence: 95%
 
 → Generating outputs...
@@ -74,10 +74,10 @@ Proposed hypotheses to investigate:
 │ Detected: 02:13 UTC                                                                                                                    │
 │                                                                                                                                        │
 │ *Conclusion*                                                                                                                           │
-│ * AWS Batch job failed due to OutOfMemoryError despite 710.7GB available RAM                                                           │
-│ * Pipeline completed without _SUCCESS marker indicating incomplete processing                                                          │
-│ * Data freshness SLA breached for events_fact table due to failed upstream job                                                         │
-│ * Downstream systems unable to refresh with latest event data                                                                          │
+│ * AWS Batch job exceeded 710.7GB RAM limit causing OutOfMemoryError                                                                    │
+│ * Pipeline failed without creating S3 _SUCCESS marker file                                                                             │
+│ * Incomplete data processing left events_fact table stale                                                                              │
+│ * Downstream systems triggered DataFreshnessSLABreach alert                                                                            │
 │                                                                                                                                        │
 │ *Evidence from Tracer*                                                                                                                 │
 │ * Pipeline: aws_batch_tests                                                                                                            │
