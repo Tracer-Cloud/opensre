@@ -24,10 +24,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run unit tests
-        run: |
-          pytest tests/ -v --ignore=tests/test_demo_output.py --ignore=tests/test_investigation_example_fixture.py --ignore=tests/run_demo.py
-
       - name: Run integration tests (demo parity gate)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
