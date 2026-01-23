@@ -147,6 +147,20 @@ Structured hypothesis tracking with evidence requirements.
 - [Tracer Documentation](https://www.tracer.cloud/docs)
 - [AI Agents for Prod: Full Stack Analysis](https://www.youtube.com/watch?v=ApR-unlYQqk)
 
+## LangSmith tracing
+
+LangSmith is enabled for the agentic pipeline.
+Traces include:
+- alert ingestion
+- hypothesis generation
+- tracer / s3 checks
+- root cause synthesis
+
+Controlled via env vars:
+- LANGSMITH_TRACING
+- LANGSMITH_API_KEY
+- LANGSMITH_PROJECT
+
 ---
 
 Built for the Data Engineering Meetup 2026 | Tracer Cloud
