@@ -206,3 +206,28 @@ def render_hypothesis_result(hypothesis_name: str, status: str, confidence: floa
     else:
         console.print(f"  [yellow][INCONCLUSIVE][/] {hypothesis_name}")
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tool Calls (for ReAct agent)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def render_tool_call(tool_name: str, args: dict):
+    """Render a tool call being made by the agent."""
+    # Format args nicely
+    args_str = ", ".join(f"{k}={v!r}" for k, v in args.items()) if args else ""
+    console.print(f"\n[bold cyan]→ Calling tool: [yellow]{tool_name}[/]({args_str})[/]")
+
+
+def render_tool_result(tool_name: str, result: dict, is_error: bool = False):
+    """Render the result of a tool call."""
+    if is_error:
+        console.print(f"  [red bold]Tool {tool_name} failed:[/] {result}")
+    else:
+        # Format key findings from result
+        if isinstance(result, dict):
+            for key, value in result.items():
+                if key not in ("message", "interpretation"):
+                    console.print(f"  [dim]{key}:[/] {value}")
+        else:
+            console.print(f"  [dim]Result:[/] {result}")
+
