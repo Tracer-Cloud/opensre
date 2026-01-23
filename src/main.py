@@ -40,6 +40,12 @@ def load_sample_alert() -> GrafanaAlertPayload:
     with open(fixture_path) as f:
         data = json.load(f)
     return GrafanaAlertPayload(**data)
+from langsmith import traceable
+
+@traceable
+def main(alert: GrafanaAlertPayload) -> dict:
+    """
+    Run the incident resolution agent.
 
 
 def main():
