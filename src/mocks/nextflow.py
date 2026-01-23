@@ -1,7 +1,7 @@
 """Mock Nextflow client for the demo."""
 
 from typing import Optional
-from fixtures.mock_data import (
+from src.mocks.mock_data import (
     NEXTFLOW_RUNS,
     NEXTFLOW_STEPS,
     NEXTFLOW_LOGS,

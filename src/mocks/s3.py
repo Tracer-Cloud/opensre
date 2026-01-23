@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional
-from fixtures.mock_data import (
+from src.mocks.mock_data import (
     S3_RAW_BUCKET,
     S3_PROCESSED_BUCKET,
     S3_RAW_FILES,

@@ -10,6 +10,10 @@ install:
 
 # Run the demo (loads .env for API keys via python-dotenv)
 demo:
+	$(PYTHON) tests/run_demo.py
+
+# Run the generic CLI (reads from stdin or --input)
+run:
 	$(PYTHON) -m src.main
 
 # Run tests

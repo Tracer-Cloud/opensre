@@ -1,102 +1,97 @@
 """
-Main entry point for the incident resolution demo.
+Generic CLI for the incident resolution agent.
 
-LangGraph state machine:
-    START -> check_s3 -> check_tracer -> determine_root_cause -> output -> END
+Reads a Grafana alert payload from --input file or stdin and runs
+the investigation graph, outputting JSON results to stdout.
 
-Uses Tracer API for pipeline data, LLM for analysis.
+For the demo with Rich console output, use: python examples/run_demo.py
 """
 
-# Load environment variables FIRST, before any other imports
-import os
-from pathlib import Path
-from dotenv import load_dotenv
+# Initialize runtime FIRST, before any other imports
+from config import init_runtime
+init_runtime()
 
-# Load .env from project root
-env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(dotenv_path=env_path, override=True)
-
-# Verify API key is set
-if not os.getenv("ANTHROPIC_API_KEY"):
-    import sys
-    print("ERROR: ANTHROPIC_API_KEY not found in environment or .env file", file=sys.stderr)
-    print(f"Please create a .env file at {env_path} with:", file=sys.stderr)
-    print("ANTHROPIC_API_KEY=your_api_key_here", file=sys.stderr)
-    sys.exit(1)
-
+import argparse
 import json
-from rich.console import Console
-from rich.panel import Panel
+import sys
+from langsmith import traceable
 
 from src.models.alert import GrafanaAlertPayload, normalize_grafana_alert
 from src.agent.graph import run_investigation
 
-console = Console()
-
-
-def load_sample_alert() -> GrafanaAlertPayload:
-    """Load the sample Grafana alert from fixtures."""
-    fixture_path = Path(__file__).parent.parent / "fixtures" / "grafana_alert.json"
-    with open(fixture_path) as f:
-        data = json.load(f)
-    return GrafanaAlertPayload(**data)
-from langsmith import traceable
 
 @traceable
-def main(alert: GrafanaAlertPayload) -> dict:
+def run(alert: GrafanaAlertPayload) -> dict:
     """
-    Run the incident resolution agent.
+    Run the incident resolution agent on a Grafana alert.
+
+    Args:
+        alert: The Grafana alert payload to investigate.
+
+    Returns:
+        The final investigation state containing:
+            - slack_message: str
+            - problem_md: str
+            - root_cause: str
+            - confidence: float
+    """
+    normalized = normalize_grafana_alert(alert)
+
+    final_state = run_investigation(
+        alert_name=normalized.alert_name,
+        affected_table=normalized.affected_table or "events_fact",
+        severity=normalized.severity,
+    )
+
+    return final_state
 
 
 def main():
-    """Run the LangGraph incident resolution demo."""
-    console.print("\n")
-
-    # Load alert
-    grafana_payload = load_sample_alert()
-    alert = normalize_grafana_alert(grafana_payload)
-
-    # Show the raw incoming Slack alert (what triggers the agent)
-    raw_alert = """[ALERT] events_fact freshness SLA breached
-Env: prod
-Detected: 02:13 UTC
-
-No new rows for 2h 0m (SLA 30m)
-Last warehouse update: 00:13 UTC
-
-Upstream pipeline run pending investigation
-"""
-    console.print(Panel(raw_alert, title="Incoming Grafana Alert (Slack Channel)", border_style="red"))
-    console.print("[dim]Agent triggered automatically...[/dim]\n")
-
-    # Run the graph
-    final_state = run_investigation(
-        alert_name=alert.alert_name,
-        affected_table=alert.affected_table or "events_fact",
-        severity=alert.severity,
+    """CLI entry point."""
+    parser = argparse.ArgumentParser(
+        description="Run incident resolution agent on a Grafana alert payload."
+    )
+    parser.add_argument(
+        "--input", "-i",
+        type=str,
+        help="Path to JSON file containing Grafana alert payload. Use - for stdin."
+    )
+    parser.add_argument(
+        "--output", "-o",
+        type=str,
+        default=None,
+        help="Path to output JSON file. Defaults to stdout."
     )
 
-    # Show RCA Report (combined output)
-    console.print("\n")
-    console.print(Panel(
-        final_state["slack_message"],
-        title="RCA Report",
-        border_style="green"
-    ))
+    args = parser.parse_args()
 
-    # Save outputs
-    output_dir = Path(__file__).parent.parent / "output"
-    output_dir.mkdir(exist_ok=True)
+    # Read input
+    if args.input == "-" or args.input is None:
+        # Read from stdin
+        data = json.load(sys.stdin)
+    else:
+        with open(args.input) as f:
+            data = json.load(f)
 
-    # problem.md
-    md_path = output_dir / "problem.md"
-    md_path.write_text(final_state["problem_md"])
-    console.print(f"[green][OK][/green] Saved: {md_path}")
+    alert = GrafanaAlertPayload(**data)
 
-    # slack_message.txt
-    slack_path = output_dir / "slack_message.txt"
-    slack_path.write_text(final_state["slack_message"])
-    console.print(f"[green][OK][/green] Saved: {slack_path}")
+    # Run investigation
+    result = run(alert)
+
+    # Output result
+    output_data = {
+        "slack_message": result["slack_message"],
+        "problem_md": result["problem_md"],
+        "root_cause": result["root_cause"],
+        "confidence": result["confidence"],
+    }
+
+    if args.output:
+        with open(args.output, "w") as f:
+            json.dump(output_data, f, indent=2)
+    else:
+        json.dump(output_data, f=sys.stdout, indent=2)
+        print()  # newline at end
 
 
 if __name__ == "__main__":
