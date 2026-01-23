@@ -1,0 +1,41 @@
+{
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "DataFreshnessSLABreach",
+        "severity": "critical",
+        "table": "events_fact",
+        "warehouse": "snowflake",
+        "environment": "production"
+      },
+      "annotations": {
+        "summary": "Table events_fact has not been updated in over 2 hours",
+        "description": "The events_fact table freshness SLA has been breached. Expected update interval: 1 hour. Last update: 2026-01-13T00:13:00Z. Current time: 2026-01-13T02:13:00Z.",
+        "runbook_url": "https://runbooks.tracer.io/data-freshness-sla"
+      },
+      "startsAt": "2026-01-13T02:13:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "https://grafana.tracer.io/alerting/grafana/abc123/view",
+      "fingerprint": "abc123def456"
+    }
+  ],
+  "groupLabels": {
+    "alertname": "DataFreshnessSLABreach"
+  },
+  "commonLabels": {
+    "alertname": "DataFreshnessSLABreach",
+    "severity": "critical"
+  },
+  "commonAnnotations": {
+    "summary": "Table events_fact has not been updated in over 2 hours"
+  },
+  "externalURL": "https://grafana.tracer.io/",
+  "version": "4",
+  "groupKey": "{}:{alertname=\"DataFreshnessSLABreach\"}",
+  "truncatedAlerts": 0,
+  "title": "[FIRING:1] DataFreshnessSLABreach critical",
+  "state": "alerting",
+  "message": "**Firing**\n\nValue: No data\nLabels:\n - alertname = DataFreshnessSLABreach\n - severity = critical\n - table = events_fact\nAnnotations:\n - summary = Table events_fact has not been updated in over 2 hours"
+}
+
