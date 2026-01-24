@@ -6,12 +6,7 @@ Run with: python -m tests.run_demo
 This demo:
 1. Finds a real failed pipeline run from Tracer Web App
 2. Creates an alert for that pipeline
-3. Runs full investigation with deep multi-source analysis
-4. Produces accurate RCA report
-
-Output consolidation:
-- Progress events during execution (one line per node)
-- Single final report at the end (Rich or plain text based on environment)
+3. Runs full investigation pipeline (which renders the final report)
 """
 
 import os
@@ -35,39 +30,19 @@ from langsmith import traceable  # noqa: E402
 
 from src.agent.graph_pipeline import run_investigation_pipeline  # noqa: E402
 from src.agent.nodes.frame_problem.context_building import (  # noqa: E402
-    _fetch_tracer_web_run_context,  # noqa: E402
+    _fetch_tracer_web_run_context,
 )
-from src.agent.output import (  # noqa: E402
-    get_output_format,
-    render_final_report,
-    reset_tracker,
-)
-
-# Conditional Rich import based on output format
-if get_output_format() == "rich":
-    from rich.console import Console
-
-    console = Console()
-else:
-    console = None
+from src.agent.output import reset_tracker  # noqa: E402
 
 
-def _print(message: str, style: str = "") -> None:
-    """Print with Rich or plain text based on output format."""
-    if console:
-        console.print(f"[{style}]{message}[/]" if style else message)
-    else:
-        # Strip Rich markup for plain text
-        import re
-
-        plain = re.sub(r"\[/?[^\]]+\]", "", message)
-        print(plain)
+def _print(message: str) -> None:
+    """Simple print wrapper."""
+    print(message)
 
 
 @traceable
 def run_demo():
     """Run the LangGraph incident resolution demo with a real failed pipeline."""
-    # Reset progress tracker for this run
     reset_tracker()
 
     # Check required environment variables
@@ -75,22 +50,22 @@ def run_demo():
     jwt_token = os.getenv("JWT_TOKEN")
 
     if not api_key:
-        _print("Error: Missing required environment variable: ANTHROPIC_API_KEY", "red")
+        _print("Error: Missing required environment variable: ANTHROPIC_API_KEY")
         _print(f"\nPlease set this in your .env file at: {env_path}")
         return None
 
     if not jwt_token:
-        _print("Error: Missing required environment variable: JWT_TOKEN", "red")
+        _print("Error: Missing required environment variable: JWT_TOKEN")
         _print(f"\nPlease set this in your .env file at: {env_path}")
         return None
 
-    _print("Finding a real failed pipeline run...", "bold cyan")
+    _print("Finding a real failed pipeline run...")
 
     # Find a real failed run from Tracer Web App
     web_run = _fetch_tracer_web_run_context()
 
     if not web_run.get("found"):
-        _print("No failed runs found in Tracer Web App", "yellow")
+        _print("No failed runs found in Tracer Web App")
         _print(f"Checked {web_run.get('pipelines_checked', 0)} pipelines")
         return None
 
@@ -101,7 +76,7 @@ def run_demo():
     status = web_run.get("status", "unknown")
     run_url = web_run.get("run_url")
 
-    _print(f"Found failed run: {run_name}", "green")
+    _print(f"Found failed run: {run_name}")
     _print(f"  Pipeline: {pipeline_name}")
     _print(f"  Status: {status}")
     if trace_id:
@@ -135,17 +110,13 @@ def run_demo():
                 "fingerprint": trace_id or "unknown",
             }
         ],
-        "groupLabels": {
-            "alertname": "PipelineFailure",
-        },
+        "groupLabels": {"alertname": "PipelineFailure"},
         "commonLabels": {
             "alertname": "PipelineFailure",
             "severity": "critical",
             "pipeline_name": pipeline_name,
         },
-        "commonAnnotations": {
-            "summary": f"Pipeline {pipeline_name} failed",
-        },
+        "commonAnnotations": {"summary": f"Pipeline {pipeline_name} failed"},
         "externalURL": TRACER_BASE_URL,
         "version": "4",
         "groupKey": '{}:{alertname="PipelineFailure"}',
@@ -162,15 +133,15 @@ def run_demo():
     raw_alert["run_name"] = run_name
     raw_alert["trace_id"] = trace_id
 
-    # Create alert details for the pipeline
+    # Create alert details
     alert_name = f"Pipeline failure: {pipeline_name}"
     affected_table = pipeline_name
     severity = "critical"
 
-    _print("Starting investigation pipeline...", "bold cyan")
+    _print("Starting investigation pipeline...")
     _print("")
 
-    # Parse the Grafana alert to show it properly
+    # Parse the Grafana alert
     from src.ingest import parse_grafana_payload  # noqa: E402
 
     try:
@@ -181,17 +152,13 @@ def run_demo():
     except Exception:
         pass
 
-    # Run the full investigation pipeline
-    # Progress is emitted via the tracker during execution
+    # Run the pipeline - publish_findings node handles rendering
     state = run_investigation_pipeline(
         alert_name=alert_name,
         affected_table=affected_table,
         severity=severity,
         raw_alert=raw_alert,
     )
-
-    # Render the final report exactly once
-    render_final_report(state)
 
     return state
 
