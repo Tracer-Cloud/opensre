@@ -4,6 +4,10 @@
 # Sensitive Data
 - Never commit API keys or secrets
 
+# Test Writing Approach:
+- Write tests always as integration tests, never use mock services. 
+- Write tests in the same file as the code they are testing or if the file is too large, create a new file with the same name as the code file but with _test.py suffix in the same directory.
+
 
 # Best Practices
 - Always run linters before committing 
