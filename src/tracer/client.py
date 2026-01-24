@@ -11,11 +11,8 @@ from typing import Optional
 import httpx
 
 
-# Demo IDs for the presentation
-# trace_id is used for tools/files endpoints
-# run_id is used for runs/logs/metrics endpoints
+# Demo trace_id for the presentation
 DEMO_TRACE_ID = "efb797c9-0226-4932-8eb0-704f03d1752f"
-DEMO_RUN_ID = "b81f28ff-d322-4b0a-a48e-d96f9f26fa82"
 
 
 @dataclass
@@ -57,32 +54,6 @@ class TracerTask:
     explanation: Optional[str]
     max_ram: float
     max_cpu: float
-
-
-@dataclass
-class TracerFile:
-    """A file created during a pipeline run."""
-    filename: str
-    size_bytes: int
-    trace_id: str
-    span_id: str
-
-
-@dataclass
-class TracerMetrics:
-    """Host metrics for a pipeline run."""
-    timestamp: str
-    cpu: float
-    ram: int
-    disk: int
-    gpu_utilization: float
-
-
-@dataclass
-class TracerLogFile:
-    """A log file from OpenSearch."""
-    filename: str
-    size: int
 
 
 @dataclass
@@ -201,91 +172,7 @@ class TracerClient:
             ))
         
         return tasks
-    
-    def get_host_metrics(self, run_id: Optional[str] = None) -> list[TracerMetrics]:
-        """
-        Get host metrics for a pipeline run.
-        Endpoint: /api/runs/{run_id}/host-metrics
-        """
-        if run_id is None:
-            run_id = os.getenv("TRACER_RUN_ID", DEMO_RUN_ID)
-        params = {"orgId": self.org_id}
-        data = self._get(f"/api/runs/{run_id}/host-metrics", params)
-        
-        if not data.get("success") or not data.get("data"):
-            return []
-        
-        metrics = []
-        for row in data["data"]:
-            metrics.append(TracerMetrics(
-                timestamp=row.get("timestamp", ""),
-                cpu=float(row.get("cpu", 0) or 0),
-                ram=int(row.get("ram", 0) or 0),
-                disk=int(row.get("disk", 0) or 0),
-                gpu_utilization=float(row.get("gpu_utilization", 0) or 0),
-            ))
-        
-        return metrics
-    
-    def get_files(self, trace_id: str) -> list[TracerFile]:
-        """
-        Get files created during a pipeline run.
-        Endpoint: /api/files?traceId={trace_id}&isTraceId=true
-        """
-        params = {"traceId": trace_id, "isTraceId": "true", "orgId": self.org_id}
-        data = self._get("/api/files", params)
-        
-        if not data.get("success") or not data.get("data"):
-            return []
-        
-        files = []
-        for row in data["data"]:
-            files.append(TracerFile(
-                filename=row.get("filename", ""),
-                size_bytes=int(row.get("size_bytes", 0) or 0),
-                trace_id=row.get("trace_id", ""),
-                span_id=row.get("span_id", ""),
-            ))
-        
-        return files
-    
-    def get_log_files(self, run_id: Optional[str] = None) -> list[TracerLogFile]:
-        """
-        Get log file list from OpenSearch.
-        Endpoint: /api/opensearch/log-files?orgId={org_id}&runId={run_id}
-        """
-        if run_id is None:
-            run_id = os.getenv("TRACER_RUN_ID", DEMO_RUN_ID)
-        params = {"orgId": self.org_id, "runId": run_id}
-        data = self._get("/api/opensearch/log-files", params)
-        
-        if not data.get("success") or not data.get("data"):
-            return []
-        
-        log_files = []
-        for row in data["data"]:
-            log_files.append(TracerLogFile(
-                filename=row.get("filename", row.get("file", "")),
-                size=int(row.get("size", 0) or 0),
-            ))
-        
-        return log_files
-    
-    def get_logs(self, run_id: Optional[str] = None, size: int = 100) -> list[dict]:
-        """
-        Get logs from OpenSearch (limited for performance).
-        Endpoint: /api/opensearch/logs?orgId={org_id}&runId={run_id}&size={size}
-        """
-        if run_id is None:
-            run_id = os.getenv("TRACER_RUN_ID", DEMO_RUN_ID)
-        params = {"orgId": self.org_id, "runId": run_id, "size": size, "from": 0}
-        data = self._get("/api/opensearch/logs", params)
-        
-        if not data.get("success") or not data.get("data"):
-            return []
-        
-        return data["data"][:size]  # Limit results
-    
+
     def get_batch_jobs(self, trace_id: Optional[str] = None) -> list[AWSBatchJob]:
         """
         Get AWS Batch jobs for a pipeline run.

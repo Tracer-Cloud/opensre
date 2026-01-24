@@ -6,7 +6,6 @@ All console output goes through here. Nodes stay pure.
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 
 console = Console()
 
@@ -43,58 +42,6 @@ def render_api_response(label: str, data: str, is_error: bool = False):
         console.print(f"  [red bold]API Response ({label}): {data}[/]")
     else:
         console.print(f"  [dim]API Response ({label}): {data}[/]")
-
-
-def render_tracer_run_details(
-    pipeline_name: str,
-    run_name: str,
-    status: str,
-    user_email: str,
-    team: str,
-    run_cost: float,
-    runtime_seconds: float,
-    instance_type: str,
-    max_ram_gb: float,
-):
-    """Render detailed Tracer run information in a table."""
-    status_color = "red bold" if status.lower() == "failed" else "green"
-    
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column("Key", style="dim")
-    table.add_column("Value")
-    
-    table.add_row("Pipeline", f"[cyan]{pipeline_name}[/]")
-    table.add_row("Run Name", run_name)
-    table.add_row("Status", f"[{status_color}]{status}[/]")
-    table.add_row("User", user_email)
-    table.add_row("Team", team)
-    table.add_row("Cost", f"[yellow]${run_cost:.2f}[/]")
-    table.add_row("Runtime", f"{runtime_seconds/60:.1f} min")
-    table.add_row("Instance", instance_type)
-    table.add_row("Max RAM", f"{max_ram_gb:.1f} GB")
-    
-    console.print(table)
-
-
-def render_batch_job_details(
-    job_name: str,
-    status: str,
-    failure_reason: str | None,
-    exit_code: int | None,
-    vcpu: int,
-    memory_gb: float,
-    gpu_count: int,
-):
-    """Render AWS Batch job details."""
-    status_color = "red bold" if status == "FAILED" else "green"
-    
-    console.print(f"  [dim]Job:[/] {job_name}")
-    console.print(f"  [dim]Status:[/] [{status_color}]{status}[/]")
-    if failure_reason:
-        console.print(f"  [red bold]Failure:[/] [red]{failure_reason}[/]")
-    if exit_code is not None:
-        console.print(f"  [dim]Exit Code:[/] [{'red' if exit_code != 0 else 'green'}]{exit_code}[/]")
-    console.print(f"  [dim]Resources:[/] {vcpu} vCPU, {memory_gb:.0f} GB RAM, {gpu_count} GPU")
 
 
 def render_llm_thinking():
@@ -170,64 +117,4 @@ def render_agent_output(slack_message: str):
 def render_saved_file(path: str):
     """Render a saved file message."""
     console.print(f"[green][OK][/] Saved: {path}")
-
-
-def render_error(message: str):
-    """Render an error message."""
-    console.print(f"[red bold][ERROR][/] {message}")
-
-
-def render_hypothesis_header():
-    """Render the hypothesis generation header."""
-    console.print("\n[bold magenta]─── Hypothesis Generation ───[/]")
-
-
-def render_hypotheses(hypotheses: list[dict]):
-    """Render the list of proposed hypotheses."""
-    console.print("[bold]Proposed hypotheses to investigate:[/]\n")
-    for i, h in enumerate(hypotheses, 1):
-        console.print(f"  [cyan]H{i}[/] [bold]{h['name']}[/]")
-        console.print(f"      {h['description']}")
-        console.print(f"      [dim]Tools: {', '.join(h['tools_to_use'])}[/]")
-        console.print()
-
-
-def render_hypothesis_testing(hypothesis_name: str):
-    """Render header for testing a specific hypothesis."""
-    console.print(f"\n[bold yellow]─── Testing Hypothesis: {hypothesis_name} ───[/]")
-
-
-def render_hypothesis_result(hypothesis_name: str, status: str, confidence: float):
-    """Render the result of testing a hypothesis."""
-    if status == "confirmed":
-        console.print(f"  [green bold][CONFIRMED][/] {hypothesis_name} (confidence: {confidence:.0%})")
-    elif status == "rejected":
-        console.print(f"  [red][REJECTED][/] {hypothesis_name}")
-    else:
-        console.print(f"  [yellow][INCONCLUSIVE][/] {hypothesis_name}")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Tool Calls (for ReAct agent)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def render_tool_call(tool_name: str, args: dict):
-    """Render a tool call being made by the agent."""
-    # Format args nicely
-    args_str = ", ".join(f"{k}={v!r}" for k, v in args.items()) if args else ""
-    console.print(f"\n[bold cyan]→ Calling tool: [yellow]{tool_name}[/]({args_str})[/]")
-
-
-def render_tool_result(tool_name: str, result: dict, is_error: bool = False):
-    """Render the result of a tool call."""
-    if is_error:
-        console.print(f"  [red bold]Tool {tool_name} failed:[/] {result}")
-    else:
-        # Format key findings from result
-        if isinstance(result, dict):
-            for key, value in result.items():
-                if key not in ("message", "interpretation"):
-                    console.print(f"  [dim]{key}:[/] {value}")
-        else:
-            console.print(f"  [dim]Result:[/] {result}")
 
