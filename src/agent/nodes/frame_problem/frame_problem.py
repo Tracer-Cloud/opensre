@@ -5,10 +5,10 @@ It updates state fields but does NOT render output directly.
 """
 
 from langsmith import traceable
-from pydantic import BaseModel, Field
 
 from src.agent.nodes.frame_problem.context_building import build_investigation_context
 from src.agent.nodes.frame_problem.extract import extract_alert_details
+from src.agent.nodes.frame_problem.models import ProblemStatement, ProblemStatementInput
 from src.agent.nodes.frame_problem.render import render_problem_statement_md
 from src.agent.nodes.frame_problem.service_graph import render_tools_briefing
 from src.agent.output import debug_print, get_tracker, render_investigation_header
@@ -30,30 +30,12 @@ def main(state: InvestigationState) -> dict:
     tracker.start("frame_problem", "Extracting alert details")
 
     alert_details = extract_alert_details(state)
-    debug_print(
-        f"Alert: {alert_details.alert_name} | "
-        f"Table: {alert_details.affected_table} | "
-        f"Severity: {alert_details.severity}"
-    )
+    _log_alert_details(alert_details)
+    _render_header(alert_details)
 
-    render_investigation_header(
-        alert_details.alert_name,
-        alert_details.affected_table,
-        alert_details.severity,
-    )
-
-    enriched_state: InvestigationState = {
-        **state,
-        "alert_name": alert_details.alert_name,
-        "affected_table": alert_details.affected_table,
-        "severity": alert_details.severity,
-    }
-
-    # Gather initial investigation context (metadata) upstream
-    context = build_investigation_context({"plan_sources": ["tracer_web"]})  # Always get tracer_web context
-
-    # Store context in state
-    enriched_state["evidence"] = context
+    enriched_state = _enrich_state_with_alert(state, alert_details)
+    context = build_investigation_context(enriched_state)
+    enriched_state = _merge_context(enriched_state, context)
 
     problem = _generate_output_problem_statement(enriched_state)
     problem = _add_tools_briefing(problem)
@@ -71,7 +53,7 @@ def main(state: InvestigationState) -> dict:
         "severity": alert_details.severity,
         "alert_json": alert_details.model_dump(),
         "problem_md": problem_md,
-        "evidence": context,
+        "evidence": enriched_state.get("evidence", context),
     }
 
 
@@ -85,23 +67,14 @@ def node_frame_problem(state: InvestigationState) -> dict:
     return main(state)
 
 
-class ProblemStatement(BaseModel):
-    """Structured problem statement for the investigation."""
-
-    summary: str = Field(description="One-line summary of the problem")
-    context: str = Field(description="Background context about the alert and affected systems")
-    investigation_goals: list[str] = Field(description="Specific goals for the investigation")
-    constraints: list[str] = Field(description="Known constraints or limitations")
-
-
-def _build_input_prompt(state: InvestigationState) -> str:
+def _build_input_prompt(problem_input: ProblemStatementInput) -> str:
     """Build the prompt for generating a problem statement."""
     return f"""You are framing a data pipeline incident for investigation.
 
 Alert Information:
-- alert_name: {state.get("alert_name", "Unknown")}
-- affected_table: {state.get("affected_table", "Unknown")}
-- severity: {state.get("severity", "Unknown")}
+- alert_name: {problem_input.alert_name}
+- affected_table: {problem_input.affected_table}
+- severity: {problem_input.severity}
 
 Task:
 Analyze the alert and provide a structured problem statement.
@@ -110,7 +83,7 @@ Analyze the alert and provide a structured problem statement.
 
 def _generate_output_problem_statement(state: InvestigationState) -> ProblemStatement:
     """Use the LLM to generate a structured problem statement."""
-    prompt = _build_input_prompt(state)
+    prompt = _build_input_prompt(ProblemStatementInput.from_state(state))
     llm = get_llm()
 
     try:
@@ -131,3 +104,39 @@ def _add_tools_briefing(problem: ProblemStatement) -> ProblemStatement:
         return problem
     new_context = f"{problem.context}\n\n{render_tools_briefing()}"
     return problem.model_copy(update={"context": new_context})
+
+
+def _log_alert_details(alert_details) -> None:
+    debug_print(
+        f"Alert: {alert_details.alert_name} | "
+        f"Table: {alert_details.affected_table} | "
+        f"Severity: {alert_details.severity}"
+    )
+
+
+def _render_header(alert_details) -> None:
+    render_investigation_header(
+        alert_details.alert_name,
+        alert_details.affected_table,
+        alert_details.severity,
+    )
+
+
+def _enrich_state_with_alert(
+    state: InvestigationState,
+    alert_details,
+) -> InvestigationState:
+    return {
+        **state,
+        "alert_name": alert_details.alert_name,
+        "affected_table": alert_details.affected_table,
+        "severity": alert_details.severity,
+    }
+
+
+def _merge_context(state: InvestigationState, context: dict) -> InvestigationState:
+    evidence = {
+        **state.get("evidence", {}),
+        **context,
+    }
+    return {**state, "evidence": evidence}

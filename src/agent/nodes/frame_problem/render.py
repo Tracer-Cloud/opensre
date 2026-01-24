@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
+from src.agent.nodes.frame_problem.models import ProblemStatement
 from src.agent.state import InvestigationState
-
-if TYPE_CHECKING:
-    from src.agent.nodes.frame_problem.frame_problem import ProblemStatement
 
 
 def render_problem_statement_md(
