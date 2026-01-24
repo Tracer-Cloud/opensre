@@ -1,12 +1,15 @@
 .PHONY: install test demo clean lint format
 
-PYTHON = .venv/bin/python
-PIP = .venv/bin/pip
+PYTHON = python3
+PIP = python3 -m pip
+PIP_INSTALL_FLAGS = --user --break-system-packages
+USER_BASE := $(shell $(PYTHON) -m site --user-base)
+USER_BIN := $(USER_BASE)/bin
+export PATH := $(USER_BIN):$(PATH)
 
 # Create venv and install dependencies
 install:
-	python3 -m venv .venv
-	$(PIP) install -r requirements.txt
+	$(PIP) install $(PIP_INSTALL_FLAGS) -r requirements.txt
 
 # Run the demo (loads .env for API keys via python-dotenv)
 demo:

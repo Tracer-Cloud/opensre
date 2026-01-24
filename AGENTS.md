@@ -13,6 +13,9 @@
 - For linting we are using Ruff 
 
 
+# Environment
+- Do not use a virtual environment; use the system `python3` directly.
+
 # Best Practices
 - Always run linters before committing 
 - Always test your changes with make test
