@@ -1,6 +1,6 @@
 # How To Use This Project
-- `$make install`
-- `$make demo` to test the project. 
+- `make install`
+- `make demo` to test the project. 
 
 # Data Pipeline Incident Resolution
 
