@@ -64,8 +64,8 @@ class InvestigationState(TypedDict, total=False):
     # ─────────────────────────────────────────────────────────────────────────
     # Outputs - formatted reports
     # ─────────────────────────────────────────────────────────────────────────
-    slack_message: str
-    problem_md: str
+    slack_message: str  # Final report for Slack
+    problem_md: str  # Problem statement markdown
 
 
 # ─────────────────────────────────────────────────────────────────────────────

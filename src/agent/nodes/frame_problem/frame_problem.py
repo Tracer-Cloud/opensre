@@ -1,4 +1,8 @@
-"""Frame the problem and enrich context."""
+"""Frame the problem and enrich context.
+
+This node extracts alert details, builds context, and generates a problem statement.
+It updates state fields but does NOT render output directly.
+"""
 
 from langsmith import traceable
 from pydantic import BaseModel, Field
@@ -7,11 +11,7 @@ from src.agent.nodes.frame_problem.context_building import build_investigation_c
 from src.agent.nodes.frame_problem.extract import extract_alert_details
 from src.agent.nodes.frame_problem.render import render_problem_statement_md
 from src.agent.nodes.frame_problem.service_graph import render_tools_briefing
-from src.agent.nodes.publish_findings.render import (
-    console,
-    render_investigation_start,
-    render_step_header,
-)
+from src.agent.output import debug_print, get_tracker, render_investigation_header
 from src.agent.state import InvestigationState
 from src.agent.tools.llm import get_llm
 
@@ -26,15 +26,17 @@ def main(state: InvestigationState) -> dict:
     3) Generate a structured problem statement
     4) Return parsed alert JSON for downstream nodes
     """
-    render_step_header(1, "Extract alert details")
+    tracker = get_tracker()
+    tracker.start("frame_problem", "Extracting alert details")
+
     alert_details = extract_alert_details(state)
-    console.print(
-        f"  [dim]Alert:[/] {alert_details.alert_name} | "
-        f"[dim]Table:[/] {alert_details.affected_table} | "
-        f"[dim]Severity:[/] {alert_details.severity}"
+    debug_print(
+        f"Alert: {alert_details.alert_name} | "
+        f"Table: {alert_details.affected_table} | "
+        f"Severity: {alert_details.severity}"
     )
 
-    render_investigation_start(
+    render_investigation_header(
         alert_details.alert_name,
         alert_details.affected_table,
         alert_details.severity,
@@ -48,7 +50,6 @@ def main(state: InvestigationState) -> dict:
     }
 
     # Gather initial investigation context (metadata) upstream
-    render_step_header(2, "Build investigation context")
     context = build_investigation_context({"plan_sources": ["tracer_web"]})  # Always get tracer_web context
 
     # Store context in state
@@ -57,8 +58,12 @@ def main(state: InvestigationState) -> dict:
     problem = _generate_output_problem_statement(enriched_state)
     problem = _add_tools_briefing(problem)
     problem_md = render_problem_statement_md(problem, enriched_state)
-    render_step_header(3, "Problem statement")
-    console.print(problem_md)
+    debug_print(f"Problem statement generated ({len(problem_md)} chars)")
+
+    tracker.complete(
+        "frame_problem",
+        fields_updated=["alert_name", "affected_table", "severity", "evidence", "problem_md"],
+    )
 
     return {
         "alert_name": alert_details.alert_name,

@@ -1,6 +1,6 @@
 """Error handling for root cause diagnosis."""
 
-from src.agent.nodes.publish_findings.render import console
+from src.agent.output import debug_print
 
 
 def check_evidence_sources(investigation: dict) -> tuple[bool, str | None]:
@@ -16,11 +16,6 @@ def check_evidence_sources(investigation: dict) -> tuple[bool, str | None]:
             "ERROR: No root cause has been identified because no information could be accessed. "
             "No evidence sources were successfully checked."
         )
-        console.print(f"\n[bold red]❌ {error_message}[/]")
-        console.print("\n[yellow]Possible reasons:[/]")
-        console.print("  • API endpoints are unavailable")
-        console.print("  • Authentication credentials are missing or invalid")
-        console.print("  • Network connectivity issues")
-        console.print("  • All evidence sources were skipped or failed")
+        debug_print(error_message)
         return False, error_message
     return True, None
