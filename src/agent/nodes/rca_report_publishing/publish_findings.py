@@ -1,8 +1,8 @@
 """Generate output reports."""
 
-from src.agent.nodes.publish_findings.context import build_report_context
-from src.agent.nodes.publish_findings.render import render_final_report
-from src.agent.nodes.publish_findings.report import (
+from src.agent.nodes.rca_report_publishing.context import build_report_context
+from src.agent.nodes.rca_report_publishing.render import render_final_report
+from src.agent.nodes.rca_report_publishing.report import (
     format_problem_md,
     format_slack_message,
 )

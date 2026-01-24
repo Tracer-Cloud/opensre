@@ -32,7 +32,7 @@ init_runtime()
 from langsmith import traceable  # noqa: E402
 from rich.console import Console  # noqa: E402
 
-from src.agent.context.context_building import _fetch_tracer_web_run_context  # noqa: E402
+from src.agent.nodes.hypothesis_execution.context_building import _fetch_tracer_web_run_context  # noqa: E402
 from src.agent.graph_pipeline import run_investigation_pipeline  # noqa: E402
 
 console = Console()

@@ -10,10 +10,17 @@ def build_report_context(state: InvestigationState) -> dict:
     batch = evidence.get("batch_jobs", {}) or {}
     s3 = evidence.get("s3", {}) or {}
 
+    validated_claims = state.get("validated_claims", [])
+    non_validated_claims = state.get("non_validated_claims", [])
+    validity_score = state.get("validity_score", 0.0)
+
     return {
         "affected_table": state["affected_table"],
         "root_cause": state["root_cause"],
         "confidence": state["confidence"],
+        "validated_claims": validated_claims,
+        "non_validated_claims": non_validated_claims,
+        "validity_score": validity_score,
         "s3_marker_exists": s3.get("marker_exists", False),
         "tracer_run_status": run.get("status"),
         "tracer_run_name": run.get("run_name"),
