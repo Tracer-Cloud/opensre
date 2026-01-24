@@ -44,8 +44,13 @@ def get_tracer_client() -> TracerClient:
         if not jwt_token:
             raise ValueError("JWT_TOKEN environment variable is required")
 
-        org_id = os.getenv("TRACER_ORG_ID", DEFAULT_ORG_ID)
-        base_url = os.getenv("TRACER_WEB_APP_URL", DEFAULT_BASE_URL)
+        org_id = os.getenv("TRACER_ORG_ID") or DEFAULT_ORG_ID
+        base_url = os.getenv("TRACER_WEB_APP_URL") or DEFAULT_BASE_URL
+
+        # Ensure URL has protocol
+        if not base_url.startswith(("http://", "https://")):
+            base_url = f"https://{base_url}"
+
         _tracer_client = TracerClient(base_url, org_id, jwt_token)
 
     return _tracer_client

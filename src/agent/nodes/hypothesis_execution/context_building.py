@@ -36,7 +36,9 @@ def build_tracer_run_url(pipeline_name: str, trace_id: str | None) -> str | None
     if not trace_id:
         return None
 
-    base_url = os.getenv("TRACER_WEB_APP_URL", "https://staging.tracer.cloud")
+    base_url = os.getenv("TRACER_WEB_APP_URL") or "https://staging.tracer.cloud"
+    if not base_url.startswith(("http://", "https://")):
+        base_url = f"https://{base_url}"
     # Extract org slug from JWT token
     jwt_token = os.getenv("JWT_TOKEN")
     org_slug = None
