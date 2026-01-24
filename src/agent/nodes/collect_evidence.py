@@ -8,6 +8,7 @@ from typing import Any
 from src.agent.nodes.publish_findings.render import render_evidence
 from src.agent.state import EvidenceSource, InvestigationState
 from src.agent.tools.tools import check_s3_marker, get_batch_jobs, get_tracer_run
+from src.agent.tools.tracer_web_client import get_tracer_web_client
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +66,59 @@ def _collect_batch() -> dict:
     }
 
 
+def _collect_tracer_web_failed_run() -> dict:
+    result, err = _call_safe(_fetch_tracer_web_failed_run)
+    if err:
+        return {"found": False, "error": err}
+    return result
+
+
+def _fetch_tracer_web_failed_run() -> dict:
+    client = get_tracer_web_client()
+    pipelines = client.get_pipelines(page=1, size=50)
+
+    failed_run = None
+    for pipeline in pipelines:
+        runs = client.get_pipeline_runs(pipeline.pipeline_name, page=1, size=50)
+        for run in runs:
+            status = (run.status or "").lower()
+            if status in ("failed", "error"):
+                failed_run = run
+                break
+        if failed_run:
+            break
+
+    if not failed_run:
+        return {
+            "found": False,
+            "error": "No failed runs found",
+            "pipelines_checked": len(pipelines),
+        }
+
+    return {
+        "found": True,
+        "pipeline_name": failed_run.pipeline_name,
+        "run_id": failed_run.run_id,
+        "run_name": failed_run.run_name,
+        "trace_id": failed_run.trace_id,
+        "status": failed_run.status,
+        "start_time": failed_run.start_time,
+        "end_time": failed_run.end_time,
+        "run_cost": failed_run.run_cost,
+        "tool_count": failed_run.tool_count,
+        "user_email": failed_run.user_email,
+        "instance_type": failed_run.instance_type,
+        "region": failed_run.region,
+        "log_file_count": failed_run.log_file_count,
+        "pipelines_checked": len(pipelines),
+    }
+
+
 COLLECTORS: dict[EvidenceSource, tuple[callable, str]] = {
     "tracer": (_collect_tracer, "pipeline_run"),
     "storage": (_collect_storage, "s3"),
     "batch": (_collect_batch, "batch_jobs"),
+    "tracer_web": (_collect_tracer_web_failed_run, "tracer_web_run"),
 }
 
 
