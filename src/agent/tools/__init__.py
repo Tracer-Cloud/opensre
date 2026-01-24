@@ -1,14 +1,14 @@
 """Infrastructure layer - external service clients and LLM."""
 
-from src.agent.clients.llm import (
+from src.agent.tools.llm import (
     InterpretationResult,
     RootCauseResult,
     parse_bullets,
     parse_root_cause,
     stream_completion,
 )
-from src.agent.clients.s3_client import S3CheckResult, get_s3_client
-from src.agent.clients.tracer_client import (
+from src.agent.tools.s3_client import S3CheckResult, get_s3_client
+from src.agent.tools.tracer_client import (
     AWSBatchJobResult,
     TracerRunResult,
     TracerTaskResult,

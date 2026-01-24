@@ -1,8 +1,7 @@
 """
 Ingestion layer for alert payloads.
 
-Parses, validates, and normalizes external alert formats into internal request objects.
-Keeps parsing logic separate from CLI wiring and agent execution.
+Parses Grafana webhooks into InvestigationRequest objects.
 """
 
 import json
@@ -15,11 +14,11 @@ from typing import Any
 from pydantic import BaseModel
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Grafana Alert Models (Pydantic validation)
+# Grafana Alert Models
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class GrafanaAlertLabel(BaseModel):
-    """Labels from a Grafana alert."""
     alertname: str
     severity: str = "warning"
     table: str | None = None
@@ -27,13 +26,11 @@ class GrafanaAlertLabel(BaseModel):
 
 
 class GrafanaAlertAnnotation(BaseModel):
-    """Annotations from a Grafana alert."""
     summary: str
     description: str | None = None
 
 
 class GrafanaAlert(BaseModel):
-    """A single alert from Grafana."""
     status: str  # "firing" or "resolved"
     labels: GrafanaAlertLabel
     annotations: GrafanaAlertAnnotation
@@ -42,7 +39,6 @@ class GrafanaAlert(BaseModel):
 
 
 class GrafanaAlertPayload(BaseModel):
-    """The full Grafana webhook payload."""
     alerts: list[GrafanaAlert]
     title: str
     state: str
@@ -53,60 +49,54 @@ class GrafanaAlertPayload(BaseModel):
 # Internal Request Object
 # ─────────────────────────────────────────────────────────────────────────────
 
-DEFAULT_AFFECTED_TABLE = "events_fact"
+SEVERITY_MAP = {"critical": "critical", "high": "high", "warning": "warning", "info": "info"}
+DEFAULT_SEVERITY = "warning"
 
 
 @dataclass(frozen=True)
 class InvestigationRequest:
-    """Internal request object for the investigation agent."""
+    """Request object for the investigation agent."""
+
     alert_name: str
     affected_table: str
     severity: str
+    environment: str
+    summary: str | None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Parsing Functions
+# Parsing
 # ─────────────────────────────────────────────────────────────────────────────
 
-def parse_grafana_payload(payload: dict[str, Any]) -> InvestigationRequest:
-    """
-    Parse and validate a Grafana alert payload into an InvestigationRequest.
 
-    Handles:
-    - Pydantic validation of the payload structure
-    - Extraction of fields needed for investigation
-    - Default value for affected_table
-    """
-    grafana_payload = GrafanaAlertPayload(**payload)
+def parse_grafana_payload(
+    payload: dict[str, Any],
+    default_table: str = "events_fact",
+) -> InvestigationRequest:
+    """Parse Grafana webhook into InvestigationRequest."""
+    grafana = GrafanaAlertPayload(**payload)
 
-    # Take the first firing alert
-    firing_alerts = [a for a in grafana_payload.alerts if a.status == "firing"]
-    if not firing_alerts:
+    firing = [a for a in grafana.alerts if a.status == "firing"]
+    if not firing:
         raise ValueError("No firing alerts in payload")
 
-    alert = firing_alerts[0]
+    alert = firing[0]
+    raw_severity = alert.labels.severity.lower()
 
     return InvestigationRequest(
         alert_name=alert.labels.alertname,
-        affected_table=alert.labels.table or DEFAULT_AFFECTED_TABLE,
-        severity=alert.labels.severity,
+        affected_table=alert.labels.table or default_table,
+        severity=SEVERITY_MAP.get(raw_severity, DEFAULT_SEVERITY),
+        environment=alert.labels.environment,
+        summary=alert.annotations.summary,
     )
 
 
 def load_request_from_json(path: str | None) -> InvestigationRequest:
-    """
-    Load an InvestigationRequest from a JSON file or stdin.
-
-    Args:
-        path: Path to JSON file, or None/"-" for stdin
-
-    Returns:
-        Validated InvestigationRequest ready for the agent
-    """
+    """Load InvestigationRequest from JSON file or stdin."""
     if path in (None, "-"):
         payload = json.load(sys.stdin)
     else:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
-
     return parse_grafana_payload(payload)
 
