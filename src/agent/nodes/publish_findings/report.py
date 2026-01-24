@@ -11,6 +11,9 @@ class ReportContext(TypedDict, total=False):
     affected_table: str
     root_cause: str
     confidence: float
+    validated_claims: list[dict]
+    non_validated_claims: list[dict]
+    validity_score: float
     s3_marker_exists: bool
     tracer_run_status: str | None
     tracer_run_name: str | None
@@ -27,8 +30,8 @@ class ReportContext(TypedDict, total=False):
 
 def format_slack_message(ctx: ReportContext) -> str:
     """Format the Slack message output."""
-    status = ctx.get('tracer_run_status', 'unknown')
-    is_failed = status.lower() == 'failed' if status else False
+    status = ctx.get("tracer_run_status", "unknown")
+    is_failed = status.lower() == "failed" if status else False
     status_marker = "[FAILED]" if is_failed else ""
 
     batch_info = ""
@@ -38,40 +41,73 @@ def format_slack_message(ctx: ReportContext) -> str:
     # Tracer investigation link
     tracer_link = "https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe"
 
-    return f"""[RCA] {ctx['affected_table']} freshness incident
+    # Format validated and non-validated claims
+    validated_section = ""
+    non_validated_section = ""
+    validity_info = ""
+
+    validated_claims = ctx.get("validated_claims", [])
+    non_validated_claims = ctx.get("non_validated_claims", [])
+    validity_score = ctx.get("validity_score", 0.0)
+
+    if validated_claims:
+        validated_section = "\n*Validated Claims (Supported by Evidence):*\n"
+        for claim_data in validated_claims:
+            claim = claim_data.get("claim", "")
+            evidence = claim_data.get("evidence_sources", [])
+            evidence_str = f" [Evidence: {', '.join(evidence)}]" if evidence else ""
+            validated_section += f"• {claim}{evidence_str}\n"
+
+    if non_validated_claims:
+        non_validated_section = "\n*Non-Validated Claims (Inferred):*\n"
+        for claim_data in non_validated_claims:
+            claim = claim_data.get("claim", "")
+            non_validated_section += f"• {claim}\n"
+
+    if validity_score > 0:
+        validity_info = f"\n*Validity Score:* {validity_score:.0%} ({len(validated_claims)}/{len(validated_claims) + len(non_validated_claims)} validated)\n"
+
+    # Include root cause text if no structured claims
+    root_cause_text = ctx.get("root_cause", "")
+    if not validated_claims and not non_validated_claims and root_cause_text:
+        conclusion_section = f"\n{root_cause_text}\n"
+    else:
+        conclusion_section = f"{validated_section}{non_validated_section}{validity_info}"
+
+    return f"""[RCA] {ctx["affected_table"]} freshness incident
 Analyzed by: pipeline-agent
 Detected: 02:13 UTC
 
 *Conclusion*
-{ctx['root_cause']}
+{conclusion_section}
+*Confidence:* {ctx["confidence"]:.0%}
+*Validity Score:* {validity_score:.0%} ({len(validated_claims)}/{len(validated_claims) + len(non_validated_claims)} validated)
 
 *Evidence from Tracer*
-* Pipeline: {ctx.get('tracer_pipeline_name', 'unknown')}
-* Run: {ctx.get('tracer_run_name', 'unknown')}
+* Pipeline: {ctx.get("tracer_pipeline_name", "unknown")}
+* Run: {ctx.get("tracer_run_name", "unknown")}
 * Status: {status} {status_marker}
-* User: {ctx.get('tracer_user_email', 'unknown')}
-* Team: {ctx.get('tracer_team', 'unknown')}
-* Cost: ${ctx.get('tracer_run_cost', 0):.2f}
-* Instance: {ctx.get('tracer_instance_type', 'unknown')}
-* Max RAM: {ctx.get('tracer_max_ram_gb', 0):.1f} GB
-{batch_info}* S3 _SUCCESS marker: {'not found' if not ctx.get('s3_marker_exists') else 'present'}
-
-*Confidence:* {ctx['confidence']:.2f}
+* User: {ctx.get("tracer_user_email", "unknown")}
+* Team: {ctx.get("tracer_team", "unknown")}
+* Cost: ${ctx.get("tracer_run_cost", 0):.2f}
+* Instance: {ctx.get("tracer_instance_type", "unknown")}
+* Max RAM: {ctx.get("tracer_max_ram_gb", 0):.1f} GB
+{batch_info}* S3 _SUCCESS marker: {"not found" if not ctx.get("s3_marker_exists") else "present"}
 
 *View Investigation:*
 {tracer_link}
 
 *Recommended Actions*
 1. Review failed job in Tracer dashboard
-2. {'Increase memory allocation - job killed due to ' + ctx.get('batch_failure_reason', 'OOM') if ctx.get('batch_failure_reason') and 'memory' in ctx.get('batch_failure_reason', '').lower() else 'Check AWS Batch logs for error details'}
+2. {"Increase memory allocation - job killed due to " + ctx.get("batch_failure_reason", "OOM") if ctx.get("batch_failure_reason") and "memory" in ctx.get("batch_failure_reason", "").lower() else "Check AWS Batch logs for error details"}
 3. Rerun pipeline after fixing issues
 """
 
 
 def format_problem_md(ctx: ReportContext) -> str:
     """Format the problem.md report."""
-    status = ctx.get('tracer_run_status', 'unknown')
-    is_failed = status.lower() == 'failed' if status else False
+    status = ctx.get("tracer_run_status", "unknown")
+    is_failed = status.lower() == "failed" if status else False
 
     # Tracer investigation link
     tracer_link = "https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe"
@@ -80,44 +116,43 @@ def format_problem_md(ctx: ReportContext) -> str:
     if ctx.get("batch_failure_reason"):
         batch_section = f"""
 ### AWS Batch Job Failure
-- Failed jobs: {ctx.get('batch_failed_jobs', 0)}
-- **Failure reason**: `{ctx.get('batch_failure_reason')}`
+- Failed jobs: {ctx.get("batch_failed_jobs", 0)}
+- **Failure reason**: `{ctx.get("batch_failure_reason")}`
 """
 
-    return f"""# Incident Report: {ctx['affected_table']} Freshness SLA Breach
+    return f"""# Incident Report: {ctx["affected_table"]} Freshness SLA Breach
 
 > **View Investigation in Tracer:** [{tracer_link}]({tracer_link})
 
 ## Summary
-{ctx['root_cause']}
+{ctx["root_cause"]}
 
 ## Evidence from Tracer
 
 ### Pipeline Run Details
 | Field | Value |
 |-------|-------|
-| Pipeline | `{ctx.get('tracer_pipeline_name', 'unknown')}` |
-| Run Name | `{ctx.get('tracer_run_name', 'unknown')}` |
-| Status | **{status}** {'[FAILED]' if is_failed else ''} |
-| User | {ctx.get('tracer_user_email', 'unknown')} |
-| Team | {ctx.get('tracer_team', 'unknown')} |
-| Cost | ${ctx.get('tracer_run_cost', 0):.2f} |
-| Instance | {ctx.get('tracer_instance_type', 'unknown')} |
-| Max RAM | {ctx.get('tracer_max_ram_gb', 0):.1f} GB |
+| Pipeline | `{ctx.get("tracer_pipeline_name", "unknown")}` |
+| Run Name | `{ctx.get("tracer_run_name", "unknown")}` |
+| Status | **{status}** {"[FAILED]" if is_failed else ""} |
+| User | {ctx.get("tracer_user_email", "unknown")} |
+| Team | {ctx.get("tracer_team", "unknown")} |
+| Cost | ${ctx.get("tracer_run_cost", 0):.2f} |
+| Instance | {ctx.get("tracer_instance_type", "unknown")} |
+| Max RAM | {ctx.get("tracer_max_ram_gb", 0):.1f} GB |
 {batch_section}
 ### S3 State
 - Bucket: `tracer-logs`
-- `_SUCCESS` marker: {'present' if ctx.get('s3_marker_exists') else '**missing**'}
+- `_SUCCESS` marker: {"present" if ctx.get("s3_marker_exists") else "**missing**"}
 
 ## Root Cause Analysis
-Confidence: {ctx['confidence']:.0%}
+Confidence: {ctx["confidence"]:.0%}
 
-{ctx['root_cause']}
+{ctx["root_cause"]}
 
 ## Recommended Actions
 1. [View failed job in Tracer dashboard]({tracer_link})
-2. {'**Increase memory allocation** - job was killed due to OutOfMemoryError' if ctx.get('batch_failure_reason') and 'memory' in ctx.get('batch_failure_reason', '').lower() else 'Check AWS Batch logs for error details'}
+2. {"**Increase memory allocation** - job was killed due to OutOfMemoryError" if ctx.get("batch_failure_reason") and "memory" in ctx.get("batch_failure_reason", "").lower() else "Check AWS Batch logs for error details"}
 3. Consider using a larger instance type with more RAM
 4. Rerun pipeline after fixing resource allocation
 """
-

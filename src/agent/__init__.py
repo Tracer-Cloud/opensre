@@ -5,4 +5,3 @@ from src.agent.graph_pipeline import run_investigation_pipeline as run_investiga
 __all__ = [
     "run_investigation",
 ]
-

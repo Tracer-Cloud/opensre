@@ -54,6 +54,10 @@ TRACER_API_URL=https://staging.tracer.cloud
 TRACER_ORG_ID=org_33W1pou1nUzYoYPZj3OCQ3jslB2
 JWT_TOKEN=your_jwt_token_here
 
+# Tracer Web App API (Next.js)
+# Use localhost when running the web app locally, or staging if not.
+TRACER_WEB_APP_URL=https://staging.tracer.cloud
+
 # Demo IDs (optional - defaults to demo run)
 # trace_id is used for tools/files endpoints
 # run_id is used for runs/logs/metrics endpoints

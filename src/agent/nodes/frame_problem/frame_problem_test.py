@@ -2,14 +2,11 @@ import json
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 from src.agent.nodes.frame_problem.extract import extract_alert_details
 from src.agent.state import InvestigationState
 
 
 def test_llm_extracts_alert_details_from_raw_json() -> None:
-    load_dotenv()
     api_key = os.getenv("ANTHROPIC_API_KEY")
     assert api_key, "ANTHROPIC_API_KEY must be set for this integration test"
 
@@ -20,6 +17,7 @@ def test_llm_extracts_alert_details_from_raw_json() -> None:
 
     details = extract_alert_details(state)
 
-    assert details.affected_table == "events_fact"
+    # The fixture contains superfluid_prod_pipeline, not events_fact
+    assert details.affected_table == "superfluid_prod_pipeline"
     assert details.severity.lower() == "critical"
-    assert "freshness" in details.alert_name.lower()
+    assert "pipeline" in details.alert_name.lower() or "failure" in details.alert_name.lower()

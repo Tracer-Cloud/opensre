@@ -10,7 +10,7 @@ from typing import Any, Literal, TypedDict
 # ─────────────────────────────────────────────────────────────────────────────
 # Evidence Source Types
 # ─────────────────────────────────────────────────────────────────────────────
-EvidenceSource = Literal["tracer", "storage", "batch"]
+EvidenceSource = Literal["storage", "batch", "tracer_web", "cloudwatch"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -52,6 +52,14 @@ class InvestigationState(TypedDict, total=False):
     # ─────────────────────────────────────────────────────────────────────────
     root_cause: str
     confidence: float
+    validated_claims: list[dict[str, Any]]  # List of validated claims with evidence
+    non_validated_claims: list[dict[str, Any]]  # List of non-validated claims
+    validity_score: float  # Percentage of validated vs total claims
+    investigation_recommendations: list[str]  # Recommended AWS SDK investigations if confidence low
+    investigation_loop_count: int  # Number of times we've looped back to generate_hypotheses
+    executed_hypotheses: list[
+        dict[str, Any]
+    ]  # History of executed hypotheses/API calls to avoid duplicates
 
     # ─────────────────────────────────────────────────────────────────────────
     # Outputs - formatted reports
@@ -69,6 +77,12 @@ STATE_DEFAULTS: dict[str, Any] = {
     "evidence": {},
     "root_cause": "",
     "confidence": 0.0,
+    "validated_claims": [],
+    "non_validated_claims": [],
+    "validity_score": 0.0,
+    "investigation_recommendations": [],
+    "investigation_loop_count": 0,
+    "executed_hypotheses": [],
     "slack_message": "",
     "problem_md": "",
 }
@@ -97,4 +111,3 @@ def make_initial_state(
     if raw_alert is not None:
         state["raw_alert"] = raw_alert
     return state
-
