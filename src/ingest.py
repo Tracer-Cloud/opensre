@@ -13,6 +13,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from src.agent.nodes.publish_findings.render import render_incoming_alert
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Grafana Alert Models
 # ─────────────────────────────────────────────────────────────────────────────
@@ -72,8 +74,11 @@ class InvestigationRequest:
 def parse_grafana_payload(
     payload: dict[str, Any],
     default_table: str = "events_fact",
+    raw_alert_text: str | None = None,
 ) -> InvestigationRequest:
     """Parse Grafana webhook into InvestigationRequest."""
+    if raw_alert_text is not None:
+        render_incoming_alert(raw_alert_text)
     grafana = GrafanaAlertPayload(**payload)
 
     firing = [a for a in grafana.alerts if a.status == "firing"]
@@ -92,11 +97,14 @@ def parse_grafana_payload(
     )
 
 
-def load_request_from_json(path: str | None) -> InvestigationRequest:
+def load_request_from_json(
+    path: str | None,
+    raw_alert_text: str | None = None,
+) -> InvestigationRequest:
     """Load InvestigationRequest from JSON file or stdin."""
     if path in (None, "-"):
         payload = json.load(sys.stdin)
     else:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    return parse_grafana_payload(payload)
+    return parse_grafana_payload(payload, raw_alert_text=raw_alert_text)
 

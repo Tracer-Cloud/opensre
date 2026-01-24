@@ -1,5 +1,6 @@
 """Generate output reports."""
 
+from src.agent.nodes.publish_findings.render import render_final_report
 from src.agent.nodes.publish_findings.report import (
     ReportContext,
     format_problem_md,
@@ -33,8 +34,13 @@ def node_publish_findings(state: InvestigationState) -> dict:
         "batch_failed_jobs": batch.get("failed_jobs", 0),
     }
 
+    slack_message = format_slack_message(ctx)
+    problem_md = format_problem_md(ctx)
+
+    render_final_report(slack_message)
+
     return {
-        "slack_message": format_slack_message(ctx),
-        "problem_md": format_problem_md(ctx),
+        "slack_message": slack_message,
+        "problem_md": problem_md,
     }
 

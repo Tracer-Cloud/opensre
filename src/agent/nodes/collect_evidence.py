@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any
 
+from src.agent.nodes.publish_findings.render import render_evidence
 from src.agent.state import EvidenceSource, InvestigationState
 from src.agent.tools.tools import check_s3_marker, get_batch_jobs, get_tracer_run
 
@@ -78,5 +79,6 @@ def node_collect_evidence(state: InvestigationState) -> dict:
         if source in COLLECTORS:
             fn, key = COLLECTORS[source]
             evidence[key] = fn()
+    render_evidence(evidence)
     return {"evidence": evidence}
 

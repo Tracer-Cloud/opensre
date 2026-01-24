@@ -1,5 +1,6 @@
 """Generate investigation hypotheses based on alert type."""
 
+from src.agent.nodes.publish_findings.render import render_plan
 from src.agent.state import EvidenceSource, InvestigationState
 
 # Alert patterns -> evidence sources to check
@@ -25,11 +26,15 @@ def node_generate_hypotheses(state: InvestigationState) -> dict:
     # Match first rule that applies
     for pattern, sources in ALERT_RULES.items():
         if pattern in alert:
+            render_plan(sources)
             return {"plan_sources": sources}
 
     # Table-specific fallback
     if "events" in table or "fact" in table:
-        return {"plan_sources": ["tracer", "storage", "batch"]}
+        sources = ["tracer", "storage", "batch"]
+        render_plan(sources)
+        return {"plan_sources": sources}
 
+    render_plan(DEFAULT_SOURCES)
     return {"plan_sources": DEFAULT_SOURCES}
 

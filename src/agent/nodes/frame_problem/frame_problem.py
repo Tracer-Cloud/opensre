@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, Field
 
+from src.agent.nodes.publish_findings.render import render_investigation_start
 from src.agent.state import InvestigationState
 from src.agent.tools.llm import get_llm
 
@@ -66,6 +67,12 @@ def node_frame_problem(state: InvestigationState) -> dict:
     Returns:
         dict with problem_md (str) containing the formatted problem statement
     """
+    render_investigation_start(
+        state.get("alert_name", "Unknown"),
+        state.get("affected_table", "Unknown"),
+        state.get("severity", "Unknown"),
+    )
+
     prompt = _build_prompt(state)
     llm = get_llm()
     

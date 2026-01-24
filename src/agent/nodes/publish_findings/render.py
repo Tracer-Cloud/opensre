@@ -1,13 +1,106 @@
-"""
-Rich/UI rendering functions.
-
-All console output goes through here. Nodes stay pure.
-"""
+"""Rich/UI rendering functions."""
 
 from rich.console import Console
 from rich.panel import Panel
 
 console = Console()
+
+# Map plan sources to human-readable names
+SOURCE_NAMES = {
+    "tracer": "Tracer Pipeline Status",
+    "storage": "S3 Storage Check",
+    "batch": "AWS Batch Jobs",
+}
+
+
+def render_incoming_alert(raw_alert_text: str):
+    """Render the incoming Grafana alert payload."""
+    console.print("\n")
+    console.print(Panel(
+        raw_alert_text,
+        title="Incoming Grafana Alert (Slack Channel)",
+        border_style="red",
+    ))
+    console.print("[dim]Agent triggered automatically...[/dim]\n")
+
+
+def render_plan(plan_sources: list[str]):
+    """Render the investigation plan (hypotheses to check)."""
+    console.print("\n[bold magenta]─── Investigation Plan ───[/]")
+    console.print("[bold]Evidence sources to check:[/]\n")
+    for i, source in enumerate(plan_sources, 1):
+        name = SOURCE_NAMES.get(source, source)
+        console.print(f"  [cyan]H{i}[/] [bold]{name}[/]")
+    console.print()
+
+
+def render_evidence(evidence: dict):
+    """Render collected evidence."""
+    console.print("\n[bold yellow]─── Evidence Collection ───[/]")
+
+    # S3 evidence
+    if "s3" in evidence:
+        s3 = evidence["s3"]
+        console.print("\n[bold cyan]→ S3 Storage Check[/]")
+        if s3.get("error"):
+            console.print(f"  [red]Error: {s3['error']}[/]")
+        else:
+            marker = "[green]✓ Found[/]" if s3.get("marker_exists") else "[red]✗ Missing[/]"
+            console.print(f"  [dim]_SUCCESS marker:[/] {marker}")
+            console.print(f"  [dim]Files found:[/] {s3.get('file_count', 0)}")
+            if s3.get("files"):
+                for f in s3["files"][:3]:
+                    console.print(f"    [dim]- {f}[/]")
+
+    # Pipeline run evidence
+    if "pipeline_run" in evidence:
+        run = evidence["pipeline_run"]
+        console.print("\n[bold cyan]→ Tracer Pipeline Status[/]")
+        if not run.get("found"):
+            console.print("  [yellow]No recent pipeline runs found[/]")
+        else:
+            status = run.get("status", "Unknown")
+            status_color = "red bold" if status.lower() == "failed" else "green"
+            console.print(f"  [dim]Pipeline:[/] {run.get('pipeline_name', 'Unknown')}")
+            console.print(f"  [dim]Run:[/] {run.get('run_name', 'Unknown')}")
+            console.print(f"  [dim]Status:[/] [{status_color}]{status}[/]")
+            console.print(f"  [dim]Duration:[/] {run.get('run_time_minutes', 0)} min")
+            console.print(f"  [dim]Cost:[/] [yellow]${run.get('run_cost_usd', 0):.2f}[/]")
+            console.print(f"  [dim]User:[/] {run.get('user_email', 'Unknown')}")
+
+    # Batch jobs evidence
+    if "batch_jobs" in evidence:
+        batch = evidence["batch_jobs"]
+        console.print("\n[bold cyan]→ AWS Batch Jobs[/]")
+        if not batch.get("found"):
+            console.print("  [yellow]No AWS Batch jobs found[/]")
+        else:
+            console.print(f"  [dim]Total jobs:[/] {batch.get('total_jobs', 0)}")
+            console.print(f"  [dim]Succeeded:[/] [green]{batch.get('succeeded_jobs', 0)}[/]")
+            failed = batch.get("failed_jobs", 0)
+            if failed > 0:
+                console.print(f"  [dim]Failed:[/] [red bold]{failed}[/]")
+                if batch.get("failure_reason"):
+                    console.print(f"  [red bold]Failure reason:[/] [red]{batch['failure_reason']}[/]")
+
+
+def render_analysis(root_cause: str, confidence: float):
+    """Render the root cause analysis."""
+    console.print("\n[bold green]─── Root Cause Analysis ───[/]")
+
+    # Parse bullet points from root_cause
+    bullets = [line.strip().lstrip("*- ") for line in root_cause.split("\n") if line.strip()]
+    render_root_cause_complete(bullets, confidence)
+
+
+def render_final_report(slack_message: str):
+    """Render the final RCA report panel."""
+    console.print("\n")
+    console.print(Panel(
+        slack_message,
+        title="RCA Report",
+        border_style="green",
+    ))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

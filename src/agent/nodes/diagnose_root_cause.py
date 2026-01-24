@@ -1,5 +1,6 @@
 """Diagnose root cause from collected evidence."""
 
+from src.agent.nodes.publish_findings.render import render_analysis
 from src.agent.state import InvestigationState
 from src.agent.tools.llm import parse_root_cause, stream_completion
 
@@ -8,6 +9,7 @@ def node_diagnose_root_cause(state: InvestigationState) -> dict:
     """Synthesize evidence into root cause using LLM."""
     prompt = _build_prompt(state, state.get("evidence", {}))
     result = parse_root_cause(stream_completion(prompt))
+    render_analysis(result.root_cause, result.confidence)
     return {"root_cause": result.root_cause, "confidence": result.confidence}
 
 
