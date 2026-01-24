@@ -201,16 +201,7 @@ def main(state: InvestigationState) -> dict:
         render_evidence(existing_evidence)
         return {"evidence": existing_evidence}
 
-    # If we have no evidence yet, we must gather it (even if plan_sources is empty)
-    if not has_existing_evidence and not new_sources:
-        # No plan sources and no existing evidence - try to gather from available metadata anyway
-        from src.agent.nodes.publish_findings.render import console
-
-        console.print(
-            "  [yellow]⚠️  No plan sources available, but attempting to gather evidence from available metadata.[/]"
-        )
-
-    # Gather evidence only for new sources (or all if first time)
+    # Gather evidence for new sources (or from context if first time)
     render_step_header(1, "Gather runtime evidence")
     if new_sources:
         from src.agent.nodes.publish_findings.render import console
