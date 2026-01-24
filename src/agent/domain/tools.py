@@ -4,11 +4,11 @@ Pure evidence collectors.
 No printing, no LLM calls. Just fetch data and return typed results.
 """
 
-from src.agent.infrastructure.clients import (
+from src.agent.clients.clients import (
+    AWSBatchJobResult,
     S3CheckResult,
     TracerRunResult,
     TracerTaskResult,
-    AWSBatchJobResult,
     get_s3_client,
     get_tracer_client,
 )

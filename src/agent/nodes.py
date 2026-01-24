@@ -11,23 +11,23 @@ Nodes are pure: inputs in, state patches out. No rendering.
 """
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any
 
+# Infrastructure layer
+from src.agent.clients.llm import parse_root_cause, stream_completion
+
 # Domain layer
-from src.agent.domain.state import InvestigationState, EvidenceSource
+from src.agent.domain.state import EvidenceSource, InvestigationState
 from src.agent.domain.tools import (
     check_s3_marker,
-    get_tracer_run,
     get_batch_jobs,
+    get_tracer_run,
 )
 
-# Infrastructure layer
-from src.agent.infrastructure.llm import stream_completion, parse_root_cause
-
 # Report formatting
-from src.agent.render_output.report import format_slack_message, format_problem_md, ReportContext
-
+from src.agent.render_output.report import ReportContext, format_problem_md, format_slack_message
 
 logger = logging.getLogger(__name__)
 

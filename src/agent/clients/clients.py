@@ -7,8 +7,7 @@ Uses Tracer API for pipeline data, S3 mock for file markers.
 
 import os
 from dataclasses import dataclass
-from typing import Protocol, Optional
-
+from typing import Protocol
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data Types
@@ -24,21 +23,21 @@ class S3CheckResult:
 @dataclass(frozen=True)
 class TracerRunResult:
     found: bool
-    run_id: Optional[str]
-    pipeline_name: Optional[str]
-    run_name: Optional[str]
-    status: Optional[str]
-    start_time: Optional[str]
-    end_time: Optional[str]
+    run_id: str | None
+    pipeline_name: str | None
+    run_name: str | None
+    status: str | None
+    start_time: str | None
+    end_time: str | None
     run_time_seconds: float
     run_cost: float
     max_ram_gb: float
-    user_email: Optional[str]
-    team: Optional[str]
-    department: Optional[str]
-    instance_type: Optional[str]
-    environment: Optional[str]
-    region: Optional[str]
+    user_email: str | None
+    team: str | None
+    department: str | None
+    instance_type: str | None
+    environment: str | None
+    region: str | None
     tool_count: int
 
 
@@ -59,7 +58,7 @@ class AWSBatchJobResult:
     failed_jobs: int
     succeeded_jobs: int
     jobs: list[dict]
-    failure_reason: Optional[str]  # Main failure reason if any
+    failure_reason: str | None  # Main failure reason if any
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -71,7 +70,7 @@ class S3ClientProtocol(Protocol):
 
 
 class TracerClientProtocol(Protocol):
-    def get_latest_run(self, pipeline_name: Optional[str] = None) -> TracerRunResult: ...
+    def get_latest_run(self, pipeline_name: str | None = None) -> TracerRunResult: ...
     def get_run_tasks(self, run_id: str) -> TracerTaskResult: ...
     def get_batch_jobs(self) -> AWSBatchJobResult: ...
 
@@ -82,11 +81,11 @@ class TracerClientProtocol(Protocol):
 
 class MockS3Client:
     """S3 client backed by mock data."""
-    
+
     def __init__(self):
         from src.mocks.s3 import get_s3_client
         self._client = get_s3_client()
-    
+
     def check_marker(self, bucket: str, prefix: str) -> S3CheckResult:
         files = self._client.list_objects(bucket, prefix)
         marker_exists = self._client.object_exists(bucket, f"{prefix}_SUCCESS")
@@ -103,15 +102,15 @@ class MockS3Client:
 
 class TracerAPIClient:
     """Client that fetches pipeline data from Tracer staging API."""
-    
+
     def __init__(self):
         from src.tracer.client import get_tracer_client
         self._client = get_tracer_client()
-    
-    def get_latest_run(self, pipeline_name: Optional[str] = None) -> TracerRunResult:
+
+    def get_latest_run(self, pipeline_name: str | None = None) -> TracerRunResult:
         """Get the demo pipeline run from Tracer batch-runs endpoint."""
         run = self._client.get_latest_run(pipeline_name)
-        
+
         if not run:
             return TracerRunResult(
                 found=False,
@@ -132,7 +131,7 @@ class TracerAPIClient:
                 region=None,
                 tool_count=0,
             )
-        
+
         return TracerRunResult(
             found=True,
             run_id=run.run_id,
@@ -152,11 +151,11 @@ class TracerAPIClient:
             region=run.region,
             tool_count=run.tool_count,
         )
-    
+
     def get_run_tasks(self, run_id: str) -> TracerTaskResult:
         """Get tasks/tools for a pipeline run from Tracer."""
         tasks = self._client.get_run_tasks(run_id)
-        
+
         if not tasks:
             return TracerTaskResult(
                 found=False,
@@ -166,10 +165,10 @@ class TracerAPIClient:
                 tasks=[],
                 failed_task_details=[],
             )
-        
+
         failed_tasks = []
         completed_tasks = []
-        
+
         for task in tasks:
             task_dict = {
                 "tool_name": task.tool_name,
@@ -179,15 +178,13 @@ class TracerAPIClient:
                 "reason": task.reason,
                 "explanation": task.explanation,
             }
-            
+
             # Check if task failed (non-zero exit code or has error reason)
-            if task.exit_code and task.exit_code not in ("0", "", None):
-                failed_tasks.append(task_dict)
-            elif task.reason and task.reason.lower() not in ("", "success", "completed", "exited"):
+            if task.exit_code and task.exit_code not in ("0", "", None) or task.reason and task.reason.lower() not in ("", "success", "completed", "exited"):
                 failed_tasks.append(task_dict)
             else:
                 completed_tasks.append(task_dict)
-        
+
         return TracerTaskResult(
             found=True,
             total_tasks=len(tasks),
@@ -200,11 +197,11 @@ class TracerAPIClient:
             } for t in tasks],
             failed_task_details=failed_tasks,
         )
-    
+
     def get_batch_jobs(self) -> AWSBatchJobResult:
         """Get AWS Batch jobs for the pipeline run."""
         jobs = self._client.get_batch_jobs()
-        
+
         if not jobs:
             return AWSBatchJobResult(
                 found=False,
@@ -214,17 +211,17 @@ class TracerAPIClient:
                 jobs=[],
                 failure_reason=None,
             )
-        
+
         failed_jobs = [j for j in jobs if j.status == "FAILED"]
         succeeded_jobs = [j for j in jobs if j.status == "SUCCEEDED"]
-        
+
         # Get the main failure reason from failed jobs
         failure_reason = None
         for job in failed_jobs:
             if job.failure_reason:
                 failure_reason = job.failure_reason
                 break
-        
+
         return AWSBatchJobResult(
             found=True,
             total_jobs=len(jobs),
@@ -276,12 +273,12 @@ def get_tracer_client() -> TracerClientProtocol:
 
 class MockTracerClient:
     """Fallback mock client when Tracer is not configured."""
-    
+
     def __init__(self):
         from src.mocks.nextflow import get_nextflow_client
         self._client = get_nextflow_client()
-    
-    def get_latest_run(self, pipeline_name: Optional[str] = None) -> TracerRunResult:
+
+    def get_latest_run(self, pipeline_name: str | None = None) -> TracerRunResult:
         run = self._client.get_latest_run(pipeline_name or "events-etl")
         if not run:
             return TracerRunResult(
@@ -303,7 +300,7 @@ class MockTracerClient:
                 region=None,
                 tool_count=0,
             )
-        
+
         return TracerRunResult(
             found=True,
             run_id=run["run_id"],
@@ -323,7 +320,7 @@ class MockTracerClient:
             region="us-east-1",
             tool_count=3,
         )
-    
+
     def get_run_tasks(self, run_id: str) -> TracerTaskResult:
         steps = self._client.get_steps(run_id)
         if not steps:
@@ -335,10 +332,10 @@ class MockTracerClient:
                 tasks=[],
                 failed_task_details=[],
             )
-        
+
         failed = [s for s in steps if s["status"] == "FAILED"]
         completed = [s for s in steps if s["status"] == "COMPLETED"]
-        
+
         return TracerTaskResult(
             found=True,
             total_tasks=len(steps),
@@ -354,7 +351,7 @@ class MockTracerClient:
                 "explanation": s.get("error"),
             } for s in failed],
         )
-    
+
     def get_batch_jobs(self) -> AWSBatchJobResult:
         """Mock batch jobs - return a simulated failure."""
         return AWSBatchJobResult(
