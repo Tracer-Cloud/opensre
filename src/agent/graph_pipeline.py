@@ -10,6 +10,7 @@ from src.agent.nodes import (
     node_generate_hypotheses,
     node_hypothesis_investigation,
     node_publish_findings,
+    node_validate_analysis,
 )
 from src.agent.state import InvestigationState, make_initial_state
 
@@ -22,8 +23,9 @@ def build_graph_pipeline() -> StateGraph:
         START
         → frame_problem          # Enrich incident context
         → generate_hypotheses    # Determine what to investigate
-        → hypothesis_investigation  # Build context and gather evidence
+        → hypothesis_execution  # Build context and gather evidence
         → diagnose_root_cause    # Synthesize conclusion
+        → validate_analysis     # Check for hallucinations and unrealistic values
         → publish_findings       # Format outputs
         → END
     """
@@ -32,17 +34,31 @@ def build_graph_pipeline() -> StateGraph:
     # Nodes define the agentic steps in the graph pipeline
     graph.add_node("frame_problem", node_frame_problem)
     graph.add_node("generate_hypotheses", node_generate_hypotheses)
-    graph.add_node("hypothesis_investigation", node_hypothesis_investigation)
+    graph.add_node("hypothesis_execution", node_hypothesis_investigation)
     graph.add_node("diagnose_root_cause", node_diagnose_root_cause)
-    graph.add_node("publish_findings_to_slack", node_publish_findings)
+    graph.add_node("validate_analysis", node_validate_analysis)
+    graph.add_node("publish_findings", node_publish_findings)
 
     # Edges define the shape of the graph pipeline
     graph.add_edge(START, "frame_problem")
     graph.add_edge("frame_problem", "generate_hypotheses")
-    graph.add_edge("generate_hypotheses", "hypothesis_investigation")
-    graph.add_edge("hypothesis_investigation", "diagnose_root_cause")
-    graph.add_edge("diagnose_root_cause", "publish_findings_to_slack")
-    graph.add_edge("publish_findings_to_slack", END)
+    graph.add_edge("generate_hypotheses", "hypothesis_execution")
+    graph.add_edge("hypothesis_execution", "diagnose_root_cause")
+    graph.add_edge("diagnose_root_cause", "validate_analysis")
+
+    # Conditional edge: if confidence/validity is too low, loop back to generate_hypotheses
+    from src.agent.graph_routing import should_continue_investigation
+
+    graph.add_conditional_edges(
+        "validate_analysis",
+        should_continue_investigation,
+        {
+            "generate_hypotheses": "generate_hypotheses",
+            "publish_findings": "publish_findings",
+        },
+    )
+
+    graph.add_edge("publish_findings", END)
 
     return graph.compile()
 

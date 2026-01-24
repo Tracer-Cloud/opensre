@@ -8,6 +8,14 @@ from src.agent.tools.llm import (
     stream_completion,
 )
 from src.agent.tools.s3_client import S3CheckResult, get_s3_client
+from src.agent.tools.tools import (
+    get_airflow_metrics,
+    get_batch_statistics,
+    get_error_logs,
+    get_failed_jobs,
+    get_failed_tools,
+    get_host_metrics,
+)
 from src.agent.tools.tracer_client import (
     AWSBatchJobResult,
     TracerRunResult,
@@ -22,6 +30,12 @@ __all__ = [
     "S3CheckResult",
     "TracerRunResult",
     "TracerTaskResult",
+    "get_airflow_metrics",
+    "get_batch_statistics",
+    "get_error_logs",
+    "get_failed_jobs",
+    "get_failed_tools",
+    "get_host_metrics",
     "get_s3_client",
     "get_tracer_client",
     "parse_bullets",

@@ -76,23 +76,71 @@ def analyze_job_failures(failed_jobs: list[dict]) -> dict:
 
 
 def analyze_metrics(host_metrics: dict, airflow_metrics: dict) -> dict:
-    """Analyze host and Airflow metrics for anomalies."""
+    """Analyze host and Airflow metrics for anomalies with data validation."""
     anomalies = []
 
+    # Handle validated metrics structure
     metrics_data = host_metrics.get("data", []) if host_metrics.get("success") else []
     if metrics_data:
-        max_cpu = max((float(m.get("cpu", 0) or 0) for m in metrics_data), default=0.0)
-        max_ram = max((float(m.get("ram", 0) or 0) for m in metrics_data), default=0.0)
-        max_disk = max((float(m.get("disk", 0) or 0) for m in metrics_data), default=0.0)
+        # Extract values, checking for validation flags
+        cpu_values = []
+        ram_values = []
+        disk_values = []
+
+        for m in metrics_data:
+            cpu_val = m.get("cpu", 0) or 0
+            ram_val = m.get("ram", 0) or 0
+            disk_val = m.get("disk", 0) or 0
+
+            # Only use valid values (not marked as invalid)
+            if not m.get("cpu_invalid", False):
+                try:
+                    cpu_values.append(float(cpu_val))
+                except (ValueError, TypeError):
+                    pass
+
+            # For RAM, check if it's invalid and has interpretation
+            if m.get("ram_invalid", False):
+                # Skip invalid RAM values - they'll be handled by validation layer
+                pass
+            else:
+                try:
+                    ram_val_float = float(ram_val)
+                    # Only add if it's a reasonable percentage
+                    if ram_val_float <= 100:
+                        ram_values.append(ram_val_float)
+                except (ValueError, TypeError):
+                    pass
+
+            if not m.get("disk_invalid", False):
+                try:
+                    disk_values.append(float(disk_val))
+                except (ValueError, TypeError):
+                    pass
+
+        max_cpu = max(cpu_values, default=0.0) if cpu_values else 0.0
+        max_ram = max(ram_values, default=0.0) if ram_values else 0.0
+        max_disk = max(disk_values, default=0.0) if disk_values else 0.0
 
         for threshold, metric_type, value in [(95, "high_cpu", max_cpu), (90, "high_memory", max_ram), (90, "high_disk", max_disk)]:
-            if value > threshold:
+            if value > threshold and value <= 100:  # Only flag if valid percentage
                 anomalies.append({
                     "type": metric_type,
                     "value": value,
                     "threshold": threshold,
                     "severity": "critical" if metric_type != "high_disk" else "warning",
                 })
+
+        # Check for data quality issues in metrics
+        data_quality_issues = host_metrics.get("data_quality_issues", [])
+        if data_quality_issues:
+            # Add anomaly for data quality issues
+            anomalies.append({
+                "type": "data_quality_error",
+                "value": len(data_quality_issues),
+                "severity": "warning",
+                "description": f"Found {len(data_quality_issues)} data quality issues in metrics"
+            })
 
     airflow_connected = airflow_metrics.get("connected", False)
     if airflow_connected:
@@ -107,59 +155,6 @@ def analyze_metrics(host_metrics: dict, airflow_metrics: dict) -> dict:
         "anomalies": anomalies,
         "summary": f"Found {len(anomalies)} metric anomalies" if anomalies else "No metric anomalies detected",
     }
-
-
-def build_causal_chain(
-    web_run: dict,
-    logs_analysis: dict,
-    tools_analysis: dict,
-    jobs_analysis: dict,
-    metrics_analysis: dict,
-) -> list[dict]:
-    """Build a causal chain from multiple evidence sources."""
-    chain = []
-
-    for job in web_run.get("failed_jobs", [])[:3]:
-        chain.append({
-            "event_type": "job_failure",
-            "job_name": job.get("job_name"),
-            "exit_code": job.get("exit_code"),
-            "status_reason": job.get("status_reason"),
-            "evidence_source": "aws_batch_jobs",
-        })
-
-    for tool in web_run.get("failed_tools", [])[:3]:
-        chain.append({
-            "event_type": "tool_failure",
-            "tool_name": tool.get("tool_name"),
-            "exit_code": tool.get("exit_code"),
-            "reason": tool.get("reason"),
-            "evidence_source": "tracer_tools",
-        })
-
-    for signal in logs_analysis.get("critical_signals", [])[:2]:
-        chain.append({
-            "event_type": "log_signal",
-            "level": signal.get("level"),
-            "message_preview": signal.get("message", "")[:100],
-            "evidence_source": "tracer_logs",
-        })
-
-    for anomaly in metrics_analysis.get("anomalies", [])[:2]:
-        chain.append({
-            "event_type": "metric_anomaly",
-            "anomaly_type": anomaly.get("type"),
-            "value": anomaly.get("value"),
-            "severity": anomaly.get("severity"),
-            "evidence_source": "host_metrics" if "cpu" in str(anomaly.get("type")) or "memory" in str(anomaly.get("type")) else "airflow_metrics",
-        })
-
-    if chain:
-        correlation = _correlate_events(chain, jobs_analysis, tools_analysis, metrics_analysis)
-        if correlation:
-            chain.append({"event_type": "correlation", "analysis": correlation, "evidence_source": "synthesis"})
-
-    return chain
 
 
 def _extract_error_patterns(messages: list[str]) -> list[dict]:
@@ -185,35 +180,3 @@ def _extract_error_patterns(messages: list[str]) -> list[dict]:
         patterns.append({"type": "other_error", "count": len(messages)})
 
     return patterns
-
-
-def _correlate_events(
-    chain: list[dict],
-    jobs_analysis: dict,
-    tools_analysis: dict,
-    metrics_analysis: dict,
-) -> str | None:
-    """Correlate events across evidence sources to identify root cause."""
-    correlations = []
-
-    job_exit_codes = {e.get("exit_code") for e in chain if e.get("event_type") == "job_failure"}
-    tool_exit_codes = {e.get("exit_code") for e in chain if e.get("event_type") == "tool_failure"}
-    if job_exit_codes & tool_exit_codes:
-        correlations.append(f"Exit codes {job_exit_codes & tool_exit_codes} appear in both job and tool failures")
-
-    failure_rate = tools_analysis.get("failure_rate", 0.0)
-    if failure_rate > 0.5:
-        correlations.append(f"High tool failure rate ({failure_rate*100:.1f}%) suggests systemic issue")
-
-    common_reason = jobs_analysis.get("common_reason")
-    if common_reason and "container" in str(common_reason).lower():
-        correlations.append(f"Container-level failure pattern: {common_reason}")
-
-    for anomaly_type in ["high_memory", "high_cpu"]:
-        anomaly = next((a for a in metrics_analysis.get("anomalies", []) if a.get("type") == anomaly_type), None)
-        if anomaly:
-            msg = f"High {anomaly_type.replace('_', ' ')} ({anomaly.get('value')}%)"
-            msg += " may have caused container termination" if anomaly_type == "high_memory" else " suggests resource contention"
-            correlations.append(msg)
-
-    return "; ".join(correlations) if correlations else None

@@ -4,7 +4,7 @@ import base64
 import json
 import os
 
-from src.agent.context.utils import call_safe
+from src.agent.nodes.hypothesis_execution.utils import call_safe
 from src.agent.tools.tools import get_tracer_run
 from src.agent.tools.tracer_client import get_tracer_web_client
 

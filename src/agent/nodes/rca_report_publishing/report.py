@@ -11,6 +11,9 @@ class ReportContext(TypedDict, total=False):
     affected_table: str
     root_cause: str
     confidence: float
+    validated_claims: list[dict]
+    non_validated_claims: list[dict]
+    validity_score: float
     s3_marker_exists: bool
     tracer_run_status: str | None
     tracer_run_name: str | None
@@ -38,12 +41,47 @@ def format_slack_message(ctx: ReportContext) -> str:
     # Tracer investigation link
     tracer_link = "https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe"
 
+    # Format validated and non-validated claims
+    validated_section = ""
+    non_validated_section = ""
+    validity_info = ""
+
+    validated_claims = ctx.get("validated_claims", [])
+    non_validated_claims = ctx.get("non_validated_claims", [])
+    validity_score = ctx.get("validity_score", 0.0)
+
+    if validated_claims:
+        validated_section = "\n*Validated Claims (Supported by Evidence):*\n"
+        for claim_data in validated_claims:
+            claim = claim_data.get("claim", "")
+            evidence = claim_data.get("evidence_sources", [])
+            evidence_str = f" [Evidence: {', '.join(evidence)}]" if evidence else ""
+            validated_section += f"• {claim}{evidence_str}\n"
+
+    if non_validated_claims:
+        non_validated_section = "\n*Non-Validated Claims (Inferred):*\n"
+        for claim_data in non_validated_claims:
+            claim = claim_data.get("claim", "")
+            non_validated_section += f"• {claim}\n"
+
+    if validity_score > 0:
+        validity_info = f"\n*Validity Score:* {validity_score:.0%} ({len(validated_claims)}/{len(validated_claims) + len(non_validated_claims)} validated)\n"
+
+    # Include root cause text if no structured claims
+    root_cause_text = ctx.get('root_cause', '')
+    if not validated_claims and not non_validated_claims and root_cause_text:
+        conclusion_section = f"\n{root_cause_text}\n"
+    else:
+        conclusion_section = f"{validated_section}{non_validated_section}{validity_info}"
+
     return f"""[RCA] {ctx['affected_table']} freshness incident
 Analyzed by: pipeline-agent
 Detected: 02:13 UTC
 
 *Conclusion*
-{ctx['root_cause']}
+{conclusion_section}
+*Confidence:* {ctx['confidence']:.0%}
+*Validity Score:* {validity_score:.0%} ({len(validated_claims)}/{len(validated_claims) + len(non_validated_claims)} validated)
 
 *Evidence from Tracer*
 * Pipeline: {ctx.get('tracer_pipeline_name', 'unknown')}
@@ -55,8 +93,6 @@ Detected: 02:13 UTC
 * Instance: {ctx.get('tracer_instance_type', 'unknown')}
 * Max RAM: {ctx.get('tracer_max_ram_gb', 0):.1f} GB
 {batch_info}* S3 _SUCCESS marker: {'not found' if not ctx.get('s3_marker_exists') else 'present'}
-
-*Confidence:* {ctx['confidence']:.2f}
 
 *View Investigation:*
 {tracer_link}

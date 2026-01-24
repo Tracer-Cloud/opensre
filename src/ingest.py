@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from src.agent.nodes.publish_findings.render import render_incoming_alert
+from src.agent.nodes.rca_report_publishing.render import render_incoming_alert
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Grafana Alert Models

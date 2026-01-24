@@ -189,6 +189,53 @@ def render_evidence(evidence: dict):
                     console.print(f"  [red bold]Failure reason:[/] [red]{batch['failure_reason']}[/]")
 
 
+def render_validated_claims(validated_claims: list[dict], non_validated_claims: list[dict], validity_score: float, confidence: float):
+    """Render validated and non-validated claims separately."""
+    console.print("\n[bold green]─── Root Cause Analysis ───[/]\n")
+
+    # Render validated claims
+    if validated_claims:
+        console.print("[bold green]✓ Validated Claims (Supported by Evidence):[/]")
+        for i, claim_data in enumerate(validated_claims, 1):
+            claim = claim_data.get("claim", "")
+            evidence_sources = claim_data.get("evidence_sources", [])
+            evidence_str = f" [dim][EVIDENCE: {', '.join(evidence_sources)}][/]" if evidence_sources else ""
+
+            # Color code based on content
+            if any(word in claim.lower() for word in ["fail", "error", "killed", "oom", "denied", "missing", "timeout"]):
+                console.print(f"  {i}. [green]✓[/] [red]{claim}[/]{evidence_str}")
+            elif any(word in claim.lower() for word in ["success", "working", "passed", "completed"]):
+                console.print(f"  {i}. [green]✓[/] [green]{claim}[/]{evidence_str}")
+            else:
+                console.print(f"  {i}. [green]✓[/] {claim}{evidence_str}")
+        console.print()
+
+    # Render non-validated claims
+    if non_validated_claims:
+        console.print("[bold yellow]⚠ Non-Validated Claims (Inferred, Not Directly Supported):[/]")
+        for i, claim_data in enumerate(non_validated_claims, 1):
+            claim = claim_data.get("claim", "")
+            issues = claim_data.get("validation_issues", [])
+            issues_str = f" [dim][Issues: {', '.join(issues[:2])}][/]" if issues else ""
+
+            console.print(f"  {i}. [yellow]⚠[/] {claim}{issues_str}")
+        console.print()
+
+    # Render validity score and confidence
+    validity_color = "green" if validity_score >= 0.7 else "yellow" if validity_score >= 0.4 else "red"
+    console.print(f"[bold]Validity Score:[/] [{validity_color}]{validity_score:.0%}[/] ({len(validated_claims)}/{len(validated_claims) + len(non_validated_claims)} validated)")
+
+    confidence_color = "green" if confidence >= 0.7 else "yellow" if confidence >= 0.4 else "red"
+    console.print(f"[bold]Confidence:[/] [{confidence_color}]{confidence:.0%}[/]")
+
+    if validity_score >= 0.7 and confidence >= 0.7:
+        console.print("[dim]  (High confidence - strong validated evidence)[/]")
+    elif validity_score >= 0.5 or confidence >= 0.5:
+        console.print("[dim]  (Moderate confidence - some validated evidence)[/]")
+    else:
+        console.print("[dim]  (Low confidence - limited validated evidence)[/]")
+
+
 def render_analysis(root_cause: str, confidence: float):
     """Render the root cause analysis in a human-readable format."""
     console.print("\n[bold green]─── Root Cause Analysis ───[/]\n")
@@ -201,8 +248,10 @@ def render_analysis(root_cause: str, confidence: float):
 
     # Parse the root cause text
     lines = root_cause.split("\n")
-    in_root_cause_section = False
-    bullets = []
+    validated_section = False
+    non_validated_section = False
+    validated_bullets = []
+    non_validated_bullets = []
     causal_chain = []
 
     for line in lines:
@@ -210,14 +259,22 @@ def render_analysis(root_cause: str, confidence: float):
         if not line:
             continue
 
-        # Check for ROOT_CAUSE: header
-        if line.upper().startswith("ROOT_CAUSE"):
-            in_root_cause_section = True
+        # Check for section headers
+        if "VALIDATED_CLAIMS:" in line.upper() or "VALIDATED CLAIMS:" in line.upper():
+            validated_section = True
+            non_validated_section = False
             continue
-
-        # Check for CONFIDENCE: header
-        if line.upper().startswith("CONFIDENCE"):
-            in_root_cause_section = False
+        if "NON_VALIDATED_CLAIMS:" in line.upper() or "NON-VALIDATED CLAIMS:" in line.upper():
+            validated_section = False
+            non_validated_section = True
+            continue
+        if "CAUSAL_CHAIN:" in line.upper() or "CAUSAL CHAIN:" in line.upper():
+            validated_section = False
+            non_validated_section = False
+            continue
+        if "CONFIDENCE:" in line.upper():
+            validated_section = False
+            non_validated_section = False
             continue
 
         # Remove bullet markers
@@ -225,22 +282,28 @@ def render_analysis(root_cause: str, confidence: float):
         if not clean_line:
             continue
 
-        if in_root_cause_section:
-            bullets.append(clean_line)
+        if validated_section:
+            validated_bullets.append(clean_line)
+        elif non_validated_section:
+            non_validated_bullets.append(clean_line)
         else:
             causal_chain.append(clean_line)
 
-    # Render root cause findings
-    if bullets:
-        console.print("[bold cyan]Root Cause Findings:[/]")
-        for i, bullet in enumerate(bullets, 1):
-            # Color code based on content
+    # Render validated claims
+    if validated_bullets:
+        console.print("[bold green]✓ Validated Claims (Supported by Evidence):[/]")
+        for i, bullet in enumerate(validated_bullets, 1):
             if any(word in bullet.lower() for word in ["fail", "error", "killed", "oom", "denied", "missing", "timeout"]):
-                console.print(f"  {i}. [red]•[/] [red]{bullet}[/]")
-            elif any(word in bullet.lower() for word in ["success", "working", "passed", "completed"]):
-                console.print(f"  {i}. [green]•[/] [green]{bullet}[/]")
+                console.print(f"  {i}. [green]✓[/] [red]{bullet}[/]")
             else:
-                console.print(f"  {i}. [yellow]•[/] {bullet}")
+                console.print(f"  {i}. [green]✓[/] {bullet}")
+        console.print()
+
+    # Render non-validated claims
+    if non_validated_bullets:
+        console.print("[bold yellow]⚠ Non-Validated Claims (Inferred, Not Directly Supported):[/]")
+        for i, bullet in enumerate(non_validated_bullets, 1):
+            console.print(f"  {i}. [yellow]⚠[/] {bullet}")
         console.print()
 
     # Render causal chain if available

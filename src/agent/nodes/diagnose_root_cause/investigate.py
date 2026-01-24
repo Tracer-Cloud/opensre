@@ -5,8 +5,8 @@ from src.agent.nodes.diagnose_root_cause.analysis import (
     analyze_logs,
     analyze_metrics,
     analyze_tools,
-    build_causal_chain,
 )
+from src.agent.nodes.diagnose_root_cause.correlation import build_causal_chain
 from src.agent.state import InvestigationState
 
 

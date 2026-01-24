@@ -28,6 +28,11 @@ SERVICE_GRAPH: tuple[ServiceNode, ...] = (
         description="Job status and failure reasons",
         tools=("get_batch_jobs",),
     ),
+    ServiceNode(
+        name="CloudWatch",
+        description="AWS CloudWatch metrics and logs for deeper investigation",
+        tools=("get_metric_statistics", "filter_log_events", "get_log_events"),
+    ),
 )
 
 
