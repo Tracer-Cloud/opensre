@@ -1,7 +1,7 @@
 """Report generation node and utilities."""
 
-from src.agent.nodes.generate_reports.generate_reports import node_generate_reports
-from src.agent.nodes.generate_reports.render import (
+from src.agent.nodes.publish_findings.publish_findings import node_publish_findings
+from src.agent.nodes.publish_findings.render import (
     console,
     render_agent_output,
     render_api_response,
@@ -15,14 +15,14 @@ from src.agent.nodes.generate_reports.render import (
     render_saved_file,
     render_step_header,
 )
-from src.agent.nodes.generate_reports.report import (
+from src.agent.nodes.publish_findings.report import (
     ReportContext,
     format_problem_md,
     format_slack_message,
 )
 
 __all__ = [
-    "node_generate_reports",
+    "node_publish_findings",
     "ReportContext",
     "format_problem_md",
     "format_slack_message",

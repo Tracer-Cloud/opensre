@@ -27,8 +27,8 @@ from langsmith import traceable  # noqa: E402
 from rich.console import Console  # noqa: E402
 from rich.panel import Panel  # noqa: E402
 
-from src.agent.graph import build_graph  # noqa: E402
-from src.agent.nodes.generate_reports.render import (  # noqa: E402
+from src.agent.graph_pipeline import build_graph  # noqa: E402
+from src.agent.nodes.publish_findings.render import (  # noqa: E402
     render_investigation_start,
     render_root_cause_complete,
 )

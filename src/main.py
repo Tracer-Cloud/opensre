@@ -10,14 +10,14 @@ init_runtime()
 
 from langsmith import traceable  # noqa: E402
 
-from src.agent.graph import run_investigation  # noqa: E402
+from src.agent.graph_pipeline import run_investigation_pipeline  # noqa: E402
 from src.cli import parse_args, write_json  # noqa: E402
 from src.ingest import load_request_from_json  # noqa: E402
 
 
 @traceable(name="investigation")
 def _run(alert_name: str, affected_table: str, severity: str) -> dict:
-    state = run_investigation(alert_name, affected_table, severity)
+    state = run_investigation_pipeline(alert_name, affected_table, severity)
     return {
         "slack_message": state["slack_message"],
         "problem_md": state["problem_md"],
