@@ -9,12 +9,13 @@ This demo:
 3. Runs full investigation with deep multi-source analysis
 4. Produces accurate RCA report
 
-Rendering is handled in the ingestion layer and nodes.
-Uses the same pipeline runner as the CLI.
+Output consolidation:
+- Progress events during execution (one line per node)
+- Single final report at the end (Rich or plain text based on environment)
 """
 
 import os
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -31,41 +32,66 @@ from config import init_runtime  # noqa: E402
 init_runtime()
 
 from langsmith import traceable  # noqa: E402
-from rich.console import Console  # noqa: E402
 
 from src.agent.graph_pipeline import run_investigation_pipeline  # noqa: E402
 from src.agent.nodes.frame_problem.context_building import (  # noqa: E402
     _fetch_tracer_web_run_context,  # noqa: E402
 )
+from src.agent.output import (  # noqa: E402
+    get_output_format,
+    render_final_report,
+    reset_tracker,
+)
 
-console = Console()
+# Conditional Rich import based on output format
+if get_output_format() == "rich":
+    from rich.console import Console
+
+    console = Console()
+else:
+    console = None
+
+
+def _print(message: str, style: str = "") -> None:
+    """Print with Rich or plain text based on output format."""
+    if console:
+        console.print(f"[{style}]{message}[/]" if style else message)
+    else:
+        # Strip Rich markup for plain text
+        import re
+
+        plain = re.sub(r"\[/?[^\]]+\]", "", message)
+        print(plain)
 
 
 @traceable
 def run_demo():
     """Run the LangGraph incident resolution demo with a real failed pipeline."""
-    # Check required environment variables (only ANTHROPIC_API_KEY and JWT_TOKEN needed)
+    # Reset progress tracker for this run
+    reset_tracker()
+
+    # Check required environment variables
     api_key = os.getenv("ANTHROPIC_API_KEY")
     jwt_token = os.getenv("JWT_TOKEN")
 
     if not api_key:
-        console.print("[red]Error: Missing required environment variable: ANTHROPIC_API_KEY[/]")
-        console.print(f"\nPlease set this in your .env file at: {env_path}")
+        _print("Error: Missing required environment variable: ANTHROPIC_API_KEY", "red")
+        _print(f"\nPlease set this in your .env file at: {env_path}")
         return None
 
     if not jwt_token:
-        console.print("[red]Error: Missing required environment variable: JWT_TOKEN[/]")
-        console.print(f"\nPlease set this in your .env file at: {env_path}")
+        _print("Error: Missing required environment variable: JWT_TOKEN", "red")
+        _print(f"\nPlease set this in your .env file at: {env_path}")
         return None
 
-    console.print("[bold cyan]🔍 Finding a real failed pipeline run...[/]")
+    _print("Finding a real failed pipeline run...", "bold cyan")
 
     # Find a real failed run from Tracer Web App
     web_run = _fetch_tracer_web_run_context()
 
     if not web_run.get("found"):
-        console.print("[yellow]⚠️  No failed runs found in Tracer Web App[/]")
-        console.print(f"Checked {web_run.get('pipelines_checked', 0)} pipelines")
+        _print("No failed runs found in Tracer Web App", "yellow")
+        _print(f"Checked {web_run.get('pipelines_checked', 0)} pipelines")
         return None
 
     # Extract pipeline details
@@ -75,14 +101,14 @@ def run_demo():
     status = web_run.get("status", "unknown")
     run_url = web_run.get("run_url")
 
-    console.print(f"[green]✓ Found failed run:[/] {run_name}")
-    console.print(f"  Pipeline: {pipeline_name}")
-    console.print(f"  Status: {status}")
+    _print(f"Found failed run: {run_name}", "green")
+    _print(f"  Pipeline: {pipeline_name}")
+    _print(f"  Status: {status}")
     if trace_id:
-        console.print(f"  Trace ID: {trace_id}")
+        _print(f"  Trace ID: {trace_id}")
     if run_url:
-        console.print(f"  Run URL: {run_url}")
-    console.print()
+        _print(f"  Run URL: {run_url}")
+    _print("")
 
     # Create a Grafana-style alert with tracer information
     grafana_alert = {
@@ -138,11 +164,11 @@ def run_demo():
 
     # Create alert details for the pipeline
     alert_name = f"Pipeline failure: {pipeline_name}"
-    affected_table = pipeline_name  # Use pipeline name as affected table
+    affected_table = pipeline_name
     severity = "critical"
 
-    console.print("[bold cyan]🚀 Starting investigation pipeline...[/]")
-    console.print()
+    _print("Starting investigation pipeline...", "bold cyan")
+    _print("")
 
     # Parse the Grafana alert to show it properly
     from src.ingest import parse_grafana_payload  # noqa: E402
@@ -153,10 +179,10 @@ def run_demo():
         affected_table = request.affected_table
         severity = request.severity
     except Exception:
-        # Fallback if parsing fails
         pass
 
     # Run the full investigation pipeline
+    # Progress is emitted via the tracker during execution
     state = run_investigation_pipeline(
         alert_name=alert_name,
         affected_table=affected_table,
@@ -164,38 +190,8 @@ def run_demo():
         raw_alert=raw_alert,
     )
 
-    # Display final results
-    console.print()
-    console.print("[bold green]✅ Investigation Complete[/]")
-    console.print()
-
-    # Show root cause
-    root_cause = state.get("root_cause", "")
-    confidence = state.get("confidence", 0.0)
-
-    if root_cause:
-        console.print("[bold]Root Cause Analysis:[/]")
-        console.print(f"[dim]Confidence: {confidence:.0%}[/]")
-        console.print()
-        # Print root cause with proper formatting
-        for line in root_cause.split("\n"):
-            if line.strip():
-                console.print(f"  {line.strip()}")
-
-    # Show evidence summary
-    evidence = state.get("evidence", {})
-    web_run_evidence = evidence.get("tracer_web_run", {})
-    if web_run_evidence.get("found"):
-        failed_jobs = web_run_evidence.get("failed_jobs", [])
-        failed_tools = web_run_evidence.get("failed_tools", [])
-        console.print()
-        console.print("[bold]Evidence Summary:[/]")
-        console.print(f"  Failed jobs: {len(failed_jobs)}")
-        console.print(f"  Failed tools: {len(failed_tools)}")
-        if web_run_evidence.get("run_url"):
-            console.print(
-                f"  [dim]View run:[/] [blue underline]{web_run_evidence.get('run_url')}[/]"
-            )
+    # Render the final report exactly once
+    render_final_report(state)
 
     return state
 

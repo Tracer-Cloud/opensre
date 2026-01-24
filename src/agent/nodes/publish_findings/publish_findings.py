@@ -1,11 +1,13 @@
-"""Generate output reports."""
+"""Generate output reports.
+
+This node ONLY sets state fields. It does NOT render output.
+Rendering is handled by the demo runner / CLI using src.agent.output.
+"""
 
 from langsmith import traceable
 
 from src.agent.nodes.publish_findings.context import build_report_context
-from src.agent.nodes.publish_findings.render import render_final_report
 from src.agent.nodes.publish_findings.report import (
-    format_problem_md,
     format_slack_message,
 )
 from src.agent.state import InvestigationState
@@ -18,16 +20,14 @@ def main(state: InvestigationState) -> dict:
     Flow:
     1) Build report context from state
     2) Format Slack message and problem.md
-    3) Render final report
+    3) Return state fields (NO rendering here)
     """
     ctx = build_report_context(state)
     slack_message = format_slack_message(ctx)
-    problem_md = format_problem_md(ctx)
-    render_final_report(slack_message)
 
+    # Only set state fields - rendering happens in the runner
     return {
         "slack_message": slack_message,
-        "problem_md": problem_md,
     }
 
 

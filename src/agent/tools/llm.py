@@ -41,7 +41,7 @@ def get_llm() -> ChatAnthropic:
     """
     Get or create the LLM client singleton.
 
-    LangSmith tracking is automatically enabled if LANGSMITH_API_KEY is set.
+    LangSmith tracking is always enabled.
     All LLM calls will be tracked in LangSmith.
     """
     global _llm

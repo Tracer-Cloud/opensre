@@ -1,14 +1,12 @@
-"""Simplified root cause diagnosis with integrated validation."""
+"""Simplified root cause diagnosis with integrated validation.
 
-import time
+This node analyzes evidence and determines root cause.
+It updates state fields but does NOT render output directly.
+"""
 
 from langsmith import traceable
 
-from src.agent.nodes.publish_findings.render import (
-    console,
-    render_analysis,
-    render_step_header,
-)
+from src.agent.output import debug_print, get_tracker
 from src.agent.state import InvestigationState
 from src.agent.tools.llm import get_llm, parse_root_cause
 
@@ -25,16 +23,15 @@ def main(state: InvestigationState) -> dict:
     4) Validate claims against evidence
     5) Calculate confidence and validity
     """
-    start_time = time.time()
-    render_step_header(1, "Root cause diagnosis")
+    tracker = get_tracker()
+    tracker.start("diagnose_root_cause", "Analyzing evidence")
 
     evidence = state.get("evidence", {})
     web_run = evidence.get("tracer_web_run", {})
 
     # Check if we have evidence
     if not web_run.get("found"):
-        console.print("\n[bold red]❌ ERROR: No evidence available for analysis[/]")
-        console.print("[yellow]No tracer_web_run data found in evidence.[/]")
+        tracker.error("diagnose_root_cause", "No evidence available for analysis")
         return {
             "root_cause": "No evidence available for analysis",
             "confidence": 0.0,
@@ -47,7 +44,7 @@ def main(state: InvestigationState) -> dict:
     prompt = _build_simple_prompt(state, web_run)
 
     # Call LLM
-    render_step_header(2, "LLM inference")
+    debug_print("Invoking LLM for root cause analysis...")
     llm = get_llm()
     response = llm.invoke(prompt)
     response_text = response.content if hasattr(response, "content") else str(response)
@@ -94,12 +91,6 @@ def main(state: InvestigationState) -> dict:
     # Update confidence based on validity
     final_confidence = (result.confidence * 0.4) + (validity_score * 0.6)
 
-    # Render results
-    render_analysis(result.root_cause, final_confidence)
-    console.print(
-        f"  [dim]Validity: {validity_score:.0%} ({len(validated_claims_list)}/{total_claims} claims validated)[/]"
-    )
-
     # Generate recommendations if confidence is low
     investigation_recommendations = []
     loop_count = state.get("investigation_loop_count", 0)
@@ -109,10 +100,13 @@ def main(state: InvestigationState) -> dict:
         )
         if investigation_recommendations:
             loop_count += 1
-            console.print(f"  [cyan]→ Returning to hypothesis generation (loop {loop_count}/5)[/]")
+            debug_print(f"Returning to hypothesis generation (loop {loop_count}/5)")
 
-    latency_ms = int((time.time() - start_time) * 1000)
-    console.print(f"  [dim]Node latency: {latency_ms}ms[/]")
+    tracker.complete(
+        "diagnose_root_cause",
+        fields_updated=["root_cause", "confidence", "validated_claims", "validity_score"],
+        message=f"confidence:{final_confidence:.0%}, validity:{validity_score:.0%}",
+    )
 
     return {
         "root_cause": result.root_cause,

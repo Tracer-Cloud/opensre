@@ -1,16 +1,13 @@
-"""Investigate node - planning and execution combined."""
+"""Investigate node - planning and execution combined.
 
-import time
+This node plans and executes evidence gathering.
+It updates state fields but does NOT render output directly.
+"""
 
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from src.agent.nodes.publish_findings.render import (
-    console,
-    render_evidence,
-    render_plan,
-    render_step_header,
-)
+from src.agent.output import debug_print, get_tracker
 from src.agent.state import EvidenceSource, InvestigationState
 from src.agent.tools.llm import get_llm
 from src.agent.tools.tool_actions import (
@@ -42,8 +39,8 @@ def node_investigate(state: InvestigationState) -> dict:
     2) Immediately executes the selected tools
     3) Merges and returns evidence
     """
-    start_time = time.time()
-    render_step_header(1, "Investigate")
+    tracker = get_tracker()
+    tracker.start("investigate", "Planning evidence gathering")
 
     # 1. Planning phase
     executed_sources_set = get_executed_sources(state)
@@ -51,7 +48,8 @@ def node_investigate(state: InvestigationState) -> dict:
     available_sources_filtered = [s for s in available_sources if s not in executed_sources_set]
 
     if not available_sources_filtered:
-        console.print("  [yellow]⚠️  All sources already executed. Using existing evidence.[/]")
+        debug_print("All sources already executed. Using existing evidence.")
+        tracker.complete("investigate", fields_updated=["evidence"], message="No new sources")
         return {"evidence": state.get("evidence", {})}
 
     # Generate plan via LLM
@@ -72,7 +70,7 @@ Task: Select the most relevant sources to investigate now.
 """
 
     plan = structured_llm.invoke(prompt)
-    render_plan(plan.sources, rationale=plan.rationale)
+    debug_print(f"Plan: {plan.sources} | {plan.rationale[:100]}...")
 
     # 2. Execution phase
     evidence = state.get("evidence", {}).copy()
@@ -83,7 +81,7 @@ Task: Select the most relevant sources to investigate now.
     trace_id = tracer_web_run.get("trace_id")
 
     if not trace_id:
-        console.print("  [red]❌ ERROR: No trace_id found in context. Cannot gather evidence.[/]")
+        tracker.error("investigate", "No trace_id found in context")
         return {"evidence": evidence}
 
     runtime_evidence = {}
@@ -138,10 +136,20 @@ Task: Select the most relevant sources to investigate now.
     }
     executed_hypotheses.append(new_hypothesis)
 
-    render_evidence(evidence)
+    # Build summary of what was collected
+    evidence_summary = []
+    if runtime_evidence.get("failed_jobs"):
+        evidence_summary.append(f"jobs:{len(runtime_evidence['failed_jobs'])}")
+    if runtime_evidence.get("failed_tools"):
+        evidence_summary.append(f"tools:{len(runtime_evidence['failed_tools'])}")
+    if runtime_evidence.get("error_logs"):
+        evidence_summary.append(f"logs:{len(runtime_evidence['error_logs'])}")
 
-    latency_ms = int((time.time() - start_time) * 1000)
-    console.print(f"  [dim]Investigate Node Latency: {latency_ms}ms[/]")
+    tracker.complete(
+        "investigate",
+        fields_updated=["evidence", "executed_hypotheses"],
+        message=", ".join(evidence_summary) if evidence_summary else "No new evidence",
+    )
 
     return {
         "evidence": evidence,

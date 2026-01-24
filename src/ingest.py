@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from src.agent.nodes.publish_findings.render import render_incoming_alert
+from src.agent.output import debug_print
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Grafana Alert Models
@@ -98,7 +98,7 @@ def parse_grafana_payload(
         raise ValueError("No firing alerts in payload")
 
     alert = firing[0]
-    render_incoming_alert(_build_alert_text(grafana, alert))
+    debug_print(f"Parsed Grafana alert: {alert.labels.alertname}")
     raw_severity = alert.labels.severity.lower()
 
     return InvestigationRequest(

@@ -32,14 +32,21 @@ def init_runtime() -> dict:
         print("ANTHROPIC_API_KEY=your_api_key_here", file=sys.stderr)
         sys.exit(1)
     
-    # Check LangSmith configuration
-    langsmith_enabled = bool(os.getenv("LANGSMITH_API_KEY"))
-    langsmith_project = os.getenv("LANGSMITH_PROJECT")
+    # Require LangSmith configuration (always enabled)
+    langsmith_api_key = os.getenv("LANGSMITH_API_KEY")
+    if not langsmith_api_key:
+        print("ERROR: LANGSMITH_API_KEY not found in environment or .env file", file=sys.stderr)
+        print(f"Please create a .env file at {env_path} with:", file=sys.stderr)
+        print("LANGSMITH_API_KEY=your_api_key_here", file=sys.stderr)
+        sys.exit(1)
 
-    if langsmith_enabled:
-        # Ensure tracing is enabled for LangChain/LangSmith
-        os.environ.setdefault("LANGSMITH_TRACING", "true")
-        os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+    langsmith_project = os.getenv("LANGSMITH_PROJECT") or "tracer-agent"
+    os.environ.setdefault("LANGSMITH_PROJECT", langsmith_project)
+    os.environ.setdefault("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+    os.environ.setdefault("LANGSMITH_TRACING", "true")
+    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+
+    langsmith_enabled = True
     
     return {
         "langsmith_enabled": langsmith_enabled,

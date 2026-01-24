@@ -4,9 +4,16 @@ from src.agent.state import InvestigationState
 
 
 def build_report_context(state: InvestigationState) -> dict:
-    """Build report context from state."""
+    """Build report context from state.
+
+    Reads from tracer_web_run which contains the actual pipeline data.
+    """
     evidence = state.get("evidence", {})
-    run = evidence.get("pipeline_run", {}) or {}
+
+    # Primary source: tracer_web_run (from frame_problem context building)
+    web_run = evidence.get("tracer_web_run", {}) or {}
+
+    # Fallback sources for backward compatibility
     batch = evidence.get("batch_jobs", {}) or {}
     s3 = evidence.get("s3", {}) or {}
 
@@ -14,23 +21,30 @@ def build_report_context(state: InvestigationState) -> dict:
     non_validated_claims = state.get("non_validated_claims", [])
     validity_score = state.get("validity_score", 0.0)
 
+    # Filter out junk claims (like "NON_" prefix artifacts)
+    validated_claims = [
+        c for c in validated_claims
+        if c.get("claim", "").strip() and not c.get("claim", "").strip().startswith("NON_")
+    ]
+
     return {
-        "affected_table": state["affected_table"],
-        "root_cause": state["root_cause"],
-        "confidence": state["confidence"],
+        "affected_table": state.get("affected_table", "unknown"),
+        "root_cause": state.get("root_cause", ""),
+        "confidence": state.get("confidence", 0.0),
         "validated_claims": validated_claims,
         "non_validated_claims": non_validated_claims,
         "validity_score": validity_score,
         "s3_marker_exists": s3.get("marker_exists", False),
-        "tracer_run_status": run.get("status"),
-        "tracer_run_name": run.get("run_name"),
-        "tracer_pipeline_name": run.get("pipeline_name"),
-        "tracer_run_cost": run.get("run_cost_usd", 0),
-        "tracer_max_ram_gb": run.get("max_ram_gb", 0),
-        "tracer_user_email": run.get("user_email"),
-        "tracer_team": run.get("team"),
-        "tracer_instance_type": run.get("instance_type"),
-        "tracer_failed_tasks": 0,
+        # Read from tracer_web_run (correct source)
+        "tracer_run_status": web_run.get("status"),
+        "tracer_run_name": web_run.get("run_name"),
+        "tracer_pipeline_name": web_run.get("pipeline_name"),
+        "tracer_run_cost": web_run.get("run_cost", 0),
+        "tracer_max_ram_gb": web_run.get("max_ram_gb", 0),
+        "tracer_user_email": web_run.get("user_email"),
+        "tracer_team": web_run.get("team"),
+        "tracer_instance_type": web_run.get("instance_type"),
+        "tracer_failed_tasks": len(web_run.get("failed_jobs", [])),
         "batch_failure_reason": batch.get("failure_reason"),
         "batch_failed_jobs": batch.get("failed_jobs", 0),
     }

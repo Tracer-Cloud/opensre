@@ -109,7 +109,6 @@ def format_problem_md(ctx: ReportContext) -> str:
     status = ctx.get("tracer_run_status", "unknown")
     is_failed = status.lower() == "failed" if status else False
 
-    # Tracer investigation link
     tracer_link = "https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe"
 
     batch_section = ""
