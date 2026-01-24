@@ -1,8 +1,8 @@
 """Pydantic models for alerts, hypotheses, and reports."""
 
-from src.models.alert import Alert, GrafanaAlertPayload, normalize_grafana_alert
-from src.models.hypothesis import Hypothesis, HypothesisStatus, Evidence
-from src.models.report import IncidentReport, RecommendedAction
+from src.schemas.alert import Alert, GrafanaAlertPayload, normalize_grafana_alert
+from src.schemas.hypothesis import Hypothesis, HypothesisStatus, Evidence
+from src.schemas.report import IncidentReport, RecommendedAction
 
 __all__ = [
     "Alert",

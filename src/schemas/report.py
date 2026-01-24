@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field
 
-from src.models.hypothesis import Hypothesis, Evidence
+from src.schemas.hypothesis import Hypothesis, Evidence
 
 
 class RecommendedAction(BaseModel):
