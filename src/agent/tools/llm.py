@@ -38,7 +38,12 @@ _llm: ChatAnthropic | None = None
 
 
 def get_llm() -> ChatAnthropic:
-    """Get or create the LLM client singleton."""
+    """
+    Get or create the LLM client singleton.
+    
+    LangSmith tracking is automatically enabled if LANGSMITH_API_KEY is set.
+    All LLM calls will be tracked in LangSmith.
+    """
     global _llm
     if _llm is None:
         _llm = ChatAnthropic(

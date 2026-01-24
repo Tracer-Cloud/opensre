@@ -1,7 +1,7 @@
 """Report generation node and utilities."""
 
-from src.agent.nodes.rca_report_publishing.publish_findings import node_publish_findings
-from src.agent.nodes.rca_report_publishing.render import (
+from src.agent.nodes.publish_findings.publish_findings import node_publish_findings
+from src.agent.nodes.publish_findings.render import (
     console,
     render_agent_output,
     render_analysis,
@@ -13,7 +13,7 @@ from src.agent.nodes.rca_report_publishing.render import (
     render_saved_file,
     render_step_header,
 )
-from src.agent.nodes.rca_report_publishing.report import (
+from src.agent.nodes.publish_findings.report import (
     ReportContext,
     format_problem_md,
     format_slack_message,

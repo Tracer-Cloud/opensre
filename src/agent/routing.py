@@ -24,7 +24,7 @@ def should_continue_investigation(state: InvestigationState) -> str:
     print("\n[ROUTING] should_continue_investigation() called", file=sys.stderr, flush=True)
 
     try:
-        from src.agent.nodes.rca_report_publishing.render import console
+        from src.agent.nodes.publish_findings.render import console
 
         confidence = state.get("confidence", 0.0)
         validity_score = state.get("validity_score", 0.0)
