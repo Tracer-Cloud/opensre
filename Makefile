@@ -18,11 +18,11 @@ run:
 
 # Run tests
 test:
-	$(PYTHON) -m pytest tests/ -v
+	$(PYTHON) -m pytest -v
 
 # Run tests with coverage
 test-cov:
-	$(PYTHON) -m pytest tests/ -v --cov=src --cov-report=term-missing
+	$(PYTHON) -m pytest -v --cov=src --cov-report=term-missing
 
 # Clean up
 clean:
