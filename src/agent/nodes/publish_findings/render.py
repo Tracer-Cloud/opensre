@@ -10,6 +10,7 @@ SOURCE_NAMES = {
     "tracer": "Tracer Pipeline Status",
     "storage": "S3 Storage Check",
     "batch": "AWS Batch Jobs",
+    "tracer_web": "Tracer Web App Runs",
 }
 
 
@@ -67,6 +68,22 @@ def render_evidence(evidence: dict):
             console.print(f"  [dim]Duration:[/] {run.get('run_time_minutes', 0)} min")
             console.print(f"  [dim]Cost:[/] [yellow]${run.get('run_cost_usd', 0):.2f}[/]")
             console.print(f"  [dim]User:[/] {run.get('user_email', 'Unknown')}")
+
+    # Tracer web app evidence
+    if "tracer_web_run" in evidence:
+        web_run = evidence["tracer_web_run"]
+        console.print("\n[bold cyan]→ Tracer Web App Runs[/]")
+        if not web_run.get("found"):
+            console.print("  [yellow]No failed runs found via web app[/]")
+        else:
+            status = web_run.get("status", "Unknown")
+            status_color = "red bold" if str(status).lower() == "failed" else "green"
+            console.print(f"  [dim]Pipeline:[/] {web_run.get('pipeline_name', 'Unknown')}")
+            console.print(f"  [dim]Run:[/] {web_run.get('run_name', 'Unknown')}")
+            console.print(f"  [dim]Status:[/] [{status_color}]{status}[/]")
+            console.print(f"  [dim]Trace:[/] {web_run.get('trace_id', 'Unknown')}")
+            console.print(f"  [dim]Cost:[/] [yellow]${web_run.get('run_cost', 0):.2f}[/]")
+            console.print(f"  [dim]User:[/] {web_run.get('user_email', 'Unknown')}")
 
     # Batch jobs evidence
     if "batch_jobs" in evidence:

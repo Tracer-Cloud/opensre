@@ -1,40 +1,96 @@
-"""Generate investigation hypotheses based on alert type."""
+"""Generate investigation hypotheses based on alert context."""
 
-from src.agent.nodes.publish_findings.render import render_plan
+from pydantic import BaseModel, Field
+
+from src.agent.context.service_graph import render_tools_briefing
+from src.agent.nodes.publish_findings.render import (
+    console,
+    render_plan,
+    render_step_header,
+)
 from src.agent.state import EvidenceSource, InvestigationState
+from src.agent.tools.llm import get_llm
 
-# Alert patterns -> evidence sources to check
-ALERT_RULES: dict[str, list[EvidenceSource]] = {
-    "freshness": ["tracer", "storage", "batch"],
-    "sla": ["tracer", "storage", "batch"],
-    "pipeline": ["tracer", "batch"],
-    "job": ["tracer", "batch"],
-    "failed": ["tracer", "batch"],
-    "missing": ["storage", "tracer"],
-    "storage": ["storage", "tracer"],
-    "s3": ["storage", "tracer"],
-}
 
-DEFAULT_SOURCES: list[EvidenceSource] = ["tracer", "storage", "batch"]
+class HypothesisPlan(BaseModel):
+    """Structured plan for evidence sources to check."""
+
+    plan_sources: list[EvidenceSource] = Field(
+        description="Ordered list of evidence sources to check"
+    )
+    rationale: str = Field(description="Reasoning for the chosen sources")
+
+
+def main(state: InvestigationState) -> dict:
+    """
+    Main entry point for hypothesis generation.
+
+    Flow:
+    1) Ask the LLM to select evidence sources
+    2) Ensure required sources are present
+    3) Render the plan to the console
+    """
+    render_step_header(1, "Generate hypotheses")
+    plan = _generate_hypothesis_plan(state)
+    plan_sources = _ensure_required_sources(plan.plan_sources)
+
+    render_plan(plan_sources)
+    console.print(f"  [dim]Rationale:[/] {plan.rationale}")
+
+    return {"plan_sources": plan_sources}
 
 
 def node_generate_hypotheses(state: InvestigationState) -> dict:
-    """Generate plan_sources based on alert type using simple rules."""
-    alert = state.get("alert_name", "").lower()
-    table = state.get("affected_table", "").lower()
+    """LangGraph node wrapper."""
+    return main(state)
 
-    # Match first rule that applies
-    for pattern, sources in ALERT_RULES.items():
-        if pattern in alert:
-            render_plan(sources)
-            return {"plan_sources": sources}
 
-    # Table-specific fallback
-    if "events" in table or "fact" in table:
-        sources = ["tracer", "storage", "batch"]
-        render_plan(sources)
-        return {"plan_sources": sources}
+def _generate_hypothesis_plan(state: InvestigationState) -> HypothesisPlan:
+    """Use the LLM to select evidence sources."""
+    prompt = _build_prompt(state)
+    llm = get_llm()
 
-    render_plan(DEFAULT_SOURCES)
-    return {"plan_sources": DEFAULT_SOURCES}
+    try:
+        structured_llm = llm.with_structured_output(HypothesisPlan)
+        plan = structured_llm.invoke(prompt)
+    except Exception as err:
+        raise RuntimeError("Failed to generate hypothesis plan") from err
+
+    if plan is None or not plan.plan_sources:
+        raise RuntimeError("LLM returned no hypothesis plan")
+
+    return plan
+
+
+def _build_prompt(state: InvestigationState) -> str:
+    """Build the prompt for hypothesis generation."""
+    problem_md = state.get("problem_md", "")
+    tools_briefing = render_tools_briefing()
+
+    return f"""You are planning an investigation for a data pipeline alert.
+
+Alert:
+- alert_name: {state.get("alert_name", "Unknown")}
+- affected_table: {state.get("affected_table", "Unknown")}
+- severity: {state.get("severity", "Unknown")}
+
+Problem context (if available):
+{problem_md}
+
+Available evidence sources:
+{tools_briefing}
+
+Select the evidence sources that are most useful for this alert.
+Return the ordered list in plan_sources and explain why in rationale.
+"""
+
+
+def _ensure_required_sources(plan_sources: list[EvidenceSource]) -> list[EvidenceSource]:
+    """Ensure required sources are included without duplicating."""
+    required_sources: list[EvidenceSource] = ["tracer_web"]
+    ordered = list(plan_sources)
+    for source in required_sources:
+        if source not in ordered:
+            ordered.append(source)
+    return ordered
 

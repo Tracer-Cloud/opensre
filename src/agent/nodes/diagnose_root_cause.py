@@ -33,6 +33,15 @@ def _build_prompt(state: InvestigationState, evidence: dict) -> str:
         if batch.get("failure_reason"):
             batch_info += f"\n- Failure: {batch['failure_reason']}"
 
+    web_run = evidence.get("tracer_web_run", {})
+    web_run_info = "No web app run data"
+    if web_run.get("found"):
+        web_run_info = (
+            f"- Pipeline: {web_run.get('pipeline_name')} | Status: {web_run.get('status')}\n"
+            f"- Run: {web_run.get('run_name')} | Trace: {web_run.get('trace_id')}\n"
+            f"- Cost: ${web_run.get('run_cost', 0)} | User: {web_run.get('user_email')}"
+        )
+
     return f"""Analyze this incident and determine root cause.
 
 ## Incident
@@ -40,6 +49,7 @@ Alert: {state['alert_name']} | Table: {state['affected_table']}
 
 ## Evidence
 ### Pipeline: {run_info}
+### Web App Runs: {web_run_info}
 ### Batch: {batch_info}
 ### S3: {s3_info}
 

@@ -19,6 +19,11 @@ SERVICE_GRAPH: tuple[ServiceNode, ...] = (
         tools=("get_tracer_run", "get_tracer_tasks", "get_batch_jobs"),
     ),
     ServiceNode(
+        name="Tracer web app",
+        description="Pipeline catalog and recent runs",
+        tools=("get_pipelines", "get_pipeline_runs"),
+    ),
+    ServiceNode(
         name="S3 storage",
         description="Output files and _SUCCESS marker",
         tools=("check_s3_marker",),
