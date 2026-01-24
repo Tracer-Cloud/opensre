@@ -1,7 +1,7 @@
 """Diagnose root cause from collected evidence."""
 
-from src.agent.tools.llm import parse_root_cause, stream_completion
 from src.agent.state import InvestigationState
+from src.agent.tools.llm import parse_root_cause, stream_completion
 
 
 def node_diagnose_root_cause(state: InvestigationState) -> dict:
