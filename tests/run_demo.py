@@ -41,42 +41,13 @@ from src.agent.nodes.hypothesis_execution.context_building import (  # noqa: E40
 console = Console()
 
 
-def _extract_org_id_from_jwt(jwt_token: str) -> str | None:
-    """Extract organization ID from JWT token."""
-    try:
-        parts = jwt_token.split(".")
-        if len(parts) < 2:
-            return None
-        # Decode JWT payload (add padding if needed)
-        payload_b64 = parts[1]
-        payload_b64 += "=" * (4 - len(payload_b64) % 4)  # Add padding
-        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
-        return payload.get("organization")
-    except Exception:
-        return None
-
-
 @traceable
 def run_demo():
     """Run the LangGraph incident resolution demo with a real failed pipeline."""
-    # Check required environment variables
+    # Check required environment variables (only ANTHROPIC_API_KEY and JWT_TOKEN needed)
     api_key = os.getenv("ANTHROPIC_API_KEY")
     jwt_token = os.getenv("JWT_TOKEN")
-    org_id = os.getenv("TRACER_ORG_ID")
-    # Set default for TRACER_WEB_APP_URL if not set
-    if not os.getenv("TRACER_WEB_APP_URL"):
-        os.environ["TRACER_WEB_APP_URL"] = os.getenv(
-            "TRACER_API_URL", "https://staging.tracer.cloud"
-        )
 
-    # Try to extract org_id from JWT token if not set
-    if not org_id and jwt_token:
-        org_id = _extract_org_id_from_jwt(jwt_token)
-        if org_id:
-            # Set it in the environment for other code to use
-            os.environ["TRACER_ORG_ID"] = org_id
-
-    # Check for truly required variables
     if not api_key:
         console.print("[red]Error: Missing required environment variable: ANTHROPIC_API_KEY[/]")
         console.print(f"\nPlease set this in your .env file at: {env_path}")
@@ -85,12 +56,6 @@ def run_demo():
     if not jwt_token:
         console.print("[red]Error: Missing required environment variable: JWT_TOKEN[/]")
         console.print(f"\nPlease set this in your .env file at: {env_path}")
-        return None
-
-    if not org_id:
-        console.print("[red]Error: Missing TRACER_ORG_ID[/]")
-        console.print("Could not extract it from JWT token. Please set it in your .env file:")
-        console.print("  TRACER_ORG_ID=org_33W1pou1nUzYoYPZj3OCQ3jslB2")
         return None
 
     console.print("[bold cyan]🔍 Finding a real failed pipeline run...[/]")
@@ -155,7 +120,7 @@ def run_demo():
         "commonAnnotations": {
             "summary": f"Pipeline {pipeline_name} failed",
         },
-        "externalURL": os.getenv("TRACER_WEB_APP_URL", "https://staging.tracer.cloud"),
+        "externalURL": "https://staging.tracer.cloud",
         "version": "4",
         "groupKey": '{}:{alertname="PipelineFailure"}',
         "truncatedAlerts": 0,
