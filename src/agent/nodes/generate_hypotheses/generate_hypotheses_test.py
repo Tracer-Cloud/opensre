@@ -1,13 +1,10 @@
 import os
 
-from dotenv import load_dotenv
-
 from src.agent.nodes.generate_hypotheses.generate_hypotheses import node_generate_hypotheses
 from src.agent.state import EvidenceSource, InvestigationState
 
 
 def test_generate_hypotheses_produces_plan_sources() -> None:
-    load_dotenv()
     api_key = os.getenv("ANTHROPIC_API_KEY")
     assert api_key, "ANTHROPIC_API_KEY must be set for this integration test"
 

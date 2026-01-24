@@ -19,11 +19,15 @@ demo:
 run:
 	$(PYTHON) -m src.main
 
-# Run tests
+# Run tests (parallelized by default)
 test:
 	$(PYTHON) -m pytest -v
 
-# Run tests with coverage
+# Run tests sequentially (for debugging)
+test-serial:
+	$(PYTHON) -m pytest -v -n 0
+
+# Run tests with coverage (parallelized)
 test-cov:
 	$(PYTHON) -m pytest -v --cov=src --cov-report=term-missing
 
@@ -54,8 +58,9 @@ help:
 	@echo "Available commands:"
 	@echo "  make install    - Install dependencies"
 	@echo "  make demo       - Run the demo"
-	@echo "  make test       - Run tests"
-	@echo "  make test-cov   - Run tests with coverage"
+	@echo "  make test       - Run tests (parallelized for speed)"
+	@echo "  make test-serial - Run tests sequentially (for debugging)"
+	@echo "  make test-cov   - Run tests with coverage (parallelized)"
 	@echo "  make clean      - Clean up cache files"
 	@echo "  make lint       - Lint code with ruff"
 	@echo "  make format     - Format code with ruff"

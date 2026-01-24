@@ -2,8 +2,6 @@
 
 import os
 
-from dotenv import load_dotenv
-
 from src.agent.graph_pipeline import run_investigation_pipeline
 from src.agent.nodes.collect_evidence.collect_evidence import _investigate_trace_id
 from src.agent.nodes.diagnose_root_cause import node_diagnose_root_cause
@@ -12,7 +10,6 @@ from src.agent.state import InvestigationState
 
 def test_investigate_specific_failed_run() -> None:
     """Test investigation of shimmering-okapi-891 (trace: a4b56a5c-03c5-438f-96b6-60f8db7c13d5)."""
-    load_dotenv()
     api_key = os.getenv("ANTHROPIC_API_KEY")
     jwt_token = os.getenv("JWT_TOKEN")
     org_id = os.getenv("TRACER_ORG_ID")
@@ -67,7 +64,6 @@ def test_investigate_specific_failed_run() -> None:
 
 def test_investigate_failed_run_shimmering_okapi() -> None:
     """Test full pipeline investigation of shimmering-okapi-891 failed run."""
-    load_dotenv()
     api_key = os.getenv("ANTHROPIC_API_KEY")
     jwt_token = os.getenv("JWT_TOKEN")
     org_id = os.getenv("TRACER_ORG_ID")
