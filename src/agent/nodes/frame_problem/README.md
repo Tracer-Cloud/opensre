@@ -30,7 +30,7 @@ Agent Goal:
 Output Format:
 - Background information and problem statement
 - Agent responsibilities and required output formats
-- Next Downstream Agent Task: generate_hypotheses.
+- Next Downstream Agent Task: investigate.
 
 Investigation History: 
 - Independent investigation history to be appended by downstream agents.

@@ -3,6 +3,7 @@
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
+from src.agent.nodes.frame_problem.context_building import build_investigation_context
 from src.agent.nodes.frame_problem.extract import extract_alert_details
 from src.agent.nodes.frame_problem.render import render_problem_statement_md
 from src.agent.nodes.frame_problem.service_graph import render_tools_briefing
@@ -45,10 +46,18 @@ def main(state: InvestigationState) -> dict:
         "affected_table": alert_details.affected_table,
         "severity": alert_details.severity,
     }
+
+    # Gather initial investigation context (metadata) upstream
+    render_step_header(2, "Build investigation context")
+    context = build_investigation_context({"plan_sources": ["tracer_web"]})  # Always get tracer_web context
+    
+    # Store context in state
+    enriched_state["evidence"] = context
+
     problem = _generate_output_problem_statement(enriched_state)
     problem = _add_tools_briefing(problem)
     problem_md = render_problem_statement_md(problem, enriched_state)
-    render_step_header(2, "Problem statement")
+    render_step_header(3, "Problem statement")
     console.print(problem_md)
 
     return {
@@ -57,6 +66,7 @@ def main(state: InvestigationState) -> dict:
         "severity": alert_details.severity,
         "alert_json": alert_details.model_dump(),
         "problem_md": problem_md,
+        "evidence": context,
     }
 
 

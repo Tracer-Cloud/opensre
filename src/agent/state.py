@@ -56,7 +56,7 @@ class InvestigationState(TypedDict, total=False):
     non_validated_claims: list[dict[str, Any]]  # List of non-validated claims
     validity_score: float  # Percentage of validated vs total claims
     investigation_recommendations: list[str]  # Recommended AWS SDK investigations if confidence low
-    investigation_loop_count: int  # Number of times we've looped back to generate_hypotheses
+    investigation_loop_count: int  # Number of times we've looped back to investigate
     executed_hypotheses: list[
         dict[str, Any]
     ]  # History of executed hypotheses/API calls to avoid duplicates

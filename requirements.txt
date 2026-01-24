@@ -20,7 +20,6 @@ rich>=13.0.0  # For pretty terminal output
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 pytest-cov>=4.0.0
-pytest-xdist>=3.5.0
 
 # Development (optional)
 ruff>=0.4.0
