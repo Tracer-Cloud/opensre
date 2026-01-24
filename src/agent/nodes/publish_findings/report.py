@@ -6,6 +6,8 @@ Pure functions that format state into output strings.
 
 from typing import TypedDict
 
+from src.agent.constants import TRACER_DEFAULT_INVESTIGATION_URL
+
 
 class ReportContext(TypedDict, total=False):
     affected_table: str
@@ -39,7 +41,7 @@ def format_slack_message(ctx: ReportContext) -> str:
         batch_info = f"* Failure Reason: {ctx['batch_failure_reason']}\n"
 
     # Tracer investigation link
-    tracer_link = "https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe"
+    tracer_link = TRACER_DEFAULT_INVESTIGATION_URL
 
     # Format validated and non-validated claims
     validated_section = ""
@@ -109,7 +111,7 @@ def format_problem_md(ctx: ReportContext) -> str:
     status = ctx.get("tracer_run_status", "unknown")
     is_failed = status.lower() == "failed" if status else False
 
-    tracer_link = "https://staging.tracer.cloud/tracer-bioinformatics/investigations/cabac2de-f4e1-4177-8386-bc053a5bf6fe"
+    tracer_link = TRACER_DEFAULT_INVESTIGATION_URL
 
     batch_section = ""
     if ctx.get("batch_failure_reason"):

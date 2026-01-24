@@ -75,17 +75,6 @@ class InvestigationRequest:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _build_alert_text(payload: GrafanaAlertPayload, alert: GrafanaAlert) -> str:
-    if payload.message:
-        return payload.message
-    summary = alert.annotations.summary
-    description = alert.annotations.description or ""
-    lines = [summary] if summary else []
-    if description:
-        lines.append(description)
-    return "\n\n".join(lines) if lines else "Grafana alert received"
-
-
 def parse_grafana_payload(
     payload: dict[str, Any],
     default_table: str = "events_fact",
