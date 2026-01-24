@@ -29,6 +29,7 @@ def build_graph_pipeline() -> StateGraph:
     """
     graph = StateGraph(InvestigationState)
 
+    # Nodes define the agentic steps in the graph pipeline
     graph.add_node("frame_problem", node_frame_problem)
     graph.add_node("generate_hypotheses", node_generate_hypotheses)
     graph.add_node("collect_evidence", node_collect_evidence)
