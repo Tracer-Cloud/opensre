@@ -24,11 +24,6 @@ SERVICE_GRAPH: tuple[ServiceNode, ...] = (
         tools=("get_pipelines", "get_pipeline_runs"),
     ),
     ServiceNode(
-        name="S3 storage",
-        description="Output files and _SUCCESS marker",
-        tools=("check_s3_marker",),
-    ),
-    ServiceNode(
         name="AWS Batch",
         description="Job status and failure reasons",
         tools=("get_batch_jobs",),

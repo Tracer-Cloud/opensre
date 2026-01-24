@@ -38,8 +38,6 @@ def main(state: InvestigationState) -> dict:
         alert_details.severity,
     )
 
-    render_step_header(2, "Frame problem statement")
-
     enriched_state: InvestigationState = {
         **state,
         "alert_name": alert_details.alert_name,
@@ -49,7 +47,7 @@ def main(state: InvestigationState) -> dict:
     problem = _generate_output_problem_statement(enriched_state)
     problem = _add_tools_briefing(problem)
     problem_md = render_problem_statement_md(problem, enriched_state)
-    render_step_header(4, "Problem statement output")
+    render_step_header(2, "Problem statement")
     console.print(problem_md)
 
     return {
@@ -99,7 +97,6 @@ Analyze the alert and provide a structured problem statement.
 
 def _generate_output_problem_statement(state: InvestigationState) -> ProblemStatement:
     """Use the LLM to generate a structured problem statement."""
-    render_step_header(3, "Generate problem statement")
     prompt = _build_input_prompt(state)
     llm = get_llm()
 
