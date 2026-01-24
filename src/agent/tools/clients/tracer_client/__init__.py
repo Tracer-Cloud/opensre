@@ -24,8 +24,9 @@ __all__ = [
     "get_tracer_web_client",  # Alias for backward compatibility
 ]
 
-# Hardcoded org_id for Tracer Cloud
+# Hardcoded defaults for Tracer Cloud
 DEFAULT_ORG_ID = "org_33W1pou1nUzYoYPZj3OCQ3jslB2"
+DEFAULT_BASE_URL = "https://staging.tracer.cloud"
 
 _tracer_client: TracerClient | None = None
 
@@ -34,8 +35,7 @@ def get_tracer_client() -> TracerClient:
     """
     Get unified Tracer client singleton.
 
-    Uses TRACER_API_URL or TRACER_WEB_APP_URL (defaults to staging.tracer.cloud).
-    Requires JWT_TOKEN. Uses hardcoded org_id.
+    Defaults to staging.tracer.cloud. Only requires JWT_TOKEN.
     """
     global _tracer_client
 
@@ -45,11 +45,7 @@ def get_tracer_client() -> TracerClient:
             raise ValueError("JWT_TOKEN environment variable is required")
 
         org_id = os.getenv("TRACER_ORG_ID", DEFAULT_ORG_ID)
-
-        # Prefer TRACER_WEB_APP_URL for web app API, fallback to TRACER_API_URL for staging API
-        base_url = os.getenv("TRACER_WEB_APP_URL") or os.getenv(
-            "TRACER_API_URL", "https://staging.tracer.cloud"
-        )
+        base_url = os.getenv("TRACER_WEB_APP_URL", DEFAULT_BASE_URL)
         _tracer_client = TracerClient(base_url, org_id, jwt_token)
 
     return _tracer_client
