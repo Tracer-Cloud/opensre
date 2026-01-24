@@ -2,9 +2,70 @@
 
 from pydantic import BaseModel, Field
 
-from src.agent.nodes.publish_findings.render import render_investigation_start
+from src.agent.nodes.frame_problem.extract import AlertDetails, extract_alert_details
+from src.agent.nodes.frame_problem.render import render_problem_statement_md
+from src.agent.nodes.publish_findings.render import (
+    console,
+    render_investigation_start,
+    render_step_header,
+)
 from src.agent.state import InvestigationState
 from src.agent.tools.llm import get_llm
+
+
+def main(state: InvestigationState) -> dict:
+    """
+    Main entry point for framing the problem.
+
+    This keeps the core flow easy to follow:
+    1) Extract alert fields from raw input using the LLM
+    2) Show the investigation header
+    3) Generate a structured problem statement
+    4) Return parsed alert JSON for downstream nodes
+    """
+    render_step_header(1, "Extract alert details")
+    alert_details = extract_alert_details(state)
+    console.print(
+        f"  [dim]Alert:[/] {alert_details.alert_name} | "
+        f"[dim]Table:[/] {alert_details.affected_table} | "
+        f"[dim]Severity:[/] {alert_details.severity}"
+    )
+
+    render_investigation_start(
+        alert_details.alert_name,
+        alert_details.affected_table,
+        alert_details.severity,
+    )
+
+    render_step_header(2, "Frame problem statement")
+
+    enriched_state: InvestigationState = {
+        **state,
+        "alert_name": alert_details.alert_name,
+        "affected_table": alert_details.affected_table,
+        "severity": alert_details.severity,
+    }
+    problem = _generate_output_problem_statement(enriched_state)
+    problem_md = render_problem_statement_md(problem, enriched_state)
+    render_step_header(4, "Problem statement output")
+    console.print(problem_md)
+
+    return {
+        "alert_name": alert_details.alert_name,
+        "affected_table": alert_details.affected_table,
+        "severity": alert_details.severity,
+        "alert_json": alert_details.model_dump(),
+        "problem_md": problem_md,
+    }
+
+
+def node_frame_problem(state: InvestigationState) -> dict:
+    """
+    LangGraph node wrapper.
+
+    Kept for graph wiring; delegates to the main flow.
+    """
+    return main(state)
 
 
 class ProblemStatement(BaseModel):
@@ -20,7 +81,7 @@ class ProblemStatement(BaseModel):
     constraints: list[str] = Field(description="Known constraints or limitations")
 
 
-def _build_prompt(state: InvestigationState) -> str:
+def _build_input_prompt(state: InvestigationState) -> str:
     """Build the prompt for generating a problem statement."""
     return f"""You are framing a data pipeline incident for investigation.
 
@@ -34,81 +95,20 @@ Analyze the alert and provide a structured problem statement.
 """
 
 
-def _render_problem_statement_md(
-    problem: ProblemStatement, state: InvestigationState
-) -> str:
-    goals_md = "\n".join(f"- {goal}" for goal in problem.investigation_goals)
-    constraints_md = "\n".join(f"- {constraint}" for constraint in problem.constraints)
-
-    return f"""# Problem Statement
-
-            ## Summary
-            {problem.summary}
-
-            ## Context
-            {problem.context}
-
-            ## Investigation Goals
-            {goals_md}
-
-            ## Constraints
-            {constraints_md}
-
-            ## Alert Details
-            - **Alert**: {state.get("alert_name", "Unknown")}
-            - **Table**: {state.get("affected_table", "Unknown")}
-            - **Severity**: {state.get("severity", "Unknown")}
-
-            ## Next Steps
-            Proceed to gather evidence from relevant sources."""
-
-
-def node_frame_problem(state: InvestigationState) -> dict:
-    """
-    Enrich the initial alert with investigation context using LLM.
-
-    Uses Pydantic for output validation via structured output.
-    Visible in LangSmith via LangChain tracing.
-
-    Returns:
-        dict with problem_md (str) containing the formatted problem statement
-    """
-    render_investigation_start(
-        state.get("alert_name", "Unknown"),
-        state.get("affected_table", "Unknown"),
-        state.get("severity", "Unknown"),
-    )
-
-    prompt = _build_prompt(state)
+def _generate_output_problem_statement(state: InvestigationState) -> ProblemStatement:
+    """Use the LLM to generate a structured problem statement."""
+    render_step_header(3, "Generate problem statement")
+    prompt = _build_input_prompt(state)
     llm = get_llm()
 
     try:
         structured_llm = llm.with_structured_output(ProblemStatement)
         problem = structured_llm.invoke(prompt)
     except Exception:
-        # Safe fallback if model fails to generate valid structure
-        problem = ProblemStatement(
-            summary="Investigation required for data pipeline alert",
-            context="Alert triggered for affected table",
-            investigation_goals=[
-                "Identify root cause",
-                "Assess impact",
-                "Determine resolution",
-            ],
-            constraints=["Limited to available evidence sources"],
-        )
+        raise RuntimeError("Failed to generate problem statement")
 
-    # ensure problem is not None (in case with_structured_output returns None on failure depending on config)
     if problem is None:
-        problem = ProblemStatement(
-            summary="Investigation required for data pipeline alert",
-            context="Alert triggered for affected table",
-            investigation_goals=[
-                "Identify root cause",
-                "Assess impact",
-                "Determine resolution",
-            ],
-            constraints=["Limited to available evidence sources"],
-        )
+        raise RuntimeError("LLM returned no problem statement")
 
-    return {"problem_md": _render_problem_statement_md(problem, state)}
+    return problem
+

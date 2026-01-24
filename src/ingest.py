@@ -64,6 +64,7 @@ class InvestigationRequest:
     severity: str
     environment: str
     summary: str | None
+    raw_alert: dict[str, Any]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -103,6 +104,7 @@ def parse_grafana_payload(
         severity=SEVERITY_MAP.get(raw_severity, DEFAULT_SEVERITY),
         environment=alert.labels.environment,
         summary=alert.annotations.summary,
+        raw_alert=payload,
     )
 
 

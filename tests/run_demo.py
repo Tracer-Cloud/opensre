@@ -30,6 +30,7 @@ def run_demo():
         alert_name=request.alert_name,
         affected_table=request.affected_table,
         severity=request.severity,
+        raw_alert=request.raw_alert,
     )
 
 

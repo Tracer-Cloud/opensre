@@ -1,5 +1,7 @@
 """Investigation Graph - Orchestrates the incident resolution workflow."""
 
+from typing import Any
+
 from langgraph.graph import END, START, StateGraph
 
 from src.agent.nodes import (
@@ -31,18 +33,24 @@ def build_graph_pipeline() -> StateGraph:
     graph.add_node("generate_hypotheses", node_generate_hypotheses)
     graph.add_node("collect_evidence", node_collect_evidence)
     graph.add_node("diagnose_root_cause", node_diagnose_root_cause)
-    graph.add_node("publish_findings", node_publish_findings)
+    graph.add_node("publish_findings_to_slack", node_publish_findings)
 
+    # Edges define the shape of the graph pipeline
     graph.add_edge(START, "frame_problem")
     graph.add_edge("frame_problem", "generate_hypotheses")
     graph.add_edge("generate_hypotheses", "collect_evidence")
     graph.add_edge("collect_evidence", "diagnose_root_cause")
-    graph.add_edge("diagnose_root_cause", "publish_findings")
-    graph.add_edge("publish_findings", END)
+    graph.add_edge("diagnose_root_cause", "publish_findings_to_slack")
+    graph.add_edge("publish_findings_to_slack", END)
 
     return graph.compile()
 
-def run_investigation_pipeline(alert_name: str, affected_table: str, severity: str) -> InvestigationState:
+def run_investigation_pipeline(
+    alert_name: str,
+    affected_table: str,
+    severity: str,
+    raw_alert: str | dict[str, Any] | None = None,
+) -> InvestigationState:
     """
     Run the investigation graph.
 
@@ -50,7 +58,12 @@ def run_investigation_pipeline(alert_name: str, affected_table: str, severity: s
     """
     graph = build_graph_pipeline()
 
-    initial_state = make_initial_state(alert_name, affected_table, severity)
+    initial_state = make_initial_state(
+        alert_name,
+        affected_table,
+        severity,
+        raw_alert=raw_alert,
+    )
 
     # Run the graph
     final_state = graph.invoke(initial_state)

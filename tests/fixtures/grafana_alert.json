@@ -36,7 +36,6 @@
   "truncatedAlerts": 0,
   "title": "[FIRING:1] DataFreshnessSLABreach critical",
   "state": "alerting",
-  "message": "**Firing**\n\nValue: No data\nLabels:\n - alertname = DataFreshnessSLABreach\n - severity = critical\n - table = events_fact\nAnnotations:\n - summary = Table events_fact has not been updated in over 2 hours",
-  "raw_alert_text": "[ALERT] events_fact freshness SLA breached\nEnv: prod\nDetected: 02:13 UTC\n\nNo new rows for 2h 0m (SLA 30m)\nLast warehouse update: 00:13 UTC\n\nUpstream pipeline run pending investigation\n"
+  "message": "**Firing**\n\nValue: No data\nLabels:\n - alertname = DataFreshnessSLABreach\n - severity = critical\n - table = events_fact\nAnnotations:\n - summary = Table events_fact has not been updated in over 2 hours"
 }
 
