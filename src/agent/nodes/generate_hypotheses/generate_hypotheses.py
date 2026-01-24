@@ -24,7 +24,7 @@ class HypothesisPlan(BaseModel):
 def _get_available_sources() -> list[EvidenceSource]:
     """Get list of evidence sources that are actually available."""
     # S3/storage is not implemented, so exclude it
-    return ["tracer", "batch", "tracer_web", "cloudwatch"]
+    return ["batch", "tracer_web", "cloudwatch"]
 
 
 def main(state: InvestigationState) -> dict:

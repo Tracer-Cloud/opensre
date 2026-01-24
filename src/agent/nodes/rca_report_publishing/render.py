@@ -7,7 +7,6 @@ console = Console()
 
 # Map plan sources to human-readable names
 SOURCE_NAMES = {
-    "tracer": "Tracer Pipeline Status",
     "storage": "S3 Storage Check",
     "batch": "AWS Batch Jobs",
     "tracer_web": "Tracer Web App Runs",

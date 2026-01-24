@@ -16,7 +16,6 @@ def build_hypothesis_prompt(
 
     # Map evidence sources to their names for the prompt
     source_names = {
-        "tracer": "tracer",
         "batch": "batch",
         "tracer_web": "tracer_web",
         "cloudwatch": "cloudwatch (AWS CloudWatch metrics and logs)",
