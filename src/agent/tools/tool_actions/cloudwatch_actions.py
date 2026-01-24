@@ -14,6 +14,7 @@ except ImportError:
             return lambda f: f
         return func
 
+
 from src.agent.tools.clients.cloudwatch_client import get_metric_statistics
 
 

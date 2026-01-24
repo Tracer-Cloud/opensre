@@ -59,12 +59,12 @@ def _format_evidence_summary(evidence: dict) -> dict:
                 for point in metrics_data:
                     if isinstance(point, dict) and "ram_interpretation" in point:
                         # Check for ram_interpretation
-                            interp = point["ram_interpretation"]
-                            likely_gb = interp.get("likely_value_gb", "unknown")
-                            data_quality_warnings.append(
-                                f"[INTERPRETATION] RAM value {point.get('ram_raw', 'unknown')} "
-                                f"labeled as percent is likely {likely_gb} GB of memory used"
-                            )
+                        interp = point["ram_interpretation"]
+                        likely_gb = interp.get("likely_value_gb", "unknown")
+                        data_quality_warnings.append(
+                            f"[INTERPRETATION] RAM value {point.get('ram_raw', 'unknown')} "
+                            f"labeled as percent is likely {likely_gb} GB of memory used"
+                        )
 
     # Also check top-level host_metrics in evidence
     top_level_host_metrics = evidence.get("host_metrics", {})
