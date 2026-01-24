@@ -54,7 +54,7 @@ def test_investigate_specific_failed_run() -> None:
         "log_file_count": failed_run.log_file_count,
         "run_url": run_url,
     }
-    
+
     # Gather evidence using the new investigate node
     state: InvestigationState = {
         "problem_md": "Testing specific run",
