@@ -55,6 +55,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run tests (parallelized)
+      - name: Run demo
         run: make demo
 

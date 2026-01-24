@@ -16,7 +16,7 @@ def should_continue_investigation(state: InvestigationState) -> str:
         state: Current investigation state
 
     Returns:
-        Next node name: "generate_hypotheses" or "publish_findings"
+        Next node name: "investigate" or "publish_findings"
     """
     # CRITICAL: Print to stderr first - this will always show if function is called
     import sys
@@ -55,9 +55,9 @@ def should_continue_investigation(state: InvestigationState) -> str:
 
         if should_loop:
             console.print(
-                "  [cyan]→ Looping back to hypothesis generation (low confidence/validity with recommendations)[/]"
+                "  [cyan]→ Looping back to investigation (low confidence/validity with recommendations)[/]"
             )
-            return "generate_hypotheses"
+            return "investigate"
 
         console.print(
             "  [green]→ Proceeding to publish findings (thresholds met or no recommendations)[/]"

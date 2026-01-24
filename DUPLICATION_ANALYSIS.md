@@ -9,8 +9,10 @@ This analysis identifies **actual duplications** and verbosity issues, while ack
 ## Current Flow
 
 ```
-frame_problem → generate_hypotheses → hypothesis_execution → diagnose_root_cause → validate_analysis
+frame_problem → investigate → diagnose_root_cause → publish_findings
 ```
+
+Note: The sections below reference the previous flow for historical context.
 
 ### 1. Architectural Separation (NOT Duplication) ✅
 
