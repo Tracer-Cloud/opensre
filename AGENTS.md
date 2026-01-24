@@ -3,7 +3,7 @@
 ## Workflow Expectations
 
 * When “push” is mentioned, it means pushing the commit to GitHub and verifying that all linting checks and GitHub Actions pass for that commit.
-* Before pushing any changes, always run make test locally.
+* Before pushing any changes, always run "make demo" locally.
 
 ## Sensitive Data
 
