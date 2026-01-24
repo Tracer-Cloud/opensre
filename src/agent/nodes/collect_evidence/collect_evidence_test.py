@@ -1,13 +1,10 @@
 import os
 
-from dotenv import load_dotenv
-
 from src.agent.nodes.collect_evidence.collect_evidence import node_collect_evidence
 from src.agent.state import InvestigationState
 
 
 def test_collect_evidence_finds_failed_run_via_web_app() -> None:
-    load_dotenv()
     jwt_token = os.getenv("JWT_TOKEN")
     org_id = os.getenv("TRACER_ORG_ID")
     web_url = os.getenv("TRACER_WEB_APP_URL")
@@ -28,7 +25,6 @@ def test_collect_evidence_finds_failed_run_via_web_app() -> None:
 
 def test_collect_evidence_investigates_specific_failed_run() -> None:
     """Test investigation of a known failed run: shimmering-okapi-891."""
-    load_dotenv()
     jwt_token = os.getenv("JWT_TOKEN")
     org_id = os.getenv("TRACER_ORG_ID")
     web_url = os.getenv("TRACER_WEB_APP_URL")
