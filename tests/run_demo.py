@@ -12,6 +12,7 @@ This demo:
 Rendering is handled in the ingestion layer and nodes.
 Uses the same pipeline runner as the CLI.
 """
+
 import base64
 import json
 import os
@@ -32,8 +33,10 @@ init_runtime()
 from langsmith import traceable  # noqa: E402
 from rich.console import Console  # noqa: E402
 
-from src.agent.nodes.hypothesis_execution.context_building import _fetch_tracer_web_run_context  # noqa: E402
 from src.agent.graph_pipeline import run_investigation_pipeline  # noqa: E402
+from src.agent.nodes.hypothesis_execution.context_building import (  # noqa: E402
+    _fetch_tracer_web_run_context,
+)
 
 console = Console()
 
@@ -62,7 +65,9 @@ def run_demo():
     org_id = os.getenv("TRACER_ORG_ID")
     # Set default for TRACER_WEB_APP_URL if not set
     if not os.getenv("TRACER_WEB_APP_URL"):
-        os.environ["TRACER_WEB_APP_URL"] = os.getenv("TRACER_API_URL", "https://staging.tracer.cloud")
+        os.environ["TRACER_WEB_APP_URL"] = os.getenv(
+            "TRACER_API_URL", "https://staging.tracer.cloud"
+        )
 
     # Try to extract org_id from JWT token if not set
     if not org_id and jwt_token:
@@ -152,7 +157,7 @@ def run_demo():
         },
         "externalURL": os.getenv("TRACER_WEB_APP_URL", "https://staging.tracer.cloud"),
         "version": "4",
-        "groupKey": "{}:{alertname=\"PipelineFailure\"}",
+        "groupKey": '{}:{alertname="PipelineFailure"}',
         "truncatedAlerts": 0,
         "title": f"[FIRING:1] PipelineFailure critical - {pipeline_name}",
         "state": "alerting",
@@ -223,7 +228,9 @@ def run_demo():
         console.print(f"  Failed jobs: {len(failed_jobs)}")
         console.print(f"  Failed tools: {len(failed_tools)}")
         if web_run_evidence.get("run_url"):
-            console.print(f"  [dim]View run:[/] [blue underline]{web_run_evidence.get('run_url')}[/]")
+            console.print(
+                f"  [dim]View run:[/] [blue underline]{web_run_evidence.get('run_url')}[/]"
+            )
 
     return state
 

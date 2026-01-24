@@ -17,11 +17,13 @@ SOURCE_NAMES = {
 def render_incoming_alert(alert_text: str):
     """Render the incoming Grafana alert payload."""
     console.print("\n")
-    console.print(Panel(
-        alert_text,
-        title="Incoming Grafana Alert (Slack Channel)",
-        border_style="red",
-    ))
+    console.print(
+        Panel(
+            alert_text,
+            title="Incoming Grafana Alert (Slack Channel)",
+            border_style="red",
+        )
+    )
     console.print("[dim]Agent triggered automatically...[/dim]\n")
 
 
@@ -149,7 +151,9 @@ def render_evidence(evidence: dict):
             if failed_jobs:
                 console.print(f"  [dim]Failed jobs:[/] [red bold]{len(failed_jobs)}[/]")
                 for job in failed_jobs[:2]:
-                    console.print(f"    [red]- {job.get('job_name', 'Unknown')}: {job.get('status_reason', '')}[/]")
+                    console.print(
+                        f"    [red]- {job.get('job_name', 'Unknown')}: {job.get('status_reason', '')}[/]"
+                    )
                     if job.get("exit_code"):
                         console.print(f"      [dim]Exit code: {job.get('exit_code')}[/]")
 
@@ -157,7 +161,9 @@ def render_evidence(evidence: dict):
             if failed_tools:
                 console.print(f"  [dim]Failed tools:[/] [red bold]{len(failed_tools)}[/]")
                 for tool in failed_tools[:2]:
-                    console.print(f"    [red]- {tool.get('tool_name', 'Unknown')} (exit_code={tool.get('exit_code')})[/]")
+                    console.print(
+                        f"    [red]- {tool.get('tool_name', 'Unknown')} (exit_code={tool.get('exit_code')})[/]"
+                    )
 
             total_logs = web_run.get("total_logs", 0)
             error_logs = web_run.get("error_logs", [])
@@ -186,10 +192,17 @@ def render_evidence(evidence: dict):
             if failed > 0:
                 console.print(f"  [dim]Failed:[/] [red bold]{failed}[/]")
                 if batch.get("failure_reason"):
-                    console.print(f"  [red bold]Failure reason:[/] [red]{batch['failure_reason']}[/]")
+                    console.print(
+                        f"  [red bold]Failure reason:[/] [red]{batch['failure_reason']}[/]"
+                    )
 
 
-def render_validated_claims(validated_claims: list[dict], non_validated_claims: list[dict], validity_score: float, confidence: float):
+def render_validated_claims(
+    validated_claims: list[dict],
+    non_validated_claims: list[dict],
+    validity_score: float,
+    confidence: float,
+):
     """Render validated and non-validated claims separately."""
     console.print("\n[bold green]─── Root Cause Analysis ───[/]\n")
 
@@ -199,12 +212,19 @@ def render_validated_claims(validated_claims: list[dict], non_validated_claims: 
         for i, claim_data in enumerate(validated_claims, 1):
             claim = claim_data.get("claim", "")
             evidence_sources = claim_data.get("evidence_sources", [])
-            evidence_str = f" [dim][EVIDENCE: {', '.join(evidence_sources)}][/]" if evidence_sources else ""
+            evidence_str = (
+                f" [dim][EVIDENCE: {', '.join(evidence_sources)}][/]" if evidence_sources else ""
+            )
 
             # Color code based on content
-            if any(word in claim.lower() for word in ["fail", "error", "killed", "oom", "denied", "missing", "timeout"]):
+            if any(
+                word in claim.lower()
+                for word in ["fail", "error", "killed", "oom", "denied", "missing", "timeout"]
+            ):
                 console.print(f"  {i}. [green]✓[/] [red]{claim}[/]{evidence_str}")
-            elif any(word in claim.lower() for word in ["success", "working", "passed", "completed"]):
+            elif any(
+                word in claim.lower() for word in ["success", "working", "passed", "completed"]
+            ):
                 console.print(f"  {i}. [green]✓[/] [green]{claim}[/]{evidence_str}")
             else:
                 console.print(f"  {i}. [green]✓[/] {claim}{evidence_str}")
@@ -222,8 +242,12 @@ def render_validated_claims(validated_claims: list[dict], non_validated_claims: 
         console.print()
 
     # Render validity score and confidence
-    validity_color = "green" if validity_score >= 0.7 else "yellow" if validity_score >= 0.4 else "red"
-    console.print(f"[bold]Validity Score:[/] [{validity_color}]{validity_score:.0%}[/] ({len(validated_claims)}/{len(validated_claims) + len(non_validated_claims)} validated)")
+    validity_color = (
+        "green" if validity_score >= 0.7 else "yellow" if validity_score >= 0.4 else "red"
+    )
+    console.print(
+        f"[bold]Validity Score:[/] [{validity_color}]{validity_score:.0%}[/] ({len(validated_claims)}/{len(validated_claims) + len(non_validated_claims)} validated)"
+    )
 
     confidence_color = "green" if confidence >= 0.7 else "yellow" if confidence >= 0.4 else "red"
     console.print(f"[bold]Confidence:[/] [{confidence_color}]{confidence:.0%}[/]")
@@ -293,7 +317,10 @@ def render_analysis(root_cause: str, confidence: float):
     if validated_bullets:
         console.print("[bold green]✓ Validated Claims (Supported by Evidence):[/]")
         for i, bullet in enumerate(validated_bullets, 1):
-            if any(word in bullet.lower() for word in ["fail", "error", "killed", "oom", "denied", "missing", "timeout"]):
+            if any(
+                word in bullet.lower()
+                for word in ["fail", "error", "killed", "oom", "denied", "missing", "timeout"]
+            ):
                 console.print(f"  {i}. [green]✓[/] [red]{bullet}[/]")
             else:
                 console.print(f"  {i}. [green]✓[/] {bullet}")
@@ -327,33 +354,39 @@ def render_analysis(root_cause: str, confidence: float):
 def render_final_report(slack_message: str):
     """Render the final RCA report panel."""
     console.print("\n")
-    console.print(Panel(
-        slack_message,
-        title="RCA Report",
-        border_style="green",
-    ))
+    console.print(
+        Panel(
+            slack_message,
+            title="RCA Report",
+            border_style="green",
+        )
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Investigation Start
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def render_investigation_start(alert_name: str, affected_table: str, severity: str):
     """Render the investigation header panel."""
     severity_color = "red" if severity == "critical" else "yellow"
-    console.print(Panel(
-        f"Investigation Started\n\n"
-        f"Alert: [bold]{alert_name}[/]\n"
-        f"Table: [cyan]{affected_table}[/]\n"
-        f"Severity: [{severity_color}]{severity}[/]",
-        title="Pipeline Investigation",
-        border_style="cyan"
-    ))
+    console.print(
+        Panel(
+            f"Investigation Started\n\n"
+            f"Alert: [bold]{alert_name}[/]\n"
+            f"Table: [cyan]{affected_table}[/]\n"
+            f"Severity: [{severity_color}]{severity}[/]",
+            title="Pipeline Investigation",
+            border_style="cyan",
+        )
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step Headers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def render_step_header(step_num: int, title: str):
     """Render a step header."""
@@ -368,13 +401,15 @@ def render_step_header(step_num: int, title: str):
 # Final Output
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def render_agent_output(slack_message: str):
     """Render the agent output panel with styled link."""
     console.print("\n")
 
     # Style the Tracer link in cyan/blue for visibility
     import re
-    tracer_url_pattern = r'(https://staging\.tracer\.cloud/[^\s]+)'
+
+    tracer_url_pattern = r"(https://staging\.tracer\.cloud/[^\s]+)"
 
     def style_url(match):
         url = match.group(1)
@@ -383,6 +418,7 @@ def render_agent_output(slack_message: str):
     styled_message = re.sub(tracer_url_pattern, style_url, slack_message)
 
     from rich.text import Text
+
     text = Text.from_markup(styled_message)
     console.print(Panel(text, title="RCA Report", border_style="blue"))
 
@@ -390,4 +426,3 @@ def render_agent_output(slack_message: str):
 def render_saved_file(path: str):
     """Render a saved file message."""
     console.print(f"[green][OK][/] Saved: {path}")
-

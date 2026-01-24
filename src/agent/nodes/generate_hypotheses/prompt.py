@@ -4,7 +4,12 @@ from src.agent.nodes.frame_problem.service_graph import render_tools_briefing
 from src.agent.state import EvidenceSource, InvestigationState
 
 
-def build_hypothesis_prompt(state: InvestigationState, available_sources: list[EvidenceSource], recommendations: list[str] | None = None, executed_hypotheses: list[dict] | None = None) -> str:
+def build_hypothesis_prompt(
+    state: InvestigationState,
+    available_sources: list[EvidenceSource],
+    recommendations: list[str] | None = None,
+    executed_hypotheses: list[dict] | None = None,
+) -> str:
     """Build the prompt for hypothesis generation."""
     problem_md = state.get("problem_md", "")
     tools_briefing = render_tools_briefing()

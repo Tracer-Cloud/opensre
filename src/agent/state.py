@@ -57,7 +57,9 @@ class InvestigationState(TypedDict, total=False):
     validity_score: float  # Percentage of validated vs total claims
     investigation_recommendations: list[str]  # Recommended AWS SDK investigations if confidence low
     investigation_loop_count: int  # Number of times we've looped back to generate_hypotheses
-    executed_hypotheses: list[dict[str, Any]]  # History of executed hypotheses/API calls to avoid duplicates
+    executed_hypotheses: list[
+        dict[str, Any]
+    ]  # History of executed hypotheses/API calls to avoid duplicates
 
     # ─────────────────────────────────────────────────────────────────────────
     # Outputs - formatted reports
@@ -109,4 +111,3 @@ def make_initial_state(
     if raw_alert is not None:
         state["raw_alert"] = raw_alert
     return state
-

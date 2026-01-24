@@ -7,6 +7,7 @@ from typing import Any
 @dataclass
 class ValidationIssue:
     """Represents a data quality issue found during validation."""
+
     field: str
     raw_value: Any
     issue_type: str  # "impossible_value", "unit_mismatch", "missing_data", etc.
@@ -34,12 +35,12 @@ class MetricsValidator:
     def validate_metrics(self, metrics: dict) -> dict:
         """
         Validate and normalize metrics, flagging impossible values.
-        
+
         Handles different API response structures:
         - Flat structure: {"cpu": 95, "ram": 8471740416, "disk": 50}
         - Nested structure: {"memory": {"percent": 8471740416}, "cpu": {"percent": 95}}
         - List structure: {"data": [{"cpu": 95, "ram": 8471740416}]}
-        
+
         Returns:
             Normalized metrics dict with added 'data_quality_issues' key
         """
@@ -114,14 +115,16 @@ class MetricsValidator:
                 # Infer the most likely unit and interpretation
                 interpretation = self._infer_memory_unit(raw_percent)
 
-                self.issues.append(ValidationIssue(
-                    field="memory.percent",
-                    raw_value=raw_percent,
-                    issue_type="impossible_percentage",
-                    severity="error",
-                    explanation=interpretation["explanation"],
-                    suggested_fix=interpretation["suggested_fix"]
-                ))
+                self.issues.append(
+                    ValidationIssue(
+                        field="memory.percent",
+                        raw_value=raw_percent,
+                        issue_type="impossible_percentage",
+                        severity="error",
+                        explanation=interpretation["explanation"],
+                        suggested_fix=interpretation["suggested_fix"],
+                    )
+                )
 
                 # Add interpretation hints to the normalized data
                 normalized["percent_interpretation"] = interpretation
@@ -134,14 +137,16 @@ class MetricsValidator:
             raw_ram = memory_data["ram"]
             if isinstance(raw_ram, (int, float)) and raw_ram > 100:
                 interpretation = self._infer_memory_unit(raw_ram)
-                self.issues.append(ValidationIssue(
-                    field="memory.ram",
-                    raw_value=raw_ram,
-                    issue_type="impossible_percentage",
-                    severity="error",
-                    explanation=interpretation["explanation"],
-                    suggested_fix=interpretation["suggested_fix"]
-                ))
+                self.issues.append(
+                    ValidationIssue(
+                        field="memory.ram",
+                        raw_value=raw_ram,
+                        issue_type="impossible_percentage",
+                        severity="error",
+                        explanation=interpretation["explanation"],
+                        suggested_fix=interpretation["suggested_fix"],
+                    )
+                )
                 normalized["ram_interpretation"] = interpretation
                 normalized["ram_invalid"] = True
                 normalized["ram_raw"] = raw_ram
@@ -152,7 +157,7 @@ class MetricsValidator:
     def _infer_memory_unit(self, value: float) -> dict:
         """
         Infer the most likely unit for a memory value that's labeled as percentage.
-        
+
         Returns interpretation with likely unit, explanation, and suggested fix.
         """
         # Common memory sizes in bytes
@@ -172,7 +177,7 @@ class MetricsValidator:
                 "suggested_fix": (
                     f"Treat this as {gb_value:.2f} GB of memory used, not a percentage. "
                     f"Compare against instance type memory limits to determine if memory was exhausted."
-                )
+                ),
             }
         elif value >= 1024**2:  # >= 1MB
             mb_value = value / (1024**2)
@@ -187,7 +192,7 @@ class MetricsValidator:
                 ),
                 "suggested_fix": (
                     f"Treat this as {mb_value:.2f} MB of memory used, not a percentage."
-                )
+                ),
             }
         else:
             # Value is > 100 but < 1MB - might be a different error
@@ -197,7 +202,7 @@ class MetricsValidator:
                     f"Value {value:,.0f} labeled as 'percent' exceeds 100% but is unusually small. "
                     f"This suggests a data collection or unit conversion error."
                 ),
-                "suggested_fix": "Verify the metric source and unit conversion logic"
+                "suggested_fix": "Verify the metric source and unit conversion logic",
             }
 
         return interpretation
@@ -212,22 +217,23 @@ class MetricsValidator:
         if "percent" in cpu_data:
             raw_percent = cpu_data["percent"]
 
-            if isinstance(raw_percent, (int, float)):
-                # CPU can legitimately exceed 100% (multi-core)
-                # But beyond 1000% is suspicious for most workloads
-                if raw_percent > 1000:
-                    self.issues.append(ValidationIssue(
-                        field="cpu.percent",
-                        raw_value=raw_percent,
-                        issue_type="suspicious_value",
-                        severity="warning",
-                        explanation=(
-                            f"CPU usage reported as {raw_percent}% which is unusually high. "
-                            f"While multi-core systems can exceed 100%, values over 1000% "
-                            f"suggest a data collection error or misconfigured metric."
-                        ),
-                        suggested_fix="Verify CPU metric calculation and core count normalization"
-                    ))
+            # CPU can legitimately exceed 100% (multi-core)
+            # But beyond 1000% is suspicious for most workloads
+            if isinstance(raw_percent, (int, float)) and raw_percent > 1000:
+                    self.issues.append(
+                        ValidationIssue(
+                            field="cpu.percent",
+                            raw_value=raw_percent,
+                            issue_type="suspicious_value",
+                            severity="warning",
+                            explanation=(
+                                f"CPU usage reported as {raw_percent}% which is unusually high. "
+                                f"While multi-core systems can exceed 100%, values over 1000% "
+                                f"suggest a data collection error or misconfigured metric."
+                            ),
+                            suggested_fix="Verify CPU metric calculation and core count normalization",
+                        )
+                    )
                     # Cap at reasonable value or mark as suspicious
                     normalized["percent_suspicious"] = True
                     normalized["percent_raw"] = raw_percent
@@ -245,17 +251,19 @@ class MetricsValidator:
             raw_percent = disk_data["percent"]
 
             if isinstance(raw_percent, (int, float)) and raw_percent > 100:
-                self.issues.append(ValidationIssue(
-                    field="disk.percent",
-                    raw_value=raw_percent,
-                    issue_type="impossible_percentage",
-                    severity="error",
-                    explanation=(
-                        f"Disk usage reported as {raw_percent}% which is impossible. "
-                        f"This indicates a data collection or unit conversion error."
-                    ),
-                    suggested_fix="Verify disk metric calculation and units"
-                ))
+                self.issues.append(
+                    ValidationIssue(
+                        field="disk.percent",
+                        raw_value=raw_percent,
+                        issue_type="impossible_percentage",
+                        severity="error",
+                        explanation=(
+                            f"Disk usage reported as {raw_percent}% which is impossible. "
+                            f"This indicates a data collection or unit conversion error."
+                        ),
+                        suggested_fix="Verify disk metric calculation and units",
+                    )
+                )
                 normalized["percent"] = None
                 normalized["percent_invalid"] = True
                 normalized["percent_raw"] = raw_percent
@@ -265,7 +273,7 @@ class MetricsValidator:
     def _validate_flat_metrics(self, metrics: dict) -> dict:
         """
         Validate metrics in flat structure (cpu, ram, disk at top level).
-        
+
         Common API format: {"cpu": 95.28, "ram": 8471740416, "disk": 50}
         """
         normalized = metrics.copy()
@@ -275,14 +283,16 @@ class MetricsValidator:
             raw_ram = normalized["ram"]
             if isinstance(raw_ram, (int, float)) and raw_ram > 100:
                 interpretation = self._infer_memory_unit(raw_ram)
-                self.issues.append(ValidationIssue(
-                    field="ram",
-                    raw_value=raw_ram,
-                    issue_type="impossible_percentage",
-                    severity="error",
-                    explanation=interpretation["explanation"],
-                    suggested_fix=interpretation["suggested_fix"]
-                ))
+                self.issues.append(
+                    ValidationIssue(
+                        field="ram",
+                        raw_value=raw_ram,
+                        issue_type="impossible_percentage",
+                        severity="error",
+                        explanation=interpretation["explanation"],
+                        suggested_fix=interpretation["suggested_fix"],
+                    )
+                )
                 normalized["ram_interpretation"] = interpretation
                 normalized["ram_invalid"] = True
                 normalized["ram_raw"] = raw_ram
@@ -294,14 +304,16 @@ class MetricsValidator:
             raw_max_ram = normalized["max_ram"]
             if isinstance(raw_max_ram, (int, float)) and raw_max_ram > 100:
                 interpretation = self._infer_memory_unit(raw_max_ram)
-                self.issues.append(ValidationIssue(
-                    field="max_ram",
-                    raw_value=raw_max_ram,
-                    issue_type="impossible_percentage",
-                    severity="error",
-                    explanation=interpretation["explanation"],
-                    suggested_fix=interpretation["suggested_fix"]
-                ))
+                self.issues.append(
+                    ValidationIssue(
+                        field="max_ram",
+                        raw_value=raw_max_ram,
+                        issue_type="impossible_percentage",
+                        severity="error",
+                        explanation=interpretation["explanation"],
+                        suggested_fix=interpretation["suggested_fix"],
+                    )
+                )
                 normalized["max_ram_interpretation"] = interpretation
                 normalized["max_ram_invalid"] = True
                 normalized["max_ram_raw"] = raw_max_ram
@@ -314,27 +326,31 @@ class MetricsValidator:
             # For memory-related fields, use intelligent inference
             if "memory" in field.lower() or "ram" in field.lower():
                 interpretation = self._infer_memory_unit(value)
-                self.issues.append(ValidationIssue(
-                    field=field,
-                    raw_value=value,
-                    issue_type="impossible_percentage",
-                    severity="error",
-                    explanation=interpretation["explanation"],
-                    suggested_fix=interpretation["suggested_fix"]
-                ))
+                self.issues.append(
+                    ValidationIssue(
+                        field=field,
+                        raw_value=value,
+                        issue_type="impossible_percentage",
+                        severity="error",
+                        explanation=interpretation["explanation"],
+                        suggested_fix=interpretation["suggested_fix"],
+                    )
+                )
                 data[f"{field}_interpretation"] = interpretation
             else:
-                self.issues.append(ValidationIssue(
-                    field=field,
-                    raw_value=value,
-                    issue_type="impossible_percentage",
-                    severity="error",
-                    explanation=(
-                        f"Field '{field}' has value {value}% which exceeds 100% and is impossible. "
-                        f"This is likely a data collection error or unit mismatch."
-                    ),
-                    suggested_fix="Verify the metric source and unit conversion"
-                ))
+                self.issues.append(
+                    ValidationIssue(
+                        field=field,
+                        raw_value=value,
+                        issue_type="impossible_percentage",
+                        severity="error",
+                        explanation=(
+                            f"Field '{field}' has value {value}% which exceeds 100% and is impossible. "
+                            f"This is likely a data collection error or unit mismatch."
+                        ),
+                        suggested_fix="Verify the metric source and unit conversion",
+                    )
+                )
             data[f"{field}_invalid"] = True
             data[f"{field}_raw"] = value
 
@@ -342,27 +358,33 @@ class MetricsValidator:
 def validate_host_metrics(metrics: dict | Any) -> dict:
     """
     Validate host metrics data.
-    
+
     Handles different API response structures:
     - List structure: {"success": True, "data": [{"cpu": 95, "ram": 8471740416, "disk": 50}]}
     - Flat structure: {"cpu": 95, "ram": 8471740416}
     - Nested structure: {"memory": {"percent": 8471740416}}
-    
+
     Args:
         metrics: Raw metrics data from API
-        
+
     Returns:
         Validated and normalized metrics dict with interpretation hints
     """
     validator = MetricsValidator()
     if not isinstance(metrics, dict):
-        return {"raw": metrics, "validated": False, "data_quality_issues": [{
-            "field": "root",
-            "raw_value": metrics,
-            "issue": "invalid_format",
-            "severity": "error",
-            "explanation": "Metrics data is not in expected dictionary format",
-        }]}
+        return {
+            "raw": metrics,
+            "validated": False,
+            "data_quality_issues": [
+                {
+                    "field": "root",
+                    "raw_value": metrics,
+                    "issue": "invalid_format",
+                    "severity": "error",
+                    "explanation": "Metrics data is not in expected dictionary format",
+                }
+            ],
+        }
 
     # Handle list-based structure (common in API responses)
     if "data" in metrics and isinstance(metrics["data"], list):

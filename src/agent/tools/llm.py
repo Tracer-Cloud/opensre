@@ -14,6 +14,7 @@ from langchain_anthropic import ChatAnthropic
 # Data Types
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class RootCauseResult:
     root_cause: str
@@ -72,13 +73,14 @@ def stream_completion(prompt: str, on_chunk: Callable[[str], None] | None = None
 # Parsers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def parse_bullets(response: str) -> InterpretationResult:
     """Parse bullet points from LLM response."""
     bullets = []
-    for line in response.strip().split('\n'):
+    for line in response.strip().split("\n"):
         line = line.strip()
         # Support both * and - bullet formats
-        if line.startswith('*') or line.startswith('-'):
+        if line.startswith("*") or line.startswith("-"):
             bullets.append(line)
     return InterpretationResult(bullets=bullets, raw=response)
 
@@ -102,11 +104,19 @@ def parse_root_cause(response: str) -> RootCauseResult:
             elif "CAUSAL_CHAIN:" in validated_section:
                 validated_text = validated_section.split("CAUSAL_CHAIN:")[0]
             else:
-                validated_text = validated_section.split("CONFIDENCE:")[0] if "CONFIDENCE:" in validated_section else validated_section
+                validated_text = (
+                    validated_section.split("CONFIDENCE:")[0]
+                    if "CONFIDENCE:" in validated_section
+                    else validated_section
+                )
 
             for line in validated_text.strip().split("\n"):
                 line = line.strip().lstrip("*-• ").strip()
-                if line and not line.startswith("NON_VALIDATED") and not line.startswith("CAUSAL_CHAIN"):
+                if (
+                    line
+                    and not line.startswith("NON_VALIDATED")
+                    and not line.startswith("CAUSAL_CHAIN")
+                ):
                     validated_claims.append(line)
 
         # Extract non-validated claims
@@ -115,17 +125,29 @@ def parse_root_cause(response: str) -> RootCauseResult:
             if "CAUSAL_CHAIN:" in non_validated_section:
                 non_validated_text = non_validated_section.split("CAUSAL_CHAIN:")[0]
             else:
-                non_validated_text = non_validated_section.split("CONFIDENCE:")[0] if "CONFIDENCE:" in non_validated_section else non_validated_section
+                non_validated_text = (
+                    non_validated_section.split("CONFIDENCE:")[0]
+                    if "CONFIDENCE:" in non_validated_section
+                    else non_validated_section
+                )
 
             for line in non_validated_text.strip().split("\n"):
                 line = line.strip().lstrip("*-• ").strip()
-                if line and not line.startswith("CAUSAL_CHAIN") and not line.startswith("CONFIDENCE"):
+                if (
+                    line
+                    and not line.startswith("CAUSAL_CHAIN")
+                    and not line.startswith("CONFIDENCE")
+                ):
                     non_validated_claims.append(line)
 
         # Extract causal chain
         if "CAUSAL_CHAIN:" in parts:
             causal_section = parts.split("CAUSAL_CHAIN:")[1]
-            causal_text = causal_section.split("CONFIDENCE:")[0] if "CONFIDENCE:" in causal_section else causal_section
+            causal_text = (
+                causal_section.split("CONFIDENCE:")[0]
+                if "CONFIDENCE:" in causal_section
+                else causal_section
+            )
 
             for line in causal_text.strip().split("\n"):
                 line = line.strip().lstrip("*-• ").strip()
@@ -143,9 +165,13 @@ def parse_root_cause(response: str) -> RootCauseResult:
         # Build root_cause text from all sections
         root_cause_parts = []
         if validated_claims:
-            root_cause_parts.append("VALIDATED CLAIMS:\n" + "\n".join(f"* {c}" for c in validated_claims))
+            root_cause_parts.append(
+                "VALIDATED CLAIMS:\n" + "\n".join(f"* {c}" for c in validated_claims)
+            )
         if non_validated_claims:
-            root_cause_parts.append("NON-VALIDATED CLAIMS:\n" + "\n".join(f"* {c}" for c in non_validated_claims))
+            root_cause_parts.append(
+                "NON-VALIDATED CLAIMS:\n" + "\n".join(f"* {c}" for c in non_validated_claims)
+            )
         if causal_chain:
             root_cause_parts.append("CAUSAL CHAIN:\n" + "\n".join(f"* {c}" for c in causal_chain))
 
@@ -153,7 +179,9 @@ def parse_root_cause(response: str) -> RootCauseResult:
             root_cause = "\n\n".join(root_cause_parts)
         else:
             # Fallback to old format
-            root_cause = parts.split("CONFIDENCE:")[0].strip() if "CONFIDENCE:" in parts else parts.strip()
+            root_cause = (
+                parts.split("CONFIDENCE:")[0].strip() if "CONFIDENCE:" in parts else parts.strip()
+            )
 
     return RootCauseResult(
         root_cause=root_cause,
@@ -162,4 +190,3 @@ def parse_root_cause(response: str) -> RootCauseResult:
         non_validated_claims=non_validated_claims,
         causal_chain=causal_chain,
     )
-

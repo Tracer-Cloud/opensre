@@ -6,17 +6,17 @@ from src.agent.state import InvestigationState
 def get_executed_sources(state: InvestigationState) -> set[str]:
     """
     Extract all executed sources from hypotheses history.
-    
+
     This function consolidates the logic for extracting executed evidence sources
     from the state's executed_hypotheses history. It handles both the legacy
     single "source" field and the newer "sources" list field.
-    
+
     Args:
         state: The investigation state containing executed_hypotheses
-        
+
     Returns:
         A set of all evidence source names that have been executed
-        
+
     Example:
         >>> state = {"executed_hypotheses": [
         ...     {"source": "tracer_web", "sources": ["tracer_web", "batch"]},

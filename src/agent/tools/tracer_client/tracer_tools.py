@@ -43,12 +43,14 @@ class TracerToolsMixin(TracerClientBase):
 
             exit_code = row.get("exit_code")
             if exit_code and exit_code not in ("0", "", None):
-                failed_details.append({
-                    **task,
-                    "tool_cmd": row.get("tool_cmd", ""),
-                    "reason": row.get("reason"),
-                    "explanation": row.get("explanation"),
-                })
+                failed_details.append(
+                    {
+                        **task,
+                        "tool_cmd": row.get("tool_cmd", ""),
+                        "reason": row.get("reason"),
+                        "explanation": row.get("explanation"),
+                    }
+                )
 
         return TracerTaskResult(
             found=True,

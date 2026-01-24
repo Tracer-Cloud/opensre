@@ -14,6 +14,7 @@ except ImportError:
             return lambda f: f
         return func
 
+
 from src.agent.tools.cloudwatch_client import get_metric_statistics
 from src.agent.tools.data_validation import validate_host_metrics
 from src.agent.tools.s3_client import S3CheckResult, get_s3_client
@@ -95,19 +96,18 @@ def get_batch_jobs() -> AWSBatchJobResult:
     return client.get_batch_jobs()
 
 
-
 def get_batch_statistics(trace_id: str) -> dict:
     """
     Get batch job statistics for a specific trace.
-    
+
     Useful for:
     - Proving systemic failure hypothesis (high failure rate)
     - Understanding overall job execution patterns
     - Cost analysis
-    
+
     Args:
         trace_id: The trace/run identifier
-        
+
     Returns:
         Dictionary with failed_job_count, total_runs, total_cost
     """
@@ -129,15 +129,15 @@ def get_batch_statistics(trace_id: str) -> dict:
 def get_failed_tools(trace_id: str) -> dict:
     """
     Get tools that failed during execution.
-    
+
     Useful for:
     - Proving tool failure hypothesis
     - Identifying specific failing components
     - Understanding error patterns
-    
+
     Args:
         trace_id: The trace/run identifier
-        
+
     Returns:
         Dictionary with failed_tools list and metadata
     """
@@ -170,15 +170,15 @@ def get_failed_tools(trace_id: str) -> dict:
 def get_failed_jobs(trace_id: str) -> dict:
     """
     Get AWS Batch jobs that failed.
-    
+
     Useful for:
     - Proving job failure hypothesis
     - Understanding container-level failures
     - Identifying infrastructure issues
-    
+
     Args:
         trace_id: The trace/run identifier
-        
+
     Returns:
         Dictionary with failed_jobs list and metadata
     """
@@ -193,12 +193,16 @@ def get_failed_jobs(trace_id: str) -> dict:
     for job in job_list:
         if job.get("status") == "FAILED":
             container = job.get("container", {})
-            failed_jobs.append({
-                "job_name": job.get("jobName"),
-                "status_reason": job.get("statusReason"),
-                "container_reason": container.get("reason") if isinstance(container, dict) else None,
-                "exit_code": container.get("exitCode") if isinstance(container, dict) else None,
-            })
+            failed_jobs.append(
+                {
+                    "job_name": job.get("jobName"),
+                    "status_reason": job.get("statusReason"),
+                    "container_reason": container.get("reason")
+                    if isinstance(container, dict)
+                    else None,
+                    "exit_code": container.get("exitCode") if isinstance(container, dict) else None,
+                }
+            )
 
     return {
         "failed_jobs": failed_jobs,
@@ -211,17 +215,17 @@ def get_failed_jobs(trace_id: str) -> dict:
 def get_error_logs(trace_id: str, size: int = 500, error_only: bool = True) -> dict:
     """
     Get logs from OpenSearch, optionally filtered for errors.
-    
+
     Useful for:
     - Proving error pattern hypothesis
     - Finding root cause error messages
     - Understanding failure timeline
-    
+
     Args:
         trace_id: The trace/run identifier
         size: Maximum number of logs to retrieve (default 500)
         error_only: If True, return only error/failure logs; if False, return all logs
-        
+
     Returns:
         Dictionary with logs list and metadata
     """
@@ -272,20 +276,20 @@ def get_error_logs(trace_id: str, size: int = 500, error_only: bool = True) -> d
 def get_host_metrics(trace_id: str) -> dict:
     """
     Get host-level metrics (CPU, memory, disk) for the run.
-    
+
     **Data Quality Notes:**
     - Metrics are validated for impossible values (e.g., >100% memory)
     - Any data quality issues are flagged in 'data_quality_issues' field
     - Invalid values are marked and may be corrected or set to None
-    
+
     Useful for:
     - Proving resource constraint hypothesis
     - Identifying memory/CPU exhaustion
     - Understanding infrastructure bottlenecks
-    
+
     Args:
         trace_id: The trace/run identifier
-        
+
     Returns:
         Dictionary with validated host metrics and data quality flags
     """
@@ -308,15 +312,15 @@ def get_host_metrics(trace_id: str) -> dict:
 def get_airflow_metrics(trace_id: str) -> dict:
     """
     Get Airflow orchestration metrics for the run.
-    
+
     Useful for:
     - Understanding orchestration issues
     - Identifying workflow problems
     - Proving scheduling hypothesis
-    
+
     Args:
         trace_id: The trace/run identifier
-        
+
     Returns:
         Dictionary with Airflow metrics
     """
@@ -335,16 +339,16 @@ def get_airflow_metrics(trace_id: str) -> dict:
 def get_cloudwatch_batch_metrics(job_queue: str, metric_type: str = "cpu") -> dict:
     """
     Get CloudWatch metrics for AWS Batch jobs.
-    
+
     Useful for:
     - Proving resource constraint hypothesis
     - Understanding batch job performance
     - Identifying AWS infrastructure issues
-    
+
     Args:
         job_queue: The AWS Batch job queue name
         metric_type: Either 'cpu' or 'memory'
-        
+
     Returns:
         Dictionary with CloudWatch metrics
     """

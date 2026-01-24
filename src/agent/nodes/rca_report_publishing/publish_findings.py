@@ -32,4 +32,3 @@ def main(state: InvestigationState) -> dict:
 def node_publish_findings(state: InvestigationState) -> dict:
     """LangGraph node wrapper."""
     return main(state)
-

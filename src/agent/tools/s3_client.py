@@ -25,4 +25,3 @@ class S3Client:
 def get_s3_client() -> S3Client:
     """Get S3 client (not implemented)."""
     return S3Client()
-

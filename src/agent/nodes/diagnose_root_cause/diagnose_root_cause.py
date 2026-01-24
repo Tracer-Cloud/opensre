@@ -38,7 +38,9 @@ def main(state: InvestigationState) -> dict:
     console.print(f"  [dim]Tools executed:[/] {len(investigation.get('tools_executed', []))}")
     console.print(f"  [dim]Logs analyzed:[/] {investigation.get('logs_analyzed', 0)}")
     if investigation.get("evidence_sources_skipped"):
-        console.print(f"  [yellow]Sources skipped:[/] {', '.join(investigation['evidence_sources_skipped'])}")
+        console.print(
+            f"  [yellow]Sources skipped:[/] {', '.join(investigation['evidence_sources_skipped'])}"
+        )
 
     prompt = build_diagnosis_prompt(state, state.get("evidence", {}), investigation)
     render_step_header(2, "Root cause inference")
@@ -47,6 +49,7 @@ def main(state: InvestigationState) -> dict:
     # Render using new validated/non-validated format if available
     if result.validated_claims or result.non_validated_claims:
         from src.agent.nodes.rca_report_publishing.render import render_validated_claims
+
         # Calculate initial validity score (will be recalculated in validation node)
         total_claims = len(result.validated_claims) + len(result.non_validated_claims)
         initial_validity = len(result.validated_claims) / total_claims if total_claims > 0 else 0.0
@@ -85,13 +88,17 @@ def _extract_evidence_sources(claim: str, investigation: dict) -> list[str]:
 
     # Check if claim mentions specific evidence types
     claim_lower = claim.lower()
-    if ("log" in claim_lower or "error" in claim_lower) and ("tracer_logs" in evidence_sources_checked or "opensearch" in evidence_sources_checked):
+    if ("log" in claim_lower or "error" in claim_lower) and (
+        "tracer_logs" in evidence_sources_checked or "opensearch" in evidence_sources_checked
+    ):
         sources.append("logs")
     if ("job" in claim_lower or "batch" in claim_lower) and "aws_batch" in evidence_sources_checked:
         sources.append("aws_batch_jobs")
     if "tool" in claim_lower and "tracer_tools" in evidence_sources_checked:
         sources.append("tracer_tools")
-    if ("metric" in claim_lower or "memory" in claim_lower or "cpu" in claim_lower) and "host_metrics" in evidence_sources_checked:
+    if (
+        "metric" in claim_lower or "memory" in claim_lower or "cpu" in claim_lower
+    ) and "host_metrics" in evidence_sources_checked:
         sources.append("host_metrics")
 
     return sources if sources else ["evidence_analysis"]
