@@ -1,6 +1,6 @@
 """Generate output reports."""
 
-from src.agent.nodes.generate_reports.report import (
+from src.agent.nodes.publish_findings.report import (
     ReportContext,
     format_problem_md,
     format_slack_message,
@@ -8,7 +8,7 @@ from src.agent.nodes.generate_reports.report import (
 from src.agent.state import InvestigationState
 
 
-def node_generate_reports(state: InvestigationState) -> dict:
+def node_publish_findings(state: InvestigationState) -> dict:
     """Generate Slack message and problem.md from analysis."""
     evidence = state.get("evidence", {})
     run = evidence.get("pipeline_run", {}) or {}
