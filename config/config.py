@@ -35,6 +35,11 @@ def init_runtime() -> dict:
     # Check LangSmith configuration
     langsmith_enabled = bool(os.getenv("LANGSMITH_API_KEY"))
     langsmith_project = os.getenv("LANGSMITH_PROJECT")
+
+    if langsmith_enabled:
+        # Ensure tracing is enabled for LangChain/LangSmith
+        os.environ.setdefault("LANGSMITH_TRACING", "true")
+        os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
     
     return {
         "langsmith_enabled": langsmith_enabled,
