@@ -21,3 +21,7 @@
 - Always test your changes with make test
 - Follow Go conventions: Use gofmt, follow project structure
 - Check for security implications: Review security-sensitive changes carefully
+
+
+# What not to do when writing code:
+- Do not create fallback functions with mock data.
