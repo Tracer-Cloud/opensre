@@ -201,11 +201,11 @@ def main(state: InvestigationState) -> dict:
 
     # If we have no evidence yet, we must gather it (even if plan_sources is empty)
     if not has_existing_evidence and not new_sources:
-        # No plan sources and no existing evidence - try to gather from context anyway
+        # No plan sources and no existing evidence - try to gather from available metadata anyway
         from src.agent.nodes.rca_report_publishing.render import console
 
         console.print(
-            "  [yellow]⚠️  No plan sources available, but attempting to gather evidence from context.[/]"
+            "  [yellow]⚠️  No plan sources available, but attempting to gather evidence from available metadata.[/]"
         )
 
     # Gather evidence only for new sources (or all if first time)

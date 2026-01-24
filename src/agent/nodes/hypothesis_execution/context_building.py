@@ -5,30 +5,7 @@ import json
 import os
 
 from src.agent.nodes.hypothesis_execution.utils import call_safe
-from src.agent.tools.tools import get_tracer_run
 from src.agent.tools.tracer_client import get_tracer_web_client
-
-
-def build_context_tracer() -> dict:
-    """Build context from Tracer staging API (metadata)."""
-    result, err = call_safe(get_tracer_run)
-    if err or not result.found:
-        return {"found": False, "error": err or "No runs found"}
-    return {
-        "found": True,
-        "run_id": result.run_id,
-        "pipeline_name": result.pipeline_name,
-        "run_name": result.run_name,
-        "status": result.status,
-        "run_time_minutes": round(result.run_time_seconds / 60, 1)
-        if result.run_time_seconds
-        else 0,
-        "run_cost_usd": round(result.run_cost, 2) if result.run_cost else 0,
-        "max_ram_gb": round(result.max_ram_gb, 1) if result.max_ram_gb else 0,
-        "user_email": result.user_email,
-        "team": result.team,
-        "instance_type": result.instance_type,
-    }
 
 
 def build_context_tracer_web() -> dict:
@@ -119,7 +96,6 @@ def _fetch_tracer_web_run_context() -> dict:
 
 
 CONTEXT_BUILDERS: dict[str, tuple[callable, str]] = {
-    "tracer": (build_context_tracer, "pipeline_run"),
     "tracer_web": (build_context_tracer_web, "tracer_web_run"),
 }
 
