@@ -110,8 +110,6 @@ def main(state: InvestigationState) -> dict:
     }
 
 
-
-
 @traceable(name="node_generate_hypotheses")
 def node_generate_hypotheses(state: InvestigationState) -> dict:
     """LangGraph node wrapper with LangSmith tracking."""

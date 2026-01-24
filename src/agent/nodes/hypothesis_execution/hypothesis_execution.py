@@ -239,8 +239,6 @@ def main(state: InvestigationState) -> dict:
     return {"evidence": evidence}
 
 
-
-
 @traceable(name="node_hypothesis_execution")
 def node_hypothesis_execution(state: InvestigationState) -> dict:
     """LangGraph node wrapper with LangSmith tracking."""

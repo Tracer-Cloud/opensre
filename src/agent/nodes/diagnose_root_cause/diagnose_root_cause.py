@@ -96,7 +96,9 @@ def main(state: InvestigationState) -> dict:
 
     # Render results
     render_analysis(result.root_cause, final_confidence)
-    console.print(f"  [dim]Validity: {validity_score:.0%} ({len(validated_claims_list)}/{total_claims} claims validated)[/]")
+    console.print(
+        f"  [dim]Validity: {validity_score:.0%} ({len(validated_claims_list)}/{total_claims} claims validated)[/]"
+    )
 
     # Generate recommendations if confidence is low
     investigation_recommendations = []
@@ -147,7 +149,9 @@ EVIDENCE:
     if failed_jobs:
         prompt += f"\nFailed Jobs ({len(failed_jobs)}):\n"
         for job in failed_jobs[:5]:
-            prompt += f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
+            prompt += (
+                f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
+            )
 
     if failed_tools:
         prompt += f"\nFailed Tools ({len(failed_tools)}):\n"
@@ -185,11 +189,16 @@ def _simple_validate_claim(claim: str, web_run: dict) -> bool:
         return False
 
     # Check metrics
-    if ("memory" in claim_lower or "cpu" in claim_lower) and not web_run.get("host_metrics", {}).get("data"):
+    if ("memory" in claim_lower or "cpu" in claim_lower) and not web_run.get(
+        "host_metrics", {}
+    ).get("data"):
         return False
 
     # Check jobs
-    return not (("job" in claim_lower or "batch" in claim_lower) and len(web_run.get("failed_jobs", [])) == 0)
+    return not (
+        ("job" in claim_lower or "batch" in claim_lower)
+        and len(web_run.get("failed_jobs", [])) == 0
+    )
 
 
 def _extract_evidence_sources(claim: str, web_run: dict) -> list[str]:
@@ -203,15 +212,15 @@ def _extract_evidence_sources(claim: str, web_run: dict) -> list[str]:
         sources.append("aws_batch_jobs")
     if "tool" in claim_lower and web_run.get("failed_tools"):
         sources.append("tracer_tools")
-    if ("metric" in claim_lower or "memory" in claim_lower or "cpu" in claim_lower) and web_run.get("host_metrics", {}).get("data"):
+    if ("metric" in claim_lower or "memory" in claim_lower or "cpu" in claim_lower) and web_run.get(
+        "host_metrics", {}
+    ).get("data"):
         sources.append("host_metrics")
 
     return sources if sources else ["evidence_analysis"]
 
 
-def _generate_simple_recommendations(
-    non_validated_claims: list[dict], evidence: dict
-) -> list[str]:
+def _generate_simple_recommendations(non_validated_claims: list[dict], evidence: dict) -> list[str]:
     """Generate simple investigation recommendations."""
     if not non_validated_claims:
         return []

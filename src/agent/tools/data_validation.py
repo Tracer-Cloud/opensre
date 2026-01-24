@@ -220,23 +220,23 @@ class MetricsValidator:
             # CPU can legitimately exceed 100% (multi-core)
             # But beyond 1000% is suspicious for most workloads
             if isinstance(raw_percent, (int, float)) and raw_percent > 1000:
-                    self.issues.append(
-                        ValidationIssue(
-                            field="cpu.percent",
-                            raw_value=raw_percent,
-                            issue_type="suspicious_value",
-                            severity="warning",
-                            explanation=(
-                                f"CPU usage reported as {raw_percent}% which is unusually high. "
-                                f"While multi-core systems can exceed 100%, values over 1000% "
-                                f"suggest a data collection error or misconfigured metric."
-                            ),
-                            suggested_fix="Verify CPU metric calculation and core count normalization",
-                        )
+                self.issues.append(
+                    ValidationIssue(
+                        field="cpu.percent",
+                        raw_value=raw_percent,
+                        issue_type="suspicious_value",
+                        severity="warning",
+                        explanation=(
+                            f"CPU usage reported as {raw_percent}% which is unusually high. "
+                            f"While multi-core systems can exceed 100%, values over 1000% "
+                            f"suggest a data collection error or misconfigured metric."
+                        ),
+                        suggested_fix="Verify CPU metric calculation and core count normalization",
                     )
-                    # Cap at reasonable value or mark as suspicious
-                    normalized["percent_suspicious"] = True
-                    normalized["percent_raw"] = raw_percent
+                )
+                # Cap at reasonable value or mark as suspicious
+                normalized["percent_suspicious"] = True
+                normalized["percent_raw"] = raw_percent
 
         return normalized
 
