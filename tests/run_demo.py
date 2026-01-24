@@ -18,20 +18,22 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 # Initialize runtime before any other imports
 from config import init_runtime  # noqa: E402
+
 init_runtime()
 
 import json  # noqa: E402
+
+from langsmith import traceable  # noqa: E402
 from rich.console import Console  # noqa: E402
 from rich.panel import Panel  # noqa: E402
-from langsmith import traceable  # noqa: E402
 
-from src.schemas.alert import GrafanaAlertPayload, normalize_grafana_alert  # noqa: E402
-from src.agent.graph import build_graph  # noqa: E402
 from src.agent.domain.state import make_initial_state  # noqa: E402
+from src.agent.graph import build_graph  # noqa: E402
 from src.agent.render_output.render import (  # noqa: E402
     render_investigation_start,
     render_root_cause_complete,
 )
+from src.ingest import parse_grafana_payload  # noqa: E402
 
 console = Console()
 
@@ -57,11 +59,11 @@ SOURCE_NAMES = {
 }
 
 
-def load_sample_alert() -> GrafanaAlertPayload:
-    """Load the sample Grafana alert from test fixtures."""
+def load_sample_request():
+    """Load the sample alert from test fixtures and parse into InvestigationRequest."""
     with open(FIXTURE_PATH) as f:
         data = json.load(f)
-    return GrafanaAlertPayload(**data)
+    return parse_grafana_payload(data)
 
 
 def render_plan(plan_sources: list[str]):
@@ -139,8 +141,7 @@ def run_demo():
     console.print("\n")
 
     # Load alert from test fixture
-    grafana_payload = load_sample_alert()
-    alert = normalize_grafana_alert(grafana_payload)
+    request = load_sample_request()
 
     # Show the raw incoming Slack alert (what triggers the agent)
     console.print(Panel(
@@ -152,17 +153,17 @@ def run_demo():
 
     # Render investigation start
     render_investigation_start(
-        alert.alert_name,
-        alert.affected_table or "events_fact",
-        alert.severity,
+        request.alert_name,
+        request.affected_table,
+        request.severity,
     )
 
     # Build graph and initial state
     graph = build_graph()
     initial_state = make_initial_state(
-        alert_name=alert.alert_name,
-        affected_table=alert.affected_table or "events_fact",
-        severity=alert.severity,
+        alert_name=request.alert_name,
+        affected_table=request.affected_table,
+        severity=request.severity,
     )
 
     # Stream the graph execution to show intermediate steps

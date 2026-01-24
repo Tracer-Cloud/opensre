@@ -1,0 +1,45 @@
+# Ruff configuration
+# https://docs.astral.sh/ruff/configuration/
+
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes (includes unused imports, variables)
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+]
+
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "B905",   # zip without explicit strict parameter
+    "SIM108", # use ternary operator instead of if-else
+]
+
+# Per-file ignores for legitimate patterns
+[lint.per-file-ignores]
+# Test files can have unused imports for fixtures
+"tests/**/*.py" = ["F401", "ARG001"]
+
+# Pydantic models have fields that appear unused but are accessed dynamically
+"src/ingest.py" = ["ARG002"]
+
+# TypedDict fields appear unused but are accessed via .get()
+"src/agent/render_output/report.py" = ["ARG002"]
+"src/agent/domain/state.py" = ["ARG002"]
+
+# Dataclass fields from external APIs may not all be used
+"src/tracer/client.py" = ["ARG002"]
+"src/agent/clients/tracer.py" = ["ARG002"]
+
+# CLI entry points
+"src/main.py" = ["ARG001"]
+

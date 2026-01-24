@@ -11,17 +11,18 @@ Architecture:
 No ReAct loop. Tools are called directly based on the plan.
 """
 
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END, START, StateGraph
 
 from src.agent.domain.state import InvestigationState, make_initial_state
 
 # Nodes (orchestration)
 from src.agent.nodes import (
-    node_plan,
-    node_gather_evidence,
     node_analyze,
+    node_gather_evidence,
     node_output,
+    node_plan,
 )
+
 
 def build_graph() -> StateGraph:
     """
