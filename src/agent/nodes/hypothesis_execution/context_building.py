@@ -5,7 +5,7 @@ import json
 import os
 
 from src.agent.nodes.hypothesis_execution.utils import call_safe
-from src.agent.tools.tracer_client import get_tracer_web_client
+from src.agent.tools.clients.tracer_client import get_tracer_web_client
 
 
 def build_context_tracer_web() -> dict:

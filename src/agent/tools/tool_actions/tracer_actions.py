@@ -1,5 +1,5 @@
 """
-Pure data collection tools - LangChain tool implementation.
+Tracer tool actions - LangChain tool implementation.
 
 No printing, no LLM calls. Just fetch data and return typed results.
 All functions are decorated with @tool for LangChain/LangGraph compatibility.
@@ -14,35 +14,14 @@ except ImportError:
             return lambda f: f
         return func
 
-
-from src.agent.tools.cloudwatch_client import get_metric_statistics
-from src.agent.tools.data_validation import validate_host_metrics
-from src.agent.tools.s3_client import S3CheckResult, get_s3_client
-from src.agent.tools.tracer_client import (
+from src.agent.tools.clients.tracer_client import (
     AWSBatchJobResult,
     TracerRunResult,
     TracerTaskResult,
     get_tracer_client,
     get_tracer_web_client,
 )
-
-
-def check_s3_marker(bucket: str, prefix: str) -> S3CheckResult:
-    """
-    Check if _SUCCESS marker exists in S3 storage.
-
-    Use this tool to verify if a data pipeline run completed successfully by checking
-    for the presence of a _SUCCESS marker file in the specified S3 location.
-
-    Args:
-        bucket: S3 bucket name
-        prefix: S3 key prefix (path) where the marker should be located
-
-    Returns:
-        S3CheckResult with marker existence status and file count
-    """
-    client = get_s3_client()
-    return client.check_marker(bucket, prefix)
+from src.agent.tools.data_validation import validate_host_metrics
 
 
 def get_tracer_run(pipeline_name: str | None = None) -> TracerRunResult:
@@ -336,57 +315,7 @@ def get_airflow_metrics(trace_id: str) -> dict:
     }
 
 
-def get_cloudwatch_batch_metrics(job_queue: str, metric_type: str = "cpu") -> dict:
-    """
-    Get CloudWatch metrics for AWS Batch jobs.
-
-    Useful for:
-    - Proving resource constraint hypothesis
-    - Understanding batch job performance
-    - Identifying AWS infrastructure issues
-
-    Args:
-        job_queue: The AWS Batch job queue name
-        metric_type: Either 'cpu' or 'memory'
-
-    Returns:
-        Dictionary with CloudWatch metrics
-    """
-    if not job_queue:
-        return {"error": "job_queue is required"}
-
-    if metric_type not in ["cpu", "memory"]:
-        return {"error": "metric_type must be 'cpu' or 'memory'"}
-
-    try:
-        if metric_type == "cpu":
-            metrics = get_metric_statistics(
-                namespace="AWS/Batch",
-                metric_name="CPUUtilization",
-                dimensions=[{"Name": "JobQueue", "Value": job_queue}],
-                statistics=["Average", "Maximum"],
-            )
-        else:
-            metrics = get_metric_statistics(
-                namespace="AWS/Batch",
-                metric_name="MemoryUtilization",
-                dimensions=[{"Name": "JobQueue", "Value": job_queue}],
-                statistics=["Average", "Maximum"],
-            )
-
-        return {
-            "metrics": metrics,
-            "metric_type": metric_type,
-            "job_queue": job_queue,
-            "source": "AWS CloudWatch API",
-        }
-    except Exception as e:
-        return {"error": f"CloudWatch not available: {str(e)}"}
-
-
 # Create LangChain tools from the functions
-# These can be used in LangGraph agents while the functions above remain callable
-check_s3_marker_tool = tool(check_s3_marker)
 get_tracer_run_tool = tool(get_tracer_run)
 get_tracer_tasks_tool = tool(get_tracer_tasks)
 get_batch_jobs_tool = tool(get_batch_jobs)
@@ -396,4 +325,3 @@ get_failed_jobs_tool = tool(get_failed_jobs)
 get_error_logs_tool = tool(get_error_logs)
 get_host_metrics_tool = tool(get_host_metrics)
 get_airflow_metrics_tool = tool(get_airflow_metrics)
-get_cloudwatch_batch_metrics_tool = tool(get_cloudwatch_batch_metrics)
