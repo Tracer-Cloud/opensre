@@ -27,7 +27,7 @@ from langsmith import traceable  # noqa: E402
 from rich.console import Console  # noqa: E402
 from rich.panel import Panel  # noqa: E402
 
-from src.agent.domain.state import make_initial_state  # noqa: E402
+from src.agent.state import make_initial_state  # noqa: E402
 from src.agent.graph import build_graph  # noqa: E402
 from src.agent.render_output.render import (  # noqa: E402
     render_investigation_start,

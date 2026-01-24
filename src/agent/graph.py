@@ -1,52 +1,31 @@
-"""
-Investigation Graph - Orchestrates the incident resolution workflow.
-
-Architecture:
-    Linear deterministic flow:
-    1. Planning Phase: Deterministic rules produce plan_sources
-    2. Evidence Gathering Phase: Execute plan by calling tools directly
-    3. Analysis Phase: Synthesize root cause from collected evidence
-    4. Output Phase: Generate reports (Slack, Markdown)
-
-No ReAct loop. Tools are called directly based on the plan.
-"""
+"""Investigation Graph - Orchestrates the incident resolution workflow."""
 
 from langgraph.graph import END, START, StateGraph
 
-from src.agent.domain.state import InvestigationState, make_initial_state
-
-# Nodes (orchestration)
+from src.agent.state import InvestigationState, make_initial_state
 from src.agent.nodes import (
-    node_analyze,
-    node_gather_evidence,
-    node_output,
-    node_plan,
+    node_collect_evidence,
+    node_diagnose_root_cause,
+    node_generate_hypotheses,
+    node_generate_reports,
 )
 
 
 def build_graph() -> StateGraph:
-    """
-    Build the investigation state machine.
-
-    Linear flow:
-        START -> plan -> gather_evidence -> analyze -> output -> END
-
-    No ReAct loop. Tools are called directly based on the plan.
-    """
+    """Build the investigation state machine."""
     graph = StateGraph(InvestigationState)
 
-    # Add nodes
-    graph.add_node("plan", node_plan)
-    graph.add_node("gather_evidence", node_gather_evidence)
-    graph.add_node("analyze", node_analyze)
-    graph.add_node("output", node_output)
+    # Problem framing node should be added here frame_problem.py
+    graph.add_node("hypotheses", node_generate_hypotheses)
+    graph.add_node("evidence", node_collect_evidence)
+    graph.add_node("diagnose", node_diagnose_root_cause)
+    graph.add_node("reports", node_generate_reports)
 
-    # Linear flow
-    graph.add_edge(START, "plan")
-    graph.add_edge("plan", "gather_evidence")
-    graph.add_edge("gather_evidence", "analyze")
-    graph.add_edge("analyze", "output")
-    graph.add_edge("output", END)
+    graph.add_edge(START, "hypotheses")
+    graph.add_edge("hypotheses", "evidence")
+    graph.add_edge("evidence", "diagnose")
+    graph.add_edge("diagnose", "reports")
+    graph.add_edge("reports", END)
 
     return graph.compile()
 
