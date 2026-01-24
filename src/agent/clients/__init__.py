@@ -1,12 +1,5 @@
 """Infrastructure layer - external service clients and LLM."""
 
-from src.agent.clients.clients import (
-    S3CheckResult,
-    TracerRunResult,
-    TracerTaskResult,
-    get_s3_client,
-    get_tracer_client,
-)
 from src.agent.clients.llm import (
     InterpretationResult,
     RootCauseResult,
@@ -14,17 +7,24 @@ from src.agent.clients.llm import (
     parse_root_cause,
     stream_completion,
 )
+from src.agent.clients.s3_client import S3CheckResult, get_s3_client
+from src.agent.clients.tracer_client import (
+    AWSBatchJobResult,
+    TracerRunResult,
+    TracerTaskResult,
+    get_tracer_client,
+)
 
 __all__ = [
+    "AWSBatchJobResult",
+    "InterpretationResult",
+    "RootCauseResult",
     "S3CheckResult",
     "TracerRunResult",
     "TracerTaskResult",
     "get_s3_client",
     "get_tracer_client",
-    "RootCauseResult",
-    "InterpretationResult",
-    "stream_completion",
     "parse_bullets",
     "parse_root_cause",
+    "stream_completion",
 ]
-
