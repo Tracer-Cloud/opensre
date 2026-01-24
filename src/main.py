@@ -13,7 +13,10 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
+
+if TYPE_CHECKING:
+    from src.schemas.alert import GrafanaAlertPayload
 
 
 def init() -> None:
