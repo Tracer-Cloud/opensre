@@ -1,6 +1,6 @@
 """Validate root cause analysis for hallucinations and unrealistic values."""
 
-from src.agent.nodes.rca_report_publishing.render import (
+from src.agent.nodes.publish_findings.render import (
     console,
     render_step_header,
 )
@@ -88,7 +88,7 @@ def main(state: InvestigationState) -> dict:
     validity_score = len(validated_results) / total_claims if total_claims > 0 else 0.0
 
     # Display results with detailed rendering
-    from src.agent.nodes.rca_report_publishing.render import render_validated_claims
+    from src.agent.nodes.publish_findings.render import render_validated_claims
 
     render_validated_claims(validated_results, non_validated_results, validity_score, confidence)
 

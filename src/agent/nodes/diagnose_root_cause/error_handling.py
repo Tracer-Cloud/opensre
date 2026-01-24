@@ -1,6 +1,6 @@
 """Error handling for root cause diagnosis."""
 
-from src.agent.nodes.rca_report_publishing.render import console
+from src.agent.nodes.publish_findings.render import console
 
 
 def check_evidence_sources(investigation: dict) -> tuple[bool, str | None]:

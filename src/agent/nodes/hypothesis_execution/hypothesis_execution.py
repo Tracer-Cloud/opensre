@@ -1,7 +1,9 @@
 """Hypothesis execution - gather evidence to prove/disprove hypotheses using dynamic tools."""
 
+from langsmith import traceable
+
 from src.agent.nodes.hypothesis_execution.context_building import build_investigation_context
-from src.agent.nodes.rca_report_publishing.render import (
+from src.agent.nodes.publish_findings.render import (
     render_evidence,
     render_step_header,
 )
@@ -191,7 +193,7 @@ def main(state: InvestigationState) -> dict:
 
     if not new_sources and executed_sources_set and has_existing_evidence:
         # All sources have been executed and we have evidence - don't re-gather
-        from src.agent.nodes.rca_report_publishing.render import console
+        from src.agent.nodes.publish_findings.render import console
 
         console.print(
             "  [yellow]⚠️  All planned sources have already been executed. Using existing evidence.[/]"
@@ -202,7 +204,7 @@ def main(state: InvestigationState) -> dict:
     # If we have no evidence yet, we must gather it (even if plan_sources is empty)
     if not has_existing_evidence and not new_sources:
         # No plan sources and no existing evidence - try to gather from available metadata anyway
-        from src.agent.nodes.rca_report_publishing.render import console
+        from src.agent.nodes.publish_findings.render import console
 
         console.print(
             "  [yellow]⚠️  No plan sources available, but attempting to gather evidence from available metadata.[/]"
@@ -211,7 +213,7 @@ def main(state: InvestigationState) -> dict:
     # Gather evidence only for new sources (or all if first time)
     render_step_header(1, "Gather runtime evidence")
     if new_sources:
-        from src.agent.nodes.rca_report_publishing.render import console
+        from src.agent.nodes.publish_findings.render import console
 
         console.print(f"  [dim]Gathering evidence for new sources: {', '.join(new_sources)}[/]")
 
@@ -237,8 +239,11 @@ def main(state: InvestigationState) -> dict:
     return {"evidence": evidence}
 
 
+
+
+@traceable(name="node_hypothesis_execution")
 def node_hypothesis_execution(state: InvestigationState) -> dict:
-    """LangGraph node wrapper."""
+    """LangGraph node wrapper with LangSmith tracking."""
     return main(state)
 
 

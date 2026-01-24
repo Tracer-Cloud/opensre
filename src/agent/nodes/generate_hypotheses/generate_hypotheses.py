@@ -1,9 +1,10 @@
 """Generate investigation hypotheses based on alert context."""
 
+from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from src.agent.nodes.generate_hypotheses.prompt import build_hypothesis_prompt
-from src.agent.nodes.rca_report_publishing.render import (
+from src.agent.nodes.publish_findings.render import (
     render_plan,
     render_step_header,
 )
@@ -43,7 +44,7 @@ def main(state: InvestigationState) -> dict:
     # Check if we have investigation recommendations from validation
     investigation_recommendations = state.get("investigation_recommendations", [])
     if investigation_recommendations:
-        from src.agent.nodes.rca_report_publishing.render import console
+        from src.agent.nodes.publish_findings.render import console
 
         console.print("\n  [yellow]📋 Investigation Recommendations (from validation):[/]")
         for i, rec in enumerate(investigation_recommendations[:5], 1):
@@ -62,7 +63,7 @@ def main(state: InvestigationState) -> dict:
 
     # If no sources available, we cannot continue - this should not happen with max 1 loop
     if not available_sources_filtered:
-        from src.agent.nodes.rca_report_publishing.render import console
+        from src.agent.nodes.publish_findings.render import console
 
         console.print(
             "  [red]⚠️  All available sources have been executed. Cannot gather new evidence.[/]"
@@ -88,7 +89,7 @@ def main(state: InvestigationState) -> dict:
     if plan_sources:
         plan_sources = _ensure_required_sources(plan_sources, executed_sources_set)
     else:
-        from src.agent.nodes.rca_report_publishing.render import console
+        from src.agent.nodes.publish_findings.render import console
 
         console.print("  [yellow]⚠️  No new sources selected. All sources have been executed.[/]")
 
@@ -109,8 +110,11 @@ def main(state: InvestigationState) -> dict:
     }
 
 
+
+
+@traceable(name="node_generate_hypotheses")
 def node_generate_hypotheses(state: InvestigationState) -> dict:
-    """LangGraph node wrapper."""
+    """LangGraph node wrapper with LangSmith tracking."""
     return main(state)
 
 

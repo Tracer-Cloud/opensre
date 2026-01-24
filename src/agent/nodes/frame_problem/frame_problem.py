@@ -1,11 +1,12 @@
 """Frame the problem and enrich context."""
 
+from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from src.agent.nodes.frame_problem.extract import extract_alert_details
 from src.agent.nodes.frame_problem.render import render_problem_statement_md
 from src.agent.nodes.frame_problem.service_graph import render_tools_briefing
-from src.agent.nodes.rca_report_publishing.render import (
+from src.agent.nodes.publish_findings.render import (
     console,
     render_investigation_start,
     render_step_header,
@@ -59,9 +60,10 @@ def main(state: InvestigationState) -> dict:
     }
 
 
+@traceable(name="node_frame_problem")
 def node_frame_problem(state: InvestigationState) -> dict:
     """
-    LangGraph node wrapper.
+    LangGraph node wrapper with LangSmith tracking.
 
     Kept for graph wiring; delegates to the main flow.
     """
