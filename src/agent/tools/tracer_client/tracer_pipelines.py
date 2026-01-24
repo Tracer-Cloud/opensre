@@ -1,13 +1,17 @@
-"""Tracer web app API client for pipelines and runs."""
+"""Pipeline and run-related API methods and models."""
 
 import os
 from dataclasses import dataclass
 
-import httpx
+from src.agent.tools.tracer_client.tracer_client_base import TracerClientBase
+
+DEMO_TRACE_ID = "efb797c9-0226-4932-8eb0-704f03d1752f"
 
 
 @dataclass(frozen=True)
 class PipelineSummary:
+    """Summary of a pipeline from the web app."""
+
     pipeline_name: str
     health_status: str | None
     last_run_start_time: str | None
@@ -18,6 +22,8 @@ class PipelineSummary:
 
 @dataclass(frozen=True)
 class PipelineRunSummary:
+    """Summary of a pipeline run from the web app."""
+
     pipeline_name: str
     run_id: str | None
     run_name: str | None
@@ -33,22 +39,31 @@ class PipelineRunSummary:
     log_file_count: int
 
 
-class TracerWebClient:
-    """HTTP client for tracer-web-app Next.js API routes."""
+@dataclass(frozen=True)
+class TracerRunResult:
+    """Result from get_latest_run."""
 
-    def __init__(self, base_url: str, org_id: str, jwt_token: str):
-        self.base_url = base_url.rstrip("/")
-        self.org_id = org_id
-        self._client = httpx.Client(
-            timeout=30.0,
-            headers={"Authorization": f"Bearer {jwt_token}"},
-        )
+    found: bool
+    run_id: str | None = None
+    pipeline_name: str | None = None
+    run_name: str | None = None
+    status: str | None = None
+    start_time: str | None = None
+    end_time: str | None = None
+    run_time_seconds: float = 0
+    run_cost: float = 0
+    max_ram_gb: float = 0
+    user_email: str | None = None
+    team: str | None = None
+    department: str | None = None
+    instance_type: str | None = None
+    environment: str | None = None
+    region: str | None = None
+    tool_count: int = 0
 
-    def _get(self, endpoint: str, params: dict | None = None) -> dict:
-        url = f"{self.base_url}{endpoint}"
-        response = self._client.get(url, params=params or {})
-        response.raise_for_status()
-        return response.json()
+
+class TracerPipelinesMixin(TracerClientBase):
+    """Mixin for Tracer pipeline and run-related API methods."""
 
     def get_pipelines(self, page: int = 1, size: int = 50) -> list[PipelineSummary]:
         """Fetch pipeline stats from /api/pipelines."""
@@ -111,24 +126,41 @@ class TracerWebClient:
             )
         return runs
 
+    def get_batch_details(self, trace_id: str) -> dict:
+        """Fetch detailed batch run information from /api/batch-runs/[trace_id]."""
+        params = {"orgId": self.org_id}
+        data = self._get(f"/api/batch-runs/{trace_id}", params)
+        return data
 
-_tracer_web_client: TracerWebClient | None = None
+    def get_latest_run(self, pipeline_name: str | None = None) -> TracerRunResult:  # noqa: ARG002
+        """Get pipeline run from /api/batch-runs endpoint."""
+        trace_id = os.getenv("TRACER_TRACE_ID", DEMO_TRACE_ID)
+        params = {"page": 1, "size": 1, "orgId": self.org_id, "traceId": trace_id}
+        data = self._get("/api/batch-runs", params)
 
+        if not data.get("success") or not data.get("data"):
+            return TracerRunResult(found=False)
 
-def get_tracer_web_client() -> TracerWebClient:
-    """Get tracer-web-app client singleton. Requires JWT_TOKEN and TRACER_ORG_ID."""
-    global _tracer_web_client
+        row = data["data"][0]
+        tags = row.get("tags", {})
+        max_ram_gb = float(row.get("max_ram", 0) or 0) / (1024**3)
 
-    if _tracer_web_client is None:
-        jwt_token = os.getenv("JWT_TOKEN")
-        if not jwt_token:
-            raise ValueError("JWT_TOKEN environment variable is required")
-
-        org_id = os.getenv("TRACER_ORG_ID")
-        if not org_id:
-            raise ValueError("TRACER_ORG_ID environment variable is required")
-
-        base_url = os.getenv("TRACER_WEB_APP_URL", "http://localhost:3000")
-        _tracer_web_client = TracerWebClient(base_url, org_id, jwt_token)
-
-    return _tracer_web_client
+        return TracerRunResult(
+            found=True,
+            run_id=row.get("run_id", ""),
+            pipeline_name=row.get("pipeline_name", ""),
+            run_name=row.get("run_name", ""),
+            status=row.get("status", "Unknown"),
+            start_time=row.get("start_time", ""),
+            end_time=row.get("end_time"),
+            run_time_seconds=float(row.get("run_time_seconds", 0) or 0),
+            run_cost=float(row.get("run_cost", 0) or 0),
+            max_ram_gb=max_ram_gb,
+            user_email=tags.get("email", row.get("user_email", "")),
+            team=tags.get("team", ""),
+            department=tags.get("department", ""),
+            instance_type=tags.get("instance_type", row.get("instance_type", "")),
+            environment=row.get("environment", tags.get("environment", "")),
+            region=row.get("region", ""),
+            tool_count=int(row.get("tool_count", 0) or 0),
+        )

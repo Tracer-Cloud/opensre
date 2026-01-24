@@ -85,6 +85,46 @@ def render_evidence(evidence: dict):
             console.print(f"  [dim]Cost:[/] [yellow]${web_run.get('run_cost', 0):.2f}[/]")
             console.print(f"  [dim]User:[/] {web_run.get('user_email', 'Unknown')}")
 
+            # Show run URL
+            run_url = web_run.get("run_url")
+            if run_url:
+                console.print(f"  [dim]View run:[/] [blue underline]{run_url}[/]")
+
+            # Show failed jobs if available (from batch jobs API)
+            failed_jobs = web_run.get("failed_jobs", [])
+            failed_jobs_source = web_run.get("failed_jobs_source", "aws/batch/jobs/completed API")
+            if failed_jobs:
+                console.print(f"  [dim]Failed jobs:[/] [red bold]{len(failed_jobs)}[/] [dim](from {failed_jobs_source})[/]")
+                for job in failed_jobs[:2]:
+                    job_name = job.get("job_name", "Unknown")
+                    status_reason = job.get("status_reason", "")
+                    exit_code = job.get("exit_code")
+                    console.print(f"    [red]- {job_name}: {status_reason}[/]")
+                    if exit_code:
+                        console.print(f"      [dim]Exit code: {exit_code} (from batch jobs API)[/]")
+
+            # Show failed tools if available (from tools API)
+            failed_tools = web_run.get("failed_tools", [])
+            failed_tools_source = web_run.get("failed_tools_source", "tools/[traceId] API")
+            if failed_tools:
+                console.print(f"  [dim]Failed tools:[/] [red bold]{len(failed_tools)}[/] [dim](from {failed_tools_source})[/]")
+                for tool in failed_tools[:2]:
+                    tool_name = tool.get("tool_name", "Unknown")
+                    exit_code = tool.get("exit_code")
+                    reason = tool.get("reason")
+                    console.print(f"    [red]- {tool_name} (exit_code={exit_code})[/]")
+                    if reason:
+                        console.print(f"      [dim]{reason}[/]")
+
+            # Show error logs status (from logs API)
+            error_logs = web_run.get("error_logs", [])
+            error_logs_source = web_run.get("error_logs_source", "opensearch/logs API")
+            logs_available = web_run.get("logs_available", False)
+            if error_logs:
+                console.print(f"  [dim]Error logs:[/] [red bold]{len(error_logs)}[/] [dim](from {error_logs_source})[/]")
+            elif not logs_available:
+                console.print(f"  [dim]Logs:[/] [yellow]No logs available[/] [dim](checked {error_logs_source})[/]")
+
     # Batch jobs evidence
     if "batch_jobs" in evidence:
         batch = evidence["batch_jobs"]
