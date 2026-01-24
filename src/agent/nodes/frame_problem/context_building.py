@@ -5,7 +5,7 @@ import json
 import os
 
 from src.agent.constants import TRACER_BASE_URL
-from src.agent.nodes.hypothesis_execution.utils import call_safe
+from src.agent.nodes.frame_problem.utils import call_safe
 from src.agent.tools.clients.tracer_client import get_tracer_web_client
 
 
