@@ -1,7 +1,11 @@
 """Generate output reports."""
 
+from src.agent.nodes.generate_reports.report import (
+    ReportContext,
+    format_problem_md,
+    format_slack_message,
+)
 from src.agent.state import InvestigationState
-from src.agent.render_output.report import ReportContext, format_problem_md, format_slack_message
 
 
 def node_generate_reports(state: InvestigationState) -> dict:

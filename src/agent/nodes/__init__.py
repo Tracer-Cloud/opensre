@@ -7,10 +7,10 @@ from src.agent.nodes.generate_hypotheses import node_generate_hypotheses
 from src.agent.nodes.generate_reports import node_generate_reports
 
 __all__ = [
-    "node_frame_problem",
-    "node_generate_hypotheses",
     "node_collect_evidence",
     "node_diagnose_root_cause",
+    "node_frame_problem",
+    "node_generate_hypotheses",
     "node_generate_reports",
 ]
 

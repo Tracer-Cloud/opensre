@@ -2,13 +2,13 @@
 
 from langgraph.graph import END, START, StateGraph
 
-from src.agent.state import InvestigationState, make_initial_state
 from src.agent.nodes import (
     node_collect_evidence,
     node_diagnose_root_cause,
     node_generate_hypotheses,
     node_generate_reports,
 )
+from src.agent.state import InvestigationState, make_initial_state
 
 
 def build_graph() -> StateGraph:
