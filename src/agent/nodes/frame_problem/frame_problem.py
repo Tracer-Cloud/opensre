@@ -11,8 +11,12 @@ class ProblemStatement(BaseModel):
     """Structured problem statement for the investigation."""
 
     summary: str = Field(description="One-line summary of the problem")
-    context: str = Field(description="Background context about the alert and affected systems")
-    investigation_goals: list[str] = Field(description="Specific goals for the investigation")
+    context: str = Field(
+        description="Background context about the alert and affected systems"
+    )
+    investigation_goals: list[str] = Field(
+        description="Specific goals for the investigation"
+    )
     constraints: list[str] = Field(description="Known constraints or limitations")
 
 
@@ -30,7 +34,9 @@ Analyze the alert and provide a structured problem statement.
 """
 
 
-def _render_problem_statement_md(problem: ProblemStatement, state: InvestigationState) -> str:
+def _render_problem_statement_md(
+    problem: ProblemStatement, state: InvestigationState
+) -> str:
     goals_md = "\n".join(f"- {goal}" for goal in problem.investigation_goals)
     constraints_md = "\n".join(f"- {constraint}" for constraint in problem.constraints)
 
@@ -75,7 +81,7 @@ def node_frame_problem(state: InvestigationState) -> dict:
 
     prompt = _build_prompt(state)
     llm = get_llm()
-    
+
     try:
         structured_llm = llm.with_structured_output(ProblemStatement)
         problem = structured_llm.invoke(prompt)
@@ -84,16 +90,24 @@ def node_frame_problem(state: InvestigationState) -> dict:
         problem = ProblemStatement(
             summary="Investigation required for data pipeline alert",
             context="Alert triggered for affected table",
-            investigation_goals=["Identify root cause", "Assess impact", "Determine resolution"],
+            investigation_goals=[
+                "Identify root cause",
+                "Assess impact",
+                "Determine resolution",
+            ],
             constraints=["Limited to available evidence sources"],
         )
 
     # ensure problem is not None (in case with_structured_output returns None on failure depending on config)
     if problem is None:
-         problem = ProblemStatement(
+        problem = ProblemStatement(
             summary="Investigation required for data pipeline alert",
             context="Alert triggered for affected table",
-            investigation_goals=["Identify root cause", "Assess impact", "Determine resolution"],
+            investigation_goals=[
+                "Identify root cause",
+                "Assess impact",
+                "Determine resolution",
+            ],
             constraints=["Limited to available evidence sources"],
         )
 

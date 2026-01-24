@@ -71,14 +71,22 @@ class InvestigationRequest:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _build_alert_text(payload: GrafanaAlertPayload, alert: GrafanaAlert) -> str:
+    if payload.message:
+        return payload.message
+    summary = alert.annotations.summary
+    description = alert.annotations.description or ""
+    lines = [summary] if summary else []
+    if description:
+        lines.append(description)
+    return "\n\n".join(lines) if lines else "Grafana alert received"
+
+
 def parse_grafana_payload(
     payload: dict[str, Any],
     default_table: str = "events_fact",
-    raw_alert_text: str | None = None,
 ) -> InvestigationRequest:
     """Parse Grafana webhook into InvestigationRequest."""
-    if raw_alert_text is not None:
-        render_incoming_alert(raw_alert_text)
     grafana = GrafanaAlertPayload(**payload)
 
     firing = [a for a in grafana.alerts if a.status == "firing"]
@@ -86,6 +94,7 @@ def parse_grafana_payload(
         raise ValueError("No firing alerts in payload")
 
     alert = firing[0]
+    render_incoming_alert(_build_alert_text(grafana, alert))
     raw_severity = alert.labels.severity.lower()
 
     return InvestigationRequest(
@@ -97,14 +106,11 @@ def parse_grafana_payload(
     )
 
 
-def load_request_from_json(
-    path: str | None,
-    raw_alert_text: str | None = None,
-) -> InvestigationRequest:
+def load_request_from_json(path: str | None) -> InvestigationRequest:
     """Load InvestigationRequest from JSON file or stdin."""
     if path in (None, "-"):
         payload = json.load(sys.stdin)
     else:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    return parse_grafana_payload(payload, raw_alert_text=raw_alert_text)
+    return parse_grafana_payload(payload)
 
