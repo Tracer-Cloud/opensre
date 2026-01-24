@@ -2,9 +2,9 @@
 
 import os
 
-from src.agent.nodes.hypothesis_execution.context_building import _fetch_tracer_web_run_context
 from src.agent.graph_pipeline import run_investigation_pipeline
 from src.agent.nodes.diagnose_root_cause import node_diagnose_root_cause
+from src.agent.nodes.hypothesis_execution.context_building import _fetch_tracer_web_run_context
 from src.agent.nodes.hypothesis_execution.hypothesis_execution import gather_evidence_for_trace
 from src.agent.state import InvestigationState
 from src.agent.tools.tracer_client import get_tracer_web_client
@@ -73,8 +73,12 @@ def test_investigate_specific_failed_run() -> None:
     # Check specific failure details we know about
     star_job = next((j for j in failed_jobs if j.get("job_name") == "STAR_S27"), None)
     assert star_job, "Expected STAR_S27 job in failed jobs"
-    assert star_job.get("exit_code") == 102, f"Expected exit code 102, got {star_job.get('exit_code')}"
-    assert "Essential container" in star_job.get("status_reason", ""), "Expected 'Essential container' in status reason"
+    assert star_job.get("exit_code") == 102, (
+        f"Expected exit code 102, got {star_job.get('exit_code')}"
+    )
+    assert "Essential container" in star_job.get("status_reason", ""), (
+        "Expected 'Essential container' in status reason"
+    )
 
     # Now test root cause analysis with this evidence
     state: InvestigationState = {

@@ -72,12 +72,8 @@ class ProblemStatement(BaseModel):
     """Structured problem statement for the investigation."""
 
     summary: str = Field(description="One-line summary of the problem")
-    context: str = Field(
-        description="Background context about the alert and affected systems"
-    )
-    investigation_goals: list[str] = Field(
-        description="Specific goals for the investigation"
-    )
+    context: str = Field(description="Background context about the alert and affected systems")
+    investigation_goals: list[str] = Field(description="Specific goals for the investigation")
     constraints: list[str] = Field(description="Known constraints or limitations")
 
 
@@ -118,4 +114,3 @@ def _add_tools_briefing(problem: ProblemStatement) -> ProblemStatement:
         return problem
     new_context = f"{problem.context}\n\n{render_tools_briefing()}"
     return problem.model_copy(update={"context": new_context})
-

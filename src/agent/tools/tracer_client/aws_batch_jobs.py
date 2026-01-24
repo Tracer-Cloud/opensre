@@ -25,7 +25,10 @@ class AWSBatchJobsMixin(TracerClientBase):
     """Mixin for AWS Batch jobs-related API methods."""
 
     def get_batch_jobs(
-        self, trace_id: str | None = None, statuses: list[str] | None = None, return_dict: bool = False
+        self,
+        trace_id: str | None = None,
+        statuses: list[str] | None = None,
+        return_dict: bool = False,
     ) -> AWSBatchJobResult | dict:
         """
         Get AWS Batch jobs from /api/aws/batch/jobs/completed endpoint.
@@ -75,7 +78,9 @@ class AWSBatchJobsMixin(TracerClientBase):
 
         for row in data["data"]:
             container = row.get("container", {})
-            resources = {r["type"]: int(r["value"]) for r in container.get("resourceRequirements", [])}
+            resources = {
+                r["type"]: int(r["value"]) for r in container.get("resourceRequirements", [])
+            }
 
             status = row.get("status", "")
             if status == "FAILED":
@@ -87,19 +92,23 @@ class AWSBatchJobsMixin(TracerClientBase):
 
             started_at = None
             if row.get("startedAt"):
-                started_at = datetime.fromtimestamp(row["startedAt"] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                started_at = datetime.fromtimestamp(row["startedAt"] / 1000).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
 
-            jobs.append({
-                "job_name": row.get("jobName", ""),
-                "status": status,
-                "status_reason": row.get("statusReason", ""),
-                "failure_reason": container.get("reason"),
-                "exit_code": container.get("exitCode"),
-                "vcpu": resources.get("VCPU", 0),
-                "memory_mb": resources.get("MEMORY", 0),
-                "gpu_count": resources.get("GPU", 0),
-                "started_at": started_at,
-            })
+            jobs.append(
+                {
+                    "job_name": row.get("jobName", ""),
+                    "status": status,
+                    "status_reason": row.get("statusReason", ""),
+                    "failure_reason": container.get("reason"),
+                    "exit_code": container.get("exitCode"),
+                    "vcpu": resources.get("VCPU", 0),
+                    "memory_mb": resources.get("MEMORY", 0),
+                    "gpu_count": resources.get("GPU", 0),
+                    "started_at": started_at,
+                }
+            )
 
         return AWSBatchJobResult(
             found=True,

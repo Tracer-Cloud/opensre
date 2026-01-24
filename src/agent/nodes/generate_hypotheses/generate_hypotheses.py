@@ -1,6 +1,5 @@
 """Generate investigation hypotheses based on alert context."""
 
-
 from pydantic import BaseModel, Field
 
 from src.agent.nodes.generate_hypotheses.prompt import build_hypothesis_prompt
@@ -45,6 +44,7 @@ def main(state: InvestigationState) -> dict:
     investigation_recommendations = state.get("investigation_recommendations", [])
     if investigation_recommendations:
         from src.agent.nodes.rca_report_publishing.render import console
+
         console.print("\n  [yellow]📋 Investigation Recommendations (from validation):[/]")
         for i, rec in enumerate(investigation_recommendations[:5], 1):
             console.print(f"    {i}. {rec}")
@@ -63,7 +63,10 @@ def main(state: InvestigationState) -> dict:
     # If no sources available, we cannot continue - this should not happen with max 1 loop
     if not available_sources_filtered:
         from src.agent.nodes.rca_report_publishing.render import console
-        console.print("  [red]⚠️  All available sources have been executed. Cannot gather new evidence.[/]")
+
+        console.print(
+            "  [red]⚠️  All available sources have been executed. Cannot gather new evidence.[/]"
+        )
         console.print("  [yellow]Proceeding with existing evidence.[/]")
         # Return empty plan - this will cause the graph to proceed with existing evidence
         return {
@@ -71,7 +74,9 @@ def main(state: InvestigationState) -> dict:
             "executed_hypotheses": executed_hypotheses,
         }
 
-    plan = _generate_hypothesis_plan(state, available_sources_filtered, investigation_recommendations, executed_hypotheses)
+    plan = _generate_hypothesis_plan(
+        state, available_sources_filtered, investigation_recommendations, executed_hypotheses
+    )
 
     # Filter plan_sources to only include available sources that haven't been executed
     plan_sources = [s for s in plan.plan_sources if s in available_sources_filtered]
@@ -84,6 +89,7 @@ def main(state: InvestigationState) -> dict:
         plan_sources = _ensure_required_sources(plan_sources, executed_sources_set)
     else:
         from src.agent.nodes.rca_report_publishing.render import console
+
         console.print("  [yellow]⚠️  No new sources selected. All sources have been executed.[/]")
 
     # Track this hypothesis execution
@@ -108,7 +114,12 @@ def node_generate_hypotheses(state: InvestigationState) -> dict:
     return main(state)
 
 
-def _generate_hypothesis_plan(state: InvestigationState, available_sources: list[EvidenceSource], recommendations: list[str] | None = None, executed_hypotheses: list[dict] | None = None) -> HypothesisPlan:
+def _generate_hypothesis_plan(
+    state: InvestigationState,
+    available_sources: list[EvidenceSource],
+    recommendations: list[str] | None = None,
+    executed_hypotheses: list[dict] | None = None,
+) -> HypothesisPlan:
     """Use the LLM to select evidence sources from available sources only."""
     prompt = build_hypothesis_prompt(state, available_sources, recommendations, executed_hypotheses)
     llm = get_llm()
@@ -125,10 +136,12 @@ def _generate_hypothesis_plan(state: InvestigationState, available_sources: list
     return plan
 
 
-def _ensure_required_sources(plan_sources: list[EvidenceSource], executed_sources: set[str] | None = None) -> list[EvidenceSource]:
+def _ensure_required_sources(
+    plan_sources: list[EvidenceSource], executed_sources: set[str] | None = None
+) -> list[EvidenceSource]:
     """
     Ensure required sources are included without duplicating.
-    
+
     Only adds required sources if they haven't been executed yet.
     """
     if executed_sources is None:
@@ -141,4 +154,3 @@ def _ensure_required_sources(plan_sources: list[EvidenceSource], executed_source
         if source not in ordered and source not in executed_sources:
             ordered.append(source)
     return ordered
-

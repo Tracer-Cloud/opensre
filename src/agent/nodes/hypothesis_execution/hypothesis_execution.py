@@ -20,17 +20,18 @@ from src.agent.utils import get_executed_sources
 # Compatibility Functions (for backward compatibility)
 # ============================================================================
 
+
 def gather_evidence_for_context(context: dict) -> dict:
     """
     Compatibility wrapper for gathering evidence.
-    
+
     This function gathers all evidence upfront. For new implementations,
     use tools directly with a LangGraph agent that can dynamically
     select which tools to call based on investigation needs.
-    
+
     Args:
         context: Investigation context containing trace_id
-        
+
     Returns:
         Dictionary with gathered evidence
     """
@@ -123,11 +124,11 @@ def gather_evidence_for_context(context: dict) -> dict:
 def gather_evidence_for_trace(trace_id: str, context: dict) -> dict:  # noqa: ARG001
     """
     Gather evidence for a specific trace (compatibility function for tests).
-    
+
     Args:
         trace_id: The trace/run identifier
         context: Unused, kept for compatibility
-        
+
     Returns:
         Dictionary with gathered evidence
     """
@@ -145,6 +146,7 @@ def gather_evidence_for_trace(trace_id: str, context: dict) -> dict:  # noqa: AR
 # ============================================================================
 # Main Node Function
 # ============================================================================
+
 
 def main(state: InvestigationState) -> dict:
     """
@@ -177,7 +179,10 @@ def main(state: InvestigationState) -> dict:
     if not new_sources and executed_sources_set:
         # All sources have been executed - don't re-gather evidence
         from src.agent.nodes.rca_report_publishing.render import console
-        console.print("  [yellow]⚠️  All planned sources have already been executed. Using existing evidence.[/]")
+
+        console.print(
+            "  [yellow]⚠️  All planned sources have already been executed. Using existing evidence.[/]"
+        )
         render_evidence(existing_evidence)
         return {"evidence": existing_evidence}
 
@@ -185,6 +190,7 @@ def main(state: InvestigationState) -> dict:
     render_step_header(1, "Gather runtime evidence")
     if new_sources:
         from src.agent.nodes.rca_report_publishing.render import console
+
         console.print(f"  [dim]Gathering evidence for new sources: {', '.join(new_sources)}[/]")
 
     runtime_evidence = gather_evidence_for_context(context)

@@ -19,7 +19,9 @@ class LogResult:
 class TracerLogsMixin(TracerClientBase):
     """Mixin for Tracer logs-related API methods."""
 
-    def get_logs(self, trace_id: str | None = None, run_id: str | None = None, size: int = 100) -> dict:
+    def get_logs(
+        self, trace_id: str | None = None, run_id: str | None = None, size: int = 100
+    ) -> dict:
         """Fetch logs from /api/opensearch/logs."""
         params = {"orgId": self.org_id, "size": size}
         if trace_id:

@@ -47,7 +47,7 @@ def build_graph_pipeline() -> StateGraph:
     graph.add_edge("diagnose_root_cause", "validate_analysis")
 
     # Conditional edge: if confidence/validity is too low, loop back to generate_hypotheses
-    from src.agent.graph_routing import should_continue_investigation
+    from src.agent.routing import should_continue_investigation
 
     graph.add_conditional_edges(
         "validate_analysis",
@@ -61,6 +61,7 @@ def build_graph_pipeline() -> StateGraph:
     graph.add_edge("publish_findings", END)
 
     return graph.compile()
+
 
 def run_investigation_pipeline(
     alert_name: str,
@@ -86,4 +87,3 @@ def run_investigation_pipeline(
     final_state = graph.invoke(initial_state)
 
     return final_state
-

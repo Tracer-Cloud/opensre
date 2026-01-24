@@ -20,7 +20,9 @@ def build_context_tracer() -> dict:
         "pipeline_name": result.pipeline_name,
         "run_name": result.run_name,
         "status": result.status,
-        "run_time_minutes": round(result.run_time_seconds / 60, 1) if result.run_time_seconds else 0,
+        "run_time_minutes": round(result.run_time_seconds / 60, 1)
+        if result.run_time_seconds
+        else 0,
         "run_cost_usd": round(result.run_cost, 2) if result.run_cost else 0,
         "max_ram_gb": round(result.max_ram_gb, 1) if result.max_ram_gb else 0,
         "user_email": result.user_email,

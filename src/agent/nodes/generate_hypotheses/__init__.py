@@ -5,4 +5,3 @@ from src.agent.nodes.generate_hypotheses.generate_hypotheses import node_generat
 __all__ = [
     "node_generate_hypotheses",
 ]
-

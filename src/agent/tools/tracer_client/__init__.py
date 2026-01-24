@@ -46,7 +46,9 @@ def get_tracer_client() -> TracerClient:
             raise ValueError("TRACER_ORG_ID environment variable is required")
 
         # Prefer TRACER_WEB_APP_URL for web app API, fallback to TRACER_API_URL for staging API
-        base_url = os.getenv("TRACER_WEB_APP_URL") or os.getenv("TRACER_API_URL", "https://staging.tracer.cloud")
+        base_url = os.getenv("TRACER_WEB_APP_URL") or os.getenv(
+            "TRACER_API_URL", "https://staging.tracer.cloud"
+        )
         _tracer_client = TracerClient(base_url, org_id, jwt_token)
 
     return _tracer_client

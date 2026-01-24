@@ -97,12 +97,18 @@ def _build_evidence_gap_summary(evidence: dict, investigation: dict) -> str:
     evidence_sources_checked = investigation.get("evidence_sources_checked", [])
     evidence_sources_skipped = investigation.get("evidence_sources_skipped", [])
 
-    summary.append(f"Sources checked: {', '.join(evidence_sources_checked) if evidence_sources_checked else 'None'}")
-    summary.append(f"Sources skipped: {', '.join(evidence_sources_skipped) if evidence_sources_skipped else 'None'}")
+    summary.append(
+        f"Sources checked: {', '.join(evidence_sources_checked) if evidence_sources_checked else 'None'}"
+    )
+    summary.append(
+        f"Sources skipped: {', '.join(evidence_sources_skipped) if evidence_sources_skipped else 'None'}"
+    )
 
     if web_run.get("found"):
         summary.append(f"Logs available: {web_run.get('total_logs', 0)}")
         summary.append(f"Failed jobs: {len(web_run.get('failed_jobs', []))}")
-        summary.append(f"Metrics available: {'Yes' if web_run.get('host_metrics', {}).get('data') else 'No'}")
+        summary.append(
+            f"Metrics available: {'Yes' if web_run.get('host_metrics', {}).get('data') else 'No'}"
+        )
 
     return "\n".join(summary)

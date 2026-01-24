@@ -15,4 +15,3 @@ __all__ = [
     "node_publish_findings",
     "node_validate_analysis",
 ]
-

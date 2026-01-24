@@ -5,7 +5,9 @@ import re
 from src.agent.tools.llm import get_llm
 
 
-def validate_claim_against_evidence(claim: str, evidence: dict, investigation: dict) -> tuple[bool, list[str]]:
+def validate_claim_against_evidence(
+    claim: str, evidence: dict, investigation: dict
+) -> tuple[bool, list[str]]:
     """
     Validate a single claim against available evidence.
 
@@ -41,16 +43,22 @@ def validate_claim_against_evidence(claim: str, evidence: dict, investigation: d
     web_run = evidence.get("tracer_web_run", {})
 
     # Check logs
-    if ("log" in claim_lower or "error message" in claim_lower) and web_run.get("total_logs", 0) == 0:
+    if ("log" in claim_lower or "error message" in claim_lower) and web_run.get(
+        "total_logs", 0
+    ) == 0:
         issues.append("Claim references logs but no logs were available")
 
     # Check metrics
     metrics = web_run.get("host_metrics", {})
-    if ("memory" in claim_lower or "cpu" in claim_lower or "metric" in claim_lower) and (not metrics or not metrics.get("data")):
+    if ("memory" in claim_lower or "cpu" in claim_lower or "metric" in claim_lower) and (
+        not metrics or not metrics.get("data")
+    ):
         issues.append("Claim references metrics but metrics were not available")
 
     # Check jobs
-    if ("job" in claim_lower or "batch" in claim_lower) and len(web_run.get("failed_jobs", [])) == 0:
+    if ("job" in claim_lower or "batch" in claim_lower) and len(
+        web_run.get("failed_jobs", [])
+    ) == 0:
         # This might be valid if no jobs failed, but check if jobs were checked
         evidence_sources_checked = investigation.get("evidence_sources_checked", [])
         if "aws_batch_jobs" not in str(evidence_sources_checked):

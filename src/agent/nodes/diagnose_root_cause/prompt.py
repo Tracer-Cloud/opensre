@@ -6,14 +6,18 @@ from src.agent.state import InvestigationState
 def _format_evidence_summary(evidence: dict) -> dict:
     """Format evidence into summary strings with data quality checks."""
     s3 = evidence.get("s3", {})
-    s3_info = f"- Marker: {s3.get('marker_exists')}, Files: {s3.get('file_count', 0)}" if s3.get("found") else "No S3 data"
+    s3_info = (
+        f"- Marker: {s3.get('marker_exists')}, Files: {s3.get('file_count', 0)}"
+        if s3.get("found")
+        else "No S3 data"
+    )
 
     run = evidence.get("pipeline_run", {})
     run_info = "No pipeline data"
     if run.get("found"):
-        run_info = f"""- Pipeline: {run.get('pipeline_name')} | Status: {run.get('status')}
-- Duration: {run.get('run_time_minutes', 0)}min | Cost: ${run.get('run_cost_usd', 0)}
-- User: {run.get('user_email')} | Team: {run.get('team')}"""
+        run_info = f"""- Pipeline: {run.get("pipeline_name")} | Status: {run.get("status")}
+- Duration: {run.get("run_time_minutes", 0)}min | Cost: ${run.get("run_cost_usd", 0)}
+- User: {run.get("user_email")} | Team: {run.get("team")}"""
 
     batch = evidence.get("batch_jobs", {})
     batch_info = "No batch data"
@@ -45,15 +49,16 @@ def _format_evidence_summary(evidence: dict) -> dict:
                     raw_value = issue.get("raw_value", "unknown")
                     explanation = issue.get("explanation", "")
                     severity = issue.get("severity", "warning")
-                    data_quality_warnings.append(f"[{severity.upper()}] {field}: {raw_value} - {explanation[:200]}")
+                    data_quality_warnings.append(
+                        f"[{severity.upper()}] {field}: {raw_value} - {explanation[:200]}"
+                    )
 
             # Check for interpretation hints in the metrics data
             metrics_data = host_metrics.get("data", [])
             if isinstance(metrics_data, list):
                 for point in metrics_data:
-                    if isinstance(point, dict):
+                    if isinstance(point, dict) and "ram_interpretation" in point:
                         # Check for ram_interpretation
-                        if "ram_interpretation" in point:
                             interp = point["ram_interpretation"]
                             likely_gb = interp.get("likely_value_gb", "unknown")
                             data_quality_warnings.append(
@@ -71,7 +76,9 @@ def _format_evidence_summary(evidence: dict) -> dict:
                 raw_value = issue.get("raw_value", "unknown")
                 explanation = issue.get("explanation", "")
                 severity = issue.get("severity", "warning")
-                data_quality_warnings.append(f"[{severity.upper()}] {field}: {raw_value} - {explanation[:200]}")
+                data_quality_warnings.append(
+                    f"[{severity.upper()}] {field}: {raw_value} - {explanation[:200]}"
+                )
 
         # Check for interpretation hints
         if "ram_interpretation" in top_level_host_metrics:
@@ -158,7 +165,9 @@ def _format_investigation_section(investigation: dict) -> str:
     return section
 
 
-def build_diagnosis_prompt(state: InvestigationState, evidence: dict, investigation: dict | None = None) -> str:
+def build_diagnosis_prompt(
+    state: InvestigationState, evidence: dict, investigation: dict | None = None
+) -> str:
     """Build analysis prompt with deep investigation results."""
     summaries = _format_evidence_summary(evidence)
     investigation_section = _format_investigation_section(investigation) if investigation else ""
@@ -179,13 +188,13 @@ def build_diagnosis_prompt(state: InvestigationState, evidence: dict, investigat
     return f"""You are a root cause analysis expert. Perform DEEP INVESTIGATION, not just correlation.{new_evidence_note}
 
 ## Incident
-Alert: {state['alert_name']} | Table: {state['affected_table']}
+Alert: {state["alert_name"]} | Table: {state["affected_table"]}
 
 ## Raw Evidence
-### Pipeline: {summaries['run']}
-### Web App Runs: {summaries['web_run']}
-### Batch: {summaries['batch']}
-### S3: {summaries['s3']}
+### Pipeline: {summaries["run"]}
+### Web App Runs: {summaries["web_run"]}
+### Batch: {summaries["batch"]}
+### S3: {summaries["s3"]}
 {investigation_section}
 ## Your Task: INFER ROOT CAUSE (Not Just Correlate)
 
