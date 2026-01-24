@@ -25,6 +25,9 @@ class GrafanaAlertLabel(BaseModel):
     severity: str = "warning"
     table: str | None = None
     environment: str = "production"
+    pipeline_name: str | None = None
+    run_id: str | None = None
+    run_name: str | None = None
 
 
 class GrafanaAlertAnnotation(BaseModel):

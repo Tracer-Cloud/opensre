@@ -2,10 +2,12 @@
 
 import os
 
+from src.agent.context.context_building import _fetch_tracer_web_run_context
 from src.agent.graph_pipeline import run_investigation_pipeline
-from src.agent.nodes.collect_evidence.collect_evidence import _investigate_trace_id
 from src.agent.nodes.diagnose_root_cause import node_diagnose_root_cause
+from src.agent.nodes.hypothesis_investigation.evidence_gathering import gather_evidence_for_trace
 from src.agent.state import InvestigationState
+from src.agent.tools.tracer_client import get_tracer_web_client
 
 
 def test_investigate_specific_failed_run() -> None:
@@ -21,7 +23,44 @@ def test_investigate_specific_failed_run() -> None:
 
     # Investigate the specific failed run
     trace_id = "a4b56a5c-03c5-438f-96b6-60f8db7c13d5"
-    web_run = _investigate_trace_id(trace_id)
+    # Find the run with matching trace_id
+    client = get_tracer_web_client()
+    pipelines = client.get_pipelines(page=1, size=50)
+    failed_run = None
+    for pipeline in pipelines:
+        runs = client.get_pipeline_runs(pipeline.pipeline_name, page=1, size=50)
+        for run in runs:
+            if run.trace_id == trace_id:
+                failed_run = run
+                break
+        if failed_run:
+            break
+    if not failed_run:
+        raise AssertionError(f"Expected to find trace {trace_id}")
+    # Build context
+    from src.agent.context.context_building import build_tracer_run_url
+
+    run_url = build_tracer_run_url(failed_run.pipeline_name, trace_id)
+    web_run = {
+        "found": True,
+        "pipeline_name": failed_run.pipeline_name,
+        "run_id": failed_run.run_id,
+        "run_name": failed_run.run_name,
+        "trace_id": trace_id,
+        "status": failed_run.status,
+        "start_time": failed_run.start_time,
+        "end_time": failed_run.end_time,
+        "run_cost": failed_run.run_cost,
+        "tool_count": failed_run.tool_count,
+        "user_email": failed_run.user_email,
+        "instance_type": failed_run.instance_type,
+        "region": failed_run.region,
+        "log_file_count": failed_run.log_file_count,
+        "run_url": run_url,
+    }
+    # Gather evidence
+    evidence = gather_evidence_for_trace(trace_id, {})
+    web_run.update(evidence)
 
     assert web_run.get("found"), f"Expected to find trace {trace_id}"
     assert web_run.get("run_name") == "shimmering-okapi-891"

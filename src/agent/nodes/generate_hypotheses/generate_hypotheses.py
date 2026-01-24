@@ -1,10 +1,10 @@
 """Generate investigation hypotheses based on alert context."""
 
+
 from pydantic import BaseModel, Field
 
-from src.agent.context.service_graph import render_tools_briefing
+from src.agent.nodes.generate_hypotheses.prompt import build_hypothesis_prompt
 from src.agent.nodes.publish_findings.render import (
-    console,
     render_plan,
     render_step_header,
 )
@@ -21,21 +21,33 @@ class HypothesisPlan(BaseModel):
     rationale: str = Field(description="Reasoning for the chosen sources")
 
 
+def _get_available_sources() -> list[EvidenceSource]:
+    """Get list of evidence sources that are actually available."""
+    # S3/storage is not implemented, so exclude it
+    return ["tracer", "batch", "tracer_web"]
+
+
 def main(state: InvestigationState) -> dict:
     """
     Main entry point for hypothesis generation.
 
     Flow:
-    1) Ask the LLM to select evidence sources
-    2) Ensure required sources are present
-    3) Render the plan to the console
+    1) Check which evidence sources are available
+    2) Generate hypothesis plan using LLM (only from available sources)
+    3) Ensure required sources are present
+    4) Render the plan with rationale
     """
     render_step_header(1, "Generate hypotheses")
-    plan = _generate_hypothesis_plan(state)
-    plan_sources = _ensure_required_sources(plan.plan_sources)
 
-    render_plan(plan_sources)
-    console.print(f"  [dim]Rationale:[/] {plan.rationale}")
+    # Filter to only available sources before generating plan
+    available_sources = _get_available_sources()
+    plan = _generate_hypothesis_plan(state, available_sources)
+
+    # Filter plan_sources to only include available sources
+    plan_sources = [s for s in plan.plan_sources if s in available_sources]
+    plan_sources = _ensure_required_sources(plan_sources)
+
+    render_plan(plan_sources, rationale=plan.rationale)
 
     return {"plan_sources": plan_sources}
 
@@ -45,9 +57,9 @@ def node_generate_hypotheses(state: InvestigationState) -> dict:
     return main(state)
 
 
-def _generate_hypothesis_plan(state: InvestigationState) -> HypothesisPlan:
-    """Use the LLM to select evidence sources."""
-    prompt = _build_prompt(state)
+def _generate_hypothesis_plan(state: InvestigationState, available_sources: list[EvidenceSource]) -> HypothesisPlan:
+    """Use the LLM to select evidence sources from available sources only."""
+    prompt = build_hypothesis_prompt(state, available_sources)
     llm = get_llm()
 
     try:
@@ -60,29 +72,6 @@ def _generate_hypothesis_plan(state: InvestigationState) -> HypothesisPlan:
         raise RuntimeError("LLM returned no hypothesis plan")
 
     return plan
-
-
-def _build_prompt(state: InvestigationState) -> str:
-    """Build the prompt for hypothesis generation."""
-    problem_md = state.get("problem_md", "")
-    tools_briefing = render_tools_briefing()
-
-    return f"""You are planning an investigation for a data pipeline alert.
-
-Alert:
-- alert_name: {state.get("alert_name", "Unknown")}
-- affected_table: {state.get("affected_table", "Unknown")}
-- severity: {state.get("severity", "Unknown")}
-
-Problem context (if available):
-{problem_md}
-
-Available evidence sources:
-{tools_briefing}
-
-Select the evidence sources that are most useful for this alert.
-Return the ordered list in plan_sources and explain why in rationale.
-"""
 
 
 def _ensure_required_sources(plan_sources: list[EvidenceSource]) -> list[EvidenceSource]:

@@ -25,7 +25,56 @@ def render_incoming_alert(alert_text: str):
     console.print("[dim]Agent triggered automatically...[/dim]\n")
 
 
-def render_plan(plan_sources: list[str]):
+def _format_rationale(rationale: str) -> str:
+    """Format rationale text as bullet points."""
+    import re
+
+    # Try to detect numbered items (e.g., "1) ... 2) ..." or "1. ... 2. ...")
+    # Split by numbered patterns to extract each item
+    numbered_pattern = r"(\d+)[.)]\s+"
+    parts = re.split(numbered_pattern, rationale)
+
+    if len(parts) > 3:  # Found numbered items (odd indices are numbers, even are text)
+        bullets = []
+        # Skip first part (text before first number), then process pairs
+        for i in range(1, len(parts), 2):
+            if i + 1 < len(parts):
+                text = parts[i + 1].strip()
+                # Remove trailing whitespace and clean up
+                text = re.sub(r"\s+", " ", text).strip()
+                # Stop at next numbered item if present in the text
+                next_num_match = re.search(r"\s+\d+[.)]\s+", text)
+                if next_num_match:
+                    text = text[: next_num_match.start()].strip()
+                # Remove trailing punctuation
+                text = re.sub(r"\.\s*$", "", text)
+                if text:
+                    bullets.append(f"  • {text}")
+        if bullets:
+            return "\n".join(bullets)
+
+    # If no numbered items, try to split by sentences and format as bullets
+    sentences = re.split(r"([.!?])\s+", rationale)
+    if len(sentences) > 3:  # Multiple sentences
+        bullets = []
+        current_sentence = ""
+        for i, part in enumerate(sentences):
+            current_sentence += part
+            if part in ".!?" and i < len(sentences) - 1:
+                bullet = current_sentence.strip()
+                if bullet:
+                    bullets.append(f"  • {bullet}")
+                current_sentence = ""
+        if current_sentence.strip():
+            bullets.append(f"  • {current_sentence.strip()}")
+        if bullets:
+            return "\n".join(bullets)
+
+    # Fallback: return as single bullet
+    return f"  • {rationale.strip()}"
+
+
+def render_plan(plan_sources: list[str], rationale: str | None = None):
     """Render the investigation plan (hypotheses to check)."""
     console.print("\n[bold magenta]─── Investigation Plan ───[/]")
     console.print("[bold]Evidence sources to check:[/]\n")
@@ -33,6 +82,11 @@ def render_plan(plan_sources: list[str]):
         name = SOURCE_NAMES.get(source, source)
         console.print(f"  [cyan]H{i}[/] [bold]{name}[/]")
     console.print()
+    if rationale:
+        formatted_rationale = _format_rationale(rationale)
+        console.print("[dim]Rationale:[/]")
+        console.print(formatted_rationale)
+        console.print()
 
 
 def render_evidence(evidence: dict):
@@ -44,7 +98,7 @@ def render_evidence(evidence: dict):
         s3 = evidence["s3"]
         console.print("\n[bold cyan]→ S3 Storage Check[/]")
         if s3.get("error"):
-            console.print(f"  [red]Error: {s3['error']}[/]")
+            console.print(f"  [yellow]{s3['error']}[/]")
         else:
             marker = "[green]✓ Found[/]" if s3.get("marker_exists") else "[red]✗ Missing[/]"
             console.print(f"  [dim]_SUCCESS marker:[/] {marker}")
@@ -90,40 +144,34 @@ def render_evidence(evidence: dict):
             if run_url:
                 console.print(f"  [dim]View run:[/] [blue underline]{run_url}[/]")
 
-            # Show failed jobs if available (from batch jobs API)
+            # Show failed jobs, tools, and logs
             failed_jobs = web_run.get("failed_jobs", [])
-            failed_jobs_source = web_run.get("failed_jobs_source", "aws/batch/jobs/completed API")
             if failed_jobs:
-                console.print(f"  [dim]Failed jobs:[/] [red bold]{len(failed_jobs)}[/] [dim](from {failed_jobs_source})[/]")
+                console.print(f"  [dim]Failed jobs:[/] [red bold]{len(failed_jobs)}[/]")
                 for job in failed_jobs[:2]:
-                    job_name = job.get("job_name", "Unknown")
-                    status_reason = job.get("status_reason", "")
-                    exit_code = job.get("exit_code")
-                    console.print(f"    [red]- {job_name}: {status_reason}[/]")
-                    if exit_code:
-                        console.print(f"      [dim]Exit code: {exit_code} (from batch jobs API)[/]")
+                    console.print(f"    [red]- {job.get('job_name', 'Unknown')}: {job.get('status_reason', '')}[/]")
+                    if job.get("exit_code"):
+                        console.print(f"      [dim]Exit code: {job.get('exit_code')}[/]")
 
-            # Show failed tools if available (from tools API)
             failed_tools = web_run.get("failed_tools", [])
-            failed_tools_source = web_run.get("failed_tools_source", "tools/[traceId] API")
             if failed_tools:
-                console.print(f"  [dim]Failed tools:[/] [red bold]{len(failed_tools)}[/] [dim](from {failed_tools_source})[/]")
+                console.print(f"  [dim]Failed tools:[/] [red bold]{len(failed_tools)}[/]")
                 for tool in failed_tools[:2]:
-                    tool_name = tool.get("tool_name", "Unknown")
-                    exit_code = tool.get("exit_code")
-                    reason = tool.get("reason")
-                    console.print(f"    [red]- {tool_name} (exit_code={exit_code})[/]")
-                    if reason:
-                        console.print(f"      [dim]{reason}[/]")
+                    console.print(f"    [red]- {tool.get('tool_name', 'Unknown')} (exit_code={tool.get('exit_code')})[/]")
 
-            # Show error logs status (from logs API)
+            total_logs = web_run.get("total_logs", 0)
             error_logs = web_run.get("error_logs", [])
-            error_logs_source = web_run.get("error_logs_source", "opensearch/logs API")
-            logs_available = web_run.get("logs_available", False)
-            if error_logs:
-                console.print(f"  [dim]Error logs:[/] [red bold]{len(error_logs)}[/] [dim](from {error_logs_source})[/]")
-            elif not logs_available:
-                console.print(f"  [dim]Logs:[/] [yellow]No logs available[/] [dim](checked {error_logs_source})[/]")
+            if total_logs > 0:
+                console.print(f"  [dim]Total logs:[/] {total_logs}")
+                if error_logs:
+                    console.print(f"  [dim]Error logs:[/] [red bold]{len(error_logs)}[/]")
+                    # Show first few error log messages
+                    for log in error_logs[:3]:
+                        level = log.get("log_level", "UNKNOWN")
+                        message = log.get("message", "")[:200]
+                        console.print(f"    [red][{level}][/] {message}")
+            else:
+                console.print("  [dim]Logs:[/] [yellow]No logs available[/]")
 
     # Batch jobs evidence
     if "batch_jobs" in evidence:
@@ -142,12 +190,75 @@ def render_evidence(evidence: dict):
 
 
 def render_analysis(root_cause: str, confidence: float):
-    """Render the root cause analysis."""
-    console.print("\n[bold green]─── Root Cause Analysis ───[/]")
+    """Render the root cause analysis in a human-readable format."""
+    console.print("\n[bold green]─── Root Cause Analysis ───[/]\n")
 
-    # Parse bullet points from root_cause
-    bullets = [line.strip().lstrip("*- ") for line in root_cause.split("\n") if line.strip()]
-    render_root_cause_complete(bullets, confidence)
+    # Check if this is an error message
+    if "ERROR:" in root_cause or "No root cause has been identified" in root_cause:
+        console.print(f"[bold red]{root_cause}[/]")
+        console.print(f"\n[dim]Confidence:[/] [red]{confidence:.0%}[/]")
+        return
+
+    # Parse the root cause text
+    lines = root_cause.split("\n")
+    in_root_cause_section = False
+    bullets = []
+    causal_chain = []
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        # Check for ROOT_CAUSE: header
+        if line.upper().startswith("ROOT_CAUSE"):
+            in_root_cause_section = True
+            continue
+
+        # Check for CONFIDENCE: header
+        if line.upper().startswith("CONFIDENCE"):
+            in_root_cause_section = False
+            continue
+
+        # Remove bullet markers
+        clean_line = line.lstrip("*-• ").strip()
+        if not clean_line:
+            continue
+
+        if in_root_cause_section:
+            bullets.append(clean_line)
+        else:
+            causal_chain.append(clean_line)
+
+    # Render root cause findings
+    if bullets:
+        console.print("[bold cyan]Root Cause Findings:[/]")
+        for i, bullet in enumerate(bullets, 1):
+            # Color code based on content
+            if any(word in bullet.lower() for word in ["fail", "error", "killed", "oom", "denied", "missing", "timeout"]):
+                console.print(f"  {i}. [red]•[/] [red]{bullet}[/]")
+            elif any(word in bullet.lower() for word in ["success", "working", "passed", "completed"]):
+                console.print(f"  {i}. [green]•[/] [green]{bullet}[/]")
+            else:
+                console.print(f"  {i}. [yellow]•[/] {bullet}")
+        console.print()
+
+    # Render causal chain if available
+    if causal_chain:
+        console.print("[bold cyan]Causal Chain:[/]")
+        for i, chain_item in enumerate(causal_chain, 1):
+            console.print(f"  {i}. {chain_item}")
+        console.print()
+
+    # Render confidence
+    confidence_color = "green" if confidence >= 0.7 else "yellow" if confidence >= 0.4 else "red"
+    console.print(f"[bold]Confidence:[/] [{confidence_color}]{confidence:.0%}[/]")
+    if confidence >= 0.8:
+        console.print("[dim]  (High confidence - strong evidence)[/]")
+    elif confidence >= 0.5:
+        console.print("[dim]  (Moderate confidence - some evidence)[/]")
+    else:
+        console.print("[dim]  (Low confidence - limited evidence)[/]")
 
 
 def render_final_report(slack_message: str):
@@ -186,60 +297,9 @@ def render_step_header(step_num: int, title: str):
     console.print(f"\n[bold cyan]→ Step {step_num}: {title}[/]")
 
 
-def render_api_response(label: str, data: str, is_error: bool = False):
-    """Render an API response line with color coding."""
-    if is_error:
-        console.print(f"  [red bold]API Response ({label}): {data}[/]")
-    else:
-        console.print(f"  [dim]API Response ({label}): {data}[/]")
-
-
-def render_llm_thinking():
-    """Render LLM thinking indicator."""
-    console.print("  [dim]LLM interpreting...[/]")
-
-
-def render_dot():
-    """Render a streaming dot."""
-    console.print("[dim].[/]", end="")
-
-
-def render_newline():
-    """Print a newline."""
-    console.print()
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Results
 # ─────────────────────────────────────────────────────────────────────────────
-
-def render_bullets(bullets: list[str], is_error: bool = False):
-    """Render bullet points with appropriate color."""
-    color = "red" if is_error else "yellow"
-    for bullet in bullets:
-        # Check if bullet contains error keywords
-        if any(word in bullet.lower() for word in ["fail", "error", "killed", "oom", "denied", "missing"]):
-            console.print(f"  [red]{bullet}[/]")
-        else:
-            console.print(f"  [{color}]{bullet}[/]")
-
-
-def render_root_cause_complete(bullets: list[str], confidence: float):
-    """Render root cause completion."""
-    console.print("  [green bold][ROOT CAUSE IDENTIFIED][/]")
-    for bullet in bullets:
-        # Color code based on content
-        if any(word in bullet.lower() for word in ["fail", "error", "killed", "oom", "denied"]):
-            console.print(f"    [red]{bullet}[/]")
-        else:
-            console.print(f"    [white]{bullet}[/]")
-    console.print(f"  Confidence: [bold cyan]{confidence:.0%}[/]")
-
-
-def render_generating_outputs():
-    """Render output generation step."""
-    console.print("\n[bold cyan]→ Generating outputs...[/]")
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Final Output

@@ -1,4 +1,4 @@
-"""S3 client (mock for demo)."""
+"""S3 client (not implemented)."""
 
 from dataclasses import dataclass
 
@@ -10,24 +10,19 @@ class S3CheckResult:
     files: list[str]
 
 
-class MockS3Client:
-    """S3 client backed by mock data."""
+class S3Client:
+    """S3 client (not implemented)."""
 
-    def __init__(self):
-        from src.mocks.s3 import get_s3_client
-        self._mock = get_s3_client()
-
-    def check_marker(self, bucket: str, prefix: str) -> S3CheckResult:
-        files = self._mock.list_objects(bucket, prefix)
-        marker_exists = self._mock.object_exists(bucket, f"{prefix}_SUCCESS")
+    def check_marker(self, bucket: str, prefix: str) -> S3CheckResult:  # noqa: ARG002
+        """Check for S3 marker (not implemented)."""
         return S3CheckResult(
-            marker_exists=marker_exists,
-            file_count=len(files),
-            files=[f["key"] for f in files],
+            marker_exists=False,
+            file_count=0,
+            files=[],
         )
 
 
-def get_s3_client() -> MockS3Client:
-    """Get S3 client (mock for demo)."""
-    return MockS3Client()
+def get_s3_client() -> S3Client:
+    """Get S3 client (not implemented)."""
+    return S3Client()
 

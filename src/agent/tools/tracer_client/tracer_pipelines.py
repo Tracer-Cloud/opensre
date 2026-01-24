@@ -132,6 +132,17 @@ class TracerPipelinesMixin(TracerClientBase):
         data = self._get(f"/api/batch-runs/{trace_id}", params)
         return data
 
+    def get_host_metrics(self, trace_id: str) -> dict:
+        """Fetch host metrics (CPU, RAM, disk, GPU) from /api/runs/[trace_id]/host-metrics."""
+        data = self._get(f"/api/runs/{trace_id}/host-metrics")
+        return data
+
+    def get_airflow_metrics(self, trace_id: str) -> dict:
+        """Fetch Airflow metrics from /api/runs/[trace_id]/airflow."""
+        params = {"orgId": self.org_id}
+        data = self._get(f"/api/runs/{trace_id}/airflow", params)
+        return data
+
     def get_latest_run(self, pipeline_name: str | None = None) -> TracerRunResult:  # noqa: ARG002
         """Get pipeline run from /api/batch-runs endpoint."""
         trace_id = os.getenv("TRACER_TRACE_ID", DEMO_TRACE_ID)

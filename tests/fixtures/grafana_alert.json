@@ -3,39 +3,45 @@
     {
       "status": "firing",
       "labels": {
-        "alertname": "DataFreshnessSLABreach",
+        "alertname": "PipelineFailure",
         "severity": "critical",
-        "table": "events_fact",
-        "warehouse": "snowflake",
+        "table": "superfluid_prod_pipeline",
+        "pipeline_name": "superfluid_prod_pipeline",
+        "run_id": "a4b56a5c-03c5-438f-96b6-60f8db7c13d5",
+        "run_name": "shimmering-okapi-891",
         "environment": "production"
       },
       "annotations": {
-        "summary": "Table events_fact has not been updated in over 2 hours",
-        "description": "The events_fact table freshness SLA has been breached. Expected update interval: 1 hour. Last update: 2026-01-13T00:13:00Z. Current time: 2026-01-13T02:13:00Z.",
-        "runbook_url": "https://runbooks.tracer.io/data-freshness-sla"
+        "summary": "Pipeline superfluid_prod_pipeline failed",
+        "description": "Pipeline superfluid_prod_pipeline run shimmering-okapi-891 failed with status failed",
+        "runbook_url": "https://staging.tracer.cloud/pipelines/superfluid_prod_pipeline/batch/a4b56a5c-03c5-438f-96b6-60f8db7c13d5"
       },
       "startsAt": "2026-01-13T02:13:00Z",
       "endsAt": "0001-01-01T00:00:00Z",
-      "generatorURL": "https://grafana.tracer.io/alerting/grafana/abc123/view",
-      "fingerprint": "abc123def456"
+      "generatorURL": "https://staging.tracer.cloud/pipelines/superfluid_prod_pipeline/batch/a4b56a5c-03c5-438f-96b6-60f8db7c13d5",
+      "fingerprint": "a4b56a5c-03c5-438f-96b6-60f8db7c13d5"
     }
   ],
   "groupLabels": {
-    "alertname": "DataFreshnessSLABreach"
+    "alertname": "PipelineFailure"
   },
   "commonLabels": {
-    "alertname": "DataFreshnessSLABreach",
-    "severity": "critical"
+    "alertname": "PipelineFailure",
+    "severity": "critical",
+    "pipeline_name": "superfluid_prod_pipeline"
   },
   "commonAnnotations": {
-    "summary": "Table events_fact has not been updated in over 2 hours"
+    "summary": "Pipeline superfluid_prod_pipeline failed"
   },
-  "externalURL": "https://grafana.tracer.io/",
+  "externalURL": "https://staging.tracer.cloud",
   "version": "4",
-  "groupKey": "{}:{alertname=\"DataFreshnessSLABreach\"}",
+  "groupKey": "{}:{alertname=\"PipelineFailure\"}",
   "truncatedAlerts": 0,
-  "title": "[FIRING:1] DataFreshnessSLABreach critical",
+  "title": "[FIRING:1] PipelineFailure critical - superfluid_prod_pipeline",
   "state": "alerting",
-  "message": "**Firing**\n\nValue: No data\nLabels:\n - alertname = DataFreshnessSLABreach\n - severity = critical\n - table = events_fact\nAnnotations:\n - summary = Table events_fact has not been updated in over 2 hours"
+  "message": "**Firing**\n\nPipeline superfluid_prod_pipeline failed\nRun: shimmering-okapi-891\nStatus: failed\nTrace ID: a4b56a5c-03c5-438f-96b6-60f8db7c13d5",
+  "run_url": "https://staging.tracer.cloud/pipelines/superfluid_prod_pipeline/batch/a4b56a5c-03c5-438f-96b6-60f8db7c13d5",
+  "pipeline_name": "superfluid_prod_pipeline",
+  "run_name": "shimmering-okapi-891",
+  "trace_id": "a4b56a5c-03c5-438f-96b6-60f8db7c13d5"
 }
-
