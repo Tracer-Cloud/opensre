@@ -13,6 +13,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from src.agent.nodes.publish_findings.render import render_incoming_alert
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Grafana Alert Models
 # ─────────────────────────────────────────────────────────────────────────────
@@ -62,11 +64,23 @@ class InvestigationRequest:
     severity: str
     environment: str
     summary: str | None
+    raw_alert: dict[str, Any]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Parsing
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def _build_alert_text(payload: GrafanaAlertPayload, alert: GrafanaAlert) -> str:
+    if payload.message:
+        return payload.message
+    summary = alert.annotations.summary
+    description = alert.annotations.description or ""
+    lines = [summary] if summary else []
+    if description:
+        lines.append(description)
+    return "\n\n".join(lines) if lines else "Grafana alert received"
 
 
 def parse_grafana_payload(
@@ -81,6 +95,7 @@ def parse_grafana_payload(
         raise ValueError("No firing alerts in payload")
 
     alert = firing[0]
+    render_incoming_alert(_build_alert_text(grafana, alert))
     raw_severity = alert.labels.severity.lower()
 
     return InvestigationRequest(
@@ -89,6 +104,7 @@ def parse_grafana_payload(
         severity=SEVERITY_MAP.get(raw_severity, DEFAULT_SEVERITY),
         environment=alert.labels.environment,
         summary=alert.annotations.summary,
+        raw_alert=payload,
     )
 
 

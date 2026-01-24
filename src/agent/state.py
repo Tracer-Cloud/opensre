@@ -34,6 +34,8 @@ class InvestigationState(TypedDict, total=False):
     alert_name: str
     affected_table: str
     severity: str
+    raw_alert: str | dict[str, Any]
+    alert_json: dict[str, Any]
 
     # ─────────────────────────────────────────────────────────────────────────
     # Planning - deterministic plan based on alert type
@@ -76,6 +78,7 @@ def make_initial_state(
     alert_name: str,
     affected_table: str,
     severity: str,
+    raw_alert: str | dict[str, Any] | None = None,
 ) -> InvestigationState:
     """
     Create the initial state for an investigation.
@@ -83,7 +86,7 @@ def make_initial_state(
     All required keys and defaults are defined in STATE_DEFAULTS.
     Input fields (alert_name, affected_table, severity) are required.
     """
-    return {
+    state: InvestigationState = {
         # Input fields (required)
         "alert_name": alert_name,
         "affected_table": affected_table,
@@ -91,4 +94,7 @@ def make_initial_state(
         # Defaults for all other fields
         **STATE_DEFAULTS,
     }
+    if raw_alert is not None:
+        state["raw_alert"] = raw_alert
+    return state
 

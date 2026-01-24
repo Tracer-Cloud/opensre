@@ -1,16 +1,19 @@
 .PHONY: install test demo clean lint format
 
-PYTHON = .venv/bin/python
-PIP = .venv/bin/pip
+PYTHON = python3
+PIP = python3 -m pip
+PIP_INSTALL_FLAGS = --user --break-system-packages
+USER_BASE := $(shell $(PYTHON) -m site --user-base)
+USER_BIN := $(USER_BASE)/bin
+export PATH := $(USER_BIN):$(PATH)
 
 # Create venv and install dependencies
 install:
-	python3 -m venv .venv
-	$(PIP) install -r requirements.txt
+	$(PIP) install $(PIP_INSTALL_FLAGS) -r requirements.txt
 
 # Run the demo (loads .env for API keys via python-dotenv)
 demo:
-	$(PYTHON) tests/run_demo.py
+	$(PYTHON) -m tests.run_demo
 
 # Run the generic CLI (reads from stdin or --input)
 run:
@@ -18,11 +21,11 @@ run:
 
 # Run tests
 test:
-	$(PYTHON) -m pytest tests/ -v
+	$(PYTHON) -m pytest -v
 
 # Run tests with coverage
 test-cov:
-	$(PYTHON) -m pytest tests/ -v --cov=src --cov-report=term-missing
+	$(PYTHON) -m pytest -v --cov=src --cov-report=term-missing
 
 # Clean up
 clean:
