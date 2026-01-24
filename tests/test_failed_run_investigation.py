@@ -4,8 +4,8 @@ import os
 
 from src.agent.graph_pipeline import run_investigation_pipeline
 from src.agent.nodes.diagnose_root_cause import node_diagnose_root_cause
-from src.agent.nodes.hypothesis_execution.context_building import _fetch_tracer_web_run_context
-from src.agent.nodes.hypothesis_execution.hypothesis_execution import gather_evidence_for_trace
+from src.agent.nodes.frame_problem.context_building import _fetch_tracer_web_run_context
+from src.agent.nodes.investigate.investigate import node_investigate as investigate_node
 from src.agent.state import InvestigationState
 from src.agent.tools.clients.tracer_client import get_tracer_web_client
 
@@ -34,7 +34,7 @@ def test_investigate_specific_failed_run() -> None:
     if not failed_run:
         raise AssertionError(f"Expected to find trace {trace_id}")
     # Build context
-    from src.agent.nodes.hypothesis_execution.context_building import build_tracer_run_url
+    from src.agent.nodes.frame_problem.context_building import build_tracer_run_url
 
     run_url = build_tracer_run_url(failed_run.pipeline_name, trace_id)
     web_run = {
@@ -54,9 +54,14 @@ def test_investigate_specific_failed_run() -> None:
         "log_file_count": failed_run.log_file_count,
         "run_url": run_url,
     }
-    # Gather evidence
-    evidence = gather_evidence_for_trace(trace_id, {})
-    web_run.update(evidence)
+    
+    # Gather evidence using the new investigate node
+    state: InvestigationState = {
+        "problem_md": "Testing specific run",
+        "evidence": {"tracer_web_run": web_run},
+    }
+    result = investigate_node(state)
+    web_run.update(result.get("evidence", {}).get("tracer_web_run", {}))
 
     assert web_run.get("found"), f"Expected to find trace {trace_id}"
     assert web_run.get("run_name") == "shimmering-okapi-891"
