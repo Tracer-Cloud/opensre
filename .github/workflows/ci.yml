@@ -31,6 +31,8 @@ jobs:
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       JWT_TOKEN: ${{ secrets.JWT_TOKEN }}
+      TRACER_ORG_ID: ${{ secrets.TRACER_ORG_ID }}
+      TRACER_WEB_APP_URL: ${{ secrets.TRACER_WEB_APP_URL }}
       LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
       LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
       LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
@@ -53,6 +55,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run tests
-        run: make test
+      - name: Run tests (parallelized)
+        run: make demo
 

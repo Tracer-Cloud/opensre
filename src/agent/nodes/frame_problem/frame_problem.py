@@ -1,10 +1,11 @@
 """Frame the problem and enrich context."""
 
+from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from src.agent.context.service_graph import render_tools_briefing
 from src.agent.nodes.frame_problem.extract import extract_alert_details
 from src.agent.nodes.frame_problem.render import render_problem_statement_md
+from src.agent.nodes.frame_problem.service_graph import render_tools_briefing
 from src.agent.nodes.publish_findings.render import (
     console,
     render_investigation_start,
@@ -38,8 +39,6 @@ def main(state: InvestigationState) -> dict:
         alert_details.severity,
     )
 
-    render_step_header(2, "Frame problem statement")
-
     enriched_state: InvestigationState = {
         **state,
         "alert_name": alert_details.alert_name,
@@ -49,7 +48,7 @@ def main(state: InvestigationState) -> dict:
     problem = _generate_output_problem_statement(enriched_state)
     problem = _add_tools_briefing(problem)
     problem_md = render_problem_statement_md(problem, enriched_state)
-    render_step_header(4, "Problem statement output")
+    render_step_header(2, "Problem statement")
     console.print(problem_md)
 
     return {
@@ -61,9 +60,10 @@ def main(state: InvestigationState) -> dict:
     }
 
 
+@traceable(name="node_frame_problem")
 def node_frame_problem(state: InvestigationState) -> dict:
     """
-    LangGraph node wrapper.
+    LangGraph node wrapper with LangSmith tracking.
 
     Kept for graph wiring; delegates to the main flow.
     """
@@ -74,12 +74,8 @@ class ProblemStatement(BaseModel):
     """Structured problem statement for the investigation."""
 
     summary: str = Field(description="One-line summary of the problem")
-    context: str = Field(
-        description="Background context about the alert and affected systems"
-    )
-    investigation_goals: list[str] = Field(
-        description="Specific goals for the investigation"
-    )
+    context: str = Field(description="Background context about the alert and affected systems")
+    investigation_goals: list[str] = Field(description="Specific goals for the investigation")
     constraints: list[str] = Field(description="Known constraints or limitations")
 
 
@@ -99,7 +95,6 @@ Analyze the alert and provide a structured problem statement.
 
 def _generate_output_problem_statement(state: InvestigationState) -> ProblemStatement:
     """Use the LLM to generate a structured problem statement."""
-    render_step_header(3, "Generate problem statement")
     prompt = _build_input_prompt(state)
     llm = get_llm()
 
@@ -121,4 +116,3 @@ def _add_tools_briefing(problem: ProblemStatement) -> ProblemStatement:
         return problem
     new_context = f"{problem.context}\n\n{render_tools_briefing()}"
     return problem.model_copy(update={"context": new_context})
-

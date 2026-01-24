@@ -25,6 +25,9 @@ class GrafanaAlertLabel(BaseModel):
     severity: str = "warning"
     table: str | None = None
     environment: str = "production"
+    pipeline_name: str | None = None
+    run_id: str | None = None
+    run_name: str | None = None
 
 
 class GrafanaAlertAnnotation(BaseModel):
@@ -115,4 +118,3 @@ def load_request_from_json(path: str | None) -> InvestigationRequest:
     else:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
     return parse_grafana_payload(payload)
-
