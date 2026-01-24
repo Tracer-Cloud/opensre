@@ -2,7 +2,8 @@
 
 from pydantic import BaseModel, Field
 
-from src.agent.nodes.frame_problem.extract import AlertDetails, extract_alert_details
+from src.agent.context.service_graph import render_tools_briefing
+from src.agent.nodes.frame_problem.extract import extract_alert_details
 from src.agent.nodes.frame_problem.render import render_problem_statement_md
 from src.agent.nodes.publish_findings.render import (
     console,
@@ -46,6 +47,7 @@ def main(state: InvestigationState) -> dict:
         "severity": alert_details.severity,
     }
     problem = _generate_output_problem_statement(enriched_state)
+    problem = _add_tools_briefing(problem)
     problem_md = render_problem_statement_md(problem, enriched_state)
     render_step_header(4, "Problem statement output")
     console.print(problem_md)
@@ -104,11 +106,19 @@ def _generate_output_problem_statement(state: InvestigationState) -> ProblemStat
     try:
         structured_llm = llm.with_structured_output(ProblemStatement)
         problem = structured_llm.invoke(prompt)
-    except Exception:
-        raise RuntimeError("Failed to generate problem statement")
+    except Exception as err:
+        raise RuntimeError("Failed to generate problem statement") from err
 
     if problem is None:
         raise RuntimeError("LLM returned no problem statement")
 
     return problem
+
+
+def _add_tools_briefing(problem: ProblemStatement) -> ProblemStatement:
+    """Add a tools briefing to the problem context."""
+    if "Available evidence sources" in problem.context:
+        return problem
+    new_context = f"{problem.context}\n\n{render_tools_briefing()}"
+    return problem.model_copy(update={"context": new_context})
 

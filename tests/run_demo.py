@@ -12,10 +12,10 @@ from config import init_runtime
 
 init_runtime()
 
-from langsmith import traceable
+from langsmith import traceable  # noqa: E402
 
-from src.agent.graph_pipeline import run_investigation_pipeline
-from src.ingest import load_request_from_json
+from src.agent.graph_pipeline import run_investigation_pipeline  # noqa: E402
+from src.ingest import load_request_from_json  # noqa: E402
 
 # Path to fixture
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "grafana_alert.json"

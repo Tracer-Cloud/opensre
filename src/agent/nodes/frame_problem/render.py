@@ -37,10 +37,5 @@ def render_problem_statement_md(
             - **Table**: {state.get("affected_table", "Unknown")}
             - **Severity**: {state.get("severity", "Unknown")}
 
-            ## Available Evidence Sources
-            - **Tracer pipeline**: run status, tasks, metrics, logs
-            - **S3 storage**: output files and _SUCCESS marker
-            - **AWS Batch**: job status and failure reasons
-
             ## Next Steps
             Proceed to gather evidence from relevant sources."""

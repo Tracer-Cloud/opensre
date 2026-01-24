@@ -4,11 +4,11 @@ CLI entry point for the incident resolution agent.
 For the demo with Rich console output, use: python tests/run_demo.py
 """
 
+from typing import Any
+
 from config import init_runtime
 
 init_runtime()
-
-from typing import Any
 
 from langsmith import traceable  # noqa: E402
 

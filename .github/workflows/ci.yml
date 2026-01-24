@@ -26,3 +26,33 @@ jobs:
       - name: Lint with ruff
         run: ruff check src/ tests/
 
+  test:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      JWT_TOKEN: ${{ secrets.JWT_TOKEN }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+      LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
+      LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
+      LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
+      CLICKHOUSE_HOST_DEV: ${{ secrets.CLICKHOUSE_HOST_DEV }}
+      CLICKHOUSE_USER_DEV: ${{ secrets.CLICKHOUSE_USER_DEV }}
+      CLICKHOUSE_PASSWORD_DEV: ${{ secrets.CLICKHOUSE_PASSWORD_DEV }}
+      CLICKHOUSE_DB_DEV: ${{ secrets.CLICKHOUSE_DB_DEV }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: make test
+
