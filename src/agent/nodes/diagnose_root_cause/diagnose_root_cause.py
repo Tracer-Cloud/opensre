@@ -4,7 +4,6 @@ import time
 
 from langsmith import traceable
 
-from src.agent.nodes.diagnose_root_cause.error_handling import check_evidence_sources
 from src.agent.nodes.publish_findings.render import (
     console,
     render_analysis,
@@ -33,10 +32,11 @@ def main(state: InvestigationState) -> dict:
     web_run = evidence.get("tracer_web_run", {})
 
     # Check if we have evidence
-    has_evidence, error_message = check_evidence_sources({"evidence_sources_checked": []})
     if not web_run.get("found"):
+        console.print("\n[bold red]❌ ERROR: No evidence available for analysis[/]")
+        console.print("[yellow]No tracer_web_run data found in evidence.[/]")
         return {
-            "root_cause": error_message or "No evidence available for analysis",
+            "root_cause": "No evidence available for analysis",
             "confidence": 0.0,
             "validated_claims": [],
             "non_validated_claims": [],
