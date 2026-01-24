@@ -176,8 +176,21 @@ def main(state: InvestigationState) -> dict:
     # Only gather if we have new sources in plan_sources that haven't been executed
     new_sources = [s for s in plan_sources if s not in executed_sources_set]
 
-    if not new_sources and executed_sources_set:
-        # All sources have been executed - don't re-gather evidence
+    # Only skip gathering if:
+    # 1. No new sources to gather AND
+    # 2. We have executed sources (meaning we've tried before) AND
+    # 3. We have existing evidence (meaning we successfully gathered something before)
+    has_existing_evidence = bool(
+        existing_evidence
+        and (
+            existing_evidence.get("tracer_web_run", {}).get("found")
+            or existing_evidence.get("pipeline_run", {}).get("found")
+            or existing_evidence.get("evidence_sources_checked")
+        )
+    )
+
+    if not new_sources and executed_sources_set and has_existing_evidence:
+        # All sources have been executed and we have evidence - don't re-gather
         from src.agent.nodes.rca_report_publishing.render import console
 
         console.print(
@@ -185,6 +198,15 @@ def main(state: InvestigationState) -> dict:
         )
         render_evidence(existing_evidence)
         return {"evidence": existing_evidence}
+
+    # If we have no evidence yet, we must gather it (even if plan_sources is empty)
+    if not has_existing_evidence and not new_sources:
+        # No plan sources and no existing evidence - try to gather from context anyway
+        from src.agent.nodes.rca_report_publishing.render import console
+
+        console.print(
+            "  [yellow]⚠️  No plan sources available, but attempting to gather evidence from context.[/]"
+        )
 
     # Gather evidence only for new sources (or all if first time)
     render_step_header(1, "Gather runtime evidence")
