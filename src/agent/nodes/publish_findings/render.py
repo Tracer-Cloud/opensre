@@ -13,11 +13,11 @@ SOURCE_NAMES = {
 }
 
 
-def render_incoming_alert(raw_alert_text: str):
+def render_incoming_alert(alert_text: str):
     """Render the incoming Grafana alert payload."""
     console.print("\n")
     console.print(Panel(
-        raw_alert_text,
+        alert_text,
         title="Incoming Grafana Alert (Slack Channel)",
         border_style="red",
     ))

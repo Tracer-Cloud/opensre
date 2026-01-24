@@ -42,11 +42,6 @@ def build_graph_pipeline() -> StateGraph:
 
     return graph.compile()
 
-
-def build_graph() -> StateGraph:
-    """Backwards-compatible alias for the compiled graph."""
-    return build_graph_pipeline()
-
 def run_investigation_pipeline(alert_name: str, affected_table: str, severity: str) -> InvestigationState:
     """
     Run the investigation graph.
