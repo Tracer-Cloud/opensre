@@ -14,11 +14,9 @@ def test_investigate_specific_failed_run() -> None:
     """Test investigation of shimmering-okapi-891 (trace: a4b56a5c-03c5-438f-96b6-60f8db7c13d5)."""
     api_key = os.getenv("ANTHROPIC_API_KEY")
     jwt_token = os.getenv("JWT_TOKEN")
-    org_id = os.getenv("TRACER_ORG_ID")
     web_url = os.getenv("TRACER_WEB_APP_URL")
     assert api_key, "ANTHROPIC_API_KEY must be set"
-    assert jwt_token, "JWT_TOKEN must be set"
-    assert org_id, "TRACER_ORG_ID must be set"
+    assert jwt_token, "JWT_TOKEN must be set (org_id is extracted from it)"
     assert web_url, "TRACER_WEB_APP_URL must be set"
 
     # Investigate the specific failed run
@@ -109,11 +107,9 @@ def test_investigate_failed_run_shimmering_okapi() -> None:
     """Test full pipeline investigation of shimmering-okapi-891 failed run."""
     api_key = os.getenv("ANTHROPIC_API_KEY")
     jwt_token = os.getenv("JWT_TOKEN")
-    org_id = os.getenv("TRACER_ORG_ID")
     web_url = os.getenv("TRACER_WEB_APP_URL")
     assert api_key, "ANTHROPIC_API_KEY must be set"
-    assert jwt_token, "JWT_TOKEN must be set"
-    assert org_id, "TRACER_ORG_ID must be set"
+    assert jwt_token, "JWT_TOKEN must be set (org_id is extracted from it)"
     assert web_url, "TRACER_WEB_APP_URL must be set"
 
     # Create an alert that would trigger investigation
