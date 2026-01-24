@@ -98,17 +98,17 @@ def render_generating_outputs():
 def render_agent_output(slack_message: str):
     """Render the agent output panel with styled link."""
     console.print("\n")
-    
+
     # Style the Tracer link in cyan/blue for visibility
     import re
     tracer_url_pattern = r'(https://staging\.tracer\.cloud/[^\s]+)'
-    
+
     def style_url(match):
         url = match.group(1)
         return f"[bold cyan underline]{url}[/bold cyan underline]"
-    
+
     styled_message = re.sub(tracer_url_pattern, style_url, slack_message)
-    
+
     from rich.text import Text
     text = Text.from_markup(styled_message)
     console.print(Panel(text, title="RCA Report", border_style="blue"))

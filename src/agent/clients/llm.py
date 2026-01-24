@@ -5,10 +5,10 @@ Handles streaming and structured parsing of LLM responses.
 """
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
-from langchain_anthropic import ChatAnthropic
 
+from langchain_anthropic import ChatAnthropic
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data Types
@@ -47,11 +47,11 @@ def get_llm() -> ChatAnthropic:
 def stream_completion(prompt: str, on_chunk: Callable[[str], None] | None = None) -> str:
     """
     Stream a completion from the LLM.
-    
+
     Args:
         prompt: The prompt to send
         on_chunk: Optional callback for each chunk (for UI updates)
-    
+
     Returns:
         Complete response text
     """
@@ -84,7 +84,7 @@ def parse_root_cause(response: str) -> RootCauseResult:
     """Parse root cause and confidence from LLM response."""
     root_cause = "Unable to determine root cause"
     confidence = 0.5
-    
+
     if "ROOT_CAUSE:" in response:
         parts = response.split("ROOT_CAUSE:")[1]
         if "CONFIDENCE:" in parts:
@@ -96,6 +96,6 @@ def parse_root_cause(response: str) -> RootCauseResult:
                 confidence = 0.8
         else:
             root_cause = parts.strip()
-    
+
     return RootCauseResult(root_cause=root_cause, confidence=confidence)
 

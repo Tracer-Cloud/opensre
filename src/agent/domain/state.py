@@ -5,8 +5,7 @@ The single source of truth for state shape across the graph.
 Linear deterministic flow: plan -> gather_evidence -> analyze -> output.
 """
 
-from typing import TypedDict, Any, Literal
-
+from typing import Any, Literal, TypedDict
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Evidence Source Types
