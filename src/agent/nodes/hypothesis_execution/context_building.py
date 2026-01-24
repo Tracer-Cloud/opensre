@@ -4,6 +4,7 @@ import base64
 import json
 import os
 
+from src.agent.constants import TRACER_BASE_URL
 from src.agent.nodes.hypothesis_execution.utils import call_safe
 from src.agent.tools.clients.tracer_client import get_tracer_web_client
 
@@ -36,7 +37,7 @@ def build_tracer_run_url(pipeline_name: str, trace_id: str | None) -> str | None
     if not trace_id:
         return None
 
-    base_url = "https://staging.tracer.cloud"
+    base_url = TRACER_BASE_URL
     # Extract org slug from JWT token
     jwt_token = os.getenv("JWT_TOKEN")
     org_slug = None

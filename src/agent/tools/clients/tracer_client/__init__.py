@@ -2,6 +2,7 @@
 
 import os
 
+from src.agent.constants import TRACER_BASE_URL, TRACER_ORG_ID
 from src.agent.tools.clients.tracer_client.aws_batch_jobs import AWSBatchJobResult
 from src.agent.tools.clients.tracer_client.client import TracerClient
 from src.agent.tools.clients.tracer_client.tracer_logs import LogResult
@@ -24,10 +25,6 @@ __all__ = [
     "get_tracer_web_client",  # Alias for backward compatibility
 ]
 
-# Hardcoded defaults for Tracer Cloud
-DEFAULT_ORG_ID = "org_33W1pou1nUzYoYPZj3OCQ3jslB2"
-DEFAULT_BASE_URL = "https://staging.tracer.cloud"
-
 _tracer_client: TracerClient | None = None
 
 
@@ -35,7 +32,7 @@ def get_tracer_client() -> TracerClient:
     """
     Get unified Tracer client singleton.
 
-    Only requires JWT_TOKEN. Org ID and URL are hardcoded.
+    Only requires JWT_TOKEN. Org ID and URL are from constants.
     """
     global _tracer_client
 
@@ -44,7 +41,7 @@ def get_tracer_client() -> TracerClient:
         if not jwt_token:
             raise ValueError("JWT_TOKEN environment variable is required")
 
-        _tracer_client = TracerClient(DEFAULT_BASE_URL, DEFAULT_ORG_ID, jwt_token)
+        _tracer_client = TracerClient(TRACER_BASE_URL, TRACER_ORG_ID, jwt_token)
 
     return _tracer_client
 

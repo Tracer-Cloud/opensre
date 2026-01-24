@@ -13,13 +13,13 @@ Rendering is handled in the ingestion layer and nodes.
 Uses the same pipeline runner as the CLI.
 """
 
-import base64
-import json
 import os
 from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+from src.agent.constants import TRACER_BASE_URL
 
 # Load .env file from project root
 env_path = Path(__file__).parent.parent / ".env"
@@ -120,7 +120,7 @@ def run_demo():
         "commonAnnotations": {
             "summary": f"Pipeline {pipeline_name} failed",
         },
-        "externalURL": "https://staging.tracer.cloud",
+        "externalURL": TRACER_BASE_URL,
         "version": "4",
         "groupKey": '{}:{alertname="PipelineFailure"}',
         "truncatedAlerts": 0,
