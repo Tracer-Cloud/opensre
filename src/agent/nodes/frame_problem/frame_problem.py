@@ -50,7 +50,7 @@ def main(state: InvestigationState) -> dict:
     # Gather initial investigation context (metadata) upstream
     render_step_header(2, "Build investigation context")
     context = build_investigation_context({"plan_sources": ["tracer_web"]})  # Always get tracer_web context
-    
+
     # Store context in state
     enriched_state["evidence"] = context
 

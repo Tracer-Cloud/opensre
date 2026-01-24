@@ -37,7 +37,11 @@ def get_tracer_client() -> TracerClient:
     global _tracer_client
 
     if _tracer_client is None:
-        jwt_token = os.getenv("JWT_TOKEN")
+        raw_token = os.getenv("JWT_TOKEN", "")
+        jwt_token = raw_token.strip()
+        if jwt_token.lower().startswith("bearer "):
+            jwt_token = jwt_token.split(None, 1)[1].strip()
+        jwt_token = "".join(jwt_token.split())
         if not jwt_token:
             raise ValueError("JWT_TOKEN environment variable is required")
 
