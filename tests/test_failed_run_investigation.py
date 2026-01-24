@@ -7,7 +7,7 @@ from src.agent.nodes.diagnose_root_cause import node_diagnose_root_cause
 from src.agent.nodes.hypothesis_execution.context_building import _fetch_tracer_web_run_context
 from src.agent.nodes.hypothesis_execution.hypothesis_execution import gather_evidence_for_trace
 from src.agent.state import InvestigationState
-from src.agent.tools.tracer_client import get_tracer_web_client
+from src.agent.tools.clients.tracer_client import get_tracer_web_client
 
 
 def test_investigate_specific_failed_run() -> None:
