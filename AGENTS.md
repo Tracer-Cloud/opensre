@@ -1,27 +1,42 @@
-# Tracer Agent - Project Overview for AI coding assistant
+# Tracer Agent – Project Overview for AI Coding Assistant
 
+## Workflow Expectations
 
-# Sensitive Data
-- Never commit API keys or secrets
+* When “push” is mentioned, it means pushing the commit to GitHub and verifying that all linting checks and GitHub Actions pass for that commit.
+* Before pushing any changes, always run make test locally.
 
-# Test Writing Approach:
-- Write tests always as integration tests, never use mock services. 
-- Write tests in the same file as the code they are testing or if the file is too large, create a new file with the same name as the code file but with _test.py suffix in the same directory. For example:
-    - `src/agent/nodes/frame_problem/frame_problem.py` -> `src/agent/nodes/frame_problem/frame_problem_test.py`
+## Sensitive Data
 
-# Linters
-- For linting we are using Ruff 
+* Never commit API keys, tokens, or secrets of any kind.
 
+## Testing Approach
 
-# Environment
-- Do not use a virtual environment; use the system `python3` directly.
+* Write tests as integration tests only. Do not use mock services.
+* Tests should live alongside the code they validate.
+* If the source file is large, create a separate test file in the same directory using the _test.py suffix.
 
-# Best Practices
-- Always run linters before committing 
-- Always test your changes with make test
-- Follow Go conventions: Use gofmt, follow project structure
-- Check for security implications: Review security-sensitive changes carefully
+Example
+src/agent/nodes/frame_problem/frame_problem.py
+src/agent/nodes/frame_problem/frame_problem_test.py
 
+## Linting
 
-# What not to do when writing code:
-- Do not create fallback functions with mock data.
+* Ruff is the only linter used in this project.
+* Linting must pass before any push.
+
+## Environment
+
+* Do not use virtual environments.
+* Use the system python3 directly.
+
+## Best Practices
+
+* Always run linters before committing.
+* Always validate changes with make test.
+* Follow Go-style discipline in structure and formatting where applicable.
+* Review all changes for potential security implications.
+
+## What Not to Do
+
+* Do not introduce fallback logic that relies on mock or fake data.
+* Do not bypass tests or CI checks.
