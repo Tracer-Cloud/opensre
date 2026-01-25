@@ -1,6 +1,7 @@
 """
-Tracer API tool actions - LangChain tool implementation.
+Tracer runs/tasks tool actions - LangChain tool implementation.
 
+Pipeline run and task execution state.
 No printing, no LLM calls. Just fetch data and return typed results.
 All functions are decorated with @tool for LangChain/LangGraph compatibility.
 """
