@@ -1,7 +1,7 @@
 import os
 
 from src.agent.nodes.build_context.context_building import build_investigation_context
-from src.agent.tools.clients import tracer_client as tracer_client_module
+
 
 def test_build_investigation_context_tracer_web_integration() -> None:
     jwt_token = os.getenv("JWT_TOKEN")
