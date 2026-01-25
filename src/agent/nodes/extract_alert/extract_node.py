@@ -2,18 +2,18 @@
 
 from langsmith import traceable
 
-from src.agent.nodes.frame_problem.extract.extract import extract_alert_details
+from src.agent.nodes.extract_alert.extract import extract_alert_details
 from src.agent.output import debug_print, get_tracker, render_investigation_header
 from src.agent.state import InvestigationState
 
 
-@traceable(name="node_frame_problem_extract")
-def node_frame_problem_extract(state: InvestigationState) -> dict:
+@traceable(name="node_extract_alert")
+def node_extract_alert(state: InvestigationState) -> dict:
     """
     Extract alert details from raw input and render the investigation header.
     """
     tracker = get_tracker()
-    tracker.start("frame_problem_extract", "Extracting alert details")
+    tracker.start("extract_alert", "Extracting alert details")
 
     alert_details = extract_alert_details(state)
     debug_print(
@@ -29,7 +29,7 @@ def node_frame_problem_extract(state: InvestigationState) -> dict:
     )
 
     tracker.complete(
-        "frame_problem_extract",
+        "extract_alert",
         fields_updated=["alert_name", "affected_table", "severity", "alert_json"],
     )
 

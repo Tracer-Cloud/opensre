@@ -1,62 +1,73 @@
-"""Frame the problem and enrich context.
+"""Frame the problem statement.
 
-This node extracts alert details, builds context, and generates a problem statement.
+This node generates a problem statement from extracted alert details and context.
+It assumes extract_alert and build_context nodes have already run.
 It updates state fields but does NOT render output directly.
 """
 
 from langsmith import traceable
 
-from src.agent.nodes.frame_problem.context.context_node import node_frame_problem_context
-from src.agent.nodes.frame_problem.extract.extract_node import node_frame_problem_extract
-from src.agent.nodes.frame_problem.statement.statement_node import node_frame_problem_statement
-from src.agent.output import get_tracker
+from src.agent.nodes.frame_problem.models import (
+    ProblemStatement,
+    ProblemStatementInput,
+)
+from src.agent.nodes.frame_problem.render import render_problem_statement_md
+from src.agent.output import debug_print, get_tracker
 from src.agent.state import InvestigationState
+from src.agent.tools.clients import get_llm
 
 
-def main(state: InvestigationState) -> dict:
-    """
-    Main entry point for framing the problem.
+def _build_input_prompt(problem_input: ProblemStatementInput) -> str:
+    """Build the prompt for generating a problem statement."""
+    return f"""You are framing a data pipeline incident for investigation.
 
-    This keeps the core flow easy to follow:
-    1) Extract alert fields from raw input using the LLM
-    2) Show the investigation header
-    3) Generate a structured problem statement
-    4) Return parsed alert JSON for downstream nodes
-    """
-    tracker = get_tracker()
-    tracker.start("frame_problem", "Framing problem via sub-nodes")
+Alert Information:
+- alert_name: {problem_input.alert_name}
+- affected_table: {problem_input.affected_table}
+- severity: {problem_input.severity}
 
-    updates = node_frame_problem_extract(state)
-    state = {**state, **updates}
+Task:
+Analyze the alert and provide a structured problem statement.
+"""
 
-    updates = node_frame_problem_context(state)
-    state = {**state, **updates}
 
-    updates = node_frame_problem_statement(state)
-    state = {**state, **updates}
+def _generate_output_problem_statement(state: InvestigationState) -> ProblemStatement:
+    """Use the LLM to generate a structured problem statement."""
+    prompt = _build_input_prompt(ProblemStatementInput.from_state(state))
+    llm = get_llm()
 
-    tracker.complete(
-        "frame_problem",
-        fields_updated=["alert_name", "affected_table", "severity", "evidence", "problem_md"],
-    )
+    try:
+        structured_llm = llm.with_structured_output(ProblemStatement)
+        problem = structured_llm.invoke(prompt)
+    except Exception as err:
+        raise RuntimeError("Failed to generate problem statement") from err
 
-    return {
-        "alert_name": state.get("alert_name", ""),
-        "affected_table": state.get("affected_table", ""),
-        "severity": state.get("severity", ""),
-        "alert_json": state.get("alert_json", {}),
-        "problem_md": state.get("problem_md", ""),
-        "evidence": state.get("evidence", {}),
-    }
+    if problem is None:
+        raise RuntimeError("LLM returned no problem statement")
+
+    return problem
 
 
 @traceable(name="node_frame_problem")
 def node_frame_problem(state: InvestigationState) -> dict:
     """
-    LangGraph node wrapper with LangSmith tracking.
+    Generate and render the problem statement.
 
-    Kept for graph wiring; delegates to the main flow.
+    Assumes:
+    - extract_alert node has already populated alert_name, affected_table, severity, alert_json
+    - build_context node has already populated evidence
+
+    Generates:
+    - problem_md: Markdown-formatted problem statement
     """
-    return main(state)
+    tracker = get_tracker()
+    tracker.start("frame_problem", "Generating problem statement")
+
+    problem = _generate_output_problem_statement(state)
+    problem_md = render_problem_statement_md(problem, state)
+    debug_print(f"Problem statement generated ({len(problem_md)} chars)")
+
+    tracker.complete("frame_problem", fields_updated=["problem_md"])
+    return {"problem_md": problem_md}
 
 

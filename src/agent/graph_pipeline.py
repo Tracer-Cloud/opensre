@@ -5,10 +5,10 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 
 from src.agent.nodes import (
+    node_build_context,
     node_diagnose_root_cause,
-    node_frame_problem_context,
-    node_frame_problem_extract,
-    node_frame_problem_statement,
+    node_extract_alert,
+    node_frame_problem,
     node_publish_findings,
 )
 from src.agent.nodes.investigate.investigate import node_investigate
@@ -21,9 +21,9 @@ def build_graph_pipeline() -> StateGraph:
 
     Simplified flow:
         START
-        → frame_problem_extract
-        → frame_problem_context
-        → frame_problem_statement
+        → extract_alert (parallel)
+        → build_context (parallel)
+        → frame_problem (waits for both, generates statement)
         → investigate      # Determine tools and gather evidence in one go
         → diagnose_root_cause    # Synthesize conclusion with validation
         → publish_findings       # Format outputs
@@ -32,10 +32,12 @@ def build_graph_pipeline() -> StateGraph:
     graph = StateGraph(InvestigationState)
 
     # Nodes define the agentic steps in the graph pipeline
-    ## Frame Problem Nodes
-    graph.add_node("frame_problem_extract", node_frame_problem_extract)
-    graph.add_node("frame_problem_context", node_frame_problem_context)
-    graph.add_node("frame_problem_statement", node_frame_problem_statement)
+    ## Initial parallel nodes
+    graph.add_node("extract_alert", node_extract_alert)
+    graph.add_node("build_context", node_build_context)
+
+    ## Frame Problem Node (statement generation)
+    graph.add_node("frame_problem", node_frame_problem)
 
     ## Hypothesis Investigation Nodes
     graph.add_node("investigate", node_investigate)
@@ -43,10 +45,15 @@ def build_graph_pipeline() -> StateGraph:
     graph.add_node("publish_findings", node_publish_findings)
 
     # Edges define the shape of the graph pipeline
-    graph.add_edge(START, "frame_problem_extract")
-    graph.add_edge("frame_problem_extract", "frame_problem_context")
-    graph.add_edge("frame_problem_context", "frame_problem_statement")
-    graph.add_edge("frame_problem_statement", "investigate")
+    # Parallel execution: both extract_alert and build_context start from START
+    graph.add_edge(START, "extract_alert")
+    graph.add_edge(START, "build_context")
+
+    # frame_problem waits for both to complete (LangGraph waits for all incoming edges)
+    graph.add_edge("extract_alert", "frame_problem")
+    graph.add_edge("build_context", "frame_problem")
+
+    graph.add_edge("frame_problem", "investigate")
     graph.add_edge("investigate", "diagnose_root_cause")
 
     # Conditional edge: if confidence/validity is too low, loop back to investigate
