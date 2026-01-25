@@ -2,7 +2,7 @@ import json
 import os
 from pathlib import Path
 
-from src.agent.nodes.frame_problem.extract.extract import extract_alert_details
+from src.agent.nodes.extract_alert.extract import extract_alert_details
 from src.agent.state import InvestigationState
 
 

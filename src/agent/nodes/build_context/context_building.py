@@ -7,12 +7,12 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from src.agent.nodes.frame_problem.context.models import (
+from src.agent.nodes.build_context.models import (
     ContextEvidence,
     ContextSourceError,
     TracerWebRunContext,
 )
-from src.agent.nodes.frame_problem.context.utils import call_safe
+from src.agent.nodes.build_context.utils import call_safe
 from src.agent.state import InvestigationState
 from src.agent.tools.tool_actions.tracer_runs import (
     build_tracer_run_url as _build_tracer_run_url,
