@@ -4,7 +4,6 @@ from typing import Any
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.graph import CompiledStateGraph
 
 from src.agent.nodes import (
     node_build_context,
@@ -18,7 +17,7 @@ from src.agent.routing import should_continue_investigation
 from src.agent.state import InvestigationState, make_initial_state
 
 
-def build_graph(checkpointer: Any = None) -> CompiledStateGraph:
+def build_graph(checkpointer: Any = None) -> Any:
     """
     Build and compile the investigation graph.
 
@@ -72,7 +71,7 @@ def build_graph(checkpointer: Any = None) -> CompiledStateGraph:
 
 def resolve_checkpointer_config(
     thread_id: str | None, checkpointer: Any | None
-) -> tuple[CompiledStateGraph, dict[str, Any]]:
+) -> tuple[Any, dict[str, Any]]:
     """
     Resolve checkpointer and config for graph execution.
 
