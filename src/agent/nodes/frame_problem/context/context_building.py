@@ -14,10 +14,10 @@ from src.agent.nodes.frame_problem.context.models import (
 )
 from src.agent.nodes.frame_problem.context.utils import call_safe
 from src.agent.state import InvestigationState
-from src.agent.tools.tool_actions.actions_tracer_web import (
+from src.agent.tools.tool_actions.tracer_runs import (
     build_tracer_run_url as _build_tracer_run_url,
 )
-from src.agent.tools.tool_actions.actions_tracer_web import (
+from src.agent.tools.tool_actions.tracer_runs import (
     fetch_failed_run_context,
 )
 

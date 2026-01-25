@@ -1,6 +1,7 @@
 """
-AWS Batch tool actions - LangChain tool implementation.
+Tracer jobs/tools tool actions - LangChain tool implementation.
 
+Job and tool execution results.
 No printing, no LLM calls. Just fetch data and return typed results.
 All functions are decorated with @tool for LangChain/LangGraph compatibility.
 """
@@ -39,33 +40,44 @@ def get_batch_jobs() -> AWSBatchJobResult:
     return client.get_batch_jobs()
 
 
-def get_batch_statistics(trace_id: str) -> dict:
+def get_failed_tools(trace_id: str) -> dict:
     """
-    Get batch job statistics for a specific trace.
+    Get tools that failed during execution.
 
     Useful for:
-    - Proving systemic failure hypothesis (high failure rate)
-    - Understanding overall job execution patterns
-    - Cost analysis
+    - Proving tool failure hypothesis
+    - Identifying specific failing components
+    - Understanding error patterns
 
     Args:
         trace_id: The trace/run identifier
 
     Returns:
-        Dictionary with failed_job_count, total_runs, total_cost
+        Dictionary with failed_tools list and metadata
     """
     if not trace_id:
         return {"error": "trace_id is required"}
 
     client = get_tracer_web_client()
-    batch_details = client.get_batch_details(trace_id)
-    batch_stats = batch_details.get("stats", {})
+    tools_data = client.get_tools(trace_id)
+    tool_list = tools_data.get("data", [])
+
+    failed_tools = [
+        {
+            "tool_name": t.get("tool_name"),
+            "exit_code": t.get("exit_code"),
+            "reason": t.get("reason"),
+            "explanation": t.get("explanation"),
+        }
+        for t in tool_list
+        if t.get("exit_code") and str(t.get("exit_code")) != "0"
+    ]
 
     return {
-        "failed_job_count": batch_stats.get("failed_job_count", 0),
-        "total_runs": batch_stats.get("total_runs", 0),
-        "total_cost": batch_stats.get("total_cost", 0),
-        "source": "batch-runs/[trace_id] API",
+        "failed_tools": failed_tools,
+        "total_tools": len(tool_list),
+        "failed_count": len(failed_tools),
+        "source": "tools/[traceId] API",
     }
 
 
@@ -116,5 +128,5 @@ def get_failed_jobs(trace_id: str) -> dict:
 
 # Create LangChain tools from the functions
 get_batch_jobs_tool = tool(get_batch_jobs)
-get_batch_statistics_tool = tool(get_batch_statistics)
+get_failed_tools_tool = tool(get_failed_tools)
 get_failed_jobs_tool = tool(get_failed_jobs)
