@@ -46,8 +46,9 @@ def run_investigation_pipeline(
         raw_alert: Raw alert payload
         thread_id: Optional thread ID for short-term memory persistence.
                    If provided, state will be persisted and can be resumed.
-                   If None, each run is independent.
-        checkpointer: Optional checkpointer instance. If None, uses InMemorySaver.
+                   If None, each run is independent (no checkpointer used).
+        checkpointer: Optional checkpointer instance. Only used if thread_id is provided.
+                      If None and thread_id is provided, uses InMemorySaver.
 
     Returns:
         Final investigation state
@@ -94,12 +95,16 @@ def run_investigation_pipeline(
 
     graph.add_edge("publish_findings", END)
 
-    # Compile with checkpointer for short-term memory (thread-level persistence)
-    # If no checkpointer provided, use in-memory by default
-    if checkpointer is None:
-        checkpointer = InMemorySaver()
-
-    compiled_graph = graph.compile(checkpointer=checkpointer)
+    # Compile with checkpointer only if thread_id is provided (for short-term memory)
+    # If no thread_id, compile without checkpointer for stateless execution
+    if thread_id:
+        # Use provided checkpointer or create in-memory one
+        if checkpointer is None:
+            checkpointer = InMemorySaver()
+        compiled_graph = graph.compile(checkpointer=checkpointer)
+    else:
+        # No checkpointer needed for stateless execution
+        compiled_graph = graph.compile()
 
     # Prepare initial state
     initial_state = make_initial_state(
