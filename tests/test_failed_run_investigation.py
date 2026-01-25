@@ -34,7 +34,7 @@ def test_investigate_specific_failed_run() -> None:
     if not failed_run:
         raise AssertionError(f"Expected to find trace {trace_id}")
     # Build context
-    from src.agent.nodes.build_context.context_building import build_tracer_run_url
+    from src.agent.tools.tool_actions.tracer_runs import build_tracer_run_url
 
     run_url = build_tracer_run_url(failed_run.pipeline_name, trace_id)
     web_run = {
