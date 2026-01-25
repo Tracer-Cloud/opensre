@@ -47,9 +47,10 @@ class ReportContext(TypedDict, total=False):
 
 
 def _build_report_context(state: dict[str, Any]) -> ReportContext:
-    """Extract data from state.evidence for the report formatter."""
+    """Extract data from state.context and state.evidence for the report formatter."""
+    context = state.get("context", {})
     evidence = state.get("evidence", {})
-    web_run = evidence.get("tracer_web_run", {}) or {}
+    web_run = context.get("tracer_web_run", {}) or {}
     batch = evidence.get("batch_jobs", {}) or {}
     s3 = evidence.get("s3", {}) or {}
 
@@ -79,7 +80,7 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
         "tracer_user_email": web_run.get("user_email"),
         "tracer_team": web_run.get("team"),
         "tracer_instance_type": web_run.get("instance_type"),
-        "tracer_failed_tasks": len(web_run.get("failed_jobs", [])),
+        "tracer_failed_tasks": len(evidence.get("failed_jobs", [])),
         "batch_failure_reason": batch.get("failure_reason"),
         "batch_failed_jobs": batch.get("failed_jobs", 0),
     }

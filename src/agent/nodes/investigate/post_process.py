@@ -17,7 +17,6 @@ def merge_evidence(
         Updated evidence dictionary
     """
     evidence = state.get("evidence", {}).copy()
-    tracer_web_run = evidence.get("tracer_web_run", {})
 
     for action_name, result in execution_results.items():
         if not result.success:
@@ -28,31 +27,17 @@ def merge_evidence(
         if action_name == "get_failed_jobs":
             evidence["failed_jobs"] = data.get("failed_jobs", [])
             evidence["total_jobs"] = data.get("total_jobs", 0)
-            if tracer_web_run.get("found"):
-                tracer_web_run["failed_jobs"] = data.get("failed_jobs", [])
-                tracer_web_run["total_jobs"] = data.get("total_jobs", 0)
 
         elif action_name == "get_failed_tools":
             evidence["failed_tools"] = data.get("failed_tools", [])
             evidence["total_tools"] = data.get("total_tools", 0)
-            if tracer_web_run.get("found"):
-                tracer_web_run["failed_tools"] = data.get("failed_tools", [])
-                tracer_web_run["total_tools"] = data.get("total_tools", 0)
 
         elif action_name == "get_error_logs":
             evidence["error_logs"] = data.get("logs", [])
             evidence["total_logs"] = data.get("total_logs", 0)
-            if tracer_web_run.get("found"):
-                tracer_web_run["error_logs"] = data.get("logs", [])
-                tracer_web_run["total_logs"] = data.get("total_logs", 0)
 
         elif action_name == "get_host_metrics":
             evidence["host_metrics"] = data.get("metrics", {})
-            if tracer_web_run.get("found"):
-                tracer_web_run["host_metrics"] = data.get("metrics", {})
-
-    if tracer_web_run.get("found"):
-        evidence["tracer_web_run"] = tracer_web_run
 
     return evidence
 

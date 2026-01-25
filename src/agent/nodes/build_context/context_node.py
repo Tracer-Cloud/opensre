@@ -9,15 +9,11 @@ from src.agent.state import InvestigationState
 
 @traceable(name="node_build_context")
 def node_build_context(state: InvestigationState) -> dict:
-    """Gather investigation context and merge into evidence."""
+    """Gather investigation context and store in context bucket."""
     tracker = get_tracker()
     tracker.start("build_context", "Building investigation context")
 
     context = build_investigation_context(state)
-    evidence = {
-        **state.get("evidence", {}),
-        **context,
-    }
 
-    tracker.complete("build_context", fields_updated=["evidence"])
-    return {"evidence": evidence}
+    tracker.complete("build_context", fields_updated=["context"])
+    return {"context": context}
