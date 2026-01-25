@@ -6,11 +6,9 @@ It updates state fields but does NOT render output directly.
 
 from langsmith import traceable
 
-from src.agent.nodes.frame_problem.steps.context_node import node_frame_problem_context
-from src.agent.nodes.frame_problem.steps.extract_alert_node import node_frame_problem_extract
-from src.agent.nodes.frame_problem.steps.statement_node import (
-    node_frame_problem_statement,
-)
+from src.agent.nodes.frame_problem.context.context_node import node_frame_problem_context
+from src.agent.nodes.frame_problem.extract.extract_node import node_frame_problem_extract
+from src.agent.nodes.frame_problem.statement.statement_node import node_frame_problem_statement
 from src.agent.output import get_tracker
 from src.agent.state import InvestigationState
 

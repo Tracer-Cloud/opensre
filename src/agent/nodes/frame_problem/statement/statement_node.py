@@ -2,9 +2,11 @@
 
 from langsmith import traceable
 
-from src.agent.nodes.frame_problem.models import ProblemStatement, ProblemStatementInput
-from src.agent.nodes.frame_problem.render import render_problem_statement_md
-from src.agent.nodes.frame_problem.service_graph import render_tools_briefing
+from src.agent.nodes.frame_problem.statement.models import (
+    ProblemStatement,
+    ProblemStatementInput,
+)
+from src.agent.nodes.frame_problem.statement.render import render_problem_statement_md
 from src.agent.output import debug_print, get_tracker
 from src.agent.state import InvestigationState
 from src.agent.tools.llm import get_llm
@@ -41,14 +43,6 @@ def _generate_output_problem_statement(state: InvestigationState) -> ProblemStat
     return problem
 
 
-def _add_tools_briefing(problem: ProblemStatement) -> ProblemStatement:
-    """Add a tools briefing to the problem context."""
-    if "Available evidence sources" in problem.context:
-        return problem
-    new_context = f"{problem.context}\n\n{render_tools_briefing()}"
-    return problem.model_copy(update={"context": new_context})
-
-
 @traceable(name="node_frame_problem_statement")
 def node_frame_problem_statement(state: InvestigationState) -> dict:
     """Generate and render the problem statement."""
@@ -56,7 +50,6 @@ def node_frame_problem_statement(state: InvestigationState) -> dict:
     tracker.start("frame_problem_statement", "Generating problem statement")
 
     problem = _generate_output_problem_statement(state)
-    problem = _add_tools_briefing(problem)
     problem_md = render_problem_statement_md(problem, state)
     debug_print(f"Problem statement generated ({len(problem_md)} chars)")
 

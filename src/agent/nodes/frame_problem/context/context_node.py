@@ -2,7 +2,7 @@
 
 from langsmith import traceable
 
-from src.agent.nodes.frame_problem.context_building import build_investigation_context
+from src.agent.nodes.frame_problem.context.context_building import build_investigation_context
 from src.agent.output import get_tracker
 from src.agent.state import InvestigationState
 
