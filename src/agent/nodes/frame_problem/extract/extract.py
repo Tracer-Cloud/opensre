@@ -3,20 +3,9 @@
 import json
 from typing import Any
 
-from pydantic import BaseModel, Field
-
+from src.agent.nodes.frame_problem.extract.models import AlertDetails, AlertExtractionInput
 from src.agent.state import InvestigationState
 from src.agent.tools.llm import get_llm
-
-
-class AlertDetails(BaseModel):
-    """Structured alert details extracted from raw input."""
-
-    alert_name: str = Field(description="Name of the alert")
-    affected_table: str = Field(description="Primary affected table")
-    severity: str = Field(description="Severity of the alert (e.g. critical, high, warning, info)")
-    environment: str | None = Field(default=None, description="Environment, if present")
-    summary: str | None = Field(default=None, description="Short alert summary, if present")
 
 
 def extract_alert_details(state: InvestigationState) -> AlertDetails:
@@ -25,7 +14,8 @@ def extract_alert_details(state: InvestigationState) -> AlertDetails:
     if raw_alert is None:
         raise RuntimeError("raw_alert is required for alert extraction")
 
-    prompt = _build_extraction_prompt(_format_raw_alert(raw_alert))
+    input_data = AlertExtractionInput(raw_alert=_format_raw_alert(raw_alert))
+    prompt = _build_extraction_prompt(input_data.raw_alert)
     llm = get_llm()
 
     try:

@@ -6,7 +6,9 @@ from langgraph.graph import END, START, StateGraph
 
 from src.agent.nodes import (
     node_diagnose_root_cause,
-    node_frame_problem,
+    node_frame_problem_context,
+    node_frame_problem_extract,
+    node_frame_problem_statement,
     node_publish_findings,
 )
 from src.agent.nodes.investigate.investigate import node_investigate
@@ -19,7 +21,9 @@ def build_graph_pipeline() -> StateGraph:
 
     Simplified flow:
         START
-        → frame_problem    # Enrich incident context + get tracer run metadata
+        → frame_problem_extract
+        → frame_problem_context
+        → frame_problem_statement
         → investigate      # Determine tools and gather evidence in one go
         → diagnose_root_cause    # Synthesize conclusion with validation
         → publish_findings       # Format outputs
@@ -28,14 +32,21 @@ def build_graph_pipeline() -> StateGraph:
     graph = StateGraph(InvestigationState)
 
     # Nodes define the agentic steps in the graph pipeline
-    graph.add_node("frame_problem", node_frame_problem)
+    ## Frame Problem Nodes
+    graph.add_node("frame_problem_extract", node_frame_problem_extract)
+    graph.add_node("frame_problem_context", node_frame_problem_context)
+    graph.add_node("frame_problem_statement", node_frame_problem_statement)
+
+    ## Hypothesis Investigation Nodes
     graph.add_node("investigate", node_investigate)
     graph.add_node("diagnose_root_cause", node_diagnose_root_cause)
     graph.add_node("publish_findings", node_publish_findings)
 
     # Edges define the shape of the graph pipeline
-    graph.add_edge(START, "frame_problem")
-    graph.add_edge("frame_problem", "investigate")
+    graph.add_edge(START, "frame_problem_extract")
+    graph.add_edge("frame_problem_extract", "frame_problem_context")
+    graph.add_edge("frame_problem_context", "frame_problem_statement")
+    graph.add_edge("frame_problem_statement", "investigate")
     graph.add_edge("investigate", "diagnose_root_cause")
 
     # Conditional edge: if confidence/validity is too low, loop back to investigate

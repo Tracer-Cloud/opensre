@@ -29,7 +29,7 @@ init_runtime()
 from langsmith import traceable  # noqa: E402
 
 from src.agent.graph_pipeline import run_investigation_pipeline  # noqa: E402
-from src.agent.nodes.frame_problem.context_building import (  # noqa: E402
+from src.agent.nodes.frame_problem.context.context_building import (  # noqa: E402
     _fetch_tracer_web_run_context,
 )
 from src.agent.output import reset_tracker  # noqa: E402

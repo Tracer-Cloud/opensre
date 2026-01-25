@@ -1,9 +1,22 @@
 """
-Tracer tool actions - LangChain tool implementation.
+Tracer Web App tool actions - LangChain tool implementation.
 
 No printing, no LLM calls. Just fetch data and return typed results.
 All functions are decorated with @tool for LangChain/LangGraph compatibility.
 """
+
+from __future__ import annotations
+
+import os
+from collections.abc import Iterable
+
+from src.agent.constants import TRACER_BASE_URL
+from src.agent.tools.clients.tracer_client import (
+    PipelineRunSummary,
+    get_tracer_web_client,
+)
+from src.agent.tools.data_validation import validate_host_metrics
+from src.agent.utils.auth import extract_org_slug_from_jwt
 
 try:
     from langchain.tools import tool
@@ -15,94 +28,58 @@ except ImportError:
         return func
 
 
-from src.agent.tools.clients.tracer_client import (
-    AWSBatchJobResult,
-    TracerRunResult,
-    TracerTaskResult,
-    get_tracer_client,
-    get_tracer_web_client,
-)
-from src.agent.tools.data_validation import validate_host_metrics
+FAILED_STATUSES = ("failed", "error")
 
 
-def get_tracer_run(pipeline_name: str | None = None) -> TracerRunResult:
-    """
-    Get the latest pipeline run from Tracer API.
-
-    Use this tool to retrieve the most recent run information for a Tracer pipeline,
-    including run status, tasks, and metadata. This is essential for understanding
-    the current state of a pipeline execution.
-
-    Args:
-        pipeline_name: Optional pipeline name to filter runs. If None, returns latest run.
-
-    Returns:
-        TracerRunResult with run details including status, run_id, and tasks
-    """
-    client = get_tracer_client()
-    return client.get_latest_run(pipeline_name)
-
-
-def get_tracer_tasks(run_id: str) -> TracerTaskResult:
-    """
-    Get tasks for a specific pipeline run from Tracer API.
-
-    Use this tool to retrieve detailed task information for a pipeline run, including
-    task status, execution details, and any errors. This helps understand which
-    specific tasks failed or succeeded in a pipeline execution.
-
-    Args:
-        run_id: The unique identifier for the pipeline run
-
-    Returns:
-        TracerTaskResult with task details and execution status
-    """
-    client = get_tracer_client()
-    return client.get_run_tasks(run_id)
-
-
-def get_batch_jobs() -> AWSBatchJobResult:
-    """
-    Get AWS Batch job status from Tracer API.
-
-    Use this tool to retrieve AWS Batch job information, including job status,
-    failure reasons, and execution details. This is crucial for investigating
-    batch job failures and understanding resource constraints.
-
-    Returns:
-        AWSBatchJobResult with batch job details and status information
-    """
-    client = get_tracer_client()
-    return client.get_batch_jobs()
-
-
-def get_batch_statistics(trace_id: str) -> dict:
-    """
-    Get batch job statistics for a specific trace.
-
-    Useful for:
-    - Proving systemic failure hypothesis (high failure rate)
-    - Understanding overall job execution patterns
-    - Cost analysis
-
-    Args:
-        trace_id: The trace/run identifier
-
-    Returns:
-        Dictionary with failed_job_count, total_runs, total_cost
-    """
+def build_tracer_run_url(pipeline_name: str, trace_id: str | None) -> str | None:
+    """Build the correct Tracer run URL with organization slug."""
     if not trace_id:
-        return {"error": "trace_id is required"}
+        return None
 
+    jwt_token = os.getenv("JWT_TOKEN")
+    org_slug = None
+    if jwt_token:
+        org_slug = extract_org_slug_from_jwt(jwt_token)
+
+    if org_slug:
+        return f"{TRACER_BASE_URL}/{org_slug}/pipelines/{pipeline_name}/batch/{trace_id}"
+    return f"{TRACER_BASE_URL}/pipelines/{pipeline_name}/batch/{trace_id}"
+
+
+def fetch_failed_run_context(pipeline_name: str | None = None) -> dict:
+    """Fetch context (metadata) about a failed run from Tracer Web App."""
     client = get_tracer_web_client()
-    batch_details = client.get_batch_details(trace_id)
-    batch_stats = batch_details.get("stats", {})
+    pipeline_names = _list_pipeline_names(client, pipeline_name)
 
+    failed_run = _find_failed_run(client, pipeline_names)
+    if not failed_run and pipeline_name:
+        pipeline_names = _list_pipeline_names(client, None)
+        failed_run = _find_failed_run(client, pipeline_names)
+    if not failed_run:
+        return {
+            "found": False,
+            "error": "No failed runs found",
+            "pipelines_checked": len(pipeline_names),
+        }
+
+    run_url = build_tracer_run_url(failed_run.pipeline_name, failed_run.trace_id)
     return {
-        "failed_job_count": batch_stats.get("failed_job_count", 0),
-        "total_runs": batch_stats.get("total_runs", 0),
-        "total_cost": batch_stats.get("total_cost", 0),
-        "source": "batch-runs/[trace_id] API",
+        "found": True,
+        "pipeline_name": failed_run.pipeline_name,
+        "run_id": failed_run.run_id,
+        "run_name": failed_run.run_name,
+        "trace_id": failed_run.trace_id,
+        "status": failed_run.status,
+        "start_time": failed_run.start_time,
+        "end_time": failed_run.end_time,
+        "run_cost": failed_run.run_cost,
+        "tool_count": failed_run.tool_count,
+        "user_email": failed_run.user_email,
+        "instance_type": failed_run.instance_type,
+        "region": failed_run.region,
+        "log_file_count": failed_run.log_file_count,
+        "run_url": run_url,
+        "pipelines_checked": len(pipeline_names),
     }
 
 
@@ -144,51 +121,6 @@ def get_failed_tools(trace_id: str) -> dict:
         "total_tools": len(tool_list),
         "failed_count": len(failed_tools),
         "source": "tools/[traceId] API",
-    }
-
-
-def get_failed_jobs(trace_id: str) -> dict:
-    """
-    Get AWS Batch jobs that failed.
-
-    Useful for:
-    - Proving job failure hypothesis
-    - Understanding container-level failures
-    - Identifying infrastructure issues
-
-    Args:
-        trace_id: The trace/run identifier
-
-    Returns:
-        Dictionary with failed_jobs list and metadata
-    """
-    if not trace_id:
-        return {"error": "trace_id is required"}
-
-    client = get_tracer_web_client()
-    batch_jobs = client.get_batch_jobs(trace_id, ["FAILED", "SUCCEEDED"], return_dict=True)
-    job_list = batch_jobs.get("data", [])
-
-    failed_jobs = []
-    for job in job_list:
-        if job.get("status") == "FAILED":
-            container = job.get("container", {})
-            failed_jobs.append(
-                {
-                    "job_name": job.get("jobName"),
-                    "status_reason": job.get("statusReason"),
-                    "container_reason": container.get("reason")
-                    if isinstance(container, dict)
-                    else None,
-                    "exit_code": container.get("exitCode") if isinstance(container, dict) else None,
-                }
-            )
-
-    return {
-        "failed_jobs": failed_jobs,
-        "total_jobs": len(job_list),
-        "failed_count": len(failed_jobs),
-        "source": "aws/batch/jobs/completed API",
     }
 
 
@@ -316,13 +248,26 @@ def get_airflow_metrics(trace_id: str) -> dict:
     }
 
 
+def _list_pipeline_names(client, pipeline_name: str | None) -> list[str]:
+    if pipeline_name:
+        return [pipeline_name]
+    pipelines = client.get_pipelines(page=1, size=50)
+    return [pipeline.pipeline_name for pipeline in pipelines if pipeline.pipeline_name]
+
+
+def _find_failed_run(client, pipeline_names: Iterable[str]) -> PipelineRunSummary | None:
+    for name in pipeline_names:
+        runs = client.get_pipeline_runs(name, page=1, size=50)
+        for run in runs:
+            status = (run.status or "").lower()
+            if status in FAILED_STATUSES:
+                return run
+    return None
+
+
 # Create LangChain tools from the functions
-get_tracer_run_tool = tool(get_tracer_run)
-get_tracer_tasks_tool = tool(get_tracer_tasks)
-get_batch_jobs_tool = tool(get_batch_jobs)
-get_batch_statistics_tool = tool(get_batch_statistics)
 get_failed_tools_tool = tool(get_failed_tools)
-get_failed_jobs_tool = tool(get_failed_jobs)
 get_error_logs_tool = tool(get_error_logs)
 get_host_metrics_tool = tool(get_host_metrics)
 get_airflow_metrics_tool = tool(get_airflow_metrics)
+fetch_failed_run_context_tool = tool(fetch_failed_run_context)
