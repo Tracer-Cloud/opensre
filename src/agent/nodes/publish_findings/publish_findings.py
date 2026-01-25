@@ -18,7 +18,6 @@ from src.agent.constants import TRACER_DEFAULT_INVESTIGATION_URL
 from src.agent.output import get_output_format
 from src.agent.state import InvestigationState
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Report Context
 # ─────────────────────────────────────────────────────────────────────────────
@@ -135,7 +134,9 @@ def _format_slack_message(ctx: ReportContext) -> str:
     if not validated_claims and not non_validated_claims and root_cause_text:
         conclusion_section = f"\n{root_cause_text}\n"
     else:
-        conclusion_section = f"{validated_section}{non_validated_section}{validity_info}"
+        # Ensure linebreak between validated and non-validated sections
+        separator = "\n" if validated_section and non_validated_section else ""
+        conclusion_section = f"{validated_section}{separator}{non_validated_section}{validity_info}"
 
     total = len(validated_claims) + len(non_validated_claims)
     return f"""[RCA] {ctx.get("affected_table", "unknown")} freshness incident
