@@ -12,7 +12,7 @@ init_runtime()
 
 from langsmith import traceable  # noqa: E402
 
-from src.agent.graph_pipeline import run_investigation_pipeline  # noqa: E402
+from src.agent.graph_pipeline import run_investigation  # noqa: E402
 from src.cli import parse_args, write_json  # noqa: E402
 from src.ingest import load_request_from_json  # noqa: E402
 
@@ -24,7 +24,7 @@ def _run(
     severity: str,
     raw_alert: dict[str, Any],
 ) -> dict:
-    state = run_investigation_pipeline(
+    state = run_investigation(
         alert_name,
         affected_table,
         severity,
