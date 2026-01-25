@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from typing import Any
-import time
 
 TIMEOUT = 10.0
 

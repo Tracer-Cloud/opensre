@@ -6,6 +6,9 @@ from src.agent.tools.tool_actions.cloudwatch_actions import (
 )
 from src.agent.tools.tool_actions.s3_actions import check_s3_marker, check_s3_marker_tool
 from src.agent.tools.tool_actions.tracer_actions import (
+    build_tracer_run_url,
+    fetch_failed_run_context,
+    fetch_failed_run_context_tool,
     get_airflow_metrics,
     get_airflow_metrics_tool,
     get_batch_jobs,
@@ -34,6 +37,9 @@ __all__ = [
     "get_cloudwatch_batch_metrics",
     "get_cloudwatch_batch_metrics_tool",
     # Tracer actions
+    "build_tracer_run_url",
+    "fetch_failed_run_context",
+    "fetch_failed_run_context_tool",
     "get_tracer_run",
     "get_tracer_run_tool",
     "get_tracer_tasks",

@@ -33,7 +33,7 @@ class ProblemStatementInput(BaseModel):
     severity: str = Field(description="Severity of the alert")
 
     @classmethod
-    def from_state(cls, state: InvestigationState) -> "ProblemStatementInput":
+    def from_state(cls, state: InvestigationState) -> ProblemStatementInput:
         return cls(
             alert_name=state.get("alert_name", "Unknown"),
             affected_table=state.get("affected_table", "Unknown"),
