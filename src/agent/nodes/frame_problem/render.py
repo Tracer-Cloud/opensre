@@ -16,8 +16,8 @@ def render_problem_statement_md(
 
     # Get tracer run URL if available
     tracer_run_url = None
-    evidence = state.get("evidence", {})
-    tracer_web_run = evidence.get("tracer_web_run", {})
+    context = state.get("context", {})
+    tracer_web_run = context.get("tracer_web_run", {})
     if tracer_web_run.get("found") and tracer_web_run.get("run_url"):
         tracer_run_url = tracer_web_run.get("run_url")
     elif state.get("raw_alert") and isinstance(state.get("raw_alert"), dict):
