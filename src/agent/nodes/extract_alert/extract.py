@@ -5,7 +5,7 @@ from typing import Any
 
 from src.agent.nodes.extract_alert.models import AlertDetails, AlertExtractionInput
 from src.agent.state import InvestigationState
-from src.agent.tools.utils import get_llm
+from src.agent.tools.clients import get_llm
 
 
 def extract_alert_details(state: InvestigationState) -> AlertDetails:

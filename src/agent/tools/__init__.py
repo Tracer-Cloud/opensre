@@ -2,11 +2,13 @@
 
 from src.agent.tools.clients import (
     AWSBatchJobResult,
+    RootCauseResult,
     S3CheckResult,
     TracerRunResult,
     TracerTaskResult,
     get_s3_client,
     get_tracer_client,
+    parse_root_cause,
 )
 from src.agent.tools.tool_actions import (
     get_airflow_metrics,
@@ -16,7 +18,6 @@ from src.agent.tools.tool_actions import (
     get_failed_tools,
     get_host_metrics,
 )
-from src.agent.tools.utils import RootCauseResult, parse_root_cause
 
 __all__ = [
     "AWSBatchJobResult",

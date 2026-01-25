@@ -9,13 +9,13 @@ from pydantic import BaseModel, Field
 
 from src.agent.output import debug_print, get_tracker
 from src.agent.state import EvidenceSource, InvestigationState
+from src.agent.tools.clients import get_llm
 from src.agent.tools.tool_actions import (
     get_error_logs,
     get_failed_jobs,
     get_failed_tools,
     get_host_metrics,
 )
-from src.agent.tools.utils import get_llm
 from src.agent.utils import get_executed_sources
 
 

@@ -14,7 +14,7 @@ from src.agent.nodes.frame_problem.models import (
 from src.agent.nodes.frame_problem.render import render_problem_statement_md
 from src.agent.output import debug_print, get_tracker
 from src.agent.state import InvestigationState
-from src.agent.tools.utils import get_llm
+from src.agent.tools.clients import get_llm
 
 
 def _build_input_prompt(problem_input: ProblemStatementInput) -> str:
