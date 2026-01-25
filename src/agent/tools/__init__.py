@@ -8,10 +8,6 @@ from src.agent.tools.clients import (
     get_s3_client,
     get_tracer_client,
 )
-from src.agent.tools.llm import (
-    RootCauseResult,
-    parse_root_cause,
-)
 from src.agent.tools.tool_actions import (
     get_airflow_metrics,
     get_batch_statistics,
@@ -20,6 +16,7 @@ from src.agent.tools.tool_actions import (
     get_failed_tools,
     get_host_metrics,
 )
+from src.agent.tools.utils import RootCauseResult, parse_root_cause
 
 __all__ = [
     "AWSBatchJobResult",
