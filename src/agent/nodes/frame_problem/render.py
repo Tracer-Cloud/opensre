@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.agent.nodes.frame_problem.statement.models import ProblemStatement
+from src.agent.nodes.frame_problem.models import ProblemStatement
 from src.agent.state import InvestigationState
 
 
