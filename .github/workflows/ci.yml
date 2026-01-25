@@ -55,6 +55,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run demo
+      - name: Run tests
+        run: make test
+
+      - name: Run demo (if tests pass)
         run: make demo
 
