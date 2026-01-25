@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from rich.console import Console
 from rich.panel import Panel
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Output Format Detection
 # ─────────────────────────────────────────────────────────────────────────────

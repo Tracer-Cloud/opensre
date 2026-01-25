@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable
+from typing import Any
 
 from src.agent.nodes.frame_problem.models import (
     ContextEvidence,
     ContextSourceError,
     TracerWebRunContext,
 )
-from src.agent.nodes.frame_problem.tracer_web import (
-    build_tracer_run_url as _build_tracer_run_url,
-    fetch_failed_run_context,
-)
 from src.agent.nodes.frame_problem.utils import call_safe
 from src.agent.state import InvestigationState
-
+from src.agent.tools.tool_actions.tracer_actions import (
+    build_tracer_run_url as _build_tracer_run_url,
+)
+from src.agent.tools.tool_actions.tracer_actions import (
+    fetch_failed_run_context,
+)
 
 DEFAULT_CONTEXT_SOURCES = ("tracer_web",)
 
@@ -72,7 +74,7 @@ def _fetch_tracer_web_run_context(state: InvestigationState | None = None) -> di
     """Fetch context (metadata) about a failed run from Tracer Web App."""
     pipeline_name = _extract_pipeline_hint(state)
     context = fetch_failed_run_context(pipeline_name=pipeline_name)
-    return context.model_dump(exclude_none=True)
+    return context
 
 
 def build_investigation_context(state: InvestigationState) -> dict:

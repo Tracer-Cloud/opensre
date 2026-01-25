@@ -1,6 +1,7 @@
 import os
 
 from src.agent.nodes.frame_problem.context_building import build_investigation_context
+from src.agent.tools.clients import tracer_client as tracer_client_module
 
 
 def test_build_investigation_context_tracer_web_integration() -> None:
@@ -16,6 +17,7 @@ def test_build_investigation_context_tracer_web_integration() -> None:
 
 def test_build_investigation_context_records_missing_jwt_token(monkeypatch) -> None:
     monkeypatch.delenv("JWT_TOKEN", raising=False)
+    monkeypatch.setattr(tracer_client_module, "_tracer_client", None)
 
     context = build_investigation_context({"plan_sources": ["tracer_web"]})
 

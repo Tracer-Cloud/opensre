@@ -18,7 +18,6 @@ from src.agent.constants import TRACER_DEFAULT_INVESTIGATION_URL
 from src.agent.output import get_output_format
 from src.agent.state import InvestigationState
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Report Context
 # ─────────────────────────────────────────────────────────────────────────────
