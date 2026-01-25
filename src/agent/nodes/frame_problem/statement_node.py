@@ -6,7 +6,9 @@ from src.agent.nodes.frame_problem.statement.models import (
     ProblemStatement,
     ProblemStatementInput,
 )
-from src.agent.nodes.frame_problem.statement.render import render_problem_statement_md
+from src.agent.nodes.frame_problem.statement.render import (
+    render_problem_statement_md,
+)
 from src.agent.output import debug_print, get_tracker
 from src.agent.state import InvestigationState
 from src.agent.tools.llm import get_llm
