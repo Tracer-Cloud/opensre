@@ -7,14 +7,51 @@ It updates state fields but does NOT render output directly.
 
 from langsmith import traceable
 
-from src.agent.nodes.frame_problem.statement_node import node_frame_problem_statement
-from src.agent.output import get_tracker
+from src.agent.nodes.frame_problem.models import (
+    ProblemStatement,
+    ProblemStatementInput,
+)
+from src.agent.nodes.frame_problem.render import render_problem_statement_md
+from src.agent.output import debug_print, get_tracker
 from src.agent.state import InvestigationState
+from src.agent.tools.llm import get_llm
 
 
-def main(state: InvestigationState) -> dict:
+def _build_input_prompt(problem_input: ProblemStatementInput) -> str:
+    """Build the prompt for generating a problem statement."""
+    return f"""You are framing a data pipeline incident for investigation.
+
+Alert Information:
+- alert_name: {problem_input.alert_name}
+- affected_table: {problem_input.affected_table}
+- severity: {problem_input.severity}
+
+Task:
+Analyze the alert and provide a structured problem statement.
+"""
+
+
+def _generate_output_problem_statement(state: InvestigationState) -> ProblemStatement:
+    """Use the LLM to generate a structured problem statement."""
+    prompt = _build_input_prompt(ProblemStatementInput.from_state(state))
+    llm = get_llm()
+
+    try:
+        structured_llm = llm.with_structured_output(ProblemStatement)
+        problem = structured_llm.invoke(prompt)
+    except Exception as err:
+        raise RuntimeError("Failed to generate problem statement") from err
+
+    if problem is None:
+        raise RuntimeError("LLM returned no problem statement")
+
+    return problem
+
+
+@traceable(name="node_frame_problem")
+def node_frame_problem(state: InvestigationState) -> dict:
     """
-    Main entry point for framing the problem statement.
+    Generate and render the problem statement.
 
     Assumes:
     - extract_alert node has already populated alert_name, affected_table, severity, alert_json
@@ -26,26 +63,11 @@ def main(state: InvestigationState) -> dict:
     tracker = get_tracker()
     tracker.start("frame_problem", "Generating problem statement")
 
-    updates = node_frame_problem_statement(state)
-    state = {**state, **updates}
+    problem = _generate_output_problem_statement(state)
+    problem_md = render_problem_statement_md(problem, state)
+    debug_print(f"Problem statement generated ({len(problem_md)} chars)")
 
-    tracker.complete(
-        "frame_problem",
-        fields_updated=["problem_md"],
-    )
-
-    return {
-        "problem_md": state.get("problem_md", ""),
-    }
-
-
-@traceable(name="node_frame_problem")
-def node_frame_problem(state: InvestigationState) -> dict:
-    """
-    LangGraph node wrapper with LangSmith tracking.
-
-    Kept for graph wiring; delegates to the main flow.
-    """
-    return main(state)
+    tracker.complete("frame_problem", fields_updated=["problem_md"])
+    return {"problem_md": problem_md}
 
 
