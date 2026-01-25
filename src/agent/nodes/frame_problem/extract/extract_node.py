@@ -2,7 +2,7 @@
 
 from langsmith import traceable
 
-from src.agent.nodes.frame_problem.extract import extract_alert_details
+from src.agent.nodes.frame_problem.extract.extract import extract_alert_details
 from src.agent.output import debug_print, get_tracker, render_investigation_header
 from src.agent.state import InvestigationState
 

@@ -32,9 +32,12 @@ def build_graph_pipeline() -> StateGraph:
     graph = StateGraph(InvestigationState)
 
     # Nodes define the agentic steps in the graph pipeline
+    ## Frame Problem Nodes
     graph.add_node("frame_problem_extract", node_frame_problem_extract)
     graph.add_node("frame_problem_context", node_frame_problem_context)
     graph.add_node("frame_problem_statement", node_frame_problem_statement)
+
+    ## Hypothesis Investigation Nodes
     graph.add_node("investigate", node_investigate)
     graph.add_node("diagnose_root_cause", node_diagnose_root_cause)
     graph.add_node("publish_findings", node_publish_findings)

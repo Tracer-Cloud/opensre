@@ -1,6 +1,6 @@
 import os
 
-from src.agent.nodes.frame_problem.context_building import build_investigation_context
+from src.agent.nodes.frame_problem.context.context_building import build_investigation_context
 from src.agent.tools.clients import tracer_client as tracer_client_module
 
 
