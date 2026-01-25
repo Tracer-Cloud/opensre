@@ -19,7 +19,7 @@ except ImportError:
 
 
 from src.agent.tools.clients.tracer_client import get_tracer_web_client
-from src.agent.tools.data_validation import validate_host_metrics
+from src.agent.tools.utils import validate_host_metrics
 
 
 def get_batch_statistics(trace_id: str) -> dict:
