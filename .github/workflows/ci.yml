@@ -57,7 +57,9 @@ jobs:
 
       - name: Run tests
         run: make test
+        continue-on-error: false
 
-      - name: Run demo (if tests pass)
+      - name: Run demo
         run: make demo
+        continue-on-error: true
 
