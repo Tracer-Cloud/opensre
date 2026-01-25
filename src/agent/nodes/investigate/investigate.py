@@ -7,7 +7,6 @@ It updates state fields but does NOT render output directly.
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from src.agent.nodes.investigate.actions import get_available_actions
 from src.agent.nodes.investigate.execution import execute_actions
 from src.agent.nodes.investigate.post_process import (
     build_evidence_summary,
@@ -18,6 +17,7 @@ from src.agent.nodes.investigate.prompt import build_investigation_prompt
 from src.agent.output import debug_print, get_tracker
 from src.agent.state import InvestigationState
 from src.agent.tools.clients import get_llm
+from src.agent.tools.investigation_actions import get_available_actions
 
 
 class InvestigationPlan(BaseModel):
