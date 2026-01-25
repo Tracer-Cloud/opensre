@@ -2,7 +2,7 @@
 
 import os
 
-from src.agent.graph_pipeline import run_investigation_pipeline
+from src.agent.graph_pipeline import run_investigation
 from src.agent.nodes.build_context.context_building import _fetch_tracer_web_run_context
 from src.agent.nodes.investigate.investigate import node_investigate as investigate_node
 from src.agent.nodes.root_cause_diagnosis import node_diagnose_root_cause
@@ -114,7 +114,7 @@ def test_investigate_failed_run_shimmering_okapi() -> None:
     assert jwt_token, "JWT_TOKEN must be set"
 
     # Create an alert that would trigger investigation
-    state = run_investigation_pipeline(
+    state = run_investigation(
         alert_name="Pipeline failure detected",
         affected_table="superfluid_prod_pipeline",
         severity="critical",

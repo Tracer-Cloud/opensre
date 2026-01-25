@@ -28,7 +28,7 @@ init_runtime()
 
 from langsmith import traceable  # noqa: E402
 
-from src.agent.graph_pipeline import run_investigation_pipeline  # noqa: E402
+from src.agent.graph_pipeline import run_investigation  # noqa: E402
 from src.agent.nodes.build_context.context_building import (  # noqa: E402
     _fetch_tracer_web_run_context,
 )
@@ -153,7 +153,7 @@ def run_demo():
         pass
 
     # Run the pipeline - publish_findings node handles rendering
-    state = run_investigation_pipeline(
+    state = run_investigation(
         alert_name=alert_name,
         affected_table=affected_table,
         severity=severity,
