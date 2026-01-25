@@ -32,7 +32,7 @@ def execute_actions(
     available_actions = {action.name: action for action in get_available_actions()}
     results: dict[str, ActionExecutionResult] = {}
 
-    tracer_web_run = state.get("evidence", {}).get("tracer_web_run", {})
+    tracer_web_run = state.get("context", {}).get("tracer_web_run", {})
     trace_id = tracer_web_run.get("trace_id")
 
     for action_name in action_names:
