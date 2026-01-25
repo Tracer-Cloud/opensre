@@ -2,9 +2,10 @@
 
 import os
 
+from src.agent.nodes.diagnose_root_cause import node_diagnose_root_cause
+
 from src.agent.graph_pipeline import run_investigation_pipeline
 from src.agent.nodes.build_context.context_building import _fetch_tracer_web_run_context
-from src.agent.nodes.diagnose_root_cause import node_diagnose_root_cause
 from src.agent.nodes.investigate.investigate import node_investigate as investigate_node
 from src.agent.state import InvestigationState
 from src.agent.tools.clients.tracer_client import get_tracer_web_client

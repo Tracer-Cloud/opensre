@@ -2,7 +2,9 @@
 
 from typing import Any
 
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.graph import CompiledStateGraph
 
 from src.agent.nodes import (
     node_build_context,
@@ -15,7 +17,7 @@ from src.agent.nodes.investigate.investigate import node_investigate
 from src.agent.state import InvestigationState, make_initial_state
 
 
-def build_graph_pipeline() -> StateGraph:
+def build_graph_pipeline(checkpointer: InMemorySaver | None = None) -> CompiledStateGraph:
     """
     Build the investigation state machine.
 
@@ -70,7 +72,12 @@ def build_graph_pipeline() -> StateGraph:
 
     graph.add_edge("publish_findings", END)
 
-    return graph.compile()
+    # Compile with checkpointer for short-term memory (thread-level persistence)
+    # If no checkpointer provided, use in-memory by default
+    if checkpointer is None:
+        checkpointer = InMemorySaver()
+
+    return graph.compile(checkpointer=checkpointer)
 
 
 def run_investigation_pipeline(
@@ -78,13 +85,28 @@ def run_investigation_pipeline(
     affected_table: str,
     severity: str,
     raw_alert: str | dict[str, Any] | None = None,
+    thread_id: str | None = None,
+    checkpointer: InMemorySaver | None = None,
 ) -> InvestigationState:
     """
     Run the investigation graph.
 
     Pure function: inputs in, state out. No rendering.
+
+    Args:
+        alert_name: Name of the alert
+        affected_table: Affected table name
+        severity: Alert severity
+        raw_alert: Raw alert payload
+        thread_id: Optional thread ID for short-term memory persistence.
+                   If provided, state will be persisted and can be resumed.
+                   If None, each run is independent.
+        checkpointer: Optional checkpointer instance. If None, uses InMemorySaver.
+
+    Returns:
+        Final investigation state
     """
-    graph = build_graph_pipeline()
+    graph = build_graph_pipeline(checkpointer=checkpointer)
 
     initial_state = make_initial_state(
         alert_name,
@@ -93,7 +115,11 @@ def run_investigation_pipeline(
         raw_alert=raw_alert,
     )
 
-    # Run the graph
-    final_state = graph.invoke(initial_state)
+    # Run the graph with optional thread_id for memory persistence
+    if thread_id:
+        config = {"configurable": {"thread_id": thread_id}}
+        final_state = graph.invoke(initial_state, config=config)
+    else:
+        final_state = graph.invoke(initial_state)
 
     return final_state
