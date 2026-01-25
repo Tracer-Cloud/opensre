@@ -14,12 +14,7 @@ from src.agent.nodes.build_context.models import (
 )
 from src.agent.nodes.build_context.utils import call_safe
 from src.agent.state import InvestigationState
-from src.agent.tools.tool_actions.tracer_runs import (
-    build_tracer_run_url as _build_tracer_run_url,
-)
-from src.agent.tools.tool_actions.tracer_runs import (
-    fetch_failed_run_context,
-)
+from src.agent.tools.tool_actions.tracer_runs import fetch_failed_run_context
 
 DEFAULT_CONTEXT_SOURCES = ("tracer_web",)
 
@@ -63,11 +58,6 @@ def build_context_tracer_web(state: InvestigationState) -> ContextSourceResult:
 
     data = TracerWebRunContext.model_validate(outcome.result).model_dump(exclude_none=True)
     return ContextSourceResult(data=data)
-
-
-def build_tracer_run_url(pipeline_name: str, trace_id: str | None) -> str | None:
-    """Backward-compatible wrapper for tracer run URL building."""
-    return _build_tracer_run_url(pipeline_name, trace_id)
 
 
 def _fetch_tracer_web_run_context(state: InvestigationState | None = None) -> dict:
