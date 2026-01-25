@@ -97,7 +97,7 @@ def main(state: InvestigationState) -> dict:
     loop_count = state.get("investigation_loop_count", 0)
     if final_confidence < 0.6 or validity_score < 0.5:
         investigation_recommendations = _generate_simple_recommendations(
-            non_validated_claims_list, context, evidence
+            non_validated_claims_list, evidence
         )
         if investigation_recommendations:
             loop_count += 1
@@ -216,7 +216,7 @@ def _extract_evidence_sources(claim: str, evidence: dict) -> list[str]:
 
 
 def _generate_simple_recommendations(
-    non_validated_claims: list[dict], context: dict, evidence: dict
+    non_validated_claims: list[dict], evidence: dict
 ) -> list[str]:
     """Generate simple investigation recommendations."""
     if not non_validated_claims:
