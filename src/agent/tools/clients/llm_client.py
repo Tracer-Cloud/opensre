@@ -5,7 +5,6 @@ Handles streaming and structured parsing of LLM responses.
 """
 
 import os
-from collections.abc import Callable
 from dataclasses import dataclass
 
 from langchain_anthropic import ChatAnthropic
@@ -22,12 +21,6 @@ class RootCauseResult:
     validated_claims: list[str]
     non_validated_claims: list[str]
     causal_chain: list[str]
-
-
-@dataclass(frozen=True)
-class InterpretationResult:
-    bullets: list[str]
-    raw: str
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -53,41 +46,9 @@ def get_llm() -> ChatAnthropic:
     return _llm
 
 
-def stream_completion(prompt: str, on_chunk: Callable[[str], None] | None = None) -> str:
-    """
-    Stream a completion from the LLM.
-
-    Args:
-        prompt: The prompt to send
-        on_chunk: Optional callback for each chunk (for UI updates)
-
-    Returns:
-        Complete response text
-    """
-    llm = get_llm()
-    content = ""
-    for chunk in llm.stream(prompt):
-        chunk_text = chunk.content
-        content += chunk_text
-        if on_chunk and chunk_text.strip():
-            on_chunk(chunk_text)
-    return content
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Parsers
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-def parse_bullets(response: str) -> InterpretationResult:
-    """Parse bullet points from LLM response."""
-    bullets = []
-    for line in response.strip().split("\n"):
-        line = line.strip()
-        # Support both * and - bullet formats
-        if line.startswith("*") or line.startswith("-"):
-            bullets.append(line)
-    return InterpretationResult(bullets=bullets, raw=response)
 
 
 def parse_root_cause(response: str) -> RootCauseResult:

@@ -4,7 +4,6 @@ from src.agent.tools.tool_actions.cloudwatch_actions import (
     get_cloudwatch_batch_metrics,
     get_cloudwatch_batch_metrics_tool,
 )
-from src.agent.tools.tool_actions.s3_actions import check_s3_marker, check_s3_marker_tool
 from src.agent.tools.tool_actions.tracer_jobs import (
     get_batch_jobs,
     get_batch_jobs_tool,
@@ -36,9 +35,6 @@ from src.agent.tools.tool_actions.tracer_runs import (
 )
 
 __all__ = [
-    # S3 actions
-    "check_s3_marker",
-    "check_s3_marker_tool",
     # CloudWatch actions
     "get_cloudwatch_batch_metrics",
     "get_cloudwatch_batch_metrics_tool",

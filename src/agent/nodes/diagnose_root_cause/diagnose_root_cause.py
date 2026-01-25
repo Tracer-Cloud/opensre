@@ -8,7 +8,7 @@ from langsmith import traceable
 
 from src.agent.output import debug_print, get_tracker
 from src.agent.state import InvestigationState
-from src.agent.tools.llm import get_llm, parse_root_cause
+from src.agent.tools.clients import get_llm, parse_root_cause
 
 
 @traceable(name="diagnose_root_cause")
