@@ -12,7 +12,7 @@ from src.agent.nodes import (
     node_frame_problem,
     node_publish_findings,
 )
-from src.agent.nodes.investigate.investigate import node_investigate
+from src.agent.nodes.investigate.investigate_node import node_investigate
 from src.agent.routing import should_continue_investigation
 from src.agent.state import InvestigationState, make_initial_state
 

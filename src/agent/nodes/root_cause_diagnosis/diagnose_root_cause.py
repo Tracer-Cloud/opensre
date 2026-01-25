@@ -26,10 +26,11 @@ def main(state: InvestigationState) -> dict:
     tracker = get_tracker()
     tracker.start("diagnose_root_cause", "Analyzing evidence")
 
+    context = state.get("context", {})
     evidence = state.get("evidence", {})
-    web_run = evidence.get("tracer_web_run", {})
+    web_run = context.get("tracer_web_run", {})
 
-    # Check if we have evidence
+    # Check if we have context
     if not web_run.get("found"):
         tracker.error("diagnose_root_cause", "No evidence available for analysis")
         return {
@@ -40,8 +41,8 @@ def main(state: InvestigationState) -> dict:
             "validity_score": 0.0,
         }
 
-    # Build simple prompt from evidence
-    prompt = _build_simple_prompt(state, web_run)
+    # Build simple prompt from context and evidence
+    prompt = _build_simple_prompt(state, evidence)
 
     # Call LLM
     debug_print("Invoking LLM for root cause analysis...")
@@ -57,22 +58,22 @@ def main(state: InvestigationState) -> dict:
     non_validated_claims_list = []
 
     for claim in result.validated_claims:
-        is_valid = _simple_validate_claim(claim, web_run)
+        is_valid = _simple_validate_claim(claim, evidence)
         validated_claims_list.append(
             {
                 "claim": claim,
-                "evidence_sources": _extract_evidence_sources(claim, web_run),
+                "evidence_sources": _extract_evidence_sources(claim, evidence),
                 "validation_status": "validated" if is_valid else "failed_validation",
             }
         )
 
     for claim in result.non_validated_claims:
-        is_valid = _simple_validate_claim(claim, web_run)
+        is_valid = _simple_validate_claim(claim, evidence)
         if is_valid:
             validated_claims_list.append(
                 {
                     "claim": claim,
-                    "evidence_sources": _extract_evidence_sources(claim, web_run),
+                    "evidence_sources": _extract_evidence_sources(claim, evidence),
                     "validation_status": "validated",
                 }
             )
@@ -119,16 +120,16 @@ def main(state: InvestigationState) -> dict:
     }
 
 
-def _build_simple_prompt(state: InvestigationState, web_run: dict) -> str:
+def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
     """Build a simple, focused prompt from evidence."""
     problem = state.get("problem_md", "")
     hypotheses = state.get("hypotheses", [])
 
-    # Extract key evidence
-    failed_jobs = web_run.get("failed_jobs", [])
-    failed_tools = web_run.get("failed_tools", [])
-    error_logs = web_run.get("error_logs", [])[:10]  # Limit to 10 most recent
-    host_metrics = web_run.get("host_metrics", {})
+    # Extract key investigation findings from evidence
+    failed_jobs = evidence.get("failed_jobs", [])
+    failed_tools = evidence.get("failed_tools", [])
+    error_logs = evidence.get("error_logs", [])[:10]  # Limit to 10 most recent
+    host_metrics = evidence.get("host_metrics", {})
 
     prompt = f"""Analyze the following incident and determine the root cause.
 
@@ -174,39 +175,39 @@ CONFIDENCE: <0-100%>
     return prompt
 
 
-def _simple_validate_claim(claim: str, web_run: dict) -> bool:
+def _simple_validate_claim(claim: str, evidence: dict) -> bool:
     """Simple validation: check if claim references available evidence."""
     claim_lower = claim.lower()
 
-    # Check logs
-    if ("log" in claim_lower or "error" in claim_lower) and web_run.get("total_logs", 0) == 0:
+    # Check logs (from evidence)
+    if ("log" in claim_lower or "error" in claim_lower) and evidence.get("total_logs", 0) == 0:
         return False
 
-    # Check metrics
-    if ("memory" in claim_lower or "cpu" in claim_lower) and not web_run.get(
+    # Check metrics (from evidence)
+    if ("memory" in claim_lower or "cpu" in claim_lower) and not evidence.get(
         "host_metrics", {}
     ).get("data"):
         return False
 
-    # Check jobs
+    # Check jobs (from evidence)
     return not (
         ("job" in claim_lower or "batch" in claim_lower)
-        and len(web_run.get("failed_jobs", [])) == 0
+        and len(evidence.get("failed_jobs", [])) == 0
     )
 
 
-def _extract_evidence_sources(claim: str, web_run: dict) -> list[str]:
+def _extract_evidence_sources(claim: str, evidence: dict) -> list[str]:
     """Extract evidence sources mentioned in a claim."""
     sources = []
     claim_lower = claim.lower()
 
-    if ("log" in claim_lower or "error" in claim_lower) and web_run.get("total_logs", 0) > 0:
+    if ("log" in claim_lower or "error" in claim_lower) and evidence.get("total_logs", 0) > 0:
         sources.append("logs")
-    if ("job" in claim_lower or "batch" in claim_lower) and web_run.get("failed_jobs"):
+    if ("job" in claim_lower or "batch" in claim_lower) and evidence.get("failed_jobs"):
         sources.append("aws_batch_jobs")
-    if "tool" in claim_lower and web_run.get("failed_tools"):
+    if "tool" in claim_lower and evidence.get("failed_tools"):
         sources.append("tracer_tools")
-    if ("metric" in claim_lower or "memory" in claim_lower or "cpu" in claim_lower) and web_run.get(
+    if ("metric" in claim_lower or "memory" in claim_lower or "cpu" in claim_lower) and evidence.get(
         "host_metrics", {}
     ).get("data"):
         sources.append("host_metrics")
@@ -214,20 +215,21 @@ def _extract_evidence_sources(claim: str, web_run: dict) -> list[str]:
     return sources if sources else ["evidence_analysis"]
 
 
-def _generate_simple_recommendations(non_validated_claims: list[dict], evidence: dict) -> list[str]:
+def _generate_simple_recommendations(
+    non_validated_claims: list[dict], evidence: dict
+) -> list[str]:
     """Generate simple investigation recommendations."""
     if not non_validated_claims:
         return []
 
     recommendations = []
-    web_run = evidence.get("tracer_web_run", {})
 
-    # Check what's missing
-    if not web_run.get("host_metrics", {}).get("data"):
+    # Check what's missing (investigation findings from evidence)
+    if not evidence.get("host_metrics", {}).get("data"):
         recommendations.append("Query CloudWatch Metrics for CPU and memory usage")
-    if web_run.get("total_logs", 0) == 0:
+    if evidence.get("total_logs", 0) == 0:
         recommendations.append("Fetch CloudWatch Logs for detailed error messages")
-    if not web_run.get("failed_jobs"):
+    if not evidence.get("failed_jobs"):
         recommendations.append("Query AWS Batch job details using describe_jobs API")
 
     return recommendations[:5]

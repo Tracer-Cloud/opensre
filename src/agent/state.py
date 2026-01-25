@@ -43,7 +43,12 @@ class InvestigationState(TypedDict, total=False):
     plan_sources: list[EvidenceSource]
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Evidence - structured data from tool calls (not messages)
+    # Context - global reference data built once at start (tracer runs, system config)
+    # ─────────────────────────────────────────────────────────────────────────
+    context: dict[str, Any]
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Evidence - investigation findings that accumulate as nodes execute (failed jobs, error logs, patterns)
     # ─────────────────────────────────────────────────────────────────────────
     evidence: dict[str, Any]
 
@@ -74,6 +79,7 @@ class InvestigationState(TypedDict, total=False):
 # Required keys and their defaults defined in one place
 STATE_DEFAULTS: dict[str, Any] = {
     "plan_sources": [],
+    "context": {},
     "evidence": {},
     "root_cause": "",
     "confidence": 0.0,

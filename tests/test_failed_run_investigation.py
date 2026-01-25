@@ -4,7 +4,7 @@ import os
 
 from src.agent.graph_pipeline import run_investigation
 from src.agent.nodes.build_context.context_building import _fetch_tracer_web_run_context
-from src.agent.nodes.investigate.investigate import node_investigate as investigate_node
+from src.agent.nodes.investigate.investigate_node import node_investigate as investigate_node
 from src.agent.nodes.root_cause_diagnosis import node_diagnose_root_cause
 from src.agent.state import InvestigationState
 from src.agent.tools.clients.tracer_client import get_tracer_web_client
@@ -58,17 +58,22 @@ def test_investigate_specific_failed_run() -> None:
     # Gather evidence using the new investigate node
     state: InvestigationState = {
         "problem_md": "Testing specific run",
-        "evidence": {"tracer_web_run": web_run},
+        "context": {"tracer_web_run": web_run},
+        "evidence": {},
     }
     result = investigate_node(state)
-    web_run.update(result.get("evidence", {}).get("tracer_web_run", {}))
+    # Note: investigate_node adds to evidence, not context
+    evidence = result.get("evidence", {})
 
-    assert web_run.get("found"), f"Expected to find trace {trace_id}"
-    assert web_run.get("run_name") == "shimmering-okapi-891"
-    assert web_run.get("pipeline_name") == "superfluid_prod_pipeline"
+    # Verify context is preserved
+    context = state.get("context", {})
+    web_run_from_context = context.get("tracer_web_run", {})
+    assert web_run_from_context.get("found"), f"Expected to find trace {trace_id}"
+    assert web_run_from_context.get("run_name") == "shimmering-okapi-891"
+    assert web_run_from_context.get("pipeline_name") == "superfluid_prod_pipeline"
 
-    # Verify detailed investigation data
-    failed_jobs = web_run.get("failed_jobs", [])
+    # Verify detailed investigation data from evidence
+    failed_jobs = evidence.get("failed_jobs", [])
     assert len(failed_jobs) > 0, "Expected failed jobs"
 
     # Check specific failure details we know about
@@ -86,7 +91,8 @@ def test_investigate_specific_failed_run() -> None:
         "alert_name": "Pipeline failure: superfluid_prod_pipeline",
         "affected_table": "superfluid_prod_pipeline",
         "severity": "critical",
-        "evidence": {"tracer_web_run": web_run},
+        "context": {"tracer_web_run": web_run_from_context},
+        "evidence": evidence,
     }
 
     result = node_diagnose_root_cause(state)
@@ -123,11 +129,12 @@ def test_investigate_failed_run_shimmering_okapi() -> None:
 
     # Verify evidence was collected
     evidence = state.get("evidence", {})
-    web_run = evidence.get("tracer_web_run", {})
+    context = state.get("context", {})
+    web_run = context.get("tracer_web_run", {})
     assert web_run.get("found"), "Expected to find failed run"
 
     # Verify detailed investigation data
-    failed_jobs = web_run.get("failed_jobs", [])
+    failed_jobs = evidence.get("failed_jobs", [])
     assert len(failed_jobs) > 0, "Expected failed jobs in investigation"
 
     # Verify root cause was identified
