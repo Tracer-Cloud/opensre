@@ -1,26 +1,8 @@
-"""
-Alert factory for creating Grafana-style alerts from various sources.
-
-This module provides builders/factories for creating alert payloads,
-separating alert creation logic from test and demo flows.
-
-This factory is pre-LLM and pre-LangGraph - it only creates standard
-Grafana alert payload structures without any Tracer-specific context.
-"""
-
 from typing import Any
 
 
 class AlertBuilder:
-    """Builder for creating Grafana-style alert payloads."""
-
     def __init__(self, external_url: str = "") -> None:
-        """
-        Initialize a new alert builder.
-
-        Args:
-            external_url: Optional external URL for the alerting system
-        """
         self._alert: dict[str, Any] = {
             "alerts": [],
             "version": "4",
@@ -37,20 +19,6 @@ class AlertBuilder:
         trace_id: str | None = None,
         run_url: str | None = None,
     ) -> "AlertBuilder":
-        """
-        Build alert from Tracer pipeline run data.
-
-        Args:
-            pipeline_name: Name of the pipeline
-            run_name: Name of the run
-            status: Status of the run (e.g., "failed", "error")
-            timestamp: ISO timestamp string (e.g., "2026-01-27T12:00:00Z")
-            trace_id: Optional trace ID for the run
-            run_url: Optional URL to view the run
-
-        Returns:
-            Self for method chaining
-        """
         alertname = "PipelineFailure"
         severity = "critical"
 
@@ -83,7 +51,9 @@ class AlertBuilder:
             "severity": severity,
             "pipeline_name": pipeline_name,
         }
-        self._alert["commonAnnotations"] = {"summary": f"Pipeline {pipeline_name} failed"}
+        self._alert["commonAnnotations"] = {
+            "summary": f"Pipeline {pipeline_name} failed"
+        }
         self._alert["groupKey"] = f'{{}}:{{alertname="{alertname}"}}'
         self._alert["title"] = f"[FIRING:1] {alertname} {severity} - {pipeline_name}"
         self._alert["state"] = "alerting"
@@ -95,12 +65,6 @@ class AlertBuilder:
         return self
 
     def build(self) -> dict[str, Any]:
-        """
-        Build and return the final alert payload.
-
-        Returns:
-            Complete Grafana-style alert payload dictionary
-        """
         return self._alert.copy()
 
 
@@ -113,27 +77,6 @@ def create_alert_from_tracer_run(
     run_url: str | None = None,
     external_url: str = "",
 ) -> dict[str, Any]:
-    """
-    Pure function to create a Grafana-style alert from pipeline run data.
-
-    This creates a standard Grafana alert payload without any Tracer-specific
-    top-level fields. All context is embedded in the standard Grafana structure
-    (labels, annotations, etc.).
-
-    This is a pure function - given the same inputs, it always produces the same output.
-
-    Args:
-        pipeline_name: Name of the pipeline
-        run_name: Name of the run
-        status: Status of the run (e.g., "failed", "error")
-        timestamp: ISO timestamp string (e.g., "2026-01-27T12:00:00Z")
-        trace_id: Optional trace ID for the run (used in labels/fingerprint)
-        run_url: Optional URL to view the run (used in annotations/generatorURL)
-        external_url: Optional external URL for the alerting system
-
-    Returns:
-        Complete Grafana-style alert payload dictionary (standard format only)
-    """
     return (
         AlertBuilder(external_url=external_url)
         .from_tracer_run(
