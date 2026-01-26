@@ -68,17 +68,6 @@ def _fetch_tracer_web_run_context(state: InvestigationState | None = None) -> di
 def build_investigation_context(state: InvestigationState) -> dict:
     """
     Build investigation context (metadata that could exist before incident).
-
-    This includes:
-    - Pipeline metadata (name, run name, trace_id)
-    - System metadata (instance type, region, user)
-    - Run summary (status, cost, tool count)
-    - URLs and identifiers
-
-    Does NOT include:
-    - Failed jobs/tools (runtime evidence)
-    - Error logs (runtime evidence)
-    - Metrics (runtime evidence)
     """
     context: dict[str, Any] = {}
     errors: list[ContextSourceError] = []
