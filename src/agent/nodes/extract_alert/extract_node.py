@@ -18,24 +18,24 @@ def node_extract_alert(state: InvestigationState) -> dict:
     alert_details = extract_alert_details(state)
     debug_print(
         f"Alert: {alert_details.alert_name} | "
-        f"Table: {alert_details.affected_table} | "
+        f"Pipeline: {alert_details.pipeline_name} | "
         f"Severity: {alert_details.severity}"
     )
 
     render_investigation_header(
         alert_details.alert_name,
-        alert_details.affected_table,
+        alert_details.pipeline_name,
         alert_details.severity,
     )
 
     tracker.complete(
         "extract_alert",
-        fields_updated=["alert_name", "affected_table", "severity", "alert_json"],
+        fields_updated=["alert_name", "pipeline_name", "severity", "alert_json"],
     )
 
     return {
         "alert_name": alert_details.alert_name,
-        "affected_table": alert_details.affected_table,
+        "pipeline_name": alert_details.pipeline_name,
         "severity": alert_details.severity,
         "alert_json": alert_details.model_dump(),
     }

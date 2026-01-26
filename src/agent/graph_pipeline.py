@@ -96,7 +96,7 @@ def resolve_checkpointer_config(
 
 def run_investigation(
     alert_name: str,
-    affected_table: str,
+    pipeline_name: str,
     severity: str,
     raw_alert: str | dict[str, Any] | None = None,
     thread_id: str | None = None,
@@ -109,7 +109,7 @@ def run_investigation(
 
     Args:
         alert_name: Name of the alert
-        affected_table: Affected table name
+        pipeline_name: Affected table name
         severity: Alert severity
         raw_alert: Raw alert payload
         thread_id: Optional thread ID for short-term memory persistence
@@ -122,7 +122,7 @@ def run_investigation(
 
     initial_state = make_initial_state(
         alert_name,
-        affected_table,
+        pipeline_name,
         severity,
         raw_alert=raw_alert,
     )

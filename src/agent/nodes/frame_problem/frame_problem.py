@@ -23,7 +23,7 @@ def _build_input_prompt(problem_input: ProblemStatementInput) -> str:
 
 Alert Information:
 - alert_name: {problem_input.alert_name}
-- affected_table: {problem_input.affected_table}
+- pipeline_name: {problem_input.pipeline_name}
 - severity: {problem_input.severity}
 
 Task:
@@ -54,7 +54,7 @@ def node_frame_problem(state: InvestigationState) -> dict:
     Generate and render the problem statement.
 
     Assumes:
-    - extract_alert node has already populated alert_name, affected_table, severity, alert_json
+    - extract_alert node has already populated alert_name, pipeline_name, severity, alert_json
     - build_context node has already populated evidence
 
     Generates:

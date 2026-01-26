@@ -26,7 +26,7 @@ from src.agent.state import InvestigationState
 class ReportContext(TypedDict, total=False):
     """Data extracted from state for report formatting."""
 
-    affected_table: str
+    pipeline_name: str
     root_cause: str
     confidence: float
     validated_claims: list[dict]
@@ -65,7 +65,7 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
     ]
 
     return {
-        "affected_table": state.get("affected_table", "unknown"),
+        "pipeline_name": state.get("pipeline_name", "unknown"),
         "root_cause": state.get("root_cause", ""),
         "confidence": state.get("confidence", 0.0),
         "validated_claims": validated_claims,
@@ -140,9 +140,9 @@ def _format_slack_message(ctx: ReportContext) -> str:
         conclusion_section = f"{validated_section}{separator}{non_validated_section}{validity_info}"
 
     total = len(validated_claims) + len(non_validated_claims)
-    return f"""[RCA] {ctx.get("affected_table", "unknown")} freshness incident
+    pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
+    return f"""[RCA] {pipeline_name} incident
 Analyzed by: pipeline-agent
-Detected: 02:13 UTC
 
 *Conclusion*
 {conclusion_section}

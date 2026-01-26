@@ -46,7 +46,7 @@ def render_problem_statement_md(
 
 ## Alert Details
 - **Alert**: {state.get("alert_name", "Unknown")}
-- **Table**: {state.get("affected_table", "Unknown")}
+- **Pipeline**: {state.get("pipeline_name", "Unknown")}
 - **Severity**: {state.get("severity", "Unknown")}
 
 ## Next Steps

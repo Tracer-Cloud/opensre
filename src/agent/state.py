@@ -32,7 +32,7 @@ class InvestigationState(TypedDict, total=False):
     # Input - from alert
     # ─────────────────────────────────────────────────────────────────────────
     alert_name: str
-    affected_table: str
+    pipeline_name: str
     severity: str
     raw_alert: str | dict[str, Any]
     alert_json: dict[str, Any]
@@ -96,7 +96,7 @@ STATE_DEFAULTS: dict[str, Any] = {
 
 def make_initial_state(
     alert_name: str,
-    affected_table: str,
+    pipeline_name: str,
     severity: str,
     raw_alert: str | dict[str, Any] | None = None,
 ) -> InvestigationState:
@@ -104,12 +104,12 @@ def make_initial_state(
     Create the initial state for an investigation.
 
     All required keys and defaults are defined in STATE_DEFAULTS.
-    Input fields (alert_name, affected_table, severity) are required.
+    Input fields (alert_name, pipeline_name, severity) are required.
     """
     state: InvestigationState = {
         # Input fields (required)
         "alert_name": alert_name,
-        "affected_table": affected_table,
+        "pipeline_name": pipeline_name,
         "severity": severity,
         # Defaults for all other fields
         **STATE_DEFAULTS,

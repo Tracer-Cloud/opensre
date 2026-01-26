@@ -11,14 +11,14 @@ class ProblemStatementInput(BaseModel):
     """Structured input for the problem statement LLM call."""
 
     alert_name: str = Field(description="Name of the alert")
-    affected_table: str = Field(description="Primary affected table")
+    pipeline_name: str = Field(description="Primary affected table")
     severity: str = Field(description="Severity of the alert")
 
     @classmethod
     def from_state(cls, state: InvestigationState) -> ProblemStatementInput:
         return cls(
             alert_name=state.get("alert_name", "Unknown"),
-            affected_table=state.get("affected_table", "Unknown"),
+            pipeline_name=state.get("pipeline_name", "Unknown"),
             severity=state.get("severity", "Unknown"),
         )
 
