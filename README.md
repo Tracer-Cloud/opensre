@@ -10,7 +10,7 @@ Data Engineering Meetup Demo - Automated investigation and root cause analysis f
 
 This system demonstrates automated incident investigation across a data stack:
 
-1. Receives Grafana alerts for warehouse freshness SLA breaches
+1. Receives Grafana alerts for bugs
 2. Investigates pipeline runs using Tracer API
 3. Analyzes task status and failure reasons
 4. Produces actionable root cause analysis with evidence and fix recommendations

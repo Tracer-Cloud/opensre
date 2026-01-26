@@ -170,15 +170,84 @@ def get_available_actions() -> list[InvestigationAction]:
 
 
 def get_actions_by_source(source: EvidenceSource) -> list[InvestigationAction]:
-    """Get actions filtered by source category."""
+    """
+    Get actions filtered by source category.
+
+    Used by the investigate node to dynamically filter actions based on
+    the evidence sources relevant to the current investigation.
+
+    Args:
+        source: The evidence source category (e.g., "batch", "tracer_web", "cloudwatch")
+
+    Returns:
+        List of InvestigationAction objects matching the source
+    """
     return [action for action in get_available_actions() if action.source == source]
 
 
 def get_actions_by_use_case(use_case_keywords: list[str]) -> list[InvestigationAction]:
-    """Get actions that match use case keywords."""
+    """
+    Get actions that match use case keywords.
+
+    Used by the investigate node to dynamically prioritize actions based on
+    keywords extracted from the problem context (e.g., "memory", "timeout", "failure").
+
+    Args:
+        use_case_keywords: Keywords to match against action use cases
+
+    Returns:
+        List of InvestigationAction objects whose use cases match any keyword
+    """
     keywords_lower = [kw.lower() for kw in use_case_keywords]
     return [
         action
         for action in get_available_actions()
         if any(kw in " ".join(action.use_cases).lower() for kw in keywords_lower)
     ]
+
+
+def get_prioritized_actions(
+    sources: list[EvidenceSource] | None = None,
+    keywords: list[str] | None = None,
+) -> list[InvestigationAction]:
+    """
+    Get actions prioritized by relevance to sources and keywords.
+
+    Combines source filtering and keyword matching to return a prioritized
+    list of actions for the investigation node.
+
+    Args:
+        sources: Optional list of evidence sources to filter by
+        keywords: Optional keywords to prioritize matching actions
+
+    Returns:
+        List of InvestigationAction objects, prioritized by relevance
+    """
+    all_actions = get_available_actions()
+
+    if not sources and not keywords:
+        return all_actions
+
+    # Score each action based on source and keyword matches
+    scored_actions: list[tuple[InvestigationAction, int]] = []
+    keywords_lower = [kw.lower() for kw in keywords] if keywords else []
+
+    for action in all_actions:
+        score = 0
+
+        # Source match gives priority
+        if sources and action.source in sources:
+            score += 2
+
+        # Keyword match in use cases gives additional priority
+        if keywords_lower:
+            use_cases_text = " ".join(action.use_cases).lower()
+            matching_keywords = sum(1 for kw in keywords_lower if kw in use_cases_text)
+            score += matching_keywords
+
+        scored_actions.append((action, score))
+
+    # Sort by score (highest first), then by name for determinism
+    scored_actions.sort(key=lambda x: (-x[1], x[0].name))
+
+    return [action for action, _ in scored_actions]

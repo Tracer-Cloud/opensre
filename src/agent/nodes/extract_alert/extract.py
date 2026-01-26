@@ -42,7 +42,7 @@ def _build_extraction_prompt(raw_alert: str) -> str:
     return f"""You extract alert metadata from raw input.
 The input may be raw text or JSON. Extract:
 - alert_name
-- affected_table
+- pipeline_name
 - severity
 - environment (if present)
 - summary (if present)
