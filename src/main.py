@@ -5,6 +5,7 @@ CLI entry point for the incident resolution agent.
 from typing import Any
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from langsmith import traceable  # noqa: E402
@@ -14,16 +15,17 @@ from src.cli import parse_args, write_json  # noqa: E402
 from src.ingest import load_request_from_json  # noqa: E402
 
 
+# Todo: this is confusing because we now both have a node called investigation and a traceable called investigation
 @traceable(name="investigation")
 def _run(
     alert_name: str,
-    affected_table: str,
+    pipeline_name: str,
     severity: str,
     raw_alert: dict[str, Any],
 ) -> dict:
     state = run_investigation(
         alert_name,
-        affected_table,
+        pipeline_name,
         severity,
         raw_alert=raw_alert,
     )
@@ -41,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     req = load_request_from_json(args.input)
     result = _run(
         req.alert_name,
-        req.affected_table,
+        req.pipeline_name,
         req.severity,
         raw_alert=req.raw_alert,
     )

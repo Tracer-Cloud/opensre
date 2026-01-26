@@ -26,8 +26,8 @@ from src.agent.tools.tool_actions.tracer_metrics import (
 )
 from src.agent.tools.tool_actions.tracer_runs import (
     build_tracer_run_url,
-    fetch_failed_run_context,
-    fetch_failed_run_context_tool,
+    fetch_failed_run,
+    fetch_failed_run_tool,
     get_tracer_run,
     get_tracer_run_tool,
     get_tracer_tasks,
@@ -40,8 +40,8 @@ __all__ = [
     "get_cloudwatch_batch_metrics_tool",
     # Tracer runs actions
     "build_tracer_run_url",
-    "fetch_failed_run_context",
-    "fetch_failed_run_context_tool",
+    "fetch_failed_run",
+    "fetch_failed_run_tool",
     "get_tracer_run",
     "get_tracer_run_tool",
     "get_tracer_tasks",

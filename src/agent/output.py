@@ -139,7 +139,7 @@ def reset_tracker() -> ProgressTracker:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def render_investigation_header(alert_name: str, affected_table: str, severity: str) -> None:
+def render_investigation_header(alert_name: str, pipeline_name: str, severity: str) -> None:
     """Render the investigation start header."""
     fmt = get_output_format()
 
@@ -149,7 +149,7 @@ def render_investigation_header(alert_name: str, affected_table: str, severity: 
             Panel(
                 f"Investigation Started\n\n"
                 f"Alert: [bold]{alert_name}[/]\n"
-                f"Table: [cyan]{affected_table}[/]\n"
+                f"Pipeline: [cyan]{pipeline_name}[/]\n"
                 f"Severity: [{severity_color}]{severity}[/]",
                 title="Pipeline Investigation",
                 border_style="cyan",
@@ -160,7 +160,7 @@ def render_investigation_header(alert_name: str, affected_table: str, severity: 
         print("PIPELINE INVESTIGATION")
         print("-" * 40)
         print(f"Alert: {alert_name}")
-        print(f"Table: {affected_table}")
+        print(f"Pipeline: {pipeline_name}")
         print(f"Severity: {severity}")
         print("-" * 40)
 

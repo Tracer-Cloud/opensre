@@ -14,9 +14,7 @@ from src.agent.nodes.build_context.models import (
 )
 from src.agent.nodes.build_context.utils import call_safe
 from src.agent.state import InvestigationState
-from src.agent.tools.tool_actions.tracer_runs import fetch_failed_run_context
-
-DEFAULT_CONTEXT_SOURCES = ("tracer_web",)
+from src.agent.tools.tool_actions.tracer_runs import fetch_failed_run
 
 
 @dataclass(frozen=True)
@@ -63,24 +61,13 @@ def build_context_tracer_web(state: InvestigationState) -> ContextSourceResult:
 def _fetch_tracer_web_run_context(state: InvestigationState | None = None) -> dict:
     """Fetch context (metadata) about a failed run from Tracer Web App."""
     pipeline_name = _extract_pipeline_hint(state)
-    context = fetch_failed_run_context(pipeline_name=pipeline_name)
+    context = fetch_failed_run(pipeline_name=pipeline_name)
     return context
 
 
 def build_investigation_context(state: InvestigationState) -> dict:
     """
     Build investigation context (metadata that could exist before incident).
-
-    This includes:
-    - Pipeline metadata (name, run name, trace_id)
-    - System metadata (instance type, region, user)
-    - Run summary (status, cost, tool count)
-    - URLs and identifiers
-
-    Does NOT include:
-    - Failed jobs/tools (runtime evidence)
-    - Error logs (runtime evidence)
-    - Metrics (runtime evidence)
     """
     context: dict[str, Any] = {}
     errors: list[ContextSourceError] = []
@@ -104,7 +91,14 @@ def build_investigation_context(state: InvestigationState) -> dict:
 
 
 def resolve_context_sources(state: InvestigationState) -> list[str]:
-    """Resolve context sources from state or environment."""
+    """
+    Resolve context sources from state, environment, or registry.
+
+    Priority order:
+    1. plan_sources from state (explicit plan)
+    2. FRAME_PROBLEM_CONTEXT_SOURCES env var (configuration)
+    3. All available sources from registry (default - source-independent)
+    """
     plan_sources = state.get("plan_sources") or []
     if plan_sources:
         return [str(source) for source in plan_sources]
@@ -113,7 +107,9 @@ def resolve_context_sources(state: InvestigationState) -> list[str]:
     if env_sources:
         return [source.strip() for source in env_sources.split(",") if source.strip()]
 
-    return list(DEFAULT_CONTEXT_SOURCES)
+    # Default: use all available context sources from registry (source-independent)
+    registry = get_context_registry()
+    return list(registry.names())
 
 
 def get_context_registry() -> ContextSourceRegistry:
@@ -165,8 +161,8 @@ def _extract_pipeline_hint(state: InvestigationState | None) -> str | None:
                         if value:
                             return str(value)
 
-    affected_table = state.get("affected_table")
-    if affected_table and affected_table != "Unknown":
-        return str(affected_table)
+    pipeline_name = state.get("pipeline_name")
+    if pipeline_name and pipeline_name != "Unknown":
+        return str(pipeline_name)
 
     return None

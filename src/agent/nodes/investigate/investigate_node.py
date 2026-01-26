@@ -17,7 +17,10 @@ from src.agent.nodes.investigate.prompt import build_investigation_prompt
 from src.agent.output import debug_print, get_tracker
 from src.agent.state import InvestigationState
 from src.agent.tools.clients import get_llm
-from src.agent.tools.tool_actions.investigation_actions import get_available_actions
+from src.agent.tools.tool_actions.investigation_actions import (
+    get_available_actions,
+    get_prioritized_actions,
+)
 
 
 class InvestigationPlan(BaseModel):
@@ -29,19 +32,43 @@ class InvestigationPlan(BaseModel):
     rationale: str = Field(description="Rationale for the chosen actions")
 
 
+def _extract_keywords_from_problem(state: InvestigationState) -> list[str]:
+    """Extract relevant keywords from the problem statement for action prioritization."""
+    problem_md = state.get("problem_md", "")
+    alert_name = state.get("alert_name", "")
+
+    # Keywords that indicate specific investigation needs
+    keyword_patterns = [
+        "memory", "oom", "killed", "timeout", "slow", "hang",
+        "failure", "failed", "error", "exception", "crash",
+        "batch", "job", "task", "tool", "pipeline",
+        "log", "logs", "trace", "debug",
+        "metrics", "cpu", "disk", "resource",
+    ]
+
+    text = f"{problem_md} {alert_name}".lower()
+    return [kw for kw in keyword_patterns if kw in text]
+
+
 @traceable(name="node_investigate")
 def node_investigate(state: InvestigationState) -> dict:
     """
     Combined investigate node:
-    1) Uses LLM to decide which actions to execute based on context
-    2) Immediately executes the selected actions
-    3) Merges and returns evidence
+    1) Dynamically selects actions based on problem context and sources
+    2) Uses LLM to decide which actions to execute
+    3) Executes the selected actions
+    4) Merges and returns evidence
     """
     tracker = get_tracker()
     tracker.start("investigate", "Planning evidence gathering")
 
-    # 1. Planning phase - build prompt with rich action metadata
-    available_actions = get_available_actions()
+    # 1. Dynamic action selection based on context
+    keywords = _extract_keywords_from_problem(state)
+
+    # Get prioritized actions based on keywords from problem context
+    # This ensures the most relevant actions appear first in the LLM prompt
+    available_actions = get_prioritized_actions(keywords=keywords) if keywords else get_available_actions()
+
     prompt = build_investigation_prompt(state, available_actions)
 
     # Check if we have any actions available
