@@ -19,6 +19,8 @@ demo:
 run:
 	$(PYTHON) -m src.main
 
+dev: 
+	langgraph dev
 # Run tests
 test:
 	$(PYTHON) -m pytest -v

@@ -14,8 +14,9 @@ aiohttp>=3.9.0
 
 # Utilities
 python-dotenv>=1.0.0
+dotenv
 rich>=13.0.0  # For pretty terminal output
-
+langchain_anthropic
 # Testing
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
