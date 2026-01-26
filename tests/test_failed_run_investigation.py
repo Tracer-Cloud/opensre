@@ -89,7 +89,7 @@ def test_investigate_specific_failed_run() -> None:
     # Now test root cause analysis with this evidence
     state: InvestigationState = {
         "alert_name": "Pipeline failure: superfluid_prod_pipeline",
-        "affected_table": "superfluid_prod_pipeline",
+        "pipeline_name": "superfluid_prod_pipeline",
         "severity": "critical",
         "context": {"tracer_web_run": web_run_from_context},
         "evidence": evidence,
@@ -122,7 +122,7 @@ def test_investigate_failed_run_shimmering_okapi() -> None:
     # Create an alert that would trigger investigation
     state = run_investigation(
         alert_name="Pipeline failure detected",
-        affected_table="superfluid_prod_pipeline",
+        pipeline_name="superfluid_prod_pipeline",
         severity="critical",
         raw_alert={"message": "Pipeline superfluid_prod_pipeline failed"},
     )

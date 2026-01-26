@@ -63,7 +63,7 @@ class InvestigationRequest:
     """Request object for the investigation agent."""
 
     alert_name: str
-    affected_table: str
+    pipeline_name: str
     severity: str
     environment: str
     summary: str | None
@@ -92,7 +92,7 @@ def parse_grafana_payload(
 
     return InvestigationRequest(
         alert_name=alert.labels.alertname,
-        affected_table=alert.labels.table or default_table,
+        pipeline_name=alert.labels.table or default_table,
         severity=SEVERITY_MAP.get(raw_severity, DEFAULT_SEVERITY),
         environment=alert.labels.environment,
         summary=alert.annotations.summary,

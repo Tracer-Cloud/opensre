@@ -49,7 +49,8 @@ def build_tracer_run_url(pipeline_name: str, trace_id: str | None) -> str | None
     return f"{TRACER_BASE_URL}/pipelines/{pipeline_name}/batch/{trace_id}"
 
 
-def fetch_failed_run_context(pipeline_name: str | None = None) -> dict:
+# This function name should not be renamed as such
+def fetch_failed_run(pipeline_name: str | None = None) -> dict:
     """Fetch context (metadata) about a failed run from Tracer Web App."""
     client = get_tracer_web_client()
     pipeline_names = _list_pipeline_names(client, pipeline_name)
@@ -140,6 +141,6 @@ def _find_failed_run(client, pipeline_names: Iterable[str]) -> PipelineRunSummar
 
 
 # Create LangChain tools from the functions
-fetch_failed_run_context_tool = tool(fetch_failed_run_context)
+fetch_failed_run_tool = tool(fetch_failed_run)
 get_tracer_run_tool = tool(get_tracer_run)
 get_tracer_tasks_tool = tool(get_tracer_tasks)
