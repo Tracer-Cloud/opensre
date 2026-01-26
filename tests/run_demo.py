@@ -22,9 +22,7 @@ env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
     load_dotenv(dotenv_path=env_path, override=True)
 
-from config import init_runtime  # noqa: E402
-
-init_runtime()
+load_dotenv()
 
 from langsmith import traceable  # noqa: E402
 
