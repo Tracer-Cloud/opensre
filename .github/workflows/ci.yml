@@ -16,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: "3.13"
 
       - name: Install dependencies
         run: |
@@ -24,7 +24,7 @@ jobs:
           pip install ruff
 
       - name: Lint with ruff
-        run: ruff check src/ tests/
+        run: ruff check app/ tests/
 
   test:
     runs-on: ubuntu-latest
@@ -37,10 +37,6 @@ jobs:
       LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
       LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
       LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
-      CLICKHOUSE_HOST_DEV: ${{ secrets.CLICKHOUSE_HOST_DEV }}
-      CLICKHOUSE_USER_DEV: ${{ secrets.CLICKHOUSE_USER_DEV }}
-      CLICKHOUSE_PASSWORD_DEV: ${{ secrets.CLICKHOUSE_PASSWORD_DEV }}
-      CLICKHOUSE_DB_DEV: ${{ secrets.CLICKHOUSE_DB_DEV }}
 
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +44,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: "3.13"
 
       - name: Install dependencies
         run: |
@@ -59,7 +55,6 @@ jobs:
         run: make test
         continue-on-error: false
 
-      - name: Run demo
-        run: make demo
-        continue-on-error: true
-
+      # - name: Run demo
+      #   run: make demo
+      #   continue-on-error: true

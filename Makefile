@@ -17,7 +17,7 @@ demo:
 
 # Run the generic CLI (reads from stdin or --input)
 run:
-	$(PYTHON) -m src.main
+	$(PYTHON) -m app.main
 
 dev: 
 	langgraph dev
@@ -27,7 +27,7 @@ test:
 
 # Run tests with coverage
 test-cov:
-	$(PYTHON) -m pytest -v --cov=src --cov-report=term-missing
+	$(PYTHON) -m pytest -v --cov=app --cov-report=term-missing
 
 # Clean up
 clean:
@@ -38,15 +38,15 @@ clean:
 
 # Lint code
 lint:
-	ruff check src/ tests/
+	ruff check app/ tests/
 
 # Format code
 format:
-	ruff format src/ tests/
+	ruff format app/ tests/
 
 # Type check
 typecheck:
-	mypy src/
+	mypy app/
 
 # Run all checks
 check: lint typecheck test

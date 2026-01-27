@@ -15,8 +15,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.agent.constants import TRACER_BASE_URL
-
 # Load .env file from project root
 env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
@@ -26,11 +24,12 @@ load_dotenv()
 
 from langsmith import traceable  # noqa: E402
 
-from src.agent.graph_pipeline import run_investigation  # noqa: E402
-from src.agent.nodes.build_context.context_building import (  # noqa: E402
+from app.agent.graph_pipeline import run_investigation  # noqa: E402
+from app.agent.nodes.build_context.context_building import (  # noqa: E402
     _fetch_tracer_web_run_context,
 )
-from src.agent.output import reset_tracker  # noqa: E402
+from app.agent.output import reset_tracker  # noqa: E402
+from tests.alert_factory import create_alert_from_tracer_run  # noqa: E402
 
 
 def _print(message: str) -> None:
@@ -83,77 +82,38 @@ def run_demo():
         _print(f"  Run URL: {run_url}")
     _print("")
 
-    # Create a Grafana-style alert with tracer information
-    grafana_alert = {
-        "alerts": [
-            {
-                "status": "firing",
-                "labels": {
-                    "alertname": "PipelineFailure",
-                    "severity": "critical",
-                    "table": pipeline_name,
-                    "pipeline_name": pipeline_name,
-                    "run_id": trace_id or "",
-                    "run_name": run_name,
-                    "environment": "production",
-                },
-                "annotations": {
-                    "summary": f"Pipeline {pipeline_name} failed",
-                    "description": f"Pipeline {pipeline_name} run {run_name} failed with status {status}",
-                    "runbook_url": run_url or "",
-                },
-                "startsAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-                "endsAt": "0001-01-01T00:00:00Z",
-                "generatorURL": run_url or "",
-                "fingerprint": trace_id or "unknown",
-            }
-        ],
-        "groupLabels": {"alertname": "PipelineFailure"},
-        "commonLabels": {
-            "alertname": "PipelineFailure",
-            "severity": "critical",
-            "pipeline_name": pipeline_name,
-        },
-        "commonAnnotations": {"summary": f"Pipeline {pipeline_name} failed"},
-        "externalURL": TRACER_BASE_URL,
-        "version": "4",
-        "groupKey": '{}:{alertname="PipelineFailure"}',
-        "truncatedAlerts": 0,
-        "title": f"[FIRING:1] PipelineFailure critical - {pipeline_name}",
-        "state": "alerting",
-        "message": f"**Firing**\n\nPipeline {pipeline_name} failed\nRun: {run_name}\nStatus: {status}\nTrace ID: {trace_id}",
-    }
-
-    # Create raw alert with Grafana format and tracer context
-    raw_alert = grafana_alert.copy()
-    raw_alert["run_url"] = run_url
-    raw_alert["pipeline_name"] = pipeline_name
-    raw_alert["run_name"] = run_name
-    raw_alert["trace_id"] = trace_id
-
-    # Create alert details
-    alert_name = f"Pipeline failure: {pipeline_name}"
-    affected_table = pipeline_name
-    severity = "critical"
+    # Create a Grafana-style alert with tracer information using the factory
+    timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    raw_alert = create_alert_from_tracer_run(
+        pipeline_name=pipeline_name,
+        run_name=run_name,
+        status=status,
+        timestamp=timestamp,
+        trace_id=trace_id,
+        run_url=run_url,
+    )
 
     _print("Starting investigation pipeline...")
     _print("")
 
-    # Parse the Grafana alert
-    from src.ingest import parse_grafana_payload  # noqa: E402
+    # Parse the Grafana alert to extract structured details
+    from app.ingest import parse_grafana_payload  # noqa: E402
 
     try:
-        request = parse_grafana_payload(grafana_alert)
+        request = parse_grafana_payload(raw_alert)
         alert_name = request.alert_name
-        affected_table = request.affected_table
+        pipeline_name = request.pipeline_name
         severity = request.severity
     except Exception:
-        pass
+        # Fallback values if parsing fails
+        alert_name = f"Pipeline failure: {pipeline_name}"
+        pipeline_name = pipeline_name
+        severity = "critical"
 
     # Run the pipeline - publish_findings node handles rendering
     state = run_investigation(
         alert_name=alert_name,
-        affected_table=affected_table,
+        pipeline_name=pipeline_name,
         severity=severity,
         raw_alert=raw_alert,
     )
