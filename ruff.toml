@@ -30,16 +30,16 @@ ignore = [
 "tests/**/*.py" = ["F401", "ARG001"]
 
 # Pydantic models have fields that appear unused but are accessed dynamically
-"src/ingest.py" = ["ARG002"]
+"app/ingest.py" = ["ARG002"]
 
 # TypedDict fields appear unused but are accessed via .get()
-"src/agent/render_output/report.py" = ["ARG002"]
-"src/agent/domain/state.py" = ["ARG002"]
+"app/agent/render_output/report.py" = ["ARG002"]
+"app/agent/domain/state.py" = ["ARG002"]
 
 # Dataclass fields from external APIs may not all be used
-"src/tracer/client.py" = ["ARG002"]
-"src/agent/clients/tracer.py" = ["ARG002"]
+"app/tracer/client.py" = ["ARG002"]
+"app/agent/clients/tracer.py" = ["ARG002"]
 
 # CLI entry points
-"src/main.py" = ["ARG001"]
+"app/main.py" = ["ARG001"]
 

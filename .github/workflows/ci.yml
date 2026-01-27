@@ -16,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: "3.13"
 
       - name: Install dependencies
         run: |
@@ -24,7 +24,7 @@ jobs:
           pip install ruff
 
       - name: Lint with ruff
-        run: ruff check src/ tests/
+        run: ruff check app/ tests/
 
   test:
     runs-on: ubuntu-latest
@@ -48,7 +48,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: "3.13"
 
       - name: Install dependencies
         run: |
@@ -62,4 +62,3 @@ jobs:
       - name: Run demo
         run: make demo
         continue-on-error: true
-
