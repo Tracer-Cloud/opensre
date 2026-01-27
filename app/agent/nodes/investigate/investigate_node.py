@@ -7,17 +7,17 @@ It updates state fields but does NOT render output directly.
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from src.agent.nodes.investigate.execution import execute_actions
-from src.agent.nodes.investigate.post_process import (
+from app.agent.nodes.investigate.execution import execute_actions
+from app.agent.nodes.investigate.post_process import (
     build_evidence_summary,
     merge_evidence,
     track_hypothesis,
 )
-from src.agent.nodes.investigate.prompt import build_investigation_prompt
-from src.agent.output import debug_print, get_tracker
-from src.agent.state import InvestigationState
-from src.agent.tools.clients import get_llm
-from src.agent.tools.tool_actions.investigation_actions import (
+from app.agent.nodes.investigate.prompt import build_investigation_prompt
+from app.agent.output import debug_print, get_tracker
+from app.agent.state import InvestigationState
+from app.agent.tools.clients import get_llm
+from app.agent.tools.tool_actions.investigation_actions import (
     get_available_actions,
     get_prioritized_actions,
 )

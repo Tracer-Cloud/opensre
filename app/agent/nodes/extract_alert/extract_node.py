@@ -2,9 +2,9 @@
 
 from langsmith import traceable
 
-from src.agent.nodes.extract_alert.extract import extract_alert_details
-from src.agent.output import debug_print, get_tracker, render_investigation_header
-from src.agent.state import InvestigationState
+from app.agent.nodes.extract_alert.extract import extract_alert_details
+from app.agent.output import debug_print, get_tracker, render_investigation_header
+from app.agent.state import InvestigationState
 
 
 @traceable(name="node_extract_alert")

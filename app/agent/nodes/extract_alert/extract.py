@@ -3,9 +3,9 @@
 import json
 from typing import Any
 
-from src.agent.nodes.extract_alert.models import AlertDetails, AlertExtractionInput
-from src.agent.state import InvestigationState
-from src.agent.tools.clients import get_llm
+from app.agent.nodes.extract_alert.models import AlertDetails, AlertExtractionInput
+from app.agent.state import InvestigationState
+from app.agent.tools.clients import get_llm
 
 
 def extract_alert_details(state: InvestigationState) -> AlertDetails:

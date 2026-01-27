@@ -1,6 +1,6 @@
 """Post-processing: merge evidence and track hypotheses."""
 
-from src.agent.state import InvestigationState
+from app.agent.state import InvestigationState
 
 
 def merge_evidence(

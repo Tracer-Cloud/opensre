@@ -1,10 +1,10 @@
 """Tool actions organized by service/SDK."""
 
-from src.agent.tools.tool_actions.cloudwatch_actions import (
+from app.agent.tools.tool_actions.cloudwatch_actions import (
     get_cloudwatch_batch_metrics,
     get_cloudwatch_batch_metrics_tool,
 )
-from src.agent.tools.tool_actions.tracer_jobs import (
+from app.agent.tools.tool_actions.tracer_jobs import (
     get_batch_jobs,
     get_batch_jobs_tool,
     get_failed_jobs,
@@ -12,11 +12,11 @@ from src.agent.tools.tool_actions.tracer_jobs import (
     get_failed_tools,
     get_failed_tools_tool,
 )
-from src.agent.tools.tool_actions.tracer_logs import (
+from app.agent.tools.tool_actions.tracer_logs import (
     get_error_logs,
     get_error_logs_tool,
 )
-from src.agent.tools.tool_actions.tracer_metrics import (
+from app.agent.tools.tool_actions.tracer_metrics import (
     get_airflow_metrics,
     get_airflow_metrics_tool,
     get_batch_statistics,
@@ -24,7 +24,7 @@ from src.agent.tools.tool_actions.tracer_metrics import (
     get_host_metrics,
     get_host_metrics_tool,
 )
-from src.agent.tools.tool_actions.tracer_runs import (
+from app.agent.tools.tool_actions.tracer_runs import (
     build_tracer_run_url,
     fetch_failed_run,
     fetch_failed_run_tool,

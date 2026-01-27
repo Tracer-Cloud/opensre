@@ -1,6 +1,6 @@
 """Infrastructure layer - external service clients and LLM."""
 
-from src.agent.tools.clients import (
+from app.agent.tools.clients import (
     AWSBatchJobResult,
     RootCauseResult,
     S3CheckResult,
@@ -10,7 +10,7 @@ from src.agent.tools.clients import (
     get_tracer_client,
     parse_root_cause,
 )
-from src.agent.tools.tool_actions import (
+from app.agent.tools.tool_actions import (
     get_airflow_metrics,
     get_batch_statistics,
     get_error_logs,

@@ -1,6 +1,6 @@
 """State helper utilities for working with InvestigationState."""
 
-from src.agent.state import InvestigationState
+from app.agent.state import InvestigationState
 
 
 def get_executed_sources(state: InvestigationState) -> set[str]:

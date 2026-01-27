@@ -18,7 +18,7 @@ except ImportError:
         return func
 
 
-from src.agent.tools.clients.tracer_client import (
+from app.agent.tools.clients.tracer_client import (
     AWSBatchJobResult,
     get_tracer_client,
     get_tracer_web_client,

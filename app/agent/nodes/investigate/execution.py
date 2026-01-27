@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 
-from src.agent.state import InvestigationState
-from src.agent.tools.tool_actions.investigation_actions import get_available_actions
+from app.agent.state import InvestigationState
+from app.agent.tools.tool_actions.investigation_actions import get_available_actions
 
 
 @dataclass

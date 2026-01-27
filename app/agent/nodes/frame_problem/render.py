@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from src.agent.nodes.frame_problem.models import ProblemStatement
-from src.agent.state import InvestigationState
+from app.agent.nodes.frame_problem.models import ProblemStatement
+from app.agent.state import InvestigationState
 
 
 def render_problem_statement_md(

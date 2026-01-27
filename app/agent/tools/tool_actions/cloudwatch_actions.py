@@ -15,7 +15,7 @@ except ImportError:
         return func
 
 
-from src.agent.tools.clients.cloudwatch_client import get_metric_statistics
+from app.agent.tools.clients.cloudwatch_client import get_metric_statistics
 
 
 def get_cloudwatch_batch_metrics(job_queue: str, metric_type: str = "cpu") -> dict:

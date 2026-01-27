@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from src.agent.state import InvestigationState
+from app.agent.state import InvestigationState
 
 
 class ProblemStatementInput(BaseModel):

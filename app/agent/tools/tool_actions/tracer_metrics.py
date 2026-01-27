@@ -18,8 +18,8 @@ except ImportError:
         return func
 
 
-from src.agent.tools.clients.tracer_client import get_tracer_web_client
-from src.agent.tools.utils import validate_host_metrics
+from app.agent.tools.clients.tracer_client import get_tracer_web_client
+from app.agent.tools.utils import validate_host_metrics
 
 
 def get_batch_statistics(trace_id: str) -> dict:
