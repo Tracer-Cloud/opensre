@@ -55,6 +55,6 @@ jobs:
         run: make test
         continue-on-error: false
 
-      - name: Run demo
-        run: make demo
-        continue-on-error: true
+      # - name: Run demo
+      #   run: make demo
+      #   continue-on-error: true
