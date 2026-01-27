@@ -2,7 +2,6 @@
 
 from typing import Any
 
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from app.agent.nodes import (
@@ -37,6 +36,7 @@ def build_graph(config: Any | None = None) -> Any:
     Returns:
         Compiled graph ready for execution
     """
+    _ = config
     graph = StateGraph(InvestigationState)
 
     graph.add_node("extract_alert", node_extract_alert)
@@ -80,6 +80,8 @@ def resolve_checkpointer_config(
     Returns:
         Tuple of (compiled_graph, config_dict)
     """
+    _ = checkpointer
+
     if thread_id:
         compiled_graph = build_graph()
         config = {"configurable": {"thread_id": thread_id}}
