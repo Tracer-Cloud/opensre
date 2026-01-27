@@ -17,7 +17,7 @@ from src.agent.routing import should_continue_investigation
 from src.agent.state import InvestigationState, make_initial_state
 
 
-def build_graph(checkpointer: Any = None) -> Any:
+def build_graph(config: Any | None = None) -> Any:
     """
     Build and compile the investigation graph.
 
@@ -32,7 +32,7 @@ def build_graph(checkpointer: Any = None) -> Any:
         → END
 
     Args:
-        checkpointer: Optional checkpointer for state persistence. If None, no persistence.
+        config: Optional config dict passed by LangGraph runtime.
 
     Returns:
         Compiled graph ready for execution
@@ -64,8 +64,6 @@ def build_graph(checkpointer: Any = None) -> Any:
 
     graph.add_edge("publish_findings", END)
 
-    if checkpointer is not None:
-        return graph.compile(checkpointer=checkpointer)
     return graph.compile()
 
 
@@ -83,9 +81,7 @@ def resolve_checkpointer_config(
         Tuple of (compiled_graph, config_dict)
     """
     if thread_id:
-        if checkpointer is None:
-            checkpointer = InMemorySaver()
-        compiled_graph = build_graph(checkpointer=checkpointer)
+        compiled_graph = build_graph()
         config = {"configurable": {"thread_id": thread_id}}
     else:
         compiled_graph = build_graph()
