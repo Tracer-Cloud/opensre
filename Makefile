@@ -38,15 +38,15 @@ clean:
 
 # Lint code
 lint:
-	ruff check src/ tests/
+	ruff check app/ tests/
 
 # Format code
 format:
-	ruff format src/ tests/
+	ruff format app/ tests/
 
 # Type check
 typecheck:
-	mypy src/
+	mypy app/
 
 # Run all checks
 check: lint typecheck test
