@@ -3,7 +3,7 @@
 import os
 from dataclasses import dataclass
 
-from src.agent.tools.clients.tracer_client.tracer_client_base import TracerClientBase
+from app.agent.tools.clients.tracer_client.tracer_client_base import TracerClientBase
 
 DEMO_TRACE_ID = "efb797c9-0226-4932-8eb0-704f03d1752f"
 

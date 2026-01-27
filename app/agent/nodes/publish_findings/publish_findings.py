@@ -14,9 +14,9 @@ from langsmith import traceable
 from rich.console import Console
 from rich.panel import Panel
 
-from src.agent.constants import TRACER_DEFAULT_INVESTIGATION_URL
-from src.agent.output import get_output_format
-from src.agent.state import InvestigationState
+from app.agent.constants import TRACER_DEFAULT_INVESTIGATION_URL
+from app.agent.output import get_output_format
+from app.agent.state import InvestigationState
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Report Context

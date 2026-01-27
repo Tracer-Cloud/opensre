@@ -1,8 +1,8 @@
 """Investigation prompt construction with available actions."""
 
-from src.agent.state import InvestigationState
-from src.agent.tools.tool_actions.investigation_actions import get_available_actions
-from src.agent.utils import get_executed_sources
+from app.agent.state import InvestigationState
+from app.agent.tools.tool_actions.investigation_actions import get_available_actions
+from app.agent.utils import get_executed_sources
 
 
 def build_investigation_prompt(

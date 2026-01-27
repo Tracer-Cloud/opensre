@@ -37,10 +37,6 @@ jobs:
       LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
       LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
       LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
-      CLICKHOUSE_HOST_DEV: ${{ secrets.CLICKHOUSE_HOST_DEV }}
-      CLICKHOUSE_USER_DEV: ${{ secrets.CLICKHOUSE_USER_DEV }}
-      CLICKHOUSE_PASSWORD_DEV: ${{ secrets.CLICKHOUSE_PASSWORD_DEV }}
-      CLICKHOUSE_DB_DEV: ${{ secrets.CLICKHOUSE_DB_DEV }}
 
     steps:
       - uses: actions/checkout@v4

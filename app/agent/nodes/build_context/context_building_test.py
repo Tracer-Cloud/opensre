@@ -1,6 +1,6 @@
 import os
 
-from src.agent.nodes.build_context.context_building import build_investigation_context
+from app.agent.nodes.build_context.context_building import build_investigation_context
 
 
 def test_build_investigation_context_tracer_web_integration() -> None:

@@ -24,11 +24,11 @@ load_dotenv()
 
 from langsmith import traceable  # noqa: E402
 
-from src.agent.graph_pipeline import run_investigation  # noqa: E402
-from src.agent.nodes.build_context.context_building import (  # noqa: E402
+from app.agent.graph_pipeline import run_investigation  # noqa: E402
+from app.agent.nodes.build_context.context_building import (  # noqa: E402
     _fetch_tracer_web_run_context,
 )
-from src.agent.output import reset_tracker  # noqa: E402
+from app.agent.output import reset_tracker  # noqa: E402
 from tests.alert_factory import create_alert_from_tracer_run  # noqa: E402
 
 
@@ -97,7 +97,7 @@ def run_demo():
     _print("")
 
     # Parse the Grafana alert to extract structured details
-    from src.ingest import parse_grafana_payload  # noqa: E402
+    from app.ingest import parse_grafana_payload  # noqa: E402
 
     try:
         request = parse_grafana_payload(raw_alert)

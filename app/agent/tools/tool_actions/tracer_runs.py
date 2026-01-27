@@ -11,15 +11,15 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable
 
-from src.agent.constants import TRACER_BASE_URL
-from src.agent.tools.clients.tracer_client import (
+from app.agent.constants import TRACER_BASE_URL
+from app.agent.tools.clients.tracer_client import (
     PipelineRunSummary,
     TracerRunResult,
     TracerTaskResult,
     get_tracer_client,
     get_tracer_web_client,
 )
-from src.agent.utils.auth import extract_org_slug_from_jwt
+from app.agent.utils.auth import extract_org_slug_from_jwt
 
 try:
     from langchain.tools import tool

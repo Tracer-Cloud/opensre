@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from src.agent.tools.clients.tracer_client.tracer_client_base import TracerClientBase
+from app.agent.tools.clients.tracer_client.tracer_client_base import TracerClientBase
 
 
 @dataclass(frozen=True)

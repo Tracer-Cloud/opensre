@@ -15,7 +15,7 @@ except ImportError:
         return func
 
 
-from src.agent.tools.clients.s3_client import S3CheckResult, get_s3_client
+from app.agent.tools.clients.s3_client import S3CheckResult, get_s3_client
 
 
 def check_s3_marker(bucket: str, prefix: str) -> S3CheckResult:

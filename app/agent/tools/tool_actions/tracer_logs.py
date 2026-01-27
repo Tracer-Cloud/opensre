@@ -18,7 +18,7 @@ except ImportError:
         return func
 
 
-from src.agent.tools.clients.tracer_client import get_tracer_web_client
+from app.agent.tools.clients.tracer_client import get_tracer_web_client
 
 
 def get_error_logs(trace_id: str, size: int = 500, error_only: bool = True) -> dict:

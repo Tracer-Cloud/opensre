@@ -7,14 +7,14 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from src.agent.nodes.build_context.models import (
+from app.agent.nodes.build_context.models import (
     ContextEvidence,
     ContextSourceError,
     TracerWebRunContext,
 )
-from src.agent.nodes.build_context.utils import call_safe
-from src.agent.state import InvestigationState
-from src.agent.tools.tool_actions.tracer_runs import fetch_failed_run
+from app.agent.nodes.build_context.utils import call_safe
+from app.agent.state import InvestigationState
+from app.agent.tools.tool_actions.tracer_runs import fetch_failed_run
 
 
 @dataclass(frozen=True)

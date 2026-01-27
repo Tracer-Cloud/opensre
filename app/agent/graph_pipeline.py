@@ -5,16 +5,16 @@ from typing import Any
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from src.agent.nodes import (
+from app.agent.nodes import (
     node_build_context,
     node_diagnose_root_cause,
     node_extract_alert,
     node_frame_problem,
     node_publish_findings,
 )
-from src.agent.nodes.investigate.investigate_node import node_investigate
-from src.agent.routing import should_continue_investigation
-from src.agent.state import InvestigationState, make_initial_state
+from app.agent.nodes.investigate.investigate_node import node_investigate
+from app.agent.routing import should_continue_investigation
+from app.agent.state import InvestigationState, make_initial_state
 
 
 def build_graph(config: Any | None = None) -> Any:

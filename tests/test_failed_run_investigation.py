@@ -2,12 +2,12 @@
 
 import os
 
-from src.agent.graph_pipeline import run_investigation
-from src.agent.nodes.build_context.context_building import _fetch_tracer_web_run_context
-from src.agent.nodes.investigate.investigate_node import node_investigate as investigate_node
-from src.agent.nodes.root_cause_diagnosis import node_diagnose_root_cause
-from src.agent.state import InvestigationState
-from src.agent.tools.clients.tracer_client import get_tracer_web_client
+from app.agent.graph_pipeline import run_investigation
+from app.agent.nodes.build_context.context_building import _fetch_tracer_web_run_context
+from app.agent.nodes.investigate.investigate_node import node_investigate as investigate_node
+from app.agent.nodes.root_cause_diagnosis import node_diagnose_root_cause
+from app.agent.state import InvestigationState
+from app.agent.tools.clients.tracer_client import get_tracer_web_client
 
 
 def test_investigate_specific_failed_run() -> None:
@@ -34,7 +34,7 @@ def test_investigate_specific_failed_run() -> None:
     if not failed_run:
         raise AssertionError(f"Expected to find trace {trace_id}")
     # Build context
-    from src.agent.tools.tool_actions.tracer_runs import build_tracer_run_url
+    from app.agent.tools.tool_actions.tracer_runs import build_tracer_run_url
 
     run_url = build_tracer_run_url(failed_run.pipeline_name, trace_id)
     web_run = {

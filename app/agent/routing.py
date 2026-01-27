@@ -1,7 +1,7 @@
 """Graph routing logic - conditional edges and flow control."""
 
-from src.agent.output import debug_print
-from src.agent.state import InvestigationState
+from app.agent.output import debug_print
+from app.agent.state import InvestigationState
 
 
 def should_continue_investigation(state: InvestigationState) -> str:
