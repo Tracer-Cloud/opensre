@@ -23,7 +23,7 @@ What We're Optimizing For
 
 **Classification Dimensions v0.1** 
 Test cases evaluated across 3 axes:
-1. Information availability: In alert → needs investigation → needs code changes → external vendor
+1. Information availability: In alert → needs investigation → correlate multipe parts of information -> needs code changes → external vendor
 2. Required expertise: Junior → senior → team → external
 3. Time to resolution: Minutes → hours → days → weeks
 
