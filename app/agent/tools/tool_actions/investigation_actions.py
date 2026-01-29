@@ -134,6 +134,7 @@ def get_available_actions() -> list[InvestigationAction]:
     This provides structured information about what actions are available,
     what they require as input, what they return, and when to use them.
     """
+    from app.agent.tools.tool_actions.cloudwatch_actions import get_cloudwatch_logs
     from app.agent.tools.tool_actions.tracer_jobs import (
         get_failed_jobs,
         get_failed_tools,
@@ -165,6 +166,12 @@ def get_available_actions() -> list[InvestigationAction]:
             func=get_host_metrics,
             source="cloudwatch",
             requires=["trace_id"],
+        ),
+        _build_investigation_action(
+            name="get_cloudwatch_logs",
+            func=get_cloudwatch_logs,
+            source="cloudwatch",
+            requires=[],
         ),
     ]
 

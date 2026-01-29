@@ -2,35 +2,6 @@
 - `make install`
 - `make demo` to test the project. 
 
-# Data Pipeline Incident Resolution
-
-Data Engineering Meetup Demo - Automated investigation and root cause analysis for production data pipeline incidents using Tracer.
-
-## Overview
-
-This system demonstrates automated incident investigation across a data stack:
-
-1. Receives Grafana alerts for bugs
-2. Investigates pipeline runs using Tracer API
-3. Analyzes task status and failure reasons
-4. Produces actionable root cause analysis with evidence and fix recommendations
-
-## Architecture
-
-```
-+---------------+     +----------------+     +---------------+
-|   Grafana     |---->|    Agent       |---->|    Slack      |
-|   Alert       |     |  (LangGraph)   |     |    Report     |
-+---------------+     +----------------+     +---------------+
-                             |
-                      +------+------+
-                      v             v
-                +----------+  +-----------+
-                | S3 Mock  |  |  Tracer   |
-                |          |  |  Web App  |
-                +----------+  +-----------+
-```
-
 ## Quick Start
 
 ### 1. Install dependencies

@@ -19,7 +19,7 @@ def send_slack_report(slack_message: str) -> None:
     """
     # if not slack_message:
     #     return
-    
+
     print("[slack] send_slack_report called", file=sys.stderr)
 
     base_url = os.getenv("TRACER_API_URL")
