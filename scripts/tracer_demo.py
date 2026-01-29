@@ -4,7 +4,6 @@ Data Engineering Pipeline - Multiple steps that fail with exit codes.
 Logs to production.log with rich output for failure diagnosis.
 """
 
-from tracer_decorator import trace
 import subprocess
 import sys
 import os
@@ -67,7 +66,6 @@ def run_tool(cmd, timeout=10, step_name=""):
     return exit_code
 
 
-@trace
 def step1_check_s3_object():
     logger.info("STEP 1: aws s3api head-object")
     time.sleep(3)
@@ -89,7 +87,6 @@ def step1_check_s3_object():
     return exit_code
 
 
-@trace
 def step2_download_from_s3():
     logger.info("STEP 2: aws s3 cp")
     time.sleep(3)
@@ -109,7 +106,6 @@ def step2_download_from_s3():
     return exit_code
 
 
-@trace
 def step3_list_s3_bucket():
     logger.info("STEP 3: aws s3 ls")
     time.sleep(3)
@@ -128,7 +124,6 @@ def step3_list_s3_bucket():
     return exit_code
 
 
-@trace
 def step4_process_json_with_jq():
     logger.info("STEP 4: jq process JSON")
     time.sleep(3)
@@ -147,7 +142,6 @@ def step4_process_json_with_jq():
     return exit_code
 
 
-@trace
 def step5_transform_with_jq():
     logger.info("STEP 5: jq transform")
     time.sleep(3)
