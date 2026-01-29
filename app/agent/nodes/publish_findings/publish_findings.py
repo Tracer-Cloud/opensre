@@ -280,7 +280,7 @@ Analyzed by: pipeline-agent
 * Cost: ${ctx.get("tracer_run_cost", 0):.2f}
 * Instance: {ctx.get("tracer_instance_type", "unknown")}
 * Max RAM: {ctx.get("tracer_max_ram_gb", 0):.1f} GB
-{batch_info}* S3 _SUCCESS marker: {"not found" if not ctx.get("s3_marker_exists") else "present"}
+{batch_info}
 
 *View Investigation:*
 {tracer_link}
