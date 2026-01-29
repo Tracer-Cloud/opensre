@@ -10,8 +10,8 @@ from datetime import UTC, datetime
 
 import requests
 
-from tests.cloudwatch_demo import customer_pipeline
 from tests.conftest import get_test_config
+from tests.test_case_cloudwatch_demo import customer_pipeline
 from tests.utils.alert_factory import create_alert
 from tests.utils.cloudwatch_logger import log_error_to_cloudwatch
 from tests.utils.langgraph_client import (

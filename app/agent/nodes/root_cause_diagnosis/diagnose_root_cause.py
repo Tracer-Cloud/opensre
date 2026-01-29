@@ -30,16 +30,14 @@ def main(state: InvestigationState) -> dict:
     evidence = state.get("evidence", {})
     web_run = context.get("tracer_web_run", {})
 
-    # Check if we have context
-    if not web_run.get("found"):
-        tracker.error("diagnose_root_cause", "No evidence available for analysis")
-        return {
-            "root_cause": "No evidence available for analysis",
-            "confidence": 0.0,
-            "validated_claims": [],
-            "non_validated_claims": [],
-            "validity_score": 0.0,
-        }
+    # Check if we have evidence (Tracer OR CloudWatch)
+    has_tracer_evidence = web_run.get("found")
+    has_cloudwatch_evidence = bool(evidence.get("error_logs") or evidence.get("cloudwatch_logs"))
+
+    if not has_tracer_evidence and not has_cloudwatch_evidence:
+        error_msg = "CATASTROPHIC ERROR: No evidence available for analysis - investigation cannot proceed"
+        tracker.error("diagnose_root_cause", error_msg)
+        raise RuntimeError(error_msg)
 
     # Build simple prompt from context and evidence
     prompt = _build_simple_prompt(state, evidence)
@@ -128,13 +126,20 @@ def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
     hypotheses = state.get("hypotheses", [])
 
     # Allowed evidence sources the model can reference (keeps grounding consistent)
-    allowed_sources = ["aws_batch_jobs", "tracer_tools", "logs", "host_metrics"]
+    allowed_sources = ["aws_batch_jobs", "tracer_tools", "logs", "cloudwatch_logs", "host_metrics"]
 
     # Extract key investigation findings from evidence
     failed_jobs = evidence.get("failed_jobs", [])
     failed_tools = evidence.get("failed_tools", [])
     error_logs = evidence.get("error_logs", [])[:10]  # Limit to 10 most recent
+    cloudwatch_logs = evidence.get("cloudwatch_logs", [])[:5]  # CloudWatch error logs
     host_metrics = evidence.get("host_metrics", {})
+
+    # Extract CloudWatch URL from alert for citation
+    raw_alert = state.get("raw_alert", {})
+    cloudwatch_url = None
+    if isinstance(raw_alert, dict):
+        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
 
     prompt = f"""You are an experienced SRE writing a short RCA (root cause analysis) for a data pipeline incident.
 
@@ -148,6 +153,8 @@ DEFINITIONS:
 
 RULES:
 - Do NOT introduce external domain knowledge that is not visible in the evidence (e.g., what a tool usually does).
+- Do NOT reference source code files or line numbers unless they appear explicitly in the log evidence below.
+- You can ONLY use information present in the evidence logs shown below. If a traceback shows file names and line numbers, you may reference them.
 - VALIDATED_CLAIMS should be factual and specific (no "maybe", "likely", "appears").
 - NON_VALIDATED_CLAIMS may include "likely/maybe", but must stay consistent with evidence.
 - Keep each claim to one sentence.
@@ -162,6 +169,14 @@ HYPOTHESES TO CONSIDER (may be incomplete):
 
 EVIDENCE:
 """
+
+    if cloudwatch_logs:
+        prompt += f"\nCloudWatch Error Logs ({len(cloudwatch_logs)} events):\n"
+        for log in cloudwatch_logs:
+            prompt += f"{log}\n"
+        if cloudwatch_url:
+            prompt += f"\n[Citation: View full logs at {cloudwatch_url}]\n"
+        prompt += "\n"
 
     if failed_jobs:
         prompt += f"\nAWS Batch Failed Jobs ({len(failed_jobs)}):\n"
