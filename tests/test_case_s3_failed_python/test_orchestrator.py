@@ -129,7 +129,15 @@ def main() -> int:
                 },
             )
             stream_investigation_results(response)
-            return {"status": response.status_code}
+            # LangGraph endpoint handles Slack delivery remotely, but ensure local fallback
+            # Run local investigation to get slack_message and ensure delivery
+            local_result = _run(
+                alert_name=alert_name,
+                pipeline_name=pipeline_name,
+                severity=severity,
+                raw_alert=raw_alert,
+            )
+            return {"status": response.status_code, **local_result}
         except Exception as exc:
             print(f"LangGraph endpoint unavailable, running locally: {exc}")
             return _run(
@@ -139,8 +147,10 @@ def main() -> int:
                 raw_alert=raw_alert,
             )
 
-    run_with_alert_id()
+    investigation_result = run_with_alert_id()
     print(f"\n✓ Pipeline failed. Logs: {LOG_FILE}")
+    if investigation_result.get("slack_message"):
+        print(f"✓ Slack message generated ({len(investigation_result['slack_message'])} chars)")
     return 0
 
 
