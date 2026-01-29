@@ -56,9 +56,7 @@ def fetch_failed_run(pipeline_name: str | None = None) -> dict:
     pipeline_names = _list_pipeline_names(client, pipeline_name)
 
     failed_run = _find_failed_run(client, pipeline_names)
-    if not failed_run and pipeline_name:
-        pipeline_names = _list_pipeline_names(client, None)
-        failed_run = _find_failed_run(client, pipeline_names)
+
     if not failed_run:
         return {
             "found": False,
