@@ -9,7 +9,7 @@ def test_publish_findings_includes_cited_evidence_section() -> None:
         "validated_claims": [
             {
                 "claim": "Error logs show a failure during execution.",
-                "evidence_sources": ["logs"],
+                "evidence_sources": ["logs", "cloudwatch_logs"],
                 "validation_status": "validated",
             }
         ],
