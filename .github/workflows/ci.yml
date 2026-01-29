@@ -89,9 +89,9 @@ jobs:
         continue-on-error: false
 
       - name: Run Superfluid demo
-        run: python3 -m tests.test_case_superfluid.test_case_superfluid
+        run: python3 -m tests.test_case_superfluid.orchestrator
         continue-on-error: true
 
       - name: Run CloudWatch demo
-        run: python3 -m tests.test_case_cloudwatch_demo.run_cloudwatch_demo
+        run: python3 -m tests.test_case_cloudwatch_demo.orchestrator
         continue-on-error: true
