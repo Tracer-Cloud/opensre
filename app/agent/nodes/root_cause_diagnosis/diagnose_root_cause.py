@@ -34,7 +34,7 @@ def main(state: InvestigationState) -> dict:
     # Check if we have evidence from various sources
     has_tracer_evidence = web_run.get("found")
     has_cloudwatch_evidence = bool(evidence.get("error_logs") or evidence.get("cloudwatch_logs"))
-    
+
     # Check for evidence in alert annotations (S3 logs, log excerpts, etc.)
     has_alert_evidence = False
     if isinstance(raw_alert, dict):
@@ -51,7 +51,7 @@ def main(state: InvestigationState) -> dict:
     if not has_tracer_evidence and not has_cloudwatch_evidence and not has_alert_evidence:
         debug_print("Warning: Limited evidence available - proceeding with low confidence")
         tracker.warn("diagnose_root_cause", "Limited evidence available")
-        
+
         # Return a basic result with low confidence
         problem = state.get("problem_md", "Pipeline failure detected")
         return {
