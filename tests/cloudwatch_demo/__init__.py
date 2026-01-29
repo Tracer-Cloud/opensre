@@ -1,0 +1,1 @@
+"""CloudWatch integration demo tests."""
