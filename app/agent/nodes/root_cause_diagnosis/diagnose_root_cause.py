@@ -29,15 +29,49 @@ def main(state: InvestigationState) -> dict:
     context = state.get("context", {})
     evidence = state.get("evidence", {})
     web_run = context.get("tracer_web_run", {})
+    raw_alert = state.get("raw_alert", {})
 
-    # Check if we have evidence (Tracer OR CloudWatch)
+    # Check if we have evidence from various sources
     has_tracer_evidence = web_run.get("found")
     has_cloudwatch_evidence = bool(evidence.get("error_logs") or evidence.get("cloudwatch_logs"))
 
-    if not has_tracer_evidence and not has_cloudwatch_evidence:
-        error_msg = "CATASTROPHIC ERROR: No evidence available for analysis - investigation cannot proceed"
-        tracker.error("diagnose_root_cause", error_msg)
-        raise RuntimeError(error_msg)
+    # Check for evidence in alert annotations (S3 logs, log excerpts, etc.)
+    has_alert_evidence = False
+    if isinstance(raw_alert, dict):
+        annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
+        if annotations:
+            has_alert_evidence = bool(
+                annotations.get("log_excerpt")
+                or annotations.get("failed_steps")
+                or annotations.get("error")
+                or annotations.get("cloudwatch_logs_url")
+            )
+
+    # If no evidence at all, return low-confidence result instead of crashing
+    if not has_tracer_evidence and not has_cloudwatch_evidence and not has_alert_evidence:
+        debug_print("Warning: Limited evidence available - proceeding with low confidence")
+        tracker.warn("diagnose_root_cause", "Limited evidence available")
+
+        # Return a basic result with low confidence
+        problem = state.get("problem_md", "Pipeline failure detected")
+        return {
+            "root_cause": f"{problem}. Limited evidence available for analysis - unable to determine exact root cause without additional diagnostic data.",
+            "confidence": 0.2,
+            "validated_claims": [],
+            "non_validated_claims": [
+                {
+                    "claim": "Insufficient evidence available to validate root cause",
+                    "validation_status": "not_validated",
+                }
+            ],
+            "validity_score": 0.0,
+            "investigation_recommendations": [
+                "Collect error logs from pipeline execution",
+                "Check CloudWatch logs if available",
+                "Review pipeline step exit codes and error messages",
+            ],
+            "investigation_loop_count": state.get("investigation_loop_count", 0),
+        }
 
     # Build simple prompt from context and evidence
     prompt = _build_simple_prompt(state, evidence)
@@ -135,11 +169,13 @@ def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
     cloudwatch_logs = evidence.get("cloudwatch_logs", [])[:5]  # CloudWatch error logs
     host_metrics = evidence.get("host_metrics", {})
 
-    # Extract CloudWatch URL from alert for citation
+    # Extract evidence from alert annotations
     raw_alert = state.get("raw_alert", {})
     cloudwatch_url = None
+    alert_annotations = {}
     if isinstance(raw_alert, dict):
         cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
+        alert_annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
 
     prompt = f"""You are an experienced SRE writing a short RCA (root cause analysis) for a data pipeline incident.
 
@@ -203,6 +239,14 @@ EVIDENCE:
         prompt += "\nHost Metrics: Available (CPU, memory, disk)\n"
     else:
         prompt += "\nHost Metrics: None\n"
+
+    # Include alert annotation evidence (log excerpts, failed steps, etc.)
+    if alert_annotations.get("log_excerpt"):
+        prompt += f"\nLog Excerpt from Alert:\n{alert_annotations['log_excerpt'][:1000]}\n"
+    if alert_annotations.get("failed_steps"):
+        prompt += f"\nFailed Steps Summary:\n{alert_annotations['failed_steps']}\n"
+    if alert_annotations.get("error"):
+        prompt += f"\nError Message:\n{alert_annotations['error']}\n"
 
     prompt += f"""
 OUTPUT FORMAT (follow exactly):
