@@ -93,6 +93,8 @@ def node_investigate(state: InvestigationState) -> dict:
     plan = structured_llm.with_config(
         run_name="LLM – Plan evidence gathering"
     ).invoke(prompt)
+    print(f"[DEBUG] LLM Plan: {plan.actions}")
+    print(f"[DEBUG] Rationale: {plan.rationale[:200]}")
     debug_print(f"Plan: {plan.actions} | {plan.rationale[:100]}...")
 
     # 2. Execution phase
@@ -108,6 +110,9 @@ def node_investigate(state: InvestigationState) -> dict:
         fields_updated=["evidence", "executed_hypotheses"],
         message=evidence_summary,
     )
+
+    print(f"[DEBUG] Evidence being returned: {list(evidence.keys())}")
+    print(f"[DEBUG] CloudWatch logs in evidence: {bool(evidence.get('cloudwatch_logs'))}")
 
     return {
         "evidence": evidence,

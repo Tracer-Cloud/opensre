@@ -4,11 +4,11 @@ Data Engineering Pipeline - Multiple steps that fail with exit codes.
 Logs to production.log with rich output for failure diagnosis.
 """
 
+import logging
+import os
 import subprocess
 import sys
-import os
 import time
-import logging
 
 logging.basicConfig(
     level=logging.INFO,

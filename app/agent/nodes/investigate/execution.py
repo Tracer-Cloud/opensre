@@ -35,6 +35,17 @@ def execute_actions(
     tracer_web_run = state.get("context", {}).get("tracer_web_run", {})
     trace_id = tracer_web_run.get("trace_id")
 
+    # Extract CloudWatch params from alert annotations
+    raw_alert = state.get("raw_alert", {})
+    cloudwatch_annotations = {}
+    if isinstance(raw_alert, dict):
+        annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
+        if annotations:
+            cloudwatch_annotations = {
+                "log_group": annotations.get("cloudwatch_log_group"),
+                "log_stream": annotations.get("cloudwatch_log_stream"),
+            }
+
     for action_name in action_names:
         if action_name not in available_actions:
             results[action_name] = ActionExecutionResult(
@@ -58,13 +69,18 @@ def execute_actions(
 
         try:
             # Build kwargs based on action inputs
-            kwargs = {}
-            if "trace_id" in action.inputs:
-                kwargs["trace_id"] = trace_id
-            if "size" in action.inputs:
-                kwargs["size"] = 500
-            if "error_only" in action.inputs:
-                kwargs["error_only"] = True
+            if action_name == "get_cloudwatch_logs" and cloudwatch_annotations.get("log_group"):
+                # CloudWatch action - use log_group/log_stream from alert
+                kwargs = cloudwatch_annotations
+            else:
+                # Standard actions - use trace_id
+                kwargs = {}
+                if "trace_id" in action.inputs:
+                    kwargs["trace_id"] = trace_id
+                if "size" in action.inputs:
+                    kwargs["size"] = 500
+                if "error_only" in action.inputs:
+                    kwargs["error_only"] = True
 
             data = action.function(**kwargs)
 

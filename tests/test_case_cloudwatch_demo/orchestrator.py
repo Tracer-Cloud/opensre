@@ -4,14 +4,15 @@ CloudWatch Demo Orchestrator.
 Run with: make cloudwatch-demo
 """
 
+import os
 import sys
 import traceback
 from datetime import UTC, datetime
 
 import requests
 
-from tests.cloudwatch_demo import customer_pipeline
 from tests.conftest import get_test_config
+from tests.test_case_cloudwatch_demo import use_case
 from tests.utils.alert_factory import create_alert
 from tests.utils.cloudwatch_logger import log_error_to_cloudwatch
 from tests.utils.langgraph_client import (
@@ -27,13 +28,13 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
     run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
 
     try:
-        result = customer_pipeline.main()
+        result = use_case.main()
         print(f"✓ {result['pipeline_name']} succeeded: {result['rows_processed']} rows")
         return 0
 
     except Exception as e:
         error_traceback = traceback.format_exc()
-        pipeline_name = customer_pipeline._pipeline_context["pipeline_name"]
+        pipeline_name = use_case._pipeline_context["pipeline_name"]
 
         cloudwatch_context = log_error_to_cloudwatch(
             error=e,
@@ -63,11 +64,9 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
 
         from langsmith import traceable
 
-        from app.agent.graph_pipeline import run_investigation
+        from app.main import _run
 
         print("Running investigation...")
-
-        from app.agent.state import make_initial_state
 
         @traceable(
             name=f"CloudWatch Investigation - {raw_alert['alert_id'][:8]}",
@@ -79,20 +78,16 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
             }
         )
         def run_with_alert_id():
-            from app.agent.graph_pipeline import build_graph
-
-            initial_state = make_initial_state(
+            return _run(
                 alert_name=f"Pipeline failure: {pipeline_name}",
                 pipeline_name=pipeline_name,
                 severity="critical",
                 raw_alert=raw_alert,
             )
-            initial_state["plan_sources"] = ["cloudwatch"]
 
-            graph = build_graph()
-            return graph.invoke(initial_state)
-
-        run_with_alert_id()
+        result = run_with_alert_id()
+        print(f"Slack delivery attempted. TRACER_API_URL={os.getenv('TRACER_API_URL')!r}")
+        print(f"Slack message length: {len(result.get('slack_message', '') or '')}")
 
         print(f"\n✓ CloudWatch logs: {cloudwatch_context['cloudwatch_url']}")
         return 0
