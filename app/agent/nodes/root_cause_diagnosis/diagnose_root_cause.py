@@ -123,7 +123,7 @@ def main(state: InvestigationState) -> dict:
 
 
 def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
-    """Build a simple, focused prompt from evidence."""
+    """Build a strict, evidence-grounded prompt from evidence."""
     problem = state.get("problem_md", "")
     hypotheses = state.get("hypotheses", [])
 
@@ -134,6 +134,13 @@ def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
     host_metrics = evidence.get("host_metrics", {})
 
     prompt = f"""Analyze the following incident and determine the root cause.
+    
+STRICT DEFINITIONS:
+- A claim is VALIDATED only if it is directly supported by evidence in the EVIDENCE section.
+- Every VALIDATED claim MUST include an evidence_sources list with one or more items from: {", ".join(allowed_sources)}.
+- If you cannot name at least one allowed evidence source for a claim, it MUST be UNVALIDATED.
+- One sentence per claim. Do not mix facts and hypotheses in the same sentence.
+- Do not invent evidence. Do not mention systems/data that are not present below.
 
 PROBLEM:
 {problem}
