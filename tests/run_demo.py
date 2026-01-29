@@ -29,6 +29,8 @@ from app.agent.nodes.build_context.context_building import (  # noqa: E402
     _fetch_tracer_web_run_context,
 )
 from app.agent.output import reset_tracker  # noqa: E402
+from app.agent.utils.slack_delivery import send_slack_report  # noqa: E402
+from tests.alert_factory import create_alert_from_tracer_run  # noqa: E402
 from tests.utils.alert_factory import create_alert_from_tracer_run  # noqa: E402
 
 
@@ -117,6 +119,11 @@ def run_demo():
         severity=severity,
         raw_alert=raw_alert,
     )
+
+    # Deliver Slack report via NextJS /api/slack without blocking demo success.
+    send_slack_report(state.get("slack_message", ""))
+    _print(f"Slack delivery attempted. TRACER_API_URL={os.getenv('TRACER_API_URL')!r}")
+    _print(f"Slack message length: {len(state.get('slack_message', '') or '')}")
 
     return state
 
