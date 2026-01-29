@@ -2,14 +2,10 @@
 Superfluid Demo Orchestrator.
 
 Run with: make demo
-
-This demo:
-1. Finds a real failed pipeline run from Tracer Web App (via use_case)
-2. Creates an alert for that pipeline
-3. Runs full investigation pipeline (which renders the final report)
 """
 
 import os
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -30,14 +26,8 @@ from tests.test_case_superfluid import use_case  # noqa: E402
 from tests.utils.alert_factory import create_alert_from_tracer_run  # noqa: E402
 
 
-def _print(message: str) -> None:
-    """Simple print wrapper."""
-    print(message)
-
-
-@traceable(name="Incident Investigation")
-def run_demo():
-    """Run the LangGraph incident resolution demo with a real failed pipeline."""
+def main() -> int:
+    """Run the Superfluid demo orchestrator."""
     reset_tracker()
 
     # Check required environment variables
@@ -45,42 +35,42 @@ def run_demo():
     jwt_token = os.getenv("JWT_TOKEN")
 
     if not api_key:
-        _print("Error: Missing required environment variable: ANTHROPIC_API_KEY")
-        _print(f"\nPlease set this in your .env file at: {env_path}")
-        return None
+        print("Error: Missing required environment variable: ANTHROPIC_API_KEY")
+        print(f"\nPlease set this in your .env file at: {env_path}")
+        return 1
 
     if not jwt_token:
-        _print("Error: Missing required environment variable: JWT_TOKEN")
-        _print(f"\nPlease set this in your .env file at: {env_path}")
-        return None
+        print("Error: Missing required environment variable: JWT_TOKEN")
+        print(f"\nPlease set this in your .env file at: {env_path}")
+        return 1
 
-    _print("Finding a real failed pipeline run...")
+    print("Finding a real failed pipeline run...")
 
-    # Find a real failed run from Tracer Web App (use case)
-    web_run = use_case.find_failed_run()
+    # Call use case to find failed run
+    web_run = use_case.main()
 
     if not web_run.get("found"):
-        _print("No failed runs found in Tracer Web App")
-        _print(f"Checked {web_run.get('pipelines_checked', 0)} pipelines")
-        return None
+        print("No failed runs found in Tracer Web App")
+        print(f"Checked {web_run.get('pipelines_checked', 0)} pipelines")
+        return 1
 
-    # Extract pipeline details
-    pipeline_name = web_run.get("pipeline_name", "unknown_pipeline")
-    run_name = web_run.get("run_name", "unknown_run")
-    trace_id = web_run.get("trace_id")
-    status = web_run.get("status", "unknown")
-    run_url = web_run.get("run_url")
+    # Extract pipeline details from use case context
+    pipeline_name = use_case._run_context["pipeline_name"]
+    run_name = use_case._run_context["run_name"]
+    trace_id = use_case._run_context["trace_id"]
+    status = use_case._run_context["status"]
+    run_url = use_case._run_context["run_url"]
 
-    _print(f"Found failed run: {run_name}")
-    _print(f"  Pipeline: {pipeline_name}")
-    _print(f"  Status: {status}")
+    print(f"Found failed run: {run_name}")
+    print(f"  Pipeline: {pipeline_name}")
+    print(f"  Status: {status}")
     if trace_id:
-        _print(f"  Trace ID: {trace_id}")
+        print(f"  Trace ID: {trace_id}")
     if run_url:
-        _print(f"  Run URL: {run_url}")
-    _print("")
+        print(f"  Run URL: {run_url}")
+    print("")
 
-    # Create a Grafana-style alert with tracer information using the factory
+    # Create alert from tracer run
     timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     raw_alert = create_alert_from_tracer_run(
         pipeline_name=pipeline_name,
@@ -91,10 +81,10 @@ def run_demo():
         run_url=run_url,
     )
 
-    _print("Starting investigation pipeline...")
-    _print("")
+    print("Starting investigation pipeline...")
+    print("")
 
-    # Parse the Grafana alert to extract structured details
+    # Parse alert to extract structured details
     from app.ingest import parse_grafana_payload  # noqa: E402
 
     try:
@@ -105,22 +95,24 @@ def run_demo():
     except Exception:
         # Fallback values if parsing fails
         alert_name = f"Pipeline failure: {pipeline_name}"
-        pipeline_name = pipeline_name
         severity = "critical"
 
-    # Run the pipeline via main._run() which handles Slack delivery automatically
-    result = _run(
-        alert_name=alert_name,
-        pipeline_name=pipeline_name,
-        severity=severity,
-        raw_alert=raw_alert,
-    )
+    # Run investigation via main._run() which handles Slack delivery automatically
+    @traceable(name="Superfluid Investigation")
+    def run_investigation():
+        return _run(
+            alert_name=alert_name,
+            pipeline_name=pipeline_name,
+            severity=severity,
+            raw_alert=raw_alert,
+        )
 
-    _print(f"Slack delivery attempted. TRACER_API_URL={os.getenv('TRACER_API_URL')!r}")
-    _print(f"Slack message length: {len(result.get('slack_message', '') or '')}")
+    result = run_investigation()
+    print(f"Slack delivery attempted. TRACER_API_URL={os.getenv('TRACER_API_URL')!r}")
+    print(f"Slack message length: {len(result.get('slack_message', '') or '')}")
 
-    return result
+    return 0
 
 
 if __name__ == "__main__":
-    run_demo()
+    sys.exit(main())
