@@ -23,13 +23,14 @@ def send_slack_report(slack_message: str) -> None:
     print("[slack] send_slack_report called", file=sys.stderr)
 
     base_url = os.getenv("TRACER_API_URL")
+    slack_channel = os.getenv("SLACK_CHANNEL")
 
     if not base_url:
         debug_print("Slack delivery skipped: TRACER_API_URL not set.")
         return
 
     api_url = f"{base_url.rstrip('/')}/api/slack"
-    payload = {"channel": 'tracer-rca-report-alerts', "text": slack_message}
+    payload = {"channel": slack_channel, "text": slack_message}
 
     try:
         response = httpx.post(api_url, json=payload, timeout=10.0, follow_redirects=True)
