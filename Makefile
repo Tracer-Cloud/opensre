@@ -15,6 +15,10 @@ install:
 demo:
 	$(PYTHON) -m tests.run_demo
 
+# Run CloudWatch minimal demo (requires LangGraph Studio running)
+cloudwatch-demo:
+	.venv/bin/python -m tests.cloudwatch_demo.run_cloudwatch_demo
+
 # Run the generic CLI (reads from stdin or --input)
 run:
 	$(PYTHON) -m app.main
@@ -54,13 +58,14 @@ check: lint typecheck test
 # Show help
 help:
 	@echo "Available commands:"
-	@echo "  make install    - Install dependencies"
-	@echo "  make demo       - Run the demo"
-	@echo "  make test       - Run tests"
-	@echo "  make test-cov   - Run tests with coverage"
-	@echo "  make clean      - Clean up cache files"
-	@echo "  make lint       - Lint code with ruff"
-	@echo "  make format     - Format code with ruff"
-	@echo "  make typecheck  - Type check with mypy"
-	@echo "  make check      - Run all checks"
+	@echo "  make install         - Install dependencies"
+	@echo "  make demo            - Run the demo"
+	@echo "  make cloudwatch-demo - Run CloudWatch minimal demo (requires langgraph dev)"
+	@echo "  make test            - Run tests"
+	@echo "  make test-cov        - Run tests with coverage"
+	@echo "  make clean           - Clean up cache files"
+	@echo "  make lint            - Lint code with ruff"
+	@echo "  make format          - Format code with ruff"
+	@echo "  make typecheck       - Type check with mypy"
+	@echo "  make check           - Run all checks"
 

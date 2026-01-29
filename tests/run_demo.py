@@ -31,6 +31,7 @@ from app.agent.nodes.build_context.context_building import (  # noqa: E402
 from app.agent.output import reset_tracker  # noqa: E402
 from app.agent.utils.slack_delivery import send_slack_report  # noqa: E402
 from tests.alert_factory import create_alert_from_tracer_run  # noqa: E402
+from tests.utils.alert_factory import create_alert_from_tracer_run  # noqa: E402
 
 
 def _print(message: str) -> None:

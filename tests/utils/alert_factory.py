@@ -1,3 +1,14 @@
+"""
+Alert factory for creating standardized alert payloads.
+
+Provides builders/factories for creating alerts from various sources:
+- Tracer pipeline runs (Grafana format)
+- CloudWatch log events (simple format)
+
+All factories are pure functions - same inputs produce same outputs.
+"""
+
+import uuid
 from typing import Any
 
 
@@ -77,6 +88,7 @@ def create_alert_from_tracer_run(
     run_url: str | None = None,
     external_url: str = "",
 ) -> dict[str, Any]:
+    """Create Grafana-style alert from Tracer pipeline run (pure function)."""
     return (
         AlertBuilder(external_url=external_url)
         .from_tracer_run(
@@ -89,3 +101,59 @@ def create_alert_from_tracer_run(
         )
         .build()
     )
+
+
+def create_alert(
+    pipeline_name: str,
+    run_name: str,
+    status: str,
+    timestamp: str,
+    annotations: dict[str, Any] | None = None,
+    trace_id: str | None = None,
+    run_url: str | None = None,
+    external_url: str = "",
+    alert_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Create standardized Grafana-style alert (pure function).
+
+    Works for all sources: Tracer, CloudWatch, S3, etc.
+    Source-specific metadata goes into annotations (generic).
+
+    Args:
+        pipeline_name: Pipeline name
+        run_name: Run name/identifier
+        status: Status (e.g., "failed")
+        timestamp: ISO timestamp
+        annotations: Optional custom metadata (CloudWatch logs, S3 paths, etc.)
+        trace_id: Optional trace ID
+        run_url: Optional run URL
+        external_url: Optional external URL
+        alert_id: Optional alert ID (generated if not provided)
+
+    Returns:
+        Grafana-style alert payload with custom annotations and alert_id
+    """
+    generated_alert_id = alert_id or str(uuid.uuid4())
+
+    alert = (
+        AlertBuilder(external_url=external_url)
+        .from_tracer_run(
+            pipeline_name=pipeline_name,
+            run_name=run_name,
+            status=status,
+            timestamp=timestamp,
+            trace_id=trace_id,
+            run_url=run_url,
+        )
+        .build()
+    )
+
+    alert["alert_id"] = generated_alert_id
+
+    if annotations:
+        if "commonAnnotations" not in alert:
+            alert["commonAnnotations"] = {}
+        alert["commonAnnotations"].update(annotations)
+
+    return alert

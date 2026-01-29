@@ -44,6 +44,9 @@ class ReportContext(TypedDict, total=False):
     tracer_failed_tasks: int
     batch_failure_reason: str | None
     batch_failed_jobs: int
+    cloudwatch_log_group: str | None
+    cloudwatch_log_stream: str | None
+    cloudwatch_logs_url: str | None
 
 
 def _build_report_context(state: dict[str, Any]) -> ReportContext:
@@ -53,6 +56,7 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
     web_run = context.get("tracer_web_run", {}) or {}
     batch = evidence.get("batch_jobs", {}) or {}
     s3 = evidence.get("s3", {}) or {}
+    raw_alert = state.get("raw_alert", {}) or {}
 
     validated_claims = state.get("validated_claims", [])
     non_validated_claims = state.get("non_validated_claims", [])
@@ -63,6 +67,15 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
         for c in validated_claims
         if c.get("claim", "").strip() and not c.get("claim", "").strip().startswith("NON_")
     ]
+
+    # Extract CloudWatch info from alert
+    cloudwatch_url = None
+    cloudwatch_group = None
+    cloudwatch_stream = None
+    if isinstance(raw_alert, dict):
+        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
+        cloudwatch_group = raw_alert.get("cloudwatch_log_group")
+        cloudwatch_stream = raw_alert.get("cloudwatch_log_stream")
 
     return {
         "pipeline_name": state.get("pipeline_name", "unknown"),
@@ -83,12 +96,38 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
         "tracer_failed_tasks": len(evidence.get("failed_jobs", [])),
         "batch_failure_reason": batch.get("failure_reason"),
         "batch_failed_jobs": batch.get("failed_jobs", 0),
+        "cloudwatch_log_group": cloudwatch_group,
+        "cloudwatch_log_stream": cloudwatch_stream,
+        "cloudwatch_logs_url": cloudwatch_url,
     }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Report Formatting
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def _render_cloudwatch_link(ctx: ReportContext) -> str:
+    """Render CloudWatch logs link if available in alert."""
+    cw_url = ctx.get("cloudwatch_logs_url")
+    cw_group = ctx.get("cloudwatch_log_group")
+    cw_stream = ctx.get("cloudwatch_log_stream")
+
+    if cw_url:
+        return f"\n*CloudWatch Logs:*\n{cw_url}\n"
+    elif cw_group and cw_stream:
+        # Build URL if not provided (default to us-east-1)
+        region = "us-east-1"
+        encoded_group = cw_group.replace("/", "$252F")
+        encoded_stream = cw_stream.replace("/", "$252F")
+        url = (
+            f"https://{region}.console.aws.amazon.com/cloudwatch/home"
+            f"?region={region}#logsV2:log-groups/log-group/{encoded_group}"
+            f"/log-events/{encoded_stream}"
+        )
+        return f"\n*CloudWatch Logs:*\n* Log Group: {cw_group}\n* Log Stream: {cw_stream}\n* View: {url}\n"
+
+    return ""
 
 
 def _format_slack_message(ctx: ReportContext) -> str:
@@ -162,6 +201,7 @@ Analyzed by: pipeline-agent
 
 *View Investigation:*
 {tracer_link}
+{_render_cloudwatch_link(ctx)}
 
 *Recommended Actions*
 1. Review failed job in Tracer dashboard

@@ -15,10 +15,6 @@ from dataclasses import dataclass, field
 from rich.console import Console
 from rich.panel import Panel
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Output Format Detection
-# ─────────────────────────────────────────────────────────────────────────────
-
 
 def get_output_format() -> str:
     """Auto-detect output format based on environment."""
@@ -133,21 +129,27 @@ def reset_tracker() -> ProgressTracker:
     _tracker = ProgressTracker()
     return _tracker
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Display Functions
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-def render_investigation_header(alert_name: str, pipeline_name: str, severity: str) -> None:
+def render_investigation_header(
+    alert_name: str,
+    pipeline_name: str,
+    severity: str,
+    alert_id: str | None = None
+) -> None:
     """Render the investigation start header."""
     fmt = get_output_format()
+
+    alert_id_line = f"Alert ID: [dim]{alert_id}[/]\n" if alert_id else ""
+    alert_id_plain = f"Alert ID: {alert_id}\n" if alert_id else ""
 
     if fmt == "rich":
         severity_color = "red" if severity == "critical" else "yellow"
         Console().print(
             Panel(
                 f"Investigation Started\n\n"
+                f"{alert_id_line}"
                 f"Alert: [bold]{alert_name}[/]\n"
                 f"Pipeline: [cyan]{pipeline_name}[/]\n"
                 f"Severity: [{severity_color}]{severity}[/]",
@@ -159,6 +161,7 @@ def render_investigation_header(alert_name: str, pipeline_name: str, severity: s
         print("\n" + "-" * 40)
         print("PIPELINE INVESTIGATION")
         print("-" * 40)
+        print(alert_id_plain, end="")
         print(f"Alert: {alert_name}")
         print(f"Pipeline: {pipeline_name}")
         print(f"Severity: {severity}")
@@ -168,8 +171,6 @@ def render_investigation_header(alert_name: str, pipeline_name: str, severity: s
 # ─────────────────────────────────────────────────────────────────────────────
 # Debug Output
 # ─────────────────────────────────────────────────────────────────────────────
-
-
 def is_verbose() -> bool:
     return os.getenv("TRACER_VERBOSE", "").lower() in ("1", "true", "yes")
 

@@ -123,89 +123,91 @@ def main(state: InvestigationState) -> dict:
 
 
 def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
-    """Build a strict, evidence-grounded prompt from evidence."""
+    """Build an evidence-based prompt for root cause analysis."""
     problem = state.get("problem_md", "")
     hypotheses = state.get("hypotheses", [])
 
+    # Allowed evidence sources the model can reference (keeps grounding consistent)
+    allowed_sources = ["aws_batch_jobs", "tracer_tools", "logs", "host_metrics"]
+
+    # Extract key investigation findings from evidence
     failed_jobs = evidence.get("failed_jobs", [])
     failed_tools = evidence.get("failed_tools", [])
-    error_logs = evidence.get("error_logs", [])[:10]
+    error_logs = evidence.get("error_logs", [])[:10]  # Limit to 10 most recent
     host_metrics = evidence.get("host_metrics", {})
 
-    # Keep the evidence sources consistent with your existing extractor
-    allowed_sources = ["logs", "aws_batch_jobs", "tracer_tools", "host_metrics"]
+    prompt = f"""You are an experienced SRE writing a short RCA (root cause analysis) for a data pipeline incident.
 
-    prompt = f"""You are a conservative incident analyst. Accuracy is more important than completeness.
+Goal: Be helpful and accurate. Prefer evidence-backed explanations over speculation.
+If the exact root cause cannot be proven, provide the most likely explanation based on observed evidence,
+and clearly state what is unknown.
 
-STRICT DEFINITIONS:
-- A claim is VALIDATED only if it is directly supported by evidence in the EVIDENCE section.
-- Every VALIDATED claim MUST include an evidence_sources list with one or more items from: {", ".join(allowed_sources)}.
-- If you cannot name at least one allowed evidence source for a claim, it MUST be UNVALIDATED.
-- One sentence per claim. Do not mix facts and hypotheses in the same sentence.
-- Do not invent evidence. Do not mention systems/data that are not present below.
+DEFINITIONS:
+- VALIDATED_CLAIMS: Directly supported by the evidence shown below (observed facts).
+- NON_VALIDATED_CLAIMS: Plausible hypotheses or contributing factors that are NOT directly proven by the evidence.
 
-INCIDENT
+RULES:
+- Do NOT introduce external domain knowledge that is not visible in the evidence (e.g., what a tool usually does).
+- VALIDATED_CLAIMS should be factual and specific (no "maybe", "likely", "appears").
+- NON_VALIDATED_CLAIMS may include "likely/maybe", but must stay consistent with evidence.
+- Keep each claim to one sentence.
+- When possible, mention which evidence source supports a validated claim using one of:
+  {", ".join(allowed_sources)}.
+
 PROBLEM:
 {problem}
 
-HYPOTHESES (may be wrong or incomplete):
+HYPOTHESES TO CONSIDER (may be incomplete):
 {chr(10).join(f"- {h}" for h in hypotheses[:5]) if hypotheses else "- None"}
 
-EVIDENCE (summarized):
+EVIDENCE:
 """
 
     if failed_jobs:
-        prompt += f"\naws_batch_jobs (failed_jobs={len(failed_jobs)}):\n"
+        prompt += f"\nAWS Batch Failed Jobs ({len(failed_jobs)}):\n"
         for job in failed_jobs[:5]:
             prompt += f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
     else:
-        prompt += "\naws_batch_jobs: none\n"
+        prompt += "\nAWS Batch Failed Jobs: None\n"
 
     if failed_tools:
-        prompt += f"\ntracer_tools (failed_tools={len(failed_tools)}):\n"
+        prompt += f"\nFailed Tools ({len(failed_tools)}):\n"
         for tool in failed_tools[:5]:
             prompt += f"- {tool.get('tool_name', 'Unknown')}: exit_code={tool.get('exit_code')}\n"
     else:
-        prompt += "\ntracer_tools: none\n"
+        prompt += "\nFailed Tools: None\n"
 
     if error_logs:
-        prompt += f"\nlogs (error_logs={len(error_logs)}):\n"
+        prompt += f"\nError Logs ({len(error_logs)}):\n"
         for log in error_logs[:5]:
             prompt += f"- {log.get('message', '')[:200]}\n"
     else:
-        prompt += "\nlogs: none\n"
+        prompt += "\nError Logs: None\n"
 
     if host_metrics and host_metrics.get("data"):
-        prompt += "\nhost_metrics: available (CPU, memory, disk)\n"
+        prompt += "\nHost Metrics: Available (CPU, memory, disk)\n"
     else:
-        prompt += "\nhost_metrics: none\n"
+        prompt += "\nHost Metrics: None\n"
 
     prompt += f"""
-OUTPUT FORMAT (exactly):
+OUTPUT FORMAT (follow exactly):
+
 ROOT_CAUSE:
-- status: validated|unvalidated
-- statement: <one sentence>
-- evidence_sources: [{", ".join(allowed_sources)}] or [] if unvalidated
+<1–2 sentences. If not proven, say "Most likely ..." and state what's missing. Do not say only "Unable to determine".>
 
-VALIDATED_CLAIMS (max 4):
-- claim: <one sentence>
-  evidence_sources: [{", ".join(allowed_sources)}]
-  evidence_summary: <what was observed, no speculation>
+VALIDATED_CLAIMS:
+- <one factual claim> [evidence: <one of {", ".join(allowed_sources)}>]
+- <another factual claim> [evidence: <one of {", ".join(allowed_sources)}>]
 
-UNVALIDATED_CLAIMS (max 4):
-- claim: <one sentence>
-  why_unvalidated: <what evidence is missing>
-  how_to_validate: <single best next step to validate>
+NON_VALIDATED_CLAIMS:
+- <one plausible hypothesis consistent with evidence>
+- <another plausible hypothesis>
+(If you include hypotheses, focus on explaining the failure mechanism and what data is missing to confirm it.)
 
 CONFIDENCE: <0-100 integer>
-
-FINAL CHECK:
-- Every validated claim has evidence_sources not empty.
-- Unvalidated claims have why_unvalidated and how_to_validate.
-- If there are zero validated claims, ROOT_CAUSE.status must be unvalidated.
 """
-    return prompt
 
+    return prompt
 
 
 def _simple_validate_claim(claim: str, evidence: dict) -> bool:
