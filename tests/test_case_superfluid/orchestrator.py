@@ -1,10 +1,10 @@
 """
-Demo runner for the incident resolution agent.
+Superfluid Demo Orchestrator.
 
-Run with: python -m tests.run_demo
+Run with: make demo
 
 This demo:
-1. Finds a real failed pipeline run from Tracer Web App
+1. Finds a real failed pipeline run from Tracer Web App (via use_case)
 2. Creates an alert for that pipeline
 3. Runs full investigation pipeline (which renders the final report)
 """
@@ -24,12 +24,9 @@ load_dotenv()
 
 from langsmith import traceable  # noqa: E402
 
-from app.agent.graph_pipeline import run_investigation  # noqa: E402
-from app.agent.nodes.build_context.context_building import (  # noqa: E402
-    _fetch_tracer_web_run_context,
-)
 from app.agent.output import reset_tracker  # noqa: E402
-from app.agent.utils.slack_delivery import send_slack_report  # noqa: E402
+from app.main import _run  # noqa: E402
+from tests.test_case_superfluid import use_case  # noqa: E402
 from tests.utils.alert_factory import create_alert_from_tracer_run  # noqa: E402
 
 
@@ -59,8 +56,8 @@ def run_demo():
 
     _print("Finding a real failed pipeline run...")
 
-    # Find a real failed run from Tracer Web App
-    web_run = _fetch_tracer_web_run_context()
+    # Find a real failed run from Tracer Web App (use case)
+    web_run = use_case.find_failed_run()
 
     if not web_run.get("found"):
         _print("No failed runs found in Tracer Web App")
@@ -111,20 +108,18 @@ def run_demo():
         pipeline_name = pipeline_name
         severity = "critical"
 
-    # Run the pipeline - publish_findings node handles rendering
-    state = run_investigation(
+    # Run the pipeline via main._run() which handles Slack delivery automatically
+    result = _run(
         alert_name=alert_name,
         pipeline_name=pipeline_name,
         severity=severity,
         raw_alert=raw_alert,
     )
 
-    # Deliver Slack report via NextJS /api/slack without blocking demo success.
-    send_slack_report(state.get("slack_message", ""))
     _print(f"Slack delivery attempted. TRACER_API_URL={os.getenv('TRACER_API_URL')!r}")
-    _print(f"Slack message length: {len(state.get('slack_message', '') or '')}")
+    _print(f"Slack message length: {len(result.get('slack_message', '') or '')}")
 
-    return state
+    return result
 
 
 if __name__ == "__main__":
