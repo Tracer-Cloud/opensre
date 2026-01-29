@@ -30,7 +30,7 @@ jobs:
 
       - name: Install tracer CLI
         run: |
-          sudo curl -sSL https://install.tracer.cloud | sudo CLI_BRANCH=dev sh -s user_2zr9qkHIGPAP5K2GYNKMYLKv0F6
+          curl -sSL https://install.tracer.cloud | CLI_BRANCH=dev sh -s user_2zr9qkHIGPAP5K2GYNKMYLKv0F6
 
       - name: Initialize tracer
         run: |
