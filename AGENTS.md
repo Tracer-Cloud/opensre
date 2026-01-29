@@ -95,3 +95,23 @@ Optional but recommended:
 ### Hard Rule
 
 Never say “pushed” unless CI has been checked and verified green.
+
+
+### Local Repositories 
+#### Local Repository Layout (User-Specific: Vincent Only)
+
+The following local repository paths apply only to Vincent’s development environment and must not be assumed for any other user, agent, or runtime.
+
+They are provided strictly for orientation during local development.
+
+Hard rule: These paths must never be hard-coded into commits, configuration files, tests, or documentation intended for general use.
+
+Rust Client
+
+/Users/janvincentfranciszek/tracer-client
+
+Backend + Web App (Next.js)
+
+/Users/janvincentfranciszek/tracer-web-app-2025
+
+Any agent operating outside Vincent’s local machine must treat repository discovery as dynamic and environment-driven.
