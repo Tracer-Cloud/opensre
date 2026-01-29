@@ -11,9 +11,9 @@ load_dotenv()
 from langsmith import traceable  # noqa: E402
 
 from app.agent.graph_pipeline import run_investigation  # noqa: E402
+from app.agent.utils.slack_delivery import send_slack_report  # noqa: E402
 from app.cli import parse_args, write_json  # noqa: E402
 from app.ingest import load_request_from_json  # noqa: E402
-from app.agent.utils.slack_delivery import send_slack_report  # noqa: E402
 
 
 # Todo: this is confusing because we now both have a node called investigation and a traceable called investigation
