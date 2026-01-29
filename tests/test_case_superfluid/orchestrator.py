@@ -107,9 +107,7 @@ def main() -> int:
             raw_alert=raw_alert,
         )
 
-    result = run_investigation()
-    print(f"Slack delivery attempted. TRACER_API_URL={os.getenv('TRACER_API_URL')!r}")
-    print(f"Slack message length: {len(result.get('slack_message', '') or '')}")
+    run_investigation()
 
     return 0
 

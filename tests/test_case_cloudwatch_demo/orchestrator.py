@@ -80,8 +80,6 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
             )
 
         result = run_with_alert_id()
-        print(f"Slack delivery attempted. TRACER_API_URL={os.getenv('TRACER_API_URL')!r}")
-        print(f"Slack message length: {len(result.get('slack_message', '') or '')}")
 
         print(f"\n✓ CloudWatch logs: {cloudwatch_context['cloudwatch_url']}")
         return 0
