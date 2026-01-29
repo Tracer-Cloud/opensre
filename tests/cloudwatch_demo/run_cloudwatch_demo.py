@@ -59,24 +59,15 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
             },
         )
 
-        try:
-            response = fire_alert_to_langgraph(
-                alert_name=f"Pipeline failure: {pipeline_name}",
-                pipeline_name=pipeline_name,
-                severity="critical",
-                raw_alert=raw_alert,
-                config_metadata={
-                    "cloudwatch_log_group": cloudwatch_context["log_group"],
-                    "cloudwatch_logs_url": cloudwatch_context["cloudwatch_url"],
-                },
-            )
+        from app.agent.graph_pipeline import run_investigation
 
-            stream_investigation_results(response)
-
-        except (requests.exceptions.ConnectionError, requests.exceptions.HTTPError) as err:
-            print(f"⚠ Investigation unavailable: {err}")
-            print("  Start local: langgraph dev")
-            print("  Or check remote endpoint configuration")
+        print("Running investigation...")
+        run_investigation(
+            alert_name=f"Pipeline failure: {pipeline_name}",
+            pipeline_name=pipeline_name,
+            severity="critical",
+            raw_alert=raw_alert,
+        )
 
         print(f"\n✓ CloudWatch logs: {cloudwatch_context['cloudwatch_url']}")
         return 0
