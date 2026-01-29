@@ -11,14 +11,9 @@ from datetime import UTC, datetime
 
 from langsmith import traceable
 
-from app.ingest import parse_grafana_payload
 from app.main import _run
 from tests.test_case_s3_failed_python import use_case
 from tests.utils.alert_factory import create_alert
-from tests.utils.langgraph_client import (
-    fire_alert_to_langgraph,
-    stream_investigation_results,
-)
 
 LOG_FILE = "production.log"
 MAX_LOG_CHARS = 2000
@@ -96,15 +91,6 @@ def main() -> int:
 
     print("Running investigation...")
 
-    try:
-        request = parse_grafana_payload(raw_alert)
-        alert_name = request.alert_name
-        pipeline_name = request.pipeline_name
-        severity = request.severity
-    except Exception:
-        alert_name = f"Pipeline failure: {pipeline_name}"
-        severity = "critical"
-
     @traceable(
         name=f"S3 Failed Python Investigation - {raw_alert['alert_id'][:8]}",
         metadata={
@@ -115,42 +101,16 @@ def main() -> int:
         },
     )
     def run_with_alert_id():
-        try:
-            response = fire_alert_to_langgraph(
-                alert_name=alert_name,
-                pipeline_name=pipeline_name,
-                severity=severity,
-                raw_alert=raw_alert,
-                config_metadata={
-                    "alert_id": raw_alert["alert_id"],
-                    "pipeline_name": pipeline_name,
-                    "run_id": run_id,
-                    "log_file": LOG_FILE,
-                },
-            )
-            stream_investigation_results(response)
-            # LangGraph endpoint handles Slack delivery remotely, but ensure local fallback
-            # Run local investigation to get slack_message and ensure delivery
-            local_result = _run(
-                alert_name=alert_name,
-                pipeline_name=pipeline_name,
-                severity=severity,
-                raw_alert=raw_alert,
-            )
-            return {"status": response.status_code, **local_result}
-        except Exception as exc:
-            print(f"LangGraph endpoint unavailable, running locally: {exc}")
-            return _run(
-                alert_name=alert_name,
-                pipeline_name=pipeline_name,
-                severity=severity,
-                raw_alert=raw_alert,
-            )
+        return _run(
+            alert_name=f"Pipeline failure: {pipeline_name}",
+            pipeline_name=pipeline_name,
+            severity="critical",
+            raw_alert=raw_alert,
+        )
 
-    investigation_result = run_with_alert_id()
+    result = run_with_alert_id()
+
     print(f"\n✓ Pipeline failed. Logs: {LOG_FILE}")
-    if investigation_result.get("slack_message"):
-        print(f"✓ Slack message generated ({len(investigation_result['slack_message'])} chars)")
     return 0
 
 
