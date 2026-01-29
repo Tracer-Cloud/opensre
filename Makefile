@@ -13,11 +13,11 @@ install:
 
 # Run the Superfluid test case demo
 demo:
-	.venv/bin/python -m tests.test_case_superfluid.test_case_superfluid
+	.venv/bin/python -m tests.test_case_superfluid.orchestrator
 
 # Run CloudWatch minimal demo (requires LangGraph Studio running)
 cloudwatch-demo:
-	.venv/bin/python -m tests.test_case_cloudwatch_demo.run_cloudwatch_demo
+	.venv/bin/python -m tests.test_case_cloudwatch_demo.orchestrator
 
 # Run the generic CLI (reads from stdin or --input)
 run:
