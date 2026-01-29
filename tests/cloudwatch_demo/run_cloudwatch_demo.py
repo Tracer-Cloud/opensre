@@ -19,6 +19,7 @@ from tests.utils.langgraph_client import (
     stream_investigation_results,
 )
 
+
 def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
     config = get_test_config()
     region = config["aws_region"]
@@ -56,18 +57,41 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
                 "cloudwatch_logs_url": cloudwatch_context["cloudwatch_url"],
                 "cloudwatch_region": region,
                 "error": cloudwatch_context["error_message"],
+                "context_sources": "cloudwatch",
             },
         )
 
         from app.agent.graph_pipeline import run_investigation
+        from langsmith import traceable
 
         print("Running investigation...")
-        run_investigation(
-            alert_name=f"Pipeline failure: {pipeline_name}",
-            pipeline_name=pipeline_name,
-            severity="critical",
-            raw_alert=raw_alert,
+        
+        from app.agent.state import make_initial_state
+        
+        @traceable(
+            name=f"CloudWatch Investigation - {raw_alert['alert_id'][:8]}",
+            metadata={
+                "alert_id": raw_alert["alert_id"],
+                "pipeline_name": pipeline_name,
+                "run_id": run_id,
+                "cloudwatch_log_group": cloudwatch_context["log_group"],
+            }
         )
+        def run_with_alert_id():
+            from app.agent.graph_pipeline import build_graph
+            
+            initial_state = make_initial_state(
+                alert_name=f"Pipeline failure: {pipeline_name}",
+                pipeline_name=pipeline_name,
+                severity="critical",
+                raw_alert=raw_alert,
+            )
+            initial_state["plan_sources"] = ["cloudwatch"]
+            
+            graph = build_graph()
+            return graph.invoke(initial_state)
+        
+        run_with_alert_id()
 
         print(f"\n✓ CloudWatch logs: {cloudwatch_context['cloudwatch_url']}")
         return 0

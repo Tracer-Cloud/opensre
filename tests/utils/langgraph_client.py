@@ -12,7 +12,6 @@ import requests
 LOCAL_ENDPOINT = "http://127.0.0.1:2024/runs/stream"
 REMOTE_ENDPOINT = "https://tracer-agent-2026-e09h3n0zulnlz1-lwyjk39e.us-central1.run.app/agent/runs/stream"
 
-
 def _select_endpoint() -> str:
     """Try local first, fall back to remote."""
     try:

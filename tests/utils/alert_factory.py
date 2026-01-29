@@ -8,6 +8,7 @@ Provides builders/factories for creating alerts from various sources:
 All factories are pure functions - same inputs produce same outputs.
 """
 
+import uuid
 from typing import Any
 
 
@@ -111,6 +112,7 @@ def create_alert(
     trace_id: str | None = None,
     run_url: str | None = None,
     external_url: str = "",
+    alert_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Create standardized Grafana-style alert (pure function).
@@ -127,10 +129,13 @@ def create_alert(
         trace_id: Optional trace ID
         run_url: Optional run URL
         external_url: Optional external URL
+        alert_id: Optional alert ID (generated if not provided)
 
     Returns:
-        Grafana-style alert payload with custom annotations
+        Grafana-style alert payload with custom annotations and alert_id
     """
+    generated_alert_id = alert_id or str(uuid.uuid4())
+
     alert = (
         AlertBuilder(external_url=external_url)
         .from_tracer_run(
@@ -143,6 +148,8 @@ def create_alert(
         )
         .build()
     )
+
+    alert["alert_id"] = generated_alert_id
 
     if annotations:
         if "commonAnnotations" not in alert:
