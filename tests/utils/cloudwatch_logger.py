@@ -21,17 +21,15 @@ def send_to_cloudwatch(
     region: str = "us-east-1",
 ) -> None:
     """Send log message to AWS CloudWatch Logs (stateless)."""
+    from contextlib import suppress
+
     client = boto3.client("logs", region_name=region)
 
-    try:
+    with suppress(client.exceptions.ResourceAlreadyExistsException):
         client.create_log_group(logGroupName=log_group)
-    except client.exceptions.ResourceAlreadyExistsException:
-        pass
 
-    try:
+    with suppress(client.exceptions.ResourceAlreadyExistsException):
         client.create_log_stream(logGroupName=log_group, logStreamName=log_stream)
-    except client.exceptions.ResourceAlreadyExistsException:
-        pass
 
     timestamp_ms = int(datetime.now(UTC).timestamp() * 1000)
     client.put_log_events(

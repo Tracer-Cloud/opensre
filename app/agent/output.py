@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from rich.console import Console
 from rich.panel import Panel
 
+
 def get_output_format() -> str:
     """Auto-detect output format based on environment."""
     if fmt := os.getenv("TRACER_OUTPUT_FORMAT"):
