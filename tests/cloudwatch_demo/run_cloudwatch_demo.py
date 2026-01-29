@@ -61,13 +61,14 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
             },
         )
 
-        from app.agent.graph_pipeline import run_investigation
         from langsmith import traceable
 
+        from app.agent.graph_pipeline import run_investigation
+
         print("Running investigation...")
-        
+
         from app.agent.state import make_initial_state
-        
+
         @traceable(
             name=f"CloudWatch Investigation - {raw_alert['alert_id'][:8]}",
             metadata={
@@ -79,7 +80,7 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
         )
         def run_with_alert_id():
             from app.agent.graph_pipeline import build_graph
-            
+
             initial_state = make_initial_state(
                 alert_name=f"Pipeline failure: {pipeline_name}",
                 pipeline_name=pipeline_name,
@@ -87,10 +88,10 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
                 raw_alert=raw_alert,
             )
             initial_state["plan_sources"] = ["cloudwatch"]
-            
+
             graph = build_graph()
             return graph.invoke(initial_state)
-        
+
         run_with_alert_id()
 
         print(f"\n✓ CloudWatch logs: {cloudwatch_context['cloudwatch_url']}")
