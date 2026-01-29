@@ -229,12 +229,23 @@ def _render_cloudwatch_link(ctx: ReportContext) -> str:
     return ""
 
 
-def _compact_json(data: Any, max_chars: int = 400) -> str:
-    """Render JSON with size cap for report output."""
-    payload = json.dumps(data, default=str, ensure_ascii=True)
-    if len(payload) > max_chars:
-        return payload[: max_chars - 3] + "..."
-    return payload
+def _format_json_payload(data: Any, max_chars: int = 400) -> str:
+    """Render JSON with a size cap for report output."""
+    pretty_payload = json.dumps(
+        data, default=str, ensure_ascii=True, indent=2, sort_keys=True
+    )
+    if len(pretty_payload) <= max_chars:
+        return pretty_payload
+
+    compact_payload = json.dumps(data, default=str, ensure_ascii=True)
+    if len(compact_payload) <= max_chars:
+        return compact_payload
+
+    return compact_payload[: max_chars - 3] + "..."
+
+
+def _format_json_block(payload: str) -> str:
+    return f"```json\n{payload}\n```"
 
 
 def _sample_evidence_payload(source: str, evidence: dict) -> Any | None:
@@ -307,20 +318,23 @@ def _format_cited_evidence_section(ctx: ReportContext) -> str:
         "evidence_analysis": "Evidence Summary",
     }
 
-    def format_source_citations(sources: list[str]) -> list[str]:
+    def format_source_citations(
+        sources: list[str], indent_prefix: str = ""
+    ) -> list[str]:
         source_citations: list[str] = []
         for source in sources:
             label = label_map.get(source, source.replace("_", " ").title())
             if source == "cloudwatch_logs":
                 cw_url = _get_cloudwatch_url(ctx)
                 if cw_url:
-                    source_citations.append(f"{label}: {cw_url}")
+                    source_citations.append(f"{indent_prefix}- {label}: {cw_url}")
                     continue
 
             payload = _sample_evidence_payload(source, evidence)
             if payload is None:
                 continue
-            source_citations.append(f"{label}: {_compact_json(payload)}")
+            source_citations.append(f"{indent_prefix}- {label}:")
+            source_citations.append(_format_json_block(_format_json_payload(payload)))
         return source_citations
 
     def shorten_claim(claim: str, max_chars: int = 120) -> str:
@@ -335,18 +349,20 @@ def _format_cited_evidence_section(ctx: ReportContext) -> str:
         if not claim:
             continue
         sources = claim_data.get("evidence_sources", [])
-        claim_citations = format_source_citations(sources)
+        claim_citations = format_source_citations(sources, indent_prefix="  ")
         if not claim_citations:
             continue
-        claim_lines.append(f"{idx}. Claim: \"{shorten_claim(claim)}\"")
-        claim_lines.extend([f"  - {citation}" for citation in claim_citations])
+        claim_block = [f"{idx}. Claim: \"{shorten_claim(claim)}\""]
+        claim_block.extend(claim_citations)
+        claim_lines.append("\n".join(claim_block))
 
     if claim_lines:
-        citations.append("\n".join(claim_lines))
+        citations.append("")
+        citations.append("\n\n".join(claim_lines))
     else:
         sources = _collect_cited_sources(ctx, evidence)
         fallback_citations = format_source_citations(sources)
-        citations.extend([f"- {citation}" for citation in fallback_citations])
+        citations.extend(fallback_citations)
 
     if not citations:
         return ""
