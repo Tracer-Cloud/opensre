@@ -13,6 +13,7 @@ from langsmith import traceable  # noqa: E402
 from app.agent.graph_pipeline import run_investigation  # noqa: E402
 from app.cli import parse_args, write_json  # noqa: E402
 from app.ingest import load_request_from_json  # noqa: E402
+from app.agent.utils.slack_delivery import send_slack_report  # noqa: E402
 
 
 # Todo: this is confusing because we now both have a node called investigation and a traceable called investigation
@@ -29,6 +30,8 @@ def _run(
         severity,
         raw_alert=raw_alert,
     )
+    # Trigger Slack delivery via NextJS /api/slack; failures should not break the investigation.
+    send_slack_report(state.get("slack_message", ""))
     return {
         "slack_message": state["slack_message"],
         "problem_md": state["problem_md"],
