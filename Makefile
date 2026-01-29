@@ -11,9 +11,9 @@ export PATH := $(USER_BIN):$(PATH)
 install:
 	$(PIP) install $(PIP_INSTALL_FLAGS) -r requirements.txt
 
-# Run the demo (loads .env for API keys via python-dotenv)
+# Run the Superfluid test case demo
 demo:
-	$(PYTHON) -m tests.run_demo
+	.venv/bin/python -m tests.test_case_superfluid.test_case_superfluid
 
 # Run CloudWatch minimal demo (requires LangGraph Studio running)
 cloudwatch-demo:
