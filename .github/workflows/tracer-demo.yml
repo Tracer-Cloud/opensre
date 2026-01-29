@@ -18,8 +18,8 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          sudo python -m pip install --upgrade pip
-          sudo pip install tracer_decorator
+          python -m pip install --upgrade pip
+          pip install tracer_decorator
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
