@@ -250,8 +250,8 @@ def _collect_cited_sources(ctx: ReportContext, evidence: dict) -> list[str]:
             if source not in sources:
                 sources.append(source)
 
-    cw_url = _get_cloudwatch_url(ctx)
-    if cw_url and "cloudwatch_logs" not in sources:
+    cw_available = bool(_get_cloudwatch_url(ctx) or evidence.get("cloudwatch_logs"))
+    if cw_available and "cloudwatch_logs" not in sources:
         sources.append("cloudwatch_logs")
 
     if evidence.get("error_logs") and "logs" not in sources:
