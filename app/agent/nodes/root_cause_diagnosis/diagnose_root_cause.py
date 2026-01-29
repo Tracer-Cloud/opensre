@@ -123,58 +123,89 @@ def main(state: InvestigationState) -> dict:
 
 
 def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
-    """Build a simple, focused prompt from evidence."""
+    """Build a strict, evidence-grounded prompt from evidence."""
     problem = state.get("problem_md", "")
     hypotheses = state.get("hypotheses", [])
 
-    # Extract key investigation findings from evidence
     failed_jobs = evidence.get("failed_jobs", [])
     failed_tools = evidence.get("failed_tools", [])
-    error_logs = evidence.get("error_logs", [])[:10]  # Limit to 10 most recent
+    error_logs = evidence.get("error_logs", [])[:10]
     host_metrics = evidence.get("host_metrics", {})
 
-    prompt = f"""Analyze the following incident and determine the root cause.
+    # Keep the evidence sources consistent with your existing extractor
+    allowed_sources = ["logs", "aws_batch_jobs", "tracer_tools", "host_metrics"]
 
+    prompt = f"""You are a conservative incident analyst. Accuracy is more important than completeness.
+
+STRICT DEFINITIONS:
+- A claim is VALIDATED only if it is directly supported by evidence in the EVIDENCE section.
+- Every VALIDATED claim MUST include an evidence_sources list with one or more items from: {", ".join(allowed_sources)}.
+- If you cannot name at least one allowed evidence source for a claim, it MUST be UNVALIDATED.
+- One sentence per claim. Do not mix facts and hypotheses in the same sentence.
+- Do not invent evidence. Do not mention systems/data that are not present below.
+
+INCIDENT
 PROBLEM:
 {problem}
 
-HYPOTHESES TO INVESTIGATE:
-{chr(10).join(f"- {h}" for h in hypotheses[:5])}
+HYPOTHESES (may be wrong or incomplete):
+{chr(10).join(f"- {h}" for h in hypotheses[:5]) if hypotheses else "- None"}
 
-EVIDENCE:
+EVIDENCE (summarized):
 """
+
     if failed_jobs:
-        prompt += f"\nFailed Jobs ({len(failed_jobs)}):\n"
+        prompt += f"\naws_batch_jobs (failed_jobs={len(failed_jobs)}):\n"
         for job in failed_jobs[:5]:
-            prompt += (
-                f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
-            )
+            prompt += f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
+    else:
+        prompt += "\naws_batch_jobs: none\n"
 
     if failed_tools:
-        prompt += f"\nFailed Tools ({len(failed_tools)}):\n"
+        prompt += f"\ntracer_tools (failed_tools={len(failed_tools)}):\n"
         for tool in failed_tools[:5]:
             prompt += f"- {tool.get('tool_name', 'Unknown')}: exit_code={tool.get('exit_code')}\n"
+    else:
+        prompt += "\ntracer_tools: none\n"
 
     if error_logs:
-        prompt += f"\nError Logs ({len(error_logs)}):\n"
+        prompt += f"\nlogs (error_logs={len(error_logs)}):\n"
         for log in error_logs[:5]:
             prompt += f"- {log.get('message', '')[:200]}\n"
+    else:
+        prompt += "\nlogs: none\n"
 
     if host_metrics and host_metrics.get("data"):
-        prompt += "\nHost Metrics: Available (CPU, memory, disk)\n"
+        prompt += "\nhost_metrics: available (CPU, memory, disk)\n"
+    else:
+        prompt += "\nhost_metrics: none\n"
 
-    prompt += """
-Based on this evidence, provide:
-ROOT_CAUSE: <clear explanation of the root cause>
-VALIDATED_CLAIMS:
-- <claim directly supported by evidence>
-- <another validated claim>
-NON_VALIDATED_CLAIMS:
-- <claim inferred but not directly supported>
-CONFIDENCE: <0-100%>
+    prompt += f"""
+OUTPUT FORMAT (exactly):
+ROOT_CAUSE:
+- status: validated|unvalidated
+- statement: <one sentence>
+- evidence_sources: [{", ".join(allowed_sources)}] or [] if unvalidated
+
+VALIDATED_CLAIMS (max 4):
+- claim: <one sentence>
+  evidence_sources: [{", ".join(allowed_sources)}]
+  evidence_summary: <what was observed, no speculation>
+
+UNVALIDATED_CLAIMS (max 4):
+- claim: <one sentence>
+  why_unvalidated: <what evidence is missing>
+  how_to_validate: <single best next step to validate>
+
+CONFIDENCE: <0-100 integer>
+
+FINAL CHECK:
+- Every validated claim has evidence_sources not empty.
+- Unvalidated claims have why_unvalidated and how_to_validate.
+- If there are zero validated claims, ROOT_CAUSE.status must be unvalidated.
 """
-
     return prompt
+
 
 
 def _simple_validate_claim(claim: str, evidence: dict) -> bool:
