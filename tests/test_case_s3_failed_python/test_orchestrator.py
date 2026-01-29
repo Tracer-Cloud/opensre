@@ -39,7 +39,7 @@ def _configure_logging() -> None:
 def _tail_log(log_file: str) -> str:
     if not os.path.exists(log_file):
         return ""
-    with open(log_file, "r", encoding="utf-8", errors="replace") as handle:
+    with open(log_file, encoding="utf-8", errors="replace") as handle:
         lines = handle.readlines()
     tail = "".join(lines[-MAX_LOG_LINES:])
     if len(tail) > MAX_LOG_CHARS:
