@@ -39,4 +39,4 @@ jobs:
       - name: Run Tracer Demo
         continue-on-error: true
         run: |
-          sudo python -m scripts.tracer_demo
+          sudo -E python -m scripts.tracer_demo
