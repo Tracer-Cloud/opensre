@@ -35,10 +35,13 @@ def _generate_output_problem_statement(state: InvestigationState) -> ProblemStat
     """Use the LLM to generate a structured problem statement."""
     prompt = _build_input_prompt(ProblemStatementInput.from_state(state))
     llm = get_llm()
-
     try:
         structured_llm = llm.with_structured_output(ProblemStatement)
-        problem = structured_llm.invoke(prompt)
+        chain = structured_llm.with_config(
+            run_name="LLM – Draft problem statement"
+        )
+
+        problem = chain.invoke(prompt)
     except Exception as err:
         raise RuntimeError("Failed to generate problem statement") from err
 

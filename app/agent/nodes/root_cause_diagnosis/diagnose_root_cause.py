@@ -47,7 +47,9 @@ def main(state: InvestigationState) -> dict:
     # Call LLM
     debug_print("Invoking LLM for root cause analysis...")
     llm = get_llm()
-    response = llm.invoke(prompt)
+    response = llm.with_config(
+        run_name="LLM – Analyze evidence and propose root cause"
+    ).invoke(prompt)
     response_text = response.content if hasattr(response, "content") else str(response)
 
     # Parse response

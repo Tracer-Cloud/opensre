@@ -89,7 +89,10 @@ def node_investigate(state: InvestigationState) -> dict:
     # Generate plan via LLM
     llm = get_llm()
     structured_llm = llm.with_structured_output(InvestigationPlan)
-    plan = structured_llm.invoke(prompt)
+
+    plan = structured_llm.with_config(
+        run_name="LLM – Plan evidence gathering"
+    ).invoke(prompt)
     debug_print(f"Plan: {plan.actions} | {plan.rationale[:100]}...")
 
     # 2. Execution phase

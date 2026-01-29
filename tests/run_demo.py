@@ -37,7 +37,7 @@ def _print(message: str) -> None:
     print(message)
 
 
-@traceable
+@traceable(name="Incident Investigation")
 def run_demo():
     """Run the LangGraph incident resolution demo with a real failed pipeline."""
     reset_tracker()
