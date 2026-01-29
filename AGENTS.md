@@ -37,7 +37,6 @@ app/agent/nodes/frame_problem/frame_problem_test.py
 - Focus on seperation of concerns, files should have one clear purpose 
 - Do not add too many print statements or comments because it clutters the code. Keep it tight and minimal the code should be explenatory and discriptive by itself. 
 
-
 **comments and print statements**
 - You are using too many comments and print statements keep max 3-4 prints per file max, unless for debugging. 
 - Use logging for debug info (configurable) but remove it after your debugging process

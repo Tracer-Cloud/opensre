@@ -16,6 +16,10 @@ def node_extract_alert(state: InvestigationState) -> dict:
     tracker.start("extract_alert", "Extracting alert details")
 
     alert_details = extract_alert_details(state)
+
+    raw_alert = state.get("raw_alert", {})
+    alert_id = raw_alert.get("alert_id") if isinstance(raw_alert, dict) else None
+
     debug_print(
         f"Alert: {alert_details.alert_name} | "
         f"Pipeline: {alert_details.pipeline_name} | "
@@ -26,6 +30,7 @@ def node_extract_alert(state: InvestigationState) -> dict:
         alert_details.alert_name,
         alert_details.pipeline_name,
         alert_details.severity,
+        alert_id=alert_id,
     )
 
     tracker.complete(
