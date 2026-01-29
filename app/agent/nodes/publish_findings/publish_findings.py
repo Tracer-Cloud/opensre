@@ -48,6 +48,7 @@ class ReportContext(TypedDict, total=False):
     cloudwatch_log_group: str | None
     cloudwatch_log_stream: str | None
     cloudwatch_logs_url: str | None
+    cloudwatch_region: str | None
     evidence: dict  # Raw evidence data for citation
 
 
@@ -74,10 +75,29 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
     cloudwatch_url = None
     cloudwatch_group = None
     cloudwatch_stream = None
+    cloudwatch_region = None
     if isinstance(raw_alert, dict):
-        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
-        cloudwatch_group = raw_alert.get("cloudwatch_log_group")
-        cloudwatch_stream = raw_alert.get("cloudwatch_log_stream")
+        annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
+        if not annotations and raw_alert.get("alerts"):
+            first_alert = raw_alert.get("alerts", [{}])[0]
+            if isinstance(first_alert, dict):
+                annotations = first_alert.get("annotations", {}) or {}
+
+        cloudwatch_url = (
+            raw_alert.get("cloudwatch_logs_url")
+            or raw_alert.get("cloudwatch_url")
+            or annotations.get("cloudwatch_logs_url")
+            or annotations.get("cloudwatch_url")
+        )
+        cloudwatch_group = (
+            raw_alert.get("cloudwatch_log_group") or annotations.get("cloudwatch_log_group")
+        )
+        cloudwatch_stream = (
+            raw_alert.get("cloudwatch_log_stream") or annotations.get("cloudwatch_log_stream")
+        )
+        cloudwatch_region = (
+            raw_alert.get("cloudwatch_region") or annotations.get("cloudwatch_region")
+        )
 
     return {
         "pipeline_name": state.get("pipeline_name", "unknown"),
@@ -101,6 +121,7 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
         "cloudwatch_log_group": cloudwatch_group,
         "cloudwatch_log_stream": cloudwatch_stream,
         "cloudwatch_logs_url": cloudwatch_url,
+        "cloudwatch_region": cloudwatch_region,
         "evidence": evidence,  # Include raw evidence for citation
     }
 
@@ -121,7 +142,7 @@ def _get_cloudwatch_url(ctx: ReportContext) -> str | None:
     if not cw_group:
         return None
 
-    region = "us-east-1"
+    region = ctx.get("cloudwatch_region") or "us-east-1"
     encoded_group = cw_group.replace("/", "$252F")
     if cw_stream:
         encoded_stream = cw_stream.replace("/", "$252F")
@@ -271,7 +292,6 @@ def _collect_cited_sources(ctx: ReportContext, evidence: dict) -> list[str]:
 
 def _format_cited_evidence_section(ctx: ReportContext) -> str:
     evidence = ctx.get("evidence", {})
-    sources = _collect_cited_sources(ctx, evidence)
     citations: list[str] = []
 
     tracer_link = TRACER_DEFAULT_INVESTIGATION_URL
@@ -287,18 +307,46 @@ def _format_cited_evidence_section(ctx: ReportContext) -> str:
         "evidence_analysis": "Evidence Summary",
     }
 
-    for source in sources:
-        label = label_map.get(source, source.replace("_", " ").title())
-        if source == "cloudwatch_logs":
-            cw_url = _get_cloudwatch_url(ctx)
-            if cw_url:
-                citations.append(f"- {label}: {cw_url}")
-                continue
+    def format_source_citations(sources: list[str]) -> list[str]:
+        source_citations: list[str] = []
+        for source in sources:
+            label = label_map.get(source, source.replace("_", " ").title())
+            if source == "cloudwatch_logs":
+                cw_url = _get_cloudwatch_url(ctx)
+                if cw_url:
+                    source_citations.append(f"{label}: {cw_url}")
+                    continue
 
-        payload = _sample_evidence_payload(source, evidence)
-        if payload is None:
+            payload = _sample_evidence_payload(source, evidence)
+            if payload is None:
+                continue
+            source_citations.append(f"{label}: {_compact_json(payload)}")
+        return source_citations
+
+    def shorten_claim(claim: str, max_chars: int = 120) -> str:
+        cleaned = " ".join(claim.split())
+        if len(cleaned) <= max_chars:
+            return cleaned
+        return cleaned[: max_chars - 3] + "..."
+
+    claim_lines: list[str] = []
+    for idx, claim_data in enumerate(ctx.get("validated_claims", []), 1):
+        claim = claim_data.get("claim", "").strip()
+        if not claim:
             continue
-        citations.append(f"- {label}: {_compact_json(payload)}")
+        sources = claim_data.get("evidence_sources", [])
+        claim_citations = format_source_citations(sources)
+        if not claim_citations:
+            continue
+        claim_lines.append(f"{idx}. Claim: \"{shorten_claim(claim)}\"")
+        claim_lines.extend([f"  - {citation}" for citation in claim_citations])
+
+    if claim_lines:
+        citations.append("\n".join(claim_lines))
+    else:
+        sources = _collect_cited_sources(ctx, evidence)
+        fallback_citations = format_source_citations(sources)
+        citations.extend([f"- {citation}" for citation in fallback_citations])
 
     if not citations:
         return ""
