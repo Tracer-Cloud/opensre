@@ -39,6 +39,11 @@ def merge_evidence(
         elif action_name == "get_host_metrics":
             evidence["host_metrics"] = data.get("metrics", {})
 
+        elif action_name == "get_cloudwatch_logs":
+            evidence["cloudwatch_logs"] = data.get("error_logs", [])
+            evidence["cloudwatch_event_count"] = data.get("event_count", 0)
+            evidence["cloudwatch_latest_error"] = data.get("latest_error")
+
     return evidence
 
 
@@ -86,5 +91,7 @@ def build_evidence_summary(execution_results: dict) -> str:
                 summary_parts.append(f"tools:{len(data['failed_tools'])}")
             elif action_name == "get_error_logs" and data.get("logs"):
                 summary_parts.append(f"logs:{len(data['logs'])}")
+            elif action_name == "get_cloudwatch_logs" and data.get("error_logs"):
+                summary_parts.append(f"cloudwatch:{len(data['error_logs'])} events")
 
     return ", ".join(summary_parts) if summary_parts else "No new evidence"

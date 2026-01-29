@@ -5,6 +5,21 @@ from app.agent.tools.tool_actions.investigation_actions import get_available_act
 from app.agent.utils import get_executed_sources
 
 
+def _extract_cloudwatch_hint(state: InvestigationState) -> str:
+    """Extract CloudWatch log availability hint from alert."""
+    raw_alert = state.get("raw_alert", {})
+    if isinstance(raw_alert, dict):
+        annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
+        if annotations and annotations.get("cloudwatch_log_group"):
+            return f"""
+CloudWatch Logs Available:
+- Log Group: {annotations.get('cloudwatch_log_group')}
+- Log Stream: {annotations.get('cloudwatch_log_stream')}
+- Use get_cloudwatch_logs to fetch error logs and tracebacks
+"""
+    return ""
+
+
 def build_investigation_prompt(
     state: InvestigationState, available_actions: list | None = None
 ) -> str:
@@ -39,11 +54,13 @@ def build_investigation_prompt(
         _format_action_metadata(action) for action in available_actions_filtered
     )
 
+    cloudwatch_hint = _extract_cloudwatch_hint(state)
+
     prompt = f"""You are investigating a data pipeline incident.
 
 Problem Context:
 {problem_context}
-
+{cloudwatch_hint}
 Available Investigation Actions:
 {actions_description if actions_description else "No actions available"}
 
@@ -53,6 +70,7 @@ Recommendations from previous analysis:
 {chr(10).join(f"- {r}" for r in recommendations) if recommendations else "None"}
 
 Task: Select the most relevant actions to execute now based on the problem context.
+IMPORTANT: If CloudWatch logs are available above, you MUST use get_cloudwatch_logs to retrieve error logs.
 Consider what information would help diagnose the root cause.
 """
     return prompt
