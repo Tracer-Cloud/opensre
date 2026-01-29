@@ -37,4 +37,4 @@ jobs:
       - name: Run Tracer Demo
         continue-on-error: true
         run: |
-          python -m scripts.tracer_demo
+          python -m tests.test_case_s3_failed_python.orchestrator
