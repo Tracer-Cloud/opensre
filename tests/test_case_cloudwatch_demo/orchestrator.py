@@ -9,16 +9,10 @@ import sys
 import traceback
 from datetime import UTC, datetime
 
-import requests
-
 from tests.conftest import get_test_config
 from tests.test_case_cloudwatch_demo import use_case
 from tests.utils.alert_factory import create_alert
 from tests.utils.cloudwatch_logger import log_error_to_cloudwatch
-from tests.utils.langgraph_client import (
-    fire_alert_to_langgraph,
-    stream_investigation_results,
-)
 
 
 def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
