@@ -11,11 +11,15 @@ export PATH := $(USER_BIN):$(PATH)
 install:
 	$(PIP) install $(PIP_INSTALL_FLAGS) -r requirements.txt
 
-# Run the Superfluid test case demo
+# Run CloudWatch demo (default demo)
 demo:
+	.venv/bin/python -m tests.test_case_cloudwatch_demo.orchestrator
+
+# Run Superfluid test case demo
+superfluid-demo:
 	.venv/bin/python -m tests.test_case_superfluid.orchestrator
 
-# Run CloudWatch minimal demo (requires LangGraph Studio running)
+# Run CloudWatch minimal demo (alias for demo)
 cloudwatch-demo:
 	.venv/bin/python -m tests.test_case_cloudwatch_demo.orchestrator
 
@@ -59,8 +63,9 @@ check: lint typecheck test
 help:
 	@echo "Available commands:"
 	@echo "  make install         - Install dependencies"
-	@echo "  make demo            - Run the demo"
-	@echo "  make cloudwatch-demo - Run CloudWatch minimal demo (requires langgraph dev)"
+	@echo "  make demo            - Run CloudWatch demo"
+	@echo "  make superfluid-demo - Run Superfluid test case demo"
+	@echo "  make cloudwatch-demo - Run CloudWatch demo (alias)"
 	@echo "  make test            - Run tests"
 	@echo "  make test-cov        - Run tests with coverage"
 	@echo "  make clean           - Clean up cache files"
