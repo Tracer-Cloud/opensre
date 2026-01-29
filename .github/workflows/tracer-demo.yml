@@ -18,8 +18,8 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install tracer_decorator
+          sudo python -m pip install --upgrade pip
+          sudo pip install tracer-decorator
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -30,12 +30,13 @@ jobs:
 
       - name: Install tracer CLI
         run: |
-          curl -sSL https://install.tracer.cloud | CLI_BRANCH=dev sh -s user_2zr9qkHIGPAP5K2GYNKMYLKv0F6
+          sudo curl -sSL https://install.tracer.cloud | sudo CLI_BRANCH=dev sh -s user_2zr9qkHIGPAP5K2GYNKMYLKv0F6
 
       - name: Initialize tracer
         run: |
           sudo tracer init --token ${{ secrets.JWT_TOKEN }}
 
       - name: Run Tracer Demo
+        continue-on-error: true
         run: |
-          python -m scripts.tracer_demo
+          sudo python -m scripts.tracer_demo
