@@ -15,7 +15,72 @@ except ImportError:
         return func
 
 
+import boto3
+
 from app.agent.tools.clients.cloudwatch_client import get_metric_statistics
+
+
+def get_cloudwatch_logs(log_group: str, log_stream: str, limit: int = 100) -> dict:
+    """
+    Fetch error logs from AWS CloudWatch Logs.
+
+    Use this when the alert includes CloudWatch log details.
+    Essential for investigating pipeline failures logged to CloudWatch.
+
+    Useful for:
+    - Retrieving error tracebacks from CloudWatch
+    - Analyzing application-level errors
+    - Investigating file not found errors
+    - Understanding pipeline failure root causes
+
+    Args:
+        log_group: CloudWatch log group name
+        log_stream: CloudWatch log stream name
+        limit: Maximum number of log events to fetch
+
+    Returns:
+        Dictionary with log events (logs, event_count, latest_log)
+    """
+    if not log_group or not log_stream:
+        return {"error": "log_group and log_stream are required"}
+
+    try:
+        client = boto3.client("logs")
+
+        response = client.get_log_events(
+            logGroupName=log_group,
+            logStreamName=log_stream,
+            limit=limit,
+            startFromHead=False
+        )
+
+        events = response.get("events", [])
+
+        if not events:
+            return {
+                "found": False,
+                "log_group": log_group,
+                "log_stream": log_stream,
+                "message": "No log events found"
+            }
+
+        log_messages = [event.get("message", "") for event in events]
+
+        return {
+            "found": True,
+            "log_group": log_group,
+            "log_stream": log_stream,
+            "event_count": len(events),
+            "error_logs": log_messages,
+            "latest_error": log_messages[0] if log_messages else None,
+        }
+
+    except Exception as e:
+        return {
+            "error": str(e),
+            "log_group": log_group,
+            "log_stream": log_stream,
+        }
 
 
 def get_cloudwatch_batch_metrics(job_queue: str, metric_type: str = "cpu") -> dict:

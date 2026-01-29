@@ -17,7 +17,7 @@ demo:
 
 # Run CloudWatch minimal demo (requires LangGraph Studio running)
 cloudwatch-demo:
-	.venv/bin/python -m tests.cloudwatch_demo.run_cloudwatch_demo
+	.venv/bin/python -m tests.test_case_cloudwatch_demo.run_cloudwatch_demo
 
 # Run the generic CLI (reads from stdin or --input)
 run:
