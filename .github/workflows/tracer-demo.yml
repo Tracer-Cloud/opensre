@@ -1,0 +1,32 @@
+name: Tracer Demo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  tracer-demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.AWS_ROLE_NAME }}
+          role-session-name: github-actions
+          aws-region: us-east-1
+
+      - name: Install tracer CLI
+        run: |
+          curl -sSL https://install.tracer.cloud | CLI_BRANCH=dev sh -s user_2zr9qkHIGPAP5K2GYNKMYLKv0F6
+
+      - name: Initialize tracer
+        run: |
+          sudo tracer init --token ${{ secrets.JWT_TOKEN }}
+
+      - name: Run Tracer Demo
+        run: |
+          python -m scripts.tracer_demo
