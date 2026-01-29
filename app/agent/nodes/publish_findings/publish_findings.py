@@ -244,8 +244,16 @@ def _format_json_payload(data: Any, max_chars: int = 400) -> str:
     return compact_payload[: max_chars - 3] + "..."
 
 
+def _format_code_block(payload: str, language: str) -> str:
+    return f"```{language}\n{payload}\n```"
+
+
 def _format_json_block(payload: str) -> str:
-    return f"```json\n{payload}\n```"
+    return _format_code_block(payload, "json")
+
+
+def _format_text_block(payload: str) -> str:
+    return _format_code_block(payload, "text")
 
 
 def _sample_evidence_payload(source: str, evidence: dict) -> Any | None:
@@ -307,7 +315,8 @@ def _format_cited_evidence_section(ctx: ReportContext) -> str:
 
     tracer_link = TRACER_DEFAULT_INVESTIGATION_URL
     if tracer_link:
-        citations.append(f"- Tracer Platform: {tracer_link}")
+        citations.append("- Tracer Platform:")
+        citations.append(_format_text_block(tracer_link))
 
     label_map = {
         "cloudwatch_logs": "CloudWatch Logs",
@@ -327,7 +336,8 @@ def _format_cited_evidence_section(ctx: ReportContext) -> str:
             if source == "cloudwatch_logs":
                 cw_url = _get_cloudwatch_url(ctx)
                 if cw_url:
-                    source_citations.append(f"{indent_prefix}- {label}: {cw_url}")
+                    source_citations.append(f"{indent_prefix}- {label}:")
+                    source_citations.append(_format_text_block(cw_url))
                     continue
 
             payload = _sample_evidence_payload(source, evidence)
