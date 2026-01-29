@@ -47,6 +47,7 @@ class ReportContext(TypedDict, total=False):
     cloudwatch_log_group: str | None
     cloudwatch_log_stream: str | None
     cloudwatch_logs_url: str | None
+    evidence: dict  # Raw evidence data for citation
 
 
 def _build_report_context(state: dict[str, Any]) -> ReportContext:
@@ -99,12 +100,80 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
         "cloudwatch_log_group": cloudwatch_group,
         "cloudwatch_log_stream": cloudwatch_stream,
         "cloudwatch_logs_url": cloudwatch_url,
+        "evidence": evidence,  # Include raw evidence for citation
     }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Report Formatting
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def _format_evidence_for_claim(claim_data: dict, evidence: dict, ctx: ReportContext) -> str:
+    """
+    Format evidence URLs or JSON for a specific claim.
+
+    Returns a formatted string with evidence links or JSON snippets.
+    """
+    evidence_sources = claim_data.get("evidence_sources", [])
+    if not evidence_sources:
+        return ""
+
+    evidence_parts = []
+
+    for source in evidence_sources:
+        if source == "cloudwatch_logs":
+            cw_url = ctx.get("cloudwatch_logs_url")
+            if cw_url:
+                evidence_parts.append(f"CloudWatch Logs: {cw_url}")
+            elif ctx.get("cloudwatch_log_group"):
+                # Build URL if not provided
+                region = "us-east-1"
+                encoded_group = ctx["cloudwatch_log_group"].replace("/", "$252F")
+                encoded_stream = ctx["cloudwatch_log_stream"].replace("/", "$252F") if ctx.get("cloudwatch_log_stream") else ""
+                if encoded_stream:
+                    url = (
+                        f"https://{region}.console.aws.amazon.com/cloudwatch/home"
+                        f"?region={region}#logsV2:log-groups/log-group/{encoded_group}"
+                        f"/log-events/{encoded_stream}"
+                    )
+                else:
+                    url = (
+                        f"https://{region}.console.aws.amazon.com/cloudwatch/home"
+                        f"?region={region}#logsV2:log-groups/log-group/{encoded_group}"
+                    )
+                evidence_parts.append(f"CloudWatch Logs: {url}")
+            # Also include sample log entries if available
+            cloudwatch_logs = evidence.get("cloudwatch_logs", [])
+            if cloudwatch_logs:
+                sample_logs = cloudwatch_logs[:3]  # First 3 log entries
+                logs_preview = "\n".join([f"  - {log[:150]}..." if len(log) > 150 else f"  - {log}" for log in sample_logs])
+                evidence_parts.append(f"Sample Logs:\n{logs_preview}")
+
+        elif source == "logs" and evidence.get("error_logs"):
+            error_logs = evidence.get("error_logs", [])[:3]
+            logs_json = "\n".join([f"  - {str(log)[:150]}..." if len(str(log)) > 150 else f"  - {str(log)}" for log in error_logs])
+            evidence_parts.append(f"Error Logs:\n{logs_json}")
+
+        elif source == "aws_batch_jobs" and evidence.get("failed_jobs"):
+            failed_jobs = evidence.get("failed_jobs", [])[:3]
+            jobs_json = "\n".join([f"  - {str(job)[:150]}..." if len(str(job)) > 150 else f"  - {str(job)}" for job in failed_jobs])
+            evidence_parts.append(f"Failed Jobs:\n{jobs_json}")
+
+        elif source == "tracer_tools" and evidence.get("failed_tools"):
+            failed_tools = evidence.get("failed_tools", [])[:3]
+            tools_json = "\n".join([f"  - {str(tool)[:150]}..." if len(str(tool)) > 150 else f"  - {str(tool)}" for tool in failed_tools])
+            evidence_parts.append(f"Failed Tools:\n{tools_json}")
+
+        elif source == "host_metrics" and evidence.get("host_metrics", {}).get("data"):
+            metrics = evidence.get("host_metrics", {}).get("data", {})
+            metrics_str = str(metrics)[:200] + "..." if len(str(metrics)) > 200 else str(metrics)
+            evidence_parts.append(f"Host Metrics: {metrics_str}")
+
+    if not evidence_parts:
+        return ""
+
+    return "\n".join(evidence_parts)
 
 
 def _render_cloudwatch_link(ctx: ReportContext) -> str:
@@ -150,13 +219,27 @@ def _format_slack_message(ctx: ReportContext) -> str:
     non_validated_section = ""
     validity_info = ""
 
+    evidence = ctx.get("evidence", {})
+
     if validated_claims:
         validated_section = "\n*Validated Claims (Supported by Evidence):*\n"
-        for claim_data in validated_claims:
+        evidence_section = "\n*Evidence Details:*\n"
+
+        for idx, claim_data in enumerate(validated_claims, 1):
             claim = claim_data.get("claim", "")
-            evidence = claim_data.get("evidence_sources", [])
-            evidence_str = f" [Evidence: {', '.join(evidence)}]" if evidence else ""
+            evidence_sources = claim_data.get("evidence_sources", [])
+            evidence_str = f" [Evidence: {', '.join(evidence_sources)}]" if evidence_sources else ""
             validated_section += f"• {claim}{evidence_str}\n"
+
+            # Add evidence details for this claim
+            evidence_detail = _format_evidence_for_claim(claim_data, evidence, ctx)
+            if evidence_detail:
+                evidence_section += f"\n{idx}. Evidence for: \"{claim[:80]}{'...' if len(claim) > 80 else ''}\"\n"
+                evidence_section += f"{evidence_detail}\n"
+
+        # Only add evidence section if there's actual evidence to show
+        if evidence_section.strip() != "*Evidence Details:*":
+            validated_section += evidence_section
 
     if non_validated_claims:
         non_validated_section = "\n*Non-Validated Claims (Inferred):*\n"
