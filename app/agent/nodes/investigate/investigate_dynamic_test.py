@@ -152,7 +152,7 @@ def test_execute_actions_with_parameter_extraction(mock_boto3):
 
     available_sources = detect_available_sources(state)
 
-    results = execute_actions(state, ["get_cloudwatch_logs"], available_sources)
+    results = execute_actions(["get_cloudwatch_logs"], available_sources)
 
     assert "get_cloudwatch_logs" in results
     assert results["get_cloudwatch_logs"].success
@@ -173,7 +173,7 @@ def test_execute_actions_skips_unavailable_actions():
 
     available_sources = detect_available_sources(state)
 
-    results = execute_actions(state, ["get_cloudwatch_logs", "get_failed_jobs"], available_sources)
+    results = execute_actions(["get_cloudwatch_logs", "get_failed_jobs"], available_sources)
 
     assert "get_cloudwatch_logs" in results
     assert not results["get_cloudwatch_logs"].success
@@ -205,7 +205,7 @@ def test_execute_actions_with_tracer_web_sources():
             ]
         }
 
-        results = execute_actions(state, ["get_failed_jobs"], available_sources)
+        results = execute_actions(["get_failed_jobs"], available_sources)
 
         assert "get_failed_jobs" in results
         assert results["get_failed_jobs"].success

@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 
-from app.agent.state import InvestigationState
 from app.agent.tools.tool_actions.investigation_actions import get_available_actions
 
 
@@ -17,7 +16,6 @@ class ActionExecutionResult:
 
 
 def execute_actions(
-    state: InvestigationState,
     action_names: list[str],
     available_sources: dict[str, dict] | None = None,
 ) -> dict[str, ActionExecutionResult]:
@@ -25,7 +23,6 @@ def execute_actions(
     Execute investigation actions by name.
 
     Args:
-        state: Current investigation state
         action_names: List of action names to execute
         available_sources: Optional dictionary of available data sources
 
@@ -61,32 +58,8 @@ def execute_actions(
             continue
 
         try:
-            # Extract parameters using parameter_extractor if available, otherwise use requires
-            if action.parameter_extractor:
-                kwargs = action.parameter_extractor(available_sources)
-            else:
-                # Fallback: build kwargs from requires (backward compatibility)
-                kwargs = {}
-                tracer_web_run = state.get("context", {}).get("tracer_web_run", {})
-                trace_id = tracer_web_run.get("trace_id")
-
-                if "trace_id" in action.requires and trace_id:
-                    kwargs["trace_id"] = trace_id
-                elif "trace_id" in action.requires:
-                    results[action_name] = ActionExecutionResult(
-                        action_name=action_name,
-                        success=False,
-                        data={},
-                        error="trace_id required but not found in state",
-                    )
-                    continue
-
-                # Add default parameters for specific actions
-                if "size" in action.inputs:
-                    kwargs["size"] = 500
-                if "error_only" in action.inputs:
-                    kwargs["error_only"] = True
-
+            # Extract parameters using parameter_extractor
+            kwargs = action.parameter_extractor(available_sources)
             data = action.function(**kwargs)
 
             if isinstance(data, dict) and "error" not in data:
