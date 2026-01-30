@@ -307,10 +307,6 @@ def _extract_evidence_sources(claim: str, evidence: dict) -> list[str]:
     sources = []
     claim_lower = claim.lower()
 
-    if ("log" in claim_lower or "error" in claim_lower) and evidence.get(
-        "cloudwatch_logs"
-    ):
-        sources.append("cloudwatch_logs")
     if ("log" in claim_lower or "error" in claim_lower) and evidence.get("total_logs", 0) > 0:
         sources.append("logs")
     if ("job" in claim_lower or "batch" in claim_lower) and evidence.get("failed_jobs"):
