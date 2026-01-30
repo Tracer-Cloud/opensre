@@ -1,22 +1,22 @@
 """Post-processing: merge evidence and track hypotheses."""
 
-from app.agent.state import InvestigationState
+from typing import Any
 
 
 def merge_evidence(
-    state: InvestigationState, execution_results: dict
-) -> dict:
+    current_evidence: dict[str, Any], execution_results: dict
+) -> dict[str, Any]:
     """
     Merge execution results into evidence state.
 
     Args:
-        state: Current investigation state
+        current_evidence: Current evidence dictionary
         execution_results: Results from action execution
 
     Returns:
         Updated evidence dictionary
     """
-    evidence = state.get("evidence", {}).copy()
+    evidence = current_evidence.copy()
 
     for action_name, result in execution_results.items():
         if not result.success:
@@ -48,24 +48,27 @@ def merge_evidence(
 
 
 def track_hypothesis(
-    state: InvestigationState, action_names: list[str], rationale: str
-) -> list[dict]:
+    executed_hypotheses: list[dict[str, Any]],
+    action_names: list[str],
+    rationale: str,
+    investigation_loop_count: int,
+) -> list[dict[str, Any]]:
     """
     Track executed hypothesis for deduplication.
 
     Args:
-        state: Current investigation state
+        executed_hypotheses: Current list of executed hypotheses
         action_names: List of actions that were executed
         rationale: Rationale for executing these actions
+        investigation_loop_count: Current loop count
 
     Returns:
         Updated executed_hypotheses list
     """
-    executed_hypotheses = state.get("executed_hypotheses", [])
     new_hypothesis = {
         "actions": action_names,
         "rationale": rationale,
-        "loop_count": state.get("investigation_loop_count", 0),
+        "loop_count": investigation_loop_count,
     }
     executed_hypotheses.append(new_hypothesis)
     return executed_hypotheses
@@ -95,3 +98,34 @@ def build_evidence_summary(execution_results: dict) -> str:
                 summary_parts.append(f"cloudwatch:{len(data['error_logs'])} events")
 
     return ", ".join(summary_parts) if summary_parts else "No new evidence"
+
+
+def summarize_execution_results(
+    execution_results: dict,
+    action_names: list[str],
+    current_evidence: dict[str, Any],
+    executed_hypotheses: list[dict[str, Any]],
+    investigation_loop_count: int,
+    rationale: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """
+    Summarize execution results into evidence and hypotheses.
+
+    Args:
+        execution_results: Results from action execution
+        action_names: List of actions that were executed
+        current_evidence: Current evidence dictionary
+        executed_hypotheses: History of executed hypotheses
+        investigation_loop_count: Current loop count
+        rationale: Rationale for executing these actions
+
+    Returns:
+        Tuple of (evidence, executed_hypotheses, evidence_summary)
+    """
+    evidence = merge_evidence(current_evidence, execution_results)
+    executed_hypotheses = track_hypothesis(
+        executed_hypotheses, action_names, rationale, investigation_loop_count
+    )
+    evidence_summary = build_evidence_summary(execution_results)
+
+    return evidence, executed_hypotheses, evidence_summary

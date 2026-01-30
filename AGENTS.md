@@ -125,3 +125,16 @@ Backend + Web App (Next.js)
 /Users/janvincentfranciszek/tracer-web-app-2025
 
 Any agent operating outside Vincent’s local machine must treat repository discovery as dynamic and environment-driven.
+
+
+## Investigations Langraph Nodes
+
+- **Dynamic context gathering**: The investigate node collects relevant context by executing multiple investigation actions in parallel (logs, traces, recent deployments, dependency health), adapting to whatever data sources are available rather than requiring specific systems.
+
+- **Action selection based on available data**: Automatically determines which investigation actions to run based on what's present in the alert annotations and state (e.g., runs CloudWatch actions only if log_group is present, falls back to local file actions if log_path exists).
+
+- **Structured information synthesis**: Aggregates results from multiple heterogeneous data sources (error logs, metrics, deployment history, runbooks) into a unified investigation context that the AI agent can reason about.
+
+- **Graceful degradation**: Continues investigation even when some actions fail or data sources are unavailable, returning partial results rather than failing completely—maximizing usefulness of available information.
+
+- **Lean startup principle**: Prioritizes easy-to-implement, high-impact context (error logs, recent deploys, basic dependency checks, team runbooks) over complex automated discovery, allowing rapid iteration and immediate value.
