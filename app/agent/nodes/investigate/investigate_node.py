@@ -7,6 +7,7 @@ It updates state fields but does NOT render output directly.
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
+from app.agent.nodes.investigate.data_sources import detect_available_sources
 from app.agent.nodes.investigate.execution import execute_actions
 from app.agent.nodes.investigate.post_process import (
     build_evidence_summary,
@@ -54,22 +55,40 @@ def _extract_keywords_from_problem(state: InvestigationState) -> list[str]:
 def node_investigate(state: InvestigationState) -> dict:
     """
     Combined investigate node:
-    1) Dynamically selects actions based on problem context and sources
-    2) Uses LLM to decide which actions to execute
-    3) Executes the selected actions
-    4) Merges and returns evidence
+    1) Detects available data sources from alert and state
+    2) Filters actions by availability
+    3) Uses LLM to decide which actions to execute
+    4) Executes the selected actions with dynamic parameter extraction
+    5) Merges and returns evidence
     """
     tracker = get_tracker()
     tracker.start("investigate", "Planning evidence gathering")
 
-    # 1. Dynamic action selection based on context
+    # 1. Detect available data sources
+    available_sources = detect_available_sources(state)
+    debug_print(f"Available sources: {list(available_sources.keys())}")
+
+    # 2. Filter actions by availability
+    all_actions = get_available_actions()
+    available_actions = [
+        action
+        for action in all_actions
+        if action.availability_check is None or action.availability_check(available_sources)
+    ]
+
+    # 3. Prioritize by keywords (secondary to availability)
     keywords = _extract_keywords_from_problem(state)
+    if keywords:
+        available_actions = get_prioritized_actions(keywords=keywords)
+        # Re-filter by availability after prioritization
+        available_actions = [
+            action
+            for action in available_actions
+            if action.availability_check is None or action.availability_check(available_sources)
+        ]
 
-    # Get prioritized actions based on keywords from problem context
-    # This ensures the most relevant actions appear first in the LLM prompt
-    available_actions = get_prioritized_actions(keywords=keywords) if keywords else get_available_actions()
-
-    prompt = build_investigation_prompt(state, available_actions)
+    # 4. Build prompt with available sources and filtered actions
+    prompt = build_investigation_prompt(state, available_actions, available_sources)
 
     # Check if we have any actions available
     executed_actions_flat = set()
@@ -86,7 +105,7 @@ def node_investigate(state: InvestigationState) -> dict:
         tracker.complete("investigate", fields_updated=["evidence"], message="No new actions")
         return {"evidence": state.get("evidence", {})}
 
-    # Generate plan via LLM
+    # 5. Generate plan via LLM
     llm = get_llm()
     structured_llm = llm.with_structured_output(InvestigationPlan)
 
@@ -97,10 +116,10 @@ def node_investigate(state: InvestigationState) -> dict:
     print(f"[DEBUG] Rationale: {plan.rationale[:200]}")
     debug_print(f"Plan: {plan.actions} | {plan.rationale[:100]}...")
 
-    # 2. Execution phase
-    execution_results = execute_actions(state, plan.actions)
+    # 6. Execution phase with dynamic parameter extraction
+    execution_results = execute_actions(state, plan.actions, available_sources)
 
-    # 3. Post-processing phase
+    # 7. Post-processing phase
     evidence = merge_evidence(state, execution_results)
     executed_hypotheses = track_hypothesis(state, plan.actions, plan.rationale)
     evidence_summary = build_evidence_summary(execution_results)

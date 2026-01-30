@@ -21,6 +21,8 @@ class InvestigationAction:
     requires: list[str]  # Required inputs (e.g., trace_id)
     source: EvidenceSource  # Which source category this belongs to
     function: Callable[..., dict[str, Any]]  # The actual function to call
+    availability_check: Callable[[dict[str, dict]], bool] | None = None  # Check if action can run given available sources
+    parameter_extractor: Callable[[dict[str, dict]], dict[str, Any]] | None = None  # Extract parameters from available sources
 
 
 def _extract_use_cases(docstring: str) -> list[str]:
@@ -99,6 +101,8 @@ def _build_investigation_action(
     func: Callable,
     source: EvidenceSource,
     requires: list[str] | None = None,
+    availability_check: Callable[[dict[str, dict]], bool] | None = None,
+    parameter_extractor: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
 ) -> InvestigationAction:
     """Build InvestigationAction from function and metadata."""
     docstring = inspect.getdoc(func) or ""
@@ -123,6 +127,8 @@ def _build_investigation_action(
         requires=requires,
         source=source,
         function=func,
+        availability_check=availability_check,
+        parameter_extractor=parameter_extractor,
     )
 
 
@@ -135,6 +141,7 @@ def get_available_actions() -> list[InvestigationAction]:
     what they require as input, what they return, and when to use them.
     """
     from app.agent.tools.tool_actions.cloudwatch_actions import get_cloudwatch_logs
+    from app.agent.tools.tool_actions.s3_actions import check_s3_marker
     from app.agent.tools.tool_actions.tracer_jobs import (
         get_failed_jobs,
         get_failed_tools,
@@ -148,30 +155,64 @@ def get_available_actions() -> list[InvestigationAction]:
             func=get_failed_jobs,
             source="batch",
             requires=["trace_id"],
+            availability_check=lambda sources: bool(sources.get("tracer_web", {}).get("trace_id")),
+            parameter_extractor=lambda sources: {"trace_id": sources.get("tracer_web", {}).get("trace_id")},
         ),
         _build_investigation_action(
             name="get_failed_tools",
             func=get_failed_tools,
             source="tracer_web",
             requires=["trace_id"],
+            availability_check=lambda sources: bool(sources.get("tracer_web", {}).get("trace_id")),
+            parameter_extractor=lambda sources: {"trace_id": sources.get("tracer_web", {}).get("trace_id")},
         ),
         _build_investigation_action(
             name="get_error_logs",
             func=get_error_logs,
             source="tracer_web",
             requires=["trace_id"],
+            availability_check=lambda sources: bool(sources.get("tracer_web", {}).get("trace_id")),
+            parameter_extractor=lambda sources: {
+                "trace_id": sources.get("tracer_web", {}).get("trace_id"),
+                "size": 500,
+                "error_only": True,
+            },
         ),
         _build_investigation_action(
             name="get_host_metrics",
             func=get_host_metrics,
             source="cloudwatch",
             requires=["trace_id"],
+            availability_check=lambda sources: bool(sources.get("tracer_web", {}).get("trace_id")),
+            parameter_extractor=lambda sources: {"trace_id": sources.get("tracer_web", {}).get("trace_id")},
         ),
         _build_investigation_action(
             name="get_cloudwatch_logs",
             func=get_cloudwatch_logs,
             source="cloudwatch",
             requires=[],
+            availability_check=lambda sources: bool(
+                sources.get("cloudwatch", {}).get("log_group")
+                and sources.get("cloudwatch", {}).get("log_stream")
+            ),
+            parameter_extractor=lambda sources: {
+                "log_group": sources.get("cloudwatch", {}).get("log_group"),
+                "log_stream": sources.get("cloudwatch", {}).get("log_stream"),
+                "limit": 100,
+            },
+        ),
+        _build_investigation_action(
+            name="check_s3_marker",
+            func=check_s3_marker,
+            source="storage",
+            requires=[],
+            availability_check=lambda sources: bool(
+                sources.get("s3", {}).get("bucket") and sources.get("s3", {}).get("prefix")
+            ),
+            parameter_extractor=lambda sources: {
+                "bucket": sources.get("s3", {}).get("bucket"),
+                "prefix": sources.get("s3", {}).get("prefix"),
+            },
         ),
     ]
 
