@@ -8,7 +8,7 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from app.agent.nodes.investigate.data_sources import detect_available_sources
-from app.agent.nodes.investigate.execution import execute_actions
+from app.agent.nodes.investigate.execute_actions import execute_actions
 from app.agent.nodes.investigate.post_process import (
     build_evidence_summary,
     merge_evidence,
