@@ -11,22 +11,9 @@ from langsmith import traceable
 from app.main import _run
 from tests.test_case_s3_failed_python_on_linux import use_case
 from tests.utils.alert_factory import create_alert
-from tests.utils.file_logger import configure_file_logging, tail_log_file
+from tests.utils.file_logger import configure_file_logging
 
 LOG_FILE = "production.log"
-
-
-def _format_failed_steps(results: list[dict]) -> str:
-    failed_steps = []
-    for result in results:
-        if result.get("exit_code", 0) == 0:
-            continue
-        stderr_summary = result.get("stderr_summary", "")
-        summary = f"{result.get('step_name')} exit_code={result.get('exit_code')}"
-        if stderr_summary:
-            summary = f"{summary} stderr={stderr_summary}"
-        failed_steps.append(summary)
-    return "; ".join(failed_steps)
 
 
 def _build_alert_annotations(result: dict) -> dict:
