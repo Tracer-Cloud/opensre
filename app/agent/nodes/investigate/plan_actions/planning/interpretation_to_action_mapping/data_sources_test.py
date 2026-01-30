@@ -1,6 +1,8 @@
 """Unit tests for data source detection."""
 
-from app.agent.nodes.investigate.data_sources import detect_available_sources
+from app.agent.nodes.investigate.plan_actions.planning.interpretation_to_action_mapping.data_sources import (
+    detect_available_sources,
+)
 from app.agent.state import InvestigationState
 
 
@@ -17,7 +19,7 @@ def test_detect_cloudwatch_sources_from_annotations():
         "context": {},
     }
 
-    sources = detect_available_sources(state)
+    sources = detect_available_sources(state["raw_alert"], state["context"])
     assert "cloudwatch" in sources
     assert sources["cloudwatch"]["log_group"] == "/aws/batch/job"
     assert sources["cloudwatch"]["log_stream"] == "job-12345/container-name/abc123"
@@ -36,7 +38,7 @@ def test_detect_cloudwatch_sources_from_common_annotations():
         "context": {},
     }
 
-    sources = detect_available_sources(state)
+    sources = detect_available_sources(state["raw_alert"], state["context"])
     assert "cloudwatch" in sources
     assert sources["cloudwatch"]["log_group"] == "/aws/lambda/my-function"
     assert sources["cloudwatch"]["log_stream"] == "2024/01/30/[$LATEST]abc123"
@@ -56,7 +58,7 @@ def test_detect_cloudwatch_sources_alternative_names():
         "context": {},
     }
 
-    sources = detect_available_sources(state)
+    sources = detect_available_sources(state["raw_alert"], state["context"])
     assert "cloudwatch" in sources
     assert sources["cloudwatch"]["log_group"] == "/aws/batch/job"
     assert sources["cloudwatch"]["log_stream"] == "job-12345/container-name/abc123"
@@ -76,7 +78,7 @@ def test_detect_s3_sources():
         "context": {},
     }
 
-    sources = detect_available_sources(state)
+    sources = detect_available_sources(state["raw_alert"], state["context"])
     assert "s3" in sources
     assert sources["s3"]["bucket"] == "my-data-bucket"
     assert sources["s3"]["prefix"] == "raw/events/2024/01/"
@@ -95,7 +97,7 @@ def test_detect_s3_sources_alternative_names():
         "context": {},
     }
 
-    sources = detect_available_sources(state)
+    sources = detect_available_sources(state["raw_alert"], state["context"])
     assert "s3" in sources
     assert sources["s3"]["bucket"] == "my-data-bucket"
     assert sources["s3"]["prefix"] == "raw/events/2024/01/"
@@ -113,7 +115,7 @@ def test_detect_local_file_sources():
         "context": {},
     }
 
-    sources = detect_available_sources(state)
+    sources = detect_available_sources(state["raw_alert"], state["context"])
     assert "local_file" in sources
     assert sources["local_file"]["log_file"] == "production.log"
 
@@ -129,7 +131,7 @@ def test_detect_local_file_sources_alternative_names():
         "context": {},
     }
 
-    sources = detect_available_sources(state)
+    sources = detect_available_sources(state["raw_alert"], state["context"])
     assert "local_file" in sources
     assert sources["local_file"]["log_file"] == "/var/log/pipeline.log"
 
@@ -146,7 +148,7 @@ def test_detect_tracer_web_sources():
         },
     }
 
-    sources = detect_available_sources(state)
+    sources = detect_available_sources(state["raw_alert"], state["context"])
     assert "tracer_web" in sources
     assert sources["tracer_web"]["trace_id"] == "a4b56a5c-03c5-438f-96b6-60f8db7c13d5"
     assert sources["tracer_web"]["run_url"] == "https://staging.tracer.cloud/pipelines/test/batch/a4b56a5c"
@@ -163,7 +165,7 @@ def test_detect_tracer_web_sources_no_url():
         },
     }
 
-    sources = detect_available_sources(state)
+    sources = detect_available_sources(state["raw_alert"], state["context"])
     assert "tracer_web" in sources
     assert sources["tracer_web"]["trace_id"] == "a4b56a5c-03c5-438f-96b6-60f8db7c13d5"
     assert "run_url" not in sources["tracer_web"]
@@ -188,7 +190,7 @@ def test_detect_multiple_sources():
         },
     }
 
-    sources = detect_available_sources(state)
+    sources = detect_available_sources(state["raw_alert"], state["context"])
     assert "cloudwatch" in sources
     assert "s3" in sources
     assert "local_file" in sources
@@ -202,7 +204,7 @@ def test_detect_no_sources():
         "context": {},
     }
 
-    sources = detect_available_sources(state)
+    sources = detect_available_sources(state["raw_alert"], state["context"])
     assert sources == {}
 
 
@@ -217,7 +219,7 @@ def test_detect_cloudwatch_requires_both_group_and_stream():
         "context": {},
     }
 
-    sources = detect_available_sources(state)
+    sources = detect_available_sources(state["raw_alert"], state["context"])
     assert "cloudwatch" not in sources
 
 
@@ -231,7 +233,7 @@ def test_detect_top_level_annotations():
         "context": {},
     }
 
-    sources = detect_available_sources(state)
+    sources = detect_available_sources(state["raw_alert"], state["context"])
     assert "cloudwatch" in sources
     assert sources["cloudwatch"]["log_group"] == "/aws/batch/job"
     assert sources["cloudwatch"]["log_stream"] == "job-12345/container-name/abc123"

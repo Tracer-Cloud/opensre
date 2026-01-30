@@ -1,8 +1,8 @@
 """Investigation action execution."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-
-from app.agent.tools.tool_actions.investigation_actions import get_available_actions
+from typing import Any
 
 
 @dataclass
@@ -17,6 +17,7 @@ class ActionExecutionResult:
 
 def execute_actions(
     action_names: list[str],
+    available_actions: dict[str, Any] | Iterable[Any],
     available_sources: dict[str, dict] | None = None,
 ) -> dict[str, ActionExecutionResult]:
     """
@@ -24,6 +25,7 @@ def execute_actions(
 
     Args:
         action_names: List of action names to execute
+        available_actions: Mapping or iterable of available actions
         available_sources: Optional dictionary of available data sources
 
     Returns:
@@ -32,11 +34,14 @@ def execute_actions(
     if available_sources is None:
         available_sources = {}
 
-    available_actions = {action.name: action for action in get_available_actions()}
+    if isinstance(available_actions, dict):
+        available_actions_map = available_actions
+    else:
+        available_actions_map = {action.name: action for action in available_actions}
     results: dict[str, ActionExecutionResult] = {}
 
     for action_name in action_names:
-        if action_name not in available_actions:
+        if action_name not in available_actions_map:
             results[action_name] = ActionExecutionResult(
                 action_name=action_name,
                 success=False,
@@ -45,7 +50,7 @@ def execute_actions(
             )
             continue
 
-        action = available_actions[action_name]
+        action = available_actions_map[action_name]
 
         # Check availability if availability_check is defined
         if action.availability_check and not action.availability_check(available_sources):

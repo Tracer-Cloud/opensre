@@ -11,7 +11,7 @@ from app.agent.nodes import (
     node_frame_problem,
     node_publish_findings,
 )
-from app.agent.nodes.investigate.investigate_node import node_investigate
+from app.agent.nodes.investigate.node import node_investigate
 from app.agent.routing import should_continue_investigation
 from app.agent.state import InvestigationState, make_initial_state
 
