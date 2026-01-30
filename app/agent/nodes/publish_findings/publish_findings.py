@@ -8,7 +8,6 @@ This is the final node in the pipeline. It:
 4. Sets state.slack_message for external use (Slack, etc.)
 """
 
-import json
 from typing import Any, TypedDict
 
 from langsmith import traceable
@@ -48,7 +47,6 @@ class ReportContext(TypedDict, total=False):
     cloudwatch_log_group: str | None
     cloudwatch_log_stream: str | None
     cloudwatch_logs_url: str | None
-    cloudwatch_region: str | None
     evidence: dict  # Raw evidence data for citation
 
 
@@ -75,29 +73,10 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
     cloudwatch_url = None
     cloudwatch_group = None
     cloudwatch_stream = None
-    cloudwatch_region = None
     if isinstance(raw_alert, dict):
-        annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
-        if not annotations and raw_alert.get("alerts"):
-            first_alert = raw_alert.get("alerts", [{}])[0]
-            if isinstance(first_alert, dict):
-                annotations = first_alert.get("annotations", {}) or {}
-
-        cloudwatch_url = (
-            raw_alert.get("cloudwatch_logs_url")
-            or raw_alert.get("cloudwatch_url")
-            or annotations.get("cloudwatch_logs_url")
-            or annotations.get("cloudwatch_url")
-        )
-        cloudwatch_group = (
-            raw_alert.get("cloudwatch_log_group") or annotations.get("cloudwatch_log_group")
-        )
-        cloudwatch_stream = (
-            raw_alert.get("cloudwatch_log_stream") or annotations.get("cloudwatch_log_stream")
-        )
-        cloudwatch_region = (
-            raw_alert.get("cloudwatch_region") or annotations.get("cloudwatch_region")
-        )
+        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
+        cloudwatch_group = raw_alert.get("cloudwatch_log_group")
+        cloudwatch_stream = raw_alert.get("cloudwatch_log_stream")
 
     return {
         "pipeline_name": state.get("pipeline_name", "unknown"),
@@ -121,7 +100,6 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
         "cloudwatch_log_group": cloudwatch_group,
         "cloudwatch_log_stream": cloudwatch_stream,
         "cloudwatch_logs_url": cloudwatch_url,
-        "cloudwatch_region": cloudwatch_region,
         "evidence": evidence,  # Include raw evidence for citation
     }
 
@@ -129,33 +107,6 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
 # ─────────────────────────────────────────────────────────────────────────────
 # Report Formatting
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-def _get_cloudwatch_url(ctx: ReportContext) -> str | None:
-    """Return a CloudWatch logs URL if available."""
-    cw_url = ctx.get("cloudwatch_logs_url")
-    if cw_url:
-        return cw_url
-
-    cw_group = ctx.get("cloudwatch_log_group")
-    cw_stream = ctx.get("cloudwatch_log_stream")
-    if not cw_group:
-        return None
-
-    region = ctx.get("cloudwatch_region") or "us-east-1"
-    encoded_group = cw_group.replace("/", "$252F")
-    if cw_stream:
-        encoded_stream = cw_stream.replace("/", "$252F")
-        return (
-            f"https://{region}.console.aws.amazon.com/cloudwatch/home"
-            f"?region={region}#logsV2:log-groups/log-group/{encoded_group}"
-            f"/log-events/{encoded_stream}"
-        )
-
-    return (
-        f"https://{region}.console.aws.amazon.com/cloudwatch/home"
-        f"?region={region}#logsV2:log-groups/log-group/{encoded_group}"
-    )
 
 
 def _format_evidence_for_claim(claim_data: dict, evidence: dict, ctx: ReportContext) -> str:
@@ -172,19 +123,31 @@ def _format_evidence_for_claim(claim_data: dict, evidence: dict, ctx: ReportCont
 
     for source in evidence_sources:
         if source == "cloudwatch_logs":
-            cw_url = _get_cloudwatch_url(ctx)
+            cw_url = ctx.get("cloudwatch_logs_url")
             if cw_url:
                 evidence_parts.append(f"CloudWatch Logs: {cw_url}")
+            elif ctx.get("cloudwatch_log_group"):
+                # Build URL if not provided
+                region = "us-east-1"
+                encoded_group = ctx["cloudwatch_log_group"].replace("/", "$252F")
+                encoded_stream = ctx["cloudwatch_log_stream"].replace("/", "$252F") if ctx.get("cloudwatch_log_stream") else ""
+                if encoded_stream:
+                    url = (
+                        f"https://{region}.console.aws.amazon.com/cloudwatch/home"
+                        f"?region={region}#logsV2:log-groups/log-group/{encoded_group}"
+                        f"/log-events/{encoded_stream}"
+                    )
+                else:
+                    url = (
+                        f"https://{region}.console.aws.amazon.com/cloudwatch/home"
+                        f"?region={region}#logsV2:log-groups/log-group/{encoded_group}"
+                    )
+                evidence_parts.append(f"CloudWatch Logs: {url}")
             # Also include sample log entries if available
             cloudwatch_logs = evidence.get("cloudwatch_logs", [])
             if cloudwatch_logs:
                 sample_logs = cloudwatch_logs[:3]  # First 3 log entries
-                logs_preview = "\n".join(
-                    [
-                        f"  - {log[:150]}..." if len(log) > 150 else f"  - {log}"
-                        for log in sample_logs
-                    ]
-                )
+                logs_preview = "\n".join([f"  - {log[:150]}..." if len(log) > 150 else f"  - {log}" for log in sample_logs])
                 evidence_parts.append(f"Sample Logs:\n{logs_preview}")
 
         elif source == "logs" and evidence.get("error_logs"):
@@ -223,161 +186,17 @@ def _render_cloudwatch_link(ctx: ReportContext) -> str:
         return f"\n*CloudWatch Logs:*\n{cw_url}\n"
     elif cw_group and cw_stream:
         # Build URL if not provided (default to us-east-1)
-        url = _get_cloudwatch_url(ctx)
+        region = "us-east-1"
+        encoded_group = cw_group.replace("/", "$252F")
+        encoded_stream = cw_stream.replace("/", "$252F")
+        url = (
+            f"https://{region}.console.aws.amazon.com/cloudwatch/home"
+            f"?region={region}#logsV2:log-groups/log-group/{encoded_group}"
+            f"/log-events/{encoded_stream}"
+        )
         return f"\n*CloudWatch Logs:*\n* Log Group: {cw_group}\n* Log Stream: {cw_stream}\n* View: {url}\n"
 
     return ""
-
-
-def _format_json_payload(data: Any, max_chars: int = 400) -> str:
-    """Render JSON with a size cap for report output."""
-    pretty_payload = json.dumps(
-        data, default=str, ensure_ascii=True, indent=2, sort_keys=True
-    )
-    if len(pretty_payload) <= max_chars:
-        return pretty_payload
-
-    compact_payload = json.dumps(data, default=str, ensure_ascii=True)
-    if len(compact_payload) <= max_chars:
-        return compact_payload
-
-    return compact_payload[: max_chars - 3] + "..."
-
-
-def _format_code_block(payload: str, language: str) -> str:
-    return f"```{language}\n{payload}\n```"
-
-
-def _format_json_block(payload: str) -> str:
-    return _format_code_block(payload, "json")
-
-
-def _format_text_block(payload: str) -> str:
-    return _format_code_block(payload, "text")
-
-
-def _sample_evidence_payload(source: str, evidence: dict) -> Any | None:
-    if source == "logs":
-        logs = evidence.get("error_logs", [])
-        return logs[:3] if logs else None
-    if source == "aws_batch_jobs":
-        failed_jobs = evidence.get("failed_jobs", [])
-        return failed_jobs[:3] if failed_jobs else None
-    if source == "tracer_tools":
-        failed_tools = evidence.get("failed_tools", [])
-        return failed_tools[:3] if failed_tools else None
-    if source == "host_metrics":
-        metrics = evidence.get("host_metrics", {}).get("data")
-        return metrics if metrics else None
-    if source == "cloudwatch_logs":
-        cw_logs = evidence.get("cloudwatch_logs", [])
-        return cw_logs[:3] if cw_logs else None
-    if source == "evidence_analysis":
-        return {
-            "failed_jobs": len(evidence.get("failed_jobs", [])),
-            "failed_tools": len(evidence.get("failed_tools", [])),
-            "error_logs": len(evidence.get("error_logs", [])),
-            "cloudwatch_logs": len(evidence.get("cloudwatch_logs", [])),
-            "host_metrics": bool(evidence.get("host_metrics", {}).get("data")),
-        }
-    return None
-
-
-def _collect_cited_sources(ctx: ReportContext, evidence: dict) -> list[str]:
-    sources: list[str] = []
-    for claim_data in ctx.get("validated_claims", []):
-        for source in claim_data.get("evidence_sources", []):
-            if source not in sources:
-                sources.append(source)
-
-    cw_available = bool(_get_cloudwatch_url(ctx) or evidence.get("cloudwatch_logs"))
-    if cw_available and "cloudwatch_logs" not in sources:
-        sources.append("cloudwatch_logs")
-
-    if evidence.get("error_logs") and "logs" not in sources:
-        sources.append("logs")
-    if evidence.get("failed_jobs") and "aws_batch_jobs" not in sources:
-        sources.append("aws_batch_jobs")
-    if evidence.get("failed_tools") and "tracer_tools" not in sources:
-        sources.append("tracer_tools")
-    if evidence.get("host_metrics", {}).get("data") and "host_metrics" not in sources:
-        sources.append("host_metrics")
-
-    if not sources:
-        sources.append("evidence_analysis")
-
-    return sources
-
-
-def _format_cited_evidence_section(ctx: ReportContext) -> str:
-    evidence = ctx.get("evidence", {})
-    citations: list[str] = []
-
-    tracer_link = TRACER_DEFAULT_INVESTIGATION_URL
-    if tracer_link:
-        citations.append("- Tracer Platform:")
-        citations.append(_format_text_block(tracer_link))
-
-    label_map = {
-        "cloudwatch_logs": "CloudWatch Logs",
-        "logs": "Error Logs",
-        "aws_batch_jobs": "AWS Batch Jobs",
-        "tracer_tools": "Tracer Tools",
-        "host_metrics": "Host Metrics",
-        "evidence_analysis": "Evidence Summary",
-    }
-
-    def format_source_citations(
-        sources: list[str], indent_prefix: str = ""
-    ) -> list[str]:
-        source_citations: list[str] = []
-        for source in sources:
-            label = label_map.get(source, source.replace("_", " ").title())
-            if source == "cloudwatch_logs":
-                cw_url = _get_cloudwatch_url(ctx)
-                if cw_url:
-                    source_citations.append(f"{indent_prefix}- {label}:")
-                    source_citations.append(_format_text_block(cw_url))
-                    continue
-
-            payload = _sample_evidence_payload(source, evidence)
-            if payload is None:
-                continue
-            source_citations.append(f"{indent_prefix}- {label}:")
-            source_citations.append(_format_json_block(_format_json_payload(payload)))
-        return source_citations
-
-    def shorten_claim(claim: str, max_chars: int = 120) -> str:
-        cleaned = " ".join(claim.split())
-        if len(cleaned) <= max_chars:
-            return cleaned
-        return cleaned[: max_chars - 3] + "..."
-
-    claim_lines: list[str] = []
-    for idx, claim_data in enumerate(ctx.get("validated_claims", []), 1):
-        claim = claim_data.get("claim", "").strip()
-        if not claim:
-            continue
-        sources = claim_data.get("evidence_sources", [])
-        claim_citations = format_source_citations(sources, indent_prefix="  ")
-        if not claim_citations:
-            continue
-        claim_block = [f"{idx}. Claim: \"{shorten_claim(claim)}\""]
-        claim_block.extend(claim_citations)
-        claim_lines.append("\n".join(claim_block))
-
-    if claim_lines:
-        citations.append("")
-        citations.append("\n\n".join(claim_lines))
-    else:
-        sources = _collect_cited_sources(ctx, evidence)
-        fallback_citations = format_source_citations(sources)
-        citations.extend(fallback_citations)
-
-    if not citations:
-        return ""
-
-    return "\n*Cited Evidence:*\n" + "\n".join(citations) + "\n"
 
 
 def _format_slack_message(ctx: ReportContext) -> str:
@@ -444,8 +263,6 @@ def _format_slack_message(ctx: ReportContext) -> str:
 
     total = len(validated_claims) + len(non_validated_claims)
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
-    cited_evidence_section = _format_cited_evidence_section(ctx)
-
     return f"""[RCA] {pipeline_name} incident
 Analyzed by: pipeline-agent
 
@@ -453,7 +270,6 @@ Analyzed by: pipeline-agent
 {conclusion_section}
 *Confidence:* {ctx.get("confidence", 0.0):.0%}
 *Validity Score:* {validity_score:.0%} ({len(validated_claims)}/{total} validated)
-{cited_evidence_section}
 
 *Evidence from Tracer*
 * Pipeline: {ctx.get("tracer_pipeline_name", "unknown")}
