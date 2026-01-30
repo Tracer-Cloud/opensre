@@ -4,12 +4,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.agent.nodes.investigate.plan_actions.keywords import extract_keywords
-from app.agent.tools.tool_actions.investigation_actions import (
-    get_available_actions,
-    get_prioritized_actions,
-)
-
 
 def _get_executed_sources(executed_hypotheses: list[dict[str, Any]]) -> set[str]:
     """Extract executed sources from hypotheses history."""
@@ -81,8 +75,8 @@ def build_investigation_prompt(
     problem_md: str,
     investigation_recommendations: list[str],
     executed_hypotheses: list[dict[str, Any]],
-    available_actions: list | None = None,
-    available_sources: dict[str, dict] | None = None,
+    available_actions: list,
+    available_sources: dict[str, dict],
 ) -> str:
     """
     Build the investigation prompt with rich action metadata.
@@ -91,18 +85,12 @@ def build_investigation_prompt(
         problem_md: Problem statement markdown
         investigation_recommendations: Recommendations from previous analysis
         executed_hypotheses: History of executed hypotheses
-        available_actions: Optional pre-computed actions list (already filtered by availability)
-        available_sources: Optional dictionary of available data sources
+        available_actions: Pre-computed actions list (already filtered by availability)
+        available_sources: Dictionary of available data sources
 
     Returns:
         Formatted prompt string for LLM
     """
-    if available_actions is None:
-        available_actions = get_available_actions()
-
-    if available_sources is None:
-        available_sources = {}
-
     executed_sources_set = _get_executed_sources(executed_hypotheses)
     executed_actions = [
         action.name
@@ -143,38 +131,26 @@ Consider what information would help diagnose the root cause.
 
 
 def select_actions(
+    actions: list,
     available_sources: dict[str, dict],
-    problem_md: str,
-    alert_name: str,
     executed_hypotheses: list[dict[str, Any]],
 ) -> tuple[list, list[str]]:
     """
-    Select available actions based on sources, keywords, and execution history.
+    Select available actions based on sources and execution history.
 
     Args:
+        actions: Candidate actions to filter
         available_sources: Dictionary mapping source type to parameters
-        problem_md: Problem statement markdown
-        alert_name: Alert name
         executed_hypotheses: History of executed hypotheses
 
     Returns:
         Tuple of (available_actions, available_action_names)
     """
-    all_actions = get_available_actions()
     available_actions = [
         action
-        for action in all_actions
+        for action in actions
         if action.availability_check is None or action.availability_check(available_sources)
     ]
-
-    keywords = extract_keywords(problem_md, alert_name)
-    if keywords:
-        available_actions = get_prioritized_actions(keywords=keywords)
-        available_actions = [
-            action
-            for action in available_actions
-            if action.availability_check is None or action.availability_check(available_sources)
-        ]
 
     executed_actions_flat = set()
     for hyp in executed_hypotheses:
@@ -182,14 +158,15 @@ def select_actions(
         if isinstance(actions, list):
             executed_actions_flat.update(actions)
 
-    available_action_names = [
-        action.name for action in available_actions if action.name not in executed_actions_flat
+    available_actions = [
+        action for action in available_actions if action.name not in executed_actions_flat
     ]
+    available_action_names = [action.name for action in available_actions]
 
     return available_actions, available_action_names
 
 
-def plan_actions(
+def plan_actions_with_llm(
     llm,
     plan_model: type[BaseModel],
     problem_md: str,
