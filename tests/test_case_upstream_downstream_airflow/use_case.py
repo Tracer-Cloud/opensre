@@ -1,12 +1,12 @@
 """
-MWAA Test Case - Use Case Logic.
+ECS Fargate Airflow Test Case - Use Case Logic.
 
-Simulates triggering an MWAA DAG and optionally injecting schema changes
+Simulates triggering an ECS Fargate Airflow DAG and optionally injecting schema changes
 to create upstream/downstream failure scenarios.
 
 This module handles:
 1. Invoking the Lambda function to ingest data
-2. Triggering the MWAA DAG
+2. Triggering the Airflow DAG
 3. Waiting for DAG completion
 4. Returning success/failure status
 """
@@ -21,12 +21,83 @@ try:
 except ImportError:
     boto3 = None
 
+try:
+    import requests
+except ImportError:
+    requests = None
+
 _pipeline_context = {
     "pipeline_name": "ingest_transform",
-    "environment_name": os.getenv("MWAA_ENVIRONMENT", "tracer-test-env"),
+    "airflow_url": os.getenv("AIRFLOW_WEBSERVER_URL", ""),
     "lambda_function": os.getenv("API_INGESTER_FUNCTION", "tracer-test-api-ingester"),
     "initialized": False,
 }
+
+
+def _get_dag_runs(
+    airflow_url: str,
+    dag_id: str,
+    limit: int = 10,
+    username: str = "admin",
+    password: str = "admin",
+) -> dict[str, Any]:
+    """Get recent DAG runs for a DAG."""
+    if requests is None:
+        return {"success": False, "error": "requests library not available"}
+
+    try:
+        auth = (username, password)
+        url = f"{airflow_url}/api/v2/dags/{dag_id}/dagRuns"
+        params = {"limit": limit, "order_by": "-execution_date"}
+
+        response = requests.get(url, auth=auth, params=params, timeout=10)
+        response.raise_for_status()
+
+        return {
+            "success": True,
+            "data": response.json(),
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+
+def _get_task_logs(
+    airflow_url: str,
+    dag_id: str,
+    dag_run_id: str,
+    task_id: str,
+    try_number: int = 1,
+    username: str = "admin",
+    password: str = "admin",
+) -> dict[str, Any]:
+    """Get task logs from Airflow."""
+    if requests is None:
+        return {"success": False, "error": "requests library not available", "content": ""}
+
+    try:
+        auth = (username, password)
+        url = f"{airflow_url}/api/v2/dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances/{task_id}/logs/{try_number}"
+
+        response = requests.get(url, auth=auth, timeout=10)
+        response.raise_for_status()
+
+        log_data = response.json()
+        content = log_data.get("content", "")
+
+        return {
+            "success": True,
+            "content": content,
+            "log_data": log_data,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "content": "",
+        }
 
 
 def invoke_lambda_ingester(
@@ -38,7 +109,7 @@ def invoke_lambda_ingester(
 
     Args:
         inject_schema_change: If True, Lambda will omit customer_id field
-        trigger_dag: If True, Lambda will trigger the MWAA DAG
+        trigger_dag: If True, Lambda will trigger the Airflow DAG
 
     Returns:
         Lambda invocation result
@@ -81,26 +152,30 @@ def wait_for_dag_completion(
     Returns:
         Final DAG run status
     """
-    from app.agent.tools.clients.mwaa_client import get_dag_runs
+    airflow_url = _pipeline_context["airflow_url"]
+    if not airflow_url:
+        return {
+            "status": "error",
+            "error": "AIRFLOW_WEBSERVER_URL not set",
+        }
 
-    env_name = _pipeline_context["environment_name"]
     start_time = time.time()
 
     while (time.time() - start_time) < timeout_seconds:
-        result = get_dag_runs(env_name, dag_id, limit=5)
+        result = _get_dag_runs(airflow_url, dag_id, limit=5)
 
         if not result.get("success"):
             print(f"Error getting DAG runs: {result.get('error')}")
             time.sleep(poll_interval)
             continue
 
-        runs = result.get("data", {}).get("runs", [])
-        if not runs:
+        dag_runs = result.get("data", {}).get("dag_runs", [])
+        if not dag_runs:
             print("No DAG runs found yet...")
             time.sleep(poll_interval)
             continue
 
-        latest_run = runs[0] if isinstance(runs, list) else runs
+        latest_run = dag_runs[0]
         state = latest_run.get("state", "unknown")
 
         print(f"DAG run state: {state}")
@@ -124,7 +199,7 @@ def wait_for_dag_completion(
 def get_task_failure_details(
     dag_id: str,
     task_id: str,
-    execution_date: str,
+    dag_run_id: str,
 ) -> dict[str, Any]:
     """
     Get details of a failed task.
@@ -132,26 +207,24 @@ def get_task_failure_details(
     Args:
         dag_id: Airflow DAG ID
         task_id: Failed task ID
-        execution_date: Execution date
+        dag_run_id: DAG run ID
 
     Returns:
         Task failure details including logs
     """
-    from app.agent.tools.tool_actions.mwaa_actions import get_airflow_task_logs
+    airflow_url = _pipeline_context["airflow_url"]
+    if not airflow_url:
+        return {
+            "success": False,
+            "error": "AIRFLOW_WEBSERVER_URL not set",
+        }
 
-    env_name = _pipeline_context["environment_name"]
-
-    return get_airflow_task_logs(
-        environment_name=env_name,
-        dag_id=dag_id,
-        task_id=task_id,
-        execution_date=execution_date,
-    )
+    return _get_task_logs(airflow_url, dag_id, dag_run_id, task_id)
 
 
 def main(inject_schema_change: bool = False) -> dict[str, Any]:
     """
-    Run the MWAA test case.
+    Run the ECS Fargate Airflow test case.
 
     Args:
         inject_schema_change: If True, inject a schema change to cause failure

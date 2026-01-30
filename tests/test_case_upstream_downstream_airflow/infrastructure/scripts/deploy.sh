@@ -2,10 +2,10 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+INFRA_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$INFRA_DIR/cdk"
 
-echo "=== MWAA Test Case Deployment ==="
-echo "WARNING: MWAA environment creation takes ~25 minutes"
+echo "=== ECS Fargate Airflow Test Case Deployment ==="
 echo ""
 
 # Check prerequisites
@@ -28,10 +28,18 @@ if [ -z "$AWS_ACCOUNT" ]; then
 fi
 echo "Using AWS account: $AWS_ACCOUNT"
 
+# Run pre-deployment validation
+echo ""
+echo "Running pre-deployment validation..."
+python3 ../tests/validate_setup.py || {
+    echo "Pre-deployment validation failed. Fix issues before deploying."
+    exit 1
+}
+
 # Install dependencies
 echo ""
 echo "Installing CDK dependencies..."
-pip install -r requirements.txt -q
+python3 -m pip install --user --break-system-packages -r ../requirements/requirements.txt -q
 
 # Bootstrap CDK (if needed)
 echo ""
@@ -40,8 +48,8 @@ cdk bootstrap --quiet 2>/dev/null || true
 
 # Deploy
 echo ""
-echo "Deploying MWAA stack..."
-echo "This will take approximately 25-30 minutes for MWAA environment creation."
+echo "Deploying ECS Fargate Airflow stack..."
+echo "This will take approximately 10-15 minutes for ECS services to start."
 echo ""
 
 cdk deploy --require-approval never
@@ -51,3 +59,6 @@ echo "=== Deployment Complete ==="
 echo ""
 echo "Outputs:"
 cdk output 2>/dev/null || echo "(Run 'cdk output' to see stack outputs)"
+echo ""
+echo "Note: Airflow webserver may take a few minutes to initialize."
+echo "Check CloudWatch logs if the webserver is not responding."

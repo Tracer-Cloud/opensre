@@ -2,11 +2,12 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+INFRA_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$INFRA_DIR/cdk"
 
-echo "=== MWAA Test Case Destruction ==="
+echo "=== ECS Fargate Airflow Test Case Destruction ==="
 echo "This will destroy all resources including:"
-echo "  - MWAA environment"
+echo "  - ECS Fargate Airflow services"
 echo "  - S3 buckets (DAGs and data)"
 echo "  - Lambda function"
 echo "  - VPC and networking"
@@ -19,7 +20,7 @@ if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
 fi
 
 echo ""
-echo "Destroying MWAA stack..."
+echo "Destroying ECS Fargate Airflow stack..."
 echo "This may take several minutes."
 echo ""
 

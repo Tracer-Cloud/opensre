@@ -1,8 +1,8 @@
 """
-MWAA Test Case - Full Trace Validation.
+ECS Fargate Airflow Test Case - Full Trace Validation.
 
 Validation checkpoints to verify the agent correctly traces failures
-from MWAA to upstream components (S3, Lambda, External API).
+from Airflow to upstream components (S3, Lambda, External API).
 
 These functions are used to validate investigation results against
 expected outcomes for different failure scenarios.
@@ -11,11 +11,11 @@ expected outcomes for different failure scenarios.
 from typing import Any
 
 
-def validate_mwaa_task_logs_collected(evidence: dict[str, Any]) -> dict[str, Any]:
+def validate_airflow_task_logs_collected(evidence: dict[str, Any]) -> dict[str, Any]:
     """
-    Checkpoint 1: Validate MWAA task logs were collected.
+    Checkpoint 1: Validate Airflow task logs were collected.
 
-    Verifies the agent retrieved task execution logs from CloudWatch.
+    Verifies the agent retrieved task execution logs from CloudWatch or Airflow REST API.
 
     Args:
         evidence: Investigation evidence dict
@@ -23,21 +23,25 @@ def validate_mwaa_task_logs_collected(evidence: dict[str, Any]) -> dict[str, Any
     Returns:
         Validation result with pass/fail and details
     """
-    task_logs = evidence.get("mwaa_task_logs") or evidence.get("airflow_task_logs")
+    task_logs = evidence.get("airflow_task_logs") or evidence.get("mwaa_task_logs")
 
     if not task_logs:
         return {
             "passed": False,
-            "checkpoint": "mwaa_task_logs_collected",
-            "message": "No MWAA task logs found in evidence",
-            "expected": "Task logs from CloudWatch",
+            "checkpoint": "airflow_task_logs_collected",
+            "message": "No Airflow task logs found in evidence",
+            "expected": "Task logs from CloudWatch or Airflow REST API",
         }
 
     log_count = task_logs.get("event_count", 0) if isinstance(task_logs, dict) else len(task_logs)
+    if log_count == 0 and isinstance(task_logs, dict):
+        # Check if content exists (from REST API)
+        content = task_logs.get("content", "")
+        log_count = 1 if content else 0
 
     return {
         "passed": log_count > 0,
-        "checkpoint": "mwaa_task_logs_collected",
+        "checkpoint": "airflow_task_logs_collected",
         "message": f"Found {log_count} task log events",
         "expected": "At least 1 task log event",
         "actual": log_count,
@@ -141,7 +145,7 @@ def validate_full_trace(result: dict[str, Any]) -> dict[str, Any]:
     Full trace validation - runs all checkpoints.
 
     Verifies the agent correctly traced the failure through all components:
-    MWAA task logs -> S3 object -> Lambda logs -> Schema change
+    Airflow task logs -> S3 object -> Lambda logs -> Schema change
 
     Args:
         result: Full investigation result
@@ -152,7 +156,7 @@ def validate_full_trace(result: dict[str, Any]) -> dict[str, Any]:
     evidence = result.get("evidence", {})
 
     checkpoints = [
-        validate_mwaa_task_logs_collected(evidence),
+        validate_airflow_task_logs_collected(evidence),
         validate_s3_object_inspected(evidence),
         validate_lambda_logs_collected(evidence),
         validate_schema_change_identified(result),

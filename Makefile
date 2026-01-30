@@ -23,9 +23,10 @@ superfluid-demo:
 cloudwatch-demo:
 	$(PYTHON) -m tests.test_case_cloudwatch_demo.test_orchestrator
 
-# Run MWAA upstream/downstream failure test case
+# Run ECS Fargate Airflow upstream/downstream failure test case
+# (command name kept as mwaa-demo for backward compatibility)
 mwaa-demo:
-	$(PYTHON) -m tests.test_case_mwaa.test_orchestrator
+	$(PYTHON) -m tests.test_case_upstream_downstream_airflow.test_orchestrator
 
 # Run the generic CLI (reads from stdin or --input)
 run:
@@ -70,7 +71,7 @@ help:
 	@echo "  make demo            - Run CloudWatch demo"
 	@echo "  make superfluid-demo - Run Superfluid test case demo"
 	@echo "  make cloudwatch-demo - Run CloudWatch demo (alias)"
-	@echo "  make mwaa-demo       - Run MWAA upstream/downstream demo"
+	@echo "  make mwaa-demo       - Run ECS Fargate Airflow upstream/downstream demo"
 	@echo "  make test            - Run tests"
 	@echo "  make test-cov        - Run tests with coverage"
 	@echo "  make clean           - Clean up cache files"

@@ -1,11 +1,11 @@
 """
-API Ingester Lambda function.
+API Ingester Lambda function for ECS Fargate Airflow test case.
 
 Fetches data from an external API (or generates mock data) and writes to S3.
 Can inject schema changes to test failure scenarios.
+Triggers Airflow DAGs via REST API.
 """
 
-import base64
 import json
 import os
 from datetime import datetime
@@ -33,7 +33,7 @@ def fetch_from_external_api(api_url: str, inject_schema_change: bool = False) ->
                 json={"inject_schema_change": True},
                 timeout=10,
             )
-            print(f"Configured external API to inject schema change")
+            print("Configured external API to inject schema change")
         except Exception as e:
             print(f"Warning: Could not configure API: {e}")
 
@@ -41,7 +41,9 @@ def fetch_from_external_api(api_url: str, inject_schema_change: bool = False) ->
     response.raise_for_status()
 
     result = response.json()
-    print(f"Fetched from external API: schema_version={result.get('meta', {}).get('schema_version')}")
+    print(
+        f"Fetched from external API: schema_version={result.get('meta', {}).get('schema_version')}"
+    )
 
     return result
 
@@ -100,39 +102,44 @@ def write_to_s3(data: list[dict], bucket: str, key: str) -> dict:
     }
 
 
-def trigger_mwaa_dag(
-    environment_name: str,
+def trigger_airflow_dag(
+    airflow_url: str,
     dag_id: str,
     conf: dict[str, Any],
+    username: str = "admin",
+    password: str = "admin",
 ) -> dict:
-    """Trigger MWAA DAG via CLI token."""
-    mwaa = boto3.client("mwaa")
+    """Trigger Airflow DAG via REST API."""
+    import base64
 
-    token_response = mwaa.create_cli_token(Name=environment_name)
-    cli_token = token_response["CliToken"]
-    hostname = token_response["WebServerHostname"]
+    # Airflow REST API v2 endpoint for triggering DAGs
+    trigger_url = f"{airflow_url}/api/v2/dags/{dag_id}/dagRuns"
 
-    conf_json = json.dumps(conf)
-    command = f"dags trigger {dag_id} --conf '{conf_json}'"
+    # Basic auth header
+    credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
+
+    # API v2 requires logical_date (can be null for manual triggers)
+    dag_run_id = f"triggered_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    logical_date = datetime.utcnow().isoformat()
 
     response = requests.post(
-        f"https://{hostname}/aws_mwaa/cli",
+        trigger_url,
         headers={
-            "Authorization": f"Bearer {cli_token}",
-            "Content-Type": "text/plain",
+            "Authorization": f"Basic {credentials}",
+            "Content-Type": "application/json",
         },
-        data=command,
+        json={
+            "dag_run_id": dag_run_id,
+            "logical_date": logical_date,
+            "conf": conf,
+        },
         timeout=30,
     )
 
-    if response.status_code == 200:
-        result = response.json()
-        stdout = base64.b64decode(result.get("stdout", "")).decode()
-        stderr = base64.b64decode(result.get("stderr", "")).decode()
+    if response.status_code in [200, 201]:
         return {
             "success": True,
-            "stdout": stdout,
-            "stderr": stderr,
+            "dag_run": response.json(),
         }
 
     return {
@@ -147,7 +154,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
 
     Event parameters:
     - inject_schema_change: bool - If true, simulate API schema change
-    - trigger_dag: bool - If true, trigger MWAA DAG after S3 write
+    - trigger_dag: bool - If true, trigger Airflow DAG after S3 write
     - use_external_api: bool - If true, call external API (default: True if URL set)
 
     Returns:
@@ -157,7 +164,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
     trigger_dag = event.get("trigger_dag", True)
 
     data_bucket = os.environ.get("DATA_BUCKET")
-    mwaa_environment = os.environ.get("MWAA_ENVIRONMENT")
+    airflow_webserver_url = os.environ.get("AIRFLOW_WEBSERVER_URL")
     dag_id = os.environ.get("DAG_ID", "ingest_transform")
     external_api_url = os.environ.get("EXTERNAL_API_URL")
 
@@ -205,10 +212,10 @@ def lambda_handler(event: dict, context: Any) -> dict:
         "api_meta": api_meta,
     }
 
-    # Optionally trigger MWAA DAG
-    if trigger_dag and mwaa_environment:
+    # Optionally trigger Airflow DAG
+    if trigger_dag and airflow_webserver_url:
         dag_conf = {"s3_key": s3_key}
-        dag_result = trigger_mwaa_dag(mwaa_environment, dag_id, dag_conf)
+        dag_result = trigger_airflow_dag(airflow_webserver_url, dag_id, dag_conf)
         result["dag_trigger"] = dag_result
         print(f"DAG trigger result: {dag_result}")
 
