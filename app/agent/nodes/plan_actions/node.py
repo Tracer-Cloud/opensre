@@ -4,9 +4,7 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from app.agent.nodes.investigate.models import InvestigateInput
-from app.agent.nodes.investigate.plan_actions.plan_actions import (
-    plan_actions as build_plan_actions,
-)
+from app.agent.nodes.plan_actions.plan_actions import plan_actions as build_plan_actions
 from app.agent.output import debug_print, get_tracker
 from app.agent.state import InvestigationState
 

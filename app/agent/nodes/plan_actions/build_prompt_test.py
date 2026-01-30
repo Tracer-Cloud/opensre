@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 from pydantic import BaseModel
 
-from app.agent.nodes.investigate.plan_actions.build_prompt import (
+from app.agent.nodes.plan_actions.build_prompt import (
     _build_available_sources_hint,
     _format_action_metadata,
     _get_executed_sources,
