@@ -41,6 +41,10 @@ class InvestigationState(TypedDict, total=False):
     # Planning - deterministic plan based on alert type
     # ─────────────────────────────────────────────────────────────────────────
     plan_sources: list[EvidenceSource]
+    planned_actions: list[str]
+    plan_rationale: str
+    available_sources: dict[str, dict]
+    available_action_names: list[str]
 
     # ─────────────────────────────────────────────────────────────────────────
     # Context - global reference data built once at start (tracer runs, system config)
@@ -79,6 +83,10 @@ class InvestigationState(TypedDict, total=False):
 # Required keys and their defaults defined in one place
 STATE_DEFAULTS: dict[str, Any] = {
     "plan_sources": [],
+    "planned_actions": [],
+    "plan_rationale": "",
+    "available_sources": {},
+    "available_action_names": [],
     "context": {},
     "evidence": {},
     "root_cause": "",

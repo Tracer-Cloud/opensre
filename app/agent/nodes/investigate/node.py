@@ -1,68 +1,59 @@
-"""Investigate node - planning and execution combined.
-
-This node plans and executes evidence gathering.
-It updates state fields but does NOT render output directly.
-"""
+"""Investigate node - execute planned actions and post-process evidence."""
 
 from langsmith import traceable
-from pydantic import BaseModel, Field
 
 from app.agent.nodes.investigate.execution import execute_actions
 from app.agent.nodes.investigate.models import InvestigateInput, InvestigateOutput
-from app.agent.nodes.investigate.plan_actions import plan_actions
 from app.agent.nodes.investigate.processing import (
     summarize_execution_results,
 )
 from app.agent.output import debug_print, get_tracker
 from app.agent.state import InvestigationState
-
-
-class InvestigationPlan(BaseModel):
-    """Structured plan for investigation."""
-
-    actions: list[str] = Field(
-        description="List of action names to execute (e.g., 'get_failed_jobs', 'get_error_logs')"
-    )
-    rationale: str = Field(description="Rationale for the chosen actions")
+from app.agent.tools.tool_actions.investigation_actions import get_available_actions
 
 
 @traceable(name="node_investigate")
 def node_investigate(state: InvestigationState) -> dict:
     """
-    Combined investigate node:
-    1) Interprets available data sources from alert and context
-    2) Selects actions based on availability, keywords, and history
-    3) Plans actions via LLM
-    4) Executes actions and post-processes evidence
+    Execute node:
+    1) Reads planned actions and sources from state
+    2) Executes actions and post-processes evidence
     """
     # Extract only needed attributes from state
     input_data = InvestigateInput.from_state(state)
 
     tracker = get_tracker()
-    tracker.start("investigate", "Planning evidence gathering")
+    tracker.start("investigate", "Executing planned actions")
 
-    # Plan required actions with LLM
-    plan, available_sources, available_action_names, available_actions = plan_actions(
-        input_data=input_data,
-        plan_model=InvestigationPlan,
-    )
+    planned_actions = state.get("planned_actions", [])
+    plan_rationale = state.get("plan_rationale", "")
+    available_sources = state.get("available_sources", {})
+    available_action_names = state.get("available_action_names", [])
 
-    if not available_action_names or plan is None:
-        debug_print("All actions already executed. Using existing evidence.")
+    if not available_action_names or not planned_actions:
+        debug_print("No planned actions to execute. Using existing evidence.")
         tracker.complete("investigate", fields_updated=["evidence"], message="No new actions")
         return {"evidence": input_data.evidence}
 
+    all_actions = get_available_actions()
+    actions_by_name = {action.name: action for action in all_actions}
+    available_actions = {
+        name: actions_by_name[name]
+        for name in available_action_names
+        if name in actions_by_name
+    }
+
     # Execute actions and summarize results
     execution_results = execute_actions(
-        plan.actions, available_actions, available_sources
+        planned_actions, available_actions, available_sources
     )
     evidence, executed_hypotheses, evidence_summary = summarize_execution_results(
         execution_results=execution_results,
-        action_names=plan.actions,
+        action_names=planned_actions,
         current_evidence=input_data.evidence,
         executed_hypotheses=input_data.executed_hypotheses,
         investigation_loop_count=input_data.investigation_loop_count,
-        rationale=plan.rationale,
+        rationale=plan_rationale,
     )
 
     tracker.complete(
