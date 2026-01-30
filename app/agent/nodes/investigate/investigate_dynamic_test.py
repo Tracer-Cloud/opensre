@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 from app.agent.nodes.investigate.data_sources import detect_available_sources
-from app.agent.nodes.investigate.execution import execute_actions
+from app.agent.nodes.investigate.execute_actions import execute_actions
 from app.agent.nodes.investigate.prompt import build_investigation_prompt
 from app.agent.state import InvestigationState
 from app.agent.tools.tool_actions.investigation_actions import get_available_actions
