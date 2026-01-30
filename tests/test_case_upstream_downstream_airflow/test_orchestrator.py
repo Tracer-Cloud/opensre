@@ -1,7 +1,7 @@
 """
-MWAA Demo Orchestrator - Upstream/Downstream Failure Detection.
+ECS Fargate Airflow Demo Orchestrator - Upstream/Downstream Failure Detection.
 
-Run with: make mwaa-demo
+Run with: make mwaa-demo (command name kept for backward compatibility)
 
 This test case demonstrates the agent's ability to:
 1. Detect Airflow task failures
@@ -10,7 +10,7 @@ This test case demonstrates the agent's ability to:
 4. Connect the dots between Lambda ingestion and downstream failures
 
 Milestones:
-- M1: Basic MWAA task failure detection
+- M1: Basic Airflow task failure detection
 - M2: S3 data boundary tracing
 - M3: Lambda upstream producer identification
 - M4: External API root cause (full trace)
@@ -20,14 +20,14 @@ import os
 import sys
 from datetime import UTC, datetime
 
-from tests.test_case_mwaa import use_case
-from tests.test_case_mwaa.validation import run_validation_suite
+from tests.test_case_upstream_downstream_airflow import use_case
+from tests.test_case_upstream_downstream_airflow.validation import run_validation_suite
 from tests.utils.alert_factory import create_alert
 
 
 def main(inject_failure: bool = True) -> int:
     """
-    Run the MWAA upstream/downstream failure test case.
+    Run the ECS Fargate Airflow upstream/downstream failure test case.
 
     Args:
         inject_failure: If True, inject schema change to cause failure
@@ -35,13 +35,14 @@ def main(inject_failure: bool = True) -> int:
     Returns:
         Exit code (0 for success)
     """
-    environment_name = os.getenv("MWAA_ENVIRONMENT", "tracer-test-env")
+    airflow_url = os.getenv("AIRFLOW_WEBSERVER_URL", "")
     data_bucket = os.getenv("DATA_BUCKET", "tracer-test-data")
+    airflow_log_group = os.getenv("AIRFLOW_LOG_GROUP", "/ecs/tracer-test-airflow")
 
     print("=" * 60)
-    print("MWAA Upstream/Downstream Failure Test Case")
+    print("ECS Fargate Airflow Upstream/Downstream Failure Test Case")
     print("=" * 60)
-    print(f"Environment: {environment_name}")
+    print(f"Airflow URL: {airflow_url}")
     print(f"Inject Failure: {inject_failure}")
     print("")
 
@@ -60,24 +61,26 @@ def main(inject_failure: bool = True) -> int:
     s3_key = result.get("s3_key", "")
     dag_run = result.get("dag_run", {})
 
+    dag_run_id = dag_run.get("dag_run_id", dag_run.get("run_id", f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"))
     execution_date = dag_run.get("execution_date", datetime.now(UTC).isoformat())
     failed_task = "validate_schema"  # Known failing task for schema issues
 
-    # Create alert with MWAA-specific annotations
+    # Create alert with ECS Fargate Airflow-specific annotations
     raw_alert = create_alert(
         pipeline_name=dag_id,
-        run_name=dag_run.get("run_id", f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"),
+        run_name=dag_run_id,
         status="failed",
         timestamp=datetime.now(UTC).isoformat(),
         annotations={
-            # MWAA context
-            "mwaa_environment": environment_name,
+            # Airflow context
+            "airflow_url": airflow_url,
             "dag_id": dag_id,
+            "dag_run_id": dag_run_id,
             "task_id": failed_task,
             "execution_date": execution_date,
-            # CloudWatch log context (MWAA logs go to CloudWatch)
-            "cloudwatch_log_group": f"airflow-{environment_name}-Task",
-            "cloudwatch_log_stream": f"{dag_id}/{failed_task}/{execution_date}",
+            # CloudWatch log context (ECS Fargate Airflow logs go to CloudWatch)
+            "cloudwatch_log_group": airflow_log_group,
+            "cloudwatch_log_stream": f"airflow/{dag_id}/{failed_task}",
             "cloudwatch_region": os.getenv("AWS_REGION", "us-east-1"),
             # S3 data context
             "s3_data_bucket": data_bucket,
@@ -87,7 +90,7 @@ def main(inject_failure: bool = True) -> int:
             # Failure context
             "error": "Schema validation failed: Missing required fields",
             "schema_change_injected": str(result.get("schema_change_injected", False)),
-            "context_sources": "mwaa,cloudwatch,s3,lambda",
+            "context_sources": "airflow,cloudwatch,s3,lambda",
         },
     )
 
@@ -105,17 +108,17 @@ def main(inject_failure: bool = True) -> int:
     print("=" * 60)
 
     @traceable(
-        name=f"MWAA Investigation - {raw_alert['alert_id'][:8]}",
+        name=f"ECS Airflow Investigation - {raw_alert['alert_id'][:8]}",
         metadata={
             "alert_id": raw_alert["alert_id"],
             "pipeline_name": dag_id,
-            "mwaa_environment": environment_name,
+            "airflow_url": airflow_url,
             "failure_type": "upstream_schema_change",
         }
     )
     def run_investigation():
         return _run(
-            alert_name=f"MWAA Task Failure: {dag_id}/{failed_task}",
+            alert_name=f"Airflow Task Failure: {dag_id}/{failed_task}",
             pipeline_name=dag_id,
             severity="critical",
             raw_alert=raw_alert,

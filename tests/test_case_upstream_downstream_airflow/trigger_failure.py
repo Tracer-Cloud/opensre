@@ -1,5 +1,5 @@
 """
-MWAA Test Case - Failure Injection Utilities.
+ECS Fargate Airflow Test Case - Failure Injection Utilities.
 
 Provides functions to programmatically trigger various failure scenarios
 for testing the agent's root cause analysis capabilities.
@@ -29,7 +29,7 @@ def inject_schema_change(
     Inject a schema change by writing data without customer_id field.
 
     This simulates an upstream API changing its response format,
-    which causes the downstream MWAA DAG to fail schema validation.
+    which causes the downstream Airflow DAG to fail schema validation.
 
     Args:
         bucket: S3 bucket name (defaults to DATA_BUCKET env var)
