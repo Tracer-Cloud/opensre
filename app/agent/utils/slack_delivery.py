@@ -7,6 +7,7 @@ import os
 import httpx
 
 from app.agent.output import debug_print
+from app.agent.constants import SLACK_CHANNEL
 
 
 def send_slack_report(slack_message: str) -> None:
@@ -17,7 +18,7 @@ def send_slack_report(slack_message: str) -> None:
     web app which posts to Slack using its bot token.
     """
     base_url = os.getenv("TRACER_API_URL")
-    slack_channel = os.getenv("SLACK_CHANNEL")
+    slack_channel = SLACK_CHANNEL
 
     if not base_url:
         debug_print("Slack delivery skipped: TRACER_API_URL not set.")
