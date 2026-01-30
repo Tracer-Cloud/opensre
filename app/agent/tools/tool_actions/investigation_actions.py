@@ -217,43 +217,6 @@ def get_available_actions() -> list[InvestigationAction]:
     ]
 
 
-def get_actions_by_source(source: EvidenceSource) -> list[InvestigationAction]:
-    """
-    Get actions filtered by source category.
-
-    Used by the investigate node to dynamically filter actions based on
-    the evidence sources relevant to the current investigation.
-
-    Args:
-        source: The evidence source category (e.g., "batch", "tracer_web", "cloudwatch")
-
-    Returns:
-        List of InvestigationAction objects matching the source
-    """
-    return [action for action in get_available_actions() if action.source == source]
-
-
-def get_actions_by_use_case(use_case_keywords: list[str]) -> list[InvestigationAction]:
-    """
-    Get actions that match use case keywords.
-
-    Used by the investigate node to dynamically prioritize actions based on
-    keywords extracted from the problem context (e.g., "memory", "timeout", "failure").
-
-    Args:
-        use_case_keywords: Keywords to match against action use cases
-
-    Returns:
-        List of InvestigationAction objects whose use cases match any keyword
-    """
-    keywords_lower = [kw.lower() for kw in use_case_keywords]
-    return [
-        action
-        for action in get_available_actions()
-        if any(kw in " ".join(action.use_cases).lower() for kw in keywords_lower)
-    ]
-
-
 def get_prioritized_actions(
     sources: list[EvidenceSource] | None = None,
     keywords: list[str] | None = None,

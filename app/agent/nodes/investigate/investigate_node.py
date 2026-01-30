@@ -117,7 +117,7 @@ def node_investigate(state: InvestigationState) -> dict:
     debug_print(f"Plan: {plan.actions} | {plan.rationale[:100]}...")
 
     # 6. Execution phase with dynamic parameter extraction
-    execution_results = execute_actions(state, plan.actions, available_sources)
+    execution_results = execute_actions(plan.actions, available_sources)
 
     # 7. Post-processing phase
     evidence = merge_evidence(state, execution_results)
