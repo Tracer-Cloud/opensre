@@ -1,6 +1,6 @@
 """Tests for keyword extraction."""
 
-from app.agent.nodes.investigate.plan_actions.planning.keywords import extract_keywords
+from app.agent.nodes.investigate.plan_actions.keywords import extract_keywords
 
 
 def test_extract_keywords_from_pipeline_failure():

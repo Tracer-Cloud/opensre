@@ -4,14 +4,14 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.agent.nodes.investigate.plan_actions.planning import (
-    plan_actions as plan_actions_with_llm,
-)
-from app.agent.nodes.investigate.plan_actions.planning import (
-    select_actions,
-)
-from app.agent.nodes.investigate.plan_actions.planning.interpretation_to_action_mapping import (
+from app.agent.nodes.investigate.plan_actions.interpretation_to_action_mapping import (
     interpret_inputs,
+)
+from app.agent.nodes.investigate.plan_actions.prompt import (
+    plan_actions as get_plan_from_llm,
+)
+from app.agent.nodes.investigate.plan_actions.prompt import (
+    select_actions,
 )
 from app.agent.output import debug_print
 from app.agent.tools.clients import get_llm
@@ -45,7 +45,7 @@ def plan_actions(
         return None, available_sources, available_action_names, available_actions
 
     llm = get_llm()
-    plan = plan_actions_with_llm(
+    plan = get_plan_from_llm(
         llm=llm,
         plan_model=plan_model,
         problem_md=input_data.problem_md,
