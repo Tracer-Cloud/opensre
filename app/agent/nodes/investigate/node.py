@@ -7,8 +7,8 @@ It updates state fields but does NOT render output directly.
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from app.agent.nodes.investigate.models import InvestigateInput, InvestigateOutput
 from app.agent.nodes.investigate.execution import execute_actions
+from app.agent.nodes.investigate.models import InvestigateInput, InvestigateOutput
 from app.agent.nodes.investigate.plan_actions import plan_actions
 from app.agent.nodes.investigate.processing import (
     summarize_execution_results,
