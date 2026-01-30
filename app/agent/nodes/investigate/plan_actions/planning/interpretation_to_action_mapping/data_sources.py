@@ -4,21 +4,22 @@ Scans alert annotations and state context to detect available data sources
 (CloudWatch, S3, local files, Tracer Web) and extract their parameters.
 """
 
-from app.agent.state import InvestigationState
+from typing import Any
 
 
-def detect_available_sources(state: InvestigationState) -> dict[str, dict]:
+def detect_available_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> dict[str, dict]:
     """
-    Detect available data sources from alert annotations and state context.
+    Detect available data sources from alert annotations and context.
 
     Scans multiple locations for source information:
     - raw_alert.annotations
     - raw_alert.commonAnnotations
     - raw_alert top-level fields
-    - state.context (for Tracer Web)
+    - context (for Tracer Web)
 
     Args:
-        state: Current investigation state
+        raw_alert: Raw alert payload (dict or str)
+        context: Investigation context dictionary
 
     Returns:
         Dictionary mapping source type to extracted parameters:
@@ -31,8 +32,8 @@ def detect_available_sources(state: InvestigationState) -> dict[str, dict]:
     """
     sources: dict[str, dict] = {}
 
-    raw_alert = state.get("raw_alert", {})
-    context = state.get("context", {})
+    if isinstance(raw_alert, str):
+        raw_alert = {}
 
     # Extract annotations from multiple possible locations
     annotations = {}
@@ -105,3 +106,19 @@ def detect_available_sources(state: InvestigationState) -> dict[str, dict]:
         sources["tracer_web"] = tracer_params
 
     return sources
+
+
+def interpret_inputs(
+    raw_alert: dict[str, Any] | str, context: dict[str, Any]
+) -> dict[str, dict]:
+    """
+    Interpret input signals into available data sources.
+
+    Args:
+        raw_alert: Raw alert payload (dict or str)
+        context: Investigation context dictionary
+
+    Returns:
+        Dictionary mapping source type to extracted parameters
+    """
+    return detect_available_sources(raw_alert, context)
