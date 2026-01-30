@@ -8,12 +8,11 @@ import logging
 import os
 import time
 
-from tests.utils.command_runner import run_tool
+from tests.utils.command_runner import MAX_LINE, run_tool
 
 logger = logging.getLogger(__name__)
 
 PIPELINE_NAME = "demo_pipeline_s3_failed_python"
-MAX_LINE = 20000
 
 
 def step1_check_s3_object() -> dict:
