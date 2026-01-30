@@ -4,12 +4,12 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.agent.nodes.investigate.plan_actions.build_prompt import (
+from app.agent.nodes.plan_actions.build_prompt import (
     plan_actions_with_llm,
     select_actions,
 )
-from app.agent.nodes.investigate.plan_actions.detect_sources import detect_sources
-from app.agent.nodes.investigate.plan_actions.extract_keywords import extract_keywords
+from app.agent.nodes.plan_actions.detect_sources import detect_sources
+from app.agent.nodes.plan_actions.extract_keywords import extract_keywords
 from app.agent.output import debug_print
 from app.agent.tools.clients import get_llm
 from app.agent.tools.tool_actions.investigation_actions import (
