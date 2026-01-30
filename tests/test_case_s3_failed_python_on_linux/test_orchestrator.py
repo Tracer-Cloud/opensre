@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from langsmith import traceable
 
 from app.main import _run
-from tests.test_case_s3_failed_python import use_case
+from tests.test_case_s3_failed_python_on_linux import use_case
 from tests.utils.alert_factory import create_alert
 from tests.utils.file_logger import configure_file_logging, tail_log_file
 
@@ -35,8 +35,6 @@ def _build_alert_annotations(result: dict) -> dict:
 
     annotations = {
         "context_sources": "s3",
-        "log_file": LOG_FILE,
-        "runtime_sec": f"{result.get('runtime_sec', 0):.2f}",
         "failed_steps": failed_steps,
     }
     if log_excerpt:
