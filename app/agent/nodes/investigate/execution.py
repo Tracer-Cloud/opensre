@@ -17,7 +17,9 @@ class ActionExecutionResult:
 
 
 def execute_actions(
-    state: InvestigationState, action_names: list[str]
+    state: InvestigationState,
+    action_names: list[str],
+    available_sources: dict[str, dict] | None = None,
 ) -> dict[str, ActionExecutionResult]:
     """
     Execute investigation actions by name.
@@ -25,26 +27,16 @@ def execute_actions(
     Args:
         state: Current investigation state
         action_names: List of action names to execute
+        available_sources: Optional dictionary of available data sources
 
     Returns:
         Dictionary mapping action names to execution results
     """
+    if available_sources is None:
+        available_sources = {}
+
     available_actions = {action.name: action for action in get_available_actions()}
     results: dict[str, ActionExecutionResult] = {}
-
-    tracer_web_run = state.get("context", {}).get("tracer_web_run", {})
-    trace_id = tracer_web_run.get("trace_id")
-
-    # Extract CloudWatch params from alert annotations
-    raw_alert = state.get("raw_alert", {})
-    cloudwatch_annotations = {}
-    if isinstance(raw_alert, dict):
-        annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
-        if annotations:
-            cloudwatch_annotations = {
-                "log_group": annotations.get("cloudwatch_log_group"),
-                "log_stream": annotations.get("cloudwatch_log_stream"),
-            }
 
     for action_name in action_names:
         if action_name not in available_actions:
@@ -58,25 +50,38 @@ def execute_actions(
 
         action = available_actions[action_name]
 
-        if "trace_id" in action.requires and not trace_id:
+        # Check availability if availability_check is defined
+        if action.availability_check and not action.availability_check(available_sources):
             results[action_name] = ActionExecutionResult(
                 action_name=action_name,
                 success=False,
                 data={},
-                error="trace_id required but not found in state",
+                error="Action not available: required data sources not found",
             )
             continue
 
         try:
-            # Build kwargs based on action inputs
-            if action_name == "get_cloudwatch_logs" and cloudwatch_annotations.get("log_group"):
-                # CloudWatch action - use log_group/log_stream from alert
-                kwargs = cloudwatch_annotations
+            # Extract parameters using parameter_extractor if available, otherwise use requires
+            if action.parameter_extractor:
+                kwargs = action.parameter_extractor(available_sources)
             else:
-                # Standard actions - use trace_id
+                # Fallback: build kwargs from requires (backward compatibility)
                 kwargs = {}
-                if "trace_id" in action.inputs:
+                tracer_web_run = state.get("context", {}).get("tracer_web_run", {})
+                trace_id = tracer_web_run.get("trace_id")
+
+                if "trace_id" in action.requires and trace_id:
                     kwargs["trace_id"] = trace_id
+                elif "trace_id" in action.requires:
+                    results[action_name] = ActionExecutionResult(
+                        action_name=action_name,
+                        success=False,
+                        data={},
+                        error="trace_id required but not found in state",
+                    )
+                    continue
+
+                # Add default parameters for specific actions
                 if "size" in action.inputs:
                     kwargs["size"] = 500
                 if "error_only" in action.inputs:

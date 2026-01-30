@@ -5,36 +5,80 @@ from app.agent.tools.tool_actions.investigation_actions import get_available_act
 from app.agent.utils import get_executed_sources
 
 
-def _extract_cloudwatch_hint(state: InvestigationState) -> str:
-    """Extract CloudWatch log availability hint from alert."""
-    raw_alert = state.get("raw_alert", {})
-    if isinstance(raw_alert, dict):
-        annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
-        if annotations and annotations.get("cloudwatch_log_group"):
-            return f"""
-CloudWatch Logs Available:
-- Log Group: {annotations.get('cloudwatch_log_group')}
-- Log Stream: {annotations.get('cloudwatch_log_stream')}
-- Use get_cloudwatch_logs to fetch error logs and tracebacks
-"""
+def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
+    """
+    Build hints for all available data sources.
+
+    Args:
+        available_sources: Dictionary mapping source type to parameters
+
+    Returns:
+        Formatted string with hints for available sources
+    """
+    hints = []
+
+    if "cloudwatch" in available_sources:
+        cw = available_sources["cloudwatch"]
+        hints.append(
+            f"""CloudWatch Logs Available:
+- Log Group: {cw.get('log_group')}
+- Log Stream: {cw.get('log_stream')}
+- Region: {cw.get('region', 'us-east-1')}
+- Use get_cloudwatch_logs to fetch error logs and tracebacks"""
+        )
+
+    if "s3" in available_sources:
+        s3 = available_sources["s3"]
+        hints.append(
+            f"""S3 Storage Available:
+- Bucket: {s3.get('bucket')}
+- Prefix: {s3.get('prefix', 'N/A')}
+- Use check_s3_marker to verify pipeline completion markers"""
+        )
+
+    if "local_file" in available_sources:
+        local = available_sources["local_file"]
+        hints.append(
+            f"""Local File Available:
+- Log File: {local.get('log_file')}
+- Note: Local file logs can be read directly"""
+        )
+
+    if "tracer_web" in available_sources:
+        tracer = available_sources["tracer_web"]
+        hints.append(
+            f"""Tracer Web Platform Available:
+- Trace ID: {tracer.get('trace_id')}
+- Run URL: {tracer.get('run_url', 'N/A')}
+- Use get_failed_jobs, get_failed_tools, get_error_logs to fetch execution data"""
+        )
+
+    if hints:
+        return "\n\n" + "\n\n".join(hints) + "\n"
     return ""
 
 
 def build_investigation_prompt(
-    state: InvestigationState, available_actions: list | None = None
+    state: InvestigationState,
+    available_actions: list | None = None,
+    available_sources: dict[str, dict] | None = None,
 ) -> str:
     """
     Build the investigation prompt with rich action metadata.
 
     Args:
         state: Current investigation state
-        available_actions: Optional pre-computed actions list
+        available_actions: Optional pre-computed actions list (already filtered by availability)
+        available_sources: Optional dictionary of available data sources
 
     Returns:
         Formatted prompt string for LLM
     """
     if available_actions is None:
         available_actions = get_available_actions()
+
+    if available_sources is None:
+        available_sources = {}
 
     executed_sources_set = get_executed_sources(state)
     executed_actions = [
@@ -54,13 +98,13 @@ def build_investigation_prompt(
         _format_action_metadata(action) for action in available_actions_filtered
     )
 
-    cloudwatch_hint = _extract_cloudwatch_hint(state)
+    sources_hint = _build_available_sources_hint(available_sources)
 
     prompt = f"""You are investigating a data pipeline incident.
 
 Problem Context:
 {problem_context}
-{cloudwatch_hint}
+{sources_hint}
 Available Investigation Actions:
 {actions_description if actions_description else "No actions available"}
 
@@ -70,7 +114,6 @@ Recommendations from previous analysis:
 {chr(10).join(f"- {r}" for r in recommendations) if recommendations else "None"}
 
 Task: Select the most relevant actions to execute now based on the problem context.
-IMPORTANT: If CloudWatch logs are available above, you MUST use get_cloudwatch_logs to retrieve error logs.
 Consider what information would help diagnose the root cause.
 """
     return prompt
