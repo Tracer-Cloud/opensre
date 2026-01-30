@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.agent.nodes.investigate.plan_actions.planning.keywords import extract_keywords
+from app.agent.nodes.investigate.plan_actions.keywords import extract_keywords
 from app.agent.tools.tool_actions.investigation_actions import (
     get_available_actions,
     get_prioritized_actions,

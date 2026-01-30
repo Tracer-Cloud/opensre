@@ -6,8 +6,8 @@ import os
 
 import httpx
 
-from app.agent.output import debug_print
 from app.agent.constants import SLACK_CHANNEL
+from app.agent.output import debug_print
 
 
 def send_slack_report(slack_message: str) -> None:
