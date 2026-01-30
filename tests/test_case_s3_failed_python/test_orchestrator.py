@@ -4,9 +4,6 @@ S3 Failed Python Demo Orchestrator.
 Runs the pipeline and triggers RCA investigation on failure.
 """
 
-import logging
-import os
-import sys
 from datetime import UTC, datetime
 
 from langsmith import traceable
@@ -14,32 +11,9 @@ from langsmith import traceable
 from app.main import _run
 from tests.test_case_s3_failed_python import use_case
 from tests.utils.alert_factory import create_alert
+from tests.utils.file_logger import configure_file_logging, tail_log_file
 
 LOG_FILE = "production.log"
-MAX_LOG_CHARS = 2000
-MAX_LOG_LINES = 40
-
-
-def _configure_logging() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.FileHandler(LOG_FILE, mode="w"),
-            logging.StreamHandler(sys.stdout),
-        ],
-    )
-
-
-def _tail_log(log_file: str) -> str:
-    if not os.path.exists(log_file):
-        return ""
-    with open(log_file, encoding="utf-8", errors="replace") as handle:
-        lines = handle.readlines()
-    tail = "".join(lines[-MAX_LOG_LINES:])
-    if len(tail) > MAX_LOG_CHARS:
-        return tail[-MAX_LOG_CHARS:]
-    return tail
 
 
 def _format_failed_steps(results: list[dict]) -> str:
@@ -57,7 +31,7 @@ def _format_failed_steps(results: list[dict]) -> str:
 
 def _build_alert_annotations(result: dict) -> dict:
     failed_steps = _format_failed_steps(result.get("results", []))
-    log_excerpt = _tail_log(LOG_FILE)
+    log_excerpt = tail_log_file(LOG_FILE)
 
     annotations = {
         "context_sources": "s3",
@@ -71,7 +45,7 @@ def _build_alert_annotations(result: dict) -> dict:
 
 
 def main() -> int:
-    _configure_logging()
+    configure_file_logging(LOG_FILE)
     run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
 
     result = use_case.main(log_file=LOG_FILE)

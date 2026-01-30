@@ -12,16 +12,14 @@ import pytest
 
 from app.main import _run
 from tests.test_case_s3_failed_python import use_case
-from tests.test_case_s3_failed_python.test_orchestrator import (
-    _build_alert_annotations,
-    _configure_logging,
-)
+from tests.test_case_s3_failed_python.test_orchestrator import _build_alert_annotations
 from tests.utils.alert_factory import create_alert
+from tests.utils.file_logger import configure_file_logging
 
 
 def test_slack_delivery_with_s3_alert() -> None:
     """Test that Slack delivery is triggered when running investigation."""
-    _configure_logging()
+    configure_file_logging("test_production.log")
     run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
 
     # Run the use case to get failure results
@@ -71,7 +69,7 @@ def test_slack_delivery_with_s3_alert() -> None:
 
 def test_slack_message_contains_expected_content() -> None:
     """Test that the Slack message contains expected RCA content."""
-    _configure_logging()
+    configure_file_logging("test_production.log")
     run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
 
     result = use_case.main(log_file="test_production.log")
