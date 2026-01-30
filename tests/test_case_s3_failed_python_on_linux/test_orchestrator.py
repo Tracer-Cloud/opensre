@@ -30,15 +30,10 @@ def _format_failed_steps(results: list[dict]) -> str:
 
 
 def _build_alert_annotations(result: dict) -> dict:
-    failed_steps = _format_failed_steps(result.get("results", []))
-    log_excerpt = tail_log_file(LOG_FILE)
-
     annotations = {
         "context_sources": "s3",
-        "failed_steps": failed_steps,
+        "log_file": LOG_FILE,
     }
-    if log_excerpt:
-        annotations["log_excerpt"] = log_excerpt
     return annotations
 
 
