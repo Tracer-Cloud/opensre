@@ -13,15 +13,15 @@ install:
 
 # Run CloudWatch demo (default demo)
 demo:
-	.venv/bin/python -m tests.test_case_cloudwatch_demo.orchestrator
+	.venv/bin/python -m tests.test_case_cloudwatch_demo.test_orchestrator
 
 # Run Superfluid test case demo
 superfluid-demo:
-	.venv/bin/python -m tests.test_case_superfluid.orchestrator
+	.venv/bin/python -m tests.test_case_superfluid.test_orchestrator
 
 # Run CloudWatch minimal demo (alias for demo)
 cloudwatch-demo:
-	.venv/bin/python -m tests.test_case_cloudwatch_demo.orchestrator
+	.venv/bin/python -m tests.test_case_cloudwatch_demo.test_orchestrator
 
 # Run the generic CLI (reads from stdin or --input)
 run:
