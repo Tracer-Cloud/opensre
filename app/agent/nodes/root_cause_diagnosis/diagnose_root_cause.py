@@ -62,7 +62,6 @@ def main(state: InvestigationState) -> dict:
     # If no evidence at all, return low-confidence result instead of crashing
     if not has_tracer_evidence and not has_cloudwatch_evidence and not has_alert_evidence:
         debug_print("Warning: Limited evidence available - proceeding with low confidence")
-        tracker.warn("diagnose_root_cause", "Limited evidence available")
 
         # Return a basic result with low confidence
         problem = state.get("problem_md", "Pipeline failure detected")
