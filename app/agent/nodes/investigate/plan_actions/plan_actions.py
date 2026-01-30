@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.agent.nodes.investigate.plan_actions.planning import (
-    plan_actions as build_plan_actions,
+    plan_actions as plan_actions_with_llm,
 )
 from app.agent.nodes.investigate.plan_actions.planning import (
     select_actions,
@@ -45,7 +45,7 @@ def plan_actions(
         return None, available_sources, available_action_names, available_actions
 
     llm = get_llm()
-    plan = build_plan_actions(
+    plan = plan_actions_with_llm(
         llm=llm,
         plan_model=plan_model,
         problem_md=input_data.problem_md,
