@@ -15,7 +15,6 @@ from tests.utils.file_logger import configure_file_logging
 
 LOG_FILE = "production.log"
 
-
 def main() -> int:
     configure_file_logging(LOG_FILE)
     run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
