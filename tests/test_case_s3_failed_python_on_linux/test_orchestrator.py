@@ -16,14 +16,6 @@ from tests.utils.file_logger import configure_file_logging
 LOG_FILE = "production.log"
 
 
-def _build_alert_annotations(result: dict) -> dict:
-    annotations = {
-        "context_sources": "s3",
-        "log_file": LOG_FILE,
-    }
-    return annotations
-
-
 def main() -> int:
     configure_file_logging(LOG_FILE)
     run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
@@ -40,7 +32,6 @@ def main() -> int:
         run_name=run_id,
         status="failed",
         timestamp=datetime.now(UTC).isoformat(),
-        annotations=_build_alert_annotations(result),
     )
 
     print("Running investigation...")
