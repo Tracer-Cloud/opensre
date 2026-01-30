@@ -7,9 +7,11 @@ Scans alert annotations and state context to detect available data sources
 from typing import Any
 
 
-def detect_available_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> dict[str, dict]:
+def detect_sources(
+    raw_alert: dict[str, Any] | str, context: dict[str, Any]
+) -> dict[str, dict]:
     """
-    Detect available data sources from alert annotations and context.
+    Detect relevant data sources from alert annotations and context.
 
     Scans multiple locations for source information:
     - raw_alert.annotations
@@ -106,19 +108,3 @@ def detect_available_sources(raw_alert: dict[str, Any] | str, context: dict[str,
         sources["tracer_web"] = tracer_params
 
     return sources
-
-
-def interpret_inputs(
-    raw_alert: dict[str, Any] | str, context: dict[str, Any]
-) -> dict[str, dict]:
-    """
-    Interpret input signals into available data sources.
-
-    Args:
-        raw_alert: Raw alert payload (dict or str)
-        context: Investigation context dictionary
-
-    Returns:
-        Dictionary mapping source type to extracted parameters
-    """
-    return detect_available_sources(raw_alert, context)

@@ -4,17 +4,18 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.agent.nodes.investigate.plan_actions.interpretation_to_action_mapping import (
-    interpret_inputs,
-)
-from app.agent.nodes.investigate.plan_actions.prompt import (
-    plan_actions as get_plan_from_llm,
-)
-from app.agent.nodes.investigate.plan_actions.prompt import (
+from app.agent.nodes.investigate.plan_actions.build_prompt import (
+    plan_actions_with_llm,
     select_actions,
 )
+from app.agent.nodes.investigate.plan_actions.detect_sources import detect_sources
+from app.agent.nodes.investigate.plan_actions.extract_keywords import extract_keywords
 from app.agent.output import debug_print
 from app.agent.tools.clients import get_llm
+from app.agent.tools.tool_actions.investigation_actions import (
+    get_available_actions,
+    get_prioritized_actions,
+)
 
 
 def plan_actions(
@@ -31,13 +32,18 @@ def plan_actions(
     Returns:
         Tuple of (plan_or_none, available_sources, available_action_names, available_actions)
     """
-    available_sources = interpret_inputs(input_data.raw_alert, input_data.context)
+    available_sources = detect_sources(input_data.raw_alert, input_data.context)
     debug_print(f"Relevant sources: {list(available_sources.keys())}")
 
+    all_actions = get_available_actions()
+    keywords = extract_keywords(input_data.problem_md, input_data.alert_name)
+    candidate_actions = (
+        get_prioritized_actions(keywords=keywords) if keywords else all_actions
+    )
+
     available_actions, available_action_names = select_actions(
+        actions=candidate_actions,
         available_sources=available_sources,
-        problem_md=input_data.problem_md,
-        alert_name=input_data.alert_name,
         executed_hypotheses=input_data.executed_hypotheses,
     )
 
@@ -45,7 +51,7 @@ def plan_actions(
         return None, available_sources, available_action_names, available_actions
 
     llm = get_llm()
-    plan = get_plan_from_llm(
+    plan = plan_actions_with_llm(
         llm=llm,
         plan_model=plan_model,
         problem_md=input_data.problem_md,
