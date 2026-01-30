@@ -9,7 +9,6 @@ from app.agent.nodes import (
     node_diagnose_root_cause,
     node_extract_alert,
     node_frame_problem,
-    node_plan_actions,
     node_publish_findings,
 )
 from app.agent.nodes.investigate.node import node_investigate
@@ -43,7 +42,6 @@ def build_graph(config: Any | None = None) -> Any:
     graph.add_node("extract_alert", node_extract_alert)
     graph.add_node("build_context", node_build_context)
     graph.add_node("frame_problem", node_frame_problem)
-    graph.add_node("plan_actions", node_plan_actions)
     graph.add_node("investigate", node_investigate)
     graph.add_node("diagnose_root_cause", node_diagnose_root_cause)
     graph.add_node("publish_findings", node_publish_findings)
@@ -52,15 +50,14 @@ def build_graph(config: Any | None = None) -> Any:
     graph.add_edge(START, "build_context")
     graph.add_edge("extract_alert", "frame_problem")
     graph.add_edge("build_context", "frame_problem")
-    graph.add_edge("frame_problem", "plan_actions")
-    graph.add_edge("plan_actions", "investigate")
+    graph.add_edge("frame_problem", "investigate")
     graph.add_edge("investigate", "diagnose_root_cause")
 
     graph.add_conditional_edges(
         "diagnose_root_cause",
         should_continue_investigation,
         {
-            "investigate": "plan_actions",
+            "investigate": "investigate",
             "publish_findings": "publish_findings",
         },
     )
