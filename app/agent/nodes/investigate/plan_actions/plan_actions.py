@@ -17,6 +17,7 @@ from app.agent.tools.tool_actions.investigation_actions import (
     get_prioritized_actions,
 )
 
+
 def plan_actions(
     input_data,
     plan_model: type[BaseModel],
