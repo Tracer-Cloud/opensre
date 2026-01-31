@@ -887,6 +887,43 @@ def main(state: InvestigationState) -> dict:
     # Render the report
     _render_report(slack_message, ctx.get("confidence", 0.0), ctx.get("validity_score", 0.0))
 
+    # Persist memory if enabled and quality gate passes
+    from app.agent.memory import is_memory_enabled, write_memory
+
+    if is_memory_enabled():
+        pipeline_name = ctx.get("pipeline_name", "unknown")
+        alert_id = ctx.get("alert_id", "unknown")
+        confidence = ctx.get("confidence", 0.0)
+        validity_score = ctx.get("validity_score", 0.0)
+        root_cause = ctx.get("root_cause", "")
+
+        # Extract action sequence from state
+        executed_hypotheses = state.get("executed_hypotheses", [])
+        action_sequence = []
+        if executed_hypotheses:
+            for hyp in executed_hypotheses:
+                actions = hyp.get("actions", [])
+                if isinstance(actions, list):
+                    action_sequence.extend(actions)
+
+        # Extract data lineage
+        lineage_section = _format_data_lineage_flow(ctx)
+
+        # Extract problem pattern (first line of root cause)
+        problem_pattern = root_cause.split(".")[0] if root_cause else ""
+
+        write_memory(
+            pipeline_name=pipeline_name,
+            alert_id=alert_id,
+            root_cause=root_cause,
+            confidence=confidence,
+            validity_score=validity_score,
+            action_sequence=action_sequence[:5],  # Top 5 actions
+            data_lineage=lineage_section,
+            problem_pattern=problem_pattern,
+            rca_report=slack_message,  # Store full RCA report
+        )
+
     return {"slack_message": slack_message}
 
 

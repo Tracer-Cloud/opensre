@@ -95,12 +95,26 @@ def main(state: InvestigationState) -> dict:
             "investigation_loop_count": loop_count,
         }
 
-    # Build simple prompt from context and evidence
-    prompt = _build_simple_prompt(state, evidence)
+    # Load memory context if enabled
+    from app.agent.memory import get_memory_context, is_memory_enabled
 
-    # Call LLM
+    memory_context = ""
+    if is_memory_enabled():
+        pipeline_name = state.get("pipeline_name", "")
+        seed_paths = []
+        if "prefect" in pipeline_name.lower():
+            seed_paths.append("tests/test_case_upstream_prefect_ecs_fargate/ARCHITECTURE.md")
+        memory_context = get_memory_context(pipeline_name=pipeline_name, seed_paths=seed_paths)
+        if memory_context:
+            debug_print("[MEMORY] Loaded context for diagnosis")
+
+    # Build simple prompt from context and evidence
+    prompt = _build_simple_prompt(state, evidence, memory_context)
+
+    # Call LLM (use fast model if memory provides guidance)
     debug_print("Invoking LLM for root cause analysis...")
-    llm = get_llm()
+    use_fast = bool(memory_context)
+    llm = get_llm(use_fast_model=use_fast)
     response = llm.with_config(run_name="LLM – Analyze evidence and propose root cause").invoke(
         prompt
     )
@@ -209,7 +223,7 @@ def main(state: InvestigationState) -> dict:
     }
 
 
-def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
+def _build_simple_prompt(state: InvestigationState, evidence: dict, memory_context: str = "") -> str:
     """Build an evidence-based prompt for root cause analysis."""
     problem = state.get("problem_md", "")
     hypotheses = state.get("hypotheses", [])
@@ -264,13 +278,22 @@ Audit evidence shows external API interactions. For data pipeline failures:
 - Explain how the external change propagated downstream to cause the pipeline failure
 """
 
+    # Add prior root cause patterns from memory
+    memory_section = ""
+    if memory_context:
+        memory_section = f"""
+**Prior Root Cause Patterns (from memory):**
+{memory_context[:1500]}
+
+Use these patterns to recognize similar failure modes and accelerate diagnosis.
+"""
+
     prompt = f"""You are an experienced SRE writing a short RCA (root cause analysis) for a data pipeline incident.
 
 Goal: Be helpful and accurate. Prefer evidence-backed explanations over speculation.
 If the exact root cause cannot be proven, provide the most likely explanation based on observed evidence,
 and clearly state what is unknown.
-{upstream_directive}
-
+{upstream_directive}{memory_section}
 DEFINITIONS:
 - VALIDATED_CLAIMS: Directly supported by the evidence shown below (observed facts).
 - NON_VALIDATED_CLAIMS: Plausible hypotheses or contributing factors that are NOT directly proven by the evidence.
