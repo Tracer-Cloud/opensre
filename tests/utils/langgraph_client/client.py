@@ -21,6 +21,52 @@ def _select_endpoint() -> str:
         return REMOTE_ENDPOINT
 
 
+def fire_alert_to_remote_langgraph_client(
+    alert_name: str,
+    pipeline_name: str,
+    severity: str,
+    raw_alert: dict[str, Any],
+    config_metadata: dict[str, Any] | None = None,
+    stream_mode: list[str] | None = None,
+    timeout: int = 300,
+) -> requests.Response:
+    """
+    Fire alert specifically to the REMOTE LangGraph client.
+
+    Args:
+        alert_name: Name of the alert
+        pipeline_name: Name of the pipeline
+        severity: Alert severity (e.g., "critical", "warning")
+        raw_alert: Raw alert payload
+        config_metadata: Optional metadata to include in config
+        stream_mode: Stream mode (default: ["values"])
+        timeout: Request timeout in seconds
+
+    Returns:
+        requests.Response object (for streaming)
+    """
+    payload = {
+        "input": {
+            "alert_name": alert_name,
+            "pipeline_name": pipeline_name,
+            "severity": severity,
+            "raw_alert": raw_alert,
+        },
+        "config": {"metadata": config_metadata or {}},
+        "stream_mode": stream_mode or ["values"],
+    }
+
+    response = requests.post(
+        REMOTE_ENDPOINT,
+        json=payload,
+        stream=True,
+        timeout=timeout
+    )
+    response.raise_for_status()
+
+    return response
+
+
 def fire_alert_to_langgraph(
     alert_name: str,
     pipeline_name: str,

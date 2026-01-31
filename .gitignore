@@ -102,6 +102,18 @@ Temporary Items
 output/
 .langgraph_api/
 
-# CDK build artifacts (keep templates for reference)
-**/cdk.out/.cache/
-**/cdk.out/asset.*/
+# Vendorized packages in api_ingester
+tests/test_case_upstream_downstream_pipeline/pipeline_code/api_ingester/certifi/
+tests/test_case_upstream_downstream_pipeline/pipeline_code/api_ingester/certifi-*/
+tests/test_case_upstream_downstream_pipeline/pipeline_code/api_ingester/charset_normalizer/
+tests/test_case_upstream_downstream_pipeline/pipeline_code/api_ingester/charset_normalizer-*/
+tests/test_case_upstream_downstream_pipeline/pipeline_code/api_ingester/idna/
+tests/test_case_upstream_downstream_pipeline/pipeline_code/api_ingester/idna-*/
+tests/test_case_upstream_downstream_pipeline/pipeline_code/api_ingester/requests/
+tests/test_case_upstream_downstream_pipeline/pipeline_code/api_ingester/requests-*/
+tests/test_case_upstream_downstream_pipeline/pipeline_code/api_ingester/urllib3/
+tests/test_case_upstream_downstream_pipeline/pipeline_code/api_ingester/urllib3-*/
+tests/test_case_upstream_downstream_pipeline/pipeline_code/api_ingester/bin/
+
+# CDK build artifacts
+**/cdk.out/
