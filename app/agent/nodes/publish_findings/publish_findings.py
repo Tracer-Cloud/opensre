@@ -921,6 +921,7 @@ def main(state: InvestigationState) -> dict:
             action_sequence=action_sequence[:5],  # Top 5 actions
             data_lineage=lineage_section,
             problem_pattern=problem_pattern,
+            rca_report=slack_message,  # Store full RCA report
         )
 
     return {"slack_message": slack_message}

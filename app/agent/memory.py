@@ -177,6 +177,7 @@ def write_memory(
     action_sequence: list[str] | None = None,
     data_lineage: str | None = None,
     problem_pattern: str | None = None,
+    rca_report: str | None = None,
 ) -> Path | None:
     """
     Write investigation memory to file (Openclaw session-memory pattern).
@@ -192,6 +193,7 @@ def write_memory(
         action_sequence: Successful action sequence
         data_lineage: Data lineage nodes
         problem_pattern: Problem statement pattern
+        rca_report: Full RCA report (slack_message) for complete context
 
     Returns:
         Path to written file, or None if not written
@@ -241,6 +243,10 @@ def write_memory(
 
     if data_lineage:
         content_parts.extend(["## Data Lineage", data_lineage, ""])
+
+    # Include full RCA report for complete context
+    if rca_report:
+        content_parts.extend(["## Full RCA Report", "", rca_report, ""])
 
     # Write file
     try:
