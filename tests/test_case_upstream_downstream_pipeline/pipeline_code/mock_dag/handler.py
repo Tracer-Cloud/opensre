@@ -9,6 +9,8 @@ Follows Senior/Staff-level refactoring principles:
 5. File layout optimized for intent.
 """
 
+import json
+
 from .adapters.alerting import fire_pipeline_alert
 from .adapters.s3 import read_json, write_json
 from .config import PIPELINE_NAME, PROCESSED_BUCKET, REQUIRED_FIELDS
@@ -35,6 +37,19 @@ def lambda_handler(event, context):
             # 1. Extraction (Infrastructure)
             raw_payload, correlation_id = read_json(bucket, key)
             raw_records = raw_payload.get("data", [])
+
+            # Log structured input for traceability
+            print(
+                json.dumps(
+                    {
+                        "event": "processing_started",
+                        "input_bucket": bucket,
+                        "input_key": key,
+                        "correlation_id": correlation_id,
+                        "record_count": len(raw_records),
+                    }
+                )
+            )
 
             # 2. Processing (Domain Logic - Pure)
             processed_records = validate_and_transform(raw_records, REQUIRED_FIELDS)
