@@ -19,8 +19,8 @@ import requests
 from langsmith import traceable
 
 from app.main import _run
-from tests.conftest import UPSTREAM_DOWNSTREAM_CONFIG
 from tests.utils.alert_factory import create_alert
+from tests.utils.conftest import UPSTREAM_DOWNSTREAM_CONFIG
 
 
 def trigger_pipeline_failure() -> dict:
@@ -115,12 +115,14 @@ def test_agent_investigation(failure_data: dict) -> bool:
     print("\nRunning agent investigation...")
 
     @traceable(
-        name=f"Pipeline Investigation - {raw_alert['alert_id'][:8]}",
+        run_type="chain",
+        name=f"test_lambda_upstream - {raw_alert['alert_id'][:8]}",
         metadata={
             "alert_id": raw_alert["alert_id"],
             "pipeline_name": pipeline_name,
             "correlation_id": failure_data["correlation_id"],
             "s3_key": failure_data["s3_key"],
+            "lambda_function": failure_data.get("mock_dag_function"),
         },
     )
     def run_investigation():

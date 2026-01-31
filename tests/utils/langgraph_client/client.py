@@ -9,7 +9,7 @@ from typing import Any
 
 import requests
 
-from tests.conftest import LANGGRAPH_LOCAL_ENDPOINT, LANGGRAPH_REMOTE_ENDPOINT
+from tests.utils.conftest import LANGGRAPH_LOCAL_ENDPOINT, LANGGRAPH_REMOTE_ENDPOINT
 
 
 def _select_endpoint() -> str:

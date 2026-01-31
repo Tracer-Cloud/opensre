@@ -1,0 +1,457 @@
+"""Prompt construction for root cause diagnosis."""
+
+import json
+from typing import Any
+
+from app.agent.state import InvestigationState
+
+# Allowed evidence sources the model can reference (keeps grounding consistent)
+ALLOWED_EVIDENCE_SOURCES = [
+    "aws_batch_jobs",
+    "tracer_tools",
+    "logs",
+    "cloudwatch_logs",
+    "host_metrics",
+    "lambda_logs",
+    "lambda_code",
+    "lambda_config",
+    "s3_metadata",
+    "s3_audit",
+    "vendor_audit",
+]
+
+
+def build_diagnosis_prompt(
+    state: InvestigationState, evidence: dict[str, Any], memory_context: str = ""
+) -> str:
+    """
+    Build an evidence-based prompt for root cause analysis.
+
+    Args:
+        state: Investigation state with problem and hypotheses
+        evidence: Collected evidence dictionary
+        memory_context: Optional memory context from prior investigations
+
+    Returns:
+        Formatted prompt string for LLM
+    """
+    problem = state.get("problem_md", "")
+    hypotheses = state.get("hypotheses", [])
+
+    # Build directive sections
+    upstream_directive = _build_upstream_directive(evidence)
+    memory_section = _build_memory_section(memory_context)
+
+    # Build evidence sections
+    evidence_text = _build_evidence_sections(state, evidence)
+
+    # Construct final prompt
+    prompt = f"""You are an experienced SRE writing a short RCA (root cause analysis) for a data pipeline incident.
+
+Goal: Be helpful and accurate. Prefer evidence-backed explanations over speculation.
+If the exact root cause cannot be proven, provide the most likely explanation based on observed evidence,
+and clearly state what is unknown.
+{upstream_directive}{memory_section}
+DEFINITIONS:
+- VALIDATED_CLAIMS: Directly supported by the evidence shown below (observed facts).
+- NON_VALIDATED_CLAIMS: Plausible hypotheses or contributing factors that are NOT directly proven by the evidence.
+
+RULES:
+- Do NOT introduce external domain knowledge that is not visible in the evidence (e.g., what a tool usually does).
+- Do NOT reference source code files or line numbers unless they appear explicitly in the log evidence below.
+- You can ONLY use information present in the evidence logs shown below. If a traceback shows file names and line numbers, you may reference them.
+- VALIDATED_CLAIMS should be factual and specific (no "maybe", "likely", "appears").
+- NON_VALIDATED_CLAIMS may include "likely/maybe", but must stay consistent with evidence.
+- Keep each claim to one sentence.
+- When possible, mention which evidence source supports a validated claim using one of:
+  {", ".join(ALLOWED_EVIDENCE_SOURCES)}.
+
+PROBLEM:
+{problem}
+
+HYPOTHESES TO CONSIDER (may be incomplete):
+{chr(10).join(f"- {h}" for h in hypotheses[:5]) if hypotheses else "- None"}
+
+EVIDENCE:
+{evidence_text}
+
+OUTPUT FORMAT (follow exactly):
+
+ROOT_CAUSE:
+<1–2 sentences. If not proven, say "Most likely ..." and state what's missing. Do not say only "Unable to determine".>
+
+VALIDATED_CLAIMS:
+- <one factual claim> [evidence: <one of {", ".join(ALLOWED_EVIDENCE_SOURCES)}>]
+- <another factual claim> [evidence: <one of {", ".join(ALLOWED_EVIDENCE_SOURCES)}>]
+
+NON_VALIDATED_CLAIMS:
+- <one plausible hypothesis consistent with evidence>
+- <another plausible hypothesis>
+(If you include hypotheses, focus on explaining the failure mechanism and what data is missing to confirm it.)
+
+CONFIDENCE: <0-100 integer>
+"""
+
+    return prompt
+
+
+def _build_upstream_directive(evidence: dict[str, Any]) -> str:
+    """Build upstream tracing directive if audit evidence is present."""
+    s3_audit_payload = evidence.get("s3_audit_payload", {})
+    vendor_audit_from_logs = evidence.get("vendor_audit_from_logs", {})
+
+    if s3_audit_payload.get("found") or vendor_audit_from_logs:
+        return """
+**CRITICAL: Upstream Root Cause Tracing**
+Audit evidence shows external API interactions. For data pipeline failures:
+- The root cause is often upstream (external API schema changes, missing fields, breaking changes)
+- S3 audit payload and vendor audit logs contain the source of truth
+- Validated claims should reference the external API request/response details
+- Explain how the external change propagated downstream to cause the pipeline failure
+"""
+    return ""
+
+
+def _build_memory_section(memory_context: str) -> str:
+    """Build memory section if context is available."""
+    if not memory_context:
+        return ""
+
+    return f"""
+**Prior Root Cause Patterns (from memory):**
+{memory_context[:1500]}
+
+Use these patterns to recognize similar failure modes and accelerate diagnosis.
+"""
+
+
+def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]) -> str:
+    """Build all evidence sections for the prompt."""
+    sections = []
+
+    # Extract evidence components
+    failed_jobs = evidence.get("failed_jobs", [])
+    failed_tools = evidence.get("failed_tools", [])
+    error_logs = evidence.get("error_logs", [])[:10]
+    cloudwatch_logs = evidence.get("cloudwatch_logs", [])[:5]
+    host_metrics = evidence.get("host_metrics", {})
+    lambda_logs = evidence.get("lambda_logs", [])[:10]
+    lambda_function = evidence.get("lambda_function", {})
+    lambda_config = evidence.get("lambda_config", {})
+    s3_object = evidence.get("s3_object", {})
+    s3_audit_payload = evidence.get("s3_audit_payload", {})
+    vendor_audit_from_logs = evidence.get("vendor_audit_from_logs", {})
+
+    # Extract alert annotations
+    raw_alert = state.get("raw_alert", {})
+    cloudwatch_url = None
+    alert_annotations = {}
+    if isinstance(raw_alert, dict):
+        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
+        alert_annotations = (
+            raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
+        )
+
+    # CloudWatch logs
+    if cloudwatch_logs:
+        section = f"\nCloudWatch Error Logs ({len(cloudwatch_logs)} events):\n"
+        for log in cloudwatch_logs:
+            section += f"{log}\n"
+        if cloudwatch_url:
+            section += f"\n[Citation: View full logs at {cloudwatch_url}]\n"
+        section += "\n"
+        sections.append(section)
+
+    # AWS Batch jobs
+    if failed_jobs:
+        section = f"\nAWS Batch Failed Jobs ({len(failed_jobs)}):\n"
+        for job in failed_jobs[:5]:
+            section += f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
+        sections.append(section)
+    else:
+        sections.append("\nAWS Batch Failed Jobs: None\n")
+
+    # Failed tools
+    if failed_tools:
+        section = f"\nFailed Tools ({len(failed_tools)}):\n"
+        for tool in failed_tools[:5]:
+            section += f"- {tool.get('tool_name', 'Unknown')}: exit_code={tool.get('exit_code')}\n"
+        sections.append(section)
+    else:
+        sections.append("\nFailed Tools: None\n")
+
+    # Error logs
+    if error_logs:
+        section = f"\nError Logs ({len(error_logs)}):\n"
+        for log in error_logs[:5]:
+            section += f"- {log.get('message', '')[:200]}\n"
+        sections.append(section)
+    else:
+        sections.append("\nError Logs: None\n")
+
+    # Host metrics
+    if host_metrics and host_metrics.get("data"):
+        sections.append("\nHost Metrics: Available (CPU, memory, disk)\n")
+    else:
+        sections.append("\nHost Metrics: None\n")
+
+    # Lambda logs
+    if lambda_logs:
+        section = f"\nLambda Invocation Logs ({len(lambda_logs)} events):\n"
+        for log in lambda_logs[:10]:
+            message = log.get("message", "") if isinstance(log, dict) else str(log)
+            section += f"- {message[:300]}\n"
+        sections.append(section)
+
+    # Lambda function details
+    if lambda_function and lambda_function.get("function_name"):
+        section = _build_lambda_function_section(lambda_function)
+        sections.append(section)
+
+    # Lambda configuration
+    if lambda_config and lambda_config.get("function_name"):
+        section = _build_lambda_config_section(lambda_config)
+        sections.append(section)
+
+    # S3 object details
+    if s3_object and s3_object.get("found"):
+        section = _build_s3_object_section(s3_object)
+        sections.append(section)
+
+    # S3 audit payload
+    if s3_audit_payload and s3_audit_payload.get("found"):
+        section = _build_s3_audit_section(s3_audit_payload)
+        sections.append(section)
+
+    # Vendor audit from logs
+    if vendor_audit_from_logs and vendor_audit_from_logs.get("requests"):
+        section = _build_vendor_audit_section(vendor_audit_from_logs)
+        sections.append(section)
+
+    # Alert annotations
+    if alert_annotations:
+        section = _build_alert_annotations_section(alert_annotations)
+        if section:
+            sections.append(section)
+
+    return "".join(sections)
+
+
+def _build_lambda_function_section(lambda_function: dict[str, Any]) -> str:
+    """Build Lambda function evidence section."""
+    section = "\nLambda Function Configuration:\n"
+    section += f"- Function: {lambda_function.get('function_name')}\n"
+    section += f"- Runtime: {lambda_function.get('runtime')}\n"
+    section += f"- Handler: {lambda_function.get('handler')}\n"
+
+    if lambda_function.get("environment_variables"):
+        env_vars = lambda_function.get("environment_variables", {})
+        section += f"- Environment Variables: {', '.join(env_vars.keys())}\n"
+
+    if lambda_function.get("code", {}).get("files"):
+        code_files = lambda_function.get("code", {}).get("files", {})
+        if isinstance(code_files, dict) and code_files:
+            section += f"- Code Files: {', '.join(list(code_files.keys())[:5])}\n"
+            # Include handler code snippet if available
+            handler_file = lambda_function.get("handler", "").split(".")[0] + ".py"
+            if handler_file in code_files:
+                file_content = code_files.get(handler_file, "")
+                if isinstance(file_content, str):
+                    code_snippet = file_content[:1000]
+                    section += f"\nHandler Code Snippet ({handler_file}):\n{code_snippet}\n"
+
+    return section
+
+
+def _build_lambda_config_section(lambda_config: dict[str, Any]) -> str:
+    """Build Lambda configuration evidence section."""
+    section = "\nLambda Configuration:\n"
+    section += f"- Function: {lambda_config.get('function_name')}\n"
+    section += f"- Runtime: {lambda_config.get('runtime')}\n"
+    section += f"- Handler: {lambda_config.get('handler')}\n"
+
+    env_vars = lambda_config.get("environment_variables", {})
+    if env_vars:
+        section += "- Environment Variables:\n"
+        for key, value in list(env_vars.items())[:10]:
+            section += f"  - {key}: {value}\n"
+
+    return section
+
+
+def _build_s3_object_section(s3_object: dict[str, Any]) -> str:
+    """Build S3 object evidence section."""
+    section = "\nS3 Object Details:\n"
+    section += f"- Bucket: {s3_object.get('bucket')}\n"
+    section += f"- Key: {s3_object.get('key')}\n"
+    section += f"- Size: {s3_object.get('size')} bytes\n"
+    section += f"- Content Type: {s3_object.get('content_type')}\n"
+
+    metadata = s3_object.get("metadata", {})
+    if metadata:
+        section += f"- Metadata: {json.dumps(metadata, indent=2)}\n"
+
+    if s3_object.get("sample") and s3_object.get("is_text"):
+        section += f"\nS3 Object Sample:\n{s3_object.get('sample')[:500]}\n"
+
+    return section
+
+
+def _build_s3_audit_section(s3_audit_payload: dict[str, Any]) -> str:
+    """Build S3 audit payload evidence section."""
+    section = "\nS3 Audit Payload (External API Lineage):\n"
+    section += f"- Bucket: {s3_audit_payload.get('bucket')}\n"
+    section += f"- Key: {s3_audit_payload.get('key')}\n"
+
+    audit_content = s3_audit_payload.get("content")
+    if audit_content:
+        try:
+            audit_data = (
+                json.loads(audit_content) if isinstance(audit_content, str) else audit_content
+            )
+            section += f"- Content: {json.dumps(audit_data, indent=2)[:1500]}\n"
+        except (json.JSONDecodeError, TypeError):
+            section += f"- Content: {str(audit_content)[:500]}\n"
+
+    return section
+
+
+def _build_vendor_audit_section(vendor_audit_from_logs: dict[str, Any]) -> str:
+    """Build vendor audit evidence section."""
+    section = "\nExternal Vendor API Audit (from Lambda logs):\n"
+    for req in vendor_audit_from_logs.get("requests", [])[:5]:
+        section += f"- {req.get('type')} {req.get('url')}\n"
+        section += f"  Status: {req.get('status_code')}\n"
+        if req.get("response_body"):
+            response_str = json.dumps(req.get("response_body"), indent=2)[:500]
+            section += f"  Response: {response_str}\n"
+
+    return section
+
+
+def _build_alert_annotations_section(alert_annotations: dict[str, Any]) -> str:
+    """Build alert annotations evidence section."""
+    sections = []
+
+    if alert_annotations.get("log_excerpt"):
+        sections.append(f"\nLog Excerpt from Alert:\n{alert_annotations['log_excerpt'][:1000]}\n")
+
+    if alert_annotations.get("failed_steps"):
+        sections.append(f"\nFailed Steps Summary:\n{alert_annotations['failed_steps']}\n")
+
+    if alert_annotations.get("error"):
+        sections.append(f"\nError Message:\n{alert_annotations['error']}\n")
+
+    return "".join(sections)
+
+
+def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]) -> str:
+    """Build all evidence sections for the prompt."""
+    sections = []
+
+    # Extract evidence components
+    failed_jobs = evidence.get("failed_jobs", [])
+    failed_tools = evidence.get("failed_tools", [])
+    error_logs = evidence.get("error_logs", [])[:10]
+    cloudwatch_logs = evidence.get("cloudwatch_logs", [])[:5]
+    host_metrics = evidence.get("host_metrics", {})
+    lambda_logs = evidence.get("lambda_logs", [])[:10]
+    lambda_function = evidence.get("lambda_function", {})
+    lambda_config = evidence.get("lambda_config", {})
+    s3_object = evidence.get("s3_object", {})
+    s3_audit_payload = evidence.get("s3_audit_payload", {})
+    vendor_audit_from_logs = evidence.get("vendor_audit_from_logs", {})
+
+    # Extract alert annotations
+    raw_alert = state.get("raw_alert", {})
+    cloudwatch_url = None
+    alert_annotations = {}
+    if isinstance(raw_alert, dict):
+        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
+        alert_annotations = (
+            raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
+        )
+
+    # CloudWatch logs
+    if cloudwatch_logs:
+        section = f"\nCloudWatch Error Logs ({len(cloudwatch_logs)} events):\n"
+        for log in cloudwatch_logs:
+            section += f"{log}\n"
+        if cloudwatch_url:
+            section += f"\n[Citation: View full logs at {cloudwatch_url}]\n"
+        section += "\n"
+        sections.append(section)
+
+    # AWS Batch jobs
+    if failed_jobs:
+        section = f"\nAWS Batch Failed Jobs ({len(failed_jobs)}):\n"
+        for job in failed_jobs[:5]:
+            section += f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
+        sections.append(section)
+    else:
+        sections.append("\nAWS Batch Failed Jobs: None\n")
+
+    # Failed tools
+    if failed_tools:
+        section = f"\nFailed Tools ({len(failed_tools)}):\n"
+        for tool in failed_tools[:5]:
+            section += f"- {tool.get('tool_name', 'Unknown')}: exit_code={tool.get('exit_code')}\n"
+        sections.append(section)
+    else:
+        sections.append("\nFailed Tools: None\n")
+
+    # Error logs
+    if error_logs:
+        section = f"\nError Logs ({len(error_logs)}):\n"
+        for log in error_logs[:5]:
+            section += f"- {log.get('message', '')[:200]}\n"
+        sections.append(section)
+    else:
+        sections.append("\nError Logs: None\n")
+
+    # Host metrics
+    if host_metrics and host_metrics.get("data"):
+        sections.append("\nHost Metrics: Available (CPU, memory, disk)\n")
+    else:
+        sections.append("\nHost Metrics: None\n")
+
+    # Lambda logs
+    if lambda_logs:
+        section = f"\nLambda Invocation Logs ({len(lambda_logs)} events):\n"
+        for log in lambda_logs[:10]:
+            message = log.get("message", "") if isinstance(log, dict) else str(log)
+            section += f"- {message[:300]}\n"
+        sections.append(section)
+
+    # Lambda function details
+    if lambda_function and lambda_function.get("function_name"):
+        section = _build_lambda_function_section(lambda_function)
+        sections.append(section)
+
+    # Lambda configuration
+    if lambda_config and lambda_config.get("function_name"):
+        section = _build_lambda_config_section(lambda_config)
+        sections.append(section)
+
+    # S3 object details
+    if s3_object and s3_object.get("found"):
+        section = _build_s3_object_section(s3_object)
+        sections.append(section)
+
+    # S3 audit payload
+    if s3_audit_payload and s3_audit_payload.get("found"):
+        section = _build_s3_audit_section(s3_audit_payload)
+        sections.append(section)
+
+    # Vendor audit from logs
+    if vendor_audit_from_logs and vendor_audit_from_logs.get("requests"):
+        section = _build_vendor_audit_section(vendor_audit_from_logs)
+        sections.append(section)
+
+    # Alert annotations
+    if alert_annotations:
+        section = _build_alert_annotations_section(alert_annotations)
+        if section:
+            sections.append(section)
+
+    return "".join(sections)

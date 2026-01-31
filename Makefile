@@ -31,6 +31,10 @@ prefect-demo:
 upstream-downstream:
 	$(PYTHON) -m tests.test_case_upstream_lambda.test_agent_e2e
 
+# Run Apache Flink ECS E2E test
+flink-demo:
+	$(PYTHON) -m tests.test_case_upstream_apache_flink_ecs.test_agent_e2e
+
 # Run the generic CLI (reads from stdin or --input)
 run:
 	$(PYTHON) -m app.main
@@ -73,6 +77,7 @@ help:
 	@echo "  make install         - Install dependencies"
 	@echo "  make demo            - Run Prefect ECS E2E test (default, shows Investigation Trace)"
 	@echo "  make prefect-demo    - Run Prefect ECS Fargate E2E test (alias for demo)"
+	@echo "  make flink-demo      - Run Apache Flink ECS E2E test"
 	@echo "  make superfluid-demo - Run Superfluid test case demo"
 	@echo "  make cloudwatch-demo - Run CloudWatch demo"
 	@echo "  make upstream-downstream - Run upstream/downstream Lambda E2E test"
