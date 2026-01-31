@@ -65,26 +65,26 @@ async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
     try:
         # Use async verification - non-blocking
         claims = await verify_jwt_async(token)
-    except JWTExpiredError:
+    except JWTExpiredError as e:
         raise Auth.exceptions.HTTPException(
             status_code=401,
             detail="JWT has expired"
-        )
+        ) from e
     except JWTInvalidIssuerError as e:
         raise Auth.exceptions.HTTPException(
             status_code=401,
             detail=str(e)
-        )
+        ) from e
     except JWTMissingClaimError as e:
         raise Auth.exceptions.HTTPException(
             status_code=401,
             detail=str(e)
-        )
+        ) from e
     except JWTVerificationError as e:
         raise Auth.exceptions.HTTPException(
             status_code=401,
             detail=f"JWT verification failed: {e}"
-        )
+        ) from e
 
     # Return user information
     # This will be accessible via:
@@ -133,7 +133,7 @@ async def on_thread_create(
 @auth.on.threads.read
 async def on_thread_read(
     ctx: Auth.types.AuthContext,
-    value: Auth.types.on.threads.read.value,
+    value: Auth.types.on.threads.read.value,  # noqa: ARG001
 ) -> dict[str, str]:
     """Filter thread reads to user's organization."""
     return {"org_id": ctx.user.get("org_id", "")}
@@ -142,7 +142,7 @@ async def on_thread_read(
 @auth.on.threads.update
 async def on_thread_update(
     ctx: Auth.types.AuthContext,
-    value: Auth.types.on.threads.update.value,
+    value: Auth.types.on.threads.update.value,  # noqa: ARG001
 ) -> dict[str, str]:
     """Filter thread updates to user's organization."""
     return {"org_id": ctx.user.get("org_id", "")}
@@ -151,7 +151,7 @@ async def on_thread_update(
 @auth.on.threads.delete
 async def on_thread_delete(
     ctx: Auth.types.AuthContext,
-    value: Auth.types.on.threads.delete.value,
+    value: Auth.types.on.threads.delete.value,  # noqa: ARG001
 ) -> dict[str, str]:
     """Filter thread deletes to user's organization."""
     return {"org_id": ctx.user.get("org_id", "")}
@@ -160,7 +160,7 @@ async def on_thread_delete(
 @auth.on.threads.search
 async def on_thread_search(
     ctx: Auth.types.AuthContext,
-    value: Auth.types.on.threads.search.value,
+    value: Auth.types.on.threads.search.value,  # noqa: ARG001
 ) -> dict[str, str]:
     """Filter thread searches to user's organization."""
     return {"org_id": ctx.user.get("org_id", "")}
@@ -169,7 +169,7 @@ async def on_thread_search(
 @auth.on.threads.create_run
 async def on_thread_create_run(
     ctx: Auth.types.AuthContext,
-    value: Auth.types.on.threads.create_run.value,
+    value: Auth.types.on.threads.create_run.value,  # noqa: ARG001
 ) -> dict[str, str]:
     """Filter run creation to user's organization."""
     return {"org_id": ctx.user.get("org_id", "")}
@@ -199,7 +199,7 @@ async def on_assistant_create(
 @auth.on.assistants.read
 async def on_assistant_read(
     ctx: Auth.types.AuthContext,
-    value: Auth.types.on.assistants.read.value,
+    value: Auth.types.on.assistants.read.value,  # noqa: ARG001
 ) -> dict[str, str]:
     """Filter assistant reads to user's organization."""
     return {"org_id": ctx.user.get("org_id", "")}
@@ -208,7 +208,7 @@ async def on_assistant_read(
 @auth.on.assistants.update
 async def on_assistant_update(
     ctx: Auth.types.AuthContext,
-    value: Auth.types.on.assistants.update.value,
+    value: Auth.types.on.assistants.update.value,  # noqa: ARG001
 ) -> dict[str, str]:
     """Filter assistant updates to user's organization."""
     return {"org_id": ctx.user.get("org_id", "")}
@@ -217,7 +217,7 @@ async def on_assistant_update(
 @auth.on.assistants.delete
 async def on_assistant_delete(
     ctx: Auth.types.AuthContext,
-    value: Auth.types.on.assistants.delete.value,
+    value: Auth.types.on.assistants.delete.value,  # noqa: ARG001
 ) -> dict[str, str]:
     """Filter assistant deletes to user's organization."""
     return {"org_id": ctx.user.get("org_id", "")}
@@ -226,7 +226,7 @@ async def on_assistant_delete(
 @auth.on.assistants.search
 async def on_assistant_search(
     ctx: Auth.types.AuthContext,
-    value: Auth.types.on.assistants.search.value,
+    value: Auth.types.on.assistants.search.value,  # noqa: ARG001
 ) -> dict[str, str]:
     """Filter assistant searches to user's organization."""
     return {"org_id": ctx.user.get("org_id", "")}
@@ -256,7 +256,7 @@ async def on_cron_create(
 @auth.on.crons.read
 async def on_cron_read(
     ctx: Auth.types.AuthContext,
-    value: Auth.types.on.crons.read.value,
+    value: Auth.types.on.crons.read.value,  # noqa: ARG001
 ) -> dict[str, str]:
     """Filter cron reads to user's organization."""
     return {"org_id": ctx.user.get("org_id", "")}
@@ -265,7 +265,7 @@ async def on_cron_read(
 @auth.on.crons.update
 async def on_cron_update(
     ctx: Auth.types.AuthContext,
-    value: Auth.types.on.crons.update.value,
+    value: Auth.types.on.crons.update.value,  # noqa: ARG001
 ) -> dict[str, str]:
     """Filter cron updates to user's organization."""
     return {"org_id": ctx.user.get("org_id", "")}
@@ -274,7 +274,7 @@ async def on_cron_update(
 @auth.on.crons.delete
 async def on_cron_delete(
     ctx: Auth.types.AuthContext,
-    value: Auth.types.on.crons.delete.value,
+    value: Auth.types.on.crons.delete.value,  # noqa: ARG001
 ) -> dict[str, str]:
     """Filter cron deletes to user's organization."""
     return {"org_id": ctx.user.get("org_id", "")}
@@ -283,7 +283,7 @@ async def on_cron_delete(
 @auth.on.crons.search
 async def on_cron_search(
     ctx: Auth.types.AuthContext,
-    value: Auth.types.on.crons.search.value,
+    value: Auth.types.on.crons.search.value,  # noqa: ARG001
 ) -> dict[str, str]:
     """Filter cron searches to user's organization."""
     return {"org_id": ctx.user.get("org_id", "")}
