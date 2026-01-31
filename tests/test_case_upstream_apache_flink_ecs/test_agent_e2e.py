@@ -29,10 +29,13 @@ from tests.utils.alert_factory import create_alert
 # Configuration - update these after deployment
 CONFIG = {
     "trigger_api_url": "https://pbjh63udyc.execute-api.us-east-1.amazonaws.com/prod/",
+    "mock_api_url": "https://ff1aspehx9.execute-api.us-east-1.amazonaws.com/prod/",
     "log_group": "/ecs/tracer-flink",
     "ecs_cluster": "tracer-flink-cluster",
     "landing_bucket": "tracerflinkecs-landingbucket23fe90fb-ztviw7xibnx7",
     "processed_bucket": "tracerflinkecs-processedbucketde59930c-bxdsoonzx2pq",
+    "trigger_lambda": "TracerFlinkEcs-TriggerLambda2FDB819B-kU5Ob8iHt0uD",
+    "mock_api_lambda": "TracerFlinkEcs-MockApiLambdaB6B81E06-2JYO44G1dQX0",
 }
 
 
@@ -123,22 +126,26 @@ def test_agent_investigation(failure_data: dict):
 
     # Create alert with Flink task information
     alert = create_alert(
-        pipeline_name="tracer_flink_batch_pipeline",
+        pipeline_name="tracer_flink_ml_feature_pipeline",
         run_name=failure_data.get("task_arn", "flink-task"),
         status="failed",
         timestamp=datetime.now(UTC).isoformat(),
         severity="critical",
-        alert_name=f"Flink Task Failed: {failure_data['correlation_id']}",
+        alert_name=f"Flink ML Task Failed: {failure_data['correlation_id']}",
         annotations={
             "cloudwatch_log_group": failure_data["log_group"],
             "ecs_cluster": CONFIG["ecs_cluster"],
+            "task_arn": failure_data.get("task_arn", ""),
             "landing_bucket": failure_data["bucket"],
             "s3_key": failure_data["s3_key"],
             "audit_key": failure_data.get("audit_key", ""),
+            "processed_bucket": CONFIG["processed_bucket"],
             "correlation_id": failure_data["correlation_id"],
             "error_message": failure_data["error_message"],
-            "task_arn": failure_data.get("task_arn", ""),
-            "context_sources": "s3,cloudwatch,ecs",
+            "trigger_function": CONFIG["trigger_lambda"],
+            "mock_api_function": CONFIG["mock_api_lambda"],
+            "mock_api_url": CONFIG["mock_api_url"],
+            "context_sources": "s3,cloudwatch,ecs,lambda",
         },
     )
 
@@ -156,14 +163,15 @@ def test_agent_investigation(failure_data: dict):
     # Run investigation with traceable metadata
     @traceable(
         run_type="chain",
-        name=f"Pipeline Investigation - {alert['alert_id'][:8]}",
+        name=f"test_flink_ml - {alert['alert_id'][:8]}",
         metadata={
             "alert_id": alert["alert_id"],
-            "pipeline_name": "tracer_flink_batch_pipeline",
+            "pipeline_name": "tracer_flink_ml_feature_pipeline",
             "correlation_id": failure_data["correlation_id"],
             "s3_key": failure_data["s3_key"],
             "ecs_cluster": CONFIG["ecs_cluster"],
             "log_group": failure_data["log_group"],
+            "task_arn": failure_data.get("task_arn"),
         },
     )
     def run_investigation():
@@ -224,7 +232,7 @@ def test_agent_investigation(failure_data: dict):
     ):
         success_checks["External API identified"] = True
 
-    if "customer_id" in investigation_text or "schema" in investigation_text:
+    if "event_id" in investigation_text or "schema" in investigation_text:
         success_checks["Schema change detected"] = True
 
     print("\nSuccess Checks:")

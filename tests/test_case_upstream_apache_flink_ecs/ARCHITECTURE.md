@@ -132,22 +132,30 @@
 - Exits with status code (0 = success, non-zero = failure)
 
 ### 5. **PyFlink Job** (`pipeline_code/flink_job/main.py`)
-**Name**: `tracer_flink_batch_pipeline`
+**Name**: `tracer_flink_ml_feature_pipeline`
+**Purpose**: Feature engineering for ML model consumption
+
 **Steps**:
 
-1. **Read Data**
+1. **Read Event Data**
    - Reads JSON from S3 landing bucket
    - Extracts correlation_id from S3 metadata
-   - Returns raw payload
+   - Returns raw event payload
 
-2. **Validate & Transform**
-   - Validates required fields (`customer_id`, `order_id`, `amount`, `timestamp`)
-   - Transforms records to domain model
+2. **Validate & Engineer Features**
+   - Validates required fields (`event_id`, `user_id`, `event_type`, `timestamp`)
+   - Computes ML features from raw_features:
+     * Normalized numerical features
+     * One-hot encoded categorical features
+     * Interaction features (value_per_second, avg_value_per_count)
+     * Temporal features (is_weekend, hour_of_day)
+   - Generates feature hash for versioning
    - Raises `DomainError` on validation failure
 
-3. **Write Output**
-   - Writes processed data to S3 processed bucket
-   - Adds metadata linking back to source
+3. **Write Feature-Engineered Output**
+   - Writes processed features to S3 processed bucket
+   - Includes feature hash for ML model versioning
+   - Adds metadata linking back to source event
    - Preserves correlation_id for tracing
 
 **Error Handling**:
@@ -179,30 +187,36 @@
    └─> API Gateway
        └─> Trigger Lambda
            ├─> GET Mock External API /data
-           │   └─> Returns: {"data": [...], "meta": {...}}
+           │   └─> Returns: ML events with raw_features
            │
            ├─> PUT S3 audit/{id}.json (API request/response)
            │
            ├─> PUT S3 ingested/{timestamp}/data.json
            │   └─> Metadata: correlation_id, audit_key, schema_version
            │
-           └─> ECS RunTask (Flink job)
+           └─> ECS RunTask (Flink ML job)
                └─> Container starts with env vars:
                    - LANDING_BUCKET
                    - PROCESSED_BUCKET
                    - CORRELATION_ID
                    - S3_KEY
 
-2. ECS Flink Task
+2. ECS Flink Task (ML Feature Engineering)
    └─> Executes: python main.py
        ├─> Read S3 ingested/{timestamp}/data.json
        │
-       ├─> Validate schema (customer_id, order_id, amount, timestamp)
+       ├─> Validate event schema (event_id, user_id, event_type, timestamp)
        │
-       ├─> Transform to ProcessedRecord objects
+       ├─> Engineer ML features from raw_features:
+       │   * Normalized values
+       │   * One-hot encoded event types
+       │   * Interaction features
+       │   * Temporal features
+       │
+       ├─> Compute feature hash for versioning
        │
        └─> PUT S3 processed/{correlation_id}/data.json
-           └─> Metadata: correlation_id, source_key
+           └─> Metadata: correlation_id, source_key, feature_hash
 
 3. CloudWatch Logs
    └─> All job execution logs captured in /ecs/tracer-flink
@@ -217,27 +231,28 @@
            ├─> POST Mock External API /config {"inject_schema_change": true}
            │
            ├─> GET Mock External API /data
-           │   └─> Returns: {"data": [{order_id, amount}], ...}  ❌ Missing customer_id
+           │   └─> Returns: ML events without event_id  ❌ Missing event_id
            │
            ├─> PUT S3 audit/{id}.json (captures schema change)
            │
            ├─> PUT S3 ingested/{timestamp}/data.json
            │   └─> Metadata: schema_change_injected=True
            │
-           └─> ECS RunTask (Flink job)
+           └─> ECS RunTask (Flink ML job)
 
-2. ECS Flink Task
+2. ECS Flink Task (ML Feature Engineering)
    └─> Executes: python main.py
        ├─> Read S3 ingested/{timestamp}/data.json ✓
        │
-       ├─> Validate schema ❌ FAILS
-       │   └─> DomainError: Missing required field 'customer_id'
+       ├─> Validate event schema ❌ FAILS
+       │   └─> DomainError: Missing required field 'event_id'
+       │       (Critical for ML feature deduplication)
        │
        └─> Task exits with status code 1
 
 3. CloudWatch Logs
    └─> Error trace includes:
-       ├─> [FLINK][ERROR] Schema validation failed: Missing fields ['customer_id']
+       ├─> [FLINK][ERROR] Schema validation failed: Missing fields ['event_id']
        ├─> correlation_id for tracing
        ├─> S3 input location
        └─> Stack trace
@@ -261,8 +276,8 @@ When investigating a pipeline failure, the Tracer Agent should:
 
 ### 3. **Schema Validation**
 - Compare actual fields vs. required fields
-- Identify missing field: `customer_id`
-- Confirm schema mismatch cause
+- Identify missing field: `event_id`
+- Confirm schema mismatch cause (breaks ML feature deduplication)
 
 ### 4. **Data Lineage (S3 Metadata)**
 - Read `correlation_id` from object metadata
@@ -281,7 +296,7 @@ When investigating a pipeline failure, the Tracer Agent should:
 - Identify schema version change: `v1.0` → `v2.0`
 
 ### Root Cause
-External vendor API changed schema from v1.0 to v2.0, removing `customer_id` field, causing downstream validation failure in Flink batch job.
+External event stream API changed schema from v1.0 to v2.0, removing `event_id` field (critical for ML feature deduplication and versioning), causing downstream validation failure in Flink ML feature engineering pipeline.
 
 ## AWS Resources (Deployed)
 

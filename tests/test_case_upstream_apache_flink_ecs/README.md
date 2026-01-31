@@ -20,26 +20,26 @@
 
 ## What Should Be Detected
 
-1. **Orchestrator (ECS Flink Task)**
-   A downstream batch processing job fails while validating input data.
+1. **Orchestrator (ECS Flink ML Task)**
+   A downstream ML feature engineering job fails while validating event schema.
 
 2. **Task Logs (CloudWatch)**
-   The agent retrieves execution logs and stack traces for the failed job.
+   The agent retrieves execution logs and stack traces for the failed ML pipeline.
 
 3. **Input Data Store (S3 – landing)**
-   From the logs, the agent identifies the S3 object used as input and inspects its schema.
+   From the logs, the agent identifies the S3 object used as input and inspects event schema.
 
 4. **Schema Validation**
-   The agent detects a schema mismatch in the S3 input data (missing customer_id).
+   The agent detects a schema mismatch in ML events (missing event_id field).
 
 5. **Data Lineage (S3 metadata)**
-   The agent traces the S3 object origin using metadata and correlation IDs.
+   The agent traces the event stream origin using metadata and correlation IDs.
 
 6. **Upstream Compute (Trigger Lambda)**
-   The agent retrieves the Lambda code and recent invocation context responsible for writing the S3 object.
+   The agent retrieves the Lambda code and recent invocation context responsible for event ingestion.
 
-7. **External Dependency (Mock External Vendor API)** → **This is the goal**
-   The agent identifies the external API dependency and inspects the request/response payloads.
+7. **External Dependency (Mock Event Stream API)** → **This is the goal**
+   The agent identifies the external event stream API and inspects the schema change that broke the ML pipeline.
 
 ## Deployed Infrastructure
 
@@ -94,31 +94,31 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
 ### Failure Propagation Path
 
 ```
-Mock External Vendor API (schema change v2.0, removes customer_id)
+Mock Event Stream API (schema change v2.0, removes event_id)
     ↓
-Trigger Lambda (ingestion + audit trail)
+Trigger Lambda (event ingestion + audit trail)
     ↓
-S3 Landing Bucket (raw data + metadata)
+S3 Landing Bucket (raw ML events + metadata)
     ↓
-ECS Flink Task (PyFlink batch job)
+ECS Flink Task (ML Feature Engineering Pipeline)
     ↓
-DomainError: Missing fields ['customer_id']
+DomainError: Missing fields ['event_id'] (breaks feature deduplication)
     ↓
 CloudWatch Logs (structured error with correlation_id)
     ↓
-Agent investigates → Root cause: External API schema change
+Agent investigates → Root cause: External event stream schema change
 ```
 
 ### Key Components
 
 | Component | Purpose |
 |-----------|---------|
-| Mock External API | Simulates upstream data provider with schema versioning |
-| Trigger Lambda | Ingests data and launches ECS Flink task |
-| S3 Landing Bucket | Stores raw input data with audit trail |
-| ECS Flink Task | Batch processing with schema validation |
-| S3 Processed Bucket | Stores validated/transformed output |
-| CloudWatch Logs | Captures all execution logs |
+| Mock Event Stream API | Simulates upstream ML event provider with schema versioning |
+| Trigger Lambda | Ingests events and launches ECS Flink ML task |
+| S3 Landing Bucket | Stores raw ML events with audit trail |
+| ECS Flink Task | ML feature engineering pipeline with schema validation |
+| S3 Processed Bucket | Stores feature-engineered output for ML models |
+| CloudWatch Logs | Captures all pipeline execution logs |
 
 ## Differences from Prefect Test Case
 

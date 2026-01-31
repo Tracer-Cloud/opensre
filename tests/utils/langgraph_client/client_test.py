@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
-from tests.conftest import LANGGRAPH_REMOTE_ENDPOINT
+from tests.utils.conftest import LANGGRAPH_REMOTE_ENDPOINT
 from tests.utils.langgraph_client import fire_alert_to_remote_langgraph_client
 
 

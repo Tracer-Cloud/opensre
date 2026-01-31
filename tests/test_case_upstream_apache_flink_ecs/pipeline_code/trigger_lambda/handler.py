@@ -154,29 +154,67 @@ def lambda_handler(event, context):
                 "body": json.dumps({"error": str(e), "correlation_id": correlation_id}),
             }
     else:
-        # Fallback to generated test data
+        # Fallback to generated test data (ML event format)
         if inject_error:
-            data = {
-                "data": [
-                    {"order_id": "ORD-001", "amount": 99.99, "timestamp": timestamp},
-                    {"order_id": "ORD-002", "amount": 149.50, "timestamp": timestamp},
-                ],
-                "meta": {"schema_version": "2.0", "note": "Missing customer_id"},
-            }
-        else:
+            # Schema v2.0: Missing event_id (breaking change for ML pipeline)
             data = {
                 "data": [
                     {
-                        "customer_id": "CUST-001",
-                        "order_id": "ORD-001",
-                        "amount": 99.99,
+                        "user_id": "user_12345",
                         "timestamp": timestamp,
+                        "event_type": "click",
+                        "raw_features": {
+                            "value": 150.0,
+                            "duration": 45,
+                            "count": 3,
+                            "is_weekend": 0,
+                            "hour": 14,
+                        },
                     },
                     {
-                        "customer_id": "CUST-002",
-                        "order_id": "ORD-002",
-                        "amount": 149.50,
+                        "user_id": "user_67890",
                         "timestamp": timestamp,
+                        "event_type": "purchase",
+                        "raw_features": {
+                            "value": 299.99,
+                            "duration": 120,
+                            "count": 1,
+                            "is_weekend": 1,
+                            "hour": 18,
+                        },
+                    },
+                ],
+                "meta": {"schema_version": "2.0", "note": "BREAKING: event_id field removed"},
+            }
+        else:
+            # Schema v1.0: Complete event schema with event_id
+            data = {
+                "data": [
+                    {
+                        "event_id": "evt_001",
+                        "user_id": "user_12345",
+                        "timestamp": timestamp,
+                        "event_type": "click",
+                        "raw_features": {
+                            "value": 150.0,
+                            "duration": 45,
+                            "count": 3,
+                            "is_weekend": 0,
+                            "hour": 14,
+                        },
+                    },
+                    {
+                        "event_id": "evt_002",
+                        "user_id": "user_67890",
+                        "timestamp": timestamp,
+                        "event_type": "purchase",
+                        "raw_features": {
+                            "value": 299.99,
+                            "duration": 120,
+                            "count": 1,
+                            "is_weekend": 1,
+                            "hour": 18,
+                        },
                     },
                 ],
                 "meta": {"schema_version": "1.0"},

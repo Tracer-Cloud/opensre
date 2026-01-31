@@ -1,4 +1,4 @@
-from tests.conftest import LANGGRAPH_LOCAL_ENDPOINT, LANGGRAPH_REMOTE_ENDPOINT
+from tests.utils.conftest import LANGGRAPH_LOCAL_ENDPOINT, LANGGRAPH_REMOTE_ENDPOINT
 
 from .client import (
     fire_alert_to_langgraph,

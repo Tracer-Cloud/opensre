@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""PyFlink batch job for processing data from S3.
+"""PyFlink feature engineering batch job for ML pipelines.
 
 This job:
-1. Reads input data from S3 landing bucket
-2. Validates schema (requires customer_id, order_id, amount, timestamp)
-3. Transforms records to ProcessedRecord format
-4. Writes output to S3 processed bucket
+1. Reads raw event data from S3 landing bucket
+2. Validates schema (requires event_id, user_id, event_type, timestamp)
+3. Engineers ML features from raw_features
+4. Writes feature-engineered records to S3 processed bucket
 
 Exit codes:
 - 0: Success
-- 1: Validation/processing error
+- 1: Validation/feature engineering error
 """
 
 import argparse
@@ -20,8 +20,8 @@ import boto3
 from domain import validate_and_transform
 from errors import DomainError
 
-# Required fields for validation
-REQUIRED_FIELDS = ["customer_id", "order_id", "amount", "timestamp"]
+# Required fields for event schema validation
+REQUIRED_FIELDS = ["event_id", "user_id", "event_type", "timestamp"]
 
 
 def main():
