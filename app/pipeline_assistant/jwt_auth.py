@@ -17,12 +17,12 @@ import jwt
 from jwt import PyJWK
 
 from app.pipeline_assistant.config import (
-    JWT_ALGORITHM,
-    JWKS_CACHE_TTL_SECONDS,
-    get_environment,
-    Environment,
     CLERK_CONFIG_DEV,
     CLERK_CONFIG_PROD,
+    JWKS_CACHE_TTL_SECONDS,
+    JWT_ALGORITHM,
+    Environment,
+    get_environment,
 )
 
 
@@ -39,7 +39,7 @@ class JWTClaims:
     iat: int
 
     @classmethod
-    def from_payload(cls, payload: dict[str, Any]) -> "JWTClaims":
+    def from_payload(cls, payload: dict[str, Any]) -> JWTClaims:
         """Create JWTClaims from decoded payload."""
         return cls(
             sub=payload.get("sub", ""),

@@ -12,20 +12,20 @@ Module structure:
 """
 
 from app.pipeline_assistant.config import (
+    CLERK_CONFIG_DEV,
+    CLERK_CONFIG_PROD,
     ClerkConfig,
     Environment,
     get_clerk_config,
     get_environment,
-    CLERK_CONFIG_DEV,
-    CLERK_CONFIG_PROD,
 )
 from app.pipeline_assistant.graph import build_graph, pipeline_assistant
 from app.pipeline_assistant.jwt_auth import (
     JWTClaims,
-    JWTVerificationError,
     JWTExpiredError,
     JWTInvalidIssuerError,
     JWTMissingClaimError,
+    JWTVerificationError,
     verify_jwt_async,
 )
 from app.pipeline_assistant.prompts import (
