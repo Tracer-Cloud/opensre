@@ -1,5 +1,11 @@
-"""Report generation node."""
+"""Report generation node - final step in RCA pipeline."""
 
-from app.agent.nodes.publish_findings.publish_findings import node_publish_findings
+from app.agent.nodes.publish_findings.node import (
+    generate_report,
+    node_publish_findings,
+)
 
-__all__ = ["node_publish_findings"]
+__all__ = [
+    "node_publish_findings",
+    "generate_report",
+]
