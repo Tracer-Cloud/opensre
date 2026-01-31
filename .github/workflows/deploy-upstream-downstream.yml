@@ -2,8 +2,6 @@ name: Deploy Upstream Downstream Pipeline
 
 on:
   push:
-    paths:
-      - 'tests/test_case_upstream_downstream_pipeline/**'
     branches: ["*"]
 
 jobs:
