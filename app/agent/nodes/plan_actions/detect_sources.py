@@ -71,6 +71,12 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
         }
         if cloudwatch_log_stream:
             cloudwatch_params["log_stream"] = cloudwatch_log_stream
+
+        # Add correlation_id for log filtering if available
+        correlation_id = annotations.get("correlation_id") or annotations.get("correlationId")
+        if correlation_id:
+            cloudwatch_params["correlation_id"] = correlation_id
+
         sources["cloudwatch"] = cloudwatch_params
 
     # Detect S3 sources

@@ -148,6 +148,7 @@ def get_available_actions() -> list[InvestigationAction]:
     This provides structured information about what actions are available,
     what they require as input, what they return, and when to use them.
     """
+    from app.agent.tools.tool_actions.aws_sdk_actions import execute_aws_operation
     from app.agent.tools.tool_actions.cloudwatch_actions import get_cloudwatch_logs
     from app.agent.tools.tool_actions.lambda_actions import (
         get_lambda_configuration,
@@ -218,11 +219,11 @@ def get_available_actions() -> list[InvestigationAction]:
             requires=[],
             availability_check=lambda sources: bool(
                 sources.get("cloudwatch", {}).get("log_group")
-                and sources.get("cloudwatch", {}).get("log_stream")
             ),
             parameter_extractor=lambda sources: {
                 "log_group": sources.get("cloudwatch", {}).get("log_group"),
-                "log_stream": sources.get("cloudwatch", {}).get("log_stream"),
+                "log_stream": sources.get("cloudwatch", {}).get("log_stream"),  # Optional
+                "filter_pattern": sources.get("cloudwatch", {}).get("correlation_id"),  # Use for filtering
                 "limit": 100,
             },
         ),
@@ -331,6 +332,14 @@ def get_available_actions() -> list[InvestigationAction]:
                     "key": sources.get("s3", {}).get("key"),
                 }
             ),
+        ),
+        _build_investigation_action(
+            name="execute_aws_operation",
+            func=execute_aws_operation,
+            source="aws_sdk",
+            requires=["service", "operation"],
+            availability_check=lambda sources: True,  # Always available  # noqa: ARG005
+            parameter_extractor=None,  # Must be specified by agent
         ),
     ]
 
