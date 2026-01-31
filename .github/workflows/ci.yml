@@ -55,6 +55,48 @@ jobs:
         run: make test
         continue-on-error: false
 
+  deploy-upstream-downstream:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tests/test_case_upstream_downstream_pipeline/infrastructure/requirements/requirements.txt
+          pip install -r requirements.txt
+      - name: Run pre-deployment validation
+        working_directory: tests/test_case_upstream_downstream_pipeline/infrastructure/cdk
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: python3 ../tests/validate_setup.py
+      - name: CDK Bootstrap
+        working_directory: tests/test_case_upstream_downstream_pipeline/infrastructure/cdk
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: cdk bootstrap
+      - name: CDK Deploy
+        working_directory: tests/test_case_upstream_downstream_pipeline/infrastructure/cdk
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: cdk deploy --require-approval never
+
   test-thorough:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
