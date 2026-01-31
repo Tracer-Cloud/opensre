@@ -17,6 +17,7 @@ class PipelineAssistantState(TypedDict, total=False):
         user_name: User's full name from JWT
         organization_slug: Organization slug from JWT
         context: Accumulated context from tool calls
+        route: Routing decision ("tracer_data" or "general")
     """
     messages: Annotated[list[BaseMessage], add_messages]
     org_id: str
@@ -25,6 +26,7 @@ class PipelineAssistantState(TypedDict, total=False):
     user_name: str
     organization_slug: str
     context: dict[str, list[dict[str, str | int | float | None]] | str | int]
+    route: str
 
 
 def make_initial_state(
