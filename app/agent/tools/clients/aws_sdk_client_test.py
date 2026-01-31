@@ -4,7 +4,6 @@ Tests for AWS SDK client.
 Integration tests - no mocks, real AWS API calls with read-only operations.
 """
 
-
 from app.agent.tools.clients.aws_sdk_client import (
     _is_operation_allowed,
     _sanitize_response,
@@ -100,13 +99,7 @@ class TestResponseSanitization:
         assert "bytes" in result
 
     def test_sanitize_nested_dict(self):
-        data = {
-            "outer": {
-                "inner": {
-                    "value": "test"
-                }
-            }
-        }
+        data = {"outer": {"inner": {"value": "test"}}}
         result = _sanitize_response(data)
         assert result["outer"]["inner"]["value"] == "test"
 

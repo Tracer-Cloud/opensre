@@ -24,7 +24,7 @@ def get_cloudwatch_logs(
     log_group: str,
     log_stream: str | None = None,
     filter_pattern: str | None = None,
-    limit: int = 100
+    limit: int = 100,
 ) -> dict:
     """
     Fetch error logs from AWS CloudWatch Logs.
@@ -62,6 +62,7 @@ def get_cloudwatch_logs(
         # If filter_pattern is provided, use filter_log_events to search across all streams
         if filter_pattern:
             import time
+
             response = client.filter_log_events(
                 logGroupName=log_group,
                 filterPattern=filter_pattern,
@@ -81,10 +82,7 @@ def get_cloudwatch_logs(
             # Auto-discover log stream if not provided
             if not log_stream:
                 streams_response = client.describe_log_streams(
-                    logGroupName=log_group,
-                    orderBy="LastEventTime",
-                    descending=True,
-                    limit=1
+                    logGroupName=log_group, orderBy="LastEventTime", descending=True, limit=1
                 )
 
                 if not streams_response.get("logStreams"):
