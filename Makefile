@@ -11,17 +11,21 @@ export PATH := $(USER_BIN):$(PATH)
 install:
 	$(PIP) install $(PIP_INSTALL_FLAGS) -r requirements.txt
 
-# Run CloudWatch demo (default demo)
+# Run Prefect ECS demo (default demo) - shows Investigation Trace in RCA
 demo:
-	$(PYTHON) -m tests.test_case_cloudwatch_demo.test_orchestrator
+	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
 
 # Run Superfluid test case demo
 superfluid-demo:
 	$(PYTHON) -m tests.test_case_superfluid.test_orchestrator
 
-# Run CloudWatch minimal demo (alias for demo)
+# Run CloudWatch demo
 cloudwatch-demo:
 	$(PYTHON) -m tests.test_case_cloudwatch_demo.test_orchestrator
+
+# Run Prefect ECS Fargate E2E test (alias for demo)
+prefect-demo:
+	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
 
 # Run upstream/downstream pipeline E2E test
 upstream-downstream:
@@ -67,10 +71,11 @@ check: lint typecheck test
 help:
 	@echo "Available commands:"
 	@echo "  make install         - Install dependencies"
-	@echo "  make demo            - Run CloudWatch demo"
+	@echo "  make demo            - Run Prefect ECS E2E test (default, shows Investigation Trace)"
+	@echo "  make prefect-demo    - Run Prefect ECS Fargate E2E test (alias for demo)"
 	@echo "  make superfluid-demo - Run Superfluid test case demo"
-	@echo "  make cloudwatch-demo - Run CloudWatch demo (alias)"
-	@echo "  make upstream-downstream - Run upstream/downstream pipeline E2E test"
+	@echo "  make cloudwatch-demo - Run CloudWatch demo"
+	@echo "  make upstream-downstream - Run upstream/downstream Lambda E2E test"
 	@echo "  make test            - Run tests"
 	@echo "  make test-cov        - Run tests with coverage"
 	@echo "  make clean           - Clean up cache files"

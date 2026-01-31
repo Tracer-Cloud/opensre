@@ -39,13 +39,13 @@ class MinimalLambdaTestCaseStack(Stack):
             auto_delete_objects=True,
         )
 
-        # Mock External API Lambda
+        # Mock External API Lambda (shared across test cases)
         mock_api_lambda = lambda_.Function(
             self,
             "MockApiLambda",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset("../../pipeline_code/external_vendor_api"),
+            code=lambda_.Code.from_asset("../../../shared/external_vendor_api"),
             timeout=Duration.seconds(30),
             memory_size=128,
         )

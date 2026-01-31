@@ -217,13 +217,13 @@ def get_available_actions() -> list[InvestigationAction]:
             func=get_cloudwatch_logs,
             source="cloudwatch",
             requires=[],
-            availability_check=lambda sources: bool(
-                sources.get("cloudwatch", {}).get("log_group")
-            ),
+            availability_check=lambda sources: bool(sources.get("cloudwatch", {}).get("log_group")),
             parameter_extractor=lambda sources: {
                 "log_group": sources.get("cloudwatch", {}).get("log_group"),
                 "log_stream": sources.get("cloudwatch", {}).get("log_stream"),  # Optional
-                "filter_pattern": sources.get("cloudwatch", {}).get("correlation_id"),  # Use for filtering
+                "filter_pattern": sources.get("cloudwatch", {}).get(
+                    "correlation_id"
+                ),  # Use for filtering
                 "limit": 100,
             },
         ),

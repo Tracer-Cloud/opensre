@@ -55,7 +55,11 @@ def _execute_with_retry(
                     error=None,
                 )
             else:
-                error_msg = data.get("error", "Unknown error") if isinstance(data, dict) else "Invalid response"
+                error_msg = (
+                    data.get("error", "Unknown error")
+                    if isinstance(data, dict)
+                    else "Invalid response"
+                )
                 return ActionExecutionResult(
                     action_name=action_name,
                     success=False,
@@ -144,7 +148,9 @@ def execute_actions(
 
     with ThreadPoolExecutor(max_workers=min(5, len(actions_to_execute))) as executor:
         future_to_action = {
-            executor.submit(_execute_single_action, action_name, action, available_sources): action_name
+            executor.submit(
+                _execute_single_action, action_name, action, available_sources
+            ): action_name
             for action_name, action in actions_to_execute
         }
 
