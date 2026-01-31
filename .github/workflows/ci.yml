@@ -2,23 +2,27 @@ name: CI
 
 on:
   push:
-    branches: ["*"]
+    branches: [main]
   pull_request:
-    branches: ["*"]
+    branches: [main]
 
 jobs:
   lint:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install ruff
+
       - name: Lint with ruff
         run: ruff check app/ tests/
 
@@ -33,60 +37,23 @@ jobs:
       LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
       LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
       LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Run pytest tests
         run: make test
         continue-on-error: false
-
-  deploy-upstream-downstream:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-      - name: Install CDK CLI
-        run: npm install -g aws-cdk
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r tests/test_case_upstream_downstream_pipeline/infrastructure/requirements/requirements.txt
-          pip install -r requirements.txt
-      - name: Run pre-deployment validation
-        working_directory: tests/test_case_upstream_downstream_pipeline/infrastructure/cdk
-        env:
-          AWS_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: python3 ../tests/validate_setup.py
-      - name: CDK Bootstrap
-        working_directory: tests/test_case_upstream_downstream_pipeline/infrastructure/cdk
-        env:
-          AWS_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: cdk bootstrap
-      - name: CDK Deploy
-        working_directory: tests/test_case_upstream_downstream_pipeline/infrastructure/cdk
-        env:
-          AWS_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: cdk deploy --require-approval never
 
   test-thorough:
     runs-on: ubuntu-latest
@@ -103,22 +70,28 @@ jobs:
       AWS_REGION: us-east-1
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Run pytest tests
         run: make test
         continue-on-error: false
+
       - name: Run Superfluid demo
         run: python3 -m tests.test_case_superfluid.orchestrator
         continue-on-error: true
+
       - name: Run CloudWatch demo
         run: python3 -m tests.test_case_cloudwatch_demo.orchestrator
         continue-on-error: true
