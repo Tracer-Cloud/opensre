@@ -45,7 +45,7 @@ class MinimalLambdaTestCaseStack(Stack):
             "MockApiLambda",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset("../lambda/mock_api"),
+            code=lambda_.Code.from_asset("../../pipeline_code/external_vendor_api"),
             timeout=Duration.seconds(30),
             memory_size=128,
         )
@@ -63,7 +63,7 @@ class MinimalLambdaTestCaseStack(Stack):
             "IngesterLambda",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset("../lambda/api_ingester"),
+            code=lambda_.Code.from_asset("../../pipeline_code/api_ingester"),
             timeout=Duration.seconds(60),
             environment={
                 "LANDING_BUCKET": landing_bucket.bucket_name,
@@ -86,7 +86,7 @@ class MinimalLambdaTestCaseStack(Stack):
             "MockDagLambda",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset("../lambda/mock_dag"),
+            code=lambda_.Code.from_asset("../../pipeline_code/mock_dag"),
             timeout=Duration.seconds(300),
             environment={
                 "LANDING_BUCKET": landing_bucket.bucket_name,

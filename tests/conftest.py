@@ -23,3 +23,20 @@ def get_test_config() -> dict:
         "aws_region": os.getenv("AWS_REGION", "us-east-1"),
         "langgraph_endpoint": os.getenv("LANGGRAPH_ENDPOINT", "http://localhost:8123/runs/stream"),
     }
+
+
+# Upstream/Downstream Pipeline Test Case - AWS Resources
+# Stack: TracerUpstreamDownstreamTest
+UPSTREAM_DOWNSTREAM_CONFIG = {
+    "stack_name": "TracerUpstreamDownstreamTest",
+    # HTTP Trigger Endpoint (easy testing)
+    "ingester_api_url": "https://ud9ogzmatj.execute-api.us-east-1.amazonaws.com/prod/",
+    # Mock External API
+    "mock_api_url": "https://pf2u8sbgk7.execute-api.us-east-1.amazonaws.com/prod/",
+    # Lambda Functions
+    "ingester_function_name": "TracerUpstreamDownstreamTes-IngesterLambda519919B4-swSsLumUC0KN",
+    "mock_dag_function_name": "TracerUpstreamDownstreamTest-MockDagLambdaCF347C20-3X8c3pPwK2Bq",
+    # S3 Buckets
+    "landing_bucket_name": "tracerupstreamdownstreamtest-landingbucket23fe90fb-felup0en4mqb",
+    "processed_bucket_name": "tracerupstreamdownstreamte-processedbucketde59930c-bg5m6jrqoq6v",
+}
