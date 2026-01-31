@@ -4,6 +4,8 @@ This node analyzes evidence and determines root cause.
 It updates state fields but does NOT render output directly.
 """
 
+import json
+
 from langsmith import traceable
 
 from app.agent.output import debug_print, get_tracker
@@ -137,16 +139,37 @@ def main(state: InvestigationState) -> dict:
     # Update confidence based on validity
     final_confidence = (result.confidence * 0.4) + (validity_score * 0.6)
 
-    # Generate recommendations if confidence is low
+    # Generate recommendations if confidence is low OR vendor evidence is missing
     investigation_recommendations = []
     loop_count = state.get("investigation_loop_count", 0)
-    if final_confidence < 0.6 or validity_score < 0.5:
+
+    # Check if vendor evidence is missing (critical for upstream/downstream tracing)
+    # Vendor evidence is present only if we have actual audit content, not just metadata pointing to it
+    vendor_evidence_missing = not (
+        evidence.get("vendor_audit_from_logs")  # Parsed from Lambda logs
+        or (
+            evidence.get("s3_audit_payload", {}).get("found")
+            and evidence.get("s3_audit_payload", {}).get("content")
+        )  # Actual audit payload fetched
+    )
+
+    print(
+        f"[DEBUG] Vendor evidence check: vendor_missing={vendor_evidence_missing}, "
+        f"confidence={final_confidence:.2f}, validity={validity_score:.2f}"
+    )
+
+    if final_confidence < 0.6 or validity_score < 0.5 or vendor_evidence_missing:
         investigation_recommendations = _generate_simple_recommendations(
             non_validated_claims_list, evidence
         )
+        print(
+            f"[DEBUG] Generated {len(investigation_recommendations)} recommendations: {investigation_recommendations}"
+        )
+        # Don't increment loop_count here - let routing do it after deciding to loop
         if investigation_recommendations:
-            loop_count += 1
-            debug_print(f"Returning to hypothesis generation (loop {loop_count}/5)")
+            debug_print(
+                f"Generated {len(investigation_recommendations)} recommendations for next loop"
+            )
 
     tracker.complete(
         "diagnose_root_cause",
@@ -171,7 +194,19 @@ def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
     hypotheses = state.get("hypotheses", [])
 
     # Allowed evidence sources the model can reference (keeps grounding consistent)
-    allowed_sources = ["aws_batch_jobs", "tracer_tools", "logs", "cloudwatch_logs", "host_metrics"]
+    allowed_sources = [
+        "aws_batch_jobs",
+        "tracer_tools",
+        "logs",
+        "cloudwatch_logs",
+        "host_metrics",
+        "lambda_logs",
+        "lambda_code",
+        "lambda_config",
+        "s3_metadata",
+        "s3_audit",
+        "vendor_audit",
+    ]
 
     # Extract key investigation findings from evidence
     failed_jobs = evidence.get("failed_jobs", [])
@@ -179,6 +214,12 @@ def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
     error_logs = evidence.get("error_logs", [])[:10]  # Limit to 10 most recent
     cloudwatch_logs = evidence.get("cloudwatch_logs", [])[:5]  # CloudWatch error logs
     host_metrics = evidence.get("host_metrics", {})
+    lambda_logs = evidence.get("lambda_logs", [])[:10]  # Lambda execution logs
+    lambda_function = evidence.get("lambda_function", {})
+    lambda_config = evidence.get("lambda_config", {})
+    s3_object = evidence.get("s3_object", {})
+    s3_audit_payload = evidence.get("s3_audit_payload", {})
+    vendor_audit_from_logs = evidence.get("vendor_audit_from_logs", {})
 
     # Extract evidence from alert annotations
     raw_alert = state.get("raw_alert", {})
@@ -255,6 +296,78 @@ EVIDENCE:
     else:
         prompt += "\nHost Metrics: None\n"
 
+    if lambda_logs:
+        prompt += f"\nLambda Invocation Logs ({len(lambda_logs)} events):\n"
+        for log in lambda_logs[:10]:
+            message = log.get("message", "") if isinstance(log, dict) else str(log)
+            prompt += f"- {message[:300]}\n"
+
+    if lambda_function and lambda_function.get("function_name"):
+        prompt += "\nLambda Function Configuration:\n"
+        prompt += f"- Function: {lambda_function.get('function_name')}\n"
+        prompt += f"- Runtime: {lambda_function.get('runtime')}\n"
+        prompt += f"- Handler: {lambda_function.get('handler')}\n"
+        if lambda_function.get("environment_variables"):
+            env_vars = lambda_function.get("environment_variables", {})
+            prompt += f"- Environment Variables: {', '.join(env_vars.keys())}\n"
+        if lambda_function.get("code", {}).get("files"):
+            code_files = lambda_function.get("code", {}).get("files", {})
+            if isinstance(code_files, dict) and code_files:
+                prompt += f"- Code Files: {', '.join(list(code_files.keys())[:5])}\n"
+                # Include handler code snippet if available
+                handler_file = lambda_function.get("handler", "").split(".")[0] + ".py"
+                if handler_file in code_files:
+                    file_content = code_files.get(handler_file, "")
+                    if isinstance(file_content, str):
+                        code_snippet = file_content[:1000]
+                        prompt += f"\nHandler Code Snippet ({handler_file}):\n{code_snippet}\n"
+
+    if lambda_config and lambda_config.get("function_name"):
+        prompt += "\nLambda Configuration:\n"
+        prompt += f"- Function: {lambda_config.get('function_name')}\n"
+        prompt += f"- Runtime: {lambda_config.get('runtime')}\n"
+        prompt += f"- Handler: {lambda_config.get('handler')}\n"
+        env_vars = lambda_config.get("environment_variables", {})
+        if env_vars:
+            prompt += "- Environment Variables:\n"
+            for key, value in list(env_vars.items())[:10]:
+                prompt += f"  - {key}: {value}\n"
+
+    if s3_object and s3_object.get("found"):
+        prompt += "\nS3 Object Details:\n"
+        prompt += f"- Bucket: {s3_object.get('bucket')}\n"
+        prompt += f"- Key: {s3_object.get('key')}\n"
+        prompt += f"- Size: {s3_object.get('size')} bytes\n"
+        prompt += f"- Content Type: {s3_object.get('content_type')}\n"
+        metadata = s3_object.get("metadata", {})
+        if metadata:
+            prompt += f"- Metadata: {json.dumps(metadata, indent=2)}\n"
+        if s3_object.get("sample") and s3_object.get("is_text"):
+            prompt += f"\nS3 Object Sample:\n{s3_object.get('sample')[:500]}\n"
+
+    if s3_audit_payload and s3_audit_payload.get("found"):
+        prompt += "\nS3 Audit Payload (External API Lineage):\n"
+        prompt += f"- Bucket: {s3_audit_payload.get('bucket')}\n"
+        prompt += f"- Key: {s3_audit_payload.get('key')}\n"
+        audit_content = s3_audit_payload.get("content")
+        if audit_content:
+            try:
+                audit_data = (
+                    json.loads(audit_content) if isinstance(audit_content, str) else audit_content
+                )
+                prompt += f"- Content: {json.dumps(audit_data, indent=2)[:1500]}\n"
+            except (json.JSONDecodeError, TypeError):
+                prompt += f"- Content: {str(audit_content)[:500]}\n"
+
+    if vendor_audit_from_logs and vendor_audit_from_logs.get("requests"):
+        prompt += "\nExternal Vendor API Audit (from Lambda logs):\n"
+        for req in vendor_audit_from_logs.get("requests", [])[:5]:
+            prompt += f"- {req.get('type')} {req.get('url')}\n"
+            prompt += f"  Status: {req.get('status_code')}\n"
+            if req.get("response_body"):
+                response_str = json.dumps(req.get("response_body"), indent=2)[:500]
+                prompt += f"  Response: {response_str}\n"
+
     # Include alert annotation evidence (log excerpts, failed steps, etc.)
     if alert_annotations.get("log_excerpt"):
         prompt += f"\nLog Excerpt from Alert:\n{alert_annotations['log_excerpt'][:1000]}\n"
@@ -299,9 +412,37 @@ def _simple_validate_claim(claim: str, evidence: dict) -> bool:
         return False
 
     # Check jobs (from evidence)
+    if ("job" in claim_lower or "batch" in claim_lower) and len(
+        evidence.get("failed_jobs", [])
+    ) == 0:
+        return False
+
+    # Check lambda evidence
+    if ("lambda" in claim_lower or "function" in claim_lower) and not (
+        evidence.get("lambda_logs") or evidence.get("lambda_function")
+    ):
+        return False
+
+    # Check s3 evidence
+    if ("s3" in claim_lower or "bucket" in claim_lower or "object" in claim_lower) and not (
+        evidence.get("s3_object") or evidence.get("s3_objects")
+    ):
+        return False
+
+    # Check schema/metadata evidence
+    if ("schema" in claim_lower or "metadata" in claim_lower) and not evidence.get(
+        "s3_object", {}
+    ).get("metadata"):
+        return False
+
+    # Check vendor/external API evidence
     return not (
-        ("job" in claim_lower or "batch" in claim_lower)
-        and len(evidence.get("failed_jobs", [])) == 0
+        ("vendor" in claim_lower or "external api" in claim_lower or "api" in claim_lower)
+        and not (
+            evidence.get("vendor_audit_from_logs")
+            or evidence.get("s3_audit_payload")
+            or evidence.get("lambda_config", {}).get("environment_variables")
+        )
     )
 
 
@@ -320,6 +461,30 @@ def _extract_evidence_sources(claim: str, evidence: dict) -> list[str]:
         "metric" in claim_lower or "memory" in claim_lower or "cpu" in claim_lower
     ) and evidence.get("host_metrics", {}).get("data"):
         sources.append("host_metrics")
+    if ("lambda" in claim_lower or "function" in claim_lower) and (
+        evidence.get("lambda_logs") or evidence.get("lambda_function")
+    ):
+        sources.append("lambda_logs")
+    if "code" in claim_lower and evidence.get("lambda_function", {}).get("code"):
+        sources.append("lambda_code")
+    if ("s3" in claim_lower or "bucket" in claim_lower or "object" in claim_lower) and evidence.get(
+        "s3_object"
+    ):
+        sources.append("s3_metadata")
+    if ("schema" in claim_lower or "metadata" in claim_lower) and evidence.get("s3_object", {}).get(
+        "metadata"
+    ):
+        sources.append("s3_metadata")
+    if ("vendor" in claim_lower or "external" in claim_lower or "api" in claim_lower) and (
+        evidence.get("vendor_audit_from_logs") or evidence.get("s3_audit_payload")
+    ):
+        sources.append("vendor_audit")
+    if ("environment" in claim_lower or "env" in claim_lower) and evidence.get(
+        "lambda_config", {}
+    ).get("environment_variables"):
+        sources.append("lambda_config")
+    if "audit" in claim_lower and evidence.get("s3_audit_payload"):
+        sources.append("s3_audit")
 
     return sources if sources else ["evidence_analysis"]
 
@@ -338,6 +503,20 @@ def _generate_simple_recommendations(non_validated_claims: list[dict], evidence:
         recommendations.append("Fetch CloudWatch Logs for detailed error messages")
     if not evidence.get("failed_jobs"):
         recommendations.append("Query AWS Batch job details using describe_jobs API")
+
+    # Check for upstream/vendor evidence gaps
+    if not evidence.get("s3_object", {}).get("metadata"):
+        recommendations.append("Inspect S3 object to get metadata and trace data lineage")
+    if not evidence.get("vendor_audit_from_logs") and not evidence.get("s3_audit_payload"):
+        recommendations.append("Retrieve Lambda configuration and logs from upstream functions")
+    if evidence.get("s3_object", {}).get("metadata", {}).get("audit_key") and not evidence.get(
+        "s3_audit_payload"
+    ):
+        recommendations.append("Fetch S3 audit payload to trace external vendor interactions")
+    if not evidence.get("lambda_config") and not evidence.get("lambda_function"):
+        recommendations.append(
+            "Get Lambda function configuration to identify external dependencies"
+        )
 
     return recommendations[:5]
 

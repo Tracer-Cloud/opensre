@@ -19,16 +19,12 @@ auth = Auth()
 async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
     """Validate JWT token and extract user information."""
     if not authorization:
-        raise Auth.exceptions.HTTPException(
-            status_code=401,
-            detail="Missing Authorization header"
-        )
+        raise Auth.exceptions.HTTPException(status_code=401, detail="Missing Authorization header")
 
     parts = authorization.split()
     if len(parts) != 2 or parts[0].lower() != "bearer":
         raise Auth.exceptions.HTTPException(
-            status_code=401,
-            detail="Invalid Authorization header format. Expected: Bearer <token>"
+            status_code=401, detail="Invalid Authorization header format. Expected: Bearer <token>"
         )
 
     token = parts[1]
@@ -36,24 +32,14 @@ async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
     try:
         claims = await verify_jwt_async(token)
     except JWTExpiredError as e:
-        raise Auth.exceptions.HTTPException(
-            status_code=401,
-            detail="JWT has expired"
-        ) from e
+        raise Auth.exceptions.HTTPException(status_code=401, detail="JWT has expired") from e
     except JWTInvalidIssuerError as e:
-        raise Auth.exceptions.HTTPException(
-            status_code=401,
-            detail=str(e)
-        ) from e
+        raise Auth.exceptions.HTTPException(status_code=401, detail=str(e)) from e
     except JWTMissingClaimError as e:
-        raise Auth.exceptions.HTTPException(
-            status_code=401,
-            detail=str(e)
-        ) from e
+        raise Auth.exceptions.HTTPException(status_code=401, detail=str(e)) from e
     except JWTVerificationError as e:
         raise Auth.exceptions.HTTPException(
-            status_code=401,
-            detail=f"JWT verification failed: {e}"
+            status_code=401, detail=f"JWT verification failed: {e}"
         ) from e
 
     return {

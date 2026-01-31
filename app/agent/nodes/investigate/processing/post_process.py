@@ -1,6 +1,20 @@
 """Post-processing: merge evidence and track hypotheses."""
 
+import json
 from typing import Any
+
+
+def _parse_vendor_audit_from_logs(logs: list) -> dict | None:
+    """Extract EXTERNAL_API_AUDIT structured logs from Lambda logs."""
+    for log_entry in logs:
+        message = log_entry.get("message", "") if isinstance(log_entry, dict) else str(log_entry)
+        if "EXTERNAL_API_AUDIT:" in message:
+            try:
+                audit_json = message.split("EXTERNAL_API_AUDIT:", 1)[1].strip()
+                return json.loads(audit_json)
+            except (json.JSONDecodeError, IndexError):
+                continue
+    return None
 
 
 def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) -> dict[str, Any]:
@@ -41,6 +55,65 @@ def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) ->
             evidence["cloudwatch_logs"] = data.get("error_logs", [])
             evidence["cloudwatch_event_count"] = data.get("event_count", 0)
             evidence["cloudwatch_latest_error"] = data.get("latest_error")
+
+        elif action_name == "inspect_s3_object":
+            evidence["s3_object"] = {
+                "bucket": data.get("bucket"),
+                "key": data.get("key"),
+                "found": data.get("found", False),
+                "size": data.get("size"),
+                "content_type": data.get("content_type"),
+                "metadata": data.get("metadata", {}),
+                "sample": data.get("sample"),
+                "is_text": data.get("is_text", False),
+            }
+
+        elif action_name == "list_s3_objects":
+            evidence["s3_objects"] = data.get("objects", [])
+            evidence["s3_object_count"] = data.get("count", 0)
+
+        elif action_name == "get_lambda_invocation_logs":
+            evidence["lambda_logs"] = data.get("recent_logs", [])
+            evidence["lambda_invocation_count"] = data.get("invocation_count", 0)
+            evidence["lambda_invocations"] = data.get("invocations", [])
+            # Parse vendor audit from logs
+            vendor_audit = _parse_vendor_audit_from_logs(data.get("recent_logs", []))
+            if vendor_audit:
+                evidence["vendor_audit_from_logs"] = vendor_audit
+
+        elif action_name == "get_lambda_errors":
+            evidence["lambda_errors"] = data.get("recent_logs", [])
+            evidence["lambda_error_count"] = data.get("invocation_count", 0)
+
+        elif action_name == "inspect_lambda_function":
+            evidence["lambda_function"] = {
+                "function_name": data.get("function_name"),
+                "runtime": data.get("runtime"),
+                "handler": data.get("handler"),
+                "timeout": data.get("timeout"),
+                "memory_size": data.get("memory_size"),
+                "environment_variables": data.get("environment_variables", {}),
+                "code": data.get("code", {}),
+            }
+
+        elif action_name == "get_lambda_configuration":
+            evidence["lambda_config"] = {
+                "function_name": data.get("function_name"),
+                "runtime": data.get("runtime"),
+                "handler": data.get("handler"),
+                "timeout": data.get("timeout"),
+                "memory_size": data.get("memory_size"),
+                "environment_variables": data.get("environment_variables", {}),
+            }
+
+        elif action_name == "get_s3_object":
+            evidence["s3_audit_payload"] = {
+                "bucket": data.get("bucket"),
+                "key": data.get("key"),
+                "found": data.get("found", False),
+                "content": data.get("content"),
+                "metadata": data.get("metadata", {}),
+            }
 
     return evidence
 
@@ -94,6 +167,20 @@ def build_evidence_summary(execution_results: dict) -> str:
                 summary_parts.append(f"logs:{len(data['logs'])}")
             elif action_name == "get_cloudwatch_logs" and data.get("error_logs"):
                 summary_parts.append(f"cloudwatch:{len(data['error_logs'])} events")
+            elif action_name == "inspect_s3_object" and data.get("found"):
+                summary_parts.append("s3:object inspected")
+            elif action_name == "list_s3_objects" and data.get("objects"):
+                summary_parts.append(f"s3:{len(data['objects'])} objects")
+            elif action_name == "get_lambda_invocation_logs" and data.get("recent_logs"):
+                summary_parts.append(f"lambda:{len(data['recent_logs'])} logs")
+            elif action_name == "get_lambda_errors" and data.get("recent_logs"):
+                summary_parts.append(f"lambda:{len(data['recent_logs'])} errors")
+            elif action_name == "inspect_lambda_function" and data.get("found"):
+                summary_parts.append("lambda:function inspected")
+            elif action_name == "get_lambda_configuration" and data.get("found"):
+                summary_parts.append("lambda:config retrieved")
+            elif action_name == "get_s3_object" and data.get("found"):
+                summary_parts.append("s3:audit payload retrieved")
 
     return ", ".join(summary_parts) if summary_parts else "No new evidence"
 

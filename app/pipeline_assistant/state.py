@@ -19,6 +19,7 @@ class PipelineAssistantState(TypedDict, total=False):
         context: Accumulated context from tool calls
         route: Routing decision ("tracer_data" or "general")
     """
+
     messages: Annotated[list[BaseMessage], add_messages]
     org_id: str
     user_id: str

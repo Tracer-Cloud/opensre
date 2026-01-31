@@ -19,7 +19,9 @@ import requests
 s3_client = boto3.client("s3")
 
 
-def fetch_from_external_api(api_url: str, inject_schema_change: bool = False) -> dict[str, Any]:
+def fetch_from_external_api(
+    api_url: str, inject_schema_change: bool = False
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Fetch data from external API.
 
     Args:
@@ -27,16 +29,27 @@ def fetch_from_external_api(api_url: str, inject_schema_change: bool = False) ->
         inject_schema_change: If True, configure API to inject schema change
 
     Returns:
-        API response data
+        Tuple of (API response data, audit info with request/response details)
     """
+    audit_info = {"requests": []}
+
     if inject_schema_change:
         try:
-            requests.post(
+            config_response = requests.post(
                 f"{api_url}/config",
                 json={"inject_schema_change": True},
                 timeout=10,
             )
             print("Configured external API to inject schema change")
+            audit_info["requests"].append(
+                {
+                    "type": "POST",
+                    "url": f"{api_url}/config",
+                    "request_body": {"inject_schema_change": True},
+                    "status_code": config_response.status_code,
+                    "response_body": config_response.json() if config_response.ok else None,
+                }
+            )
         except Exception as e:
             print(f"Warning: Could not configure API: {e}")
 
@@ -47,7 +60,19 @@ def fetch_from_external_api(api_url: str, inject_schema_change: bool = False) ->
     schema_version = result.get("meta", {}).get("schema_version", "unknown")
     print(f"Fetched from external API: schema_version={schema_version}")
 
-    return result
+    # Log structured request/response for audit
+    audit_info["requests"].append(
+        {
+            "type": "GET",
+            "url": f"{api_url}/data",
+            "status_code": response.status_code,
+            "response_body": result,
+            "schema_version": schema_version,
+        }
+    )
+    print(f"EXTERNAL_API_AUDIT: {json.dumps(audit_info)}")
+
+    return result, audit_info
 
 
 def lambda_handler(event: dict, context: Any) -> dict:
@@ -99,7 +124,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
 
     # Fetch data from external API
     try:
-        api_response = fetch_from_external_api(external_api_url, inject_schema_change)
+        api_response, audit_info = fetch_from_external_api(external_api_url, inject_schema_change)
         data = api_response.get("data", [])
         api_meta = api_response.get("meta", {})
         print(f"Fetched {len(data)} records from external API")
@@ -114,8 +139,25 @@ def lambda_handler(event: dict, context: Any) -> dict:
     # Write to S3
     timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H-%M-%S")
     s3_key = f"ingested/{timestamp}/data.json"
+    audit_key = f"audit/{correlation_id}.json"
 
     try:
+        # Write audit object with external API request/response details
+        audit_payload = {
+            "correlation_id": correlation_id,
+            "timestamp": timestamp,
+            "external_api_url": external_api_url,
+            "audit_info": audit_info,
+        }
+        s3_client.put_object(
+            Bucket=landing_bucket,
+            Key=audit_key,
+            Body=json.dumps(audit_payload, indent=2),
+            ContentType="application/json",
+        )
+        print(f"Wrote audit data to S3: s3://{landing_bucket}/{audit_key}")
+
+        # Write main data with audit_key in metadata
         s3_client.put_object(
             Bucket=landing_bucket,
             Key=s3_key,
@@ -127,11 +169,12 @@ def lambda_handler(event: dict, context: Any) -> dict:
                 "timestamp": timestamp,
                 "schema_version": api_meta.get("schema_version", "unknown"),
                 "schema_change_injected": str(inject_schema_change),
+                "audit_key": audit_key,
             },
         )
         print(f"Wrote data to S3: s3://{landing_bucket}/{s3_key}")
         print(
-            f"Metadata: correlation_id={correlation_id}, schema_version={api_meta.get('schema_version')}"
+            f"Metadata: correlation_id={correlation_id}, schema_version={api_meta.get('schema_version')}, audit_key={audit_key}"
         )
     except Exception as e:
         print(f"ERROR: S3 write failed: {e}")
