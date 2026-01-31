@@ -71,6 +71,8 @@ def plan_actions(
         pipeline_lower = pipeline_name.lower() if pipeline_name else ""
         if "prefect" in pipeline_lower:
             seed_paths.append("tests/test_case_upstream_prefect_ecs_fargate/ARCHITECTURE.md")
+        elif "airflow" in pipeline_lower:
+            seed_paths.append("tests/test_case_upstream_airflow_ecs_fargate/ARCHITECTURE.md")
         elif "lambda" in pipeline_lower:
             seed_paths.append("tests/test_case_upstream_lambda/ARCHITECTURE.md")
         memory_context = get_memory_context(pipeline_name=pipeline_name, seed_paths=seed_paths)

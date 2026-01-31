@@ -81,7 +81,12 @@ def format_data_lineage_flow(ctx: ReportContext) -> str:
     # 4. Pipeline Execution (Prefect/Airflow)
     cw_url = build_cloudwatch_url(ctx)
     if cw_url:
-        pipeline_name = annotations.get("prefect_flow") or "Pipeline Executor"
+        pipeline_name = (
+            annotations.get("airflow_dag")
+            or annotations.get("dag_id")
+            or annotations.get("prefect_flow")
+            or "Pipeline Executor"
+        )
         flow_nodes.append(f"{pipeline_name}: {cw_url}")
 
     # 5. S3 Processed (output)

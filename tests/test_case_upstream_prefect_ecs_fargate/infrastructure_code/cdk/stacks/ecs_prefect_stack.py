@@ -17,7 +17,6 @@ from aws_cdk import (
     BundlingOptions,
     CfnOutput,
     Duration,
-    RemovalPolicy,
     Stack,
 )
 from aws_cdk import aws_apigateway as apigw

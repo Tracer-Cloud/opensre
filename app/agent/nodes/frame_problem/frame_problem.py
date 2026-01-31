@@ -88,6 +88,8 @@ def node_frame_problem(state: InvestigationState) -> dict:
         seed_paths = []
         if "prefect" in pipeline_name.lower():
             seed_paths.append("tests/test_case_upstream_prefect_ecs_fargate/ARCHITECTURE.md")
+        elif "airflow" in pipeline_name.lower():
+            seed_paths.append("tests/test_case_upstream_airflow_ecs_fargate/ARCHITECTURE.md")
         elif "lambda" in pipeline_name.lower():
             seed_paths.append("tests/test_case_upstream_lambda/ARCHITECTURE.md")
 

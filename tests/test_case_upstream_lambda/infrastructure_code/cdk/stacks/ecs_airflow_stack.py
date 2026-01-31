@@ -11,14 +11,14 @@ Creates:
 - IAM roles with least privilege
 """
 
+import sys
+from pathlib import Path
+
 from aws_cdk import (
     CfnOutput,
     Duration,
     RemovalPolicy,
     Stack,
-)
-from aws_cdk import (
-    aws_apigateway as apigw,
 )
 from aws_cdk import (
     aws_ec2 as ec2,
@@ -36,9 +36,6 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from aws_cdk import (
-    aws_logs as logs,
-)
-from aws_cdk import (
     aws_s3 as s3,
 )
 from aws_cdk import (
@@ -46,6 +43,15 @@ from aws_cdk import (
 )
 from constructs import Construct
 
+project_root = Path(__file__).resolve().parents[5]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from tests.shared.infrastructure_code.cdk.constructs import (  # noqa: E402
+    MockExternalApi,
+    create_ecs_cluster,
+    create_log_group,
+)
 
 class EcsAirflowTestCaseStack(Stack):
     """ECS Fargate Airflow test case infrastructure stack."""
@@ -116,21 +122,18 @@ class EcsAirflowTestCaseStack(Stack):
         )
 
         # CloudWatch log groups for Airflow
-        airflow_log_group = logs.LogGroup(
+        airflow_log_group = create_log_group(
             self,
             "AirflowLogGroup",
             log_group_name=f"/ecs/{env_name}-airflow",
-            retention=logs.RetentionDays.ONE_WEEK,
-            removal_policy=RemovalPolicy.DESTROY,
         )
 
         # ECS Cluster
-        cluster = ecs.Cluster(
+        cluster = create_ecs_cluster(
             self,
             "AirflowCluster",
             vpc=vpc,
             cluster_name=f"{env_name}-airflow-cluster",
-            enable_fargate_capacity_providers=True,
         )
 
         # Service discovery namespace (created but not currently used)
@@ -252,28 +255,15 @@ class EcsAirflowTestCaseStack(Stack):
         # =================================================================
 
         # Mock API Lambda function
-        mock_api_lambda = lambda_.Function(
-            self,
-            "MockApiLambda",
-            function_name=f"{env_name}-mock-external-api",
-            runtime=lambda_.Runtime.PYTHON_3_11,
-            handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset("../lambda/mock_api"),
-            timeout=Duration.seconds(30),
-            memory_size=128,
-            environment={
-                "INJECT_SCHEMA_CHANGE": "false",
-            },
-        )
-
-        # API Gateway for mock external API
-        mock_api = apigw.LambdaRestApi(
+        mock_api = MockExternalApi(
             self,
             "MockExternalApi",
-            handler=mock_api_lambda,
+            code_path="../../../shared/external_vendor_api",
+            function_name=f"{env_name}-mock-external-api",
             rest_api_name=f"{env_name}-external-api",
             description="Mock external API (simulates third-party data provider)",
-            deploy_options=apigw.StageOptions(stage_name="v1"),
+            stage_name="v1",
+            environment={"INJECT_SCHEMA_CHANGE": "false"},
         )
 
         # =================================================================
@@ -324,7 +314,7 @@ class EcsAirflowTestCaseStack(Stack):
                 "DATA_BUCKET": data_bucket.bucket_name,
                 "AIRFLOW_WEBSERVER_URL": f"http://{webserver_alb.load_balancer.load_balancer_dns_name}",
                 "DAG_ID": "ingest_transform",
-                "EXTERNAL_API_URL": mock_api.url,
+                "EXTERNAL_API_URL": mock_api.api.url,
             },
         )
 
@@ -370,7 +360,7 @@ class EcsAirflowTestCaseStack(Stack):
         CfnOutput(
             self,
             "MockApiUrl",
-            value=mock_api.url,
+            value=mock_api.api.url,
             description="Mock external API URL (API Gateway + Lambda)",
         )
 
