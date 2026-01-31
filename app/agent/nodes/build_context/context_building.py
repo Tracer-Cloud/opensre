@@ -77,9 +77,7 @@ def build_investigation_context(state: InvestigationState) -> dict:
     for source_name in sources:
         source = registry.get(source_name)
         if not source:
-            errors.append(
-                ContextSourceError(source=source_name, message="Unknown context source")
-            )
+            errors.append(ContextSourceError(source=source_name, message="Unknown context source"))
             continue
         result = source.builder(state)
         context[source.key] = result.data
@@ -141,7 +139,9 @@ def _extract_pipeline_hint(state: InvestigationState | None) -> str | None:
                 if value:
                     return str(value)
         common_labels = (
-            raw_alert.get("commonLabels") if isinstance(raw_alert.get("commonLabels"), dict) else None
+            raw_alert.get("commonLabels")
+            if isinstance(raw_alert.get("commonLabels"), dict)
+            else None
         )
         if common_labels:
             for key in ("pipeline_name", "table"):
@@ -153,7 +153,9 @@ def _extract_pipeline_hint(state: InvestigationState | None) -> str | None:
             first_alert = alerts[0]
             if isinstance(first_alert, dict):
                 alert_labels = (
-                    first_alert.get("labels") if isinstance(first_alert.get("labels"), dict) else None
+                    first_alert.get("labels")
+                    if isinstance(first_alert.get("labels"), dict)
+                    else None
                 )
                 if alert_labels:
                     for key in ("pipeline_name", "table"):

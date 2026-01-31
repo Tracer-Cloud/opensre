@@ -37,9 +37,7 @@ def plan_actions(
 
     all_actions = get_available_actions()
     keywords = extract_keywords(input_data.problem_md, input_data.alert_name)
-    candidate_actions = (
-        get_prioritized_actions(keywords=keywords) if keywords else all_actions
-    )
+    candidate_actions = get_prioritized_actions(keywords=keywords) if keywords else all_actions
 
     available_actions, available_action_names = select_actions(
         actions=candidate_actions,

@@ -47,6 +47,7 @@ class ReportContext(TypedDict, total=False):
     cloudwatch_log_group: str | None
     cloudwatch_log_stream: str | None
     cloudwatch_logs_url: str | None
+    alert_id: str | None
     evidence: dict  # Raw evidence data for citation
 
 
@@ -73,10 +74,12 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
     cloudwatch_url = None
     cloudwatch_group = None
     cloudwatch_stream = None
+    alert_id = None
     if isinstance(raw_alert, dict):
         cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
         cloudwatch_group = raw_alert.get("cloudwatch_log_group")
         cloudwatch_stream = raw_alert.get("cloudwatch_log_stream")
+        alert_id = raw_alert.get("alert_id")
 
     return {
         "pipeline_name": state.get("pipeline_name", "unknown"),
@@ -100,6 +103,7 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
         "cloudwatch_log_group": cloudwatch_group,
         "cloudwatch_log_stream": cloudwatch_stream,
         "cloudwatch_logs_url": cloudwatch_url,
+        "alert_id": alert_id,
         "evidence": evidence,  # Include raw evidence for citation
     }
 
@@ -130,7 +134,11 @@ def _format_evidence_for_claim(claim_data: dict, evidence: dict, ctx: ReportCont
                 # Build URL if not provided
                 region = "us-east-1"
                 encoded_group = ctx["cloudwatch_log_group"].replace("/", "$252F")
-                encoded_stream = ctx["cloudwatch_log_stream"].replace("/", "$252F") if ctx.get("cloudwatch_log_stream") else ""
+                encoded_stream = (
+                    ctx["cloudwatch_log_stream"].replace("/", "$252F")
+                    if ctx.get("cloudwatch_log_stream")
+                    else ""
+                )
                 if encoded_stream:
                     url = (
                         f"https://{region}.console.aws.amazon.com/cloudwatch/home"
@@ -147,22 +155,42 @@ def _format_evidence_for_claim(claim_data: dict, evidence: dict, ctx: ReportCont
             cloudwatch_logs = evidence.get("cloudwatch_logs", [])
             if cloudwatch_logs:
                 sample_logs = cloudwatch_logs[:3]  # First 3 log entries
-                logs_preview = "\n".join([f"  - {log[:150]}..." if len(log) > 150 else f"  - {log}" for log in sample_logs])
+                logs_preview = "\n".join(
+                    [
+                        f"  - {log[:150]}..." if len(log) > 150 else f"  - {log}"
+                        for log in sample_logs
+                    ]
+                )
                 evidence_parts.append(f"Sample Logs:\n{logs_preview}")
 
         elif source == "logs" and evidence.get("error_logs"):
             error_logs = evidence.get("error_logs", [])[:3]
-            logs_json = "\n".join([f"  - {str(log)[:150]}..." if len(str(log)) > 150 else f"  - {str(log)}" for log in error_logs])
+            logs_json = "\n".join(
+                [
+                    f"  - {str(log)[:150]}..." if len(str(log)) > 150 else f"  - {str(log)}"
+                    for log in error_logs
+                ]
+            )
             evidence_parts.append(f"Error Logs:\n{logs_json}")
 
         elif source == "aws_batch_jobs" and evidence.get("failed_jobs"):
             failed_jobs = evidence.get("failed_jobs", [])[:3]
-            jobs_json = "\n".join([f"  - {str(job)[:150]}..." if len(str(job)) > 150 else f"  - {str(job)}" for job in failed_jobs])
+            jobs_json = "\n".join(
+                [
+                    f"  - {str(job)[:150]}..." if len(str(job)) > 150 else f"  - {str(job)}"
+                    for job in failed_jobs
+                ]
+            )
             evidence_parts.append(f"Failed Jobs:\n{jobs_json}")
 
         elif source == "tracer_tools" and evidence.get("failed_tools"):
             failed_tools = evidence.get("failed_tools", [])[:3]
-            tools_json = "\n".join([f"  - {str(tool)[:150]}..." if len(str(tool)) > 150 else f"  - {str(tool)}" for tool in failed_tools])
+            tools_json = "\n".join(
+                [
+                    f"  - {str(tool)[:150]}..." if len(str(tool)) > 150 else f"  - {str(tool)}"
+                    for tool in failed_tools
+                ]
+            )
             evidence_parts.append(f"Failed Tools:\n{tools_json}")
 
         elif source == "host_metrics" and evidence.get("host_metrics", {}).get("data"):
@@ -234,7 +262,9 @@ def _format_slack_message(ctx: ReportContext) -> str:
             # Add evidence details for this claim
             evidence_detail = _format_evidence_for_claim(claim_data, evidence, ctx)
             if evidence_detail:
-                evidence_section += f"\n{idx}. Evidence for: \"{claim[:80]}{'...' if len(claim) > 80 else ''}\"\n"
+                evidence_section += (
+                    f'\n{idx}. Evidence for: "{claim[:80]}{"..." if len(claim) > 80 else ""}"\n'
+                )
                 evidence_section += f"{evidence_detail}\n"
 
         # Only add evidence section if there's actual evidence to show
@@ -249,9 +279,7 @@ def _format_slack_message(ctx: ReportContext) -> str:
 
     if validity_score > 0:
         total = len(validated_claims) + len(non_validated_claims)
-        validity_info = (
-            f"\n*Validity Score:* {validity_score:.0%} ({len(validated_claims)}/{total} validated)\n"
-        )
+        validity_info = f"\n*Validity Score:* {validity_score:.0%} ({len(validated_claims)}/{total} validated)\n"
 
     root_cause_text = ctx.get("root_cause", "")
     if not validated_claims and not non_validated_claims and root_cause_text:
@@ -263,8 +291,11 @@ def _format_slack_message(ctx: ReportContext) -> str:
 
     total = len(validated_claims) + len(non_validated_claims)
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
+    alert_id_str = f"\n*Alert ID:* {ctx['alert_id']}" if ctx.get("alert_id") else ""
+
     return f"""[RCA] {pipeline_name} incident
 Analyzed by: pipeline-agent
+{alert_id_str}
 
 *Conclusion*
 {conclusion_section}
@@ -322,7 +353,9 @@ def _render_report(slack_message: str, confidence: float, validity_score: float)
         print("=" * 60)
         print(slack_message)
         print("=" * 60)
-        print(f"Investigation complete. Confidence: {confidence:.0%} | Validity: {validity_score:.0%}")
+        print(
+            f"Investigation complete. Confidence: {confidence:.0%} | Validity: {validity_score:.0%}"
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

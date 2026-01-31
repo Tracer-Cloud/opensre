@@ -129,14 +129,12 @@ def reset_tracker() -> ProgressTracker:
     _tracker = ProgressTracker()
     return _tracker
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Display Functions
 # ─────────────────────────────────────────────────────────────────────────────
 def render_investigation_header(
-    alert_name: str,
-    pipeline_name: str,
-    severity: str,
-    alert_id: str | None = None
+    alert_name: str, pipeline_name: str, severity: str, alert_id: str | None = None
 ) -> None:
     """Render the investigation start header."""
     fmt = get_output_format()

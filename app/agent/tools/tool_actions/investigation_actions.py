@@ -21,15 +21,21 @@ class InvestigationAction:
     requires: list[str]  # Required inputs (e.g., trace_id)
     source: EvidenceSource  # Which source category this belongs to
     function: Callable[..., dict[str, Any]]  # The actual function to call
-    availability_check: Callable[[dict[str, dict]], bool] | None = None  # Check if action can run given available sources
-    parameter_extractor: Callable[[dict[str, dict]], dict[str, Any]] | None = None  # Extract parameters from available sources
+    availability_check: Callable[[dict[str, dict]], bool] | None = (
+        None  # Check if action can run given available sources
+    )
+    parameter_extractor: Callable[[dict[str, dict]], dict[str, Any]] | None = (
+        None  # Extract parameters from available sources
+    )
 
 
 def _extract_use_cases(docstring: str) -> list[str]:
     """Extract use cases from 'Useful for:' section in docstring."""
     if not docstring:
         return []
-    useful_match = re.search(r"Useful for:\s*(.*?)(?:\n\n|\n[A-Z]|$)", docstring, re.DOTALL | re.IGNORECASE)
+    useful_match = re.search(
+        r"Useful for:\s*(.*?)(?:\n\n|\n[A-Z]|$)", docstring, re.DOTALL | re.IGNORECASE
+    )
     if not useful_match:
         return []
     useful_text = useful_match.group(1).strip()
@@ -73,7 +79,9 @@ def _extract_outputs(docstring: str) -> dict[str, str]:
     if not docstring:
         return outputs
 
-    returns_match = re.search(r"Returns:\s*(.*?)(?:\n\n|\n[A-Z]|$)", docstring, re.DOTALL | re.IGNORECASE)
+    returns_match = re.search(
+        r"Returns:\s*(.*?)(?:\n\n|\n[A-Z]|$)", docstring, re.DOTALL | re.IGNORECASE
+    )
     if returns_match:
         returns_text = returns_match.group(1).strip()
         if "Dictionary with" in returns_text:
@@ -156,7 +164,9 @@ def get_available_actions() -> list[InvestigationAction]:
             source="batch",
             requires=["trace_id"],
             availability_check=lambda sources: bool(sources.get("tracer_web", {}).get("trace_id")),
-            parameter_extractor=lambda sources: {"trace_id": sources.get("tracer_web", {}).get("trace_id")},
+            parameter_extractor=lambda sources: {
+                "trace_id": sources.get("tracer_web", {}).get("trace_id")
+            },
         ),
         _build_investigation_action(
             name="get_failed_tools",
@@ -164,7 +174,9 @@ def get_available_actions() -> list[InvestigationAction]:
             source="tracer_web",
             requires=["trace_id"],
             availability_check=lambda sources: bool(sources.get("tracer_web", {}).get("trace_id")),
-            parameter_extractor=lambda sources: {"trace_id": sources.get("tracer_web", {}).get("trace_id")},
+            parameter_extractor=lambda sources: {
+                "trace_id": sources.get("tracer_web", {}).get("trace_id")
+            },
         ),
         _build_investigation_action(
             name="get_error_logs",
@@ -184,7 +196,9 @@ def get_available_actions() -> list[InvestigationAction]:
             source="cloudwatch",
             requires=["trace_id"],
             availability_check=lambda sources: bool(sources.get("tracer_web", {}).get("trace_id")),
-            parameter_extractor=lambda sources: {"trace_id": sources.get("tracer_web", {}).get("trace_id")},
+            parameter_extractor=lambda sources: {
+                "trace_id": sources.get("tracer_web", {}).get("trace_id")
+            },
         ),
         _build_investigation_action(
             name="get_cloudwatch_logs",

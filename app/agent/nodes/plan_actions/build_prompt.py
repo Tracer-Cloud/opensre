@@ -34,9 +34,9 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
         cw = available_sources["cloudwatch"]
         hints.append(
             f"""CloudWatch Logs Available:
-- Log Group: {cw.get('log_group')}
-- Log Stream: {cw.get('log_stream')}
-- Region: {cw.get('region', 'us-east-1')}
+- Log Group: {cw.get("log_group")}
+- Log Stream: {cw.get("log_stream")}
+- Region: {cw.get("region", "us-east-1")}
 - Use get_cloudwatch_logs to fetch error logs and tracebacks"""
         )
 
@@ -44,8 +44,8 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
         s3 = available_sources["s3"]
         hints.append(
             f"""S3 Storage Available:
-- Bucket: {s3.get('bucket')}
-- Prefix: {s3.get('prefix', 'N/A')}
+- Bucket: {s3.get("bucket")}
+- Prefix: {s3.get("prefix", "N/A")}
 - Use check_s3_marker to verify pipeline completion markers"""
         )
 
@@ -53,7 +53,7 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
         local = available_sources["local_file"]
         hints.append(
             f"""Local File Available:
-- Log File: {local.get('log_file')}
+- Log File: {local.get("log_file")}
 - Note: Local file logs can be read directly"""
         )
 
@@ -61,8 +61,8 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
         tracer = available_sources["tracer_web"]
         hints.append(
             f"""Tracer Web Platform Available:
-- Trace ID: {tracer.get('trace_id')}
-- Run URL: {tracer.get('run_url', 'N/A')}
+- Trace ID: {tracer.get("trace_id")}
+- Run URL: {tracer.get("run_url", "N/A")}
 - Use get_failed_jobs, get_failed_tools, get_error_logs to fetch execution data"""
         )
 
@@ -93,9 +93,7 @@ def build_investigation_prompt(
     """
     executed_sources_set = _get_executed_sources(executed_hypotheses)
     executed_actions = [
-        action.name
-        for action in available_actions
-        if action.source in executed_sources_set
+        action.name for action in available_actions if action.source in executed_sources_set
     ]
 
     available_actions_filtered = [
@@ -119,7 +117,7 @@ Problem Context:
 Available Investigation Actions:
 {actions_description if actions_description else "No actions available"}
 
-Executed Actions: {', '.join(executed_actions) if executed_actions else "None"}
+Executed Actions: {", ".join(executed_actions) if executed_actions else "None"}
 
 Recommendations from previous analysis:
 {chr(10).join(f"- {r}" for r in recommendations) if recommendations else "None"}
@@ -199,19 +197,13 @@ def plan_actions_with_llm(
     )
 
     structured_llm = llm.with_structured_output(plan_model)
-    return structured_llm.with_config(
-        run_name="LLM – Plan evidence gathering"
-    ).invoke(prompt)
+    return structured_llm.with_config(run_name="LLM – Plan evidence gathering").invoke(prompt)
 
 
 def _format_action_metadata(action) -> str:
     """Format a single action's metadata for the prompt."""
-    inputs_desc = "\n    ".join(
-        f"- {param}: {desc}" for param, desc in action.inputs.items()
-    )
-    outputs_desc = "\n    ".join(
-        f"- {field}: {desc}" for field, desc in action.outputs.items()
-    )
+    inputs_desc = "\n    ".join(f"- {param}: {desc}" for param, desc in action.inputs.items())
+    outputs_desc = "\n    ".join(f"- {field}: {desc}" for field, desc in action.outputs.items())
     use_cases_desc = "\n    ".join(f"- {uc}" for uc in action.use_cases)
 
     return f"""Action: {action.name}

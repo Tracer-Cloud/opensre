@@ -8,4 +8,4 @@ TRACER_ORG_SLUG = "tracer-bioinformatics"
 # Default investigation link (placeholder)
 TRACER_DEFAULT_INVESTIGATION_URL = f"{TRACER_BASE_URL}/{TRACER_ORG_SLUG}/investigations"
 
-SLACK_CHANNEL='tracer-rca-report-alerts'
+SLACK_CHANNEL = "tracer-rca-report-alerts"

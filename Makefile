@@ -13,7 +13,7 @@ install:
 
 # Run CloudWatch demo (default demo)
 demo:
-	$(PYTHON) -m tests.test_case_cloudwatch_demo.test_orchestrator
+	$(PYTHON) -m tests.test_case_upstream_downstream_pipeline.test_orchestrator
 
 # Run Superfluid test case demo
 superfluid-demo:
@@ -22,6 +22,10 @@ superfluid-demo:
 # Run CloudWatch minimal demo (alias for demo)
 cloudwatch-demo:
 	$(PYTHON) -m tests.test_case_cloudwatch_demo.test_orchestrator
+
+# Run ECS Fargate Airflow upstream/downstream failure test case
+upstream-downstream:
+	$(PYTHON) -m tests.test_case_upstream_downstream_pipeline.test_orchestrator
 
 # Run the generic CLI (reads from stdin or --input)
 run:
@@ -66,6 +70,7 @@ help:
 	@echo "  make demo            - Run CloudWatch demo"
 	@echo "  make superfluid-demo - Run Superfluid test case demo"
 	@echo "  make cloudwatch-demo - Run CloudWatch demo (alias)"
+	@echo "  make mwaa-demo       - Run ECS Fargate Airflow upstream/downstream demo"
 	@echo "  make test            - Run tests"
 	@echo "  make test-cov        - Run tests with coverage"
 	@echo "  make clean           - Clean up cache files"
