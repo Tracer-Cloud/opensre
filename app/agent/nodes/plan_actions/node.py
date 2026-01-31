@@ -30,6 +30,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
     plan, available_sources, available_action_names, _available_actions = build_plan_actions(
         input_data=input_data,
         plan_model=InvestigationPlan,
+        pipeline_name=state.get("pipeline_name", ""),
     )
 
     planned_actions = plan.actions if plan else []

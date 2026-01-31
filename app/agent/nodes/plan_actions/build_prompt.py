@@ -105,6 +105,7 @@ def build_investigation_prompt(
     executed_hypotheses: list[dict[str, Any]],
     available_actions: list,
     available_sources: dict[str, dict],
+    memory_context: str = "",
 ) -> str:
     """
     Build the investigation prompt with rich action metadata.
@@ -151,11 +152,22 @@ For pipeline failures with S3 input data, follow this evidence chain to trace ro
 This upstream trace reveals root causes outside the failed service (external API issues, upstream Lambda bugs, data quality problems).
 """
 
+    # Add memory section with prior successful investigation paths
+    memory_section = ""
+    if memory_context:
+        memory_section = f"""
+**Prior Successful Investigation Paths (from memory):**
+{memory_context[:1500]}
+
+Use these proven investigation sequences as guidance for action selection.
+"""
+
     prompt = f"""You are investigating a data pipeline incident.
 
 Problem Context:
 {problem_context}
 {lineage_directive}
+{memory_section}
 {sources_hint}
 Available Investigation Actions:
 {actions_description if actions_description else "No actions available"}
@@ -215,6 +227,7 @@ def plan_actions_with_llm(
     executed_hypotheses: list[dict[str, Any]],
     available_actions: list,
     available_sources: dict[str, dict],
+    memory_context: str = "",
 ):
     """
     Build the investigation prompt and invoke the LLM for a plan.
@@ -227,6 +240,7 @@ def plan_actions_with_llm(
         executed_hypotheses: History of executed hypotheses
         available_actions: Filtered list of actions
         available_sources: Available data sources
+        memory_context: Optional memory context from prior investigations
 
     Returns:
         Structured plan from the LLM
@@ -237,6 +251,7 @@ def plan_actions_with_llm(
         executed_hypotheses=executed_hypotheses,
         available_actions=available_actions,
         available_sources=available_sources,
+        memory_context=memory_context,
     )
 
     structured_llm = llm.with_structured_output(plan_model)

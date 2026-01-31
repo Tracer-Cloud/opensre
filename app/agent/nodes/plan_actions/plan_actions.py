@@ -21,6 +21,7 @@ from app.agent.tools.tool_actions.investigation_actions import (
 def plan_actions(
     input_data,
     plan_model: type[BaseModel],
+    pipeline_name: str = "",
 ) -> tuple[Any | None, dict[str, dict], list[str], list]:
     """
     Interpret inputs, select actions, and request a plan from the LLM.
@@ -28,6 +29,7 @@ def plan_actions(
     Args:
         input_data: InvestigateInput (or compatible) object
         plan_model: Pydantic model for structured LLM output
+        pipeline_name: Pipeline name from state (for memory lookup)
 
     Returns:
         Tuple of (plan_or_none, available_sources, available_action_names, available_actions)
@@ -60,6 +62,21 @@ def plan_actions(
     if not available_action_names:
         return None, available_sources, available_action_names, available_actions
 
+    # Load memory context if enabled
+    from app.agent.memory import get_memory_context, is_memory_enabled
+
+    memory_context = ""
+    if is_memory_enabled() and pipeline_name:
+        seed_paths = []
+        pipeline_lower = pipeline_name.lower() if pipeline_name else ""
+        if "prefect" in pipeline_lower:
+            seed_paths.append("tests/test_case_upstream_prefect_ecs_fargate/ARCHITECTURE.md")
+        elif "lambda" in pipeline_lower:
+            seed_paths.append("tests/test_case_upstream_lambda/ARCHITECTURE.md")
+        memory_context = get_memory_context(pipeline_name=pipeline_name, seed_paths=seed_paths)
+        if memory_context:
+            debug_print("[MEMORY] Loaded context for action planning")
+
     llm = get_llm()
     plan = plan_actions_with_llm(
         llm=llm,
@@ -69,6 +86,7 @@ def plan_actions(
         executed_hypotheses=input_data.executed_hypotheses,
         available_actions=available_actions,
         available_sources=available_sources,
+        memory_context=memory_context,
     )
     print(f"[DEBUG] LLM Plan: {plan.actions}")
     print(f"[DEBUG] Rationale: {plan.rationale[:200]}")

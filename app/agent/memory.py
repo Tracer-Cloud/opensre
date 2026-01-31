@@ -4,12 +4,10 @@ Memory system for investigation agent (Openclaw session-memory pattern).
 Stores and retrieves prior investigation knowledge to speed up RCA.
 """
 
-import json
 import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 
 def _get_memories_dir() -> Path:
@@ -50,13 +48,7 @@ def _extract_memory_from_md(md_content: str, max_chars: int = 2000) -> str:
             continue
 
         # Include headings
-        if line_stripped.startswith("#"):
-            extracted.append(line_stripped)
-        # Include bullet lists
-        elif line_stripped.startswith("-") or line_stripped.startswith("*"):
-            extracted.append(line_stripped)
-        # Include lines with keywords
-        elif any(kw in line_stripped.lower() for kw in keywords):
+        if line_stripped.startswith("#") or line_stripped.startswith("-") or line_stripped.startswith("*") or any(kw in line_stripped.lower() for kw in keywords):
             extracted.append(line_stripped)
 
     # Join and truncate
@@ -67,76 +59,113 @@ def _extract_memory_from_md(md_content: str, max_chars: int = 2000) -> str:
     return result
 
 
+def get_cached_investigation(pipeline_name: str) -> dict | None:
+    """
+    Get cached investigation results for direct reuse (skip LLM calls).
+
+    Returns most recent high-quality investigation if available.
+
+    Args:
+        pipeline_name: Pipeline name to lookup
+
+    Returns:
+        Dict with cached results (action_sequence, root_cause_pattern, problem_pattern)
+        or None if no suitable cache found
+    """
+    if not os.getenv("TRACER_MEMORY_ENABLED") or not pipeline_name:
+        return None
+
+    memories_dir = _get_memories_dir()
+    if not memories_dir.exists():
+        return None
+
+    # Find recent memory files for this pipeline
+    pattern = re.compile(rf"\d{{4}}-\d{{2}}-\d{{2}}-{re.escape(pipeline_name)}-.*\.md")
+    memory_files = [
+        f
+        for f in memories_dir.glob("*.md")
+        if pattern.match(f.name) and f.name != "IMPLEMENTATION_PLAN.md"
+    ]
+
+    if not memory_files:
+        return None
+
+    # Get most recent
+    memory_files.sort(reverse=True)
+    latest_file = memory_files[0]
+
+    try:
+        content = latest_file.read_text()
+
+        # Extract key sections
+        cached = {}
+
+        # Extract action sequence
+        if "## Investigation Path" in content:
+            path_section = content.split("## Investigation Path")[1].split("##")[0]
+            actions = [line.split(". ", 1)[1] for line in path_section.strip().split("\n") if ". " in line]
+            cached["action_sequence"] = actions
+
+        # Extract root cause pattern
+        if "## Root Cause" in content:
+            root_cause = content.split("## Root Cause")[1].split("##")[0].strip()
+            cached["root_cause_pattern"] = root_cause
+
+        # Extract problem pattern
+        if "## Problem Pattern" in content:
+            problem = content.split("## Problem Pattern")[1].split("##")[0].strip()
+            cached["problem_pattern"] = problem
+
+        # Extract data lineage
+        if "## Data Lineage" in content:
+            lineage = content.split("## Data Lineage")[1].split("##")[0].strip()
+            cached["data_lineage"] = lineage
+
+        print(f"[MEMORY] Loaded cache from {latest_file.name}")
+        return cached if cached else None
+
+    except Exception as e:
+        print(f"[WARNING] Failed to parse memory file: {e}")
+        return None
+
+
 def get_memory_context(
     pipeline_name: str | None = None,
-    alert_id: str | None = None,
-    seed_paths: list[str] | None = None,
+    alert_id: str | None = None,  # noqa: ARG001
+    seed_paths: list[str] | None = None,  # noqa: ARG001
 ) -> str:
     """
-    Load memory context from seed MD files and prior investigations.
+    Load memory context from prior investigations (minimal, targeted).
 
     Args:
         pipeline_name: Pipeline name to load specific memories for
-        alert_id: Alert ID (not used for retrieval, just for context)
-        seed_paths: Optional list of MD files to seed from
+        alert_id: Alert ID (not used for retrieval, kept for API compatibility)
+        seed_paths: MD files to seed from (not used - caching is better)
 
     Returns:
-        Memory context string (empty if disabled or not found)
+        Short memory summary string (empty if disabled or not found)
     """
     # Check if memory is enabled
     if not os.getenv("TRACER_MEMORY_ENABLED"):
         return ""
 
-    memory_parts = []
+    # Use cached investigation instead of long context
+    cached = get_cached_investigation(pipeline_name) if pipeline_name else None
 
-    # 1. Seed from specified MD files
-    if seed_paths:
-        for seed_path in seed_paths:
-            path = Path(seed_path)
-            if path.exists() and path.suffix == ".md":
-                try:
-                    content = path.read_text()
-                    extracted = _extract_memory_from_md(content, max_chars=1500)
-                    if extracted:
-                        memory_parts.append(f"## Seed: {path.name}\n{extracted}")
-                except Exception as e:
-                    print(f"[WARNING] Could not read seed file {seed_path}: {e}")
-
-    # 2. Load prior investigations for this pipeline (newest first)
-    if pipeline_name:
-        memories_dir = _get_memories_dir()
-        if memories_dir.exists():
-            # Find memory files matching this pipeline
-            pattern = re.compile(rf"\d{{4}}-\d{{2}}-\d{{2}}-{re.escape(pipeline_name)}-.*\.md")
-            memory_files = [
-                f
-                for f in memories_dir.glob("*.md")
-                if pattern.match(f.name) and f.name != "IMPLEMENTATION_PLAN.md"
-            ]
-            # Sort by name (date) descending, take most recent 3
-            memory_files.sort(reverse=True)
-            for mem_file in memory_files[:3]:
-                try:
-                    content = mem_file.read_text()
-                    memory_parts.append(f"## Prior Investigation: {mem_file.name}\n{content}")
-                except Exception as e:
-                    print(f"[WARNING] Could not read memory file {mem_file}: {e}")
-
-    # 3. Optional: BOOT.md (Openclaw boot-md pattern)
-    boot_md = Path(__file__).parent.parent.parent / "BOOT.md"
-    if boot_md.exists():
-        try:
-            content = boot_md.read_text()
-            extracted = _extract_memory_from_md(content, max_chars=500)
-            if extracted:
-                memory_parts.append(f"## BOOT Context\n{extracted}")
-        except Exception:
-            pass  # Silently skip if BOOT.md fails
-
-    if not memory_parts:
+    if not cached:
         return ""
 
-    return "\n\n".join(memory_parts)
+    # Build minimal summary (< 500 chars)
+    parts = []
+    if cached.get("action_sequence"):
+        actions_str = " → ".join(cached["action_sequence"][:5])
+        parts.append(f"Prior successful path: {actions_str}")
+
+    if cached.get("root_cause_pattern"):
+        root_cause = cached["root_cause_pattern"][:200]
+        parts.append(f"Prior root cause: {root_cause}")
+
+    return "\n".join(parts) if parts else ""
 
 
 def write_memory(

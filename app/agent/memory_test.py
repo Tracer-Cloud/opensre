@@ -72,10 +72,11 @@ class TestMemoryInfrastructure:
 
             # Read it back
             memory = get_memory_context("test_pipeline", "abc12345")
-            assert "test_pipeline" in memory
-            assert "External API" in memory
+            # New implementation returns minimal summary
+            assert memory != ""
+            assert "External API" in memory or "schema change" in memory.lower()
             assert "inspect_s3_object" in memory
-            assert "Root Cause" in memory
+            assert len(memory) < 1000  # Should be short and targeted
 
         finally:
             os.environ.pop("TRACER_MEMORY_ENABLED", None)
@@ -119,17 +120,28 @@ class TestMemoryInfrastructure:
             os.environ.pop("TRACER_MEMORY_ENABLED", None)
 
     def test_seed_from_md_files(self):
-        """Load memory from seed MD files (ARCHITECTURE.md pattern)."""
+        """Load memory from cached investigations (new behavior: no direct seed)."""
         os.environ["TRACER_MEMORY_ENABLED"] = "1"
 
         try:
-            # Use ARCHITECTURE.md from Prefect test case
-            seed_path = "tests/test_case_upstream_prefect_ecs_fargate/ARCHITECTURE.md"
-            memory = get_memory_context(seed_paths=[seed_path])
+            # Write a prior investigation first
+            from app.agent.memory import write_memory
 
-            # Should contain key architecture patterns
+            write_memory(
+                pipeline_name="test_pipeline_seed",
+                alert_id="seed001",
+                root_cause="External API issue",
+                confidence=0.85,
+                validity_score=0.90,
+                action_sequence=["inspect_s3_object"],
+            )
+
+            # Now get memory - should load the cached investigation
+            memory = get_memory_context(pipeline_name="test_pipeline_seed")
+
+            # Should contain minimal cached summary
             assert memory != ""
-            assert ("External API" in memory or "Lambda" in memory or "S3" in memory)
+            assert "External API" in memory or "inspect_s3_object" in memory
 
         finally:
             os.environ.pop("TRACER_MEMORY_ENABLED", None)
@@ -179,12 +191,14 @@ Lambda writes data to S3 landing bucket.
                     validity_score=0.80,
                 )
 
-            # Load memory - should include up to 3 recent investigations
+            # Load memory - should load most recent investigation (minimal summary)
             memory = get_memory_context("test_pipeline")
 
-            assert "Prior Investigation" in memory
-            # Should contain at least 2 of them (newest first)
-            assert memory.count("## Prior Investigation") >= 2
+            assert memory != ""
+            # New behavior: loads single most recent investigation as minimal summary
+            assert "Prior" in memory or "Root cause" in memory
+            # Should be short
+            assert len(memory) < 1000
 
         finally:
             os.environ.pop("TRACER_MEMORY_ENABLED", None)
