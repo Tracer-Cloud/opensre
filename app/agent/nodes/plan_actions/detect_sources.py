@@ -98,19 +98,26 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
         sources["local_file"] = {"log_file": log_file}
 
     # Detect Lambda sources
-    # Look for function_name in various annotation patterns
-    lambda_function = None
+    # Collect all Lambda functions from annotations (primary + upstream/downstream)
+    lambda_functions = []
     for key in annotations:
-        if key in ("function_name", "lambda_function"):
-            lambda_function = annotations[key]
-            break
-        # Check for patterns like mock_dag_function, ingester_function, etc.
-        if key.endswith("_function") and annotations[key]:
-            lambda_function = annotations[key]
-            break
+        if key in ("function_name", "lambda_function") and annotations[key]:
+            # Primary function (prioritize it)
+            lambda_functions.insert(0, annotations[key])
+        elif (
+            key.endswith("_function")
+            and annotations[key]
+            and annotations[key] not in lambda_functions
+        ):
+            # Additional functions (ingester_function, mock_dag_function, etc.)
+            lambda_functions.append(annotations[key])
 
-    if lambda_function:
-        sources["lambda"] = {"function_name": lambda_function}
+    if lambda_functions:
+        # Store primary function and additional functions
+        sources["lambda"] = {
+            "function_name": lambda_functions[0],  # Primary function for single-function actions
+            "all_functions": lambda_functions,  # All functions for multi-function investigations
+        }
 
     # Detect Tracer Web sources from context
     tracer_web_run = context.get("tracer_web_run", {})

@@ -33,6 +33,18 @@ def plan_actions(
         Tuple of (plan_or_none, available_sources, available_action_names, available_actions)
     """
     available_sources = detect_sources(input_data.raw_alert, input_data.context)
+
+    # Enhance sources with dynamically discovered information from evidence (e.g., audit_key from S3 metadata)
+    s3_object = input_data.evidence.get("s3_object", {})
+    if s3_object.get("found") and s3_object.get("metadata", {}).get("audit_key"):
+        audit_key = s3_object["metadata"]["audit_key"]
+        bucket = s3_object.get("bucket")
+        if bucket and "s3_audit" not in available_sources:
+            # Add audit payload as discoverable S3 source
+            available_sources["s3_audit"] = {"bucket": bucket, "key": audit_key}
+            print(f"[DEBUG] Added s3_audit source: s3://{bucket}/{audit_key}")
+
+    print(f"[DEBUG] Available sources: {list(available_sources.keys())}")
     debug_print(f"Relevant sources: {list(available_sources.keys())}")
 
     all_actions = get_available_actions()
