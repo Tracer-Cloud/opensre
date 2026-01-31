@@ -22,6 +22,7 @@ class InvestigationPlan(BaseModel):
 def node_plan_actions(state: InvestigationState) -> dict:
     """Plan investigation actions and write plan outputs to state."""
     input_data = InvestigateInput.from_state(state)
+    loop_count = state.get("investigation_loop_count", 0)
 
     tracker = get_tracker()
     tracker.start("plan_actions", "Planning evidence gathering")
@@ -34,7 +35,33 @@ def node_plan_actions(state: InvestigationState) -> dict:
     planned_actions = plan.actions if plan else []
     plan_rationale = plan.rationale if plan else ""
 
+    # Safety check: if we're in a loop but can't plan new actions, stop the investigation
     if not available_action_names or plan is None:
+        if loop_count > 0:
+            debug_print(
+                f"WARNING: Loop {loop_count} but no new actions can be planned. "
+                "Clearing recommendations to stop loop."
+            )
+            # Clear recommendations to stop the routing from looping again
+            tracker.complete(
+                "plan_actions",
+                fields_updated=[
+                    "planned_actions",
+                    "plan_rationale",
+                    "available_sources",
+                    "available_action_names",
+                    "investigation_recommendations",
+                ],
+                message="No new actions planned (stopping loop)",
+            )
+            return {
+                "planned_actions": [],
+                "plan_rationale": "",
+                "available_sources": available_sources,
+                "available_action_names": available_action_names,
+                "investigation_recommendations": [],  # Clear to stop loop
+            }
+
         debug_print("No new actions selected in planning.")
         tracker.complete(
             "plan_actions",

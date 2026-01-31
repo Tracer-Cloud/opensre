@@ -134,9 +134,11 @@ def test_agent_investigation(failure_data: dict) -> bool:
         severity="critical",
         alert_name=f"Prefect Flow Failed: {failure_data['flow_run_name']}",
         annotations={
-            "correlation_id": failure_data["correlation_id"],
+            # Don't include correlation_id as filter - it won't match logs
+            # Instead, agent will get latest logs from the log group
             "cloudwatch_log_group": failure_data["log_group"],
             "flow_run_id": failure_data["flow_run_id"],
+            "flow_run_name": failure_data["flow_run_name"],
             "prefect_flow": "upstream_downstream_pipeline",
             "ecs_cluster": "tracer-prefect-cluster",
             "landing_bucket": failure_data["s3_bucket"],
@@ -150,7 +152,7 @@ def test_agent_investigation(failure_data: dict) -> bool:
     print("\n📋 Alert created:")
     print(f"   Pipeline: {alert.get('labels', {}).get('alertname', 'unknown')}")
     print(f"   Run Name: {failure_data['flow_run_name']}")
-    print(f"   Correlation ID: {failure_data['correlation_id']}")
+    print(f"   Flow Run ID: {failure_data['flow_run_id']}")
     print(f"   Log Group: {failure_data['log_group']}")
     print(f"   S3 Data: s3://{failure_data['s3_bucket']}/{failure_data['s3_key']}")
     print(f"   S3 Audit: s3://{failure_data['s3_bucket']}/{failure_data['audit_key']}")
