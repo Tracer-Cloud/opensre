@@ -4,9 +4,9 @@ Clerk JWT configuration for both development and production environments.
 These are public endpoints and issuer URLs, not secrets.
 """
 
+import os
 from dataclasses import dataclass
 from enum import Enum
-import os
 
 
 class Environment(Enum):

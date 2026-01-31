@@ -18,11 +18,11 @@ from __future__ import annotations
 from langgraph_sdk import Auth
 
 from app.pipeline_assistant.jwt_auth import (
-    verify_jwt_async,
-    JWTVerificationError,
     JWTExpiredError,
     JWTInvalidIssuerError,
     JWTMissingClaimError,
+    JWTVerificationError,
+    verify_jwt_async,
 )
 
 auth = Auth()
