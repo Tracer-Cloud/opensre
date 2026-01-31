@@ -12,8 +12,8 @@ import requests
 from dotenv import load_dotenv
 
 from tests.utils.alert_factory.factory import create_alert, from_pipeline_run
-from tests.utils.alert_factory.intent import AlertIntent
 from tests.utils.alert_factory.formatters.grafana import format_as_grafana
+from tests.utils.alert_factory.intent import AlertIntent
 
 load_dotenv()
 
@@ -29,9 +29,9 @@ def test_alert_intent_creation():
         severity="warning",
         alert_name="CustomAlert",
         environment="staging",
-        annotations={"foo": "bar"}
+        annotations={"foo": "bar"},
     )
-    
+
     assert intent.pipeline_name == "test_pipeline"
     assert intent.severity == "warning"
     assert intent.alert_name == "CustomAlert"
@@ -48,9 +48,9 @@ def test_grafana_formatter():
         status="failed",
         timestamp=timestamp,
     )
-    
+
     payload = format_as_grafana(intent)
-    
+
     assert payload["alerts"][0]["labels"]["pipeline_name"] == "test_pipeline"
     assert payload["alerts"][0]["labels"]["alertname"] == "PipelineFailure"
     assert payload["alerts"][0]["labels"]["severity"] == "critical"
@@ -66,9 +66,9 @@ def test_factory_from_pipeline_run():
         status="failed",
         timestamp=timestamp,
         severity="high",
-        alert_name="FailureEvent"
+        alert_name="FailureEvent",
     )
-    
+
     assert payload["alerts"][0]["labels"]["severity"] == "high"
     assert payload["alerts"][0]["labels"]["alertname"] == "FailureEvent"
 

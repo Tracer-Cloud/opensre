@@ -1,7 +1,9 @@
-from typing import Any, Dict
+from typing import Any
+
 from ..intent import AlertIntent
 
-def format_as_grafana(intent: AlertIntent) -> Dict[str, Any]:
+
+def format_as_grafana(intent: AlertIntent) -> dict[str, Any]:
     """Renders an AlertIntent into a Grafana/Tracer-compatible payload."""
     alert = {
         "status": "firing",
@@ -36,9 +38,7 @@ def format_as_grafana(intent: AlertIntent) -> Dict[str, Any]:
             "severity": intent.severity,
             "pipeline_name": intent.pipeline_name,
         },
-        "commonAnnotations": {
-            "summary": f"Pipeline {intent.pipeline_name} failed"
-        },
+        "commonAnnotations": {"summary": f"Pipeline {intent.pipeline_name} failed"},
         "groupKey": f'{{}}:{{alertname="{intent.alert_name}"}}',
         "title": f"[FIRING:1] {intent.alert_name} {intent.severity} - {intent.pipeline_name}",
         "state": "alerting",

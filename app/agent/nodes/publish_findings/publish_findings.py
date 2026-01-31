@@ -47,6 +47,7 @@ class ReportContext(TypedDict, total=False):
     cloudwatch_log_group: str | None
     cloudwatch_log_stream: str | None
     cloudwatch_logs_url: str | None
+    alert_id: str | None
     evidence: dict  # Raw evidence data for citation
 
 
@@ -73,10 +74,12 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
     cloudwatch_url = None
     cloudwatch_group = None
     cloudwatch_stream = None
+    alert_id = None
     if isinstance(raw_alert, dict):
         cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
         cloudwatch_group = raw_alert.get("cloudwatch_log_group")
         cloudwatch_stream = raw_alert.get("cloudwatch_log_stream")
+        alert_id = raw_alert.get("alert_id")
 
     return {
         "pipeline_name": state.get("pipeline_name", "unknown"),
@@ -100,6 +103,7 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
         "cloudwatch_log_group": cloudwatch_group,
         "cloudwatch_log_stream": cloudwatch_stream,
         "cloudwatch_logs_url": cloudwatch_url,
+        "alert_id": alert_id,
         "evidence": evidence,  # Include raw evidence for citation
     }
 
@@ -287,8 +291,11 @@ def _format_slack_message(ctx: ReportContext) -> str:
 
     total = len(validated_claims) + len(non_validated_claims)
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
+    alert_id_str = f"\n*Alert ID:* {ctx['alert_id']}" if ctx.get("alert_id") else ""
+
     return f"""[RCA] {pipeline_name} incident
 Analyzed by: pipeline-agent
+{alert_id_str}
 
 *Conclusion*
 {conclusion_section}
