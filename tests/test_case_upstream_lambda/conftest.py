@@ -24,10 +24,11 @@ def stack_outputs() -> dict:
     return {}
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def failure_data() -> dict:
     """Fixture for pipeline failure data - skip if infrastructure unavailable."""
     if not _infrastructure_available():
         pytest.skip("Infrastructure tests skipped in CI - run manually")
-    # Return placeholder - actual values come from trigger_pipeline_failure()
-    return {}
+    from tests.test_case_upstream_lambda.test_agent_e2e import trigger_pipeline_failure
+
+    return trigger_pipeline_failure()
