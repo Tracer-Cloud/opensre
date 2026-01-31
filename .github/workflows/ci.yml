@@ -58,6 +58,25 @@ jobs:
   test-thorough:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: superfluid
+            command: python3 -m tests.test_case_superfluid.test_orchestrator
+          - name: cloudwatch-demo
+            command: python3 -m tests.test_case_cloudwatch_demo.test_orchestrator
+          - name: s3-failed-python
+            command: python3 -m tests.test_case_s3_failed_python_on_linux.test_orchestrator
+          - name: upstream-lambda
+            command: python3 -m tests.test_case_upstream_lambda.test_agent_e2e
+          - name: prefect-ecs-fargate
+            command: python3 -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
+          - name: flink-ecs
+            command: python3 -m tests.test_case_upstream_apache_flink_ecs.test_agent_e2e
+          - name: memory-performance
+            command: python3 -m pytest -v tests/test_case_memory_performance/test_memory_speed.py
+    name: test-thorough (${{ matrix.name }})
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       JWT_TOKEN: ${{ secrets.JWT_TOKEN }}
@@ -88,10 +107,6 @@ jobs:
         run: make test
         continue-on-error: false
 
-      - name: Run Superfluid demo
-        run: python3 -m tests.test_case_superfluid.orchestrator
-        continue-on-error: true
-
-      - name: Run CloudWatch demo
-        run: python3 -m tests.test_case_cloudwatch_demo.orchestrator
-        continue-on-error: true
+      - name: Run thorough test case
+        run: ${{ matrix.command }}
+        continue-on-error: false
