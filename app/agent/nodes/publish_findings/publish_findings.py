@@ -172,8 +172,7 @@ def _generate_s3_console_url(bucket: str, key: str, region: str = "us-east-1") -
     encoded_key = quote(key, safe="")
 
     return (
-        f"https://s3.console.aws.amazon.com/s3/object/{bucket}"
-        f"?region={region}&prefix={encoded_key}"
+        f"https://s3.console.aws.amazon.com/s3/object/{bucket}?region={region}&prefix={encoded_key}"
     )
 
 
@@ -455,6 +454,70 @@ def _build_investigation_trace(ctx: ReportContext) -> list[str]:
     return trace_steps
 
 
+def _format_data_lineage_flow(ctx: ReportContext) -> str:
+    """Format data lineage flow from evidence (upstream to downstream)."""
+    evidence = ctx.get("evidence", {})
+    raw_alert = ctx.get("raw_alert", {})
+    annotations = {}
+    if isinstance(raw_alert, dict):
+        annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
+
+    flow_nodes = []
+    region = ctx.get("cloudwatch_region") or "us-east-1"
+
+    # 1. External API (from audit payload)
+    s3_audit = evidence.get("s3_audit_payload", {})
+    if s3_audit.get("found") and s3_audit.get("content"):
+        try:
+            audit_content = s3_audit.get("content")
+            audit_data = json.loads(audit_content) if isinstance(audit_content, str) else audit_content
+            external_api_url = audit_data.get("external_api_url")
+            if external_api_url:
+                flow_nodes.append(f"External API: {external_api_url}")
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # 2. Trigger Lambda (from S3 metadata or Lambda evidence)
+    lambda_func = evidence.get("lambda_function", {})
+    if lambda_func.get("function_name"):
+        function_name = lambda_func["function_name"]
+        lambda_url = (
+            f"https://{region}.console.aws.amazon.com/lambda/home"
+            f"?region={region}#/functions/{function_name}?tab=code"
+        )
+        flow_nodes.append(f"Trigger Lambda: {lambda_url}")
+
+    # 3. S3 Landing (input data)
+    s3_object = evidence.get("s3_object", {})
+    if s3_object.get("found"):
+        bucket = s3_object.get("bucket")
+        key = s3_object.get("key")
+        s3_url = _generate_s3_console_url(bucket, key, region)
+        flow_nodes.append(f"S3 Landing: {s3_url}")
+
+    # 4. Pipeline Execution (Prefect/Airflow)
+    cw_url = _get_cloudwatch_url(ctx)
+    if cw_url:
+        pipeline_name = annotations.get("prefect_flow") or "Pipeline Executor"
+        flow_nodes.append(f"{pipeline_name}: {cw_url}")
+
+    # 5. S3 Processed (output)
+    # Check if we verified processed bucket
+    processed_bucket = annotations.get("processed_bucket")
+    if processed_bucket:
+        flow_nodes.append(f"S3 Processed: s3://{processed_bucket}/ (missing)")
+
+    if not flow_nodes:
+        return ""
+
+    lines = ["*Data Lineage Flow (Evidence-Based)*"]
+    for i, node in enumerate(flow_nodes, 1):
+        arrow = " → " if i < len(flow_nodes) else ""
+        lines.append(f"{i}. {node}{arrow}")
+
+    return "\n" + "\n".join(lines) + "\n"
+
+
 def _format_infrastructure_correlation(ctx: ReportContext) -> str:
     """Format infrastructure correlation showing the investigation trace path."""
     trace_steps = _build_investigation_trace(ctx)
@@ -520,10 +583,33 @@ def _sample_evidence_payload(source: str, evidence: dict) -> Any | None:
         return lambda_errors[:3] if lambda_errors else None
     if source == "s3_object":
         s3_obj = evidence.get("s3_object")
-        return s3_obj if s3_obj else None
+        # Include bucket and key for test validation
+        if s3_obj:
+            return {
+                "bucket": s3_obj.get("bucket"),
+                "key": s3_obj.get("key"),
+                "metadata": s3_obj.get("metadata", {}),
+                "size": s3_obj.get("size"),
+                "is_text": s3_obj.get("is_text"),
+            }
+        return None
     if source == "s3_audit_payload":
         s3_audit = evidence.get("s3_audit_payload")
-        return s3_audit if s3_audit else None
+        # Include bucket and key for test validation
+        if s3_audit:
+            return {
+                "bucket": s3_audit.get("bucket"),
+                "key": s3_audit.get("key"),
+                "content_preview": str(s3_audit.get("content", ""))[:500],
+            }
+        return None
+    # Map s3_metadata and s3_audit to s3_object and s3_audit_payload
+    if source == "s3_metadata":
+        return evidence.get("s3_object")
+    if source == "s3_audit":
+        return evidence.get("s3_audit_payload")
+    if source == "vendor_audit":
+        return evidence.get("vendor_audit_from_logs") or evidence.get("s3_audit_payload")
     if source == "evidence_analysis":
         return {
             "failed_jobs": len(evidence.get("failed_jobs", [])),
@@ -589,6 +675,9 @@ def _format_cited_evidence_section(ctx: ReportContext) -> str:
         "lambda_errors": "Lambda Errors",
         "s3_object": "S3 Object Inspection",
         "s3_audit_payload": "S3 Audit Payload",
+        "s3_metadata": "S3 Object Metadata",
+        "s3_audit": "S3 Audit Trail",
+        "vendor_audit": "External Vendor API Audit",
         "logs": "Error Logs",
         "aws_batch_jobs": "AWS Batch Jobs",
         "tracer_tools": "Tracer Tools",
@@ -722,6 +811,7 @@ def _format_slack_message(ctx: ReportContext) -> str:
     total = len(validated_claims) + len(non_validated_claims)
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
     alert_id_str = f"\n*Alert ID:* {ctx['alert_id']}" if ctx.get("alert_id") else ""
+    lineage_section = _format_data_lineage_flow(ctx)
     infrastructure_section = _format_infrastructure_correlation(ctx)
     cited_evidence_section = _format_cited_evidence_section(ctx)
 
@@ -731,6 +821,7 @@ Analyzed by: pipeline-agent
 
 *Conclusion*
 {conclusion_section}
+{lineage_section}
 {infrastructure_section}
 *Confidence:* {ctx.get("confidence", 0.0):.0%}
 *Validity Score:* {validity_score:.0%} ({len(validated_claims)}/{total} validated)

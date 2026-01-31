@@ -83,7 +83,7 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
 
         sources["cloudwatch"] = cloudwatch_params
 
-    # Detect S3 sources
+    # Detect S3 sources (landing bucket)
     s3_bucket = (
         annotations.get("s3_bucket")
         or annotations.get("bucket")
@@ -102,6 +102,20 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
         if s3_key:
             s3_params["key"] = s3_key
         sources["s3"] = s3_params
+
+    # Detect S3 audit source (when audit_key is specified)
+    audit_key = annotations.get("audit_key") or annotations.get("auditKey")
+    if s3_bucket and audit_key:
+        sources["s3_audit"] = {"bucket": s3_bucket, "key": audit_key}
+
+    # Detect S3 processed bucket (for output verification)
+    processed_bucket = annotations.get("processed_bucket") or annotations.get("processedBucket")
+    processed_prefix = annotations.get("processed_prefix")
+    if processed_bucket:
+        processed_params: dict[str, str] = {"bucket": processed_bucket}
+        if processed_prefix:
+            processed_params["prefix"] = processed_prefix
+        sources["s3_processed"] = processed_params
 
     # Detect local file sources
     log_file = (
@@ -193,9 +207,12 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
 
     # Add region for AWS SDK calls
     if "region" not in aws_metadata and "aws_region" not in aws_metadata:
-        aws_metadata["region"] = annotations.get("cloudwatch_region") or annotations.get(
-            "aws_region"
-        ) or annotations.get("region") or "us-east-1"
+        aws_metadata["region"] = (
+            annotations.get("cloudwatch_region")
+            or annotations.get("aws_region")
+            or annotations.get("region")
+            or "us-east-1"
+        )
 
     if aws_metadata:
         sources["aws_metadata"] = aws_metadata

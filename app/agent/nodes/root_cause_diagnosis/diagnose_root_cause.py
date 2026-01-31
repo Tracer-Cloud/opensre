@@ -65,6 +65,19 @@ def main(state: InvestigationState) -> dict:
     if not has_tracer_evidence and not has_cloudwatch_evidence and not has_alert_evidence:
         debug_print("Warning: Limited evidence available - proceeding with low confidence")
 
+        loop_count = state.get("investigation_loop_count", 0)
+        recommendations = [
+            "Collect error logs from pipeline execution",
+            "Check CloudWatch logs if available",
+            "Review pipeline step exit codes and error messages",
+        ]
+
+        # Increment loop counter since we're recommending more investigation
+        loop_count += 1
+        print(
+            f"[DEBUG] Early return: Limited evidence. Incrementing loop: {loop_count - 1} -> {loop_count}"
+        )
+
         # Return a basic result with low confidence
         problem = state.get("problem_md", "Pipeline failure detected")
         return {
@@ -78,12 +91,8 @@ def main(state: InvestigationState) -> dict:
                 }
             ],
             "validity_score": 0.0,
-            "investigation_recommendations": [
-                "Collect error logs from pipeline execution",
-                "Check CloudWatch logs if available",
-                "Review pipeline step exit codes and error messages",
-            ],
-            "investigation_loop_count": state.get("investigation_loop_count", 0),
+            "investigation_recommendations": recommendations,
+            "investigation_loop_count": loop_count,
         }
 
     # Build simple prompt from context and evidence
@@ -143,6 +152,10 @@ def main(state: InvestigationState) -> dict:
     investigation_recommendations = []
     loop_count = state.get("investigation_loop_count", 0)
 
+    print(
+        f"[DEBUG] Diagnosis: confidence={final_confidence:.2f}, validity={validity_score:.2f}, loop_count={loop_count}"
+    )
+
     # Check if vendor evidence is missing (critical for upstream/downstream tracing)
     # Vendor evidence is present only if we have actual audit content, not just metadata pointing to it
     vendor_evidence_missing = not (
@@ -158,17 +171,25 @@ def main(state: InvestigationState) -> dict:
         f"confidence={final_confidence:.2f}, validity={validity_score:.2f}"
     )
 
-    if final_confidence < 0.6 or validity_score < 0.5 or vendor_evidence_missing:
+    should_recommend = final_confidence < 0.6 or validity_score < 0.5 or vendor_evidence_missing
+    print(
+        f"[DEBUG] Should generate recommendations? {should_recommend} (conf<0.6: {final_confidence < 0.6}, val<0.5: {validity_score < 0.5}, vendor_missing: {vendor_evidence_missing})"
+    )
+
+    if should_recommend:
         investigation_recommendations = _generate_simple_recommendations(
             non_validated_claims_list, evidence
         )
         print(
             f"[DEBUG] Generated {len(investigation_recommendations)} recommendations: {investigation_recommendations}"
         )
-        # Don't increment loop_count here - let routing do it after deciding to loop
+        # Increment loop_count when we generate recommendations (indicating we want to loop back)
         if investigation_recommendations:
+            old_loop_count = loop_count
+            loop_count += 1
+            print(f"[DEBUG] Incrementing loop counter: {old_loop_count} -> {loop_count}")
             debug_print(
-                f"Generated {len(investigation_recommendations)} recommendations for next loop"
+                f"Generated {len(investigation_recommendations)} recommendations for next loop (loop_count={loop_count})"
             )
 
     tracker.complete(
@@ -231,11 +252,24 @@ def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
             raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
         )
 
+    # Add upstream tracing directive if audit evidence is present
+    upstream_directive = ""
+    if s3_audit_payload.get("found") or vendor_audit_from_logs:
+        upstream_directive = """
+**CRITICAL: Upstream Root Cause Tracing**
+Audit evidence shows external API interactions. For data pipeline failures:
+- The root cause is often upstream (external API schema changes, missing fields, breaking changes)
+- S3 audit payload and vendor audit logs contain the source of truth
+- Validated claims should reference the external API request/response details
+- Explain how the external change propagated downstream to cause the pipeline failure
+"""
+
     prompt = f"""You are an experienced SRE writing a short RCA (root cause analysis) for a data pipeline incident.
 
 Goal: Be helpful and accurate. Prefer evidence-backed explanations over speculation.
 If the exact root cause cannot be proven, provide the most likely explanation based on observed evidence,
 and clearly state what is unknown.
+{upstream_directive}
 
 DEFINITIONS:
 - VALIDATED_CLAIMS: Directly supported by the evidence shown below (observed facts).
