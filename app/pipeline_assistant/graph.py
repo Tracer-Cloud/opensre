@@ -61,7 +61,7 @@ def _extract_auth_context(
 
 def router_node(
     state: PipelineAssistantState,
-    config: RunnableConfig,
+    config: RunnableConfig,  # noqa: ARG001
 ) -> dict[str, Any]:
     """Route user messages based on intent.
 
@@ -69,7 +69,7 @@ def router_node(
 
     Args:
         state: Current conversation state.
-        config: Runtime configuration with auth context.
+        config: Runtime configuration with auth context (unused but required by LangGraph).
 
     Returns:
         Updated state with route decision.
