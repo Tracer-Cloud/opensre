@@ -62,9 +62,7 @@ class AlertBuilder:
             "severity": severity,
             "pipeline_name": pipeline_name,
         }
-        self._alert["commonAnnotations"] = {
-            "summary": f"Pipeline {pipeline_name} failed"
-        }
+        self._alert["commonAnnotations"] = {"summary": f"Pipeline {pipeline_name} failed"}
         self._alert["groupKey"] = f'{{}}:{{alertname="{alertname}"}}'
         self._alert["title"] = f"[FIRING:1] {alertname} {severity} - {pipeline_name}"
         self._alert["state"] = "alerting"

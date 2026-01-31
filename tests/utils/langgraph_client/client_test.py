@@ -1,15 +1,15 @@
 """Tests for langgraph_client.py."""
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import requests
-from tests.utils.langgraph_client import (
-    fire_alert_to_remote_langgraph_client,
-    REMOTE_ENDPOINT
-)
+
+from tests.conftest import LANGGRAPH_REMOTE_ENDPOINT
+from tests.utils.langgraph_client import fire_alert_to_remote_langgraph_client
+
 
 class TestLangGraphClient(unittest.TestCase):
-
     @patch("requests.post")
     def test_fire_alert_to_remote_langgraph_client_success(self, mock_post):
         """Test successful alert firing to remote endpoint."""
@@ -29,13 +29,13 @@ class TestLangGraphClient(unittest.TestCase):
             alert_name=alert_name,
             pipeline_name=pipeline_name,
             severity=severity,
-            raw_alert=raw_alert
+            raw_alert=raw_alert,
         )
 
         # Verify post call
         mock_post.assert_called_once()
         args, kwargs = mock_post.call_args
-        self.assertEqual(args[0], REMOTE_ENDPOINT)
+        self.assertEqual(args[0], LANGGRAPH_REMOTE_ENDPOINT)
         self.assertEqual(kwargs["json"]["input"]["alert_name"], alert_name)
         self.assertEqual(kwargs["json"]["input"]["pipeline_name"], pipeline_name)
         self.assertEqual(kwargs["json"]["input"]["severity"], severity)
@@ -49,7 +49,9 @@ class TestLangGraphClient(unittest.TestCase):
         """Test alert firing failure to remote endpoint."""
         # Setup mock response to raise HTTPError
         mock_response = MagicMock()
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("404 Client Error")
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "404 Client Error"
+        )
         mock_post.return_value = mock_response
 
         with self.assertRaises(requests.exceptions.HTTPError):
@@ -57,8 +59,9 @@ class TestLangGraphClient(unittest.TestCase):
                 alert_name="Fail Alert",
                 pipeline_name="fail_pipeline",
                 severity="warning",
-                raw_alert={}
+                raw_alert={},
             )
+
 
 if __name__ == "__main__":
     unittest.main()

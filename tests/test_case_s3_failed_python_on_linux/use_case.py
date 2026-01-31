@@ -110,9 +110,7 @@ def step5_transform_with_jq() -> dict:
 
 
 def main(log_file: str = "production.log") -> dict:
-    logger.info(
-        "DATA ENGINEERING PIPELINE START main_pid=%s log_file=%s", os.getpid(), log_file
-    )
+    logger.info("DATA ENGINEERING PIPELINE START main_pid=%s log_file=%s", os.getpid(), log_file)
     start_time = time.time()
     results: list[dict] = []
 

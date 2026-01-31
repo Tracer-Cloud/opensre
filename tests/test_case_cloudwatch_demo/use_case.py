@@ -13,6 +13,7 @@ _pipeline_context = {
     "initialized": False,
 }
 
+
 def extract_and_validate(input_path: str) -> str:
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"empty file not present: {input_path}")
@@ -25,6 +26,7 @@ def extract_and_validate(input_path: str) -> str:
 
     return data
 
+
 def transform_data(data: str) -> list[dict]:
     rows = data.split("\n")
     transformed = [{"line": i, "content": row} for i, row in enumerate(rows)]
@@ -33,6 +35,7 @@ def transform_data(data: str) -> list[dict]:
 
 def write_output(transformed_data: list[dict], output_path: str) -> int:
     return len(transformed_data)
+
 
 def main() -> dict:
     _pipeline_context["initialized"] = True

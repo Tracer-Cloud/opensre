@@ -67,14 +67,18 @@ def lambda_handler(event: dict, context: Any) -> dict:
         try:
             body = json.loads(event["body"])
             inject_schema_change = body.get("inject_schema_change", False)
-            correlation_id = body.get("correlation_id") or f"ing-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
+            correlation_id = (
+                body.get("correlation_id") or f"ing-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
+            )
         except json.JSONDecodeError:
             inject_schema_change = False
             correlation_id = f"ing-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
     else:
         # Direct Lambda invoke
         inject_schema_change = event.get("inject_schema_change", False)
-        correlation_id = event.get("correlation_id") or f"ing-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
+        correlation_id = (
+            event.get("correlation_id") or f"ing-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
+        )
 
     landing_bucket = os.environ.get("LANDING_BUCKET")
     external_api_url = os.environ.get("EXTERNAL_API_URL")
@@ -126,7 +130,9 @@ def lambda_handler(event: dict, context: Any) -> dict:
             },
         )
         print(f"Wrote data to S3: s3://{landing_bucket}/{s3_key}")
-        print(f"Metadata: correlation_id={correlation_id}, schema_version={api_meta.get('schema_version')}")
+        print(
+            f"Metadata: correlation_id={correlation_id}, schema_version={api_meta.get('schema_version')}"
+        )
     except Exception as e:
         print(f"ERROR: S3 write failed: {e}")
         return {

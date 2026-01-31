@@ -104,7 +104,12 @@ class MinimalLambdaTestCaseStack(Stack):
 
         # Outputs
         CfnOutput(self, "MockApiUrl", value=mock_api.url)
-        CfnOutput(self, "IngesterApiUrl", value=ingester_api.url, description="HTTP endpoint to trigger pipeline")
+        CfnOutput(
+            self,
+            "IngesterApiUrl",
+            value=ingester_api.url,
+            description="HTTP endpoint to trigger pipeline",
+        )
         CfnOutput(self, "IngesterFunctionName", value=ingester_lambda.function_name)
         CfnOutput(self, "MockDagFunctionName", value=mock_dag_lambda.function_name)
         CfnOutput(self, "LandingBucketName", value=landing_bucket.bucket_name)

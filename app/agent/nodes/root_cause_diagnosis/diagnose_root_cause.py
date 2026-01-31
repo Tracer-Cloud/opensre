@@ -90,9 +90,9 @@ def main(state: InvestigationState) -> dict:
     # Call LLM
     debug_print("Invoking LLM for root cause analysis...")
     llm = get_llm()
-    response = llm.with_config(
-        run_name="LLM – Analyze evidence and propose root cause"
-    ).invoke(prompt)
+    response = llm.with_config(run_name="LLM – Analyze evidence and propose root cause").invoke(
+        prompt
+    )
     response_text = response.content if hasattr(response, "content") else str(response)
 
     # Parse response
@@ -186,7 +186,9 @@ def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
     alert_annotations = {}
     if isinstance(raw_alert, dict):
         cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
-        alert_annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
+        alert_annotations = (
+            raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
+        )
 
     prompt = f"""You are an experienced SRE writing a short RCA (root cause analysis) for a data pipeline incident.
 
@@ -228,7 +230,9 @@ EVIDENCE:
     if failed_jobs:
         prompt += f"\nAWS Batch Failed Jobs ({len(failed_jobs)}):\n"
         for job in failed_jobs[:5]:
-            prompt += f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
+            prompt += (
+                f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
+            )
     else:
         prompt += "\nAWS Batch Failed Jobs: None\n"
 
@@ -312,17 +316,15 @@ def _extract_evidence_sources(claim: str, evidence: dict) -> list[str]:
         sources.append("aws_batch_jobs")
     if "tool" in claim_lower and evidence.get("failed_tools"):
         sources.append("tracer_tools")
-    if ("metric" in claim_lower or "memory" in claim_lower or "cpu" in claim_lower) and evidence.get(
-        "host_metrics", {}
-    ).get("data"):
+    if (
+        "metric" in claim_lower or "memory" in claim_lower or "cpu" in claim_lower
+    ) and evidence.get("host_metrics", {}).get("data"):
         sources.append("host_metrics")
 
     return sources if sources else ["evidence_analysis"]
 
 
-def _generate_simple_recommendations(
-    non_validated_claims: list[dict], evidence: dict
-) -> list[str]:
+def _generate_simple_recommendations(non_validated_claims: list[dict], evidence: dict) -> list[str]:
     """Generate simple investigation recommendations."""
     if not non_validated_claims:
         return []

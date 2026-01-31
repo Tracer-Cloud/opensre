@@ -25,6 +25,12 @@ def get_test_config() -> dict:
     }
 
 
+# LangGraph Studio Endpoints
+LANGGRAPH_LOCAL_ENDPOINT = "http://127.0.0.1:2024/runs/stream"
+LANGGRAPH_REMOTE_ENDPOINT = (
+    "https://tracer-agent-2026-e09h3n0zulnlz1-lwyjk39e.us-central1.run.app/agent/runs/stream"
+)
+
 # Upstream/Downstream Pipeline Test Case - AWS Resources
 # Stack: TracerUpstreamDownstreamTest
 UPSTREAM_DOWNSTREAM_CONFIG = {
