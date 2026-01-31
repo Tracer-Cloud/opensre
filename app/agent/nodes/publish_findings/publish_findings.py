@@ -164,6 +164,19 @@ def _get_cloudwatch_url(ctx: ReportContext) -> str | None:
     )
 
 
+def _generate_s3_console_url(bucket: str, key: str, region: str = "us-east-1") -> str:
+    """Generate AWS S3 console URL for an object."""
+    from urllib.parse import quote
+
+    # URL encode the key for use in query parameters
+    encoded_key = quote(key, safe="")
+
+    return (
+        f"https://s3.console.aws.amazon.com/s3/object/{bucket}"
+        f"?region={region}&prefix={encoded_key}"
+    )
+
+
 def _format_evidence_for_claim(claim_data: dict, evidence: dict, ctx: ReportContext) -> str:
     """
     Format evidence URLs or JSON for a specific claim.
@@ -412,16 +425,19 @@ def _build_investigation_trace(ctx: ReportContext) -> list[str]:
     # Step 4: S3 data inspection
     s3_buckets = assets.get("s3_buckets", [])
     if s3_buckets:
+        region = ctx.get("cloudwatch_region") or "us-east-1"
         for bucket in s3_buckets:
             bucket_type = bucket.get("type", "")
             name = bucket["name"]
             key = bucket.get("key")
 
             if bucket_type == "landing" and key:
-                trace_steps.append(f"{step_num}. Input data inspected: s3://{name}/{key}")
+                s3_url = _generate_s3_console_url(name, key, region)
+                trace_steps.append(f"{step_num}. Input data inspected: {s3_url}")
                 step_num += 1
             elif bucket_type == "audit" and key:
-                trace_steps.append(f"{step_num}. Audit trail found: s3://{name}/{key}")
+                s3_url = _generate_s3_console_url(name, key, region)
+                trace_steps.append(f"{step_num}. Audit trail found: {s3_url}")
                 step_num += 1
 
     # Step 5: S3 marker/processed bucket (if checked)
