@@ -164,6 +164,19 @@ def _get_cloudwatch_url(ctx: ReportContext) -> str | None:
     )
 
 
+def _generate_s3_console_url(bucket: str, key: str, region: str = "us-east-1") -> str:
+    """Generate AWS S3 console URL for an object."""
+    from urllib.parse import quote
+
+    # URL encode the key for use in query parameters
+    encoded_key = quote(key, safe="")
+
+    return (
+        f"https://s3.console.aws.amazon.com/s3/object/{bucket}"
+        f"?region={region}&prefix={encoded_key}"
+    )
+
+
 def _format_evidence_for_claim(claim_data: dict, evidence: dict, ctx: ReportContext) -> str:
     """
     Format evidence URLs or JSON for a specific claim.
@@ -412,17 +425,19 @@ def _build_investigation_trace(ctx: ReportContext) -> list[str]:
     # Step 4: S3 data inspection
     s3_buckets = assets.get("s3_buckets", [])
     if s3_buckets:
+        region = ctx.get("cloudwatch_region") or "us-east-1"
         for bucket in s3_buckets:
             bucket_type = bucket.get("type", "")
             name = bucket["name"]
             key = bucket.get("key")
 
             if bucket_type == "landing" and key:
-                short_key = key.split("/")[-1] if "/" in key else key
-                trace_steps.append(f"{step_num}. Input data inspected: s3://{name}/.../{short_key}")
+                s3_url = _generate_s3_console_url(name, key, region)
+                trace_steps.append(f"{step_num}. Input data inspected: {s3_url}")
                 step_num += 1
             elif bucket_type == "audit" and key:
-                trace_steps.append(f"{step_num}. Audit trail found: s3://{name}/{key}")
+                s3_url = _generate_s3_console_url(name, key, region)
+                trace_steps.append(f"{step_num}. Audit trail found: {s3_url}")
                 step_num += 1
 
     # Step 5: S3 marker/processed bucket (if checked)
@@ -494,6 +509,21 @@ def _sample_evidence_payload(source: str, evidence: dict) -> Any | None:
     if source == "cloudwatch_logs":
         cw_logs = evidence.get("cloudwatch_logs", [])
         return cw_logs[:3] if cw_logs else None
+    if source == "lambda_function":
+        lambda_func = evidence.get("lambda_function")
+        return lambda_func if lambda_func else None
+    if source == "lambda_logs":
+        lambda_logs = evidence.get("lambda_logs", [])
+        return lambda_logs[:3] if lambda_logs else None
+    if source == "lambda_errors":
+        lambda_errors = evidence.get("lambda_errors", [])
+        return lambda_errors[:3] if lambda_errors else None
+    if source == "s3_object":
+        s3_obj = evidence.get("s3_object")
+        return s3_obj if s3_obj else None
+    if source == "s3_audit_payload":
+        s3_audit = evidence.get("s3_audit_payload")
+        return s3_audit if s3_audit else None
     if source == "evidence_analysis":
         return {
             "failed_jobs": len(evidence.get("failed_jobs", [])),
@@ -516,6 +546,21 @@ def _collect_cited_sources(ctx: ReportContext, evidence: dict) -> list[str]:
     if cw_available and "cloudwatch_logs" not in sources:
         sources.append("cloudwatch_logs")
 
+    # Lambda evidence
+    if evidence.get("lambda_function") and "lambda_function" not in sources:
+        sources.append("lambda_function")
+    if evidence.get("lambda_logs") and "lambda_logs" not in sources:
+        sources.append("lambda_logs")
+    if evidence.get("lambda_errors") and "lambda_errors" not in sources:
+        sources.append("lambda_errors")
+
+    # S3 evidence
+    if evidence.get("s3_object") and "s3_object" not in sources:
+        sources.append("s3_object")
+    if evidence.get("s3_audit_payload") and "s3_audit_payload" not in sources:
+        sources.append("s3_audit_payload")
+
+    # Other evidence
     if evidence.get("error_logs") and "logs" not in sources:
         sources.append("logs")
     if evidence.get("failed_jobs") and "aws_batch_jobs" not in sources:
@@ -535,13 +580,15 @@ def _format_cited_evidence_section(ctx: ReportContext) -> str:
     evidence = ctx.get("evidence", {})
     citations: list[str] = []
 
-    tracer_link = TRACER_DEFAULT_INVESTIGATION_URL
-    if tracer_link:
-        citations.append("- Tracer Platform:")
-        citations.append(_format_text_block(tracer_link))
+    # Don't include generic Tracer Platform link - only show actual evidence sources used
 
     label_map = {
         "cloudwatch_logs": "CloudWatch Logs",
+        "lambda_function": "Lambda Function",
+        "lambda_logs": "Lambda Invocation Logs",
+        "lambda_errors": "Lambda Errors",
+        "s3_object": "S3 Object Inspection",
+        "s3_audit_payload": "S3 Audit Payload",
         "logs": "Error Logs",
         "aws_batch_jobs": "AWS Batch Jobs",
         "tracer_tools": "Tracer Tools",
@@ -558,6 +605,24 @@ def _format_cited_evidence_section(ctx: ReportContext) -> str:
                 if cw_url:
                     source_citations.append(f"{indent_prefix}- {label}:")
                     source_citations.append(_format_text_block(cw_url))
+                    continue
+
+            # Special handling for Lambda functions - include AWS Console URL
+            if source == "lambda_function":
+                lambda_func = evidence.get("lambda_function", {})
+                function_name = lambda_func.get("function_name")
+                if function_name:
+                    region = ctx.get("cloudwatch_region") or "us-east-1"
+                    lambda_url = (
+                        f"https://{region}.console.aws.amazon.com/lambda/home"
+                        f"?region={region}#/functions/{function_name}?tab=code"
+                    )
+                    source_citations.append(f"{indent_prefix}- {label}:")
+                    source_citations.append(_format_text_block(lambda_url))
+                    # Also include function details
+                    payload = _sample_evidence_payload(source, evidence)
+                    if payload:
+                        source_citations.append(_format_json_block(_format_json_payload(payload)))
                     continue
 
             payload = _sample_evidence_payload(source, evidence)
