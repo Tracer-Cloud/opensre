@@ -26,7 +26,7 @@ cloudwatch-demo:
 # Run ECS Fargate Airflow upstream/downstream failure test case
 # (command name kept as mwaa-demo for backward compatibility)
 mwaa-demo:
-	$(PYTHON) -m tests.test_case_upstream_downstream_airflow.test_orchestrator
+	$(PYTHON) -m tests.test_case_upstream_downstream_pipeline.test_orchestrator
 
 # Run the generic CLI (reads from stdin or --input)
 run:

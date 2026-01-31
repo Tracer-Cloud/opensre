@@ -1,0 +1,76 @@
+{
+  "version": "48.0.0",
+  "files": {
+    "faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6": {
+      "displayName": "TracerUpstreamDownstreamTest/Custom::S3AutoDeleteObjectsCustomResourceProvider Code",
+      "source": {
+        "path": "asset.faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "current_account-current_region-e31788a2": {
+          "bucketName": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}",
+          "objectKey": "faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6.zip",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-file-publishing-role-${AWS::AccountId}-${AWS::Region}"
+        }
+      }
+    },
+    "d93a08ce173c82f3140f3db1c3628ffa7809bbb3ee3dd4ec99ab6c46425e48c5": {
+      "displayName": "MockApiLambda/Code",
+      "source": {
+        "path": "asset.d93a08ce173c82f3140f3db1c3628ffa7809bbb3ee3dd4ec99ab6c46425e48c5",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "current_account-current_region-6cabadf2": {
+          "bucketName": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}",
+          "objectKey": "d93a08ce173c82f3140f3db1c3628ffa7809bbb3ee3dd4ec99ab6c46425e48c5.zip",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-file-publishing-role-${AWS::AccountId}-${AWS::Region}"
+        }
+      }
+    },
+    "a32929d968c88d7e282fc5c66403de15f3e554773793e28321172b964d4f2d75": {
+      "displayName": "IngesterLambda/Code",
+      "source": {
+        "path": "asset.a32929d968c88d7e282fc5c66403de15f3e554773793e28321172b964d4f2d75",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "current_account-current_region-7206fa1d": {
+          "bucketName": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}",
+          "objectKey": "a32929d968c88d7e282fc5c66403de15f3e554773793e28321172b964d4f2d75.zip",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-file-publishing-role-${AWS::AccountId}-${AWS::Region}"
+        }
+      }
+    },
+    "bbe152179a23793253d6e82a767c6563f5f34241794118ec4c66e2dde25c7e05": {
+      "displayName": "MockDagLambda/Code",
+      "source": {
+        "path": "asset.bbe152179a23793253d6e82a767c6563f5f34241794118ec4c66e2dde25c7e05",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "current_account-current_region-4d7e4c17": {
+          "bucketName": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}",
+          "objectKey": "bbe152179a23793253d6e82a767c6563f5f34241794118ec4c66e2dde25c7e05.zip",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-file-publishing-role-${AWS::AccountId}-${AWS::Region}"
+        }
+      }
+    },
+    "68f58a2be0040f988ab183326a1139b678d082771bef42e2525b720d88f66d6f": {
+      "displayName": "TracerUpstreamDownstreamTest Template",
+      "source": {
+        "path": "TracerUpstreamDownstreamTest.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "current_account-current_region-69683d7e": {
+          "bucketName": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}",
+          "objectKey": "68f58a2be0040f988ab183326a1139b678d082771bef42e2525b720d88f66d6f.json",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-file-publishing-role-${AWS::AccountId}-${AWS::Region}"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}
