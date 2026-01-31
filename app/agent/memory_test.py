@@ -5,7 +5,6 @@ Integration tests - validates read/write and seeding from MD files.
 """
 
 import os
-import shutil
 from pathlib import Path
 
 from app.agent.memory import (
