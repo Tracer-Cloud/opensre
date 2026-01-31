@@ -209,6 +209,7 @@ def build_evidence_summary(execution_results: dict) -> str:
         Summary string
     """
     summary_parts = []
+    errors = []
     for action_name, result in execution_results.items():
         if result.success:
             data = result.data
@@ -234,13 +235,21 @@ def build_evidence_summary(execution_results: dict) -> str:
                 summary_parts.append("lambda:config retrieved")
             elif action_name == "get_s3_object" and data.get("found"):
                 summary_parts.append("s3:audit payload retrieved")
+        else:
+            # Log action failures for debugging
+            error_msg = f"{action_name}:FAILED({result.error[:50] if result.error else 'unknown'})"
+            errors.append(error_msg)
+            print(f"[WARNING] Action failed: {error_msg}")
+
+    if errors:
+        summary = ", ".join(summary_parts) if summary_parts else "No evidence collected"
+        return f"{summary} | Errors: {', '.join(errors)}"
 
     return ", ".join(summary_parts) if summary_parts else "No new evidence"
 
 
 def summarize_execution_results(
     execution_results: dict,
-    action_names: list[str],
     current_evidence: dict[str, Any],
     executed_hypotheses: list[dict[str, Any]],
     investigation_loop_count: int,
@@ -251,7 +260,6 @@ def summarize_execution_results(
 
     Args:
         execution_results: Results from action execution
-        action_names: List of actions that were executed
         current_evidence: Current evidence dictionary
         executed_hypotheses: History of executed hypotheses
         investigation_loop_count: Current loop count
@@ -261,9 +269,17 @@ def summarize_execution_results(
         Tuple of (evidence, executed_hypotheses, evidence_summary)
     """
     evidence = merge_evidence(current_evidence, execution_results)
-    executed_hypotheses = track_hypothesis(
-        executed_hypotheses, action_names, rationale, investigation_loop_count
-    )
+
+    # Only track successful actions in hypothesis history (allow retries of failed actions)
+    successful_actions = [
+        action_name for action_name, result in execution_results.items() if result.success
+    ]
+
+    if successful_actions:
+        executed_hypotheses = track_hypothesis(
+            executed_hypotheses, successful_actions, rationale, investigation_loop_count
+        )
+
     evidence_summary = build_evidence_summary(execution_results)
 
     return evidence, executed_hypotheses, evidence_summary

@@ -37,15 +37,20 @@ def node_investigate(state: InvestigationState) -> dict:
 
     all_actions = get_available_actions()
     actions_by_name = {action.name: action for action in all_actions}
-    available_actions = {
-        name: actions_by_name[name] for name in available_action_names if name in actions_by_name
-    }
+
+    # Build available actions dictionary from ALL planned actions (not just available_action_names)
+    # This allows retrying actions that may have been filtered out by select_actions
+    available_actions = {}
+    for name in planned_actions:
+        if name in actions_by_name:
+            available_actions[name] = actions_by_name[name]
+        else:
+            print(f"[WARNING] Planned action '{name}' not found in action registry")
 
     # Execute actions and summarize results
     execution_results = execute_actions(planned_actions, available_actions, available_sources)
     evidence, executed_hypotheses, evidence_summary = summarize_execution_results(
         execution_results=execution_results,
-        action_names=planned_actions,
         current_evidence=input_data.evidence,
         executed_hypotheses=input_data.executed_hypotheses,
         investigation_loop_count=input_data.investigation_loop_count,

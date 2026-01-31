@@ -233,12 +233,20 @@ def get_available_actions() -> list[InvestigationAction]:
             source="storage",
             requires=[],
             availability_check=lambda sources: bool(
-                sources.get("s3", {}).get("bucket") and sources.get("s3", {}).get("prefix")
+                (sources.get("s3", {}).get("bucket") and sources.get("s3", {}).get("prefix"))
+                or sources.get("s3_processed", {}).get("bucket")
             ),
-            parameter_extractor=lambda sources: {
-                "bucket": sources.get("s3", {}).get("bucket"),
-                "prefix": sources.get("s3", {}).get("prefix"),
-            },
+            parameter_extractor=lambda sources: (
+                {
+                    "bucket": sources.get("s3_processed", {}).get("bucket"),
+                    "prefix": sources.get("s3_processed", {}).get("prefix", ""),
+                }
+                if sources.get("s3_processed")
+                else {
+                    "bucket": sources.get("s3", {}).get("bucket"),
+                    "prefix": sources.get("s3", {}).get("prefix"),
+                }
+            ),
         ),
         _build_investigation_action(
             name="inspect_s3_object",
@@ -338,8 +346,8 @@ def get_available_actions() -> list[InvestigationAction]:
             func=execute_aws_operation,
             source="aws_sdk",
             requires=["service", "operation"],
-            availability_check=lambda sources: True,  # Always available  # noqa: ARG005
-            parameter_extractor=None,  # Must be specified by agent
+            availability_check=lambda sources: bool(sources.get("aws_metadata")),  # Available when AWS metadata exists
+            parameter_extractor=None,  # Agent must specify parameters dynamically
         ),
     ]
 
