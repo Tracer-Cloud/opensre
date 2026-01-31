@@ -101,3 +101,7 @@ Temporary Items
 # Project specific
 output/
 .langgraph_api/
+
+# CDK build artifacts (keep templates for reference)
+**/cdk.out/.cache/
+**/cdk.out/asset.*/
