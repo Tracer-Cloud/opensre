@@ -12,9 +12,7 @@ import pytest
 def _infrastructure_available() -> bool:
     """Check if AWS infrastructure is available for testing."""
     # Skip if running in CI or if explicitly disabled
-    if os.getenv("CI") or os.getenv("SKIP_INFRA_TESTS"):
-        return False
-    return True
+    return not (os.getenv("CI") or os.getenv("SKIP_INFRA_TESTS"))
 
 
 @pytest.fixture
