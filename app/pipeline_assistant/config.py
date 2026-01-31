@@ -11,6 +11,7 @@ from enum import Enum
 
 class Environment(Enum):
     """Application environment."""
+
     DEVELOPMENT = "development"
     PRODUCTION = "production"
 
@@ -18,6 +19,7 @@ class Environment(Enum):
 @dataclass(frozen=True)
 class ClerkConfig:
     """Clerk JWT configuration for a specific environment."""
+
     jwks_url: str
     issuer: str
 

@@ -42,6 +42,30 @@ def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) ->
             evidence["cloudwatch_event_count"] = data.get("event_count", 0)
             evidence["cloudwatch_latest_error"] = data.get("latest_error")
 
+        elif action_name == "inspect_s3_object":
+            evidence["s3_object"] = {
+                "bucket": data.get("bucket"),
+                "key": data.get("key"),
+                "found": data.get("found", False),
+                "size": data.get("size"),
+                "content_type": data.get("content_type"),
+                "sample": data.get("sample"),
+                "is_text": data.get("is_text", False),
+            }
+
+        elif action_name == "list_s3_objects":
+            evidence["s3_objects"] = data.get("objects", [])
+            evidence["s3_object_count"] = data.get("count", 0)
+
+        elif action_name == "get_lambda_invocation_logs":
+            evidence["lambda_logs"] = data.get("recent_logs", [])
+            evidence["lambda_invocation_count"] = data.get("invocation_count", 0)
+            evidence["lambda_invocations"] = data.get("invocations", [])
+
+        elif action_name == "get_lambda_errors":
+            evidence["lambda_errors"] = data.get("recent_logs", [])
+            evidence["lambda_error_count"] = data.get("invocation_count", 0)
+
     return evidence
 
 
@@ -94,6 +118,14 @@ def build_evidence_summary(execution_results: dict) -> str:
                 summary_parts.append(f"logs:{len(data['logs'])}")
             elif action_name == "get_cloudwatch_logs" and data.get("error_logs"):
                 summary_parts.append(f"cloudwatch:{len(data['error_logs'])} events")
+            elif action_name == "inspect_s3_object" and data.get("found"):
+                summary_parts.append("s3:object inspected")
+            elif action_name == "list_s3_objects" and data.get("objects"):
+                summary_parts.append(f"s3:{len(data['objects'])} objects")
+            elif action_name == "get_lambda_invocation_logs" and data.get("recent_logs"):
+                summary_parts.append(f"lambda:{len(data['recent_logs'])} logs")
+            elif action_name == "get_lambda_errors" and data.get("recent_logs"):
+                summary_parts.append(f"lambda:{len(data['recent_logs'])} errors")
 
     return ", ".join(summary_parts) if summary_parts else "No new evidence"
 
