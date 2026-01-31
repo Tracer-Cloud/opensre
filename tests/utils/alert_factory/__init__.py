@@ -1,11 +1,11 @@
 from .factory import (
-    AlertBuilder,
     create_alert,
-    create_alert_from_tracer_run,
+    from_pipeline_run,
 )
+from .intent import AlertIntent
 
 __all__ = [
     "create_alert",
-    "create_alert_from_tracer_run",
-    "AlertBuilder",
+    "from_pipeline_run",
+    "AlertIntent",
 ]
