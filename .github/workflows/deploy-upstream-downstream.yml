@@ -9,11 +9,6 @@ jobs:
     name: Deploy CDK Stack
     runs-on: ubuntu-latest
     
-    env:
-      AWS_REGION: us-east-1
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -35,17 +30,28 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r tests/test_case_upstream_downstream_pipeline/infrastructure/requirements/requirements.txt
-          # Also install project requirements for validation script
           pip install -r requirements.txt
 
       - name: Run pre-deployment validation
         working_directory: tests/test_case_upstream_downstream_pipeline/infrastructure/cdk
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: python3 ../tests/validate_setup.py
 
       - name: CDK Bootstrap
         working_directory: tests/test_case_upstream_downstream_pipeline/infrastructure/cdk
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: cdk bootstrap
 
       - name: CDK Deploy
         working_directory: tests/test_case_upstream_downstream_pipeline/infrastructure/cdk
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: cdk deploy --require-approval never
