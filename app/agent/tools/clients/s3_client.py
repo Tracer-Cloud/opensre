@@ -171,6 +171,54 @@ def get_object_sample(
         return {"success": False, "error": str(e)}
 
 
+def get_full_object(bucket: str, key: str, max_size: int = 1048576) -> dict[str, Any]:
+    """
+    Get full S3 object content.
+
+    Use for fetching complete JSON objects like audit payloads.
+
+    Args:
+        bucket: S3 bucket name
+        key: S3 object key
+        max_size: Maximum bytes to read (default 1MB)
+
+    Returns:
+        dict with full object content
+    """
+    client = _get_s3_client()
+    if not client:
+        return {"success": False, "error": "boto3 not available"}
+
+    try:
+        response = client.get_object(Bucket=bucket, Key=key)
+        body = response["Body"].read(max_size)
+
+        try:
+            content_text = body.decode("utf-8")
+            is_text = True
+        except UnicodeDecodeError:
+            content_text = None
+            is_text = False
+
+        return {
+            "success": True,
+            "data": {
+                "bucket": bucket,
+                "key": key,
+                "content_type": response.get("ContentType"),
+                "size": response.get("ContentLength"),
+                "is_text": is_text,
+                "content": content_text,
+                "metadata": response.get("Metadata", {}),
+            },
+        }
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code", "")
+        if error_code == "NoSuchKey":
+            return {"success": True, "exists": False, "data": {"bucket": bucket, "key": key}}
+        return {"success": False, "error": str(e)}
+
+
 def list_object_versions(
     bucket: str,
     key: str,

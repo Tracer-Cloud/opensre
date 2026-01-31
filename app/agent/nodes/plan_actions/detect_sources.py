@@ -27,7 +27,8 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
           "cloudwatch": {"log_group": "...", "log_stream": "...", "region": "..."},
           "s3": {"bucket": "...", "prefix": "...", "key": "..."},
           "local_file": {"log_file": "...", "log_path": "..."},
-          "tracer_web": {"trace_id": "...", "run_url": "..."}
+          "tracer_web": {"trace_id": "...", "run_url": "..."},
+          "lambda": {"function_name": "..."}
         }
     """
     sources: dict[str, dict] = {}
@@ -50,6 +51,7 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
         annotations.get("cloudwatch_log_group")
         or annotations.get("log_group")
         or annotations.get("cloudwatchLogGroup")
+        or annotations.get("lambda_log_group")  # Lambda-specific alias
     )
     cloudwatch_log_stream = (
         annotations.get("cloudwatch_log_stream")
@@ -57,10 +59,9 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
         or annotations.get("cloudwatchLogStream")
     )
 
-    if cloudwatch_log_group and cloudwatch_log_stream:
-        sources["cloudwatch"] = {
+    if cloudwatch_log_group:
+        cloudwatch_params: dict[str, str] = {
             "log_group": cloudwatch_log_group,
-            "log_stream": cloudwatch_log_stream,
             "region": (
                 annotations.get("cloudwatch_region")
                 or annotations.get("aws_region")
@@ -68,6 +69,9 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
                 or "us-east-1"
             ),
         }
+        if cloudwatch_log_stream:
+            cloudwatch_params["log_stream"] = cloudwatch_log_stream
+        sources["cloudwatch"] = cloudwatch_params
 
     # Detect S3 sources
     s3_bucket = (
@@ -92,6 +96,28 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
     )
     if log_file:
         sources["local_file"] = {"log_file": log_file}
+
+    # Detect Lambda sources
+    # Collect all Lambda functions from annotations (primary + upstream/downstream)
+    lambda_functions = []
+    for key in annotations:
+        if key in ("function_name", "lambda_function") and annotations[key]:
+            # Primary function (prioritize it)
+            lambda_functions.insert(0, annotations[key])
+        elif (
+            key.endswith("_function")
+            and annotations[key]
+            and annotations[key] not in lambda_functions
+        ):
+            # Additional functions (ingester_function, mock_dag_function, etc.)
+            lambda_functions.append(annotations[key])
+
+    if lambda_functions:
+        # Store primary function and additional functions
+        sources["lambda"] = {
+            "function_name": lambda_functions[0],  # Primary function for single-function actions
+            "all_functions": lambda_functions,  # All functions for multi-function investigations
+        }
 
     # Detect Tracer Web sources from context
     tracer_web_run = context.get("tracer_web_run", {})

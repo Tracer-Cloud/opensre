@@ -46,3 +46,20 @@ UPSTREAM_DOWNSTREAM_CONFIG = {
     "landing_bucket_name": "tracerupstreamdownstreamtest-landingbucket23fe90fb-felup0en4mqb",
     "processed_bucket_name": "tracerupstreamdownstreamte-processedbucketde59930c-bg5m6jrqoq6v",
 }
+
+# Prefect ECS Fargate Test Case - AWS Resources
+# Stack: TracerPrefectEcsFargate
+PREFECT_ECS_FARGATE_CONFIG = {
+    "stack_name": "TracerPrefectEcsFargate",
+    # HTTP Trigger Endpoint
+    "trigger_api_url": "https://q5tl03u98c.execute-api.us-east-1.amazonaws.com/prod/",
+    # ECS Cluster
+    "ecs_cluster_name": "tracer-prefect-cluster",
+    # CloudWatch Log Group
+    "log_group_name": "/ecs/tracer-prefect",
+    # Lambda Function
+    "trigger_lambda_name": "TracerPrefectEcsFargate-TriggerLambda2FDB819B-YCP5yvOvuE0l",
+    # S3 Buckets
+    "landing_bucket_name": "tracerprefectecsfargate-landingbucket23fe90fb-woehzac5msvj",
+    "processed_bucket_name": "tracerprefectecsfargate-processedbucketde59930c-xwdkeidp0qsu",
+}

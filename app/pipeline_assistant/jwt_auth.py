@@ -29,6 +29,7 @@ from app.pipeline_assistant.config import (
 @dataclass
 class JWTClaims:
     """Validated JWT claims."""
+
     sub: str  # User ID
     organization: str  # Organization ID
     organization_slug: str
@@ -55,27 +56,32 @@ class JWTClaims:
 
 class JWTVerificationError(Exception):
     """Raised when JWT verification fails."""
+
     pass
 
 
 class JWTExpiredError(JWTVerificationError):
     """Raised when JWT has expired."""
+
     pass
 
 
 class JWTInvalidIssuerError(JWTVerificationError):
     """Raised when JWT issuer is invalid."""
+
     pass
 
 
 class JWTMissingClaimError(JWTVerificationError):
     """Raised when a required claim is missing."""
+
     pass
 
 
 @dataclass
 class CachedJWKS:
     """Cached JWKS data with TTL."""
+
     keys: dict[str, Any]
     fetched_at: float
 
@@ -83,6 +89,7 @@ class CachedJWKS:
 @dataclass
 class AsyncJWKSCache:
     """Async JWKS cache with httpx for non-blocking fetches."""
+
     _cache: dict[str, CachedJWKS] = field(default_factory=dict)
     _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
     _cache_ttl: int = JWKS_CACHE_TTL_SECONDS
@@ -223,9 +230,7 @@ async def verify_jwt_async(token: str) -> JWTClaims:
     # Validate issuer
     valid_issuers = get_valid_issuers()
     if issuer not in valid_issuers:
-        raise JWTInvalidIssuerError(
-            f"Invalid issuer '{issuer}'. Expected one of: {valid_issuers}"
-        )
+        raise JWTInvalidIssuerError(f"Invalid issuer '{issuer}'. Expected one of: {valid_issuers}")
 
     # Get JWKS URL for this issuer
     jwks_url = get_jwks_url_for_issuer(issuer)

@@ -96,6 +96,7 @@ def test_agent_investigation(failure_data: dict) -> bool:
             "correlation_id": failure_data["correlation_id"],
             "error": failure_data["error_message"],
             "lambda_log_group": failure_data["log_group"],
+            "function_name": UPSTREAM_DOWNSTREAM_CONFIG["mock_dag_function_name"],
             "landing_bucket": UPSTREAM_DOWNSTREAM_CONFIG["landing_bucket_name"],
             "processed_bucket": UPSTREAM_DOWNSTREAM_CONFIG["processed_bucket_name"],
             "mock_api_url": UPSTREAM_DOWNSTREAM_CONFIG["mock_api_url"],
