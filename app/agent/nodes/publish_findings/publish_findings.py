@@ -418,8 +418,7 @@ def _build_investigation_trace(ctx: ReportContext) -> list[str]:
             key = bucket.get("key")
 
             if bucket_type == "landing" and key:
-                short_key = key.split("/")[-1] if "/" in key else key
-                trace_steps.append(f"{step_num}. Input data inspected: s3://{name}/.../{short_key}")
+                trace_steps.append(f"{step_num}. Input data inspected: s3://{name}/{key}")
                 step_num += 1
             elif bucket_type == "audit" and key:
                 trace_steps.append(f"{step_num}. Audit trail found: s3://{name}/{key}")
