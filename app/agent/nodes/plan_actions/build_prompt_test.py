@@ -118,8 +118,17 @@ def test_build_investigation_prompt_filters_executed():
     """Test prompt filters out executed actions."""
     executed_hypotheses = [{"sources": ["cloudwatch"], "actions": ["get_logs"]}]
     available_actions = [
-        MockAction(name="get_logs", description="", inputs={}, outputs={}, use_cases=[], source="cloudwatch"),
-        MockAction(name="check_s3", description="", inputs={}, outputs={}, use_cases=[], source="storage"),
+        MockAction(
+            name="get_logs",
+            description="",
+            inputs={},
+            outputs={},
+            use_cases=[],
+            source="cloudwatch",
+        ),
+        MockAction(
+            name="check_s3", description="", inputs={}, outputs={}, use_cases=[], source="storage"
+        ),
     ]
 
     prompt = build_investigation_prompt(
@@ -136,6 +145,7 @@ def test_build_investigation_prompt_filters_executed():
 
 def test_select_actions():
     """Test selecting actions based on availability."""
+
     def cloudwatch_available(sources: dict[str, dict]) -> bool:
         return "cloudwatch" in sources
 
@@ -173,8 +183,12 @@ def test_select_actions():
 def test_select_actions_filters_executed():
     """Test selecting actions filters executed ones."""
     actions = [
-        MockAction(name="action1", description="", inputs={}, outputs={}, use_cases=[], source="cloudwatch"),
-        MockAction(name="action2", description="", inputs={}, outputs={}, use_cases=[], source="storage"),
+        MockAction(
+            name="action1", description="", inputs={}, outputs={}, use_cases=[], source="cloudwatch"
+        ),
+        MockAction(
+            name="action2", description="", inputs={}, outputs={}, use_cases=[], source="storage"
+        ),
     ]
 
     selected_actions, _ = select_actions(

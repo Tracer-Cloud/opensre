@@ -3,11 +3,7 @@ Pure functions for CloudWatch operations.
 """
 
 
-def build_cloudwatch_console_url(
-    log_group: str,
-    log_stream: str,
-    region: str = "us-east-1"
-) -> str:
+def build_cloudwatch_console_url(log_group: str, log_stream: str, region: str = "us-east-1") -> str:
     """
     Build CloudWatch console URL for a specific log stream (stateless).
 
@@ -31,10 +27,7 @@ def build_cloudwatch_console_url(
 
 
 def verify_logs_in_cloudwatch(
-    cloudwatch_client,
-    log_group: str,
-    log_stream: str,
-    limit: int = 1
+    cloudwatch_client, log_group: str, log_stream: str, limit: int = 1
 ) -> bool:
     """
     Verify logs are present in CloudWatch (stateless check).
@@ -50,9 +43,7 @@ def verify_logs_in_cloudwatch(
     """
     try:
         response = cloudwatch_client.get_log_events(
-            logGroupName=log_group,
-            logStreamName=log_stream,
-            limit=limit
+            logGroupName=log_group, logStreamName=log_stream, limit=limit
         )
         return len(response.get("events", [])) > 0
     except Exception:

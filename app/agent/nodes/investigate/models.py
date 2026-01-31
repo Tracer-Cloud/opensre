@@ -40,7 +40,9 @@ class InvestigateOutput(BaseModel):
     """Output data from the investigate node."""
 
     evidence: dict[str, Any] = Field(description="Updated evidence dictionary")
-    executed_hypotheses: list[dict[str, Any]] = Field(description="Updated executed hypotheses list")
+    executed_hypotheses: list[dict[str, Any]] = Field(
+        description="Updated executed hypotheses list"
+    )
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for state update."""

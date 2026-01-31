@@ -17,9 +17,7 @@ def get_stack_outputs(stack_name: str = "TracerUpstreamDownstreamTest") -> dict:
     cf_client = boto3.client("cloudformation")
     try:
         stack = cf_client.describe_stacks(StackName=stack_name)
-        outputs = {
-            o["OutputKey"]: o["OutputValue"] for o in stack["Stacks"][0]["Outputs"]
-        }
+        outputs = {o["OutputKey"]: o["OutputValue"] for o in stack["Stacks"][0]["Outputs"]}
         return outputs
     except Exception as e:
         print(f"ERROR: Could not get stack outputs: {e}")
@@ -74,9 +72,7 @@ def test_happy_path(stack_outputs: dict) -> bool:
     # Verify landing bucket has data
     s3_client = boto3.client("s3")
     try:
-        obj = s3_client.get_object(
-            Bucket=stack_outputs["LandingBucketName"], Key=s3_key
-        )
+        obj = s3_client.get_object(Bucket=stack_outputs["LandingBucketName"], Key=s3_key)
         landing_data = json.loads(obj["Body"].read())
         has_customer_id = "customer_id" in landing_data.get("data", [{}])[0]
         print(f"✓ Landing data has customer_id: {has_customer_id}")
@@ -95,9 +91,7 @@ def test_happy_path(stack_outputs: dict) -> bool:
     # Verify processed output exists
     processed_key = s3_key.replace("ingested/", "processed/")
     try:
-        obj = s3_client.get_object(
-            Bucket=stack_outputs["ProcessedBucketName"], Key=processed_key
-        )
+        obj = s3_client.get_object(Bucket=stack_outputs["ProcessedBucketName"], Key=processed_key)
         processed_data = json.loads(obj["Body"].read())
 
         # Verify transformation occurred
@@ -163,9 +157,7 @@ def test_failure_path(stack_outputs: dict) -> bool:
     # Verify landing bucket has bad data
     s3_client = boto3.client("s3")
     try:
-        obj = s3_client.get_object(
-            Bucket=stack_outputs["LandingBucketName"], Key=s3_key
-        )
+        obj = s3_client.get_object(Bucket=stack_outputs["LandingBucketName"], Key=s3_key)
         landing_data = json.loads(obj["Body"].read())
         has_customer_id = "customer_id" in landing_data.get("data", [{}])[0]
         print(f"✓ Landing data missing customer_id: {not has_customer_id}")
@@ -184,9 +176,7 @@ def test_failure_path(stack_outputs: dict) -> bool:
     # Verify NO processed output (pipeline should have failed)
     processed_key = s3_key.replace("ingested/", "processed/")
     try:
-        s3_client.head_object(
-            Bucket=stack_outputs["ProcessedBucketName"], Key=processed_key
-        )
+        s3_client.head_object(Bucket=stack_outputs["ProcessedBucketName"], Key=processed_key)
         print(f"✗ FAILURE PATH FAILED: Output exists at {processed_key} (should have failed)")
         return False
     except Exception as e:

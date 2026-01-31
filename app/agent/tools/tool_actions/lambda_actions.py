@@ -140,10 +140,12 @@ def get_lambda_invocation_logs(
     all_logs = []
     for inv in invocations:
         for log in inv.get("logs", []):
-            all_logs.append({
-                "request_id": inv.get("request_id"),
-                "message": log,
-            })
+            all_logs.append(
+                {
+                    "request_id": inv.get("request_id"),
+                    "message": log,
+                }
+            )
 
     return {
         "found": bool(invocations),

@@ -69,7 +69,7 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
                 "pipeline_name": pipeline_name,
                 "run_id": run_id,
                 "cloudwatch_log_group": cloudwatch_context["log_group"],
-            }
+            },
         )
         def run_with_alert_id():
             return _run(

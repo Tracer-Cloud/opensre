@@ -79,7 +79,9 @@ def execute_actions(
                     action_name=action_name,
                     success=False,
                     data=data if isinstance(data, dict) else {},
-                    error=data.get("error", "Unknown error") if isinstance(data, dict) else "Invalid response",
+                    error=data.get("error", "Unknown error")
+                    if isinstance(data, dict)
+                    else "Invalid response",
                 )
         except Exception as e:
             results[action_name] = ActionExecutionResult(

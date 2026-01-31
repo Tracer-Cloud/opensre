@@ -12,7 +12,7 @@ import requests
 from dotenv import load_dotenv
 
 from tests.conftest import get_test_config
-from tests.utils.alert_factory import create_alert
+from tests.utils.alert_factory.factory import create_alert
 
 load_dotenv()
 
@@ -75,11 +75,7 @@ def test_fire_alert_to_remote_platform():
         "stream_mode": ["values"],
     }
 
-    response = requests.post(
-        endpoint,
-        json=payload,
-        timeout=30
-    )
+    response = requests.post(endpoint, json=payload, timeout=30)
 
     assert response.status_code == 200, f"Failed to fire alert: {response.text}"
     print(f"✓ Alert fired to remote platform: {endpoint}")

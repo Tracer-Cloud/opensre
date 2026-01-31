@@ -195,7 +195,9 @@ def get_recent_invocations(
             if "START RequestId:" in message:
                 if current_invocation:
                     invocations.append(current_invocation)
-                request_id = message.split("RequestId: ")[1].split()[0] if "RequestId:" in message else None
+                request_id = (
+                    message.split("RequestId: ")[1].split()[0] if "RequestId:" in message else None
+                )
                 current_invocation = {
                     "request_id": request_id,
                     "start_time": timestamp,
@@ -372,16 +374,18 @@ def list_functions(
 
         functions = []
         for func in response.get("Functions", []):
-            functions.append({
-                "function_name": func.get("FunctionName"),
-                "function_arn": func.get("FunctionArn"),
-                "runtime": func.get("Runtime"),
-                "handler": func.get("Handler"),
-                "code_size": func.get("CodeSize"),
-                "timeout": func.get("Timeout"),
-                "memory_size": func.get("MemorySize"),
-                "last_modified": func.get("LastModified"),
-            })
+            functions.append(
+                {
+                    "function_name": func.get("FunctionName"),
+                    "function_arn": func.get("FunctionArn"),
+                    "runtime": func.get("Runtime"),
+                    "handler": func.get("Handler"),
+                    "code_size": func.get("CodeSize"),
+                    "timeout": func.get("Timeout"),
+                    "memory_size": func.get("MemorySize"),
+                    "last_modified": func.get("LastModified"),
+                }
+            )
 
         return {
             "success": True,

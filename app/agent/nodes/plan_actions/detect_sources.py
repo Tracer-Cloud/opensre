@@ -7,9 +7,7 @@ Scans alert annotations and state context to detect available data sources
 from typing import Any
 
 
-def detect_sources(
-    raw_alert: dict[str, Any] | str, context: dict[str, Any]
-) -> dict[str, dict]:
+def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> dict[str, dict]:
     """
     Detect relevant data sources from alert annotations and context.
 
@@ -41,9 +39,7 @@ def detect_sources(
     annotations = {}
     if isinstance(raw_alert, dict):
         annotations = (
-            raw_alert.get("annotations", {})
-            or raw_alert.get("commonAnnotations", {})
-            or {}
+            raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
         )
         # Also check top-level fields
         if not annotations:
@@ -75,14 +71,10 @@ def detect_sources(
 
     # Detect S3 sources
     s3_bucket = (
-        annotations.get("s3_bucket")
-        or annotations.get("bucket")
-        or annotations.get("s3Bucket")
+        annotations.get("s3_bucket") or annotations.get("bucket") or annotations.get("s3Bucket")
     )
     s3_prefix = (
-        annotations.get("s3_prefix")
-        or annotations.get("prefix")
-        or annotations.get("s3Prefix")
+        annotations.get("s3_prefix") or annotations.get("prefix") or annotations.get("s3Prefix")
     )
     s3_key = annotations.get("s3_key") or annotations.get("key") or annotations.get("s3Key")
 
@@ -95,7 +87,9 @@ def detect_sources(
         sources["s3"] = s3_params
 
     # Detect local file sources
-    log_file = annotations.get("log_file") or annotations.get("log_path") or annotations.get("logFile")
+    log_file = (
+        annotations.get("log_file") or annotations.get("log_path") or annotations.get("logFile")
+    )
     if log_file:
         sources["local_file"] = {"log_file": log_file}
 

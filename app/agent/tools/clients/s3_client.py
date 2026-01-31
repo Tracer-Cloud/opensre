@@ -203,23 +203,27 @@ def list_object_versions(
         versions = []
         for v in response.get("Versions", []):
             if v.get("Key") == key:
-                versions.append({
-                    "version_id": v.get("VersionId"),
-                    "last_modified": v.get("LastModified"),
-                    "size": v.get("Size"),
-                    "etag": v.get("ETag", "").strip('"'),
-                    "is_latest": v.get("IsLatest", False),
-                    "storage_class": v.get("StorageClass"),
-                })
+                versions.append(
+                    {
+                        "version_id": v.get("VersionId"),
+                        "last_modified": v.get("LastModified"),
+                        "size": v.get("Size"),
+                        "etag": v.get("ETag", "").strip('"'),
+                        "is_latest": v.get("IsLatest", False),
+                        "storage_class": v.get("StorageClass"),
+                    }
+                )
 
         delete_markers = []
         for dm in response.get("DeleteMarkers", []):
             if dm.get("Key") == key:
-                delete_markers.append({
-                    "version_id": dm.get("VersionId"),
-                    "last_modified": dm.get("LastModified"),
-                    "is_latest": dm.get("IsLatest", False),
-                })
+                delete_markers.append(
+                    {
+                        "version_id": dm.get("VersionId"),
+                        "last_modified": dm.get("LastModified"),
+                        "is_latest": dm.get("IsLatest", False),
+                    }
+                )
 
         return {
             "success": True,
@@ -341,13 +345,15 @@ def list_objects(
 
         objects = []
         for obj in response.get("Contents", []):
-            objects.append({
-                "key": obj.get("Key"),
-                "size": obj.get("Size"),
-                "last_modified": obj.get("LastModified"),
-                "etag": obj.get("ETag", "").strip('"'),
-                "storage_class": obj.get("StorageClass"),
-            })
+            objects.append(
+                {
+                    "key": obj.get("Key"),
+                    "size": obj.get("Size"),
+                    "last_modified": obj.get("LastModified"),
+                    "etag": obj.get("ETag", "").strip('"'),
+                    "storage_class": obj.get("StorageClass"),
+                }
+            )
 
         return {
             "success": True,

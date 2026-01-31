@@ -37,9 +37,7 @@ def _generate_output_problem_statement(state: InvestigationState) -> ProblemStat
     llm = get_llm()
     try:
         structured_llm = llm.with_structured_output(ProblemStatement)
-        chain = structured_llm.with_config(
-            run_name="LLM – Draft problem statement"
-        )
+        chain = structured_llm.with_config(run_name="LLM – Draft problem statement")
 
         problem = chain.invoke(prompt)
     except Exception as err:
@@ -72,5 +70,3 @@ def node_frame_problem(state: InvestigationState) -> dict:
 
     tracker.complete("frame_problem", fields_updated=["problem_md"])
     return {"problem_md": problem_md}
-
-
