@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Test alert integration locally.
+"""End-to-end agent investigation test for upstream/downstream pipeline.
 
-Triggers a failure in the pipeline and tests if the agent can investigate it.
+Triggers a failure in the pipeline and tests if the agent can correctly investigate and diagnose it.
 """
 
 import json
@@ -150,7 +150,7 @@ def test_agent_investigation(failure_data: dict) -> bool:
 def main():
     """Main test flow."""
     print("=" * 60)
-    print("Upstream/Downstream Pipeline - Alert Test")
+    print("Upstream/Downstream Pipeline - Agent E2E Test")
     print("=" * 60)
     print()
 
@@ -162,12 +162,12 @@ def main():
 
     if success:
         print("\n" + "=" * 60)
-        print("✓ ALERT TEST PASSED")
+        print("✓ AGENT E2E TEST PASSED")
         print("=" * 60)
         return 0
     else:
         print("\n" + "=" * 60)
-        print("✗ ALERT TEST FAILED")
+        print("✗ AGENT E2E TEST FAILED")
         print("=" * 60)
         return 1
 

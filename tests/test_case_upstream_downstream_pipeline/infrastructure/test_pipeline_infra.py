@@ -1,6 +1,6 @@
-"""Integration tests for upstream/downstream pipeline.
+"""Infrastructure validation tests for upstream/downstream pipeline.
 
-Tests happy path and failure path scenarios.
+Tests that the AWS infrastructure and mock pipeline are working correctly.
 """
 
 import json
