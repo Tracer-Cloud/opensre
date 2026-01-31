@@ -32,7 +32,9 @@ def send_slack_report(slack_message: str) -> None:
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         detail = exc.response.text if exc.response is not None else str(exc)
-        debug_print(f"Slack delivery failed: HTTP {exc.response.status_code if exc.response else 'unknown'}: {detail[:200]}")
+        debug_print(
+            f"Slack delivery failed: HTTP {exc.response.status_code if exc.response else 'unknown'}: {detail[:200]}"
+        )
     except Exception as exc:  # noqa: BLE001 - best-effort logging, no crash
         debug_print(f"Slack delivery failed: {exc}")
     else:

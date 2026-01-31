@@ -42,7 +42,9 @@ def test_execute_actions_unavailable_action():
     results = execute_actions(["get_unavailable"], [action], {"any": {}})
 
     assert results["get_unavailable"].success is False
-    assert results["get_unavailable"].error == "Action not available: required data sources not found"
+    assert (
+        results["get_unavailable"].error == "Action not available: required data sources not found"
+    )
 
 
 def test_execute_actions_unknown_action():

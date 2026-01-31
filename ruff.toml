@@ -4,6 +4,17 @@
 target-version = "py312"
 line-length = 100
 
+# Exclude vendored dependencies in Lambda code and build artifacts
+exclude = [
+    "**/certifi*",
+    "**/charset_normalizer*",
+    "**/idna*",
+    "**/requests*",
+    "**/urllib3*",
+    "**/bin",
+    "**/cdk.out/**",
+]
+
 [lint]
 select = [
     "E",      # pycodestyle errors
@@ -26,8 +37,8 @@ ignore = [
 
 # Per-file ignores for legitimate patterns
 [lint.per-file-ignores]
-# Test files can have unused imports for fixtures
-"tests/**/*.py" = ["F401", "ARG001"]
+# Test files can have unused imports for fixtures and sys.path modifications before imports
+"tests/**/*.py" = ["F401", "ARG001", "E402"]
 
 # Pydantic models have fields that appear unused but are accessed dynamically
 "app/ingest.py" = ["ARG002"]

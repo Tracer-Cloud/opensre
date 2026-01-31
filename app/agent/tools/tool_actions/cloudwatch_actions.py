@@ -48,10 +48,7 @@ def get_cloudwatch_logs(log_group: str, log_stream: str, limit: int = 100) -> di
         client = boto3.client("logs")
 
         response = client.get_log_events(
-            logGroupName=log_group,
-            logStreamName=log_stream,
-            limit=limit,
-            startFromHead=False
+            logGroupName=log_group, logStreamName=log_stream, limit=limit, startFromHead=False
         )
 
         events = response.get("events", [])
@@ -61,7 +58,7 @@ def get_cloudwatch_logs(log_group: str, log_stream: str, limit: int = 100) -> di
                 "found": False,
                 "log_group": log_group,
                 "log_stream": log_stream,
-                "message": "No log events found"
+                "message": "No log events found",
             }
 
         log_messages = [event.get("message", "") for event in events]

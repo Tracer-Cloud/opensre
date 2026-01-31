@@ -38,15 +38,11 @@ def node_investigate(state: InvestigationState) -> dict:
     all_actions = get_available_actions()
     actions_by_name = {action.name: action for action in all_actions}
     available_actions = {
-        name: actions_by_name[name]
-        for name in available_action_names
-        if name in actions_by_name
+        name: actions_by_name[name] for name in available_action_names if name in actions_by_name
     }
 
     # Execute actions and summarize results
-    execution_results = execute_actions(
-        planned_actions, available_actions, available_sources
-    )
+    execution_results = execute_actions(planned_actions, available_actions, available_sources)
     evidence, executed_hypotheses, evidence_summary = summarize_execution_results(
         execution_results=execution_results,
         action_names=planned_actions,

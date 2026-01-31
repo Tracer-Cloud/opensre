@@ -20,9 +20,7 @@ def extract_alert_details(state: InvestigationState) -> AlertDetails:
 
     try:
         structured_llm = llm.with_structured_output(AlertDetails)
-        details = structured_llm.with_config(
-            run_name="LLM – Extract alert fields"
-        ).invoke(prompt)
+        details = structured_llm.with_config(run_name="LLM – Extract alert fields").invoke(prompt)
     except Exception as err:
         raise RuntimeError("Failed to extract alert details") from err
 

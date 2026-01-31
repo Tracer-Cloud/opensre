@@ -23,7 +23,7 @@ from langsmith import traceable  # noqa: E402
 from app.agent.output import reset_tracker  # noqa: E402
 from app.main import _run  # noqa: E402
 from tests.test_case_superfluid import use_case  # noqa: E402
-from tests.utils.alert_factory import create_alert_from_tracer_run  # noqa: E402
+from tests.utils.alert_factory import from_pipeline_run  # noqa: E402
 
 
 def main() -> int:
@@ -72,7 +72,7 @@ def main() -> int:
 
     # Create alert from tracer run
     timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
-    raw_alert = create_alert_from_tracer_run(
+    raw_alert = from_pipeline_run(
         pipeline_name=pipeline_name,
         run_name=run_name,
         status=status,

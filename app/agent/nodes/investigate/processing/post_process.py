@@ -3,9 +3,7 @@
 from typing import Any
 
 
-def merge_evidence(
-    current_evidence: dict[str, Any], execution_results: dict
-) -> dict[str, Any]:
+def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) -> dict[str, Any]:
     """
     Merge execution results into evidence state.
 
