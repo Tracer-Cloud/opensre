@@ -7,6 +7,7 @@ No printing, no LLM calls. Just fetch data and return typed results.
 from app.agent.tools.clients.s3_client import (
     S3CheckResult,
     compare_versions,
+    get_full_object,
     get_object_metadata,
     get_object_sample,
     get_s3_client,
@@ -38,22 +39,24 @@ def inspect_s3_object(bucket: str, key: str) -> dict:
     """
     Inspect an S3 object's metadata and sample content.
 
-    Use this when investigating data issues to understand:
-    - Object existence and size
-    - Content type and format
-    - Sample data for schema validation
+    CRITICAL for data pipeline failures - retrieves metadata that contains:
+    - correlation_id for tracing data lineage
+    - source (which upstream Lambda wrote this object)
+    - audit_key (path to audit payload with external API details)
+    - schema_version for detecting breaking changes
 
     Useful for:
-    - Verifying input data exists
-    - Checking data format and structure
-    - Identifying schema changes in data files
+    - Tracing data lineage upstream to find root cause
+    - Identifying schema changes in input data
+    - Finding audit trails for external vendor interactions
+    - Discovering which Lambda function produced the data
 
     Args:
         bucket: S3 bucket name
         key: S3 object key (full path)
 
     Returns:
-        Dictionary with object metadata and content sample
+        Dictionary with object metadata (including custom metadata), content sample, and lineage information
     """
     if not bucket or not key:
         return {"error": "bucket and key are required"}
@@ -263,4 +266,61 @@ def list_s3_objects(bucket: str, prefix: str = "", max_keys: int = 100) -> dict:
         "count": data.get("count", 0),
         "objects": data.get("objects", []),
         "is_truncated": data.get("is_truncated", False),
+    }
+
+
+def get_s3_object(bucket: str, key: str) -> dict:
+    """
+    Get full S3 object content (audit payloads, configs, lineage data).
+
+    CRITICAL for upstream root cause - use this to fetch audit payloads referenced
+    in S3 metadata (audit_key field) that contain:
+    - External vendor API request/response payloads
+    - Correlation IDs and timestamps for tracing
+    - Breaking changes and schema version details
+
+    Useful for:
+    - Retrieving audit payloads when audit_key found in S3 metadata
+    - Tracing external vendor interactions that caused failures
+    - Reading configuration or manifest files
+    - Finding upstream data lineage details
+
+    Args:
+        bucket: S3 bucket name
+        key: S3 object key (often from audit_key in metadata)
+
+    Returns:
+        Dictionary with full object content, metadata, and lineage information
+    """
+    if not bucket or not key:
+        return {"error": "bucket and key are required"}
+
+    result = get_full_object(bucket, key, max_size=1048576)
+
+    if not result.get("success"):
+        return {
+            "error": result.get("error", "Unknown error"),
+            "bucket": bucket,
+            "key": key,
+        }
+
+    if not result.get("exists", True):
+        return {
+            "found": False,
+            "bucket": bucket,
+            "key": key,
+            "message": "Object does not exist",
+        }
+
+    data = result.get("data", {})
+
+    return {
+        "found": True,
+        "bucket": bucket,
+        "key": key,
+        "size": data.get("size"),
+        "content_type": data.get("content_type"),
+        "is_text": data.get("is_text", False),
+        "content": data.get("content"),
+        "metadata": data.get("metadata", {}),
     }
