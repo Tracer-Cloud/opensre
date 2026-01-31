@@ -1,6 +1,8 @@
 """Investigation action execution."""
 
+import time
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,13 +17,85 @@ class ActionExecutionResult:
     error: str | None = None
 
 
+def _is_transient_error(exception: Exception) -> bool:
+    """Check if exception is likely a transient AWS error."""
+    error_str = str(exception).lower()
+    transient_indicators = [
+        "throttling",
+        "rate exceeded",
+        "timeout",
+        "connection",
+        "service unavailable",
+        "internal error",
+        "503",
+        "500",
+    ]
+    return any(indicator in error_str for indicator in transient_indicators)
+
+
+def _execute_with_retry(
+    action_name: str,
+    action: Any,
+    available_sources: dict[str, dict],
+    max_attempts: int = 3,
+) -> ActionExecutionResult:
+    """Execute action with exponential backoff retry for transient failures."""
+    last_error = None
+
+    for attempt in range(max_attempts):
+        try:
+            kwargs = action.parameter_extractor(available_sources)
+            data = action.function(**kwargs)
+
+            if isinstance(data, dict) and "error" not in data:
+                return ActionExecutionResult(
+                    action_name=action_name,
+                    success=True,
+                    data=data,
+                    error=None,
+                )
+            else:
+                error_msg = data.get("error", "Unknown error") if isinstance(data, dict) else "Invalid response"
+                return ActionExecutionResult(
+                    action_name=action_name,
+                    success=False,
+                    data=data if isinstance(data, dict) else {},
+                    error=error_msg,
+                )
+        except Exception as e:
+            last_error = e
+            if attempt < max_attempts - 1 and _is_transient_error(e):
+                backoff_seconds = 2**attempt
+                time.sleep(backoff_seconds)
+                continue
+            break
+
+    available_source_keys = list(available_sources.keys()) if available_sources else []
+    error_detail = f"{type(last_error).__name__}: {str(last_error)} | Available sources: {available_source_keys}"
+    return ActionExecutionResult(
+        action_name=action_name,
+        success=False,
+        data={},
+        error=error_detail,
+    )
+
+
+def _execute_single_action(
+    action_name: str,
+    action: Any,
+    available_sources: dict[str, dict],
+) -> ActionExecutionResult:
+    """Execute a single investigation action with error handling and retry."""
+    return _execute_with_retry(action_name, action, available_sources)
+
+
 def execute_actions(
     action_names: list[str],
     available_actions: dict[str, Any] | Iterable[Any],
     available_sources: dict[str, dict] | None = None,
 ) -> dict[str, ActionExecutionResult]:
     """
-    Execute investigation actions by name.
+    Execute investigation actions in parallel.
 
     Args:
         action_names: List of action names to execute
@@ -38,8 +112,10 @@ def execute_actions(
         available_actions_map = available_actions
     else:
         available_actions_map = {action.name: action for action in available_actions}
+
     results: dict[str, ActionExecutionResult] = {}
 
+    actions_to_execute = []
     for action_name in action_names:
         if action_name not in available_actions_map:
             results[action_name] = ActionExecutionResult(
@@ -52,7 +128,6 @@ def execute_actions(
 
         action = available_actions_map[action_name]
 
-        # Check availability if availability_check is defined
         if action.availability_check and not action.availability_check(available_sources):
             results[action_name] = ActionExecutionResult(
                 action_name=action_name,
@@ -62,33 +137,27 @@ def execute_actions(
             )
             continue
 
-        try:
-            # Extract parameters using parameter_extractor
-            kwargs = action.parameter_extractor(available_sources)
-            data = action.function(**kwargs)
+        actions_to_execute.append((action_name, action))
 
-            if isinstance(data, dict) and "error" not in data:
-                results[action_name] = ActionExecutionResult(
-                    action_name=action_name,
-                    success=True,
-                    data=data,
-                    error=None,
-                )
-            else:
+    if not actions_to_execute:
+        return results
+
+    with ThreadPoolExecutor(max_workers=min(5, len(actions_to_execute))) as executor:
+        future_to_action = {
+            executor.submit(_execute_single_action, action_name, action, available_sources): action_name
+            for action_name, action in actions_to_execute
+        }
+
+        for future in as_completed(future_to_action):
+            action_name = future_to_action[future]
+            try:
+                results[action_name] = future.result()
+            except Exception as e:
                 results[action_name] = ActionExecutionResult(
                     action_name=action_name,
                     success=False,
-                    data=data if isinstance(data, dict) else {},
-                    error=data.get("error", "Unknown error")
-                    if isinstance(data, dict)
-                    else "Invalid response",
+                    data={},
+                    error=f"Execution failed: {type(e).__name__}: {str(e)}",
                 )
-        except Exception as e:
-            results[action_name] = ActionExecutionResult(
-                action_name=action_name,
-                success=False,
-                data={},
-                error=str(e),
-            )
 
     return results

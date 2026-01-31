@@ -1,6 +1,7 @@
 """Post-processing: merge evidence and track hypotheses."""
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 
@@ -15,6 +16,135 @@ def _parse_vendor_audit_from_logs(logs: list) -> dict | None:
             except (json.JSONDecodeError, IndexError):
                 continue
     return None
+
+
+def _map_failed_jobs(data: dict) -> dict:
+    return {
+        "failed_jobs": data.get("failed_jobs", []),
+        "total_jobs": data.get("total_jobs", 0),
+    }
+
+
+def _map_failed_tools(data: dict) -> dict:
+    return {
+        "failed_tools": data.get("failed_tools", []),
+        "total_tools": data.get("total_tools", 0),
+    }
+
+
+def _map_error_logs(data: dict) -> dict:
+    return {
+        "error_logs": data.get("logs", []),
+        "total_logs": data.get("total_logs", 0),
+    }
+
+
+def _map_host_metrics(data: dict) -> dict:
+    return {"host_metrics": data.get("metrics", {})}
+
+
+def _map_cloudwatch_logs(data: dict) -> dict:
+    return {
+        "cloudwatch_logs": data.get("error_logs", []),
+        "cloudwatch_event_count": data.get("event_count", 0),
+        "cloudwatch_latest_error": data.get("latest_error"),
+    }
+
+
+def _map_inspect_s3_object(data: dict) -> dict:
+    return {
+        "s3_object": {
+            "bucket": data.get("bucket"),
+            "key": data.get("key"),
+            "found": data.get("found", False),
+            "size": data.get("size"),
+            "content_type": data.get("content_type"),
+            "metadata": data.get("metadata", {}),
+            "sample": data.get("sample"),
+            "is_text": data.get("is_text", False),
+        }
+    }
+
+
+def _map_list_s3_objects(data: dict) -> dict:
+    return {
+        "s3_objects": data.get("objects", []),
+        "s3_object_count": data.get("count", 0),
+    }
+
+
+def _map_lambda_invocation_logs(data: dict) -> dict:
+    result = {
+        "lambda_logs": data.get("recent_logs", []),
+        "lambda_invocation_count": data.get("invocation_count", 0),
+        "lambda_invocations": data.get("invocations", []),
+    }
+    vendor_audit = _parse_vendor_audit_from_logs(data.get("recent_logs", []))
+    if vendor_audit:
+        result["vendor_audit_from_logs"] = vendor_audit
+    return result
+
+
+def _map_lambda_errors(data: dict) -> dict:
+    return {
+        "lambda_errors": data.get("recent_logs", []),
+        "lambda_error_count": data.get("invocation_count", 0),
+    }
+
+
+def _map_inspect_lambda_function(data: dict) -> dict:
+    return {
+        "lambda_function": {
+            "function_name": data.get("function_name"),
+            "runtime": data.get("runtime"),
+            "handler": data.get("handler"),
+            "timeout": data.get("timeout"),
+            "memory_size": data.get("memory_size"),
+            "environment_variables": data.get("environment_variables", {}),
+            "code": data.get("code", {}),
+        }
+    }
+
+
+def _map_lambda_configuration(data: dict) -> dict:
+    return {
+        "lambda_config": {
+            "function_name": data.get("function_name"),
+            "runtime": data.get("runtime"),
+            "handler": data.get("handler"),
+            "timeout": data.get("timeout"),
+            "memory_size": data.get("memory_size"),
+            "environment_variables": data.get("environment_variables", {}),
+        }
+    }
+
+
+def _map_s3_object(data: dict) -> dict:
+    return {
+        "s3_audit_payload": {
+            "bucket": data.get("bucket"),
+            "key": data.get("key"),
+            "found": data.get("found", False),
+            "content": data.get("content"),
+            "metadata": data.get("metadata", {}),
+        }
+    }
+
+
+EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
+    "get_failed_jobs": _map_failed_jobs,
+    "get_failed_tools": _map_failed_tools,
+    "get_error_logs": _map_error_logs,
+    "get_host_metrics": _map_host_metrics,
+    "get_cloudwatch_logs": _map_cloudwatch_logs,
+    "inspect_s3_object": _map_inspect_s3_object,
+    "list_s3_objects": _map_list_s3_objects,
+    "get_lambda_invocation_logs": _map_lambda_invocation_logs,
+    "get_lambda_errors": _map_lambda_errors,
+    "inspect_lambda_function": _map_inspect_lambda_function,
+    "get_lambda_configuration": _map_lambda_configuration,
+    "get_s3_object": _map_s3_object,
+}
 
 
 def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) -> dict[str, Any]:
@@ -34,86 +164,9 @@ def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) ->
         if not result.success:
             continue
 
-        data = result.data
-
-        if action_name == "get_failed_jobs":
-            evidence["failed_jobs"] = data.get("failed_jobs", [])
-            evidence["total_jobs"] = data.get("total_jobs", 0)
-
-        elif action_name == "get_failed_tools":
-            evidence["failed_tools"] = data.get("failed_tools", [])
-            evidence["total_tools"] = data.get("total_tools", 0)
-
-        elif action_name == "get_error_logs":
-            evidence["error_logs"] = data.get("logs", [])
-            evidence["total_logs"] = data.get("total_logs", 0)
-
-        elif action_name == "get_host_metrics":
-            evidence["host_metrics"] = data.get("metrics", {})
-
-        elif action_name == "get_cloudwatch_logs":
-            evidence["cloudwatch_logs"] = data.get("error_logs", [])
-            evidence["cloudwatch_event_count"] = data.get("event_count", 0)
-            evidence["cloudwatch_latest_error"] = data.get("latest_error")
-
-        elif action_name == "inspect_s3_object":
-            evidence["s3_object"] = {
-                "bucket": data.get("bucket"),
-                "key": data.get("key"),
-                "found": data.get("found", False),
-                "size": data.get("size"),
-                "content_type": data.get("content_type"),
-                "metadata": data.get("metadata", {}),
-                "sample": data.get("sample"),
-                "is_text": data.get("is_text", False),
-            }
-
-        elif action_name == "list_s3_objects":
-            evidence["s3_objects"] = data.get("objects", [])
-            evidence["s3_object_count"] = data.get("count", 0)
-
-        elif action_name == "get_lambda_invocation_logs":
-            evidence["lambda_logs"] = data.get("recent_logs", [])
-            evidence["lambda_invocation_count"] = data.get("invocation_count", 0)
-            evidence["lambda_invocations"] = data.get("invocations", [])
-            # Parse vendor audit from logs
-            vendor_audit = _parse_vendor_audit_from_logs(data.get("recent_logs", []))
-            if vendor_audit:
-                evidence["vendor_audit_from_logs"] = vendor_audit
-
-        elif action_name == "get_lambda_errors":
-            evidence["lambda_errors"] = data.get("recent_logs", [])
-            evidence["lambda_error_count"] = data.get("invocation_count", 0)
-
-        elif action_name == "inspect_lambda_function":
-            evidence["lambda_function"] = {
-                "function_name": data.get("function_name"),
-                "runtime": data.get("runtime"),
-                "handler": data.get("handler"),
-                "timeout": data.get("timeout"),
-                "memory_size": data.get("memory_size"),
-                "environment_variables": data.get("environment_variables", {}),
-                "code": data.get("code", {}),
-            }
-
-        elif action_name == "get_lambda_configuration":
-            evidence["lambda_config"] = {
-                "function_name": data.get("function_name"),
-                "runtime": data.get("runtime"),
-                "handler": data.get("handler"),
-                "timeout": data.get("timeout"),
-                "memory_size": data.get("memory_size"),
-                "environment_variables": data.get("environment_variables", {}),
-            }
-
-        elif action_name == "get_s3_object":
-            evidence["s3_audit_payload"] = {
-                "bucket": data.get("bucket"),
-                "key": data.get("key"),
-                "found": data.get("found", False),
-                "content": data.get("content"),
-                "metadata": data.get("metadata", {}),
-            }
+        mapper = EVIDENCE_MAPPERS.get(action_name)
+        if mapper:
+            evidence.update(mapper(result.data))
 
     return evidence
 

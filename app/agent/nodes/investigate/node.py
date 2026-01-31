@@ -58,8 +58,5 @@ def node_investigate(state: InvestigationState) -> dict:
         message=evidence_summary,
     )
 
-    print(f"[DEBUG] Evidence being returned: {list(evidence.keys())}")
-    print(f"[DEBUG] CloudWatch logs in evidence: {bool(evidence.get('cloudwatch_logs'))}")
-
     output = InvestigateOutput(evidence=evidence, executed_hypotheses=executed_hypotheses)
     return output.to_dict()
