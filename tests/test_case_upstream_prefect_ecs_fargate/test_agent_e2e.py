@@ -118,7 +118,6 @@ def get_failure_details() -> dict:
     }
 
 
-@traceable(run_type="chain", name="test_prefect_ecs_agent_investigation")
 def test_agent_investigation(failure_data: dict) -> bool:
     """Test agent can investigate the Prefect pipeline failure."""
     print("\n" + "=" * 60)
@@ -160,13 +159,29 @@ def test_agent_investigation(failure_data: dict) -> bool:
     print("\n🤖 Starting investigation agent...")
     print("-" * 60)
 
-    # Run investigation
-    result = _run(
-        alert_name=alert.get("labels", {}).get("alertname", "PrefectFlowFailure"),
-        pipeline_name="upstream_downstream_pipeline_prefect",
-        severity="critical",
-        raw_alert=alert,
+    # Run investigation with traceable metadata
+    @traceable(
+        run_type="chain",
+        name=f"test_prefect_ecs - {alert['alert_id'][:8]}",
+        metadata={
+            "alert_id": alert["alert_id"],
+            "pipeline_name": "upstream_downstream_pipeline_prefect",
+            "flow_run_id": failure_data["flow_run_id"],
+            "flow_run_name": failure_data["flow_run_name"],
+            "ecs_cluster": "tracer-prefect-cluster",
+            "log_group": failure_data["log_group"],
+            "s3_key": failure_data["s3_key"],
+        },
     )
+    def run_investigation():
+        return _run(
+            alert_name=alert.get("labels", {}).get("alertname", "PrefectFlowFailure"),
+            pipeline_name="upstream_downstream_pipeline_prefect",
+            severity="critical",
+            raw_alert=alert,
+        )
+
+    result = run_investigation()
 
     print("-" * 60)
     print("\n📊 Investigation Results:")

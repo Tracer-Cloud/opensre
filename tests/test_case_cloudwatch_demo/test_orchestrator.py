@@ -9,10 +9,10 @@ import sys
 import traceback
 from datetime import UTC, datetime
 
-from tests.conftest import get_test_config
 from tests.test_case_cloudwatch_demo import use_case
 from tests.utils.alert_factory import create_alert
 from tests.utils.cloudwatch_logger import log_error_to_cloudwatch
+from tests.utils.conftest import get_test_config
 
 
 def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
@@ -63,12 +63,14 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
         print("Running investigation...")
 
         @traceable(
-            name=f"CloudWatch Investigation - {raw_alert['alert_id'][:8]}",
+            run_type="chain",
+            name=f"test_cloudwatch_demo - {raw_alert['alert_id'][:8]}",
             metadata={
                 "alert_id": raw_alert["alert_id"],
                 "pipeline_name": pipeline_name,
                 "run_id": run_id,
                 "cloudwatch_log_group": cloudwatch_context["log_group"],
+                "log_stream": cloudwatch_context.get("log_stream"),
             },
         )
         def run_with_alert_id():

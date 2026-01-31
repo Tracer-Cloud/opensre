@@ -37,12 +37,14 @@ def main() -> int:
     print("Running investigation...")
 
     @traceable(
-        name=f"S3 Failed Python Investigation - {raw_alert['alert_id'][:8]}",
+        run_type="chain",
+        name=f"test_s3_failed_python - {raw_alert['alert_id'][:8]}",
         metadata={
             "alert_id": raw_alert["alert_id"],
             "pipeline_name": pipeline_name,
             "run_id": run_id,
             "log_file": LOG_FILE,
+            "s3_bucket": raw_alert.get("annotations", {}).get("s3_bucket"),
         },
     )
     def run_with_alert_id():

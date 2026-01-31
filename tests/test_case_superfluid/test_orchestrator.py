@@ -98,7 +98,17 @@ def main() -> int:
         severity = "critical"
 
     # Run investigation via main._run() which handles Slack delivery automatically
-    @traceable(name="Superfluid Investigation")
+    @traceable(
+        run_type="chain",
+        name=f"test_superfluid - {raw_alert.get('alert_id', 'unknown')[:8]}",
+        metadata={
+            "alert_id": raw_alert.get("alert_id", "unknown"),
+            "pipeline_name": pipeline_name,
+            "trace_id": trace_id,
+            "run_url": run_url,
+            "run_name": run_name,
+        },
+    )
     def run_investigation():
         return _run(
             alert_name=alert_name,

@@ -1,16 +1,16 @@
 """
-Mock External API Lambda for ECS Fargate Airflow Test Case.
+Mock External API Lambda for ML Feature Engineering Test Cases.
 
-This simulates an external data provider that the Lambda ingester calls.
+This simulates an external event stream provider that ML pipelines consume.
 The API can be configured to return data with schema changes to simulate
-upstream API changes that cause downstream failures.
+upstream API changes that cause downstream ML pipeline failures.
 
 Environment Variables:
-- INJECT_SCHEMA_CHANGE: Set to "true" to omit customer_id field
+- INJECT_SCHEMA_CHANGE: Set to "true" to omit event_id field
 
 Endpoints:
 - GET /health - Health check
-- GET /data - Returns order data
+- GET /data - Returns ML event data (user events with raw features)
 - POST /config - Update schema change injection setting
 - GET /config - Get current configuration
 """
@@ -64,17 +64,51 @@ def lambda_handler(event, context):
 
 
 def _get_data():
-    """Return order data. If inject_schema_change is True, omits customer_id field."""
+    """Return ML event data. If inject_schema_change is True, omits event_id field."""
     timestamp = datetime.utcnow().isoformat()
 
+    # ML event data format (feature engineering pipeline)
     base_data = [
-        {"order_id": "ORD-001", "amount": 99.99, "timestamp": timestamp},
-        {"order_id": "ORD-002", "amount": 149.50, "timestamp": timestamp},
-        {"order_id": "ORD-003", "amount": 75.00, "timestamp": timestamp},
+        {
+            "user_id": "user_12345",
+            "timestamp": timestamp,
+            "event_type": "click",
+            "raw_features": {
+                "value": 150.0,
+                "duration": 45,
+                "count": 3,
+                "is_weekend": 0,
+                "hour": 14,
+            },
+        },
+        {
+            "user_id": "user_67890",
+            "timestamp": timestamp,
+            "event_type": "purchase",
+            "raw_features": {
+                "value": 299.99,
+                "duration": 120,
+                "count": 1,
+                "is_weekend": 1,
+                "hour": 18,
+            },
+        },
+        {
+            "user_id": "user_11223",
+            "timestamp": timestamp,
+            "event_type": "view",
+            "raw_features": {
+                "value": 0.0,
+                "duration": 15,
+                "count": 1,
+                "is_weekend": 0,
+                "hour": 10,
+            },
+        },
     ]
 
     if _config["inject_schema_change"]:
-        # Schema violation: missing customer_id
+        # Schema violation: missing event_id (critical for ML feature deduplication)
         return _response(
             200,
             {
@@ -83,14 +117,14 @@ def _get_data():
                     "schema_version": "2.0",
                     "record_count": len(base_data),
                     "timestamp": timestamp,
-                    "note": "BREAKING: customer_id field removed in v2.0",
+                    "note": "BREAKING: event_id field removed in v2.0",
                 },
             },
         )
 
-    # Normal response with customer_id
+    # Normal response with event_id
     for i, record in enumerate(base_data):
-        record["customer_id"] = f"CUST-{i + 1:03d}"
+        record["event_id"] = f"evt_{i + 1:03d}"
 
     return _response(
         200,

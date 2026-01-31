@@ -1,4 +1,4 @@
-from app.agent.nodes.publish_findings.publish_findings import main
+from app.agent.nodes.publish_findings.node import generate_report
 
 
 def test_publish_findings_includes_cited_evidence_section() -> None:
@@ -35,7 +35,7 @@ def test_publish_findings_includes_cited_evidence_section() -> None:
         "raw_alert": {"cloudwatch_logs_url": "https://example.com/cloudwatch"},
     }
 
-    result = main(state)
+    result = generate_report(state)
     slack_message = result["slack_message"]
 
     # Verify cited evidence section is present and contains actual evidence
@@ -44,4 +44,7 @@ def test_publish_findings_includes_cited_evidence_section() -> None:
     assert "CloudWatch Logs: https://example.com/cloudwatch" in slack_message
     assert '"message": "Failure in step 3"' in slack_message
     # Verify Data Lineage Flow section is present
-    assert "*Data Lineage Flow (Evidence-Based)*" in slack_message or "*Investigation Trace*" in slack_message
+    assert (
+        "*Data Lineage Flow (Evidence-Based)*" in slack_message
+        or "*Investigation Trace*" in slack_message
+    )
