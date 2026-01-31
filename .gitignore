@@ -117,3 +117,5 @@ tests/test_case_upstream_downstream_pipeline/pipeline_code/api_ingester/bin/
 
 # CDK build artifacts
 **/cdk.out/
+
+CLAUDE_PERSONAL.md
