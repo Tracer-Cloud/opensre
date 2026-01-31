@@ -149,7 +149,15 @@ def get_available_actions() -> list[InvestigationAction]:
     what they require as input, what they return, and when to use them.
     """
     from app.agent.tools.tool_actions.cloudwatch_actions import get_cloudwatch_logs
-    from app.agent.tools.tool_actions.s3_actions import check_s3_marker
+    from app.agent.tools.tool_actions.lambda_actions import (
+        get_lambda_errors,
+        get_lambda_invocation_logs,
+    )
+    from app.agent.tools.tool_actions.s3_actions import (
+        check_s3_marker,
+        inspect_s3_object,
+        list_s3_objects,
+    )
     from app.agent.tools.tool_actions.tracer_jobs import (
         get_failed_jobs,
         get_failed_tools,
@@ -226,6 +234,54 @@ def get_available_actions() -> list[InvestigationAction]:
             parameter_extractor=lambda sources: {
                 "bucket": sources.get("s3", {}).get("bucket"),
                 "prefix": sources.get("s3", {}).get("prefix"),
+            },
+        ),
+        _build_investigation_action(
+            name="inspect_s3_object",
+            func=inspect_s3_object,
+            source="storage",
+            requires=["bucket", "key"],
+            availability_check=lambda sources: bool(
+                sources.get("s3", {}).get("bucket") and sources.get("s3", {}).get("key")
+            ),
+            parameter_extractor=lambda sources: {
+                "bucket": sources.get("s3", {}).get("bucket"),
+                "key": sources.get("s3", {}).get("key"),
+            },
+        ),
+        _build_investigation_action(
+            name="list_s3_objects",
+            func=list_s3_objects,
+            source="storage",
+            requires=["bucket"],
+            availability_check=lambda sources: bool(sources.get("s3", {}).get("bucket")),
+            parameter_extractor=lambda sources: {
+                "bucket": sources.get("s3", {}).get("bucket"),
+                "prefix": sources.get("s3", {}).get("prefix", ""),
+                "max_keys": 100,
+            },
+        ),
+        _build_investigation_action(
+            name="get_lambda_invocation_logs",
+            func=get_lambda_invocation_logs,
+            source="cloudwatch",
+            requires=["function_name"],
+            availability_check=lambda sources: bool(sources.get("lambda", {}).get("function_name")),
+            parameter_extractor=lambda sources: {
+                "function_name": sources.get("lambda", {}).get("function_name"),
+                "filter_errors": False,
+                "limit": 50,
+            },
+        ),
+        _build_investigation_action(
+            name="get_lambda_errors",
+            func=get_lambda_errors,
+            source="cloudwatch",
+            requires=["function_name"],
+            availability_check=lambda sources: bool(sources.get("lambda", {}).get("function_name")),
+            parameter_extractor=lambda sources: {
+                "function_name": sources.get("lambda", {}).get("function_name"),
+                "limit": 50,
             },
         ),
     ]
