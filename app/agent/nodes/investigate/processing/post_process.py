@@ -49,6 +49,7 @@ def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) ->
                 "found": data.get("found", False),
                 "size": data.get("size"),
                 "content_type": data.get("content_type"),
+                "metadata": data.get("metadata", {}),
                 "sample": data.get("sample"),
                 "is_text": data.get("is_text", False),
             }
@@ -65,6 +66,17 @@ def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) ->
         elif action_name == "get_lambda_errors":
             evidence["lambda_errors"] = data.get("recent_logs", [])
             evidence["lambda_error_count"] = data.get("invocation_count", 0)
+
+        elif action_name == "inspect_lambda_function":
+            evidence["lambda_function"] = {
+                "function_name": data.get("function_name"),
+                "runtime": data.get("runtime"),
+                "handler": data.get("handler"),
+                "timeout": data.get("timeout"),
+                "memory_size": data.get("memory_size"),
+                "environment_variables": data.get("environment_variables", {}),
+                "code": data.get("code", {}),
+            }
 
     return evidence
 
@@ -126,6 +138,8 @@ def build_evidence_summary(execution_results: dict) -> str:
                 summary_parts.append(f"lambda:{len(data['recent_logs'])} logs")
             elif action_name == "get_lambda_errors" and data.get("recent_logs"):
                 summary_parts.append(f"lambda:{len(data['recent_logs'])} errors")
+            elif action_name == "inspect_lambda_function" and data.get("found"):
+                summary_parts.append("lambda:function inspected")
 
     return ", ".join(summary_parts) if summary_parts else "No new evidence"
 

@@ -152,6 +152,7 @@ def get_available_actions() -> list[InvestigationAction]:
     from app.agent.tools.tool_actions.lambda_actions import (
         get_lambda_errors,
         get_lambda_invocation_logs,
+        inspect_lambda_function,
     )
     from app.agent.tools.tool_actions.s3_actions import (
         check_s3_marker,
@@ -282,6 +283,17 @@ def get_available_actions() -> list[InvestigationAction]:
             parameter_extractor=lambda sources: {
                 "function_name": sources.get("lambda", {}).get("function_name"),
                 "limit": 50,
+            },
+        ),
+        _build_investigation_action(
+            name="inspect_lambda_function",
+            func=inspect_lambda_function,
+            source="cloudwatch",
+            requires=["function_name"],
+            availability_check=lambda sources: bool(sources.get("lambda", {}).get("function_name")),
+            parameter_extractor=lambda sources: {
+                "function_name": sources.get("lambda", {}).get("function_name"),
+                "include_code": True,
             },
         ),
     ]

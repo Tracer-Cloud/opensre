@@ -4,6 +4,8 @@ This node analyzes evidence and determines root cause.
 It updates state fields but does NOT render output directly.
 """
 
+import json
+
 from langsmith import traceable
 
 from app.agent.output import debug_print, get_tracker
@@ -171,7 +173,16 @@ def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
     hypotheses = state.get("hypotheses", [])
 
     # Allowed evidence sources the model can reference (keeps grounding consistent)
-    allowed_sources = ["aws_batch_jobs", "tracer_tools", "logs", "cloudwatch_logs", "host_metrics"]
+    allowed_sources = [
+        "aws_batch_jobs",
+        "tracer_tools",
+        "logs",
+        "cloudwatch_logs",
+        "host_metrics",
+        "lambda_logs",
+        "lambda_code",
+        "s3_metadata",
+    ]
 
     # Extract key investigation findings from evidence
     failed_jobs = evidence.get("failed_jobs", [])
@@ -179,6 +190,9 @@ def _build_simple_prompt(state: InvestigationState, evidence: dict) -> str:
     error_logs = evidence.get("error_logs", [])[:10]  # Limit to 10 most recent
     cloudwatch_logs = evidence.get("cloudwatch_logs", [])[:5]  # CloudWatch error logs
     host_metrics = evidence.get("host_metrics", {})
+    lambda_logs = evidence.get("lambda_logs", [])[:10]  # Lambda execution logs
+    lambda_function = evidence.get("lambda_function", {})
+    s3_object = evidence.get("s3_object", {})
 
     # Extract evidence from alert annotations
     raw_alert = state.get("raw_alert", {})
@@ -255,6 +269,41 @@ EVIDENCE:
     else:
         prompt += "\nHost Metrics: None\n"
 
+    if lambda_logs:
+        prompt += f"\nLambda Invocation Logs ({len(lambda_logs)} events):\n"
+        for log in lambda_logs[:10]:
+            message = log.get("message", "") if isinstance(log, dict) else str(log)
+            prompt += f"- {message[:300]}\n"
+
+    if lambda_function and lambda_function.get("function_name"):
+        prompt += "\nLambda Function Configuration:\n"
+        prompt += f"- Function: {lambda_function.get('function_name')}\n"
+        prompt += f"- Runtime: {lambda_function.get('runtime')}\n"
+        prompt += f"- Handler: {lambda_function.get('handler')}\n"
+        if lambda_function.get("environment_variables"):
+            env_vars = lambda_function.get("environment_variables", {})
+            prompt += f"- Environment Variables: {', '.join(env_vars.keys())}\n"
+        if lambda_function.get("code", {}).get("files"):
+            code_files = lambda_function.get("code", {}).get("files", {})
+            prompt += f"- Code Files: {', '.join(list(code_files.keys())[:5])}\n"
+            # Include handler code snippet if available
+            handler_file = lambda_function.get("handler", "").split(".")[0] + ".py"
+            if handler_file in code_files:
+                code_content = code_files[handler_file][:1000]
+                prompt += f"\nHandler Code Snippet ({handler_file}):\n{code_content}\n"
+
+    if s3_object and s3_object.get("found"):
+        prompt += "\nS3 Object Details:\n"
+        prompt += f"- Bucket: {s3_object.get('bucket')}\n"
+        prompt += f"- Key: {s3_object.get('key')}\n"
+        prompt += f"- Size: {s3_object.get('size')} bytes\n"
+        prompt += f"- Content Type: {s3_object.get('content_type')}\n"
+        metadata = s3_object.get("metadata", {})
+        if metadata:
+            prompt += f"- Metadata: {json.dumps(metadata, indent=2)}\n"
+        if s3_object.get("sample") and s3_object.get("is_text"):
+            prompt += f"\nS3 Object Sample:\n{s3_object.get('sample')[:500]}\n"
+
     # Include alert annotation evidence (log excerpts, failed steps, etc.)
     if alert_annotations.get("log_excerpt"):
         prompt += f"\nLog Excerpt from Alert:\n{alert_annotations['log_excerpt'][:1000]}\n"
@@ -299,9 +348,27 @@ def _simple_validate_claim(claim: str, evidence: dict) -> bool:
         return False
 
     # Check jobs (from evidence)
+    if ("job" in claim_lower or "batch" in claim_lower) and len(
+        evidence.get("failed_jobs", [])
+    ) == 0:
+        return False
+
+    # Check lambda evidence
+    if ("lambda" in claim_lower or "function" in claim_lower) and not (
+        evidence.get("lambda_logs") or evidence.get("lambda_function")
+    ):
+        return False
+
+    # Check s3 evidence
+    if ("s3" in claim_lower or "bucket" in claim_lower or "object" in claim_lower) and not (
+        evidence.get("s3_object") or evidence.get("s3_objects")
+    ):
+        return False
+
+    # Check schema/metadata evidence
     return not (
-        ("job" in claim_lower or "batch" in claim_lower)
-        and len(evidence.get("failed_jobs", [])) == 0
+        ("schema" in claim_lower or "metadata" in claim_lower)
+        and not evidence.get("s3_object", {}).get("metadata")
     )
 
 
@@ -320,6 +387,20 @@ def _extract_evidence_sources(claim: str, evidence: dict) -> list[str]:
         "metric" in claim_lower or "memory" in claim_lower or "cpu" in claim_lower
     ) and evidence.get("host_metrics", {}).get("data"):
         sources.append("host_metrics")
+    if ("lambda" in claim_lower or "function" in claim_lower) and (
+        evidence.get("lambda_logs") or evidence.get("lambda_function")
+    ):
+        sources.append("lambda_logs")
+    if "code" in claim_lower and evidence.get("lambda_function", {}).get("code"):
+        sources.append("lambda_code")
+    if ("s3" in claim_lower or "bucket" in claim_lower or "object" in claim_lower) and evidence.get(
+        "s3_object"
+    ):
+        sources.append("s3_metadata")
+    if ("schema" in claim_lower or "metadata" in claim_lower) and evidence.get("s3_object", {}).get(
+        "metadata"
+    ):
+        sources.append("s3_metadata")
 
     return sources if sources else ["evidence_analysis"]
 

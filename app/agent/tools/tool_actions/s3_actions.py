@@ -91,6 +91,7 @@ def inspect_s3_object(bucket: str, key: str) -> dict:
         "content_type": metadata.get("content_type"),
         "etag": metadata.get("etag"),
         "version_id": metadata.get("version_id"),
+        "metadata": metadata.get("metadata", {}),
         "is_text": sample_data.get("is_text", False),
         "sample": sample_data.get("sample"),
         "sample_bytes": sample_data.get("sample_bytes"),
