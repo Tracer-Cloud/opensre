@@ -1,5 +1,5 @@
 {
-  "app": "python3 app.py",
+  "app": "/opt/homebrew/bin/python3 app.py",
   "watch": {
     "include": ["**"],
     "exclude": [

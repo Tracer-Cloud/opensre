@@ -14,6 +14,7 @@ Simplified:
 """
 
 from aws_cdk import (
+    BundlingOptions,
     CfnOutput,
     Duration,
     RemovalPolicy,
@@ -21,6 +22,7 @@ from aws_cdk import (
 )
 from aws_cdk import aws_apigateway as apigw
 from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_ecs as ecs
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
@@ -53,15 +55,13 @@ class EcsPrefectStack(Stack):
             auto_delete_objects=True,
         )
 
-        # Mock External API Lambda (reuse from upstream/downstream test case)
+        # Mock External API Lambda (shared across test cases)
         mock_api_lambda = lambda_.Function(
             self,
             "MockApiLambda",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset(
-                "../../../test_case_upstream_downstream_pipeline/pipeline_code/external_vendor_api"
-            ),
+            code=lambda_.Code.from_asset("../../../shared/external_vendor_api"),
             timeout=Duration.seconds(30),
             memory_size=128,
         )
@@ -112,7 +112,7 @@ class EcsPrefectStack(Stack):
             ],
         )
 
-        # Task Definition - runs Prefect server + worker in single container
+        # Task Definition - ARM64 with sufficient resources for Prefect server + worker
         task_definition = ecs.FargateTaskDefinition(
             self,
             "PrefectTaskDef",
@@ -120,32 +120,28 @@ class EcsPrefectStack(Stack):
             memory_limit_mib=1024,
             task_role=task_role,
             execution_role=execution_role,
+            runtime_platform=ecs.RuntimePlatform(
+                cpu_architecture=ecs.CpuArchitecture.ARM64,
+                operating_system_family=ecs.OperatingSystemFamily.LINUX,
+            ),
         )
 
-        # Container running Prefect server and worker
+        # Container with custom pre-built image for faster startup (ARM64 platform)
         container = task_definition.add_container(
             "PrefectContainer",
-            image=ecs.ContainerImage.from_registry("prefecthq/prefect:3-python3.11"),
+            image=ecs.ContainerImage.from_asset(
+                "../prefect_image",
+                platform=ecr_assets.Platform.LINUX_ARM64,
+            ),
             logging=ecs.LogDrivers.aws_logs(
                 stream_prefix="prefect",
                 log_group=log_group,
             ),
             environment={
-                "PREFECT_SERVER_API_HOST": "0.0.0.0",
-                "PREFECT_SERVER_API_PORT": "4200",
-                "PREFECT_API_URL": "http://localhost:4200/api",
                 "LANDING_BUCKET": landing_bucket.bucket_name,
                 "PROCESSED_BUCKET": processed_bucket.bucket_name,
+                "PREFECT_API_URL": "http://127.0.0.1:4200/api",
             },
-            # Start server, wait, then start worker
-            command=[
-                "bash",
-                "-c",
-                "prefect server start --host 0.0.0.0 & "
-                "sleep 10 && "
-                "prefect work-pool create default-pool --type process 2>/dev/null || true && "
-                "prefect worker start --pool default-pool",
-            ],
         )
 
         container.add_port_mappings(ecs.PortMapping(container_port=4200, protocol=ecs.Protocol.TCP))
@@ -164,7 +160,7 @@ class EcsPrefectStack(Stack):
             "Allow Prefect API access",
         )
 
-        # ECS Service - runs in public subnet with public IP
+        # ECS Service - optimized for fast dev deployments
         ecs.FargateService(
             self,
             "PrefectService",
@@ -174,6 +170,9 @@ class EcsPrefectStack(Stack):
             assign_public_ip=True,
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
             security_groups=[security_group],
+            min_healthy_percent=0,
+            max_healthy_percent=200,
+            health_check_grace_period=Duration.seconds(0),
         )
 
         # Lambda for /trigger endpoint
@@ -189,13 +188,23 @@ class EcsPrefectStack(Stack):
         )
         landing_bucket.grant_write(trigger_lambda_role)
 
-        # Trigger Lambda
+        # Trigger Lambda with bundled dependencies
         trigger_lambda = lambda_.Function(
             self,
             "TriggerLambda",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset("../../pipeline_code/trigger_lambda"),
+            code=lambda_.Code.from_asset(
+                "../../pipeline_code/trigger_lambda",
+                bundling=BundlingOptions(
+                    image=lambda_.Runtime.PYTHON_3_11.bundling_image,
+                    command=[
+                        "bash",
+                        "-c",
+                        "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output",
+                    ],
+                ),
+            ),
             role=trigger_lambda_role,
             timeout=Duration.seconds(60),
             memory_size=256,

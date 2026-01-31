@@ -15,6 +15,8 @@ def fire_pipeline_alert(
     pipeline_name: str, bucket: str, key: str, correlation_id: str, error: Exception
 ):
     """Standardized alerting for pipeline failures."""
+    import os
+
     run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
 
     alert_payload = create_alert(
@@ -23,12 +25,16 @@ def fire_pipeline_alert(
         status="failed",
         timestamp=datetime.now(UTC).isoformat(),
         annotations={
-            "s3_bucket": bucket,
+            "landing_bucket": bucket,
             "s3_key": key,
             "correlation_id": correlation_id,
             "error": str(error),
             "error_type": type(error).__name__,
             "context_sources": "s3,prefect,ecs",
+            "prefect_flow": "upstream_downstream_pipeline",
+            "ecs_cluster": "tracer-prefect-cluster",
+            "cloudwatch_log_group": "/ecs/tracer-prefect",
+            "processed_bucket": os.getenv("PROCESSED_BUCKET", "processed-bucket"),
         },
     )
 
