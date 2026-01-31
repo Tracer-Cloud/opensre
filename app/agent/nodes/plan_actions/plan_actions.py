@@ -77,7 +77,10 @@ def plan_actions(
         if memory_context:
             debug_print("[MEMORY] Loaded context for action planning")
 
-    llm = get_llm()
+    # Use fast model (Haiku) if memory provides guidance
+    use_fast = bool(memory_context)
+    llm = get_llm(use_fast_model=use_fast)
+
     plan = plan_actions_with_llm(
         llm=llm,
         plan_model=plan_model,

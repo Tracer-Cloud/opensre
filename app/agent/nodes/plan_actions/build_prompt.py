@@ -254,6 +254,7 @@ def plan_actions_with_llm(
         memory_context=memory_context,
     )
 
+    # If memory context is provided, we're already using fast model from caller
     structured_llm = llm.with_structured_output(plan_model)
     return structured_llm.with_config(run_name="LLM – Plan evidence gathering").invoke(prompt)
 

@@ -111,9 +111,10 @@ def main(state: InvestigationState) -> dict:
     # Build simple prompt from context and evidence
     prompt = _build_simple_prompt(state, evidence, memory_context)
 
-    # Call LLM
+    # Call LLM (use fast model if memory provides guidance)
     debug_print("Invoking LLM for root cause analysis...")
-    llm = get_llm()
+    use_fast = bool(memory_context)
+    llm = get_llm(use_fast_model=use_fast)
     response = llm.with_config(run_name="LLM – Analyze evidence and propose root cause").invoke(
         prompt
     )

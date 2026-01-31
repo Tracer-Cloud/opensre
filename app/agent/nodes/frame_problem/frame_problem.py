@@ -46,7 +46,11 @@ def _generate_output_problem_statement(
 ) -> ProblemStatement:
     """Use the LLM to generate a structured problem statement."""
     prompt = _build_input_prompt(ProblemStatementInput.from_state(state), memory_context)
-    llm = get_llm()
+
+    # Use fast model (Haiku) if memory provides guidance
+    use_fast = bool(memory_context)
+    llm = get_llm(use_fast_model=use_fast)
+
     try:
         structured_llm = llm.with_structured_output(ProblemStatement)
         chain = structured_llm.with_config(run_name="LLM – Draft problem statement")

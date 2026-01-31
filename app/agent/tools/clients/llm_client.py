@@ -28,15 +28,39 @@ class RootCauseResult:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _llm: ChatAnthropic | None = None
+_fast_llm: ChatAnthropic | None = None
 
 
-def get_llm() -> ChatAnthropic:
+def get_llm(use_fast_model: bool = False) -> ChatAnthropic:
     """
     Get or create the LLM client singleton.
 
     LangSmith tracking is always enabled.
     All LLM calls will be tracked in LangSmith.
+
+    Args:
+        use_fast_model: If True and memory is available, use Claude Haiku (5-10x faster)
+                       for scenarios with strong memory guidance
+
+    Returns:
+        ChatAnthropic client configured for the appropriate model
     """
+    # Check if we should use fast model (Haiku) with memory guidance
+    if use_fast_model:
+        from app.agent.memory import is_memory_enabled
+
+        if is_memory_enabled():
+            global _fast_llm
+            if _fast_llm is None:
+                _fast_llm = ChatAnthropic(
+                    model="claude-3-haiku-20240307",  # Haiku: 5-10x faster than Sonnet
+                    max_tokens=1024,
+                    temperature=0.3,
+                )
+                print("[MEMORY] Using fast model (Haiku) with memory guidance")
+            return _fast_llm
+
+    # Default: use standard model (Sonnet)
     global _llm
     if _llm is None:
         _llm = ChatAnthropic(
