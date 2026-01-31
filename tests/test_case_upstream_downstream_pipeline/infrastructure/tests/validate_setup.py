@@ -11,11 +11,12 @@ from pathlib import Path
 
 def check_lambda_handlers():
     """Verify Lambda handlers exist and are valid Python."""
-    infra_dir = Path(__file__).parent.parent
+    test_case_dir = Path(__file__).parent.parent.parent
 
     handlers = [
-        ("api_ingester", infra_dir / "lambda" / "api_ingester" / "handler.py"),
-        ("mock_api", infra_dir / "lambda" / "mock_api" / "handler.py"),
+        ("api_ingester", test_case_dir / "pipeline_code" / "api_ingester" / "handler.py"),
+        ("external_vendor_api", test_case_dir / "pipeline_code" / "external_vendor_api" / "handler.py"),
+        ("mock_dag", test_case_dir / "pipeline_code" / "mock_dag" / "handler.py"),
     ]
 
     for name, handler_path in handlers:
