@@ -580,10 +580,7 @@ def _format_cited_evidence_section(ctx: ReportContext) -> str:
     evidence = ctx.get("evidence", {})
     citations: list[str] = []
 
-    tracer_link = TRACER_DEFAULT_INVESTIGATION_URL
-    if tracer_link:
-        citations.append("- Tracer Platform:")
-        citations.append(_format_text_block(tracer_link))
+    # Don't include generic Tracer Platform link - only show actual evidence sources used
 
     label_map = {
         "cloudwatch_logs": "CloudWatch Logs",
