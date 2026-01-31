@@ -11,32 +11,82 @@ import pytest
 import requests
 from dotenv import load_dotenv
 
-from tests.conftest import get_test_config
-from tests.utils.alert_factory.factory import create_alert
+from tests.utils.alert_factory.factory import create_alert, from_pipeline_run
+from tests.utils.alert_factory.intent import AlertIntent
+from tests.utils.alert_factory.formatters.grafana import format_as_grafana
 
 load_dotenv()
 
 
-def test_alert_factory_creates_valid_alert():
-    """Test that alert factory produces valid Grafana-style alerts."""
+def test_alert_intent_creation():
+    """Test that AlertIntent captures core information correctly."""
     timestamp = datetime.now(UTC).isoformat()
+    intent = AlertIntent(
+        pipeline_name="test_pipeline",
+        run_name="test_run_001",
+        status="failed",
+        timestamp=timestamp,
+        severity="warning",
+        alert_name="CustomAlert",
+        environment="staging",
+        annotations={"foo": "bar"}
+    )
+    
+    assert intent.pipeline_name == "test_pipeline"
+    assert intent.severity == "warning"
+    assert intent.alert_name == "CustomAlert"
+    assert intent.environment == "staging"
+    assert intent.annotations["foo"] == "bar"
 
+
+def test_grafana_formatter():
+    """Test that Grafana formatter renders intent correctly."""
+    timestamp = datetime.now(UTC).isoformat()
+    intent = AlertIntent(
+        pipeline_name="test_pipeline",
+        run_name="test_run_001",
+        status="failed",
+        timestamp=timestamp,
+    )
+    
+    payload = format_as_grafana(intent)
+    
+    assert payload["alerts"][0]["labels"]["pipeline_name"] == "test_pipeline"
+    assert payload["alerts"][0]["labels"]["alertname"] == "PipelineFailure"
+    assert payload["alerts"][0]["labels"]["severity"] == "critical"
+    assert payload["alerts"][0]["labels"]["environment"] == "production"
+
+
+def test_factory_from_pipeline_run():
+    """Test that from_pipeline_run produces valid payloads."""
+    timestamp = datetime.now(UTC).isoformat()
+    payload = from_pipeline_run(
+        pipeline_name="test_pipeline",
+        run_name="test_run_001",
+        status="failed",
+        timestamp=timestamp,
+        severity="high",
+        alert_name="FailureEvent"
+    )
+    
+    assert payload["alerts"][0]["labels"]["severity"] == "high"
+    assert payload["alerts"][0]["labels"]["alertname"] == "FailureEvent"
+
+
+def test_create_alert_backwards_compatibility():
+    """Test that create_alert still works as expected."""
+    timestamp = datetime.now(UTC).isoformat()
     alert = create_alert(
         pipeline_name="test_pipeline",
         run_name="test_run_001",
         status="failed",
         timestamp=timestamp,
-        annotations={
-            "test_key": "test_value",
-            "error": "Test error message",
-        },
+        annotations={"test_key": "test_value"},
     )
 
     assert alert is not None
     assert "alerts" in alert
     assert alert["version"] == "4"
-    assert len(alert["alerts"]) == 1
-    assert alert["alerts"][0]["labels"]["alertname"] == "PipelineFailure"
     assert "test_key" in alert["commonAnnotations"]
 
 
