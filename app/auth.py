@@ -1,10 +1,12 @@
 """LangGraph authentication and authorization for multi-tenant access control.
 
-This module implements JWT-based authentication and organization-scoped
-authorization for LangGraph threads and resources.
+This module implements JWT-based authentication with proper signature verification
+using Clerk's JWKS (JSON Web Key Set) and organization-scoped authorization
+for LangGraph threads and resources.
 
 JWT claims expected:
     - sub: User ID (e.g., "user_2zr9qkHIGPAP5K2GYNKMYLKv0F6")
+    - iss: Issuer URL (verified against Clerk domains)
     - organization: Organization ID (e.g., "org_33W1pou1nUzYoYPZj3OCQ3jslB2")
     - organization_slug: Organization slug (e.g., "tracer-bioinformatics")
     - email: User email
@@ -13,54 +15,27 @@ JWT claims expected:
 
 from __future__ import annotations
 
-import base64
-import json
-import os
-from typing import Any
-
 from langgraph_sdk import Auth
 
+from app.pipeline_assistant.jwt_auth import (
+    verify_jwt_async,
+    JWTVerificationError,
+    JWTExpiredError,
+    JWTInvalidIssuerError,
+    JWTMissingClaimError,
+)
+
 auth = Auth()
-
-
-def decode_jwt_payload(token: str) -> dict[str, Any]:
-    """Decode JWT payload without signature verification.
-
-    Note: In production, you should verify the JWT signature using
-    the issuer's public key. This implementation assumes the JWT
-    has already been validated by an API gateway or load balancer.
-
-    Args:
-        token: JWT token string
-
-    Returns:
-        Decoded payload as dictionary
-
-    Raises:
-        ValueError: If token format is invalid
-    """
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise ValueError("Invalid JWT format: expected 3 parts")
-
-    payload_b64 = parts[1]
-    # Add padding if needed
-    payload_b64 += "=" * (4 - len(payload_b64) % 4)
-
-    try:
-        payload_bytes = base64.urlsafe_b64decode(payload_b64)
-        return json.loads(payload_bytes)
-    except Exception as e:
-        raise ValueError(f"Failed to decode JWT payload: {e}") from e
 
 
 @auth.authenticate
 async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
     """Validate JWT token and extract user information.
 
-    This handler runs on every request. It validates the Authorization header
-    and returns user information that will be available to authorization
-    handlers and within graph execution via config["configurable"]["langgraph_auth_user"].
+    This handler runs on every request. It validates the Authorization header,
+    verifies the JWT signature using Clerk's JWKS, checks the issuer, and
+    returns user information that will be available to authorization handlers
+    and within graph execution via config["configurable"]["langgraph_auth_user"].
 
     Args:
         authorization: Authorization header value (e.g., "Bearer <token>")
@@ -88,27 +63,27 @@ async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
     token = parts[1]
 
     try:
-        payload = decode_jwt_payload(token)
-    except ValueError as e:
+        # Use async verification - non-blocking
+        claims = await verify_jwt_async(token)
+    except JWTExpiredError:
+        raise Auth.exceptions.HTTPException(
+            status_code=401,
+            detail="JWT has expired"
+        )
+    except JWTInvalidIssuerError as e:
         raise Auth.exceptions.HTTPException(
             status_code=401,
             detail=str(e)
-        ) from e
-
-    # Extract required claims
-    user_id = payload.get("sub")
-    org_id = payload.get("organization")
-
-    if not user_id:
-        raise Auth.exceptions.HTTPException(
-            status_code=401,
-            detail="JWT missing required 'sub' claim"
         )
-
-    if not org_id:
+    except JWTMissingClaimError as e:
         raise Auth.exceptions.HTTPException(
             status_code=401,
-            detail="JWT missing required 'organization' claim"
+            detail=str(e)
+        )
+    except JWTVerificationError as e:
+        raise Auth.exceptions.HTTPException(
+            status_code=401,
+            detail=f"JWT verification failed: {e}"
         )
 
     # Return user information
@@ -116,13 +91,13 @@ async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
     # - ctx.user in authorization handlers
     # - config["configurable"]["langgraph_auth_user"] in graph nodes
     return {
-        "identity": user_id,
+        "identity": claims.sub,
         "is_authenticated": True,
         # Custom fields for organization scoping
-        "org_id": org_id,
-        "organization_slug": payload.get("organization_slug", ""),
-        "email": payload.get("email", ""),
-        "full_name": payload.get("full_name", ""),
+        "org_id": claims.organization,
+        "organization_slug": claims.organization_slug,
+        "email": claims.email,
+        "full_name": claims.full_name,
     }
 
 
