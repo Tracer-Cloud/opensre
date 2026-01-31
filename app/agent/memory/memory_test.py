@@ -5,14 +5,9 @@ Integration tests - validates read/write and seeding from MD files.
 """
 
 import os
-from pathlib import Path
 
-from app.agent.memory import (
-    _extract_memory_from_md,
-    get_memory_context,
-    is_memory_enabled,
-    write_memory,
-)
+from app.agent.memory import get_memory_context, is_memory_enabled, write_memory
+from app.agent.memory.parser import extract_keywords_from_md
 
 
 class TestMemoryInfrastructure:
@@ -20,10 +15,12 @@ class TestMemoryInfrastructure:
 
     def setup_method(self):
         """Clean memories before each test."""
-        memories_dir = Path(__file__).parent.parent / "memories"
+        from app.agent.memory.io import get_memories_dir
+
+        memories_dir = get_memories_dir()
         if memories_dir.exists():
-            for f in memories_dir.glob("202*.md"):  # Only test files
-                if "test_pipeline" in f.name:
+            for f in memories_dir.glob("*.md"):
+                if "test_pipeline" in f.name and f.name not in ("IMPLEMENTATION_PLAN.md", "FINDINGS.md"):
                     f.unlink()
 
     def test_memory_disabled_by_default(self):
@@ -164,7 +161,7 @@ The external API removed customer_id in v2.0.
 Lambda writes data to S3 landing bucket.
 """
 
-        extracted = _extract_memory_from_md(sample_md)
+        extracted = extract_keywords_from_md(sample_md)
 
         # Should extract headings and bullets
         assert "# Prefect ECS Architecture" in extracted
