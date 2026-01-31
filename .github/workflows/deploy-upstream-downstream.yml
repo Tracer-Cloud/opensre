@@ -4,9 +4,7 @@ on:
   push:
     paths:
       - 'tests/test_case_upstream_downstream_pipeline/**'
-    branches:
-      - main
-      - feature/test-upstream-downstream
+    branches: ["*"]
 
 jobs:
   deploy:
