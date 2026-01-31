@@ -66,6 +66,16 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Use get_failed_jobs, get_failed_tools, get_error_logs to fetch execution data"""
         )
 
+    if "aws_metadata" in available_sources:
+        aws_meta = available_sources["aws_metadata"]
+        metadata_items = [f"- {key}: {value}" for key, value in list(aws_meta.items())[:10]]
+        hints.append(
+            f"""AWS Infrastructure Metadata Available:
+{chr(10).join(metadata_items)}
+- Use execute_aws_operation to investigate any AWS resource dynamically
+- Examples: ecs.describe_tasks, rds.describe_db_instances, ec2.describe_instances"""
+        )
+
     if hints:
         return "\n\n" + "\n\n".join(hints) + "\n"
     return ""
