@@ -80,6 +80,8 @@ def data_pipeline_flow(bucket: str, key: str) -> dict:
     Returns:
         dict with status and correlation_id
     """
+    import json
+
     logger = get_run_logger()
     logger.info(f"Starting pipeline for s3://{bucket}/{key}")
 
@@ -89,6 +91,19 @@ def data_pipeline_flow(bucket: str, key: str) -> dict:
         # Extract
         raw_payload, correlation_id = extract_data(bucket, key)
         raw_records = raw_payload.get("data", [])
+
+        # Log structured input for traceability
+        logger.info(
+            json.dumps(
+                {
+                    "event": "processing_started",
+                    "input_bucket": bucket,
+                    "input_key": key,
+                    "correlation_id": correlation_id,
+                    "record_count": len(raw_records),
+                }
+            )
+        )
 
         # Transform
         processed_records = transform_data(raw_records)

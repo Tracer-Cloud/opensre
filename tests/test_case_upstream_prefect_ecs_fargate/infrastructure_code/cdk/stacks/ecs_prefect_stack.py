@@ -53,6 +53,26 @@ class EcsPrefectStack(Stack):
             auto_delete_objects=True,
         )
 
+        # Mock External API Lambda (reuse from upstream/downstream test case)
+        mock_api_lambda = lambda_.Function(
+            self,
+            "MockApiLambda",
+            runtime=lambda_.Runtime.PYTHON_3_11,
+            handler="handler.lambda_handler",
+            code=lambda_.Code.from_asset(
+                "../../../test_case_upstream_downstream_pipeline/pipeline_code/external_vendor_api"
+            ),
+            timeout=Duration.seconds(30),
+            memory_size=128,
+        )
+
+        # API Gateway for Mock API
+        mock_api = apigw.LambdaRestApi(
+            self,
+            "MockExternalApi",
+            handler=mock_api_lambda,
+        )
+
         # CloudWatch log group for Prefect
         log_group = logs.LogGroup(
             self,
@@ -182,6 +202,7 @@ class EcsPrefectStack(Stack):
             environment={
                 "LANDING_BUCKET": landing_bucket.bucket_name,
                 "PROCESSED_BUCKET": processed_bucket.bucket_name,
+                "EXTERNAL_API_URL": mock_api.url,
                 # Prefect API URL will need to be updated after deployment
                 # with the ECS task public IP
                 "PREFECT_API_URL": "http://localhost:4200/api",
@@ -201,6 +222,7 @@ class EcsPrefectStack(Stack):
         CfnOutput(self, "LandingBucketName", value=landing_bucket.bucket_name)
         CfnOutput(self, "ProcessedBucketName", value=processed_bucket.bucket_name)
         CfnOutput(self, "TriggerApiUrl", value=api.url)
+        CfnOutput(self, "MockApiUrl", value=mock_api.url)
         CfnOutput(self, "EcsClusterName", value=cluster.cluster_name)
         CfnOutput(self, "LogGroupName", value=log_group.log_group_name)
         CfnOutput(
