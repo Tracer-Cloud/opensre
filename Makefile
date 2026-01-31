@@ -25,7 +25,7 @@ cloudwatch-demo:
 
 # Run upstream/downstream pipeline E2E test
 upstream-downstream:
-	$(PYTHON) -m tests.test_case_upstream_downstream_pipeline.test_agent_e2e
+	$(PYTHON) -m tests.test_case_upstream_lambda.test_agent_e2e
 
 # Run the generic CLI (reads from stdin or --input)
 run:
