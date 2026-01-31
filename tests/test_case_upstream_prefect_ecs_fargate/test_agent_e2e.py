@@ -104,11 +104,11 @@ def get_failure_details() -> dict:
 
     except Exception as e:
         print(f"⚠ Warning: Could not fetch CloudWatch logs: {e}")
-        error_message = failed_run['state'].get('message', 'Schema validation failed')
+        error_message = failed_run["state"].get("message", "Schema validation failed")
 
     return {
-        "flow_run_id": failed_run['id'],
-        "flow_run_name": failed_run['name'],
+        "flow_run_id": failed_run["id"],
+        "flow_run_name": failed_run["name"],
         "correlation_id": CONFIG["correlation_id"],
         "error_message": error_message,
         "log_group": CONFIG["log_group"],
@@ -128,7 +128,7 @@ def test_agent_investigation(failure_data: dict) -> bool:
     # Create alert with Prefect flow run information
     alert = create_alert(
         pipeline_name="upstream_downstream_pipeline_prefect",
-        run_name=failure_data['flow_run_name'],
+        run_name=failure_data["flow_run_name"],
         status="failed",
         timestamp=datetime.now(UTC).isoformat(),
         severity="critical",
@@ -143,7 +143,7 @@ def test_agent_investigation(failure_data: dict) -> bool:
             "s3_key": failure_data["s3_key"],
             "audit_key": failure_data["audit_key"],
             "prefect_api_url": CONFIG["prefect_api_url"],
-            "error_message": failure_data['error_message'],
+            "error_message": failure_data["error_message"],
         },
     )
 
@@ -208,7 +208,9 @@ def test_agent_investigation(failure_data: dict) -> bool:
     if failure_data["audit_key"] in investigation_text or "audit/" in investigation_text:
         success_checks["Audit trail traced"] = True
 
-    if "external" in investigation_text and ("api" in investigation_text or "vendor" in investigation_text):
+    if "external" in investigation_text and (
+        "api" in investigation_text or "vendor" in investigation_text
+    ):
         success_checks["External API identified"] = True
 
     if "customer_id" in investigation_text or "schema" in investigation_text:

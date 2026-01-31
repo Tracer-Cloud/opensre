@@ -92,14 +92,14 @@ def _build_report_context(state: dict[str, Any]) -> ReportContext:
             or annotations.get("cloudwatch_logs_url")
             or annotations.get("cloudwatch_url")
         )
-        cloudwatch_group = (
-            raw_alert.get("cloudwatch_log_group") or annotations.get("cloudwatch_log_group")
+        cloudwatch_group = raw_alert.get("cloudwatch_log_group") or annotations.get(
+            "cloudwatch_log_group"
         )
-        cloudwatch_stream = (
-            raw_alert.get("cloudwatch_log_stream") or annotations.get("cloudwatch_log_stream")
+        cloudwatch_stream = raw_alert.get("cloudwatch_log_stream") or annotations.get(
+            "cloudwatch_log_stream"
         )
-        cloudwatch_region = (
-            raw_alert.get("cloudwatch_region") or annotations.get("cloudwatch_region")
+        cloudwatch_region = raw_alert.get("cloudwatch_region") or annotations.get(
+            "cloudwatch_region"
         )
         alert_id = raw_alert.get("alert_id")
 
@@ -281,29 +281,23 @@ def _extract_infrastructure_assets(ctx: ReportContext) -> dict[str, Any]:
         or evidence.get("lambda_function", {}).get("function_name")
     )
     if primary_lambda:
-        lambda_functions.append({
-            "name": primary_lambda,
-            "runtime": evidence.get("lambda_function", {}).get("runtime"),
-            "role": "primary"
-        })
+        lambda_functions.append(
+            {
+                "name": primary_lambda,
+                "runtime": evidence.get("lambda_function", {}).get("runtime"),
+                "role": "primary",
+            }
+        )
 
     # Trigger Lambda (if different from primary)
     trigger_lambda = annotations.get("trigger_lambda") or annotations.get("ingestion_lambda")
     if trigger_lambda and trigger_lambda != primary_lambda:
-        lambda_functions.append({
-            "name": trigger_lambda,
-            "runtime": None,
-            "role": "trigger"
-        })
+        lambda_functions.append({"name": trigger_lambda, "runtime": None, "role": "trigger"})
 
     # External/Mock API Lambda
     external_lambda = annotations.get("external_api_lambda") or annotations.get("mock_api_lambda")
     if external_lambda:
-        lambda_functions.append({
-            "name": external_lambda,
-            "runtime": None,
-            "role": "external_api"
-        })
+        lambda_functions.append({"name": external_lambda, "runtime": None, "role": "external_api"})
 
     if lambda_functions:
         assets["lambda_functions"] = lambda_functions
@@ -318,27 +312,15 @@ def _extract_infrastructure_assets(ctx: ReportContext) -> dict[str, Any]:
     )
     if landing_bucket:
         landing_key = annotations.get("s3_key") or annotations.get("key")
-        s3_buckets.append({
-            "name": landing_bucket,
-            "key": landing_key,
-            "type": "landing"
-        })
+        s3_buckets.append({"name": landing_bucket, "key": landing_key, "type": "landing"})
 
     processed_bucket = annotations.get("processed_bucket") or annotations.get("output_bucket")
     if processed_bucket and processed_bucket != landing_bucket:
-        s3_buckets.append({
-            "name": processed_bucket,
-            "key": None,
-            "type": "processed"
-        })
+        s3_buckets.append({"name": processed_bucket, "key": None, "type": "processed"})
 
     audit_key = annotations.get("audit_key")
     if audit_key and landing_bucket:
-        s3_buckets.append({
-            "name": landing_bucket,
-            "key": audit_key,
-            "type": "audit"
-        })
+        s3_buckets.append({"name": landing_bucket, "key": audit_key, "type": "audit"})
 
     if s3_buckets:
         assets["s3_buckets"] = s3_buckets
@@ -352,17 +334,16 @@ def _extract_infrastructure_assets(ctx: ReportContext) -> dict[str, Any]:
         assets["ecs_service"] = {
             "cluster": ecs_cluster,
             "task": ecs_task,
-            "flow_name": prefect_flow
+            "flow_name": prefect_flow,
         }
 
     # Extract AWS Batch info
-    batch_job_queue = annotations.get("batch_job_queue") or evidence.get("batch_jobs", {}).get("job_queue")
+    batch_job_queue = annotations.get("batch_job_queue") or evidence.get("batch_jobs", {}).get(
+        "job_queue"
+    )
     batch_job_definition = annotations.get("batch_job_definition")
     if batch_job_queue:
-        assets["batch_service"] = {
-            "queue": batch_job_queue,
-            "definition": batch_job_definition
-        }
+        assets["batch_service"] = {"queue": batch_job_queue, "definition": batch_job_definition}
 
     # Extract pipeline/workflow info (Prefect, Airflow, etc.)
     pipeline_name = ctx.get("pipeline_name")
@@ -474,9 +455,7 @@ def _format_infrastructure_correlation(ctx: ReportContext) -> str:
 
 def _format_json_payload(data: Any, max_chars: int = 400) -> str:
     """Render JSON with a size cap for report output."""
-    pretty_payload = json.dumps(
-        data, default=str, ensure_ascii=True, indent=2, sort_keys=True
-    )
+    pretty_payload = json.dumps(data, default=str, ensure_ascii=True, indent=2, sort_keys=True)
     if len(pretty_payload) <= max_chars:
         return pretty_payload
 
@@ -570,9 +549,7 @@ def _format_cited_evidence_section(ctx: ReportContext) -> str:
         "evidence_analysis": "Evidence Summary",
     }
 
-    def format_source_citations(
-        sources: list[str], indent_prefix: str = ""
-    ) -> list[str]:
+    def format_source_citations(sources: list[str], indent_prefix: str = "") -> list[str]:
         source_citations: list[str] = []
         for source in sources:
             label = label_map.get(source, source.replace("_", " ").title())
@@ -605,7 +582,7 @@ def _format_cited_evidence_section(ctx: ReportContext) -> str:
         claim_citations = format_source_citations(sources, indent_prefix="  ")
         if not claim_citations:
             continue
-        claim_block = [f"{idx}. Claim: \"{shorten_claim(claim)}\""]
+        claim_block = [f'{idx}. Claim: "{shorten_claim(claim)}"']
         claim_block.extend(claim_citations)
         claim_lines.append("\n".join(claim_block))
 

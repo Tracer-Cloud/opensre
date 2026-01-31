@@ -33,7 +33,7 @@ if __name__ == "__main__":
         name="s3-processor",
         work_pool_name="default-pool",
         image=None,  # No image build needed, code is in ECS container
-        push=False,   # Don't push to registry
+        push=False,  # Don't push to registry
         parameters={"bucket": BUCKET, "key": KEY},
     )
 
