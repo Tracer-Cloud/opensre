@@ -28,8 +28,12 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
           "s3": {"bucket": "...", "prefix": "...", "key": "..."},
           "local_file": {"log_file": "...", "log_path": "..."},
           "tracer_web": {"trace_id": "...", "run_url": "..."},
-          "lambda": {"function_name": "..."}
+          "lambda": {"function_name": "...", "all_functions": [...]},
+          "aws_metadata": {"ecs_cluster": "...", "vpc_id": "...", "region": "..."}
         }
+
+        The aws_metadata source contains ALL AWS-related annotations from the alert,
+        enabling dynamic AWS SDK investigations (ECS, RDS, EC2, VPC, etc.).
     """
     sources: dict[str, dict] = {}
 
@@ -79,9 +83,12 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
 
         sources["cloudwatch"] = cloudwatch_params
 
-    # Detect S3 sources
+    # Detect S3 sources (landing bucket)
     s3_bucket = (
-        annotations.get("s3_bucket") or annotations.get("bucket") or annotations.get("s3Bucket")
+        annotations.get("s3_bucket")
+        or annotations.get("bucket")
+        or annotations.get("s3Bucket")
+        or annotations.get("landing_bucket")
     )
     s3_prefix = (
         annotations.get("s3_prefix") or annotations.get("prefix") or annotations.get("s3Prefix")
@@ -95,6 +102,20 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
         if s3_key:
             s3_params["key"] = s3_key
         sources["s3"] = s3_params
+
+    # Detect S3 audit source (when audit_key is specified)
+    audit_key = annotations.get("audit_key") or annotations.get("auditKey")
+    if s3_bucket and audit_key:
+        sources["s3_audit"] = {"bucket": s3_bucket, "key": audit_key}
+
+    # Detect S3 processed bucket (for output verification)
+    processed_bucket = annotations.get("processed_bucket") or annotations.get("processedBucket")
+    processed_prefix = annotations.get("processed_prefix")
+    if processed_bucket:
+        processed_params: dict[str, str] = {"bucket": processed_bucket}
+        if processed_prefix:
+            processed_params["prefix"] = processed_prefix
+        sources["s3_processed"] = processed_params
 
     # Detect local file sources
     log_file = (
@@ -132,5 +153,68 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
         if tracer_web_run.get("run_url"):
             tracer_params["run_url"] = tracer_web_run["run_url"]
         sources["tracer_web"] = tracer_params
+
+    # Collect ALL AWS-related metadata for dynamic AWS SDK investigations
+    # This enables the agent to make intelligent AWS API calls based on alert context
+    aws_metadata: dict[str, Any] = {}
+
+    # Common AWS resource identifiers
+    aws_patterns = [
+        # ECS/Fargate
+        "ecs_cluster",
+        "ecs_service",
+        "ecs_task",
+        "ecs_task_arn",
+        "task_definition",
+        # RDS
+        "db_instance",
+        "db_instance_identifier",
+        "db_cluster",
+        # EC2
+        "instance_id",
+        "vpc_id",
+        "subnet_id",
+        "security_group",
+        # Lambda (additional metadata beyond function_name)
+        "lambda_arn",
+        "lambda_alias",
+        # S3 (additional buckets)
+        "processed_bucket",
+        "audit_bucket",
+        # Step Functions
+        "state_machine_arn",
+        "execution_arn",
+        # CloudFormation
+        "stack_name",
+        "stack_id",
+        # General AWS
+        "aws_account_id",
+        "aws_region",
+        "region",
+    ]
+
+    for key, value in annotations.items():
+        # Collect fields matching AWS patterns
+        if any(pattern in key.lower() for pattern in aws_patterns):
+            if value and key not in aws_metadata:
+                aws_metadata[key] = value
+        # Also collect any field ending with common AWS suffixes
+        elif value and any(
+            key.endswith(suffix)
+            for suffix in ("_arn", "_id", "_name", "_cluster", "_bucket", "_queue", "_topic")
+        ):
+            aws_metadata[key] = value
+
+    # Add region for AWS SDK calls
+    if "region" not in aws_metadata and "aws_region" not in aws_metadata:
+        aws_metadata["region"] = (
+            annotations.get("cloudwatch_region")
+            or annotations.get("aws_region")
+            or annotations.get("region")
+            or "us-east-1"
+        )
+
+    if aws_metadata:
+        sources["aws_metadata"] = aws_metadata
 
     return sources

@@ -45,8 +45,26 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
         hints.append(
             f"""S3 Storage Available:
 - Bucket: {s3.get("bucket")}
+- Key: {s3.get("key", "N/A")}
 - Prefix: {s3.get("prefix", "N/A")}
-- Use check_s3_marker to verify pipeline completion markers"""
+- Use inspect_s3_object to examine metadata and trace data lineage"""
+        )
+
+    if "s3_audit" in available_sources:
+        s3_audit = available_sources["s3_audit"]
+        hints.append(
+            f"""S3 Audit Trail Available:
+- Bucket: {s3_audit.get("bucket")}
+- Key: {s3_audit.get("key")}
+- Use get_s3_object to fetch audit payload with external API request/response details"""
+        )
+
+    if "s3_processed" in available_sources:
+        s3_proc = available_sources["s3_processed"]
+        hints.append(
+            f"""S3 Processed Bucket Available:
+- Bucket: {s3_proc.get("bucket")}
+- Use check_s3_marker or list_s3_objects to verify output was created"""
         )
 
     if "local_file" in available_sources:
@@ -64,6 +82,16 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Trace ID: {tracer.get("trace_id")}
 - Run URL: {tracer.get("run_url", "N/A")}
 - Use get_failed_jobs, get_failed_tools, get_error_logs to fetch execution data"""
+        )
+
+    if "aws_metadata" in available_sources:
+        aws_meta = available_sources["aws_metadata"]
+        metadata_items = [f"- {key}: {value}" for key, value in list(aws_meta.items())[:10]]
+        hints.append(
+            f"""AWS Infrastructure Metadata Available:
+{chr(10).join(metadata_items)}
+- Use execute_aws_operation to investigate any AWS resource dynamically
+- Examples: ecs.describe_tasks, rds.describe_db_instances, ec2.describe_instances"""
         )
 
     if hints:
@@ -109,10 +137,25 @@ def build_investigation_prompt(
 
     sources_hint = _build_available_sources_hint(available_sources)
 
+    # Build lineage investigation directive if S3 data is available
+    lineage_directive = ""
+    if available_sources.get("s3") or available_sources.get("s3_audit"):
+        lineage_directive = """
+**Upstream Tracing Strategy:**
+For pipeline failures with S3 input data, follow this evidence chain to trace root cause:
+1. Inspect S3 input object (inspect_s3_object) - get metadata: correlation_id, audit_key, schema_version, source Lambda
+2. Fetch audit payload (get_s3_object with audit_key) - contains external API request/response details
+3. Inspect source Lambda function (inspect_lambda_function) - get code and configuration
+4. Correlate: external API schema changes → Lambda → S3 data → pipeline failure
+
+This upstream trace reveals root causes outside the failed service (external API issues, upstream Lambda bugs, data quality problems).
+"""
+
     prompt = f"""You are investigating a data pipeline incident.
 
 Problem Context:
 {problem_context}
+{lineage_directive}
 {sources_hint}
 Available Investigation Actions:
 {actions_description if actions_description else "No actions available"}

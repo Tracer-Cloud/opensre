@@ -38,7 +38,10 @@ def test_publish_findings_includes_cited_evidence_section() -> None:
     result = main(state)
     slack_message = result["slack_message"]
 
+    # Verify cited evidence section is present and contains actual evidence
     assert "*Cited Evidence:*" in slack_message
-    assert "Tracer Platform:" in slack_message
+    # No longer shows generic Tracer Platform link - only actual evidence sources
     assert "CloudWatch Logs: https://example.com/cloudwatch" in slack_message
     assert '"message": "Failure in step 3"' in slack_message
+    # Verify Data Lineage Flow section is present
+    assert "*Data Lineage Flow (Evidence-Based)*" in slack_message or "*Investigation Trace*" in slack_message
