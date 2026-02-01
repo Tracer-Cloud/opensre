@@ -83,16 +83,15 @@ def node_frame_problem(state: InvestigationState) -> dict:
     # Load memory context if enabled
     memory_context = ""
     if is_memory_enabled():
+        from app.agent.memory.architecture_discovery import find_architecture_doc_for_pipeline
+
         pipeline_name = state.get("pipeline_name", "")
-        # Seed from test case ARCHITECTURE.md
-        seed_paths = []
-        if "prefect" in pipeline_name.lower():
-            seed_paths.append("tests/test_case_upstream_prefect_ecs_fargate/ARCHITECTURE.md")
-        elif "lambda" in pipeline_name.lower():
-            seed_paths.append("tests/test_case_upstream_lambda/ARCHITECTURE.md")
+        seed_paths = find_architecture_doc_for_pipeline(pipeline_name)
 
         memory_context = get_memory_context(
-            pipeline_name=pipeline_name, alert_id=state.get("alert_json", {}).get("alert_id"), seed_paths=seed_paths
+            pipeline_name=pipeline_name,
+            alert_id=state.get("alert_json", {}).get("alert_id"),
+            seed_paths=seed_paths,
         )
         if memory_context:
             debug_print("[MEMORY] Loaded context for problem framing")

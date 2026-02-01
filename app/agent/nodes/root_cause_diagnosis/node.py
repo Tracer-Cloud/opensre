@@ -172,16 +172,13 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
 def _load_memory_context(state: InvestigationState) -> str:
     """Load memory context if enabled."""
     from app.agent.memory import get_memory_context, is_memory_enabled
+    from app.agent.memory.architecture_discovery import find_architecture_doc_for_pipeline
 
     if not is_memory_enabled():
         return ""
 
     pipeline_name = state.get("pipeline_name", "")
-    seed_paths = []
-
-    if "prefect" in pipeline_name.lower():
-        seed_paths.append("tests/test_case_upstream_prefect_ecs_fargate/ARCHITECTURE.md")
-
+    seed_paths = find_architecture_doc_for_pipeline(pipeline_name)
     memory_context = get_memory_context(pipeline_name=pipeline_name, seed_paths=seed_paths)
 
     if memory_context:

@@ -32,6 +32,7 @@ def extract_keywords_from_md(md_content: str, max_chars: int = 2000) -> str:
         "missing field",
         "validation",
         "prefect",
+        "airflow",
         "ecs",
     ]
 
