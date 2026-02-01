@@ -41,7 +41,7 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
         raw_alert = {}
 
     # Extract annotations from multiple possible locations
-    annotations = {}
+    annotations: dict[str, Any] = {}
     if isinstance(raw_alert, dict):
         annotations = (
             raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
@@ -126,7 +126,7 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
 
     # Detect Lambda sources
     # Collect all Lambda functions from annotations (primary + upstream/downstream)
-    lambda_functions = []
+    lambda_functions: list[str] = []
     for key in annotations:
         if key in ("function_name", "lambda_function") and annotations[key]:
             # Primary function (prioritize it)

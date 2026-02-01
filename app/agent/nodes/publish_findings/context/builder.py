@@ -3,14 +3,15 @@
 from typing import Any
 
 from app.agent.nodes.publish_findings.context.models import ReportContext
+from app.agent.state import InvestigationState
 
 
-def _safe_get(data: dict | None, *keys: str, default: Any = None) -> Any:
+def _safe_get(data: dict[str, Any] | None, *keys: str, default: Any = None) -> Any:
     """Safely navigate nested dictionaries."""
     if data is None:
         return default
 
-    current = data
+    current: Any = data
     for key in keys:
         if not isinstance(current, dict):
             return default
@@ -22,7 +23,7 @@ def _safe_get(data: dict | None, *keys: str, default: Any = None) -> Any:
 
 
 def _extract_cloudwatch_info(
-    raw_alert: dict,
+    raw_alert: dict[str, Any] | str,
 ) -> tuple[str | None, str | None, str | None, str | None, str | None]:
     """Extract CloudWatch metadata from alert.
 
@@ -79,7 +80,7 @@ def _filter_valid_claims(claims: list[dict]) -> list[dict]:
     ]
 
 
-def build_report_context(state: dict[str, Any]) -> ReportContext:
+def build_report_context(state: InvestigationState) -> ReportContext:
     """Extract data from state.context and state.evidence for report formatting.
 
     Args:
@@ -96,7 +97,8 @@ def build_report_context(state: dict[str, Any]) -> ReportContext:
     # Extract top-level state data
     context = state.get("context", {}) or {}
     evidence = state.get("evidence", {}) or {}
-    raw_alert = state.get("raw_alert", {}) or {}
+    raw_alert_value = state.get("raw_alert", {})
+    raw_alert: dict[str, Any] = raw_alert_value if isinstance(raw_alert_value, dict) else {}
 
     # Extract nested structures
     web_run = context.get("tracer_web_run", {}) or {}

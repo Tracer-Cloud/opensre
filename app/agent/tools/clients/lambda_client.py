@@ -99,7 +99,7 @@ def get_function_code(
         code_size = response.get("Configuration", {}).get("CodeSize", 0)
         repository_type = response.get("Code", {}).get("RepositoryType")
 
-        result = {
+        result: dict[str, Any] = {
             "success": True,
             "data": {
                 "function_name": function_name,
@@ -115,7 +115,7 @@ def get_function_code(
 
             zip_response = requests.get(code_location, timeout=30)
             if zip_response.status_code == 200:
-                files = {}
+                files: dict[str, Any] = {}
                 try:
                     with ZipFile(BytesIO(zip_response.content)) as zf:
                         for name in zf.namelist():

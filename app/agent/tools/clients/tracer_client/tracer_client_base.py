@@ -1,5 +1,7 @@
 """Base HTTP client for Tracer API."""
 
+from typing import Any, cast
+
 import httpx
 
 
@@ -14,9 +16,9 @@ class TracerClientBase:
             headers={"Authorization": f"Bearer {jwt_token}"},
         )
 
-    def _get(self, endpoint: str, params: dict | None = None) -> dict:
+    def _get(self, endpoint: str, params: dict | None = None) -> dict[Any, Any]:
         """Make a GET request to the API."""
         url = f"{self.base_url}{endpoint}"
         response = self._client.get(url, params=params or {})
         response.raise_for_status()
-        return response.json()
+        return cast(dict[Any, Any], response.json())

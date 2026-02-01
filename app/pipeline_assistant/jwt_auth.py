@@ -130,7 +130,8 @@ class AsyncJWKSCache:
 
             # Cache the result
             self._cache[jwks_url] = CachedJWKS(keys=jwks_data, fetched_at=now)
-            return jwks_data
+            from typing import cast
+            return cast(dict[str, Any], jwks_data)
 
     def clear(self) -> None:
         """Clear the cache."""
@@ -168,7 +169,9 @@ def decode_jwt_payload_unverified(token: str) -> dict[str, Any]:
     Used to extract the issuer before we know which JWKS to use.
     """
     try:
-        return jwt.decode(
+        from typing import cast
+
+        result = jwt.decode(
             token,
             options={
                 "verify_signature": False,
@@ -176,6 +179,7 @@ def decode_jwt_payload_unverified(token: str) -> dict[str, Any]:
                 "verify_aud": False,
             },
         )
+        return cast(dict[str, Any], result)
     except jwt.exceptions.DecodeError as e:
         raise JWTVerificationError(f"Invalid JWT format: {e}") from e
 

@@ -12,7 +12,8 @@ def _parse_vendor_audit_from_logs(logs: list) -> dict | None:
         if "EXTERNAL_API_AUDIT:" in message:
             try:
                 audit_json = message.split("EXTERNAL_API_AUDIT:", 1)[1].strip()
-                return json.loads(audit_json)
+                result = json.loads(audit_json)
+                return result if isinstance(result, dict) else None
             except (json.JSONDecodeError, IndexError):
                 continue
     return None

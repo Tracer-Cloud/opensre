@@ -63,6 +63,6 @@ class TracerToolsMixin(TracerClientBase):
 
     def get_tools(self, trace_id: str) -> dict:
         """Fetch tools for a trace from /api/tools/[traceId]."""
-        params = {}
+        params: dict[str, str] = {}
         data = self._get(f"/api/tools/{trace_id}", params)
         return data

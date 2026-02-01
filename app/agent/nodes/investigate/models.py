@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.agent.state import InvestigationState
+
 
 class InvestigateInput(BaseModel):
     """Input data for the investigate node."""
@@ -22,7 +24,7 @@ class InvestigateInput(BaseModel):
     investigation_loop_count: int = Field(default=0, description="Number of investigation loops")
 
     @classmethod
-    def from_state(cls, state: dict[str, Any]) -> "InvestigateInput":
+    def from_state(cls, state: InvestigationState | dict[str, Any]) -> "InvestigateInput":
         """Create InvestigateInput from investigation state."""
         return cls(
             raw_alert=state.get("raw_alert", {}),

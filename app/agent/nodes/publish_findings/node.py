@@ -9,7 +9,7 @@ from app.agent.nodes.publish_findings.renderers.terminal import render_report
 from app.agent.state import InvestigationState
 
 
-def _persist_memory(state: dict, slack_message: str) -> None:
+def _persist_memory(state: InvestigationState, slack_message: str) -> None:
     """Persist investigation results to memory if enabled.
 
     Args:
@@ -27,7 +27,9 @@ def _persist_memory(state: dict, slack_message: str) -> None:
     web_run = context.get("tracer_web_run", {}) or {}
 
     pipeline_name = web_run.get("pipeline_name") or state.get("pipeline_name", "unknown")
-    alert_id = state.get("raw_alert", {}).get("alert_id", "unknown")
+    raw_alert_value = state.get("raw_alert", {})
+    raw_alert_dict = raw_alert_value if isinstance(raw_alert_value, dict) else {}
+    alert_id = raw_alert_dict.get("alert_id", "unknown")
     root_cause = state.get("root_cause", "")
     confidence = state.get("confidence", 0.0)
     validity_score = state.get("validity_score", 0.0)
@@ -69,7 +71,7 @@ def _persist_memory(state: dict, slack_message: str) -> None:
         "cloudwatch_region": None,
         "alert_id": alert_id,
         "evidence": evidence,
-        "raw_alert": state.get("raw_alert", {}),
+        "raw_alert": raw_alert_dict,
     }
 
     lineage_section = format_data_lineage_flow(ctx)

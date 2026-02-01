@@ -33,6 +33,8 @@ pytest-cov>=4.0.0
 # Development (optional)
 ruff>=0.4.0
 mypy>=1.10.0
+types-requests
+boto3-stubs[essential]
 
 # Tracer
 tracer_decorator
