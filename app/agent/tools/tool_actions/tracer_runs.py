@@ -25,7 +25,7 @@ try:
     from langchain.tools import tool
 except ImportError:
     # Fallback if langchain not available - create a no-op decorator
-    def tool(func=None, **kwargs):  # noqa: ARG001
+    def tool(func=None, **kwargs):  # type: ignore[no-redef]  # noqa: ARG001
         if func is None:
             return lambda f: f
         return func
@@ -132,6 +132,8 @@ def _find_failed_run(client, pipeline_names: Iterable[str]) -> PipelineRunSummar
     for name in pipeline_names:
         runs = client.get_pipeline_runs(name, page=1, size=50)
         for run in runs:
+            if not isinstance(run, PipelineRunSummary):
+                continue
             status = (run.status or "").lower()
             if status in FAILED_STATUSES:
                 return run

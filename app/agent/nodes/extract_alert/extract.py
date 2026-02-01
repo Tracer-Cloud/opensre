@@ -1,7 +1,7 @@
 """LLM-based alert extraction for the frame_problem node."""
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from app.agent.nodes.extract_alert.models import AlertDetails, AlertExtractionInput
 from app.agent.state import InvestigationState
@@ -27,7 +27,7 @@ def extract_alert_details(state: InvestigationState) -> AlertDetails:
     if details is None:
         raise RuntimeError("LLM returned no alert details")
 
-    return details
+    return cast(AlertDetails, details)
 
 
 def _format_raw_alert(raw_alert: str | dict[str, Any]) -> str:

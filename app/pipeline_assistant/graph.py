@@ -32,13 +32,13 @@ def get_llm() -> ChatAnthropic:
     Uses the model specified in ANTHROPIC_MODEL env var,
     falling back to the default model from config.
     """
-    return ChatAnthropic(
+    return ChatAnthropic(  # type: ignore[call-arg]
         model=os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL),
         max_tokens=DEFAULT_MAX_TOKENS,
     )
 
 
-def get_llm_with_tools() -> ChatAnthropic:
+def get_llm_with_tools() -> Any:
     """Get LLM instance with tools bound for Tracer data queries."""
     tools = get_pipeline_assistant_tools()
     return get_llm().bind_tools(tools)
@@ -187,7 +187,7 @@ def should_continue(state: PipelineAssistantState) -> Literal["tools", "__end__"
     return "__end__"
 
 
-def build_graph() -> StateGraph:
+def build_graph() -> Any:
     """Build the pipeline assistant graph with routing.
 
     Graph flow:

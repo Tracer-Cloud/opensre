@@ -52,7 +52,7 @@ def get_llm(use_fast_model: bool = False) -> ChatAnthropic:
         if is_memory_enabled():
             global _fast_llm
             if _fast_llm is None:
-                _fast_llm = ChatAnthropic(
+                _fast_llm = ChatAnthropic(  # type: ignore[call-arg]
                     model="claude-3-haiku-20240307",  # Haiku: 5-10x faster than Sonnet
                     max_tokens=1024,
                     temperature=0.3,
@@ -63,7 +63,7 @@ def get_llm(use_fast_model: bool = False) -> ChatAnthropic:
     # Default: use standard model (Sonnet)
     global _llm
     if _llm is None:
-        _llm = ChatAnthropic(
+        _llm = ChatAnthropic(  # type: ignore[call-arg]
             model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
             max_tokens=1024,
         )

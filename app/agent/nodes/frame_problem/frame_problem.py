@@ -5,6 +5,8 @@ It assumes extract_alert and build_context nodes have already run.
 It updates state fields but does NOT render output directly.
 """
 
+from typing import cast
+
 from langsmith import traceable
 
 from app.agent.memory import get_memory_context, is_memory_enabled
@@ -62,7 +64,7 @@ def _generate_output_problem_statement(
     if problem is None:
         raise RuntimeError("LLM returned no problem statement")
 
-    return problem
+    return cast(ProblemStatement, problem)
 
 
 @traceable(name="node_frame_problem")

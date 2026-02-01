@@ -45,7 +45,7 @@ def _extract_use_cases(docstring: str) -> list[str]:
 
 def _extract_inputs(docstring: str, func: Callable) -> dict[str, str]:
     """Extract input descriptions from 'Args:' section and function signature."""
-    inputs = {}
+    inputs: dict[str, str] = {}
     if not docstring:
         return inputs
 
@@ -75,7 +75,7 @@ def _extract_inputs(docstring: str, func: Callable) -> dict[str, str]:
 
 def _extract_outputs(docstring: str) -> dict[str, str]:
     """Extract output descriptions from 'Returns:' section."""
-    outputs = {}
+    outputs: dict[str, str] = {}
     if not docstring:
         return outputs
 

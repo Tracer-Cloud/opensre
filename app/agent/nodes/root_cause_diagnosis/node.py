@@ -57,7 +57,8 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     response = llm.with_config(run_name="LLM – Analyze evidence and propose root cause").invoke(
         prompt
     )
-    response_text = response.content if hasattr(response, "content") else str(response)
+    response_content = response.content if hasattr(response, "content") else str(response)
+    response_text = response_content if isinstance(response_content, str) else str(response_content)
 
     # Parse response
     result = parse_root_cause(response_text)

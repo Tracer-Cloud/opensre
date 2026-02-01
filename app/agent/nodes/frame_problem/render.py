@@ -18,12 +18,13 @@ def render_problem_statement_md(
     tracer_run_url = None
     context = state.get("context", {})
     tracer_web_run = context.get("tracer_web_run", {})
-    if tracer_web_run.get("found") and tracer_web_run.get("run_url"):
+    if isinstance(tracer_web_run, dict) and tracer_web_run.get("found") and tracer_web_run.get(
+        "run_url"
+    ):
         tracer_run_url = tracer_web_run.get("run_url")
-    elif state.get("raw_alert") and isinstance(state.get("raw_alert"), dict):
-        # Check if run_url is in raw_alert
-        raw_alert = state.get("raw_alert", {})
-        if raw_alert.get("run_url"):
+    else:
+        raw_alert = state.get("raw_alert")
+        if isinstance(raw_alert, dict) and raw_alert.get("run_url"):
             tracer_run_url = raw_alert.get("run_url")
 
     run_url_section = ""

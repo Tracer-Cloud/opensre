@@ -102,7 +102,7 @@ def parse_grafana_payload(
 
 def load_request_from_json(path: str | None) -> InvestigationRequest:
     """Load InvestigationRequest from JSON file or stdin."""
-    if path in (None, "-"):
+    if path is None or path == "-":
         payload = json.load(sys.stdin)
     else:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))

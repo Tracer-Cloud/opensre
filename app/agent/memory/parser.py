@@ -1,5 +1,7 @@
 """Memory content parsing and extraction."""
 
+from typing import Any
+
 
 def extract_keywords_from_md(md_content: str, max_chars: int = 2000) -> str:
     """
@@ -74,7 +76,7 @@ def parse_memory_sections(content: str) -> dict:
     Returns:
         Dict with extracted sections
     """
-    sections = {}
+    sections: dict[str, Any] = {}
 
     # Extract action sequence
     if "## Investigation Path" in content:

@@ -3,6 +3,7 @@
 import os
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from app.agent.tools.clients.tracer_client.tracer_client_base import TracerClientBase
 
@@ -45,7 +46,7 @@ class AWSBatchJobsMixin(TracerClientBase):
         if trace_id is None:
             trace_id = os.getenv("TRACER_TRACE_ID", DEMO_TRACE_ID)
 
-        params = {
+        params: dict[str, Any] = {
             "traceId": trace_id,
             "orgId": self.org_id,
         }

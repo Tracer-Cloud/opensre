@@ -128,4 +128,7 @@ def run_investigation(
         raw_alert=raw_alert,
     )
 
-    return compiled_graph.invoke(initial_state, config=config)
+    from typing import cast
+
+    result = compiled_graph.invoke(initial_state, config=config)
+    return cast(InvestigationState, result)

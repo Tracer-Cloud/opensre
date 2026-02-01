@@ -127,7 +127,7 @@ Use these patterns to recognize similar failure modes and accelerate diagnosis.
 
 def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]) -> str:
     """Build all evidence sections for the prompt."""
-    sections = []
+    sections: list[str] = []
 
     # Extract evidence components
     failed_jobs = evidence.get("failed_jobs", [])
@@ -145,7 +145,7 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     # Extract alert annotations
     raw_alert = state.get("raw_alert", {})
     cloudwatch_url = None
-    alert_annotations = {}
+    alert_annotations: dict[str, Any] = {}
     if isinstance(raw_alert, dict):
         cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
         alert_annotations = (
@@ -291,8 +291,9 @@ def _build_s3_object_section(s3_object: dict[str, Any]) -> str:
     if metadata:
         section += f"- Metadata: {json.dumps(metadata, indent=2)}\n"
 
-    if s3_object.get("sample") and s3_object.get("is_text"):
-        section += f"\nS3 Object Sample:\n{s3_object.get('sample')[:500]}\n"
+    sample = s3_object.get("sample")
+    if s3_object.get("is_text") and isinstance(sample, str):
+        section += f"\nS3 Object Sample:\n{sample[:500]}\n"
 
     return section
 
@@ -341,117 +342,5 @@ def _build_alert_annotations_section(alert_annotations: dict[str, Any]) -> str:
 
     if alert_annotations.get("error"):
         sections.append(f"\nError Message:\n{alert_annotations['error']}\n")
-
-    return "".join(sections)
-
-
-def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]) -> str:
-    """Build all evidence sections for the prompt."""
-    sections = []
-
-    # Extract evidence components
-    failed_jobs = evidence.get("failed_jobs", [])
-    failed_tools = evidence.get("failed_tools", [])
-    error_logs = evidence.get("error_logs", [])[:10]
-    cloudwatch_logs = evidence.get("cloudwatch_logs", [])[:5]
-    host_metrics = evidence.get("host_metrics", {})
-    lambda_logs = evidence.get("lambda_logs", [])[:10]
-    lambda_function = evidence.get("lambda_function", {})
-    lambda_config = evidence.get("lambda_config", {})
-    s3_object = evidence.get("s3_object", {})
-    s3_audit_payload = evidence.get("s3_audit_payload", {})
-    vendor_audit_from_logs = evidence.get("vendor_audit_from_logs", {})
-
-    # Extract alert annotations
-    raw_alert = state.get("raw_alert", {})
-    cloudwatch_url = None
-    alert_annotations = {}
-    if isinstance(raw_alert, dict):
-        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
-        alert_annotations = (
-            raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
-        )
-
-    # CloudWatch logs
-    if cloudwatch_logs:
-        section = f"\nCloudWatch Error Logs ({len(cloudwatch_logs)} events):\n"
-        for log in cloudwatch_logs:
-            section += f"{log}\n"
-        if cloudwatch_url:
-            section += f"\n[Citation: View full logs at {cloudwatch_url}]\n"
-        section += "\n"
-        sections.append(section)
-
-    # AWS Batch jobs
-    if failed_jobs:
-        section = f"\nAWS Batch Failed Jobs ({len(failed_jobs)}):\n"
-        for job in failed_jobs[:5]:
-            section += f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
-        sections.append(section)
-    else:
-        sections.append("\nAWS Batch Failed Jobs: None\n")
-
-    # Failed tools
-    if failed_tools:
-        section = f"\nFailed Tools ({len(failed_tools)}):\n"
-        for tool in failed_tools[:5]:
-            section += f"- {tool.get('tool_name', 'Unknown')}: exit_code={tool.get('exit_code')}\n"
-        sections.append(section)
-    else:
-        sections.append("\nFailed Tools: None\n")
-
-    # Error logs
-    if error_logs:
-        section = f"\nError Logs ({len(error_logs)}):\n"
-        for log in error_logs[:5]:
-            section += f"- {log.get('message', '')[:200]}\n"
-        sections.append(section)
-    else:
-        sections.append("\nError Logs: None\n")
-
-    # Host metrics
-    if host_metrics and host_metrics.get("data"):
-        sections.append("\nHost Metrics: Available (CPU, memory, disk)\n")
-    else:
-        sections.append("\nHost Metrics: None\n")
-
-    # Lambda logs
-    if lambda_logs:
-        section = f"\nLambda Invocation Logs ({len(lambda_logs)} events):\n"
-        for log in lambda_logs[:10]:
-            message = log.get("message", "") if isinstance(log, dict) else str(log)
-            section += f"- {message[:300]}\n"
-        sections.append(section)
-
-    # Lambda function details
-    if lambda_function and lambda_function.get("function_name"):
-        section = _build_lambda_function_section(lambda_function)
-        sections.append(section)
-
-    # Lambda configuration
-    if lambda_config and lambda_config.get("function_name"):
-        section = _build_lambda_config_section(lambda_config)
-        sections.append(section)
-
-    # S3 object details
-    if s3_object and s3_object.get("found"):
-        section = _build_s3_object_section(s3_object)
-        sections.append(section)
-
-    # S3 audit payload
-    if s3_audit_payload and s3_audit_payload.get("found"):
-        section = _build_s3_audit_section(s3_audit_payload)
-        sections.append(section)
-
-    # Vendor audit from logs
-    if vendor_audit_from_logs and vendor_audit_from_logs.get("requests"):
-        section = _build_vendor_audit_section(vendor_audit_from_logs)
-        sections.append(section)
-
-    # Alert annotations
-    if alert_annotations:
-        section = _build_alert_annotations_section(alert_annotations)
-        if section:
-            sections.append(section)
 
     return "".join(sections)

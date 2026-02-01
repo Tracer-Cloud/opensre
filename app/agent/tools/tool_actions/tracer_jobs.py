@@ -8,11 +8,13 @@ All functions are decorated with @tool for LangChain/LangGraph compatibility.
 
 from __future__ import annotations
 
+from typing import Any
+
 try:
     from langchain.tools import tool
 except ImportError:
     # Fallback if langchain not available - create a no-op decorator
-    def tool(func=None, **kwargs):  # noqa: ARG001
+    def tool(func=None, **kwargs):  # type: ignore[no-redef]  # noqa: ARG001
         if func is None:
             return lambda f: f
         return func
@@ -25,7 +27,7 @@ from app.agent.tools.clients.tracer_client import (
 )
 
 
-def get_batch_jobs() -> AWSBatchJobResult:
+def get_batch_jobs() -> AWSBatchJobResult | dict[str, Any]:
     """
     Get AWS Batch job status from Tracer API.
 
@@ -37,7 +39,8 @@ def get_batch_jobs() -> AWSBatchJobResult:
         AWSBatchJobResult with batch job details and status information
     """
     client = get_tracer_client()
-    return client.get_batch_jobs()
+    result = client.get_batch_jobs()
+    return result
 
 
 def get_failed_tools(trace_id: str) -> dict:
@@ -101,7 +104,10 @@ def get_failed_jobs(trace_id: str) -> dict:
 
     client = get_tracer_web_client()
     batch_jobs = client.get_batch_jobs(trace_id, ["FAILED", "SUCCEEDED"], return_dict=True)
-    job_list = batch_jobs.get("data", [])
+    if isinstance(batch_jobs, dict):
+        job_list = batch_jobs.get("data", [])
+    else:
+        job_list = batch_jobs.jobs or []
 
     failed_jobs = []
     for job in job_list:

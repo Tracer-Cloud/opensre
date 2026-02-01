@@ -1,8 +1,9 @@
 from app.agent.nodes.publish_findings.node import generate_report
+from app.agent.state import InvestigationState
 
 
 def test_publish_findings_includes_cited_evidence_section() -> None:
-    state = {
+    state: InvestigationState = {
         "pipeline_name": "demo-pipeline",
         "root_cause": "Root cause text.",
         "confidence": 0.82,

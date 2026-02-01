@@ -15,6 +15,7 @@ def extract_org_slug_from_jwt(jwt_token: str) -> str | None:
         payload_b64 = parts[1]
         payload_b64 += "=" * (4 - len(payload_b64) % 4)
         payload = json.loads(base64.urlsafe_b64decode(payload_b64))
-        return payload.get("organization_slug")
+        result = payload.get("organization_slug")
+        return result if isinstance(result, str) else None
     except Exception:
         return None

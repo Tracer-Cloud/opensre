@@ -5,7 +5,7 @@ The single source of truth for state shape across the graph.
 Linear deterministic flow: plan -> gather_evidence -> analyze -> output.
 """
 
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, cast
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Evidence Source Types
@@ -66,6 +66,7 @@ class InvestigationState(TypedDict, total=False):
     validity_score: float  # Percentage of validated vs total claims
     investigation_recommendations: list[str]  # Recommended AWS SDK investigations if confidence low
     investigation_loop_count: int  # Number of times we've looped back to investigate
+    hypotheses: list[str]  # Hypotheses to consider during diagnosis
     executed_hypotheses: list[
         dict[str, Any]
     ]  # History of executed hypotheses/API calls to avoid duplicates
@@ -96,6 +97,7 @@ STATE_DEFAULTS: dict[str, Any] = {
     "validity_score": 0.0,
     "investigation_recommendations": [],
     "investigation_loop_count": 0,
+    "hypotheses": [],
     "executed_hypotheses": [],
     "slack_message": "",
     "problem_md": "",
@@ -114,14 +116,17 @@ def make_initial_state(
     All required keys and defaults are defined in STATE_DEFAULTS.
     Input fields (alert_name, pipeline_name, severity) are required.
     """
-    state: InvestigationState = {
-        # Input fields (required)
-        "alert_name": alert_name,
-        "pipeline_name": pipeline_name,
-        "severity": severity,
-        # Defaults for all other fields
-        **STATE_DEFAULTS,
-    }
+    state = cast(
+        InvestigationState,
+        {
+            # Input fields (required)
+            "alert_name": alert_name,
+            "pipeline_name": pipeline_name,
+            "severity": severity,
+            # Defaults for all other fields
+            **STATE_DEFAULTS,
+        },
+    )
     if raw_alert is not None:
         state["raw_alert"] = raw_alert
     return state

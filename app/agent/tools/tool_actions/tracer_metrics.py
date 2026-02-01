@@ -12,7 +12,7 @@ try:
     from langchain.tools import tool
 except ImportError:
     # Fallback if langchain not available - create a no-op decorator
-    def tool(func=None, **kwargs):  # noqa: ARG001
+    def tool(func=None, **kwargs):  # type: ignore[no-redef]  # noqa: ARG001
         if func is None:
             return lambda f: f
         return func

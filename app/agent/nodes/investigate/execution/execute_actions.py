@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
+from app.agent.tools.tool_actions.investigation_actions import InvestigationAction
+
 
 @dataclass
 class ActionExecutionResult:
@@ -95,7 +97,7 @@ def _execute_single_action(
 
 def execute_actions(
     action_names: list[str],
-    available_actions: dict[str, Any] | Iterable[Any],
+    available_actions: dict[str, InvestigationAction] | Iterable[InvestigationAction],
     available_sources: dict[str, dict] | None = None,
 ) -> dict[str, ActionExecutionResult]:
     """
@@ -119,7 +121,7 @@ def execute_actions(
 
     results: dict[str, ActionExecutionResult] = {}
 
-    actions_to_execute = []
+    actions_to_execute: list[tuple[str, InvestigationAction]] = []
     for action_name in action_names:
         if action_name not in available_actions_map:
             results[action_name] = ActionExecutionResult(
