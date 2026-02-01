@@ -162,6 +162,7 @@ def get_available_actions() -> list[InvestigationAction]:
         inspect_s3_object,
         list_s3_objects,
     )
+    from app.agent.tools.tool_actions.sre_knowledge_actions import get_sre_guidance
     from app.agent.tools.tool_actions.tracer_jobs import (
         get_failed_jobs,
         get_failed_tools,
@@ -348,6 +349,16 @@ def get_available_actions() -> list[InvestigationAction]:
             requires=["service", "operation"],
             availability_check=lambda sources: bool(sources.get("aws_metadata")),  # Available when AWS metadata exists
             parameter_extractor=None,  # Agent must specify parameters dynamically
+        ),
+        _build_investigation_action(
+            name="get_sre_guidance",
+            func=get_sre_guidance,
+            source="knowledge",
+            requires=[],  # Always available - no external dependencies
+            availability_check=lambda _sources: True,  # Always available
+            parameter_extractor=lambda sources: {
+                "keywords": sources.get("problem_keywords", []),
+            },
         ),
     ]
 

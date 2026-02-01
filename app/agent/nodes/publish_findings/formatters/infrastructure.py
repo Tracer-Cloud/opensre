@@ -101,13 +101,18 @@ def extract_infrastructure_assets(ctx: ReportContext) -> dict[str, Any]:
     # Extract ECS/Fargate info
     ecs_cluster = annotations.get("ecs_cluster")
     ecs_task = annotations.get("ecs_task_arn") or annotations.get("ecs_task")
-    prefect_flow = annotations.get("prefect_flow") or annotations.get("flow_name")
+    workflow_name = (
+        annotations.get("airflow_dag")
+        or annotations.get("dag_id")
+        or annotations.get("prefect_flow")
+        or annotations.get("flow_name")
+    )
 
-    if ecs_cluster or prefect_flow:
+    if ecs_cluster or workflow_name:
         assets["ecs_service"] = {
             "cluster": ecs_cluster,
             "task": ecs_task,
-            "flow_name": prefect_flow,
+            "flow_name": workflow_name,
         }
 
     # Extract AWS Batch info
@@ -169,7 +174,7 @@ def build_investigation_trace(ctx: ReportContext) -> list[str]:
         ecs = assets["ecs_service"]
         flow_name = ecs.get("flow_name")
         if flow_name:
-            trace_steps.append(f"{step_num}. Prefect flow '{flow_name}' task failure identified")
+            trace_steps.append(f"{step_num}. Workflow '{flow_name}' task failure identified")
         else:
             trace_steps.append(f"{step_num}. ECS task failure in {ecs.get('cluster', 'cluster')}")
         step_num += 1
