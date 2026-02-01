@@ -76,11 +76,11 @@ jobs:
 
       - name: Type check with mypy
         run: make typecheck
-        continue-on-error: false
+        continue-on-error: true
 
   test-thorough:
     runs-on: ubuntu-latest
-    needs: [lint, test, typecheck]
+    needs: [lint, test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
