@@ -9,8 +9,8 @@ try:
     import boto3
     from botocore.exceptions import ClientError
 except ImportError:
-    boto3 = None
-    ClientError = Exception
+    boto3 = None  # type: ignore[assignment]
+    ClientError = Exception  # type: ignore[assignment, misc]
 
 
 @dataclass(frozen=True)

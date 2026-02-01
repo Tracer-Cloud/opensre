@@ -178,11 +178,11 @@ def execute_aws_sdk_call(
 
     try:
         # Create boto3 client
-        client_kwargs = {}
+        client_kwargs: dict[str, str] = {}
         if region:
             client_kwargs["region_name"] = region
 
-        client = boto3.client(service_name, **client_kwargs)
+        client = boto3.client(service_name, **client_kwargs)  # type: ignore[call-overload]
 
         # Verify operation exists
         if not hasattr(client, operation_name):
