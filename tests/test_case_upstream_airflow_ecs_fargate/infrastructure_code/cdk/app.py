@@ -4,7 +4,6 @@
 import os
 
 import aws_cdk as cdk
-
 from stacks.ecs_airflow_stack import EcsAirflowStack
 
 app = cdk.App()

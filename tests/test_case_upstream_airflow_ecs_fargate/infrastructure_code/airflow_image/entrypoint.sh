@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
 
+export AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS=True
+
 echo "Initializing Airflow database..."
-airflow db init
+airflow db migrate
 
 echo "Ensuring admin user exists..."
 airflow users create \

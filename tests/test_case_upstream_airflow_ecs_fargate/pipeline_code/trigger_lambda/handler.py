@@ -14,7 +14,7 @@ import boto3
 import requests
 
 LANDING_BUCKET = os.environ.get("LANDING_BUCKET", "")
-AIRFLOW_API_URL = os.environ.get("AIRFLOW_API_URL", "http://localhost:8080/api/v1")
+AIRFLOW_API_URL = os.environ.get("AIRFLOW_API_URL", "http://localhost:8080/api/v2")
 AIRFLOW_API_USERNAME = os.environ.get("AIRFLOW_API_USERNAME", "admin")
 AIRFLOW_API_PASSWORD = os.environ.get("AIRFLOW_API_PASSWORD", "admin")
 AIRFLOW_DAG_ID = os.environ.get("AIRFLOW_DAG_ID", "upstream_downstream_pipeline_airflow")
@@ -64,9 +64,34 @@ def fetch_from_external_api(api_url: str, inject_error: bool = False) -> tuple[d
     return result, audit_info
 
 
+def _airflow_base_url() -> str:
+    api_url = AIRFLOW_API_URL.rstrip("/")
+    if "/api/" in api_url:
+        return api_url.split("/api/", 1)[0]
+    return api_url
+
+
+def _get_airflow_token() -> str:
+    base_url = _airflow_base_url()
+    token_url = f"{base_url}/auth/token"
+
+    response = requests.get(token_url, timeout=10)
+    if response.ok:
+        return response.json().get("access_token", "")
+
+    response = requests.post(
+        token_url,
+        json={"username": AIRFLOW_API_USERNAME, "password": AIRFLOW_API_PASSWORD},
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json().get("access_token", "")
+
+
 def _trigger_airflow_dag(bucket: str, key: str, correlation_id: str, inject_error: bool) -> None:
     payload = {
         "dag_run_id": f"trigger__{correlation_id}",
+        "logical_date": datetime.utcnow().isoformat() + "Z",
         "conf": {
             "bucket": bucket,
             "key": key,
@@ -74,10 +99,12 @@ def _trigger_airflow_dag(bucket: str, key: str, correlation_id: str, inject_erro
             "inject_error": inject_error,
         },
     }
+    token = _get_airflow_token()
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
     response = requests.post(
         f"{AIRFLOW_API_URL}/dags/{AIRFLOW_DAG_ID}/dagRuns",
-        auth=(AIRFLOW_API_USERNAME, AIRFLOW_API_PASSWORD),
         json=payload,
+        headers=headers,
         timeout=10,
     )
     response.raise_for_status()

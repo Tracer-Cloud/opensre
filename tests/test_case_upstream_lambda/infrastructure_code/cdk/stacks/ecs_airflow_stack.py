@@ -53,6 +53,7 @@ from tests.shared.infrastructure_code.cdk.constructs import (  # noqa: E402
     create_log_group,
 )
 
+
 class EcsAirflowTestCaseStack(Stack):
     """ECS Fargate Airflow test case infrastructure stack."""
 
@@ -196,10 +197,11 @@ class EcsAirflowTestCaseStack(Stack):
             "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN": "sqlite:////tmp/airflow.db",
             "AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION": "False",
             "AIRFLOW__CORE__LOAD_EXAMPLES": "False",
-            "AIRFLOW__API__AUTH_BACKEND": "airflow.api.auth.backend.basic_auth",
+            "AIRFLOW__API__AUTH_BACKENDS": "airflow.api.auth.backend.basic_auth",
             "AIRFLOW__WEBSERVER__EXPOSE_CONFIG": "True",
             "AIRFLOW__CORE__FERNET_KEY": "dummy-fernet-key-for-testing-only",
             "AIRFLOW__CORE__DAGS_FOLDER": "/opt/airflow/dags",
+            "AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS": "True",
             "AIRFLOW__CORE__PLUGINS_FOLDER": "/opt/airflow/plugins",
             "DATA_BUCKET": data_bucket.bucket_name,
             "AIRFLOW__WEBSERVER__RBAC": "False",

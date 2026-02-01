@@ -64,17 +64,11 @@ def plan_actions(
 
     # Load memory context if enabled
     from app.agent.memory import get_memory_context, is_memory_enabled
+    from app.agent.memory.architecture_discovery import find_architecture_doc_for_pipeline
 
     memory_context = ""
     if is_memory_enabled() and pipeline_name:
-        seed_paths = []
-        pipeline_lower = pipeline_name.lower() if pipeline_name else ""
-        if "prefect" in pipeline_lower:
-            seed_paths.append("tests/test_case_upstream_prefect_ecs_fargate/ARCHITECTURE.md")
-        elif "airflow" in pipeline_lower:
-            seed_paths.append("tests/test_case_upstream_airflow_ecs_fargate/ARCHITECTURE.md")
-        elif "lambda" in pipeline_lower:
-            seed_paths.append("tests/test_case_upstream_lambda/ARCHITECTURE.md")
+        seed_paths = find_architecture_doc_for_pipeline(pipeline_name)
         memory_context = get_memory_context(pipeline_name=pipeline_name, seed_paths=seed_paths)
         if memory_context:
             debug_print("[MEMORY] Loaded context for action planning")
