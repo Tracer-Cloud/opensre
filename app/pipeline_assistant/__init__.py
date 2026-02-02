@@ -12,6 +12,14 @@ Configuration (JWT and LLM) is in app.config.
 JWT authentication is handled by app.auth.jwt_auth.
 """
 
+from app.auth.jwt_auth import (
+    JWTClaims,
+    JWTExpiredError,
+    JWTInvalidIssuerError,
+    JWTMissingClaimError,
+    JWTVerificationError,
+    verify_jwt_async,
+)
 from app.config import (
     CLERK_CONFIG_DEV,
     CLERK_CONFIG_PROD,
@@ -21,14 +29,6 @@ from app.config import (
     get_environment,
 )
 from app.pipeline_assistant.graph import build_graph, pipeline_assistant
-from app.auth.jwt_auth import (
-    JWTClaims,
-    JWTExpiredError,
-    JWTInvalidIssuerError,
-    JWTMissingClaimError,
-    JWTVerificationError,
-    verify_jwt_async,
-)
 from app.pipeline_assistant.prompts import (
     PIPELINE_ASSISTANT_SYSTEM_PROMPT,
     ROUTER_SYSTEM_PROMPT,
