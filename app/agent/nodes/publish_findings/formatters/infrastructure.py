@@ -3,6 +3,7 @@
 from typing import Any
 
 from app.agent.nodes.publish_findings.context.models import ReportContext
+from app.agent.nodes.publish_findings.formatters.base import format_slack_link
 from app.agent.nodes.publish_findings.urls.aws import build_s3_console_url
 
 
@@ -208,11 +209,15 @@ def build_investigation_trace(ctx: ReportContext) -> list[str]:
 
             if bucket_type == "landing" and key:
                 s3_url = build_s3_console_url(name, key, region)
-                trace_steps.append(f"{step_num}. Input data inspected: {s3_url}")
+                trace_steps.append(
+                    f"{step_num}. Input data inspected: {format_slack_link('S3 object', s3_url)}"
+                )
                 step_num += 1
             elif bucket_type == "audit" and key:
                 s3_url = build_s3_console_url(name, key, region)
-                trace_steps.append(f"{step_num}. Audit trail found: {s3_url}")
+                trace_steps.append(
+                    f"{step_num}. Audit trail found: {format_slack_link('S3 audit trail', s3_url)}"
+                )
                 step_num += 1
 
     # Step 5: S3 marker/processed bucket (if checked)

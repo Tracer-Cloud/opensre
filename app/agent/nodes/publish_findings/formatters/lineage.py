@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from app.agent.nodes.publish_findings.context.models import ReportContext
+from app.agent.nodes.publish_findings.formatters.base import format_slack_link
 from app.agent.nodes.publish_findings.urls.aws import build_cloudwatch_url, build_s3_console_url
 
 
@@ -56,7 +57,7 @@ def format_data_lineage_flow(ctx: ReportContext) -> str:
             )
             external_api_url = audit_data.get("external_api_url")
             if external_api_url:
-                flow_nodes.append(f"External API: {external_api_url}")
+                flow_nodes.append(format_slack_link("External API", external_api_url))
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -68,7 +69,7 @@ def format_data_lineage_flow(ctx: ReportContext) -> str:
             f"https://{region}.console.aws.amazon.com/lambda/home"
             f"?region={region}#/functions/{function_name}?tab=code"
         )
-        flow_nodes.append(f"Trigger Lambda: {lambda_url}")
+        flow_nodes.append(format_slack_link("Trigger Lambda", lambda_url))
 
     # 3. S3 Landing (input data)
     s3_object = evidence.get("s3_object", {})
@@ -76,7 +77,7 @@ def format_data_lineage_flow(ctx: ReportContext) -> str:
         bucket = s3_object.get("bucket")
         key = s3_object.get("key")
         s3_url = build_s3_console_url(bucket, key, region)
-        flow_nodes.append(f"S3 Landing: {s3_url}")
+        flow_nodes.append(format_slack_link("S3 Landing", s3_url))
 
     # 4. Pipeline Execution (Prefect/Airflow)
     cw_url = build_cloudwatch_url(ctx)
@@ -87,7 +88,7 @@ def format_data_lineage_flow(ctx: ReportContext) -> str:
             or annotations.get("prefect_flow")
             or "Pipeline Executor"
         )
-        flow_nodes.append(f"{pipeline_name}: {cw_url}")
+        flow_nodes.append(format_slack_link(pipeline_name, cw_url))
 
     # 5. S3 Processed (output)
     processed_bucket = annotations.get("processed_bucket")
