@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from langgraph_sdk import Auth
 
-from app.pipeline_assistant.jwt_auth import (
+from app.auth.jwt_auth import (
     JWTExpiredError,
     JWTInvalidIssuerError,
     JWTMissingClaimError,
