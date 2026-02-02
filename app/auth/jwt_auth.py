@@ -16,7 +16,7 @@ import httpx
 import jwt
 from jwt import PyJWK
 
-from app.pipeline_assistant.config import (
+from app.config import (
     CLERK_CONFIG_DEV,
     CLERK_CONFIG_PROD,
     JWKS_CACHE_TTL_SECONDS,
