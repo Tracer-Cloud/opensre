@@ -3,15 +3,16 @@
 All data access is scoped to the user's organization via JWT authentication.
 
 Module structure:
-- config.py: Configuration constants (Clerk domains, JWT settings)
-- jwt_auth.py: Async JWT verification with JWKS
 - prompts.py: System prompts for the assistant
 - state.py: State definitions for the graph
 - tools.py: LangChain tools for Tracer data access
 - graph.py: LangGraph pipeline definition with routing
+
+Configuration (JWT and LLM) is in app.config.
+JWT authentication is handled by app.auth.jwt_auth.
 """
 
-from app.pipeline_assistant.config import (
+from app.config import (
     CLERK_CONFIG_DEV,
     CLERK_CONFIG_PROD,
     ClerkConfig,
@@ -20,7 +21,7 @@ from app.pipeline_assistant.config import (
     get_environment,
 )
 from app.pipeline_assistant.graph import build_graph, pipeline_assistant
-from app.pipeline_assistant.jwt_auth import (
+from app.auth.jwt_auth import (
     JWTClaims,
     JWTExpiredError,
     JWTInvalidIssuerError,
