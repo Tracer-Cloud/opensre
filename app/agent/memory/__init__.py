@@ -7,6 +7,7 @@ Public API that orchestrates focused modules:
 - parser: MD parsing and extraction
 - cache: Cache lookup and retrieval
 - formatter: Memory file formatting
+- service_map: Service map asset inventory and connectivity graph
 """
 
 from datetime import UTC, datetime
@@ -18,7 +19,12 @@ from app.agent.memory.formatter import format_memory_content, generate_memory_fi
 from app.agent.memory.io import get_memories_dir, write_memory_file
 
 # Re-export for backward compatibility
-__all__ = ["get_memory_context", "write_memory", "is_memory_enabled", "get_cached_investigation"]
+__all__ = [
+    "get_memory_context",
+    "write_memory",
+    "is_memory_enabled",
+    "get_cached_investigation",
+]
 
 
 def get_memory_context(
@@ -72,6 +78,8 @@ def write_memory(
     data_lineage: str | None = None,
     problem_pattern: str | None = None,
     rca_report: str | None = None,
+    asset_inventory: str | None = None,
+    service_map_json: str | None = None,
 ) -> Path | None:
     """
     Write investigation memory to file (Openclaw session-memory pattern).
@@ -90,6 +98,8 @@ def write_memory(
         data_lineage: Data lineage nodes
         problem_pattern: Problem statement pattern
         rca_report: Full RCA report (slack_message) for complete context
+        asset_inventory: Compact asset inventory summary
+        service_map_json: Compact service map JSON
 
     Returns:
         Path to written file, or None if not written
@@ -102,7 +112,8 @@ def write_memory(
     confidence_threshold, validity_threshold = get_quality_gate_threshold()
     if confidence < confidence_threshold or validity_score < validity_threshold:
         print(
-            f"[MEMORY] Not persisting (quality gate): confidence={confidence:.0%}, validity={validity_score:.0%}"
+            f"[MEMORY] Not persisting (quality gate): "
+            f"confidence={confidence:.0%}, validity={validity_score:.0%}"
         )
         return None
 
@@ -124,6 +135,8 @@ def write_memory(
         root_cause=root_cause,
         data_lineage=data_lineage,
         rca_report=rca_report,
+        asset_inventory=asset_inventory,
+        service_map_json=service_map_json,
     )
 
     # Write file

@@ -6,7 +6,50 @@ from app.agent.nodes.publish_findings.context import build_report_context
 from app.agent.nodes.publish_findings.formatters.lineage import format_data_lineage_flow
 from app.agent.nodes.publish_findings.formatters.report import format_slack_message
 from app.agent.nodes.publish_findings.renderers.terminal import render_report
+from app.agent.output import debug_print
 from app.agent.state import InvestigationState
+
+
+def _update_service_map(state: InvestigationState) -> None:
+    """Update service map with complete investigation evidence.
+
+    Called after report generation when all evidence is collected.
+
+    Args:
+        state: Complete investigation state
+    """
+    from app.agent.memory.service_map import (
+        build_service_map,
+        is_service_map_enabled,
+        persist_service_map,
+    )
+
+    # Skip if service map is disabled
+    if not is_service_map_enabled():
+        return
+
+    try:
+        raw_alert = state.get("raw_alert", {})
+        context = state.get("context", {})
+        evidence = state.get("evidence", {})
+        pipeline_name = state.get("pipeline_name", "")
+        alert_name = state.get("alert_name", "")
+
+        service_map = build_service_map(
+            evidence=evidence,
+            raw_alert=raw_alert if isinstance(raw_alert, dict) else {},
+            context=context,
+            pipeline_name=pipeline_name,
+            alert_name=alert_name,
+        )
+
+        persist_service_map(service_map)
+        debug_print(
+            f"Service map updated: {len(service_map['assets'])} assets, "
+            f"{len(service_map['edges'])} edges"
+        )
+    except Exception as e:
+        print(f"[WARNING] Service map update failed: {e}")
 
 
 def _persist_memory(state: InvestigationState, slack_message: str) -> None:
@@ -79,6 +122,23 @@ def _persist_memory(state: InvestigationState, slack_message: str) -> None:
     # Extract problem pattern (first sentence of root cause)
     problem_pattern = root_cause.split(".")[0] if root_cause else ""
 
+    # Load service map for memory embedding
+    from app.agent.memory.service_map import get_compact_asset_inventory, load_service_map
+
+    service_map = load_service_map()
+    asset_inventory = get_compact_asset_inventory(service_map, limit=10)
+
+    # Create compact service map JSON (assets + edges only, no history)
+    import json
+
+    compact_map = {
+        "assets": service_map.get("assets", [])[:15],  # Top 15 assets
+        "edges": service_map.get("edges", [])[:20],  # Top 20 edges
+        "total_assets": len(service_map.get("assets", [])),
+        "total_edges": len(service_map.get("edges", [])),
+    }
+    service_map_json = json.dumps(compact_map, indent=2)
+
     write_memory(
         pipeline_name=pipeline_name,
         alert_id=alert_id,
@@ -89,6 +149,8 @@ def _persist_memory(state: InvestigationState, slack_message: str) -> None:
         data_lineage=lineage_section,
         problem_pattern=problem_pattern,
         rca_report=slack_message,  # Store full RCA report
+        asset_inventory=asset_inventory,
+        service_map_json=service_map_json,
     )
 
 
@@ -99,8 +161,9 @@ def generate_report(state: InvestigationState) -> dict:
     1. Builds report context from investigation state
     2. Formats the Slack message
     3. Renders the report to terminal
-    4. Persists to memory (if enabled)
-    5. Returns the slack_message for external use
+    4. Updates service map (with complete evidence)
+    5. Persists to memory (if enabled)
+    6. Returns the slack_message for external use
 
     Args:
         state: Investigation state with all analysis results
@@ -116,6 +179,9 @@ def generate_report(state: InvestigationState) -> dict:
 
     # Render to terminal
     render_report(slack_message, ctx.get("confidence", 0.0), ctx.get("validity_score", 0.0))
+
+    # Update service map with complete evidence (before memory persistence)
+    _update_service_map(state)
 
     # Persist to memory if enabled
     _persist_memory(state, slack_message)

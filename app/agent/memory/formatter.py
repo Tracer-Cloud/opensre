@@ -14,6 +14,8 @@ def format_memory_content(
     root_cause: str | None = None,
     data_lineage: str | None = None,
     rca_report: str | None = None,
+    asset_inventory: str | None = None,
+    service_map_json: str | None = None,
 ) -> str:
     """
     Format investigation data into structured markdown.
@@ -31,6 +33,8 @@ def format_memory_content(
         root_cause: Root cause summary
         data_lineage: Data lineage nodes
         rca_report: Full RCA report
+        asset_inventory: Compact asset inventory summary
+        service_map_json: Compact service map JSON
 
     Returns:
         Formatted markdown content
@@ -62,6 +66,14 @@ def format_memory_content(
 
     if data_lineage:
         content_parts.extend(["## Data Lineage", data_lineage, ""])
+
+    # Asset inventory (compact)
+    if asset_inventory:
+        content_parts.extend(["## Asset Inventory", asset_inventory, ""])
+
+    # Service map (compact JSON)
+    if service_map_json:
+        content_parts.extend(["## Service Map", "```json", service_map_json, "```", ""])
 
     # Include full RCA report for complete context
     if rca_report:

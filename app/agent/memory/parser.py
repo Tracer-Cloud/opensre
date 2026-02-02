@@ -69,6 +69,8 @@ def parse_memory_sections(content: str) -> dict:
     - root_cause_pattern from "## Root Cause"
     - problem_pattern from "## Problem Pattern"
     - data_lineage from "## Data Lineage"
+    - asset_inventory from "## Asset Inventory"
+    - service_map from "## Service Map"
 
     Args:
         content: Memory file content
@@ -100,5 +102,25 @@ def parse_memory_sections(content: str) -> dict:
     if "## Data Lineage" in content:
         lineage = content.split("## Data Lineage")[1].split("##")[0].strip()
         sections["data_lineage"] = lineage
+
+    # Extract asset inventory
+    if "## Asset Inventory" in content:
+        inventory = content.split("## Asset Inventory")[1].split("##")[0].strip()
+        sections["asset_inventory"] = inventory
+
+    # Extract service map (parse JSON from code block)
+    if "## Service Map" in content:
+        service_map_section = content.split("## Service Map")[1].split("##")[0]
+        # Extract JSON from code block
+        if "```json" in service_map_section:
+            json_content = service_map_section.split("```json")[1].split("```")[0].strip()
+            try:
+                import json
+
+                sections["service_map"] = json.loads(json_content)
+            except json.JSONDecodeError:
+                sections["service_map"] = None
+        else:
+            sections["service_map"] = None
 
     return sections

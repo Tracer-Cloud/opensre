@@ -1,0 +1,20 @@
+{
+  "timestamp": "2026-02-01T19:10:27.753054",
+  "test_module": "tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e",
+  "runs_per_phase": 3,
+  "avg_without_service_map_seconds": 30.09,
+  "avg_with_service_map_seconds": 35.05,
+  "time_saved_seconds": -4.95,
+  "improvement_percent": -16.5,
+  "times_without": [
+    29.14,
+    27.94,
+    33.2
+  ],
+  "times_with": [
+    28.1,
+    44.69,
+    32.35
+  ],
+  "initial_build_time_seconds": 31.57
+}

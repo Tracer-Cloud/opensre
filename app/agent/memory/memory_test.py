@@ -20,7 +20,8 @@ class TestMemoryInfrastructure:
         memories_dir = get_memories_dir()
         if memories_dir.exists():
             for f in memories_dir.glob("*.md"):
-                if "test_pipeline" in f.name and f.name not in ("IMPLEMENTATION_PLAN.md", "FINDINGS.md"):
+                excluded = ("IMPLEMENTATION_PLAN.md", "FINDINGS.md")
+                if "test_pipeline" in f.name and f.name not in excluded:
                     f.unlink()
 
     def test_memory_disabled_by_default(self):
