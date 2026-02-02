@@ -6,7 +6,7 @@
     "pipeline_assistant": "./app/pipeline_assistant/graph.py:build_graph"
   },
   "auth": {
-    "path": "./app/auth.py:auth"
+    "path": "./app/auth/auth.py:auth"
   },
   "env": ".env",
   "image_distro": "wolfi"

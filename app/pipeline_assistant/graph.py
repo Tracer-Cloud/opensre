@@ -17,7 +17,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from app.pipeline_assistant.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL
+from app.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL
 from app.pipeline_assistant.prompts import (
     PIPELINE_ASSISTANT_SYSTEM_PROMPT,
     ROUTER_SYSTEM_PROMPT,

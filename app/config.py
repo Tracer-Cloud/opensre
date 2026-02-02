@@ -1,4 +1,4 @@
-"""Configuration for pipeline assistant authentication.
+"""Global application configuration.
 
 Clerk JWT configuration for both development and production environments.
 These are public endpoints and issuer URLs, not secrets.
@@ -61,10 +61,10 @@ def get_clerk_config() -> ClerkConfig:
     return CLERK_CONFIG_DEV
 
 
-# LLM Configuration
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
-DEFAULT_MAX_TOKENS = 4096
-
 # JWT Configuration
 JWT_ALGORITHM = "RS256"
 JWKS_CACHE_TTL_SECONDS = 3600  # Cache JWKS for 1 hour
+
+# LLM Configuration
+DEFAULT_MODEL = "claude-sonnet-4-20250514"
+DEFAULT_MAX_TOKENS = 4096
