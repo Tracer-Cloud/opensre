@@ -2,11 +2,14 @@ FROM prefecthq/prefect:3-python3.11
 
 WORKDIR /app
 
-# Install boto3 for S3 access
-RUN pip install boto3
+# Copy telemetry package
+COPY ../../shared/telemetry/tracer_telemetry /app/tracer_telemetry
 
 # Copy pipeline code
 COPY ../../pipeline_code/prefect_flow /app/prefect_flow
+
+# Install pipeline dependencies
+RUN pip install --no-cache-dir -r /app/prefect_flow/requirements.txt
 
 # Configure Prefect server
 RUN prefect config set PREFECT_SERVER_API_HOST=0.0.0.0 && \

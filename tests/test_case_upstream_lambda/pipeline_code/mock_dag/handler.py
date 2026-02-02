@@ -10,6 +10,9 @@ Follows Senior/Staff-level refactoring principles:
 """
 
 import json
+import time
+
+from tracer_telemetry import init_telemetry
 
 from .adapters.alerting import fire_pipeline_alert
 from .adapters.s3 import read_json, write_json
@@ -17,6 +20,14 @@ from .config import PIPELINE_NAME, PROCESSED_BUCKET, REQUIRED_FIELDS
 from .domain import validate_and_transform
 from .errors import PipelineError
 
+telemetry = init_telemetry(
+    service_name="lambda-mock-dag",
+    resource_attributes={
+        "pipeline.name": PIPELINE_NAME,
+        "pipeline.framework": "lambda",
+    },
+)
+tracer = telemetry.tracer
 
 def lambda_handler(event, context):
     """
@@ -32,48 +43,76 @@ def lambda_handler(event, context):
     for record in event.get("Records", []):
         bucket = record["s3"]["bucket"]["name"]
         key = record["s3"]["object"]["key"]
+        start_time = time.monotonic()
 
-        try:
-            # 1. Extraction (Infrastructure)
-            raw_payload, correlation_id = read_json(bucket, key)
-            raw_records = raw_payload.get("data", [])
+        with tracer.start_as_current_span("process_s3_record") as span:
+            span.set_attribute("s3.bucket", bucket)
+            span.set_attribute("s3.key", key)
 
-            # Log structured input for traceability
-            print(
-                json.dumps(
-                    {
-                        "event": "processing_started",
-                        "input_bucket": bucket,
-                        "input_key": key,
-                        "correlation_id": correlation_id,
-                        "record_count": len(raw_records),
-                    }
+            try:
+                # 1. Extraction (Infrastructure)
+                raw_payload, correlation_id = read_json(bucket, key)
+                raw_records = raw_payload.get("data", [])
+                span.set_attribute("record_count", len(raw_records))
+                span.set_attribute("correlation_id", correlation_id)
+
+                # Log structured input for traceability
+                print(
+                    json.dumps(
+                        {
+                            "event": "processing_started",
+                            "input_bucket": bucket,
+                            "input_key": key,
+                            "correlation_id": correlation_id,
+                            "record_count": len(raw_records),
+                        }
+                    )
                 )
-            )
 
-            # 2. Processing (Domain Logic - Pure)
-            processed_records = validate_and_transform(raw_records, REQUIRED_FIELDS)
+                # 2. Processing (Domain Logic - Pure)
+                processed_records = validate_and_transform(raw_records, REQUIRED_FIELDS)
 
-            # 3. Loading (Infrastructure)
-            output_key = key.replace("ingested/", "processed/")
-            output_payload = {"data": [r.to_dict() for r in processed_records]}
+                # 3. Loading (Infrastructure)
+                output_key = key.replace("ingested/", "processed/")
+                output_payload = {"data": [r.to_dict() for r in processed_records]}
 
-            write_json(
-                bucket=PROCESSED_BUCKET,
-                key=output_key,
-                data=output_payload,
-                correlation_id=correlation_id,
-                source_key=key,
-            )
+                write_json(
+                    bucket=PROCESSED_BUCKET,
+                    key=output_key,
+                    data=output_payload,
+                    correlation_id=correlation_id,
+                    source_key=key,
+                )
 
-        except PipelineError as e:
-            # Domain or System errors caught and alerted
-            fire_pipeline_alert(PIPELINE_NAME, bucket, key, correlation_id, e)
-            raise
+                telemetry.record_run(
+                    status="success",
+                    duration_seconds=time.monotonic() - start_time,
+                    record_count=len(processed_records),
+                    attributes={"pipeline.name": PIPELINE_NAME},
+                )
 
-        except Exception as e:
-            # Unexpected system-level crashes
-            fire_pipeline_alert(PIPELINE_NAME, bucket, key, correlation_id, e)
-            raise
+            except PipelineError as e:
+                # Domain or System errors caught and alerted
+                fire_pipeline_alert(PIPELINE_NAME, bucket, key, correlation_id, e)
+                telemetry.record_run(
+                    status="failure",
+                    duration_seconds=time.monotonic() - start_time,
+                    record_count=len(raw_records) if "raw_records" in locals() else 0,
+                    failure_count=1,
+                    attributes={"pipeline.name": PIPELINE_NAME},
+                )
+                raise
+
+            except Exception as e:
+                # Unexpected system-level crashes
+                fire_pipeline_alert(PIPELINE_NAME, bucket, key, correlation_id, e)
+                telemetry.record_run(
+                    status="failure",
+                    duration_seconds=time.monotonic() - start_time,
+                    record_count=len(raw_records) if "raw_records" in locals() else 0,
+                    failure_count=1,
+                    attributes={"pipeline.name": PIPELINE_NAME},
+                )
+                raise
 
     return {"status": "success", "correlation_id": correlation_id}

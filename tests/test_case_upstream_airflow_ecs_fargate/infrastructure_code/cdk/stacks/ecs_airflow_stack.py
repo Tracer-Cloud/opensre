@@ -28,6 +28,8 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from tests.shared.infrastructure_code.cdk.constructs import (  # noqa: E402
+    AlloySidecar,
+    GrafanaCloudSecrets,
     LandingProcessedBuckets,
     MockExternalApi,
     TriggerApiLambda,
@@ -41,6 +43,10 @@ class EcsAirflowStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+        secret_name = self.node.try_get_context("grafana_secret_name") or "tracer/grafana-cloud"
+        grafana_secrets = GrafanaCloudSecrets(
+            self, "GrafanaSecrets", secret_name=secret_name
+        )
 
         vpc = ec2.Vpc.from_lookup(self, "DefaultVpc", is_default=True)
 
@@ -122,10 +128,28 @@ class EcsAirflowStack(Stack):
                 "AIRFLOW__CORE__DAGS_FOLDER": "/opt/airflow/dags",
                 "AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS": "True",
                 "AWS_DEFAULT_REGION": self.region,
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "127.0.0.1:4317",
+                "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+                "OTEL_SERVICE_NAME": "airflow-etl-pipeline",
+                "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_airflow,pipeline.framework=airflow,test_case=test_case_upstream_airflow_ecs_fargate",
             },
         )
 
         container.add_port_mappings(ecs.PortMapping(container_port=8080, protocol=ecs.Protocol.TCP))
+
+        alloy_sidecar = AlloySidecar(
+            self,
+            "AlloySidecar",
+            task_definition=task_definition,
+            log_group=log_group,
+            grafana_secrets=grafana_secrets,
+        )
+        container.add_container_dependencies(
+            ecs.ContainerDependency(
+                container=alloy_sidecar.container,
+                condition=ecs.ContainerDependencyCondition.START,
+            )
+        )
 
         security_group = ec2.SecurityGroup(
             self,
