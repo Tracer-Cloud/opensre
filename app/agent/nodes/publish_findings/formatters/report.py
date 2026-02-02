@@ -28,16 +28,17 @@ def render_cloudwatch_link(ctx: ReportContext) -> str:
     cw_stream = ctx.get("cloudwatch_log_stream")
 
     if cw_url:
-        return f"\n*CloudWatch Logs:*\n{format_slack_link('View logs', cw_url)}\n"
+        return f"\n*{format_slack_link('CloudWatch Logs', cw_url)}*\n"
     elif cw_group and cw_stream:
         # Build URL if not provided
         url = build_cloudwatch_url(ctx)
-        view_link = format_slack_link("Open in console", url) if url else url
+        view_link = format_slack_link("CloudWatch Logs", url) if url else None
+        if view_link:
+            return f"\n*{view_link}*\n"
         return (
             "\n*CloudWatch Logs:*\n"
             f"* Log Group: {cw_group}\n"
             f"* Log Stream: {cw_stream}\n"
-            f"* View: {view_link}\n"
         )
 
     return ""
