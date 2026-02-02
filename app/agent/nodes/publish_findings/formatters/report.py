@@ -2,6 +2,7 @@
 
 from app.agent.constants import TRACER_DEFAULT_INVESTIGATION_URL
 from app.agent.nodes.publish_findings.context.models import ReportContext
+from app.agent.nodes.publish_findings.formatters.base import format_slack_link
 from app.agent.nodes.publish_findings.formatters.evidence import (
     format_cited_evidence_section,
     format_evidence_for_claim,
@@ -27,11 +28,17 @@ def render_cloudwatch_link(ctx: ReportContext) -> str:
     cw_stream = ctx.get("cloudwatch_log_stream")
 
     if cw_url:
-        return f"\n*CloudWatch Logs:*\n{cw_url}\n"
+        return f"\n*CloudWatch Logs:*\n{format_slack_link('View logs', cw_url)}\n"
     elif cw_group and cw_stream:
         # Build URL if not provided
         url = build_cloudwatch_url(ctx)
-        return f"\n*CloudWatch Logs:*\n* Log Group: {cw_group}\n* Log Stream: {cw_stream}\n* View: {url}\n"
+        view_link = format_slack_link("Open in console", url) if url else url
+        return (
+            "\n*CloudWatch Logs:*\n"
+            f"* Log Group: {cw_group}\n"
+            f"* Log Stream: {cw_stream}\n"
+            f"* View: {view_link}\n"
+        )
 
     return ""
 
@@ -165,6 +172,7 @@ def format_slack_message(ctx: ReportContext) -> str:
 
     # Build report sections
     tracer_link = TRACER_DEFAULT_INVESTIGATION_URL
+    tracer_cta = f"*{format_slack_link('View Investigation', tracer_link)}*"
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
     alert_id_str = f"\n*Alert ID:* {ctx['alert_id']}" if ctx.get("alert_id") else ""
 
@@ -190,7 +198,6 @@ Analyzed by: pipeline-agent
 *Validity Score:* {validity_score:.0%} ({len(validated_claims)}/{total_claims} validated)
 {cited_evidence_section}
 
-*View Investigation:*
-{tracer_link}
+{tracer_cta}
 {cloudwatch_link}
 """
