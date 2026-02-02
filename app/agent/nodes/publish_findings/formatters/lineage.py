@@ -93,7 +93,9 @@ def format_data_lineage_flow(ctx: ReportContext) -> str:
     # 5. S3 Processed (output)
     processed_bucket = annotations.get("processed_bucket")
     if processed_bucket:
-        flow_nodes.append(f"S3 Processed: s3://{processed_bucket}/ (missing)")
+        processed_label = "S3 Processed"
+        processed_url = f"s3://{processed_bucket}/"
+        flow_nodes.append(f"{format_slack_link(processed_label, processed_url)} (missing)")
 
     if not flow_nodes:
         return ""
