@@ -2,8 +2,7 @@
   "$schema": "https://langgra.ph/schema.json",
   "dependencies": ["."],
   "graphs": {
-    "agent": "./app/agent/graph_pipeline.py:build_graph",
-    "pipeline_assistant": "./app/pipeline_assistant/graph.py:build_graph"
+    "agent": "./app/agent/graph_pipeline.py:build_graph"
   },
   "auth": {
     "path": "./app/auth/auth.py:auth"
