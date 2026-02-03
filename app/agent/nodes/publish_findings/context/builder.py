@@ -3,6 +3,7 @@
 from typing import Any
 
 from app.agent.nodes.publish_findings.context.models import ReportContext
+from app.agent.nodes.publish_findings.urls.aws import build_s3_console_url
 from app.agent.state import InvestigationState
 
 
@@ -118,6 +119,116 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         alert_id,
     ) = _extract_cloudwatch_info(raw_alert)
 
+    # Build evidence catalog (deduplicated artifacts)
+    evidence_catalog: dict[str, dict] = {}
+    source_to_id: dict[str, str] = {}
+
+    def _as_snippet(value: str | None, max_len: int = 140) -> str | None:
+        if not value:
+            return None
+        compact = " ".join(str(value).split())
+        compact = compact.replace("{", "").replace("}", "").replace("[", "").replace("]", "")
+        return compact[:max_len]
+
+    def _display_id_for(source_name: str, fallback_index: int) -> str:
+        explicit = {
+            "s3_metadata": "E1",
+            "s3_audit": "E2",
+            "cloudwatch_logs": "E3",
+            "vendor_audit": "E4",
+        }
+        return explicit.get(source_name, f"E{fallback_index}")
+
+    s3_obj = evidence.get("s3_object", {}) or {}
+    if s3_obj.get("bucket") and s3_obj.get("key"):
+        s3_url = build_s3_console_url(
+            s3_obj.get("bucket"),
+            s3_obj.get("key"),
+            cloudwatch_region or "us-east-1",
+        )
+        eid = "evidence/s3_metadata/landing"
+        evidence_catalog[eid] = {
+            "label": "S3 Object Metadata",
+            "url": s3_url,
+            "summary": f"{s3_obj.get('bucket')}/{s3_obj.get('key')}",
+            "display_id": _display_id_for("s3_metadata", len(evidence_catalog) + 1),
+            "snippet": _as_snippet(
+                ", ".join(
+                    [
+                        f"schema_change_injected={s3_obj.get('metadata', {}).get('schema_change_injected')}",
+                        f"schema_version={s3_obj.get('metadata', {}).get('schema_version')}",
+                    ]
+                ).strip(", ")
+            ),
+        }
+        source_to_id["s3_metadata"] = eid
+
+    s3_audit = evidence.get("s3_audit_payload", {}) or {}
+    if s3_audit.get("bucket") and s3_audit.get("key"):
+        eid = "evidence/s3_audit/main"
+        evidence_catalog[eid] = {
+            "label": "S3 Audit Payload",
+            "summary": f"{s3_audit.get('bucket')}/{s3_audit.get('key')}",
+            "display_id": _display_id_for("s3_audit", len(evidence_catalog) + 1),
+            "snippet": _as_snippet(str(s3_audit.get("content", "")) or None),
+        }
+        source_to_id["s3_audit"] = eid
+        source_to_id.setdefault("vendor_audit", eid)
+
+    vendor_audit = evidence.get("vendor_audit_from_logs") or {}
+    if vendor_audit and "vendor_audit" not in source_to_id:
+        eid = "evidence/vendor_audit/main"
+        evidence_catalog[eid] = {
+            "label": "Vendor Audit",
+            "summary": "External vendor audit record",
+            "display_id": _display_id_for("vendor_audit", len(evidence_catalog) + 1),
+            "snippet": None,
+        }
+        source_to_id["vendor_audit"] = eid
+
+    if cloudwatch_url:
+        eid = "evidence/cloudwatch/prefect"
+        evidence_catalog[eid] = {
+            "label": "CloudWatch Logs",
+            "url": cloudwatch_url,
+            "display_id": _display_id_for("cloudwatch_logs", len(evidence_catalog) + 1),
+            "snippet": None,
+        }
+        source_to_id["cloudwatch_logs"] = eid
+
+    # Attach evidence_ids to claims (validated + non-validated) without mutating originals
+    display_map = {eid: entry.get("display_id", eid) for eid, entry in evidence_catalog.items()}
+
+    aliases = {
+        "cloudwatch": "cloudwatch_logs",
+        "cloudwatch_log": "cloudwatch_logs",
+        "cloudwatch_logs": "cloudwatch_logs",
+    }
+
+    def _attach_ids(claims: list[dict]) -> list[dict]:
+        mapped: list[dict] = []
+        for claim in claims:
+            new_claim = dict(claim)
+            evidence_ids: list[str] = []
+            evidence_labels: list[str] = []
+            for src in claim.get("evidence_sources", []) or []:
+                key = aliases.get(src, src)
+                if key == "evidence_analysis":
+                    continue
+                eid = source_to_id.get(key)
+                if eid and eid not in evidence_ids:
+                    evidence_ids.append(eid)
+                    evidence_labels.append(display_map.get(eid, eid))
+            if evidence_ids:
+                new_claim["evidence_ids"] = evidence_ids
+                new_claim["evidence_labels"] = evidence_labels
+            new_claim["evidence_sources"] = []  # normalize display to E-ids only
+            mapped.append(new_claim)
+        return mapped
+
+    validated_claims = _attach_ids(validated_claims)
+    non_validated_claims = _attach_ids(non_validated_claims)
+
     # Build context dictionary
     return {
         # Core RCA results
@@ -127,6 +238,8 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         "validated_claims": validated_claims,
         "non_validated_claims": non_validated_claims,
         "validity_score": state.get("validity_score", 0.0),
+        "investigation_recommendations": state.get("investigation_recommendations", []),
+        "remediation_steps": state.get("remediation_steps", []),
         # S3 verification
         "s3_marker_exists": s3.get("marker_exists", False),
         # Tracer web run metadata
@@ -148,6 +261,7 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         "cloudwatch_logs_url": cloudwatch_url,
         "cloudwatch_region": cloudwatch_region,
         "alert_id": alert_id,
+        "evidence_catalog": evidence_catalog,
         # Raw data for deeper inspection
         "evidence": evidence,
         "raw_alert": raw_alert,

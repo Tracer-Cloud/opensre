@@ -24,39 +24,11 @@ import requests
 from langsmith import traceable
 
 from app.main import _run
+from tests.shared.stack_config import get_prefect_config
 from tests.utils.alert_factory import create_alert
 
-# Configuration from CDK outputs
-CONFIG = {
-    "prefect_api_url": None,  # Fetched dynamically
-    "trigger_api_url": "https://q5tl03u98c.execute-api.us-east-1.amazonaws.com/prod/",
-    "mock_api_url": "https://uz0k23ui7c.execute-api.us-east-1.amazonaws.com/prod/",
-    "ecs_cluster": "tracer-prefect-cluster",
-    "log_group": "/ecs/tracer-prefect",
-    "s3_bucket": "tracerprefectecsfargate-landingbucket23fe90fb-woehzac5msvj",
-}
-
-
-def get_prefect_server_ip() -> str | None:
-    """Fetch current public IP of the Prefect server ECS task."""
-    ecs = boto3.client("ecs", region_name="us-east-1")
-    ec2 = boto3.client("ec2", region_name="us-east-1")
-
-    tasks = ecs.list_tasks(cluster=CONFIG["ecs_cluster"], desiredStatus="RUNNING")
-    if not tasks.get("taskArns"):
-        return None
-
-    task_details = ecs.describe_tasks(cluster=CONFIG["ecs_cluster"], tasks=tasks["taskArns"])
-    for task in task_details.get("tasks", []):
-        for attachment in task.get("attachments", []):
-            for detail in attachment.get("details", []):
-                if detail.get("name") == "networkInterfaceId":
-                    eni_id = detail.get("value")
-                    eni = ec2.describe_network_interfaces(NetworkInterfaceIds=[eni_id])
-                    public_ip = eni["NetworkInterfaces"][0].get("Association", {}).get("PublicIp")
-                    if public_ip:
-                        return public_ip
-    return None
+# Configuration loaded dynamically from CloudFormation
+CONFIG = get_prefect_config()
 
 
 def trigger_pipeline_failure() -> dict:
@@ -101,14 +73,9 @@ def get_failure_details() -> dict:
     print("Retrieving Prefect Flow Run Details")
     print("=" * 60)
 
-    # Dynamically fetch Prefect server IP
-    print("\nFetching Prefect server IP from ECS...")
-    public_ip = get_prefect_server_ip()
-    if not public_ip:
-        print("ERROR: No running Prefect server found in ECS")
+    if not CONFIG.get("prefect_api_url"):
+        print("ERROR: No Prefect server found in ECS")
         return None
-    CONFIG["prefect_api_url"] = f"http://{public_ip}:4200/api"
-    print(f"Found Prefect server at {public_ip}")
 
     # Query Prefect for recent flow runs
     print(f"\nQuerying Prefect at {CONFIG['prefect_api_url']}...")
