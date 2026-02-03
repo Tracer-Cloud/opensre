@@ -188,6 +188,11 @@ def main():
 
     os.environ["PREFECT_API_URL"] = f"{PREFECT_SERVER_URL}/api"
 
+    # Set local OTLP endpoint for telemetry (if Grafana stack is running)
+    if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") is None:
+        os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317"
+        os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "grpc"
+
     # Step 1: Start Prefect server
     if not args.no_server and not start_prefect_server():
         print("\nFailed to start Prefect server")

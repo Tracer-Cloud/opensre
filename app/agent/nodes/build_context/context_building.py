@@ -14,7 +14,7 @@ from app.agent.nodes.build_context.models import (
 )
 from app.agent.nodes.build_context.utils import call_safe
 from app.agent.state import InvestigationState
-from app.agent.tools.tool_actions.tracer_runs import fetch_failed_run
+from app.agent.tools.tool_actions.tracer.tracer_runs import fetch_failed_run
 
 
 @dataclass(frozen=True)

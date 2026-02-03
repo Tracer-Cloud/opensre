@@ -14,7 +14,7 @@ import boto3
 import requests
 
 LANDING_BUCKET = os.environ.get("LANDING_BUCKET", "")
-AIRFLOW_API_URL = os.environ.get("AIRFLOW_API_URL", "http://localhost:8080/api/v2")
+AIRFLOW_API_URL = os.environ.get("AIRFLOW_API_URL", "http://localhost:8080")
 AIRFLOW_API_USERNAME = os.environ.get("AIRFLOW_API_USERNAME", "admin")
 AIRFLOW_API_PASSWORD = os.environ.get("AIRFLOW_API_PASSWORD", "admin")
 AIRFLOW_DAG_ID = os.environ.get("AIRFLOW_DAG_ID", "upstream_downstream_pipeline_airflow")
@@ -71,6 +71,10 @@ def _airflow_base_url() -> str:
     return api_url
 
 
+def _airflow_api_url() -> str:
+    return f"{_airflow_base_url()}/api/v2"
+
+
 def _get_airflow_token() -> str:
     base_url = _airflow_base_url()
     token_url = f"{base_url}/auth/token"
@@ -84,7 +88,8 @@ def _get_airflow_token() -> str:
         json={"username": AIRFLOW_API_USERNAME, "password": AIRFLOW_API_PASSWORD},
         timeout=10,
     )
-    response.raise_for_status()
+    if response.status_code not in (200, 201):
+        response.raise_for_status()
     return response.json().get("access_token", "")
 
 
@@ -102,7 +107,7 @@ def _trigger_airflow_dag(bucket: str, key: str, correlation_id: str, inject_erro
     token = _get_airflow_token()
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     response = requests.post(
-        f"{AIRFLOW_API_URL}/dags/{AIRFLOW_DAG_ID}/dagRuns",
+        f"{_airflow_api_url()}/dags/{AIRFLOW_DAG_ID}/dagRuns",
         json=payload,
         headers=headers,
         timeout=10,

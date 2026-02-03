@@ -38,6 +38,8 @@ jobs:
       LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
       LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
       LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
+      # Grafana read token for querying (instance URL is in configs/grafana_accounts.yaml)
+      GRAFANA_READ_TOKEN: ${{ secrets.GRAFANA_READ_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -114,6 +116,8 @@ jobs:
       AWS_DEFAULT_REGION: us-east-1
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      # Grafana read token for querying (instance URL is in configs/grafana_accounts.yaml)
+      GRAFANA_READ_TOKEN: ${{ secrets.GRAFANA_READ_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4

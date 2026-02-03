@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
-from app.agent.tools.tool_actions.investigation_actions import InvestigationAction
+from app.agent.tools.tool_actions.investigation_registry import InvestigationAction
 
 
 @dataclass

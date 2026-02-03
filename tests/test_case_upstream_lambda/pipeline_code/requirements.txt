@@ -1,0 +1,7 @@
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-http
+opentelemetry-instrumentation-aws-lambda
+opentelemetry-instrumentation-botocore
+opentelemetry-instrumentation-requests
+requests

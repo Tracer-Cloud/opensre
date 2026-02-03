@@ -26,6 +26,15 @@ dotenv
 rich>=13.0.0  # For pretty terminal output
 langchain_anthropic
 boto3
+PyYAML>=6.0
+
+# OpenTelemetry (for test case telemetry simulation)
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+opentelemetry-exporter-otlp-proto-http>=1.20.0
+opentelemetry-instrumentation>=0.40b0
+opentelemetry-instrumentation-botocore>=0.40b0
+opentelemetry-instrumentation-requests>=0.40b0
 
 # Testing
 pytest>=8.0.0
@@ -36,6 +45,7 @@ pytest-cov>=4.0.0
 ruff>=0.4.0
 mypy>=1.10.0
 types-requests
+types-PyYAML
 boto3-stubs[essential]
 
 # Tracer

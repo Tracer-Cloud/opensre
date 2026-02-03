@@ -1,7 +1,7 @@
 """Integration tests for SRE knowledge retrieval action."""
 
 from app.agent.knowledge.sre_knowledge_base import SRE_TOPICS, get_topics_for_keywords
-from app.agent.tools.tool_actions.sre_knowledge_actions import get_sre_guidance
+from app.agent.tools.tool_actions.knowledge_sre_book.sre_knowledge_actions import get_sre_guidance
 
 
 class TestGetSREGuidance:
@@ -113,7 +113,7 @@ class TestActionIntegration:
 
     def test_action_registered(self):
         """get_sre_guidance should be registered in available actions."""
-        from app.agent.tools.tool_actions.investigation_actions import (
+        from app.agent.tools.tool_actions.investigation_registry import (
             get_available_actions,
         )
 
@@ -124,7 +124,7 @@ class TestActionIntegration:
 
     def test_action_always_available(self):
         """SRE guidance should always be available (no external deps)."""
-        from app.agent.tools.tool_actions.investigation_actions import (
+        from app.agent.tools.tool_actions.investigation_registry import (
             get_available_actions,
         )
 
@@ -136,7 +136,7 @@ class TestActionIntegration:
 
     def test_action_source_is_knowledge(self):
         """SRE guidance action should have 'knowledge' source type."""
-        from app.agent.tools.tool_actions.investigation_actions import (
+        from app.agent.tools.tool_actions.investigation_registry import (
             get_available_actions,
         )
 
