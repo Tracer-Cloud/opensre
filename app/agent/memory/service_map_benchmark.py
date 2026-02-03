@@ -141,7 +141,7 @@ def run_multi_pipeline_benchmark() -> dict[str, tuple[float, float]]:
     Returns:
         Dict mapping pipeline name to (time_without, time_with) tuples
     """
-    results = {}
+    results: dict[str, tuple[float, float]] = {}
 
     # We'll need to import test alerts here
     # For now, return empty - will be populated by actual test runner

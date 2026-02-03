@@ -74,9 +74,9 @@ class GrafanaClient:
         end_ns = int(time.time() * 1e9)
         start_ns = end_ns - (time_range_minutes * 60 * int(1e9))
 
-        params = {
+        params: dict[str, str] = {
             "query": query,
-            "limit": limit,
+            "limit": str(limit),
             "start": str(start_ns),
             "end": str(end_ns),
         }
@@ -147,9 +147,9 @@ class GrafanaClient:
         )
         headers = {"Authorization": f"Bearer {self.read_token}"}
 
-        params = {
+        params: dict[str, str] = {
             "q": f'{{.service.name="{service_name}"}}',
-            "limit": limit,
+            "limit": str(limit),
         }
 
         try:

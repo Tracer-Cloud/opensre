@@ -4,7 +4,7 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from app.agent.memory.io import get_memories_dir
 from app.agent.memory.service_map_config import is_service_map_enabled
@@ -189,7 +189,7 @@ def _extract_assets_from_infrastructure(
             )
 
     # S3 buckets - deduplicate by bucket name
-    s3_buckets_seen = {}
+    s3_buckets_seen: dict[str, Asset] = {}
     for s3_bucket in infra_assets.get("s3_buckets", []):
         bucket_name = s3_bucket["name"]
         bucket_id = _generate_asset_id("s3_bucket", bucket_name)
@@ -208,7 +208,7 @@ def _extract_assets_from_infrastructure(
                 existing_asset["metadata"]["bucket_type"] = s3_bucket.get("type")
         else:
             # New bucket
-            asset = {
+            asset: Asset = {
                 "id": bucket_id,
                 "type": "s3_bucket",
                 "name": bucket_name,
@@ -1024,7 +1024,7 @@ def load_service_map() -> ServiceMap:
 
     try:
         with service_map_path.open("r") as f:
-            return json.load(f)
+            return cast(ServiceMap, json.load(f))
     except (json.JSONDecodeError, OSError):
         return {
             "enabled": is_service_map_enabled(),

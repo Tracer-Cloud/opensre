@@ -108,8 +108,9 @@ class GrafanaConfigLoader:
         if self._config is None:
             self._load_config()
 
-        effective_account_id = account_id or self._config.get("default_account", "tracerbio")
-        accounts = self._config.get("accounts", {})
+        config = self._config or {}
+        effective_account_id = account_id or config.get("default_account", "tracerbio")
+        accounts: dict[str, Any] = config.get("accounts", {})
 
         if effective_account_id not in accounts:
             return GrafanaAccountConfig(
@@ -139,13 +140,17 @@ class GrafanaConfigLoader:
         """List all configured account IDs."""
         if self._config is None:
             self._load_config()
-        return list(self._config.get("accounts", {}).keys())
+        config = self._config or {}
+        accounts: dict[str, Any] = config.get("accounts", {})
+        return list(accounts.keys())
 
     def get_default_account_id(self) -> str:
         """Get the default account ID."""
         if self._config is None:
             self._load_config()
-        return self._config.get("default_account", "tracerbio")
+        config = self._config or {}
+        default: str = config.get("default_account", "tracerbio")
+        return default
 
     @classmethod
     def reset(cls) -> None:

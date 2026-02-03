@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Trigger the Airflow DAG for testing."""
 
-from datetime import UTC, datetime
 import os
+from datetime import UTC, datetime
 
 import requests
 
