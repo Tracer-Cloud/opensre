@@ -18,6 +18,8 @@ class ReportContext(TypedDict, total=False):
     validated_claims: list[dict]
     non_validated_claims: list[dict]
     validity_score: float
+    investigation_recommendations: list[str]
+    remediation_steps: list[str]
 
     # S3 verification
     s3_marker_exists: bool
@@ -43,6 +45,7 @@ class ReportContext(TypedDict, total=False):
     cloudwatch_logs_url: str | None
     cloudwatch_region: str | None
     alert_id: str | None
+    evidence_catalog: dict
 
     # Raw data for deeper inspection
     evidence: dict  # Raw evidence data for citation

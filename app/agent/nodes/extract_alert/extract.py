@@ -4,6 +4,7 @@ import json
 from typing import Any, cast
 
 from app.agent.nodes.extract_alert.models import AlertDetails, AlertExtractionInput
+from app.agent.output import debug_print
 from app.agent.state import InvestigationState
 from app.agent.tools.clients import get_llm
 
@@ -22,12 +23,40 @@ def extract_alert_details(state: InvestigationState) -> AlertDetails:
         structured_llm = llm.with_structured_output(AlertDetails)
         details = structured_llm.with_config(run_name="LLM – Extract alert fields").invoke(prompt)
     except Exception as err:
-        raise RuntimeError("Failed to extract alert details") from err
+        debug_print(f"LLM alert extraction failed, using fallback: {err}")
+        return _fallback_details(state, raw_alert)
 
     if details is None:
         raise RuntimeError("LLM returned no alert details")
 
     return cast(AlertDetails, details)
+
+
+def _fallback_details(state: InvestigationState, raw_alert: str | dict[str, Any]) -> AlertDetails:
+    """Best-effort extraction without LLM when it fails."""
+    alert_name = state.get("alert_name", "unknown")
+    pipeline_name = state.get("pipeline_name", "unknown")
+    severity = state.get("severity", "unknown")
+
+    if isinstance(raw_alert, dict):
+        labels = raw_alert.get("labels", {})
+        annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
+        alert_name = labels.get("alertname", alert_name)
+        pipeline_name = (
+            labels.get("pipeline")
+            or annotations.get("pipeline_name")
+            or raw_alert.get("pipeline_name")
+            or pipeline_name
+        )
+        severity = labels.get("severity", severity)
+
+    return AlertDetails(
+        alert_name=alert_name or "unknown",
+        pipeline_name=pipeline_name or "unknown",
+        severity=severity or "unknown",
+        environment=None,
+        summary=None,
+    )
 
 
 def _format_raw_alert(raw_alert: str | dict[str, Any]) -> str:
