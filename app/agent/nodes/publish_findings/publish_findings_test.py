@@ -49,3 +49,29 @@ def test_publish_findings_includes_cited_evidence_section() -> None:
         "*Data Lineage Flow (Evidence-Based)*" in slack_message
         or "*Investigation Trace*" in slack_message
     )
+
+
+def test_publish_findings_shows_next_steps_sections() -> None:
+    state: InvestigationState = {
+        "pipeline_name": "demo-pipeline",
+        "root_cause": "Schema change removed customer_id, causing downstream validation failure.",
+        "confidence": 0.7,
+        "validated_claims": [
+            {"claim": "Schema version bumped to 2.0 without customer_id", "evidence_sources": []}
+        ],
+        "non_validated_claims": [],
+        "validity_score": 0.8,
+        "investigation_recommendations": ["Fetch CloudWatch metrics for spikes"],
+        "remediation_steps": ["Add schema contract gate to block missing customer_id"],
+        "context": {},
+        "evidence": {},
+        "raw_alert": {},
+    }
+
+    result = generate_report(state)
+    slack_message = result["slack_message"]
+
+    assert "*Investigation Next Steps:*" in slack_message
+    assert "Fetch CloudWatch metrics for spikes" in slack_message
+    assert "*Remediation Next Steps:*" in slack_message
+    assert "Add schema contract gate to block missing customer_id" in slack_message

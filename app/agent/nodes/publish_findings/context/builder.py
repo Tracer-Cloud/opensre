@@ -127,6 +127,8 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         "validated_claims": validated_claims,
         "non_validated_claims": non_validated_claims,
         "validity_score": state.get("validity_score", 0.0),
+        "investigation_recommendations": state.get("investigation_recommendations", []),
+        "remediation_steps": state.get("remediation_steps", []),
         # S3 verification
         "s3_marker_exists": s3.get("marker_exists", False),
         # Tracer web run metadata

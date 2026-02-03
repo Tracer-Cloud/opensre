@@ -18,6 +18,8 @@ class ReportContext(TypedDict, total=False):
     validated_claims: list[dict]
     non_validated_claims: list[dict]
     validity_score: float
+    investigation_recommendations: list[str]
+    remediation_steps: list[str]
 
     # S3 verification
     s3_marker_exists: bool
