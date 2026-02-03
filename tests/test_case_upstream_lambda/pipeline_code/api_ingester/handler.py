@@ -9,7 +9,9 @@ No Airflow triggering - using S3 events instead.
 """
 
 import json
+import logging
 import os
+import time
 from datetime import datetime
 from typing import Any
 
@@ -17,10 +19,31 @@ import boto3
 import requests
 
 s3_client = boto3.client("s3")
+PIPELINE_NAME = "upstream_downstream_pipeline_lambda_ingester"
+
+# Initialize telemetry lazily to avoid circular import with AwsLambdaInstrumentor
+_telemetry = None
+_tracer = None
+
+
+def _get_telemetry():
+    global _telemetry, _tracer
+    if _telemetry is None:
+        from tracer_telemetry import init_telemetry
+
+        _telemetry = init_telemetry(
+            service_name="lambda-api-ingester",
+            resource_attributes={
+                "pipeline.name": PIPELINE_NAME,
+                "pipeline.framework": "lambda",
+            },
+        )
+        _tracer = _telemetry.tracer
+    return _telemetry, _tracer
 
 
 def fetch_from_external_api(
-    api_url: str, inject_schema_change: bool = False
+    api_url: str, inject_schema_change: bool = False, logger: logging.Logger = None
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Fetch data from external API.
 
@@ -40,7 +63,7 @@ def fetch_from_external_api(
                 json={"inject_schema_change": True},
                 timeout=10,
             )
-            print("Configured external API to inject schema change")
+            logger.info("Configured external API to inject schema change")
             audit_info["requests"].append(
                 {
                     "type": "POST",
@@ -51,14 +74,14 @@ def fetch_from_external_api(
                 }
             )
         except Exception as e:
-            print(f"Warning: Could not configure API: {e}")
+            logger.warning(f"Could not configure API: {e}")
 
     response = requests.get(f"{api_url}/data", timeout=30)
     response.raise_for_status()
 
     result = response.json()
     schema_version = result.get("meta", {}).get("schema_version", "unknown")
-    print(f"Fetched from external API: schema_version={schema_version}")
+    logger.info(f"Fetched from external API: schema_version={schema_version}")
 
     # Log structured request/response for audit
     audit_info["requests"].append(
@@ -70,7 +93,7 @@ def fetch_from_external_api(
             "schema_version": schema_version,
         }
     )
-    print(f"EXTERNAL_API_AUDIT: {json.dumps(audit_info)}")
+    logger.info(f"EXTERNAL_API_AUDIT: {json.dumps(audit_info)}")
 
     return result, audit_info
 
@@ -87,6 +110,11 @@ def lambda_handler(event: dict, context: Any) -> dict:
     Returns:
         dict with s3_key, bucket, and status
     """
+    telemetry, tracer = _get_telemetry()
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)  # Ensure logger level is set
+    start_time = time.monotonic()
+
     # Handle API Gateway event format
     if "body" in event and isinstance(event.get("body"), str):
         try:
@@ -120,16 +148,43 @@ def lambda_handler(event: dict, context: Any) -> dict:
             "error": "EXTERNAL_API_URL environment variable not set",
         }
 
-    print(f"Correlation ID: {correlation_id}")
+    execution_run_id = correlation_id
+    logger.info(json.dumps({
+        "event": "lambda_invocation",
+        "execution_run_id": execution_run_id,
+        "correlation_id": correlation_id,
+    }))
 
     # Fetch data from external API
     try:
-        api_response, audit_info = fetch_from_external_api(external_api_url, inject_schema_change)
-        data = api_response.get("data", [])
-        api_meta = api_response.get("meta", {})
-        print(f"Fetched {len(data)} records from external API")
+        with tracer.start_as_current_span("fetch_external_api") as span:
+            span.set_attribute("correlation_id", correlation_id)
+            span.set_attribute("execution.run_id", execution_run_id)
+            span.set_attribute("inject_schema_change", inject_schema_change)
+            api_response, audit_info = fetch_from_external_api(
+                external_api_url, inject_schema_change, logger
+            )
+            data = api_response.get("data", [])
+            api_meta = api_response.get("meta", {})
+            span.set_attribute("record_count", len(data))
+        logger.info(json.dumps({
+            "event": "external_api_fetch_complete",
+            "execution_run_id": execution_run_id,
+            "record_count": len(data),
+        }))
     except Exception as e:
-        print(f"ERROR: External API call failed: {e}")
+        logger.error(json.dumps({
+            "event": "external_api_error",
+            "execution_run_id": execution_run_id,
+            "error": str(e),
+        }))
+        telemetry.record_run(
+            status="failure",
+            duration_seconds=time.monotonic() - start_time,
+            record_count=0,
+            failure_count=1,
+            attributes={"pipeline.name": PIPELINE_NAME},
+        )
         return {
             "statusCode": 500,
             "error": f"External API call failed: {str(e)}",
@@ -142,42 +197,67 @@ def lambda_handler(event: dict, context: Any) -> dict:
     audit_key = f"audit/{correlation_id}.json"
 
     try:
-        # Write audit object with external API request/response details
-        audit_payload = {
-            "correlation_id": correlation_id,
-            "timestamp": timestamp,
-            "external_api_url": external_api_url,
-            "audit_info": audit_info,
-        }
-        s3_client.put_object(
-            Bucket=landing_bucket,
-            Key=audit_key,
-            Body=json.dumps(audit_payload, indent=2),
-            ContentType="application/json",
-        )
-        print(f"Wrote audit data to S3: s3://{landing_bucket}/{audit_key}")
+        with tracer.start_as_current_span("write_s3_objects") as span:
+            span.set_attribute("s3.bucket", landing_bucket)
+            span.set_attribute("correlation_id", correlation_id)
+            span.set_attribute("execution.run_id", execution_run_id)
+            span.set_attribute("record_count", len(data))
 
-        # Write main data with audit_key in metadata
-        s3_client.put_object(
-            Bucket=landing_bucket,
-            Key=s3_key,
-            Body=json.dumps(api_response, indent=2),
-            ContentType="application/json",
-            Metadata={
+            # Write audit object with external API request/response details
+            audit_payload = {
                 "correlation_id": correlation_id,
-                "source": "api_ingester_lambda",
                 "timestamp": timestamp,
-                "schema_version": api_meta.get("schema_version", "unknown"),
-                "schema_change_injected": str(inject_schema_change),
+                "external_api_url": external_api_url,
+                "audit_info": audit_info,
+            }
+            s3_client.put_object(
+                Bucket=landing_bucket,
+                Key=audit_key,
+                Body=json.dumps(audit_payload, indent=2),
+                ContentType="application/json",
+            )
+            logger.info(json.dumps({
+                "event": "s3_write_complete",
+                "execution_run_id": execution_run_id,
                 "audit_key": audit_key,
-            },
-        )
-        print(f"Wrote data to S3: s3://{landing_bucket}/{s3_key}")
-        print(
-            f"Metadata: correlation_id={correlation_id}, schema_version={api_meta.get('schema_version')}, audit_key={audit_key}"
-        )
+            }))
+
+            # Write main data with audit_key in metadata
+            s3_client.put_object(
+                Bucket=landing_bucket,
+                Key=s3_key,
+                Body=json.dumps(api_response, indent=2),
+                ContentType="application/json",
+                Metadata={
+                    "correlation_id": correlation_id,
+                    "source": "api_ingester_lambda",
+                    "timestamp": timestamp,
+                    "schema_version": api_meta.get("schema_version", "unknown"),
+                    "schema_change_injected": str(inject_schema_change),
+                    "audit_key": audit_key,
+                },
+            )
+            logger.info(json.dumps({
+                "event": "s3_data_written",
+                "execution_run_id": execution_run_id,
+                "s3_key": s3_key,
+                "record_count": len(data),
+                "correlation_id": correlation_id,
+                "schema_version": api_meta.get("schema_version"),
+            }))
     except Exception as e:
-        print(f"ERROR: S3 write failed: {e}")
+        logger.error(json.dumps({
+            "event": "s3_write_error",
+            "execution_run_id": execution_run_id,
+            "error": str(e),
+        }))
+        telemetry.record_run(
+            status="failure",
+            duration_seconds=time.monotonic() - start_time,
+            record_count=len(data),
+            failure_count=1,
+            attributes={"pipeline.name": PIPELINE_NAME},
+        )
         return {
             "statusCode": 500,
             "error": f"S3 write failed: {str(e)}",
@@ -190,9 +270,20 @@ def lambda_handler(event: dict, context: Any) -> dict:
         "s3_bucket": landing_bucket,
         "record_count": len(data),
         "correlation_id": correlation_id,
+        "execution_run_id": execution_run_id,
         "schema_version": api_meta.get("schema_version"),
         "schema_change_injected": inject_schema_change,
     }
+
+    telemetry.record_run(
+        status="success",
+        duration_seconds=time.monotonic() - start_time,
+        record_count=len(data),
+        attributes={"pipeline.name": PIPELINE_NAME},
+    )
+
+    # Force flush telemetry before Lambda terminates
+    telemetry.flush()
 
     # Format for API Gateway if called via HTTP
     if "body" in event:

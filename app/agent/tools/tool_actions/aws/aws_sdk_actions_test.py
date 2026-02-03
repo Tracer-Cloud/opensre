@@ -4,7 +4,7 @@ Tests for AWS SDK tool actions.
 Integration tests - no mocks, real AWS API calls with read-only operations.
 """
 
-from app.agent.tools.tool_actions.aws_sdk_actions import execute_aws_operation
+from app.agent.tools.tool_actions.aws.aws_sdk_actions import execute_aws_operation
 
 
 class TestExecuteAWSOperation:

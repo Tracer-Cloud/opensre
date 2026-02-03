@@ -41,8 +41,8 @@ def test_publish_findings_includes_cited_evidence_section() -> None:
 
     # Verify cited evidence section is present and contains actual evidence
     assert "*Cited Evidence:*" in slack_message
-    # No longer shows generic Tracer Platform link - only actual evidence sources
-    assert "CloudWatch Logs: https://example.com/cloudwatch" in slack_message
+    # CloudWatch URL should be present (format may vary between Slack and terminal)
+    assert "https://example.com/cloudwatch" in slack_message
     assert '"message": "Failure in step 3"' in slack_message
     # Verify Data Lineage Flow section is present
     assert (

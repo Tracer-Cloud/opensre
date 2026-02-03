@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal, TypedDict, cast
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
-EvidenceSource = Literal["storage", "batch", "tracer_web", "cloudwatch", "aws_sdk", "knowledge"]
+EvidenceSource = Literal["storage", "batch", "tracer_web", "cloudwatch", "aws_sdk", "knowledge", "grafana"]
 AgentMode = Literal["chat", "investigation"]
 
 

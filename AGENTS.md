@@ -1,140 +1,75 @@
-# Tracer Agent – Project Overview for AI Coding Assistant
+# Tracer Agent – AI Coding Assistant Rules
 
-## Workflow Expectations
+## Hard Rules
 
-- When “push” is mentioned, it means pushing the commit to GitHub and verifying that all linting checks and GitHub Actions pass for that commit.
-- Before pushing any changes, always run `make demo` locally.
+- Never commit API keys, tokens, or secrets
+- Never create `.md` files in project root (except CLAUDE.md, AGENTS.md, README.md)
+- Never use mock services or fake data fallbacks
+- Never bypass tests or CI checks
+- Never say "pushed" unless CI is verified green
 
-## Sensitive Data
+## Documentation
 
-- Never commit API keys, tokens, or secrets of any kind.
+- Status reports and retrospectives go in `docs/status/`
+- Tests live alongside the code they validate
 
-## Testing Approach
+## Code Style
 
-- Write tests as integration tests only. Do not use mock services.
-- Tests should live alongside the code they validate.
-- If the source file is large, create a separate test file in the same directory using the `_test.py` suffix.
+- One clear purpose per file (separation of concerns)
+- Code should be self-explanatory—minimal comments
+- Max 3-4 print statements per file (use logging for debug, remove after)
+- Let functions run silently unless they fail
+- Only show results, not process
 
-Example:
+## Testing
+
+- Integration tests only, no mocks
+- Test files use `_test.py` suffix in same directory as source
 
 ```
 app/agent/nodes/frame_problem/frame_problem.py
 app/agent/nodes/frame_problem/frame_problem_test.py
 ```
 
-## Linting
-
-- Ruff is the only linter used in this project.
-- Linting must pass before any push.
-
 ## Environment
 
-- Do not use virtual environments.
-- Use the system `python3` directly.
+- Use system `python3` directly (no virtual environments)
+- Ruff is the only linter
 
-## Best Practices
-**coding** 
-- Focus on seperation of concerns, files should have one clear purpose 
-- Do not add too many print statements or comments because it clutters the code. Keep it tight and minimal the code should be explenatory and discriptive by itself. 
+## Git & CI Protocol
 
-**comments and print statements**
-- You are using too many comments and print statements keep max 3-4 prints per file max, unless for debugging. 
-- Use logging for debug info (configurable) but remove it after your debugging process
-- Let functions run silently unless they fail
-- Only show results, not process
+"Push" = code pushed + CI run + CI passed.
 
-**commiting** 
-- Always run linters before committing.
-- Always validate changes with `make test`.
-- Follow Go-style discipline in structure and formatting where applicable.
-- Review all changes for potential security implications.
+### Before Push
+1. Clean working tree
+2. `make test`
+3. `ruff` passes
+4. `make demo` runs
 
-## What Not to Do
+### After Push
+1. `gh run list --branch <branch> --limit 5`
+2. Verify workflow passed
+3. If CI fails, fix before proceeding
 
-- Do not introduce fallback logic that relies on mock or fake data.
-- Do not bypass tests or CI checks.
+## Local Paths (Vincent Only)
 
-## GitHub Push and CI Verification Protocol
+These paths are for local orientation only. Never hard-code in commits.
 
-“Push” means completing the full push cycle, not just running `git push`.
+| Project | Path |
+|---------|------|
+| Rust Client | `/Users/janvincentfranciszek/tracer-client` |
+| Web App | `/Users/janvincentfranciszek/tracer-web-app-2025` |
 
-### Required Steps Before Declaring a Push Successful
+---
 
-1. Ensure working tree is clean.
-2. Run `make test` locally.
-3. Run linters locally (`ruff`).
-4. Push the branch to GitHub.
+## Project Context
 
-### Required Steps After Pushing
+### Investigation Nodes (LangGraph)
 
-1. Verify GitHub authentication is working.
-2. If `gh` reports HTTP 401, run `gh auth login`.
-3. Ensure `GITHUB_TOKEN` is correctly scoped or unset if using `gh` credentials.
-4. Check GitHub Actions for the pushed branch:
-   - `gh run list --branch <branch> --limit N`
-5. Identify the most recent workflow run for the commit.
-6. Confirm CI status:
-   - All required workflows must complete successfully.
-   - A failed or cancelled workflow means the push is not complete.
+The investigate node architecture:
 
-### Failure Handling
-
-- If CI fails, investigate and fix before proceeding.
-- Do not proceed assuming CI will “probably pass”.
-- If authentication blocks CI inspection, resolve auth first before continuing work.
-
-### Completion Definition
-
-A push is only considered complete when:
-
-- Code is pushed.
-- CI has run.
-- CI has passed.
-
-Optional but recommended:
-
-- Capture CI run ID in commit or task notes.
-- Call out infra or CI failures explicitly if unrelated to code changes.
-
-### Why This Helps
-
-- Prevents silent CI failures.
-- Prevents broken demo branches.
-- Forces agents to treat CI as part of the development loop, not an afterthought.
-
-### Hard Rule
-
-Never say “pushed” unless CI has been checked and verified green.
-
-
-### Local Repositories 
-#### Local Repository Layout (User-Specific: Vincent Only)
-
-The following local repository paths apply only to Vincent’s development environment and must not be assumed for any other user, agent, or runtime.
-
-They are provided strictly for orientation during local development.
-
-Hard rule: These paths must never be hard-coded into commits, configuration files, tests, or documentation intended for general use.
-
-Rust Client
-
-/Users/janvincentfranciszek/tracer-client
-
-Backend + Web App (Next.js)
-
-/Users/janvincentfranciszek/tracer-web-app-2025
-
-Any agent operating outside Vincent’s local machine must treat repository discovery as dynamic and environment-driven.
-
-
-## Investigations Langraph Nodes
-
-- **Dynamic context gathering**: The investigate node collects relevant context by executing multiple investigation actions in parallel (logs, traces, recent deployments, dependency health), adapting to whatever data sources are available rather than requiring specific systems.
-
-- **Action selection based on available data**: Automatically determines which investigation actions to run based on what's present in the alert annotations and state (e.g., runs CloudWatch actions only if log_group is present, falls back to local file actions if log_path exists).
-
-- **Structured information synthesis**: Aggregates results from multiple heterogeneous data sources (error logs, metrics, deployment history, runbooks) into a unified investigation context that the AI agent can reason about.
-
-- **Graceful degradation**: Continues investigation even when some actions fail or data sources are unavailable, returning partial results rather than failing completely—maximizing usefulness of available information.
-
-- **Lean startup principle**: Prioritizes easy-to-implement, high-impact context (error logs, recent deploys, basic dependency checks, team runbooks) over complex automated discovery, allowing rapid iteration and immediate value.
+- **Dynamic context gathering** – Parallel investigation actions (logs, traces, deployments, dependencies)
+- **Adaptive action selection** – Runs CloudWatch if log_group present, falls back to local files
+- **Structured synthesis** – Aggregates heterogeneous sources into unified context
+- **Graceful degradation** – Continues with partial results when sources fail
+- **Lean startup** – Prioritizes high-impact, easy-to-implement context first

@@ -1,0 +1,60 @@
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    metrics = [otelcol.exporter.prometheus.grafana.input]
+    logs    = [otelcol.exporter.loki.grafana.input]
+    traces  = [otelcol.exporter.otlphttp.grafana.input]
+  }
+}
+
+otelcol.exporter.prometheus "grafana" {
+  forward_to = [prometheus.remote_write.grafana.receiver]
+}
+
+prometheus.remote_write "grafana" {
+  endpoint {
+    url = env("GCLOUD_HOSTED_METRICS_URL")
+    basic_auth {
+      username = env("GCLOUD_HOSTED_METRICS_ID")
+      password = env("GCLOUD_RW_API_KEY")
+    }
+  }
+}
+
+otelcol.exporter.loki "grafana" {
+  forward_to = [loki.write.grafana.receiver]
+}
+
+loki.write "grafana" {
+  endpoint {
+    url = env("GCLOUD_HOSTED_LOGS_URL")
+    basic_auth {
+      username = env("GCLOUD_HOSTED_LOGS_ID")
+      password = env("GCLOUD_RW_API_KEY")
+    }
+  }
+}
+
+otelcol.exporter.otlphttp "grafana" {
+  client {
+    endpoint = env("GCLOUD_OTLP_ENDPOINT")
+    headers = {
+      "Authorization" = env("GCLOUD_OTLP_AUTH_HEADER"),
+    }
+  }
+}

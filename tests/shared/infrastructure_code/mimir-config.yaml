@@ -1,0 +1,52 @@
+target: all,alertmanager
+
+server:
+  http_listen_port: 9009
+  log_level: info
+
+common:
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /data/mimir
+
+limits:
+  ingestion_rate: 50000
+  ingestion_burst_size: 100000
+
+blocks_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/mimir/blocks
+
+compactor:
+  data_dir: /data/mimir/compactor
+  sharding_ring:
+    kvstore:
+      store: memberlist
+
+distributor:
+  ring:
+    kvstore:
+      store: memberlist
+
+ingester:
+  ring:
+    kvstore:
+      store: memberlist
+    replication_factor: 1
+
+ruler_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/mimir/rules
+
+alertmanager_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/mimir/alertmanager
+
+memberlist:
+  bind_port: 7946
+  join_members:
+    - mimir:7946

@@ -13,6 +13,9 @@ Key difference from Prefect stack:
 - Trigger Lambda starts ECS tasks via RunTask API
 """
 
+import sys
+from pathlib import Path
+
 from aws_cdk import (
     BundlingOptions,
     CfnOutput,
@@ -30,12 +33,25 @@ from aws_cdk import aws_logs as logs
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
 
+project_root = Path(__file__).resolve().parents[5]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from tests.shared.infrastructure_code.cdk.constructs import (  # noqa: E402
+    AlloySidecar,
+    GrafanaCloudSecrets,
+)
+
 
 class EcsFlinkStack(Stack):
     """ECS Fargate Flink batch processing infrastructure stack."""
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+        secret_name = self.node.try_get_context("grafana_secret_name") or "tracer/grafana-cloud"
+        grafana_secrets = GrafanaCloudSecrets(
+            self, "GrafanaSecrets", secret_name=secret_name
+        )
 
         # Use default VPC (no new VPC creation)
         vpc = ec2.Vpc.from_lookup(self, "DefaultVpc", is_default=True)
@@ -111,13 +127,14 @@ class EcsFlinkStack(Stack):
                 )
             ],
         )
+        grafana_secrets.secret.grant_read(execution_role)
 
         # Task Definition - ARM64 for cost efficiency
         task_definition = ecs.FargateTaskDefinition(
             self,
             "FlinkTaskDef",
             cpu=512,
-            memory_limit_mib=1024,
+            memory_limit_mib=2048,
             task_role=task_role,
             execution_role=execution_role,
             runtime_platform=ecs.RuntimePlatform(
@@ -127,20 +144,49 @@ class EcsFlinkStack(Stack):
         )
 
         # Container with PyFlink image (ARM64 platform)
-        task_definition.add_container(
+        container = task_definition.add_container(
             "FlinkContainer",
             image=ecs.ContainerImage.from_asset(
-                "../flink_image",
+                "../../..",
                 platform=ecr_assets.Platform.LINUX_ARM64,
+                file="test_case_upstream_apache_flink_ecs/infrastructure_code/flink_image/Dockerfile",
+                exclude=[
+                    "**/cdk.out/**",
+                    "**/.git/**",
+                    "**/.cursor/**",
+                    "**/__pycache__/**",
+                    "**/.pytest_cache/**",
+                ],
             ),
             logging=ecs.LogDrivers.aws_logs(
                 stream_prefix="flink",
                 log_group=log_group,
             ),
+            memory_limit_mib=1536,
+            memory_reservation_mib=1024,
             environment={
                 "LANDING_BUCKET": landing_bucket.bucket_name,
                 "PROCESSED_BUCKET": processed_bucket.bucket_name,
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
+                "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+                "OTEL_EXPORTER_OTLP_INSECURE": "true",
+                "OTEL_SERVICE_NAME": "flink-etl-pipeline",
+                "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_flink,pipeline.framework=flink,test_case=test_case_upstream_apache_flink_ecs",
             },
+        )
+
+        alloy_sidecar = AlloySidecar(
+            self,
+            "AlloySidecar",
+            task_definition=task_definition,
+            log_group=log_group,
+            grafana_secrets=grafana_secrets,
+        )
+        container.add_container_dependencies(
+            ecs.ContainerDependency(
+                container=alloy_sidecar.container,
+                condition=ecs.ContainerDependencyCondition.START,
+            )
         )
 
         # Security group for Flink tasks (outbound only)
