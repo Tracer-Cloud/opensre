@@ -1,17 +1,10 @@
-"""
-Tracer runs/tasks tool actions - LangChain tool implementation.
-
-Pipeline run and task execution state.
-No printing, no LLM calls. Just fetch data and return typed results.
-All functions are decorated with @tool for LangChain/LangGraph compatibility.
-"""
+"""Tracer runs/tasks tool actions - LangChain tool implementation."""
 
 from __future__ import annotations
 
 import os
 from collections.abc import Iterable
 
-from app.agent.constants import TRACER_BASE_URL
 from app.agent.tools.clients.tracer_client import (
     PipelineRunSummary,
     TracerRunResult,
@@ -20,33 +13,26 @@ from app.agent.tools.clients.tracer_client import (
     get_tracer_web_client,
 )
 from app.agent.utils.auth import extract_org_slug_from_jwt
+from app.config import get_tracer_base_url
 
 try:
     from langchain.tools import tool
 except ImportError:
-    # Fallback if langchain not available - create a no-op decorator
     def tool(func=None, **kwargs):  # type: ignore[no-redef]  # noqa: ARG001
-        if func is None:
-            return lambda f: f
-        return func
+        return func if func else (lambda f: f)
 
 
 FAILED_STATUSES = ("failed", "error")
 
 
 def build_tracer_run_url(pipeline_name: str, trace_id: str | None) -> str | None:
-    """Build the correct Tracer run URL with organization slug."""
+    """Build Tracer run URL with organization slug from JWT."""
     if not trace_id:
         return None
-
-    jwt_token = os.getenv("JWT_TOKEN")
-    org_slug = None
-    if jwt_token:
-        org_slug = extract_org_slug_from_jwt(jwt_token)
-
-    if org_slug:
-        return f"{TRACER_BASE_URL}/{org_slug}/pipelines/{pipeline_name}/batch/{trace_id}"
-    return f"{TRACER_BASE_URL}/pipelines/{pipeline_name}/batch/{trace_id}"
+    base = get_tracer_base_url()
+    jwt = os.getenv("JWT_TOKEN")
+    slug = extract_org_slug_from_jwt(jwt) if jwt else None
+    return f"{base}/{slug}/pipelines/{pipeline_name}/batch/{trace_id}" if slug else f"{base}/pipelines/{pipeline_name}/batch/{trace_id}"
 
 
 # This function name should not be renamed as such
