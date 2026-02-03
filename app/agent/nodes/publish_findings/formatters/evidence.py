@@ -317,7 +317,38 @@ def format_cited_evidence_section(ctx: ReportContext) -> str:
         Formatted evidence section with citations
     """
     evidence = ctx.get("evidence", {})
+    catalog = ctx.get("evidence_catalog") or {}
     citations: list[str] = []
+
+    if catalog:
+        catalog_lines: list[str] = []
+        def _sort_key(eid: str) -> str:
+            display = catalog[eid].get("display_id", eid)
+            return display
+
+        for evidence_id in sorted(catalog.keys(), key=_sort_key):
+            entry = catalog[evidence_id] or {}
+            display_id = entry.get("display_id", evidence_id)
+            label = entry.get("label") or evidence_id
+            url = entry.get("url")
+            summary = entry.get("summary")
+            snippet = entry.get("snippet")
+            if url:
+                link = format_slack_link(label, url)
+            else:
+                link = label
+            line = f"- {display_id} — {link} — {evidence_id}"
+            details = []
+            if summary:
+                details.append(summary)
+            if snippet:
+                details.append(f"snippet: {snippet}")
+            if details:
+                line = f"{line} — " + "; ".join(details)
+            catalog_lines.append(line)
+
+        if catalog_lines:
+            return "\n*Cited Evidence:*\n" + "\n".join(catalog_lines) + "\n"
 
     # Format per-claim citations
     claim_lines: list[str] = []
