@@ -1,8 +1,8 @@
 """Main report formatting and assembly for Slack messages."""
 
+import os
 import re
 
-from app.agent.constants import TRACER_DEFAULT_INVESTIGATION_URL
 from app.agent.nodes.publish_findings.context.models import ReportContext
 from app.agent.nodes.publish_findings.formatters.base import format_slack_link
 from app.agent.nodes.publish_findings.formatters.evidence import (
