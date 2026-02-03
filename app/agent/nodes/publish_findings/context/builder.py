@@ -127,6 +127,7 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         if not value:
             return None
         compact = " ".join(str(value).split())
+        compact = compact.replace("{", "").replace("}", "").replace("[", "").replace("]", "")
         return compact[:max_len]
 
     def _display_id_for(source_name: str, fallback_index: int) -> str:
@@ -212,6 +213,8 @@ def build_report_context(state: InvestigationState) -> ReportContext:
             evidence_labels: list[str] = []
             for src in claim.get("evidence_sources", []) or []:
                 key = aliases.get(src, src)
+                if key == "evidence_analysis":
+                    continue
                 eid = source_to_id.get(key)
                 if eid and eid not in evidence_ids:
                     evidence_ids.append(eid)
@@ -219,6 +222,7 @@ def build_report_context(state: InvestigationState) -> ReportContext:
             if evidence_ids:
                 new_claim["evidence_ids"] = evidence_ids
                 new_claim["evidence_labels"] = evidence_labels
+            new_claim["evidence_sources"] = []  # normalize display to E-ids only
             mapped.append(new_claim)
         return mapped
 
