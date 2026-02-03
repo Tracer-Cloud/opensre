@@ -178,8 +178,7 @@ def build_graph(config: Any | None = None) -> Any:
     graph.add_edge("tools", "chat_agent")
     graph.add_edge("general", END)
 
-    # Investigation flow (parallel start)
-    graph.add_edge("extract_alert", "frame_problem")
+    # Investigation flow
     graph.add_edge("build_context", "frame_problem")
     graph.add_edge("frame_problem", "plan_actions")
     graph.add_edge("plan_actions", "investigate")
