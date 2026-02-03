@@ -9,7 +9,7 @@ from app.agent.tools.clients import get_llm, parse_root_cause
 from .claim_validator import calculate_validity_score, validate_and_categorize_claims
 from .evidence_checker import check_evidence_availability, check_vendor_evidence_missing
 from .prompt_builder import build_diagnosis_prompt
-from .recommendations import generate_recommendations
+from .recommendations import generate_recommendations, generate_remediation_steps
 
 
 def diagnose_root_cause(state: InvestigationState) -> dict:
@@ -94,6 +94,7 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
         validity_score,
         vendor_missing,
     )
+    remediation_steps = generate_remediation_steps(validated_claims_list, result.root_cause)
 
     should_recommend = final_confidence < 0.6 or validity_score < 0.5 or vendor_missing
     print(
@@ -124,6 +125,7 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
         "non_validated_claims": non_validated_claims_list,
         "validity_score": validity_score,
         "investigation_recommendations": recommendations,
+        "remediation_steps": remediation_steps,
         "investigation_loop_count": loop_count,
     }
 
@@ -137,6 +139,11 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
         "Collect error logs from pipeline execution",
         "Check CloudWatch logs if available",
         "Review pipeline step exit codes and error messages",
+    ]
+    remediation_steps = [
+        "Add fail-fast validation for required fields before downstream transforms",
+        "Introduce schema compatibility gate to block breaking changes at ingress",
+        "Alert downstream consumers when schema_version changes until RCA is confirmed",
     ]
 
     # Increment loop counter since we're recommending more investigation
@@ -166,6 +173,7 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
         ],
         "validity_score": 0.0,
         "investigation_recommendations": recommendations,
+        "remediation_steps": remediation_steps,
         "investigation_loop_count": loop_count,
     }
 

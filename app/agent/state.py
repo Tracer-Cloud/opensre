@@ -65,6 +65,7 @@ class InvestigationState(TypedDict, total=False):
     non_validated_claims: list[dict[str, Any]]  # List of non-validated claims
     validity_score: float  # Percentage of validated vs total claims
     investigation_recommendations: list[str]  # Recommended AWS SDK investigations if confidence low
+    remediation_steps: list[str]  # Recommended remediation / prevention steps
     investigation_loop_count: int  # Number of times we've looped back to investigate
     hypotheses: list[str]  # Hypotheses to consider during diagnosis
     executed_hypotheses: list[
@@ -96,6 +97,7 @@ STATE_DEFAULTS: dict[str, Any] = {
     "non_validated_claims": [],
     "validity_score": 0.0,
     "investigation_recommendations": [],
+    "remediation_steps": [],
     "investigation_loop_count": 0,
     "hypotheses": [],
     "executed_hypotheses": [],

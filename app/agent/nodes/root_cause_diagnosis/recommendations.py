@@ -56,3 +56,41 @@ def generate_recommendations(
         )
 
     return recommendations[:5]
+
+
+def generate_remediation_steps(
+    validated_claims: list[dict[str, Any]],
+    root_cause: str,
+) -> list[str]:
+    """
+    Produce remediation/prevention steps (not evidence gathering).
+    """
+    steps: list[str] = []
+
+    text_blob = " ".join([root_cause] + [c.get("claim", "") or "" for c in validated_claims]).lower()
+    mentions_schema = "schema" in text_blob
+    mentions_customer = "customer_id" in text_blob
+
+    if mentions_schema:
+        steps.append("Rollback schema to last compatible version until downstream validators are updated")
+        steps.append("Add schema contract gate that blocks deployments when required fields are removed")
+    else:
+        steps.append("Add contract gate that blocks incompatible data shape changes before ingestion")
+
+    steps.append("Patch validation step to fail fast with clear error and skip downstream writes")
+
+    if mentions_customer:
+        steps.append("Backfill missing customer_id for impacted records and re-run the failed flow segment")
+        steps.append("Alert downstream consumers on schema_version changes and require explicit allowlist")
+    else:
+        steps.append("Alert downstream consumers on schema_version changes and require explicit allowlist")
+
+    # Deduplicate while preserving order
+    seen = set()
+    uniq_steps = []
+    for s in steps:
+        if s not in seen:
+            uniq_steps.append(s)
+            seen.add(s)
+
+    return uniq_steps[:5]

@@ -1,5 +1,7 @@
 """Main report formatting and assembly for Slack messages."""
 
+import re
+
 from app.agent.constants import TRACER_DEFAULT_INVESTIGATION_URL
 from app.agent.nodes.publish_findings.context.models import ReportContext
 from app.agent.nodes.publish_findings.formatters.base import format_slack_link
@@ -123,29 +125,103 @@ def _format_validity_info(ctx: ReportContext) -> str:
     return f"\n*Validity Score:* {validity_score:.0%} ({len(validated_claims)}/{total} validated)\n"
 
 
+def _format_recommendations(ctx: ReportContext) -> str:
+    """Render investigation recommendations, if any."""
+    recs = ctx.get("investigation_recommendations", []) or []
+    if not recs:
+        return ""
+    lines = ["*Suggested Next Steps:*"]
+    for rec in recs:
+        if rec:
+            lines.append(f"• {rec}")
+    return "\n" + "\n".join(lines) + "\n"
+
+
+def _format_remediation_steps(ctx: ReportContext) -> str:
+    """Render remediation/prevention steps, if any."""
+    steps = ctx.get("remediation_steps", []) or []
+    if not steps:
+        return ""
+    lines = ["*Remediation Next Steps:*"]
+    for step in steps:
+        if step:
+            lines.append(f"• {step}")
+    return "\n" + "\n".join(lines) + "\n"
+
+
+def _first_sentence(text: str) -> str:
+    """Return the first sentence from text, normalized to one line."""
+    normalized = " ".join(text.split())
+    if not normalized:
+        return ""
+
+    parts = re.split(r"(?<=[.?!])\s+", normalized, maxsplit=1)
+    sentence = parts[0]
+    sentence = sentence.rstrip(".?!")
+    return sentence
+
+
+def _is_speculative(text: str) -> bool:
+    speculative_terms = (" may ", " might ", " possibly", " possible ", " likely ")
+    lower = f" {text.lower()} "
+    return any(term in lower for term in speculative_terms)
+
+
+def _derive_root_cause_sentence(ctx: ReportContext) -> str:
+    """Derive a concise, single-sentence root cause with causal preference."""
+    root_cause_text = ctx.get("root_cause", "") or ""
+    validated_claims = ctx.get("validated_claims", [])
+
+    if root_cause_text:
+        sentence = _first_sentence(root_cause_text)
+        if sentence and not _is_speculative(sentence):
+            return sentence
+
+    causal_connectors = (
+        " because ",
+        " due to ",
+        " caused ",
+        " resulted in ",
+        " led to ",
+        " root cause ",
+        " failure triggered ",
+    )
+
+    for claim_data in validated_claims:
+        claim = claim_data.get("claim", "") or ""
+        lower = f" {claim.lower()} "
+        if any(connector in lower for connector in causal_connectors):
+            sentence = _first_sentence(claim)
+            if sentence:
+                return sentence
+
+    return ""
+
+
 def _format_conclusion_section(ctx: ReportContext, evidence: dict) -> str:
-    """Format the conclusion section with claims and root cause.
-
-    Args:
-        ctx: Report context
-        evidence: Evidence dictionary
-
-    Returns:
-        Formatted conclusion section
-    """
     validated_section = _format_validated_claims_section(ctx, evidence)
     non_validated_section = _format_non_validated_claims_section(ctx)
     validity_info = _format_validity_info(ctx)
 
-    root_cause_text = ctx.get("root_cause", "")
+    # 1) Always show a one-liner root cause (with a safe fallback)
+    root_cause_sentence = _derive_root_cause_sentence(ctx)
+    if not root_cause_sentence:
+        root_cause_sentence = "Not determined (insufficient evidence)."
 
-    # If no claims, just show root cause
-    if not validated_section and not non_validated_section and root_cause_text:
-        return f"\n{root_cause_text}\n"
+    root_cause_block = f"*Root Cause:* {root_cause_sentence}\n"
 
-    # Otherwise, combine claims with proper spacing
+    # 2) Then add claims (progressive disclosure)
     separator = "\n" if validated_section and non_validated_section else ""
-    return f"{validated_section}{separator}{non_validated_section}{validity_info}"
+    recommendations_section = _format_recommendations(ctx)
+    remediation_section = _format_remediation_steps(ctx)
+
+    claims_block = f"{validated_section}{separator}{non_validated_section}{validity_info}{recommendations_section}{remediation_section}".strip()
+
+    if claims_block:
+        return f"\n{root_cause_block}{claims_block}\n"
+
+    return f"\n{root_cause_block}\n"
+
 
 
 def format_slack_message(ctx: ReportContext) -> str:
