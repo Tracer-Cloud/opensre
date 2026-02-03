@@ -97,27 +97,6 @@ def setup_logging(resource) -> None:
     if not any(isinstance(existing, (LoggingHandler, ExecutionRunIdLoggingHandler)) for existing in root_logger.handlers):
         root_logger.addHandler(handler)
 
-    airflow_loggers = [
-        "airflow",
-        "airflow.task",
-        "airflow.jobs",
-        "airflow.processor",
-        "airflow.scheduler",
-        "airflow.api",
-        "airflow.api_fastapi",
-        "airflow.api_fastapi.execution_api",
-    ]
-    for logger_name in airflow_loggers:
-        airflow_logger = logging.getLogger(logger_name)
-        if any(
-            isinstance(existing, (LoggingHandler, ExecutionRunIdLoggingHandler))
-            for existing in airflow_logger.handlers
-        ):
-            continue
-        if not airflow_logger.propagate:
-            airflow_logger.setLevel(logging.INFO)
-            airflow_logger.addHandler(handler)
-
     protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
     logs_endpoint = endpoint

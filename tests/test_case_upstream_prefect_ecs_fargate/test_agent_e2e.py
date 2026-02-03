@@ -28,13 +28,71 @@ from tests.utils.alert_factory import create_alert
 
 # Configuration from CDK outputs
 CONFIG = {
-    "prefect_api_url": "http://98.91.253.152:4200/api",
+    "prefect_api_url": None,  # Fetched dynamically
+    "trigger_api_url": "https://q5tl03u98c.execute-api.us-east-1.amazonaws.com/prod/",
+    "mock_api_url": "https://uz0k23ui7c.execute-api.us-east-1.amazonaws.com/prod/",
+    "ecs_cluster": "tracer-prefect-cluster",
     "log_group": "/ecs/tracer-prefect",
-    "correlation_id": "trigger-20260131-124548",
     "s3_bucket": "tracerprefectecsfargate-landingbucket23fe90fb-woehzac5msvj",
-    "s3_key": "ingested/20260131-124548/data.json",
-    "audit_key": "audit/trigger-20260131-124548.json",
 }
+
+
+def get_prefect_server_ip() -> str | None:
+    """Fetch current public IP of the Prefect server ECS task."""
+    ecs = boto3.client("ecs", region_name="us-east-1")
+    ec2 = boto3.client("ec2", region_name="us-east-1")
+
+    tasks = ecs.list_tasks(cluster=CONFIG["ecs_cluster"], desiredStatus="RUNNING")
+    if not tasks.get("taskArns"):
+        return None
+
+    task_details = ecs.describe_tasks(cluster=CONFIG["ecs_cluster"], tasks=tasks["taskArns"])
+    for task in task_details.get("tasks", []):
+        for attachment in task.get("attachments", []):
+            for detail in attachment.get("details", []):
+                if detail.get("name") == "networkInterfaceId":
+                    eni_id = detail.get("value")
+                    eni = ec2.describe_network_interfaces(NetworkInterfaceIds=[eni_id])
+                    public_ip = eni["NetworkInterfaces"][0].get("Association", {}).get("PublicIp")
+                    if public_ip:
+                        return public_ip
+    return None
+
+
+def trigger_pipeline_failure() -> dict:
+    """Trigger the Prefect pipeline with error injection."""
+    print("=" * 60)
+    print("Triggering Prefect Pipeline Failure")
+    print("=" * 60)
+
+    url = f"{CONFIG['trigger_api_url']}trigger?inject_error=true"
+    print(f"\nPOST {url}")
+
+    response = requests.post(url, timeout=60)
+    if not response.ok:
+        print(f"ERROR: Trigger failed with status {response.status_code}")
+        print(f"Response: {response.text}")
+        return None
+
+    result = response.json()
+    print(f"Trigger response: {json.dumps(result, indent=2)}")
+
+    correlation_id = result.get("correlation_id")
+    s3_key = result.get("s3_key")
+    audit_key = result.get("audit_key")
+
+    print(f"\nCorrelation ID: {correlation_id}")
+    print(f"S3 Key: {s3_key}")
+
+    print("\nWaiting for Prefect flow to complete...")
+    time.sleep(30)
+
+    return {
+        "correlation_id": correlation_id,
+        "s3_key": s3_key,
+        "audit_key": audit_key,
+        "s3_bucket": CONFIG["s3_bucket"],
+    }
 
 
 def get_failure_details() -> dict:
@@ -42,6 +100,15 @@ def get_failure_details() -> dict:
     print("=" * 60)
     print("Retrieving Prefect Flow Run Details")
     print("=" * 60)
+
+    # Dynamically fetch Prefect server IP
+    print("\nFetching Prefect server IP from ECS...")
+    public_ip = get_prefect_server_ip()
+    if not public_ip:
+        print("ERROR: No running Prefect server found in ECS")
+        return None
+    CONFIG["prefect_api_url"] = f"http://{public_ip}:4200/api"
+    print(f"Found Prefect server at {public_ip}")
 
     # Query Prefect for recent flow runs
     print(f"\nQuerying Prefect at {CONFIG['prefect_api_url']}...")
@@ -250,11 +317,18 @@ def main():
     print("PREFECT ECS E2E INVESTIGATION TEST")
     print("=" * 60)
 
+    # Trigger a pipeline failure first
+    trigger_data = trigger_pipeline_failure()
+    if not trigger_data:
+        print("\n❌ Could not trigger pipeline failure")
+        return False
+
     # Get failure details from Prefect
     failure_data = get_failure_details()
     if not failure_data:
-        print("\n❌ Could not retrieve failure details")
-        return False
+        # Fall back to trigger data if Prefect query fails
+        print("\nUsing trigger data as failure details...")
+        failure_data = trigger_data
 
     # Run agent investigation
     success = test_agent_investigation(failure_data)

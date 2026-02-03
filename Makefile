@@ -27,10 +27,6 @@ cloudwatch-demo:
 prefect-demo:
 	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
 
-# Run Airflow ECS Fargate E2E test
-airflow-demo:
-	$(PYTHON) -m tests.test_case_upstream_airflow_ecs_fargate.test_agent_e2e
-
 # Run upstream/downstream pipeline E2E test
 upstream-downstream:
 	$(PYTHON) -m tests.test_case_upstream_lambda.test_agent_e2e
@@ -107,7 +103,6 @@ help:
 	@echo "  make install         - Install dependencies"
 	@echo "  make demo            - Run Prefect ECS E2E test (default, shows Investigation Trace)"
 	@echo "  make prefect-demo    - Run Prefect ECS Fargate E2E test (alias for demo)"
-	@echo "  make airflow-demo    - Run Airflow ECS Fargate E2E test"
 	@echo "  make flink-demo      - Run Apache Flink ECS E2E test"
 	@echo "  make superfluid-demo - Run Superfluid test case demo"
 	@echo "  make cloudwatch-demo - Run CloudWatch demo"
