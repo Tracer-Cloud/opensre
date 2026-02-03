@@ -6,6 +6,7 @@ from app.agent.nodes.publish_findings.context.models import ReportContext
 from app.agent.nodes.publish_findings.formatters.base import (
     format_json_block,
     format_json_payload,
+    format_slack_link,
     format_text_block,
     shorten_text,
 )
@@ -140,7 +141,7 @@ def format_evidence_for_claim(claim_data: dict, evidence: dict, ctx: ReportConte
         if source == "cloudwatch_logs":
             cw_url = build_cloudwatch_url(ctx)
             if cw_url:
-                evidence_parts.append(f"CloudWatch Logs: {cw_url}")
+                evidence_parts.append(f"*{format_slack_link('View CloudWatch Logs', cw_url)}*")
 
             # Also include sample log entries if available
             cloudwatch_logs = evidence.get("cloudwatch_logs", [])
@@ -272,8 +273,8 @@ def _format_source_citations(
         if source == "cloudwatch_logs":
             cw_url = build_cloudwatch_url(ctx)
             if cw_url:
-                source_citations.append(f"{indent_prefix}- {label}:")
-                source_citations.append(format_text_block(cw_url))
+                link = format_slack_link("View CloudWatch evidence", cw_url)
+                source_citations.append(f"{indent_prefix}- {link}")
                 continue
 
         # Special handling for Lambda functions - include AWS Console URL
