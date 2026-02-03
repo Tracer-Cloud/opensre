@@ -2,9 +2,8 @@
 
 from typing import Any
 
-from opentelemetry import trace
-
 from errors import DomainError
+from opentelemetry import trace
 from schemas import InputRecord, ProcessedRecord
 
 try:

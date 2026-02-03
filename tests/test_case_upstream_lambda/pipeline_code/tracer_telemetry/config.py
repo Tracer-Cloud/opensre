@@ -41,6 +41,7 @@ def validate_grafana_cloud_config() -> bool:
             warnings.warn(
                 f"Grafana Cloud endpoint detected but missing env vars: {', '.join(missing)}",
                 UserWarning,
+                stacklevel=2,
             )
             return False
     return True

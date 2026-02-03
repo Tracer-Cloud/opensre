@@ -28,7 +28,8 @@ from tracer_telemetry import init_telemetry
 from .adapters.alerting import fire_pipeline_alert
 from .adapters.s3 import read_json, write_json
 from .config import PIPELINE_NAME, PROCESSED_BUCKET, REQUIRED_FIELDS
-from .domain import transform_data as domain_transform_data, validate_data as domain_validate_data
+from .domain import transform_data as domain_transform_data
+from .domain import validate_data as domain_validate_data
 from .errors import PipelineError
 from .schemas import ProcessedRecord
 

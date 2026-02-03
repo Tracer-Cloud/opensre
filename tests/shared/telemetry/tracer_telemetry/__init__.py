@@ -14,7 +14,7 @@ from tracer_telemetry.logging import setup_logging
 from tracer_telemetry.metrics import PipelineMetrics, setup_metrics
 from tracer_telemetry.tracing import setup_tracing
 
-_telemetry: "PipelineTelemetry | None" = None
+_telemetry: PipelineTelemetry | None = None
 _std_logging = importlib.import_module("logging")
 
 
@@ -44,7 +44,7 @@ class PipelineTelemetry:
             self.metrics.records_processed_total.add(record_count, metric_attrs)
         if failure_count:
             self.metrics.records_failed_total.add(failure_count, metric_attrs)
-    
+
     def flush(self) -> None:
         """Force flush all telemetry data (critical for Lambda/short-lived processes)."""
         try:
@@ -54,7 +54,7 @@ class PipelineTelemetry:
                 provider.force_flush(timeout_millis=5000)
         except Exception:
             pass
-        
+
         try:
             # Flush logs
             from opentelemetry import _logs

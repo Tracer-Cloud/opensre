@@ -187,7 +187,7 @@ def main():
     import os
 
     os.environ["PREFECT_API_URL"] = f"{PREFECT_SERVER_URL}/api"
-    
+
     # Set local OTLP endpoint for telemetry (if Grafana stack is running)
     if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") is None:
         os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317"

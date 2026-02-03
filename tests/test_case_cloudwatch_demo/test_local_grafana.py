@@ -61,10 +61,10 @@ def run_pipeline() -> str:
     # Set local OTLP endpoint
     os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317"
     os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "grpc"
-    
+
     # Import use case (Note: This will fail because /data/input.csv doesn't exist)
     from tests.test_case_cloudwatch_demo import use_case
-    
+
     # Run pipeline (expecting failure due to missing file)
     try:
         result = use_case.main()
@@ -79,13 +79,13 @@ def run_pipeline() -> str:
 def validate_grafana_telemetry(execution_run_id: str) -> bool:
     """Validate that telemetry appears in Grafana."""
     print(f"\nValidating Grafana telemetry for execution_run_id={execution_run_id}...")
-    
+
     logs = query_loki_logs(execution_run_id)
     traces = query_tempo_traces(execution_run_id)
-    
+
     print(f"  Logs found: {len(logs)}")
     print(f"  Traces found: {len(traces)}")
-    
+
     if traces:
         print("✓ Telemetry validation passed")
         return True
@@ -100,7 +100,7 @@ def main():
     print("CloudWatch Demo Local Test with Grafana Validation")
     print("=" * 60)
     print()
-    
+
     # Check if Grafana is running
     try:
         response = requests.get(f"{GRAFANA_URL}/api/health", timeout=5)
@@ -112,15 +112,15 @@ def main():
         print("✗ Grafana is not running on localhost:3000")
         print("  Run: make grafana-local")
         return 1
-    
+
     # Run pipeline
     print("Running CloudWatch Demo pipeline locally...")
     execution_run_id = run_pipeline()
-    
+
     # Wait for telemetry export
     print("Waiting for telemetry export...")
     time.sleep(5)
-    
+
     # Validate Grafana
     if validate_grafana_telemetry(execution_run_id):
         print("\n" + "=" * 60)

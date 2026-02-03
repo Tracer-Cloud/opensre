@@ -17,6 +17,7 @@ from aws_cdk import (
     Stack,
 )
 from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_elasticloadbalancingv2 as elbv2
 from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_ecs as ecs
 from aws_cdk import aws_iam as iam
@@ -178,7 +179,7 @@ class EcsAirflowStack(Stack):
             "Allow Airflow API access",
         )
 
-        ecs.FargateService(
+        airflow_service = ecs.FargateService(
             self,
             "AirflowService",
             cluster=cluster,
@@ -191,6 +192,51 @@ class EcsAirflowStack(Stack):
             max_healthy_percent=200,
             health_check_grace_period=Duration.seconds(0),
         )
+
+        alb_security_group = ec2.SecurityGroup(
+            self,
+            "AirflowAlbSG",
+            vpc=vpc,
+            description="Security group for Airflow ALB",
+            allow_all_outbound=True,
+        )
+        alb_security_group.add_ingress_rule(
+            ec2.Peer.any_ipv4(),
+            ec2.Port.tcp(80),
+            "Allow HTTP access to Airflow ALB",
+        )
+
+        airflow_alb = elbv2.ApplicationLoadBalancer(
+            self,
+            "AirflowAlb",
+            vpc=vpc,
+            internet_facing=True,
+            security_group=alb_security_group,
+        )
+        listener = airflow_alb.add_listener(
+            "AirflowHttpListener",
+            port=80,
+            open=True,
+        )
+        target_group = elbv2.ApplicationTargetGroup(
+            self,
+            "AirflowTargetGroup",
+            vpc=vpc,
+            port=8080,
+            protocol=elbv2.ApplicationProtocol.HTTP,
+            targets=[airflow_service],
+            health_check=elbv2.HealthCheck(
+                path="/api/v2/dags",
+                healthy_http_codes="200-499",
+                interval=Duration.seconds(30),
+            ),
+        )
+        listener.add_target_groups(
+            "AirflowTargetGroups",
+            target_groups=[target_group],
+        )
+
+        airflow_api_url = f"http://{airflow_alb.load_balancer_dns_name}"
 
         trigger_lambda_role = iam.Role(
             self,
@@ -217,7 +263,7 @@ class EcsAirflowStack(Stack):
                 "LANDING_BUCKET": landing_bucket.bucket_name,
                 "PROCESSED_BUCKET": processed_bucket.bucket_name,
                 "EXTERNAL_API_URL": mock_api.api.url,
-                "AIRFLOW_API_URL": "http://localhost:8080/api/v2",
+                "AIRFLOW_API_URL": airflow_api_url,
                 "AIRFLOW_API_USERNAME": "admin",
                 "AIRFLOW_API_PASSWORD": "admin",
                 "AIRFLOW_DAG_ID": "upstream_downstream_pipeline_airflow",
@@ -242,6 +288,12 @@ class EcsAirflowStack(Stack):
         CfnOutput(self, "MockApiUrl", value=mock_api.api.url)
         CfnOutput(self, "EcsClusterName", value=cluster.cluster_name)
         CfnOutput(self, "LogGroupName", value=log_group.log_group_name)
+        CfnOutput(
+            self,
+            "AirflowApiUrl",
+            value=airflow_api_url,
+            description="Airflow API base URL (via ALB)",
+        )
         CfnOutput(
             self,
             "TriggerLambdaName",

@@ -25,7 +25,7 @@ class PipelineMetrics:
     records_failed_total: metrics.Counter
 
     @classmethod
-    def create(cls, meter: metrics.Meter) -> "PipelineMetrics":
+    def create(cls, meter: metrics.Meter) -> PipelineMetrics:
         return cls(
             runs_total=meter.create_counter(
                 "pipeline_runs_total",
@@ -55,7 +55,7 @@ class PipelineMetrics:
         )
 
     @classmethod
-    def noop(cls) -> "PipelineMetrics":
+    def noop(cls) -> PipelineMetrics:
         meter = metrics.get_meter("tracer_telemetry.noop")
         return cls.create(meter)
 
@@ -63,7 +63,7 @@ class PipelineMetrics:
 def setup_metrics(resource) -> PipelineMetrics:
     if OTLPMetricExporter is None:
         return PipelineMetrics.noop()
-    
+
     metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
     provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     metrics.set_meter_provider(provider)

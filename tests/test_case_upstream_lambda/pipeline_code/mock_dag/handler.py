@@ -15,7 +15,8 @@ import time
 from .adapters.alerting import fire_pipeline_alert
 from .adapters.s3 import read_json, write_json
 from .config import PIPELINE_NAME, PROCESSED_BUCKET, REQUIRED_FIELDS
-from .domain import transform_data as domain_transform_data, validate_data as domain_validate_data
+from .domain import transform_data as domain_transform_data
+from .domain import validate_data as domain_validate_data
 from .errors import PipelineError
 
 # Initialize telemetry lazily to avoid circular import with AwsLambdaInstrumentor
@@ -142,6 +143,6 @@ def lambda_handler(event, context):
                 )
                 telemetry.flush()
                 raise
-    
+
     telemetry.flush()
     return {"status": "success", "correlation_id": correlation_id}

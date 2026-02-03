@@ -47,7 +47,7 @@ def main() -> dict:
         - execution_run_id: str
     """
     global _telemetry, _tracer
-    
+
     # Initialize telemetry
     _telemetry = init_telemetry(
         service_name="superfluid-pipeline",
@@ -57,17 +57,17 @@ def main() -> dict:
         },
     )
     _tracer = _telemetry.tracer
-    
+
     execution_run_id = str(uuid.uuid4())
 
     with _tracer.start_as_current_span("fetch_tracer_runs") as root_span:
         root_span.set_attribute("execution.run_id", execution_run_id)
         root_span.set_attribute("pipeline.name", "superfluid_fetch_runs")
-        
+
         with _tracer.start_as_current_span("api_call_tracer_web") as api_span:
             api_span.set_attribute("execution.run_id", execution_run_id)
             web_run = _fetch_tracer_web_run_context()
-            
+
             api_span.set_attribute("found", web_run.get("found", False))
             api_span.set_attribute("pipelines_checked", web_run.get("pipelines_checked", 0))
 
@@ -78,7 +78,7 @@ def main() -> dict:
             _run_context["status"] = web_run.get("status")
             _run_context["run_url"] = web_run.get("run_url")
             _run_context["found"] = True
-            
+
             root_span.set_attribute("found_pipeline", web_run.get("pipeline_name", ""))
             root_span.set_attribute("found_run", web_run.get("run_name", ""))
 

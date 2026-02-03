@@ -78,7 +78,7 @@ def main():
     print("─" * 100)
 
     result = query_grafana_metrics("pipeline_runs_total", service_name="lambda-mock-dag")
-    print(f"\nMetric: pipeline_runs_total")
+    print("\nMetric: pipeline_runs_total")
     print(f"  Available: {result.get('available')}")
     print(f"  Total series: {result.get('total_series', 0)}")
 

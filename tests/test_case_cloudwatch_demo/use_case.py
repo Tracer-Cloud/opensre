@@ -30,7 +30,7 @@ def extract_and_validate(input_path: str, execution_run_id: str) -> str:
     with _tracer.start_as_current_span("extract_data") as span:
         span.set_attribute("execution.run_id", execution_run_id)
         span.set_attribute("input_path", input_path)
-        
+
         if not os.path.exists(input_path):
             span.set_attribute("error", True)
             span.set_attribute("error.message", f"empty file not present: {input_path}")
@@ -67,7 +67,7 @@ def write_output(transformed_data: list[dict], output_path: str, execution_run_i
 
 def main() -> dict:
     global _telemetry, _tracer
-    
+
     # Initialize telemetry
     _telemetry = init_telemetry(
         service_name="cloudwatch-demo",
@@ -77,7 +77,7 @@ def main() -> dict:
         },
     )
     _tracer = _telemetry.tracer
-    
+
     _pipeline_context["initialized"] = True
     execution_run_id = str(uuid.uuid4())
 
@@ -87,11 +87,11 @@ def main() -> dict:
     with _tracer.start_as_current_span("process_pipeline") as root_span:
         root_span.set_attribute("execution.run_id", execution_run_id)
         root_span.set_attribute("pipeline.name", _pipeline_context["pipeline_name"])
-        
+
         raw_data = extract_and_validate(input_file, execution_run_id)
         transformed = transform_data(raw_data, execution_run_id)
         rows = write_output(transformed, output_file, execution_run_id)
-        
+
         root_span.set_attribute("rows_processed", rows)
         root_span.set_attribute("status", "success")
 

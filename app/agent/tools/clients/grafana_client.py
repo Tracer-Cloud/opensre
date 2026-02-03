@@ -1,10 +1,13 @@
 """Grafana Cloud API client for querying logs, traces, and metrics."""
 
-import os
+from __future__ import annotations
+
 import time
 from typing import Any
 
 import requests
+
+from app.agent.tools.clients.grafana_config import GrafanaAccountConfig, get_grafana_config
 
 
 class GrafanaClient:
@@ -12,19 +15,32 @@ class GrafanaClient:
 
     def __init__(
         self,
-        instance_url: str | None = None,
-        read_token: str | None = None,
-        loki_datasource_uid: str = "grafanacloud-logs",
-        tempo_datasource_uid: str = "grafanacloud-traces",
-        mimir_datasource_uid: str = "grafanacloud-prom",
+        account_id: str | None = None,
+        config: GrafanaAccountConfig | None = None,
     ):
-        self.instance_url = instance_url or os.getenv(
-            "GRAFANA_INSTANCE_URL", "https://tracerbio.grafana.net"
-        )
-        self.read_token = read_token or os.getenv("GRAFANA_READ_TOKEN", "")
-        self.loki_datasource_uid = loki_datasource_uid
-        self.tempo_datasource_uid = tempo_datasource_uid
-        self.mimir_datasource_uid = mimir_datasource_uid
+        """Initialize Grafana client.
+
+        Args:
+            account_id: Grafana account identifier (e.g., "tracerbio", "customer1").
+                       If None, uses the default account from config.
+            config: Optional pre-loaded config. If provided, account_id is ignored.
+        """
+        if config is not None:
+            self._config = config
+        else:
+            self._config = get_grafana_config(account_id)
+
+        self.account_id = self._config.account_id
+        self.instance_url = self._config.instance_url
+        self.read_token = self._config.read_token
+        self.loki_datasource_uid = self._config.loki_datasource_uid
+        self.tempo_datasource_uid = self._config.tempo_datasource_uid
+        self.mimir_datasource_uid = self._config.mimir_datasource_uid
+
+    @property
+    def is_configured(self) -> bool:
+        """Check if client is properly configured."""
+        return self._config.is_configured
 
     def query_loki(
         self,
@@ -43,9 +59,16 @@ class GrafanaClient:
             Dictionary with log streams and metadata
         """
         if not self.read_token:
-            return {"success": False, "error": "GRAFANA_READ_TOKEN not configured", "logs": []}
+            return {
+                "success": False,
+                "error": f"Read token not configured for account '{self.account_id}'",
+                "logs": [],
+            }
 
-        url = f"{self.instance_url}/api/datasources/proxy/uid/{self.loki_datasource_uid}/loki/api/v1/query_range"
+        url = (
+            f"{self.instance_url}/api/datasources/proxy/uid/"
+            f"{self.loki_datasource_uid}/loki/api/v1/query_range"
+        )
         headers = {"Authorization": f"Bearer {self.read_token}"}
 
         end_ns = int(time.time() * 1e9)
@@ -85,6 +108,7 @@ class GrafanaClient:
                     "total_streams": len(result),
                     "total_logs": len(logs),
                     "query": query,
+                    "account_id": self.account_id,
                 }
             else:
                 return {
@@ -111,9 +135,16 @@ class GrafanaClient:
             Dictionary with traces and span details
         """
         if not self.read_token:
-            return {"success": False, "error": "GRAFANA_READ_TOKEN not configured", "traces": []}
+            return {
+                "success": False,
+                "error": f"Read token not configured for account '{self.account_id}'",
+                "traces": [],
+            }
 
-        url = f"{self.instance_url}/api/datasources/proxy/uid/{self.tempo_datasource_uid}/api/search"
+        url = (
+            f"{self.instance_url}/api/datasources/proxy/uid/"
+            f"{self.tempo_datasource_uid}/api/search"
+        )
         headers = {"Authorization": f"Bearer {self.read_token}"}
 
         params = {
@@ -148,6 +179,7 @@ class GrafanaClient:
                     "traces": enriched_traces,
                     "total_traces": len(traces),
                     "service_name": service_name,
+                    "account_id": self.account_id,
                 }
             else:
                 return {
@@ -161,7 +193,10 @@ class GrafanaClient:
 
     def _get_trace_details(self, trace_id: str) -> dict[str, Any]:
         """Get detailed span information for a trace."""
-        url = f"{self.instance_url}/api/datasources/proxy/uid/{self.tempo_datasource_uid}/api/traces/{trace_id}"
+        url = (
+            f"{self.instance_url}/api/datasources/proxy/uid/"
+            f"{self.tempo_datasource_uid}/api/traces/{trace_id}"
+        )
         headers = {"Authorization": f"Bearer {self.read_token}"}
 
         try:
@@ -216,9 +251,16 @@ class GrafanaClient:
             Dictionary with metric series and values
         """
         if not self.read_token:
-            return {"success": False, "error": "GRAFANA_READ_TOKEN not configured", "metrics": []}
+            return {
+                "success": False,
+                "error": f"Read token not configured for account '{self.account_id}'",
+                "metrics": [],
+            }
 
-        url = f"{self.instance_url}/api/datasources/proxy/uid/{self.mimir_datasource_uid}/api/v1/query"
+        url = (
+            f"{self.instance_url}/api/datasources/proxy/uid/"
+            f"{self.mimir_datasource_uid}/api/v1/query"
+        )
         headers = {"Authorization": f"Bearer {self.read_token}"}
 
         query = metric_name
@@ -248,6 +290,7 @@ class GrafanaClient:
                     "metrics": metrics,
                     "total_series": len(result),
                     "query": query,
+                    "account_id": self.account_id,
                 }
             else:
                 return {
@@ -260,6 +303,13 @@ class GrafanaClient:
             return {"success": False, "error": str(e), "metrics": []}
 
 
-def get_grafana_client() -> GrafanaClient:
-    """Get shared Grafana client instance."""
-    return GrafanaClient()
+def get_grafana_client(account_id: str | None = None) -> GrafanaClient:
+    """Get Grafana client for a specific account.
+
+    Args:
+        account_id: Grafana account identifier. If None, uses default account.
+
+    Returns:
+        GrafanaClient configured for the requested account
+    """
+    return GrafanaClient(account_id=account_id)

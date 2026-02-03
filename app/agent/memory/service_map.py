@@ -441,7 +441,7 @@ def _extract_lambda_config_edges(evidence: dict[str, Any]) -> list[Edge]:
 
 
 def _extract_grafana_edges(
-    evidence: dict[str, Any], raw_alert: dict[str, Any], pipeline_name: str
+    evidence: dict[str, Any], raw_alert: dict[str, Any], pipeline_name: str  # noqa: ARG001
 ) -> list[Edge]:
     """Extract Pipeline → Grafana datasource edges from OTLP configuration."""
     edges: list[Edge] = []

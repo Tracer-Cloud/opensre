@@ -32,7 +32,7 @@ def step1_check_s3_object(execution_run_id: str) -> dict:
     with _tracer.start_as_current_span("step1_check_s3_object") as span:
         span.set_attribute("execution.run_id", execution_run_id)
         span.set_attribute("step_name", "check_s3_object")
-        
+
         logger.info("STEP 1: aws s3api head-object")
         time.sleep(3)
         result = run_tool(
@@ -48,12 +48,12 @@ def step1_check_s3_object(execution_run_id: str) -> dict:
             timeout=15,
             step_name="step1_check_s3_object",
         )
-        
+
         span.set_attribute("exit_code", result["exit_code"])
         if result["exit_code"] != 0:
             span.set_attribute("error", True)
             logger.error("step1_check_s3_object failed exit_code=%s", result["exit_code"])
-        
+
         return result
 
 
@@ -61,7 +61,7 @@ def step2_download_from_s3(execution_run_id: str) -> dict:
     with _tracer.start_as_current_span("step2_download_from_s3") as span:
         span.set_attribute("execution.run_id", execution_run_id)
         span.set_attribute("step_name", "download_from_s3")
-        
+
         logger.info("STEP 2: aws s3 cp")
         time.sleep(3)
         result = run_tool(
@@ -75,12 +75,12 @@ def step2_download_from_s3(execution_run_id: str) -> dict:
             timeout=15,
             step_name="step2_download_from_s3",
         )
-        
+
         span.set_attribute("exit_code", result["exit_code"])
         if result["exit_code"] != 0:
             span.set_attribute("error", True)
             logger.error("step2_download_from_s3 failed exit_code=%s", result["exit_code"])
-        
+
         return result
 
 
@@ -88,7 +88,7 @@ def step3_list_s3_bucket(execution_run_id: str) -> dict:
     with _tracer.start_as_current_span("step3_list_s3_bucket") as span:
         span.set_attribute("execution.run_id", execution_run_id)
         span.set_attribute("step_name", "list_s3_bucket")
-        
+
         logger.info("STEP 3: aws s3 ls")
         time.sleep(3)
         result = run_tool(
@@ -101,12 +101,12 @@ def step3_list_s3_bucket(execution_run_id: str) -> dict:
             timeout=15,
             step_name="step3_list_s3_bucket",
         )
-        
+
         span.set_attribute("exit_code", result["exit_code"])
         if result["exit_code"] != 0:
             span.set_attribute("error", True)
             logger.error("step3_list_s3_bucket failed exit_code=%s", result["exit_code"])
-        
+
         return result
 
 
@@ -114,7 +114,7 @@ def step4_process_json_with_jq(execution_run_id: str) -> dict:
     with _tracer.start_as_current_span("step4_process_json_with_jq") as span:
         span.set_attribute("execution.run_id", execution_run_id)
         span.set_attribute("step_name", "process_json_with_jq")
-        
+
         logger.info("STEP 4: jq process JSON")
         time.sleep(3)
         result = run_tool(
@@ -127,12 +127,12 @@ def step4_process_json_with_jq(execution_run_id: str) -> dict:
             timeout=10,
             step_name="step4_process_json_with_jq",
         )
-        
+
         span.set_attribute("exit_code", result["exit_code"])
         if result["exit_code"] != 0:
             span.set_attribute("error", True)
             logger.error("step4_process_json_with_jq failed exit_code=%s", result["exit_code"])
-        
+
         return result
 
 
@@ -140,7 +140,7 @@ def step5_transform_with_jq(execution_run_id: str) -> dict:
     with _tracer.start_as_current_span("step5_transform_with_jq") as span:
         span.set_attribute("execution.run_id", execution_run_id)
         span.set_attribute("step_name", "transform_with_jq")
-        
+
         logger.info("STEP 5: jq transform")
         time.sleep(3)
         result = run_tool(
@@ -153,18 +153,18 @@ def step5_transform_with_jq(execution_run_id: str) -> dict:
             timeout=10,
             step_name="step5_transform_with_jq",
         )
-        
+
         span.set_attribute("exit_code", result["exit_code"])
         if result["exit_code"] != 0:
             span.set_attribute("error", True)
             logger.error("step5_transform_with_jq failed exit_code=%s", result["exit_code"])
-        
+
         return result
 
 
 def main(log_file: str = "production.log") -> dict:
     global _telemetry, _tracer
-    
+
     # Initialize telemetry
     _telemetry = init_telemetry(
         service_name="s3-failed-pipeline",
@@ -174,10 +174,10 @@ def main(log_file: str = "production.log") -> dict:
         },
     )
     _tracer = _telemetry.tracer
-    
+
     execution_run_id = str(uuid.uuid4())
-    
-    logger.info("DATA ENGINEERING PIPELINE START main_pid=%s log_file=%s execution_run_id=%s", 
+
+    logger.info("DATA ENGINEERING PIPELINE START main_pid=%s log_file=%s execution_run_id=%s",
                 os.getpid(), log_file, execution_run_id)
     start_time = time.time()
     results: list[dict] = []

@@ -61,13 +61,13 @@ def query_tempo_traces(execution_run_id: str) -> list[dict]:
 def validate_grafana_telemetry(execution_run_id: str) -> bool:
     """Validate that telemetry appears in Grafana."""
     print(f"\nValidating Grafana telemetry for execution_run_id={execution_run_id}...")
-    
+
     logs = query_loki_logs(execution_run_id)
     traces = query_tempo_traces(execution_run_id)
-    
+
     print(f"  Logs found: {len(logs)}")
     print(f"  Traces found: {len(traces)}")
-    
+
     # Check for expected spans
     if traces:
         print("  Expected spans:")
@@ -75,7 +75,7 @@ def validate_grafana_telemetry(execution_run_id: str) -> bool:
         print("    - validate_data")
         print("    - transform_data")
         print("    - load_data")
-    
+
     if logs and traces:
         print("✓ Telemetry validation passed")
         return True
@@ -90,7 +90,7 @@ def main():
     print("Airflow DAG Local Test with Grafana Validation")
     print("=" * 60)
     print()
-    
+
     # Check if Grafana is running
     try:
         response = requests.get(f"{GRAFANA_URL}/api/health", timeout=5)
@@ -102,7 +102,7 @@ def main():
         print("✗ Grafana is not running on localhost:3000")
         print("  Run: make grafana-local")
         return 1
-    
+
     # Prompt for execution_run_id
     print("This test validates telemetry from an Airflow DAG run.")
     print("You must first:")
@@ -111,15 +111,15 @@ def main():
     print("  3. Trigger a DAG run and note the dag_run_id")
     print()
     execution_run_id = input("Enter the dag_run_id to validate: ").strip()
-    
+
     if not execution_run_id:
         print("No execution_run_id provided. Exiting.")
         return 1
-    
+
     # Wait for telemetry export
     print("Waiting for telemetry export...")
     time.sleep(5)
-    
+
     # Validate Grafana
     if validate_grafana_telemetry(execution_run_id):
         print("\n" + "=" * 60)

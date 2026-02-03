@@ -22,7 +22,8 @@ from tracer_telemetry import init_telemetry
 from airflow_dag.adapters.alerting import log_pipeline_alert
 from airflow_dag.adapters.s3 import read_json, write_json
 from airflow_dag.config import PIPELINE_NAME, PROCESSED_BUCKET, REQUIRED_FIELDS
-from airflow_dag.domain import transform_data as domain_transform_data, validate_data as domain_validate_data
+from airflow_dag.domain import transform_data as domain_transform_data
+from airflow_dag.domain import validate_data as domain_validate_data
 from airflow_dag.errors import DomainError, PipelineError
 
 logger = logging.getLogger("airflow.task")

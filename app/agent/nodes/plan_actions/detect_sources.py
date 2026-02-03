@@ -35,7 +35,7 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
 
         The aws_metadata source contains ALL AWS-related annotations from the alert,
         enabling dynamic AWS SDK investigations (ECS, RDS, EC2, VPC, etc.).
-        
+
         The grafana source is OPTIONAL and only added if service map shows Grafana connectivity.
     """
     sources: dict[str, dict] = {}
@@ -228,16 +228,20 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
         or annotations.get("correlation_id")
     )
 
+    # Check for explicit Grafana account from alert annotations
+    grafana_account_id = annotations.get("grafana_account") or annotations.get("grafana_account_id")
+
     if pipeline_name:
         from app.agent.tools.tool_actions.grafana_actions import check_grafana_connection
 
-        connection_check = check_grafana_connection(pipeline_name)
+        connection_check = check_grafana_connection(pipeline_name, account_id=grafana_account_id)
 
         if connection_check.get("connected"):
             grafana_params: dict[str, Any] = {
                 "service_name": connection_check["service_name"],
                 "pipeline_name": pipeline_name,
                 "connection_verified": True,
+                "account_id": connection_check.get("account_id"),
             }
 
             if execution_run_id:

@@ -40,18 +40,18 @@ class ExecutionRunIdLoggingHandler(logging.Handler):
                             pass
         except Exception:
             pass
-        
+
         self.base_handler.emit(record)
 
 
 def setup_logging(resource) -> None:
     if OTLPLogExporter is None:
         return
-    
+
     try:
+        from opentelemetry import _logs
         from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
         from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-        from opentelemetry import _logs
     except ImportError:
         return
 

@@ -281,7 +281,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
         record_count=len(data),
         attributes={"pipeline.name": PIPELINE_NAME},
     )
-    
+
     # Force flush telemetry before Lambda terminates
     telemetry.flush()
 

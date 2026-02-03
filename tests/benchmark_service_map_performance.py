@@ -3,17 +3,19 @@
 Validates time savings claims by measuring investigation time with service map ON vs OFF.
 """
 
+import json
 import os
 import time
+from datetime import datetime
 from pathlib import Path
+
+from app.agent.graph_pipeline import run_investigation
+from app.agent.memory.io import get_memories_dir
 
 # Import test fixtures
 from tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e import (
     create_test_alert as create_prefect_alert,
 )
-
-from app.agent.graph_pipeline import run_investigation
-from app.agent.memory.io import get_memories_dir
 
 
 def clean_service_map():
@@ -81,7 +83,7 @@ def benchmark_service_map_impact():
     print(f"\n✓ Average WITHOUT service map (cold): {avg_without:.2f}s")
 
     # Phase 2: Initial run WITH service map (builds the map)
-    print(f"\nPhase 2: Initial run WITH service map (builds map)")
+    print("\nPhase 2: Initial run WITH service map (builds map)")
     print("-" * 80)
 
     config.SERVICE_MAP_ENABLED = True
@@ -93,7 +95,7 @@ def benchmark_service_map_impact():
     print(f"  Time: {build_time:.2f}s (includes service map creation)")
 
     # Phase 3: Warm start WITH service map (3 runs)
-    print(f"\nPhase 3: WITH service map (warm start) - 3 runs")
+    print("\nPhase 3: WITH service map (warm start) - 3 runs")
     print("-" * 80)
 
     times_with = []
@@ -120,11 +122,11 @@ def benchmark_service_map_impact():
     print(f"Percentage improvement:             {((avg_without - avg_with) / avg_without * 100):.1f}%")
 
     if avg_without > avg_with:
-        print(f"\n✅ Service map provides measurable speedup!")
+        print("\n✅ Service map provides measurable speedup!")
     elif abs(avg_without - avg_with) < 1.0:
-        print(f"\n⚠️  Service map has minimal impact (< 1s difference)")
+        print("\n⚠️  Service map has minimal impact (< 1s difference)")
     else:
-        print(f"\n❌ Service map may be slower (needs investigation)")
+        print("\n❌ Service map may be slower (needs investigation)")
 
     print(f"{'='*80}\n")
 
@@ -179,7 +181,7 @@ if __name__ == "__main__":
 ### WITHOUT Service Map (Cold Start)
 {chr(10).join(f'- Run {i+1}: {t:.2f}s' for i, t in enumerate(results['times_without']))}
 
-### WITH Service Map (Warm Start)  
+### WITH Service Map (Warm Start)
 {chr(10).join(f'- Run {i+1}: {t:.2f}s' for i, t in enumerate(results['times_with']))}
 
 ### Initial Build

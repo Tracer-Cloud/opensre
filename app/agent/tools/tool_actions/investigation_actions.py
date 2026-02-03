@@ -150,6 +150,12 @@ def get_available_actions() -> list[InvestigationAction]:
     """
     from app.agent.tools.tool_actions.aws_sdk_actions import execute_aws_operation
     from app.agent.tools.tool_actions.cloudwatch_actions import get_cloudwatch_logs
+    from app.agent.tools.tool_actions.grafana_actions import (
+        check_grafana_connection,
+        query_grafana_logs,
+        query_grafana_metrics,
+        query_grafana_traces,
+    )
     from app.agent.tools.tool_actions.lambda_actions import (
         get_lambda_configuration,
         get_lambda_errors,
@@ -161,12 +167,6 @@ def get_available_actions() -> list[InvestigationAction]:
         get_s3_object,
         inspect_s3_object,
         list_s3_objects,
-    )
-    from app.agent.tools.tool_actions.grafana_actions import (
-        check_grafana_connection,
-        query_grafana_logs,
-        query_grafana_metrics,
-        query_grafana_traces,
     )
     from app.agent.tools.tool_actions.sre_knowledge_actions import get_sre_guidance
     from app.agent.tools.tool_actions.tracer_jobs import (
@@ -379,6 +379,7 @@ def get_available_actions() -> list[InvestigationAction]:
                 "execution_run_id": sources["grafana"].get("execution_run_id"),
                 "time_range_minutes": 60,
                 "limit": 100,
+                "account_id": sources["grafana"].get("account_id"),
             },
         ),
         _build_investigation_action(
@@ -393,6 +394,7 @@ def get_available_actions() -> list[InvestigationAction]:
                 "service_name": sources["grafana"]["service_name"],
                 "execution_run_id": sources["grafana"].get("execution_run_id"),
                 "limit": 20,
+                "account_id": sources["grafana"].get("account_id"),
             },
         ),
         _build_investigation_action(
@@ -404,6 +406,7 @@ def get_available_actions() -> list[InvestigationAction]:
             parameter_extractor=lambda sources: {
                 "metric_name": "pipeline_runs_total",
                 "service_name": sources.get("grafana", {}).get("service_name"),
+                "account_id": sources.get("grafana", {}).get("account_id"),
             },
         ),
         _build_investigation_action(
@@ -414,6 +417,7 @@ def get_available_actions() -> list[InvestigationAction]:
             availability_check=lambda _sources: True,  # Always available for checking
             parameter_extractor=lambda sources: {
                 "pipeline_name": sources.get("grafana", {}).get("pipeline_name", ""),
+                "account_id": sources.get("grafana", {}).get("account_id"),
             },
         ),
     ]

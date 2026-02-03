@@ -167,8 +167,9 @@ class EcsFlinkStack(Stack):
             environment={
                 "LANDING_BUCKET": landing_bucket.bucket_name,
                 "PROCESSED_BUCKET": processed_bucket.bucket_name,
-                "OTEL_EXPORTER_OTLP_ENDPOINT": "127.0.0.1:4317",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
                 "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+                "OTEL_EXPORTER_OTLP_INSECURE": "true",
                 "OTEL_SERVICE_NAME": "flink-etl-pipeline",
                 "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_flink,pipeline.framework=flink,test_case=test_case_upstream_apache_flink_ecs",
             },
