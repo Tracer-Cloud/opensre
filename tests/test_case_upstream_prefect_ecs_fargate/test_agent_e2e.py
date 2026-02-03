@@ -2,7 +2,7 @@
 """End-to-end agent investigation test for Prefect ECS pipeline.
 
 Tests if the agent can trace a schema validation failure through:
-1. Prefect logs (ECS CloudWatch)
+1. Prefect flow logs (ECS CloudWatch)
 2. S3 input data
 3. S3 metadata/audit trail
 4. Trigger Lambda
@@ -52,104 +52,61 @@ def trigger_pipeline_failure() -> dict:
     correlation_id = result.get("correlation_id")
     s3_key = result.get("s3_key")
     audit_key = result.get("audit_key")
+    task_arn = result.get("task_arn")
 
     print(f"\nCorrelation ID: {correlation_id}")
     print(f"S3 Key: {s3_key}")
+    print(f"Task ARN: {task_arn}")
 
-    print("\nWaiting for Prefect flow to complete...")
+    # Wait for ECS task to complete (and fail)
+    print("\nWaiting for ECS task to complete...")
     time.sleep(30)
 
     return {
         "correlation_id": correlation_id,
         "s3_key": s3_key,
         "audit_key": audit_key,
-        "s3_bucket": CONFIG["s3_bucket"],
+        "task_arn": task_arn,
+        "bucket": CONFIG["s3_bucket"],
     }
 
 
-def get_failure_details() -> dict:
-    """Get details about the failed Prefect flow run."""
+def get_failure_details_from_logs(trigger_data: dict) -> dict:
+    """Get error details from CloudWatch logs."""
     print("=" * 60)
-    print("Retrieving Prefect Flow Run Details")
+    print("Retrieving Failure Details from CloudWatch")
     print("=" * 60)
 
-    if not CONFIG.get("prefect_api_url"):
-        print("ERROR: No Prefect server found in ECS")
-        return None
-
-    # Query Prefect for recent flow runs
-    print(f"\nQuerying Prefect at {CONFIG['prefect_api_url']}...")
-    response = requests.post(
-        f"{CONFIG['prefect_api_url']}/flow_runs/filter",
-        json={
-            "sort": "START_TIME_DESC",
-            "limit": 10,
-        },
-        timeout=10,
-    )
-
-    if not response.ok:
-        print(f"❌ Failed to query Prefect: {response.status_code}")
-        return None
-
-    flow_runs = response.json()
-    print(f"✓ Found {len(flow_runs)} recent flow runs")
-
-    # Find the failed run
-    failed_run = None
-    for run in flow_runs:
-        if run.get("state", {}).get("type") == "FAILED":
-            failed_run = run
-            break
-
-    if not failed_run:
-        print("❌ No failed flow runs found")
-        return None
-
-    print("\n✓ Found failed flow run:")
-    print(f"   ID: {failed_run['id']}")
-    print(f"   Name: {failed_run['name']}")
-    print(f"   Flow: {failed_run.get('flow_name', 'unknown')}")
-    print(f"   State: {failed_run['state']['type']}")
-    print(f"   Message: {failed_run['state'].get('message', 'No message')}")
-
-    # Get error message from CloudWatch logs
     logs_client = boto3.client("logs", region_name="us-east-1")
-    print(f"\nChecking CloudWatch logs: {CONFIG['log_group']}")
 
     try:
         response = logs_client.filter_log_events(
             logGroupName=CONFIG["log_group"],
-            startTime=int((time.time() - 3600) * 1000),  # Last hour
-            filterPattern=CONFIG["correlation_id"],
+            filterPattern="ERROR",
+            limit=50,
         )
 
         error_message = "Schema validation failed"
-        for event in response["events"]:
-            message = event["message"]
-            if "Schema validation failed" in message and "Missing fields" in message:
-                # Extract the exact error
-                start = message.find("Missing fields")
-                end = message.find("in record", start) + len("in record 0")
-                error_message = message[start:end]
+        for event in response.get("events", []):
+            msg = event.get("message", "")
+            if "Schema validation failed" in msg or "required field" in msg.lower():
+                error_message = msg[:200]
+                print(f"Found error in logs: {error_message[:100]}")
                 break
 
-        print(f"✓ Error found in logs: {error_message}")
+        return {
+            **trigger_data,
+            "error_message": error_message,
+            "log_group": CONFIG["log_group"],
+        }
 
     except Exception as e:
-        print(f"⚠ Warning: Could not fetch CloudWatch logs: {e}")
-        error_message = failed_run["state"].get("message", "Schema validation failed")
-
-    return {
-        "flow_run_id": failed_run["id"],
-        "flow_run_name": failed_run["name"],
-        "correlation_id": CONFIG["correlation_id"],
-        "error_message": error_message,
-        "log_group": CONFIG["log_group"],
-        "s3_bucket": CONFIG["s3_bucket"],
-        "s3_key": CONFIG["s3_key"],
-        "audit_key": CONFIG["audit_key"],
-    }
+        print(f"Warning: Could not query logs: {e}")
+        return {
+            **trigger_data,
+            "error_message": "Schema validation failed",
+            "log_group": CONFIG["log_group"],
+        }
 
 
 def test_agent_investigation(failure_data: dict) -> bool:
@@ -158,51 +115,47 @@ def test_agent_investigation(failure_data: dict) -> bool:
     print("Running Agent Investigation")
     print("=" * 60)
 
-    # Create alert with Prefect flow run information
     alert = create_alert(
         pipeline_name="upstream_downstream_pipeline_prefect",
-        run_name=failure_data["flow_run_name"],
+        run_name=failure_data["correlation_id"],
         status="failed",
         timestamp=datetime.now(UTC).isoformat(),
         severity="critical",
-        alert_name=f"Prefect Flow Failed: {failure_data['flow_run_name']}",
+        alert_name=f"Prefect Flow Failed: {failure_data['correlation_id']}",
         annotations={
-            # Don't include correlation_id as filter - it won't match logs
-            # Instead, agent will get latest logs from the log group
             "cloudwatch_log_group": failure_data["log_group"],
-            "flow_run_id": failure_data["flow_run_id"],
-            "flow_run_name": failure_data["flow_run_name"],
-            "prefect_flow": "upstream_downstream_pipeline",
-            "ecs_cluster": "tracer-prefect-cluster",
-            "landing_bucket": failure_data["s3_bucket"],
+            "ecs_cluster": CONFIG["ecs_cluster"],
+            "task_arn": failure_data.get("task_arn", ""),
+            "landing_bucket": failure_data["bucket"],
             "s3_key": failure_data["s3_key"],
-            "audit_key": failure_data["audit_key"],
-            "prefect_api_url": CONFIG["prefect_api_url"],
+            "audit_key": failure_data.get("audit_key", ""),
+            "processed_bucket": CONFIG.get("processed_bucket", ""),
+            "correlation_id": failure_data["correlation_id"],
             "error_message": failure_data["error_message"],
+            "mock_api_url": CONFIG.get("mock_api_url", ""),
+            "context_sources": "s3,cloudwatch,ecs,lambda",
         },
     )
 
-    print("\n📋 Alert created:")
+    print("\nAlert created:")
     print(f"   Pipeline: {alert.get('labels', {}).get('alertname', 'unknown')}")
-    print(f"   Run Name: {failure_data['flow_run_name']}")
-    print(f"   Flow Run ID: {failure_data['flow_run_id']}")
+    print(f"   Correlation ID: {failure_data['correlation_id']}")
     print(f"   Log Group: {failure_data['log_group']}")
-    print(f"   S3 Data: s3://{failure_data['s3_bucket']}/{failure_data['s3_key']}")
-    print(f"   S3 Audit: s3://{failure_data['s3_bucket']}/{failure_data['audit_key']}")
+    print(f"   S3 Data: s3://{failure_data['bucket']}/{failure_data['s3_key']}")
+    if failure_data.get("audit_key"):
+        print(f"   S3 Audit: s3://{failure_data['bucket']}/{failure_data['audit_key']}")
 
-    print("\n🤖 Starting investigation agent...")
+    print("\nStarting investigation agent...")
     print("-" * 60)
 
-    # Run investigation with traceable metadata
     @traceable(
         run_type="chain",
         name=f"test_prefect_ecs - {alert['alert_id'][:8]}",
         metadata={
             "alert_id": alert["alert_id"],
             "pipeline_name": "upstream_downstream_pipeline_prefect",
-            "flow_run_id": failure_data["flow_run_id"],
-            "flow_run_name": failure_data["flow_run_name"],
-            "ecs_cluster": "tracer-prefect-cluster",
+            "correlation_id": failure_data["correlation_id"],
+            "ecs_cluster": CONFIG["ecs_cluster"],
             "log_group": failure_data["log_group"],
             "s3_key": failure_data["s3_key"],
         },
@@ -217,28 +170,27 @@ def test_agent_investigation(failure_data: dict) -> bool:
 
     result = run_investigation()
 
+    print("\n" + "=" * 60)
+    print("RCA REPORT")
+    print("=" * 60)
+    print(result.get("report", "No report generated"))
+
+    confidence = result.get("confidence", 0)
+    validity = result.get("validity_score", 0)
+    print("\n" + "=" * 60)
+    print(f"Investigation complete. Confidence: {confidence}% | Validity: {validity}%")
     print("-" * 60)
-    print("\n📊 Investigation Results:")
+
+    print("\nInvestigation Results:")
     print(f"   Status: {result.get('status', 'unknown')}")
 
-    # Analyze investigation output
-    investigation = result.get("investigation", {})
-    root_cause = result.get("root_cause_analysis", {})
+    print("\nInvestigation Summary:")
+    print(result.get("summary", "No summary available"))
 
-    print("\n🔍 Investigation Summary:")
-    if investigation:
-        print(f"   Context gathered: {len(investigation)} items")
-        for key, value in investigation.items():
-            if isinstance(value, dict):
-                print(f"   - {key}: {len(value)} entries")
-            elif isinstance(value, list):
-                print(f"   - {key}: {len(value)} items")
+    print("\nRoot Cause Analysis:")
+    print(result.get("root_cause", "No root cause determined"))
 
-    print("\n🎯 Root Cause Analysis:")
-    if root_cause:
-        print(json.dumps(root_cause, indent=2))
-
-    # Check if agent identified the key components
+    # Check success criteria
     success_checks = {
         "Prefect logs retrieved": False,
         "S3 input data inspected": False,
@@ -247,16 +199,17 @@ def test_agent_investigation(failure_data: dict) -> bool:
         "Schema change detected": False,
     }
 
-    # Analyze the investigation to check our success criteria
     investigation_text = json.dumps(result).lower()
 
     if "cloudwatch" in investigation_text or "prefect" in investigation_text:
         success_checks["Prefect logs retrieved"] = True
 
-    if failure_data["s3_key"] in investigation_text or "ingested/20260131" in investigation_text:
+    s3_key = failure_data.get("s3_key", "")
+    if s3_key in investigation_text or "ingested/" in investigation_text:
         success_checks["S3 input data inspected"] = True
 
-    if failure_data["audit_key"] in investigation_text or "audit/" in investigation_text:
+    audit_key = failure_data.get("audit_key", "")
+    if audit_key in investigation_text or "audit/" in investigation_text:
         success_checks["Audit trail traced"] = True
 
     if "external" in investigation_text and (
@@ -267,10 +220,10 @@ def test_agent_investigation(failure_data: dict) -> bool:
     if "customer_id" in investigation_text or "schema" in investigation_text:
         success_checks["Schema change detected"] = True
 
-    print("\n✅ Success Checks:")
+    print("\nSuccess Checks:")
     all_passed = True
     for check, passed in success_checks.items():
-        status = "✓" if passed else "✗"
+        status = "[PASS]" if passed else "[FAIL]"
         print(f"   {status} {check}")
         if not passed:
             all_passed = False
@@ -284,29 +237,25 @@ def main():
     print("PREFECT ECS E2E INVESTIGATION TEST")
     print("=" * 60)
 
-    # Trigger a pipeline failure first
+    # Trigger a pipeline failure
     trigger_data = trigger_pipeline_failure()
     if not trigger_data:
-        print("\n❌ Could not trigger pipeline failure")
+        print("\nERROR: Could not trigger pipeline failure")
         return False
 
-    # Get failure details from Prefect
-    failure_data = get_failure_details()
-    if not failure_data:
-        # Fall back to trigger data if Prefect query fails
-        print("\nUsing trigger data as failure details...")
-        failure_data = trigger_data
+    # Get failure details from CloudWatch
+    failure_data = get_failure_details_from_logs(trigger_data)
 
     # Run agent investigation
     success = test_agent_investigation(failure_data)
 
     print("\n" + "=" * 60)
     if success:
-        print("✅ TEST PASSED: Agent successfully traced the failure")
-        print("   to the External Vendor API schema change")
+        print("TEST PASSED: Agent successfully traced the failure")
+        print("   and detected the schema change as root cause")
     else:
-        print("❌ TEST FAILED: Agent could not complete full trace")
-    print("=" * 60 + "\n")
+        print("TEST FAILED: Agent did not detect all expected signals")
+    print("=" * 60)
 
     return success
 

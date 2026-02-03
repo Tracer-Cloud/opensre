@@ -1,4 +1,4 @@
-.PHONY: install test demo clean lint format
+.PHONY: install test demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink
 
 PYTHON = python3
 PIP = python3 -m pip
@@ -59,6 +59,54 @@ grafana-local-down:
 grafana-local-logs:
 	cd tests/shared/infrastructure_code && docker compose logs -f
 
+# Deploy all test case infrastructure in parallel (SDK - fast!)
+deploy:
+	@echo "Deploying all stacks in parallel..."
+	@$(PYTHON) tests/test_case_upstream_lambda/infrastructure_sdk/deploy.py & \
+	$(PYTHON) tests/test_case_upstream_prefect_ecs_fargate/infrastructure_sdk/deploy.py & \
+	$(PYTHON) tests/test_case_upstream_apache_flink_ecs/infrastructure_sdk/deploy.py & \
+	wait
+	@echo "All stacks deployed."
+
+# Deploy Lambda test case
+deploy-lambda:
+	@echo "Deploying Lambda stack..."
+	$(PYTHON) tests/test_case_upstream_lambda/infrastructure_sdk/deploy.py
+
+# Deploy Prefect ECS test case
+deploy-prefect:
+	@echo "Deploying Prefect ECS stack..."
+	$(PYTHON) tests/test_case_upstream_prefect_ecs_fargate/infrastructure_sdk/deploy.py
+
+# Deploy Flink ECS test case
+deploy-flink:
+	@echo "Deploying Flink ECS stack..."
+	$(PYTHON) tests/test_case_upstream_apache_flink_ecs/infrastructure_sdk/deploy.py
+
+# Destroy all test case infrastructure in parallel
+destroy:
+	@echo "Destroying all stacks in parallel..."
+	@$(PYTHON) tests/test_case_upstream_lambda/infrastructure_sdk/destroy.py & \
+	$(PYTHON) tests/test_case_upstream_prefect_ecs_fargate/infrastructure_sdk/destroy.py & \
+	$(PYTHON) tests/test_case_upstream_apache_flink_ecs/infrastructure_sdk/destroy.py & \
+	wait
+	@echo "All stacks destroyed."
+
+# Destroy Lambda test case
+destroy-lambda:
+	@echo "Destroying Lambda stack..."
+	$(PYTHON) tests/test_case_upstream_lambda/infrastructure_sdk/destroy.py
+
+# Destroy Prefect ECS test case
+destroy-prefect:
+	@echo "Destroying Prefect ECS stack..."
+	$(PYTHON) tests/test_case_upstream_prefect_ecs_fargate/infrastructure_sdk/destroy.py
+
+# Destroy Flink ECS test case
+destroy-flink:
+	@echo "Destroying Flink ECS stack..."
+	$(PYTHON) tests/test_case_upstream_apache_flink_ecs/infrastructure_sdk/destroy.py
+
 # Run tests
 test:
 	$(PYTHON) -m pytest -v
@@ -100,16 +148,32 @@ check: lint typecheck test
 # Show help
 help:
 	@echo "Available commands:"
-	@echo "  make install         - Install dependencies"
+	@echo ""
+	@echo "  DEPLOYMENT (AWS SDK - fast!)"
+	@echo "  make deploy          - Deploy all test case infrastructure"
+	@echo "  make deploy-lambda   - Deploy Lambda stack (~50s)"
+	@echo "  make deploy-prefect  - Deploy Prefect ECS stack (~55s)"
+	@echo "  make deploy-flink    - Deploy Flink ECS stack (~90s)"
+	@echo "  make destroy         - Destroy all test case infrastructure"
+	@echo "  make destroy-lambda  - Destroy Lambda stack"
+	@echo "  make destroy-prefect - Destroy Prefect ECS stack"
+	@echo "  make destroy-flink   - Destroy Flink ECS stack"
+	@echo ""
+	@echo "  DEMOS"
 	@echo "  make demo            - Run Prefect ECS E2E test (default, shows Investigation Trace)"
 	@echo "  make prefect-demo    - Run Prefect ECS Fargate E2E test (alias for demo)"
 	@echo "  make flink-demo      - Run Apache Flink ECS E2E test"
 	@echo "  make superfluid-demo - Run Superfluid test case demo"
 	@echo "  make cloudwatch-demo - Run CloudWatch demo"
 	@echo "  make upstream-downstream - Run upstream/downstream Lambda E2E test"
+	@echo ""
+	@echo "  LOCAL DEVELOPMENT"
+	@echo "  make install         - Install dependencies"
 	@echo "  make grafana-local   - Start local Grafana observability stack"
 	@echo "  make grafana-local-down - Stop local Grafana stack"
 	@echo "  make grafana-local-logs - View local Grafana stack logs"
+	@echo ""
+	@echo "  TESTING & QUALITY"
 	@echo "  make test            - Run tests"
 	@echo "  make test-cov        - Run tests with coverage"
 	@echo "  make test-grafana    - Run Grafana integration tests"

@@ -1,11 +1,24 @@
 """Dynamic stack configuration loader.
 
-Fetches configuration from CloudFormation stack outputs.
+Fetches configuration from CloudFormation stack outputs or SDK outputs.
 No more hardcoded URLs/IPs - single source of truth.
 """
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
+
+from tests.shared.infrastructure_sdk.config import load_outputs
+
+
+def get_sdk_outputs(stack_name: str) -> dict:
+    """Fetch outputs from SDK deployment JSON file.
+
+    Returns empty dict if outputs file doesn't exist.
+    """
+    try:
+        return load_outputs(stack_name)
+    except FileNotFoundError:
+        return {}
 
 
 def get_stack_outputs(stack_name: str, region: str = "us-east-1") -> dict:
@@ -60,10 +73,25 @@ STACKS = {
     "lambda": "TracerUpstreamLambda",
 }
 
+# SDK stack names (different naming convention)
+SDK_STACKS = {
+    "flink": "tracer-flink-ecs",
+    "prefect": "tracer-prefect-ecs",
+}
+
 
 def get_flink_config() -> dict:
-    """Get Flink test configuration from stack outputs."""
-    outputs = get_stack_outputs(STACKS["flink"])
+    """Get Flink test configuration from stack outputs.
+
+    Checks SDK outputs first, then falls back to CloudFormation.
+    """
+    # Try SDK outputs first
+    outputs = get_sdk_outputs(SDK_STACKS["flink"])
+
+    # Fall back to CloudFormation if no SDK outputs
+    if not outputs:
+        outputs = get_stack_outputs(STACKS["flink"])
+
     return {
         "trigger_api_url": outputs.get("TriggerApiUrl"),
         "mock_api_url": outputs.get("MockApiUrl"),
@@ -71,12 +99,26 @@ def get_flink_config() -> dict:
         "ecs_cluster": outputs.get("EcsClusterName"),
         "landing_bucket": outputs.get("LandingBucketName"),
         "processed_bucket": outputs.get("ProcessedBucketName"),
+        "trigger_lambda": outputs.get("TriggerLambdaName"),
+        "mock_api_lambda": outputs.get("MockApiLambdaName"),
+        "task_definition_arn": outputs.get("TaskDefinitionArn"),
+        "security_group_id": outputs.get("SecurityGroupId"),
+        "subnet_ids": outputs.get("SubnetIds"),
     }
 
 
 def get_prefect_config() -> dict:
-    """Get Prefect test configuration from stack outputs."""
-    outputs = get_stack_outputs(STACKS["prefect"])
+    """Get Prefect test configuration from stack outputs.
+
+    Checks SDK outputs first (tracer-prefect-ecs), then falls back to CDK stack.
+    """
+    # Try SDK outputs first (new deployment method)
+    outputs = get_sdk_outputs("tracer-prefect-ecs")
+
+    # Fall back to CDK stack outputs
+    if not outputs:
+        outputs = get_stack_outputs(STACKS["prefect"])
+
     cluster_name = outputs.get("EcsClusterName")
 
     return {

@@ -9,8 +9,8 @@ This Lambda:
 1. Fetches data from external vendor API
 2. Stores audit payload with vendor request/response
 3. Writes data to S3 landing bucket with audit_key in metadata
-4. Triggers the Prefect flow via API
-5. Returns flow run ID
+4. Starts ECS flow task via RunTask API
+5. Returns correlation_id and task ARN
 """
 
 import json
@@ -23,10 +23,14 @@ import requests
 # Environment variables
 LANDING_BUCKET = os.environ.get("LANDING_BUCKET", "")
 PROCESSED_BUCKET = os.environ.get("PROCESSED_BUCKET", "")
-PREFECT_API_URL = os.environ.get("PREFECT_API_URL", "http://localhost:4200/api")
 EXTERNAL_API_URL = os.environ.get("EXTERNAL_API_URL", "")
+ECS_CLUSTER = os.environ.get("ECS_CLUSTER", "")
+TASK_DEFINITION = os.environ.get("TASK_DEFINITION", "")
+SUBNET_IDS = os.environ.get("SUBNET_IDS", "").split(",")
+SECURITY_GROUP_ID = os.environ.get("SECURITY_GROUP_ID", "")
 
 s3_client = boto3.client("s3")
+ecs_client = boto3.client("ecs")
 
 
 def fetch_from_external_api(api_url: str, inject_error: bool = False) -> tuple[dict, dict]:
@@ -78,6 +82,47 @@ def fetch_from_external_api(api_url: str, inject_error: bool = False) -> tuple[d
     print(f"EXTERNAL_API_AUDIT: {json.dumps(audit_info)}")
 
     return result, audit_info
+
+
+def start_flow_task(correlation_id: str, s3_bucket: str, s3_key: str) -> str:
+    """Start ECS flow task and return task ARN."""
+    response = ecs_client.run_task(
+        cluster=ECS_CLUSTER,
+        taskDefinition=TASK_DEFINITION,
+        launchType="FARGATE",
+        networkConfiguration={
+            "awsvpcConfiguration": {
+                "subnets": SUBNET_IDS,
+                "securityGroups": [SECURITY_GROUP_ID],
+                "assignPublicIp": "ENABLED",
+            }
+        },
+        overrides={
+            "containerOverrides": [
+                {
+                    "name": "FlowContainer",
+                    "environment": [
+                        {"name": "S3_BUCKET", "value": s3_bucket},
+                        {"name": "S3_KEY", "value": s3_key},
+                        {"name": "CORRELATION_ID", "value": correlation_id},
+                    ],
+                    "command": [
+                        "python",
+                        "-c",
+                        f"from prefect_flow.flow import data_pipeline_flow; data_pipeline_flow('{s3_bucket}', '{s3_key}')",
+                    ],
+                }
+            ]
+        },
+    )
+
+    if not response.get("tasks"):
+        failures = response.get("failures", [])
+        raise RuntimeError(f"Failed to start ECS task: {failures}")
+
+    task_arn = response["tasks"][0]["taskArn"]
+    print(f"Started ECS flow task: {task_arn}")
+    return task_arn
 
 
 def lambda_handler(event, context):
@@ -173,18 +218,34 @@ def lambda_handler(event, context):
     print(f"Wrote data to S3: s3://{LANDING_BUCKET}/{s3_key}")
     print(f"Metadata: {json.dumps(s3_metadata)}")
 
-    # Trigger Prefect flow
-    # Note: In production, you'd create a deployment and trigger it
-    # For now, we just return success with the S3 key
-    # The flow would be triggered by the ECS worker polling for work
+    # Start ECS flow task
+    task_arn = None
+    if ECS_CLUSTER and TASK_DEFINITION:
+        try:
+            task_arn = start_flow_task(correlation_id, LANDING_BUCKET, s3_key)
+        except Exception as e:
+            print(f"ERROR: Failed to start ECS task: {e}")
+            return {
+                "statusCode": 500,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({
+                    "error": str(e),
+                    "correlation_id": correlation_id,
+                    "s3_key": s3_key,
+                }),
+            }
+    else:
+        print("ECS_CLUSTER or TASK_DEFINITION not configured, skipping task launch")
 
     response_body = {
         "status": "triggered",
         "correlation_id": correlation_id,
         "s3_bucket": LANDING_BUCKET,
         "s3_key": s3_key,
+        "audit_key": audit_key,
+        "task_arn": task_arn,
         "inject_error": inject_error,
-        "message": "Data written to S3. Flow will process when triggered.",
+        "message": "Data written to S3 and flow task started.",
     }
 
     return {

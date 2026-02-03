@@ -32,20 +32,35 @@ LANGGRAPH_REMOTE_ENDPOINT = (
 )
 
 # Upstream/Downstream Pipeline Test Case - AWS Resources
-# Stack: TracerUpstreamDownstreamTest
-UPSTREAM_DOWNSTREAM_CONFIG = {
-    "stack_name": "TracerUpstreamDownstreamTest",
-    # HTTP Trigger Endpoint (easy testing)
-    "ingester_api_url": "https://ud9ogzmatj.execute-api.us-east-1.amazonaws.com/prod/",
-    # Mock External API
-    "mock_api_url": "https://pf2u8sbgk7.execute-api.us-east-1.amazonaws.com/prod/",
-    # Lambda Functions
-    "ingester_function_name": "TracerUpstreamDownstreamTes-IngesterLambda519919B4-swSsLumUC0KN",
-    "mock_dag_function_name": "TracerUpstreamDownstreamTest-MockDagLambdaCF347C20-3X8c3pPwK2Bq",
-    # S3 Buckets
-    "landing_bucket_name": "tracerupstreamdownstreamtest-landingbucket23fe90fb-felup0en4mqb",
-    "processed_bucket_name": "tracerupstreamdownstreamte-processedbucketde59930c-bg5m6jrqoq6v",
-}
+# Try loading from SDK outputs first, fall back to hardcoded CDK values
+def _load_upstream_downstream_config() -> dict:
+    """Load config from SDK outputs or use CDK fallback."""
+    try:
+        from tests.shared.infrastructure_sdk.config import load_outputs
+        outputs = load_outputs("tracer-lambda")
+        return {
+            "stack_name": "tracer-lambda",
+            "ingester_api_url": outputs["IngesterApiUrl"],
+            "mock_api_url": outputs["MockApiUrl"],
+            "ingester_function_name": outputs["IngesterFunctionName"],
+            "mock_dag_function_name": outputs["MockDagFunctionName"],
+            "landing_bucket_name": outputs["LandingBucketName"],
+            "processed_bucket_name": outputs["ProcessedBucketName"],
+        }
+    except (FileNotFoundError, ImportError):
+        # Fall back to CDK deployment values
+        return {
+            "stack_name": "TracerUpstreamDownstreamTest",
+            "ingester_api_url": "https://ud9ogzmatj.execute-api.us-east-1.amazonaws.com/prod/",
+            "mock_api_url": "https://pf2u8sbgk7.execute-api.us-east-1.amazonaws.com/prod/",
+            "ingester_function_name": "TracerUpstreamDownstreamTes-IngesterLambda519919B4-swSsLumUC0KN",
+            "mock_dag_function_name": "TracerUpstreamDownstreamTest-MockDagLambdaCF347C20-3X8c3pPwK2Bq",
+            "landing_bucket_name": "tracerupstreamdownstreamtest-landingbucket23fe90fb-felup0en4mqb",
+            "processed_bucket_name": "tracerupstreamdownstreamte-processedbucketde59930c-bg5m6jrqoq6v",
+        }
+
+
+UPSTREAM_DOWNSTREAM_CONFIG = _load_upstream_downstream_config()
 
 # Prefect ECS Fargate Test Case - AWS Resources
 # Stack: TracerPrefectEcsFargate

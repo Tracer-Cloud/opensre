@@ -1,0 +1,19 @@
+{
+  "LandingBucketName": "tracer-flink-landing-42435d0f",
+  "ProcessedBucketName": "tracer-flink-processed-42435d0f",
+  "TriggerApiUrl": "https://qgebeq4e25.execute-api.us-east-1.amazonaws.com/prod/",
+  "MockApiUrl": "https://32uvskjj77.execute-api.us-east-1.amazonaws.com/prod/",
+  "EcsClusterName": "tracer-flink-cluster",
+  "EcsClusterArn": "arn:aws:ecs:us-east-1:395261708130:cluster/tracer-flink-cluster",
+  "LogGroupName": "/ecs/tracer-flink",
+  "TaskDefinitionArn": "arn:aws:ecs:us-east-1:395261708130:task-definition/tracer-flink-ecs-task:3",
+  "SecurityGroupId": "sg-00ef889149fb89f84",
+  "SubnetIds": "subnet-0eccd7f096a709d8c,subnet-0d0d475fbd710814c,subnet-0c28e20367794ab28,subnet-09f1849d671b6a064,subnet-067507b22f881d449,subnet-08e6c8f49086b7ccd",
+  "TriggerLambdaName": "tracer-flink-ecs-trigger",
+  "TriggerLambdaArn": "arn:aws:lambda:us-east-1:395261708130:function:tracer-flink-ecs-trigger",
+  "MockApiLambdaName": "tracer-flink-ecs-mock-api",
+  "MockApiLambdaArn": "arn:aws:lambda:us-east-1:395261708130:function:tracer-flink-ecs-mock-api",
+  "VpcId": "vpc-0f2ef3c2fffcda11c",
+  "EcrRepositoryUri": "395261708130.dkr.ecr.us-east-1.amazonaws.com/tracer-flink-ecs-flink",
+  "ImageUri": "395261708130.dkr.ecr.us-east-1.amazonaws.com/tracer-flink-ecs-flink:latest"
+}
