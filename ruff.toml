@@ -13,6 +13,7 @@ exclude = [
     "**/urllib3*",
     "**/bin",
     "**/cdk.out/**",
+    "pytest.ini",
 ]
 
 [lint]
