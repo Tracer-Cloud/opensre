@@ -4,18 +4,35 @@ from __future__ import annotations
 
 import base64
 import json
+from typing import Any, cast
 
 
-def extract_org_slug_from_jwt(jwt_token: str) -> str | None:
-    """Extract organization slug from JWT token."""
+def _decode_jwt_payload(jwt_token: str) -> dict[str, Any] | None:
+    """Decode JWT payload without verification."""
     try:
         parts = jwt_token.split(".")
         if len(parts) < 2:
             return None
-        payload_b64 = parts[1]
-        payload_b64 += "=" * (4 - len(payload_b64) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
-        result = payload.get("organization_slug")
-        return result if isinstance(result, str) else None
+        b64 = parts[1] + "=" * (4 - len(parts[1]) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(b64))
+        return cast(dict[str, Any], decoded)
     except Exception:
         return None
+
+
+def extract_org_slug_from_jwt(jwt_token: str) -> str | None:
+    """Extract organization slug from JWT token."""
+    payload = _decode_jwt_payload(jwt_token)
+    if not payload:
+        return None
+    val = payload.get("organization_slug")
+    return val if isinstance(val, str) else None
+
+
+def extract_org_id_from_jwt(jwt_token: str) -> str | None:
+    """Extract organization ID from JWT token."""
+    payload = _decode_jwt_payload(jwt_token)
+    if not payload:
+        return None
+    val = payload.get("organization")
+    return val if isinstance(val, str) else None
