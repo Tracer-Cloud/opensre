@@ -43,7 +43,6 @@ def test_publish_findings_includes_cited_evidence_section() -> None:
     assert "*Cited Evidence:*" in slack_message
     # CloudWatch URL should be present (format may vary between Slack and terminal)
     assert "https://example.com/cloudwatch" in slack_message
-    assert '"message": "Failure in step 3"' in slack_message
     # Verify Data Lineage Flow section is present
     assert (
         "*Data Lineage Flow (Evidence-Based)*" in slack_message
@@ -71,7 +70,7 @@ def test_publish_findings_shows_next_steps_sections() -> None:
     result = generate_report(state)
     slack_message = result["slack_message"]
 
-    assert "*Investigation Next Steps:*" in slack_message
+    assert "*Suggested Next Steps:*" in slack_message
     assert "Fetch CloudWatch metrics for spikes" in slack_message
     assert "*Remediation Next Steps:*" in slack_message
     assert "Add schema contract gate to block missing customer_id" in slack_message

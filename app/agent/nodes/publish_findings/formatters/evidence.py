@@ -324,7 +324,7 @@ def format_cited_evidence_section(ctx: ReportContext) -> str:
         catalog_lines: list[str] = []
         def _sort_key(eid: str) -> str:
             display = catalog[eid].get("display_id", eid)
-            return display
+            return str(display)
 
         for evidence_id in sorted(catalog.keys(), key=_sort_key):
             entry = catalog[evidence_id] or {}

@@ -140,10 +140,12 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         return explicit.get(source_name, f"E{fallback_index}")
 
     s3_obj = evidence.get("s3_object", {}) or {}
-    if s3_obj.get("bucket") and s3_obj.get("key"):
+    s3_bucket = s3_obj.get("bucket")
+    s3_key = s3_obj.get("key")
+    if s3_bucket and s3_key:
         s3_url = build_s3_console_url(
-            s3_obj.get("bucket"),
-            s3_obj.get("key"),
+            str(s3_bucket),
+            str(s3_key),
             cloudwatch_region or "us-east-1",
         )
         eid = "evidence/s3_metadata/landing"
