@@ -59,12 +59,37 @@ def _generate_output_problem_statement(
 
         problem = chain.invoke(prompt)
     except Exception as err:
-        raise RuntimeError("Failed to generate problem statement") from err
+        debug_print(f"Problem statement LLM failed, using fallback: {err}")
+        return _fallback_problem_statement(state)
 
     if problem is None:
-        raise RuntimeError("LLM returned no problem statement")
+        debug_print("Problem statement LLM returned no result, using fallback")
+        return _fallback_problem_statement(state)
 
     return cast(ProblemStatement, problem)
+
+
+def _fallback_problem_statement(state: InvestigationState) -> ProblemStatement:
+    """Fallback problem statement when LLM is unavailable."""
+    alert_name = state.get("alert_name", "Unknown")
+    pipeline_name = state.get("pipeline_name", "Unknown")
+    severity = state.get("severity", "Unknown")
+
+    summary = f"{alert_name} detected on {pipeline_name} (severity: {severity})"
+    context = "Automated fallback: LLM unavailable. Proceed with standard investigation playbook."
+    investigation_goals = [
+        "Identify failure point in pipeline execution",
+        "Confirm impact on downstream outputs",
+        "Gather minimal evidence to unblock RCA",
+    ]
+    constraints = ["Limited context due to LLM outage"]
+
+    return ProblemStatement(
+        summary=summary,
+        context=context,
+        investigation_goals=investigation_goals,
+        constraints=constraints,
+    )
 
 
 @traceable(name="node_frame_problem")

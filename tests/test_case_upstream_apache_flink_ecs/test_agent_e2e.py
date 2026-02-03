@@ -24,19 +24,11 @@ import requests
 from langsmith import traceable
 
 from app.main import _run
+from tests.shared.stack_config import get_flink_config
 from tests.utils.alert_factory import create_alert
 
-# Configuration - update these after deployment
-CONFIG = {
-    "trigger_api_url": "https://pbjh63udyc.execute-api.us-east-1.amazonaws.com/prod/",
-    "mock_api_url": "https://ff1aspehx9.execute-api.us-east-1.amazonaws.com/prod/",
-    "log_group": "/ecs/tracer-flink",
-    "ecs_cluster": "tracer-flink-cluster",
-    "landing_bucket": "tracerflinkecs-landingbucket23fe90fb-ztviw7xibnx7",
-    "processed_bucket": "tracerflinkecs-processedbucketde59930c-bxdsoonzx2pq",
-    "trigger_lambda": "TracerFlinkEcs-TriggerLambda2FDB819B-kU5Ob8iHt0uD",
-    "mock_api_lambda": "TracerFlinkEcs-MockApiLambdaB6B81E06-2JYO44G1dQX0",
-}
+# Configuration loaded dynamically from CloudFormation
+CONFIG = get_flink_config()
 
 
 def trigger_pipeline_failure() -> dict:
