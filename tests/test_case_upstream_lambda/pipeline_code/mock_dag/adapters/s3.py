@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 import boto3
 
-from .errors import SystemError
+from ..errors import SystemError
 
 s3_client = boto3.client("s3")
 

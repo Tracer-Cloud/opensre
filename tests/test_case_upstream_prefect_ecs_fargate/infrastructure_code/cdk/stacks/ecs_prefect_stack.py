@@ -127,13 +127,14 @@ class EcsPrefectStack(Stack):
                 )
             ],
         )
+        grafana_secrets.secret.grant_read(execution_role)
 
         # Task Definition - ARM64 with sufficient resources for Prefect server + worker
         task_definition = ecs.FargateTaskDefinition(
             self,
             "PrefectTaskDef",
             cpu=512,
-            memory_limit_mib=1024,
+            memory_limit_mib=2048,
             task_role=task_role,
             execution_role=execution_role,
             runtime_platform=ecs.RuntimePlatform(
@@ -146,13 +147,23 @@ class EcsPrefectStack(Stack):
         container = task_definition.add_container(
             "PrefectContainer",
             image=ecs.ContainerImage.from_asset(
-                "../prefect_image",
+                "../../..",
                 platform=ecr_assets.Platform.LINUX_ARM64,
+                file="test_case_upstream_prefect_ecs_fargate/infrastructure_code/prefect_image/Dockerfile",
+                exclude=[
+                    "**/cdk.out/**",
+                    "**/.git/**",
+                    "**/.cursor/**",
+                    "**/__pycache__/**",
+                    "**/.pytest_cache/**",
+                ],
             ),
             logging=ecs.LogDrivers.aws_logs(
                 stream_prefix="prefect",
                 log_group=log_group,
             ),
+            memory_limit_mib=1536,
+            memory_reservation_mib=1024,
             environment={
                 "LANDING_BUCKET": landing_bucket.bucket_name,
                 "PROCESSED_BUCKET": processed_bucket.bucket_name,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import logging
+import importlib
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -15,6 +15,7 @@ from tracer_telemetry.metrics import PipelineMetrics, setup_metrics
 from tracer_telemetry.tracing import setup_tracing
 
 _telemetry: "PipelineTelemetry | None" = None
+_std_logging = importlib.import_module("logging")
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,15 @@ class PipelineTelemetry:
             self.metrics.records_processed_total.add(record_count, metric_attrs)
         if failure_count:
             self.metrics.records_failed_total.add(failure_count, metric_attrs)
+    
+    def flush(self) -> None:
+        """Force flush all telemetry data (critical for Lambda/short-lived processes)."""
+        try:
+            provider = trace.get_tracer_provider()
+            if hasattr(provider, "force_flush"):
+                provider.force_flush(timeout_millis=5000)
+        except Exception:
+            pass
 
 
 def init_telemetry(
@@ -56,6 +66,9 @@ def init_telemetry(
 
     try:
         apply_otel_env_defaults()
+        from tracer_telemetry.config import validate_grafana_cloud_config
+
+        validate_grafana_cloud_config()
         resource = build_resource(service_name, resource_attributes)
         tracer = setup_tracing(resource)
         metrics = setup_metrics(resource)
@@ -72,7 +85,7 @@ def init_telemetry(
 
         _telemetry = PipelineTelemetry(tracer=tracer, metrics=metrics)
     except Exception as exc:  # noqa: BLE001 - avoid breaking pipelines on telemetry failures
-        logging.getLogger(__name__).warning("Telemetry init failed: %s", exc)
+        _std_logging.getLogger(__name__).warning("Telemetry init failed: %s", exc)
         _telemetry = PipelineTelemetry(
             tracer=trace.get_tracer(__name__), metrics=PipelineMetrics.noop()
         )

@@ -91,13 +91,13 @@ class MinimalLambdaTestCaseStack(Stack):
             environment={
                 "LANDING_BUCKET": landing_bucket.bucket_name,
                 "EXTERNAL_API_URL": mock_api.url,
-                "OTEL_EXPORTER_OTLP_ENDPOINT": grafana_secrets.lambda_env(
+                "OTEL_EXPORTER_OTLP_ENDPOINT": grafana_secrets.secret.secret_value_from_json(
                     "GCLOUD_OTLP_ENDPOINT"
-                ),
-                "GCLOUD_OTLP_AUTH_HEADER": grafana_secrets.lambda_env(
+                ).unsafe_unwrap(),
+                "GCLOUD_OTLP_AUTH_HEADER": grafana_secrets.secret.secret_value_from_json(
                     "GCLOUD_OTLP_AUTH_HEADER"
-                ),
-                "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+                ).unsafe_unwrap(),
+                "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
                 "OTEL_SERVICE_NAME": "lambda-api-ingester",
                 "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_lambda_ingester,pipeline.framework=lambda,test_case=test_case_upstream_lambda",
             },
@@ -123,13 +123,13 @@ class MinimalLambdaTestCaseStack(Stack):
             environment={
                 "LANDING_BUCKET": landing_bucket.bucket_name,
                 "PROCESSED_BUCKET": processed_bucket.bucket_name,
-                "OTEL_EXPORTER_OTLP_ENDPOINT": grafana_secrets.lambda_env(
+                "OTEL_EXPORTER_OTLP_ENDPOINT": grafana_secrets.secret.secret_value_from_json(
                     "GCLOUD_OTLP_ENDPOINT"
-                ),
-                "GCLOUD_OTLP_AUTH_HEADER": grafana_secrets.lambda_env(
+                ).unsafe_unwrap(),
+                "GCLOUD_OTLP_AUTH_HEADER": grafana_secrets.secret.secret_value_from_json(
                     "GCLOUD_OTLP_AUTH_HEADER"
-                ),
-                "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+                ).unsafe_unwrap(),
+                "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
                 "OTEL_SERVICE_NAME": "lambda-mock-dag",
                 "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_lambda,pipeline.framework=lambda,test_case=test_case_upstream_lambda",
             },

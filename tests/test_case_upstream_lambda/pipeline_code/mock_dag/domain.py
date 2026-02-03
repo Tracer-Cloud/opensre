@@ -1,35 +1,64 @@
+from opentelemetry import trace
+
 from .errors import DomainError
 from .schemas import InputRecord, ProcessedRecord
+
+try:
+    from tracer_telemetry import get_tracer
+except ImportError:  # pragma: no cover - fallback for local tooling
+    def get_tracer(name: str | None = None) -> trace.Tracer:
+        return trace.get_tracer(name or __name__)
+
+tracer = get_tracer(__name__)
+
+
+def validate_data(raw_records: list[dict], required_fields: list[str]) -> None:
+    """Validate raw records against required fields schema."""
+    with tracer.start_as_current_span("validate_data") as span:
+        span.set_attribute("record_count", len(raw_records))
+        if not raw_records:
+            raise DomainError("No data records found")
+
+        for i, record in enumerate(raw_records):
+            with tracer.start_as_current_span("validate_record") as record_span:
+                record_span.set_attribute("record_index", i)
+                missing = [f for f in required_fields if f not in record]
+                if missing:
+                    record_span.set_attribute("missing_fields", ",".join(missing))
+                    raise DomainError(
+                        f"Schema validation failed: Missing fields {missing} in record {i}"
+                    )
+
+
+def transform_data(raw_records: list[dict]) -> list[ProcessedRecord]:
+    """Transform validated raw records into ProcessedRecord models."""
+    with tracer.start_as_current_span("transform_data") as span:
+        span.set_attribute("record_count", len(raw_records))
+        processed = []
+
+        for i, record in enumerate(raw_records):
+            with tracer.start_as_current_span("transform_record") as record_span:
+                record_span.set_attribute("record_index", i)
+                try:
+                    model = InputRecord.from_dict(record)
+                    processed.append(
+                        ProcessedRecord(
+                            customer_id=model.customer_id,
+                            order_id=model.order_id,
+                            amount=model.amount,
+                            amount_cents=int(model.amount * 100),
+                            timestamp=model.timestamp,
+                        )
+                    )
+                except (ValueError, KeyError) as e:
+                    raise DomainError(f"Data type error in record {i}: {e}") from e
+
+        return processed
 
 
 def validate_and_transform(
     raw_records: list[dict], required_fields: list[str]
 ) -> list[ProcessedRecord]:
     """Pure business logic: validates raw dicts and transforms to ProcessedRecord models."""
-    if not raw_records:
-        raise DomainError("No data records found")
-
-    processed = []
-    for i, record in enumerate(raw_records):
-        # 1. Validation
-        missing = [f for f in required_fields if f not in record]
-        if missing:
-            raise DomainError(f"Schema validation failed: Missing fields {missing} in record {i}")
-
-        # 2. Parsing & Transformation
-        try:
-            model = InputRecord.from_dict(record)
-
-            processed.append(
-                ProcessedRecord(
-                    customer_id=model.customer_id,
-                    order_id=model.order_id,
-                    amount=model.amount,
-                    amount_cents=int(model.amount * 100),
-                    timestamp=model.timestamp,
-                )
-            )
-        except (ValueError, KeyError) as e:
-            raise DomainError(f"Data type error in record {i}: {e}") from e
-
-    return processed
+    validate_data(raw_records, required_fields)
+    return transform_data(raw_records)

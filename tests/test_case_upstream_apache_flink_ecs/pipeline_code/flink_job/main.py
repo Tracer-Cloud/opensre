@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 import boto3
-from domain import validate_and_transform
+from domain import transform_data as domain_transform_data, validate_data as domain_validate_data
 from errors import DomainError
 
 for parent in Path(__file__).resolve().parents:
@@ -70,6 +70,7 @@ def main():
             correlation_id = metadata.get("correlation_id", args.correlation_id)
             audit_key = metadata.get("audit_key", "")
             span.set_attribute("correlation_id", correlation_id)
+            span.set_attribute("execution.run_id", correlation_id)
 
         print(f"[FLINK] Processing correlation_id={correlation_id}")
         if audit_key:
@@ -95,11 +96,23 @@ def main():
 
     # Validate and transform
     try:
-        with tracer.start_as_current_span("transform_data") as span:
-            span.set_attribute("record_count", len(raw_records))
-            span.set_attribute("correlation_id", correlation_id)
-            processed_records = validate_and_transform(raw_records, REQUIRED_FIELDS)
-        print(f"[FLINK] Validation successful: {len(processed_records)} records processed")
+        with tracer.start_as_current_span("validate_data") as validate_span:
+            from tracer_telemetry.tracing import ensure_execution_run_id
+
+            ensure_execution_run_id(validate_span, correlation_id)
+            validate_span.set_attribute("record_count", len(raw_records))
+            validate_span.set_attribute("correlation_id", correlation_id)
+            domain_validate_data(raw_records, REQUIRED_FIELDS)
+        print(f"[FLINK] Validation successful: {len(raw_records)} records validated")
+
+        with tracer.start_as_current_span("transform_data") as transform_span:
+            from tracer_telemetry.tracing import ensure_execution_run_id
+
+            ensure_execution_run_id(transform_span, correlation_id)
+            transform_span.set_attribute("record_count", len(raw_records))
+            transform_span.set_attribute("correlation_id", correlation_id)
+            processed_records = domain_transform_data(raw_records)
+        print(f"[FLINK] Transformation successful: {len(processed_records)} records processed")
 
     except DomainError as e:
         print(f"[FLINK][ERROR] {e}")
@@ -134,6 +147,7 @@ def main():
             span.set_attribute("s3.key", output_key)
             span.set_attribute("record_count", len(processed_records))
             span.set_attribute("correlation_id", correlation_id)
+            span.set_attribute("execution.run_id", correlation_id)
             s3.put_object(
                 Bucket=args.output_bucket,
                 Key=output_key,

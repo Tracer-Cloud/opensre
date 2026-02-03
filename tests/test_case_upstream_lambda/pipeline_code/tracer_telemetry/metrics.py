@@ -3,9 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from opentelemetry import metrics
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+# Try to import gRPC exporter first, fall back to HTTP if not available
+try:
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+except ImportError:
+    try:
+        from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+    except ImportError:
+        OTLPMetricExporter = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +61,9 @@ class PipelineMetrics:
 
 
 def setup_metrics(resource) -> PipelineMetrics:
+    if OTLPMetricExporter is None:
+        return PipelineMetrics.noop()
+    
     metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
     provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     metrics.set_meter_provider(provider)

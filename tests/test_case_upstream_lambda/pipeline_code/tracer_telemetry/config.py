@@ -7,6 +7,7 @@ from opentelemetry.sdk.resources import Resource
 
 
 def apply_otel_env_defaults() -> None:
+    """Apply OpenTelemetry environment defaults, preferring Grafana Cloud config if available."""
     if not os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
         gcloud_endpoint = os.getenv("GCLOUD_OTLP_ENDPOINT")
         if gcloud_endpoint:
@@ -16,6 +17,33 @@ def apply_otel_env_defaults() -> None:
         gcloud_auth = os.getenv("GCLOUD_OTLP_AUTH_HEADER")
         if gcloud_auth:
             os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization={gcloud_auth}"
+
+    if not os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL"):
+        os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "grpc"
+
+
+def validate_grafana_cloud_config() -> bool:
+    """Validate that Grafana Cloud configuration is present when using cloud endpoints."""
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+    if "grafana.net" in endpoint or "grafana.com" in endpoint:
+        required_vars = [
+            "GCLOUD_HOSTED_METRICS_ID",
+            "GCLOUD_HOSTED_METRICS_URL",
+            "GCLOUD_HOSTED_LOGS_ID",
+            "GCLOUD_HOSTED_LOGS_URL",
+            "GCLOUD_RW_API_KEY",
+            "GCLOUD_OTLP_ENDPOINT",
+            "GCLOUD_OTLP_AUTH_HEADER",
+        ]
+        missing = [var for var in required_vars if not os.getenv(var)]
+        if missing:
+            import warnings
+            warnings.warn(
+                f"Grafana Cloud endpoint detected but missing env vars: {', '.join(missing)}",
+                UserWarning,
+            )
+            return False
+    return True
 
 
 def build_resource(service_name: str, extra_attributes: dict[str, Any] | None) -> Resource:

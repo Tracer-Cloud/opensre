@@ -91,12 +91,13 @@ class EcsAirflowStack(Stack):
                 )
             ],
         )
+        grafana_secrets.secret.grant_read(execution_role)
 
         task_definition = ecs.FargateTaskDefinition(
             self,
             "AirflowTaskDef",
             cpu=1024,
-            memory_limit_mib=2048,
+            memory_limit_mib=4096,
             task_role=task_role,
             execution_role=execution_role,
             runtime_platform=ecs.RuntimePlatform(
@@ -108,13 +109,23 @@ class EcsAirflowStack(Stack):
         container = task_definition.add_container(
             "AirflowContainer",
             image=ecs.ContainerImage.from_asset(
-                "../airflow_image",
+                "../../..",
                 platform=ecr_assets.Platform.LINUX_ARM64,
+                file="test_case_upstream_airflow_ecs_fargate/infrastructure_code/airflow_image/Dockerfile",
+                exclude=[
+                    "**/cdk.out/**",
+                    "**/.git/**",
+                    "**/.cursor/**",
+                    "**/__pycache__/**",
+                    "**/.pytest_cache/**",
+                ],
             ),
             logging=ecs.LogDrivers.aws_logs(
                 stream_prefix="airflow",
                 log_group=log_group,
             ),
+            memory_limit_mib=3584,
+            memory_reservation_mib=3072,
             environment={
                 "LANDING_BUCKET": landing_bucket.bucket_name,
                 "PROCESSED_BUCKET": processed_bucket.bucket_name,
@@ -122,6 +133,9 @@ class EcsAirflowStack(Stack):
                 "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN": "sqlite:////opt/airflow/airflow.db",
                 "AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION": "False",
                 "AIRFLOW__CORE__LOAD_EXAMPLES": "False",
+                "AIRFLOW__CORE__STORE_SERIALIZED_DAGS": "True",
+                "AIRFLOW__CORE__MIN_SERIALIZED_DAG_UPDATE_INTERVAL": "0",
+                "AIRFLOW__CORE__MIN_SERIALIZED_DAG_FETCH_INTERVAL": "0",
                 "AIRFLOW__API__AUTH_BACKENDS": "airflow.api.auth.backend.basic_auth",
                 "AIRFLOW__WEBSERVER__EXPOSE_CONFIG": "True",
                 "AIRFLOW__CORE__FERNET_KEY": "dummy-fernet-key-for-testing-only",

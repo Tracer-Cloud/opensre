@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 from prefect import flow, get_run_logger, task
+from prefect.runtime import flow_run
 
 for parent in Path(__file__).resolve().parents:
     telemetry_root = parent / "shared" / "telemetry"
@@ -27,7 +28,7 @@ from tracer_telemetry import init_telemetry
 from .adapters.alerting import fire_pipeline_alert
 from .adapters.s3 import read_json, write_json
 from .config import PIPELINE_NAME, PROCESSED_BUCKET, REQUIRED_FIELDS
-from .domain import validate_and_transform
+from .domain import transform_data as domain_transform_data, validate_data as domain_validate_data
 from .errors import PipelineError
 from .schemas import ProcessedRecord
 
@@ -46,6 +47,7 @@ def extract_data(bucket: str, key: str) -> tuple[dict, str]:
     """Read JSON from S3 landing bucket."""
     logger = get_run_logger()
     with tracer.start_as_current_span("extract_data") as span:
+        run_id = flow_run.id
         span.set_attribute("s3.bucket", bucket)
         span.set_attribute("s3.key", key)
 
@@ -54,20 +56,38 @@ def extract_data(bucket: str, key: str) -> tuple[dict, str]:
         record_count = len(raw_payload.get("data", []))
         span.set_attribute("record_count", record_count)
         span.set_attribute("correlation_id", correlation_id)
+        if run_id:
+            span.set_attribute("execution.run_id", str(run_id))
+        else:
+            span.set_attribute("execution.run_id", correlation_id)
         logger.info(f"Extracted {record_count} records, correlation_id={correlation_id}")
 
         return raw_payload, correlation_id
 
 
 @task(name="transform_data")
-def transform_data(raw_records: list[dict]) -> list[ProcessedRecord]:
+def transform_data_task(raw_records: list[dict]) -> list[ProcessedRecord]:
     """Validate and transform records using domain logic."""
     logger = get_run_logger()
-    with tracer.start_as_current_span("transform_data") as span:
-        span.set_attribute("record_count", len(raw_records))
-        logger.info(f"Transforming {len(raw_records)} records")
+    run_id = flow_run.id
+    execution_run_id = str(run_id) if run_id else None
 
-        processed = validate_and_transform(raw_records, REQUIRED_FIELDS)
+    with tracer.start_as_current_span("validate_data") as validate_span:
+        from tracer_telemetry.tracing import ensure_execution_run_id
+
+        ensure_execution_run_id(validate_span, execution_run_id)
+        validate_span.set_attribute("record_count", len(raw_records))
+        logger.info(f"Validating {len(raw_records)} records")
+        domain_validate_data(raw_records, REQUIRED_FIELDS)
+        logger.info(f"Validation successful for {len(raw_records)} records")
+
+    with tracer.start_as_current_span("transform_data") as transform_span:
+        from tracer_telemetry.tracing import ensure_execution_run_id
+
+        ensure_execution_run_id(transform_span, execution_run_id)
+        transform_span.set_attribute("record_count", len(raw_records))
+        logger.info(f"Transforming {len(raw_records)} records")
+        processed = domain_transform_data(raw_records)
         logger.info(f"Successfully transformed {len(processed)} records")
         return processed
 
@@ -82,10 +102,15 @@ def load_data(
     """Write processed data to S3."""
     logger = get_run_logger()
     with tracer.start_as_current_span("load_data") as span:
+        run_id = flow_run.id
         span.set_attribute("s3.bucket", PROCESSED_BUCKET)
         span.set_attribute("s3.key", output_key)
         span.set_attribute("record_count", len(records))
         span.set_attribute("correlation_id", correlation_id)
+        if run_id:
+            span.set_attribute("execution.run_id", str(run_id))
+        else:
+            span.set_attribute("execution.run_id", correlation_id)
         logger.info(
             f"Loading {len(records)} records to s3://{PROCESSED_BUCKET}/{output_key}"
         )
@@ -121,11 +146,14 @@ def data_pipeline_flow(bucket: str, key: str) -> dict:
     start_time = time.monotonic()
 
     correlation_id = "unknown"
+    execution_run_id = str(flow_run.id) if flow_run.id else None
     raw_record_count = 0
 
     try:
         # Extract
         raw_payload, correlation_id = extract_data(bucket, key)
+        if execution_run_id is None:
+            execution_run_id = correlation_id
         raw_records = raw_payload.get("data", [])
         raw_record_count = len(raw_records)
 
@@ -137,13 +165,14 @@ def data_pipeline_flow(bucket: str, key: str) -> dict:
                     "input_bucket": bucket,
                     "input_key": key,
                     "correlation_id": correlation_id,
+                    "execution_run_id": execution_run_id,
                     "record_count": len(raw_records),
                 }
             )
         )
 
         # Transform
-        processed_records = transform_data(raw_records)
+        processed_records = transform_data_task(raw_records)
 
         # Load
         output_key = key.replace("ingested/", "processed/")

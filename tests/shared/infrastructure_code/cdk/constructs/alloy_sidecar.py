@@ -21,6 +21,9 @@ class AlloySidecar(Construct):
         log_group: logs.ILogGroup,
         grafana_secrets: GrafanaCloudSecrets,
         container_name: str = "AlloySidecar",
+        essential: bool = False,
+        memory_limit_mib: int = 512,
+        memory_reservation_mib: int = 256,
     ) -> None:
         super().__init__(scope, construct_id)
 
@@ -33,6 +36,9 @@ class AlloySidecar(Construct):
                 stream_prefix="alloy",
                 log_group=log_group,
             ),
+            essential=essential,
+            memory_limit_mib=memory_limit_mib,
+            memory_reservation_mib=memory_reservation_mib,
             secrets={
                 "GCLOUD_HOSTED_METRICS_URL": grafana_secrets.ecs_secret(
                     "GCLOUD_HOSTED_METRICS_URL"
