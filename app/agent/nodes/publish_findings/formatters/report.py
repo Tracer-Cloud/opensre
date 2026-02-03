@@ -184,6 +184,7 @@ def format_slack_message(ctx: ReportContext) -> str:
 
     # Build report sections
     tracer_link = get_investigation_url()
+    tracer_cta = f"*{format_slack_link('View Investigation', tracer_link)}*"
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
     alert_id_str = f"\n*Alert ID:* {ctx['alert_id']}" if ctx.get("alert_id") else ""
 
