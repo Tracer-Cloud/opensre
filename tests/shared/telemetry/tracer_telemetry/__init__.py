@@ -48,9 +48,19 @@ class PipelineTelemetry:
     def flush(self) -> None:
         """Force flush all telemetry data (critical for Lambda/short-lived processes)."""
         try:
+            # Flush traces
             provider = trace.get_tracer_provider()
             if hasattr(provider, "force_flush"):
                 provider.force_flush(timeout_millis=5000)
+        except Exception:
+            pass
+        
+        try:
+            # Flush logs
+            from opentelemetry import _logs
+            log_provider = _logs.get_logger_provider()
+            if hasattr(log_provider, "force_flush"):
+                log_provider.force_flush(timeout_millis=5000)
         except Exception:
             pass
 

@@ -20,7 +20,6 @@ import requests
 
 s3_client = boto3.client("s3")
 PIPELINE_NAME = "upstream_downstream_pipeline_lambda_ingester"
-logger = logging.getLogger(__name__)
 
 # Initialize telemetry lazily to avoid circular import with AwsLambdaInstrumentor
 _telemetry = None
@@ -44,7 +43,7 @@ def _get_telemetry():
 
 
 def fetch_from_external_api(
-    api_url: str, inject_schema_change: bool = False
+    api_url: str, inject_schema_change: bool = False, logger: logging.Logger = None
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Fetch data from external API.
 
@@ -112,6 +111,8 @@ def lambda_handler(event: dict, context: Any) -> dict:
         dict with s3_key, bucket, and status
     """
     telemetry, tracer = _get_telemetry()
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)  # Ensure logger level is set
     start_time = time.monotonic()
 
     # Handle API Gateway event format
@@ -161,7 +162,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
             span.set_attribute("execution.run_id", execution_run_id)
             span.set_attribute("inject_schema_change", inject_schema_change)
             api_response, audit_info = fetch_from_external_api(
-                external_api_url, inject_schema_change
+                external_api_url, inject_schema_change, logger
             )
             data = api_response.get("data", [])
             api_meta = api_response.get("meta", {})

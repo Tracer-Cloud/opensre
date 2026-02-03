@@ -440,6 +440,98 @@ def _extract_lambda_config_edges(evidence: dict[str, Any]) -> list[Edge]:
     return edges
 
 
+def _extract_grafana_edges(
+    evidence: dict[str, Any], raw_alert: dict[str, Any], pipeline_name: str
+) -> list[Edge]:
+    """Extract Pipeline → Grafana datasource edges from OTLP configuration."""
+    edges: list[Edge] = []
+    now = datetime.now(UTC).isoformat()
+
+    # Check Lambda configuration for OTLP endpoint
+    lambda_data = evidence.get("lambda_function", {}) or evidence.get("lambda_config", {})
+    if lambda_data.get("function_name"):
+        env_vars = lambda_data.get("environment_variables", {})
+
+        otlp_endpoint = env_vars.get("OTEL_EXPORTER_OTLP_ENDPOINT") or env_vars.get(
+            "GCLOUD_OTLP_ENDPOINT"
+        )
+
+        if otlp_endpoint and "grafana.net" in otlp_endpoint:
+            function_name = lambda_data["function_name"]
+
+            edges.append(
+                {
+                    "from_asset": _generate_asset_id("lambda", function_name),
+                    "to_asset": "grafana_datasource:tracerbio",
+                    "type": "exports_telemetry_to",
+                    "confidence": 1.0,
+                    "verification_status": "verified",
+                    "evidence": f"OTEL_EXPORTER_OTLP_ENDPOINT={otlp_endpoint}",
+                    "first_seen": now,
+                    "last_seen": now,
+                }
+            )
+
+            if pipeline_name:
+                edges.append(
+                    {
+                        "from_asset": _generate_asset_id("pipeline", pipeline_name),
+                        "to_asset": "grafana_datasource:tracerbio",
+                        "type": "exports_telemetry_to",
+                        "confidence": 0.9,
+                        "verification_status": "verified",
+                        "evidence": f"lambda.{function_name}.OTLP→Grafana",
+                        "first_seen": now,
+                        "last_seen": now,
+                    }
+                )
+
+    # Check ECS task definition for OTLP endpoint
+    ecs_task = evidence.get("ecs_task_definition", {})
+    if ecs_task.get("taskDefinitionArn"):
+        for container in ecs_task.get("containerDefinitions", []):
+            env_vars = {e["name"]: e["value"] for e in container.get("environment", [])}
+
+            otlp_endpoint = env_vars.get("OTEL_EXPORTER_OTLP_ENDPOINT") or env_vars.get(
+                "GCLOUD_OTLP_ENDPOINT"
+            )
+
+            if otlp_endpoint and "grafana.net" in otlp_endpoint:
+                ecs_cluster = evidence.get("ecs_cluster", {}).get("clusterName", "")
+                container_name = container.get("name", "")
+
+                if ecs_cluster:
+                    edges.append(
+                        {
+                            "from_asset": _generate_asset_id("ecs_cluster", ecs_cluster),
+                            "to_asset": "grafana_datasource:tracerbio",
+                            "type": "exports_telemetry_to",
+                            "confidence": 1.0,
+                            "verification_status": "verified",
+                            "evidence": f"ECS.{container_name}.OTLP→Grafana",
+                            "first_seen": now,
+                            "last_seen": now,
+                        }
+                    )
+
+                if pipeline_name:
+                    edges.append(
+                        {
+                            "from_asset": _generate_asset_id("pipeline", pipeline_name),
+                            "to_asset": "grafana_datasource:tracerbio",
+                            "type": "exports_telemetry_to",
+                            "confidence": 0.9,
+                            "verification_status": "verified",
+                            "evidence": f"ECS.{ecs_cluster}.OTLP→Grafana",
+                            "first_seen": now,
+                            "last_seen": now,
+                        }
+                    )
+                break
+
+    return edges
+
+
 def _infer_edges_from_evidence(
     assets: list[Asset], evidence: dict[str, Any], raw_alert: dict[str, Any]
 ) -> list[Edge]:
@@ -850,6 +942,7 @@ def build_service_map(
     edges_from_evidence.extend(_extract_s3_metadata_edges(evidence))
     edges_from_evidence.extend(_extract_audit_payload_edges(evidence, raw_alert))
     edges_from_evidence.extend(_extract_lambda_config_edges(evidence))
+    edges_from_evidence.extend(_extract_grafana_edges(evidence, raw_alert, pipeline_name))
 
     # Step 2: Ensure edge endpoints exist as assets
     assets_from_edges = _ensure_edge_endpoint_assets(

@@ -45,6 +45,24 @@ run:
 
 dev: 
 	langgraph dev
+
+# Start local Grafana stack for telemetry validation
+grafana-local:
+	cd tests/shared/infrastructure_code && docker compose up -d
+	@echo "Grafana stack started:"
+	@echo "  Grafana UI:    http://localhost:3000"
+	@echo "  Alloy UI:      http://localhost:12345"
+	@echo "  OTLP gRPC:     localhost:4317"
+	@echo "  OTLP HTTP:     localhost:4318"
+
+# Stop local Grafana stack
+grafana-local-down:
+	cd tests/shared/infrastructure_code && docker compose down
+
+# View Grafana stack logs
+grafana-local-logs:
+	cd tests/shared/infrastructure_code && docker compose logs -f
+
 # Run tests
 test:
 	$(PYTHON) -m pytest -v
@@ -52,6 +70,14 @@ test:
 # Run tests with coverage
 test-cov:
 	$(PYTHON) -m pytest -v --cov=app --cov-report=term-missing
+
+# Run Grafana integration tests
+test-grafana:
+	@echo "Running Grafana agent integration tests..."
+	$(PYTHON) -m pytest app/agent/tools/tool_actions/grafana_actions_test.py tests/test_grafana_agent_integration.py -v
+	@echo ""
+	@echo "Running Grafana validation test case..."
+	cd tests/test_case_grafana_validation && $(PYTHON) test_agent_grafana_actions.py
 
 # Clean up
 clean:
@@ -86,8 +112,12 @@ help:
 	@echo "  make superfluid-demo - Run Superfluid test case demo"
 	@echo "  make cloudwatch-demo - Run CloudWatch demo"
 	@echo "  make upstream-downstream - Run upstream/downstream Lambda E2E test"
+	@echo "  make grafana-local   - Start local Grafana observability stack"
+	@echo "  make grafana-local-down - Stop local Grafana stack"
+	@echo "  make grafana-local-logs - View local Grafana stack logs"
 	@echo "  make test            - Run tests"
 	@echo "  make test-cov        - Run tests with coverage"
+	@echo "  make test-grafana    - Run Grafana integration tests"
 	@echo "  make clean           - Clean up cache files"
 	@echo "  make lint            - Lint code with ruff"
 	@echo "  make format          - Format code with ruff"

@@ -29,11 +29,14 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
           "local_file": {"log_file": "...", "log_path": "..."},
           "tracer_web": {"trace_id": "...", "run_url": "..."},
           "lambda": {"function_name": "...", "all_functions": [...]},
-          "aws_metadata": {"ecs_cluster": "...", "vpc_id": "...", "region": "..."}
+          "aws_metadata": {"ecs_cluster": "...", "vpc_id": "...", "region": "..."},
+          "grafana": {"service_name": "...", "execution_run_id": "...", "connection_verified": bool}
         }
 
         The aws_metadata source contains ALL AWS-related annotations from the alert,
         enabling dynamic AWS SDK investigations (ECS, RDS, EC2, VPC, etc.).
+        
+        The grafana source is OPTIONAL and only added if service map shows Grafana connectivity.
     """
     sources: dict[str, dict] = {}
 
@@ -216,5 +219,30 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
 
     if aws_metadata:
         sources["aws_metadata"] = aws_metadata
+
+    # Detect Grafana sources (optional - only if service map shows connectivity)
+    pipeline_name = annotations.get("pipeline_name") or context.get("pipeline_name", "")
+    execution_run_id = (
+        annotations.get("execution_run_id")
+        or annotations.get("executionRunId")
+        or annotations.get("correlation_id")
+    )
+
+    if pipeline_name:
+        from app.agent.tools.tool_actions.grafana_actions import check_grafana_connection
+
+        connection_check = check_grafana_connection(pipeline_name)
+
+        if connection_check.get("connected"):
+            grafana_params: dict[str, Any] = {
+                "service_name": connection_check["service_name"],
+                "pipeline_name": pipeline_name,
+                "connection_verified": True,
+            }
+
+            if execution_run_id:
+                grafana_params["execution_run_id"] = execution_run_id
+
+            sources["grafana"] = grafana_params
 
     return sources

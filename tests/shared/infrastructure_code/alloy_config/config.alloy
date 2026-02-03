@@ -46,7 +46,7 @@ otelcol.exporter.otlp "grafana" {
   client {
     endpoint = env("GCLOUD_OTLP_ENDPOINT")
     headers = {
-      "Authorization" = env("GCLOUD_OTLP_AUTH_HEADER")
+      "Authorization" = env("GCLOUD_OTLP_AUTH_HEADER"),
     }
   }
 }

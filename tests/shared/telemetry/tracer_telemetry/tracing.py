@@ -17,9 +17,8 @@ except ImportError:
 def _get_execution_run_id_from_context() -> str | None:
     """Extract execution.run_id from the current active span context."""
     span = trace.get_current_span()
-    if span and span.is_recording():
-        attrs = span.get_attributes() or {}
-        return attrs.get("execution.run_id")
+    if span and span.is_recording() and hasattr(span, "attributes"):
+        return span.attributes.get("execution.run_id")
     return None
 
 

@@ -162,6 +162,12 @@ def get_available_actions() -> list[InvestigationAction]:
         inspect_s3_object,
         list_s3_objects,
     )
+    from app.agent.tools.tool_actions.grafana_actions import (
+        check_grafana_connection,
+        query_grafana_logs,
+        query_grafana_metrics,
+        query_grafana_traces,
+    )
     from app.agent.tools.tool_actions.sre_knowledge_actions import get_sre_guidance
     from app.agent.tools.tool_actions.tracer_jobs import (
         get_failed_jobs,
@@ -358,6 +364,56 @@ def get_available_actions() -> list[InvestigationAction]:
             availability_check=lambda _sources: True,  # Always available
             parameter_extractor=lambda sources: {
                 "keywords": sources.get("problem_keywords", []),
+            },
+        ),
+        _build_investigation_action(
+            name="query_grafana_logs",
+            func=query_grafana_logs,
+            source="grafana",
+            requires=["service_name"],
+            availability_check=lambda sources: bool(
+                sources.get("grafana", {}).get("connection_verified")
+            ),
+            parameter_extractor=lambda sources: {
+                "service_name": sources["grafana"]["service_name"],
+                "execution_run_id": sources["grafana"].get("execution_run_id"),
+                "time_range_minutes": 60,
+                "limit": 100,
+            },
+        ),
+        _build_investigation_action(
+            name="query_grafana_traces",
+            func=query_grafana_traces,
+            source="grafana",
+            requires=["service_name"],
+            availability_check=lambda sources: bool(
+                sources.get("grafana", {}).get("connection_verified")
+            ),
+            parameter_extractor=lambda sources: {
+                "service_name": sources["grafana"]["service_name"],
+                "execution_run_id": sources["grafana"].get("execution_run_id"),
+                "limit": 20,
+            },
+        ),
+        _build_investigation_action(
+            name="query_grafana_metrics",
+            func=query_grafana_metrics,
+            source="grafana",
+            requires=["metric_name"],
+            availability_check=lambda sources: bool(sources.get("grafana")),
+            parameter_extractor=lambda sources: {
+                "metric_name": "pipeline_runs_total",
+                "service_name": sources.get("grafana", {}).get("service_name"),
+            },
+        ),
+        _build_investigation_action(
+            name="check_grafana_connection",
+            func=check_grafana_connection,
+            source="grafana",
+            requires=["pipeline_name"],
+            availability_check=lambda _sources: True,  # Always available for checking
+            parameter_extractor=lambda sources: {
+                "pipeline_name": sources.get("grafana", {}).get("pipeline_name", ""),
             },
         ),
     ]

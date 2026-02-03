@@ -5,7 +5,17 @@ Find a failed pipeline run from Tracer Web App.
 No orchestration, no alert creation, no investigation logic.
 """
 
+import sys
+import uuid
+from pathlib import Path
+
 from app.agent.nodes.build_context.context_building import _fetch_tracer_web_run_context
+
+# Add shared telemetry to path
+_test_root = Path(__file__).parent.parent
+sys.path.insert(0, str(_test_root / "shared" / "telemetry"))
+
+from tracer_telemetry import init_telemetry
 
 _run_context = {
     "pipeline_name": None,
@@ -15,6 +25,10 @@ _run_context = {
     "run_url": None,
     "found": False,
 }
+
+# Initialize telemetry
+_telemetry = None
+_tracer = None
 
 
 def main() -> dict:
@@ -30,15 +44,48 @@ def main() -> dict:
         - status: str | None
         - run_url: str | None
         - pipelines_checked: int
+        - execution_run_id: str
     """
-    web_run = _fetch_tracer_web_run_context()
+    global _telemetry, _tracer
+    
+    # Initialize telemetry
+    _telemetry = init_telemetry(
+        service_name="superfluid-pipeline",
+        resource_attributes={
+            "pipeline.name": "superfluid_fetch_runs",
+            "pipeline.type": "api",
+        },
+    )
+    _tracer = _telemetry.tracer
+    
+    execution_run_id = str(uuid.uuid4())
 
-    if web_run.get("found"):
-        _run_context["pipeline_name"] = web_run.get("pipeline_name")
-        _run_context["run_name"] = web_run.get("run_name")
-        _run_context["trace_id"] = web_run.get("trace_id")
-        _run_context["status"] = web_run.get("status")
-        _run_context["run_url"] = web_run.get("run_url")
-        _run_context["found"] = True
+    with _tracer.start_as_current_span("fetch_tracer_runs") as root_span:
+        root_span.set_attribute("execution.run_id", execution_run_id)
+        root_span.set_attribute("pipeline.name", "superfluid_fetch_runs")
+        
+        with _tracer.start_as_current_span("api_call_tracer_web") as api_span:
+            api_span.set_attribute("execution.run_id", execution_run_id)
+            web_run = _fetch_tracer_web_run_context()
+            
+            api_span.set_attribute("found", web_run.get("found", False))
+            api_span.set_attribute("pipelines_checked", web_run.get("pipelines_checked", 0))
 
+        if web_run.get("found"):
+            _run_context["pipeline_name"] = web_run.get("pipeline_name")
+            _run_context["run_name"] = web_run.get("run_name")
+            _run_context["trace_id"] = web_run.get("trace_id")
+            _run_context["status"] = web_run.get("status")
+            _run_context["run_url"] = web_run.get("run_url")
+            _run_context["found"] = True
+            
+            root_span.set_attribute("found_pipeline", web_run.get("pipeline_name", ""))
+            root_span.set_attribute("found_run", web_run.get("run_name", ""))
+
+        root_span.set_attribute("status", "success" if web_run.get("found") else "no_runs_found")
+
+    # Flush telemetry for short-lived process
+    _telemetry.flush()
+
+    web_run["execution_run_id"] = execution_run_id
     return web_run

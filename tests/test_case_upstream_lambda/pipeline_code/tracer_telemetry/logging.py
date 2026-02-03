@@ -24,20 +24,23 @@ class ExecutionRunIdLoggingHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         """Inject execution_run_id from span context before emitting."""
-        span = trace.get_current_span()
-        if span and span.is_recording():
-            attrs = span.get_attributes() or {}
-            execution_run_id = attrs.get("execution.run_id")
-            if execution_run_id:
-                record.execution_run_id = execution_run_id
-                if record.msg and isinstance(record.msg, str):
-                    try:
-                        log_data = json.loads(record.msg)
-                        if isinstance(log_data, dict) and "execution_run_id" not in log_data:
-                            log_data["execution_run_id"] = execution_run_id
-                            record.msg = json.dumps(log_data)
-                    except (json.JSONDecodeError, TypeError):
-                        pass
+        try:
+            span = trace.get_current_span()
+            if span and span.is_recording() and hasattr(span, "attributes"):
+                execution_run_id = span.attributes.get("execution.run_id")
+                if execution_run_id:
+                    record.execution_run_id = execution_run_id
+                    if record.msg and isinstance(record.msg, str):
+                        try:
+                            log_data = json.loads(record.msg)
+                            if isinstance(log_data, dict) and "execution_run_id" not in log_data:
+                                log_data["execution_run_id"] = execution_run_id
+                                record.msg = json.dumps(log_data)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+        except Exception:
+            pass
+        
         self.base_handler.emit(record)
 
 

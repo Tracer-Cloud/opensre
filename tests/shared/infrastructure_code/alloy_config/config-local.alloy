@@ -1,0 +1,52 @@
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    metrics = [otelcol.exporter.prometheus.local.input]
+    logs    = [otelcol.exporter.loki.local.input]
+    traces  = [otelcol.exporter.otlp.local.input]
+  }
+}
+
+otelcol.exporter.prometheus "local" {
+  forward_to = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.remote_write "local" {
+  endpoint {
+    url = env("MIMIR_ENDPOINT")
+  }
+}
+
+otelcol.exporter.loki "local" {
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = env("LOKI_ENDPOINT")
+  }
+}
+
+otelcol.exporter.otlp "local" {
+  client {
+    endpoint = env("TEMPO_ENDPOINT")
+    tls {
+      insecure = true
+    }
+  }
+}

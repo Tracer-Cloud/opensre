@@ -10,7 +10,7 @@ from typing import Any, Literal, TypedDict, cast
 # ─────────────────────────────────────────────────────────────────────────────
 # Evidence Source Types
 # ─────────────────────────────────────────────────────────────────────────────
-EvidenceSource = Literal["storage", "batch", "tracer_web", "cloudwatch", "aws_sdk", "knowledge"]
+EvidenceSource = Literal["storage", "batch", "tracer_web", "cloudwatch", "aws_sdk", "knowledge", "grafana"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

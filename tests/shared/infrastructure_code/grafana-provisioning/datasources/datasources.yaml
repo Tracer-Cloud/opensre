@@ -1,0 +1,46 @@
+apiVersion: 1
+
+datasources:
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    uid: tempo
+    isDefault: false
+    editable: true
+    jsonData:
+      httpMethod: GET
+      tracesToLogs:
+        datasourceUid: loki
+        tags: ['execution_run_id', 'correlation_id']
+        mappedTags: [{ key: 'service.name', value: 'service_name' }]
+        mapTagNamesEnabled: true
+        spanStartTimeShift: '-1m'
+        spanEndTimeShift: '1m'
+
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    uid: loki
+    isDefault: false
+    editable: true
+    jsonData:
+      derivedFields:
+        - datasourceUid: tempo
+          matcherRegex: "execution_run_id=(\\w+)"
+          name: execution_run_id
+          url: "$${__value.raw}"
+
+  - name: Mimir
+    type: prometheus
+    access: proxy
+    url: http://mimir:9009/prometheus
+    uid: mimir
+    isDefault: true
+    editable: true
+    jsonData:
+      httpMethod: POST
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
