@@ -21,11 +21,10 @@ sys.path.insert(0, str(project_root))
 import pytest
 
 from app.main import _run
-from tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e import (
-    CONFIG,
-    get_failure_details,
-)
+from tests.shared.stack_config import get_prefect_config
 from tests.utils.alert_factory import create_alert
+
+CONFIG = get_prefect_config()
 
 
 @pytest.mark.skipif(
@@ -43,32 +42,34 @@ def test_memory_speedup_50_percent():
     print("E2E MEMORY SPEED TEST")
     print("=" * 60)
 
-    # Get failure details from Prefect
-    try:
-        failure_data = get_failure_details()
-        if not failure_data:
-            pytest.skip("No Prefect failure data available - infrastructure not deployed")
-    except Exception as e:
-        pytest.skip(f"Could not get failure data: {e}")
+    # Skip if infrastructure not available
+    if not CONFIG.get("trigger_api_url"):
+        pytest.skip("Prefect infrastructure not deployed")
 
-    # Create alert (same as test_agent_e2e.py)
+    # Use static failure data for memory benchmarking (doesn't need live infrastructure)
+    failure_data = {
+        "correlation_id": "memory-benchmark-test",
+        "s3_key": "ingested/test/data.json",
+        "audit_key": "audit/memory-benchmark-test.json",
+        "s3_bucket": CONFIG.get("s3_bucket", "test-bucket"),
+        "log_group": CONFIG.get("log_group", "/ecs/tracer-prefect"),
+        "error_message": "Schema validation failed: missing required field customer_id",
+    }
+
+    # Create alert
     alert = create_alert(
         pipeline_name="upstream_downstream_pipeline_prefect",
-        run_name=failure_data["flow_run_name"],
+        run_name=failure_data["correlation_id"],
         status="failed",
         timestamp=datetime.now(UTC).isoformat(),
         severity="critical",
-        alert_name=f"Prefect Flow Failed: {failure_data['flow_run_name']}",
+        alert_name=f"Prefect Flow Failed: {failure_data['correlation_id']}",
         annotations={
             "cloudwatch_log_group": failure_data["log_group"],
-            "flow_run_id": failure_data["flow_run_id"],
-            "flow_run_name": failure_data["flow_run_name"],
-            "prefect_flow": "upstream_downstream_pipeline",
-            "ecs_cluster": "tracer-prefect-cluster",
+            "ecs_cluster": CONFIG.get("ecs_cluster", "tracer-prefect-cluster"),
             "landing_bucket": failure_data["s3_bucket"],
             "s3_key": failure_data["s3_key"],
             "audit_key": failure_data["audit_key"],
-            "prefect_api_url": CONFIG["prefect_api_url"],
             "error_message": failure_data["error_message"],
         },
     )

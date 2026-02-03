@@ -190,3 +190,5 @@ The investigation node uses `context_sources` to determine which `investigation_
 ## Integration with Make
 - End-to-end tests should be added to the Makefile as targets (e.g., `make cloudwatch-demo`, `make upstream-lambda-test`)
 - Tests should return exit code 0 on success, non-zero on failure for CI integration
+
+# Do not use Pydantic V1 --> Always use Pydantic V2
