@@ -71,7 +71,6 @@ def _format_validated_claims_section(ctx: ReportContext, evidence: dict) -> str:
         claim = re.sub(r"\s*\[(?i:evidence):[^\]]*\]", "", claim).strip()
         evidence_ids = claim_data.get("evidence_ids", [])
         evidence_labels = claim_data.get("evidence_labels", [])
-        evidence_sources = claim_data.get("evidence_sources", [])
         # Build clickable labels if possible
         evidence_list = []
         if evidence_ids:
@@ -82,8 +81,7 @@ def _format_validated_claims_section(ctx: ReportContext, evidence: dict) -> str:
                 evidence_list.append(format_slack_link(disp, url) if url else disp)
         elif evidence_labels:
             evidence_list = evidence_labels
-        elif evidence_sources:
-            evidence_list = evidence_sources
+        # no fallback to sources to avoid duplication
         else:
             evidence_list = []
         evidence_str = f" [Evidence: {', '.join(evidence_list)}]" if evidence_list else ""
@@ -214,9 +212,16 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
         if any(connector in lower for connector in causal_connectors):
             sentence = _first_sentence(claim)
             if sentence:
-                return sentence
+                return _first_sentence(_remove_speculative_words(sentence))
 
     return ""
+
+
+def _remove_speculative_words(text: str) -> str:
+    speculative = ("may", "might", "likely", "probably", "possibly")
+    words = text.split()
+    filtered = [w for w in words if w.lower() not in speculative]
+    return " ".join(filtered)
 
 
 def _format_conclusion_section(ctx: ReportContext, evidence: dict) -> str:
