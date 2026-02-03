@@ -68,3 +68,12 @@ JWKS_CACHE_TTL_SECONDS = 3600  # Cache JWKS for 1 hour
 # LLM Configuration
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
 DEFAULT_MAX_TOKENS = 4096
+
+# Tracer API Configuration
+TRACER_BASE_URL_DEV = "https://staging.tracer.cloud"
+TRACER_BASE_URL_PROD = "https://app.tracer.cloud"
+
+
+def get_tracer_base_url() -> str:
+    """Get Tracer base URL for current environment."""
+    return TRACER_BASE_URL_PROD if get_environment() == Environment.PRODUCTION else TRACER_BASE_URL_DEV

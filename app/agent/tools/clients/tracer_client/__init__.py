@@ -2,7 +2,6 @@
 
 import os
 
-from app.agent.constants import TRACER_BASE_URL, TRACER_ORG_ID
 from app.agent.tools.clients.tracer_client.aws_batch_jobs import AWSBatchJobResult
 from app.agent.tools.clients.tracer_client.client import TracerClient
 from app.agent.tools.clients.tracer_client.tracer_logs import LogResult
@@ -12,6 +11,8 @@ from app.agent.tools.clients.tracer_client.tracer_pipelines import (
     TracerRunResult,
 )
 from app.agent.tools.clients.tracer_client.tracer_tools import TracerTaskResult
+from app.agent.utils.auth import extract_org_id_from_jwt
+from app.config import get_tracer_base_url
 
 __all__ = [
     "AWSBatchJobResult",
@@ -22,38 +23,33 @@ __all__ = [
     "TracerRunResult",
     "TracerTaskResult",
     "get_tracer_client",
-    "get_tracer_web_client",  # Alias for backward compatibility
+    "get_tracer_web_client",
 ]
 
 _tracer_client: TracerClient | None = None
 
 
+def _clean_jwt(raw: str) -> str:
+    token = raw.strip()
+    if token.lower().startswith("bearer "):
+        token = token.split(None, 1)[1].strip()
+    return "".join(token.split())
+
+
 def get_tracer_client() -> TracerClient:
-    """
-    Get unified Tracer client singleton.
-
-    Only requires JWT_TOKEN. Org ID and URL are from constants.
-    """
+    """Get unified Tracer client singleton. Extracts org_id from JWT."""
     global _tracer_client
-
     if _tracer_client is None:
-        raw_token = os.getenv("JWT_TOKEN", "")
-        jwt_token = raw_token.strip()
-        if jwt_token.lower().startswith("bearer "):
-            jwt_token = jwt_token.split(None, 1)[1].strip()
-        jwt_token = "".join(jwt_token.split())
+        jwt_token = _clean_jwt(os.getenv("JWT_TOKEN", ""))
         if not jwt_token:
             raise ValueError("JWT_TOKEN environment variable is required")
-
-        _tracer_client = TracerClient(TRACER_BASE_URL, TRACER_ORG_ID, jwt_token)
-
+        org_id = extract_org_id_from_jwt(jwt_token)
+        if not org_id:
+            raise ValueError("JWT_TOKEN must contain organization claim")
+        _tracer_client = TracerClient(get_tracer_base_url(), org_id, jwt_token)
     return _tracer_client
 
 
 def get_tracer_web_client() -> TracerClient:
-    """
-    Alias for get_tracer_client() for backward compatibility.
-
-    The unified client supports both staging API and web app API.
-    """
+    """Alias for get_tracer_client()."""
     return get_tracer_client()
