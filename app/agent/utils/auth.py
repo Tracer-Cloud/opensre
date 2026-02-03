@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import base64
 import json
+from typing import Any, cast
 
 
-def _decode_jwt_payload(jwt_token: str) -> dict | None:
+def _decode_jwt_payload(jwt_token: str) -> dict[str, Any] | None:
     """Decode JWT payload without verification."""
     try:
         parts = jwt_token.split(".")
         if len(parts) < 2:
             return None
         b64 = parts[1] + "=" * (4 - len(parts[1]) % 4)
-        return json.loads(base64.urlsafe_b64decode(b64))  # type: ignore[return-value]
+        decoded = json.loads(base64.urlsafe_b64decode(b64))
+        return cast(dict[str, Any], decoded)
     except Exception:
         return None
 
