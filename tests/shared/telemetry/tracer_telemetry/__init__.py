@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -64,6 +65,15 @@ class PipelineTelemetry:
         except Exception:
             pass
 
+        try:
+            # Flush metrics
+            from opentelemetry import metrics
+            meter_provider = metrics.get_meter_provider()
+            if hasattr(meter_provider, "force_flush"):
+                meter_provider.force_flush(timeout_millis=5000)
+        except Exception:
+            pass
+
 
 def init_telemetry(
     *,
@@ -78,11 +88,23 @@ def init_telemetry(
         apply_otel_env_defaults()
         from tracer_telemetry.config import validate_grafana_cloud_config
 
-        validate_grafana_cloud_config()
+        config_ok = validate_grafana_cloud_config()
         resource = build_resource(service_name, resource_attributes)
+        setup_logging(resource)
+        _std_logging.getLogger("tracer_telemetry").setLevel(_std_logging.INFO)
+        _std_logging.getLogger("tracer_telemetry").info(
+            json.dumps(
+                {
+                    "event": "otel_env_config",
+                    "config_valid": config_ok,
+                    "service_name": service_name,
+                    "endpoint": os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+                    "protocol": os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", ""),
+                }
+            )
+        )
         tracer = setup_tracing(resource)
         metrics = setup_metrics(resource)
-        setup_logging(resource)
 
         BotocoreInstrumentor().instrument()
         RequestsInstrumentor().instrument()

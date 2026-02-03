@@ -232,7 +232,7 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
     grafana_account_id = annotations.get("grafana_account") or annotations.get("grafana_account_id")
 
     if pipeline_name:
-        from app.agent.tools.tool_actions.grafana_actions import check_grafana_connection
+        from app.agent.tools.tool_actions.grafana.grafana_actions import check_grafana_connection
 
         connection_check = check_grafana_connection(pipeline_name, account_id=grafana_account_id)
 

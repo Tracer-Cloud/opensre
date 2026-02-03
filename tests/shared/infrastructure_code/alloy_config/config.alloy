@@ -52,7 +52,7 @@ loki.write "grafana" {
 
 otelcol.exporter.otlphttp "grafana" {
   client {
-    endpoint = "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp"
+    endpoint = env("GCLOUD_OTLP_ENDPOINT")
     headers = {
       "Authorization" = env("GCLOUD_OTLP_AUTH_HEADER"),
     }

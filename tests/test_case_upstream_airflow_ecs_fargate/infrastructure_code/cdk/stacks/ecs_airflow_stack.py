@@ -22,6 +22,7 @@ from aws_cdk import aws_ecs as ecs
 from aws_cdk import aws_elasticloadbalancingv2 as elbv2
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
+from aws_cdk import aws_servicediscovery as servicediscovery
 from constructs import Construct
 
 project_root = Path(__file__).resolve().parents[5]
@@ -29,7 +30,6 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from tests.shared.infrastructure_code.cdk.constructs import (  # noqa: E402
-    AlloySidecar,
     GrafanaCloudSecrets,
     LandingProcessedBuckets,
     MockExternalApi,
@@ -73,6 +73,88 @@ class EcsAirflowStack(Stack):
             vpc=vpc,
             cluster_name="tracer-airflow-cluster",
         )
+
+        telemetry_namespace_name = "tracer-airflow.local"
+        telemetry_namespace = servicediscovery.PrivateDnsNamespace(
+            self,
+            "TelemetryNamespace",
+            vpc=vpc,
+            name=telemetry_namespace_name,
+        )
+
+        collector_log_group = create_log_group(
+            self,
+            "AlloyCollectorLogGroup",
+            log_group_name="/ecs/tracer-airflow-collector",
+        )
+
+        collector_task_role = iam.Role(
+            self,
+            "CollectorTaskRole",
+            assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+        )
+
+        collector_execution_role = iam.Role(
+            self,
+            "CollectorExecutionRole",
+            assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AmazonECSTaskExecutionRolePolicy"
+                )
+            ],
+        )
+        grafana_secrets.secret.grant_read(collector_execution_role)
+
+        collector_task_definition = ecs.FargateTaskDefinition(
+            self,
+            "CollectorTaskDef",
+            cpu=256,
+            memory_limit_mib=512,
+            task_role=collector_task_role,
+            execution_role=collector_execution_role,
+            runtime_platform=ecs.RuntimePlatform(
+                cpu_architecture=ecs.CpuArchitecture.ARM64,
+                operating_system_family=ecs.OperatingSystemFamily.LINUX,
+            ),
+        )
+
+        collector_config_dir = project_root / "tests/shared/infrastructure_code/alloy_config"
+        collector_container = collector_task_definition.add_container(
+            "AlloyCollector",
+            image=ecs.ContainerImage.from_asset(str(collector_config_dir)),
+            logging=ecs.LogDrivers.aws_logs(
+                stream_prefix="alloy-collector",
+                log_group=collector_log_group,
+            ),
+            memory_limit_mib=512,
+            memory_reservation_mib=256,
+            secrets={
+                "GCLOUD_HOSTED_METRICS_URL": grafana_secrets.ecs_secret(
+                    "GCLOUD_HOSTED_METRICS_URL"
+                ),
+                "GCLOUD_HOSTED_METRICS_ID": grafana_secrets.ecs_secret(
+                    "GCLOUD_HOSTED_METRICS_ID"
+                ),
+                "GCLOUD_HOSTED_LOGS_URL": grafana_secrets.ecs_secret(
+                    "GCLOUD_HOSTED_LOGS_URL"
+                ),
+                "GCLOUD_HOSTED_LOGS_ID": grafana_secrets.ecs_secret("GCLOUD_HOSTED_LOGS_ID"),
+                "GCLOUD_RW_API_KEY": grafana_secrets.ecs_secret("GCLOUD_RW_API_KEY"),
+                "GCLOUD_OTLP_ENDPOINT": grafana_secrets.ecs_secret("GCLOUD_OTLP_ENDPOINT"),
+                "GCLOUD_OTLP_AUTH_HEADER": grafana_secrets.ecs_secret(
+                    "GCLOUD_OTLP_AUTH_HEADER"
+                ),
+            },
+        )
+
+        collector_container.add_port_mappings(
+            ecs.PortMapping(container_port=4317, protocol=ecs.Protocol.TCP),
+            ecs.PortMapping(container_port=4318, protocol=ecs.Protocol.TCP),
+        )
+
+        collector_dns = f"alloy-collector.{telemetry_namespace_name}"
+        collector_endpoint = f"{collector_dns}:4317"
 
         task_role = iam.Role(
             self,
@@ -143,7 +225,8 @@ class EcsAirflowStack(Stack):
                 "AIRFLOW__CORE__DAGS_FOLDER": "/opt/airflow/dags",
                 "AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS": "True",
                 "AWS_DEFAULT_REGION": self.region,
-                "OTEL_EXPORTER_OTLP_ENDPOINT": "127.0.0.1:4317",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": collector_endpoint,
+                "OTEL_EXPORTER_OTLP_INSECURE": "true",
                 "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
                 "OTEL_SERVICE_NAME": "airflow-etl-pipeline",
                 "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_airflow,pipeline.framework=airflow,test_case=test_case_upstream_airflow_ecs_fargate",
@@ -151,20 +234,6 @@ class EcsAirflowStack(Stack):
         )
 
         container.add_port_mappings(ecs.PortMapping(container_port=8080, protocol=ecs.Protocol.TCP))
-
-        alloy_sidecar = AlloySidecar(
-            self,
-            "AlloySidecar",
-            task_definition=task_definition,
-            log_group=log_group,
-            grafana_secrets=grafana_secrets,
-        )
-        container.add_container_dependencies(
-            ecs.ContainerDependency(
-                container=alloy_sidecar.container,
-                condition=ecs.ContainerDependencyCondition.START,
-            )
-        )
 
         security_group = ec2.SecurityGroup(
             self,
@@ -177,6 +246,39 @@ class EcsAirflowStack(Stack):
             ec2.Peer.any_ipv4(),
             ec2.Port.tcp(8080),
             "Allow Airflow API access",
+        )
+
+        collector_security_group = ec2.SecurityGroup(
+            self,
+            "AlloyCollectorSG",
+            vpc=vpc,
+            description="Security group for Alloy collector service",
+            allow_all_outbound=True,
+        )
+        collector_security_group.add_ingress_rule(
+            security_group,
+            ec2.Port.tcp(4317),
+            "Allow OTLP gRPC from Airflow",
+        )
+        collector_security_group.add_ingress_rule(
+            security_group,
+            ec2.Port.tcp(4318),
+            "Allow OTLP HTTP from Airflow",
+        )
+
+        ecs.FargateService(
+            self,
+            "AlloyCollectorService",
+            cluster=cluster,
+            task_definition=collector_task_definition,
+            desired_count=1,
+            assign_public_ip=True,
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+            security_groups=[collector_security_group],
+            cloud_map_options=ecs.CloudMapOptions(
+                name="alloy-collector",
+                cloud_map_namespace=telemetry_namespace,
+            ),
         )
 
         airflow_service = ecs.FargateService(
@@ -288,6 +390,12 @@ class EcsAirflowStack(Stack):
         CfnOutput(self, "MockApiUrl", value=mock_api.api.url)
         CfnOutput(self, "EcsClusterName", value=cluster.cluster_name)
         CfnOutput(self, "LogGroupName", value=log_group.log_group_name)
+        CfnOutput(
+            self,
+            "TelemetryCollectorEndpoint",
+            value=collector_endpoint,
+            description="OTLP gRPC endpoint for the Alloy collector service",
+        )
         CfnOutput(
             self,
             "AirflowApiUrl",

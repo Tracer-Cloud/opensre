@@ -8,18 +8,19 @@ from opentelemetry.sdk.resources import Resource
 
 def apply_otel_env_defaults() -> None:
     """Apply OpenTelemetry environment defaults, preferring Grafana Cloud config if available."""
-    if not os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
-        gcloud_endpoint = os.getenv("GCLOUD_OTLP_ENDPOINT")
-        if gcloud_endpoint:
-            os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = gcloud_endpoint
+    gcloud_endpoint = os.getenv("GCLOUD_OTLP_ENDPOINT")
+    is_grafana_cloud = gcloud_endpoint and ("grafana.net" in gcloud_endpoint or "grafana.com" in gcloud_endpoint)
 
-    if not os.getenv("OTEL_EXPORTER_OTLP_HEADERS"):
-        gcloud_auth = os.getenv("GCLOUD_OTLP_AUTH_HEADER")
-        if gcloud_auth:
-            os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization={gcloud_auth}"
+    if not os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") and gcloud_endpoint:
+        os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = gcloud_endpoint
+
+    gcloud_auth = os.getenv("GCLOUD_OTLP_AUTH_HEADER")
+    if not os.getenv("OTEL_EXPORTER_OTLP_HEADERS") and gcloud_auth:
+        os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization={gcloud_auth}"
 
     if not os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL"):
-        os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "grpc"
+        # Use HTTP for Grafana Cloud (gRPC has ALPN issues), gRPC for local collectors
+        os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf" if is_grafana_cloud else "grpc"
 
 
 def validate_grafana_cloud_config() -> bool:

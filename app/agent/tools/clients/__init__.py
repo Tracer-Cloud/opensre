@@ -1,6 +1,14 @@
 """Client modules for different services."""
 
 from app.agent.tools.clients.cloudwatch_client import get_metric_statistics
+from app.agent.tools.clients.grafana import (
+    GrafanaAccountConfig,
+    GrafanaClient,
+    GrafanaConfigLoader,
+    get_grafana_client,
+    get_grafana_config,
+    list_grafana_accounts,
+)
 from app.agent.tools.clients.llm_client import (
     RootCauseResult,
     get_llm,
@@ -22,6 +30,13 @@ from app.agent.tools.clients.tracer_client import (
 __all__ = [
     # CloudWatch client
     "get_metric_statistics",
+    # Grafana client
+    "GrafanaAccountConfig",
+    "GrafanaClient",
+    "GrafanaConfigLoader",
+    "get_grafana_client",
+    "get_grafana_config",
+    "list_grafana_accounts",
     # LLM client
     "RootCauseResult",
     "get_llm",

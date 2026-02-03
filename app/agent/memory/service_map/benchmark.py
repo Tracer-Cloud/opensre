@@ -55,7 +55,7 @@ def run_benchmark(
     print("Phase 1: WITHOUT service map (cold start)")
     print("-" * 60)
 
-    import app.agent.memory.service_map_config as config
+    from . import config
 
     config.SERVICE_MAP_ENABLED = False
 

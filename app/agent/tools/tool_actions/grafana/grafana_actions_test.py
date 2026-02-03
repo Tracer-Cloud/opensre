@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from app.agent.tools.tool_actions.grafana_actions import (
+from app.agent.tools.tool_actions.grafana.grafana_actions import (
     check_grafana_connection,
     query_grafana_logs,
     query_grafana_metrics,
@@ -20,7 +20,7 @@ def _create_mock_client(is_configured: bool = True, account_id: str = "tracerbio
 
 def test_query_grafana_logs_success():
     """Test query_grafana_logs returns logs when available."""
-    with patch("app.agent.tools.tool_actions.grafana_actions.get_grafana_client") as mock_client:
+    with patch("app.agent.tools.tool_actions.grafana.grafana_actions.get_grafana_client") as mock_client:
         mock_instance = _create_mock_client()
         mock_instance.query_loki.return_value = {
             "success": True,
@@ -43,7 +43,7 @@ def test_query_grafana_logs_success():
 
 def test_query_grafana_logs_not_configured():
     """Test query_grafana_logs handles unconfigured accounts."""
-    with patch("app.agent.tools.tool_actions.grafana_actions.get_grafana_client") as mock_client:
+    with patch("app.agent.tools.tool_actions.grafana.grafana_actions.get_grafana_client") as mock_client:
         mock_instance = _create_mock_client(is_configured=False, account_id="customer1")
         mock_client.return_value = mock_instance
 
@@ -55,7 +55,7 @@ def test_query_grafana_logs_not_configured():
 
 def test_query_grafana_logs_failure():
     """Test query_grafana_logs handles failures gracefully."""
-    with patch("app.agent.tools.tool_actions.grafana_actions.get_grafana_client") as mock_client:
+    with patch("app.agent.tools.tool_actions.grafana.grafana_actions.get_grafana_client") as mock_client:
         mock_instance = _create_mock_client()
         mock_instance.query_loki.return_value = {
             "success": False,
@@ -73,7 +73,7 @@ def test_query_grafana_logs_failure():
 
 def test_query_grafana_traces_success():
     """Test query_grafana_traces returns traces with spans."""
-    with patch("app.agent.tools.tool_actions.grafana_actions.get_grafana_client") as mock_client:
+    with patch("app.agent.tools.tool_actions.grafana.grafana_actions.get_grafana_client") as mock_client:
         mock_instance = _create_mock_client()
         mock_instance.query_tempo.return_value = {
             "success": True,
@@ -108,7 +108,7 @@ def test_query_grafana_traces_success():
 
 def test_query_grafana_metrics_success():
     """Test query_grafana_metrics returns metric series."""
-    with patch("app.agent.tools.tool_actions.grafana_actions.get_grafana_client") as mock_client:
+    with patch("app.agent.tools.tool_actions.grafana.grafana_actions.get_grafana_client") as mock_client:
         mock_instance = _create_mock_client()
         mock_instance.query_mimir.return_value = {
             "success": True,
@@ -132,7 +132,7 @@ def test_check_grafana_connection_connected():
     with (
         patch("app.agent.memory.service_map.load_service_map") as mock_load,
         patch(
-            "app.agent.tools.clients.grafana_config.get_grafana_config"
+            "app.agent.tools.clients.grafana.get_grafana_config"
         ) as mock_config,
     ):
         mock_load.return_value = {
@@ -160,7 +160,7 @@ def test_check_grafana_connection_not_connected():
     with (
         patch("app.agent.memory.service_map.load_service_map") as mock_load,
         patch(
-            "app.agent.tools.clients.grafana_config.get_grafana_config"
+            "app.agent.tools.clients.grafana.get_grafana_config"
         ) as mock_config,
     ):
         mock_load.return_value = {
@@ -181,7 +181,7 @@ def test_check_grafana_connection_account_not_configured():
     with (
         patch("app.agent.memory.service_map.load_service_map") as mock_load,
         patch(
-            "app.agent.tools.clients.grafana_config.get_grafana_config"
+            "app.agent.tools.clients.grafana.get_grafana_config"
         ) as mock_config,
     ):
         mock_load.return_value = {

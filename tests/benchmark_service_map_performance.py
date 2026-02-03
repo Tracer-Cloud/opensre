@@ -64,7 +64,7 @@ def benchmark_service_map_impact():
     print("-" * 80)
 
     # Disable service map
-    import app.agent.memory.service_map_config as config
+    import app.agent.memory.service_map.config as config
 
     config.SERVICE_MAP_ENABLED = False
 

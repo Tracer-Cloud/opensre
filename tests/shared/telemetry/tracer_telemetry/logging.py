@@ -25,7 +25,12 @@ def _get_log_exporter():
     if protocol in ("http/protobuf", "http"):
         try:
             from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
-            return OTLPLogExporter(endpoint=endpoint, headers=headers) if endpoint else OTLPLogExporter(headers=headers)
+            # HTTP exporter needs full path when endpoint is passed explicitly
+            if endpoint and not endpoint.endswith("/v1/logs"):
+                logs_endpoint = endpoint.rstrip("/") + "/v1/logs"
+            else:
+                logs_endpoint = endpoint
+            return OTLPLogExporter(endpoint=logs_endpoint, headers=headers) if logs_endpoint else OTLPLogExporter(headers=headers)
         except ImportError:
             pass
 
@@ -71,6 +76,7 @@ class ExecutionRunIdLoggingHandler(logging.Handler):
 def setup_logging(resource) -> None:
     exporter = _get_log_exporter()
     if exporter is None:
+        logging.getLogger(__name__).warning("OTLP log exporter is unavailable")
         return
 
     try:
@@ -87,5 +93,65 @@ def setup_logging(resource) -> None:
     base_handler = LoggingHandler(level=logging.INFO, logger_provider=logger_provider)
     handler = ExecutionRunIdLoggingHandler(base_handler)
     root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
     if not any(isinstance(existing, (LoggingHandler, ExecutionRunIdLoggingHandler)) for existing in root_logger.handlers):
         root_logger.addHandler(handler)
+
+    airflow_loggers = [
+        "airflow",
+        "airflow.task",
+        "airflow.jobs",
+        "airflow.processor",
+        "airflow.scheduler",
+        "airflow.api",
+        "airflow.api_fastapi",
+        "airflow.api_fastapi.execution_api",
+    ]
+    for logger_name in airflow_loggers:
+        airflow_logger = logging.getLogger(logger_name)
+        if any(
+            isinstance(existing, (LoggingHandler, ExecutionRunIdLoggingHandler))
+            for existing in airflow_logger.handlers
+        ):
+            continue
+        if not airflow_logger.propagate:
+            airflow_logger.setLevel(logging.INFO)
+            airflow_logger.addHandler(handler)
+
+    protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+    logs_endpoint = endpoint
+    if protocol in ("http/protobuf", "http") and endpoint and not endpoint.endswith("/v1/logs"):
+        logs_endpoint = endpoint.rstrip("/") + "/v1/logs"
+    logging.getLogger(__name__).info(
+        json.dumps(
+            {
+                "event": "otel_logging_configured",
+                "protocol": protocol,
+                "endpoint": endpoint,
+                "logs_endpoint": logs_endpoint,
+                "exporter": exporter.__class__.__name__,
+            }
+        )
+    )
+
+
+def ensure_otel_logging(logger_name: str) -> None:
+    """Ensure the OTEL logging handler is attached to a logger."""
+    try:
+        from opentelemetry import _logs
+        from opentelemetry.sdk._logs import LoggingHandler
+    except ImportError:
+        return
+
+    logger = logging.getLogger(logger_name)
+    if any(isinstance(existing, (LoggingHandler, ExecutionRunIdLoggingHandler)) for existing in logger.handlers):
+        return
+
+    provider = _logs.get_logger_provider()
+    if provider is None:
+        return
+
+    base_handler = LoggingHandler(level=logging.INFO, logger_provider=provider)
+    handler = ExecutionRunIdLoggingHandler(base_handler)
+    logger.addHandler(handler)

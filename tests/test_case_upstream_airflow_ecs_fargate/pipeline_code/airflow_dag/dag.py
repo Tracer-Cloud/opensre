@@ -18,6 +18,7 @@ for parent in Path(__file__).resolve().parents:
         break
 
 from tracer_telemetry import init_telemetry
+from tracer_telemetry.logging import ensure_otel_logging
 
 from airflow_dag.adapters.alerting import log_pipeline_alert
 from airflow_dag.adapters.s3 import read_json, write_json
@@ -40,6 +41,7 @@ tracer = telemetry.tracer
 @task
 def extract_data(**context) -> dict:
     """Read JSON from S3 landing bucket."""
+    ensure_otel_logging("airflow.task")
     dag_run = context.get("dag_run")
     execution_run_id = dag_run.run_id if dag_run else None
     conf = dag_run.conf if dag_run else {}
@@ -47,7 +49,28 @@ def extract_data(**context) -> dict:
     key = conf.get("key")
 
     if not bucket or not key:
+        logger.error(
+            json.dumps(
+                {
+                    "event": "extract_missing_conf",
+                    "bucket": bucket,
+                    "key": key,
+                    "execution_run_id": execution_run_id,
+                }
+            )
+        )
         raise AirflowFailException("Missing bucket/key in dag_run.conf")
+
+    logger.info(
+        json.dumps(
+            {
+                "event": "extract_started",
+                "bucket": bucket,
+                "key": key,
+                "execution_run_id": execution_run_id,
+            }
+        )
+    )
 
     with tracer.start_as_current_span("extract_data") as span:
         span.set_attribute("s3.bucket", bucket)
@@ -87,6 +110,7 @@ def extract_data(**context) -> dict:
 @task
 def transform_data(payload: dict, **context) -> dict:
     """Validate and transform records using domain logic."""
+    ensure_otel_logging("airflow.task")
     raw_records = payload.get("raw_payload", {}).get("data", [])
     correlation_id = payload.get("correlation_id", "unknown")
     execution_run_id = payload.get("execution_run_id")
@@ -166,6 +190,19 @@ def transform_data(payload: dict, **context) -> dict:
             failure_count=1,
             attributes={"pipeline.name": PIPELINE_NAME},
         )
+        logger.info(
+            json.dumps(
+                {
+                    "event": "pipeline_metrics_recorded",
+                    "status": "failure",
+                    "record_count": len(raw_records),
+                    "failure_count": 1,
+                    "correlation_id": correlation_id,
+                    "execution_run_id": execution_run_id,
+                }
+            )
+        )
+        telemetry.flush()
         raise AirflowFailException(str(e)) from e
 
     return {
@@ -181,6 +218,7 @@ def transform_data(payload: dict, **context) -> dict:
 @task
 def load_data(payload: dict) -> None:
     """Write processed data to S3."""
+    ensure_otel_logging("airflow.task")
     source_key = payload.get("key", "")
     output_key = source_key.replace("ingested/", "processed/")
     correlation_id = payload.get("correlation_id", "unknown")
@@ -248,6 +286,19 @@ def load_data(payload: dict) -> None:
             record_count=len(records),
             attributes={"pipeline.name": PIPELINE_NAME},
         )
+        logger.info(
+            json.dumps(
+                {
+                    "event": "pipeline_metrics_recorded",
+                    "status": "success",
+                    "record_count": len(records),
+                    "duration_seconds": duration_seconds,
+                    "correlation_id": correlation_id,
+                    "execution_run_id": execution_run_id,
+                }
+            )
+        )
+        telemetry.flush()
 
 
 with DAG(

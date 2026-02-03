@@ -17,7 +17,7 @@ class TestServiceMap:
     def setup_method(self):
         """Clean service map and enable for tests."""
         # Enable service map for tests
-        import app.agent.memory.service_map_config as config
+        import app.agent.memory.service_map.config as config
         from app.agent.memory.io import get_memories_dir
 
         config.SERVICE_MAP_ENABLED = True
@@ -420,7 +420,7 @@ class TestServiceMap:
 
     def test_empty_state_when_disabled(self):
         """Service map returns empty state when disabled."""
-        from app.agent.memory import service_map_config
+        import app.agent.memory.service_map.config as service_map_config
 
         # Disable service map
         original_value = service_map_config.SERVICE_MAP_ENABLED

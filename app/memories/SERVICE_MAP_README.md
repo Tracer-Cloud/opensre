@@ -6,10 +6,10 @@ The service map is a global asset inventory and connectivity graph that tracks d
 ## Architecture
 
 ### Core Components
-- **Service Map Builder** (`app/agent/memory/service_map.py`) - Extracts assets and infers edges
+- **Service Map Builder** (`app/agent/memory/service_map/builder.py`) - Extracts assets and infers edges
 - **Incremental Updates** (`app/agent/nodes/investigate/node.py`) - Updates map after each investigate cycle
 - **Memory Integration** (`app/agent/memory/formatter.py`) - Embeds compact map in memory files
-- **Config** (`app/agent/memory/service_map_config.py`) - Toggle (default ON)
+- **Config** (`app/agent/memory/service_map/config.py`) - Toggle (default ON)
 
 ### Data Structure
 
@@ -134,7 +134,7 @@ Service map is embedded in memory files:
 ## Usage
 
 ### Toggle On/Off
-Edit `app/agent/memory/service_map_config.py`:
+Edit `app/agent/memory/service_map/config.py`:
 ```python
 SERVICE_MAP_ENABLED = True  # or False for empty state
 ```

@@ -2,17 +2,46 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 
 from opentelemetry import trace
 
-# Try to import gRPC exporter first, fall back to HTTP if not available
-try:
-    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
-except ImportError:
+
+def _get_log_exporter():
+    """Get the appropriate log exporter based on OTEL_EXPORTER_OTLP_PROTOCOL."""
+    protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    headers_str = os.getenv("OTEL_EXPORTER_OTLP_HEADERS", "")
+
+    # Parse headers string (format: "key1=value1,key2=value2")
+    headers = {}
+    if headers_str:
+        for pair in headers_str.split(","):
+            if "=" in pair:
+                key, value = pair.split("=", 1)
+                headers[key.strip()] = value.strip()
+
+    # Use HTTP for http/protobuf protocol (required for Grafana Cloud)
+    if protocol in ("http/protobuf", "http"):
+        try:
+            from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+            # HTTP exporter needs full path when endpoint is passed explicitly
+            if endpoint and not endpoint.endswith("/v1/logs"):
+                logs_endpoint = endpoint.rstrip("/") + "/v1/logs"
+            else:
+                logs_endpoint = endpoint
+            return OTLPLogExporter(endpoint=logs_endpoint, headers=headers) if logs_endpoint else OTLPLogExporter(headers=headers)
+        except ImportError:
+            pass
+
+    # Fall back to gRPC
     try:
-        from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+        from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+        return OTLPLogExporter()
     except ImportError:
-        OTLPLogExporter = None
+        pass
+
+    return None
 
 
 class ExecutionRunIdLoggingHandler(logging.Handler):
@@ -45,7 +74,8 @@ class ExecutionRunIdLoggingHandler(logging.Handler):
 
 
 def setup_logging(resource) -> None:
-    if OTLPLogExporter is None:
+    exporter = _get_log_exporter()
+    if exporter is None:
         return
 
     try:
@@ -56,7 +86,7 @@ def setup_logging(resource) -> None:
         return
 
     logger_provider = LoggerProvider(resource=resource)
-    logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
+    logger_provider.add_log_record_processor(BatchLogRecordProcessor(exporter))
     _logs.set_logger_provider(logger_provider)
 
     base_handler = LoggingHandler(level=logging.INFO, logger_provider=logger_provider)

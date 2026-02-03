@@ -8,6 +8,7 @@ distributor:
         grpc:
         http:
 
+
 storage:
   trace:
     backend: local

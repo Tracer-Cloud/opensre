@@ -63,7 +63,9 @@ class GrafanaConfigLoader:
     def _find_config_file(self) -> Path | None:
         """Find the grafana accounts config file."""
         search_paths = [
-            Path(__file__).parent.parent.parent.parent.parent / "configs" / "grafana_accounts.yaml",
+            Path(__file__).parent.parent.parent.parent.parent.parent
+            / "configs"
+            / "grafana_accounts.yaml",
             Path.cwd() / "configs" / "grafana_accounts.yaml",
             Path.home() / ".tracer" / "grafana_accounts.yaml",
         ]

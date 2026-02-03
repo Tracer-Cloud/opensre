@@ -23,7 +23,6 @@ accounts:
       tempo: "grafanacloud-traces"
       mimir: "grafanacloud-prom"
     description: "Tracer.bio main Grafana Cloud account"
-
   # Example customer account (template)
   # customer1:
   #   instance_url: "https://customer1.grafana.net"
@@ -34,5 +33,5 @@ accounts:
   #     mimir: "grafanacloud-prom"
   #   description: "Customer 1 Grafana Cloud account"
 
-# Default account to use when no specific account is specified
+  # Default account to use when no specific account is specified
 default_account: "tracerbio"

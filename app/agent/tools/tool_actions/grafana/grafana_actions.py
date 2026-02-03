@@ -16,7 +16,7 @@ except ImportError:
         return func
 
 
-from app.agent.tools.clients.grafana_client import get_grafana_client
+from app.agent.tools.clients.grafana import get_grafana_client
 
 # Service name mapping: Pipeline name -> Grafana service name
 SERVICE_NAME_MAPPING = {
@@ -261,7 +261,7 @@ def check_grafana_connection(pipeline_name: str, account_id: str | None = None) 
         Dictionary with connection status, Grafana service name mapping, and account_id
     """
     from app.agent.memory.service_map import load_service_map
-    from app.agent.tools.clients.grafana_config import get_grafana_config
+    from app.agent.tools.clients.grafana import get_grafana_config
 
     service_map = load_service_map()
 

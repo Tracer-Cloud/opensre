@@ -12,7 +12,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from app.agent.tools.tool_actions.grafana_actions import (
+from app.agent.tools.tool_actions.grafana import (
     check_grafana_connection,
     query_grafana_logs,
     query_grafana_metrics,

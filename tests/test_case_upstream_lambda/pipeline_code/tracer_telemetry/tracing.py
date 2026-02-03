@@ -1,17 +1,32 @@
 from __future__ import annotations
 
+import os
+
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-# Try to import gRPC exporter first, fall back to HTTP if not available
-try:
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-except ImportError:
+
+def _get_span_exporter():
+    """Get the appropriate span exporter based on OTEL_EXPORTER_OTLP_PROTOCOL."""
+    protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+
+    # Use HTTP for http/protobuf protocol (required for Grafana Cloud)
+    if protocol in ("http/protobuf", "http"):
+        try:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+            return OTLPSpanExporter()
+        except ImportError:
+            pass
+
+    # Fall back to gRPC
     try:
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        return OTLPSpanExporter()
     except ImportError:
-        OTLPSpanExporter = None
+        pass
+
+    return None
 
 
 def _get_execution_run_id_from_context() -> str | None:
@@ -34,7 +49,8 @@ def ensure_execution_run_id(span: trace.Span, execution_run_id: str | None = Non
 
 def setup_tracing(resource) -> trace.Tracer:
     provider = TracerProvider(resource=resource)
-    if OTLPSpanExporter is not None:
-        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+    exporter = _get_span_exporter()
+    if exporter is not None:
+        provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     return trace.get_tracer("tracer_telemetry")

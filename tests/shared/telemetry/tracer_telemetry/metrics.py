@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import logging
+import os
 from dataclasses import dataclass
 
 from opentelemetry import metrics
@@ -62,10 +65,21 @@ class PipelineMetrics:
 
 def setup_metrics(resource) -> PipelineMetrics:
     if OTLPMetricExporter is None:
+        logging.getLogger(__name__).warning("OTLP metric exporter is unavailable")
         return PipelineMetrics.noop()
 
     metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
     provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     metrics.set_meter_provider(provider)
+    logging.getLogger(__name__).info(
+        json.dumps(
+            {
+                "event": "otel_metrics_configured",
+                "protocol": os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"),
+                "endpoint": os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+                "exporter": OTLPMetricExporter.__name__,
+            }
+        )
+    )
     meter = metrics.get_meter("tracer_telemetry")
     return PipelineMetrics.create(meter)

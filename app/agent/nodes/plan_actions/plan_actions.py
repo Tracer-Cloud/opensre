@@ -12,7 +12,7 @@ from app.agent.nodes.plan_actions.detect_sources import detect_sources
 from app.agent.nodes.plan_actions.extract_keywords import extract_keywords
 from app.agent.output import debug_print
 from app.agent.tools.clients import get_llm
-from app.agent.tools.tool_actions.investigation_actions import (
+from app.agent.tools.tool_actions.investigation_registry import (
     get_available_actions,
     get_prioritized_actions,
 )

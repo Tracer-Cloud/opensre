@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 import os
 
 from opentelemetry import trace
@@ -10,22 +12,12 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 def _get_span_exporter():
     """Get the appropriate span exporter based on OTEL_EXPORTER_OTLP_PROTOCOL."""
     protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-    headers_str = os.getenv("OTEL_EXPORTER_OTLP_HEADERS", "")
-
-    # Parse headers string (format: "key1=value1,key2=value2")
-    headers = {}
-    if headers_str:
-        for pair in headers_str.split(","):
-            if "=" in pair:
-                key, value = pair.split("=", 1)
-                headers[key.strip()] = value.strip()
 
     # Use HTTP for http/protobuf protocol (required for Grafana Cloud)
     if protocol in ("http/protobuf", "http"):
         try:
             from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-            return OTLPSpanExporter(endpoint=endpoint, headers=headers) if endpoint else OTLPSpanExporter(headers=headers)
+            return OTLPSpanExporter()
         except ImportError:
             pass
 
@@ -62,5 +54,17 @@ def setup_tracing(resource) -> trace.Tracer:
     exporter = _get_span_exporter()
     if exporter is not None:
         provider.add_span_processor(BatchSpanProcessor(exporter))
+        logging.getLogger(__name__).info(
+            json.dumps(
+                {
+                    "event": "otel_tracing_configured",
+                    "protocol": os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"),
+                    "exporter": exporter.__class__.__name__,
+                    "endpoint": os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+                }
+            )
+        )
+    else:
+        logging.getLogger(__name__).warning("OTLP trace exporter is unavailable")
     trace.set_tracer_provider(provider)
     return trace.get_tracer("tracer_telemetry")

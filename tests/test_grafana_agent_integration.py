@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.agent.nodes.plan_actions.detect_sources import detect_sources
-from app.agent.tools.tool_actions.grafana_actions import (
+from app.agent.tools.tool_actions.grafana import (
     check_grafana_connection,
     query_grafana_logs,
     query_grafana_traces,
@@ -25,7 +25,7 @@ def test_detect_sources_includes_grafana_when_connected():
     context = {}
 
     with patch(
-        "app.agent.tools.tool_actions.grafana_actions.check_grafana_connection"
+        "app.agent.tools.tool_actions.grafana.grafana_actions.check_grafana_connection"
     ) as mock_check:
         mock_check.return_value = {
             "connected": True,
@@ -51,7 +51,7 @@ def test_detect_sources_skips_grafana_when_not_connected():
     context = {}
 
     with patch(
-        "app.agent.tools.tool_actions.grafana_actions.check_grafana_connection"
+        "app.agent.tools.tool_actions.grafana.grafana_actions.check_grafana_connection"
     ) as mock_check:
         mock_check.return_value = {"connected": False}
 
@@ -62,7 +62,7 @@ def test_detect_sources_skips_grafana_when_not_connected():
 
 def test_grafana_actions_available_in_action_pool():
     """Test that Grafana actions are registered and available."""
-    from app.agent.tools.tool_actions.investigation_actions import get_available_actions
+    from app.agent.tools.tool_actions.investigation_registry import get_available_actions
 
     actions = get_available_actions()
     action_names = [a.name for a in actions]
@@ -81,7 +81,7 @@ def test_grafana_actions_available_in_action_pool():
 
 def test_grafana_availability_check():
     """Test that Grafana actions are only available when connection verified."""
-    from app.agent.tools.tool_actions.investigation_actions import get_available_actions
+    from app.agent.tools.tool_actions.investigation_registry import get_available_actions
 
     actions = get_available_actions()
     grafana_log_action = next(a for a in actions if a.name == "query_grafana_logs")
