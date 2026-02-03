@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 class LokiMixin:
     """Mixin providing Loki log query capabilities."""
 
-    def query_loki(
+    def query_loki(  # type: ignore[misc]
         self: GrafanaClientBase,
         query: str,
         time_range_minutes: int = 60,

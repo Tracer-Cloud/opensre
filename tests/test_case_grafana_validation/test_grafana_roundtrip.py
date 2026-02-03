@@ -142,7 +142,7 @@ def query_grafana_loki(service_name: str, execution_run_id: str) -> dict:
         logs = []
         for stream in result:
             values = stream.get("values", [])
-            for timestamp_ns, log_line in values:
+            for _timestamp_ns, log_line in values:
                 logs.append(log_line)
 
         return {"success": True, "logs": logs, "query": query}

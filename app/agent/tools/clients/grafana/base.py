@@ -83,4 +83,5 @@ class GrafanaClientBase:
             timeout=timeout,
         )
         response.raise_for_status()
-        return response.json()
+        result: dict[str, Any] = response.json()
+        return result

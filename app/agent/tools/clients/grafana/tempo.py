@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 class TempoMixin:
     """Mixin providing Tempo trace query capabilities."""
 
-    def query_tempo(
+    def query_tempo(  # type: ignore[misc]
         self: GrafanaClientBase,
         service_name: str,
         limit: int = 20,
@@ -51,7 +51,7 @@ class TempoMixin:
             enriched_traces = []
             for trace in traces:
                 trace_id = trace.get("traceID", "")
-                span_details = self._get_trace_details(trace_id)
+                span_details = self._get_trace_details(trace_id)  # type: ignore[attr-defined]
 
                 enriched_traces.append(
                     {
@@ -84,7 +84,7 @@ class TempoMixin:
                 "traces": [],
             }
 
-    def _get_trace_details(
+    def _get_trace_details(  # type: ignore[misc]
         self: GrafanaClientBase,
         trace_id: str,
     ) -> dict[str, Any]:
@@ -118,7 +118,7 @@ class TempoMixin:
                             for scope in batch["scopeSpans"]:
                                 if "spans" in scope:
                                     for span in scope["spans"]:
-                                        attributes = self._extract_span_attributes(span)
+                                        attributes = self._extract_span_attributes(span)  # type: ignore[attr-defined]
                                         spans.append(
                                             {
                                                 "name": span.get("name", "unknown"),
@@ -132,7 +132,7 @@ class TempoMixin:
 
         return {"spans": []}
 
-    def _extract_span_attributes(
+    def _extract_span_attributes(  # type: ignore[misc]
         self: GrafanaClientBase,
         span: dict[str, Any],
     ) -> dict[str, Any]:

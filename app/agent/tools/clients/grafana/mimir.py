@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 class MimirMixin:
     """Mixin providing Mimir metrics query capabilities."""
 
-    def query_mimir(
+    def query_mimir(  # type: ignore[misc]
         self: GrafanaClientBase,
         metric_name: str,
         service_name: str | None = None,

@@ -262,7 +262,8 @@ def _extract_external_api_url(evidence: dict[str, Any]) -> str:
     if not isinstance(audit_content, dict):
         return "unknown"
 
-    return audit_content.get("external_api_url", "unknown")
+    url: str = audit_content.get("external_api_url", "unknown")
+    return url
 
 
 def ensure_edge_endpoint_assets(
