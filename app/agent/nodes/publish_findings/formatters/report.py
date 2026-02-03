@@ -3,6 +3,7 @@
 import os
 
 from app.agent.nodes.publish_findings.context.models import ReportContext
+from app.agent.nodes.publish_findings.formatters.base import format_slack_link
 from app.agent.nodes.publish_findings.formatters.evidence import (
     format_cited_evidence_section,
     format_evidence_for_claim,
@@ -38,11 +39,18 @@ def render_cloudwatch_link(ctx: ReportContext) -> str:
     cw_stream = ctx.get("cloudwatch_log_stream")
 
     if cw_url:
-        return f"\n*CloudWatch Logs:*\n{cw_url}\n"
+        return f"\n*{format_slack_link('CloudWatch Logs', cw_url)}*\n"
     elif cw_group and cw_stream:
         # Build URL if not provided
         url = build_cloudwatch_url(ctx)
-        return f"\n*CloudWatch Logs:*\n* Log Group: {cw_group}\n* Log Stream: {cw_stream}\n* View: {url}\n"
+        view_link = format_slack_link("CloudWatch Logs", url) if url else None
+        if view_link:
+            return f"\n*{view_link}*\n"
+        return (
+            "\n*CloudWatch Logs:*\n"
+            f"* Log Group: {cw_group}\n"
+            f"* Log Stream: {cw_stream}\n"
+        )
 
     return ""
 
@@ -201,7 +209,6 @@ Analyzed by: pipeline-agent
 *Validity Score:* {validity_score:.0%} ({len(validated_claims)}/{total_claims} validated)
 {cited_evidence_section}
 
-*View Investigation:*
-{tracer_link}
+{tracer_cta}
 {cloudwatch_link}
 """
