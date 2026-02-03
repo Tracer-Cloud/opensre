@@ -45,6 +45,7 @@ class ReportContext(TypedDict, total=False):
     cloudwatch_logs_url: str | None
     cloudwatch_region: str | None
     alert_id: str | None
+    evidence_catalog: dict
 
     # Raw data for deeper inspection
     evidence: dict  # Raw evidence data for citation

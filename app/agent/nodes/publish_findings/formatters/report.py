@@ -62,23 +62,44 @@ def _format_validated_claims_section(ctx: ReportContext, evidence: dict) -> str:
 
     validated_section = "\n*Validated Claims (Supported by Evidence):*\n"
     evidence_section = "\n*Evidence Details:*\n"
+    has_catalog = bool(ctx.get("evidence_catalog"))
+    catalog = ctx.get("evidence_catalog") or {}
 
     for idx, claim_data in enumerate(validated_claims, 1):
         claim = claim_data.get("claim", "")
+        # Strip legacy inline evidence markers
+        claim = re.sub(r"\s*\[(?i:evidence):[^\]]*\]", "", claim).strip()
+        evidence_ids = claim_data.get("evidence_ids", [])
+        evidence_labels = claim_data.get("evidence_labels", [])
         evidence_sources = claim_data.get("evidence_sources", [])
-        evidence_str = f" [Evidence: {', '.join(evidence_sources)}]" if evidence_sources else ""
+        # Build clickable labels if possible
+        evidence_list = []
+        if evidence_ids:
+            for eid in evidence_ids:
+                entry = catalog.get(eid, {})
+                disp = entry.get("display_id", eid)
+                url = entry.get("url")
+                evidence_list.append(format_slack_link(disp, url) if url else disp)
+        elif evidence_labels:
+            evidence_list = evidence_labels
+        elif evidence_sources:
+            evidence_list = evidence_sources
+        else:
+            evidence_list = []
+        evidence_str = f" [Evidence: {', '.join(evidence_list)}]" if evidence_list else ""
         validated_section += f"• {claim}{evidence_str}\n"
 
-        # Add evidence details for this claim
-        evidence_detail = format_evidence_for_claim(claim_data, evidence, ctx)
-        if evidence_detail:
-            evidence_section += (
-                f'\n{idx}. Evidence for: "{claim[:80]}{"..." if len(claim) > 80 else ""}"\n'
-            )
-            evidence_section += f"{evidence_detail}\n"
+        # Add evidence details only when no catalog is present (fallback)
+        if not has_catalog:
+            evidence_detail = format_evidence_for_claim(claim_data, evidence, ctx)
+            if evidence_detail:
+                evidence_section += (
+                    f'\n{idx}. Evidence for: "{claim[:80]}{"..." if len(claim) > 80 else ""}"\n'
+                )
+                evidence_section += f"{evidence_detail}\n"
 
-    # Only add evidence section if there's actual evidence to show
-    if evidence_section.strip() != "*Evidence Details:*":
+    # Only add evidence section if there's actual evidence to show (and no catalog)
+    if not has_catalog and evidence_section.strip() != "*Evidence Details:*":
         validated_section += evidence_section
 
     return validated_section
