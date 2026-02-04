@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,7 +18,14 @@ from opentelemetry import trace
 from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
 
-from app.outbound_telemetry.config import apply_otel_env_defaults, build_resource
+from config.grafana_config import (
+    get_aws_lambda_function_name,
+    get_otel_exporter_otlp_endpoint,
+    get_otel_exporter_otlp_protocol,
+    apply_otel_env_defaults,
+    build_resource,
+    validate_grafana_cloud_config,
+)
 from app.outbound_telemetry.grafana_client import GrafanaCloudClient, GrafanaCloudConfig
 from app.outbound_telemetry.logging import setup_logging
 from app.outbound_telemetry.metrics import PipelineMetrics, setup_metrics
@@ -106,8 +112,6 @@ def init_telemetry(
 
     try:
         apply_otel_env_defaults()
-        from app.outbound_telemetry.config import validate_grafana_cloud_config
-
         config_ok = validate_grafana_cloud_config()
         resource = build_resource(service_name, resource_attributes)
         setup_logging(resource)
@@ -118,8 +122,8 @@ def init_telemetry(
                     "event": "otel_env_config",
                     "config_valid": config_ok,
                     "service_name": service_name,
-                    "endpoint": os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
-                    "protocol": os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", ""),
+                    "endpoint": get_otel_exporter_otlp_endpoint(),
+                    "protocol": get_otel_exporter_otlp_protocol(default=""),
                 }
             )
         )
@@ -132,7 +136,7 @@ def init_telemetry(
             from opentelemetry.instrumentation.aws_lambda import AwsLambdaInstrumentor
         except ImportError:
             AwsLambdaInstrumentor = None
-        if os.getenv("AWS_LAMBDA_FUNCTION_NAME") and AwsLambdaInstrumentor:
+        if get_aws_lambda_function_name() and AwsLambdaInstrumentor:
             AwsLambdaInstrumentor().instrument()
 
         _telemetry = PipelineTelemetry(tracer=tracer, metrics=metrics)

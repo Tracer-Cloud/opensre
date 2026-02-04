@@ -6,14 +6,19 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from dataclasses import dataclass
 
 from opentelemetry import metrics
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
-from app.outbound_telemetry.env import parse_otel_headers
+from config.grafana_config import (
+    get_otel_exporter_otlp_endpoint,
+    get_otel_exporter_otlp_metrics_endpoint,
+    get_otel_exporter_otlp_metrics_protocol,
+    get_otel_exporter_otlp_protocol,
+    parse_otel_headers,
+)
 
 
 @dataclass(frozen=True)
@@ -61,12 +66,9 @@ class PipelineMetrics:
 
 
 def _get_metric_exporter():
-    protocol = os.getenv(
-        "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL",
-        os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"),
-    )
-    endpoint = os.getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT") or os.getenv(
-        "OTEL_EXPORTER_OTLP_ENDPOINT"
+    protocol = get_otel_exporter_otlp_metrics_protocol()
+    endpoint = (
+        get_otel_exporter_otlp_metrics_endpoint() or get_otel_exporter_otlp_endpoint()
     )
     headers = parse_otel_headers()
 
@@ -110,8 +112,8 @@ def setup_metrics(resource) -> PipelineMetrics:
         json.dumps(
             {
                 "event": "otel_metrics_configured",
-                "protocol": os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"),
-                "endpoint": os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+                "protocol": get_otel_exporter_otlp_protocol(),
+                "endpoint": get_otel_exporter_otlp_endpoint(),
                 "exporter": exporter.__class__.__name__,
             }
         )

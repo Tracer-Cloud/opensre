@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 
 from opentelemetry import trace
 
-from app.outbound_telemetry.env import parse_otel_headers
+from config.grafana_config import (
+    get_otel_exporter_otlp_endpoint,
+    get_otel_exporter_otlp_protocol,
+    parse_otel_headers,
+)
 
 
 def _get_log_exporter():
     """Get the appropriate log exporter based on OTEL_EXPORTER_OTLP_PROTOCOL."""
-    protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    protocol = get_otel_exporter_otlp_protocol()
+    endpoint = get_otel_exporter_otlp_endpoint()
     headers = parse_otel_headers()
 
     # Use HTTP for http/protobuf protocol (required for Grafana Cloud)
@@ -98,8 +101,8 @@ def setup_logging(resource) -> None:
     ):
         root_logger.addHandler(handler)
 
-    protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+    protocol = get_otel_exporter_otlp_protocol()
+    endpoint = get_otel_exporter_otlp_endpoint()
     logs_endpoint = endpoint
     if protocol in ("http/protobuf", "http") and endpoint and not endpoint.endswith("/v1/logs"):
         logs_endpoint = endpoint.rstrip("/") + "/v1/logs"

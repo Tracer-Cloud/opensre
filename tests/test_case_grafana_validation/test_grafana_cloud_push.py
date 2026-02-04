@@ -10,7 +10,7 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.trace import TracerProvider
 
 from app.outbound_telemetry import init_telemetry, traced_operation
-from app.outbound_telemetry.config import configure_grafana_cloud
+from config.grafana_config import configure_grafana_cloud
 from config.grafana_config import get_otlp_auth_header, get_otlp_endpoint, load_env
 
 

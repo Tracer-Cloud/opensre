@@ -1,7 +1,9 @@
 import os
 from contextlib import contextmanager
 
-from app.outbound_telemetry.config import (
+import pytest
+
+from config.grafana_config import (
     apply_otel_env_defaults,
     configure_grafana_cloud,
     validate_grafana_cloud_config,
@@ -69,8 +71,11 @@ def test_validate_grafana_cloud_config_flags_missing():
             "OTEL_EXPORTER_OTLP_ENDPOINT": "https://example.grafana.net/otlp",
         }
     ):
-        assert validate_grafana_cloud_config() is False
+        with pytest.raises(ValueError, match="missing env vars"):
+            validate_grafana_cloud_config()
 
+
+def test_validate_grafana_cloud_config_passes_when_present():
     with temp_env(
         {
             "OTEL_EXPORTER_OTLP_ENDPOINT": "https://example.grafana.net/otlp",

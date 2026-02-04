@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
@@ -12,10 +11,14 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import Status, StatusCode
 
+from config.grafana_config import (
+    get_otel_exporter_otlp_endpoint,
+    get_otel_exporter_otlp_protocol,
+)
 
 def _get_span_exporter():
     """Get the appropriate span exporter based on OTEL_EXPORTER_OTLP_PROTOCOL."""
-    protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+    protocol = get_otel_exporter_otlp_protocol()
 
     if protocol in ("http/protobuf", "http"):
         try:
@@ -63,9 +66,9 @@ def setup_tracing(resource) -> trace.Tracer:
             json.dumps(
                 {
                     "event": "otel_tracing_configured",
-                    "protocol": os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"),
+                    "protocol": get_otel_exporter_otlp_protocol(),
                     "exporter": exporter.__class__.__name__,
-                    "endpoint": os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+                    "endpoint": get_otel_exporter_otlp_endpoint(),
                 }
             )
         )

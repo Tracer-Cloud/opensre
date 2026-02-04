@@ -33,3 +33,39 @@
 - Sorted imports and removed unused imports where flagged by ruff.
 - Updated the tool decorator to use type parameters per Python 3.13.
 - `ruff check .` passes clean.
+
+## Centralize Grafana Env Access (2026-02-04)
+
+- [x] Catalog outbound_telemetry env reads and needed helpers
+- [x] Add grafana_config getters + update outbound_telemetry usage
+- [x] Verify outbound_telemetry tests or lint clean
+
+## Results - Centralize Grafana Env Access (2026-02-04)
+
+- Added centralized OTEL/AWS env getters in `config/grafana_config.py`.
+- Updated outbound telemetry modules to use grafana_config getters only.
+- Ran `python3 -m pytest tests/outbound_telemetry -q`.
+
+## Consolidate Grafana Config Getters (2026-02-04)
+
+- [x] Add shared env accessor helpers
+- [x] Update grafana_config getters to use shared helpers
+- [x] Verify outbound_telemetry tests pass
+
+## Results - Consolidate Grafana Config Getters (2026-02-04)
+
+- Added `get_env()` + `_get_env()` helpers to centralize lookups.
+- Updated grafana_config getters to call shared helpers.
+- Ran `python3 -m pytest tests/outbound_telemetry -q`.
+
+## Centralize Outbound Telemetry Config (2026-02-04)
+
+- [x] Move outbound_telemetry config/env helpers into grafana_config
+- [x] Update imports and remove outbound_telemetry config/env modules
+- [x] Run outbound_telemetry tests
+
+## Results - Centralize Outbound Telemetry Config (2026-02-04)
+
+- Moved Grafana Cloud config and OTEL header parsing into `config/grafana_config.py`.
+- Updated imports and removed `app/outbound_telemetry/config.py` and `env.py`.
+- Ran `python3 -m pytest tests/outbound_telemetry -q`.

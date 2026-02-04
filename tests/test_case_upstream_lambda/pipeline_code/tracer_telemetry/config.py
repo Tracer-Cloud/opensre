@@ -49,13 +49,9 @@ def validate_grafana_cloud_config() -> bool:
         }
         missing = [key for key, value in required_values.items() if not value]
         if missing:
-            import warnings
-            warnings.warn(
-                f"Grafana Cloud endpoint detected but missing env vars: {', '.join(missing)}",
-                UserWarning,
-                stacklevel=2,
+            raise ValueError(
+                f"Grafana Cloud endpoint detected but missing env vars: {', '.join(missing)}"
             )
-            return False
     return True
 
 
