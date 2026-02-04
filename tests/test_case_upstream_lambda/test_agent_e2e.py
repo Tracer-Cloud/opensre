@@ -23,6 +23,51 @@ from tests.utils.alert_factory import create_alert
 from tests.utils.conftest import UPSTREAM_DOWNSTREAM_CONFIG
 
 
+def _pick_field(payload: dict, keys: list[str]) -> str | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            return value
+    data = payload.get("data")
+    if isinstance(data, dict):
+        for key in keys:
+            value = data.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
+
+def _parse_ingester_payload(response: requests.Response) -> dict:
+    try:
+        result = response.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Ingester API did not return JSON: {response.text}") from exc
+
+    payload: object = result
+    if isinstance(result, dict) and "statusCode" in result and "body" in result:
+        status_code = result.get("statusCode")
+        if status_code != 200:
+            raise RuntimeError(f"Pipeline trigger failed: {result}")
+        payload = result.get("body")
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"Ingester body was not valid JSON: {payload}") from exc
+
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Unexpected ingester payload: {payload}")
+    if payload.get("error"):
+        raise RuntimeError(f"Pipeline trigger failed: {payload}")
+
+    s3_key = _pick_field(payload, ["s3_key", "s3Key", "key"])
+    bucket = _pick_field(payload, ["s3_bucket", "s3Bucket", "bucket"])
+    if not s3_key or not bucket:
+        raise RuntimeError(f"Ingester response missing s3 fields: {payload}")
+
+    return {"s3_key": s3_key, "bucket": bucket, "payload": payload}
+
+
 def trigger_pipeline_failure() -> dict:
     """Trigger a pipeline failure and return alert data."""
     print("=" * 60)
@@ -39,9 +84,9 @@ def trigger_pipeline_failure() -> dict:
         timeout=10,
     )
 
-    result = response.json()
-    s3_key = result["s3_key"]
-    bucket = result["s3_bucket"]
+    parsed = _parse_ingester_payload(response)
+    s3_key = parsed["s3_key"]
+    bucket = parsed["bucket"]
 
     print(f"✓ Bad data written to: s3://{bucket}/{s3_key}")
     print("Waiting 10s for Mock DAG to process and fail...")

@@ -8,17 +8,8 @@ All functions are decorated with @tool for LangChain/LangGraph compatibility.
 
 from __future__ import annotations
 
-try:
-    from langchain.tools import tool
-except ImportError:
-    # Fallback if langchain not available - create a no-op decorator
-    def tool(func=None, **kwargs):  # type: ignore[no-redef]  # noqa: ARG001
-        if func is None:
-            return lambda f: f
-        return func
-
-
 from app.agent.tools.clients.tracer_client import get_tracer_web_client
+from app.agent.tools.tool_decorator import tool
 
 
 def get_error_logs(trace_id: str, size: int = 500, error_only: bool = True) -> dict:

@@ -106,7 +106,6 @@ def get_flink_config() -> dict:
         "subnet_ids": outputs.get("SubnetIds"),
     }
 
-
 def get_prefect_config() -> dict:
     """Get Prefect test configuration from stack outputs.
 
@@ -120,12 +119,18 @@ def get_prefect_config() -> dict:
         outputs = get_stack_outputs(STACKS["prefect"])
 
     cluster_name = outputs.get("EcsClusterName")
+    prefect_api_url = None
+    if cluster_name:
+        public_ip = get_ecs_task_public_ip(cluster_name)
+        if public_ip:
+            prefect_api_url = f"http://{public_ip}:4200/api"
 
     return {
         "trigger_api_url": outputs.get("TriggerApiUrl"),
         "mock_api_url": outputs.get("MockApiUrl"),
         "log_group": outputs.get("LogGroupName"),
         "ecs_cluster": cluster_name,
+        "prefect_api_url": prefect_api_url,
         "s3_bucket": outputs.get("LandingBucketName"),
         "processed_bucket": outputs.get("ProcessedBucketName"),
         "flow_task_definition": outputs.get("FlowTaskDefinitionArn"),

@@ -6,8 +6,14 @@ This is a Prefect 3.x implementation of the data pipeline that:
 2. Validates and transforms the data
 3. Loads processed data to S3 processed bucket
 
+Telemetry Architecture:
+- Prefect's native OpenTelemetry integration handles task-level spans automatically
+- Domain logic (domain.py) and adapters (s3.py) are instrumented with semantic conventions
+- Flow-level metrics (runs, duration, record counts) use proper OpenTelemetry meters
+- Context propagation is handled automatically by OpenTelemetry - no manual threading
+
 Run locally:
-    python -c "from flow import data_pipeline_flow; data_pipeline_flow('bucket', 'key')"
+    python -c "from flow import data_pipeline_flow; data_pipeline_flow('bucket', 'key', 'processed_bucket')"
 """
 
 import sys
@@ -27,9 +33,8 @@ from tracer_telemetry import init_telemetry
 
 from .adapters.alerting import fire_pipeline_alert
 from .adapters.s3 import read_json, write_json
-from .config import PIPELINE_NAME, PROCESSED_BUCKET, REQUIRED_FIELDS
-from .domain import transform_data as domain_transform_data
-from .domain import validate_data as domain_validate_data
+from .config import PIPELINE_NAME, REQUIRED_FIELDS
+from .domain import validate_and_transform
 from .errors import PipelineError
 from .schemas import ProcessedRecord
 
@@ -40,57 +45,36 @@ telemetry = init_telemetry(
         "pipeline.framework": "prefect",
     },
 )
-tracer = telemetry.tracer
-
 
 @task(name="extract_data", retries=2, retry_delay_seconds=5)
 def extract_data(bucket: str, key: str) -> tuple[dict, str]:
-    """Read JSON from S3 landing bucket."""
+    """
+    Read JSON from S3 landing bucket.
+
+    S3 operations are instrumented at the adapter layer with semantic conventions.
+    Prefect handles task-level span creation automatically.
+    """
     logger = get_run_logger()
-    with tracer.start_as_current_span("extract_data") as span:
-        run_id = flow_run.id
-        span.set_attribute("s3.bucket", bucket)
-        span.set_attribute("s3.key", key)
-
-        logger.info(f"Extracting data from s3://{bucket}/{key}")
-        raw_payload, correlation_id = read_json(bucket, key)
-        record_count = len(raw_payload.get("data", []))
-        span.set_attribute("record_count", record_count)
-        span.set_attribute("correlation_id", correlation_id)
-        if run_id:
-            span.set_attribute("execution.run_id", str(run_id))
-        else:
-            span.set_attribute("execution.run_id", correlation_id)
-        logger.info(f"Extracted {record_count} records, correlation_id={correlation_id}")
-
-        return raw_payload, correlation_id
+    logger.info(f"Extracting data from s3://{bucket}/{key}")
+    raw_payload, correlation_id = read_json(bucket, key)
+    record_count = len(raw_payload.get("data", []))
+    logger.info(f"Extracted {record_count} records, correlation_id={correlation_id}")
+    return raw_payload, correlation_id
 
 
 @task(name="transform_data")
 def transform_data_task(raw_records: list[dict]) -> list[ProcessedRecord]:
-    """Validate and transform records using domain logic."""
+    """
+    Validate and transform records using domain logic.
+
+    Domain logic is instrumented at the function level in domain.py.
+    Prefect handles task-level span creation automatically.
+    """
     logger = get_run_logger()
-    run_id = flow_run.id
-    execution_run_id = str(run_id) if run_id else None
-
-    with tracer.start_as_current_span("validate_data") as validate_span:
-        from tracer_telemetry.tracing import ensure_execution_run_id
-
-        ensure_execution_run_id(validate_span, execution_run_id)
-        validate_span.set_attribute("record_count", len(raw_records))
-        logger.info(f"Validating {len(raw_records)} records")
-        domain_validate_data(raw_records, REQUIRED_FIELDS)
-        logger.info(f"Validation successful for {len(raw_records)} records")
-
-    with tracer.start_as_current_span("transform_data") as transform_span:
-        from tracer_telemetry.tracing import ensure_execution_run_id
-
-        ensure_execution_run_id(transform_span, execution_run_id)
-        transform_span.set_attribute("record_count", len(raw_records))
-        logger.info(f"Transforming {len(raw_records)} records")
-        processed = domain_transform_data(raw_records)
-        logger.info(f"Successfully transformed {len(processed)} records")
-        return processed
+    logger.info(f"Validating {len(raw_records)} records")
+    processed = validate_and_transform(raw_records, REQUIRED_FIELDS)
+    logger.info(f"Successfully transformed {len(processed)} records")
+    return processed
 
 
 @task(name="load_data", retries=2, retry_delay_seconds=5)
@@ -99,37 +83,33 @@ def load_data(
     output_key: str,
     correlation_id: str,
     source_key: str,
+    processed_bucket: str,
 ):
-    """Write processed data to S3."""
+    """
+    Write processed data to S3.
+
+    S3 operations are instrumented at the adapter layer with semantic conventions.
+    Prefect handles task-level span creation automatically.
+    """
     logger = get_run_logger()
-    with tracer.start_as_current_span("load_data") as span:
-        run_id = flow_run.id
-        span.set_attribute("s3.bucket", PROCESSED_BUCKET)
-        span.set_attribute("s3.key", output_key)
-        span.set_attribute("record_count", len(records))
-        span.set_attribute("correlation_id", correlation_id)
-        if run_id:
-            span.set_attribute("execution.run_id", str(run_id))
-        else:
-            span.set_attribute("execution.run_id", correlation_id)
-        logger.info(
-            f"Loading {len(records)} records to s3://{PROCESSED_BUCKET}/{output_key}"
-        )
+    logger.info(
+        f"Loading {len(records)} records to s3://{processed_bucket}/{output_key}"
+    )
 
-        output_payload = {"data": [r.to_dict() for r in records]}
-        write_json(
-            bucket=PROCESSED_BUCKET,
-            key=output_key,
-            data=output_payload,
-            correlation_id=correlation_id,
-            source_key=source_key,
-        )
+    output_payload = {"data": [r.to_dict() for r in records]}
+    write_json(
+        bucket=processed_bucket,
+        key=output_key,
+        data=output_payload,
+        correlation_id=correlation_id,
+        source_key=source_key,
+    )
 
-        logger.info("Data loaded successfully")
+    logger.info("Data loaded successfully")
 
 
 @flow(name="upstream_downstream_pipeline")
-def data_pipeline_flow(bucket: str, key: str) -> dict:
+def data_pipeline_flow(bucket: str, key: str, processed_bucket: str) -> dict:
     """
     Main ETL flow for processing upstream data.
 
@@ -177,7 +157,7 @@ def data_pipeline_flow(bucket: str, key: str) -> dict:
 
         # Load
         output_key = key.replace("ingested/", "processed/")
-        load_data(processed_records, output_key, correlation_id, key)
+        load_data(processed_records, output_key, correlation_id, key, processed_bucket)
 
         logger.info(f"Pipeline completed successfully, correlation_id={correlation_id}")
         telemetry.record_run(
@@ -186,6 +166,7 @@ def data_pipeline_flow(bucket: str, key: str) -> dict:
             record_count=len(processed_records),
             attributes={"pipeline.name": PIPELINE_NAME},
         )
+        telemetry.flush()
         return {"status": "success", "correlation_id": correlation_id}
 
     except PipelineError as e:
@@ -198,6 +179,7 @@ def data_pipeline_flow(bucket: str, key: str) -> dict:
             failure_count=1,
             attributes={"pipeline.name": PIPELINE_NAME},
         )
+        telemetry.flush()
         raise
 
     except Exception as e:
@@ -210,6 +192,7 @@ def data_pipeline_flow(bucket: str, key: str) -> dict:
             failure_count=1,
             attributes={"pipeline.name": PIPELINE_NAME},
         )
+        telemetry.flush()
         raise
 
 
@@ -217,9 +200,9 @@ if __name__ == "__main__":
     # For local testing
     import sys
 
-    if len(sys.argv) == 3:
-        bucket, key = sys.argv[1], sys.argv[2]
-        result = data_pipeline_flow(bucket, key)
+    if len(sys.argv) == 4:
+        bucket, key, processed_bucket = sys.argv[1], sys.argv[2], sys.argv[3]
+        result = data_pipeline_flow(bucket, key, processed_bucket)
         print(f"Result: {result}")
     else:
-        print("Usage: python flow.py <bucket> <key>")
+        print("Usage: python flow.py <bucket> <key> <processed_bucket>")

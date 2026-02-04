@@ -191,11 +191,14 @@ def create_function(
             if error_code == "ResourceConflictException":
                 # Function exists, update it
                 return update_function_code(name, code_zip, region)
-            elif error_code == "InvalidParameterValueException" and "cannot be assumed" in str(e):
+            elif (
+                error_code == "InvalidParameterValueException"
+                and "cannot be assumed" in str(e)
+                and attempt < max_retries - 1
+            ):
                 # IAM role not ready yet, retry
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                    continue
+                time.sleep(retry_delay)
+                continue
             raise
 
     # Wait for function to be active

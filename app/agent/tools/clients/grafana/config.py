@@ -1,19 +1,19 @@
 """Grafana account configuration management.
 
-Loads Grafana Cloud account configurations from YAML config files.
-Tokens are never stored in config files - they're loaded from:
-- Environment variables (development/CI)
-- AWS Secrets Manager (production)
+Loads Grafana Cloud account configurations from environment variables.
 """
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
 
-import yaml
+from config.grafana_config import (
+    get_account_datasource_uids,
+    get_account_instance_url,
+    get_account_read_token,
+    list_account_ids,
+    load_env,
+)
 
 
 @dataclass(frozen=True)
@@ -34,11 +34,47 @@ class GrafanaAccountConfig:
         return bool(self.instance_url and self.read_token)
 
 
+DEFAULT_ACCOUNT_ID = "tracerbio"
+DEFAULT_INSTANCE_URL = "https://tracerbio.grafana.net"
+DEFAULT_LOKI_UID = "grafanacloud-logs"
+DEFAULT_TEMPO_UID = "grafanacloud-traces"
+DEFAULT_MIMIR_UID = "grafanacloud-prom"
+
+
+def _build_account_config(account_id: str) -> GrafanaAccountConfig:
+    token = get_account_read_token(account_id)
+    instance_url = get_account_instance_url(account_id)
+    loki_uid, tempo_uid, mimir_uid = get_account_datasource_uids(account_id)
+
+    description = f"Account {account_id} from environment"
+
+    return GrafanaAccountConfig(
+        account_id=account_id,
+        instance_url=instance_url,
+        read_token=token,
+        loki_datasource_uid=loki_uid,
+        tempo_datasource_uid=tempo_uid,
+        mimir_datasource_uid=mimir_uid,
+        description=description,
+    )
+
+
+def _discover_accounts() -> dict[str, GrafanaAccountConfig]:
+    accounts: dict[str, GrafanaAccountConfig] = {}
+    accounts[DEFAULT_ACCOUNT_ID] = _build_account_config(DEFAULT_ACCOUNT_ID)
+
+    for account_id in list_account_ids():
+        if account_id not in accounts:
+            accounts[account_id] = _build_account_config(account_id)
+
+    return accounts
+
+
 class GrafanaConfigLoader:
     """Loads and manages Grafana account configurations."""
 
     _instance: GrafanaConfigLoader | None = None
-    _config: dict[str, Any] | None = None
+    _accounts: dict[str, GrafanaAccountConfig] | None = None
 
     def __new__(cls) -> GrafanaConfigLoader:
         """Singleton pattern for config loader."""
@@ -48,117 +84,45 @@ class GrafanaConfigLoader:
 
     def __init__(self) -> None:
         """Initialize the config loader."""
-        if self._config is None:
-            self._load_config()
-
-    def _load_config(self) -> None:
-        """Load configuration from YAML file."""
-        config_path = self._find_config_file()
-        if config_path and config_path.exists():
-            with open(config_path) as f:
-                self._config = yaml.safe_load(f) or {}
-        else:
-            self._config = {"accounts": {}, "default_account": "tracerbio"}
-
-    def _find_config_file(self) -> Path | None:
-        """Find the grafana accounts config file."""
-        search_paths = [
-            Path(__file__).parent.parent.parent.parent.parent.parent
-            / "configs"
-            / "grafana_accounts.yaml",
-            Path.cwd() / "configs" / "grafana_accounts.yaml",
-            Path.home() / ".tracer" / "grafana_accounts.yaml",
-        ]
-
-        for path in search_paths:
-            if path.exists():
-                return path
-        return None
-
-    def _resolve_token(self, account_config: dict[str, Any]) -> str:
-        """Resolve the read token from environment or secrets manager.
-
-        Args:
-            account_config: Account configuration dict from YAML
-
-        Returns:
-            The resolved token string, or empty string if not found
-        """
-        token_env_var = account_config.get("read_token_env", "")
-        if token_env_var:
-            token = os.getenv(token_env_var, "")
-            if token:
-                return token
-
-        # Future: Add AWS Secrets Manager lookup here
-        # secret_name = account_config.get("read_token_secret")
-        # if secret_name:
-        #     return fetch_from_secrets_manager(secret_name)
-
-        return ""
+        if self._accounts is None:
+            load_env()
+            self._accounts = _discover_accounts()
 
     def get_account(self, account_id: str | None = None) -> GrafanaAccountConfig:
-        """Get configuration for a specific Grafana account.
+        """Get configuration for a specific Grafana account."""
+        if self._accounts is None:
+            self._accounts = _discover_accounts()
 
-        Args:
-            account_id: Account identifier (e.g., "tracerbio", "customer1")
-                       If None, uses the default account.
-
-        Returns:
-            GrafanaAccountConfig for the requested account
-        """
-        if self._config is None:
-            self._load_config()
-
-        config = self._config or {}
-        effective_account_id = account_id or config.get("default_account", "tracerbio")
-        accounts: dict[str, Any] = config.get("accounts", {})
-
-        if effective_account_id not in accounts:
-            return GrafanaAccountConfig(
-                account_id=effective_account_id,
-                instance_url="",
-                read_token="",
-                loki_datasource_uid="grafanacloud-logs",
-                tempo_datasource_uid="grafanacloud-traces",
-                mimir_datasource_uid="grafanacloud-prom",
-                description=f"Account {effective_account_id} not found in config",
-            )
-
-        account_data = accounts[effective_account_id]
-        datasources = account_data.get("datasources", {})
+        effective_account_id = account_id or DEFAULT_ACCOUNT_ID
+        account = self._accounts.get(effective_account_id)
+        if account:
+            return account
 
         return GrafanaAccountConfig(
             account_id=effective_account_id,
-            instance_url=account_data.get("instance_url", ""),
-            read_token=self._resolve_token(account_data),
-            loki_datasource_uid=datasources.get("loki", "grafanacloud-logs"),
-            tempo_datasource_uid=datasources.get("tempo", "grafanacloud-traces"),
-            mimir_datasource_uid=datasources.get("mimir", "grafanacloud-prom"),
-            description=account_data.get("description", ""),
+            instance_url="",
+            read_token="",
+            loki_datasource_uid=DEFAULT_LOKI_UID,
+            tempo_datasource_uid=DEFAULT_TEMPO_UID,
+            mimir_datasource_uid=DEFAULT_MIMIR_UID,
+            description=f"Account {effective_account_id} not configured",
         )
 
     def list_accounts(self) -> list[str]:
         """List all configured account IDs."""
-        if self._config is None:
-            self._load_config()
-        config = self._config or {}
-        accounts: dict[str, Any] = config.get("accounts", {})
-        return list(accounts.keys())
+        if self._accounts is None:
+            self._accounts = _discover_accounts()
+        return list(self._accounts.keys())
 
     def get_default_account_id(self) -> str:
         """Get the default account ID."""
-        if self._config is None:
-            self._load_config()
-        config = self._config or {}
-        default: str = config.get("default_account", "tracerbio")
-        return default
+        return DEFAULT_ACCOUNT_ID
 
     @classmethod
     def reset(cls) -> None:
         """Reset the singleton instance (useful for testing)."""
         cls._instance = None
-        cls._config = None
+        cls._accounts = None
 
 
 def get_grafana_config(account_id: str | None = None) -> GrafanaAccountConfig:

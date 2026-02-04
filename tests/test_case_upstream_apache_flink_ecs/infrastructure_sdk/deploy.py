@@ -26,7 +26,17 @@ if str(project_root) not in sys.path:
 
 from tests.shared.infrastructure_sdk import save_outputs
 from tests.shared.infrastructure_sdk.deployer import get_boto3_client, get_standard_tags_dict
-from tests.shared.infrastructure_sdk.resources import api_gateway, ecr, ecs, iam, lambda_, logs, s3, secrets, vpc
+from tests.shared.infrastructure_sdk.resources import (
+    api_gateway,
+    ecr,
+    ecs,
+    iam,
+    lambda_,
+    logs,
+    s3,
+    secrets,
+    vpc,
+)
 
 STACK_NAME = "tracer-flink-ecs"
 REGION = "us-east-1"
@@ -59,15 +69,15 @@ def deploy() -> dict:
     processed_bucket_name = f"tracer-flink-processed-{unique_suffix}"
 
     print(f"  - Creating S3 bucket: {landing_bucket_name}")
-    landing_bucket = s3.create_bucket(landing_bucket_name, STACK_NAME, REGION)
+    s3.create_bucket(landing_bucket_name, STACK_NAME, REGION)
 
     print(f"  - Creating S3 bucket: {processed_bucket_name}")
-    processed_bucket = s3.create_bucket(processed_bucket_name, STACK_NAME, REGION)
+    s3.create_bucket(processed_bucket_name, STACK_NAME, REGION)
 
     # CloudWatch log group
     log_group_name = "/ecs/tracer-flink"
     print(f"  - Creating log group: {log_group_name}")
-    log_group = logs.create_log_group(log_group_name, retention_days=7, stack_name=STACK_NAME, region=REGION)
+    logs.create_log_group(log_group_name, retention_days=7, stack_name=STACK_NAME, region=REGION)
 
     # IAM roles
     print("  - Creating ECS task role...")
@@ -142,7 +152,7 @@ def deploy() -> dict:
     context_dir = project_root / "tests"
     dockerfile_path = context_dir / "test_case_upstream_apache_flink_ecs/infrastructure_code/flink_image/Dockerfile"
 
-    print(f"  - Building and pushing Docker image (ARM64)...")
+    print("  - Building and pushing Docker image (ARM64)...")
     print(f"    Dockerfile: {dockerfile_path}")
     print(f"    Context: {context_dir}")
 
@@ -166,9 +176,6 @@ def deploy() -> dict:
     # ========================================
     print("\n[Phase 4] Creating ECS task definition...")
 
-    # Get Grafana secrets for Alloy sidecar
-    grafana_secrets_data = secrets.get_secret_value(GRAFANA_SECRET_NAME, REGION)
-
     # Build container definitions
     flink_container = ecs.build_container_definition(
         name="FlinkContainer",
@@ -178,12 +185,19 @@ def deploy() -> dict:
         environment={
             "LANDING_BUCKET": landing_bucket_name,
             "PROCESSED_BUCKET": processed_bucket_name,
-            "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
-            "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
-            "OTEL_EXPORTER_OTLP_INSECURE": "true",
+            "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
             "OTEL_SERVICE_NAME": "flink-etl-pipeline",
             "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_flink,pipeline.framework=flink,test_case=test_case_upstream_apache_flink_ecs",
         },
+        secrets=[
+            {"name": "GCLOUD_HOSTED_METRICS_URL", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_METRICS_URL::"},
+            {"name": "GCLOUD_HOSTED_METRICS_ID", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_METRICS_ID::"},
+            {"name": "GCLOUD_HOSTED_LOGS_URL", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_LOGS_URL::"},
+            {"name": "GCLOUD_HOSTED_LOGS_ID", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_LOGS_ID::"},
+            {"name": "GCLOUD_RW_API_KEY", "valueFrom": f"{secret_arn}:GCLOUD_RW_API_KEY::"},
+            {"name": "GCLOUD_OTLP_ENDPOINT", "valueFrom": f"{secret_arn}:GCLOUD_OTLP_ENDPOINT::"},
+            {"name": "GCLOUD_OTLP_AUTH_HEADER", "valueFrom": f"{secret_arn}:GCLOUD_OTLP_AUTH_HEADER::"},
+        ],
         log_group=log_group_name,
         region=REGION,
         essential=True,
@@ -200,10 +214,11 @@ def deploy() -> dict:
             "--server.http.listen-addr=0.0.0.0:12345",
             "/etc/alloy/config.alloy",
         ],
-        environment={
-            "GCLOUD_OTLP_ENDPOINT": grafana_secrets_data.get("GCLOUD_OTLP_ENDPOINT", ""),
-        },
         secrets=[
+            {
+                "name": "GCLOUD_OTLP_ENDPOINT",
+                "valueFrom": f"{secret_arn}:GCLOUD_OTLP_ENDPOINT::",
+            },
             {
                 "name": "GCLOUD_OTLP_AUTH_HEADER",
                 "valueFrom": f"{secret_arn}:GCLOUD_OTLP_AUTH_HEADER::",
@@ -240,7 +255,9 @@ otelcol.exporter.otlphttp "grafana" {
 """
 
     # Update alloy container with config
-    alloy_container["environment"].append({"name": "ALLOY_CONFIG", "value": alloy_config.strip()})
+    alloy_container.setdefault("environment", []).append(
+        {"name": "ALLOY_CONFIG", "value": alloy_config.strip()}
+    )
 
     # Add container dependency
     flink_container["dependsOn"] = [
@@ -265,8 +282,6 @@ otelcol.exporter.otlphttp "grafana" {
     # Phase 5: Update Trigger Lambda Role with Task Definition ARN
     # ========================================
     print("\n[Phase 5] Updating Lambda role with ECS RunTask permissions...")
-
-    account_id = iam.get_account_id(REGION)
 
     iam.put_role_policy(
         trigger_lambda_role["name"],

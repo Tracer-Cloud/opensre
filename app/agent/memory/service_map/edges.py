@@ -4,6 +4,8 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from config.grafana_config import is_grafana_otlp_endpoint
+
 from .identifiers import generate_asset_id
 from .types import Asset, Edge
 
@@ -174,7 +176,7 @@ def _extract_grafana_edges(evidence: dict[str, Any], pipeline_name: str) -> list
             "GCLOUD_OTLP_ENDPOINT"
         )
 
-        if otlp_endpoint and "grafana.net" in otlp_endpoint:
+        if otlp_endpoint and is_grafana_otlp_endpoint(otlp_endpoint):
             function_name = lambda_data["function_name"]
 
             edges.append(
@@ -212,7 +214,7 @@ def _extract_grafana_edges(evidence: dict[str, Any], pipeline_name: str) -> list
                 "GCLOUD_OTLP_ENDPOINT"
             )
 
-            if otlp_endpoint and "grafana.net" in otlp_endpoint:
+            if otlp_endpoint and is_grafana_otlp_endpoint(otlp_endpoint):
                 ecs_cluster = evidence.get("ecs_cluster", {}).get("clusterName", "")
                 container_name = container.get("name", "")
 
