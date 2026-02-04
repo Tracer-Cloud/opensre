@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 from tests.utils.s3_upload_validate import (
     INVALID_PAYLOAD,
-    upload_test_data,
     VALID_PAYLOAD,
+    upload_test_data,
     verify_output,
 )
 

@@ -58,7 +58,7 @@ def run_prefect_flow(secrets: dict[str, str]) -> bool:
     env.update(secrets)
     env["OTEL_EXPORTER_OTLP_ENDPOINT"] = secrets.get("GCLOUD_OTLP_ENDPOINT", "")
     env["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization={secrets.get('GCLOUD_OTLP_AUTH_HEADER', '')}"
-    env["OTEL_EXPORTER_OTLP_PROTOCOL"] = "grpc"
+    env["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf"
 
     exit_code, stdout, stderr = run_command(
         ["python3", str(flow_file), "test-bucket", "test-key"],

@@ -166,6 +166,7 @@ def data_pipeline_flow(bucket: str, key: str, processed_bucket: str) -> dict:
             record_count=len(processed_records),
             attributes={"pipeline.name": PIPELINE_NAME},
         )
+        telemetry.flush()
         return {"status": "success", "correlation_id": correlation_id}
 
     except PipelineError as e:
@@ -178,6 +179,7 @@ def data_pipeline_flow(bucket: str, key: str, processed_bucket: str) -> dict:
             failure_count=1,
             attributes={"pipeline.name": PIPELINE_NAME},
         )
+        telemetry.flush()
         raise
 
     except Exception as e:
@@ -190,6 +192,7 @@ def data_pipeline_flow(bucket: str, key: str, processed_bucket: str) -> dict:
             failure_count=1,
             attributes={"pipeline.name": PIPELINE_NAME},
         )
+        telemetry.flush()
         raise
 
 

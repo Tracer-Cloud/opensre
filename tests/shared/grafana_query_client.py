@@ -1,8 +1,7 @@
 """
 Shared Grafana query client for validation scripts.
 
-Provides common functions for querying Grafana Cloud (Loki, Tempo, Mimir)
-and local Grafana instances.
+Provides common functions for querying Grafana Cloud (Loki, Tempo, Mimir).
 """
 
 from __future__ import annotations
@@ -179,78 +178,3 @@ class GrafanaCloudClient:
         return []
 
 
-class LocalGrafanaClient:
-    """Client for querying local Grafana instance (Loki, Tempo, Prometheus)."""
-
-    def __init__(self, grafana_url: str = "http://localhost:3000"):
-        self.grafana_url = grafana_url
-        self.loki_url = f"{grafana_url}/loki/api/v1"
-        self.tempo_url = f"{grafana_url}/api/tempo/api/traces"
-        self.prometheus_url = f"{grafana_url}/api/prometheus/api/v1"
-
-    def check_health(self) -> bool:
-        """Check if Grafana is running."""
-        try:
-            response = requests.get(f"{self.grafana_url}/api/health", timeout=5)
-            return response.status_code == 200
-        except requests.RequestException:
-            return False
-
-    def query_loki(
-        self,
-        query: str,
-        *,
-        limit: int = 100,
-    ) -> list[dict[str, Any]]:
-        """Query local Loki for logs."""
-        try:
-            response = requests.get(
-                f"{self.loki_url}/query",
-                params={"query": query, "limit": limit},
-                timeout=10,
-            )
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("data", {}).get("result", [])
-        except requests.RequestException as e:
-            print(f"Loki query failed: {e}")
-
-        return []
-
-    def query_tempo(
-        self,
-        execution_run_id: str,
-    ) -> list[dict[str, Any]]:
-        """Query local Tempo for traces by execution_run_id."""
-        try:
-            query = f'{{execution.run_id="{execution_run_id}"}}'
-            response = requests.get(
-                f"{self.tempo_url}/search",
-                params={"tags": query},
-                timeout=10,
-            )
-            if response.status_code == 200:
-                return response.json().get("traces", [])
-        except requests.RequestException as e:
-            print(f"Tempo query failed: {e}")
-
-        return []
-
-    def query_prometheus(
-        self,
-        query: str,
-    ) -> list[dict[str, Any]]:
-        """Query local Prometheus for metrics."""
-        try:
-            response = requests.get(
-                f"{self.prometheus_url}/query",
-                params={"query": query},
-                timeout=10,
-            )
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("data", {}).get("result", [])
-        except requests.RequestException as e:
-            print(f"Prometheus query failed: {e}")
-
-        return []

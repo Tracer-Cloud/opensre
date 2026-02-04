@@ -16,11 +16,12 @@ import sys
 
 import requests
 
+from tests.shared.grafana_helpers import build_grafana_loki_explore_url
 from tests.shared.stack_config import get_prefect_config
 from tests.utils.s3_upload_validate import (
     INVALID_PAYLOAD,
-    upload_test_data,
     VALID_PAYLOAD,
+    upload_test_data,
     verify_output,
 )
 
@@ -56,18 +57,20 @@ def run_test(
     valid_payload: dict,
     invalid_payload: dict,
     expect_failure: bool = False,
-) -> bool:
+) -> tuple[bool, str | None]:
     """Run the full test: check server, upload, execute flow, verify output."""
+    from prefect.settings import PREFECT_API_URL, temporary_settings
+
     from tests.test_case_upstream_prefect_ecs_fargate.pipeline_code.prefect_flow.flow import (
         data_pipeline_flow,
     )
-    from prefect.settings import PREFECT_API_URL, temporary_settings
 
     if not require_prefect_server(prefect_api_url):
-        return False
+        return False, None
 
     payload = invalid_payload if expect_failure else valid_payload
     test_data = upload_test_data(landing_bucket, payload)
+    correlation_id = test_data.correlation_id
 
     try:
         with temporary_settings({PREFECT_API_URL: prefect_api_url}):
@@ -80,19 +83,19 @@ def run_test(
 
         if expect_failure:
             print("✗ Flow should have failed")
-            return False
+            return False, correlation_id
 
-        return verify_output(processed_bucket, test_data.key)
+        return verify_output(processed_bucket, test_data.key), correlation_id
 
     except Exception as e:
         if expect_failure:
             print(f"✓ Flow failed as expected: {e}")
-            return True
+            return True, correlation_id
 
         print(f"✗ Unexpected error: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        return False, correlation_id
 
 
 def main() -> int:
@@ -120,7 +123,7 @@ def main() -> int:
         print("  Ensure AWS credentials are available and the stack is deployed.")
         return 1
 
-    success = run_test(
+    success, correlation_id = run_test(
         landing_bucket,
         processed_bucket,
         prefect_api_url,
@@ -133,6 +136,17 @@ def main() -> int:
     print(f"\n{'=' * 60}")
     print(f"TEST {status}")
     print(f"{'=' * 60}\n")
+
+    log_url = build_grafana_loki_explore_url(
+        service_name="prefect-etl-pipeline",
+        correlation_id=correlation_id,
+    )
+    print("Grafana Cloud logs (Prefect flow service):")
+    if log_url:
+        print(f"  {log_url}")
+    else:
+        print("  (Grafana Cloud instance URL not configured)")
+    print("  Paste this log URL after the test run.\n")
 
     return 0 if success else 1
 

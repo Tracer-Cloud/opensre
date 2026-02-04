@@ -46,22 +46,6 @@ run:
 dev: 
 	langgraph dev
 
-# Start local Grafana stack for telemetry validation
-grafana-local:
-	cd tests/shared/infrastructure_code && docker compose up -d
-	@echo "Grafana stack started:"
-	@echo "  Grafana UI:    http://localhost:3000"
-	@echo "  Alloy UI:      http://localhost:12345"
-	@echo "  OTLP gRPC:     localhost:4317"
-	@echo "  OTLP HTTP:     localhost:4318"
-
-# Stop local Grafana stack
-grafana-local-down:
-	cd tests/shared/infrastructure_code && docker compose down
-
-# View Grafana stack logs
-grafana-local-logs:
-	cd tests/shared/infrastructure_code && docker compose logs -f
 
 # Deploy all test case infrastructure in parallel (SDK - fast!)
 deploy:
@@ -174,9 +158,6 @@ help:
 	@echo ""
 	@echo "  LOCAL DEVELOPMENT"
 	@echo "  make install         - Install dependencies"
-	@echo "  make grafana-local   - Start local Grafana observability stack"
-	@echo "  make grafana-local-down - Stop local Grafana stack"
-	@echo "  make grafana-local-logs - View local Grafana stack logs"
 	@echo ""
 	@echo "  TESTING & QUALITY"
 	@echo "  make test            - Run tests"

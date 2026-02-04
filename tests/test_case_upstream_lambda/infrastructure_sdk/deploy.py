@@ -18,6 +18,7 @@ import tempfile
 import time
 import uuid
 import zipfile
+from contextlib import suppress
 from pathlib import Path
 
 project_root = Path(__file__).resolve().parents[3]
@@ -188,17 +189,17 @@ def ensure_execution_run_id(span, execution_run_id: str) -> None:
 def create_s3_buckets() -> dict:
     """Create S3 buckets for landing and processed data."""
     suffix = uuid.uuid4().hex[:8]
-    
+
     landing_bucket_name = f"{STACK_NAME}-landing-{suffix}"
     processed_bucket_name = f"{STACK_NAME}-processed-{suffix}"
-    
-    print(f"Creating S3 buckets...")
+
+    print("Creating S3 buckets...")
     landing = s3.create_bucket(landing_bucket_name, STACK_NAME, REGION)
     processed = s3.create_bucket(processed_bucket_name, STACK_NAME, REGION)
-    
+
     print(f"  - Landing: {landing['name']}")
     print(f"  - Processed: {processed['name']}")
-    
+
     return {
         "landing_bucket": landing,
         "processed_bucket": processed,
@@ -208,26 +209,26 @@ def create_s3_buckets() -> dict:
 def create_iam_roles(landing_bucket: str, processed_bucket: str) -> dict:
     """Create IAM roles for Lambda functions."""
     print("Creating IAM roles...")
-    
+
     # Create roles
     mock_api_role = iam.create_lambda_execution_role(
         f"{STACK_NAME}-mock-api-role",
         STACK_NAME,
         REGION,
     )
-    
+
     ingester_role = iam.create_lambda_execution_role(
         f"{STACK_NAME}-ingester-role",
         STACK_NAME,
         REGION,
     )
-    
+
     mock_dag_role = iam.create_lambda_execution_role(
         f"{STACK_NAME}-mock-dag-role",
         STACK_NAME,
         REGION,
     )
-    
+
     # Add S3 write permission to ingester role
     put_role_policy(
         ingester_role["name"],
@@ -244,7 +245,7 @@ def create_iam_roles(landing_bucket: str, processed_bucket: str) -> dict:
         },
         REGION,
     )
-    
+
     # Add S3 read/write permissions to mock_dag role
     put_role_policy(
         mock_dag_role["name"],
@@ -266,11 +267,11 @@ def create_iam_roles(landing_bucket: str, processed_bucket: str) -> dict:
         },
         REGION,
     )
-    
+
     print(f"  - Mock API role: {mock_api_role['name']}")
     print(f"  - Ingester role: {ingester_role['name']}")
     print(f"  - Mock DAG role: {mock_dag_role['name']}")
-    
+
     return {
         "mock_api_role": mock_api_role,
         "ingester_role": ingester_role,
@@ -287,20 +288,19 @@ def create_lambda_functions(
 ) -> dict:
     """Create Lambda functions."""
     print("Creating Lambda functions...")
-    
+
     # Paths
     shared_dir = project_root / "tests" / "shared" / "external_vendor_api"
     pipeline_dir = project_root / "tests" / "test_case_upstream_lambda" / "pipeline_code"
-    requirements_file = pipeline_dir / "requirements.txt"
-    
+
     # Bundle code
     print("  Bundling MockApi Lambda code...")
     mock_api_zip = lambda_.bundle_code(shared_dir)
-    
+
     print("  Bundling pipeline code (dependencies already vendored)...")
     # Use custom bundling that puts vendored deps at root level
     pipeline_zip = bundle_pipeline_code(pipeline_dir)
-    
+
     # Create MockApi Lambda
     print("  Creating MockApiLambda...")
     mock_api_lambda = lambda_.create_function(
@@ -313,7 +313,7 @@ def create_lambda_functions(
         stack_name=STACK_NAME,
         region=REGION,
     )
-    
+
     # Create Ingester Lambda
     print("  Creating IngesterLambda...")
     ingester_lambda = lambda_.create_function(
@@ -335,7 +335,7 @@ def create_lambda_functions(
         stack_name=STACK_NAME,
         region=REGION,
     )
-    
+
     # Create MockDag Lambda
     print("  Creating MockDagLambda...")
     mock_dag_lambda = lambda_.create_function(
@@ -357,11 +357,11 @@ def create_lambda_functions(
         stack_name=STACK_NAME,
         region=REGION,
     )
-    
+
     print(f"  - MockApi: {mock_api_lambda['name']}")
     print(f"  - Ingester: {ingester_lambda['name']}")
     print(f"  - MockDag: {mock_dag_lambda['name']}")
-    
+
     return {
         "mock_api_lambda": mock_api_lambda,
         "ingester_lambda": ingester_lambda,
@@ -372,7 +372,7 @@ def create_lambda_functions(
 def create_api_gateways(lambdas: dict) -> dict:
     """Create API Gateways for MockApi and Ingester."""
     print("Creating API Gateways...")
-    
+
     # Create MockExternalApi
     mock_api = api_gateway.create_simple_api_with_lambda(
         api_name=f"{STACK_NAME}-mock-external-api",
@@ -380,7 +380,7 @@ def create_api_gateways(lambdas: dict) -> dict:
         stack_name=STACK_NAME,
         region=REGION,
     )
-    
+
     # Create IngesterApi
     ingester_api = api_gateway.create_simple_api_with_lambda(
         api_name=f"{STACK_NAME}-ingester-api",
@@ -388,10 +388,10 @@ def create_api_gateways(lambdas: dict) -> dict:
         stack_name=STACK_NAME,
         region=REGION,
     )
-    
+
     print(f"  - MockExternalApi: {mock_api['invoke_url']}")
     print(f"  - IngesterApi: {ingester_api['invoke_url']}")
-    
+
     return {
         "mock_api": mock_api,
         "ingester_api": ingester_api,
@@ -401,13 +401,13 @@ def create_api_gateways(lambdas: dict) -> dict:
 def add_s3_trigger(landing_bucket: str, mock_dag_lambda_arn: str, mock_dag_lambda_name: str) -> None:
     """Add S3 event notification to trigger MockDag Lambda."""
     print("Adding S3 event notification...")
-    
+
     s3_client = get_boto3_client("s3", REGION)
     lambda_client = get_boto3_client("lambda", REGION)
     account_id = get_account_id(REGION)
-    
+
     # Add Lambda permission for S3
-    try:
+    with suppress(lambda_client.exceptions.ResourceConflictException):
         lambda_client.add_permission(
             FunctionName=mock_dag_lambda_name,
             StatementId=f"s3-trigger-{landing_bucket}",
@@ -416,9 +416,7 @@ def add_s3_trigger(landing_bucket: str, mock_dag_lambda_arn: str, mock_dag_lambd
             SourceArn=f"arn:aws:s3:::{landing_bucket}",
             SourceAccount=account_id,
         )
-    except lambda_client.exceptions.ResourceConflictException:
-        pass  # Permission already exists
-    
+
     # Configure S3 notification
     s3_client.put_bucket_notification_configuration(
         Bucket=landing_bucket,
@@ -438,29 +436,29 @@ def add_s3_trigger(landing_bucket: str, mock_dag_lambda_arn: str, mock_dag_lambd
             ]
         },
     )
-    
+
     print(f"  - S3 trigger: {landing_bucket} -> {mock_dag_lambda_name}")
 
 
 def update_ingester_env(ingester_lambda_name: str, mock_api_url: str) -> None:
     """Update ingester Lambda with the mock API URL."""
     print("Updating Ingester Lambda environment...")
-    
+
     lambda_client = get_boto3_client("lambda", REGION)
-    
+
     # Get current configuration
     response = lambda_client.get_function_configuration(FunctionName=ingester_lambda_name)
     env_vars = response.get("Environment", {}).get("Variables", {})
-    
+
     # Update EXTERNAL_API_URL
     env_vars["EXTERNAL_API_URL"] = mock_api_url
-    
+
     # Update function configuration
     lambda_client.update_function_configuration(
         FunctionName=ingester_lambda_name,
         Environment={"Variables": env_vars},
     )
-    
+
     # Wait for update to complete
     time.sleep(5)
     print(f"  - Updated EXTERNAL_API_URL to: {mock_api_url}")
@@ -473,7 +471,7 @@ def deploy() -> dict:
     print(f"Deploying {STACK_NAME} infrastructure")
     print("=" * 60)
     print()
-    
+
     # Get Grafana secrets
     print("Fetching Grafana secrets...")
     try:
@@ -482,20 +480,20 @@ def deploy() -> dict:
     except Exception as e:
         print(f"  - Warning: Could not load Grafana secrets: {e}")
         grafana_secrets = {}
-    
+
     # 1. Create S3 buckets
     buckets = create_s3_buckets()
     landing_bucket = buckets["landing_bucket"]["name"]
     processed_bucket = buckets["processed_bucket"]["name"]
-    
+
     # 2. Create IAM roles
     roles = create_iam_roles(landing_bucket, processed_bucket)
-    
+
     # 3. Create MockApi Lambda and API Gateway first (for URL)
     print("Creating MockApi Lambda...")
     shared_dir = project_root / "tests" / "shared" / "external_vendor_api"
     mock_api_zip = lambda_.bundle_code(shared_dir)
-    
+
     mock_api_lambda = lambda_.create_function(
         name=f"{STACK_NAME}-mock-api",
         role_arn=roles["mock_api_role"]["arn"],
@@ -507,7 +505,7 @@ def deploy() -> dict:
         region=REGION,
     )
     print(f"  - Created: {mock_api_lambda['name']}")
-    
+
     # Create MockApi API Gateway
     print("Creating MockApi API Gateway...")
     mock_api_gw = api_gateway.create_simple_api_with_lambda(
@@ -518,16 +516,15 @@ def deploy() -> dict:
     )
     mock_api_url = mock_api_gw["invoke_url"]
     print(f"  - URL: {mock_api_url}")
-    
+
     # 4. Create pipeline Lambdas with correct URLs
     print("Creating pipeline Lambda functions...")
     pipeline_dir = project_root / "tests" / "test_case_upstream_lambda" / "pipeline_code"
-    requirements_file = pipeline_dir / "requirements.txt"
-    
+
     print("  Bundling pipeline code (dependencies already vendored)...")
     # Use custom bundling that puts vendored deps at root level
     pipeline_zip = bundle_pipeline_code(pipeline_dir)
-    
+
     print("  Creating IngesterLambda...")
     ingester_lambda = lambda_.create_function(
         name=f"{STACK_NAME}-ingester",
@@ -549,7 +546,7 @@ def deploy() -> dict:
         region=REGION,
     )
     print(f"  - Created: {ingester_lambda['name']}")
-    
+
     print("  Creating MockDagLambda...")
     mock_dag_lambda = lambda_.create_function(
         name=f"{STACK_NAME}-mock-dag",
@@ -571,7 +568,7 @@ def deploy() -> dict:
         region=REGION,
     )
     print(f"  - Created: {mock_dag_lambda['name']}")
-    
+
     # 5. Create Ingester API Gateway
     print("Creating Ingester API Gateway...")
     ingester_api_gw = api_gateway.create_simple_api_with_lambda(
@@ -581,10 +578,10 @@ def deploy() -> dict:
         region=REGION,
     )
     print(f"  - URL: {ingester_api_gw['invoke_url']}")
-    
+
     # 6. Add S3 trigger for MockDag
     add_s3_trigger(landing_bucket, mock_dag_lambda["arn"], mock_dag_lambda["name"])
-    
+
     # Prepare outputs (matching CDK output keys)
     outputs = {
         "MockApiUrl": mock_api_url,
@@ -600,10 +597,10 @@ def deploy() -> dict:
         "MockApiGatewayId": mock_api_gw["api_id"],
         "IngesterApiGatewayId": ingester_api_gw["api_id"],
     }
-    
+
     # Save outputs
     save_outputs(STACK_NAME, outputs)
-    
+
     elapsed = time.time() - start_time
     print()
     print("=" * 60)
@@ -617,7 +614,7 @@ def deploy() -> dict:
     print(f"  MockDagFunctionName: {outputs['MockDagFunctionName']}")
     print(f"  LandingBucketName: {outputs['LandingBucketName']}")
     print(f"  ProcessedBucketName: {outputs['ProcessedBucketName']}")
-    
+
     return outputs
 
 
