@@ -1,12 +1,13 @@
-## Unused Code Cleanup Plan
+## Observability Test Cleanup
 
-- [x] Scan repo for unused code indicators (ruff, references)
-- [x] Remove unused imports/variables and dead files
-- [x] Verify with ruff (and targeted tests if needed)
-- [x] Record results and any follow-ups
+- [x] Delete redundant observability scripts/tests
+- [x] Simplify validate_grafana_cloud.py
+- [x] Simplify run_local_with_cloud.py
+- [x] Add observability README
+- [x] Document results
 
 ## Results
 
-- Ruff unused checks found no issues.
-- Removed unused `data-alloy/` directory (seed + remotecfg).
-- `python3 -m ruff check .` passed.
+- Reduced to two scripts + README under `tests/observability/`.
+- `validate_grafana_cloud.py` now performs parallel endpoint checks with 2s timeouts.
+- `run_local_with_cloud.py` remains env-only with inline `.env` loading.
