@@ -1,3 +1,12 @@
+## CI/CD Fixes (2026-02-04)
+
+- [ ] Run `make test` and capture failures
+- [ ] Fix failing tests and update code
+- [ ] Run lint/type checks until clean
+- [ ] Commit changes and push branch
+- [ ] Confirm CI/CD passes on remote
+- [ ] Record results in this file
+
 ## Telemetry Re-export Fix (2026-02-04)
 
 - [x] Audit tracer_telemetry re-exports after rename

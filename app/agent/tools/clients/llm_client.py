@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from anthropic import Anthropic
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data Types
@@ -44,7 +44,7 @@ class LLMClient:
     def with_config(self, **_kwargs) -> LLMClient:
         return self
 
-    def with_structured_output(self, model: type) -> StructuredOutputClient:
+    def with_structured_output(self, model: type[BaseModel]) -> StructuredOutputClient:
         return StructuredOutputClient(self, model)
 
     def bind_tools(self, _tools: list) -> LLMClient:
@@ -68,7 +68,7 @@ class LLMClient:
 
 
 class StructuredOutputClient:
-    def __init__(self, base: LLMClient, model: type) -> None:
+    def __init__(self, base: LLMClient, model: type[BaseModel]) -> None:
         self._base = base
         self._model = model
 

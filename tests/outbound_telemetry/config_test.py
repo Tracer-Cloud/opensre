@@ -70,9 +70,8 @@ def test_validate_grafana_cloud_config_flags_missing():
             "GCLOUD_OTLP_ENDPOINT": "https://example.grafana.net/otlp",
             "OTEL_EXPORTER_OTLP_ENDPOINT": "https://example.grafana.net/otlp",
         }
-    ):
-        with pytest.raises(ValueError, match="missing env vars"):
-            validate_grafana_cloud_config()
+    ), pytest.raises(ValueError, match="missing env vars"):
+        validate_grafana_cloud_config()
 
 
 def test_validate_grafana_cloud_config_passes_when_present():

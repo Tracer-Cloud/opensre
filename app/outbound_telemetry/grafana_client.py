@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, cast
 
 import requests
 from requests.auth import HTTPBasicAuth
@@ -97,7 +98,7 @@ class GrafanaCloudClient:
     def _basic_auth(self, hosted_id: str) -> HTTPBasicAuth:
         return HTTPBasicAuth(hosted_id, self.config.rw_api_key)
 
-    def query_mimir(self, query: str, *, timeout: int = 10) -> dict:
+    def query_mimir(self, query: str, *, timeout: int = 10) -> dict[str, Any]:
         response = requests.get(
             self._mimir_query_url(),
             params={"query": query},
@@ -105,7 +106,7 @@ class GrafanaCloudClient:
             timeout=timeout,
         )
         response.raise_for_status()
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     def query_loki(
         self,
@@ -115,20 +116,21 @@ class GrafanaCloudClient:
         end_ns: str,
         limit: int = 100,
         timeout: int = 10,
-    ) -> dict:
+    ) -> dict[str, Any]:
+        params: dict[str, str | int] = {
+            "query": query,
+            "limit": limit,
+            "start": start_ns,
+            "end": end_ns,
+        }
         response = requests.get(
             self._loki_query_range_url(),
-            params={
-                "query": query,
-                "limit": limit,
-                "start": start_ns,
-                "end": end_ns,
-            },
+            params=params,
             auth=self._basic_auth(self.config.hosted_logs_id),
             timeout=timeout,
         )
         response.raise_for_status()
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     def query_tempo(
         self,
@@ -138,17 +140,18 @@ class GrafanaCloudClient:
         end_s: int,
         limit: int = 20,
         timeout: int = 10,
-    ) -> dict:
+    ) -> dict[str, Any]:
+        params: dict[str, str | int] = {
+            "limit": limit,
+            "start": start_s,
+            "end": end_s,
+            "q": f'{{resource.service.name="{service_name}"}}',
+        }
         response = requests.get(
             self._tempo_search_url(),
-            params={
-                "limit": limit,
-                "start": start_s,
-                "end": end_s,
-                "q": f'{{resource.service.name="{service_name}"}}',
-            },
+            params=params,
             auth=self._basic_auth(self.config.hosted_traces_id),
             timeout=timeout,
         )
         response.raise_for_status()
-        return response.json()
+        return cast(dict[str, Any], response.json())

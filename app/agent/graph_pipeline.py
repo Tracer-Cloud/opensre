@@ -36,16 +36,17 @@ Respond with ONLY: tracer_data or general"""
 def _merge_state(state: AgentState, updates: dict[str, Any]) -> None:
     if not updates:
         return
+    state_any = cast(dict[str, Any], state)
     for key, value in updates.items():
         if key == "messages":
-            messages = list(state.get("messages", []))
+            messages = list(state_any.get("messages", []))
             if isinstance(value, list):
                 messages.extend(value)
             else:
                 messages.append(value)
-            state["messages"] = messages
+            state_any["messages"] = messages
             continue
-        state[key] = value
+        state_any[key] = value
 
 
 def _extract_auth(state: AgentState, config: dict[str, Any] | None) -> dict[str, str]:
@@ -85,7 +86,8 @@ def _respond_with_llm(
     auth = _extract_auth(state, config)
     msgs = list(state.get("messages", []))
     if not msgs or msgs[0].get("role") != "system":
-        msgs = [{"role": "system", "content": SYSTEM_PROMPT}] + msgs
+        system_msg: ChatMessage = {"role": "system", "content": SYSTEM_PROMPT}
+        msgs = [system_msg, *msgs]
 
     llm = get_llm()
     if bind_tools:

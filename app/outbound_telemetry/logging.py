@@ -36,7 +36,9 @@ def _get_log_exporter():
 
     # Fall back to gRPC
     try:
-        from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+        from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (  # type: ignore[import-not-found]
+            OTLPLogExporter,
+        )
 
         return OTLPLogExporter()
     except ImportError:

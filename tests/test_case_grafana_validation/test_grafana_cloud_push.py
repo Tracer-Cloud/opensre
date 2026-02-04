@@ -10,8 +10,12 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.trace import TracerProvider
 
 from app.outbound_telemetry import init_telemetry, traced_operation
-from config.grafana_config import configure_grafana_cloud
-from config.grafana_config import get_otlp_auth_header, get_otlp_endpoint, load_env
+from config.grafana_config import (
+    configure_grafana_cloud,
+    get_otlp_auth_header,
+    get_otlp_endpoint,
+    load_env,
+)
 
 
 def _assert_force_flush(provider, *, name: str) -> None:

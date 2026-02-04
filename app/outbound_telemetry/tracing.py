@@ -16,6 +16,7 @@ from config.grafana_config import (
     get_otel_exporter_otlp_protocol,
 )
 
+
 def _get_span_exporter():
     """Get the appropriate span exporter based on OTEL_EXPORTER_OTLP_PROTOCOL."""
     protocol = get_otel_exporter_otlp_protocol()
@@ -28,7 +29,9 @@ def _get_span_exporter():
             pass
 
     try:
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore[import-not-found]
+            OTLPSpanExporter,
+        )
         return OTLPSpanExporter()
     except ImportError:
         pass

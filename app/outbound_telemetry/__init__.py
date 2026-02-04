@@ -18,18 +18,18 @@ from opentelemetry import trace
 from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
 
-from config.grafana_config import (
-    get_aws_lambda_function_name,
-    get_otel_exporter_otlp_endpoint,
-    get_otel_exporter_otlp_protocol,
-    apply_otel_env_defaults,
-    build_resource,
-    validate_grafana_cloud_config,
-)
 from app.outbound_telemetry.grafana_client import GrafanaCloudClient, GrafanaCloudConfig
 from app.outbound_telemetry.logging import setup_logging
 from app.outbound_telemetry.metrics import PipelineMetrics, setup_metrics
 from app.outbound_telemetry.tracing import setup_tracing, traced_operation
+from config.grafana_config import (
+    apply_otel_env_defaults,
+    build_resource,
+    get_aws_lambda_function_name,
+    get_otel_exporter_otlp_endpoint,
+    get_otel_exporter_otlp_protocol,
+    validate_grafana_cloud_config,
+)
 
 __all__ = [
     "init_telemetry",
@@ -133,7 +133,9 @@ def init_telemetry(
         BotocoreInstrumentor().instrument()
         RequestsInstrumentor().instrument()
         try:
-            from opentelemetry.instrumentation.aws_lambda import AwsLambdaInstrumentor
+            from opentelemetry.instrumentation.aws_lambda import (  # type: ignore[import-not-found]
+                AwsLambdaInstrumentor,
+            )
         except ImportError:
             AwsLambdaInstrumentor = None
         if get_aws_lambda_function_name() and AwsLambdaInstrumentor:
