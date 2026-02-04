@@ -12,14 +12,9 @@ from app.agent.tools.clients.tracer_client import (
     get_tracer_client,
     get_tracer_web_client,
 )
+from app.agent.tools.tool_decorator import tool
 from app.agent.utils.auth import extract_org_slug_from_jwt
 from app.config import get_tracer_base_url
-
-try:
-    from langchain.tools import tool
-except ImportError:
-    def tool(func=None, **kwargs):  # type: ignore[no-redef]  # noqa: ARG001
-        return func if func else (lambda f: f)
 
 
 FAILED_STATUSES = ("failed", "error")

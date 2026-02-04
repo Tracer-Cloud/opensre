@@ -6,17 +6,8 @@ Account selection is config-driven - different customers have different Grafana 
 
 from __future__ import annotations
 
-try:
-    from langchain.tools import tool
-except ImportError:
-
-    def tool(func=None, **kwargs):  # type: ignore[no-redef]  # noqa: ARG001
-        if func is None:
-            return lambda f: f
-        return func
-
-
 from app.agent.tools.clients.grafana import get_grafana_client
+from app.agent.tools.tool_decorator import tool
 
 # Service name mapping: Pipeline name -> Grafana service name
 SERVICE_NAME_MAPPING = {

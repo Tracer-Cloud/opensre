@@ -1,3 +1,3 @@
-"""Re-export shared tracer_telemetry config."""
+"""Re-export shared outbound_telemetry config."""
 
-from tests.shared.tracer_telemetry.config import *  # noqa: F401,F403
+from app.outbound_telemetry.config import *  # noqa: F401,F403

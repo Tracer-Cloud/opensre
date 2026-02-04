@@ -17,7 +17,6 @@ def _get_span_exporter():
     """Get the appropriate span exporter based on OTEL_EXPORTER_OTLP_PROTOCOL."""
     protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
 
-    # Use HTTP for http/protobuf protocol (required for Grafana Cloud)
     if protocol in ("http/protobuf", "http"):
         try:
             from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -25,7 +24,6 @@ def _get_span_exporter():
         except ImportError:
             pass
 
-    # Fall back to gRPC
     try:
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
         return OTLPSpanExporter()
@@ -43,16 +41,6 @@ def traced_operation(
 ) -> Generator[trace.Span, None, None]:
     """
     Context manager for creating spans with proper error recording.
-
-    Automatically:
-    - Records exceptions on the span
-    - Sets error status on failure
-    - Propagates context automatically via OpenTelemetry
-
-    Usage:
-        with traced_operation(tracer, "my_operation", {"key": "value"}) as span:
-            # do work
-            span.set_attribute("result.count", 42)
     """
     with tracer.start_as_current_span(name) as span:
         if attributes:
@@ -84,4 +72,4 @@ def setup_tracing(resource) -> trace.Tracer:
     else:
         logging.getLogger(__name__).warning("OTLP trace exporter is unavailable")
     trace.set_tracer_provider(provider)
-    return trace.get_tracer("tracer_telemetry")
+    return trace.get_tracer("outbound_telemetry")

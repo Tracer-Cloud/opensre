@@ -106,10 +106,10 @@ test-cov:
 # Run Grafana integration tests
 test-grafana:
 	@echo "Running Grafana agent integration tests..."
-	$(PYTHON) -m pytest app/agent/tools/tool_actions/grafana_actions_test.py tests/test_grafana_agent_integration.py -v
+	$(PYTHON) -m pytest app/agent/tools/tool_actions/grafana/grafana_actions_test.py tests/test_case_grafana_validation/test_grafana_cloud_queries.py -v
 	@echo ""
-	@echo "Running Grafana validation test case..."
-	cd tests/test_case_grafana_validation && $(PYTHON) test_agent_grafana_actions.py
+	@echo "Running Grafana live action checks..."
+	$(PYTHON) -m app.agent.tools.tool_actions.grafana.test_agent_grafana_actions
 
 # Clean up
 clean:

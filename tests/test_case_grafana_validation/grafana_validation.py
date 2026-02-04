@@ -4,7 +4,7 @@ Validates that telemetry (logs, traces, metrics) appears in Grafana Cloud
 after pipeline execution.
 
 Usage:
-    from tests.shared.grafana_validation import validate_grafana_telemetry
+    from tests.test_case_grafana_validation.grafana_validation import validate_grafana_telemetry
 
     result = validate_grafana_telemetry(
         service_name="prefect-etl-pipeline",
@@ -15,7 +15,6 @@ Usage:
     print(f"Traces found: {result['traces_found']}")
 """
 
-import os
 import sys
 import time
 from pathlib import Path
@@ -27,6 +26,7 @@ sys.path.insert(0, str(project_root))
 # Load .env
 try:
     from dotenv import load_dotenv
+
     load_dotenv(project_root / ".env")
 except ImportError:
     pass

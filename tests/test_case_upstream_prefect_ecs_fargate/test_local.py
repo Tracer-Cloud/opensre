@@ -16,7 +16,7 @@ import sys
 
 import requests
 
-from tests.shared.grafana_helpers import build_grafana_loki_explore_url
+from app.agent.tools.clients.grafana import get_grafana_client
 from tests.shared.stack_config import get_prefect_config
 from tests.utils.s3_upload_validate import (
     INVALID_PAYLOAD,
@@ -137,7 +137,8 @@ def main() -> int:
     print(f"TEST {status}")
     print(f"{'=' * 60}\n")
 
-    log_url = build_grafana_loki_explore_url(
+    grafana_client = get_grafana_client()
+    log_url = grafana_client.build_loki_explore_url(
         service_name="prefect-etl-pipeline",
         correlation_id=correlation_id,
     )

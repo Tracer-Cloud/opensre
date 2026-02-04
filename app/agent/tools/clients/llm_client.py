@@ -1,13 +1,19 @@
 """
 LLM wrapper and response parsers.
 
-Handles streaming and structured parsing of LLM responses.
+Handles structured parsing of LLM responses.
 """
 
-import os
-from dataclasses import dataclass
+from __future__ import annotations
 
-from langchain_anthropic import ChatAnthropic
+import json
+import os
+import re
+from dataclasses import dataclass
+from typing import Any
+
+from anthropic import Anthropic
+from pydantic import ValidationError
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data Types
@@ -23,15 +29,145 @@ class RootCauseResult:
     causal_chain: list[str]
 
 
+@dataclass(frozen=True)
+class LLMResponse:
+    content: str
+
+
+class LLMClient:
+    def __init__(self, *, model: str, max_tokens: int = 1024, temperature: float | None = None) -> None:
+        self._client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        self._model = model
+        self._max_tokens = max_tokens
+        self._temperature = temperature
+
+    def with_config(self, **_kwargs) -> "LLMClient":
+        return self
+
+    def with_structured_output(self, model: type) -> "StructuredOutputClient":
+        return StructuredOutputClient(self, model)
+
+    def bind_tools(self, _tools: list) -> "LLMClient":
+        return self
+
+    def invoke(self, prompt_or_messages: Any) -> LLMResponse:
+        system, messages = _normalize_messages(prompt_or_messages)
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": self._max_tokens,
+            "messages": messages,
+        }
+        if system:
+            kwargs["system"] = system
+        if self._temperature is not None:
+            kwargs["temperature"] = self._temperature
+
+        response = self._client.messages.create(**kwargs)
+        content = _extract_text(response)
+        return LLMResponse(content=content)
+
+
+class StructuredOutputClient:
+    def __init__(self, base: LLMClient, model: type) -> None:
+        self._base = base
+        self._model = model
+
+    def with_config(self, **_kwargs) -> "StructuredOutputClient":
+        return self
+
+    def invoke(self, prompt: str) -> Any:
+        schema = self._model.model_json_schema()
+        schema_json = json.dumps(schema, indent=2)
+        wrapped_prompt = (
+            f"{prompt}\n\n"
+            "Return ONLY valid JSON that matches this schema:\n"
+            f"{schema_json}\n"
+        )
+        response = self._base.invoke(wrapped_prompt)
+        payload = _extract_json_payload(response.content)
+        try:
+            return self._model.model_validate(payload)
+        except ValidationError:
+            if isinstance(payload, list) and "actions" in self._model.model_fields:
+                fallback = {"actions": payload, "rationale": "LLM returned actions only."}
+                return self._model.model_validate(fallback)
+            raise
+
+
+def _normalize_messages(prompt_or_messages: Any) -> tuple[str | None, list[dict[str, str]]]:
+    if isinstance(prompt_or_messages, list):
+        system_parts: list[str] = []
+        messages: list[dict[str, str]] = []
+        for msg in prompt_or_messages:
+            if isinstance(msg, dict):
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+            else:
+                role = getattr(msg, "role", "user")
+                content = getattr(msg, "content", "")
+            if role == "system":
+                system_parts.append(str(content))
+            else:
+                messages.append({"role": str(role), "content": str(content)})
+        return ("\n".join(system_parts) if system_parts else None, messages)
+
+    return None, [{"role": "user", "content": str(prompt_or_messages)}]
+
+
+def _extract_text(response: Any) -> str:
+    parts: list[str] = []
+    for block in getattr(response, "content", []):
+        if getattr(block, "type", None) == "text":
+            parts.append(block.text)
+    text = "".join(parts).strip()
+    return text or str(response)
+
+
+def _safe_json_loads(payload: str) -> Any:
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError:
+        return json.loads(payload, strict=False)
+
+
+def _extract_json_payload(text: str) -> Any:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+        cleaned = cleaned.strip()
+
+    try:
+        return _safe_json_loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    obj_match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if obj_match:
+        try:
+            return _safe_json_loads(obj_match.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    list_match = re.search(r"\[.*\]", cleaned, re.DOTALL)
+    if list_match:
+        try:
+            return _safe_json_loads(list_match.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError("LLM did not return valid JSON payload")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # LLM Client
 # ─────────────────────────────────────────────────────────────────────────────
 
-_llm: ChatAnthropic | None = None
-_fast_llm: ChatAnthropic | None = None
+_llm: LLMClient | None = None
+_fast_llm: LLMClient | None = None
 
 
-def get_llm(use_fast_model: bool = False) -> ChatAnthropic:
+def get_llm(use_fast_model: bool = False) -> LLMClient:
     """
     Get or create the LLM client singleton.
 
@@ -43,27 +179,25 @@ def get_llm(use_fast_model: bool = False) -> ChatAnthropic:
                        for scenarios with strong memory guidance
 
     Returns:
-        ChatAnthropic client configured for the appropriate model
+        LLM client configured for the appropriate model
     """
-    # Check if we should use fast model (Haiku) with memory guidance
     if use_fast_model:
         from app.agent.memory import is_memory_enabled
 
         if is_memory_enabled():
             global _fast_llm
             if _fast_llm is None:
-                _fast_llm = ChatAnthropic(  # type: ignore[call-arg]
-                    model="claude-3-haiku-20240307",  # Haiku: 5-10x faster than Sonnet
+                _fast_llm = LLMClient(
+                    model="claude-3-haiku-20240307",
                     max_tokens=1024,
                     temperature=0.3,
                 )
                 print("[MEMORY] Using fast model (Haiku) with memory guidance")
             return _fast_llm
 
-    # Default: use standard model (Sonnet)
     global _llm
     if _llm is None:
-        _llm = ChatAnthropic(  # type: ignore[call-arg]
+        _llm = LLMClient(
             model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
             max_tokens=1024,
         )

@@ -23,8 +23,8 @@ import boto3
 import requests
 from langsmith import traceable
 
+from app.agent.tools.clients.grafana import get_grafana_client
 from app.main import _run
-from tests.shared.grafana_helpers import build_grafana_loki_explore_url
 from tests.shared.stack_config import get_prefect_config
 from tests.utils.alert_factory import create_alert
 
@@ -258,7 +258,8 @@ def main():
         print("TEST FAILED: Agent did not detect all expected signals")
     print("=" * 60)
 
-    log_url = build_grafana_loki_explore_url(
+    grafana_client = get_grafana_client()
+    log_url = grafana_client.build_loki_explore_url(
         service_name="prefect-etl-pipeline",
         correlation_id=failure_data.get("correlation_id"),
     )

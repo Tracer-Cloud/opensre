@@ -1,3 +1,3 @@
-"""Re-export shared tracer_telemetry metrics."""
+"""Re-export shared outbound_telemetry metrics."""
 
-from tests.shared.tracer_telemetry.metrics import *  # noqa: F401,F403
+from app.outbound_telemetry.metrics import *  # noqa: F401,F403

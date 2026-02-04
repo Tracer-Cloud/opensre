@@ -5,19 +5,10 @@ No printing, no LLM calls. Just fetch data and return typed results.
 All functions are decorated with @tool for LangChain/LangGraph compatibility.
 """
 
-try:
-    from langchain.tools import tool
-except ImportError:
-    # Fallback if langchain not available - create a no-op decorator
-    def tool(func=None, **kwargs):  # type: ignore[no-redef]  # noqa: ARG001
-        if func is None:
-            return lambda f: f
-        return func
-
-
 import boto3
 
 from app.agent.tools.clients.cloudwatch_client import get_metric_statistics
+from app.agent.tools.tool_decorator import tool
 
 
 def get_cloudwatch_logs(

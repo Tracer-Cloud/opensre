@@ -1,40 +1,10 @@
 """
-Tracer Telemetry - OpenTelemetry instrumentation for data pipelines.
-
-This module provides standardized telemetry for pipeline observability following
-OpenTelemetry best practices:
-
-Architecture:
-    - Tracing: Instrument domain logic and adapters, not orchestration layer
-    - Metrics: Proper counters/histograms for aggregate pipeline measurements
-    - Context: Automatic propagation via OpenTelemetry - no manual threading
-    - Errors: Exceptions recorded on spans with proper error status
-
-Prefect Integration:
-    Prefect 3.x handles task/flow orchestration visibility through its own UI and
-    metrics. Our instrumentation complements this by providing:
-    - Domain-level spans (validation, transformation) for business logic visibility
-    - Adapter-level spans (S3 operations) with AWS semantic conventions
-    - Auto-instrumentation of boto3/requests via OpenTelemetry instrumentors
-
-    We do NOT duplicate Prefect's task-level instrumentation. The span hierarchy is:
-    1. Prefect manages flow/task execution boundaries (via Prefect UI)
-    2. We instrument what happens inside tasks (domain logic, I/O operations)
-
-Semantic Conventions:
-    - AWS S3: aws.s3.bucket, aws.s3.key, aws.s3.operation
-    - Domain: data.record.count, data.validation.status, data.transform.status
-    - Pipeline: pipeline.name, pipeline.framework
+Outbound Telemetry - OpenTelemetry instrumentation helpers.
 
 Usage:
-    from tracer_telemetry import init_telemetry, get_tracer, traced_operation
+    from app.outbound_telemetry import init_telemetry, get_tracer, traced_operation
 
     telemetry = init_telemetry(service_name="my-pipeline")
-
-    # Domain code uses spans with error handling
-    with traced_operation(tracer, "process_data", {"count": 10}) as span:
-        result = do_work()
-        span.set_attribute("output.count", len(result))
 """
 
 from __future__ import annotations
@@ -49,10 +19,11 @@ from opentelemetry import trace
 from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
 
-from tracer_telemetry.config import apply_otel_env_defaults, build_resource
-from tracer_telemetry.logging import setup_logging
-from tracer_telemetry.metrics import PipelineMetrics, setup_metrics
-from tracer_telemetry.tracing import setup_tracing, traced_operation
+from app.outbound_telemetry.config import apply_otel_env_defaults, build_resource
+from app.outbound_telemetry.grafana_client import GrafanaCloudClient, GrafanaCloudConfig
+from app.outbound_telemetry.logging import setup_logging
+from app.outbound_telemetry.metrics import PipelineMetrics, setup_metrics
+from app.outbound_telemetry.tracing import setup_tracing, traced_operation
 
 __all__ = [
     "init_telemetry",
@@ -61,6 +32,8 @@ __all__ = [
     "traced_operation",
     "PipelineTelemetry",
     "PipelineMetrics",
+    "GrafanaCloudClient",
+    "GrafanaCloudConfig",
 ]
 
 _telemetry: PipelineTelemetry | None = None
@@ -97,7 +70,6 @@ class PipelineTelemetry:
     def flush(self) -> None:
         """Force flush all telemetry data (critical for Lambda/short-lived processes)."""
         try:
-            # Flush traces
             provider = trace.get_tracer_provider()
             if hasattr(provider, "force_flush"):
                 provider.force_flush(timeout_millis=5000)
@@ -105,8 +77,8 @@ class PipelineTelemetry:
             pass
 
         try:
-            # Flush logs
             from opentelemetry import _logs
+
             log_provider = _logs.get_logger_provider()
             if hasattr(log_provider, "force_flush"):
                 log_provider.force_flush(timeout_millis=5000)
@@ -114,8 +86,8 @@ class PipelineTelemetry:
             pass
 
         try:
-            # Flush metrics
             from opentelemetry import metrics
+
             meter_provider = metrics.get_meter_provider()
             if hasattr(meter_provider, "force_flush"):
                 meter_provider.force_flush(timeout_millis=5000)
@@ -134,13 +106,13 @@ def init_telemetry(
 
     try:
         apply_otel_env_defaults()
-        from tracer_telemetry.config import validate_grafana_cloud_config
+        from app.outbound_telemetry.config import validate_grafana_cloud_config
 
         config_ok = validate_grafana_cloud_config()
         resource = build_resource(service_name, resource_attributes)
         setup_logging(resource)
-        _std_logging.getLogger("tracer_telemetry").setLevel(_std_logging.INFO)
-        _std_logging.getLogger("tracer_telemetry").info(
+        _std_logging.getLogger("outbound_telemetry").setLevel(_std_logging.INFO)
+        _std_logging.getLogger("outbound_telemetry").info(
             json.dumps(
                 {
                     "event": "otel_env_config",

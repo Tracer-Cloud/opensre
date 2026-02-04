@@ -6,37 +6,35 @@ import os
 
 from opentelemetry import trace
 
+from app.outbound_telemetry.env import parse_otel_headers
+
 
 def _get_log_exporter():
     """Get the appropriate log exporter based on OTEL_EXPORTER_OTLP_PROTOCOL."""
     protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-    headers_str = os.getenv("OTEL_EXPORTER_OTLP_HEADERS", "")
-
-    # Parse headers string (format: "key1=value1,key2=value2")
-    headers = {}
-    if headers_str:
-        for pair in headers_str.split(","):
-            if "=" in pair:
-                key, value = pair.split("=", 1)
-                headers[key.strip()] = value.strip()
+    headers = parse_otel_headers()
 
     # Use HTTP for http/protobuf protocol (required for Grafana Cloud)
     if protocol in ("http/protobuf", "http"):
         try:
             from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
-            # HTTP exporter needs full path when endpoint is passed explicitly
             if endpoint and not endpoint.endswith("/v1/logs"):
                 logs_endpoint = endpoint.rstrip("/") + "/v1/logs"
             else:
                 logs_endpoint = endpoint
-            return OTLPLogExporter(endpoint=logs_endpoint, headers=headers) if logs_endpoint else OTLPLogExporter(headers=headers)
+            return (
+                OTLPLogExporter(endpoint=logs_endpoint, headers=headers)
+                if logs_endpoint
+                else OTLPLogExporter(headers=headers)
+            )
         except ImportError:
             pass
 
     # Fall back to gRPC
     try:
         from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+
         return OTLPLogExporter()
     except ImportError:
         pass
@@ -94,7 +92,10 @@ def setup_logging(resource) -> None:
     handler = ExecutionRunIdLoggingHandler(base_handler)
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
-    if not any(isinstance(existing, (LoggingHandler, ExecutionRunIdLoggingHandler)) for existing in root_logger.handlers):
+    if not any(
+        isinstance(existing, (LoggingHandler, ExecutionRunIdLoggingHandler))
+        for existing in root_logger.handlers
+    ):
         root_logger.addHandler(handler)
 
     protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
@@ -124,7 +125,10 @@ def ensure_otel_logging(logger_name: str) -> None:
         return
 
     logger = logging.getLogger(logger_name)
-    if any(isinstance(existing, (LoggingHandler, ExecutionRunIdLoggingHandler)) for existing in logger.handlers):
+    if any(
+        isinstance(existing, (LoggingHandler, ExecutionRunIdLoggingHandler))
+        for existing in logger.handlers
+    ):
         return
 
     provider = _logs.get_logger_provider()

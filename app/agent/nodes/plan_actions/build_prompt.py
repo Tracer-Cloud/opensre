@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 
 def _get_executed_sources(executed_hypotheses: list[dict[str, Any]]) -> set[str]:
@@ -256,7 +256,12 @@ def plan_actions_with_llm(
 
     # If memory context is provided, we're already using fast model from caller
     structured_llm = llm.with_structured_output(plan_model)
-    return structured_llm.with_config(run_name="LLM – Plan evidence gathering").invoke(prompt)
+    try:
+        return structured_llm.with_config(run_name="LLM – Plan evidence gathering").invoke(prompt)
+    except (ValidationError, ValueError):
+        fallback_actions = [action.name for action in available_actions][:3]
+        rationale = "Fallback plan: LLM returned invalid structured output."
+        return plan_model(actions=fallback_actions, rationale=rationale)
 
 
 def _format_action_metadata(action) -> str:
