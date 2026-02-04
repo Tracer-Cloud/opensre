@@ -7,17 +7,17 @@ from app.agent.tools.clients.grafana import get_grafana_client
 def grafana_client():
     client = get_grafana_client()
     if not client.is_configured:
-        pytest.skip("Grafana client not configured (check grafana_accounts.yaml and GRAFANA_READ_TOKEN)")
+        pytest.fail("Grafana client not configured (set GRAFANA_READ_TOKEN and GRAFANA_INSTANCE_URL if needed)")
     return client
 
 
 def test_grafana_logs_query(grafana_client):
-    result = grafana_client.query_loki("{}", time_range_minutes=10, limit=1)
+    result = grafana_client.query_loki('{service_name=~".+"}', time_range_minutes=10, limit=1)
     assert result.get("success"), result.get("error") or result.get("response", "")
 
 
 def test_grafana_metrics_query(grafana_client):
-    result = grafana_client.query_mimir("1")
+    result = grafana_client.query_mimir("vector(1)")
     assert result.get("success"), result.get("error") or result.get("response", "")
 
 

@@ -37,8 +37,10 @@ These tests verify that Grafana Cloud query endpoints respond successfully
 without requiring pipeline-specific telemetry.
 
 Prerequisites:
-- `configs/grafana_accounts.yaml` configured (default `tracerbio` account)
-- `GRAFANA_READ_TOKEN` set in the environment
+- `GRAFANA_READ_TOKEN` available in `.env` or environment
+- Optional: `GRAFANA_INSTANCE_URL` (defaults to `https://tracerbio.grafana.net`)
+ 
+Note: These tests do not skip when configuration is missing.
 
 Run:
 ```
