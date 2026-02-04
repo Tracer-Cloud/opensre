@@ -6,11 +6,6 @@ by querying real telemetry from Grafana Cloud.
 """
 
 import sys
-from pathlib import Path
-
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
 
 from app.agent.tools.tool_actions.grafana import (
     check_grafana_connection,
