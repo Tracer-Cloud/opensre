@@ -11,6 +11,20 @@ from app.outbound_telemetry.config import (
 @contextmanager
 def temp_env(values: dict[str, str]):
     original = os.environ.copy()
+    keys_to_clear = [
+        "GCLOUD_HOSTED_METRICS_ID",
+        "GCLOUD_HOSTED_METRICS_URL",
+        "GCLOUD_HOSTED_LOGS_ID",
+        "GCLOUD_HOSTED_LOGS_URL",
+        "GCLOUD_RW_API_KEY",
+        "GCLOUD_OTLP_ENDPOINT",
+        "GCLOUD_OTLP_AUTH_HEADER",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_HEADERS",
+        "OTEL_EXPORTER_OTLP_PROTOCOL",
+    ]
+    for key in keys_to_clear:
+        os.environ.pop(key, None)
     os.environ.update({"GRAFANA_CONFIG_SKIP_ENV_FILE": "1", **values})
     try:
         yield

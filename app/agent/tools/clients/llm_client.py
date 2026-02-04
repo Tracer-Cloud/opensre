@@ -41,13 +41,13 @@ class LLMClient:
         self._max_tokens = max_tokens
         self._temperature = temperature
 
-    def with_config(self, **_kwargs) -> "LLMClient":
+    def with_config(self, **_kwargs) -> LLMClient:
         return self
 
-    def with_structured_output(self, model: type) -> "StructuredOutputClient":
+    def with_structured_output(self, model: type) -> StructuredOutputClient:
         return StructuredOutputClient(self, model)
 
-    def bind_tools(self, _tools: list) -> "LLMClient":
+    def bind_tools(self, _tools: list) -> LLMClient:
         return self
 
     def invoke(self, prompt_or_messages: Any) -> LLMResponse:
@@ -72,7 +72,7 @@ class StructuredOutputClient:
         self._base = base
         self._model = model
 
-    def with_config(self, **_kwargs) -> "StructuredOutputClient":
+    def with_config(self, **_kwargs) -> StructuredOutputClient:
         return self
 
     def invoke(self, prompt: str) -> Any:

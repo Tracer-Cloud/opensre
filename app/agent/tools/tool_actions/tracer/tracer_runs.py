@@ -16,7 +16,6 @@ from app.agent.tools.tool_decorator import tool
 from app.agent.utils.auth import extract_org_slug_from_jwt
 from app.config import get_tracer_base_url
 
-
 FAILED_STATUSES = ("failed", "error")
 
 

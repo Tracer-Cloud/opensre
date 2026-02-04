@@ -1,5 +1,5 @@
-from contextlib import contextmanager
 import os
+from contextlib import contextmanager
 
 from app.outbound_telemetry.grafana_client import GrafanaCloudClient
 

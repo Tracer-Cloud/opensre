@@ -6,6 +6,7 @@ Loads Grafana Cloud account configurations from environment variables.
 from __future__ import annotations
 
 from dataclasses import dataclass
+
 from config.grafana_config import (
     get_account_datasource_uids,
     get_account_instance_url,

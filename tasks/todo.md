@@ -21,3 +21,15 @@
 - Added `GrafanaCloud` class + pytest smoke tests for prefect-etl-pipeline ingestion.
 - Moved scripts to `tests/test_case_grafana_validation/` and removed `tests/observability/`.
 - Updated README and `.dockerignore` to reflect the new location.
+
+## Linting Fixes (2026-02-04)
+
+- [x] Identify current ruff failures
+- [x] Fix linting issues in affected files
+- [x] Re-run ruff to confirm clean
+
+## Results - Linting Fixes (2026-02-04)
+
+- Sorted imports and removed unused imports where flagged by ruff.
+- Updated the tool decorator to use type parameters per Python 3.13.
+- `ruff check .` passes clean.

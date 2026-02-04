@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any
 
-F = TypeVar("F", bound=Callable[..., Any])
 
-
-def tool(func: F | None = None, **_kwargs: Any) -> F | Callable[[F], F]:
+def tool[F: Callable[..., Any]](
+    func: F | None = None,
+    **_kwargs: Any,
+) -> F | Callable[[F], F]:
     if func is None:
         def wrapper(inner: F) -> F:
             return inner
