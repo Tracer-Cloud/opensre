@@ -3,10 +3,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Generator
+from contextlib import contextmanager
+from typing import Any
 
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import Status, StatusCode
 
 
 def _get_span_exporter():
@@ -31,22 +35,35 @@ def _get_span_exporter():
     return None
 
 
-def _get_execution_run_id_from_context() -> str | None:
-    """Extract execution.run_id from the current active span context."""
-    span = trace.get_current_span()
-    if span and span.is_recording() and hasattr(span, "attributes"):
-        return span.attributes.get("execution.run_id")
-    return None
+@contextmanager
+def traced_operation(
+    tracer: trace.Tracer,
+    name: str,
+    attributes: dict[str, Any] | None = None,
+) -> Generator[trace.Span, None, None]:
+    """
+    Context manager for creating spans with proper error recording.
 
+    Automatically:
+    - Records exceptions on the span
+    - Sets error status on failure
+    - Propagates context automatically via OpenTelemetry
 
-def ensure_execution_run_id(span: trace.Span, execution_run_id: str | None = None) -> None:
-    """Ensure execution.run_id is set on a span, inheriting from context if not provided."""
-    if execution_run_id:
-        span.set_attribute("execution.run_id", execution_run_id)
-    else:
-        inherited_id = _get_execution_run_id_from_context()
-        if inherited_id:
-            span.set_attribute("execution.run_id", inherited_id)
+    Usage:
+        with traced_operation(tracer, "my_operation", {"key": "value"}) as span:
+            # do work
+            span.set_attribute("result.count", 42)
+    """
+    with tracer.start_as_current_span(name) as span:
+        if attributes:
+            for key, value in attributes.items():
+                span.set_attribute(key, value)
+        try:
+            yield span
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(Status(StatusCode.ERROR, str(exc)))
+            raise
 
 
 def setup_tracing(resource) -> trace.Tracer:

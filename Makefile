@@ -1,4 +1,4 @@
-.PHONY: install test demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink
+.PHONY: install test demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test
 
 PYTHON = python3
 PIP = python3 -m pip
@@ -26,6 +26,10 @@ cloudwatch-demo:
 # Run Prefect ECS Fargate E2E test (alias for demo)
 prefect-demo:
 	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
+
+# Run Prefect ECS local test
+prefect-local-test:
+	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_local $(if $(CLOUD),--cloud,)
 
 # Run upstream/downstream pipeline E2E test
 upstream-downstream:
@@ -162,6 +166,7 @@ help:
 	@echo "  DEMOS"
 	@echo "  make demo            - Run Prefect ECS E2E test (default, shows Investigation Trace)"
 	@echo "  make prefect-demo    - Run Prefect ECS Fargate E2E test (alias for demo)"
+	@echo "  make prefect-local-test - Run Prefect ECS local test (CLOUD=1 for ECS)"
 	@echo "  make flink-demo      - Run Apache Flink ECS E2E test"
 	@echo "  make superfluid-demo - Run Superfluid test case demo"
 	@echo "  make cloudwatch-demo - Run CloudWatch demo"

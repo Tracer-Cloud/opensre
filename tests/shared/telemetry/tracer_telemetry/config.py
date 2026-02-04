@@ -1,9 +1,56 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from opentelemetry.sdk.resources import Resource
+
+
+def configure_grafana_cloud(env_file: Path | str | None = None) -> None:
+    """
+    Configure OTLP to send telemetry to Grafana Cloud.
+
+    Args:
+        env_file: Optional path to .env file containing Grafana Cloud credentials.
+                  If provided, loads environment variables from this file.
+
+    Raises:
+        ValueError: If GCLOUD_OTLP_ENDPOINT is not set after loading .env.
+
+    Environment variables used:
+        - GCLOUD_OTLP_ENDPOINT: Grafana Cloud OTLP endpoint (required)
+        - GCLOUD_OTLP_AUTH_HEADER: Authorization header value (optional but recommended)
+    """
+    if env_file is not None:
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(env_file)
+        except ImportError:
+            pass
+
+    endpoint = os.getenv("GCLOUD_OTLP_ENDPOINT")
+    auth_header = os.getenv("GCLOUD_OTLP_AUTH_HEADER")
+
+    if not endpoint:
+        raise ValueError("GCLOUD_OTLP_ENDPOINT not set in environment")
+
+    os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint
+    os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf"
+    if auth_header:
+        os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization={auth_header}"
+
+
+def configure_local_otlp(endpoint: str = "http://localhost:4317") -> None:
+    """
+    Configure OTLP to send telemetry to a local collector.
+
+    Args:
+        endpoint: Local OTLP endpoint URL. Defaults to localhost:4317.
+    """
+    if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") is None:
+        os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint
+        os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "grpc"
 
 
 def apply_otel_env_defaults() -> None:

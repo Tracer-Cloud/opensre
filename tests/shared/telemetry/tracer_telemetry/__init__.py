@@ -1,3 +1,42 @@
+"""
+Tracer Telemetry - OpenTelemetry instrumentation for data pipelines.
+
+This module provides standardized telemetry for pipeline observability following
+OpenTelemetry best practices:
+
+Architecture:
+    - Tracing: Instrument domain logic and adapters, not orchestration layer
+    - Metrics: Proper counters/histograms for aggregate pipeline measurements
+    - Context: Automatic propagation via OpenTelemetry - no manual threading
+    - Errors: Exceptions recorded on spans with proper error status
+
+Prefect Integration:
+    Prefect 3.x handles task/flow orchestration visibility through its own UI and
+    metrics. Our instrumentation complements this by providing:
+    - Domain-level spans (validation, transformation) for business logic visibility
+    - Adapter-level spans (S3 operations) with AWS semantic conventions
+    - Auto-instrumentation of boto3/requests via OpenTelemetry instrumentors
+
+    We do NOT duplicate Prefect's task-level instrumentation. The span hierarchy is:
+    1. Prefect manages flow/task execution boundaries (via Prefect UI)
+    2. We instrument what happens inside tasks (domain logic, I/O operations)
+
+Semantic Conventions:
+    - AWS S3: aws.s3.bucket, aws.s3.key, aws.s3.operation
+    - Domain: data.record.count, data.validation.status, data.transform.status
+    - Pipeline: pipeline.name, pipeline.framework
+
+Usage:
+    from tracer_telemetry import init_telemetry, get_tracer, traced_operation
+
+    telemetry = init_telemetry(service_name="my-pipeline")
+
+    # Domain code uses spans with error handling
+    with traced_operation(tracer, "process_data", {"count": 10}) as span:
+        result = do_work()
+        span.set_attribute("output.count", len(result))
+"""
+
 from __future__ import annotations
 
 import importlib
@@ -13,7 +52,16 @@ from opentelemetry.instrumentation.requests import RequestsInstrumentor
 from tracer_telemetry.config import apply_otel_env_defaults, build_resource
 from tracer_telemetry.logging import setup_logging
 from tracer_telemetry.metrics import PipelineMetrics, setup_metrics
-from tracer_telemetry.tracing import setup_tracing
+from tracer_telemetry.tracing import setup_tracing, traced_operation
+
+__all__ = [
+    "init_telemetry",
+    "get_tracer",
+    "get_metrics",
+    "traced_operation",
+    "PipelineTelemetry",
+    "PipelineMetrics",
+]
 
 _telemetry: PipelineTelemetry | None = None
 _std_logging = importlib.import_module("logging")

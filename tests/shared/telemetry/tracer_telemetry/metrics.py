@@ -1,3 +1,15 @@
+"""
+OpenTelemetry metrics for pipeline observability.
+
+Metrics follow OpenTelemetry semantic conventions:
+- Counter names use dot notation and describe what is counted
+- Histogram names describe what is measured with unit suffix
+- Units follow UCUM conventions (s for seconds, 1 for unitless counts)
+
+These metrics are separate from tracing - they measure aggregate pipeline
+behavior, not individual request flows.
+"""
+
 from __future__ import annotations
 
 import json
@@ -12,6 +24,13 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
 @dataclass(frozen=True)
 class PipelineMetrics:
+    """
+    Container for pipeline-related OpenTelemetry metrics.
+
+    Metrics are created via proper OpenTelemetry meter APIs - counters for
+    things that only go up, histograms for distributions. Each metric has
+    semantic naming that describes what it measures.
+    """
     runs_total: metrics.Counter
     runs_failed_total: metrics.Counter
     duration_seconds: metrics.Histogram
@@ -20,36 +39,38 @@ class PipelineMetrics:
 
     @classmethod
     def create(cls, meter: metrics.Meter) -> PipelineMetrics:
+        """Create metrics instruments using standard OpenTelemetry APIs."""
         return cls(
             runs_total=meter.create_counter(
-                "pipeline_runs_total",
-                description="Total pipeline runs",
-                unit="1",
+                "pipeline.runs",
+                description="Total number of pipeline executions",
+                unit="{run}",
             ),
             runs_failed_total=meter.create_counter(
-                "pipeline_runs_failed_total",
-                description="Total failed pipeline runs",
-                unit="1",
+                "pipeline.runs.failed",
+                description="Total number of failed pipeline executions",
+                unit="{run}",
             ),
             duration_seconds=meter.create_histogram(
-                "pipeline_duration_seconds",
-                description="Pipeline duration in seconds",
+                "pipeline.duration",
+                description="Duration of pipeline execution",
                 unit="s",
             ),
             records_processed_total=meter.create_counter(
-                "records_processed_total",
-                description="Total records processed",
-                unit="1",
+                "pipeline.records.processed",
+                description="Total number of records successfully processed",
+                unit="{record}",
             ),
             records_failed_total=meter.create_counter(
-                "records_failed_total",
-                description="Total records failed validation",
-                unit="1",
+                "pipeline.records.failed",
+                description="Total number of records that failed processing",
+                unit="{record}",
             ),
         )
 
     @classmethod
     def noop(cls) -> PipelineMetrics:
+        """Create no-op metrics for when OTLP export is unavailable."""
         meter = metrics.get_meter("tracer_telemetry.noop")
         return cls.create(meter)
 
