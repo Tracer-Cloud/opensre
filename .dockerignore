@@ -10,7 +10,6 @@
 **/.venv
 **/node_modules
 **/cdk.out
-tests/observability
 tests/test_case_upstream_lambda/pipeline_code/api_ingester/certifi
 tests/test_case_upstream_lambda/pipeline_code/api_ingester/charset_normalizer
 tests/test_case_upstream_lambda/pipeline_code/api_ingester/idna

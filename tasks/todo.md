@@ -1,13 +1,12 @@
-## Observability Test Cleanup
+## Grafana Cloud Validation Move
 
-- [x] Delete redundant observability scripts/tests
-- [x] Simplify validate_grafana_cloud.py
-- [x] Simplify run_local_with_cloud.py
-- [x] Add observability README
-- [x] Document results
+- [x] Move observability scripts into test_case_grafana_validation
+- [x] Add GrafanaCloud class and pytest smoke tests
+- [x] Remove Prefect execution from run_local_with_cloud
+- [x] Update docs and cleanup ignores
 
 ## Results
 
-- Reduced to two scripts + README under `tests/observability/`.
-- `validate_grafana_cloud.py` now performs parallel endpoint checks with 2s timeouts.
-- `run_local_with_cloud.py` remains env-only with inline `.env` loading.
+- Added `GrafanaCloud` class + pytest smoke tests for prefect-etl-pipeline ingestion.
+- Moved scripts to `tests/test_case_grafana_validation/` and removed `tests/observability/`.
+- Updated README and `.dockerignore` to reflect the new location.

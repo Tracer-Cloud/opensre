@@ -17,6 +17,31 @@ This test case validates the complete telemetry pipeline:
 
 ## Usage
 
+### Quick Grafana Cloud Checks
+```bash
+python3 tests/test_case_grafana_validation/validate_grafana_cloud.py
+```
+
+This checks Grafana Cloud ingestion for `prefect-etl-pipeline` (logs, metrics, traces).
+Required environment variables:
+- GCLOUD_HOSTED_METRICS_URL
+- GCLOUD_HOSTED_METRICS_ID
+- GCLOUD_HOSTED_LOGS_URL
+- GCLOUD_HOSTED_LOGS_ID
+- GCLOUD_HOSTED_TRACES_URL_TEMPO
+- GCLOUD_HOSTED_TRACES_ID
+- GCLOUD_RW_API_KEY
+
+### Prepare Local Prefect Run
+```bash
+python3 tests/test_case_grafana_validation/run_local_with_cloud.py
+```
+
+Then run the local Prefect test:
+```bash
+python3 -m tests.test_case_upstream_prefect_ecs_fargate.test_local
+```
+
 ### Run Test
 ```bash
 cd tests/test_case_grafana_validation
@@ -88,6 +113,8 @@ Test Validation Script
 ## Files
 
 - `test_grafana_roundtrip.py` - Main test script
+- `validate_grafana_cloud.py` - Grafana Cloud ingestion checks (prefect-etl-pipeline)
+- `run_local_with_cloud.py` - Local OTLP env prep + instructions
 - `README.md` - This file
 - Reuses: `../test_case_upstream_prefect_ecs_fargate/pipeline_code/prefect_flow/flow.py`
 - Reuses: `../shared/telemetry/tracer_telemetry/` - Telemetry library
