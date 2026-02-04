@@ -1,4 +1,4 @@
-.PHONY: install test demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink
+.PHONY: install test demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test
 
 PYTHON = python3
 PIP = python3 -m pip
@@ -27,6 +27,10 @@ cloudwatch-demo:
 prefect-demo:
 	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
 
+# Run Prefect ECS local test
+prefect-local-test:
+	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_local $(if $(CLOUD),--cloud,)
+
 # Run upstream/downstream pipeline E2E test
 upstream-downstream:
 	$(PYTHON) -m tests.test_case_upstream_lambda.test_agent_e2e
@@ -42,22 +46,6 @@ run:
 dev: 
 	langgraph dev
 
-# Start local Grafana stack for telemetry validation
-grafana-local:
-	cd tests/shared/infrastructure_code && docker compose up -d
-	@echo "Grafana stack started:"
-	@echo "  Grafana UI:    http://localhost:3000"
-	@echo "  Alloy UI:      http://localhost:12345"
-	@echo "  OTLP gRPC:     localhost:4317"
-	@echo "  OTLP HTTP:     localhost:4318"
-
-# Stop local Grafana stack
-grafana-local-down:
-	cd tests/shared/infrastructure_code && docker compose down
-
-# View Grafana stack logs
-grafana-local-logs:
-	cd tests/shared/infrastructure_code && docker compose logs -f
 
 # Deploy all test case infrastructure in parallel (SDK - fast!)
 deploy:
@@ -118,10 +106,10 @@ test-cov:
 # Run Grafana integration tests
 test-grafana:
 	@echo "Running Grafana agent integration tests..."
-	$(PYTHON) -m pytest app/agent/tools/tool_actions/grafana_actions_test.py tests/test_grafana_agent_integration.py -v
+	$(PYTHON) -m pytest app/agent/tools/tool_actions/grafana/grafana_actions_test.py tests/test_case_grafana_validation/test_grafana_cloud_queries.py -v
 	@echo ""
-	@echo "Running Grafana validation test case..."
-	cd tests/test_case_grafana_validation && $(PYTHON) test_agent_grafana_actions.py
+	@echo "Running Grafana live action checks..."
+	$(PYTHON) -m app.agent.tools.tool_actions.grafana.test_agent_grafana_actions
 
 # Clean up
 clean:
@@ -162,6 +150,7 @@ help:
 	@echo "  DEMOS"
 	@echo "  make demo            - Run Prefect ECS E2E test (default, shows Investigation Trace)"
 	@echo "  make prefect-demo    - Run Prefect ECS Fargate E2E test (alias for demo)"
+	@echo "  make prefect-local-test - Run Prefect ECS local test (CLOUD=1 for ECS)"
 	@echo "  make flink-demo      - Run Apache Flink ECS E2E test"
 	@echo "  make superfluid-demo - Run Superfluid test case demo"
 	@echo "  make cloudwatch-demo - Run CloudWatch demo"
@@ -169,9 +158,6 @@ help:
 	@echo ""
 	@echo "  LOCAL DEVELOPMENT"
 	@echo "  make install         - Install dependencies"
-	@echo "  make grafana-local   - Start local Grafana observability stack"
-	@echo "  make grafana-local-down - Stop local Grafana stack"
-	@echo "  make grafana-local-logs - View local Grafana stack logs"
 	@echo ""
 	@echo "  TESTING & QUALITY"
 	@echo "  make test            - Run tests"

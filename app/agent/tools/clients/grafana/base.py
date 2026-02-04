@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
@@ -52,6 +54,62 @@ class GrafanaClientBase:
             Full URL for the datasource proxy endpoint
         """
         return f"{self.instance_url}/api/datasources/proxy/uid/{datasource_uid}{path}"
+
+    def build_logql_query(
+        self,
+        service_name: str,
+        *,
+        correlation_id: str | None = None,
+        execution_run_id: str | None = None,
+    ) -> str:
+        base = f'{{service_name="{service_name}"}}'
+        filters: list[str] = []
+
+        if execution_run_id:
+            filters.append(execution_run_id)
+        if correlation_id and correlation_id != execution_run_id:
+            filters.append(correlation_id)
+
+        for value in filters:
+            base += f' |= "{value}"'
+
+        return base
+
+    def build_explore_url(
+        self,
+        *,
+        query: str,
+        datasource_uid: str,
+        from_time: str = "now-1h",
+        to_time: str = "now",
+    ) -> str:
+        left = [from_time, to_time, datasource_uid, {"expr": query, "refId": "A"}]
+        left_param = quote(json.dumps(left, separators=(",", ":")))
+        return f"{self.instance_url.rstrip('/')}/explore?orgId=1&left={left_param}"
+
+    def build_loki_explore_url(
+        self,
+        service_name: str,
+        *,
+        correlation_id: str | None = None,
+        execution_run_id: str | None = None,
+        from_time: str = "now-1h",
+        to_time: str = "now",
+    ) -> str:
+        if not self.instance_url:
+            return ""
+
+        query = self.build_logql_query(
+            service_name,
+            correlation_id=correlation_id,
+            execution_run_id=execution_run_id,
+        )
+        return self.build_explore_url(
+            query=query,
+            datasource_uid=self.loki_datasource_uid,
+            from_time=from_time,
+            to_time=to_time,
+        )
 
     def _get_auth_headers(self) -> dict[str, str]:
         """Get authorization headers for API requests."""

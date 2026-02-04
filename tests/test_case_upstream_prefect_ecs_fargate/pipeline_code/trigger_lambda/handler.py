@@ -109,7 +109,10 @@ def start_flow_task(correlation_id: str, s3_bucket: str, s3_key: str) -> str:
                     "command": [
                         "python",
                         "-c",
-                        f"from prefect_flow.flow import data_pipeline_flow; data_pipeline_flow('{s3_bucket}', '{s3_key}')",
+                        (
+                            "from prefect_flow.flow import data_pipeline_flow; "
+                            f"data_pipeline_flow('{s3_bucket}', '{s3_key}', '{PROCESSED_BUCKET}')"
+                        ),
                     ],
                 }
             ]

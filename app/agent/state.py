@@ -1,12 +1,15 @@
 """Agent state definition - supports both chat and investigation modes."""
 
-from typing import Annotated, Any, Literal, TypedDict, cast
-
-from langchain_core.messages import BaseMessage
-from langgraph.graph.message import add_messages
+from typing import Any, Literal, TypedDict, cast
 
 EvidenceSource = Literal["storage", "batch", "tracer_web", "cloudwatch", "aws_sdk", "knowledge", "grafana"]
 AgentMode = Literal["chat", "investigation"]
+
+
+class ChatMessage(TypedDict, total=False):
+    role: Literal["system", "user", "assistant"]
+    content: str
+    tool_calls: list[dict[str, Any]]
 
 
 class AgentState(TypedDict, total=False):
@@ -28,7 +31,7 @@ class AgentState(TypedDict, total=False):
     organization_slug: str
 
     # Chat mode - conversation
-    messages: Annotated[list[BaseMessage], add_messages]
+    messages: list[ChatMessage]
 
     # Investigation mode - alert input
     alert_name: str
@@ -126,7 +129,7 @@ def make_chat_state(
     user_email: str = "",
     user_name: str = "",
     organization_slug: str = "",
-    messages: list[BaseMessage] | None = None,
+    messages: list[ChatMessage] | None = None,
 ) -> AgentState:
     """Create initial state for chat mode."""
     return cast(AgentState, {

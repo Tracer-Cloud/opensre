@@ -6,6 +6,7 @@ Uses tag-based cleanup to find and delete all resources created by the SDK deplo
 
 import sys
 import time
+from contextlib import suppress
 from pathlib import Path
 
 # Add project root to path
@@ -35,7 +36,7 @@ def destroy() -> dict:
     # Try to load outputs for explicit resource deletion
     try:
         outputs = load_outputs(STACK_NAME)
-        print(f"Found outputs file, performing explicit deletion...")
+        print("Found outputs file, performing explicit deletion...")
         _explicit_delete(outputs, results)
     except FileNotFoundError:
         print("No outputs file found, using tag-based discovery...")
@@ -50,10 +51,8 @@ def destroy() -> dict:
     results["not_found"].extend(tag_results.get("not_found", []))
 
     # Delete outputs file
-    try:
+    with suppress(Exception):
         delete_outputs(STACK_NAME)
-    except Exception:
-        pass
 
     elapsed = time.time() - start_time
     print("\n" + "=" * 60)
@@ -221,7 +220,7 @@ def _explicit_delete(outputs: dict, results: dict) -> None:
             if "InvalidGroup.NotFound" in str(e):
                 results["not_found"].append(f"ec2:security-group/{sg_id}")
             elif "DependencyViolation" in str(e):
-                print(f"    Warning: Security group has dependencies, may need manual cleanup")
+                print("    Warning: Security group has dependencies, may need manual cleanup")
                 results["failed"].append({"arn": f"ec2:security-group/{sg_id}", "error": "DependencyViolation - ENIs still attached"})
             else:
                 results["failed"].append({"arn": f"ec2:security-group/{sg_id}", "error": str(e)})

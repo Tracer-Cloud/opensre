@@ -44,7 +44,7 @@ def fire_pipeline_alert(
     pipeline_name: str, bucket: str, key: str, correlation_id: str, error: Exception
 ):
     """Standardized alerting for pipeline failures.
-    
+
     Note: This currently just logs the alert. In production, this would
     fire to a LangGraph endpoint or alerting system.
     """
@@ -70,7 +70,7 @@ def fire_pipeline_alert(
     )
 
     # Log the alert (in production, this would fire to LangGraph)
-    print(f"ALERT: Pipeline failure detected")
+    print("ALERT: Pipeline failure detected")
     print(f"  Pipeline: {pipeline_name}")
     print(f"  Correlation ID: {correlation_id}")
     print(f"  Error: {error}")
