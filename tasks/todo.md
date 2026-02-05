@@ -8,7 +8,11 @@
 ## Results - Optimize make test (2026-02-04)
 
 - `make test` runs fast unit tests and then Prefect ECS E2E.
-- Unit tests pass; Prefect ECS E2E failed with AccessDenied for S3 PutObject (AWS role permissions).
+- Unit tests pass; Prefect ECS E2E initially failed with AccessDenied for S3 PutObject and ecs:RunTask.
+- Updated `tracer-prefect-ecs-trigger-lambda-role` inline policy to allow:
+  - `s3:PutObject` on `arn:aws:s3:::tracer-prefect-ecs-landing-*/*`
+  - `ecs:RunTask` on `arn:aws:ecs:us-east-1:395261708130:task-definition/tracer-prefect-flow-task:*`
+- `make test` now passes end-to-end.
 - CI already runs full pytest via `make test-cov` and the E2E suite in `test-thorough`.
 
 ## CI/CD Fixes (2026-02-04)

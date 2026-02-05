@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from app.agent.nodes.publish_findings.context.models import ReportContext
 
@@ -137,7 +138,6 @@ def format_data_lineage_flow(ctx: ReportContext) -> str:
     # 2) S3 Landing
     # Include only if we have landing evidence (S3 metadata/object metadata entry).
     # Do NOT drive this step from `s3_obj.get('found')` alone, unless you also have an evidence object for it.
-    s3_obj = evidence.get("s3_object", {}) or {}
     ev_s3 = _format_evidence_line(["s3_metadata", "s3 object metadata", "landing"])
     if ev_s3:
         # If we have evidence entry, we can safely say ingestion captured.

@@ -1,5 +1,6 @@
 """Agent state definition - supports both chat and investigation modes."""
 
+import time
 from typing import Any, Literal, TypedDict, cast
 
 EvidenceSource = Literal["storage", "batch", "tracer_web", "cloudwatch", "aws_sdk", "knowledge", "grafana"]
@@ -64,6 +65,7 @@ class AgentState(TypedDict, total=False):
     executed_hypotheses: list[
         dict[str, Any]
     ]  # History of executed hypotheses/API calls to avoid duplicates
+    investigation_started_at: float  # Monotonic start time for timing calculations
 
     # Outputs
     slack_message: str
@@ -116,6 +118,7 @@ def make_initial_state(
         "alert_name": alert_name,
         "pipeline_name": pipeline_name,
         "severity": severity,
+        "investigation_started_at": time.monotonic(),
         **{k: v for k, v in STATE_DEFAULTS.items() if k not in ("mode", "messages")},
     })
     if raw_alert is not None:
