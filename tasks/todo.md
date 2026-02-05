@@ -1,3 +1,16 @@
+## Optimize make test (2026-02-04)
+
+- [x] Update Makefile test targets (fast + Prefect E2E)
+- [x] Run `make test` with new targets
+- [x] Review CI/CD workflow alignment
+- [x] Record results
+
+## Results - Optimize make test (2026-02-04)
+
+- `make test` runs fast unit tests and then Prefect ECS E2E.
+- Unit tests pass; Prefect ECS E2E failed with AccessDenied for S3 PutObject (AWS role permissions).
+- CI already runs full pytest via `make test-cov` and the E2E suite in `test-thorough`.
+
 ## CI/CD Fixes (2026-02-04)
 
 - [ ] Run `make test` and capture failures

@@ -108,4 +108,6 @@ def test_cited_evidence_dedup_by_evidence_id() -> None:
     slack_message = result["slack_message"]
 
     # The short evidence id should appear once in cited evidence (prefixed with "- E")
-    assert slack_message.count("- E") == 1
+    section = slack_message.split("*Cited Evidence:*", 1)[-1]
+    evidence_lines = [line for line in section.splitlines() if line.startswith("- E")]
+    assert len(evidence_lines) == 1
