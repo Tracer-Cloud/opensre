@@ -288,6 +288,10 @@ def format_slack_message(ctx: ReportContext) -> str:
     tracer_cta = f"*{format_slack_link('View Investigation', tracer_link)}*"
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
     alert_id_str = f"\n*Alert ID:* {ctx['alert_id']}" if ctx.get("alert_id") else ""
+    duration_seconds = ctx.get("investigation_duration_seconds")
+    timing_line = (
+        f"Timing: {duration_seconds}s" if duration_seconds is not None else "Timing: unknown"
+    )
 
     conclusion_section = _format_conclusion_section(ctx, evidence)
     lineage_section = format_data_lineage_flow(ctx)
@@ -301,6 +305,7 @@ def format_slack_message(ctx: ReportContext) -> str:
     # Assemble final message
     return f"""[RCA] {pipeline_name} incident
 Analyzed by: pipeline-agent
+{timing_line}
 {alert_id_str}
 
 *Conclusion*

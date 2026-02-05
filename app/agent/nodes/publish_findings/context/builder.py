@@ -1,5 +1,6 @@
 """Extract report context from investigation state."""
 
+import time
 from typing import Any
 
 from app.agent.nodes.publish_findings.context.models import ReportContext
@@ -118,6 +119,11 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         cloudwatch_region,
         alert_id,
     ) = _extract_cloudwatch_info(raw_alert)
+
+    duration_seconds: int | None = None
+    started_at = state.get("investigation_started_at")
+    if isinstance(started_at, (int, float)):
+        duration_seconds = max(0, int(round(time.monotonic() - float(started_at))))
 
     # Build evidence catalog (deduplicated artifacts)
     evidence_catalog: dict[str, dict] = {}
@@ -264,6 +270,7 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         "cloudwatch_region": cloudwatch_region,
         "alert_id": alert_id,
         "evidence_catalog": evidence_catalog,
+        "investigation_duration_seconds": duration_seconds,
         # Raw data for deeper inspection
         "evidence": evidence,
         "raw_alert": raw_alert,
