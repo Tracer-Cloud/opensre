@@ -1,4 +1,4 @@
-.PHONY: install test demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test
+.PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test
 
 PYTHON = python3
 PIP = python3 -m pip
@@ -95,8 +95,13 @@ destroy-flink:
 	@echo "Destroying Flink ECS stack..."
 	$(PYTHON) tests/test_case_upstream_apache_flink_ecs/infrastructure_sdk/destroy.py
 
-# Run tests
+# Run fast tests + Prefect cloud E2E
 test:
+	$(PYTHON) -m pytest -v app tests/outbound_telemetry tests/utils
+	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
+
+# Run full test suite (CI/CD)
+test-full:
 	$(PYTHON) -m pytest -v
 
 # Run tests with coverage
@@ -131,7 +136,7 @@ typecheck:
 	mypy app/
 
 # Run all checks
-check: lint typecheck test
+check: lint typecheck test-full
 
 # Show help
 help:
@@ -160,7 +165,8 @@ help:
 	@echo "  make install         - Install dependencies"
 	@echo ""
 	@echo "  TESTING & QUALITY"
-	@echo "  make test            - Run tests"
+	@echo "  make test            - Run fast unit tests + Prefect cloud E2E"
+	@echo "  make test-full       - Run full test suite (CI/CD)"
 	@echo "  make test-cov        - Run tests with coverage"
 	@echo "  make test-grafana    - Run Grafana integration tests"
 	@echo "  make clean           - Clean up cache files"
