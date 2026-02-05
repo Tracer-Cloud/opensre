@@ -38,7 +38,7 @@ jobs:
 
       - name: Install tracer CLI
         run: |
-          curl -sSL https://install.tracer.cloud | CLI_BRANCH=dev sh -s user_2zr9qkHIGPAP5K2GYNKMYLKv0F6
+          curl -sSL https://install.tracer.cloud | CLI_BRANCH=dev sh -s user_36fbN6K6FwEgJFHsQv1pUByo8K6
 
       - name: Initialize tracer
         run: |
@@ -47,4 +47,4 @@ jobs:
       - name: Run Tracer Demo
         continue-on-error: true
         run: |
-          python -m tests.test_case_s3_failed_python.test_orchestrator
+          python -m tests.test_case_s3_failed_python_on_linux.test_orchestrator
