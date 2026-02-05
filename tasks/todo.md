@@ -1,3 +1,18 @@
+## CI Pytest Grafana Fixes (2026-02-05)
+
+- [x] Add Grafana env requirements helper for tests
+- [x] Update Grafana validation tests to skip if missing env
+- [x] Wire Grafana secrets into CI test job env
+- [ ] Run `make test-cov` (note if not run)
+
+## Results - CI Pytest Grafana Fixes (2026-02-05)
+
+- Added `tests/test_case_grafana_validation/env_requirements.py` to centralize env checks.
+- Grafana validation tests now skip when required env vars are missing.
+- CI test job exports Grafana secrets via GitHub Secrets.
+- `make test-cov` not run in this session.
+- Ran `python3 -m pytest -v tests/test_case_grafana_validation/test_grafana_cloud_push.py tests/test_case_grafana_validation/test_grafana_cloud_queries.py`.
+
 ## Optimize make test (2026-02-04)
 
 - [x] Update Makefile test targets (fast + Prefect E2E)
