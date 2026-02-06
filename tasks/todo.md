@@ -1,3 +1,18 @@
+## Investigate ECS Outbound Permissions (2026-02-06)
+
+- [x] Inspect ECS task role, SG/NACL, and VPC endpoints used by Prefect ECS
+- [x] Trace Otel/Grafana exporter config and any network/client errors
+- [x] Validate test infra settings (IAM, VPC endpoints, policies)
+- [x] Record findings, suspected bottleneck, and next actions
+
+## Results - Investigate ECS Outbound Permissions (2026-02-06)
+
+- ECS tasks run in public subnets with `assign_public_ip=True` and default VPC routes to IGW.
+- Security group only adds ingress rules; outbound uses default allow-all.
+- Task role policy only grants S3 access; no IAM-level outbound restriction present.
+- No VPC endpoints are configured; outbound uses public internet.
+- Likely not an ECS outbound-permission bottleneck for Grafana OTLP; check SCP/NACL/DNS if still blocked.
+
 ## CI Pytest Grafana Fixes (2026-02-05)
 
 - [x] Add Grafana env requirements helper for tests

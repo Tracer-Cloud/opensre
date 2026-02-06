@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +29,7 @@ from config.grafana_config import (
     build_resource,
     get_aws_lambda_function_name,
     get_otel_exporter_otlp_endpoint,
+    get_otel_exporter_otlp_headers,
     get_otel_exporter_otlp_protocol,
     validate_grafana_cloud_config,
 )
@@ -44,6 +47,26 @@ __all__ = [
 
 _telemetry: PipelineTelemetry | None = None
 _std_logging = importlib.import_module("logging")
+_DEBUG_LOG_PATH = "/Users/janvincentfranciszek/tracer-agent-2026/.cursor/debug.log"
+_DEBUG_SESSION_ID = "debug-session"
+_DEBUG_RUN_ID = "pre-fix"
+
+
+def _debug_log(hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    payload = {
+        "sessionId": _DEBUG_SESSION_ID,
+        "runId": _DEBUG_RUN_ID,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload) + "\n")
+    except Exception:
+        return
 
 
 @dataclass(frozen=True)
@@ -111,6 +134,39 @@ def init_telemetry(
         return _telemetry
 
     try:
+        # region agent log
+        _debug_log(
+            "H1",
+            "app/outbound_telemetry/__init__.py:init_telemetry",
+            "init_start",
+            {
+                "service_name": service_name,
+                "resource_attr_keys": sorted((resource_attributes or {}).keys()),
+                "env_present": {
+                    "OTEL_EXPORTER_OTLP_ENDPOINT": bool(
+                        os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+                    ),
+                    "OTEL_EXPORTER_OTLP_HEADERS": bool(
+                        os.getenv("OTEL_EXPORTER_OTLP_HEADERS")
+                    ),
+                    "OTEL_EXPORTER_OTLP_PROTOCOL": bool(
+                        os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
+                    ),
+                    "GCLOUD_OTLP_ENDPOINT": bool(os.getenv("GCLOUD_OTLP_ENDPOINT")),
+                    "GCLOUD_OTLP_AUTH_HEADER": bool(
+                        os.getenv("GCLOUD_OTLP_AUTH_HEADER")
+                    ),
+                    "GCLOUD_HOSTED_LOGS_ID": bool(
+                        os.getenv("GCLOUD_HOSTED_LOGS_ID")
+                    ),
+                    "GCLOUD_HOSTED_LOGS_URL": bool(
+                        os.getenv("GCLOUD_HOSTED_LOGS_URL")
+                    ),
+                },
+            },
+        )
+        # endregion agent log
+
         apply_otel_env_defaults()
         config_ok = validate_grafana_cloud_config()
         resource = build_resource(service_name, resource_attributes)
@@ -127,6 +183,19 @@ def init_telemetry(
                 }
             )
         )
+        # region agent log
+        _debug_log(
+            "H2",
+            "app/outbound_telemetry/__init__.py:init_telemetry",
+            "otel_env_resolved",
+            {
+                "config_ok": config_ok,
+                "endpoint": get_otel_exporter_otlp_endpoint(),
+                "protocol": get_otel_exporter_otlp_protocol(default=""),
+                "headers_present": bool(get_otel_exporter_otlp_headers()),
+            },
+        )
+        # endregion agent log
         tracer = setup_tracing(resource)
         metrics = setup_metrics(resource)
 
@@ -143,6 +212,14 @@ def init_telemetry(
 
         _telemetry = PipelineTelemetry(tracer=tracer, metrics=metrics)
     except Exception as exc:  # noqa: BLE001 - avoid breaking pipelines on telemetry failures
+        # region agent log
+        _debug_log(
+            "H5",
+            "app/outbound_telemetry/__init__.py:init_telemetry",
+            "init_failed",
+            {"error_type": type(exc).__name__, "error_message": str(exc)},
+        )
+        # endregion agent log
         _std_logging.getLogger(__name__).warning("Telemetry init failed: %s", exc)
         _telemetry = PipelineTelemetry(
             tracer=trace.get_tracer(__name__), metrics=PipelineMetrics.noop()

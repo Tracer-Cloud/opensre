@@ -9,13 +9,13 @@ from datetime import UTC, datetime
 
 import pytest
 import requests
-from dotenv import load_dotenv
+from config.grafana_config import load_env
 
 from tests.utils.alert_factory.factory import create_alert, from_pipeline_run
 from tests.utils.alert_factory.formatters.grafana import format_as_grafana
 from tests.utils.alert_factory.intent import AlertIntent
 
-load_dotenv()
+load_env()
 
 
 def test_alert_intent_creation():

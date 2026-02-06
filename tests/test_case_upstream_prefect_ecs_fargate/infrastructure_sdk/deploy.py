@@ -17,6 +17,7 @@ Usage:
     python3 tests/test_case_upstream_prefect_ecs_fargate/infrastructure_sdk/deploy.py
 """
 
+import os
 import subprocess
 import sys
 import time
@@ -36,9 +37,10 @@ from tests.shared.infrastructure_sdk.resources import (
     lambda_,
     logs,
     s3,
-    secrets,
     vpc,
 )
+
+from config.grafana_config import load_env
 
 STACK_NAME = "tracer-prefect-ecs"
 REGION = "us-east-1"
@@ -64,6 +66,26 @@ PREFECT_DOCKERFILE = TESTS_DIR / "test_case_upstream_prefect_ecs_fargate" / "inf
 ALLOY_CONFIG_DIR = TESTS_DIR / "shared" / "infrastructure_code" / "alloy_config"
 MOCK_API_CODE = TESTS_DIR / "shared" / "external_vendor_api"
 TRIGGER_LAMBDA_CODE = TESTS_DIR / "test_case_upstream_prefect_ecs_fargate" / "pipeline_code" / "trigger_lambda"
+
+GRAFANA_ENV_KEYS = [
+    "GCLOUD_HOSTED_METRICS_URL",
+    "GCLOUD_HOSTED_METRICS_ID",
+    "GCLOUD_HOSTED_LOGS_URL",
+    "GCLOUD_HOSTED_LOGS_ID",
+    "GCLOUD_RW_API_KEY",
+    "GCLOUD_OTLP_ENDPOINT",
+    "GCLOUD_OTLP_AUTH_HEADER",
+]
+
+
+def _load_grafana_env(env_path: Path) -> dict[str, str]:
+    load_env(env_path)
+    values = {key: os.getenv(key, "") for key in GRAFANA_ENV_KEYS}
+    missing = [key for key, value in values.items() if not value]
+    if missing:
+        missing_list = ", ".join(missing)
+        raise ValueError(f"Missing Grafana env vars in {env_path}: {missing_list}")
+    return values
 
 
 def print_step(step: str) -> None:
@@ -201,7 +223,7 @@ def _build_and_push_prefect_image(repo_uri: str) -> str:
         "-t", full_uri,
         "-f", str(PREFECT_DOCKERFILE),
         "--push",
-        str(TESTS_DIR),
+        str(project_root),
     ]
 
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -245,28 +267,7 @@ def deploy_phase3_ecs(foundation: dict, images: dict) -> dict:
     print_step("Phase 3: ECS Task Definitions & Service")
     results = {}
 
-    # Get Grafana secrets for Alloy sidecar
-    secret_name = "tracer/grafana-cloud"
-    secret_arn = secrets.get_secret_arn(secret_name, REGION)
-    print(f"  [OK] grafana_secrets: {secret_arn}")
-
-    # Grant execution role access to secrets
-    iam.put_role_policy(
-        EXECUTION_ROLE_NAME,
-        "SecretsManagerAccess",
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": ["secretsmanager:GetSecretValue"],
-                    "Resource": [secret_arn],
-                }
-            ],
-        },
-        REGION,
-    )
-    print("  [OK] execution_role secrets policy")
+    grafana_env = _load_grafana_env(project_root / ".env")
 
     # Build Prefect container definition
     prefect_container = ecs.build_container_definition(
@@ -282,16 +283,8 @@ def deploy_phase3_ecs(foundation: dict, images: dict) -> dict:
             "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
             "OTEL_SERVICE_NAME": "prefect-etl-pipeline",
             "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_prefect,pipeline.framework=prefect,test_case=test_case_upstream_prefect_ecs_fargate",
+            **grafana_env,
         },
-        secrets=[
-            {"name": "GCLOUD_HOSTED_METRICS_URL", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_METRICS_URL::"},
-            {"name": "GCLOUD_HOSTED_METRICS_ID", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_METRICS_ID::"},
-            {"name": "GCLOUD_HOSTED_LOGS_URL", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_LOGS_URL::"},
-            {"name": "GCLOUD_HOSTED_LOGS_ID", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_LOGS_ID::"},
-            {"name": "GCLOUD_RW_API_KEY", "valueFrom": f"{secret_arn}:GCLOUD_RW_API_KEY::"},
-            {"name": "GCLOUD_OTLP_ENDPOINT", "valueFrom": f"{secret_arn}:GCLOUD_OTLP_ENDPOINT::"},
-            {"name": "GCLOUD_OTLP_AUTH_HEADER", "valueFrom": f"{secret_arn}:GCLOUD_OTLP_AUTH_HEADER::"},
-        ],
         log_group=LOG_GROUP_NAME,
         region=REGION,
         essential=True,
@@ -308,15 +301,7 @@ def deploy_phase3_ecs(foundation: dict, images: dict) -> dict:
             {"containerPort": 4318, "protocol": "tcp"},
             {"containerPort": 12345, "protocol": "tcp"},
         ],
-        secrets=[
-            {"name": "GCLOUD_HOSTED_METRICS_URL", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_METRICS_URL::"},
-            {"name": "GCLOUD_HOSTED_METRICS_ID", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_METRICS_ID::"},
-            {"name": "GCLOUD_HOSTED_LOGS_URL", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_LOGS_URL::"},
-            {"name": "GCLOUD_HOSTED_LOGS_ID", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_LOGS_ID::"},
-            {"name": "GCLOUD_RW_API_KEY", "valueFrom": f"{secret_arn}:GCLOUD_RW_API_KEY::"},
-            {"name": "GCLOUD_OTLP_ENDPOINT", "valueFrom": f"{secret_arn}:GCLOUD_OTLP_ENDPOINT::"},
-            {"name": "GCLOUD_OTLP_AUTH_HEADER", "valueFrom": f"{secret_arn}:GCLOUD_OTLP_AUTH_HEADER::"},
-        ],
+        environment=grafana_env,
         log_group=LOG_GROUP_NAME,
         region=REGION,
         essential=False,
@@ -355,16 +340,8 @@ def deploy_phase3_ecs(foundation: dict, images: dict) -> dict:
             "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
             "OTEL_SERVICE_NAME": "prefect-etl-pipeline",
             "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_prefect,pipeline.framework=prefect",
+            **grafana_env,
         },
-        secrets=[
-            {"name": "GCLOUD_HOSTED_METRICS_URL", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_METRICS_URL::"},
-            {"name": "GCLOUD_HOSTED_METRICS_ID", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_METRICS_ID::"},
-            {"name": "GCLOUD_HOSTED_LOGS_URL", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_LOGS_URL::"},
-            {"name": "GCLOUD_HOSTED_LOGS_ID", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_LOGS_ID::"},
-            {"name": "GCLOUD_RW_API_KEY", "valueFrom": f"{secret_arn}:GCLOUD_RW_API_KEY::"},
-            {"name": "GCLOUD_OTLP_ENDPOINT", "valueFrom": f"{secret_arn}:GCLOUD_OTLP_ENDPOINT::"},
-            {"name": "GCLOUD_OTLP_AUTH_HEADER", "valueFrom": f"{secret_arn}:GCLOUD_OTLP_AUTH_HEADER::"},
-        ],
         log_group=LOG_GROUP_NAME,
         region=REGION,
         essential=True,
@@ -492,11 +469,21 @@ def deploy_phase4_lambdas(foundation: dict, ecs_resources: dict) -> dict:
                 },
                 {
                     "Effect": "Allow",
+                    "Action": ["ecs:ListTasks", "ecs:DescribeTasks"],
+                    "Resource": ["*"],
+                },
+                {
+                    "Effect": "Allow",
                     "Action": ["iam:PassRole"],
                     "Resource": [
                         foundation["task_role"]["arn"],
                         foundation["execution_role"]["arn"],
                     ],
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": ["ec2:DescribeNetworkInterfaces"],
+                    "Resource": ["*"],
                 },
             ],
         },
@@ -527,6 +514,7 @@ def deploy_phase4_lambdas(foundation: dict, ecs_resources: dict) -> dict:
             "TASK_DEFINITION": ecs_resources["flow_task_def"]["arn"],
             "SUBNET_IDS": ",".join(foundation["subnets"]),
             "SECURITY_GROUP_ID": foundation["security_group"]["group_id"],
+            "PREFECT_SERVICE_NAME": PREFECT_SERVICE_NAME,
         },
         stack_name=STACK_NAME,
         region=REGION,
