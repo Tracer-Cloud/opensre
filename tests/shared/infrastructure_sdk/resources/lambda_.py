@@ -190,7 +190,14 @@ def create_function(
             error_code = e.response["Error"]["Code"]
             if error_code == "ResourceConflictException":
                 # Function exists, update it
-                return update_function_code(name, code_zip, region)
+                update_function_code(name, code_zip, region)
+                return update_function_configuration(
+                    name,
+                    environment=environment,
+                    timeout=timeout,
+                    memory=memory,
+                    region=region,
+                )
             elif (
                 error_code == "InvalidParameterValueException"
                 and "cannot be assumed" in str(e)
