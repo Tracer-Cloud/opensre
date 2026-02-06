@@ -24,12 +24,9 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Load .env
-try:
-    from dotenv import load_dotenv
+from config.grafana_config import load_env
 
-    load_dotenv(project_root / ".env")
-except ImportError:
-    pass
+load_env(project_root / ".env")
 
 
 def validate_grafana_telemetry(

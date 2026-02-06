@@ -3,40 +3,50 @@
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from config.grafana_config import load_env
 
-# Auto-load .env when this module is imported (works for both pytest and direct execution)
-_project_root = Path(__file__).parent.parent
-_env_path = _project_root / ".env"
-if _env_path.exists():
-    load_dotenv(dotenv_path=_env_path, override=True)
+# Environment loading
+_PROJECT_ROOT = Path(__file__).parent.parent
+_ENV_PATH = _PROJECT_ROOT / ".env"
+
+
+def _load_env() -> None:
+    if _ENV_PATH.exists():
+        load_env(_ENV_PATH, override=True)
+
+
+# Auto-load .env when this module is imported (pytest and direct execution).
+_load_env()
 
 
 def pytest_configure(config):
-    """Pytest hook - .env already loaded above."""
-    pass
+    """Pytest hook - keep env available for collection and execution."""
+    _load_env()
 
 
 def get_test_config() -> dict:
     """Get test configuration (not a pytest fixture - plain function)."""
     return {
         "aws_region": os.getenv("AWS_REGION", "us-east-1"),
-        "langgraph_endpoint": os.getenv("LANGGRAPH_ENDPOINT", "http://localhost:8123/runs/stream"),
+        "langgraph_endpoint": os.getenv(
+            "LANGGRAPH_ENDPOINT",
+            "http://localhost:8123/runs/stream",
+        ),
     }
 
 
-# LangGraph Studio Endpoints
+# LangGraph Studio endpoints
 LANGGRAPH_LOCAL_ENDPOINT = "http://127.0.0.1:2024/runs/stream"
 LANGGRAPH_REMOTE_ENDPOINT = (
     "https://tracer-agent-2026-e09h3n0zulnlz1-lwyjk39e.us-central1.run.app/agent/runs/stream"
 )
 
-# Upstream/Downstream Pipeline Test Case - AWS Resources
-# Try loading from SDK outputs first, fall back to hardcoded CDK values
+# Upstream/Downstream Pipeline test case - AWS resources
 def _load_upstream_downstream_config() -> dict:
     """Load config from SDK outputs or use CDK fallback."""
     try:
         from tests.shared.infrastructure_sdk.config import load_outputs
+
         outputs = load_outputs("tracer-lambda")
         return {
             "stack_name": "tracer-lambda",
@@ -48,7 +58,6 @@ def _load_upstream_downstream_config() -> dict:
             "processed_bucket_name": outputs["ProcessedBucketName"],
         }
     except (FileNotFoundError, ImportError):
-        # Fall back to CDK deployment values
         return {
             "stack_name": "TracerUpstreamDownstreamTest",
             "ingester_api_url": "https://ud9ogzmatj.execute-api.us-east-1.amazonaws.com/prod/",
@@ -62,19 +71,14 @@ def _load_upstream_downstream_config() -> dict:
 
 UPSTREAM_DOWNSTREAM_CONFIG = _load_upstream_downstream_config()
 
-# Prefect ECS Fargate Test Case - AWS Resources
-# Stack: TracerPrefectEcsFargate
+
+# Prefect ECS Fargate test case - AWS resources
 PREFECT_ECS_FARGATE_CONFIG = {
     "stack_name": "TracerPrefectEcsFargate",
-    # HTTP Trigger Endpoint
     "trigger_api_url": "https://q5tl03u98c.execute-api.us-east-1.amazonaws.com/prod/",
-    # ECS Cluster
     "ecs_cluster_name": "tracer-prefect-cluster",
-    # CloudWatch Log Group
     "log_group_name": "/ecs/tracer-prefect",
-    # Lambda Function
     "trigger_lambda_name": "TracerPrefectEcsFargate-TriggerLambda2FDB819B-YCP5yvOvuE0l",
-    # S3 Buckets
     "landing_bucket_name": "tracerprefectecsfargate-landingbucket23fe90fb-woehzac5msvj",
     "processed_bucket_name": "tracerprefectecsfargate-processedbucketde59930c-xwdkeidp0qsu",
 }
