@@ -270,7 +270,14 @@ def update_function_configuration(
     config: dict[str, Any] = {"FunctionName": name}
 
     if environment is not None:
-        config["Environment"] = {"Variables": environment}
+        merged_env = dict(environment)
+        try:
+            current_config = lambda_client.get_function_configuration(FunctionName=name)
+            current_env = current_config.get("Environment", {}).get("Variables", {})
+            merged_env = {**current_env, **environment}
+        except ClientError:
+            merged_env = dict(environment)
+        config["Environment"] = {"Variables": merged_env}
     if timeout is not None:
         config["Timeout"] = timeout
     if memory is not None:
