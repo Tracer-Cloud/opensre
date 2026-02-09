@@ -136,17 +136,38 @@ def lambda_handler(event: dict, context: Any) -> dict:
     landing_bucket = os.environ.get("LANDING_BUCKET")
     external_api_url = os.environ.get("EXTERNAL_API_URL")
 
+    missing_env = []
     if not landing_bucket:
-        return {
-            "statusCode": 500,
-            "error": "LANDING_BUCKET environment variable not set",
-        }
-
+        missing_env.append("LANDING_BUCKET")
     if not external_api_url:
-        return {
-            "statusCode": 500,
-            "error": "EXTERNAL_API_URL environment variable not set",
+        missing_env.append("EXTERNAL_API_URL")
+    if missing_env:
+        error_message = f"Missing required environment variables: {', '.join(missing_env)}"
+        logger.error(
+            json.dumps(
+                {
+                    "event": "config_error",
+                    "execution_run_id": correlation_id,
+                    "correlation_id": correlation_id,
+                    "missing_env": missing_env,
+                    "error": error_message,
+                }
+            )
+        )
+        payload = {
+            "error": error_message,
+            "missing_env": missing_env,
+            "correlation_id": correlation_id,
+            "hint": "Ensure the Lambda environment includes LANDING_BUCKET and EXTERNAL_API_URL.",
         }
+        if "body" in event:
+            return {
+                "statusCode": 500,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps(payload),
+            }
+        payload["statusCode"] = 500
+        return payload
 
     execution_run_id = correlation_id
     logger.info(json.dumps({

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from app.agent.tools.clients.env import require_aws_credentials
+
 try:
     import boto3
     from botocore.exceptions import ClientError
@@ -71,6 +73,9 @@ def head_object(bucket: str, key: str) -> dict[str, Any]:
     client = _get_s3_client()
     if not client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="s3_client.head_object")
+    if credentials_error:
+        return credentials_error
 
     try:
         response = client.head_object(Bucket=bucket, Key=key)
@@ -137,6 +142,9 @@ def get_object_sample(
     client = _get_s3_client()
     if not client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="s3_client.get_object_sample")
+    if credentials_error:
+        return credentials_error
 
     try:
         response = client.get_object(
@@ -188,6 +196,9 @@ def get_full_object(bucket: str, key: str, max_size: int = 1048576) -> dict[str,
     client = _get_s3_client()
     if not client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="s3_client.get_full_object")
+    if credentials_error:
+        return credentials_error
 
     try:
         response = client.get_object(Bucket=bucket, Key=key)
@@ -240,6 +251,9 @@ def list_object_versions(
     client = _get_s3_client()
     if not client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="s3_client.list_object_versions")
+    if credentials_error:
+        return credentials_error
 
     try:
         response = client.list_object_versions(
@@ -310,6 +324,9 @@ def compare_versions(
     client = _get_s3_client()
     if not client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="s3_client.compare_versions")
+    if credentials_error:
+        return credentials_error
 
     try:
         # Get both versions
@@ -383,6 +400,9 @@ def list_objects(
     client = _get_s3_client()
     if not client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="s3_client.list_objects")
+    if credentials_error:
+        return credentials_error
 
     try:
         response = client.list_objects_v2(

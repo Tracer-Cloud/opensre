@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
+import time
 
 from opentelemetry import trace
 
@@ -10,6 +12,27 @@ from config.grafana_config import (
     get_otel_exporter_otlp_protocol,
     parse_otel_headers,
 )
+
+_DEBUG_LOG_PATH = "/Users/janvincentfranciszek/tracer-agent-2026/.cursor/debug.log"
+_DEBUG_SESSION_ID = "debug-session"
+_DEBUG_RUN_ID = "pre-fix"
+
+
+def _debug_log(hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    payload = {
+        "sessionId": _DEBUG_SESSION_ID,
+        "runId": _DEBUG_RUN_ID,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload) + "\n")
+    except Exception:
+        return
 
 
 def _get_log_exporter():
@@ -78,6 +101,24 @@ class ExecutionRunIdLoggingHandler(logging.Handler):
 
 def setup_logging(resource) -> None:
     exporter = _get_log_exporter()
+    protocol = get_otel_exporter_otlp_protocol()
+    endpoint = get_otel_exporter_otlp_endpoint()
+    logs_endpoint = endpoint
+    if protocol in ("http/protobuf", "http") and endpoint and not endpoint.endswith("/v1/logs"):
+        logs_endpoint = endpoint.rstrip("/") + "/v1/logs"
+    # region agent log
+    _debug_log(
+        "H3",
+        "app/outbound_telemetry/logging.py:setup_logging",
+        "log_exporter_status",
+        {
+            "exporter": exporter.__class__.__name__ if exporter else None,
+            "protocol": protocol,
+            "endpoint": endpoint,
+            "logs_endpoint": logs_endpoint if exporter else None,
+        },
+    )
+    # endregion agent log
     if exporter is None:
         logging.getLogger(__name__).warning("OTLP log exporter is unavailable")
         return
@@ -97,17 +138,16 @@ def setup_logging(resource) -> None:
     handler = ExecutionRunIdLoggingHandler(base_handler)
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
+    if not any(isinstance(existing, logging.StreamHandler) for existing in root_logger.handlers):
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setLevel(logging.INFO)
+        root_logger.addHandler(stream_handler)
     if not any(
         isinstance(existing, (LoggingHandler, ExecutionRunIdLoggingHandler))
         for existing in root_logger.handlers
     ):
         root_logger.addHandler(handler)
 
-    protocol = get_otel_exporter_otlp_protocol()
-    endpoint = get_otel_exporter_otlp_endpoint()
-    logs_endpoint = endpoint
-    if protocol in ("http/protobuf", "http") and endpoint and not endpoint.endswith("/v1/logs"):
-        logs_endpoint = endpoint.rstrip("/") + "/v1/logs"
     logging.getLogger(__name__).info(
         json.dumps(
             {
