@@ -43,6 +43,43 @@ def _utc_now_iso() -> str:
     )
 
 
+def _tracer_context_metadata() -> dict[str, Any]:
+    """
+    Optional context from Tracer CLI / CI.
+    Attach to each event to make joins & debugging easier.
+    """
+    ctx: dict[str, Any] = {}
+
+    tracer_run_id = (os.getenv("TRACER_RUN_ID") or "").strip()
+    tracer_trace_id = (os.getenv("TRACER_TRACE_ID") or "").strip()
+    tracer_pipeline = (os.getenv("TRACER_PIPELINE_NAME") or "").strip()
+    tracer_org = (os.getenv("TRACER_ORG_SLUG") or "").strip()
+
+    if tracer_run_id:
+        ctx["tracer_run_id"] = tracer_run_id
+    if tracer_trace_id:
+        ctx["tracer_trace_id"] = tracer_trace_id
+    if tracer_pipeline:
+        ctx["tracer_pipeline_name"] = tracer_pipeline
+    if tracer_org:
+        ctx["tracer_org_slug"] = tracer_org
+
+    # Optional GitHub Actions context (helps when debugging CI)
+    for k in (
+        "GITHUB_RUN_ID",
+        "GITHUB_RUN_ATTEMPT",
+        "GITHUB_WORKFLOW",
+        "GITHUB_JOB",
+        "GITHUB_REPOSITORY",
+        "GITHUB_SHA",
+    ):
+        v = (os.getenv(k) or "").strip()
+        if v:
+            ctx[k.lower()] = v
+
+    return ctx
+
+
 def emit_tool_event(
     *,
     trace_id: str,
@@ -60,6 +97,10 @@ def emit_tool_event(
     """
     Best-effort event emitter to Tracer ingest endpoint.
     Returns True if sent successfully, False otherwise.
+
+    Notes:
+    - "metadata" is merged with optional Tracer/CI context so the backend can
+      join/debug even if some ids are off during early integration.
     """
     base_url = os.getenv("TRACER_API_URL", "").strip().rstrip("/")
     token = os.getenv("TRACER_INGEST_TOKEN", "").strip()
@@ -70,19 +111,15 @@ def emit_tool_event(
         f"TRACER_INGEST_TOKEN={_redact_token(token) if token else '<missing>'}"
     )
 
-    # Explicit token debug (still redacted)
-    _log(
-        "token debug: "
-        f"TRACER_INGEST_TOKEN_RAW={_redact_token(token)} "
-        f"len={len(token)}"
-    )
-
     if not base_url or not token:
         _log("skip: missing TRACER_API_URL and/or TRACER_INGEST_TOKEN")
         return False
 
     start = start_time or _utc_now_iso()
     end = end_time or start
+
+    # Merge context metadata (context first, explicit metadata wins)
+    merged_meta = {**_tracer_context_metadata(), **(metadata or {})}
 
     payload = {
         "events": [
@@ -97,7 +134,7 @@ def emit_tool_event(
                 "start_time": start,
                 "end_time": end,
                 "exit_code": int(exit_code),
-                "metadata": metadata or {},
+                "metadata": merged_meta,
             }
         ]
     }
@@ -117,6 +154,7 @@ def emit_tool_event(
         _log(f"response: status={resp.status_code} ok={ok}")
 
         if not ok:
+            # Keep response small to avoid noise / accidental secrets
             body_preview = (resp.text or "")[:500]
             _log(f"response body (preview): {body_preview}")
 
