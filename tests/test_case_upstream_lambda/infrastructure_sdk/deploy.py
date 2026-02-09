@@ -24,6 +24,8 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(project_root))
 
+from botocore.exceptions import ClientError
+
 from tests.shared.infrastructure_sdk.config import save_outputs
 from tests.shared.infrastructure_sdk.deployer import get_boto3_client, get_standard_tags
 from tests.shared.infrastructure_sdk.resources import api_gateway, iam, lambda_, s3
@@ -417,25 +419,40 @@ def add_s3_trigger(landing_bucket: str, mock_dag_lambda_arn: str, mock_dag_lambd
             SourceAccount=account_id,
         )
 
-    # Configure S3 notification
-    s3_client.put_bucket_notification_configuration(
-        Bucket=landing_bucket,
-        NotificationConfiguration={
-            "LambdaFunctionConfigurations": [
-                {
-                    "LambdaFunctionArn": mock_dag_lambda_arn,
-                    "Events": ["s3:ObjectCreated:*"],
-                    "Filter": {
-                        "Key": {
-                            "FilterRules": [
-                                {"Name": "prefix", "Value": "ingested/"},
-                            ]
+    # Configure S3 notification with retry to handle IAM propagation delays
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            s3_client.put_bucket_notification_configuration(
+                Bucket=landing_bucket,
+                NotificationConfiguration={
+                    "LambdaFunctionConfigurations": [
+                        {
+                            "LambdaFunctionArn": mock_dag_lambda_arn,
+                            "Events": ["s3:ObjectCreated:*"],
+                            "Filter": {
+                                "Key": {
+                                    "FilterRules": [
+                                        {"Name": "prefix", "Value": "ingested/"},
+                                    ]
+                                }
+                            },
                         }
-                    },
-                }
-            ]
-        },
-    )
+                    ]
+                },
+            )
+            break
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code == "InvalidArgument" and attempt < max_attempts:
+                wait_seconds = attempt * 2
+                print(
+                    "  - Warning: S3 notification validation failed. "
+                    f"Retrying in {wait_seconds}s (attempt {attempt}/{max_attempts})..."
+                )
+                time.sleep(wait_seconds)
+                continue
+            raise
 
     print(f"  - S3 trigger: {landing_bucket} -> {mock_dag_lambda_name}")
 
@@ -449,18 +466,18 @@ def update_ingester_env(ingester_lambda_name: str, mock_api_url: str) -> None:
     # Get current configuration
     response = lambda_client.get_function_configuration(FunctionName=ingester_lambda_name)
     env_vars = response.get("Environment", {}).get("Variables", {})
+    if not isinstance(env_vars, dict):
+        env_vars = {}
 
     # Update EXTERNAL_API_URL
     env_vars["EXTERNAL_API_URL"] = mock_api_url
 
     # Update function configuration
-    lambda_client.update_function_configuration(
-        FunctionName=ingester_lambda_name,
-        Environment={"Variables": env_vars},
+    lambda_.update_function_configuration(
+        name=ingester_lambda_name,
+        environment=env_vars,
+        region=REGION,
     )
-
-    # Wait for update to complete
-    time.sleep(5)
     print(f"  - Updated EXTERNAL_API_URL to: {mock_api_url}")
 
 
