@@ -156,7 +156,7 @@ def router_node(state: AgentState) -> dict[str, Any]:
     return {"route": route if route in ("tracer_data", "general") else "general"}
 
 
-def chat_agent_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any]:
+def chat_agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
     """Chat agent with tools for Tracer data queries.
 
     Uses ChatAnthropic with bound tools. The LLM can make tool_calls
@@ -178,7 +178,7 @@ def chat_agent_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any
     return {"messages": [response]}
 
 
-def general_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any]:
+def general_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
     """Direct LLM response without tools for general questions."""
     msgs = list(state.get("messages", []))
 
