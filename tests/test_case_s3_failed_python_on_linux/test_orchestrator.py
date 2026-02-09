@@ -4,6 +4,9 @@ S3 Failed Python Demo Orchestrator.
 Runs the pipeline and triggers RCA investigation on failure.
 """
 
+from __future__ import annotations
+
+import os
 from datetime import UTC, datetime
 
 from langsmith import traceable
@@ -12,15 +15,30 @@ from app.main import _run
 from tests.test_case_s3_failed_python_on_linux import use_case
 from tests.utils.alert_factory import create_alert
 from tests.utils.file_logger import configure_file_logging
-from tests.shared.tracer_ingest import emit_tool_event, StepTimer
+from tests.shared.tracer_ingest import StepTimer, emit_tool_event
 
 LOG_FILE = "production.log"
 
 
+def _get_run_and_trace_ids() -> tuple[str, str]:
+    """
+    Prefer canonical run_id from tracer CLI (exported as TRACER_RUN_ID).
+    Fallback to timestamp-based run id for local dev when tracer init isn't used.
+    """
+    tracer_run_id = (os.getenv("TRACER_RUN_ID") or "").strip()
+    if tracer_run_id:
+        run_id = tracer_run_id
+    else:
+        run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
+
+    trace_id = (os.getenv("TRACER_TRACE_ID") or "").strip() or f"trace_{run_id}"
+    return run_id, trace_id
+
+
 def main() -> int:
     configure_file_logging(LOG_FILE)
-    run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
-    trace_id = f"trace_{run_id}"
+
+    run_id, trace_id = _get_run_and_trace_ids()
 
     # Pipeline start
     emit_tool_event(
@@ -138,13 +156,13 @@ def main() -> int:
         tool_cmd="_run",
     )
 
-    result = run_with_alert_id()
+    investigation_result = run_with_alert_id()
 
     investigation_step.finish(
         exit_code=0,
         metadata={
             "alert_id": raw_alert["alert_id"],
-            "result_type": type(result).__name__,
+            "result_type": type(investigation_result).__name__,
         },
     )
 

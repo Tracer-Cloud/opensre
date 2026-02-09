@@ -16,6 +16,7 @@ jobs:
       LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
       LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
       AWS_REGION: us-east-1
+
     steps:
       - uses: actions/checkout@v4
 
@@ -43,6 +44,22 @@ jobs:
       - name: Initialize tracer
         run: |
           sudo tracer init --token ${{ secrets.JWT_TOKEN }}
+
+      - name: Export Tracer run id
+        shell: bash
+        run: |
+          RUN_ID=$(tracer info --json | python3 -c "import sys,json; print(json.load(sys.stdin)['run']['id'])")
+          PIPELINE_NAME=$(tracer info --json | python3 -c "import sys,json; print(json.load(sys.stdin)['pipeline']['name'])")
+          ORG_SLUG=$(tracer info --json | python3 -c "import sys,json; print(json.load(sys.stdin)['pipeline']['organization'])")
+
+          echo "TRACER_RUN_ID=$RUN_ID" >> $GITHUB_ENV
+          echo "TRACER_PIPELINE_NAME=$PIPELINE_NAME" >> $GITHUB_ENV
+          echo "TRACER_ORG_SLUG=$ORG_SLUG" >> $GITHUB_ENV
+
+          # Optional but helpful: stable trace id for ingest rows
+          echo "TRACER_TRACE_ID=trace_$RUN_ID" >> $GITHUB_ENV
+
+          echo "Exported TRACER_RUN_ID=$RUN_ID"
 
       - name: Run Tracer Demo
         continue-on-error: true
