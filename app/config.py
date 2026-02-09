@@ -72,7 +72,7 @@ DEFAULT_MAX_TOKENS = 4096
 # Tracer API Configuration
 TRACER_BASE_URL_DEV = "https://staging.tracer.cloud"
 TRACER_BASE_URL_PROD = "https://app.tracer.cloud"
-
+SLACK_CHANNEL = "tracer-rca-report-alerts"
 
 def get_tracer_base_url() -> str:
     """Get Tracer base URL for current environment."""

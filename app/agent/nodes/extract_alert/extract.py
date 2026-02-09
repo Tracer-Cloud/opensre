@@ -1,4 +1,4 @@
-"""LLM-based alert extraction for the frame_problem node."""
+"""LLM-based alert extraction and classification for the extract_alert node."""
 
 import json
 from typing import Any, cast
@@ -7,6 +7,50 @@ from app.agent.nodes.extract_alert.models import AlertDetails, AlertExtractionIn
 from app.agent.output import debug_print
 from app.agent.state import InvestigationState
 from app.agent.tools.clients import get_llm
+
+
+def classify_alert(state: InvestigationState) -> bool:
+    """Use the LLM to determine if this message is a real actionable alert.
+
+    Returns True if the message is a real alert worth investigating,
+    False if it's noise (test messages, resolved alerts, info-only, etc.).
+    """
+    raw_alert = state.get("raw_alert")
+    if raw_alert is None:
+        return False
+
+    text = _format_raw_alert(raw_alert) if isinstance(raw_alert, (str, dict)) else str(raw_alert)
+
+    prompt = f"""Classify this message. Should it be investigated?
+
+ALERT (investigate) — default. Includes:
+- Any alert from a monitoring system (Grafana, PagerDuty, CloudWatch, etc.)
+- Firing, resolved, or recovery notifications from monitoring tools
+- Errors, failures, incidents, warnings, OOM, timeouts, threshold breaches
+- Anything that looks like it came from an automated alerting system
+
+NOISE (skip) — only these:
+- Casual human chat, greetings, or questions unrelated to incidents
+- Very short trivial messages with no alert content (e.g. "ok", "thanks")
+- A reply to an existing investigation report (contains "Root Cause" or "Investigation Report")
+
+When in doubt, classify as ALERT.
+
+Message:
+{text}
+
+Respond with ONLY one word: ALERT or NOISE"""
+
+    llm = get_llm()
+    try:
+        response = llm.invoke(prompt)
+        result = response.content.strip().upper()
+        is_alert = "ALERT" in result
+        debug_print(f"Alert classification: {'ALERT' if is_alert else 'NOISE'}")
+        return is_alert
+    except Exception as err:
+        debug_print(f"Alert classification failed, defaulting to ALERT: {err}")
+        return True  # Fail open - investigate if unsure
 
 
 def extract_alert_details(state: InvestigationState) -> AlertDetails:
