@@ -12,6 +12,7 @@ from app.main import _run
 from tests.test_case_s3_failed_python_on_linux import use_case
 from tests.utils.alert_factory import create_alert
 from tests.utils.file_logger import configure_file_logging
+from tests.shared.tracer_ingest import emit_tool_event, StepTimer
 
 LOG_FILE = "production.log"
 
@@ -19,13 +20,74 @@ LOG_FILE = "production.log"
 def main() -> int:
     configure_file_logging(LOG_FILE)
     run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
+    trace_id = f"trace_{run_id}"
+
+    # Pipeline start
+    emit_tool_event(
+        trace_id=trace_id,
+        run_id=run_id,
+        run_name="s3_failed_python_on_linux",
+        tool_id="pipeline_start",
+        tool_name="pipeline",
+        tool_cmd="start",
+        exit_code=0,
+        metadata={"log_file": LOG_FILE},
+    )
+
+    # Measure use_case execution as a single step
+    use_case_step = StepTimer(
+        trace_id=trace_id,
+        run_id=run_id,
+        run_name="s3_failed_python_on_linux",
+        tool_id="use_case_main",
+        tool_name="python",
+        tool_cmd="use_case.main",
+    )
 
     result = use_case.main(log_file=LOG_FILE)
     pipeline_name = result["pipeline_name"]
+    status = result.get("status", "unknown")
 
-    if result["status"] == "success":
+    use_case_ok = status == "success"
+    use_case_step.finish(
+        exit_code=0 if use_case_ok else 1,
+        metadata={
+            "pipeline_name": pipeline_name,
+            "status": status,
+            "log_file": LOG_FILE,
+        },
+    )
+
+    if use_case_ok:
+        # Pipeline end (success)
+        emit_tool_event(
+            trace_id=trace_id,
+            run_id=run_id,
+            run_name=pipeline_name,
+            tool_id="pipeline_end",
+            tool_name="pipeline",
+            tool_cmd="end",
+            exit_code=0,
+            metadata={"final_status": "success"},
+        )
         print(f"✓ {pipeline_name} succeeded")
         return 0
+
+    # Pipeline end (failed)
+    emit_tool_event(
+        trace_id=trace_id,
+        run_id=run_id,
+        run_name=pipeline_name,
+        tool_id="pipeline_end",
+        tool_name="pipeline",
+        tool_cmd="end",
+        exit_code=1,
+        metadata={
+            "final_status": "failed",
+            "failed_step": "use_case_main",
+            "log_file": LOG_FILE,
+        },
+    )
 
     raw_alert = create_alert(
         pipeline_name=pipeline_name,
@@ -35,6 +97,18 @@ def main() -> int:
     )
 
     print("Running investigation...")
+
+    # Investigation start
+    emit_tool_event(
+        trace_id=trace_id,
+        run_id=run_id,
+        run_name=pipeline_name,
+        tool_id="investigation_start",
+        tool_name="tracer_agent",
+        tool_cmd="run_investigation",
+        exit_code=0,
+        metadata={"alert_id": raw_alert["alert_id"], "pipeline_name": pipeline_name},
+    )
 
     @traceable(
         run_type="chain",
@@ -55,7 +129,36 @@ def main() -> int:
             raw_alert=raw_alert,
         )
 
+    investigation_step = StepTimer(
+        trace_id=trace_id,
+        run_id=run_id,
+        run_name=pipeline_name,
+        tool_id="investigation",
+        tool_name="tracer_agent",
+        tool_cmd="_run",
+    )
+
     result = run_with_alert_id()
+
+    investigation_step.finish(
+        exit_code=0,
+        metadata={
+            "alert_id": raw_alert["alert_id"],
+            "result_type": type(result).__name__,
+        },
+    )
+
+    # Investigation end
+    emit_tool_event(
+        trace_id=trace_id,
+        run_id=run_id,
+        run_name=pipeline_name,
+        tool_id="investigation_end",
+        tool_name="tracer_agent",
+        tool_cmd="finish_investigation",
+        exit_code=0,
+        metadata={"alert_id": raw_alert["alert_id"], "status": "completed"},
+    )
 
     print(f"\n✓ Pipeline failed. Logs: {LOG_FILE}")
     return 0
