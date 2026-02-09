@@ -6,6 +6,8 @@ from io import BytesIO
 from typing import Any
 from zipfile import ZipFile
 
+from app.agent.tools.clients.env import require_aws_credentials
+
 try:
     import boto3
     from botocore.exceptions import ClientError
@@ -41,6 +43,9 @@ def get_function_configuration(function_name: str) -> dict[str, Any]:
     client = _get_lambda_client()
     if not client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="lambda_client.get_function_configuration")
+    if credentials_error:
+        return credentials_error
 
     try:
         response = client.get_function_configuration(FunctionName=function_name)
@@ -91,6 +96,9 @@ def get_function_code(
     client = _get_lambda_client()
     if not client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="lambda_client.get_function_code")
+    if credentials_error:
+        return credentials_error
 
     try:
         response = client.get_function(FunctionName=function_name)
@@ -170,6 +178,9 @@ def get_recent_invocations(
     logs_client = _get_cloudwatch_logs_client()
     if not logs_client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="lambda_client.get_recent_invocations")
+    if credentials_error:
+        return credentials_error
 
     log_group_name = f"/aws/lambda/{function_name}"
 
@@ -270,6 +281,9 @@ def get_invocation_logs_by_request_id(
     logs_client = _get_cloudwatch_logs_client()
     if not logs_client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="lambda_client.get_invocation_logs_by_request_id")
+    if credentials_error:
+        return credentials_error
 
     log_group_name = f"/aws/lambda/{function_name}"
 
@@ -315,6 +329,9 @@ def invoke_function(
     client = _get_lambda_client()
     if not client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="lambda_client.invoke_function")
+    if credentials_error:
+        return credentials_error
 
     import json
 
@@ -365,6 +382,9 @@ def list_functions(
     client = _get_lambda_client()
     if not client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="lambda_client.list_functions")
+    if credentials_error:
+        return credentials_error
 
     try:
         response = client.list_functions(

@@ -4,9 +4,9 @@ CLI entry point for the incident resolution agent.
 
 from typing import Any
 
-from dotenv import load_dotenv
+from config.grafana_config import load_env
 
-load_dotenv()
+load_env()
 
 from langsmith import traceable  # noqa: E402
 

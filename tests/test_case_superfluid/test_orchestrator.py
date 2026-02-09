@@ -9,14 +9,12 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from dotenv import load_dotenv
+from config.grafana_config import load_env
 
 # Load .env file from project root
 env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
-    load_dotenv(dotenv_path=env_path, override=True)
-
-load_dotenv()
+    load_env(env_path, override=True)
 
 from langsmith import traceable  # noqa: E402
 

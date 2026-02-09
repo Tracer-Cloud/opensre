@@ -25,12 +25,14 @@ LANDING_BUCKET = os.environ.get("LANDING_BUCKET", "")
 PROCESSED_BUCKET = os.environ.get("PROCESSED_BUCKET", "")
 EXTERNAL_API_URL = os.environ.get("EXTERNAL_API_URL", "")
 ECS_CLUSTER = os.environ.get("ECS_CLUSTER", "")
+PREFECT_SERVICE_NAME = os.environ.get("PREFECT_SERVICE_NAME", "")
 TASK_DEFINITION = os.environ.get("TASK_DEFINITION", "")
 SUBNET_IDS = os.environ.get("SUBNET_IDS", "").split(",")
 SECURITY_GROUP_ID = os.environ.get("SECURITY_GROUP_ID", "")
 
 s3_client = boto3.client("s3")
 ecs_client = boto3.client("ecs")
+ec2_client = boto3.client("ec2")
 
 
 def fetch_from_external_api(api_url: str, inject_error: bool = False) -> tuple[dict, dict]:
@@ -86,6 +88,16 @@ def fetch_from_external_api(api_url: str, inject_error: bool = False) -> tuple[d
 
 def start_flow_task(correlation_id: str, s3_bucket: str, s3_key: str) -> str:
     """Start ECS flow task and return task ARN."""
+    prefect_api_url = get_prefect_api_url()
+    overrides = [
+        {"name": "S3_BUCKET", "value": s3_bucket},
+        {"name": "S3_KEY", "value": s3_key},
+        {"name": "CORRELATION_ID", "value": correlation_id},
+    ]
+    if prefect_api_url:
+        overrides.append({"name": "PREFECT_API_URL", "value": prefect_api_url})
+    else:
+        print("Warning: Prefect API URL not resolved; flow will use ephemeral API")
     response = ecs_client.run_task(
         cluster=ECS_CLUSTER,
         taskDefinition=TASK_DEFINITION,
@@ -101,11 +113,7 @@ def start_flow_task(correlation_id: str, s3_bucket: str, s3_key: str) -> str:
             "containerOverrides": [
                 {
                     "name": "FlowContainer",
-                    "environment": [
-                        {"name": "S3_BUCKET", "value": s3_bucket},
-                        {"name": "S3_KEY", "value": s3_key},
-                        {"name": "CORRELATION_ID", "value": correlation_id},
-                    ],
+                    "environment": overrides,
                     "command": [
                         "python",
                         "-c",
@@ -126,6 +134,43 @@ def start_flow_task(correlation_id: str, s3_bucket: str, s3_key: str) -> str:
     task_arn = response["tasks"][0]["taskArn"]
     print(f"Started ECS flow task: {task_arn}")
     return task_arn
+
+
+def get_prefect_api_url() -> str:
+    if not PREFECT_SERVICE_NAME:
+        return ""
+
+    try:
+        tasks = ecs_client.list_tasks(
+            cluster=ECS_CLUSTER,
+            serviceName=PREFECT_SERVICE_NAME,
+            desiredStatus="RUNNING",
+        )
+        if not tasks.get("taskArns"):
+            return ""
+
+        task_details = ecs_client.describe_tasks(
+            cluster=ECS_CLUSTER, tasks=tasks["taskArns"]
+        )
+        for task in task_details.get("tasks", []):
+            for attachment in task.get("attachments", []):
+                for detail in attachment.get("details", []):
+                    if detail.get("name") == "networkInterfaceId":
+                        eni_id = detail.get("value")
+                        eni = ec2_client.describe_network_interfaces(
+                            NetworkInterfaceIds=[eni_id]
+                        )
+                        public_ip = (
+                            eni["NetworkInterfaces"][0]
+                            .get("Association", {})
+                            .get("PublicIp")
+                        )
+                        if public_ip:
+                            return f"http://{public_ip}:4200/api"
+    except Exception as e:
+        print(f"Warning: Failed to resolve Prefect API URL: {e}")
+
+    return ""
 
 
 def lambda_handler(event, context):

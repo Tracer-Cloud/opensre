@@ -1,6 +1,7 @@
 # Core AI/Agent dependencies
 anthropic>=0.77.1
 langsmith>=0.6.8
+langgraph-sdk
 
 # Data validation
 pydantic>=2.12.5,<3
