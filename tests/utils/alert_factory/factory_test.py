@@ -71,7 +71,6 @@ def test_factory_from_pipeline_run():
     assert payload["alerts"][0]["labels"]["severity"] == "high"
     assert payload["alerts"][0]["labels"]["alertname"] == "FailureEvent"
 
-
 def test_create_alert_backwards_compatibility():
     """Test that create_alert still works as expected."""
     timestamp = datetime.now(UTC).isoformat()
