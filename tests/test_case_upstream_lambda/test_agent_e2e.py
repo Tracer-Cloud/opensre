@@ -5,6 +5,7 @@ Triggers a failure in the pipeline and tests if the agent can correctly investig
 """
 
 import json
+import sys
 import time
 from datetime import UTC, datetime
 

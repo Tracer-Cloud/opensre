@@ -15,6 +15,7 @@ Usage:
     print(f"Traces found: {result['traces_found']}")
 """
 
+import sys
 import time
 from pathlib import Path
 

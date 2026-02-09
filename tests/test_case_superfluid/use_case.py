@@ -8,7 +8,6 @@ No orchestration, no alert creation, no investigation logic.
 import uuid
 
 from app.agent.nodes.build_context.context_building import _fetch_tracer_web_run_context
-
 from tracer_telemetry import init_telemetry
 
 _run_context = {

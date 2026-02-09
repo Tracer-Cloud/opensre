@@ -16,6 +16,7 @@ import argparse
 import json
 import sys
 import time
+
 import boto3
 from domain import transform_data as domain_transform_data
 from domain import validate_data as domain_validate_data

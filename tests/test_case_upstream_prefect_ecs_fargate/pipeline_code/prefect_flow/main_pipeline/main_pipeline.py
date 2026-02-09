@@ -1,18 +1,19 @@
 import json
 import logging
 import time
+
 from prefect import flow, get_run_logger, task
 from prefect.runtime import flow_run
 
 from tracer_telemetry import init_telemetry
 
-from .ancillary import run_connectivity_checks, run_local_flow
 from ..adapters.alerting import fire_pipeline_alert
 from ..adapters.s3 import read_json, write_json
 from ..config import PIPELINE_NAME, REQUIRED_FIELDS
 from ..domain import validate_and_transform
 from ..errors import PipelineError
 from ..schemas import ProcessedRecord
+from .ancillary import run_connectivity_checks, run_local_flow
 
 telemetry = init_telemetry(
     service_name="prefect-etl-pipeline",

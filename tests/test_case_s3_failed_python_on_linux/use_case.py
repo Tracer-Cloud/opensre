@@ -10,7 +10,6 @@ import time
 import uuid
 
 from tests.utils.command_runner import MAX_LINE, run_tool
-
 from tracer_telemetry import init_telemetry
 
 logger = logging.getLogger(__name__)

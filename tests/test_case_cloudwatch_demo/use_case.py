@@ -6,6 +6,7 @@ No CloudWatch, no logging infrastructure, no observability code.
 """
 
 import os
+import sys
 import uuid
 
 from tracer_telemetry import init_telemetry

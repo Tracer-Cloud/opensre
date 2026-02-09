@@ -2,6 +2,7 @@
 """Destroy Lambda test case infrastructure."""
 
 import time
+
 from tests.shared.infrastructure_sdk.cleanup import destroy_stack
 
 STACK_NAME = "tracer-lambda"

@@ -6,7 +6,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
-from typing import Callable
+from collections.abc import Callable
 
 CONNECTIVITY_TIMEOUT_SECONDS = 5
 CONNECTIVITY_SAMPLE_BYTES = 512
@@ -60,7 +60,6 @@ def _check_http_get(
         logger.info(message)
         if log_to_stdout:
             log_stdout(message)
-            
     except urllib.error.URLError as exc:
         message = f"{label} GET {url} failed: {exc.reason}"
         logger.info(message)

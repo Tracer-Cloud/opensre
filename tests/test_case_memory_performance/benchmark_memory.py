@@ -6,8 +6,10 @@ Runs multiple iterations to get robust statistics on speedup.
 """
 
 import os
+import sys
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from statistics import mean, stdev
 
 from app.main import _run
@@ -16,6 +18,8 @@ from tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e import (
     get_failure_details,
 )
 from tests.utils.alert_factory import create_alert
+
+project_root = Path(__file__).parent.parent.parent
 
 
 def run_single_investigation(enable_memory: bool, alert: dict) -> tuple[float, dict]:
