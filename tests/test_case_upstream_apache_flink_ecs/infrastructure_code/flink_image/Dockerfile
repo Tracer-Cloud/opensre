@@ -2,16 +2,19 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy telemetry package and install dependencies
-COPY shared/telemetry/tracer_telemetry /app/tracer_telemetry
-COPY test_case_upstream_apache_flink_ecs/pipeline_code/flink_job/requirements.txt /app/requirements.txt
+# Copy telemetry packages and install dependencies
+COPY tracer_telemetry /app/tracer_telemetry
+COPY app/__init__.py /app/app/__init__.py
+COPY app/outbound_telemetry /app/app/outbound_telemetry
+COPY config /app/config
+COPY tests/test_case_upstream_apache_flink_ecs/pipeline_code/flink_job/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy Flink job code
-COPY test_case_upstream_apache_flink_ecs/pipeline_code/flink_job /app/flink_job
+COPY tests/test_case_upstream_apache_flink_ecs/pipeline_code/flink_job /app/flink_job
 
 # Copy entrypoint script
-COPY test_case_upstream_apache_flink_ecs/infrastructure_code/flink_image/entrypoint.sh /app/entrypoint.sh
+COPY tests/test_case_upstream_apache_flink_ecs/infrastructure_code/flink_image/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]
