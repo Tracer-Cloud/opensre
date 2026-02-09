@@ -1,14 +1,14 @@
 {
-  "LandingBucketName": "tracer-prefect-ecs-landing-1770400987",
-  "ProcessedBucketName": "tracer-prefect-ecs-processed-1770400987",
-  "TriggerApiUrl": "https://343iftq4e0.execute-api.us-east-1.amazonaws.com/prod/",
-  "MockApiUrl": "https://ce2obr5rv2.execute-api.us-east-1.amazonaws.com/prod/",
+  "LandingBucketName": "tracer-prefect-ecs-landing-1770648422",
+  "ProcessedBucketName": "tracer-prefect-ecs-processed-1770648422",
+  "TriggerApiUrl": "https://2sh0nc0m79.execute-api.us-east-1.amazonaws.com/prod/",
+  "MockApiUrl": "https://8z80vjsid0.execute-api.us-east-1.amazonaws.com/prod/",
   "EcsClusterName": "tracer-prefect-cluster",
   "LogGroupName": "/ecs/tracer-prefect",
-  "FlowTaskDefinitionArn": "arn:aws:ecs:us-east-1:395261708130:task-definition/tracer-prefect-flow-task:13",
+  "FlowTaskDefinitionArn": "arn:aws:ecs:us-east-1:395261708130:task-definition/tracer-prefect-flow-task:14",
   "SecurityGroupId": "sg-0c40ee04d31f8dc31",
   "SubnetIds": "subnet-0eccd7f096a709d8c,subnet-0d0d475fbd710814c,subnet-0c28e20367794ab28,subnet-09f1849d671b6a064,subnet-067507b22f881d449,subnet-08e6c8f49086b7ccd",
-  "PrefectTaskDefinitionArn": "arn:aws:ecs:us-east-1:395261708130:task-definition/tracer-prefect-task:13",
+  "PrefectTaskDefinitionArn": "arn:aws:ecs:us-east-1:395261708130:task-definition/tracer-prefect-task:14",
   "PrefectRepoUri": "395261708130.dkr.ecr.us-east-1.amazonaws.com/tracer-prefect-ecs/prefect:latest",
   "AlloyRepoUri": "395261708130.dkr.ecr.us-east-1.amazonaws.com/tracer-prefect-ecs/alloy:latest"
 }
