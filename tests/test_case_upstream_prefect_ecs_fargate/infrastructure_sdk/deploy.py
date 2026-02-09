@@ -28,6 +28,7 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(project_root))
 
+from config.grafana_config import load_env
 from tests.shared.infrastructure_sdk import save_outputs
 from tests.shared.infrastructure_sdk.resources import (
     api_gateway,
@@ -39,8 +40,6 @@ from tests.shared.infrastructure_sdk.resources import (
     s3,
     vpc,
 )
-
-from config.grafana_config import load_env
 
 STACK_NAME = "tracer-prefect-ecs"
 REGION = "us-east-1"
