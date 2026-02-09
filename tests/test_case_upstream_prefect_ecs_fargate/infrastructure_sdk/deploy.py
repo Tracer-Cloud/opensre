@@ -19,14 +19,11 @@ Usage:
 
 import os
 import subprocess
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-# Add project root to path
 project_root = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(project_root))
 
 from config.grafana_config import load_env
 from tests.shared.infrastructure_sdk import save_outputs

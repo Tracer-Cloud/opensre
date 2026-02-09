@@ -6,16 +6,10 @@ No alerting or RCA orchestration logic lives here.
 
 import logging
 import os
-import sys
 import time
 import uuid
-from pathlib import Path
 
 from tests.utils.command_runner import MAX_LINE, run_tool
-
-# Add shared telemetry to path
-_test_root = Path(__file__).parent.parent
-sys.path.insert(0, str(_test_root / "shared" / "telemetry"))
 
 from tracer_telemetry import init_telemetry
 

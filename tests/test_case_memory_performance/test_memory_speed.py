@@ -8,15 +8,9 @@ Run with: pytest tests/test_case_upstream_prefect_ecs_fargate/test_memory_speed.
 """
 
 import os
-import shutil
-import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
 
 import pytest
 
@@ -25,6 +19,7 @@ from tests.shared.stack_config import get_prefect_config
 from tests.utils.alert_factory import create_alert
 
 CONFIG = get_prefect_config()
+project_root = Path(__file__).parent.parent.parent
 
 
 @pytest.mark.skipif(

@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
 """Destroy Lambda test case infrastructure."""
 
-import sys
 import time
-from pathlib import Path
-
-project_root = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(project_root))
-
 from tests.shared.infrastructure_sdk.cleanup import destroy_stack
 
 STACK_NAME = "tracer-lambda"

@@ -23,6 +23,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install ruff
+          pip install -e .
 
       - name: Lint with ruff
         run: ruff check app/ tests/
@@ -61,6 +62,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -e .
 
       - name: Run pytest with coverage
         run: make test-cov
@@ -82,6 +84,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -e .
 
       - name: Type check with mypy
         run: make typecheck
@@ -139,6 +142,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -e .
 
       - name: Run thorough test case
         run: ${{ matrix.command }}

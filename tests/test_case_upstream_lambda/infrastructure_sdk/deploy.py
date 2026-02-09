@@ -13,7 +13,6 @@ import io
 import json
 import os
 import shutil
-import sys
 import tempfile
 import time
 import uuid
@@ -22,7 +21,6 @@ from contextlib import suppress
 from pathlib import Path
 
 project_root = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(project_root))
 
 from botocore.exceptions import ClientError
 
