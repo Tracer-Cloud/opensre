@@ -15,6 +15,9 @@ jobs:
       LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
       LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
       LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
+      TRACER_API_URL: ${{ secrets.TRACER_WEB_APP_URL }}
+      TRACER_INGEST_TOKEN: ${{ secrets.JWT_TOKEN }}
+
       AWS_REGION: us-east-1
 
     steps:
