@@ -199,7 +199,7 @@ def get_llm(use_fast_model: bool = False) -> LLMClient:
     if _llm is None:
         _llm = LLMClient(
             model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
-            max_tokens=1024,
+            max_tokens=4096,
         )
     return _llm
 

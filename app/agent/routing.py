@@ -18,7 +18,7 @@ def should_continue_investigation(state: InvestigationState) -> str:
         state: Current investigation state
 
     Returns:
-        Next node name: "investigate" or "publish_findings"
+        Next node name: "investigate" or "publish"
     """
     try:
         confidence = state.get("confidence", 0.0)
@@ -36,13 +36,13 @@ def should_continue_investigation(state: InvestigationState) -> str:
 
         # Safety check: if no actions are available, we can't gather more evidence
         if not available_action_names:
-            debug_print("No available actions -> publish_findings (safety check)")
-            return "publish_findings"
+            debug_print("No available actions -> publish (safety check)")
+            return "publish"
 
         # Check loop limit first
         if loop_count > max_loops:
-            debug_print(f"Max loops ({max_loops}) exceeded -> publish_findings")
-            return "publish_findings"
+            debug_print(f"Max loops ({max_loops}) exceeded -> publish")
+            return "publish"
 
         # Continue investigation if:
         # 1. confidence or validity is low AND we have recommendations, OR
@@ -70,11 +70,11 @@ def should_continue_investigation(state: InvestigationState) -> str:
             print("[DEBUG] Routing -> investigate (looping back)")
             return "investigate"
 
-        print("[DEBUG] Routing -> publish_findings")
-        return "publish_findings"
+        print("[DEBUG] Routing -> publish")
+        return "publish"
     except Exception as e:
         # If there's any error, log it and default to publishing findings
         import sys
 
         print(f"[ERROR] Routing function failed: {e}", file=sys.stderr)
-        return "publish_findings"
+        return "publish"
