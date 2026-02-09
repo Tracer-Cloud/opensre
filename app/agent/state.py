@@ -1,7 +1,11 @@
 """Agent state definition - supports both chat and investigation modes."""
 
+from __future__ import annotations
+
 import time
-from typing import Any, Literal, TypedDict, cast
+from typing import Annotated, Any, Literal, TypedDict, cast
+
+from langgraph.graph import add_messages
 
 EvidenceSource = Literal["storage", "batch", "tracer_web", "cloudwatch", "aws_sdk", "knowledge", "grafana"]
 AgentMode = Literal["chat", "investigation"]
@@ -31,8 +35,11 @@ class AgentState(TypedDict, total=False):
     user_name: str
     organization_slug: str
 
-    # Chat mode - conversation
-    messages: list[ChatMessage]
+    # Chat mode - conversation (add_messages reducer appends instead of replacing)
+    messages: Annotated[list, add_messages]
+
+    # Alert classification
+    is_noise: bool  # True if message classified as noise, skip investigation
 
     # Investigation mode - alert input
     alert_name: str
@@ -67,6 +74,14 @@ class AgentState(TypedDict, total=False):
     ]  # History of executed hypotheses/API calls to avoid duplicates
     investigation_started_at: float  # Monotonic start time for timing calculations
 
+    # Slack context (when triggered from Slack message)
+    slack_context: dict[str, Any]  # channel_id, ts, thread_ts, team_id, etc.
+
+    # LangGraph context (injected from config by inject_auth_node)
+    thread_id: str
+    run_id: str
+    _auth_token: str  # Raw JWT for authenticated API calls
+
     # Outputs
     slack_message: str
     problem_md: str
@@ -78,6 +93,7 @@ InvestigationState = AgentState
 STATE_DEFAULTS: dict[str, Any] = {
     "mode": "chat",
     "route": "",
+    "is_noise": False,
     "org_id": "",
     "user_id": "",
     "user_email": "",
@@ -101,6 +117,10 @@ STATE_DEFAULTS: dict[str, Any] = {
     "investigation_loop_count": 0,
     "hypotheses": [],
     "executed_hypotheses": [],
+    "slack_context": {},
+    "thread_id": "",
+    "run_id": "",
+    "_auth_token": "",
     "slack_message": "",
     "problem_md": "",
 }

@@ -1,8 +1,10 @@
 """Extract alert details and seed investigation state."""
 
+import time
+
 from langsmith import traceable
 
-from app.agent.nodes.extract_alert.extract import extract_alert_details
+from app.agent.nodes.extract_alert.extract import classify_alert, extract_alert_details
 from app.agent.output import debug_print, get_tracker, render_investigation_header
 from app.agent.state import InvestigationState
 
@@ -10,10 +12,19 @@ from app.agent.state import InvestigationState
 @traceable(name="node_extract_alert")
 def node_extract_alert(state: InvestigationState) -> dict:
     """
-    Extract alert details from raw input and render the investigation header.
+    Classify and extract alert details from raw input.
+
+    First determines if the message is a real alert worth investigating.
+    If noise, sets is_noise=True so the graph can skip the investigation.
     """
     tracker = get_tracker()
-    tracker.start("extract_alert", "Extracting alert details")
+    tracker.start("extract_alert", "Classifying and extracting alert details")
+
+    # Classify first - skip full extraction if noise
+    if not classify_alert(state):
+        debug_print("Message classified as noise - skipping investigation")
+        tracker.complete("extract_alert", fields_updated=["is_noise"])
+        return {"is_noise": True}
 
     alert_details = extract_alert_details(state)
 
@@ -38,9 +49,14 @@ def node_extract_alert(state: InvestigationState) -> dict:
         fields_updated=["alert_name", "pipeline_name", "severity", "alert_json"],
     )
 
-    return {
+    result: dict = {
+        "is_noise": False,
         "alert_name": alert_details.alert_name,
         "pipeline_name": alert_details.pipeline_name,
         "severity": alert_details.severity,
         "alert_json": alert_details.model_dump(),
     }
+    # Ensure investigation timer is set (may be missing when invoked via LangGraph)
+    if not state.get("investigation_started_at"):
+        result["investigation_started_at"] = time.monotonic()
+    return result
