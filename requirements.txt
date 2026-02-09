@@ -1,7 +1,10 @@
 # Core AI/Agent dependencies
 anthropic>=0.77.1
 langsmith>=0.6.8
+langgraph>=0.4.0
 langgraph-sdk
+langchain-core>=0.3.0
+langchain-anthropic>=0.3.0
 
 # Data validation
 pydantic>=2.12.5,<3
@@ -32,7 +35,7 @@ opentelemetry-exporter-otlp-proto-http>=1.20.0
 opentelemetry-instrumentation>=0.40b0
 opentelemetry-instrumentation-botocore>=0.40b0
 opentelemetry-instrumentation-requests>=0.40b0
-langchain_anthropic
+
 # Testing
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
