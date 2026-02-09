@@ -40,6 +40,13 @@ jobs:
       LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
       # Grafana read token for querying (instance URL via GRAFANA_INSTANCE_URL if needed)
       GRAFANA_READ_TOKEN: ${{ secrets.GRAFANA_READ_TOKEN }}
+      GCLOUD_HOSTED_METRICS_ID: ${{ secrets.GCLOUD_HOSTED_METRICS_ID }}
+      GCLOUD_HOSTED_METRICS_URL: ${{ secrets.GCLOUD_HOSTED_METRICS_URL }}
+      GCLOUD_HOSTED_LOGS_ID: ${{ secrets.GCLOUD_HOSTED_LOGS_ID }}
+      GCLOUD_HOSTED_LOGS_URL: ${{ secrets.GCLOUD_HOSTED_LOGS_URL }}
+      GCLOUD_RW_API_KEY: ${{ secrets.GCLOUD_RW_API_KEY }}
+      GCLOUD_OTLP_ENDPOINT: ${{ secrets.GCLOUD_OTLP_ENDPOINT }}
+      GCLOUD_OTLP_AUTH_HEADER: ${{ secrets.GCLOUD_OTLP_AUTH_HEADER }}
 
     steps:
       - uses: actions/checkout@v4

@@ -3,6 +3,8 @@
 import os
 from typing import Any
 
+from app.agent.tools.clients.env import require_aws_credentials
+
 try:
     import boto3
     from botocore.exceptions import ClientError
@@ -58,6 +60,9 @@ def get_metric_statistics(
     client = _get_cloudwatch_client()
     if not client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="cloudwatch_client.get_metric_statistics")
+    if credentials_error:
+        return credentials_error
 
     if statistics is None:
         statistics = ["Average", "Maximum", "Minimum"]
@@ -104,6 +109,9 @@ def filter_log_events(
     client = _get_cloudwatch_logs_client()
     if not client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="cloudwatch_client.filter_log_events")
+    if credentials_error:
+        return credentials_error
 
     try:
         kwargs = {
@@ -150,6 +158,9 @@ def get_log_events(
     client = _get_cloudwatch_logs_client()
     if not client:
         return {"success": False, "error": "boto3 not available"}
+    credentials_error = require_aws_credentials(context="cloudwatch_client.get_log_events")
+    if credentials_error:
+        return credentials_error
 
     try:
         kwargs = {

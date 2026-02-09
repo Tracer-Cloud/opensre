@@ -1,13 +1,17 @@
 import pytest
 
 from app.agent.tools.clients.grafana import get_grafana_client
+from tests.test_case_grafana_validation.env_requirements import require_grafana_query_env
 
 
 @pytest.fixture(scope="session")
 def grafana_client():
+    require_grafana_query_env()
     client = get_grafana_client()
     if not client.is_configured:
-        pytest.fail("Grafana client not configured (set GRAFANA_READ_TOKEN and GRAFANA_INSTANCE_URL if needed)")
+        pytest.skip(
+            "Grafana client not configured (set GRAFANA_READ_TOKEN and GRAFANA_INSTANCE_URL if needed)"
+        )
     return client
 
 

@@ -148,9 +148,16 @@ def deploy() -> dict:
     ecr_repo = ecr.create_repository(ecr_repo_name, STACK_NAME, REGION)
 
     # Build and push Docker image
-    # Context must be tests/ directory because Dockerfile copies from shared/
-    context_dir = project_root / "tests"
-    dockerfile_path = context_dir / "test_case_upstream_apache_flink_ecs/infrastructure_code/flink_image/Dockerfile"
+    # Build context is project root to include telemetry packages
+    context_dir = project_root
+    dockerfile_path = (
+        project_root
+        / "tests"
+        / "test_case_upstream_apache_flink_ecs"
+        / "infrastructure_code"
+        / "flink_image"
+        / "Dockerfile"
+    )
 
     print("  - Building and pushing Docker image (ARM64)...")
     print(f"    Dockerfile: {dockerfile_path}")
@@ -292,7 +299,7 @@ otelcol.exporter.otlphttp "grafana" {
                 {
                     "Effect": "Allow",
                     "Action": ["ecs:RunTask"],
-                    "Resource": [task_def["arn"]],
+                    "Resource": [f"{task_def['arn'].rsplit(':', 1)[0]}:*"],
                 },
                 {
                     "Effect": "Allow",

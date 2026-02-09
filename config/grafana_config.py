@@ -21,7 +21,7 @@ def get_env(key: str, default: str = "") -> str:
     return _get_env(key, default)
 
 
-def load_env(env_path: Path | str | None = None) -> None:
+def load_env(env_path: Path | str | None = None, *, override: bool = False) -> None:
     if os.getenv("GRAFANA_CONFIG_SKIP_ENV_FILE") == "1":
         return
     if env_path is None:
@@ -38,7 +38,7 @@ def load_env(env_path: Path | str | None = None) -> None:
         key, value = stripped.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
+        if key and (override or key not in os.environ):
             os.environ[key] = value
 
 

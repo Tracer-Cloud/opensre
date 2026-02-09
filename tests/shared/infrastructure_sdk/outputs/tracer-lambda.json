@@ -1,13 +1,13 @@
 {
-  "MockApiUrl": "https://eerwr1i7xf.execute-api.us-east-1.amazonaws.com/prod/",
-  "IngesterApiUrl": "https://2my0wcrkea.execute-api.us-east-1.amazonaws.com/prod/",
+  "MockApiUrl": "https://6gkmijmr0i.execute-api.us-east-1.amazonaws.com/prod/",
+  "IngesterApiUrl": "https://3r2d3ilwy3.execute-api.us-east-1.amazonaws.com/prod/",
   "IngesterFunctionName": "tracer-lambda-ingester",
   "MockDagFunctionName": "tracer-lambda-mock-dag",
-  "LandingBucketName": "tracer-lambda-landing-863063b1",
-  "ProcessedBucketName": "tracer-lambda-processed-863063b1",
+  "LandingBucketName": "tracer-lambda-landing-b06053a6",
+  "ProcessedBucketName": "tracer-lambda-processed-b06053a6",
   "MockApiLambdaArn": "arn:aws:lambda:us-east-1:395261708130:function:tracer-lambda-mock-api",
   "IngesterLambdaArn": "arn:aws:lambda:us-east-1:395261708130:function:tracer-lambda-ingester",
   "MockDagLambdaArn": "arn:aws:lambda:us-east-1:395261708130:function:tracer-lambda-mock-dag",
-  "MockApiGatewayId": "eerwr1i7xf",
-  "IngesterApiGatewayId": "2my0wcrkea"
+  "MockApiGatewayId": "6gkmijmr0i",
+  "IngesterApiGatewayId": "3r2d3ilwy3"
 }
