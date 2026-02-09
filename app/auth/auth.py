@@ -47,6 +47,7 @@ async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
         "organization_slug": claims.organization_slug,
         "email": claims.email,
         "full_name": claims.full_name,
+        "token": parts[1],  # Raw JWT for downstream API calls
     })
 
 

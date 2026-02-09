@@ -100,7 +100,8 @@ def generate_report(state: InvestigationState) -> dict:
     2. Formats the Slack message
     3. Renders the report to terminal
     4. Persists to memory (if enabled)
-    5. Returns the slack_message for external use
+    5. Sends to Slack (with thread reply if slack_context is present)
+    6. Returns the slack_message for external use
 
     Args:
         state: Investigation state with all analysis results
@@ -108,6 +109,8 @@ def generate_report(state: InvestigationState) -> dict:
     Returns:
         Dictionary with slack_message key for downstream consumers
     """
+    from app.agent.utils.slack_delivery import send_slack_report
+
     # Build context from state
     ctx = build_report_context(state)
 
@@ -120,7 +123,20 @@ def generate_report(state: InvestigationState) -> dict:
     # Persist to memory if enabled
     _persist_memory(state, slack_message)
 
+    # Send to Slack - always reply in the thread of the original alert message.
+    # Use thread_ts if the alert was already in a thread, otherwise use ts
+    # (the alert message's own timestamp) to start a thread under it.
+    slack_ctx = state.get("slack_context", {})
+    thread_ts = slack_ctx.get("thread_ts") or slack_ctx.get("ts")
+    send_slack_report(
+        slack_message,
+        channel=slack_ctx.get("channel_id"),
+        thread_ts=thread_ts,
+        access_token=slack_ctx.get("access_token"),
+    )
+
     return {"slack_message": slack_message}
+
 
 
 @traceable(name="node_publish_findings")
