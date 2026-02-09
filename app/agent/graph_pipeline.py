@@ -11,6 +11,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from app.agent.chat_tools import CHAT_TOOLS
 from app.agent.nodes import (
@@ -85,7 +86,7 @@ def _get_chat_llm(*, with_tools: bool = False) -> ChatAnthropic:
 
     if with_tools:
         if _chat_llm_with_tools is None:
-            base = ChatAnthropic(
+            base = ChatAnthropic(  # type: ignore[call-arg]
                 model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
                 max_tokens=4096,
                 streaming=True,
@@ -94,7 +95,7 @@ def _get_chat_llm(*, with_tools: bool = False) -> ChatAnthropic:
         return _chat_llm_with_tools  # type: ignore[return-value]
 
     if _chat_llm is None:
-        _chat_llm = ChatAnthropic(
+        _chat_llm = ChatAnthropic(  # type: ignore[call-arg]
             model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
             max_tokens=4096,
             streaming=True,
@@ -155,7 +156,7 @@ def router_node(state: AgentState) -> dict[str, Any]:
     return {"route": route if route in ("tracer_data", "general") else "general"}
 
 
-def chat_agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
+def chat_agent_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any]:
     """Chat agent with tools for Tracer data queries.
 
     Uses ChatAnthropic with bound tools. The LLM can make tool_calls
@@ -177,7 +178,7 @@ def chat_agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]
     return {"messages": [response]}
 
 
-def general_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
+def general_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any]:
     """Direct LLM response without tools for general questions."""
     msgs = list(state.get("messages", []))
 
@@ -330,7 +331,7 @@ def _route_investigation_loop(state: AgentState) -> str:
     return should_continue_investigation(state)
 
 
-def build_graph(config: Any | None = None) -> StateGraph:
+def build_graph(config: Any | None = None) -> CompiledStateGraph:
     """Build and compile the LangGraph agent."""
     _ = config
 
@@ -341,8 +342,8 @@ def build_graph(config: Any | None = None) -> StateGraph:
 
     # Chat branch nodes
     graph.add_node("router", router_node)
-    graph.add_node("chat_agent", chat_agent_node)
-    graph.add_node("general", general_node)
+    graph.add_node("chat_agent", chat_agent_node)  # type: ignore[arg-type]
+    graph.add_node("general", general_node)  # type: ignore[arg-type]
     graph.add_node("tool_executor", tool_executor_node)
 
     # Investigation branch nodes
