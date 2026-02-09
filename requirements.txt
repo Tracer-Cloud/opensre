@@ -32,7 +32,7 @@ opentelemetry-exporter-otlp-proto-http>=1.20.0
 opentelemetry-instrumentation>=0.40b0
 opentelemetry-instrumentation-botocore>=0.40b0
 opentelemetry-instrumentation-requests>=0.40b0
-
+langchain_anthropic
 # Testing
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
