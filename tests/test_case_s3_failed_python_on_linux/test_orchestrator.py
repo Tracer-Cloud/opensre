@@ -23,15 +23,22 @@ LOG_FILE = "production.log"
 def _get_run_and_trace_ids() -> tuple[str, str]:
     """
     Prefer canonical run_id from tracer CLI (exported as TRACER_RUN_ID).
-    Fallback to timestamp-based run id for local dev when tracer init isn't used.
+
+    In CI / any environment where Tracer CLI is used, TRACER_RUN_ID must exist.
+    For local dev without tracer init, we allow a fallback timestamp run id.
     """
     tracer_run_id = (os.getenv("TRACER_RUN_ID") or "").strip()
+    tracer_trace_id = (os.getenv("TRACER_TRACE_ID") or "").strip()
+
     if tracer_run_id:
         run_id = tracer_run_id
-    else:
-        run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
+        # If trace id isn't provided, make a stable one derived from run id
+        trace_id = tracer_trace_id or f"trace_{run_id}"
+        return run_id, trace_id
 
-    trace_id = (os.getenv("TRACER_TRACE_ID") or "").strip() or f"trace_{run_id}"
+    # Local fallback (no tracer init)
+    run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
+    trace_id = tracer_trace_id or f"trace_{run_id}"
     return run_id, trace_id
 
 
@@ -39,6 +46,14 @@ def main() -> int:
     configure_file_logging(LOG_FILE)
 
     run_id, trace_id = _get_run_and_trace_ids()
+
+    # If we are in CI, fail hard if TRACER_RUN_ID is missing to avoid polluting data
+    is_ci = (os.getenv("CI") or "").strip().lower() in {"1", "true", "yes"}
+    if is_ci and not (os.getenv("TRACER_RUN_ID") or "").strip():
+        raise RuntimeError(
+            "CI is true but TRACER_RUN_ID is missing. "
+            "Make sure 'tracer init' ran and the workflow exported TRACER_RUN_ID."
+        )
 
     # Pipeline start
     emit_tool_event(
@@ -109,7 +124,7 @@ def main() -> int:
 
     raw_alert = create_alert(
         pipeline_name=pipeline_name,
-        run_name=run_id,
+        run_name=run_id,  # IMPORTANT: must match canonical tracer run id
         status="failed",
         timestamp=datetime.now(UTC).isoformat(),
     )
