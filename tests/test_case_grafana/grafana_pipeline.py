@@ -60,7 +60,7 @@ def main():
     configure_grafana_cloud()
     telemetry = init_telemetry(service_name=SERVICE_NAME, resource_attributes={"pipeline.type": "etl", "environment": "demo"})
 
-    print(f"\n--- Running 5 pipeline executions -> Grafana Cloud ---\n")
+    print("\n--- Running 5 pipeline executions -> Grafana Cloud ---\n")
     results = {"success": 0, "failure": 0}
     for i in range(5):
         run_id = uuid.uuid4().hex[:12]
@@ -75,7 +75,7 @@ def main():
     print(f"\n--- Done: {results['success']} ok, {results['failure']} failed ---")
     print(f"  Logs:    Explore > Loki  > {{service_name=\"{SERVICE_NAME}\"}}")
     print(f"  Traces:  Explore > Tempo > service.name = {SERVICE_NAME}")
-    print(f"  Metrics: Explore > Mimir > pipeline_runs_total")
+    print("  Metrics: Explore > Mimir > pipeline_runs_total")
 
 
 if __name__ == "__main__":
