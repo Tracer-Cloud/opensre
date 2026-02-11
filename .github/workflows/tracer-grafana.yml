@@ -1,0 +1,50 @@
+name: Tracer Grafana
+
+on:
+  workflow_dispatch:
+
+jobs:
+  tracer-grafana:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      JWT_TOKEN: ${{ secrets.JWT_TOKEN }}
+      TRACER_ORG_ID: ${{ secrets.TRACER_ORG_ID }}
+      TRACER_WEB_APP_URL: ${{ secrets.TRACER_WEB_APP_URL }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+      LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
+      LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
+      LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
+      AWS_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Install tracer CLI
+        run: |
+          curl -sSL https://install.tracer.cloud | CLI_BRANCH=dev sh -s user_2zr9qkHIGPAP5K2GYNKMYLKv0F6
+
+      - name: Initialize tracer
+        run: |
+          sudo tracer init --token ${{ secrets.JWT_TOKEN }}
+
+      - name: Run Tracer Demo
+        continue-on-error: true
+        run: |
+          python -m tests.test_case_s3_failed_python.test_orchestrator

@@ -33,27 +33,27 @@ class PipelineMetrics:
     def create(cls, meter: metrics.Meter) -> PipelineMetrics:
         return cls(
             runs_total=meter.create_counter(
-                "pipeline.runs",
+                "pipeline_runs_total",
                 description="Total number of pipeline executions",
                 unit="{run}",
             ),
             runs_failed_total=meter.create_counter(
-                "pipeline.runs.failed",
+                "pipeline_runs_failed_total",
                 description="Total number of failed pipeline executions",
                 unit="{run}",
             ),
             duration_seconds=meter.create_histogram(
-                "pipeline.duration",
+                "pipeline_duration_seconds",
                 description="Duration of pipeline execution",
                 unit="s",
             ),
             records_processed_total=meter.create_counter(
-                "pipeline.records.processed",
+                "pipeline_records_processed_total",
                 description="Total number of records successfully processed",
                 unit="{record}",
             ),
             records_failed_total=meter.create_counter(
-                "pipeline.records.failed",
+                "pipeline_records_failed_total",
                 description="Total number of records that failed processing",
                 unit="{record}",
             ),

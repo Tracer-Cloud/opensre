@@ -39,6 +39,9 @@ upstream-downstream:
 flink-demo:
 	$(PYTHON) -m tests.test_case_upstream_apache_flink_ecs.test_agent_e2e
 
+grafana-demo:
+	$(PYTHON) -m tests.test_case_grafana.grafana_pipeline
+
 # Run the generic CLI (reads from stdin or --input)
 run:
 	$(PYTHON) -m app.main
