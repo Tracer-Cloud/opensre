@@ -12,10 +12,10 @@ from datetime import UTC, datetime
 from langsmith import traceable
 
 from app.main import _run
+from tests.shared.tracer_ingest import StepTimer, emit_tool_event
 from tests.test_case_s3_failed_python_on_linux import use_case
 from tests.utils.alert_factory import create_alert
 from tests.utils.file_logger import configure_file_logging
-from tests.shared.tracer_ingest import StepTimer, emit_tool_event
 
 LOG_FILE = "production.log"
 
@@ -64,7 +64,7 @@ def main() -> int:
         tool_name="pipeline",
         tool_cmd="start",
         exit_code=0,
-        metadata={"log_file": LOG_FILE},
+        metadata={"log_file": LOG_FILE, "pipeline_name": "s3_failed_python_on_linux"},
     )
 
     # Measure use_case execution as a single step
@@ -72,12 +72,12 @@ def main() -> int:
         trace_id=trace_id,
         run_id=run_id,
         run_name="s3_failed_python_on_linux",
-        tool_id="use_case_main",
+        tool_id="python_pipeline",
         tool_name="python",
         tool_cmd="use_case.main",
     )
 
-    result = use_case.main(log_file=LOG_FILE)
+    result = use_case.main(log_file=LOG_FILE, run_id=run_id, trace_id=trace_id)
     pipeline_name = result["pipeline_name"]
     status = result.get("status", "unknown")
 
@@ -97,12 +97,12 @@ def main() -> int:
             trace_id=trace_id,
             run_id=run_id,
             run_name=pipeline_name,
-            tool_id="pipeline_end",
-            tool_name="pipeline",
-            tool_cmd="end",
-            exit_code=0,
-            metadata={"final_status": "success"},
-        )
+        tool_id="pipeline_end",
+        tool_name="pipeline",
+        tool_cmd="end",
+        exit_code=0,
+        metadata={"final_status": "success"},
+    )
         print(f"✓ {pipeline_name} succeeded")
         return 0
 
@@ -140,7 +140,11 @@ def main() -> int:
         tool_name="tracer_agent",
         tool_cmd="run_investigation",
         exit_code=0,
-        metadata={"alert_id": raw_alert["alert_id"], "pipeline_name": pipeline_name},
+        metadata={
+            "alert_id": raw_alert["alert_id"],
+            "pipeline_name": pipeline_name,
+            "correlation_id": raw_alert.get("annotations", {}).get("correlation_id"),
+        },
     )
 
     @traceable(
@@ -190,7 +194,11 @@ def main() -> int:
         tool_name="tracer_agent",
         tool_cmd="finish_investigation",
         exit_code=0,
-        metadata={"alert_id": raw_alert["alert_id"], "status": "completed"},
+        metadata={
+            "alert_id": raw_alert["alert_id"],
+            "status": "completed",
+            "correlation_id": raw_alert.get("annotations", {}).get("correlation_id"),
+        },
     )
 
     print(f"\n✓ Pipeline failed. Logs: {LOG_FILE}")
