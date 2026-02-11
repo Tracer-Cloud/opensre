@@ -63,6 +63,15 @@ jobs:
           echo "TRACER_TRACE_ID=trace_$RUN_ID" >> $GITHUB_ENV
 
           echo "Exported TRACER_RUN_ID=$RUN_ID"
+      - name: Debug ingest env + ping ingest
+        shell: bash
+        run: |
+          echo "TRACER_API_URL=$TRACER_API_URL"
+          echo "TRACER_INGEST_TOKEN_LEN=${#TRACER_INGEST_TOKEN}"
+          curl -i -X POST "$TRACER_API_URL/api/tools/ingest" \
+            -H "Authorization: Bearer $TRACER_INGEST_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data '{"events":[{"trace_id":"debug","run_id":"debug","span_id":"debug","run_name":"debug","tool_id":"debug","tool_name":"debug","start_time":"2026-01-01T00:00:00Z","end_time":"2026-01-01T00:00:00Z","exit_code":0,"metadata":{}}]}'
 
       - name: Run Tracer Demo
         continue-on-error: true
