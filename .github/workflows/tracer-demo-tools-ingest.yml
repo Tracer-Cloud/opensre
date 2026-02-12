@@ -15,6 +15,8 @@ jobs:
       LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
       LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
       LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
+      TRACER_API_URL: ${{ secrets.TRACER_API_URL }}
+      TRACER_INGEST_TOKEN: ${{ secrets.TRACER_INGEST_TOKEN }}
 
       AWS_REGION: us-east-1
 
@@ -40,13 +42,29 @@ jobs:
 
       - name: Install tracer CLI
         run: |
-          curl -sSL https://install.tracer.cloud | CLI_BRANCH=dev sh -s user_2zr9qkHIGPAP5K2GYNKMYLKv0F6
+          curl -sSL https://install.tracer.cloud | CLI_BRANCH=dev sh -s user_36fbN6K6FwEgJFHsQv1pUByo8K6
 
       - name: Initialize tracer
         run: |
           sudo tracer init --token ${{ secrets.JWT_TOKEN }}
 
+      - name: Export Tracer run id
+        shell: bash
+        run: |
+          RUN_ID=$(tracer info --json | python3 -c "import sys,json; print(json.load(sys.stdin)['run']['id'])")
+          PIPELINE_NAME=$(tracer info --json | python3 -c "import sys,json; print(json.load(sys.stdin)['pipeline']['name'])")
+          ORG_SLUG=$(tracer info --json | python3 -c "import sys,json; print(json.load(sys.stdin)['pipeline']['organization'])")
+
+          echo "TRACER_RUN_ID=$RUN_ID" >> $GITHUB_ENV
+          echo "TRACER_PIPELINE_NAME=$PIPELINE_NAME" >> $GITHUB_ENV
+          echo "TRACER_ORG_SLUG=$ORG_SLUG" >> $GITHUB_ENV
+
+          # Optional but helpful: stable trace id for ingest rows
+          echo "TRACER_TRACE_ID=trace_$RUN_ID" >> $GITHUB_ENV
+
+          echo "Exported TRACER_RUN_ID=$RUN_ID"
+
       - name: Run Tracer Demo
         continue-on-error: true
         run: |
-          python -m tests.test_case_s3_failed_python.test_orchestrator
+          python -m tests.test_case_s3_failed_python_on_linux.test_orchestrator
