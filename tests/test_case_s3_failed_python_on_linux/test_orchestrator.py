@@ -61,8 +61,8 @@ def main() -> int:
         run_id=run_id,
         run_name="s3_failed_python_on_linux",
         tool_id="pipeline_start",
-        tool_name="pipeline",
-        tool_cmd="start",
+        tool_name="pipeline_orchestrator",
+        tool_cmd="start_pipeline",
         exit_code=0,
         metadata={"log_file": LOG_FILE, "pipeline_name": "s3_failed_python_on_linux"},
     )
@@ -73,7 +73,7 @@ def main() -> int:
         run_id=run_id,
         run_name="s3_failed_python_on_linux",
         tool_id="python_pipeline",
-        tool_name="python",
+        tool_name="Python pipeline driver",
         tool_cmd="use_case.main",
     )
 
@@ -97,12 +97,12 @@ def main() -> int:
             trace_id=trace_id,
             run_id=run_id,
             run_name=pipeline_name,
-        tool_id="pipeline_end",
-        tool_name="pipeline",
-        tool_cmd="end",
-        exit_code=0,
-        metadata={"final_status": "success"},
-    )
+            tool_id="pipeline_end",
+            tool_name="pipeline_orchestrator",
+            tool_cmd="end_pipeline",
+            exit_code=0,
+            metadata={"final_status": "success"},
+        )
         print(f"✓ {pipeline_name} succeeded")
         return 0
 
@@ -112,8 +112,8 @@ def main() -> int:
         run_id=run_id,
         run_name=pipeline_name,
         tool_id="pipeline_end",
-        tool_name="pipeline",
-        tool_cmd="end",
+        tool_name="pipeline_orchestrator",
+        tool_cmd="end_pipeline",
         exit_code=1,
         metadata={
             "final_status": "failed",
@@ -137,8 +137,8 @@ def main() -> int:
         run_id=run_id,
         run_name=pipeline_name,
         tool_id="investigation_start",
-        tool_name="tracer_agent",
-        tool_cmd="run_investigation",
+        tool_name="rca_agent",
+        tool_cmd="start_investigation",
         exit_code=0,
         metadata={
             "alert_id": raw_alert["alert_id"],
@@ -171,8 +171,8 @@ def main() -> int:
         run_id=run_id,
         run_name=pipeline_name,
         tool_id="investigation",
-        tool_name="tracer_agent",
-        tool_cmd="_run",
+        tool_name="rca_agent",
+        tool_cmd="investigation",
     )
 
     investigation_result = run_with_alert_id()
@@ -191,7 +191,7 @@ def main() -> int:
         run_id=run_id,
         run_name=pipeline_name,
         tool_id="investigation_end",
-        tool_name="tracer_agent",
+        tool_name="rca_agent",
         tool_cmd="finish_investigation",
         exit_code=0,
         metadata={
