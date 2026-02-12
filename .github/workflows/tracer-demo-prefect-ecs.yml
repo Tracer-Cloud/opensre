@@ -1,0 +1,70 @@
+name: Tracer Demo – Prefect ECS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  tracer-demo-prefect-ecs:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      JWT_TOKEN: ${{ secrets.JWT_TOKEN }}
+      TRACER_ORG_ID: ${{ secrets.TRACER_ORG_ID }}
+      TRACER_WEB_APP_URL: ${{ secrets.TRACER_WEB_APP_URL }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+      LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
+      LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
+      LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
+      TRACER_API_URL: ${{ secrets.TRACER_API_URL }}
+      TRACER_INGEST_TOKEN: ${{ secrets.TRACER_INGEST_TOKEN }}
+
+      AWS_REGION: us-east-1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Install tracer CLI
+        run: |
+          curl -sSL https://install.tracer.cloud | CLI_BRANCH=dev sh -s user_36fbN6K6FwEgJFHsQv1pUByo8K6
+
+      - name: Initialize tracer
+        run: |
+          sudo tracer init --token ${{ secrets.JWT_TOKEN }}
+
+      - name: Export Tracer run id
+        shell: bash
+        run: |
+          RUN_ID=$(tracer info --json | python3 -c "import sys,json; print(json.load(sys.stdin)['run']['id'])")
+          PIPELINE_NAME=$(tracer info --json | python3 -c "import sys,json; print(json.load(sys.stdin)['pipeline']['name'])")
+          ORG_SLUG=$(tracer info --json | python3 -c "import sys,json; print(json.load(sys.stdin)['pipeline']['organization'])")
+
+          echo "TRACER_RUN_ID=$RUN_ID" >> $GITHUB_ENV
+          echo "TRACER_PIPELINE_NAME=$PIPELINE_NAME" >> $GITHUB_ENV
+          echo "TRACER_ORG_SLUG=$ORG_SLUG" >> $GITHUB_ENV
+
+          # Optional but helpful: stable trace id for ingest rows
+          echo "TRACER_TRACE_ID=trace_$RUN_ID" >> $GITHUB_ENV
+
+          echo "Exported TRACER_RUN_ID=$RUN_ID"
+
+      - name: Run Prefect ECS Demo
+        continue-on-error: true
+        run: |
+          python -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
