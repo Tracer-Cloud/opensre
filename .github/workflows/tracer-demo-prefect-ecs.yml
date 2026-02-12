@@ -1,10 +1,10 @@
-name: Tracer Demo Ingest Tools
+name: Tracer Demo – Prefect ECS
 
 on:
   workflow_dispatch:
 
 jobs:
-  tracer-demo:
+  tracer-demo-prefect-ecs:
     runs-on: ubuntu-latest
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -64,7 +64,7 @@ jobs:
 
           echo "Exported TRACER_RUN_ID=$RUN_ID"
 
-      - name: Run Tracer Demo
+      - name: Run Prefect ECS Demo
         continue-on-error: true
         run: |
-          python -m tests.test_case_s3_failed_python_on_linux.test_orchestrator
+          python -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
