@@ -61,7 +61,7 @@ def main() -> int:
         run_id=run_id,
         run_name="s3_failed_python_on_linux",
         tool_id="pipeline_start",
-        tool_name="pipeline_orchestrator",
+        tool_name="Pipeline Orchestrator",
         tool_cmd="start_pipeline",
         exit_code=0,
         metadata={"log_file": LOG_FILE, "pipeline_name": "s3_failed_python_on_linux"},
@@ -73,8 +73,8 @@ def main() -> int:
         run_id=run_id,
         run_name="s3_failed_python_on_linux",
         tool_id="python_pipeline",
-        tool_name="Python pipeline driver",
-        tool_cmd="use_case.main",
+        tool_name="Data Transformation Driver",
+        tool_cmd="run_pipeline",
     )
 
     result = use_case.main(log_file=LOG_FILE, run_id=run_id, trace_id=trace_id)
@@ -98,7 +98,7 @@ def main() -> int:
             run_id=run_id,
             run_name=pipeline_name,
             tool_id="pipeline_end",
-            tool_name="pipeline_orchestrator",
+            tool_name="Pipeline Orchestrator",
             tool_cmd="end_pipeline",
             exit_code=0,
             metadata={"final_status": "success"},
@@ -112,7 +112,7 @@ def main() -> int:
         run_id=run_id,
         run_name=pipeline_name,
         tool_id="pipeline_end",
-        tool_name="pipeline_orchestrator",
+        tool_name="Pipeline Orchestrator",
         tool_cmd="end_pipeline",
         exit_code=1,
         metadata={
