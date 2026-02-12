@@ -137,7 +137,7 @@ def step2_download_from_s3(execution_run_id: str, run_id: str, trace_id: str) ->
             run_id=run_id,
             run_name=PIPELINE_NAME,
             tool_id="prefect_task_download_s3",
-            tool_name="S3 cp (download artifact)",
+            tool_name="Download artifact from S3",
             tool_cmd="aws s3 cp",
             cmd=cmd,
             timeout=15,

@@ -137,8 +137,8 @@ def main() -> int:
         run_id=run_id,
         run_name=pipeline_name,
         tool_id="investigation_start",
-        tool_name="rca_agent",
-        tool_cmd="start_investigation",
+        tool_name="RCA Investigation",
+        tool_cmd="Frame problem",
         exit_code=0,
         metadata={
             "alert_id": raw_alert["alert_id"],
@@ -171,8 +171,8 @@ def main() -> int:
         run_id=run_id,
         run_name=pipeline_name,
         tool_id="investigation",
-        tool_name="rca_agent",
-        tool_cmd="investigation",
+        tool_name="RCA Investigation",
+        tool_cmd="Collect evidence",
     )
 
     investigation_result = run_with_alert_id()
@@ -191,8 +191,8 @@ def main() -> int:
         run_id=run_id,
         run_name=pipeline_name,
         tool_id="investigation_end",
-        tool_name="rca_agent",
-        tool_cmd="finish_investigation",
+        tool_name="RCA Investigation",
+        tool_cmd="Diagnose root cause",
         exit_code=0,
         metadata={
             "alert_id": raw_alert["alert_id"],
