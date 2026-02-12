@@ -1,4 +1,4 @@
-name: Tracer Demo
+name: Tracer Demo Ingest Tools
 
 on:
   workflow_dispatch:
