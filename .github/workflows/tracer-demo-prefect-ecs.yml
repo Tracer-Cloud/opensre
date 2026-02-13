@@ -19,6 +19,7 @@ jobs:
       TRACER_INGEST_TOKEN: ${{ secrets.TRACER_INGEST_TOKEN }}
 
       AWS_REGION: us-east-1
+      TRACER_INGEST_DEBUG: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +40,11 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+
+      - name: Ensure ingest config is present
+        run: |
+          test -n "$TRACER_API_URL" || (echo "TRACER_API_URL missing" && exit 1)
+          test -n "$TRACER_INGEST_TOKEN" || (echo "TRACER_INGEST_TOKEN missing" && exit 1)
 
       - name: Install tracer CLI
         run: |

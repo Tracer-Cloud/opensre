@@ -26,6 +26,11 @@ from langsmith import traceable
 
 from app.agent.tools.clients.grafana import get_grafana_client
 from app.main import _run
+from tests.shared.connectors.prefect_connector import (
+    fetch_flow_run,
+    fetch_task_runs,
+    task_runs_to_tool_events,
+)
 from tests.shared.tracer_ingest import StepTimer, emit_tool_event
 from tests.shared.stack_config import get_prefect_config
 from tests.utils.alert_factory import create_alert
@@ -90,15 +95,6 @@ def trigger_pipeline_failure(run_id: str, trace_id: str) -> dict:
     print("\nWaiting for ECS task to complete...")
     time.sleep(30)
 
-    return {
-        "correlation_id": correlation_id,
-        "s3_key": s3_key,
-        "audit_key": audit_key,
-        "task_arn": task_arn,
-        "bucket": CONFIG["s3_bucket"],
-    }
-
-
     trigger_timer.finish(
         exit_code=0,
         metadata={
@@ -150,8 +146,8 @@ def get_failure_details_from_logs(trigger_data: dict, run_id: str, trace_id: str
             msg = event.get("message", "")
             if "Schema validation failed" in msg or "required field" in msg.lower():
                 error_message = msg[:200]
-        print(f"Found error in logs: {error_message[:100]}")
                 break
+        print(f"Found error in logs: {error_message[:100]}")
 
         result = {
             **trigger_data,
@@ -225,6 +221,33 @@ def test_agent_investigation(failure_data: dict, run_id: str, trace_id: str) -> 
 
     print("\nStarting investigation agent...")
     print("-" * 60)
+
+    # Prefect connector: emit real task run events
+    prefect_api = CONFIG.get("prefect_api_url")
+    emitted_prefect_events = 0
+    if prefect_api:
+        flow_run = fetch_flow_run(prefect_api, failure_data["correlation_id"])
+        if flow_run:
+            task_runs = fetch_task_runs(prefect_api, flow_run.get("id"))
+            events = task_runs_to_tool_events(
+                task_runs,
+                trace_id=trace_id,
+                run_id=run_id,
+                run_name="upstream_downstream_pipeline_prefect",
+                flow_run=flow_run,
+                prefect_api_url=prefect_api,
+            )
+            for ev in events:
+                emit_tool_event(**ev)
+            emitted_prefect_events = len(events)
+            print(
+                f"Prefect connector emitted {emitted_prefect_events} task run events "
+                f"(flow_run_id={flow_run.get('id')})"
+            )
+        else:
+            print("Prefect flow run not found; skipping Prefect task events")
+    else:
+        print("Prefect API URL missing; skipping Prefect connector")
 
     emit_tool_event(
         trace_id=trace_id,
