@@ -10,6 +10,7 @@ Tests if the agent can trace a schema validation failure through:
 """
 
 import json
+import os
 import sys
 import time
 from datetime import UTC, datetime
@@ -20,6 +21,7 @@ from langsmith import traceable
 
 from app.agent.tools.clients.grafana import get_grafana_client
 from app.main import _run
+from tests.shared.tracer_ingest import StepTimer, emit_tool_event
 from tests.shared.stack_config import get_prefect_config
 from tests.utils.alert_factory import create_alert
 
@@ -27,7 +29,17 @@ from tests.utils.alert_factory import create_alert
 CONFIG = get_prefect_config()
 
 
-def trigger_pipeline_failure() -> dict:
+def _get_run_and_trace_ids() -> tuple[str, str]:
+    """Prefer TRACER_RUN_ID/TRACER_TRACE_ID, fallback to timestamp."""
+    tracer_run_id = (os.getenv("TRACER_RUN_ID") or "").strip()
+    tracer_trace_id = (os.getenv("TRACER_TRACE_ID") or "").strip()
+    if tracer_run_id:
+        return tracer_run_id, tracer_trace_id or f"trace_{tracer_run_id}"
+    run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
+    return run_id, tracer_trace_id or f"trace_{run_id}"
+
+
+def trigger_pipeline_failure(run_id: str, trace_id: str) -> dict:
     """Trigger the Prefect pipeline with error injection."""
     print("=" * 60)
     print("Triggering Prefect Pipeline Failure")
@@ -36,10 +48,25 @@ def trigger_pipeline_failure() -> dict:
     url = f"{CONFIG['trigger_api_url']}trigger?inject_error=true"
     print(f"\nPOST {url}")
 
+    trigger_timer = StepTimer(
+        trace_id=trace_id,
+        run_id=run_id,
+        run_name="upstream_downstream_pipeline_prefect",
+        tool_id="pipeline_trigger",
+        tool_name="Pipeline Orchestrator",
+        tool_cmd="trigger_prefect_flow",
+    )
+
+    status_code = None
     response = requests.post(url, timeout=60)
+    status_code = response.status_code if response else None
     if not response.ok:
         print(f"ERROR: Trigger failed with status {response.status_code}")
         print(f"Response: {response.text}")
+        trigger_timer.finish(
+            exit_code=1,
+            metadata={"url": url, "status_code": status_code, "body_preview": response.text[:200]},
+        )
         return None
 
     result = response.json()
@@ -67,13 +94,44 @@ def trigger_pipeline_failure() -> dict:
     }
 
 
-def get_failure_details_from_logs(trigger_data: dict) -> dict:
+    trigger_timer.finish(
+        exit_code=0,
+        metadata={
+            "url": url,
+            "status_code": status_code,
+            "correlation_id": correlation_id,
+            "s3_key": s3_key,
+            "audit_key": audit_key,
+            "task_arn": task_arn,
+            "bucket": CONFIG["s3_bucket"],
+        },
+    )
+
+    return {
+        "correlation_id": correlation_id,
+        "s3_key": s3_key,
+        "audit_key": audit_key,
+        "task_arn": task_arn,
+        "bucket": CONFIG["s3_bucket"],
+    }
+
+
+def get_failure_details_from_logs(trigger_data: dict, run_id: str, trace_id: str) -> dict:
     """Get error details from CloudWatch logs."""
     print("=" * 60)
     print("Retrieving Failure Details from CloudWatch")
     print("=" * 60)
 
     logs_client = boto3.client("logs", region_name="us-east-1")
+
+    logs_timer = StepTimer(
+        trace_id=trace_id,
+        run_id=run_id,
+        run_name="upstream_downstream_pipeline_prefect",
+        tool_id="log_collection",
+        tool_name="CloudWatch: Collect failure logs",
+        tool_cmd="logs filter ERROR",
+    )
 
     try:
         response = logs_client.filter_log_events(
@@ -87,17 +145,36 @@ def get_failure_details_from_logs(trigger_data: dict) -> dict:
             msg = event.get("message", "")
             if "Schema validation failed" in msg or "required field" in msg.lower():
                 error_message = msg[:200]
-                print(f"Found error in logs: {error_message[:100]}")
+        print(f"Found error in logs: {error_message[:100]}")
                 break
 
-        return {
+        result = {
             **trigger_data,
             "error_message": error_message,
             "log_group": CONFIG["log_group"],
         }
 
+        logs_timer.finish(
+            exit_code=0,
+            metadata={
+                "log_group": CONFIG["log_group"],
+                "filter_pattern": "ERROR",
+                "error_message": error_message[:200],
+                "event_count": len(response.get("events", [])),
+            },
+        )
+        return result
+
     except Exception as e:
         print(f"Warning: Could not query logs: {e}")
+        logs_timer.finish(
+            exit_code=1,
+            metadata={
+                "log_group": CONFIG["log_group"],
+                "filter_pattern": "ERROR",
+                "error": str(e),
+            },
+        )
         return {
             **trigger_data,
             "error_message": "Schema validation failed",
@@ -105,7 +182,7 @@ def get_failure_details_from_logs(trigger_data: dict) -> dict:
         }
 
 
-def test_agent_investigation(failure_data: dict) -> bool:
+def test_agent_investigation(failure_data: dict, run_id: str, trace_id: str) -> bool:
     """Test agent can investigate the Prefect pipeline failure."""
     print("\n" + "=" * 60)
     print("Running Agent Investigation")
@@ -144,6 +221,21 @@ def test_agent_investigation(failure_data: dict) -> bool:
     print("\nStarting investigation agent...")
     print("-" * 60)
 
+    emit_tool_event(
+        trace_id=trace_id,
+        run_id=run_id,
+        run_name="upstream_downstream_pipeline_prefect",
+        tool_id="investigation_start",
+        tool_name="RCA Investigation",
+        tool_cmd="Frame problem",
+        exit_code=0,
+        metadata={
+            "alert_id": alert["alert_id"],
+            "pipeline_name": "upstream_downstream_pipeline_prefect",
+            "correlation_id": failure_data["correlation_id"],
+        },
+    )
+
     @traceable(
         run_type="chain",
         name=f"test_prefect_ecs - {alert['alert_id'][:8]}",
@@ -164,7 +256,40 @@ def test_agent_investigation(failure_data: dict) -> bool:
             raw_alert=alert,
         )
 
+    investigation_timer = StepTimer(
+        trace_id=trace_id,
+        run_id=run_id,
+        run_name="upstream_downstream_pipeline_prefect",
+        tool_id="investigation",
+        tool_name="RCA Investigation",
+        tool_cmd="Collect evidence",
+    )
+
     result = run_investigation()
+
+    investigation_timer.finish(
+        exit_code=0,
+        metadata={
+            "alert_id": alert["alert_id"],
+            "correlation_id": failure_data["correlation_id"],
+            "result_type": type(result).__name__,
+        },
+    )
+
+    emit_tool_event(
+        trace_id=trace_id,
+        run_id=run_id,
+        run_name="upstream_downstream_pipeline_prefect",
+        tool_id="investigation_end",
+        tool_name="RCA Investigation",
+        tool_cmd="Diagnose root cause",
+        exit_code=0,
+        metadata={
+            "alert_id": alert["alert_id"],
+            "pipeline_name": "upstream_downstream_pipeline_prefect",
+            "correlation_id": failure_data["correlation_id"],
+        },
+    )
 
     print("\n" + "=" * 60)
     print("RCA REPORT")
@@ -233,17 +358,19 @@ def main():
     print("PREFECT ECS E2E INVESTIGATION TEST")
     print("=" * 60)
 
+    run_id, trace_id = _get_run_and_trace_ids()
+
     # Trigger a pipeline failure
-    trigger_data = trigger_pipeline_failure()
+    trigger_data = trigger_pipeline_failure(run_id, trace_id)
     if not trigger_data:
         print("\nERROR: Could not trigger pipeline failure")
         return False
 
     # Get failure details from CloudWatch
-    failure_data = get_failure_details_from_logs(trigger_data)
+    failure_data = get_failure_details_from_logs(trigger_data, run_id, trace_id)
 
     # Run agent investigation
-    success = test_agent_investigation(failure_data)
+    success = test_agent_investigation(failure_data, run_id, trace_id)
 
     print("\n" + "=" * 60)
     if success:

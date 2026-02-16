@@ -1,10 +1,10 @@
-name: Tracer Demo
+name: Tracer Grafana
 
 on:
   workflow_dispatch:
 
 jobs:
-  tracer-demo:
+  tracer-grafana:
     runs-on: ubuntu-latest
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -15,9 +15,7 @@ jobs:
       LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
       LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
       LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
-
       AWS_REGION: us-east-1
-
     steps:
       - uses: actions/checkout@v4
 

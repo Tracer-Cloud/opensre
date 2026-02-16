@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TypeVar
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
-def tool[F: Callable[..., Any]](
+def tool(  # noqa: UP047
     func: F | None = None,
     **_kwargs: Any,
 ) -> F | Callable[[F], F]:

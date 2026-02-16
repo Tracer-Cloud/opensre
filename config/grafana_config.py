@@ -210,6 +210,7 @@ def configure_grafana_cloud(env_file: Path | str | None = None) -> None:
 
     os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint
     os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf"
+    os.environ["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"] = "cumulative"
     if auth_header:
         os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization={auth_header}"
 
