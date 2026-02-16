@@ -8,7 +8,7 @@ echo "[FLINK] CORRELATION_ID=$CORRELATION_ID"
 echo "[FLINK] S3_KEY=$S3_KEY"
 
 # Run the PyFlink batch job
-python /app/flink_job/main.py \
+python -m flink_job.main \
     --input-bucket "$LANDING_BUCKET" \
     --output-bucket "$PROCESSED_BUCKET" \
     --correlation-id "$CORRELATION_ID" \

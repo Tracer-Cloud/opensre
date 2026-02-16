@@ -61,7 +61,7 @@ def run_test(
     """Run the full test: check server, upload, execute flow, verify output."""
     from prefect.settings import PREFECT_API_URL, temporary_settings
 
-    from tests.test_case_upstream_prefect_ecs_fargate.pipeline_code.prefect_flow.flow import (
+    from tests.test_case_upstream_prefect_ecs_fargate.pipeline_code.prefect_flow.main_pipeline.main_pipeline import (
         data_pipeline_flow,
     )
 
