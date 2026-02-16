@@ -1,13 +1,6 @@
 import json
 import logging
-import sys
 from datetime import UTC, datetime
-from pathlib import Path
-
-# Add project root to path for imports
-project_root = Path(__file__).parent.parent.parent.parent.parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
 
 try:
     from tests.utils.alert_factory import create_alert

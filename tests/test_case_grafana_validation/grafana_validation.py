@@ -17,16 +17,6 @@ Usage:
 
 import sys
 import time
-from pathlib import Path
-
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
-
-# Load .env
-from config.grafana_config import load_env
-
-load_env(project_root / ".env")
 
 
 def validate_grafana_telemetry(
@@ -180,7 +170,12 @@ def validate_and_report(
 
 
 if __name__ == "__main__":
-    # Quick test
+    from pathlib import Path
+
+    from config.grafana_config import load_env
+
+    load_env(Path(__file__).resolve().parent.parent.parent / ".env")
+
     import argparse
 
     parser = argparse.ArgumentParser(description="Validate Grafana Cloud telemetry")

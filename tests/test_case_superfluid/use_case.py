@@ -5,16 +5,9 @@ Find a failed pipeline run from Tracer Web App.
 No orchestration, no alert creation, no investigation logic.
 """
 
-import sys
 import uuid
-from pathlib import Path
 
 from app.agent.nodes.build_context.context_building import _fetch_tracer_web_run_context
-
-# Add shared telemetry to path
-_test_root = Path(__file__).parent.parent
-sys.path.insert(0, str(_test_root / "shared" / "telemetry"))
-
 from tracer_telemetry import init_telemetry
 
 _run_context = {

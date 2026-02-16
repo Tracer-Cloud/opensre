@@ -94,8 +94,8 @@ class TestFrameProblemMemory:
         finally:
             os.environ.pop("TRACER_MEMORY_ENABLED", None)
             # Cleanup test memory files
-            from pathlib import Path
+            from app.agent.memory.io import get_memories_dir
 
-            memories_dir = Path(__file__).parent.parent.parent / "memories"
+            memories_dir = get_memories_dir()
             for f in memories_dir.glob("*-upstream_downstream_pipeline_prefect-prior001.md"):
                 f.unlink()
