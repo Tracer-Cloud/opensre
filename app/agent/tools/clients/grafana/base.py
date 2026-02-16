@@ -20,8 +20,9 @@ def _extract_datasource_uid(rule: dict) -> str:
     for datum in alert.get("data", []):
         model = datum.get("model", {})
         ds = model.get("datasource", {})
-        if ds.get("uid"):
-            return ds["uid"]
+        uid = ds.get("uid")
+        if isinstance(uid, str) and uid:
+            return uid
     return ""
 
 
@@ -123,12 +124,27 @@ class GrafanaClientBase:
         "prometheus": "mimir_uid",
     }
 
+    # UIDs/names containing these substrings are internal/secondary datasources
+    # that should be deprioritized in favour of the primary ones.
+    _DEPRIORITIZE_KEYWORDS = ("alert", "state-history", "ml-", "usage-insights")
+
+    # UIDs/names containing these substrings are strong signals for primary datasources.
+    _PRIMARY_HINTS: dict[str, list[str]] = {
+        "loki_uid": ["logs", "-log"],
+        "tempo_uid": ["traces", "-trace"],
+        "mimir_uid": ["prom", "metrics", "-metric"],
+    }
+
     def discover_datasource_uids(self) -> dict[str, str]:
         """Discover datasource UIDs by querying GET /api/datasources.
 
         Iterates all datasources returned by the user's Grafana instance and
-        picks the first one matching each type (loki, tempo, prometheus).
-        No hardcoded UIDs — everything is discovered from the API.
+        picks the best one matching each type (loki, tempo, prometheus).
+        Selection priority:
+        1. Datasource marked ``isDefault``
+        2. Datasource whose uid/name contains a primary hint (e.g. "logs" for loki)
+        3. Datasource whose uid/name does NOT contain deprioritized keywords
+        4. First datasource of that type (fallback)
 
         Returns:
             Dict with keys loki_uid, tempo_uid, mimir_uid (only present if found).
@@ -146,21 +162,75 @@ class GrafanaClientBase:
             response.raise_for_status()
             datasources = response.json()
 
-            result: dict[str, str] = {}
+            # Collect all candidates per type, then pick the best one.
+            candidates: dict[str, list[dict]] = {
+                key: [] for key in self._TYPE_MAP.values()
+            }
+
             for ds in datasources:
                 ds_type = ds.get("type", "").lower()
                 uid = ds.get("uid", "")
+                name = ds.get("name", "")
+                is_default = bool(ds.get("isDefault"))
                 if not uid:
                     continue
 
                 for type_keyword, result_key in self._TYPE_MAP.items():
-                    if type_keyword in ds_type and result_key not in result:
-                        result[result_key] = uid
+                    if type_keyword in ds_type:
+                        candidates[result_key].append({
+                            "uid": uid,
+                            "name": name,
+                            "is_default": is_default,
+                        })
                         break
 
-                # Stop early if all three found
-                if len(result) == len(self._TYPE_MAP):
-                    break
+            result: dict[str, str] = {}
+            for result_key, ds_list in candidates.items():
+                if not ds_list:
+                    continue
+
+                logger.info(
+                    "[grafana] Candidates for %s: %s",
+                    result_key,
+                    [(d["uid"], d["name"]) for d in ds_list],
+                )
+
+                def _is_deprioritized(d: dict) -> bool:
+                    return any(
+                        kw in d["uid"].lower() or kw in d["name"].lower()
+                        for kw in self._DEPRIORITIZE_KEYWORDS
+                    )
+
+                # 1. Prefer the default datasource for this type
+                defaults = [d for d in ds_list if d["is_default"]]
+                if defaults:
+                    result[result_key] = defaults[0]["uid"]
+                    continue
+
+                # Filter out deprioritized datasources for hint matching
+                non_deprioritized = [d for d in ds_list if not _is_deprioritized(d)]
+
+                # 2. Prefer non-deprioritized datasources matching primary hints
+                hints = self._PRIMARY_HINTS.get(result_key, [])
+                if hints and non_deprioritized:
+                    hinted = [
+                        d for d in non_deprioritized
+                        if any(
+                            h in d["uid"].lower() or h in d["name"].lower()
+                            for h in hints
+                        )
+                    ]
+                    if hinted:
+                        result[result_key] = hinted[0]["uid"]
+                        continue
+
+                # 3. Use any non-deprioritized datasource
+                if non_deprioritized:
+                    result[result_key] = non_deprioritized[0]["uid"]
+                    continue
+
+                # 4. Fallback to first (even if deprioritized)
+                result[result_key] = ds_list[0]["uid"]
 
             logger.info("[grafana] Discovered datasource UIDs: %s", result)
             return result
@@ -178,7 +248,8 @@ class GrafanaClientBase:
         )
         try:
             data = self._make_request(url)
-            return data.get("data", [])
+            values: list[str] = data.get("data", [])
+            return values
         except Exception:
             return []
 
