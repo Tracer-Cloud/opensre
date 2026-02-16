@@ -21,6 +21,7 @@ ALLOWED_EVIDENCE_SOURCES = [
     "grafana_logs",
     "grafana_traces",
     "grafana_metrics",
+    "grafana_alert_rules",
 ]
 
 
@@ -261,6 +262,19 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
         section = f"\nGrafana Metrics ({metric_name}):\n"
         for metric in grafana_metrics[:5]:
             section += f"- {json.dumps(metric, default=str)[:200]}\n"
+        sections.append(section)
+
+    # Grafana alert rules
+    grafana_alert_rules = evidence.get("grafana_alert_rules", [])
+    if grafana_alert_rules:
+        section = f"\nGrafana Alert Rules ({len(grafana_alert_rules)}):\n"
+        for rule in grafana_alert_rules[:5]:
+            section += f"- {rule.get('rule_name', 'unknown')} [{rule.get('state', '')}]\n"
+            section += f"  Folder: {rule.get('folder', '')}, Group: {rule.get('group', '')}\n"
+            for query in rule.get("queries", [])[:2]:
+                section += f"  Query ({query.get('ref_id', '')}): {query.get('expr', '')[:200]}\n"
+            if rule.get("no_data_state"):
+                section += f"  No-data state: {rule.get('no_data_state')}\n"
         sections.append(section)
 
     # Alert annotations

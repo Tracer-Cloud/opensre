@@ -157,6 +157,19 @@ def _map_grafana_metrics(data: dict) -> dict:
     }
 
 
+def _map_grafana_alert_rules(data: dict) -> dict:
+    return {
+        "grafana_alert_rules": data.get("rules", []),
+        "grafana_alert_rules_count": data.get("total_rules", 0),
+    }
+
+
+def _map_grafana_service_names(data: dict) -> dict:
+    return {
+        "grafana_service_names": data.get("service_names", []),
+    }
+
+
 EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "get_failed_jobs": _map_failed_jobs,
     "get_failed_tools": _map_failed_tools,
@@ -173,6 +186,8 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "query_grafana_logs": _map_grafana_logs,
     "query_grafana_traces": _map_grafana_traces,
     "query_grafana_metrics": _map_grafana_metrics,
+    "query_grafana_alert_rules": _map_grafana_alert_rules,
+    "query_grafana_service_names": _map_grafana_service_names,
 }
 
 
@@ -271,6 +286,10 @@ def build_evidence_summary(execution_results: dict) -> str:
                 summary_parts.append(f"grafana:{len(data['traces'])} traces")
             elif action_name == "query_grafana_metrics" and data.get("metrics"):
                 summary_parts.append(f"grafana:{len(data['metrics'])} metric series")
+            elif action_name == "query_grafana_alert_rules" and data.get("rules"):
+                summary_parts.append(f"grafana:{len(data['rules'])} alert rules")
+            elif action_name == "query_grafana_service_names" and data.get("service_names"):
+                summary_parts.append(f"grafana:{len(data['service_names'])} services")
         else:
             # Log action failures for debugging
             error_msg = f"{action_name}:FAILED({result.error[:50] if result.error else 'unknown'})"

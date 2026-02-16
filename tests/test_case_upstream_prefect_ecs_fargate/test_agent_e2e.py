@@ -26,8 +26,8 @@ from langsmith import traceable
 
 from app.agent.tools.clients.grafana import get_grafana_client
 from app.main import _run
-from tests.shared.tracer_ingest import StepTimer, emit_tool_event
 from tests.shared.stack_config import get_prefect_config
+from tests.shared.tracer_ingest import StepTimer, emit_tool_event
 from tests.utils.alert_factory import create_alert
 
 # Configuration loaded dynamically from CloudFormation
@@ -150,7 +150,7 @@ def get_failure_details_from_logs(trigger_data: dict, run_id: str, trace_id: str
             msg = event.get("message", "")
             if "Schema validation failed" in msg or "required field" in msg.lower():
                 error_message = msg[:200]
-        print(f"Found error in logs: {error_message[:100]}")
+                print(f"Found error in logs: {error_message[:100]}")
                 break
 
         result = {
