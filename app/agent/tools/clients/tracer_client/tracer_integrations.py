@@ -43,7 +43,8 @@ class TracerIntegrationsMixin(TracerClientBase):
         if not data.get("success") or not data.get("data"):
             return []
 
-        return data["data"]
+        result: list[dict[str, Any]] = data["data"]
+        return result
 
     def get_all_integrations(self) -> list[dict[str, Any]]:
         """Fetch all integration records for the org from /api/integrations.
@@ -57,7 +58,7 @@ class TracerIntegrationsMixin(TracerClientBase):
         if not data.get("success") or not data.get("data"):
             return []
 
-        integrations = data["data"]
+        integrations: list[dict[str, Any]] = data["data"]
 
         # Parse JSON-encoded credentials
         for integration in integrations:

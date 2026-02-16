@@ -44,6 +44,14 @@ def _execute_with_retry(
     """Execute action with exponential backoff retry for transient failures."""
     last_error = None
 
+    if action.parameter_extractor is None:
+        return ActionExecutionResult(
+            action_name=action_name,
+            success=False,
+            data={},
+            error="Action has no parameter extractor and cannot be executed automatically",
+        )
+
     for attempt in range(max_attempts):
         try:
             kwargs = action.parameter_extractor(available_sources)
