@@ -20,8 +20,6 @@ import zipfile
 from contextlib import suppress
 from pathlib import Path
 
-project_root = Path(__file__).resolve().parents[3]
-
 from botocore.exceptions import ClientError
 
 from tests.shared.infrastructure_sdk.config import save_outputs
@@ -29,6 +27,8 @@ from tests.shared.infrastructure_sdk.deployer import get_boto3_client, get_stand
 from tests.shared.infrastructure_sdk.resources import api_gateway, iam, lambda_, s3
 from tests.shared.infrastructure_sdk.resources.iam import get_account_id, put_role_policy
 from tests.shared.infrastructure_sdk.resources.secrets import get_secret_value
+
+project_root = Path(__file__).resolve().parents[3]
 
 STACK_NAME = "tracer-lambda"
 REGION = "us-east-1"
