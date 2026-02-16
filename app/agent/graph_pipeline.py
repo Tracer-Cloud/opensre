@@ -21,6 +21,7 @@ from app.agent.nodes import (
     node_frame_problem,
     node_plan_actions,
     node_publish_findings,
+    node_resolve_integrations,
 )
 from app.agent.nodes.investigate.node import node_investigate
 from app.agent.routing import should_continue_investigation
@@ -270,6 +271,7 @@ def _run_investigation_pipeline(state: AgentState) -> AgentState:
     if state.get("is_noise"):
         return state
 
+    _merge_state(state, node_resolve_integrations(state))
     _merge_state(state, node_build_context(state))
     _merge_state(state, node_frame_problem(state))
 
@@ -348,6 +350,7 @@ def build_graph(config: Any | None = None) -> CompiledStateGraph:
 
     # Investigation branch nodes
     graph.add_node("extract_alert", node_extract_alert)
+    graph.add_node("resolve_integrations", node_resolve_integrations)
     graph.add_node("build_context", node_build_context)
     graph.add_node("frame_problem", node_frame_problem)
     graph.add_node("plan_actions", node_plan_actions)
@@ -389,8 +392,9 @@ def build_graph(config: Any | None = None) -> CompiledStateGraph:
     graph.add_conditional_edges(
         "extract_alert",
         _route_after_extract,
-        {"end": END, "investigate": "build_context"},
+        {"end": END, "investigate": "resolve_integrations"},
     )
+    graph.add_edge("resolve_integrations", "build_context")
     graph.add_edge("build_context", "frame_problem")
     graph.add_edge("frame_problem", "plan_actions")
     graph.add_edge("plan_actions", "investigate")

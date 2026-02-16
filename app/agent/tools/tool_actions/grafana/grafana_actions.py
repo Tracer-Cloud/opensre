@@ -6,8 +6,26 @@ Account selection is config-driven - different customers have different Grafana 
 
 from __future__ import annotations
 
-from app.agent.tools.clients.grafana import get_grafana_client
+from app.agent.tools.clients.grafana import (
+    get_grafana_client,
+    get_grafana_client_from_credentials,
+)
 from app.agent.tools.tool_decorator import tool
+
+
+def _resolve_grafana_client(
+    account_id: str | None = None,
+    grafana_endpoint: str | None = None,
+    grafana_api_key: str | None = None,
+):
+    """Resolve the right Grafana client: DB credentials take priority over env config."""
+    if grafana_endpoint and grafana_api_key:
+        return get_grafana_client_from_credentials(
+            endpoint=grafana_endpoint,
+            api_key=grafana_api_key,
+            account_id=account_id or "user_integration",
+        )
+    return get_grafana_client(account_id=account_id)
 
 # Service name mapping: Pipeline name -> Grafana service name
 SERVICE_NAME_MAPPING = {
@@ -40,6 +58,8 @@ def query_grafana_logs(
     time_range_minutes: int = 60,
     limit: int = 100,
     account_id: str | None = None,
+    grafana_endpoint: str | None = None,
+    grafana_api_key: str | None = None,
 ) -> dict:
     """Query Grafana Cloud Loki for pipeline logs.
 
@@ -54,11 +74,13 @@ def query_grafana_logs(
         time_range_minutes: Time range to query in minutes (default 60)
         limit: Maximum logs to return (default 100)
         account_id: Grafana account to query (default: use config default)
+        grafana_endpoint: Grafana instance URL from user's DB integration
+        grafana_api_key: Grafana API key from user's DB integration
 
     Returns:
         Dictionary with logs list, metadata, and query success status
     """
-    client = get_grafana_client(account_id=account_id)
+    client = _resolve_grafana_client(account_id, grafana_endpoint, grafana_api_key)
 
     if not client.is_configured:
         return {
@@ -106,6 +128,8 @@ def query_grafana_traces(
     execution_run_id: str | None = None,
     limit: int = 20,
     account_id: str | None = None,
+    grafana_endpoint: str | None = None,
+    grafana_api_key: str | None = None,
 ) -> dict:
     """Query Grafana Cloud Tempo for pipeline traces.
 
@@ -120,11 +144,13 @@ def query_grafana_traces(
         execution_run_id: Optional execution run ID to filter traces
         limit: Maximum traces to return (default 20)
         account_id: Grafana account to query (default: use config default)
+        grafana_endpoint: Grafana instance URL from user's DB integration
+        grafana_api_key: Grafana API key from user's DB integration
 
     Returns:
         Dictionary with traces and span details
     """
-    client = get_grafana_client(account_id=account_id)
+    client = _resolve_grafana_client(account_id, grafana_endpoint, grafana_api_key)
 
     if not client.is_configured:
         return {
@@ -188,6 +214,8 @@ def query_grafana_metrics(
     service_name: str | None = None,
     execution_run_id: str | None = None,  # noqa: ARG001
     account_id: str | None = None,
+    grafana_endpoint: str | None = None,
+    grafana_api_key: str | None = None,
 ) -> dict:
     """Query Grafana Cloud Mimir for pipeline metrics.
 
@@ -201,11 +229,13 @@ def query_grafana_metrics(
         service_name: Optional service filter
         execution_run_id: Optional execution run ID filter (not commonly used in metrics)
         account_id: Grafana account to query (default: use config default)
+        grafana_endpoint: Grafana instance URL from user's DB integration
+        grafana_api_key: Grafana API key from user's DB integration
 
     Returns:
         Dictionary with metric series and values
     """
-    client = get_grafana_client(account_id=account_id)
+    client = _resolve_grafana_client(account_id, grafana_endpoint, grafana_api_key)
 
     if not client.is_configured:
         return {
