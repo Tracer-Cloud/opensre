@@ -10,16 +10,15 @@ Run with: pytest tests/test_case_upstream_prefect_ecs_fargate/test_memory_speed.
 import os
 import time
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 
+from app.agent.memory.io import get_memories_dir
 from app.main import _run
 from tests.shared.stack_config import get_prefect_config
 from tests.utils.alert_factory import create_alert
 
 CONFIG = get_prefect_config()
-project_root = Path(__file__).parent.parent.parent
 
 
 @pytest.mark.skipif(
@@ -75,7 +74,7 @@ def test_memory_speedup_50_percent():
     print("-" * 60)
 
     # Clean memories folder
-    memories_dir = project_root / "app" / "memories"
+    memories_dir = get_memories_dir()
     for f in memories_dir.glob("*-upstream_downstream_pipeline_prefect-*.md"):
         f.unlink()
     print("✓ Cleaned prior memories")

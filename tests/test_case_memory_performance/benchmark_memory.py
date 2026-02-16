@@ -9,17 +9,15 @@ import os
 import sys
 import time
 from datetime import UTC, datetime
-from pathlib import Path
 from statistics import mean, stdev
 
+from app.agent.memory.io import get_memories_dir
 from app.main import _run
 from tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e import (
     CONFIG,
     get_failure_details,
 )
 from tests.utils.alert_factory import create_alert
-
-project_root = Path(__file__).parent.parent.parent
 
 
 def run_single_investigation(enable_memory: bool, alert: dict) -> tuple[float, dict]:
@@ -81,7 +79,7 @@ def main():
     )
 
     # Clean memories
-    memories_dir = project_root / "app" / "memories"
+    memories_dir = get_memories_dir()
     for f in memories_dir.glob("*-upstream_downstream_pipeline_prefect-*.md"):
         if "IMPLEMENTATION" not in f.name and "FINDINGS" not in f.name and "SUCCESS" not in f.name and "SPEEDUP" not in f.name:
             f.unlink()
