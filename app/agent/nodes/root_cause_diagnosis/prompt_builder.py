@@ -18,6 +18,10 @@ ALLOWED_EVIDENCE_SOURCES = [
     "s3_metadata",
     "s3_audit",
     "vendor_audit",
+    "grafana_logs",
+    "grafana_traces",
+    "grafana_metrics",
+    "grafana_alert_rules",
 ]
 
 
@@ -162,38 +166,30 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
         section += "\n"
         sections.append(section)
 
-    # AWS Batch jobs
+    # AWS Batch jobs (only show if data exists)
     if failed_jobs:
         section = f"\nAWS Batch Failed Jobs ({len(failed_jobs)}):\n"
         for job in failed_jobs[:5]:
             section += f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
         sections.append(section)
-    else:
-        sections.append("\nAWS Batch Failed Jobs: None\n")
 
-    # Failed tools
+    # Failed tools (only show if data exists)
     if failed_tools:
         section = f"\nFailed Tools ({len(failed_tools)}):\n"
         for tool in failed_tools[:5]:
             section += f"- {tool.get('tool_name', 'Unknown')}: exit_code={tool.get('exit_code')}\n"
         sections.append(section)
-    else:
-        sections.append("\nFailed Tools: None\n")
 
-    # Error logs
+    # Error logs (only show if data exists)
     if error_logs:
         section = f"\nError Logs ({len(error_logs)}):\n"
         for log in error_logs[:5]:
             section += f"- {log.get('message', '')[:200]}\n"
         sections.append(section)
-    else:
-        sections.append("\nError Logs: None\n")
 
-    # Host metrics
+    # Host metrics (only show if data exists)
     if host_metrics and host_metrics.get("data"):
         sections.append("\nHost Metrics: Available (CPU, memory, disk)\n")
-    else:
-        sections.append("\nHost Metrics: None\n")
 
     # Lambda logs
     if lambda_logs:
@@ -226,6 +222,59 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     # Vendor audit from logs
     if vendor_audit_from_logs and vendor_audit_from_logs.get("requests"):
         section = _build_vendor_audit_section(vendor_audit_from_logs)
+        sections.append(section)
+
+    # Grafana logs
+    grafana_error_logs = evidence.get("grafana_error_logs", [])
+    grafana_logs = evidence.get("grafana_logs", [])
+    if grafana_error_logs:
+        section = f"\nGrafana Error Logs ({len(grafana_error_logs)} events):\n"
+        for log in grafana_error_logs[:10]:
+            message = log.get("message", "") if isinstance(log, dict) else str(log)
+            section += f"- {message[:300]}\n"
+        sections.append(section)
+    elif grafana_logs:
+        section = f"\nGrafana Logs ({len(grafana_logs)} events):\n"
+        for log in grafana_logs[:10]:
+            message = log.get("message", "") if isinstance(log, dict) else str(log)
+            section += f"- {message[:300]}\n"
+        sections.append(section)
+
+    # Grafana traces
+    grafana_spans = evidence.get("grafana_pipeline_spans", [])
+    if grafana_spans:
+        section = f"\nGrafana Pipeline Spans ({len(grafana_spans)}):\n"
+        for span in grafana_spans[:10]:
+            run_id = span.get("execution_run_id", "")
+            records = span.get("record_count", "")
+            section += f"- {span.get('span_name', 'unknown')}"
+            if run_id:
+                section += f" (run_id={run_id})"
+            if records:
+                section += f" records={records}"
+            section += "\n"
+        sections.append(section)
+
+    # Grafana metrics
+    grafana_metrics = evidence.get("grafana_metrics", [])
+    if grafana_metrics:
+        metric_name = evidence.get("grafana_metric_name", "unknown")
+        section = f"\nGrafana Metrics ({metric_name}):\n"
+        for metric in grafana_metrics[:5]:
+            section += f"- {json.dumps(metric, default=str)[:200]}\n"
+        sections.append(section)
+
+    # Grafana alert rules
+    grafana_alert_rules = evidence.get("grafana_alert_rules", [])
+    if grafana_alert_rules:
+        section = f"\nGrafana Alert Rules ({len(grafana_alert_rules)}):\n"
+        for rule in grafana_alert_rules[:5]:
+            section += f"- {rule.get('rule_name', 'unknown')} [{rule.get('state', '')}]\n"
+            section += f"  Folder: {rule.get('folder', '')}, Group: {rule.get('group', '')}\n"
+            for query in rule.get("queries", [])[:2]:
+                section += f"  Query ({query.get('ref_id', '')}): {query.get('expr', '')[:200]}\n"
+            if rule.get("no_data_state"):
+                section += f"  No-data state: {rule.get('no_data_state')}\n"
         sections.append(section)
 
     # Alert annotations

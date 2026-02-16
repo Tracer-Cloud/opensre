@@ -31,6 +31,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
         input_data=input_data,
         plan_model=InvestigationPlan,
         pipeline_name=state.get("pipeline_name", ""),
+        resolved_integrations=state.get("resolved_integrations"),
     )
 
     planned_actions = plan.actions if plan else []

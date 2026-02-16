@@ -1,13 +1,19 @@
 """Data source detection for dynamic investigation.
 
 Scans alert annotations and state context to detect available data sources
-(CloudWatch, S3, local files, Tracer Web) and extract their parameters.
+(CloudWatch, S3, local files, Tracer Web, Grafana) and extract their parameters.
 """
 
 from typing import Any
 
+from app.agent.tools.tool_actions.grafana.grafana_actions import _map_pipeline_to_service_name
 
-def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> dict[str, dict]:
+
+def detect_sources(
+    raw_alert: dict[str, Any] | str,
+    context: dict[str, Any],
+    resolved_integrations: dict[str, Any] | None = None,
+) -> dict[str, dict]:
     """
     Detect relevant data sources from alert annotations and context.
 
@@ -16,27 +22,15 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
     - raw_alert.commonAnnotations
     - raw_alert top-level fields
     - context (for Tracer Web)
+    - resolved_integrations (for Grafana credentials)
 
     Args:
         raw_alert: Raw alert payload (dict or str)
         context: Investigation context dictionary
+        resolved_integrations: Pre-resolved integration credentials from resolve_integrations node
 
     Returns:
-        Dictionary mapping source type to extracted parameters:
-        {
-          "cloudwatch": {"log_group": "...", "log_stream": "...", "region": "..."},
-          "s3": {"bucket": "...", "prefix": "...", "key": "..."},
-          "local_file": {"log_file": "...", "log_path": "..."},
-          "tracer_web": {"trace_id": "...", "run_url": "..."},
-          "lambda": {"function_name": "...", "all_functions": [...]},
-          "aws_metadata": {"ecs_cluster": "...", "vpc_id": "...", "region": "..."},
-          "grafana": {"service_name": "...", "execution_run_id": "...", "connection_verified": bool}
-        }
-
-        The aws_metadata source contains ALL AWS-related annotations from the alert,
-        enabling dynamic AWS SDK investigations (ECS, RDS, EC2, VPC, etc.).
-
-        The grafana source is OPTIONAL and only added if service map shows Grafana connectivity.
+        Dictionary mapping source type to extracted parameters.
     """
     sources: dict[str, dict] = {}
 
@@ -158,7 +152,6 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
         sources["tracer_web"] = tracer_params
 
     # Collect ALL AWS-related metadata for dynamic AWS SDK investigations
-    # This enables the agent to make intelligent AWS API calls based on alert context
     aws_metadata: dict[str, Any] = {}
 
     # Common AWS resource identifiers
@@ -220,7 +213,7 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
     if aws_metadata:
         sources["aws_metadata"] = aws_metadata
 
-    # Detect Grafana sources (optional - only if service map shows connectivity)
+    # Detect Grafana sources from resolved_integrations
     pipeline_name = annotations.get("pipeline_name") or context.get("pipeline_name", "")
     execution_run_id = (
         annotations.get("execution_run_id")
@@ -228,25 +221,22 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
         or annotations.get("correlation_id")
     )
 
-    # Check for explicit Grafana account from alert annotations
-    grafana_account_id = annotations.get("grafana_account") or annotations.get("grafana_account_id")
+    if resolved_integrations and resolved_integrations.get("grafana"):
+        grafana_int = resolved_integrations["grafana"]
+        endpoint = grafana_int.get("endpoint", "")
+        api_key = grafana_int.get("api_key", "")
 
-    if pipeline_name:
-        from app.agent.tools.tool_actions.grafana.grafana_actions import check_grafana_connection
-
-        connection_check = check_grafana_connection(pipeline_name, account_id=grafana_account_id)
-
-        if connection_check.get("connected"):
+        if endpoint and api_key:
+            service_name = _map_pipeline_to_service_name(pipeline_name) if pipeline_name else ""
             grafana_params: dict[str, Any] = {
-                "service_name": connection_check["service_name"],
+                "service_name": service_name,
                 "pipeline_name": pipeline_name,
                 "connection_verified": True,
-                "account_id": connection_check.get("account_id"),
+                "grafana_endpoint": endpoint,
+                "grafana_api_key": api_key,
             }
-
             if execution_run_id:
                 grafana_params["execution_run_id"] = execution_run_id
-
             sources["grafana"] = grafana_params
 
     return sources

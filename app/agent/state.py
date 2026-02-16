@@ -55,6 +55,9 @@ class AgentState(TypedDict, total=False):
     available_sources: dict[str, dict]
     available_action_names: list[str]
 
+    # Resolved integrations (from resolve_integrations node)
+    resolved_integrations: dict[str, Any]
+
     # Shared context/evidence
     context: dict[str, Any]
     evidence: dict[str, Any]
@@ -103,6 +106,7 @@ STATE_DEFAULTS: dict[str, Any] = {
     "plan_sources": [],
     "planned_actions": [],
     "plan_rationale": "",
+    "resolved_integrations": {},
     "available_sources": {},
     "available_action_names": [],
     "context": {},

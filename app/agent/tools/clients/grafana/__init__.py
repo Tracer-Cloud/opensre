@@ -1,41 +1,95 @@
 """Grafana Cloud client module.
 
 Provides a unified client for querying Grafana Cloud Loki, Tempo, and Mimir.
+Credentials come from the user's integration stored in the Tracer web app DB.
 """
 
+import logging
+
 from app.agent.tools.clients.grafana.client import GrafanaClient
-from app.agent.tools.clients.grafana.config import (
-    GrafanaAccountConfig,
-    GrafanaConfigLoader,
-    get_grafana_config,
-    list_grafana_accounts,
-)
+from app.agent.tools.clients.grafana.config import GrafanaAccountConfig
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "GrafanaAccountConfig",
     "GrafanaClient",
-    "GrafanaConfigLoader",
     "get_grafana_client",
-    "get_grafana_config",
-    "list_grafana_accounts",
+    "get_grafana_client_from_credentials",
 ]
 
 _grafana_client_cache: dict[str, GrafanaClient] = {}
 
 
-def get_grafana_client(account_id: str | None = None) -> GrafanaClient:
-    """Get Grafana client for a specific account.
+def get_grafana_client() -> GrafanaClient:
+    """Create a Grafana client from environment variables.
+
+    Reads GRAFANA_INSTANCE_URL and GRAFANA_READ_TOKEN from env / .env file.
+    Intended for local tests and demo pipelines only — production code should
+    use get_grafana_client_from_credentials() with explicit credentials.
+    """
+    from config.grafana_config import get_grafana_instance_url, get_grafana_read_token
+
+    return get_grafana_client_from_credentials(
+        endpoint=get_grafana_instance_url(),
+        api_key=get_grafana_read_token(),
+        account_id="env_default",
+    )
+
+
+def get_grafana_client_from_credentials(
+    endpoint: str,
+    api_key: str,
+    account_id: str = "user_integration",
+) -> GrafanaClient:
+    """Create a Grafana client from integration credentials.
+
+    Datasource UIDs are auto-discovered from the user's Grafana instance
+    via GET /api/datasources. Results are cached per endpoint.
 
     Args:
-        account_id: Grafana account identifier. If None, uses default account.
+        endpoint: Grafana instance URL (e.g., https://myorg.grafana.net)
+        api_key: Grafana service account token (glsa_...)
+        account_id: Identifier for caching (default: "user_integration")
 
     Returns:
-        GrafanaClient configured for the requested account
+        GrafanaClient configured with discovered datasource UIDs
     """
-    config = get_grafana_config(account_id)
-    cache_key = config.account_id
+    cache_key = f"creds_{account_id}_{endpoint}"
+    if cache_key in _grafana_client_cache:
+        return _grafana_client_cache[cache_key]
 
-    if cache_key not in _grafana_client_cache:
-        _grafana_client_cache[cache_key] = GrafanaClient(config=config)
+    config = GrafanaAccountConfig(
+        account_id=account_id,
+        instance_url=endpoint.rstrip("/"),
+        read_token=api_key,
+    )
+    client = GrafanaClient(config=config)
 
-    return _grafana_client_cache[cache_key]
+    # Auto-discover actual datasource UIDs from the user's Grafana instance
+    discovered = client.discover_datasource_uids()
+    if discovered:
+        config = GrafanaAccountConfig(
+            account_id=account_id,
+            instance_url=endpoint.rstrip("/"),
+            read_token=api_key,
+            loki_datasource_uid=discovered.get("loki_uid", ""),
+            tempo_datasource_uid=discovered.get("tempo_uid", ""),
+            mimir_datasource_uid=discovered.get("mimir_uid", ""),
+        )
+        client = GrafanaClient(config=config)
+        logger.info(
+            "[grafana] Client ready for %s with discovered UIDs: loki=%s tempo=%s mimir=%s",
+            endpoint,
+            config.loki_datasource_uid,
+            config.tempo_datasource_uid,
+            config.mimir_datasource_uid,
+        )
+    else:
+        logger.warning(
+            "[grafana] Could not discover datasource UIDs for %s — queries will fail",
+            endpoint,
+        )
+
+    _grafana_client_cache[cache_key] = client
+    return client

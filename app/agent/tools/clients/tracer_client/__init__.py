@@ -4,6 +4,9 @@ import os
 
 from app.agent.tools.clients.tracer_client.aws_batch_jobs import AWSBatchJobResult
 from app.agent.tools.clients.tracer_client.client import TracerClient
+from app.agent.tools.clients.tracer_client.tracer_integrations import (
+    GrafanaIntegrationCredentials,
+)
 from app.agent.tools.clients.tracer_client.tracer_logs import LogResult
 from app.agent.tools.clients.tracer_client.tracer_pipelines import (
     PipelineRunSummary,
@@ -16,6 +19,7 @@ from app.config import get_tracer_base_url
 
 __all__ = [
     "AWSBatchJobResult",
+    "GrafanaIntegrationCredentials",
     "LogResult",
     "PipelineRunSummary",
     "PipelineSummary",
@@ -23,6 +27,7 @@ __all__ = [
     "TracerRunResult",
     "TracerTaskResult",
     "get_tracer_client",
+    "get_tracer_client_for_org",
     "get_tracer_web_client",
 ]
 
@@ -53,3 +58,20 @@ def get_tracer_client() -> TracerClient:
 def get_tracer_web_client() -> TracerClient:
     """Alias for get_tracer_client()."""
     return get_tracer_client()
+
+
+def get_tracer_client_for_org(org_id: str, auth_token: str) -> TracerClient:
+    """Create a TracerClient for a specific org using the user's auth token.
+
+    Unlike get_tracer_client() which uses the JWT_TOKEN env var,
+    this creates a client using the per-request auth token from state.
+
+    Args:
+        org_id: Organization ID from the authenticated user.
+        auth_token: Raw JWT token from state._auth_token.
+
+    Returns:
+        TracerClient configured for the user's org.
+    """
+    token = _clean_jwt(auth_token)
+    return TracerClient(get_tracer_base_url(), org_id, token)
