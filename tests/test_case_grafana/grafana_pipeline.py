@@ -27,7 +27,7 @@ def run_stage(tracer, run_id: str, stage: str, record_count: int) -> tuple[int, 
             failed = random.randint(0, max(1, record_count // 5))
             if failed:
                 log.error(json.dumps({"event": "validation_failures", "run_id": run_id, "stage": stage, "failed": failed}))
-        elif stage == "load":
+        elif stage == "load" and random.random() < 0.15:
             log.error(json.dumps({"event": "load_error", "run_id": run_id, "error": "connection_timeout"}))
             raise RuntimeError("Connection timeout to destination")
 
