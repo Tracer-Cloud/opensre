@@ -329,7 +329,7 @@ def deploy_phase3_ecs(foundation: dict, images: dict) -> dict:
         image=images["prefect_image_uri"],
         cpu=256,
         memory=512,
-        command=["python", "-m", "prefect_flow.flow"],
+        command=["python", "-m", "prefect_flow.main_pipeline.main_pipeline"],
         environment={
             "LANDING_BUCKET": foundation["landing_bucket"]["name"],
             "PROCESSED_BUCKET": foundation["processed_bucket"]["name"],
