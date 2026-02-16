@@ -8,11 +8,6 @@ No CloudWatch, no logging infrastructure, no observability code.
 import os
 import sys
 import uuid
-from pathlib import Path
-
-# Add shared telemetry to path
-_test_root = Path(__file__).parent.parent
-sys.path.insert(0, str(_test_root / "shared" / "telemetry"))
 
 from tracer_telemetry import init_telemetry
 

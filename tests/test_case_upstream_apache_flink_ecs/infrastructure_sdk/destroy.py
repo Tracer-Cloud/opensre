@@ -4,17 +4,8 @@
 Uses tag-based cleanup to find and delete all resources created by the SDK deployment.
 """
 
-import sys
 import time
 from contextlib import suppress
-from pathlib import Path
-
-# Add project root to path
-project_root = Path(__file__).resolve().parents[3]
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-from botocore.exceptions import ClientError
 
 from tests.shared.infrastructure_sdk import destroy_stack, load_outputs
 from tests.shared.infrastructure_sdk.config import delete_outputs

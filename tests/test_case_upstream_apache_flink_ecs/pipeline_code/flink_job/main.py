@@ -16,22 +16,11 @@ import argparse
 import json
 import sys
 import time
-from pathlib import Path
 
 import boto3
 from domain import transform_data as domain_transform_data
 from domain import validate_data as domain_validate_data
 from errors import DomainError
-
-# Add telemetry module to path (Docker: /app/tracer_telemetry, Local: shared/telemetry)
-if Path("/app/tracer_telemetry").exists():
-    sys.path.insert(0, "/app")
-else:
-    for parent in Path(__file__).resolve().parents:
-        telemetry_root = parent / "shared" / "telemetry"
-        if telemetry_root.exists():
-            sys.path.insert(0, str(telemetry_root))
-            break
 
 from tracer_telemetry import init_telemetry
 

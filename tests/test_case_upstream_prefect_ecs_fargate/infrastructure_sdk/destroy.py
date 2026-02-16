@@ -7,13 +7,7 @@ Usage:
     python3 tests/test_case_upstream_prefect_ecs_fargate/infrastructure_sdk/destroy.py
 """
 
-import sys
 import time
-from pathlib import Path
-
-# Add project root to path
-project_root = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(project_root))
 
 from botocore.exceptions import ClientError
 

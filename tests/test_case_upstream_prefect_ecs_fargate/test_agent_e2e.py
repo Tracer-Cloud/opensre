@@ -14,11 +14,6 @@ import os
 import sys
 import time
 from datetime import UTC, datetime
-from pathlib import Path
-
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
 
 import boto3
 import requests
@@ -33,6 +28,7 @@ from tests.shared.connectors.prefect_connector import (
 )
 from tests.shared.tracer_ingest import StepTimer, emit_tool_event
 from tests.shared.stack_config import get_prefect_config
+from tests.shared.tracer_ingest import StepTimer, emit_tool_event
 from tests.utils.alert_factory import create_alert
 
 # Configuration loaded dynamically from CloudFormation
@@ -146,6 +142,7 @@ def get_failure_details_from_logs(trigger_data: dict, run_id: str, trace_id: str
             msg = event.get("message", "")
             if "Schema validation failed" in msg or "required field" in msg.lower():
                 error_message = msg[:200]
+                print(f"Found error in logs: {error_message[:100]}")
                 break
         print(f"Found error in logs: {error_message[:100]}")
 
