@@ -4,13 +4,16 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from config.grafana_config import is_grafana_otlp_endpoint
-
 from .identifiers import generate_asset_id
 from .types import Asset, Edge
 
 GRAFANA_DATASOURCE_ASSET_ID = "grafana_datasource:tracerbio"
 EXTERNAL_API_ASSET_ID = "external_api:vendor"
+
+
+def _is_grafana_otlp_endpoint(value: str | None) -> bool:
+    """Check if an OTLP endpoint points to Grafana Cloud."""
+    return bool(value and ("grafana.net" in value or "grafana.com" in value))
 
 
 def _build_edge(
@@ -176,7 +179,7 @@ def _extract_grafana_edges(evidence: dict[str, Any], pipeline_name: str) -> list
             "GCLOUD_OTLP_ENDPOINT"
         )
 
-        if otlp_endpoint and is_grafana_otlp_endpoint(otlp_endpoint):
+        if otlp_endpoint and _is_grafana_otlp_endpoint(otlp_endpoint):
             function_name = lambda_data["function_name"]
 
             edges.append(
@@ -214,7 +217,7 @@ def _extract_grafana_edges(evidence: dict[str, Any], pipeline_name: str) -> list
                 "GCLOUD_OTLP_ENDPOINT"
             )
 
-            if otlp_endpoint and is_grafana_otlp_endpoint(otlp_endpoint):
+            if otlp_endpoint and _is_grafana_otlp_endpoint(otlp_endpoint):
                 ecs_cluster = evidence.get("ecs_cluster", {}).get("clusterName", "")
                 container_name = container.get("name", "")
 

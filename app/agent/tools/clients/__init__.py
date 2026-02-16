@@ -4,10 +4,7 @@ from app.agent.tools.clients.cloudwatch_client import get_metric_statistics
 from app.agent.tools.clients.grafana import (
     GrafanaAccountConfig,
     GrafanaClient,
-    GrafanaConfigLoader,
-    get_grafana_client,
-    get_grafana_config,
-    list_grafana_accounts,
+    get_grafana_client_from_credentials,
 )
 from app.agent.tools.clients.llm_client import (
     RootCauseResult,
@@ -33,10 +30,7 @@ __all__ = [
     # Grafana client
     "GrafanaAccountConfig",
     "GrafanaClient",
-    "GrafanaConfigLoader",
-    "get_grafana_client",
-    "get_grafana_config",
-    "list_grafana_accounts",
+    "get_grafana_client_from_credentials",
     # LLM client
     "RootCauseResult",
     "get_llm",

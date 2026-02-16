@@ -21,9 +21,10 @@ def get_available_actions() -> list[InvestigationAction]:
         list_s3_objects,
     )
     from app.agent.tools.tool_actions.grafana.grafana_actions import (
-        check_grafana_connection,
+        query_grafana_alert_rules,
         query_grafana_logs,
         query_grafana_metrics,
+        query_grafana_service_names,
         query_grafana_traces,
     )
     from app.agent.tools.tool_actions.knowledge_sre_book.sre_knowledge_actions import (
@@ -244,7 +245,8 @@ def get_available_actions() -> list[InvestigationAction]:
                 "execution_run_id": sources["grafana"].get("execution_run_id"),
                 "time_range_minutes": 60,
                 "limit": 100,
-                "account_id": sources["grafana"].get("account_id"),
+                "grafana_endpoint": sources["grafana"].get("grafana_endpoint"),
+                "grafana_api_key": sources["grafana"].get("grafana_api_key"),
             },
         ),
         build_action(
@@ -259,7 +261,8 @@ def get_available_actions() -> list[InvestigationAction]:
                 "service_name": sources["grafana"]["service_name"],
                 "execution_run_id": sources["grafana"].get("execution_run_id"),
                 "limit": 20,
-                "account_id": sources["grafana"].get("account_id"),
+                "grafana_endpoint": sources["grafana"].get("grafana_endpoint"),
+                "grafana_api_key": sources["grafana"].get("grafana_api_key"),
             },
         ),
         build_action(
@@ -267,22 +270,41 @@ def get_available_actions() -> list[InvestigationAction]:
             func=query_grafana_metrics,
             source="grafana",
             requires=["metric_name"],
-            availability_check=lambda sources: bool(sources.get("grafana")),
+            availability_check=lambda sources: bool(
+                sources.get("grafana", {}).get("connection_verified")
+            ),
             parameter_extractor=lambda sources: {
                 "metric_name": "pipeline_runs_total",
                 "service_name": sources.get("grafana", {}).get("service_name"),
-                "account_id": sources.get("grafana", {}).get("account_id"),
+                "grafana_endpoint": sources.get("grafana", {}).get("grafana_endpoint"),
+                "grafana_api_key": sources.get("grafana", {}).get("grafana_api_key"),
             },
         ),
         build_action(
-            name="check_grafana_connection",
-            func=check_grafana_connection,
+            name="query_grafana_alert_rules",
+            func=query_grafana_alert_rules,
             source="grafana",
-            requires=["pipeline_name"],
-            availability_check=lambda _sources: True,
+            requires=[],
+            availability_check=lambda sources: bool(
+                sources.get("grafana", {}).get("connection_verified")
+            ),
             parameter_extractor=lambda sources: {
-                "pipeline_name": sources.get("grafana", {}).get("pipeline_name", ""),
-                "account_id": sources.get("grafana", {}).get("account_id"),
+                "folder": sources.get("grafana", {}).get("pipeline_name"),
+                "grafana_endpoint": sources.get("grafana", {}).get("grafana_endpoint"),
+                "grafana_api_key": sources.get("grafana", {}).get("grafana_api_key"),
+            },
+        ),
+        build_action(
+            name="query_grafana_service_names",
+            func=query_grafana_service_names,
+            source="grafana",
+            requires=[],
+            availability_check=lambda sources: bool(
+                sources.get("grafana", {}).get("connection_verified")
+            ),
+            parameter_extractor=lambda sources: {
+                "grafana_endpoint": sources.get("grafana", {}).get("grafana_endpoint"),
+                "grafana_api_key": sources.get("grafana", {}).get("grafana_api_key"),
             },
         ),
     ]

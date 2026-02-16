@@ -44,29 +44,48 @@ def _execute_with_retry(
     """Execute action with exponential backoff retry for transient failures."""
     last_error = None
 
+    if action.parameter_extractor is None:
+        return ActionExecutionResult(
+            action_name=action_name,
+            success=False,
+            data={},
+            error="Action has no parameter extractor and cannot be executed automatically",
+        )
+
     for attempt in range(max_attempts):
         try:
             kwargs = action.parameter_extractor(available_sources)
             data = action.function(**kwargs)
 
-            if isinstance(data, dict) and "error" not in data:
-                return ActionExecutionResult(
-                    action_name=action_name,
-                    success=True,
-                    data=data,
-                    error=None,
-                )
+            if isinstance(data, dict):
+                # Actions that use "available" field (e.g. Grafana) are successful
+                # when available=True, even if they contain an "error" key for
+                # context. All other actions succeed when no "error" key is present.
+                if "available" in data:
+                    is_success = bool(data.get("available"))
+                else:
+                    is_success = "error" not in data
+
+                if is_success:
+                    return ActionExecutionResult(
+                        action_name=action_name,
+                        success=True,
+                        data=data,
+                        error=None,
+                    )
+                else:
+                    return ActionExecutionResult(
+                        action_name=action_name,
+                        success=False,
+                        data=data,
+                        error=data.get("error", "Unknown error"),
+                    )
             else:
-                error_msg = (
-                    data.get("error", "Unknown error")
-                    if isinstance(data, dict)
-                    else "Invalid response"
-                )
                 return ActionExecutionResult(
                     action_name=action_name,
                     success=False,
-                    data=data if isinstance(data, dict) else {},
-                    error=error_msg,
+                    data={},
+                    error="Invalid response",
                 )
         except Exception as e:
             last_error = e
