@@ -118,6 +118,8 @@ jobs:
       JWT_TOKEN: ${{ secrets.JWT_TOKEN }}
       TRACER_ORG_ID: ${{ secrets.TRACER_ORG_ID }}
       TRACER_WEB_APP_URL: ${{ secrets.TRACER_WEB_APP_URL }}
+      TRACER_API_URL: ${{ secrets.TRACER_API_URL }}
+      TRACER_INGEST_TOKEN: ${{ secrets.TRACER_INGEST_TOKEN }}
       LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
       LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
       LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
@@ -150,6 +152,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
+
+      - name: Install tracer CLI
+        run: |
+          curl -sSL https://install.tracer.cloud | CLI_BRANCH=dev sh -s user_36fbN6K6FwEgJFHsQv1pUByo8K6
+
+      - name: Initialize tracer
+        run: |
+          sudo tracer init --token ${{ secrets.JWT_TOKEN }}
+
+      - name: Export Tracer run id
+        shell: bash
+        run: |
+          RUN_ID=$(tracer info --json | python3 -c "import sys,json; print(json.load(sys.stdin)['run']['id'])")
+          PIPELINE_NAME=$(tracer info --json | python3 -c "import sys,json; print(json.load(sys.stdin)['pipeline']['name'])")
+          ORG_SLUG=$(tracer info --json | python3 -c "import sys,json; print(json.load(sys.stdin)['pipeline']['organization'])")
+
+          echo "TRACER_RUN_ID=$RUN_ID" >> $GITHUB_ENV
+          echo "TRACER_PIPELINE_NAME=$PIPELINE_NAME" >> $GITHUB_ENV
+          echo "TRACER_ORG_SLUG=$ORG_SLUG" >> $GITHUB_ENV
+
+          echo "TRACER_TRACE_ID=trace_$RUN_ID" >> $GITHUB_ENV
+
+          echo "Exported TRACER_RUN_ID=$RUN_ID"
 
       - name: Run thorough test case
         run: ${{ matrix.command }}
