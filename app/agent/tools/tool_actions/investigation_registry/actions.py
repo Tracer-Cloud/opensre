@@ -245,6 +245,8 @@ def get_available_actions() -> list[InvestigationAction]:
                 "time_range_minutes": 60,
                 "limit": 100,
                 "account_id": sources["grafana"].get("account_id"),
+                "grafana_endpoint": sources["grafana"].get("grafana_endpoint"),
+                "grafana_api_key": sources["grafana"].get("grafana_api_key"),
             },
         ),
         build_action(
@@ -260,6 +262,8 @@ def get_available_actions() -> list[InvestigationAction]:
                 "execution_run_id": sources["grafana"].get("execution_run_id"),
                 "limit": 20,
                 "account_id": sources["grafana"].get("account_id"),
+                "grafana_endpoint": sources["grafana"].get("grafana_endpoint"),
+                "grafana_api_key": sources["grafana"].get("grafana_api_key"),
             },
         ),
         build_action(
@@ -272,6 +276,8 @@ def get_available_actions() -> list[InvestigationAction]:
                 "metric_name": "pipeline_runs_total",
                 "service_name": sources.get("grafana", {}).get("service_name"),
                 "account_id": sources.get("grafana", {}).get("account_id"),
+                "grafana_endpoint": sources.get("grafana", {}).get("grafana_endpoint"),
+                "grafana_api_key": sources.get("grafana", {}).get("grafana_api_key"),
             },
         ),
         build_action(

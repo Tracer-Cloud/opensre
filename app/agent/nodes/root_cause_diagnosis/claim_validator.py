@@ -16,8 +16,13 @@ def validate_claim(claim: str, evidence: dict[str, Any]) -> bool:
     """
     claim_lower = claim.lower()
 
-    # Check logs (from evidence)
-    if ("log" in claim_lower or "error" in claim_lower) and evidence.get("total_logs", 0) == 0:
+    # Check logs (from evidence - including Grafana logs)
+    has_any_logs = (
+        evidence.get("total_logs", 0) > 0
+        or evidence.get("grafana_logs")
+        or evidence.get("grafana_error_logs")
+    )
+    if ("log" in claim_lower or "error" in claim_lower) and not has_any_logs:
         return False
 
     # Check metrics (from evidence)
@@ -111,6 +116,18 @@ def extract_evidence_sources(claim: str, evidence: dict[str, Any]) -> list[str]:
         sources.append("lambda_config")
     if "audit" in claim_lower and evidence.get("s3_audit_payload"):
         sources.append("s3_audit")
+    if ("log" in claim_lower or "error" in claim_lower or "grafana" in claim_lower) and (
+        evidence.get("grafana_logs") or evidence.get("grafana_error_logs")
+    ):
+        sources.append("grafana_logs")
+    if ("trace" in claim_lower or "span" in claim_lower or "pipeline" in claim_lower) and evidence.get(
+        "grafana_pipeline_spans"
+    ):
+        sources.append("grafana_traces")
+    if ("metric" in claim_lower or "rate" in claim_lower or "count" in claim_lower) and evidence.get(
+        "grafana_metrics"
+    ):
+        sources.append("grafana_metrics")
 
     return sources if sources else ["evidence_analysis"]
 

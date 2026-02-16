@@ -132,6 +132,31 @@ def _map_s3_object(data: dict) -> dict:
     }
 
 
+def _map_grafana_logs(data: dict) -> dict:
+    return {
+        "grafana_logs": data.get("logs", []),
+        "grafana_error_logs": data.get("error_logs", []),
+        "grafana_logs_query": data.get("query", ""),
+        "grafana_logs_service": data.get("service_name", ""),
+    }
+
+
+def _map_grafana_traces(data: dict) -> dict:
+    return {
+        "grafana_traces": data.get("traces", []),
+        "grafana_pipeline_spans": data.get("pipeline_spans", []),
+        "grafana_traces_service": data.get("service_name", ""),
+    }
+
+
+def _map_grafana_metrics(data: dict) -> dict:
+    return {
+        "grafana_metrics": data.get("metrics", []),
+        "grafana_metric_name": data.get("metric_name", ""),
+        "grafana_metrics_service": data.get("service_name", ""),
+    }
+
+
 EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "get_failed_jobs": _map_failed_jobs,
     "get_failed_tools": _map_failed_tools,
@@ -145,6 +170,9 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "inspect_lambda_function": _map_inspect_lambda_function,
     "get_lambda_configuration": _map_lambda_configuration,
     "get_s3_object": _map_s3_object,
+    "query_grafana_logs": _map_grafana_logs,
+    "query_grafana_traces": _map_grafana_traces,
+    "query_grafana_metrics": _map_grafana_metrics,
 }
 
 
@@ -236,6 +264,13 @@ def build_evidence_summary(execution_results: dict) -> str:
                 summary_parts.append("lambda:config retrieved")
             elif action_name == "get_s3_object" and data.get("found"):
                 summary_parts.append("s3:audit payload retrieved")
+            elif action_name == "query_grafana_logs" and data.get("logs"):
+                error_count = len(data.get("error_logs", []))
+                summary_parts.append(f"grafana:{len(data['logs'])} logs ({error_count} errors)")
+            elif action_name == "query_grafana_traces" and data.get("traces"):
+                summary_parts.append(f"grafana:{len(data['traces'])} traces")
+            elif action_name == "query_grafana_metrics" and data.get("metrics"):
+                summary_parts.append(f"grafana:{len(data['metrics'])} metric series")
         else:
             # Log action failures for debugging
             error_msg = f"{action_name}:FAILED({result.error[:50] if result.error else 'unknown'})"

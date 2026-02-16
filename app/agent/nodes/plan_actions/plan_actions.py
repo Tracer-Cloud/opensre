@@ -22,6 +22,7 @@ def plan_actions(
     input_data,
     plan_model: type[BaseModel],
     pipeline_name: str = "",
+    resolved_integrations: dict[str, Any] | None = None,
 ) -> tuple[Any | None, dict[str, dict], list[str], list]:
     """
     Interpret inputs, select actions, and request a plan from the LLM.
@@ -30,11 +31,14 @@ def plan_actions(
         input_data: InvestigateInput (or compatible) object
         plan_model: Pydantic model for structured LLM output
         pipeline_name: Pipeline name from state (for memory lookup)
+        resolved_integrations: Pre-fetched integration credentials from resolve_integrations node
 
     Returns:
         Tuple of (plan_or_none, available_sources, available_action_names, available_actions)
     """
-    available_sources = detect_sources(input_data.raw_alert, input_data.context)
+    available_sources = detect_sources(
+        input_data.raw_alert, input_data.context, resolved_integrations=resolved_integrations
+    )
 
     # Enhance sources with dynamically discovered information from evidence (e.g., audit_key from S3 metadata)
     s3_object = input_data.evidence.get("s3_object", {})

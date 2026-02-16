@@ -6,6 +6,7 @@ from app.agent.nodes.frame_problem.frame_problem import node_frame_problem
 from app.agent.nodes.investigate.node import node_investigate
 from app.agent.nodes.plan_actions.node import node_plan_actions
 from app.agent.nodes.publish_findings import node_publish_findings
+from app.agent.nodes.resolve_integrations import node_resolve_integrations
 from app.agent.nodes.root_cause_diagnosis import node_diagnose_root_cause
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "node_plan_actions",
     "node_investigate",
     "node_publish_findings",
+    "node_resolve_integrations",
 ]

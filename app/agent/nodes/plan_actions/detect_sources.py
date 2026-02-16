@@ -7,7 +7,11 @@ Scans alert annotations and state context to detect available data sources
 from typing import Any
 
 
-def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> dict[str, dict]:
+def detect_sources(
+    raw_alert: dict[str, Any] | str,
+    context: dict[str, Any],
+    resolved_integrations: dict[str, Any] | None = None,
+) -> dict[str, dict]:
     """
     Detect relevant data sources from alert annotations and context.
 
@@ -220,7 +224,8 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
     if aws_metadata:
         sources["aws_metadata"] = aws_metadata
 
-    # Detect Grafana sources (optional - only if service map shows connectivity)
+    # Detect Grafana sources
+    # Priority: 1) service map + env config, 2) user's integration credentials from DB
     pipeline_name = annotations.get("pipeline_name") or context.get("pipeline_name", "")
     execution_run_id = (
         annotations.get("execution_run_id")
@@ -228,9 +233,11 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
         or annotations.get("correlation_id")
     )
 
-    # Check for explicit Grafana account from alert annotations
     grafana_account_id = annotations.get("grafana_account") or annotations.get("grafana_account_id")
 
+    grafana_connected = False
+
+    # Try 1: Check service map + env-based config (existing flow)
     if pipeline_name:
         from app.agent.tools.tool_actions.grafana.grafana_actions import check_grafana_connection
 
@@ -243,10 +250,29 @@ def detect_sources(raw_alert: dict[str, Any] | str, context: dict[str, Any]) -> 
                 "connection_verified": True,
                 "account_id": connection_check.get("account_id"),
             }
-
             if execution_run_id:
                 grafana_params["execution_run_id"] = execution_run_id
-
             sources["grafana"] = grafana_params
+            grafana_connected = True
+
+    # Try 2: Use pre-resolved integration credentials from resolve_integrations node
+    if not grafana_connected and resolved_integrations and resolved_integrations.get("grafana"):
+        from app.agent.tools.tool_actions.grafana.grafana_actions import (
+            _map_pipeline_to_service_name,
+        )
+
+        grafana_int = resolved_integrations["grafana"]
+        service_name = _map_pipeline_to_service_name(pipeline_name) if pipeline_name else ""
+        grafana_params = {
+            "service_name": service_name,
+            "pipeline_name": pipeline_name,
+            "connection_verified": True,
+            "account_id": "user_integration",
+            "grafana_endpoint": grafana_int["endpoint"],
+            "grafana_api_key": grafana_int["api_key"],
+        }
+        if execution_run_id:
+            grafana_params["execution_run_id"] = execution_run_id
+        sources["grafana"] = grafana_params
 
     return sources

@@ -19,7 +19,14 @@ def check_evidence_availability(
     """
     web_run = context.get("tracer_web_run", {})
     has_tracer_evidence = web_run.get("found")
-    has_cloudwatch_evidence = bool(evidence.get("error_logs") or evidence.get("cloudwatch_logs"))
+    has_cloudwatch_evidence = bool(
+        evidence.get("error_logs")
+        or evidence.get("cloudwatch_logs")
+        or evidence.get("grafana_logs")
+        or evidence.get("grafana_error_logs")
+        or evidence.get("grafana_traces")
+        or evidence.get("grafana_metrics")
+    )
 
     # Check for evidence in alert annotations
     has_alert_evidence = False
