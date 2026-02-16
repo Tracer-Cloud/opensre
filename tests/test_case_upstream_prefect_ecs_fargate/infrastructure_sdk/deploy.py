@@ -19,14 +19,11 @@ Usage:
 
 import os
 import subprocess
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-# Add project root to path
 project_root = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(project_root))
 
 from config.grafana_config import load_env
 from tests.shared.infrastructure_sdk import save_outputs
@@ -332,7 +329,7 @@ def deploy_phase3_ecs(foundation: dict, images: dict) -> dict:
         image=images["prefect_image_uri"],
         cpu=256,
         memory=512,
-        command=["python", "-m", "prefect_flow.flow"],
+        command=["python", "-m", "prefect_flow.main_pipeline.main_pipeline"],
         environment={
             "LANDING_BUCKET": foundation["landing_bucket"]["name"],
             "PROCESSED_BUCKET": foundation["processed_bucket"]["name"],

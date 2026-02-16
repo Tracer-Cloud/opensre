@@ -2,15 +2,20 @@
 
 from pathlib import Path
 
+from app.agent.memory.io import get_memories_dir
 
-def discover_architecture_docs() -> dict[str, str]:
+
+def discover_architecture_docs(tests_dir: Path | None = None) -> dict[str, str]:
     """Discover all ARCHITECTURE.md files in test case directories.
+
+    Args:
+        tests_dir: Path to the tests directory. Defaults to <project_root>/tests.
 
     Returns:
         Dict mapping test case identifiers to architecture doc paths
     """
-    project_root = Path(__file__).parent.parent.parent.parent
-    tests_dir = project_root / "tests"
+    if tests_dir is None:
+        tests_dir = get_memories_dir().parent.parent / "tests"
 
     architecture_docs = {}
     for arch_file in tests_dir.glob("test_case_*/ARCHITECTURE.md"):
@@ -21,7 +26,9 @@ def discover_architecture_docs() -> dict[str, str]:
     return architecture_docs
 
 
-def find_architecture_doc_for_pipeline(pipeline_name: str) -> list[str]:
+def find_architecture_doc_for_pipeline(
+    pipeline_name: str, tests_dir: Path | None = None
+) -> list[str]:
     """Find architecture documentation matching the pipeline name.
 
     Matches using orchestrator-specific keywords (prefect, airflow, flink, lambda)
@@ -29,6 +36,7 @@ def find_architecture_doc_for_pipeline(pipeline_name: str) -> list[str]:
 
     Args:
         pipeline_name: Pipeline name from alert (e.g., "upstream_downstream_pipeline_airflow")
+        tests_dir: Path to the tests directory. Defaults to <project_root>/tests.
 
     Returns:
         List of paths to relevant architecture docs (may be empty)
@@ -36,7 +44,7 @@ def find_architecture_doc_for_pipeline(pipeline_name: str) -> list[str]:
     if not pipeline_name:
         return []
 
-    architecture_docs = discover_architecture_docs()
+    architecture_docs = discover_architecture_docs(tests_dir)
     pipeline_lower = pipeline_name.lower()
     seed_paths = []
 

@@ -10,6 +10,7 @@ export PATH := $(USER_BIN):$(PATH)
 # Create venv and install dependencies
 install:
 	$(PIP) install $(PIP_INSTALL_FLAGS) -r requirements.txt
+	$(PIP) install $(PIP_INSTALL_FLAGS) -e .
 
 # Run Prefect ECS demo (default demo) - shows Investigation Trace in RCA
 demo:
@@ -53,50 +54,50 @@ dev:
 # Deploy all test case infrastructure in parallel (SDK - fast!)
 deploy:
 	@echo "Deploying all stacks in parallel..."
-	@$(PYTHON) tests/test_case_upstream_lambda/infrastructure_sdk/deploy.py & \
-	$(PYTHON) tests/test_case_upstream_prefect_ecs_fargate/infrastructure_sdk/deploy.py & \
-	$(PYTHON) tests/test_case_upstream_apache_flink_ecs/infrastructure_sdk/deploy.py & \
+	@$(PYTHON) -m tests.test_case_upstream_lambda.infrastructure_sdk.deploy & \
+	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.infrastructure_sdk.deploy & \
+	$(PYTHON) -m tests.test_case_upstream_apache_flink_ecs.infrastructure_sdk.deploy & \
 	wait
 	@echo "All stacks deployed."
 
 # Deploy Lambda test case
 deploy-lambda:
 	@echo "Deploying Lambda stack..."
-	$(PYTHON) tests/test_case_upstream_lambda/infrastructure_sdk/deploy.py
+	$(PYTHON) -m tests.test_case_upstream_lambda.infrastructure_sdk.deploy
 
 # Deploy Prefect ECS test case
 deploy-prefect:
 	@echo "Deploying Prefect ECS stack..."
-	$(PYTHON) tests/test_case_upstream_prefect_ecs_fargate/infrastructure_sdk/deploy.py
+	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.infrastructure_sdk.deploy
 
 # Deploy Flink ECS test case
 deploy-flink:
 	@echo "Deploying Flink ECS stack..."
-	$(PYTHON) tests/test_case_upstream_apache_flink_ecs/infrastructure_sdk/deploy.py
+	$(PYTHON) -m tests.test_case_upstream_apache_flink_ecs.infrastructure_sdk.deploy
 
 # Destroy all test case infrastructure in parallel
 destroy:
 	@echo "Destroying all stacks in parallel..."
-	@$(PYTHON) tests/test_case_upstream_lambda/infrastructure_sdk/destroy.py & \
-	$(PYTHON) tests/test_case_upstream_prefect_ecs_fargate/infrastructure_sdk/destroy.py & \
-	$(PYTHON) tests/test_case_upstream_apache_flink_ecs/infrastructure_sdk/destroy.py & \
+	@$(PYTHON) -m tests.test_case_upstream_lambda.infrastructure_sdk.destroy & \
+	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.infrastructure_sdk.destroy & \
+	$(PYTHON) -m tests.test_case_upstream_apache_flink_ecs.infrastructure_sdk.destroy & \
 	wait
 	@echo "All stacks destroyed."
 
 # Destroy Lambda test case
 destroy-lambda:
 	@echo "Destroying Lambda stack..."
-	$(PYTHON) tests/test_case_upstream_lambda/infrastructure_sdk/destroy.py
+	$(PYTHON) -m tests.test_case_upstream_lambda.infrastructure_sdk.destroy
 
 # Destroy Prefect ECS test case
 destroy-prefect:
 	@echo "Destroying Prefect ECS stack..."
-	$(PYTHON) tests/test_case_upstream_prefect_ecs_fargate/infrastructure_sdk/destroy.py
+	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.infrastructure_sdk.destroy
 
 # Destroy Flink ECS test case
 destroy-flink:
 	@echo "Destroying Flink ECS stack..."
-	$(PYTHON) tests/test_case_upstream_apache_flink_ecs/infrastructure_sdk/destroy.py
+	$(PYTHON) -m tests.test_case_upstream_apache_flink_ecs.infrastructure_sdk.destroy
 
 # Run fast tests + Prefect cloud E2E
 test:

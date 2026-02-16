@@ -14,15 +14,11 @@ Key difference from Prefect stack:
 - Trigger Lambda starts ECS tasks via RunTask API
 """
 
-import sys
 import time
 import uuid
 from pathlib import Path
 
-# Add project root to path
 project_root = Path(__file__).resolve().parents[3]
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
 
 from tests.shared.infrastructure_sdk import save_outputs
 from tests.shared.infrastructure_sdk.deployer import get_boto3_client, get_standard_tags_dict
