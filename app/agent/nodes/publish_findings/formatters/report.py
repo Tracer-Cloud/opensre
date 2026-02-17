@@ -134,26 +134,6 @@ def _format_non_validated_claims_section(ctx: ReportContext) -> str:
     return non_validated_section
 
 
-def _format_validity_info(ctx: ReportContext) -> str:
-    """Format the validity score summary.
-
-    Args:
-        ctx: Report context
-
-    Returns:
-        Formatted validity info line
-    """
-    validity_score = ctx.get("validity_score", 0.0)
-    if validity_score <= 0:
-        return ""
-
-    validated_claims = ctx.get("validated_claims", [])
-    non_validated_claims = ctx.get("non_validated_claims", [])
-    total = len(validated_claims) + len(non_validated_claims)
-
-    return f"\n*Validity Score:* {validity_score:.0%} ({len(validated_claims)}/{total} validated)\n"
-
-
 def _format_recommendations(ctx: ReportContext) -> str:
     """Render investigation recommendations, if any."""
     recs = ctx.get("investigation_recommendations", []) or []
@@ -264,7 +244,6 @@ def _remove_speculative_words(text: str) -> str:
 def _format_conclusion_section(ctx: ReportContext, evidence: dict) -> str:
     validated_section = _format_validated_claims_section(ctx, evidence)
     non_validated_section = _format_non_validated_claims_section(ctx)
-    validity_info = _format_validity_info(ctx)
 
     # 1) Always show a one-liner root cause (with a safe fallback)
     root_cause_sentence = _derive_root_cause_sentence(ctx)
@@ -278,7 +257,7 @@ def _format_conclusion_section(ctx: ReportContext, evidence: dict) -> str:
     recommendations_section = _format_recommendations(ctx)
     remediation_section = _format_remediation_steps(ctx)
 
-    claims_block = f"{validated_section}{separator}{non_validated_section}{validity_info}{recommendations_section}{remediation_section}".strip()
+    claims_block = f"{validated_section}{separator}{non_validated_section}{recommendations_section}{remediation_section}".strip()
 
     if claims_block:
         return f"\n{root_cause_block}{claims_block}\n"
@@ -300,16 +279,10 @@ def format_slack_message(ctx: ReportContext) -> str:
         Formatted Slack message string (plain-text with mrkdwn)
     """
     evidence = ctx.get("evidence", {})
-    validated_claims = ctx.get("validated_claims", [])
-    non_validated_claims = ctx.get("non_validated_claims", [])
-    validity_score = ctx.get("validity_score", 0.0)
 
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
-    alert_id_str = f"\n*Alert ID:* {ctx['alert_id']}" if ctx.get("alert_id") else ""
+    alert_id = ctx.get("alert_id")
     duration_seconds = ctx.get("investigation_duration_seconds")
-    timing_line = (
-        f"Timing: {duration_seconds}s" if duration_seconds is not None else "Timing: unknown"
-    )
 
     conclusion_section = _sanitize_for_slack(_format_conclusion_section(ctx, evidence))
     lineage_section = _sanitize_for_slack(format_data_lineage_flow(ctx))
@@ -317,18 +290,19 @@ def format_slack_message(ctx: ReportContext) -> str:
     cited_evidence_section = _sanitize_for_slack(format_cited_evidence_section(ctx))
     cloudwatch_link = render_cloudwatch_link(ctx)
 
-    total_claims = len(validated_claims) + len(non_validated_claims)
-    confidence = ctx.get("confidence", 0.0)
+    meta_lines = []
+    if duration_seconds is not None:
+        meta_lines.append(f"Timing: {duration_seconds}s")
+    if alert_id:
+        meta_lines.append(f"*Alert ID:* {alert_id}")
+    meta_block = "\n" + "\n".join(meta_lines) if meta_lines else ""
 
     return f"""[RCA] {pipeline_name} incident
-{timing_line}
-{alert_id_str}
 {conclusion_section}
 {lineage_section}
 {infrastructure_section}
-Confidence: {confidence:.0%} | Validity: {validity_score:.0%} ({len(validated_claims)}/{total_claims} validated)
 {cited_evidence_section}
-{cloudwatch_link}
+{cloudwatch_link}{meta_block}
 """
 
 
@@ -348,12 +322,10 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
 
     validated_claims = ctx.get("validated_claims", [])
     non_validated_claims = ctx.get("non_validated_claims", [])
-    validity_score = ctx.get("validity_score", 0.0)
-    confidence = ctx.get("confidence", 0.0)
-    total_claims = len(validated_claims) + len(non_validated_claims)
 
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
     duration_seconds = ctx.get("investigation_duration_seconds")
+    alert_id = ctx.get("alert_id")
 
     blocks: list[dict[str, Any]] = []
 
@@ -362,20 +334,6 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
         "type": "header",
         "text": {"type": "plain_text", "text": f"\U0001f6a8 [RCA] {pipeline_name} incident"},
     })
-
-    # ── Meta context line ──
-    meta_parts = []
-    if duration_seconds is not None:
-        meta_parts.append(f"Analyzed in {duration_seconds}s")
-    if ctx.get("alert_id"):
-        meta_parts.append(f"Alert: {ctx['alert_id']}")
-    if meta_parts:
-        blocks.append({
-            "type": "context",
-            "elements": [{"type": "mrkdwn", "text": " | ".join(meta_parts)}],
-        })
-
-    blocks.append({"type": "divider"})
 
     def _mrkdwn_section(text: str) -> dict[str, Any]:
         """Build a section block with sanitized mrkdwn text.
@@ -454,14 +412,17 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     if cw_link:
         blocks.append(_mrkdwn_section(cw_link))
 
-    # ── Confidence footer ──
-    blocks.append({"type": "divider"})
-    blocks.append({
-        "type": "context",
-        "elements": [{"type": "mrkdwn", "text": (
-            f"Confidence: *{confidence:.0%}* | "
-            f"Validity: *{validity_score:.0%}* ({len(validated_claims)}/{total_claims} validated)"
-        )}],
-    })
+    # ── Meta context (duration / alert) at the bottom ──
+    meta_parts = []
+    if duration_seconds is not None:
+        meta_parts.append(f"Analyzed in {duration_seconds}s")
+    if alert_id:
+        meta_parts.append(f"Alert: {alert_id}")
+    if meta_parts:
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": " | ".join(meta_parts)}],
+        })
 
     return blocks

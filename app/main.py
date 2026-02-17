@@ -31,6 +31,7 @@ def _run(
     # Slack delivery is now handled inside node_publish_findings
     return {
         "slack_message": state["slack_message"],
+        "report": state["slack_message"],
         "problem_md": state["problem_md"],
         "root_cause": state["root_cause"],
         "confidence": state["confidence"],

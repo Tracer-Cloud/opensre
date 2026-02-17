@@ -6,7 +6,7 @@ from rich.panel import Panel
 from app.agent.output import get_output_format
 
 
-def render_report(slack_message: str, confidence: float, validity_score: float) -> None:
+def render_report(slack_message: str, confidence: float) -> None:
     """Render the final report to terminal.
 
     Uses Rich for formatted output when available, falls back to plain text.
@@ -14,7 +14,6 @@ def render_report(slack_message: str, confidence: float, validity_score: float) 
     Args:
         slack_message: Formatted report message
         confidence: Confidence score (0.0 to 1.0)
-        validity_score: Validity score (0.0 to 1.0)
 
     Returns:
         None - outputs directly to terminal
@@ -26,9 +25,9 @@ def render_report(slack_message: str, confidence: float, validity_score: float) 
         return
 
     if fmt == "rich":
-        _render_rich_report(slack_message, confidence, validity_score)
+        _render_rich_report(slack_message, confidence)
     else:
-        _render_plain_report(slack_message, confidence, validity_score)
+        _render_plain_report(slack_message, confidence)
 
 
 def _render_empty_report(fmt: str) -> None:
@@ -39,33 +38,29 @@ def _render_empty_report(fmt: str) -> None:
         print("No report generated.")
 
 
-def _render_rich_report(slack_message: str, confidence: float, validity_score: float) -> None:
+def _render_rich_report(slack_message: str, confidence: float) -> None:
     """Render report using Rich formatting.
 
     Args:
         slack_message: Formatted report message
         confidence: Confidence score
-        validity_score: Validity score
     """
     console = Console()
     console.print()
     console.print(Panel(slack_message, title="RCA Report", border_style="green"))
-    console.print(
-        f"\nInvestigation complete. Confidence: {confidence:.0%} | Validity: {validity_score:.0%}"
-    )
+    console.print(f"\nInvestigation complete. Confidence: {confidence:.0%}")
 
 
-def _render_plain_report(slack_message: str, confidence: float, validity_score: float) -> None:
+def _render_plain_report(slack_message: str, confidence: float) -> None:
     """Render report using plain text formatting.
 
     Args:
         slack_message: Formatted report message
         confidence: Confidence score
-        validity_score: Validity score
     """
     print("\n" + "=" * 60)
     print("RCA REPORT")
     print("=" * 60)
     print(slack_message)
     print("=" * 60)
-    print(f"Investigation complete. Confidence: {confidence:.0%} | Validity: {validity_score:.0%}")
+    print(f"Investigation complete. Confidence: {confidence:.0%}")
