@@ -11,6 +11,34 @@ from app.agent.output import debug_print
 from app.config import SLACK_CHANNEL
 
 
+def build_action_blocks(investigation_url: str, feedback_url: str | None = None) -> list[dict[str, Any]]:
+    """Build Slack Block Kit action blocks with interactive buttons.
+
+    Args:
+        investigation_url: URL to the investigation details page in Tracer.
+        feedback_url: Optional URL for the feedback form. Defaults to investigation_url.
+
+    Returns:
+        List of Block Kit block dicts ready for the blocks parameter.
+    """
+    elements: list[dict[str, Any]] = [
+        {
+            "type": "button",
+            "text": {"type": "plain_text", "text": "View Details in Tracer"},
+            "url": investigation_url,
+            "style": "primary",
+            "action_id": "view_investigation",
+        },
+        {
+            "type": "button",
+            "text": {"type": "plain_text", "text": "\U0001f4dd Give Feedback"},
+            "url": feedback_url or investigation_url,
+            "action_id": "give_feedback",
+        },
+    ]
+    return [{"type": "actions", "elements": elements}]
+
+
 def send_slack_report(
     slack_message: str,
     channel: str | None = None,
