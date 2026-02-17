@@ -122,7 +122,7 @@ def generate_report(state: InvestigationState) -> dict:
     slack_message = format_slack_message(ctx)
 
     # Render to terminal
-    render_report(slack_message, ctx.get("confidence", 0.0), ctx.get("validity_score", 0.0))
+    render_report(slack_message, ctx.get("confidence", 0.0))
 
     # Persist to memory if enabled
     _persist_memory(state, slack_message)
