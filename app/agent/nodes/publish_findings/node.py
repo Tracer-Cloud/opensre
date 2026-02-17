@@ -4,7 +4,11 @@ from langsmith import traceable
 
 from app.agent.nodes.publish_findings.context import build_report_context
 from app.agent.nodes.publish_findings.formatters.lineage import format_data_lineage_flow
-from app.agent.nodes.publish_findings.formatters.report import format_slack_message
+from app.agent.nodes.publish_findings.formatters.report import (
+    build_slack_blocks,
+    format_slack_message,
+    get_investigation_url,
+)
 from app.agent.nodes.publish_findings.renderers.terminal import render_report
 from app.agent.state import InvestigationState
 
@@ -126,13 +130,22 @@ def generate_report(state: InvestigationState) -> dict:
     # Send to Slack - always reply in the thread of the original alert message.
     # Use thread_ts if the alert was already in a thread, otherwise use ts
     # (the alert message's own timestamp) to start a thread under it.
+    from app.agent.utils.slack_delivery import build_action_blocks
+
     slack_ctx = state.get("slack_context", {})
     thread_ts = slack_ctx.get("thread_ts") or slack_ctx.get("ts")
+
+    investigation_url = get_investigation_url()
+    report_blocks = build_slack_blocks(ctx)
+    action_blocks = build_action_blocks(investigation_url)
+    all_blocks = report_blocks + action_blocks
+
     send_slack_report(
         slack_message,
         channel=slack_ctx.get("channel_id"),
         thread_ts=thread_ts,
         access_token=slack_ctx.get("access_token"),
+        blocks=all_blocks,
     )
 
     return {"slack_message": slack_message}

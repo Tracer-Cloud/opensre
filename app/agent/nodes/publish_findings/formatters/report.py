@@ -178,9 +178,36 @@ def _format_remediation_steps(ctx: ReportContext) -> str:
     return "\n" + "\n".join(lines) + "\n"
 
 
+def _sanitize_for_slack(text: str) -> str:
+    """Convert markdown formatting to Slack mrkdwn.
+
+    Slack does not render # headers, ** bold, or other standard markdown.
+    This converts common patterns to Slack-native formatting.
+    """
+    # Strip markdown headers (# ## ### etc.) → *bold*
+    result = re.sub(r"^#{1,6}\s+(.+)$", r"*\1*", text, flags=re.MULTILINE)
+    # Convert **bold** to *bold*
+    result = re.sub(r"\*\*(.+?)\*\*", r"*\1*", result)
+    # Convert __bold__ to *bold*
+    result = re.sub(r"__(.+?)__", r"*\1*", result)
+    return result
+
+
 def _first_sentence(text: str) -> str:
-    """Return the first sentence from text, normalized to one line."""
-    normalized = " ".join(text.split())
+    """Return the first sentence from text, normalized to one line.
+
+    Strips markdown headers and structural labels before extracting.
+    """
+    # Remove markdown headers (at line start or inline after collapse)
+    cleaned = re.sub(r"(?:^|\s)#{1,6}\s+", " ", text, flags=re.MULTILINE)
+    # Remove structural labels like "Problem Statement", "Summary", "Context"
+    cleaned = re.sub(
+        r"\b(?:Problem Statement|Summary|Context|Description|Overview)\b[:\s]*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    normalized = " ".join(cleaned.split()).strip()
     if not normalized:
         return ""
 
@@ -261,31 +288,22 @@ def _format_conclusion_section(ctx: ReportContext, evidence: dict) -> str:
 
 
 def format_slack_message(ctx: ReportContext) -> str:
-    """Format the complete Slack message for RCA report.
+    """Format a plain-text Slack message for the RCA report.
 
-    Assembles all report sections:
-    - Header with pipeline name and alert ID
-    - Conclusion with claims and root cause
-    - Data lineage flow
-    - Investigation trace
-    - Confidence and validity scores
-    - Cited evidence with samples and URLs
-    - Investigation and CloudWatch links
+    Used as the `text` fallback (notifications, accessibility) when
+    Block Kit blocks are the primary rendered content.
 
     Args:
         ctx: Report context with all investigation data
 
     Returns:
-        Formatted Slack message string
+        Formatted Slack message string (plain-text with mrkdwn)
     """
     evidence = ctx.get("evidence", {})
     validated_claims = ctx.get("validated_claims", [])
     non_validated_claims = ctx.get("non_validated_claims", [])
     validity_score = ctx.get("validity_score", 0.0)
 
-    # Build report sections
-    tracer_link = get_investigation_url()
-    tracer_cta = f"*{format_slack_link('View Investigation', tracer_link)}*"
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
     alert_id_str = f"\n*Alert ID:* {ctx['alert_id']}" if ctx.get("alert_id") else ""
     duration_seconds = ctx.get("investigation_duration_seconds")
@@ -293,29 +311,157 @@ def format_slack_message(ctx: ReportContext) -> str:
         f"Timing: {duration_seconds}s" if duration_seconds is not None else "Timing: unknown"
     )
 
-    conclusion_section = _format_conclusion_section(ctx, evidence)
-    lineage_section = format_data_lineage_flow(ctx)
-    infrastructure_section = format_infrastructure_correlation(ctx)
-    cited_evidence_section = format_cited_evidence_section(ctx)
+    conclusion_section = _sanitize_for_slack(_format_conclusion_section(ctx, evidence))
+    lineage_section = _sanitize_for_slack(format_data_lineage_flow(ctx))
+    infrastructure_section = _sanitize_for_slack(format_infrastructure_correlation(ctx))
+    cited_evidence_section = _sanitize_for_slack(format_cited_evidence_section(ctx))
     cloudwatch_link = render_cloudwatch_link(ctx)
 
     total_claims = len(validated_claims) + len(non_validated_claims)
     confidence = ctx.get("confidence", 0.0)
 
-    # Assemble final message
     return f"""[RCA] {pipeline_name} incident
-Analyzed by: pipeline-agent
 {timing_line}
 {alert_id_str}
-
-*Conclusion*
 {conclusion_section}
 {lineage_section}
 {infrastructure_section}
-*Confidence:* {confidence:.0%}
-*Validity Score:* {validity_score:.0%} ({len(validated_claims)}/{total_claims} validated)
+Confidence: {confidence:.0%} | Validity: {validity_score:.0%} ({len(validated_claims)}/{total_claims} validated)
 {cited_evidence_section}
-
-{tracer_cta}
 {cloudwatch_link}
 """
+
+
+def build_slack_blocks(ctx: ReportContext) -> list[dict]:
+    """Build Slack Block Kit blocks for the RCA report.
+
+    Produces a clean, well-structured message using Slack's native
+    formatting: header, sections with mrkdwn, dividers, and context blocks.
+
+    Args:
+        ctx: Report context with all investigation data
+
+    Returns:
+        List of Block Kit block dicts.
+    """
+    from typing import Any
+
+    validated_claims = ctx.get("validated_claims", [])
+    non_validated_claims = ctx.get("non_validated_claims", [])
+    validity_score = ctx.get("validity_score", 0.0)
+    confidence = ctx.get("confidence", 0.0)
+    total_claims = len(validated_claims) + len(non_validated_claims)
+
+    pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
+    duration_seconds = ctx.get("investigation_duration_seconds")
+
+    blocks: list[dict[str, Any]] = []
+
+    # ── Header ──
+    blocks.append({
+        "type": "header",
+        "text": {"type": "plain_text", "text": f"\U0001f6a8 [RCA] {pipeline_name} incident"},
+    })
+
+    # ── Meta context line ──
+    meta_parts = []
+    if duration_seconds is not None:
+        meta_parts.append(f"Analyzed in {duration_seconds}s")
+    if ctx.get("alert_id"):
+        meta_parts.append(f"Alert: {ctx['alert_id']}")
+    if meta_parts:
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": " | ".join(meta_parts)}],
+        })
+
+    blocks.append({"type": "divider"})
+
+    def _mrkdwn_section(text: str) -> dict[str, Any]:
+        """Build a section block with sanitized mrkdwn text.
+
+        Slack section blocks have a 3000 char limit per text field.
+        """
+        sanitized = _sanitize_for_slack(text)
+        if len(sanitized) > 2990:
+            sanitized = sanitized[:2987] + "..."
+        return {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": sanitized},
+        }
+
+    # ── Root Cause ──
+    root_cause_sentence = _derive_root_cause_sentence(ctx)
+    if not root_cause_sentence:
+        root_cause_sentence = "Not determined (insufficient evidence)"
+    blocks.append(_mrkdwn_section(f"*Root Cause*\n{root_cause_sentence}"))
+
+    # ── Validated Claims ──
+    if validated_claims:
+        catalog = ctx.get("evidence_catalog") or {}
+        claims_lines = []
+        for claim_data in validated_claims:
+            claim = claim_data.get("claim", "")
+            claim = re.sub(r"\s*\[(?i:evidence):[^\]]*\]", "", claim).strip()
+            claim = _sanitize_for_slack(claim)
+            evidence_ids = claim_data.get("evidence_ids", [])
+            evidence_list = []
+            if evidence_ids:
+                for eid in evidence_ids:
+                    entry = catalog.get(eid, {})
+                    disp = entry.get("display_id", eid)
+                    url = entry.get("url")
+                    evidence_list.append(format_slack_link(disp, url) if url else disp)
+            ev_str = f" [{', '.join(evidence_list)}]" if evidence_list else ""
+            claims_lines.append(f"\u2022 {claim}{ev_str}")
+        blocks.append(_mrkdwn_section("*Findings*\n" + "\n".join(claims_lines)))
+
+    # ── Non-Validated Claims ──
+    if non_validated_claims:
+        nv_lines = []
+        for claim_data in non_validated_claims:
+            claim = _sanitize_for_slack(claim_data.get("claim", ""))
+            nv_lines.append(f"\u2022 {claim}")
+        blocks.append(_mrkdwn_section("*Inferred (not yet validated)*\n" + "\n".join(nv_lines)))
+
+    # ── Recommendations / Remediation ──
+    recs = _format_recommendations(ctx).strip()
+    remediation = _format_remediation_steps(ctx).strip()
+    next_steps = "\n".join(filter(None, [recs, remediation]))
+    if next_steps:
+        blocks.append({"type": "divider"})
+        blocks.append(_mrkdwn_section(next_steps))
+
+    # ── Data Lineage ──
+    lineage_section = format_data_lineage_flow(ctx).strip()
+    if lineage_section:
+        blocks.append({"type": "divider"})
+        blocks.append(_mrkdwn_section(lineage_section))
+
+    # ── Investigation Trace ──
+    infra_section = format_infrastructure_correlation(ctx).strip()
+    if infra_section:
+        blocks.append(_mrkdwn_section(infra_section))
+
+    # ── Cited Evidence ──
+    cited_section = format_cited_evidence_section(ctx).strip()
+    if cited_section:
+        blocks.append({"type": "divider"})
+        blocks.append(_mrkdwn_section(cited_section))
+
+    # ── CloudWatch link ──
+    cw_link = render_cloudwatch_link(ctx).strip()
+    if cw_link:
+        blocks.append(_mrkdwn_section(cw_link))
+
+    # ── Confidence footer ──
+    blocks.append({"type": "divider"})
+    blocks.append({
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": (
+            f"Confidence: *{confidence:.0%}* | "
+            f"Validity: *{validity_score:.0%}* ({len(validated_claims)}/{total_claims} validated)"
+        )}],
+    })
+
+    return blocks
