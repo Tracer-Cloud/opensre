@@ -11,10 +11,12 @@ monitors:
       {{#is_alert}}
       Kubernetes job {{kube_job.name}} failed in namespace tracer-test.
       Check pod logs and events for details.
+      @slack-devs-alerts
       {{/is_alert}}
 
       {{#is_recovery}}
       Job {{kube_job.name}} has recovered.
+      @slack-devs-alerts
       {{/is_recovery}}
     tags:
       - managed_by:tracer-agent
@@ -36,10 +38,12 @@ monitors:
       {{#is_alert}}
       Pipeline error detected in tracer-test namespace.
       Review application logs for the PIPELINE_ERROR pattern.
+      @slack-devs-alerts
       {{/is_alert}}
 
       {{#is_recovery}}
       No more pipeline errors detected.
+      @slack-devs-alerts
       {{/is_recovery}}
     tags:
       - managed_by:tracer-agent

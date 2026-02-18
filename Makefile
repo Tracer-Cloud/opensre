@@ -1,3 +1,6 @@
+-include .env
+export
+
 .PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors
 
 PYTHON = python3
