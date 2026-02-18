@@ -1,0 +1,18 @@
+{
+  "stack_name": "tracer-eks-k8s-test",
+  "cluster_name": "tracer-eks-test",
+  "node_group_name": "tracer-eks-test-nodes",
+  "cluster_role_arn": "arn:aws:iam::395261708130:role/tracer-eks-cluster-role",
+  "node_role_arn": "arn:aws:iam::395261708130:role/tracer-eks-node-role",
+  "ecr_repo_name": "tracer-eks/etl-job",
+  "ecr_image_uri": "395261708130.dkr.ecr.us-east-1.amazonaws.com/tracer-eks/etl-job:latest",
+  "vpc_id": "vpc-0f2ef3c2fffcda11c",
+  "subnet_ids": [
+    "subnet-0eccd7f096a709d8c",
+    "subnet-0d0d475fbd710814c",
+    "subnet-0c28e20367794ab28",
+    "subnet-09f1849d671b6a064",
+    "subnet-067507b22f881d449"
+  ],
+  "region": "us-east-1"
+}
