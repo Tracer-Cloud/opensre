@@ -1,0 +1,29 @@
+## Datadog Helm chart values for AWS EKS cluster
+## Usage: helm install datadog datadog/datadog -f datadog-values-eks.yaml -n tracer-test
+
+datadog:
+  clusterName: tracer-eks-test
+  site: datadoghq.com
+  logs:
+    enabled: true
+    containerCollectAll: true
+  kubeStateMetricsCore:
+    enabled: true
+  kubeStateMetricsEnabled: false
+  orchestratorExplorer:
+    enabled: true
+
+clusterAgent:
+  enabled: true
+  replicas: 1
+
+agents:
+  containers:
+    agent:
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "200m"
+        limits:
+          memory: "512Mi"
+          cpu: "500m"
