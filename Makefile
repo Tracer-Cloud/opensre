@@ -63,6 +63,14 @@ destroy-eks:
 test-k8s-eks:
 	$(PYTHON) -m tests.test_case_kubernetes.test_eks
 
+# Fast: trigger a K8s alert in ~15s (fire-and-forget)
+trigger-alert:
+	$(PYTHON) -m tests.test_case_kubernetes.trigger_alert --configure-kubectl
+
+# Fast trigger + wait for Slack confirmation
+trigger-alert-verify:
+	$(PYTHON) -m tests.test_case_kubernetes.trigger_alert --configure-kubectl --wait-slack
+
 # Run Prefect ECS local test
 prefect-local-test:
 	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_local $(if $(CLOUD),--cloud,)
