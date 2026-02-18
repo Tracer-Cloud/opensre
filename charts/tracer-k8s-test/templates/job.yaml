@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ if .Values.job.injectError }}simple-etl-error{{ else }}simple-etl{{ end }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ if .Values.job.injectError }}simple-etl-error{{ else }}simple-etl{{ end }}
+    tracer: test-case
+spec:
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        app: {{ if .Values.job.injectError }}simple-etl-error{{ else }}simple-etl{{ end }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: etl
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: INPUT_DATA
+              value: {{ .Values.job.inputData | quote }}
+            {{- if .Values.job.injectError }}
+            - name: INJECT_ERROR
+              value: "true"
+            {{- end }}

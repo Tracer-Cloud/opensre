@@ -1,0 +1,11 @@
+namespace: tracer-test
+
+image:
+  repository: tracer-k8s-test
+  tag: latest
+  pullPolicy: Never
+
+job:
+  backoffLimit: 0
+  inputData: '{"id": 1, "name": "sample", "value": 42}'
+  injectError: false
