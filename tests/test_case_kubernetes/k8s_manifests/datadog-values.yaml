@@ -1,0 +1,32 @@
+## Datadog Helm chart values for local kind cluster
+## Usage: helm install datadog datadog/datadog -f datadog-values.yaml -n tracer-test
+
+datadog:
+  clusterName: tracer-k8s-test
+  site: datadoghq.com
+  logs:
+    enabled: true
+    containerCollectAll: true
+  kubeStateMetricsCore:
+    enabled: true
+  kubeStateMetricsEnabled: false
+  orchestratorExplorer:
+    enabled: true
+  kubelet:
+    tlsVerify: false
+  criSocketPath: /run/containerd/containerd.sock
+
+clusterAgent:
+  enabled: true
+  replicas: 1
+
+agents:
+  containers:
+    agent:
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "200m"
+        limits:
+          memory: "512Mi"
+          cpu: "500m"

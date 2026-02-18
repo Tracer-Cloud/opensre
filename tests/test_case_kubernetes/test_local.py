@@ -22,7 +22,7 @@ import sys
 from tests.test_case_kubernetes.infrastructure_sdk.local import (
     apply_manifest,
     build_image,
-    check_prerequisites,
+    check_prerequisites_basic,
     create_kind_cluster,
     delete_kind_cluster,
     delete_manifest,
@@ -104,7 +104,7 @@ def main() -> int:
 
     run_both = not args.success and not args.fail
 
-    missing = check_prerequisites()
+    missing = check_prerequisites_basic()
     if missing:
         print(f"Missing prerequisites: {', '.join(missing)}")
         print("Install with: brew install " + " ".join(missing))

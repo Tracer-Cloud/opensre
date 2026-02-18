@@ -1,4 +1,4 @@
-.PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test test-k8s-local test-k8s test-k8s-datadog
+.PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors
 
 PYTHON = python3
 PIP = python3 -m pip
@@ -39,6 +39,14 @@ test-k8s:
 # Run Kubernetes + Datadog test (kind + DD Agent)
 test-k8s-datadog:
 	$(PYTHON) -m tests.test_case_kubernetes.test_datadog
+
+# Deploy Datadog monitors (requires DD_API_KEY + DD_APP_KEY)
+deploy-dd-monitors:
+	$(PYTHON) -c "from tests.test_case_kubernetes.test_datadog import deploy_monitors; deploy_monitors()"
+
+# Remove Datadog monitors created by tracer tests
+cleanup-dd-monitors:
+	$(PYTHON) -c "from tests.test_case_kubernetes.test_datadog import cleanup_monitors; cleanup_monitors()"
 
 # Run Prefect ECS local test
 prefect-local-test:
@@ -176,6 +184,13 @@ help:
 	@echo "  make superfluid-demo - Run Superfluid test case demo"
 	@echo "  make cloudwatch-demo - Run CloudWatch demo"
 	@echo "  make upstream-downstream - Run upstream/downstream Lambda E2E test"
+	@echo ""
+	@echo "  KUBERNETES"
+	@echo "  make test-k8s-local  - Run Kubernetes local test (kind)"
+	@echo "  make test-k8s        - Run Kubernetes test (matches CI)"
+	@echo "  make test-k8s-datadog - Run Kubernetes + Datadog test"
+	@echo "  make deploy-dd-monitors - Deploy Datadog monitors (DD_API_KEY + DD_APP_KEY)"
+	@echo "  make cleanup-dd-monitors - Remove Datadog test monitors"
 	@echo ""
 	@echo "  LOCAL DEVELOPMENT"
 	@echo "  make install         - Install dependencies"
