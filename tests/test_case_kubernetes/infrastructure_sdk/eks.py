@@ -25,6 +25,9 @@ CLUSTER_NAME = "tracer-eks-test"
 NODE_GROUP_NAME = "tracer-eks-test-nodes"
 ECR_REPO_NAME = "tracer-eks/etl-job"
 REGION = DEFAULT_REGION
+K8S_VERSION = "1.34"
+
+EKS_ADDONS = ["kube-proxy", "vpc-cni", "coredns"]
 
 CLUSTER_ROLE_NAME = "tracer-eks-cluster-role"
 NODE_ROLE_NAME = "tracer-eks-node-role"
@@ -140,6 +143,7 @@ def _create_cluster(cluster_role_arn: str, subnet_ids: list[str]) -> None:
         print(f"Creating EKS cluster {CLUSTER_NAME}...")
         eks.create_cluster(
             name=CLUSTER_NAME,
+            version=K8S_VERSION,
             roleArn=cluster_role_arn,
             resourcesVpcConfig={"subnetIds": subnet_ids, "endpointPublicAccess": True},
             tags=get_standard_tags_dict(STACK_NAME),
@@ -228,6 +232,79 @@ def _wait_for_node_group(target_status: str, timeout: int = 600) -> None:
             raise
         time.sleep(15)
     raise TimeoutError(f"Node group did not reach {target_status} within {timeout}s")
+
+
+# ---------------------------------------------------------------------------
+# EKS Add-ons
+# ---------------------------------------------------------------------------
+
+def _get_latest_addon_version(addon_name: str) -> str:
+    """Look up the latest compatible version for an EKS add-on."""
+    eks = get_boto3_client("eks", REGION)
+    resp = eks.describe_addon_versions(
+        kubernetesVersion=K8S_VERSION,
+        addonName=addon_name,
+    )
+    return resp["addons"][0]["addonVersions"][0]["addonVersion"]
+
+
+def _install_addon(addon_name: str) -> None:
+    """Install or update a single EKS managed add-on."""
+    eks = get_boto3_client("eks", REGION)
+
+    try:
+        resp = eks.describe_addon(clusterName=CLUSTER_NAME, addonName=addon_name)
+        status = resp["addon"]["status"]
+        print(f"Add-on {addon_name} already exists (status={status})")
+        return
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ResourceNotFoundException":
+            raise
+
+    version = _get_latest_addon_version(addon_name)
+    print(f"Installing add-on {addon_name} ({version})...")
+    eks.create_addon(
+        clusterName=CLUSTER_NAME,
+        addonName=addon_name,
+        addonVersion=version,
+        resolveConflicts="OVERWRITE",
+        tags=get_standard_tags_dict(STACK_NAME),
+    )
+
+
+def _wait_for_addon(addon_name: str, timeout: int = 300) -> None:
+    eks = get_boto3_client("eks", REGION)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        resp = eks.describe_addon(clusterName=CLUSTER_NAME, addonName=addon_name)
+        status = resp["addon"]["status"]
+        if status == "ACTIVE":
+            return
+        if status in ("CREATE_FAILED", "DEGRADED"):
+            raise RuntimeError(f"Add-on {addon_name} entered {status}")
+        time.sleep(10)
+    raise TimeoutError(f"Add-on {addon_name} did not become ACTIVE within {timeout}s")
+
+
+def _install_addons() -> None:
+    """Install all EKS managed add-ons and wait for them to become active."""
+    for addon in EKS_ADDONS:
+        _install_addon(addon)
+    for addon in EKS_ADDONS:
+        _wait_for_addon(addon)
+        print(f"Add-on {addon} is ACTIVE")
+
+
+def _delete_addons() -> None:
+    """Delete all EKS managed add-ons (best effort)."""
+    eks = get_boto3_client("eks", REGION)
+    for addon in EKS_ADDONS:
+        try:
+            eks.delete_addon(clusterName=CLUSTER_NAME, addonName=addon)
+            print(f"Deleted add-on {addon}")
+        except ClientError as e:
+            if e.response["Error"]["Code"] != "ResourceNotFoundException":
+                print(f"Warning deleting add-on {addon}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +426,7 @@ def deploy_eks_stack() -> dict[str, Any]:
     _create_cluster(cluster_role["arn"], subnet_ids)
     _enable_api_auth_mode()
     _grant_ci_access()
+    _install_addons()
     _create_node_group(node_role["arn"], subnet_ids)
 
     image_uri = _setup_ecr_and_push_image()
@@ -359,6 +437,7 @@ def deploy_eks_stack() -> dict[str, Any]:
         "stack_name": STACK_NAME,
         "cluster_name": CLUSTER_NAME,
         "node_group_name": NODE_GROUP_NAME,
+        "k8s_version": K8S_VERSION,
         "cluster_role_arn": cluster_role["arn"],
         "node_role_arn": node_role["arn"],
         "ecr_repo_name": ECR_REPO_NAME,
@@ -390,6 +469,8 @@ def destroy_eks_stack() -> None:
         except ClientError as e:
             if e.response["Error"]["Code"] != "ResourceNotFoundException":
                 print(f"Warning: {e}")
+
+    _delete_addons()
 
     if _cluster_exists():
         print(f"Deleting EKS cluster {CLUSTER_NAME}...")
