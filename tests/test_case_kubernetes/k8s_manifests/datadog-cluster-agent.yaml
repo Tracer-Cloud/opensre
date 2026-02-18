@@ -94,8 +94,8 @@ metadata:
   namespace: tracer-test
 type: Opaque
 data:
-  # "tracer-k8s-cluster-token" base64-encoded
-  token: dHJhY2VyLWs4cy1jbHVzdGVyLXRva2Vu
+  # "tracer-k8s-cluster-auth-token-2026" base64-encoded (must be >=32 chars)
+  token: dHJhY2VyLWs4cy1jbHVzdGVyLWF1dGgtdG9rZW4tMjAyNg==
 ---
 apiVersion: apps/v1
 kind: Deployment
