@@ -157,25 +157,6 @@ def _get_slack_channel_id() -> str | None:
     return None
 
 
-def _post_to_slack(channel_id: str, text: str) -> bool:
-    """Post a message to Slack."""
-    token = os.environ.get("SLACK_BOT_TOKEN", "")
-    if not token:
-        return False
-    payload = json.dumps({"channel": channel_id, "text": text}).encode()
-    req = urllib.request.Request(
-        "https://slack.com/api/chat.postMessage",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        data = json.loads(resp.read())
-    return data.get("ok", False)
-
-
 def _get_recent_messages(channel_id: str, oldest: str = "0") -> list[dict]:
     token = os.environ.get("SLACK_BOT_TOKEN", "")
     if not token:
@@ -229,8 +210,7 @@ def query_slack_alerts(max_wait: int = 300, channel_id: str | None = None) -> bo
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fast K8s alert trigger (~40s end-to-end)")
     parser.add_argument("--configure-kubectl", action="store_true", help="Run aws eks update-kubeconfig first")
-    parser.add_argument("--verify", action="store_true", help="Verify logs in DD + post confirmation to Slack")
-    parser.add_argument("--wait-monitor", action="store_true", help="Also wait for DD monitor to fire in Slack")
+    parser.add_argument("--verify", action="store_true", help="Verify logs in DD + wait for DD alert in Slack")
     args = parser.parse_args()
 
     start = time.monotonic()
@@ -265,28 +245,28 @@ def main() -> int:
         return 0
 
     dd_found = _poll_datadog_logs(max_wait=90)
-    total_elapsed = time.monotonic() - start
+    dd_elapsed = time.monotonic() - start
 
-    channel_id = _get_slack_channel_id()
-    if dd_found and channel_id:
-        _post_to_slack(channel_id, (
-            f"*[tracer] K8s Job Failure Verified*\n"
-            f"Job `{JOB_NAME}` failed on EKS. "
-            f"Log confirmed in Datadog in {total_elapsed:.0f}s.\n"
-            f"`{logs}`"
-        ))
-        print(f"\nPosted confirmation to #devs-alerts ({total_elapsed:.1f}s total)")
-    elif dd_found:
-        print(f"\nLog confirmed in Datadog ({total_elapsed:.1f}s) but no Slack channel configured")
+    if dd_found:
+        print(f"\nLog confirmed in Datadog ({dd_elapsed:.1f}s)")
     else:
-        print(f"\nWARNING: Log not found in Datadog within timeout ({total_elapsed:.1f}s)")
+        print(f"\nWARNING: Log not found in Datadog within timeout ({dd_elapsed:.1f}s)")
 
-    if args.wait_monitor:
-        query_slack_alerts(max_wait=300, channel_id=channel_id)
+    print("Waiting for Datadog monitor to fire and post to Slack...")
+    channel_id = _get_slack_channel_id()
+    slack_found = query_slack_alerts(max_wait=300, channel_id=channel_id)
 
     _delete_old_job()
 
-    print(f"\nTotal: {time.monotonic() - start:.1f}s")
+    total = time.monotonic() - start
+    if dd_found and slack_found:
+        print(f"\nEnd-to-end verified: job -> Datadog -> Slack ({total:.1f}s)")
+    elif dd_found:
+        print(f"\nPartial: log in Datadog but Slack alert not confirmed ({total:.1f}s)")
+    else:
+        print(f"\nFailed: log not found in Datadog ({total:.1f}s)")
+        return 1
+
     return 0
 
 
