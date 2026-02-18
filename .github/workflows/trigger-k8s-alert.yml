@@ -3,10 +3,10 @@ name: Trigger K8s Alert
 on:
   workflow_dispatch:
     inputs:
-      verify_datadog:
-        description: "Wait and verify logs appear in Datadog"
+      verify:
+        description: "Verify logs in Datadog + post to Slack"
         type: boolean
-        default: false
+        default: true
   schedule:
     - cron: "0 9 * * 1"  # every Monday 9am UTC
 
@@ -20,6 +20,8 @@ jobs:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
       DD_SITE: datadoghq.com
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      SLACK_DEVS_ALERTS_CHANNEL_ID: C09S7GDG60J
 
     steps:
       - uses: actions/checkout@v4
@@ -36,11 +38,8 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
-      - name: Configure kubectl for EKS
-        run: aws eks update-kubeconfig --name tracer-eks-test --region us-east-1
-
-      - name: Run failing job on EKS
+      - name: Trigger K8s alert (~12s)
         run: |
-          python -m tests.test_case_kubernetes.test_eks \
-            --skip-deploy --skip-destroy --skip-monitors \
-            ${{ inputs.verify_datadog == false && '--skip-verify' || '' }}
+          python -m tests.test_case_kubernetes.trigger_alert \
+            --configure-kubectl \
+            ${{ inputs.verify == true && '--verify' || '' }}

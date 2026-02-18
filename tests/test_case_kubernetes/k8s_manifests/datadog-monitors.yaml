@@ -6,7 +6,7 @@ monitors:
   - name: "[tracer] Kubernetes Job Failed"
     type: metric alert
     query: >-
-      sum(last_5m):sum:kubernetes_state.job.failed{kube_namespace:tracer-test} by {kube_job} > 0
+      sum(last_1m):sum:kubernetes_state.job.failed{kube_namespace:tracer-test} by {kube_job} > 0
     message: >-
       {{#is_alert}}
       Kubernetes job {{kube_job.name}} failed in namespace tracer-test.
@@ -28,12 +28,12 @@ monitors:
         critical: 0
       notify_no_data: false
       renotify_interval: 0
-      evaluation_delay: 60
+      evaluation_delay: 0
 
   - name: "[tracer] Pipeline Error in Logs"
     type: log alert
     query: >-
-      logs("PIPELINE_ERROR kube_namespace:tracer-test").index("*").rollup("count").last("5m") > 0
+      logs("PIPELINE_ERROR kube_namespace:tracer-test").index("*").rollup("count").last("1m") > 0
     message: >-
       {{#is_alert}}
       Pipeline error detected in tracer-test namespace.

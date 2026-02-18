@@ -25,7 +25,7 @@ CLUSTER_NAME = "tracer-eks-test"
 NODE_GROUP_NAME = "tracer-eks-test-nodes"
 ECR_REPO_NAME = "tracer-eks/etl-job"
 REGION = DEFAULT_REGION
-K8S_VERSION = "1.34"
+K8S_VERSION = "1.35"
 
 EKS_ADDONS = ["kube-proxy", "vpc-cni", "coredns"]
 
