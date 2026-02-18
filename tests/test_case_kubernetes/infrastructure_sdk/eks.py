@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 import time
@@ -280,6 +281,54 @@ def _filter_eks_subnets(subnet_ids: list[str]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# EKS access management
+# ---------------------------------------------------------------------------
+
+CI_IAM_PRINCIPAL = "arn:aws:iam::395261708130:user/github-actions-ci-readonly"
+
+
+def _enable_api_auth_mode() -> None:
+    """Switch cluster to API_AND_CONFIG_MAP auth so access entries work."""
+    eks_client = get_boto3_client("eks", REGION)
+    try:
+        resp = eks_client.describe_cluster(name=CLUSTER_NAME)
+        mode = resp["cluster"]["accessConfig"]["authenticationMode"]
+        if mode == "API_AND_CONFIG_MAP":
+            return
+        print("Enabling API_AND_CONFIG_MAP authentication mode...")
+        eks_client.update_cluster_config(
+            name=CLUSTER_NAME,
+            accessConfig={"authenticationMode": "API_AND_CONFIG_MAP"},
+        )
+        _wait_for_cluster("ACTIVE", timeout=120)
+    except ClientError:
+        pass
+
+
+def _grant_ci_access() -> None:
+    """Grant the CI IAM principal cluster admin access."""
+    eks_client = get_boto3_client("eks", REGION)
+    try:
+        eks_client.create_access_entry(
+            clusterName=CLUSTER_NAME,
+            principalArn=CI_IAM_PRINCIPAL,
+            type="STANDARD",
+        )
+        print(f"Created access entry for {CI_IAM_PRINCIPAL}")
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ResourceInUseException":
+            raise
+
+    with contextlib.suppress(ClientError):
+        eks_client.associate_access_policy(
+            clusterName=CLUSTER_NAME,
+            principalArn=CI_IAM_PRINCIPAL,
+            policyArn="arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
+            accessScope={"type": "cluster"},
+        )
+
+
+# ---------------------------------------------------------------------------
 # Deploy / Destroy orchestration
 # ---------------------------------------------------------------------------
 
@@ -298,6 +347,8 @@ def deploy_eks_stack() -> dict[str, Any]:
     print(f"Using VPC {vpc_info['vpc_id']} with {len(subnet_ids)} subnets")
 
     _create_cluster(cluster_role["arn"], subnet_ids)
+    _enable_api_auth_mode()
+    _grant_ci_access()
     _create_node_group(node_role["arn"], subnet_ids)
 
     image_uri = _setup_ecr_and_push_image()
