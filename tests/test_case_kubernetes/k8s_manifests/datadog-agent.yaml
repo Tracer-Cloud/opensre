@@ -58,6 +58,8 @@ spec:
                   key: token
             - name: DD_CLUSTER_AGENT_KUBERNETES_SERVICE_NAME
               value: datadog-cluster-agent
+            - name: DD_ORCHESTRATOR_EXPLORER_ENABLED
+              value: "true"
             # kind-specific: resolve hostname and kubelet connectivity
             - name: DD_HOSTNAME
               valueFrom:
