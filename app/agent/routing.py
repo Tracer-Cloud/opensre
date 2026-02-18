@@ -1,7 +1,39 @@
 """Graph routing logic - conditional edges and flow control."""
 
+from __future__ import annotations
+
 from app.agent.output import debug_print
-from app.agent.state import InvestigationState
+from app.agent.state import AgentState, InvestigationState
+
+
+def route_by_mode(state: AgentState) -> str:
+    """Route based on agent mode. Defaults to chat when mode is not set."""
+    return "investigation" if state.get("mode") == "investigation" else "chat"
+
+
+def route_chat(state: AgentState) -> str:
+    """Route chat messages by intent."""
+    return "tracer_data" if state.get("route") == "tracer_data" else "general"
+
+
+def route_after_extract(state: AgentState) -> str:
+    """Route after alert extraction - skip investigation if noise."""
+    return "end" if state.get("is_noise") else "investigate"
+
+
+def route_investigation_loop(state: AgentState) -> str:
+    """Decide whether to continue investigation loop."""
+    return should_continue_investigation(state)
+
+
+def should_call_tools(state: AgentState) -> str:
+    """Check if the last AI message has tool calls that need execution."""
+    msgs = list(state.get("messages", []))
+    if msgs:
+        last = msgs[-1]
+        if hasattr(last, "tool_calls") and getattr(last, "tool_calls", None):
+            return "call_tools"
+    return "done"
 
 
 def should_continue_investigation(state: InvestigationState) -> str:

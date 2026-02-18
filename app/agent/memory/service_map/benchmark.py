@@ -5,8 +5,8 @@ Measures investigation time with service map ON vs OFF to validate performance c
 
 import time
 
-from app.agent.graph_pipeline import run_investigation
 from app.agent.memory.io import get_memories_dir
+from app.agent.runners import run_investigation
 
 
 def _clean_service_map() -> None:
