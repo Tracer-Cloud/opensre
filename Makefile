@@ -1,4 +1,4 @@
-.PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test
+.PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test test-k8s-local test-k8s test-k8s-datadog
 
 PYTHON = python3
 PIP = python3 -m pip
@@ -27,6 +27,18 @@ cloudwatch-demo:
 # Run Prefect ECS Fargate E2E test (alias for demo)
 prefect-demo:
 	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
+
+# Run Kubernetes local test (kind)
+test-k8s-local:
+	$(PYTHON) -m tests.test_case_kubernetes.test_local --both
+
+# Run Kubernetes test (matches CI)
+test-k8s:
+	$(PYTHON) -m tests.test_case_kubernetes.test_local
+
+# Run Kubernetes + Datadog test (kind + DD Agent)
+test-k8s-datadog:
+	$(PYTHON) -m tests.test_case_kubernetes.test_datadog
 
 # Run Prefect ECS local test
 prefect-local-test:

@@ -1,0 +1,171 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: datadog-cluster-agent
+  namespace: tracer-test
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: datadog-cluster-agent
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "namespaces", "pods", "services", "endpoints", "events",
+                "componentstatuses", "configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["nodes/metrics", "nodes/spec", "nodes/stats", "nodes/proxy"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes", "persistentvolumeclaims", "limitranges",
+                "resourcequotas", "replicationcontrollers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "volumeattachments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update"]
+  - nonResourceURLs: ["/metrics", "/healthz"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: datadog-cluster-agent
+  namespace: tracer-test
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: datadog-cluster-agent
+  namespace: tracer-test
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: datadog-cluster-agent
+subjects:
+  - kind: ServiceAccount
+    name: datadog-cluster-agent
+    namespace: tracer-test
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: datadog-cluster-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: datadog-cluster-agent
+subjects:
+  - kind: ServiceAccount
+    name: datadog-cluster-agent
+    namespace: tracer-test
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: datadog-cluster-agent-token
+  namespace: tracer-test
+type: Opaque
+data:
+  # "tracer-k8s-cluster-token" base64-encoded
+  token: dHJhY2VyLWs4cy1jbHVzdGVyLXRva2Vu
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datadog-cluster-agent
+  namespace: tracer-test
+  labels:
+    app: datadog-cluster-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: datadog-cluster-agent
+  template:
+    metadata:
+      labels:
+        app: datadog-cluster-agent
+    spec:
+      serviceAccountName: datadog-cluster-agent
+      containers:
+        - name: cluster-agent
+          image: datadog/cluster-agent:7.62.2
+          imagePullPolicy: Never
+          env:
+            - name: DD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: datadog-api-key
+                  key: api-key
+            - name: DD_SITE
+              valueFrom:
+                secretKeyRef:
+                  name: datadog-api-key
+                  key: site
+                  optional: true
+            - name: DD_CLUSTER_AGENT_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: datadog-cluster-agent-token
+                  key: token
+            - name: DD_CLUSTER_NAME
+              value: tracer-k8s-test
+            - name: DD_ORCHESTRATOR_EXPLORER_ENABLED
+              value: "true"
+            - name: DD_LEADER_ELECTION
+              value: "true"
+            - name: DD_LEADER_ELECTION_DEFAULT_RESOURCE
+              value: "configmap"
+            - name: DD_CLUSTER_AGENT_KUBERNETES_SERVICE_NAME
+              value: datadog-cluster-agent
+          ports:
+            - containerPort: 5005
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: datadog-cluster-agent
+  namespace: tracer-test
+  labels:
+    app: datadog-cluster-agent
+spec:
+  ports:
+    - port: 5005
+      targetPort: 5005
+  selector:
+    app: datadog-cluster-agent
