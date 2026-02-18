@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Kubernetes + Datadog integration test.
+Kubernetes + Datadog integration test (Helm-based).
 
-Deploys a Datadog Agent in a local kind cluster, runs the ETL job,
-and verifies logs arrive in Datadog.
+Deploys Datadog via the official Helm chart in a local kind cluster,
+runs the ETL job, and verifies logs arrive in Datadog.
 
 Prerequisites:
-    brew install kind kubectl
+    brew install kind kubectl helm
     Docker Desktop running
     DD_API_KEY environment variable set
     DD_APP_KEY environment variable set (for log query verification)
@@ -15,16 +15,18 @@ Prerequisites:
 Usage (from project root):
     python -m tests.test_case_kubernetes.test_datadog
     python -m tests.test_case_kubernetes.test_datadog --keep-cluster
-    python -m tests.test_case_kubernetes.test_datadog --skip-verify  # skip Datadog API check
+    python -m tests.test_case_kubernetes.test_datadog --skip-verify
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 
 from tests.test_case_kubernetes.infrastructure_sdk.local import (
@@ -32,11 +34,14 @@ from tests.test_case_kubernetes.infrastructure_sdk.local import (
     build_image,
     check_prerequisites,
     create_kind_cluster,
+    create_or_update_monitor,
     delete_kind_cluster,
     delete_manifest,
-    deploy_datadog_agent,
+    delete_monitor_by_name,
+    deploy_datadog_helm,
     get_pod_logs,
     load_image,
+    load_monitor_definitions,
     wait_for_datadog_agent,
     wait_for_job,
 )
@@ -50,6 +55,8 @@ PIPELINE_DIR = os.path.join(BASE_DIR, "pipeline_code")
 MANIFESTS_DIR = os.path.join(BASE_DIR, "k8s_manifests")
 
 NAMESPACE_MANIFEST = os.path.join(MANIFESTS_DIR, "namespace.yaml")
+DATADOG_VALUES = os.path.join(MANIFESTS_DIR, "datadog-values.yaml")
+MONITOR_DEFS = os.path.join(MANIFESTS_DIR, "datadog-monitors.yaml")
 JOB_ERROR_MANIFEST = os.path.join(MANIFESTS_DIR, "job-with-error.yaml")
 
 
@@ -92,6 +99,67 @@ def query_datadog_logs(query: str, from_seconds_ago: int = 300) -> list[dict]:
         return []
 
 
+def deploy_monitors() -> list[dict]:
+    """Load monitor definitions and create/update each in Datadog."""
+    defs = load_monitor_definitions(MONITOR_DEFS)
+    print(f"\nDeploying {len(defs)} monitor(s) to Datadog...")
+    created = []
+    for monitor_def in defs:
+        try:
+            result = create_or_update_monitor(monitor_def)
+            created.append(result)
+        except Exception as e:
+            print(f"WARNING: Failed to deploy monitor '{monitor_def.get('name')}': {e}")
+    return created
+
+
+def cleanup_monitors() -> None:
+    """Delete monitors created by this test."""
+    defs = load_monitor_definitions(MONITOR_DEFS)
+    for monitor_def in defs:
+        with contextlib.suppress(Exception):
+            delete_monitor_by_name(monitor_def["name"])
+
+
+def verify_monitor_triggered(monitor_name: str, max_wait: int = 300) -> bool:
+    """Poll until a monitor enters Alert or Warn state."""
+    print(f"\nVerifying monitor '{monitor_name}' triggers (up to {max_wait}s)...")
+    api_key = os.environ.get("DD_API_KEY", "")
+    app_key = os.environ.get("DD_APP_KEY", "")
+    site = os.environ.get("DD_SITE", "datadoghq.com")
+
+    if not api_key or not app_key:
+        print("DD_API_KEY and DD_APP_KEY required for monitor verification")
+        return False
+
+    deadline = time.monotonic() + max_wait
+    while time.monotonic() < deadline:
+        try:
+            encoded = urllib.parse.quote(monitor_name)
+            url = f"https://api.{site}/api/v1/monitor?name={encoded}"
+            req = urllib.request.Request(url, headers={
+                "DD-API-KEY": api_key,
+                "DD-APPLICATION-KEY": app_key,
+            })
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                monitors = json.loads(resp.read())
+            for m in monitors:
+                if m.get("name") == monitor_name:
+                    state = m.get("overall_state", "")
+                    print(f"  Monitor state: {state}")
+                    if state in ("Alert", "Warn"):
+                        return True
+        except Exception as e:
+            print(f"  Poll error: {e}")
+
+        remaining = int(deadline - time.monotonic())
+        print(f"  Not triggered yet, retrying... ({remaining}s remaining)")
+        time.sleep(20)
+
+    print(f"FAIL: monitor '{monitor_name}' did not trigger within {max_wait}s")
+    return False
+
+
 def verify_logs_in_datadog(max_wait: int = 180) -> bool:
     """Poll Datadog until the error job's logs appear."""
     print(f"\nVerifying logs in Datadog (polling up to {max_wait}s)...")
@@ -118,11 +186,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Kubernetes + Datadog integration test")
     parser.add_argument("--keep-cluster", action="store_true", help="Don't delete kind cluster after test")
     parser.add_argument("--skip-verify", action="store_true", help="Skip Datadog API log verification")
+    parser.add_argument("--skip-monitors", action="store_true", help="Skip monitor deployment and verification")
+    parser.add_argument("--cleanup-monitors", action="store_true", help="Delete test monitors on exit")
     args = parser.parse_args()
 
     missing = check_prerequisites()
     if missing:
         print(f"Missing prerequisites: {', '.join(missing)}")
+        print("Install with: brew install " + " ".join(missing))
         return 1
 
     if not os.environ.get("DD_API_KEY"):
@@ -131,18 +202,20 @@ def main() -> int:
 
     passed = True
     try:
-        # 1. Setup cluster + Datadog Agent
         create_kind_cluster(CLUSTER_NAME)
         build_image(PIPELINE_DIR, IMAGE_TAG)
         load_image(CLUSTER_NAME, IMAGE_TAG)
         apply_manifest(NAMESPACE_MANIFEST)
-        deploy_datadog_agent(MANIFESTS_DIR, NAMESPACE)
+        deploy_datadog_helm(DATADOG_VALUES, NAMESPACE)
 
         if not wait_for_datadog_agent(NAMESPACE):
             print("FAIL: Datadog Agent did not become ready")
             return 1
 
-        # 2. Run error job (produces distinctive log output)
+        monitors_deployed = []
+        if not args.skip_monitors and os.environ.get("DD_APP_KEY"):
+            monitors_deployed = deploy_monitors()
+
         print("\n--- Running error job ---")
         apply_manifest(JOB_ERROR_MANIFEST)
         status = wait_for_job(NAMESPACE, "simple-etl-error")
@@ -158,7 +231,6 @@ def main() -> int:
             print("FAIL: expected error not in pod logs")
             passed = False
 
-        # 3. Give Datadog Agent time to ship the logs
         if not args.skip_verify and passed:
             print("\nWaiting 30s for Datadog Agent to flush logs...")
             time.sleep(30)
@@ -166,8 +238,15 @@ def main() -> int:
             if not verify_logs_in_datadog():
                 passed = False
 
+        if monitors_deployed and not args.skip_verify and passed:
+            log_monitor_name = "[tracer] Pipeline Error in Logs"
+            if not verify_monitor_triggered(log_monitor_name):
+                print("WARNING: monitor did not trigger (may need more time)")
+
         delete_manifest(JOB_ERROR_MANIFEST)
     finally:
+        if args.cleanup_monitors and os.environ.get("DD_APP_KEY"):
+            cleanup_monitors()
         if not args.keep_cluster:
             delete_kind_cluster(CLUSTER_NAME)
 
