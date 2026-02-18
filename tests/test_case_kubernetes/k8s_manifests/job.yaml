@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: simple-etl
+  namespace: tracer-test
+  labels:
+    app: simple-etl
+    tracer: test-case
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: simple-etl
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: etl
+          image: tracer-k8s-test:latest
+          imagePullPolicy: Never
+          env:
+            - name: INPUT_DATA
+              value: '{"id": 1, "name": "sample", "value": 42}'

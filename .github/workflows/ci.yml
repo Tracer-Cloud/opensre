@@ -90,6 +90,48 @@ jobs:
         run: make typecheck
         continue-on-error: false
 
+  test-kubernetes:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Create package init files
+        run: |
+          touch tests/test_case_kubernetes/__init__.py
+          touch tests/test_case_kubernetes/infrastructure_sdk/__init__.py
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: tracer-k8s-test
+          wait: 60s
+
+      - name: Build Docker image
+        run: docker build -t tracer-k8s-test:latest tests/test_case_kubernetes/pipeline_code/
+
+      - name: Load image into kind
+        run: kind load docker-image tracer-k8s-test:latest --name tracer-k8s-test
+
+      - name: Run Kubernetes tests
+        run: python -m tests.test_case_kubernetes.test_local --keep-cluster
+
+      - name: Teardown kind cluster
+        if: always()
+        run: kind delete cluster --name tracer-k8s-test
+
   test-thorough:
     runs-on: ubuntu-latest
     needs: [lint, test, typecheck]
