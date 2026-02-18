@@ -10,7 +10,7 @@ load_env()
 
 from langsmith import traceable  # noqa: E402
 
-from app.agent.graph_pipeline import run_investigation  # noqa: E402
+from app.agent.runners import run_investigation  # noqa: E402
 from app.cli import parse_args, write_json  # noqa: E402
 from app.ingest import load_request_from_json  # noqa: E402
 
