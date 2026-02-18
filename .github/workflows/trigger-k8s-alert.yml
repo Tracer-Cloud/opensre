@@ -36,9 +36,6 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
-      - name: Identify CI IAM principal
-        run: aws sts get-caller-identity
-
       - name: Configure kubectl for EKS
         run: aws eks update-kubeconfig --name tracer-eks-test --region us-east-1
 
