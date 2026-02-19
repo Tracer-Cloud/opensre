@@ -92,6 +92,10 @@ jobs:
 
   test-kubernetes:
     runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
 
     steps:
       - uses: actions/checkout@v4
@@ -108,29 +112,8 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
-      - name: Create package init files
-        run: |
-          touch tests/test_case_kubernetes/__init__.py
-          touch tests/test_case_kubernetes/infrastructure_sdk/__init__.py
-
-      - name: Create kind cluster
-        uses: helm/kind-action@v1
-        with:
-          cluster_name: tracer-k8s-test
-          wait: 60s
-
-      - name: Build Docker image
-        run: docker build -t tracer-k8s-test:latest tests/test_case_kubernetes/pipeline_code/
-
-      - name: Load image into kind
-        run: kind load docker-image tracer-k8s-test:latest --name tracer-k8s-test
-
-      - name: Run Kubernetes tests
-        run: python -m tests.test_case_kubernetes.test_local --keep-cluster
-
-      - name: Teardown kind cluster
-        if: always()
-        run: kind delete cluster --name tracer-k8s-test
+      - name: Run Kubernetes tests (kind cluster + real S3)
+        run: python -m tests.test_case_kubernetes.test_local
 
   test-thorough:
     runs-on: ubuntu-latest
