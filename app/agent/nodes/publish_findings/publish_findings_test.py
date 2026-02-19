@@ -6,7 +6,6 @@ def test_publish_findings_includes_cited_evidence_section() -> None:
     state: InvestigationState = {
         "pipeline_name": "demo-pipeline",
         "root_cause": "Root cause text.",
-        "confidence": 0.82,
         "validated_claims": [
             {
                 "claim": "Error logs show a failure during execution.",
@@ -54,7 +53,6 @@ def test_publish_findings_does_not_show_next_steps_sections() -> None:
     state: InvestigationState = {
         "pipeline_name": "demo-pipeline",
         "root_cause": "Schema change removed customer_id, causing downstream validation failure.",
-        "confidence": 0.7,
         "validated_claims": [
             {"claim": "Schema version bumped to 2.0 without customer_id", "evidence_sources": []}
         ],
@@ -78,7 +76,6 @@ def test_cited_evidence_dedup_by_evidence_id() -> None:
     state: InvestigationState = {
         "pipeline_name": "demo-pipeline",
         "root_cause": "Root cause text.",
-        "confidence": 0.9,
         "validated_claims": [
             {
                 "claim": "Claim one",

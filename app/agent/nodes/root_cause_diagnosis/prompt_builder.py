@@ -96,8 +96,6 @@ NON_VALIDATED_CLAIMS:
 - <one plausible hypothesis consistent with evidence>
 - <another plausible hypothesis>
 (If you include hypotheses, focus on explaining the failure mechanism and what data is missing to confirm it.)
-
-CONFIDENCE: <0-100 integer>
 """
 
     return prompt

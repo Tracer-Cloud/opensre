@@ -1,8 +1,7 @@
-# Session: 2026-02-19 22:56:07 UTC
+# Session: 2026-02-19 23:46:52 UTC
 
 - **Pipeline**: test_pipeline
 - **Alert ID**: prior001
-- **Confidence**: 80%
 - **Validity**: 80%
 
 ## Root Cause

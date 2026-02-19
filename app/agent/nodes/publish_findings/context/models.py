@@ -14,7 +14,6 @@ class ReportContext(TypedDict, total=False):
     # Core RCA results
     pipeline_name: str
     root_cause: str
-    confidence: float
     validated_claims: list[dict]
     non_validated_claims: list[dict]
     validity_score: float

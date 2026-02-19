@@ -142,7 +142,7 @@ def main():
     result = run_investigation(raw_alert)
     
     # Step 5: Validate investigation quality
-    assert result.get('confidence') > 0.7
+    assert result.get('validity_score') > 0.7
 ```
 
 **Anti-pattern:** Testing happy paths or artificially injecting failures after the fact.

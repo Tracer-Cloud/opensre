@@ -100,7 +100,6 @@ def main():
         baseline_times.append(elapsed)
         baseline_results.append(result)
         print(f"  Time: {elapsed:.2f}s")
-        print(f"  Confidence: {result.get('confidence', 0):.0%}")
         print(f"  Validity: {result.get('validity_score', 0):.0%}")
 
     # Memory runs (with memory, Haiku)
@@ -118,7 +117,6 @@ def main():
         memory_times.append(elapsed)
         memory_results.append(result)
         print(f"  Time: {elapsed:.2f}s")
-        print(f"  Confidence: {result.get('confidence', 0):.0%}")
         print(f"  Validity: {result.get('validity_score', 0):.0%}")
 
     # Statistical analysis
@@ -148,14 +146,10 @@ def main():
     print(f"  Factor: {baseline_mean/memory_mean:.2f}x")
 
     # Quality comparison
-    baseline_conf = mean([r.get("confidence", 0) for r in baseline_results])
     baseline_val = mean([r.get("validity_score", 0) for r in baseline_results])
-    memory_conf = mean([r.get("confidence", 0) for r in memory_results])
     memory_val = mean([r.get("validity_score", 0) for r in memory_results])
 
     print("\nQuality Metrics:")
-    print(f"  Baseline Confidence: {baseline_conf:.0%}")
-    print(f"  Memory Confidence: {memory_conf:.0%} (Δ {memory_conf-baseline_conf:+.0%})")
     print(f"  Baseline Validity: {baseline_val:.0%}")
     print(f"  Memory Validity: {memory_val:.0%} (Δ {memory_val-baseline_val:+.0%})")
 

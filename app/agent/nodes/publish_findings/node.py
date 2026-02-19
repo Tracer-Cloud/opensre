@@ -39,7 +39,6 @@ def _persist_memory(state: InvestigationState, slack_message: str) -> None:
     raw_alert_dict = raw_alert_value if isinstance(raw_alert_value, dict) else {}
     alert_id = raw_alert_dict.get("alert_id", "unknown")
     root_cause = state.get("root_cause", "")
-    confidence = state.get("confidence", 0.0)
     validity_score = state.get("validity_score", 0.0)
 
     # Extract action sequence from executed hypotheses
@@ -57,7 +56,6 @@ def _persist_memory(state: InvestigationState, slack_message: str) -> None:
     ctx: ReportContext = {
         "pipeline_name": pipeline_name,
         "root_cause": root_cause,
-        "confidence": confidence,
         "validated_claims": state.get("validated_claims", []),
         "non_validated_claims": state.get("non_validated_claims", []),
         "validity_score": validity_score,
@@ -91,7 +89,6 @@ def _persist_memory(state: InvestigationState, slack_message: str) -> None:
         pipeline_name=pipeline_name,
         alert_id=alert_id,
         root_cause=root_cause,
-        confidence=confidence,
         validity_score=validity_score,
         action_sequence=action_sequence[:5],  # Top 5 actions
         data_lineage=lineage_section,
@@ -140,7 +137,7 @@ def generate_report(state: InvestigationState) -> dict:
     slack_message = format_slack_message(ctx)
 
     # Render to terminal
-    render_report(slack_message, ctx.get("confidence", 0.0))
+    render_report(slack_message)
 
     # Persist to memory if enabled
     _persist_memory(state, slack_message)
