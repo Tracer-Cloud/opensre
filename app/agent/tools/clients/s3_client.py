@@ -1,17 +1,14 @@
 """S3 client for data inspection and version tracking."""
 
-import os
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from app.agent.tools.clients.env import require_aws_credentials
+from app.agent.tools.clients.env import make_boto3_client, require_aws_credentials
 
 try:
-    import boto3
     from botocore.exceptions import ClientError
 except ImportError:
-    boto3 = None  # type: ignore[assignment]
     ClientError = Exception  # type: ignore[assignment, misc]
 
 
@@ -53,10 +50,7 @@ class S3ObjectVersion:
 
 
 def _get_s3_client():
-    """Get or create S3 client."""
-    if boto3 is None:
-        return None
-    return boto3.client("s3", region_name=os.getenv("AWS_REGION", "us-east-1"))
+    return make_boto3_client("s3")
 
 
 def head_object(bucket: str, key: str) -> dict[str, Any]:

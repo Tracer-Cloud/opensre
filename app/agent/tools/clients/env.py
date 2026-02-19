@@ -26,6 +26,15 @@ def require_env(keys: list[str], *, context: str, hint: str | None = None) -> di
     return _missing_env_error(missing, context=context, hint=hint)
 
 
+def make_boto3_client(service: str):
+    """Return a boto3 client for the given service using the configured AWS region."""
+    try:
+        import boto3 as _boto3
+    except ImportError:
+        return None
+    return _boto3.client(service, region_name=os.getenv("AWS_REGION", "us-east-1"))
+
+
 def require_aws_credentials(*, context: str) -> dict[str, Any] | None:
     try:
         import boto3
