@@ -5,7 +5,6 @@ No printing, no LLM calls. Just fetch data and return typed results.
 """
 
 from app.agent.tools.clients.s3_client import (
-    S3CheckResult,
     compare_versions,
     get_full_object,
     get_object_metadata,
@@ -17,7 +16,7 @@ from app.agent.tools.clients.s3_client import (
 )
 
 
-def check_s3_marker(bucket: str, prefix: str) -> S3CheckResult:
+def check_s3_marker(bucket: str, prefix: str) -> dict:
     """
     Check if _SUCCESS marker exists in S3 storage.
 
@@ -29,10 +28,15 @@ def check_s3_marker(bucket: str, prefix: str) -> S3CheckResult:
         prefix: S3 key prefix (path) where the marker should be located
 
     Returns:
-        S3CheckResult with marker existence status and file count
+        Dictionary with marker existence status and file count
     """
     client = get_s3_client()
-    return client.check_marker(bucket, prefix)
+    result = client.check_marker(bucket, prefix)
+    return {
+        "marker_exists": result.marker_exists,
+        "file_count": result.file_count,
+        "files": result.files,
+    }
 
 
 def inspect_s3_object(bucket: str, key: str) -> dict:

@@ -29,6 +29,11 @@ def check_evidence_availability(
         or evidence.get("datadog_logs")
         or evidence.get("datadog_monitors")
         or evidence.get("datadog_events")
+        or evidence.get("s3_object", {}).get("found")
+        or evidence.get("s3_audit_payload", {}).get("found")
+        or evidence.get("s3_marker")
+        or evidence.get("lambda_function")
+        or evidence.get("lambda_logs")
     )
 
     # Check for evidence in alert annotations
@@ -40,6 +45,7 @@ def check_evidence_availability(
                 annotations.get("log_excerpt")
                 or annotations.get("failed_steps")
                 or annotations.get("error")
+                or annotations.get("error_message")
                 or annotations.get("cloudwatch_logs_url")
             )
 
