@@ -42,12 +42,33 @@ def build_action_blocks(investigation_url: str, feedback_url: str | None = None)
     return [{"type": "actions", "elements": elements}]
 
 
+def _merge_payload(
+    channel: str,
+    text: str,
+    thread_ts: str,
+    blocks: list[dict[str, Any]] | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Build Slack payload by merging base config with optional blocks and any extra keys."""
+    payload: dict[str, Any] = {
+        "channel": channel,
+        "text": text,
+        "thread_ts": thread_ts,
+    }
+    if blocks:
+        payload["blocks"] = blocks
+    if extra:
+        payload.update(extra)
+    return payload
+
+
 def send_slack_report(
     slack_message: str,
     channel: str | None = None,
     thread_ts: str | None = None,
     access_token: str | None = None,
     blocks: list[dict[str, Any]] | None = None,
+    **extra: Any,
 ) -> None:
     """
     Post the RCA report as a thread reply in Slack.
@@ -61,6 +82,7 @@ def send_slack_report(
         thread_ts: The parent message ts to reply under. Required.
         access_token: Slack bot/user OAuth token for direct posting.
         blocks: Optional Slack Block Kit blocks for interactive elements.
+        **extra: Any additional Slack API params (e.g. unfurl_links, mrkdwn) merged into the payload.
     """
     if not thread_ts:
         logger.warning("[slack] Delivery skipped: no thread_ts (channel=%s)", channel)
@@ -68,28 +90,30 @@ def send_slack_report(
         return
 
     if access_token and channel:
-        success = _post_direct(slack_message, channel, thread_ts, access_token, blocks=blocks)
+        success = _post_direct(
+            slack_message, channel, thread_ts, access_token, blocks=blocks, **extra
+        )
         if not success:
             logger.info("[slack] Direct post failed, falling back to webapp delivery")
-            _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks)
+            _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks, **extra)
     else:
-        _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks)
+        _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks, **extra)
 
 
 def _post_direct(
-    text: str, channel: str, thread_ts: str, token: str, *, blocks: list[dict[str, Any]] | None = None,
+    text: str,
+    channel: str,
+    thread_ts: str,
+    token: str,
+    *,
+    blocks: list[dict[str, Any]] | None = None,
+    **extra: Any,
 ) -> bool:
     """Post as a thread reply via Slack chat.postMessage.
 
     Returns True if the message was posted successfully, False otherwise.
     """
-    payload: dict[str, Any] = {
-        "channel": channel,
-        "text": text,
-        "thread_ts": thread_ts,
-    }
-    if blocks:
-        payload["blocks"] = blocks
+    payload = _merge_payload(channel, text, thread_ts, blocks=blocks, **extra)
 
     try:
         resp = httpx.post(
@@ -124,7 +148,12 @@ def _post_direct(
 
 
 def _post_via_webapp(
-    text: str, channel: str | None, thread_ts: str, *, blocks: list[dict[str, Any]] | None = None,
+    text: str,
+    channel: str | None,
+    thread_ts: str,
+    *,
+    blocks: list[dict[str, Any]] | None = None,
+    **extra: Any,
 ) -> None:
     """Fallback: delegate to NextJS /api/slack endpoint."""
     base_url = os.getenv("TRACER_API_URL")
@@ -135,13 +164,7 @@ def _post_via_webapp(
         return
 
     api_url = f"{base_url.rstrip('/')}/api/slack"
-    payload: dict[str, Any] = {
-        "channel": target_channel,
-        "text": text,
-        "thread_ts": thread_ts,
-    }
-    if blocks:
-        payload["blocks"] = blocks
+    payload = _merge_payload(target_channel, text, thread_ts, blocks=blocks, **extra)
 
     try:
         response = httpx.post(api_url, json=payload, timeout=10.0, follow_redirects=True)

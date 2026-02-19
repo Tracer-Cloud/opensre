@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors
+.PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks
 
 PYTHON = python3
 PIP = python3 -m pip
@@ -50,6 +50,26 @@ deploy-dd-monitors:
 # Remove Datadog monitors created by tracer tests
 cleanup-dd-monitors:
 	$(PYTHON) -c "from tests.test_case_kubernetes.test_datadog import cleanup_monitors; cleanup_monitors()"
+
+# Deploy EKS cluster + ECR image for Kubernetes tests
+deploy-eks:
+	$(PYTHON) -c "from tests.test_case_kubernetes.infrastructure_sdk.eks import deploy_eks_stack; deploy_eks_stack()"
+
+# Destroy EKS cluster and all associated resources
+destroy-eks:
+	$(PYTHON) -c "from tests.test_case_kubernetes.infrastructure_sdk.eks import destroy_eks_stack; destroy_eks_stack()"
+
+# Run Kubernetes + Datadog test on EKS
+test-k8s-eks:
+	$(PYTHON) -m tests.test_case_kubernetes.test_eks
+
+# Fast: trigger a K8s alert in ~15s (fire-and-forget)
+trigger-alert:
+	$(PYTHON) -m tests.test_case_kubernetes.trigger_alert --configure-kubectl
+
+# Fast trigger + wait for Slack confirmation
+trigger-alert-verify:
+	$(PYTHON) -m tests.test_case_kubernetes.trigger_alert --configure-kubectl --wait-slack
 
 # Run Prefect ECS local test
 prefect-local-test:
@@ -194,6 +214,9 @@ help:
 	@echo "  make test-k8s-datadog - Run Kubernetes + Datadog test"
 	@echo "  make deploy-dd-monitors - Deploy Datadog monitors (DD_API_KEY + DD_APP_KEY)"
 	@echo "  make cleanup-dd-monitors - Remove Datadog test monitors"
+	@echo "  make deploy-eks      - Deploy EKS cluster + ECR image"
+	@echo "  make destroy-eks     - Destroy EKS cluster and resources"
+	@echo "  make test-k8s-eks    - Run Kubernetes + Datadog test on EKS"
 	@echo ""
 	@echo "  LOCAL DEVELOPMENT"
 	@echo "  make install         - Install dependencies"

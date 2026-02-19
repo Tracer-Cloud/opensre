@@ -9,8 +9,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from app.agent.graph_pipeline import run_investigation
 from app.agent.memory.io import get_memories_dir
+from app.agent.runners import run_investigation
 
 # Import test fixtures
 from tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e import (

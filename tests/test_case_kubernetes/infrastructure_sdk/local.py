@@ -168,11 +168,6 @@ def wait_for_datadog_agent(namespace: str, timeout: int = 180) -> bool:
     return False
 
 
-def uninstall_datadog_helm(namespace: str) -> None:
-    """Uninstall Datadog Helm release."""
-    _run(["helm", "uninstall", DATADOG_HELM_RELEASE, "-n", namespace], check=False)
-
-
 # ---------------------------------------------------------------------------
 # Datadog Monitor API helpers
 # ---------------------------------------------------------------------------
@@ -208,12 +203,6 @@ def load_monitor_definitions(yaml_path: str) -> list[dict]:
     with open(yaml_path) as f:
         doc = yaml.safe_load(f)
     return doc.get("monitors", [])
-
-
-def list_monitors(tag: str) -> list[dict]:
-    """List Datadog monitors filtered by a tag (e.g. 'managed_by:tracer-agent')."""
-    encoded_tag = urllib.parse.quote(f"tag:\"{tag}\"")
-    return _dd_api_request("GET", f"/api/v1/monitor?monitor_tags={encoded_tag}")
 
 
 def _find_monitor_by_name(name: str) -> dict | None:
