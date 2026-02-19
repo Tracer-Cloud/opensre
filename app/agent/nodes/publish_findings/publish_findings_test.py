@@ -50,7 +50,7 @@ def test_publish_findings_includes_cited_evidence_section() -> None:
     )
 
 
-def test_publish_findings_shows_next_steps_sections() -> None:
+def test_publish_findings_does_not_show_next_steps_sections() -> None:
     state: InvestigationState = {
         "pipeline_name": "demo-pipeline",
         "root_cause": "Schema change removed customer_id, causing downstream validation failure.",
@@ -70,10 +70,8 @@ def test_publish_findings_shows_next_steps_sections() -> None:
     result = generate_report(state)
     slack_message = result["slack_message"]
 
-    assert "*Suggested Next Steps:*" in slack_message
-    assert "Fetch CloudWatch metrics for spikes" in slack_message
-    assert "*Remediation Next Steps:*" in slack_message
-    assert "Add schema contract gate to block missing customer_id" in slack_message
+    assert "*Suggested Next Steps:*" not in slack_message
+    assert "*Remediation Next Steps:*" not in slack_message
 
 
 def test_cited_evidence_dedup_by_evidence_id() -> None:

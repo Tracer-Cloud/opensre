@@ -85,7 +85,6 @@ def plan_actions(
         llm=llm,
         plan_model=plan_model,
         problem_md=input_data.problem_md,
-        investigation_recommendations=input_data.investigation_recommendations,
         executed_hypotheses=input_data.executed_hypotheses,
         available_actions=available_actions,
         available_sources=available_sources,
