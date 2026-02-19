@@ -1,0 +1,45 @@
+name: Trigger K8s Alert
+
+on:
+  workflow_dispatch:
+    inputs:
+      verify:
+        description: "Verify logs in Datadog + post to Slack"
+        type: boolean
+        default: true
+  schedule:
+    - cron: "0 9 * * 1"  # every Monday 9am UTC
+
+jobs:
+  trigger-alert:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+      DD_SITE: datadoghq.com
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      SLACK_DEVS_ALERTS_CHANNEL_ID: C09S7GDG60J
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Trigger K8s alert (~12s)
+        run: |
+          python -m tests.test_case_kubernetes.trigger_alert \
+            --configure-kubectl \
+            ${{ inputs.verify == true && '--verify' || '' }}
