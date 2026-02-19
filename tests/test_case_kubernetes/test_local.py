@@ -189,6 +189,12 @@ def setup_cluster() -> None:
     build_image(PIPELINE_DIR, IMAGE_TAG)
     load_image(CLUSTER_NAME, IMAGE_TAG)
     apply_manifest(NAMESPACE_MANIFEST)
+    # Create the service account used by job manifests (on EKS this is created with IRSA)
+    from tests.test_case_kubernetes.infrastructure_sdk.local import _run
+    _run(
+        ["kubectl", "create", "serviceaccount", "etl-pipeline-sa", "-n", NAMESPACE],
+        check=False,
+    )
 
 
 def run_success_test(config: dict) -> bool:

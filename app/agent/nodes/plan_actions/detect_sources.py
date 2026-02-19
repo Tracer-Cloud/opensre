@@ -9,6 +9,24 @@ from typing import Any
 from app.agent.tools.tool_actions.grafana.grafana_actions import _map_pipeline_to_service_name
 
 
+def _match_service_name(pipeline_name: str, available_service_names: list[str]) -> str:
+    """Return the best matching service name from the pre-fetched Loki label values.
+
+    Normalizes separators for comparison so "my_pipeline" matches "my-pipeline".
+    Falls back to the first available name if no match is found.
+    """
+    if not available_service_names:
+        return pipeline_name
+
+    normalized = pipeline_name.lower().replace("_", "-").replace(" ", "-")
+    for name in available_service_names:
+        candidate = name.lower().replace("_", "-").replace(" ", "-")
+        if normalized and (normalized in candidate or candidate in normalized):
+            return name
+
+    return available_service_names[0]
+
+
 def detect_sources(
     raw_alert: dict[str, Any] | str,
     context: dict[str, Any],
@@ -228,12 +246,20 @@ def detect_sources(
 
         if endpoint and api_key:
             service_name = _map_pipeline_to_service_name(pipeline_name) if pipeline_name else ""
+
+            # Use pre-fetched service names from build_context to find the real service name
+            pre_context = context.get("grafana_pre_context", {})
+            available_service_names: list[str] = pre_context.get("service_names", [])
+            if available_service_names:
+                service_name = _match_service_name(service_name, available_service_names)
+
             grafana_params: dict[str, Any] = {
                 "service_name": service_name,
                 "pipeline_name": pipeline_name,
                 "connection_verified": True,
                 "grafana_endpoint": endpoint,
                 "grafana_api_key": api_key,
+                "available_service_names": available_service_names,
             }
             if execution_run_id:
                 grafana_params["execution_run_id"] = execution_run_id
@@ -253,7 +279,7 @@ def detect_sources(
                 f"PIPELINE_ERROR kube_namespace:{kube_namespace}" if kube_namespace else pipeline_name or "*"
             )
 
-            sources["datadog"] = {
+            dd_params: dict[str, Any] = {
                 "api_key": dd_api_key,
                 "app_key": dd_app_key,
                 "site": dd_int.get("site", "datadoghq.com"),
@@ -262,5 +288,13 @@ def detect_sources(
                 "default_query": default_query,
                 "monitor_query": f"tag:pipeline:{pipeline_name}" if pipeline_name else None,
             }
+
+            # Include pre-fetched monitor context from build_context
+            dd_pre_context = context.get("datadog_pre_context", {})
+            if dd_pre_context.get("monitors"):
+                dd_params["pre_fetched_monitors"] = dd_pre_context["monitors"]
+                dd_params["pre_fetched_monitors_total"] = dd_pre_context.get("total", 0)
+
+            sources["datadog"] = dd_params
 
     return sources
