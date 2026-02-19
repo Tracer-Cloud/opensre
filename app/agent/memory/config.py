@@ -8,6 +8,6 @@ def is_memory_enabled() -> bool:
     return bool(os.getenv("TRACER_MEMORY_ENABLED"))
 
 
-def get_quality_gate_threshold() -> tuple[float, float]:
-    """Get confidence and validity thresholds for memory persistence."""
-    return 0.7, 0.7  # confidence_threshold, validity_threshold
+def get_quality_gate_threshold() -> float:
+    """Get validity threshold for memory persistence."""
+    return 0.7

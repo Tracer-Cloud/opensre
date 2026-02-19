@@ -67,7 +67,6 @@ def write_memory(
     pipeline_name: str,
     alert_id: str,
     root_cause: str,
-    confidence: float,
     validity_score: float,
     action_sequence: list[str] | None = None,
     data_lineage: str | None = None,
@@ -79,13 +78,12 @@ def write_memory(
 
     Orchestrates: config check → quality gate → formatting → file write
 
-    Only writes if TRACER_MEMORY_ENABLED=1 and quality gate passes (confidence + validity >70%).
+    Only writes if TRACER_MEMORY_ENABLED=1 and quality gate passes (validity >= 70%).
 
     Args:
         pipeline_name: Pipeline name
         alert_id: Alert ID (first 8 chars used)
         root_cause: Root cause summary
-        confidence: Investigation confidence
         validity_score: Claim validity score
         action_sequence: Successful action sequence
         data_lineage: Data lineage nodes
@@ -95,30 +93,25 @@ def write_memory(
     Returns:
         Path to written file, or None if not written
     """
-    # Check if memory is enabled
     if not is_memory_enabled():
         return None
 
-    # Quality gate: only persist high-quality investigations
-    confidence_threshold, validity_threshold = get_quality_gate_threshold()
-    if confidence < confidence_threshold or validity_score < validity_threshold:
+    validity_threshold = get_quality_gate_threshold()
+    if validity_score < validity_threshold:
         print(
-            f"[MEMORY] Not persisting (quality gate): confidence={confidence:.0%}, validity={validity_score:.0%}"
+            f"[MEMORY] Not persisting (quality gate): validity={validity_score:.0%}"
         )
         return None
 
-    # Generate filename and path
     timestamp = datetime.now(UTC)
     filename = generate_memory_filename(pipeline_name, alert_id, timestamp)
     filepath = get_memories_dir() / filename
 
-    # Format content
     alert_id_short = alert_id[:8] if alert_id else "unknown"
     content = format_memory_content(
         timestamp=timestamp,
         pipeline_name=pipeline_name,
         alert_id_short=alert_id_short,
-        confidence=confidence,
         validity_score=validity_score,
         problem_pattern=problem_pattern,
         action_sequence=action_sequence,
@@ -127,7 +120,6 @@ def write_memory(
         rca_report=rca_report,
     )
 
-    # Write file
     try:
         result_path = write_memory_file(filepath, content)
         print(f"[MEMORY] Persisted to {result_path.name}")

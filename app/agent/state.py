@@ -64,11 +64,10 @@ class AgentState(TypedDict, total=False):
 
     # Investigation analysis
     root_cause: str
-    confidence: float
     validated_claims: list[dict[str, Any]]  # List of validated claims with evidence
     non_validated_claims: list[dict[str, Any]]  # List of non-validated claims
     validity_score: float  # Percentage of validated vs total claims
-    investigation_recommendations: list[str]  # Recommended AWS SDK investigations if confidence low
+    investigation_recommendations: list[str]  # Recommended investigations for additional evidence
     remediation_steps: list[str]  # Recommended remediation / prevention steps
     investigation_loop_count: int  # Number of times we've looped back to investigate
     hypotheses: list[str]  # Hypotheses to consider during diagnosis
@@ -112,7 +111,6 @@ STATE_DEFAULTS: dict[str, Any] = {
     "context": {},
     "evidence": {},
     "root_cause": "",
-    "confidence": 0.0,
     "validated_claims": [],
     "non_validated_claims": [],
     "validity_score": 0.0,

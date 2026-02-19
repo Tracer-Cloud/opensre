@@ -93,7 +93,6 @@ def test_memory_speedup_50_percent():
     baseline_time = time.perf_counter() - t1
 
     print(f"\nBaseline (no memory): {baseline_time:.2f}s")
-    print(f"  Confidence: {result_baseline.get('confidence', 0):.0%}")
     print(f"  Validity: {result_baseline.get('validity_score', 0):.0%}")
 
     # ========== Memory Run (With Memory) ==========
@@ -117,7 +116,6 @@ def test_memory_speedup_50_percent():
             pipeline_name="upstream_downstream_pipeline_prefect",
             alert_id="seed001",
             root_cause="External API schema change removed required field",
-            confidence=0.85,
             validity_score=0.90,
             action_sequence=["inspect_s3_object", "get_s3_object", "inspect_lambda_function"],
             data_lineage="External API → Lambda → S3 → Prefect",
@@ -135,7 +133,6 @@ def test_memory_speedup_50_percent():
     memory_time = time.perf_counter() - t2
 
     print(f"\nWith memory: {memory_time:.2f}s")
-    print(f"  Confidence: {result_memory.get('confidence', 0):.0%}")
     print(f"  Validity: {result_memory.get('validity_score', 0):.0%}")
 
     # ========== Analysis ==========

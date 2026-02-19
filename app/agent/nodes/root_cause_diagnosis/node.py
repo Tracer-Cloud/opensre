@@ -20,14 +20,14 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     2) Build prompt from evidence
     3) Call LLM to get root cause
     4) Validate claims against evidence
-    5) Calculate confidence and validity
+    5) Calculate validity score
     6) Generate recommendations if needed
 
     Args:
         state: Investigation state
 
     Returns:
-        Dictionary with root_cause, confidence, validated_claims, etc.
+        Dictionary with root_cause, validated_claims, validity_score, etc.
     """
     tracker = get_tracker()
     tracker.start("diagnose_root_cause", "Analyzing evidence")
@@ -36,20 +36,15 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     evidence = state.get("evidence", {})
     raw_alert = state.get("raw_alert", {})
 
-    # Check evidence availability
     has_tracer, has_cloudwatch, has_alert = check_evidence_availability(context, evidence, raw_alert)
 
-    # If no evidence at all, return low-confidence result
     if not has_tracer and not has_cloudwatch and not has_alert:
         return _handle_insufficient_evidence(state, tracker)
 
-    # Load memory context if enabled
     memory_context = _load_memory_context(state)
 
-    # Build prompt from evidence
     prompt = build_diagnosis_prompt(state, evidence, memory_context)
 
-    # Call LLM for root cause analysis
     debug_print("Invoking LLM for root cause analysis...")
     use_fast = bool(memory_context)
     llm = get_llm(use_fast_model=use_fast)
@@ -59,38 +54,30 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     response_content = response.content if hasattr(response, "content") else str(response)
     response_text = response_content if isinstance(response_content, str) else str(response_content)
 
-    # Parse response
     result = parse_root_cause(response_text)
 
-    # Validate claims against evidence
     validated_claims_list, non_validated_claims_list = validate_and_categorize_claims(
         result.validated_claims,
         result.non_validated_claims,
         evidence,
     )
 
-    # Calculate validity score
     validity_score = calculate_validity_score(validated_claims_list, non_validated_claims_list)
-
-    # Update confidence based on validity
-    final_confidence = (result.confidence * 0.4) + (validity_score * 0.6)
 
     loop_count = state.get("investigation_loop_count", 0)
 
-    # Generate recommendations when vendor/audit evidence is missing
     recommendations: list[str] = []
     if check_vendor_evidence_missing(evidence) and loop_count < 3:
         recommendations.append("Fetch audit payload from S3 to trace external vendor interactions")
 
     tracker.complete(
         "diagnose_root_cause",
-        fields_updated=["root_cause", "confidence", "validated_claims", "validity_score"],
-        message=f"confidence:{final_confidence:.0%}, validity:{validity_score:.0%}",
+        fields_updated=["root_cause", "validated_claims", "validity_score"],
+        message=f"validity:{validity_score:.0%}",
     )
 
     return {
         "root_cause": result.root_cause,
-        "confidence": final_confidence,
         "validated_claims": validated_claims_list,
         "non_validated_claims": non_validated_claims_list,
         "validity_score": validity_score,
@@ -102,7 +89,7 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
 
 def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
     """Handle case when no evidence is available."""
-    debug_print("Warning: Limited evidence available - proceeding with low confidence")
+    debug_print("Warning: Limited evidence available")
 
     loop_count = state.get("investigation_loop_count", 0) + 1
 
@@ -110,13 +97,12 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
 
     tracker.complete(
         "diagnose_root_cause",
-        fields_updated=["root_cause", "confidence"],
+        fields_updated=["root_cause"],
         message="Insufficient evidence",
     )
 
     return {
         "root_cause": f"{problem}. Limited evidence available for analysis - unable to determine exact root cause without additional diagnostic data.",
-        "confidence": 0.2,
         "validated_claims": [],
         "non_validated_claims": [
             {
