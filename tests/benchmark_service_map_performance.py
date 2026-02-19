@@ -236,6 +236,3 @@ This needs investigation:
 
     results_file.write_text(content)
     print(f"\n✓ Results written to: {results_file.name}")
-
-
-import json

@@ -1,33 +1,24 @@
 """Lambda client for function inspection and log retrieval."""
 
 import base64
-import os
 from io import BytesIO
 from typing import Any
 from zipfile import ZipFile
 
-from app.agent.tools.clients.env import require_aws_credentials
+from app.agent.tools.clients.env import make_boto3_client, require_aws_credentials
 
 try:
-    import boto3
     from botocore.exceptions import ClientError
 except ImportError:
-    boto3 = None  # type: ignore[assignment]
     ClientError = Exception  # type: ignore[assignment, misc]
 
 
 def _get_lambda_client():
-    """Get or create Lambda client."""
-    if boto3 is None:
-        return None
-    return boto3.client("lambda", region_name=os.getenv("AWS_REGION", "us-east-1"))
+    return make_boto3_client("lambda")
 
 
 def _get_cloudwatch_logs_client():
-    """Get or create CloudWatch Logs client."""
-    if boto3 is None:
-        return None
-    return boto3.client("logs", region_name=os.getenv("AWS_REGION", "us-east-1"))
+    return make_boto3_client("logs")
 
 
 def get_function_configuration(function_name: str) -> dict[str, Any]:

@@ -1,32 +1,22 @@
 """CloudWatch client for metrics and logs - LangChain tool implementation."""
 
-import os
 from typing import Any
 
-from app.agent.tools.clients.env import require_aws_credentials
+from app.agent.tools.clients.env import make_boto3_client, require_aws_credentials
+from app.agent.tools.tool_decorator import tool
 
 try:
-    import boto3
     from botocore.exceptions import ClientError
 except ImportError:
-    boto3 = None  # type: ignore[assignment]
     ClientError = Exception  # type: ignore[assignment, misc]
-
-from app.agent.tools.tool_decorator import tool
 
 
 def _get_cloudwatch_client():
-    """Get or create CloudWatch client."""
-    if boto3 is None:
-        return None
-    return boto3.client("cloudwatch", region_name=os.getenv("AWS_REGION", "us-east-1"))
+    return make_boto3_client("cloudwatch")
 
 
 def _get_cloudwatch_logs_client():
-    """Get or create CloudWatch Logs client."""
-    if boto3 is None:
-        return None
-    return boto3.client("logs", region_name=os.getenv("AWS_REGION", "us-east-1"))
+    return make_boto3_client("logs")
 
 
 def get_metric_statistics(
