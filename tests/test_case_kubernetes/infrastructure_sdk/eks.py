@@ -18,7 +18,7 @@ from tests.shared.infrastructure_sdk.deployer import (
     get_standard_tags,
     get_standard_tags_dict,
 )
-from tests.shared.infrastructure_sdk.resources import ecr, iam, s3, vpc
+from tests.shared.infrastructure_sdk.resources import api_gateway, ecr, iam, lambda_, s3, vpc
 
 STACK_NAME = "tracer-eks-k8s-test"
 CLUSTER_NAME = "tracer-eks-test"
@@ -512,6 +512,138 @@ def get_ecr_image_uri() -> str:
     from tests.shared.infrastructure_sdk.config import load_outputs
     outputs = load_outputs(STACK_NAME)
     return outputs["ecr_image_uri"]
+
+
+# ---------------------------------------------------------------------------
+# Trigger Lambda constants
+# ---------------------------------------------------------------------------
+
+TRIGGER_LAMBDA_NAME = "tracer-eks-etl-trigger"
+TRIGGER_LAMBDA_ROLE_NAME = "tracer-eks-trigger-lambda-role"
+TRIGGER_API_NAME = "tracer-eks-trigger-api"
+TRIGGER_LAMBDA_DIR = Path(__file__).parent.parent / "trigger_lambda"
+
+TRIGGER_LAMBDA_POLICIES = [
+    iam.LAMBDA_BASIC_EXECUTION_POLICY,
+    "arn:aws:iam::aws:policy/AmazonS3FullAccess",
+]
+
+_EKS_DESCRIBE_POLICY_DOCUMENT = {
+    "Version": "2012-10-17",
+    "Statement": [{
+        "Effect": "Allow",
+        "Action": ["eks:DescribeCluster"],
+        "Resource": "*",
+    }],
+}
+
+_TRIGGER_INLINE_POLICY_NAME = "eks-describe"
+
+
+def deploy_trigger_lambda(outputs: dict[str, Any]) -> str:
+    """Create the trigger Lambda + API Gateway. Returns the invoke URL."""
+    print("\nDeploying trigger Lambda...")
+
+    # 1. IAM role for the Lambda
+    role = iam.create_lambda_execution_role(TRIGGER_LAMBDA_ROLE_NAME, STACK_NAME, REGION)
+    for policy_arn in TRIGGER_LAMBDA_POLICIES[1:]:  # basic policy already attached
+        iam.attach_policy(TRIGGER_LAMBDA_ROLE_NAME, policy_arn, REGION)
+
+    # Inline policy: describe EKS cluster
+    iam_client = get_boto3_client("iam", REGION)
+    iam_client.put_role_policy(
+        RoleName=TRIGGER_LAMBDA_ROLE_NAME,
+        PolicyName=_TRIGGER_INLINE_POLICY_NAME,
+        PolicyDocument=json.dumps(_EKS_DESCRIBE_POLICY_DOCUMENT),
+    )
+    time.sleep(5)  # IAM propagation
+
+    # 2. Grant Lambda role access to EKS cluster
+    eks_client = get_boto3_client("eks", REGION)
+    try:
+        eks_client.create_access_entry(
+            clusterName=CLUSTER_NAME,
+            principalArn=role["arn"],
+            type="STANDARD",
+        )
+        print("  Created EKS access entry for Lambda role")
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ResourceInUseException":
+            raise
+
+    with contextlib.suppress(ClientError):
+        eks_client.associate_access_policy(
+            clusterName=CLUSTER_NAME,
+            principalArn=role["arn"],
+            policyArn="arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
+            accessScope={"type": "cluster"},
+        )
+
+    # 3. Fetch cluster info for Lambda env vars
+    cluster_info = eks_client.describe_cluster(name=CLUSTER_NAME)["cluster"]
+    cluster_endpoint = cluster_info["endpoint"]
+    cluster_ca = cluster_info["certificateAuthority"]["data"]
+
+    # 4. Build and deploy Lambda
+    code_zip = lambda_.bundle_single_file(TRIGGER_LAMBDA_DIR / "handler.py")
+    func = lambda_.create_function(
+        name=TRIGGER_LAMBDA_NAME,
+        role_arn=role["arn"],
+        handler="handler.lambda_handler",
+        code_zip=code_zip,
+        timeout=120,
+        memory=256,
+        environment={
+            "CLUSTER_NAME": CLUSTER_NAME,
+            "CLUSTER_ENDPOINT": cluster_endpoint,
+            "CLUSTER_CA_DATA": cluster_ca,
+            "LANDING_BUCKET": outputs["landing_bucket"],
+            "PROCESSED_BUCKET": outputs["processed_bucket"],
+            "IMAGE_URI": outputs["ecr_image_uri"],
+            "NAMESPACE": "tracer-test",
+            "SERVICE_ACCOUNT": "etl-pipeline-sa",
+        },
+        stack_name=STACK_NAME,
+        region=REGION,
+    )
+    print(f"  Lambda deployed: {func['arn']}")
+
+    # 5. API Gateway
+    api = api_gateway.create_simple_api_with_lambda(
+        api_name=TRIGGER_API_NAME,
+        lambda_arn=func["arn"],
+        stack_name=STACK_NAME,
+        region=REGION,
+    )
+    print(f"  API Gateway: {api['invoke_url']}")
+
+    return api["invoke_url"]
+
+
+def destroy_trigger_lambda() -> None:
+    """Tear down trigger Lambda and API Gateway."""
+    print("\nDestroying trigger Lambda...")
+
+    # Find and delete API Gateway
+    api_client = get_boto3_client("apigateway", REGION)
+    try:
+        apis = api_client.get_rest_apis()["items"]
+        for a in apis:
+            if a["name"] == TRIGGER_API_NAME:
+                api_gateway.delete_api(a["id"], REGION)
+                print(f"  Deleted API {TRIGGER_API_NAME}")
+                break
+    except Exception as e:
+        print(f"  Warning deleting API: {e}")
+
+    lambda_.delete_function(TRIGGER_LAMBDA_NAME, REGION)
+    print(f"  Deleted Lambda {TRIGGER_LAMBDA_NAME}")
+
+    iam.detach_policy(TRIGGER_LAMBDA_ROLE_NAME, iam.LAMBDA_BASIC_EXECUTION_POLICY, REGION)
+    for policy_arn in TRIGGER_LAMBDA_POLICIES[1:]:
+        iam.detach_policy(TRIGGER_LAMBDA_ROLE_NAME, policy_arn, REGION)
+    iam.delete_role(TRIGGER_LAMBDA_ROLE_NAME, REGION)
+    print(f"  Deleted role {TRIGGER_LAMBDA_ROLE_NAME}")
 
 
 if __name__ == "__main__":

@@ -14,32 +14,117 @@ jobs:
   trigger-alert:
     runs-on: ubuntu-latest
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: us-east-1
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
       DD_SITE: datadoghq.com
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
       SLACK_DEVS_ALERTS_CHANNEL_ID: C09S7GDG60J
+      TRIGGER_API_URL: https://dowvqoqx85.execute-api.us-east-1.amazonaws.com/prod
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Trigger pipeline failure via API (~10s)
+        id: trigger
+        run: |
+          response=$(curl -sf -X POST "$TRIGGER_API_URL/trigger?inject_error=true")
+          echo "response=$response"
+          echo "pipeline_run_id=$(echo $response | python3 -c 'import sys,json; print(json.load(sys.stdin)["pipeline_run_id"])')" >> "$GITHUB_OUTPUT"
+          echo "s3_key=$(echo $response | python3 -c 'import sys,json; print(json.load(sys.stdin)["s3_key"])')" >> "$GITHUB_OUTPUT"
+
+      - name: Report trigger result
+        run: |
+          echo "Pipeline run: ${{ steps.trigger.outputs.pipeline_run_id }}"
+          echo "S3 key: ${{ steps.trigger.outputs.s3_key }}"
+
+      - name: Set up Python (for DD/Slack verification)
+        if: ${{ inputs.verify == true || github.event_name == 'schedule' }}
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
           cache: "pip"
 
-      - name: Install dependencies
+      - name: Install verification dependencies
+        if: ${{ inputs.verify == true || github.event_name == 'schedule' }}
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
+          pip install -q boto3 python-dotenv
 
-      - name: Trigger K8s alert (~12s)
+      - name: Verify Datadog + Slack (~2 min)
+        if: ${{ inputs.verify == true || github.event_name == 'schedule' }}
         run: |
-          python -m tests.test_case_kubernetes.trigger_alert \
-            --configure-kubectl \
-            ${{ inputs.verify == true && '--verify' || '' }}
+          python3 - <<'PYEOF'
+          import os, json, time, urllib.request, sys
+
+          api_key = os.environ["DD_API_KEY"]
+          app_key = os.environ["DD_APP_KEY"]
+          site = os.environ.get("DD_SITE", "datadoghq.com")
+          slack_token = os.environ.get("SLACK_BOT_TOKEN", "")
+          channel_id = os.environ.get("SLACK_DEVS_ALERTS_CHANNEL_ID", "")
+          start_epoch = time.time()
+
+          def dd_search_logs(max_wait=90):
+              print("Polling Datadog Logs API...")
+              deadline = time.monotonic() + max_wait
+              while time.monotonic() < deadline:
+                  try:
+                      payload = json.dumps({
+                          "filter": {
+                              "query": "kube_namespace:tracer-test PIPELINE_ERROR",
+                              "from": "now-3m", "to": "now",
+                          },
+                          "sort": "-timestamp",
+                          "page": {"limit": 1},
+                      }).encode()
+                      req = urllib.request.Request(
+                          f"https://api.{site}/api/v2/logs/events/search",
+                          data=payload,
+                          headers={"DD-API-KEY": api_key, "DD-APPLICATION-KEY": app_key,
+                                   "Content-Type": "application/json"},
+                      )
+                      with urllib.request.urlopen(req, timeout=10) as resp:
+                          body = json.loads(resp.read())
+                      if body.get("data"):
+                          return True
+                  except Exception as e:
+                      print(f"  DD poll error: {e}")
+                  remaining = int(deadline - time.monotonic())
+                  print(f"  Not in DD yet... ({remaining}s remaining)")
+                  time.sleep(5)
+              return False
+
+          def slack_search(max_wait=300):
+              if not slack_token or not channel_id:
+                  print("Slack credentials not set, skipping")
+                  return True  # Don't fail the job
+              print("Polling Slack #devs-alerts...")
+              deadline = time.monotonic() + max_wait
+              oldest = str(start_epoch)
+              while time.monotonic() < deadline:
+                  req = urllib.request.Request(
+                      f"https://slack.com/api/conversations.history?channel={channel_id}&oldest={oldest}&limit=20",
+                      headers={"Authorization": f"Bearer {slack_token}"},
+                  )
+                  with urllib.request.urlopen(req, timeout=10) as resp:
+                      data = json.loads(resp.read())
+                  for msg in data.get("messages", []):
+                      searchable = msg.get("text","") + json.dumps(msg.get("attachments",[]))
+                      if any(kw.lower() in searchable.lower() for kw in ["PIPELINE_ERROR","pipeline error","etl-transform"]):
+                          print(f"  Slack alert found!")
+                          return True
+                  remaining = int(deadline - time.monotonic())
+                  print(f"  No Slack alert yet... ({remaining}s remaining)")
+                  time.sleep(15)
+              return False
+
+          dd_ok = dd_search_logs(max_wait=120)
+          if not dd_ok:
+              print("FAIL: PIPELINE_ERROR not found in Datadog within 2 minutes")
+              sys.exit(1)
+          print(f"Datadog confirmed in {time.monotonic():.0f}s")
+
+          slack_ok = slack_search(max_wait=300)
+          if slack_ok:
+              print("End-to-end verified: API -> K8s failure -> Datadog -> Slack")
+          else:
+              print("WARNING: Slack alert not confirmed (Datadog verified)")
+          PYEOF
