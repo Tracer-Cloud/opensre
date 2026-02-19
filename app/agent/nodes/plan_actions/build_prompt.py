@@ -117,6 +117,15 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Use query_datadog_events to find deployments and infrastructure changes"""
         )
 
+    if "upstream_context" in available_sources:
+        upstream = available_sources["upstream_context"]
+        hints.append(
+            f"""CAUSAL CHAIN DETECTED (confidence {upstream.get("causal_chain_confidence", 0.85):.0%}):
+- {upstream.get("upstream_failure_hint")}
+- Prioritise investigating whether this pipeline consumed bad or missing data from the upstream failure
+- Check S3 input data timestamps and content for evidence of upstream data issues"""
+        )
+
     if hints:
         return "\n\n" + "\n\n".join(hints) + "\n"
     return ""

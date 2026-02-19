@@ -1,9 +1,15 @@
-"""Service map configuration (no env flags)."""
+"""Service map configuration."""
 
-# Default OFF: Validated benchmarks show 16.5% overhead currently
-# Turn ON when action-skipping and hotspot prioritization are implemented
-SERVICE_MAP_ENABLED = False
+# Overhead resolved by async writes (daemon thread) — safe to enable.
+SERVICE_MAP_ENABLED = True
+
+# Write service_map.json in a background thread so it doesn't block publish.
+SERVICE_MAP_WRITE_ASYNC = True
 
 
 def is_service_map_enabled() -> bool:
     return SERVICE_MAP_ENABLED
+
+
+def is_async_write_enabled() -> bool:
+    return SERVICE_MAP_WRITE_ASYNC

@@ -99,6 +99,20 @@ def _persist_memory(state: InvestigationState, slack_message: str) -> None:
         rca_report=slack_message,  # Store full RCA report
     )
 
+    # Build and persist service map (async, non-blocking)
+    from app.agent.memory import write_service_map
+
+    raw_alert_for_map = raw_alert_dict
+    context_for_map = state.get("context", {}) or {}
+    alert_name_for_map = state.get("alert_name", alert_id)
+    write_service_map(
+        evidence=evidence,
+        raw_alert=raw_alert_for_map,
+        context=context_for_map,
+        pipeline_name=pipeline_name,
+        alert_name=alert_name_for_map,
+    )
+
 
 def generate_report(state: InvestigationState) -> dict:
     """Generate and render the final RCA report.

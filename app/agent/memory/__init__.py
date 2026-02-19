@@ -11,6 +11,7 @@ Public API that orchestrates focused modules:
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from app.agent.memory.cache import get_cached_investigation
 from app.agent.memory.config import get_quality_gate_threshold, is_memory_enabled
@@ -18,7 +19,7 @@ from app.agent.memory.formatter import format_memory_content, generate_memory_fi
 from app.agent.memory.io import get_memories_dir, write_memory_file
 
 # Re-export for backward compatibility
-__all__ = ["get_memory_context", "write_memory", "is_memory_enabled", "get_cached_investigation"]
+__all__ = ["get_memory_context", "write_memory", "write_service_map", "is_memory_enabled", "get_cached_investigation"]
 
 
 def get_memory_context(
@@ -134,3 +135,55 @@ def write_memory(
     except Exception as e:
         print(f"[WARNING] Failed to write memory: {e}")
         return None
+
+
+def write_service_map(
+    evidence: dict[str, Any],
+    raw_alert: dict[str, Any],
+    context: dict[str, Any],
+    pipeline_name: str,
+    alert_name: str,
+) -> None:
+    """Build service map from investigation evidence and persist it.
+
+    Runs pipeline-to-pipeline edge inference after building the asset graph,
+    then persists asynchronously (non-blocking when SERVICE_MAP_WRITE_ASYNC=True).
+
+    Only runs when SERVICE_MAP_ENABLED is True.
+    """
+    from app.agent.memory.service_map import (
+        build_service_map,
+        infer_feeds_into_edges,
+        is_service_map_enabled,
+        persist_service_map,
+    )
+
+    if not is_service_map_enabled():
+        return
+
+    try:
+        service_map = build_service_map(
+            evidence=evidence,
+            raw_alert=raw_alert,
+            context=context,
+            pipeline_name=pipeline_name,
+            alert_name=alert_name,
+        )
+
+        # Infer pipeline-to-pipeline dependency edges and merge into the map
+        pipeline_edges = infer_feeds_into_edges(service_map)
+        if pipeline_edges:
+            existing_by_key = {
+                (e["from_asset"], e["to_asset"], e["type"]): i
+                for i, e in enumerate(service_map["edges"])
+            }
+            for edge in pipeline_edges:
+                key = (edge["from_asset"], edge["to_asset"], edge["type"])
+                if key in existing_by_key:
+                    service_map["edges"][existing_by_key[key]] = edge
+                else:
+                    service_map["edges"].append(edge)
+
+        persist_service_map(service_map)
+    except Exception as e:
+        print(f"[WARNING] Failed to write service map: {e}")
