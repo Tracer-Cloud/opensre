@@ -42,6 +42,8 @@ class ContextEvidence(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     tracer_web_run: TracerWebRunContext | None = None
+    grafana_pre_context: dict[str, Any] | None = None
+    datadog_pre_context: dict[str, Any] | None = None
     context_errors: list[ContextSourceError] = Field(default_factory=list)
 
     def to_state(self) -> dict[str, Any]:
