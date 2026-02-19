@@ -94,6 +94,29 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Examples: ecs.describe_tasks, rds.describe_db_instances, ec2.describe_instances"""
         )
 
+    if "grafana" in available_sources:
+        grafana = available_sources["grafana"]
+        hints.append(
+            f"""Grafana Cloud Available:
+- Service Name: {grafana.get("service_name")}
+- Pipeline: {grafana.get("pipeline_name")}
+- Use query_grafana_logs to search Loki for pipeline errors
+- Use query_grafana_traces to find distributed traces in Tempo
+- Use query_grafana_alert_rules to inspect alert configuration"""
+        )
+
+    if "datadog" in available_sources:
+        dd = available_sources["datadog"]
+        hints.append(
+            f"""Datadog Available:
+- Pipeline: {dd.get("pipeline_name")}
+- Default Query: {dd.get("default_query")}
+- Site: {dd.get("site", "datadoghq.com")}
+- Use query_datadog_logs to search for pipeline errors, PIPELINE_ERROR patterns, and application logs
+- Use query_datadog_monitors to check monitor states and alerting configuration
+- Use query_datadog_events to find deployments and infrastructure changes"""
+        )
+
     if hints:
         return "\n\n" + "\n\n".join(hints) + "\n"
     return ""

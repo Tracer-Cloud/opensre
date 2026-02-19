@@ -1,5 +1,7 @@
 """Extract alert details and seed investigation state."""
 
+import json
+import logging
 import time
 
 from langsmith import traceable
@@ -7,6 +9,8 @@ from langsmith import traceable
 from app.agent.nodes.extract_alert.extract import classify_alert, extract_alert_details
 from app.agent.output import debug_print, get_tracker, render_investigation_header
 from app.agent.state import InvestigationState
+
+logger = logging.getLogger(__name__)
 
 
 @traceable(name="node_extract_alert")
@@ -19,6 +23,13 @@ def node_extract_alert(state: InvestigationState) -> dict:
     """
     tracker = get_tracker()
     tracker.start("extract_alert", "Classifying and extracting alert details")
+
+    # Log the full raw alert input for debugging
+    raw_input = state.get("raw_alert")
+    if raw_input is not None:
+        formatted = json.dumps(raw_input, indent=2, default=str) if isinstance(raw_input, dict) else str(raw_input)
+        logger.info("[extract_alert] Raw alert input:\n%s", formatted)
+        debug_print(f"Raw alert input:\n{formatted}")
 
     # Classify first - skip full extraction if noise
     if not classify_alert(state):
@@ -35,6 +46,8 @@ def node_extract_alert(state: InvestigationState) -> dict:
         f"Alert: {alert_details.alert_name} | "
         f"Pipeline: {alert_details.pipeline_name} | "
         f"Severity: {alert_details.severity}"
+        f"Alert ID: {alert_id}"
+        f"Raw alert: {raw_input}"
     )
 
     render_investigation_header(
