@@ -133,7 +133,6 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 
 def build_investigation_prompt(
     problem_md: str,
-    investigation_recommendations: list[str],
     executed_hypotheses: list[dict[str, Any]],
     available_actions: list,
     available_sources: dict[str, dict],
@@ -144,7 +143,6 @@ def build_investigation_prompt(
 
     Args:
         problem_md: Problem statement markdown
-        investigation_recommendations: Recommendations from previous analysis
         executed_hypotheses: History of executed hypotheses
         available_actions: Pre-computed actions list (already filtered by availability)
         available_sources: Dictionary of available data sources
@@ -162,7 +160,6 @@ def build_investigation_prompt(
     ]
 
     problem_context = problem_md or "No problem statement available"
-    recommendations = investigation_recommendations or []
 
     actions_description = "\n\n".join(
         _format_action_metadata(action) for action in available_actions_filtered
@@ -205,9 +202,6 @@ Available Investigation Actions:
 {actions_description if actions_description else "No actions available"}
 
 Executed Actions: {", ".join(executed_actions) if executed_actions else "None"}
-
-Recommendations from previous analysis:
-{chr(10).join(f"- {r}" for r in recommendations) if recommendations else "None"}
 
 Task: Select the most relevant actions to execute now based on the problem context.
 Consider what information would help diagnose the root cause.
@@ -255,7 +249,6 @@ def plan_actions_with_llm(
     llm,
     plan_model: type[BaseModel],
     problem_md: str,
-    investigation_recommendations: list[str],
     executed_hypotheses: list[dict[str, Any]],
     available_actions: list,
     available_sources: dict[str, dict],
@@ -268,7 +261,6 @@ def plan_actions_with_llm(
         llm: LLM client
         plan_model: Pydantic model for structured output
         problem_md: Problem statement markdown
-        investigation_recommendations: Recommendations from previous analysis
         executed_hypotheses: History of executed hypotheses
         available_actions: Filtered list of actions
         available_sources: Available data sources
@@ -279,7 +271,6 @@ def plan_actions_with_llm(
     """
     prompt = build_investigation_prompt(
         problem_md=problem_md,
-        investigation_recommendations=investigation_recommendations,
         executed_hypotheses=executed_hypotheses,
         available_actions=available_actions,
         available_sources=available_sources,

@@ -135,30 +135,6 @@ def _format_non_validated_claims_section(ctx: ReportContext) -> str:
     return non_validated_section
 
 
-def _format_recommendations(ctx: ReportContext) -> str:
-    """Render investigation recommendations, if any."""
-    recs = ctx.get("investigation_recommendations", []) or []
-    if not recs:
-        return ""
-    lines = ["*Suggested Next Steps:*"]
-    for rec in recs:
-        if rec:
-            lines.append(f"• {rec}")
-    return "\n" + "\n".join(lines) + "\n"
-
-
-def _format_remediation_steps(ctx: ReportContext) -> str:
-    """Render remediation/prevention steps, if any."""
-    steps = ctx.get("remediation_steps", []) or []
-    if not steps:
-        return ""
-    lines = ["*Remediation Next Steps:*"]
-    for step in steps:
-        if step:
-            lines.append(f"• {step}")
-    return "\n" + "\n".join(lines) + "\n"
-
-
 def _sanitize_for_slack(text: str) -> str:
     """Convert markdown formatting to Slack mrkdwn.
 
@@ -255,10 +231,8 @@ def _format_conclusion_section(ctx: ReportContext, evidence: dict) -> str:
 
     # 2) Then add claims (progressive disclosure)
     separator = "\n" if validated_section and non_validated_section else ""
-    recommendations_section = _format_recommendations(ctx)
-    remediation_section = _format_remediation_steps(ctx)
 
-    claims_block = f"{validated_section}{separator}{non_validated_section}{recommendations_section}{remediation_section}".strip()
+    claims_block = f"{validated_section}{separator}{non_validated_section}".strip()
 
     if claims_block:
         return f"\n{root_cause_block}{claims_block}\n"
@@ -384,14 +358,6 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
             claim = _sanitize_for_slack(claim_data.get("claim", ""))
             nv_lines.append(f"\u2022 {claim}")
         blocks.append(_mrkdwn_section("*Inferred (not yet validated)*\n" + "\n".join(nv_lines)))
-
-    # ── Recommendations / Remediation ──
-    recs = _format_recommendations(ctx).strip()
-    remediation = _format_remediation_steps(ctx).strip()
-    next_steps = "\n".join(filter(None, [recs, remediation]))
-    if next_steps:
-        blocks.append({"type": "divider"})
-        blocks.append(_mrkdwn_section(next_steps))
 
     # ── Data Lineage ──
     lineage_section = format_data_lineage_flow(ctx).strip()
