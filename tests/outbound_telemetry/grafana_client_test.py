@@ -1,18 +1,5 @@
-import os
-from contextlib import contextmanager
-
 from app.outbound_telemetry.grafana_client import GrafanaCloudClient
-
-
-@contextmanager
-def temp_env(values: dict[str, str]):
-    original = os.environ.copy()
-    os.environ.update(values)
-    try:
-        yield
-    finally:
-        os.environ.clear()
-        os.environ.update(original)
+from tests.outbound_telemetry.conftest import temp_env
 
 
 def test_grafana_client_builders():

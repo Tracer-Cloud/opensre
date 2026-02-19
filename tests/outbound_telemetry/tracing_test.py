@@ -1,20 +1,7 @@
-import os
-from contextlib import contextmanager
-
 from opentelemetry.sdk.resources import Resource
 
 from app.outbound_telemetry.tracing import setup_tracing, traced_operation
-
-
-@contextmanager
-def temp_env(values: dict[str, str]):
-    original = os.environ.copy()
-    os.environ.update(values)
-    try:
-        yield
-    finally:
-        os.environ.clear()
-        os.environ.update(original)
+from tests.outbound_telemetry.conftest import temp_env
 
 
 def test_setup_tracing_and_traced_operation():

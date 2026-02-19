@@ -9,7 +9,7 @@ from typing import cast
 
 from langsmith import traceable
 
-from app.agent.memory import get_memory_context, is_memory_enabled
+from app.agent.memory import get_memory_context
 from app.agent.nodes.frame_problem.models import (
     ProblemStatement,
     ProblemStatementInput,
@@ -92,6 +92,15 @@ def _fallback_problem_statement(state: InvestigationState) -> ProblemStatement:
     )
 
 
+def _load_memory_context(state: InvestigationState) -> str:
+    """Load memory context if enabled."""
+    pipeline_name = state.get("pipeline_name", "")
+    memory_context = get_memory_context(pipeline_name=pipeline_name)
+    if memory_context:
+        debug_print("[MEMORY] Loaded context for problem framing")
+    return memory_context
+
+
 @traceable(name="node_frame_problem")
 def node_frame_problem(state: InvestigationState) -> dict:
     """
@@ -107,21 +116,7 @@ def node_frame_problem(state: InvestigationState) -> dict:
     tracker = get_tracker()
     tracker.start("frame_problem", "Generating problem statement")
 
-    # Load memory context if enabled
-    memory_context = ""
-    if is_memory_enabled():
-        from app.agent.memory.architecture_discovery import find_architecture_doc_for_pipeline
-
-        pipeline_name = state.get("pipeline_name", "")
-        seed_paths = find_architecture_doc_for_pipeline(pipeline_name)
-
-        memory_context = get_memory_context(
-            pipeline_name=pipeline_name,
-            alert_id=state.get("alert_json", {}).get("alert_id"),
-            seed_paths=seed_paths,
-        )
-        if memory_context:
-            debug_print("[MEMORY] Loaded context for problem framing")
+    memory_context = _load_memory_context(state)
 
     problem = _generate_output_problem_statement(state, memory_context)
     problem_md = render_problem_statement_md(problem, state)
