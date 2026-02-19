@@ -297,4 +297,21 @@ def detect_sources(
 
             sources["datadog"] = dd_params
 
+    # Surface upstream pipeline failure from dependency_context (built by build_context)
+    dep_ctx = context.get("dependency_context", {})
+    if isinstance(dep_ctx, dict) and dep_ctx.get("causal_chain_detected"):
+        upstream_pipelines = dep_ctx.get("upstream_pipelines", [])
+        hint_parts = [
+            f"{p['name']} failed {p.get('minutes_ago', '?')}min ago on shared asset {p.get('shared_asset', 'unknown')}"
+            for p in upstream_pipelines
+            if p.get("status") in ("failed", "error", "Failed", "Error")
+        ]
+        if hint_parts:
+            sources["upstream_context"] = {
+                "causal_chain_detected": True,
+                "upstream_failure_hint": "; ".join(hint_parts),
+                "upstream_pipelines": upstream_pipelines,
+                "causal_chain_confidence": dep_ctx.get("causal_chain_confidence", 0.85),
+            }
+
     return sources

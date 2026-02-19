@@ -112,6 +112,7 @@ def resolve_context_sources(state: InvestigationState) -> list[str]:
 
 def get_context_registry() -> ContextSourceRegistry:
     from app.agent.nodes.build_context.sources.datadog_context import build_context_datadog
+    from app.agent.nodes.build_context.sources.dependency_context import build_context_dependency
     from app.agent.nodes.build_context.sources.grafana_context import build_context_grafana
 
     return ContextSourceRegistry(
@@ -130,6 +131,11 @@ def get_context_registry() -> ContextSourceRegistry:
                 name="datadog",
                 key="datadog_pre_context",
                 builder=build_context_datadog,
+            ),
+            ContextSource(
+                name="dependency",
+                key="dependency_context",
+                builder=build_context_dependency,
             ),
         ),
     )
