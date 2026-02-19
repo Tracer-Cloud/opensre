@@ -47,6 +47,7 @@ def build_diagnosis_prompt(
 
     # Build directive sections
     upstream_directive = _build_upstream_directive(evidence)
+    causal_chain_section = _build_causal_chain_section(state)
     memory_section = _build_memory_section(memory_context)
 
     # Build evidence sections
@@ -58,7 +59,7 @@ def build_diagnosis_prompt(
 Goal: Be helpful and accurate. Prefer evidence-backed explanations over speculation.
 If the exact root cause cannot be proven, provide the most likely explanation based on observed evidence,
 and clearly state what is unknown.
-{upstream_directive}{memory_section}
+{upstream_directive}{causal_chain_section}{memory_section}
 DEFINITIONS:
 - VALIDATED_CLAIMS: Directly supported by the evidence shown below (observed facts).
 - NON_VALIDATED_CLAIMS: Plausible hypotheses or contributing factors that are NOT directly proven by the evidence.
@@ -117,6 +118,43 @@ Audit evidence shows external API interactions. For data pipeline failures:
 - Explain how the external change propagated downstream to cause the pipeline failure
 """
     return ""
+
+
+def _build_causal_chain_section(state: InvestigationState) -> str:
+    """Build causal chain directive when an upstream pipeline failure was detected."""
+    context = state.get("context", {}) or {}
+    dep_ctx = context.get("dependency_context", {}) or {}
+
+    if not dep_ctx.get("causal_chain_detected"):
+        return ""
+
+    upstream_pipelines = dep_ctx.get("upstream_pipelines", [])
+    failed = [
+        p for p in upstream_pipelines
+        if p.get("status") in ("failed", "error", "Failed", "Error")
+    ]
+    if not failed:
+        return ""
+
+    lines = []
+    for p in failed:
+        minutes_ago = p.get("minutes_ago", "?")
+        shared_asset = p.get("shared_asset", "unknown asset")
+        lines.append(
+            f"  - {p['name']}: status={p['status']}, failed {minutes_ago}min ago, shared asset: {shared_asset}"
+        )
+
+    upstream_list = "\n".join(lines)
+    confidence = dep_ctx.get("causal_chain_confidence", 0.85)
+
+    return f"""
+**Causal Chain Context (confidence {confidence:.0%}):**
+An upstream pipeline failure was detected before this incident:
+{upstream_list}
+- Consider whether this pipeline consumed incomplete or malformed data produced by the upstream failure
+- Look for evidence of missing S3 objects, schema mismatches, or stale data in the input
+- If supported by evidence, identify this as the root cause of the causal chain
+"""
 
 
 def _build_memory_section(memory_context: str) -> str:

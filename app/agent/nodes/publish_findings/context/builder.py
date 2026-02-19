@@ -237,6 +237,10 @@ def build_report_context(state: InvestigationState) -> ReportContext:
     validated_claims = _attach_ids(validated_claims)
     non_validated_claims = _attach_ids(non_validated_claims)
 
+    # Extract causal chain from dependency context (built in build_context node)
+    dep_ctx = context.get("dependency_context") or {}
+    causal_chain: dict | None = dep_ctx if dep_ctx.get("causal_chain_detected") else None
+
     # Build context dictionary
     return {
         # Core RCA results
@@ -274,4 +278,6 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         # Raw data for deeper inspection
         "evidence": evidence,
         "raw_alert": raw_alert,
+        # Upstream causal chain
+        "causal_chain": causal_chain,
     }

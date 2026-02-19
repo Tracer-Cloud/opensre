@@ -16,11 +16,12 @@ class TestServiceMap:
 
     def setup_method(self):
         """Clean service map and enable for tests."""
-        # Enable service map for tests
         import app.agent.memory.service_map.config as config
         from app.agent.memory.io import get_memories_dir
 
         config.SERVICE_MAP_ENABLED = True
+        # Tests need synchronous writes to assert file state immediately after persist
+        config.SERVICE_MAP_WRITE_ASYNC = False
 
         service_map_path = get_memories_dir() / "service_map.json"
         if service_map_path.exists():
