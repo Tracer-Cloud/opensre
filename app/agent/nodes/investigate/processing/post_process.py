@@ -120,6 +120,16 @@ def _map_lambda_configuration(data: dict) -> dict:
     }
 
 
+def _map_check_s3_marker(data: dict) -> dict:
+    return {
+        "s3_marker": {
+            "marker_exists": data.get("marker_exists", False),
+            "file_count": data.get("file_count", 0),
+            "files": data.get("files", []),
+        }
+    }
+
+
 def _map_s3_object(data: dict) -> dict:
     return {
         "s3_audit_payload": {
@@ -199,6 +209,7 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "get_host_metrics": _map_host_metrics,
     "get_cloudwatch_logs": _map_cloudwatch_logs,
     "inspect_s3_object": _map_inspect_s3_object,
+    "check_s3_marker": _map_check_s3_marker,
     "list_s3_objects": _map_list_s3_objects,
     "get_lambda_invocation_logs": _map_lambda_invocation_logs,
     "get_lambda_errors": _map_lambda_errors,

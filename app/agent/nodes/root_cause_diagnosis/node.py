@@ -7,7 +7,7 @@ from app.agent.state import InvestigationState
 from app.agent.tools.clients import get_llm, parse_root_cause
 
 from .claim_validator import calculate_validity_score, validate_and_categorize_claims
-from .evidence_checker import check_evidence_availability
+from .evidence_checker import check_evidence_availability, check_vendor_evidence_missing
 from .prompt_builder import build_diagnosis_prompt
 
 
@@ -77,6 +77,11 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
 
     loop_count = state.get("investigation_loop_count", 0)
 
+    # Generate recommendations when vendor/audit evidence is missing
+    recommendations: list[str] = []
+    if check_vendor_evidence_missing(evidence) and loop_count < 3:
+        recommendations.append("Fetch audit payload from S3 to trace external vendor interactions")
+
     tracker.complete(
         "diagnose_root_cause",
         fields_updated=["root_cause", "confidence", "validated_claims", "validity_score"],
@@ -89,7 +94,7 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
         "validated_claims": validated_claims_list,
         "non_validated_claims": non_validated_claims_list,
         "validity_score": validity_score,
-        "investigation_recommendations": [],
+        "investigation_recommendations": recommendations,
         "remediation_steps": [],
         "investigation_loop_count": loop_count,
     }
