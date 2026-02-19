@@ -34,7 +34,6 @@ def _run(
         "report": state["slack_message"],
         "problem_md": state["problem_md"],
         "root_cause": state["root_cause"],
-        "confidence": state["confidence"],
     }
 
 

@@ -296,10 +296,9 @@ def test_agent_investigation(failure_data: dict, run_id: str, trace_id: str) -> 
     print("=" * 60)
     print(result.get("report", "No report generated"))
 
-    confidence = result.get("confidence", 0)
     validity = result.get("validity_score", 0)
     print("\n" + "=" * 60)
-    print(f"Investigation complete. Confidence: {confidence}% | Validity: {validity}%")
+    print(f"Investigation complete. Validity: {validity}%")
     print("-" * 60)
 
     print("\nInvestigation Results:")

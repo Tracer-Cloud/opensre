@@ -71,7 +71,6 @@ class TestFrameProblemMemory:
                 pipeline_name="upstream_downstream_pipeline_prefect",
                 alert_id="prior001",
                 root_cause="External API schema change removed customer_id field",
-                confidence=0.85,
                 validity_score=0.90,
                 problem_pattern="Upstream schema failure: External API removed required field",
             )

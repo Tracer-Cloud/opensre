@@ -7,7 +7,6 @@ def format_memory_content(
     timestamp: datetime,
     pipeline_name: str,
     alert_id_short: str,
-    confidence: float,
     validity_score: float,
     problem_pattern: str | None = None,
     action_sequence: list[str] | None = None,
@@ -24,7 +23,6 @@ def format_memory_content(
         timestamp: Investigation timestamp
         pipeline_name: Pipeline name
         alert_id_short: Short alert ID (8 chars)
-        confidence: Investigation confidence score
         validity_score: Claim validity score
         problem_pattern: Problem statement pattern
         action_sequence: Successful action sequence
@@ -40,7 +38,6 @@ def format_memory_content(
         "",
         f"- **Pipeline**: {pipeline_name}",
         f"- **Alert ID**: {alert_id_short}",
-        f"- **Confidence**: {confidence:.0%}",
         f"- **Validity**: {validity_score:.0%}",
         "",
     ]

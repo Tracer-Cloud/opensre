@@ -178,7 +178,6 @@ def test_agent_investigation(failure_data: dict) -> bool:
 
         print("\n✓ Investigation complete")
         print(f"  Root cause: {result.get('root_cause', 'Unknown')}")
-        print(f"  Confidence: {result.get('confidence', 0):.0%}")
 
         return True
 

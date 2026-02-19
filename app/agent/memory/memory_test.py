@@ -39,7 +39,6 @@ class TestMemoryInfrastructure:
             pipeline_name="test_pipeline",
             alert_id="abc123",
             root_cause="Test",
-            confidence=0.9,
             validity_score=0.9,
         )
         assert result is None
@@ -54,7 +53,6 @@ class TestMemoryInfrastructure:
                 pipeline_name="test_pipeline",
                 alert_id="abc12345",
                 root_cause="External API schema change removed customer_id field",
-                confidence=0.85,
                 validity_score=0.90,
                 action_sequence=["inspect_s3_object", "get_s3_object", "inspect_lambda_function"],
                 data_lineage="External API → Lambda → S3 → Prefect",
@@ -78,36 +76,24 @@ class TestMemoryInfrastructure:
             os.environ.pop("TRACER_MEMORY_ENABLED", None)
 
     def test_quality_gate_blocks_low_quality(self):
-        """Memory should not be written if confidence or validity is too low."""
+        """Memory should not be written if validity is too low."""
         os.environ["TRACER_MEMORY_ENABLED"] = "1"
 
         try:
-            # Low confidence
-            result = write_memory(
-                pipeline_name="test_pipeline",
-                alert_id="low001",
-                root_cause="Unknown",
-                confidence=0.50,
-                validity_score=0.90,
-            )
-            assert result is None
-
             # Low validity
             result = write_memory(
                 pipeline_name="test_pipeline",
                 alert_id="low002",
                 root_cause="Unknown",
-                confidence=0.90,
                 validity_score=0.50,
             )
             assert result is None
 
-            # Both high - should write
+            # High validity - should write
             result = write_memory(
                 pipeline_name="test_pipeline",
                 alert_id="high001",
                 root_cause="Test",
-                confidence=0.85,
                 validity_score=0.85,
             )
             assert result is not None
@@ -127,7 +113,6 @@ class TestMemoryInfrastructure:
                 pipeline_name="test_pipeline_seed",
                 alert_id="seed001",
                 root_cause="External API issue",
-                confidence=0.85,
                 validity_score=0.90,
                 action_sequence=["inspect_s3_object"],
             )
@@ -183,7 +168,6 @@ Lambda writes data to S3 landing bucket.
                     pipeline_name="test_pipeline",
                     alert_id=f"prior{i:03d}",
                     root_cause=f"Root cause {i}",
-                    confidence=0.80,
                     validity_score=0.80,
                 )
 
