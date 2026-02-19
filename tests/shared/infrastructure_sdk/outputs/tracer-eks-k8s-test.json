@@ -16,5 +16,6 @@
   ],
   "region": "us-east-1",
   "landing_bucket": "tracer-k8s-landing-5c87531d",
-  "processed_bucket": "tracer-k8s-processed-5c87531d"
+  "processed_bucket": "tracer-k8s-processed-5c87531d",
+  "trigger_api_url": "https://dowvqoqx85.execute-api.us-east-1.amazonaws.com/prod/"
 }

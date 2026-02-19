@@ -106,7 +106,7 @@ def poll_for_message(
             searchable = _extract_searchable_text(msg)
             if any(kw.lower() in searchable for kw in keywords):
                 preview = searchable[:200]
-                print(f"  Matching message found in Slack!")
+                print("  Matching message found in Slack!")
                 print(f"  Preview: {preview}")
                 return True
 
