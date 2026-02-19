@@ -154,9 +154,9 @@ def write_service_map(
     from app.agent.memory.service_map import (
         build_service_map,
         infer_feeds_into_edges,
-        is_service_map_enabled,
         persist_service_map,
     )
+    from app.agent.memory.service_map.config import is_service_map_enabled
 
     if not is_service_map_enabled():
         return
