@@ -32,7 +32,7 @@ def make_boto3_client(service: str):
         import boto3 as _boto3
     except ImportError:
         return None
-    return _boto3.client(service, region_name=os.getenv("AWS_REGION", "us-east-1"))
+    return _boto3.client(service, region_name=os.getenv("AWS_REGION", "us-east-1"))  # type: ignore[call-overload]
 
 
 def require_aws_credentials(*, context: str) -> dict[str, Any] | None:
