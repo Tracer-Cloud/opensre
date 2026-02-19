@@ -18,7 +18,7 @@ from tests.shared.infrastructure_sdk.deployer import (
     get_standard_tags,
     get_standard_tags_dict,
 )
-from tests.shared.infrastructure_sdk.resources import ecr, iam, vpc
+from tests.shared.infrastructure_sdk.resources import ecr, iam, s3, vpc
 
 STACK_NAME = "tracer-eks-k8s-test"
 CLUSTER_NAME = "tracer-eks-test"
@@ -62,6 +62,7 @@ EKS_NODE_POLICIES = [
     "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
     "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
     "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
+    "arn:aws:iam::aws:policy/AmazonS3FullAccess",
 ]
 
 EKS_UNSUPPORTED_AZS = {"us-east-1e"}
@@ -431,6 +432,12 @@ def deploy_eks_stack() -> dict[str, Any]:
 
     image_uri = _setup_ecr_and_push_image()
 
+    import uuid
+    suffix = uuid.uuid4().hex[:8]
+    landing_bucket = s3.create_bucket(f"tracer-k8s-landing-{suffix}", STACK_NAME, REGION)
+    processed_bucket = s3.create_bucket(f"tracer-k8s-processed-{suffix}", STACK_NAME, REGION)
+    print(f"S3 buckets: {landing_bucket['name']}, {processed_bucket['name']}")
+
     update_kubeconfig()
 
     outputs = {
@@ -445,6 +452,8 @@ def deploy_eks_stack() -> dict[str, Any]:
         "vpc_id": vpc_info["vpc_id"],
         "subnet_ids": subnet_ids,
         "region": REGION,
+        "landing_bucket": landing_bucket["name"],
+        "processed_bucket": processed_bucket["name"],
     }
     save_outputs(STACK_NAME, outputs)
 

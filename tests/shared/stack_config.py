@@ -79,7 +79,6 @@ SDK_STACKS = {
     "prefect": "tracer-prefect-ecs",
 }
 
-
 def get_flink_config() -> dict:
     """Get Flink test configuration from stack outputs.
 

@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: etl-load
+  namespace: tracer-test
+  labels:
+    app: etl-pipeline
+    stage: load
+    tracer: test-case
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: etl-pipeline
+        stage: load
+    spec:
+      serviceAccountName: etl-pipeline-sa
+      restartPolicy: Never
+      containers:
+        - name: load
+          image: tracer-k8s-test:latest
+          imagePullPolicy: Never
+          env:
+            - name: PIPELINE_STAGE
+              value: "load"
+            - name: LANDING_BUCKET
+              value: "{{LANDING_BUCKET}}"
+            - name: PROCESSED_BUCKET
+              value: "{{PROCESSED_BUCKET}}"
+            - name: PIPELINE_RUN_ID
+              value: "{{PIPELINE_RUN_ID}}"

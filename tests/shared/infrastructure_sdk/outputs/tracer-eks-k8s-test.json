@@ -14,5 +14,7 @@
     "subnet-09f1849d671b6a064",
     "subnet-067507b22f881d449"
   ],
-  "region": "us-east-1"
+  "region": "us-east-1",
+  "landing_bucket": "tracer-k8s-landing-5c87531d",
+  "processed_bucket": "tracer-k8s-processed-5c87531d"
 }

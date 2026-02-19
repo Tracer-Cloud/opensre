@@ -25,8 +25,9 @@ import argparse
 import os
 import shutil
 import sys
-import tempfile
+import uuid
 
+from tests.shared.infrastructure_sdk.config import load_outputs
 from tests.test_case_kubernetes.infrastructure_sdk.eks import (
     deploy_eks_stack,
     destroy_eks_stack,
@@ -35,7 +36,6 @@ from tests.test_case_kubernetes.infrastructure_sdk.eks import (
 )
 from tests.test_case_kubernetes.infrastructure_sdk.local import (
     apply_manifest,
-    delete_manifest,
     deploy_datadog_helm,
     get_pod_logs,
     wait_for_datadog_agent,
@@ -47,6 +47,12 @@ from tests.test_case_kubernetes.test_datadog import (
     verify_logs_in_datadog,
     verify_monitor_triggered,
 )
+from tests.test_case_kubernetes.trigger_alert import (
+    _apply_manifest,
+    _delete_job,
+    _render_eks_manifest,
+)
+from tests.utils.s3_upload_validate import INVALID_PAYLOAD, upload_test_data
 
 NAMESPACE = "tracer-test"
 
@@ -55,7 +61,8 @@ MANIFESTS_DIR = os.path.join(BASE_DIR, "k8s_manifests")
 
 NAMESPACE_MANIFEST = os.path.join(MANIFESTS_DIR, "namespace.yaml")
 DATADOG_VALUES_EKS = os.path.join(MANIFESTS_DIR, "datadog-values-eks.yaml")
-JOB_ERROR_MANIFEST = os.path.join(MANIFESTS_DIR, "job-with-error.yaml")
+JOB_EXTRACT_MANIFEST = os.path.join(MANIFESTS_DIR, "job-extract.yaml")
+JOB_TRANSFORM_ERROR_MANIFEST = os.path.join(MANIFESTS_DIR, "job-transform-error.yaml")
 
 
 def check_eks_prerequisites() -> list[str]:
@@ -66,20 +73,6 @@ def check_eks_prerequisites() -> list[str]:
     return missing
 
 
-def apply_manifest_with_image(manifest_path: str, image_uri: str) -> str:
-    """Read a manifest, replace the image and imagePullPolicy, write a temp copy, apply it."""
-    with open(manifest_path) as f:
-        content = f.read()
-
-    content = content.replace("image: tracer-k8s-test:latest", f"image: {image_uri}")
-    content = content.replace("imagePullPolicy: Never", "imagePullPolicy: Always")
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    apply_manifest(tmp_path)
-    return tmp_path
 
 
 def main() -> int:
@@ -101,14 +94,14 @@ def main() -> int:
         return 1
 
     passed = True
-    tmp_manifest = None
     try:
         if not args.skip_deploy:
             deploy_eks_stack()
         else:
             update_kubeconfig()
 
-        image_uri = get_ecr_image_uri()
+        config = load_outputs("tracer-eks-k8s-test")
+        image_uri = config["ecr_image_uri"]
         print(f"Using ECR image: {image_uri}")
 
         apply_manifest(NAMESPACE_MANIFEST)
@@ -122,20 +115,44 @@ def main() -> int:
         if not args.skip_monitors and os.environ.get("DD_APP_KEY"):
             monitors_deployed = deploy_monitors()
 
-        print("\n--- Running error job on EKS ---")
-        tmp_manifest = apply_manifest_with_image(JOB_ERROR_MANIFEST, image_uri)
-        status = wait_for_job(NAMESPACE, "simple-etl-error", timeout=180)
-        logs = get_pod_logs(NAMESPACE, "app=simple-etl-error")
-        print(f"Job status: {status}")
-        print(f"Pod logs:\n{logs}")
+        run_id = f"eks-test-{uuid.uuid4().hex[:8]}"
+        test_data = upload_test_data(config["landing_bucket"], INVALID_PAYLOAD)
 
-        if status != "failed":
-            print("FAIL: job should have failed")
+        common = {
+            "landing_bucket": config["landing_bucket"],
+            "processed_bucket": config["processed_bucket"],
+            "s3_key": test_data.key,
+            "pipeline_run_id": run_id,
+            "image_uri": image_uri,
+        }
+
+        print("\n--- Running 3-stage pipeline on EKS (extract -> transform-error) ---")
+
+        _delete_job("etl-extract")
+        content = _render_eks_manifest(JOB_EXTRACT_MANIFEST, **common)
+        _apply_manifest(content)
+        status = wait_for_job(NAMESPACE, "etl-extract", timeout=180)
+        if status != "complete":
+            logs = get_pod_logs(NAMESPACE, "stage=extract")
+            print(f"FAIL: extract did not complete ({status})\n{logs}")
             passed = False
 
-        if "Injected ETL failure" not in logs:
-            print("FAIL: expected error not in pod logs")
-            passed = False
+        if passed:
+            _delete_job("etl-transform-error")
+            content = _render_eks_manifest(JOB_TRANSFORM_ERROR_MANIFEST, **common)
+            _apply_manifest(content)
+            status = wait_for_job(NAMESPACE, "etl-transform-error", timeout=180)
+            logs = get_pod_logs(NAMESPACE, "stage=transform-error")
+            print(f"Transform status: {status}")
+            print(f"Pod logs:\n{logs}")
+
+            if status != "failed":
+                print("FAIL: transform should have failed")
+                passed = False
+
+            if "Schema validation failed" not in logs and "Missing fields" not in logs:
+                print("FAIL: expected schema validation error in pod logs")
+                passed = False
 
         if not args.skip_verify and passed:
             import time
@@ -150,10 +167,9 @@ def main() -> int:
             if not verify_monitor_triggered(log_monitor_name):
                 print("WARNING: monitor did not trigger (may need more time)")
 
-        delete_manifest(tmp_manifest or JOB_ERROR_MANIFEST)
+        _delete_job("etl-extract")
+        _delete_job("etl-transform-error")
     finally:
-        if tmp_manifest:
-            os.unlink(tmp_manifest)
         if args.cleanup_monitors and os.environ.get("DD_APP_KEY"):
             cleanup_monitors()
         if not args.skip_destroy and not args.skip_deploy:

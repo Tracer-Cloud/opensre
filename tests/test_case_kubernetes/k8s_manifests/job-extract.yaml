@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: etl-extract
+  namespace: tracer-test
+  labels:
+    app: etl-pipeline
+    stage: extract
+    tracer: test-case
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: etl-pipeline
+        stage: extract
+    spec:
+      serviceAccountName: etl-pipeline-sa
+      restartPolicy: Never
+      containers:
+        - name: extract
+          image: tracer-k8s-test:latest
+          imagePullPolicy: Never
+          env:
+            - name: PIPELINE_STAGE
+              value: "extract"
+            - name: LANDING_BUCKET
+              value: "{{LANDING_BUCKET}}"
+            - name: S3_KEY
+              value: "{{S3_KEY}}"
+            - name: PIPELINE_RUN_ID
+              value: "{{PIPELINE_RUN_ID}}"
