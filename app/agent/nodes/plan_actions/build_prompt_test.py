@@ -104,7 +104,6 @@ def test_build_investigation_prompt():
 
     prompt = build_investigation_prompt(
         problem_md="Pipeline failed",
-        investigation_recommendations=["Check logs"],
         executed_hypotheses=[],
         available_actions=available_actions,
         available_sources={"cloudwatch": {}},
@@ -133,7 +132,6 @@ def test_build_investigation_prompt_filters_executed():
 
     prompt = build_investigation_prompt(
         problem_md="Pipeline failed",
-        investigation_recommendations=[],
         executed_hypotheses=executed_hypotheses,
         available_actions=available_actions,
         available_sources={},
@@ -212,7 +210,6 @@ def test_plan_actions_with_llm():
         llm=mock_llm,
         plan_model=MockPlanModel,
         problem_md="Pipeline failed",
-        investigation_recommendations=[],
         executed_hypotheses=[],
         available_actions=[],
         available_sources={},

@@ -33,7 +33,7 @@ This test case validates an end-to-end ETL pipeline running as Kubernetes Jobs, 
 │  │  → reads  s3://landing-bucket/<run-id>/input.json                       │ │
 │  │  → writes s3://landing-bucket/<run-id>/extracted.json                   │ │
 │  └──────────────────────────────┬──────────────────────────────────────────┘ │
-│                                 │ sequential (test runner waits for job)      │
+│                                 │ sequential (test runner waits for job)     │
 │  ┌──────────────────────────────▼──────────────────────────────────────────┐ │
 │  │  Job: etl-transform  (PIPELINE_STAGE=transform)                         │ │
 │  │  Happy path  → validates schema, converts amount to cents               │ │
@@ -41,7 +41,7 @@ This test case validates an end-to-end ETL pipeline running as Kubernetes Jobs, 
 │  │  → reads  s3://landing-bucket/<run-id>/extracted.json                   │ │
 │  │  → writes s3://landing-bucket/<run-id>/transformed.json  (happy only)   │ │
 │  └──────────────────────────────┬──────────────────────────────────────────┘ │
-│                                 │ (happy path only)                           │
+│                                 │ (happy path only)                          │
 │  ┌──────────────────────────────▼──────────────────────────────────────────┐ │
 │  │  Job: etl-load  (PIPELINE_STAGE=load)                                   │ │
 │  │  → reads  s3://landing-bucket/<run-id>/transformed.json                 │ │
@@ -57,7 +57,7 @@ This test case validates an end-to-end ETL pipeline running as Kubernetes Jobs, 
 │  │  tracer-k8s-landing-*         │   │  tracer-k8s-processed-*            │  │
 │  │  <run-id>/input.json          │   │  <run-id>/output.json              │  │
 │  │  <run-id>/extracted.json      │   └────────────────────────────────────┘  │
-│  │  <run-id>/transformed.json    │                                            │
+│  │  <run-id>/transformed.json    │                                           │
 │  └───────────────────────────────┘                                           │
 └──────────────────────────────────────────────────────────────────────────────┘
 

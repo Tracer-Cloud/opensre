@@ -7,9 +7,8 @@ from app.agent.state import InvestigationState
 from app.agent.tools.clients import get_llm, parse_root_cause
 
 from .claim_validator import calculate_validity_score, validate_and_categorize_claims
-from .evidence_checker import check_evidence_availability, check_vendor_evidence_missing
+from .evidence_checker import check_evidence_availability
 from .prompt_builder import build_diagnosis_prompt
-from .recommendations import generate_recommendations, generate_remediation_steps
 
 
 def diagnose_root_cause(state: InvestigationState) -> dict:
@@ -76,41 +75,7 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     # Update confidence based on validity
     final_confidence = (result.confidence * 0.4) + (validity_score * 0.6)
 
-    # Generate recommendations if needed
     loop_count = state.get("investigation_loop_count", 0)
-    vendor_missing = check_vendor_evidence_missing(evidence)
-
-    print(
-        f"[DEBUG] Diagnosis: confidence={final_confidence:.2f}, validity={validity_score:.2f}, loop_count={loop_count}"
-    )
-    print(
-        f"[DEBUG] Vendor evidence check: vendor_missing={vendor_missing}, "
-        f"confidence={final_confidence:.2f}, validity={validity_score:.2f}"
-    )
-
-    recommendations = generate_recommendations(
-        evidence,
-        final_confidence,
-        validity_score,
-        vendor_missing,
-    )
-    remediation_steps = generate_remediation_steps(validated_claims_list, result.root_cause)
-
-    should_recommend = final_confidence < 0.6 or validity_score < 0.5 or vendor_missing
-    print(
-        f"[DEBUG] Should generate recommendations? {should_recommend} "
-        f"(conf<0.6: {final_confidence < 0.6}, val<0.5: {validity_score < 0.5}, vendor_missing: {vendor_missing})"
-    )
-    print(f"[DEBUG] Generated {len(recommendations)} recommendations: {recommendations}")
-
-    # Increment loop counter if recommendations generated
-    if recommendations:
-        old_loop_count = loop_count
-        loop_count += 1
-        print(f"[DEBUG] Incrementing loop counter: {old_loop_count} -> {loop_count}")
-        debug_print(
-            f"Generated {len(recommendations)} recommendations for next loop (loop_count={loop_count})"
-        )
 
     tracker.complete(
         "diagnose_root_cause",
@@ -124,8 +89,8 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
         "validated_claims": validated_claims_list,
         "non_validated_claims": non_validated_claims_list,
         "validity_score": validity_score,
-        "investigation_recommendations": recommendations,
-        "remediation_steps": remediation_steps,
+        "investigation_recommendations": [],
+        "remediation_steps": [],
         "investigation_loop_count": loop_count,
     }
 
@@ -134,25 +99,8 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
     """Handle case when no evidence is available."""
     debug_print("Warning: Limited evidence available - proceeding with low confidence")
 
-    loop_count = state.get("investigation_loop_count", 0)
-    recommendations = [
-        "Collect error logs from pipeline execution",
-        "Check CloudWatch logs if available",
-        "Review pipeline step exit codes and error messages",
-    ]
-    remediation_steps = [
-        "Add fail-fast validation for required fields before downstream transforms",
-        "Introduce schema compatibility gate to block breaking changes at ingress",
-        "Alert downstream consumers when schema_version changes until RCA is confirmed",
-    ]
+    loop_count = state.get("investigation_loop_count", 0) + 1
 
-    # Increment loop counter since we're recommending more investigation
-    loop_count += 1
-    print(
-        f"[DEBUG] Early return: Limited evidence. Incrementing loop: {loop_count - 1} -> {loop_count}"
-    )
-
-    # Return basic result with low confidence
     problem = state.get("problem_md", "Pipeline failure detected")
 
     tracker.complete(
@@ -172,8 +120,8 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
             }
         ],
         "validity_score": 0.0,
-        "investigation_recommendations": recommendations,
-        "remediation_steps": remediation_steps,
+        "investigation_recommendations": [],
+        "remediation_steps": [],
         "investigation_loop_count": loop_count,
     }
 
