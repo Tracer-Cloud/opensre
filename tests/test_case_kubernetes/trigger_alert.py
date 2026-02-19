@@ -13,6 +13,10 @@ Usage:
     python -m tests.test_case_kubernetes.trigger_alert
     python -m tests.test_case_kubernetes.trigger_alert --verify
     python -m tests.test_case_kubernetes.trigger_alert --configure-kubectl --verify
+
+    # Verify only (after a trigger already happened via API or other means):
+    python -m tests.test_case_kubernetes.trigger_alert --verify-only
+    python -m tests.test_case_kubernetes.trigger_alert --verify-only --since-epoch 1771466422
 """
 
 from __future__ import annotations
@@ -183,11 +187,51 @@ def query_slack_alerts(
 # Main
 # ---------------------------------------------------------------------------
 
+def verify(since_epoch: float, *, dd_max_wait: int = 120, slack_max_wait: int = 300) -> int:
+    """Poll Datadog and Slack to confirm the pipeline failure was observed.
+
+    Returns 0 on success, 1 if Datadog verification fails.
+    """
+    start = time.monotonic()
+
+    dd_found = _poll_datadog_logs(max_wait=dd_max_wait)
+    dd_elapsed = time.monotonic() - start
+
+    if not dd_found:
+        print(f"\nFAIL: PIPELINE_ERROR not found in Datadog within {dd_max_wait}s")
+        return 1
+
+    print(f"\nLog confirmed in Datadog ({dd_elapsed:.1f}s)")
+    print("Waiting for Datadog monitor to fire and post to Slack...")
+
+    channel_id = get_channel_id()
+    slack_found = query_slack_alerts(
+        max_wait=slack_max_wait,
+        channel_id=channel_id,
+        since_epoch=since_epoch,
+    )
+
+    total = time.monotonic() - start
+    if dd_found and slack_found:
+        print(f"\nEnd-to-end verified: pipeline failure -> Datadog -> Slack ({total:.1f}s)")
+    else:
+        print(f"\nPartial: log in Datadog but Slack alert not confirmed ({total:.1f}s)")
+
+    return 0
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Fast K8s 3-stage pipeline alert trigger")
+    parser = argparse.ArgumentParser(description="K8s ETL pipeline alert trigger and verifier")
     parser.add_argument("--configure-kubectl", action="store_true", help="Run aws eks update-kubeconfig first")
     parser.add_argument("--verify", action="store_true", help="Verify logs in DD + wait for DD alert in Slack")
+    parser.add_argument("--verify-only", action="store_true", help="Skip trigger, only run DD + Slack verification")
+    parser.add_argument("--since-epoch", type=float, default=None, help="Unix timestamp to search Slack from (for --verify-only)")
     args = parser.parse_args()
+
+    since_epoch = args.since_epoch or time.time()
+
+    if args.verify_only:
+        return verify(since_epoch)
 
     start = time.monotonic()
     start_epoch = time.time()
@@ -206,11 +250,9 @@ def main() -> int:
         "image_uri": image_uri,
     }
 
-    # Upload bad data (missing customer_id)
     print("Uploading bad test data to S3...")
     test_data = upload_test_data(config["landing_bucket"], INVALID_PAYLOAD)
 
-    # Stage 1: Extract
     print("\nCleaning up old jobs...")
     for job in ("etl-extract", "etl-transform", "etl-transform-error"):
         _delete_job(job)
@@ -231,7 +273,6 @@ def main() -> int:
         return 1
     print("  Extract completed")
 
-    # Stage 2: Transform (expect failure)
     print("Submitting transform job to EKS...")
     transform_content = _render_eks_manifest(
         os.path.join(MANIFESTS_DIR, "job-transform-error.yaml"),
@@ -258,32 +299,11 @@ def main() -> int:
         print("Done. DD monitor will fire in ~1-2 min -> Slack alert follows.")
         return 0
 
-    dd_found = _poll_datadog_logs(max_wait=90)
-    dd_elapsed = time.monotonic() - start
-
-    if dd_found:
-        print(f"\nLog confirmed in Datadog ({dd_elapsed:.1f}s)")
-    else:
-        print(f"\nWARNING: Log not found in Datadog within timeout ({dd_elapsed:.1f}s)")
-
-    print("Waiting for Datadog monitor to fire and post to Slack...")
-    channel_id = get_channel_id()
-    slack_found = query_slack_alerts(max_wait=300, channel_id=channel_id, since_epoch=start_epoch)
-
-    # Cleanup
+    # Cleanup jobs before verifying
     for job in ("etl-extract", "etl-transform-error"):
         _delete_job(job)
 
-    total = time.monotonic() - start
-    if dd_found and slack_found:
-        print(f"\nEnd-to-end verified: extract -> transform(fail) -> Datadog -> Slack ({total:.1f}s)")
-    elif dd_found:
-        print(f"\nPartial: log in Datadog but Slack alert not confirmed ({total:.1f}s)")
-    else:
-        print(f"\nFailed: log not found in Datadog ({total:.1f}s)")
-        return 1
-
-    return 0
+    return verify(start_epoch)
 
 
 if __name__ == "__main__":

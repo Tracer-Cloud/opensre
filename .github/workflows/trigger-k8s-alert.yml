@@ -38,99 +38,20 @@ jobs:
           echo "Pipeline run: ${{ steps.trigger.outputs.pipeline_run_id }}"
           echo "S3 key: ${{ steps.trigger.outputs.s3_key }}"
 
-      - name: Set up Python (for DD/Slack verification)
+      - name: Set up Python
         if: ${{ inputs.verify == true || github.event_name == 'schedule' }}
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
           cache: "pip"
 
-      - name: Install verification dependencies
+      - name: Install project
         if: ${{ inputs.verify == true || github.event_name == 'schedule' }}
-        run: |
-          pip install -q boto3 python-dotenv
+        run: pip install -q -e .
 
       - name: Verify Datadog + Slack (~2 min)
         if: ${{ inputs.verify == true || github.event_name == 'schedule' }}
-        env:
-          # Record epoch when job started (before Python setup) so Slack search covers full run
-          JOB_START_EPOCH: ${{ steps.trigger.outputs.trigger_epoch }}
         run: |
-          python3 - <<'PYEOF'
-          import os, json, time, urllib.request, sys
-
-          api_key = os.environ["DD_API_KEY"]
-          app_key = os.environ["DD_APP_KEY"]
-          site = os.environ.get("DD_SITE", "datadoghq.com")
-          slack_token = os.environ.get("SLACK_BOT_TOKEN", "")
-          channel_id = os.environ.get("SLACK_DEVS_ALERTS_CHANNEL_ID", "")
-          # Look back to when the trigger step ran (or 15 min if not set)
-          job_start = os.environ.get("JOB_START_EPOCH", "")
-          start_epoch = float(job_start) if job_start else (time.time() - 900)
-
-          def dd_search_logs(max_wait=90):
-              print("Polling Datadog Logs API...")
-              deadline = time.monotonic() + max_wait
-              while time.monotonic() < deadline:
-                  try:
-                      payload = json.dumps({
-                          "filter": {
-                              "query": "kube_namespace:tracer-test PIPELINE_ERROR",
-                              "from": "now-3m", "to": "now",
-                          },
-                          "sort": "-timestamp",
-                          "page": {"limit": 1},
-                      }).encode()
-                      req = urllib.request.Request(
-                          f"https://api.{site}/api/v2/logs/events/search",
-                          data=payload,
-                          headers={"DD-API-KEY": api_key, "DD-APPLICATION-KEY": app_key,
-                                   "Content-Type": "application/json"},
-                      )
-                      with urllib.request.urlopen(req, timeout=10) as resp:
-                          body = json.loads(resp.read())
-                      if body.get("data"):
-                          return True
-                  except Exception as e:
-                      print(f"  DD poll error: {e}")
-                  remaining = int(deadline - time.monotonic())
-                  print(f"  Not in DD yet... ({remaining}s remaining)")
-                  time.sleep(5)
-              return False
-
-          def slack_search(max_wait=300):
-              if not slack_token or not channel_id:
-                  print("Slack credentials not set, skipping")
-                  return True  # Don't fail the job
-              print("Polling Slack #devs-alerts...")
-              deadline = time.monotonic() + max_wait
-              oldest = str(start_epoch)
-              while time.monotonic() < deadline:
-                  req = urllib.request.Request(
-                      f"https://slack.com/api/conversations.history?channel={channel_id}&oldest={oldest}&limit=20",
-                      headers={"Authorization": f"Bearer {slack_token}"},
-                  )
-                  with urllib.request.urlopen(req, timeout=10) as resp:
-                      data = json.loads(resp.read())
-                  for msg in data.get("messages", []):
-                      searchable = msg.get("text","") + json.dumps(msg.get("attachments",[]))
-                      if any(kw.lower() in searchable.lower() for kw in ["PIPELINE_ERROR","pipeline error","etl-transform"]):
-                          print(f"  Slack alert found!")
-                          return True
-                  remaining = int(deadline - time.monotonic())
-                  print(f"  No Slack alert yet... ({remaining}s remaining)")
-                  time.sleep(15)
-              return False
-
-          dd_ok = dd_search_logs(max_wait=120)
-          if not dd_ok:
-              print("FAIL: PIPELINE_ERROR not found in Datadog within 2 minutes")
-              sys.exit(1)
-          print(f"Datadog confirmed in {time.monotonic():.0f}s")
-
-          slack_ok = slack_search(max_wait=300)
-          if slack_ok:
-              print(f"End-to-end verified: API -> K8s failure -> Datadog -> Slack (start_epoch={start_epoch:.0f})")
-          else:
-              print("WARNING: Slack alert not confirmed within 5 min (Datadog verified - Slack may still arrive)")
-          PYEOF
+          python -m tests.test_case_kubernetes.trigger_alert \
+            --verify-only \
+            --since-epoch ${{ steps.trigger.outputs.trigger_epoch }}
