@@ -170,6 +170,28 @@ def _map_grafana_service_names(data: dict) -> dict:
     }
 
 
+def _map_datadog_logs(data: dict) -> dict:
+    return {
+        "datadog_logs": data.get("logs", []),
+        "datadog_error_logs": data.get("error_logs", []),
+        "datadog_logs_query": data.get("query", ""),
+    }
+
+
+def _map_datadog_monitors(data: dict) -> dict:
+    return {
+        "datadog_monitors": data.get("monitors", []),
+        "datadog_monitors_count": data.get("total", 0),
+    }
+
+
+def _map_datadog_events(data: dict) -> dict:
+    return {
+        "datadog_events": data.get("events", []),
+        "datadog_events_count": data.get("total", 0),
+    }
+
+
 EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "get_failed_jobs": _map_failed_jobs,
     "get_failed_tools": _map_failed_tools,
@@ -188,6 +210,9 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "query_grafana_metrics": _map_grafana_metrics,
     "query_grafana_alert_rules": _map_grafana_alert_rules,
     "query_grafana_service_names": _map_grafana_service_names,
+    "query_datadog_logs": _map_datadog_logs,
+    "query_datadog_monitors": _map_datadog_monitors,
+    "query_datadog_events": _map_datadog_events,
 }
 
 
@@ -290,6 +315,13 @@ def build_evidence_summary(execution_results: dict) -> str:
                 summary_parts.append(f"grafana:{len(data['rules'])} alert rules")
             elif action_name == "query_grafana_service_names" and data.get("service_names"):
                 summary_parts.append(f"grafana:{len(data['service_names'])} services")
+            elif action_name == "query_datadog_logs" and data.get("logs"):
+                error_count = len(data.get("error_logs", []))
+                summary_parts.append(f"datadog:{len(data['logs'])} logs ({error_count} errors)")
+            elif action_name == "query_datadog_monitors" and data.get("monitors"):
+                summary_parts.append(f"datadog:{len(data['monitors'])} monitors")
+            elif action_name == "query_datadog_events" and data.get("events"):
+                summary_parts.append(f"datadog:{len(data['events'])} events")
         else:
             # Log action failures for debugging
             error_msg = f"{action_name}:FAILED({result.error[:50] if result.error else 'unknown'})"

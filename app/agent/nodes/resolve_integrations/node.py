@@ -23,6 +23,8 @@ _SERVICE_KEY_MAP = {
     "grafana": "grafana",
     "AWS": "aws",
     "aws": "aws",
+    "Datadog": "datadog",
+    "datadog": "datadog",
 }
 
 
@@ -73,6 +75,18 @@ def _classify_integrations(
                 resolved["aws"] = {
                     "role_arn": role_arn,
                     "external_id": external_id,
+                    "integration_id": integration.get("id", ""),
+                }
+
+        elif key == "datadog":
+            api_key = credentials.get("api_key", "")
+            app_key = credentials.get("app_key", "")
+            site = credentials.get("site", "datadoghq.com")
+            if api_key and app_key:
+                resolved["datadog"] = {
+                    "api_key": api_key,
+                    "app_key": app_key,
+                    "site": site,
                     "integration_id": integration.get("id", ""),
                 }
 

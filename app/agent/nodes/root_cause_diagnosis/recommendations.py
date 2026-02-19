@@ -55,6 +55,13 @@ def generate_recommendations(
             "Get Lambda function configuration to identify external dependencies"
         )
 
+    # Check for Datadog evidence gaps
+    if not evidence.get("datadog_logs"):
+        recommendations.append("Query Datadog logs for pipeline error details and stack traces")
+
+    if not evidence.get("datadog_monitors"):
+        recommendations.append("Check Datadog monitor states and alerting configuration")
+
     return recommendations[:5]
 
 

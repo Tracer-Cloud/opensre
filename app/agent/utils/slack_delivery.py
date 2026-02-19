@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
@@ -9,6 +10,8 @@ import httpx
 
 from app.agent.output import debug_print
 from app.config import SLACK_CHANNEL
+
+logger = logging.getLogger(__name__)
 
 
 def build_action_blocks(investigation_url: str, feedback_url: str | None = None) -> list[dict[str, Any]]:
@@ -60,19 +63,26 @@ def send_slack_report(
         blocks: Optional Slack Block Kit blocks for interactive elements.
     """
     if not thread_ts:
+        logger.warning("[slack] Delivery skipped: no thread_ts (channel=%s)", channel)
         debug_print("Slack delivery skipped: no thread_ts - refusing to post top-level message.")
         return
 
     if access_token and channel:
-        _post_direct(slack_message, channel, thread_ts, access_token, blocks=blocks)
+        success = _post_direct(slack_message, channel, thread_ts, access_token, blocks=blocks)
+        if not success:
+            logger.info("[slack] Direct post failed, falling back to webapp delivery")
+            _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks)
     else:
         _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks)
 
 
 def _post_direct(
     text: str, channel: str, thread_ts: str, token: str, *, blocks: list[dict[str, Any]] | None = None,
-) -> None:
-    """Post as a thread reply via Slack chat.postMessage."""
+) -> bool:
+    """Post as a thread reply via Slack chat.postMessage.
+
+    Returns True if the message was posted successfully, False otherwise.
+    """
     payload: dict[str, Any] = {
         "channel": channel,
         "text": text,
@@ -93,11 +103,24 @@ def _post_direct(
         )
         data = resp.json()
         if not data.get("ok"):
-            debug_print(f"Slack direct post failed: {data.get('error')}")
-        else:
-            debug_print(f"Slack reply posted (thread_ts={thread_ts}, ts={data.get('ts')})")
+            error = data.get("error", "unknown")
+            response_meta = data.get("response_metadata", {})
+            logger.error(
+                "[slack] Direct post FAILED: error=%s, metadata=%s (channel=%s, thread_ts=%s)",
+                error, response_meta, channel, thread_ts,
+            )
+            debug_print(f"Slack direct post failed: {error}")
+            return False
+        warnings = data.get("response_metadata", {}).get("warnings", [])
+        if warnings:
+            logger.warning("[slack] Reply posted with warnings: %s", warnings)
+        logger.info("[slack] Reply posted successfully (thread_ts=%s, ts=%s)", thread_ts, data.get("ts"))
+        debug_print(f"Slack reply posted (thread_ts={thread_ts}, ts={data.get('ts')})")
+        return True
     except Exception as exc:  # noqa: BLE001
+        logger.error("[slack] Direct post exception: %s", exc)
         debug_print(f"Slack direct post failed: {exc}")
+        return False
 
 
 def _post_via_webapp(

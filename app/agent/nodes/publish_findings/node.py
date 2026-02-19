@@ -1,5 +1,7 @@
 """Main orchestration node for report generation and publishing."""
 
+import logging
+
 from langsmith import traceable
 
 from app.agent.nodes.publish_findings.context import build_report_context
@@ -11,6 +13,8 @@ from app.agent.nodes.publish_findings.formatters.report import (
 )
 from app.agent.nodes.publish_findings.renderers.terminal import render_report
 from app.agent.state import InvestigationState
+
+logger = logging.getLogger(__name__)
 
 
 def _persist_memory(state: InvestigationState, slack_message: str) -> None:
@@ -135,10 +139,26 @@ def generate_report(state: InvestigationState) -> dict:
     slack_ctx = state.get("slack_context", {})
     thread_ts = slack_ctx.get("thread_ts") or slack_ctx.get("ts")
 
+    logger.info(
+        "[publish] Slack delivery context: channel=%s, thread_ts=%s, has_access_token=%s",
+        slack_ctx.get("channel_id"),
+        thread_ts,
+        bool(slack_ctx.get("access_token")),
+    )
+
+    logger.info(
+        "slack_ctx: %s", slack_ctx,
+    )
     investigation_url = get_investigation_url()
     report_blocks = build_slack_blocks(ctx)
     action_blocks = build_action_blocks(investigation_url)
     all_blocks = report_blocks + action_blocks
+
+    logger.info(
+        "[publish] Sending report: text_len=%d, blocks=%d",
+        len(slack_message),
+        len(all_blocks),
+    )
 
     send_slack_report(
         slack_message,

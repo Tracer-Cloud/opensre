@@ -26,6 +26,9 @@ def check_evidence_availability(
         or evidence.get("grafana_error_logs")
         or evidence.get("grafana_traces")
         or evidence.get("grafana_metrics")
+        or evidence.get("datadog_logs")
+        or evidence.get("datadog_monitors")
+        or evidence.get("datadog_events")
     )
 
     # Check for evidence in alert annotations
