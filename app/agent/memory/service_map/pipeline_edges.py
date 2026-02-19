@@ -73,9 +73,11 @@ def infer_feeds_into_edges(service_map: ServiceMap) -> list[Edge]:
         existing = existing_by_key.get(pair)
         if existing:
             updated = dict(existing)
-            updated["confidence"] = min(_CONFIDENCE_MAX, existing.get("confidence", _CONFIDENCE_INITIAL) + _CONFIDENCE_BUMP)
+            old_confidence = float(existing.get("confidence") or _CONFIDENCE_INITIAL)
+            new_confidence = min(_CONFIDENCE_MAX, old_confidence + _CONFIDENCE_BUMP)
+            updated["confidence"] = new_confidence
             updated["last_seen"] = now
-            if updated["confidence"] >= _CONFIDENCE_MAX:
+            if new_confidence >= _CONFIDENCE_MAX:
                 updated["verification_status"] = "verified"
             result.append(updated)  # type: ignore[arg-type]
         else:
