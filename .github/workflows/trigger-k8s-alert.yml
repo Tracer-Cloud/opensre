@@ -27,6 +27,7 @@ jobs:
       - name: Trigger pipeline failure via API (~10s)
         id: trigger
         run: |
+          echo "trigger_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
           response=$(curl -sf -X POST "$TRIGGER_API_URL/trigger?inject_error=true")
           echo "response=$response"
           echo "pipeline_run_id=$(echo $response | python3 -c 'import sys,json; print(json.load(sys.stdin)["pipeline_run_id"])')" >> "$GITHUB_OUTPUT"
@@ -51,6 +52,9 @@ jobs:
 
       - name: Verify Datadog + Slack (~2 min)
         if: ${{ inputs.verify == true || github.event_name == 'schedule' }}
+        env:
+          # Record epoch when job started (before Python setup) so Slack search covers full run
+          JOB_START_EPOCH: ${{ steps.trigger.outputs.trigger_epoch }}
         run: |
           python3 - <<'PYEOF'
           import os, json, time, urllib.request, sys
@@ -60,7 +64,9 @@ jobs:
           site = os.environ.get("DD_SITE", "datadoghq.com")
           slack_token = os.environ.get("SLACK_BOT_TOKEN", "")
           channel_id = os.environ.get("SLACK_DEVS_ALERTS_CHANNEL_ID", "")
-          start_epoch = time.time()
+          # Look back to when the trigger step ran (or 15 min if not set)
+          job_start = os.environ.get("JOB_START_EPOCH", "")
+          start_epoch = float(job_start) if job_start else (time.time() - 900)
 
           def dd_search_logs(max_wait=90):
               print("Polling Datadog Logs API...")
@@ -124,7 +130,7 @@ jobs:
 
           slack_ok = slack_search(max_wait=300)
           if slack_ok:
-              print("End-to-end verified: API -> K8s failure -> Datadog -> Slack")
+              print(f"End-to-end verified: API -> K8s failure -> Datadog -> Slack (start_epoch={start_epoch:.0f})")
           else:
-              print("WARNING: Slack alert not confirmed (Datadog verified)")
+              print("WARNING: Slack alert not confirmed within 5 min (Datadog verified - Slack may still arrive)")
           PYEOF
