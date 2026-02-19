@@ -28,7 +28,9 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+import uuid
 
+from tests.shared.infrastructure_sdk.config import load_outputs
 from tests.test_case_kubernetes.infrastructure_sdk.local import (
     apply_manifest,
     build_image,
@@ -45,6 +47,8 @@ from tests.test_case_kubernetes.infrastructure_sdk.local import (
     wait_for_datadog_agent,
     wait_for_job,
 )
+from tests.test_case_kubernetes.test_local import _apply_rendered, _delete_job, _render_manifest
+from tests.utils.s3_upload_validate import INVALID_PAYLOAD, upload_test_data
 
 CLUSTER_NAME = "tracer-k8s-test"
 IMAGE_TAG = "tracer-k8s-test:latest"
@@ -57,7 +61,8 @@ MANIFESTS_DIR = os.path.join(BASE_DIR, "k8s_manifests")
 NAMESPACE_MANIFEST = os.path.join(MANIFESTS_DIR, "namespace.yaml")
 DATADOG_VALUES = os.path.join(MANIFESTS_DIR, "datadog-values.yaml")
 MONITOR_DEFS = os.path.join(MANIFESTS_DIR, "datadog-monitors.yaml")
-JOB_ERROR_MANIFEST = os.path.join(MANIFESTS_DIR, "job-with-error.yaml")
+JOB_EXTRACT_MANIFEST = os.path.join(MANIFESTS_DIR, "job-extract.yaml")
+JOB_TRANSFORM_ERROR_MANIFEST = os.path.join(MANIFESTS_DIR, "job-transform-error.yaml")
 
 
 def query_datadog_logs(query: str, from_seconds_ago: int = 300) -> list[dict]:
@@ -216,20 +221,43 @@ def main() -> int:
         if not args.skip_monitors and os.environ.get("DD_APP_KEY"):
             monitors_deployed = deploy_monitors()
 
-        print("\n--- Running error job ---")
-        apply_manifest(JOB_ERROR_MANIFEST)
-        status = wait_for_job(NAMESPACE, "simple-etl-error")
-        logs = get_pod_logs(NAMESPACE, "app=simple-etl-error")
-        print(f"Job status: {status}")
-        print(f"Pod logs:\n{logs}")
+        config = load_outputs("tracer-eks-k8s-test")
+        run_id = f"dd-test-{uuid.uuid4().hex[:8]}"
+        test_data = upload_test_data(config["landing_bucket"], INVALID_PAYLOAD)
 
-        if status != "failed":
-            print("FAIL: job should have failed")
+        common = {
+            "landing_bucket": config["landing_bucket"],
+            "processed_bucket": config["processed_bucket"],
+            "s3_key": test_data.key,
+            "pipeline_run_id": run_id,
+        }
+
+        print("\n--- Running 3-stage pipeline (extract -> transform-error) ---")
+
+        _delete_job("etl-extract")
+        content = _render_manifest(JOB_EXTRACT_MANIFEST, **common)
+        _apply_rendered(content)
+        status = wait_for_job(NAMESPACE, "etl-extract")
+        if status != "complete":
+            print(f"FAIL: extract did not complete ({status})")
             passed = False
 
-        if "Injected ETL failure" not in logs:
-            print("FAIL: expected error not in pod logs")
-            passed = False
+        if passed:
+            _delete_job("etl-transform-error")
+            content = _render_manifest(JOB_TRANSFORM_ERROR_MANIFEST, **common)
+            _apply_rendered(content)
+            status = wait_for_job(NAMESPACE, "etl-transform-error")
+            logs = get_pod_logs(NAMESPACE, "stage=transform-error")
+            print(f"Transform status: {status}")
+            print(f"Pod logs:\n{logs}")
+
+            if status != "failed":
+                print("FAIL: transform should have failed")
+                passed = False
+
+            if "Schema validation failed" not in logs and "Missing fields" not in logs:
+                print("FAIL: expected schema validation error in pod logs")
+                passed = False
 
         if not args.skip_verify and passed:
             print("\nWaiting 30s for Datadog Agent to flush logs...")
@@ -243,7 +271,8 @@ def main() -> int:
             if not verify_monitor_triggered(log_monitor_name):
                 print("WARNING: monitor did not trigger (may need more time)")
 
-        delete_manifest(JOB_ERROR_MANIFEST)
+        _delete_job("etl-extract")
+        _delete_job("etl-transform-error")
     finally:
         if args.cleanup_monitors and os.environ.get("DD_APP_KEY"):
             cleanup_monitors()

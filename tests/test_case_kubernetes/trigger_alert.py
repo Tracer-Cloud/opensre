@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-Fast alert trigger: submit a failing K8s job on EKS and verify in ~40 seconds.
+Fast alert trigger: run the 3-stage ETL pipeline on EKS with bad data.
 
 Flow:
-  1. Submit failing job to EKS (~9s)
-  2. Poll Datadog Logs API until PIPELINE_ERROR appears (~20-30s)
-  3. Post alert confirmation to Slack #devs-alerts (instant)
-  Total: ~40s
-
-The Datadog monitor also fires in the background (~1-2 min) for ongoing alerting.
+  1. Upload bad data to S3 (missing customer_id)
+  2. Submit extract job -> wait for completion
+  3. Submit transform job -> wait for failure (schema validation error)
+  4. Poll Datadog Logs API until PIPELINE_ERROR appears
+  5. Optionally verify Slack alert
 
 Usage:
     python -m tests.test_case_kubernetes.trigger_alert
@@ -26,49 +25,74 @@ import sys
 import tempfile
 import time
 import urllib.request
+import uuid
 
+from tests.shared.infrastructure_sdk.config import load_outputs
+from tests.shared.slack_polling import get_channel_id, poll_for_message
 from tests.test_case_kubernetes.infrastructure_sdk.eks import (
     get_ecr_image_uri,
     update_kubeconfig,
 )
+from tests.utils.s3_upload_validate import INVALID_PAYLOAD, upload_test_data
 
 NAMESPACE = "tracer-test"
-JOB_NAME = "simple-etl-error"
-
 BASE_DIR = os.path.dirname(__file__)
 MANIFESTS_DIR = os.path.join(BASE_DIR, "k8s_manifests")
-JOB_ERROR_MANIFEST = os.path.join(MANIFESTS_DIR, "job-with-error.yaml")
 
 
 def _run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=check, capture_output=True, text=True)
 
 
-# ---------------------------------------------------------------------------
-# K8s job operations
-# ---------------------------------------------------------------------------
+def _load_config() -> dict:
+    outputs = load_outputs("tracer-eks-k8s-test")
+    return {
+        "landing_bucket": outputs["landing_bucket"],
+        "processed_bucket": outputs["processed_bucket"],
+        "ecr_image_uri": outputs["ecr_image_uri"],
+    }
 
-def _delete_old_job() -> None:
-    _run(["kubectl", "delete", "job", JOB_NAME, "-n", NAMESPACE, "--ignore-not-found"], check=False)
 
-
-def _apply_error_job(image_uri: str) -> None:
-    with open(JOB_ERROR_MANIFEST) as f:
+def _render_eks_manifest(
+    manifest_path: str,
+    *,
+    landing_bucket: str,
+    processed_bucket: str,
+    s3_key: str,
+    pipeline_run_id: str,
+    image_uri: str,
+) -> str:
+    """Render manifest for EKS: replace templates, set ECR image, Always pull."""
+    with open(manifest_path) as f:
         content = f.read()
-    content = content.replace("image: tracer-k8s-test:latest", f"image: {image_uri}")
-    content = content.replace("imagePullPolicy: Never", "imagePullPolicy: Always")
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
-    _run(["kubectl", "apply", "-f", tmp_path])
-    os.unlink(tmp_path)
+
+    return (
+        content.replace("{{LANDING_BUCKET}}", landing_bucket)
+        .replace("{{PROCESSED_BUCKET}}", processed_bucket)
+        .replace("{{S3_KEY}}", s3_key)
+        .replace("{{PIPELINE_RUN_ID}}", pipeline_run_id)
+        .replace("tracer-k8s-test:latest", image_uri)
+        .replace("imagePullPolicy: Never", "imagePullPolicy: Always")
+    )
 
 
-def _wait_for_failure(timeout: int = 60) -> str:
+def _apply_manifest(content: str) -> None:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(content)
+        path = f.name
+    _run(["kubectl", "apply", "-f", path])
+    os.unlink(path)
+
+
+def _delete_job(job_name: str) -> None:
+    _run(["kubectl", "delete", "job", job_name, "-n", NAMESPACE, "--ignore-not-found"], check=False)
+
+
+def _wait_for_job(job_name: str, timeout: int = 120) -> str:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = _run(
-            ["kubectl", "get", "job", JOB_NAME, "-n", NAMESPACE,
+            ["kubectl", "get", "job", job_name, "-n", NAMESPACE,
              "-o", "jsonpath={.status.conditions[*].type}"],
             check=False,
         )
@@ -81,20 +105,19 @@ def _wait_for_failure(timeout: int = 60) -> str:
     return "timeout"
 
 
-def _get_logs() -> str:
+def _get_logs(label: str) -> str:
     result = _run(
-        ["kubectl", "logs", "-l", f"app={JOB_NAME}", "-n", NAMESPACE, "--all-containers=true"],
+        ["kubectl", "logs", "-l", label, "-n", NAMESPACE, "--all-containers=true"],
         check=False,
     )
     return (result.stdout + result.stderr).strip()
 
 
 # ---------------------------------------------------------------------------
-# Datadog Logs API (fast path -- logs appear in ~20-30s)
+# Datadog Logs API
 # ---------------------------------------------------------------------------
 
 def _poll_datadog_logs(max_wait: int = 90) -> bool:
-    """Poll Datadog Logs API until PIPELINE_ERROR appears."""
     api_key = os.environ.get("DD_API_KEY", "")
     app_key = os.environ.get("DD_APP_KEY", "")
     site = os.environ.get("DD_SITE", "datadoghq.com")
@@ -137,70 +160,23 @@ def _poll_datadog_logs(max_wait: int = 90) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Slack: post alert + read messages
+# Slack
 # ---------------------------------------------------------------------------
 
-def _get_slack_channel_id() -> str | None:
-    channel_id = os.environ.get("SLACK_DEVS_ALERTS_CHANNEL_ID", "")
-    if channel_id:
-        return channel_id
-    token = os.environ.get("SLACK_BOT_TOKEN", "")
-    if not token:
-        return None
-    url = "https://slack.com/api/conversations.list?types=public_channel,private_channel&limit=200"
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        data = json.loads(resp.read())
-    for ch in data.get("channels", []):
-        if ch["name"] == "devs-alerts":
-            return ch["id"]
-    return None
+_SLACK_KEYWORDS = ["PIPELINE_ERROR", "Pipeline error", "tracer"]
 
 
-def _get_recent_messages(channel_id: str, oldest: str = "0") -> list[dict]:
-    token = os.environ.get("SLACK_BOT_TOKEN", "")
-    if not token:
-        return []
-    url = f"https://slack.com/api/conversations.history?channel={channel_id}&oldest={oldest}&limit=10"
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        data = json.loads(resp.read())
-    return data.get("messages", [])
-
-
-def query_slack_alerts(max_wait: int = 300, channel_id: str | None = None) -> bool:
-    """Poll Slack #devs-alerts for a Datadog monitor alert message."""
-    token = os.environ.get("SLACK_BOT_TOKEN", "")
-    if not token:
-        print("SLACK_BOT_TOKEN not set, skipping Slack verification")
-        return False
-
-    if not channel_id:
-        channel_id = _get_slack_channel_id()
-    if not channel_id:
-        print("Could not find #devs-alerts channel. Set SLACK_DEVS_ALERTS_CHANNEL_ID.")
-        return False
-
-    print(f"Polling Slack #devs-alerts for DD monitor alert (up to {max_wait}s)...")
-    trigger_time = time.time()
-    deadline = time.monotonic() + max_wait
-
-    while time.monotonic() < deadline:
-        messages = _get_recent_messages(channel_id, oldest=str(trigger_time - 60))
-        for msg in messages:
-            text = msg.get("text", "") + json.dumps(msg.get("attachments", []))
-            if "PIPELINE_ERROR" in text or "Pipeline error" in text or "tracer" in text.lower():
-                print("  DD monitor alert found in Slack!")
-                preview = msg.get("text", "")[:120]
-                print(f"  Message: {preview}")
-                return True
-
-        remaining = int(deadline - time.monotonic())
-        print(f"  No DD alert yet, retrying... ({remaining}s remaining)")
-        time.sleep(10)
-
-    print("DD monitor alert did not appear in Slack within timeout")
-    return False
+def query_slack_alerts(
+    max_wait: int = 300,
+    channel_id: str | None = None,
+    since_epoch: float | None = None,
+) -> bool:
+    return poll_for_message(
+        _SLACK_KEYWORDS,
+        channel_id=channel_id,
+        max_wait=max_wait,
+        since_epoch=since_epoch,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -208,34 +184,72 @@ def query_slack_alerts(max_wait: int = 300, channel_id: str | None = None) -> bo
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Fast K8s alert trigger (~40s end-to-end)")
+    parser = argparse.ArgumentParser(description="Fast K8s 3-stage pipeline alert trigger")
     parser.add_argument("--configure-kubectl", action="store_true", help="Run aws eks update-kubeconfig first")
     parser.add_argument("--verify", action="store_true", help="Verify logs in DD + wait for DD alert in Slack")
     args = parser.parse_args()
 
     start = time.monotonic()
+    start_epoch = time.time()
 
     if args.configure_kubectl:
         update_kubeconfig()
 
-    image_uri = get_ecr_image_uri()
+    config = _load_config()
+    image_uri = config["ecr_image_uri"]
+    run_id = f"alert-{uuid.uuid4().hex[:8]}"
 
-    print("Cleaning up old job...")
-    _delete_old_job()
+    common = {
+        "landing_bucket": config["landing_bucket"],
+        "processed_bucket": config["processed_bucket"],
+        "pipeline_run_id": run_id,
+        "image_uri": image_uri,
+    }
 
-    print("Submitting failing job to EKS...")
-    _apply_error_job(image_uri)
+    # Upload bad data (missing customer_id)
+    print("Uploading bad test data to S3...")
+    test_data = upload_test_data(config["landing_bucket"], INVALID_PAYLOAD)
 
-    print("Waiting for job to fail...")
-    status = _wait_for_failure()
-    logs = _get_logs()
+    # Stage 1: Extract
+    print("\nCleaning up old jobs...")
+    for job in ("etl-extract", "etl-transform", "etl-transform-error"):
+        _delete_job(job)
+
+    print("Submitting extract job to EKS...")
+    extract_content = _render_eks_manifest(
+        os.path.join(MANIFESTS_DIR, "job-extract.yaml"),
+        s3_key=test_data.key,
+        **common,
+    )
+    _apply_manifest(extract_content)
+
+    print("Waiting for extract to complete...")
+    status = _wait_for_job("etl-extract")
+    if status != "complete":
+        logs = _get_logs("stage=extract")
+        print(f"FAIL: extract {status}\n{logs}")
+        return 1
+    print("  Extract completed")
+
+    # Stage 2: Transform (expect failure)
+    print("Submitting transform job to EKS...")
+    transform_content = _render_eks_manifest(
+        os.path.join(MANIFESTS_DIR, "job-transform-error.yaml"),
+        s3_key=test_data.key,
+        **common,
+    )
+    _apply_manifest(transform_content)
+
+    print("Waiting for transform to fail...")
+    status = _wait_for_job("etl-transform-error")
+    logs = _get_logs("stage=transform-error")
 
     trigger_elapsed = time.monotonic() - start
-    print(f"\nJob status: {status} ({trigger_elapsed:.1f}s)")
+    print(f"\nTransform status: {status} ({trigger_elapsed:.1f}s)")
     print(f"Pod logs: {logs}")
 
-    if status != "failed" or "Injected ETL failure" not in logs:
-        print("FAIL: job did not fail as expected")
+    if status != "failed" or "Schema validation failed" not in logs:
+        print("FAIL: transform did not fail as expected")
         return 1
 
     print(f"\nAlert triggered in {trigger_elapsed:.1f}s")
@@ -253,14 +267,16 @@ def main() -> int:
         print(f"\nWARNING: Log not found in Datadog within timeout ({dd_elapsed:.1f}s)")
 
     print("Waiting for Datadog monitor to fire and post to Slack...")
-    channel_id = _get_slack_channel_id()
-    slack_found = query_slack_alerts(max_wait=300, channel_id=channel_id)
+    channel_id = get_channel_id()
+    slack_found = query_slack_alerts(max_wait=300, channel_id=channel_id, since_epoch=start_epoch)
 
-    _delete_old_job()
+    # Cleanup
+    for job in ("etl-extract", "etl-transform-error"):
+        _delete_job(job)
 
     total = time.monotonic() - start
     if dd_found and slack_found:
-        print(f"\nEnd-to-end verified: job -> Datadog -> Slack ({total:.1f}s)")
+        print(f"\nEnd-to-end verified: extract -> transform(fail) -> Datadog -> Slack ({total:.1f}s)")
     elif dd_found:
         print(f"\nPartial: log in Datadog but Slack alert not confirmed ({total:.1f}s)")
     else:

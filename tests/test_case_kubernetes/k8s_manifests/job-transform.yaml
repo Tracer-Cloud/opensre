@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: etl-transform
+  namespace: tracer-test
+  labels:
+    app: etl-pipeline
+    stage: transform
+    tracer: test-case
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: etl-pipeline
+        stage: transform
+    spec:
+      serviceAccountName: etl-pipeline-sa
+      restartPolicy: Never
+      containers:
+        - name: transform
+          image: tracer-k8s-test:latest
+          imagePullPolicy: Never
+          env:
+            - name: PIPELINE_STAGE
+              value: "transform"
+            - name: LANDING_BUCKET
+              value: "{{LANDING_BUCKET}}"
+            - name: PIPELINE_RUN_ID
+              value: "{{PIPELINE_RUN_ID}}"
