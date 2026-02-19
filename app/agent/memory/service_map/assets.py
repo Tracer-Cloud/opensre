@@ -59,7 +59,6 @@ def extract_assets_from_infrastructure(
     report_ctx: ReportContext = {
         "pipeline_name": pipeline_name,
         "root_cause": "",
-        "confidence": 0.0,
         "validated_claims": [],
         "non_validated_claims": [],
         "validity_score": 0.0,
