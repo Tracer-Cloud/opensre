@@ -90,6 +90,15 @@ def plan_actions(
         available_sources=available_sources,
         memory_context=memory_context,
     )
+
+    # Ensure audit trail is fetched when s3_audit source is available
+    if (
+        "s3_audit" in available_sources
+        and "get_s3_object" not in plan.actions
+        and "get_s3_object" in available_action_names
+    ):
+        plan.actions.append("get_s3_object")
+
     print(f"[DEBUG] LLM Plan: {plan.actions}")
     print(f"[DEBUG] Rationale: {plan.rationale[:200]}")
     debug_print(f"Plan: {plan.actions} | {plan.rationale[:100]}...")
