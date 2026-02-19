@@ -22,6 +22,9 @@ ALLOWED_EVIDENCE_SOURCES = [
     "grafana_traces",
     "grafana_metrics",
     "grafana_alert_rules",
+    "datadog_logs",
+    "datadog_monitors",
+    "datadog_events",
 ]
 
 
@@ -275,6 +278,47 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
                 section += f"  Query ({query.get('ref_id', '')}): {query.get('expr', '')[:200]}\n"
             if rule.get("no_data_state"):
                 section += f"  No-data state: {rule.get('no_data_state')}\n"
+        sections.append(section)
+
+    # Datadog logs
+    datadog_error_logs = evidence.get("datadog_error_logs", [])
+    datadog_logs = evidence.get("datadog_logs", [])
+    if datadog_error_logs:
+        section = f"\nDatadog Error Logs ({len(datadog_error_logs)} events):\n"
+        for log in datadog_error_logs[:10]:
+            message = log.get("message", "") if isinstance(log, dict) else str(log)
+            host = log.get("host", "") if isinstance(log, dict) else ""
+            service = log.get("service", "") if isinstance(log, dict) else ""
+            prefix = f"[{service}@{host}] " if service or host else ""
+            section += f"- {prefix}{message[:300]}\n"
+        sections.append(section)
+    elif datadog_logs:
+        section = f"\nDatadog Logs ({len(datadog_logs)} events):\n"
+        for log in datadog_logs[:10]:
+            message = log.get("message", "") if isinstance(log, dict) else str(log)
+            host = log.get("host", "") if isinstance(log, dict) else ""
+            service = log.get("service", "") if isinstance(log, dict) else ""
+            prefix = f"[{service}@{host}] " if service or host else ""
+            section += f"- {prefix}{message[:300]}\n"
+        sections.append(section)
+
+    # Datadog monitors
+    datadog_monitors = evidence.get("datadog_monitors", [])
+    if datadog_monitors:
+        section = f"\nDatadog Monitors ({len(datadog_monitors)}):\n"
+        for monitor in datadog_monitors[:5]:
+            section += f"- {monitor.get('name', 'unknown')} [{monitor.get('overall_state', '')}]\n"
+            section += f"  Type: {monitor.get('type', '')}, Query: {monitor.get('query', '')[:200]}\n"
+        sections.append(section)
+
+    # Datadog events
+    datadog_events = evidence.get("datadog_events", [])
+    if datadog_events:
+        section = f"\nDatadog Events ({len(datadog_events)}):\n"
+        for event in datadog_events[:5]:
+            section += f"- {event.get('title', 'unknown')}\n"
+            if event.get("message"):
+                section += f"  {event['message'][:200]}\n"
         sections.append(section)
 
     # Alert annotations

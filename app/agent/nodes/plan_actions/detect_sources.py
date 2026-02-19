@@ -239,4 +239,28 @@ def detect_sources(
                 grafana_params["execution_run_id"] = execution_run_id
             sources["grafana"] = grafana_params
 
+    # Detect Datadog sources from resolved_integrations
+    if resolved_integrations and resolved_integrations.get("datadog"):
+        dd_int = resolved_integrations["datadog"]
+        dd_api_key = dd_int.get("api_key", "")
+        dd_app_key = dd_int.get("app_key", "")
+
+        if dd_api_key and dd_app_key:
+            # Build a default log query from alert context
+            kube_namespace = annotations.get("kube_namespace", "")
+            alert_query = annotations.get("query", "")
+            default_query = alert_query or (
+                f"PIPELINE_ERROR kube_namespace:{kube_namespace}" if kube_namespace else pipeline_name or "*"
+            )
+
+            sources["datadog"] = {
+                "api_key": dd_api_key,
+                "app_key": dd_app_key,
+                "site": dd_int.get("site", "datadoghq.com"),
+                "connection_verified": True,
+                "pipeline_name": pipeline_name,
+                "default_query": default_query,
+                "monitor_query": f"tag:pipeline:{pipeline_name}" if pipeline_name else None,
+            }
+
     return sources

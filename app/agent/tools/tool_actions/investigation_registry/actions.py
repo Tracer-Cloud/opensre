@@ -20,6 +20,11 @@ def get_available_actions() -> list[InvestigationAction]:
         inspect_s3_object,
         list_s3_objects,
     )
+    from app.agent.tools.tool_actions.datadog.datadog_actions import (
+        query_datadog_events,
+        query_datadog_logs,
+        query_datadog_monitors,
+    )
     from app.agent.tools.tool_actions.grafana.grafana_actions import (
         query_grafana_alert_rules,
         query_grafana_logs,
@@ -305,6 +310,55 @@ def get_available_actions() -> list[InvestigationAction]:
             parameter_extractor=lambda sources: {
                 "grafana_endpoint": sources.get("grafana", {}).get("grafana_endpoint"),
                 "grafana_api_key": sources.get("grafana", {}).get("grafana_api_key"),
+            },
+        ),
+        # Datadog actions
+        build_action(
+            name="query_datadog_logs",
+            func=query_datadog_logs,
+            source="datadog",
+            requires=[],
+            availability_check=lambda sources: bool(
+                sources.get("datadog", {}).get("connection_verified")
+            ),
+            parameter_extractor=lambda sources: {
+                "query": sources.get("datadog", {}).get("default_query", ""),
+                "time_range_minutes": 60,
+                "limit": 50,
+                "api_key": sources["datadog"].get("api_key"),
+                "app_key": sources["datadog"].get("app_key"),
+                "site": sources["datadog"].get("site", "datadoghq.com"),
+            },
+        ),
+        build_action(
+            name="query_datadog_monitors",
+            func=query_datadog_monitors,
+            source="datadog",
+            requires=[],
+            availability_check=lambda sources: bool(
+                sources.get("datadog", {}).get("connection_verified")
+            ),
+            parameter_extractor=lambda sources: {
+                "query": sources.get("datadog", {}).get("monitor_query"),
+                "api_key": sources["datadog"].get("api_key"),
+                "app_key": sources["datadog"].get("app_key"),
+                "site": sources["datadog"].get("site", "datadoghq.com"),
+            },
+        ),
+        build_action(
+            name="query_datadog_events",
+            func=query_datadog_events,
+            source="datadog",
+            requires=[],
+            availability_check=lambda sources: bool(
+                sources.get("datadog", {}).get("connection_verified")
+            ),
+            parameter_extractor=lambda sources: {
+                "query": sources.get("datadog", {}).get("default_query"),
+                "time_range_minutes": 60,
+                "api_key": sources["datadog"].get("api_key"),
+                "app_key": sources["datadog"].get("app_key"),
+                "site": sources["datadog"].get("site", "datadoghq.com"),
             },
         ),
     ]
