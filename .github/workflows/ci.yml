@@ -158,8 +158,9 @@ jobs:
       GCLOUD_HOSTED_LOGS_ID: ${{ secrets.GCLOUD_HOSTED_LOGS_ID }}
       GCLOUD_HOSTED_LOGS_URL: ${{ secrets.GCLOUD_HOSTED_LOGS_URL }}
       GCLOUD_RW_API_KEY: ${{ secrets.GCLOUD_RW_API_KEY }}
-      GCLOUD_OTLP_ENDPOINT: ${{ secrets.GCLOUD_OTLP_ENDPOINT }}
-      GCLOUD_OTLP_AUTH_HEADER: ${{ secrets.GCLOUD_OTLP_AUTH_HEADER }}
+      # Disable OTLP in test-thorough to avoid exporter connection hangs in CI
+      GCLOUD_OTLP_ENDPOINT: ""
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
 
     steps:
       - uses: actions/checkout@v4
