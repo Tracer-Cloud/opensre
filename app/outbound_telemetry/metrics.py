@@ -13,6 +13,7 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
 from config.grafana_config import (
+    get_effective_otlp_endpoint,
     get_otel_exporter_otlp_endpoint,
     get_otel_exporter_otlp_metrics_endpoint,
     get_otel_exporter_otlp_metrics_protocol,
@@ -102,7 +103,8 @@ def _get_metric_exporter():
 def setup_metrics(resource) -> PipelineMetrics:
     exporter = _get_metric_exporter()
     if exporter is None:
-        logging.getLogger(__name__).warning("OTLP metric exporter is unavailable")
+        if get_effective_otlp_endpoint():
+            logging.getLogger(__name__).warning("OTLP metric exporter is unavailable")
         return PipelineMetrics.noop()
 
     metric_reader = PeriodicExportingMetricReader(exporter)

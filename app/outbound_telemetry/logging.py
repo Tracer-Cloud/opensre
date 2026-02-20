@@ -7,6 +7,7 @@ import sys
 from opentelemetry import trace
 
 from config.grafana_config import (
+    get_effective_otlp_endpoint,
     get_otel_exporter_otlp_endpoint,
     get_otel_exporter_otlp_protocol,
     parse_otel_headers,
@@ -85,7 +86,8 @@ def setup_logging(resource) -> None:
     if protocol in ("http/protobuf", "http") and endpoint and not endpoint.endswith("/v1/logs"):
         logs_endpoint = endpoint.rstrip("/") + "/v1/logs"
     if exporter is None:
-        logging.getLogger(__name__).warning("OTLP log exporter is unavailable")
+        if get_effective_otlp_endpoint():
+            logging.getLogger(__name__).warning("OTLP log exporter is unavailable")
         return
 
     try:

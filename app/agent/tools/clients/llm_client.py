@@ -47,7 +47,10 @@ class LLMResponse:
 
 class LLMClient:
     def __init__(self, *, model: str, max_tokens: int = 1024, temperature: float | None = None) -> None:
-        self._client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        self._client = Anthropic(
+            api_key=os.getenv("ANTHROPIC_API_KEY"),
+            timeout=60.0,
+        )
         self._model = model
         self._max_tokens = max_tokens
         self._temperature = temperature
