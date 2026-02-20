@@ -41,13 +41,10 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     if not has_tracer and not has_cloudwatch and not has_alert:
         return _handle_insufficient_evidence(state, tracker)
 
-    memory_context = _load_memory_context(state)
-
-    prompt = build_diagnosis_prompt(state, evidence, memory_context)
+    prompt = build_diagnosis_prompt(state, evidence, "")
 
     debug_print("Invoking LLM for root cause analysis...")
-    use_fast = bool(memory_context)
-    llm = get_llm(use_fast_model=use_fast)
+    llm = get_llm()
     response = llm.with_config(run_name="LLM – Analyze evidence and propose root cause").invoke(
         prompt
     )
@@ -117,19 +114,6 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
         "remediation_steps": [],
         "investigation_loop_count": loop_count,
     }
-
-
-def _load_memory_context(state: InvestigationState) -> str:
-    """Load memory context if enabled."""
-    from app.agent.memory import get_memory_context
-
-    pipeline_name = state.get("pipeline_name", "")
-    memory_context = get_memory_context(pipeline_name=pipeline_name)
-
-    if memory_context:
-        debug_print("[MEMORY] Loaded context for diagnosis")
-
-    return memory_context
 
 
 @traceable(name="node_diagnose_root_cause")

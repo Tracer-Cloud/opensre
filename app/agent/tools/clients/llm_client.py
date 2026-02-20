@@ -175,37 +175,18 @@ def _extract_json_payload(text: str) -> Any:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _llm: LLMClient | None = None
-_fast_llm: LLMClient | None = None
 
 
-def get_llm(use_fast_model: bool = False) -> LLMClient:
+def get_llm() -> LLMClient:
     """
     Get or create the LLM client singleton.
 
     LangSmith tracking is always enabled.
     All LLM calls will be tracked in LangSmith.
 
-    Args:
-        use_fast_model: If True and memory is available, use Claude Haiku (5-10x faster)
-                       for scenarios with strong memory guidance
-
     Returns:
         LLM client configured for the appropriate model
     """
-    if use_fast_model:
-        from app.agent.memory import is_memory_enabled
-
-        if is_memory_enabled():
-            global _fast_llm
-            if _fast_llm is None:
-                _fast_llm = LLMClient(
-                    model="claude-3-haiku-20240307",
-                    max_tokens=1024,
-                    temperature=0.3,
-                )
-                print("[MEMORY] Using fast model (Haiku) with memory guidance")
-            return _fast_llm
-
     global _llm
     if _llm is None:
         _llm = LLMClient(

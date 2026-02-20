@@ -5,7 +5,6 @@ import logging
 from langsmith import traceable
 
 from app.agent.nodes.publish_findings.context import build_report_context
-from app.agent.nodes.publish_findings.formatters.lineage import format_data_lineage_flow
 from app.agent.nodes.publish_findings.formatters.report import (
     build_slack_blocks,
     format_slack_message,
@@ -17,100 +16,6 @@ from app.agent.state import InvestigationState
 logger = logging.getLogger(__name__)
 
 
-def _persist_memory(state: InvestigationState, slack_message: str) -> None:
-    """Persist investigation results to memory if enabled.
-
-    Args:
-        state: Investigation state
-        slack_message: Formatted RCA report
-    """
-    from app.agent.memory import is_memory_enabled, write_memory
-
-    if not is_memory_enabled():
-        return
-
-    # Extract context for memory
-    context = state.get("context", {})
-    evidence = state.get("evidence", {})
-    web_run = context.get("tracer_web_run", {}) or {}
-
-    pipeline_name = web_run.get("pipeline_name") or state.get("pipeline_name", "unknown")
-    raw_alert_value = state.get("raw_alert", {})
-    raw_alert_dict = raw_alert_value if isinstance(raw_alert_value, dict) else {}
-    alert_id = raw_alert_dict.get("alert_id", "unknown")
-    root_cause = state.get("root_cause", "")
-    validity_score = state.get("validity_score", 0.0)
-
-    # Extract action sequence from executed hypotheses
-    executed_hypotheses = state.get("executed_hypotheses", [])
-    action_sequence = []
-    if executed_hypotheses:
-        for hyp in executed_hypotheses:
-            actions = hyp.get("actions", [])
-            if isinstance(actions, list):
-                action_sequence.extend(actions)
-
-    # Extract data lineage (use same context building as report)
-    from app.agent.nodes.publish_findings.context.models import ReportContext
-
-    ctx: ReportContext = {
-        "pipeline_name": pipeline_name,
-        "root_cause": root_cause,
-        "validated_claims": state.get("validated_claims", []),
-        "non_validated_claims": state.get("non_validated_claims", []),
-        "validity_score": validity_score,
-        "s3_marker_exists": evidence.get("s3", {}).get("marker_exists", False),
-        "tracer_run_status": web_run.get("status"),
-        "tracer_run_name": web_run.get("run_name"),
-        "tracer_pipeline_name": web_run.get("pipeline_name"),
-        "tracer_run_cost": web_run.get("run_cost", 0),
-        "tracer_max_ram_gb": web_run.get("max_ram_gb", 0),
-        "tracer_user_email": web_run.get("user_email"),
-        "tracer_team": web_run.get("team"),
-        "tracer_instance_type": web_run.get("instance_type"),
-        "tracer_failed_tasks": len(evidence.get("failed_jobs", [])),
-        "batch_failure_reason": evidence.get("batch_jobs", {}).get("failure_reason"),
-        "batch_failed_jobs": evidence.get("batch_jobs", {}).get("failed_jobs", 0),
-        "cloudwatch_log_group": None,
-        "cloudwatch_log_stream": None,
-        "cloudwatch_logs_url": None,
-        "cloudwatch_region": None,
-        "alert_id": alert_id,
-        "evidence": evidence,
-        "raw_alert": raw_alert_dict,
-    }
-
-    lineage_section = format_data_lineage_flow(ctx)
-
-    # Extract problem pattern (first sentence of root cause)
-    problem_pattern = root_cause.split(".")[0] if root_cause else ""
-
-    write_memory(
-        pipeline_name=pipeline_name,
-        alert_id=alert_id,
-        root_cause=root_cause,
-        validity_score=validity_score,
-        action_sequence=action_sequence[:5],  # Top 5 actions
-        data_lineage=lineage_section,
-        problem_pattern=problem_pattern,
-        rca_report=slack_message,  # Store full RCA report
-    )
-
-    # Build and persist service map (async, non-blocking)
-    from app.agent.memory import write_service_map
-
-    raw_alert_for_map = raw_alert_dict
-    context_for_map = state.get("context", {}) or {}
-    alert_name_for_map = state.get("alert_name", alert_id)
-    write_service_map(
-        evidence=evidence,
-        raw_alert=raw_alert_for_map,
-        context=context_for_map,
-        pipeline_name=pipeline_name,
-        alert_name=alert_name_for_map,
-    )
-
-
 def generate_report(state: InvestigationState) -> dict:
     """Generate and render the final RCA report.
 
@@ -118,9 +23,8 @@ def generate_report(state: InvestigationState) -> dict:
     1. Builds report context from investigation state
     2. Formats the Slack message
     3. Renders the report to terminal
-    4. Persists to memory (if enabled)
-    5. Sends to Slack (with thread reply if slack_context is present)
-    6. Returns the slack_message for external use
+    4. Sends to Slack (with thread reply if slack_context is present)
+    5. Returns the slack_message for external use
 
     Args:
         state: Investigation state with all analysis results
@@ -138,9 +42,6 @@ def generate_report(state: InvestigationState) -> dict:
 
     # Render to terminal
     render_report(slack_message)
-
-    # Persist to memory if enabled
-    _persist_memory(state, slack_message)
 
     # Send to Slack - always reply in the thread of the original alert message.
     # Use thread_ts if the alert was already in a thread, otherwise use ts
