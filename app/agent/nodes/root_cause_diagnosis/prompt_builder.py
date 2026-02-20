@@ -47,6 +47,7 @@ def build_diagnosis_prompt(
 
     # Build directive sections
     upstream_directive = _build_upstream_directive(evidence)
+    kubernetes_directive = _build_kubernetes_directive(state, evidence)
     causal_chain_section = _build_causal_chain_section(state)
     memory_section = _build_memory_section(memory_context)
 
@@ -59,7 +60,7 @@ def build_diagnosis_prompt(
 Goal: Be helpful and accurate. Prefer evidence-backed explanations over speculation.
 If the exact root cause cannot be proven, provide the most likely explanation based on observed evidence,
 and clearly state what is unknown.
-{upstream_directive}{causal_chain_section}{memory_section}
+{upstream_directive}{kubernetes_directive}{causal_chain_section}{memory_section}
 DEFINITIONS:
 - VALIDATED_CLAIMS: Directly supported by the evidence shown below (observed facts).
 - NON_VALIDATED_CLAIMS: Plausible hypotheses or contributing factors that are NOT directly proven by the evidence.
@@ -87,6 +88,9 @@ OUTPUT FORMAT (follow exactly):
 
 ROOT_CAUSE:
 <1–2 sentences. If not proven, say "Most likely ..." and state what's missing. Do not say only "Unable to determine".>
+
+ROOT_CAUSE_CATEGORY:
+<one of: configuration_error, code_defect, data_quality, resource_exhaustion, dependency_failure, infrastructure, unknown>
 
 VALIDATED_CLAIMS:
 - <one factual claim> [evidence: <one of {", ".join(ALLOWED_EVIDENCE_SOURCES)}>]
@@ -116,6 +120,68 @@ Audit evidence shows external API interactions. For data pipeline failures:
 - Explain how the external change propagated downstream to cause the pipeline failure
 """
     return ""
+
+
+def _extract_k8s_tags_from_evidence(evidence: dict[str, Any]) -> dict[str, str]:
+    """Extract K8s metadata from Datadog log tags (Signal 1 -- primary)."""
+    k8s: dict[str, str] = {}
+    for log_list_key in ("datadog_error_logs", "datadog_logs"):
+        for log in evidence.get(log_list_key, []):
+            if not isinstance(log, dict):
+                continue
+            for tag in log.get("tags", []):
+                if not isinstance(tag, str) or ":" not in tag:
+                    continue
+                key, _, val = tag.partition(":")
+                if key.startswith("kube_") and key not in k8s:
+                    k8s[key] = val
+    return k8s
+
+
+def _detect_k8s_from_monitors(evidence: dict[str, Any]) -> bool:
+    """Check Datadog monitors for kubernetes_state queries (Signal 2 -- secondary)."""
+    for mon in evidence.get("datadog_monitors", []):
+        if isinstance(mon, dict) and "kubernetes_state" in mon.get("query", ""):
+            return True
+    return False
+
+
+def _build_kubernetes_directive(state: InvestigationState, evidence: dict[str, Any]) -> str:
+    """Build K8s diagnostic directive when Kubernetes context is detected.
+
+    Detection cascade (strict priority):
+    1. Tags: kube_* tags in Datadog log entries (most reliable)
+    2. Monitors: kubernetes_state in Datadog monitor queries
+    3. Alert text: "kubernetes" in raw alert (fallback only)
+    """
+    k8s_tags = _extract_k8s_tags_from_evidence(evidence)
+
+    if not k8s_tags and not _detect_k8s_from_monitors(evidence):
+        raw_alert = state.get("raw_alert", "")
+        if "kubernetes" not in str(raw_alert).lower():
+            return ""
+
+    metadata_lines = [f"- {k}: {v}" for k, v in k8s_tags.items()] if k8s_tags else []
+    metadata_block = "\n".join(metadata_lines)
+    metadata_section = f"\n{metadata_block}\n" if metadata_block else ""
+
+    return f"""
+**Kubernetes Context Detected:**{metadata_section}
+For Kubernetes workload failures, distinguish clearly between:
+- SYMPTOM: The workload (Job/Pod/Deployment) entered a failed state
+- ROOT CAUSE: The underlying reason the application process failed
+
+Common root cause categories for K8s workload failures:
+- Configuration error: environment variables, ConfigMaps, or manifest settings that cause the application to reject valid input or fail validation
+- Resource issue: OOM, CPU throttling, storage limits
+- Image/dependency: wrong image tag, missing dependencies, startup crash
+- Input data: upstream data quality or missing data
+
+Key distinction for schema/validation failures:
+When logs show the application validating data against a configured list of required fields, and a field in that list is missing from the data, the root cause is typically a configuration error (the required fields list was misconfigured in the Job manifest or environment variables), not a data quality issue. Data quality issues manifest as malformed values or corrupted records, not as a mismatch between a configured field list and the data schema.
+
+Identify which category fits the evidence and trace the error chain from configuration/input through to the observed failure.
+"""
 
 
 def _build_causal_chain_section(state: InvestigationState) -> str:
@@ -322,20 +388,12 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     if datadog_error_logs:
         section = f"\nDatadog Error Logs ({len(datadog_error_logs)} events):\n"
         for log in datadog_error_logs[:10]:
-            message = log.get("message", "") if isinstance(log, dict) else str(log)
-            host = log.get("host", "") if isinstance(log, dict) else ""
-            service = log.get("service", "") if isinstance(log, dict) else ""
-            prefix = f"[{service}@{host}] " if service or host else ""
-            section += f"- {prefix}{message[:300]}\n"
+            section += f"- {_format_datadog_log_entry(log)}\n"
         sections.append(section)
     elif datadog_logs:
         section = f"\nDatadog Logs ({len(datadog_logs)} events):\n"
         for log in datadog_logs[:10]:
-            message = log.get("message", "") if isinstance(log, dict) else str(log)
-            host = log.get("host", "") if isinstance(log, dict) else ""
-            service = log.get("service", "") if isinstance(log, dict) else ""
-            prefix = f"[{service}@{host}] " if service or host else ""
-            section += f"- {prefix}{message[:300]}\n"
+            section += f"- {_format_datadog_log_entry(log)}\n"
         sections.append(section)
 
     # Datadog monitors
@@ -406,6 +464,36 @@ def _build_lambda_config_section(lambda_config: dict[str, Any]) -> str:
             section += f"  - {key}: {value}\n"
 
     return section
+
+
+_STRUCTURED_TAG_PREFIXES = ("kube_",)
+_STRUCTURED_TAG_NAMES = ("pod_name", "container_name", "container_id")
+
+
+def _format_datadog_log_entry(log: Any) -> str:
+    """Format a single Datadog log entry, surfacing structured tags when present."""
+    if not isinstance(log, dict):
+        return str(log)[:300]
+
+    message = log.get("message", "")[:300]
+    tags = log.get("tags", [])
+
+    tag_parts: dict[str, str] = {}
+    for t in tags:
+        if not isinstance(t, str) or ":" not in t:
+            continue
+        k, _, v = t.partition(":")
+        if any(k.startswith(p) for p in _STRUCTURED_TAG_PREFIXES) or k in _STRUCTURED_TAG_NAMES:
+            tag_parts[k] = v
+
+    if tag_parts:
+        tag_str = " ".join(f"{k}={v}" for k, v in tag_parts.items())
+        return f"[{tag_str}] {message}"
+
+    host = log.get("host", "")
+    service = log.get("service", "")
+    prefix = f"[{service}@{host}] " if service or host else ""
+    return f"{prefix}{message}"
 
 
 def _build_s3_object_section(s3_object: dict[str, Any]) -> str:
