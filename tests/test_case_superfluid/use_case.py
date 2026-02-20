@@ -5,9 +5,11 @@ Find a failed pipeline run from Tracer Web App.
 No orchestration, no alert creation, no investigation logic.
 """
 
+import os
 import uuid
 
-from app.agent.nodes.build_context.context_building import _fetch_tracer_web_run_context
+from app.agent.nodes.build_context.utils import call_safe
+from app.agent.tools.tool_actions.tracer.tracer_runs import fetch_failed_run
 from tracer_telemetry import init_telemetry
 
 _run_context = {
@@ -22,6 +24,24 @@ _run_context = {
 # Initialize telemetry
 _telemetry = None
 _tracer = None
+
+
+def _fetch_failed_run_with_timeout() -> dict:
+    pipeline_hint = os.getenv("TRACER_PIPELINE_NAME") or None
+    outcome = call_safe(fetch_failed_run, pipeline_name=pipeline_hint)
+    if outcome.error:
+        return {
+            "found": False,
+            "error": outcome.error,
+            "pipelines_checked": 0,
+        }
+    if outcome.result is None:
+        return {
+            "found": False,
+            "error": "No context returned",
+            "pipelines_checked": 0,
+        }
+    return outcome.result
 
 
 def main() -> dict:
@@ -59,7 +79,7 @@ def main() -> dict:
 
         with _tracer.start_as_current_span("api_call_tracer_web") as api_span:
             api_span.set_attribute("execution.run_id", execution_run_id)
-            web_run = _fetch_tracer_web_run_context()
+            web_run = _fetch_failed_run_with_timeout()
 
             api_span.set_attribute("found", web_run.get("found", False))
             api_span.set_attribute("pipelines_checked", web_run.get("pipelines_checked", 0))
