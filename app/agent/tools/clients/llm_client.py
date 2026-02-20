@@ -20,9 +20,21 @@ from pydantic import BaseModel, ValidationError
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+_VALID_ROOT_CAUSE_CATEGORIES = frozenset({
+    "configuration_error",
+    "code_defect",
+    "data_quality",
+    "resource_exhaustion",
+    "dependency_failure",
+    "infrastructure",
+    "unknown",
+})
+
+
 @dataclass(frozen=True)
 class RootCauseResult:
     root_cause: str
+    root_cause_category: str
     validated_claims: list[str]
     non_validated_claims: list[str]
     causal_chain: list[str]
@@ -190,11 +202,20 @@ def get_llm() -> LLMClient:
 
 
 def parse_root_cause(response: str) -> RootCauseResult:
-    """Parse root cause and claims from LLM response."""
+    """Parse root cause, category, and claims from LLM response."""
     root_cause = "Unable to determine root cause"
+    root_cause_category = "unknown"
     validated_claims: list[str] = []
     non_validated_claims: list[str] = []
     causal_chain: list[str] = []
+
+    if "ROOT_CAUSE_CATEGORY:" in response:
+        after = response.split("ROOT_CAUSE_CATEGORY:")[1]
+        for line in after.split("\n"):
+            candidate = line.strip().lower()
+            if candidate and candidate in _VALID_ROOT_CAUSE_CATEGORIES:
+                root_cause_category = candidate
+                break
 
     if "ROOT_CAUSE:" in response:
         parts = response.split("ROOT_CAUSE:")[1]
@@ -213,8 +234,10 @@ def parse_root_cause(response: str) -> RootCauseResult:
                 line = line.strip().lstrip("*-• ").strip()
                 if (
                     line
-                    and not line.startswith("NON_VALIDATED")
+                    and not line.startswith("NON_")
                     and not line.startswith("CAUSAL_CHAIN")
+                    and not line.startswith("CONFIDENCE")
+                    and not line.startswith("ROOT_CAUSE")
                 ):
                     validated_claims.append(line)
 
@@ -264,6 +287,7 @@ def parse_root_cause(response: str) -> RootCauseResult:
 
     return RootCauseResult(
         root_cause=root_cause,
+        root_cause_category=root_cause_category,
         validated_claims=validated_claims,
         non_validated_claims=non_validated_claims,
         causal_chain=causal_chain,

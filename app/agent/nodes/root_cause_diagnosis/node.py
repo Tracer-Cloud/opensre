@@ -41,7 +41,6 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     if not has_tracer and not has_cloudwatch and not has_alert:
         return _handle_insufficient_evidence(state, tracker)
 
-    # Build prompt from evidence
     prompt = build_diagnosis_prompt(state, evidence, "")
 
     debug_print("Invoking LLM for root cause analysis...")
@@ -76,6 +75,8 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
 
     return {
         "root_cause": result.root_cause,
+        "root_cause_category": result.root_cause_category,
+        "causal_chain": result.causal_chain,
         "validated_claims": validated_claims_list,
         "non_validated_claims": non_validated_claims_list,
         "validity_score": validity_score,
@@ -101,6 +102,7 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
 
     return {
         "root_cause": f"{problem}. Limited evidence available for analysis - unable to determine exact root cause without additional diagnostic data.",
+        "root_cause_category": "unknown",
         "validated_claims": [],
         "non_validated_claims": [
             {

@@ -107,11 +107,16 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 
     if "datadog" in available_sources:
         dd = available_sources["datadog"]
+        k8s_ctx = dd.get("kubernetes_context", {})
+        k8s_hint = ""
+        if k8s_ctx:
+            k8s_parts = [f"{k}={v}" for k, v in k8s_ctx.items()]
+            k8s_hint = f"\n- Kubernetes context: {', '.join(k8s_parts)}"
         hints.append(
             f"""Datadog Available:
 - Pipeline: {dd.get("pipeline_name")}
 - Default Query: {dd.get("default_query")}
-- Site: {dd.get("site", "datadoghq.com")}
+- Site: {dd.get("site", "datadoghq.com")}{k8s_hint}
 - Use query_datadog_logs to search for pipeline errors, PIPELINE_ERROR patterns, and application logs
 - Use query_datadog_monitors to check monitor states and alerting configuration
 - Use query_datadog_events to find deployments and infrastructure changes"""
