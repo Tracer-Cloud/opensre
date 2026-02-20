@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from anthropic import Anthropic
+from anthropic import Anthropic, AuthenticationError
 from pydantic import BaseModel, ValidationError
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -47,10 +47,9 @@ class LLMResponse:
 
 class LLMClient:
     def __init__(self, *, model: str, max_tokens: int = 1024, temperature: float | None = None) -> None:
-        self._client = Anthropic(
-            api_key=os.getenv("ANTHROPIC_API_KEY"),
-            timeout=60.0,
-        )
+        api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+        self._api_key = api_key
+        self._client = Anthropic(api_key=api_key, timeout=60.0)
         self._model = model
         self._max_tokens = max_tokens
         self._temperature = temperature
@@ -64,7 +63,18 @@ class LLMClient:
     def bind_tools(self, _tools: list) -> LLMClient:
         return self
 
+    def _ensure_client(self) -> None:
+        api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+        if not api_key:
+            raise RuntimeError(
+                "Missing ANTHROPIC_API_KEY. Set it in your environment or .env before running LLM steps."
+            )
+        if api_key != self._api_key:
+            self._api_key = api_key
+            self._client = Anthropic(api_key=api_key, timeout=60.0)
+
     def invoke(self, prompt_or_messages: Any) -> LLMResponse:
+        self._ensure_client()
         system, messages = _normalize_messages(prompt_or_messages)
         kwargs: dict[str, Any] = {
             "model": self._model,
@@ -76,7 +86,12 @@ class LLMClient:
         if self._temperature is not None:
             kwargs["temperature"] = self._temperature
 
-        response = self._client.messages.create(**kwargs)
+        try:
+            response = self._client.messages.create(**kwargs)
+        except AuthenticationError as err:
+            raise RuntimeError(
+                "Anthropic authentication failed. Check ANTHROPIC_API_KEY in your environment or .env."
+            ) from err
         content = _extract_text(response)
         return LLMResponse(content=content)
 
