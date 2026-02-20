@@ -9,11 +9,39 @@ from typing import Any
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import StructuredTool
 
-from app.agent.chat_tools import CHAT_TOOLS
 from app.agent.prompts import ROUTER_PROMPT, SYSTEM_PROMPT
 from app.agent.state import AgentState, ChatMessage
 from app.agent.tools.clients import get_llm
+from app.agent.tools.tool_actions.tracer.tracer_jobs import (
+    get_failed_jobs,
+    get_failed_tools,
+)
+from app.agent.tools.tool_actions.tracer.tracer_logs import get_error_logs
+from app.agent.tools.tool_actions.tracer.tracer_metrics import (
+    get_batch_statistics,
+    get_host_metrics,
+)
+from app.agent.tools.tool_actions.tracer.tracer_runs import (
+    fetch_failed_run,
+    get_tracer_run,
+    get_tracer_tasks,
+)
+
+CHAT_TOOLS: list[StructuredTool] = [
+    StructuredTool.from_function(fn, return_direct=False)
+    for fn in [
+        fetch_failed_run,
+        get_tracer_run,
+        get_tracer_tasks,
+        get_failed_jobs,
+        get_failed_tools,
+        get_error_logs,
+        get_batch_statistics,
+        get_host_metrics,
+    ]
+]
 
 # LangChain type -> ChatMessage role mapping
 _TYPE_TO_ROLE: dict[str, str] = {
