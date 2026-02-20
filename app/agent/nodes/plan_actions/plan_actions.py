@@ -21,7 +21,7 @@ from app.agent.tools.tool_actions.investigation_registry import (
 def plan_actions(
     input_data,
     plan_model: type[BaseModel],
-    pipeline_name: str = "",
+    _pipeline_name: str = "",
     resolved_integrations: dict[str, Any] | None = None,
 ) -> tuple[Any | None, dict[str, dict], list[str], list]:
     """
@@ -30,7 +30,7 @@ def plan_actions(
     Args:
         input_data: InvestigateInput (or compatible) object
         plan_model: Pydantic model for structured LLM output
-        pipeline_name: Pipeline name from state (for memory lookup)
+        _pipeline_name: Unused (was for memory lookup, kept for caller compatibility)
         resolved_integrations: Pre-fetched integration credentials from resolve_integrations node
 
     Returns:

@@ -295,6 +295,19 @@ def detect_sources(
                 dd_params["pre_fetched_monitors"] = dd_pre_context["monitors"]
                 dd_params["pre_fetched_monitors_total"] = dd_pre_context.get("total", 0)
 
+            kube_job = annotations.get("kube_job", "") or annotations.get("kube_job_name", "")
+            kube_deployment = annotations.get("kube_deployment", "")
+            if kube_namespace or kube_job:
+                dd_params["kubernetes_context"] = {
+                    k: v
+                    for k, v in {
+                        "namespace": kube_namespace,
+                        "job": kube_job,
+                        "deployment": kube_deployment,
+                    }.items()
+                    if v
+                }
+
             sources["datadog"] = dd_params
 
     # Surface upstream pipeline failure from dependency_context (built by build_context)

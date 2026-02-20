@@ -56,13 +56,31 @@ def validate_claim(claim: str, evidence: dict[str, Any]) -> bool:
         return False
 
     # Check vendor/external API evidence
-    return not (
+    if (
         ("vendor" in claim_lower or "external api" in claim_lower or "api" in claim_lower)
         and not (
             evidence.get("vendor_audit_from_logs")
             or evidence.get("s3_audit_payload")
             or evidence.get("lambda_config", {}).get("environment_variables")
         )
+    ):
+        return False
+
+    _has_datadog = bool(
+        evidence.get("datadog_logs")
+        or evidence.get("datadog_error_logs")
+        or evidence.get("datadog_monitors")
+    )
+
+    if (
+        any(kw in claim_lower for kw in ("kubernetes", "k8s", "container", "manifest", "pod"))
+        and not _has_datadog
+    ):
+        return False
+
+    return not (
+        any(kw in claim_lower for kw in ("configuration", "config", "environment variable", "env var"))
+        and not (evidence.get("datadog_logs") or evidence.get("datadog_error_logs"))
     )
 
 
@@ -128,6 +146,23 @@ def extract_evidence_sources(claim: str, evidence: dict[str, Any]) -> list[str]:
         "grafana_metrics"
     ):
         sources.append("grafana_metrics")
+
+    _has_dd_logs = bool(evidence.get("datadog_logs") or evidence.get("datadog_error_logs"))
+    if (
+        any(kw in claim_lower for kw in ("kubernetes", "k8s", "container", "job", "pod", "manifest"))
+        and _has_dd_logs
+    ):
+        sources.append("datadog_logs")
+    if (
+        any(kw in claim_lower for kw in ("monitor", "alert", "metric alert"))
+        and evidence.get("datadog_monitors")
+    ):
+        sources.append("datadog_monitors")
+    if (
+        any(kw in claim_lower for kw in ("configuration", "config", "environment variable", "env var"))
+        and _has_dd_logs
+    ):
+        sources.append("datadog_logs")
 
     return sources if sources else ["evidence_analysis"]
 

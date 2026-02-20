@@ -1,0 +1,163 @@
+{
+  "_meta": {
+    "captured_at": "2026-02-19T00:00:00Z",
+    "source": "hand-built from datadog-monitors.yaml + pipeline_code error format; replace with capture_fixture.py output",
+    "datadog_site": "datadoghq.com",
+    "schema_version": 1
+  },
+  "alert": {
+    "alerts": [
+      {
+        "status": "firing",
+        "labels": {
+          "alertname": "KubernetesJobFailed",
+          "severity": "critical",
+          "table": "kubernetes_etl_pipeline",
+          "pipeline_name": "kubernetes_etl_pipeline",
+          "run_id": "",
+          "run_name": "etl-transform-error",
+          "environment": "test"
+        },
+        "annotations": {
+          "summary": "Kubernetes job etl-transform-error failed in namespace tracer-test",
+          "description": "Pipeline kubernetes_etl_pipeline run etl-transform-error failed with status failed",
+          "runbook_url": ""
+        },
+        "startsAt": "2026-02-19T00:00:00Z",
+        "endsAt": "0001-01-01T00:00:00Z",
+        "generatorURL": "",
+        "fingerprint": "unknown"
+      }
+    ],
+    "version": "4",
+    "externalURL": "",
+    "truncatedAlerts": 0,
+    "groupLabels": {
+      "alertname": "KubernetesJobFailed"
+    },
+    "commonLabels": {
+      "alertname": "KubernetesJobFailed",
+      "severity": "critical",
+      "pipeline_name": "kubernetes_etl_pipeline"
+    },
+    "commonAnnotations": {
+      "summary": "Kubernetes job etl-transform-error failed in namespace tracer-test",
+      "kube_namespace": "tracer-test",
+      "kube_job": "etl-transform-error"
+    },
+    "groupKey": "{}:{alertname=\"KubernetesJobFailed\"}",
+    "title": "[FIRING:1] KubernetesJobFailed critical - kubernetes_etl_pipeline",
+    "state": "alerting",
+    "message": "**Firing**\n\nKubernetes job etl-transform-error failed in namespace tracer-test.\nThe job-transform-error manifest sets REQUIRED_FIELDS to include a field that does not exist in the extracted data.\nTransform stage validated extracted.json against REQUIRED_FIELDS and raised DomainError.\nReview application logs for the PIPELINE_ERROR pattern.",
+    "alert_id": "k8s-rca-fixture-001"
+  },
+  "evidence": {
+    "datadog_logs": [
+      {
+        "timestamp": "2026-02-19T00:01:30Z",
+        "message": "[pipeline] stage=transform run_id=fail-abc12345",
+        "status": "info",
+        "service": "tracer-k8s-test",
+        "host": "kind-control-plane",
+        "tags": [
+          "kube_namespace:tracer-test",
+          "kube_job:etl-transform-error",
+          "pod_name:etl-transform-error-r7k4m",
+          "container_name:transform",
+          "env:test",
+          "service:tracer-k8s-test"
+        ]
+      },
+      {
+        "timestamp": "2026-02-19T00:01:31Z",
+        "message": "[transform] Reading from s3://tracer-k8s-landing-test/staging/fail-abc12345/extracted.json",
+        "status": "info",
+        "service": "tracer-k8s-test",
+        "host": "kind-control-plane",
+        "tags": [
+          "kube_namespace:tracer-test",
+          "kube_job:etl-transform-error",
+          "pod_name:etl-transform-error-r7k4m",
+          "container_name:transform",
+          "env:test",
+          "service:tracer-k8s-test"
+        ]
+      },
+      {
+        "timestamp": "2026-02-19T00:01:31Z",
+        "message": "[transform] Validating 2 records against ['customer_id', 'order_id', 'amount', 'timestamp', 'payment_method']",
+        "status": "info",
+        "service": "tracer-k8s-test",
+        "host": "kind-control-plane",
+        "tags": [
+          "kube_namespace:tracer-test",
+          "kube_job:etl-transform-error",
+          "pod_name:etl-transform-error-r7k4m",
+          "container_name:transform",
+          "env:test",
+          "service:tracer-k8s-test"
+        ]
+      },
+      {
+        "timestamp": "2026-02-19T00:01:32Z",
+        "message": "PIPELINE_ERROR: Schema validation failed: Missing fields ['payment_method'] in record 0",
+        "status": "error",
+        "service": "tracer-k8s-test",
+        "host": "kind-control-plane",
+        "tags": [
+          "kube_namespace:tracer-test",
+          "kube_job:etl-transform-error",
+          "pod_name:etl-transform-error-r7k4m",
+          "container_name:transform",
+          "env:test",
+          "service:tracer-k8s-test"
+        ]
+      }
+    ],
+    "datadog_error_logs": [
+      {
+        "timestamp": "2026-02-19T00:01:32Z",
+        "message": "PIPELINE_ERROR: Schema validation failed: Missing fields ['payment_method'] in record 0",
+        "status": "error",
+        "service": "tracer-k8s-test",
+        "host": "kind-control-plane",
+        "tags": [
+          "kube_namespace:tracer-test",
+          "kube_job:etl-transform-error",
+          "pod_name:etl-transform-error-r7k4m",
+          "container_name:transform",
+          "env:test",
+          "service:tracer-k8s-test"
+        ]
+      }
+    ],
+    "datadog_monitors": [
+      {
+        "id": null,
+        "name": "[tracer] Kubernetes Job Failed",
+        "type": "metric alert",
+        "query": "sum(last_1m):sum:kubernetes_state.job.failed{kube_namespace:tracer-test} by {kube_job} > 0",
+        "message": "Kubernetes job etl-transform-error failed in namespace tracer-test. Check pod logs and events for details.",
+        "overall_state": "Alert",
+        "tags": [
+          "managed_by:tracer-agent",
+          "env:test",
+          "service:tracer-k8s-test"
+        ]
+      },
+      {
+        "id": null,
+        "name": "[tracer] Pipeline Error in Logs",
+        "type": "log alert",
+        "query": "logs(\"PIPELINE_ERROR kube_namespace:tracer-test\").index(\"*\").rollup(\"count\").last(\"1m\") > 0",
+        "message": "Pipeline error detected in tracer-test namespace. Review application logs for the PIPELINE_ERROR pattern.",
+        "overall_state": "Alert",
+        "tags": [
+          "managed_by:tracer-agent",
+          "env:test",
+          "service:tracer-k8s-test"
+        ]
+      }
+    ]
+  }
+}

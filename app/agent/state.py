@@ -64,6 +64,7 @@ class AgentState(TypedDict, total=False):
 
     # Investigation analysis
     root_cause: str
+    root_cause_category: str
     validated_claims: list[dict[str, Any]]  # List of validated claims with evidence
     non_validated_claims: list[dict[str, Any]]  # List of non-validated claims
     validity_score: float  # Percentage of validated vs total claims
@@ -111,6 +112,7 @@ STATE_DEFAULTS: dict[str, Any] = {
     "context": {},
     "evidence": {},
     "root_cause": "",
+    "root_cause_category": "",
     "validated_claims": [],
     "non_validated_claims": [],
     "validity_score": 0.0,
