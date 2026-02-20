@@ -183,6 +183,7 @@ jobs:
       - name: Initialize tracer
         run: |
           sudo tracer init --token ${{ secrets.JWT_TOKEN }}
+        timeout-minutes: 2
 
       - name: Export Tracer run id
         shell: bash
@@ -198,7 +199,9 @@ jobs:
           echo "TRACER_TRACE_ID=trace_$RUN_ID" >> $GITHUB_ENV
 
           echo "Exported TRACER_RUN_ID=$RUN_ID"
+        timeout-minutes: 2
 
       - name: Run thorough test case
         run: ${{ matrix.command }}
+        timeout-minutes: 15
         continue-on-error: false

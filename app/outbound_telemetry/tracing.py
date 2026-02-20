@@ -12,6 +12,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import Status, StatusCode
 
 from config.grafana_config import (
+    get_effective_otlp_endpoint,
     get_otel_exporter_otlp_endpoint,
     get_otel_exporter_otlp_protocol,
 )
@@ -75,7 +76,7 @@ def setup_tracing(resource) -> trace.Tracer:
                 }
             )
         )
-    else:
+    elif get_effective_otlp_endpoint():
         logging.getLogger(__name__).warning("OTLP trace exporter is unavailable")
     trace.set_tracer_provider(provider)
     return trace.get_tracer("outbound_telemetry")
