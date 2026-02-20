@@ -65,5 +65,13 @@ def test_accurate_kubernetes_rca():
             f"Parsing artifact in validated claims: '{claim_text}'"
         )
 
+    causal_chain = result.get("causal_chain", [])
+    assert len(causal_chain) >= 2, (
+        f"Causal chain should have at least 2 steps, got {len(causal_chain)}: {causal_chain}"
+    )
+
     print(f"\nPASS: root_cause_category={result['root_cause_category']}")
     print(f"Root cause: {result['root_cause']}")
+    print(f"Causal chain ({len(causal_chain)} steps):")
+    for step in causal_chain:
+        print(f"  -> {step}")

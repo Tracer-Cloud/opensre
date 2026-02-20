@@ -76,6 +76,7 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     return {
         "root_cause": result.root_cause,
         "root_cause_category": result.root_cause_category,
+        "causal_chain": result.causal_chain,
         "validated_claims": validated_claims_list,
         "non_validated_claims": non_validated_claims_list,
         "validity_score": validity_score,

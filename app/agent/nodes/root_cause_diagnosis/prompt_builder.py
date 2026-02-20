@@ -100,6 +100,12 @@ NON_VALIDATED_CLAIMS:
 - <one plausible hypothesis consistent with evidence>
 - <another plausible hypothesis>
 (If you include hypotheses, focus on explaining the failure mechanism and what data is missing to confirm it.)
+
+CAUSAL_CHAIN:
+- <step 1: the trigger or misconfiguration>
+- <step 2: how it propagated>
+- <step N: the observable symptom or alert>
+(Trace the error from root cause through to the alert that triggered this investigation. Each step should be one sentence.)
 """
 
     return prompt
