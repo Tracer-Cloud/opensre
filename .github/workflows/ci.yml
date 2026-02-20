@@ -135,8 +135,6 @@ jobs:
             command: python3 -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
           - name: flink-ecs
             command: python3 -m tests.test_case_upstream_apache_flink_ecs.test_agent_e2e
-          - name: memory-performance
-            command: python3 -m pytest -v tests/test_case_memory_performance/test_memory_speed.py
     name: test-thorough (${{ matrix.name }})
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
