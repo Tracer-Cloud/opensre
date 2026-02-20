@@ -66,6 +66,7 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     recommendations: list[str] = []
     if check_vendor_evidence_missing(evidence) and loop_count < 3:
         recommendations.append("Fetch audit payload from S3 to trace external vendor interactions")
+    next_loop_count = loop_count + 1 if recommendations else loop_count
 
     tracker.complete(
         "diagnose_root_cause",
@@ -82,7 +83,7 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
         "validity_score": validity_score,
         "investigation_recommendations": recommendations,
         "remediation_steps": [],
-        "investigation_loop_count": loop_count,
+        "investigation_loop_count": next_loop_count,
     }
 
 

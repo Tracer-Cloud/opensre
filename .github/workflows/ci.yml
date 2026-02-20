@@ -151,6 +151,7 @@ jobs:
       AWS_DEFAULT_REGION: us-east-1
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      CLOUDWATCH_VERIFY_LOGS: ${{ matrix.name == 'cloudwatch-demo' && '0' || '1' }}
       # Grafana read token for querying (instance URL via GRAFANA_INSTANCE_URL if needed)
       GRAFANA_READ_TOKEN: ${{ secrets.GRAFANA_READ_TOKEN }}
       GCLOUD_HOSTED_METRICS_ID: ${{ secrets.GCLOUD_HOSTED_METRICS_ID }}
