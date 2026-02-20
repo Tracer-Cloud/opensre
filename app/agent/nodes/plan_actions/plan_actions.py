@@ -66,20 +66,7 @@ def plan_actions(
     if not available_action_names:
         return None, available_sources, available_action_names, available_actions
 
-    # Load memory context if enabled
-    from app.agent.memory import get_memory_context, is_memory_enabled
-    from app.agent.memory.architecture_discovery import find_architecture_doc_for_pipeline
-
-    memory_context = ""
-    if is_memory_enabled() and pipeline_name:
-        seed_paths = find_architecture_doc_for_pipeline(pipeline_name)
-        memory_context = get_memory_context(pipeline_name=pipeline_name, seed_paths=seed_paths)
-        if memory_context:
-            debug_print("[MEMORY] Loaded context for action planning")
-
-    # Use fast model (Haiku) if memory provides guidance
-    use_fast = bool(memory_context)
-    llm = get_llm(use_fast_model=use_fast)
+    llm = get_llm()
 
     plan = plan_actions_with_llm(
         llm=llm,
@@ -88,7 +75,7 @@ def plan_actions(
         executed_hypotheses=input_data.executed_hypotheses,
         available_actions=available_actions,
         available_sources=available_sources,
-        memory_context=memory_context,
+        memory_context="",
     )
 
     # Ensure audit trail is fetched when s3_audit source is available
