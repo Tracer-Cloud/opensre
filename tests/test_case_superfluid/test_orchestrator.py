@@ -50,7 +50,11 @@ def main() -> int:
     if not web_run.get("found"):
         print("No failed runs found in Tracer Web App")
         print(f"Checked {web_run.get('pipelines_checked', 0)} pipelines")
-        return 1
+        require_failed_run = os.getenv("SUPERFLUID_REQUIRE_FAILED_RUN", "0").strip().lower()
+        if require_failed_run in {"1", "true", "yes"}:
+            return 1
+        print("Skipping superfluid test (no failed runs available)")
+        return 0
 
     # Extract pipeline details from use case context
     pipeline_name = use_case._run_context["pipeline_name"]
