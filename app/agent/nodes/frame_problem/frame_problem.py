@@ -9,7 +9,6 @@ from typing import cast
 
 from langsmith import traceable
 
-from app.agent.memory import get_memory_context
 from app.agent.nodes.frame_problem.models import (
     ProblemStatement,
     ProblemStatementInput,
@@ -20,38 +19,23 @@ from app.agent.state import InvestigationState
 from app.agent.tools.clients import get_llm
 
 
-def _build_input_prompt(problem_input: ProblemStatementInput, memory_context: str = "") -> str:
+def _build_input_prompt(problem_input: ProblemStatementInput) -> str:
     """Build the prompt for generating a problem statement."""
-    memory_section = ""
-    if memory_context:
-        memory_section = f"""
-Prior Problem Patterns (from memory):
-{memory_context[:1000]}
-
-Use these patterns as templates to frame the current problem quickly.
-"""
-
     return f"""You are framing a data pipeline incident for investigation.
 
 Alert Information:
 - alert_name: {problem_input.alert_name}
 - pipeline_name: {problem_input.pipeline_name}
 - severity: {problem_input.severity}
-{memory_section}
 Task:
 Analyze the alert and provide a structured problem statement.
 """
 
 
-def _generate_output_problem_statement(
-    state: InvestigationState, memory_context: str = ""
-) -> ProblemStatement:
+def _generate_output_problem_statement(state: InvestigationState) -> ProblemStatement:
     """Use the LLM to generate a structured problem statement."""
-    prompt = _build_input_prompt(ProblemStatementInput.from_state(state), memory_context)
-
-    # Use fast model (Haiku) if memory provides guidance
-    use_fast = bool(memory_context)
-    llm = get_llm(use_fast_model=use_fast)
+    prompt = _build_input_prompt(ProblemStatementInput.from_state(state))
+    llm = get_llm()
 
     try:
         structured_llm = llm.with_structured_output(ProblemStatement)
@@ -92,15 +76,6 @@ def _fallback_problem_statement(state: InvestigationState) -> ProblemStatement:
     )
 
 
-def _load_memory_context(state: InvestigationState) -> str:
-    """Load memory context if enabled."""
-    pipeline_name = state.get("pipeline_name", "")
-    memory_context = get_memory_context(pipeline_name=pipeline_name)
-    if memory_context:
-        debug_print("[MEMORY] Loaded context for problem framing")
-    return memory_context
-
-
 @traceable(name="node_frame_problem")
 def node_frame_problem(state: InvestigationState) -> dict:
     """
@@ -116,9 +91,7 @@ def node_frame_problem(state: InvestigationState) -> dict:
     tracker = get_tracker()
     tracker.start("frame_problem", "Generating problem statement")
 
-    memory_context = _load_memory_context(state)
-
-    problem = _generate_output_problem_statement(state, memory_context)
+    problem = _generate_output_problem_statement(state)
     problem_md = render_problem_statement_md(problem, state)
     debug_print(f"Problem statement generated ({len(problem_md)} chars)")
 
