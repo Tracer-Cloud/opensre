@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from typing import Any
 
 from langchain_anthropic import ChatAnthropic
@@ -29,18 +30,19 @@ from app.agent.tools.tool_actions.tracer.tracer_runs import (
     get_tracer_tasks,
 )
 
+_CHAT_FUNCTIONS: list[Callable[..., Any]] = [
+    fetch_failed_run,
+    get_tracer_run,
+    get_tracer_tasks,
+    get_failed_jobs,
+    get_failed_tools,
+    get_error_logs,
+    get_batch_statistics,
+    get_host_metrics,
+]
+
 CHAT_TOOLS: list[StructuredTool] = [
-    StructuredTool.from_function(fn, return_direct=False)
-    for fn in [
-        fetch_failed_run,
-        get_tracer_run,
-        get_tracer_tasks,
-        get_failed_jobs,
-        get_failed_tools,
-        get_error_logs,
-        get_batch_statistics,
-        get_host_metrics,
-    ]
+    StructuredTool.from_function(fn, return_direct=False) for fn in _CHAT_FUNCTIONS
 ]
 
 # LangChain type -> ChatMessage role mapping
