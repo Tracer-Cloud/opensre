@@ -86,18 +86,9 @@ def main() -> int:
     print("Starting investigation pipeline...")
     print("")
 
-    # Parse alert to extract structured details
-    from app.ingest import parse_grafana_payload  # noqa: E402
-
-    try:
-        request = parse_grafana_payload(raw_alert)
-        alert_name = request.alert_name
-        pipeline_name = request.pipeline_name
-        severity = request.severity
-    except Exception:
-        # Fallback values if parsing fails
-        alert_name = f"Pipeline failure: {pipeline_name}"
-        severity = "critical"
+    # Derive alert metadata from context
+    alert_name = f"Pipeline failure: {pipeline_name}"
+    severity = "critical"
 
     # Run investigation via main._run() which handles Slack delivery automatically
     @traceable(
