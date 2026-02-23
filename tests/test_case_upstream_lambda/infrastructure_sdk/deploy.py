@@ -59,13 +59,6 @@ def bundle_pipeline_code(pipeline_dir: Path) -> bytes:
                         # Copy subdirectories (like adapters/)
                         shutil.copytree(item, module_dst / item.name, dirs_exist_ok=True)
 
-        # Create a stub tracer_telemetry module that provides no-op telemetry
-        # This avoids opentelemetry dependency issues in Lambda
-        tracer_telemetry_dir = package_dir / "tracer_telemetry"
-        tracer_telemetry_dir.mkdir(exist_ok=True)
-        (tracer_telemetry_dir / "__init__.py").write_text(NOOP_TRACER_TELEMETRY_INIT)
-        (tracer_telemetry_dir / "tracing.py").write_text(NOOP_TRACING_MODULE)
-
         # Copy vendored dependencies from api_ingester to root level
         api_ingester_dir = pipeline_dir / "api_ingester"
         vendored_packages = [
@@ -89,101 +82,6 @@ def bundle_pipeline_code(pipeline_dir: Path) -> bytes:
                     zf.write(file_path, arcname)
 
         return zip_buffer.getvalue()
-
-
-# No-op tracer_telemetry module for Lambda (avoids opentelemetry dependency issues)
-NOOP_TRACER_TELEMETRY_INIT = '''"""No-op telemetry module for Lambda."""
-from __future__ import annotations
-from dataclasses import dataclass
-from typing import Any
-
-class NoOpSpan:
-    """No-op span that does nothing."""
-    def set_attribute(self, key: str, value: Any) -> None:
-        pass
-    def __enter__(self):
-        return self
-    def __exit__(self, *args):
-        pass
-
-class NoOpTracer:
-    """No-op tracer that returns no-op spans."""
-    def start_as_current_span(self, name: str, **kwargs) -> NoOpSpan:
-        return NoOpSpan()
-
-class NoOpMetrics:
-    """No-op metrics."""
-    def add(self, value: int, attributes: dict = None) -> None:
-        pass
-    def record(self, value: float, attributes: dict = None) -> None:
-        pass
-
-@dataclass
-class PipelineMetrics:
-    runs_total: Any = None
-    runs_failed_total: Any = None
-    duration_seconds: Any = None
-    records_processed_total: Any = None
-    records_failed_total: Any = None
-
-    @classmethod
-    def noop(cls) -> "PipelineMetrics":
-        m = NoOpMetrics()
-        return cls(
-            runs_total=m,
-            runs_failed_total=m,
-            duration_seconds=m,
-            records_processed_total=m,
-            records_failed_total=m,
-        )
-
-@dataclass
-class PipelineTelemetry:
-    tracer: NoOpTracer
-    metrics: PipelineMetrics
-
-    def record_run(
-        self,
-        *,
-        status: str,
-        duration_seconds: float | None,
-        record_count: int = 0,
-        failure_count: int = 0,
-        attributes: dict[str, Any] | None = None,
-    ) -> None:
-        pass
-
-    def flush(self) -> None:
-        pass
-
-_telemetry: PipelineTelemetry | None = None
-
-def init_telemetry(
-    *,
-    service_name: str,
-    resource_attributes: dict[str, Any] | None = None,
-) -> PipelineTelemetry:
-    global _telemetry
-    if _telemetry is None:
-        _telemetry = PipelineTelemetry(
-            tracer=NoOpTracer(),
-            metrics=PipelineMetrics.noop(),
-        )
-    return _telemetry
-
-def get_tracer(name: str | None = None) -> NoOpTracer:
-    return NoOpTracer()
-
-def get_metrics() -> PipelineMetrics:
-    return PipelineMetrics.noop()
-'''
-
-NOOP_TRACING_MODULE = '''"""No-op tracing utilities."""
-
-def ensure_execution_run_id(span, execution_run_id: str) -> None:
-    """No-op function for setting execution run ID."""
-    pass
-'''
 
 
 def create_s3_buckets() -> dict:

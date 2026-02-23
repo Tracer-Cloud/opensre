@@ -21,21 +21,13 @@ import boto3
 from domain import transform_data as domain_transform_data
 from domain import validate_data as domain_validate_data
 from errors import DomainError
-
-from tracer_telemetry import init_telemetry
+from opentelemetry import trace
 
 # Required fields for event schema validation
 REQUIRED_FIELDS = ["event_id", "user_id", "event_type", "timestamp"]
 PIPELINE_NAME = "upstream_downstream_pipeline_flink"
 
-telemetry = init_telemetry(
-    service_name="flink-etl-pipeline",
-    resource_attributes={
-        "pipeline.name": PIPELINE_NAME,
-        "pipeline.framework": "flink",
-    },
-)
-tracer = telemetry.tracer
+tracer = trace.get_tracer("flink-etl-pipeline")
 
 
 def main():
@@ -48,7 +40,6 @@ def main():
     args = parser.parse_args()
 
     s3 = boto3.client("s3")
-    start_time = time.monotonic()
 
     # Read input data from S3
     print(f"[FLINK] Reading from s3://{args.input_bucket}/{args.s3_key}")
@@ -72,13 +63,6 @@ def main():
 
     except Exception as e:
         print(f"[FLINK][ERROR] Failed to read input data: {e}")
-        telemetry.record_run(
-            status="failure",
-            duration_seconds=time.monotonic() - start_time,
-            record_count=0,
-            failure_count=1,
-            attributes={"pipeline.name": PIPELINE_NAME},
-        )
         sys.exit(1)
 
     # Extract records from input data
@@ -91,18 +75,14 @@ def main():
     # Validate and transform
     try:
         with tracer.start_as_current_span("validate_data") as validate_span:
-            from tracer_telemetry.tracing import ensure_execution_run_id
-
-            ensure_execution_run_id(validate_span, correlation_id)
+            validate_span.set_attribute("execution.run_id", correlation_id)
             validate_span.set_attribute("record_count", len(raw_records))
             validate_span.set_attribute("correlation_id", correlation_id)
             domain_validate_data(raw_records, REQUIRED_FIELDS)
         print(f"[FLINK] Validation successful: {len(raw_records)} records validated")
 
         with tracer.start_as_current_span("transform_data") as transform_span:
-            from tracer_telemetry.tracing import ensure_execution_run_id
-
-            ensure_execution_run_id(transform_span, correlation_id)
+            transform_span.set_attribute("execution.run_id", correlation_id)
             transform_span.set_attribute("record_count", len(raw_records))
             transform_span.set_attribute("correlation_id", correlation_id)
             processed_records = domain_transform_data(raw_records)
@@ -114,13 +94,6 @@ def main():
         print(f"[FLINK][ERROR] schema_version={schema_version}")
         if audit_key:
             print(f"[FLINK][ERROR] Check audit trail: s3://{args.input_bucket}/{audit_key}")
-        telemetry.record_run(
-            status="failure",
-            duration_seconds=time.monotonic() - start_time,
-            record_count=len(raw_records),
-            failure_count=1,
-            attributes={"pipeline.name": PIPELINE_NAME},
-        )
         sys.exit(1)
 
     # Write output to S3
@@ -156,22 +129,7 @@ def main():
 
     except Exception as e:
         print(f"[FLINK][ERROR] Failed to write output: {e}")
-        telemetry.record_run(
-            status="failure",
-            duration_seconds=time.monotonic() - start_time,
-            record_count=len(processed_records),
-            failure_count=1,
-            attributes={"pipeline.name": PIPELINE_NAME},
-        )
         sys.exit(1)
-
-    telemetry.record_run(
-        status="success",
-        duration_seconds=time.monotonic() - start_time,
-        record_count=len(processed_records),
-        attributes={"pipeline.name": PIPELINE_NAME},
-    )
-
 
 if __name__ == "__main__":
     main()

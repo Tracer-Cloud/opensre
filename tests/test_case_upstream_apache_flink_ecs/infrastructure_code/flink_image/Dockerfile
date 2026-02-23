@@ -2,8 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy app, tracer_telemetry shim, and config, then install dependencies
-COPY tracer_telemetry /app/tracer_telemetry
+# Copy app and config, then install dependencies
 COPY app/__init__.py /app/app/__init__.py
 COPY config /app/config
 COPY tests/test_case_upstream_apache_flink_ecs/pipeline_code/flink_job/requirements.txt /app/requirements.txt

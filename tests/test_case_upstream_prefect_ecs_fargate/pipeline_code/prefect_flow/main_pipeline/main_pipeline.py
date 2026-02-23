@@ -5,8 +5,6 @@ import time
 from prefect import flow, get_run_logger, task
 from prefect.runtime import flow_run
 
-from tracer_telemetry import init_telemetry
-
 from ..adapters.alerting import fire_pipeline_alert
 from ..adapters.s3 import read_json, write_json
 from ..config import PIPELINE_NAME, REQUIRED_FIELDS
@@ -14,14 +12,6 @@ from ..domain import validate_and_transform
 from ..errors import PipelineError
 from ..schemas import ProcessedRecord
 from .ancillary import run_connectivity_checks, run_local_flow
-
-telemetry = init_telemetry(
-    service_name="prefect-etl-pipeline",
-    resource_attributes={
-        "pipeline.name": PIPELINE_NAME,
-        "pipeline.framework": "prefect",
-    },
-)
 
 
 class PipelineLogger:
@@ -113,11 +103,9 @@ def data_pipeline_flow(bucket: str, key: str, processed_bucket: str) -> dict:
     """
     logger = PipelineLogger(get_run_logger())
     logger.info(f"Starting pipeline for s3://{bucket}/{key}")
-    start_time = time.monotonic()
 
     correlation_id = "unknown"
     execution_run_id = str(flow_run.id) if flow_run.id else None
-    raw_record_count = 0
 
     try:
         run_connectivity_checks(logger, print)
@@ -127,7 +115,6 @@ def data_pipeline_flow(bucket: str, key: str, processed_bucket: str) -> dict:
         if execution_run_id is None:
             execution_run_id = correlation_id
         raw_records = raw_payload.get("data", [])
-        raw_record_count = len(raw_records)
 
         # Log structured input for traceability
         logger.info_json(
@@ -149,39 +136,16 @@ def data_pipeline_flow(bucket: str, key: str, processed_bucket: str) -> dict:
         load_data(processed_records, output_key, correlation_id, key, processed_bucket)
 
         logger.info(f"Pipeline completed successfully, correlation_id={correlation_id}")
-        telemetry.record_run(
-            status="success",
-            duration_seconds=time.monotonic() - start_time,
-            record_count=len(processed_records),
-            attributes={"pipeline.name": PIPELINE_NAME},
-        )
-        telemetry.flush()
         return {"status": "success", "correlation_id": correlation_id}
 
     except PipelineError as e:
         logger.info(f"Pipeline failed: {e}")
         fire_pipeline_alert(PIPELINE_NAME, bucket, key, correlation_id, e)
-        telemetry.record_run(
-            status="failure",
-            duration_seconds=time.monotonic() - start_time,
-            record_count=raw_record_count,
-            failure_count=1,
-            attributes={"pipeline.name": PIPELINE_NAME},
-        )
-        telemetry.flush()
         raise
 
     except Exception as e:
         logger.info(f"Unexpected error: {e}")
         fire_pipeline_alert(PIPELINE_NAME, bucket, key, correlation_id, e)
-        telemetry.record_run(
-            status="failure",
-            duration_seconds=time.monotonic() - start_time,
-            record_count=raw_record_count,
-            failure_count=1,
-            attributes={"pipeline.name": PIPELINE_NAME},
-        )
-        telemetry.flush()
         raise
 
 
