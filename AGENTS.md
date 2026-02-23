@@ -44,9 +44,10 @@ app/agent/nodes/frame_problem/frame_problem_test.py
 ### Before Push
 
 1. Clean working tree
-2. `make test`
-3. `ruff` passes
-4. `make demo` runs
+2. `make test-cov`
+3. `make lint`
+4. `make typecheck`
+5. `make demo` runs
 
 ### After Push
 
