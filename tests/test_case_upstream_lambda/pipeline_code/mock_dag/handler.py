@@ -11,6 +11,7 @@ Follows Senior/Staff-level refactoring principles:
 
 import json
 import time
+from contextlib import contextmanager
 
 from .adapters.alerting import fire_pipeline_alert
 from .adapters.s3 import read_json, write_json
@@ -19,25 +20,16 @@ from .domain import transform_data as domain_transform_data
 from .domain import validate_data as domain_validate_data
 from .errors import PipelineError
 
-# Initialize telemetry lazily to avoid circular import with AwsLambdaInstrumentor
-_telemetry = None
-_tracer = None
+
+class _NoopSpan:
+    def set_attribute(self, *_args, **_kwargs) -> None:
+        return None
 
 
-def _get_telemetry():
-    global _telemetry, _tracer
-    if _telemetry is None:
-        from tracer_telemetry import init_telemetry
-
-        _telemetry = init_telemetry(
-            service_name="lambda-mock-dag",
-            resource_attributes={
-                "pipeline.name": PIPELINE_NAME,
-                "pipeline.framework": "lambda",
-            },
-        )
-        _tracer = _telemetry.tracer
-    return _telemetry, _tracer
+class _NoopTracer:
+    @contextmanager
+    def start_as_current_span(self, *_args, **_kwargs):
+        yield _NoopSpan()
 
 def lambda_handler(event, context):
     """
@@ -48,13 +40,12 @@ def lambda_handler(event, context):
     - Coordinate adapters and domain logic.
     - Centralized error handling and alerting.
     """
-    telemetry, tracer = _get_telemetry()
+    tracer = _NoopTracer()
     correlation_id = "unknown"
 
     for record in event.get("Records", []):
         bucket = record["s3"]["bucket"]["name"]
         key = record["s3"]["object"]["key"]
-        start_time = time.monotonic()
 
         with tracer.start_as_current_span("process_s3_record") as span:
             span.set_attribute("s3.bucket", bucket)
@@ -85,17 +76,13 @@ def lambda_handler(event, context):
 
                 # 2. Processing (Domain Logic - Pure)
                 with tracer.start_as_current_span("validate_data") as validate_span:
-                    from tracer_telemetry.tracing import ensure_execution_run_id
-
-                    ensure_execution_run_id(validate_span, execution_run_id)
+                    validate_span.set_attribute("execution.run_id", execution_run_id)
                     validate_span.set_attribute("record_count", len(raw_records))
                     validate_span.set_attribute("correlation_id", correlation_id)
                     domain_validate_data(raw_records, REQUIRED_FIELDS)
 
                 with tracer.start_as_current_span("transform_data") as transform_span:
-                    from tracer_telemetry.tracing import ensure_execution_run_id
-
-                    ensure_execution_run_id(transform_span, execution_run_id)
+                    transform_span.set_attribute("execution.run_id", execution_run_id)
                     transform_span.set_attribute("record_count", len(raw_records))
                     transform_span.set_attribute("correlation_id", correlation_id)
                     processed_records = domain_transform_data(raw_records)
@@ -112,37 +99,14 @@ def lambda_handler(event, context):
                     source_key=key,
                 )
 
-                telemetry.record_run(
-                    status="success",
-                    duration_seconds=time.monotonic() - start_time,
-                    record_count=len(processed_records),
-                    attributes={"pipeline.name": PIPELINE_NAME},
-                )
-
             except PipelineError as e:
                 # Domain or System errors caught and alerted
                 fire_pipeline_alert(PIPELINE_NAME, bucket, key, correlation_id, e)
-                telemetry.record_run(
-                    status="failure",
-                    duration_seconds=time.monotonic() - start_time,
-                    record_count=len(raw_records) if "raw_records" in locals() else 0,
-                    failure_count=1,
-                    attributes={"pipeline.name": PIPELINE_NAME},
-                )
                 raise
 
             except Exception as e:
                 # Unexpected system-level crashes
                 fire_pipeline_alert(PIPELINE_NAME, bucket, key, correlation_id, e)
-                telemetry.record_run(
-                    status="failure",
-                    duration_seconds=time.monotonic() - start_time,
-                    record_count=len(raw_records) if "raw_records" in locals() else 0,
-                    failure_count=1,
-                    attributes={"pipeline.name": PIPELINE_NAME},
-                )
-                telemetry.flush()
                 raise
 
-    telemetry.flush()
     return {"status": "success", "correlation_id": correlation_id}

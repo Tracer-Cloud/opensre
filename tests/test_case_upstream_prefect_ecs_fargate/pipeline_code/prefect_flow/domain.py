@@ -15,13 +15,7 @@ from opentelemetry.trace import Status, StatusCode
 from .errors import DomainError
 from .schemas import InputRecord, ProcessedRecord
 
-try:
-    from tracer_telemetry import get_tracer
-except ImportError:  # pragma: no cover - fallback for local tooling
-    def get_tracer(name: str | None = None) -> trace.Tracer:
-        return trace.get_tracer(name or __name__)
-
-tracer = get_tracer(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 def validate_data(raw_records: list[dict], required_fields: list[str]) -> None:
