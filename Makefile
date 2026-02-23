@@ -144,7 +144,7 @@ destroy-flink:
 
 # Run fast tests + Prefect cloud E2E
 test:
-	$(PYTHON) -m pytest -v app tests/outbound_telemetry tests/utils
+	$(PYTHON) -m pytest -v app tests/utils
 	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
 
 # Run full test suite (CI/CD)

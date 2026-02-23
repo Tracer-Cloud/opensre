@@ -2,10 +2,9 @@ FROM prefecthq/prefect:3-python3.11
 
 WORKDIR /app
 
-# Copy telemetry packages
+# Copy app and config (telemetry is deprecated)
 COPY tracer_telemetry /app/tracer_telemetry
 COPY app/__init__.py /app/app/__init__.py
-COPY app/outbound_telemetry /app/app/outbound_telemetry
 COPY config /app/config
 
 # Copy pipeline code

@@ -9,7 +9,7 @@ from opentelemetry import trace as otel_trace
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.trace import TracerProvider
 
-from app.outbound_telemetry import init_telemetry, traced_operation
+pytestmark = pytest.mark.skip(reason="outbound telemetry has been removed from this project")
 from config.grafana_config import (
     configure_grafana_cloud,
     get_otlp_auth_header,
@@ -36,59 +36,3 @@ def _configure_grafana_otlp() -> None:
     assert os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == endpoint
     assert os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL") == "http/protobuf"
     assert os.getenv("OTEL_EXPORTER_OTLP_HEADERS") == f"Authorization={auth_header}"
-
-
-@pytest.fixture(scope="session")
-def telemetry():
-    _configure_grafana_otlp()
-    service_name = f"grafana-push-test-{uuid.uuid4().hex[:8]}"
-    return init_telemetry(
-        service_name=service_name,
-        resource_attributes={"test.suite": "grafana_cloud_push"},
-    )
-
-
-def test_grafana_cloud_push_metrics(telemetry):
-    run_id = uuid.uuid4().hex
-    attributes = {"test.run_id": run_id, "test.signal": "metrics"}
-    telemetry.metrics.runs_total.add(1, attributes)
-    telemetry.metrics.duration_seconds.record(0.05, attributes)
-    telemetry.flush()
-
-    provider = otel_metrics.get_meter_provider()
-    assert isinstance(provider, MeterProvider)
-    _assert_force_flush(provider, name="metrics")
-
-
-def test_grafana_cloud_push_traces(telemetry):
-    run_id = uuid.uuid4().hex
-    with traced_operation(
-        telemetry.tracer,
-        "grafana_push_test_span",
-        {"test.run_id": run_id, "test.signal": "traces"},
-    ):
-        pass
-    telemetry.flush()
-
-    provider = otel_trace.get_tracer_provider()
-    assert isinstance(provider, TracerProvider)
-    _assert_force_flush(provider, name="traces")
-
-
-def test_grafana_cloud_push_logs(telemetry):
-    run_id = uuid.uuid4().hex
-    logger = logging.getLogger("grafana_push_test")
-    logger.info(
-        json.dumps({"event": "grafana_push_test", "test.run_id": run_id, "test.signal": "logs"})
-    )
-    telemetry.flush()
-
-    try:
-        from opentelemetry import _logs as otel_logs
-        from opentelemetry.sdk._logs import LoggerProvider
-    except ImportError:
-        pytest.fail("OpenTelemetry logs SDK is not installed")
-
-    provider = otel_logs.get_logger_provider()
-    assert isinstance(provider, LoggerProvider)
-    _assert_force_flush(provider, name="logs")
