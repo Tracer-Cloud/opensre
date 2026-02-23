@@ -91,7 +91,7 @@ def _get_metric_exporter():
             pass
 
     try:
-        from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (  # type: ignore[import-not-found]
+        from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (  # type: ignore[import-untyped]
             OTLPMetricExporter,
         )
 

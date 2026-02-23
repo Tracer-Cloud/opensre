@@ -30,7 +30,7 @@ def _get_span_exporter():
             pass
 
     try:
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore[import-not-found]
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore[import-untyped]
             OTLPSpanExporter,
         )
         return OTLPSpanExporter()

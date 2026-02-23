@@ -19,7 +19,7 @@ Workflow Orchestration
 4. Verification Before DoneNever mark a task complete without proving it works
    Diff behavior between main and your changes when relevant
    Ask yourself: "Would a staff engineer approve this?"
-   Run tests, check logs, demonstrate correctness
+   Run `make test-cov`, `make lint`, and `make typecheck` before claiming changes are valid
 
 5. Demand Elegance (Balanced)For non-trivial changes: pause and ask "is there a more elegant way?"
    If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
