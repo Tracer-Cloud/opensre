@@ -226,24 +226,58 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
     return ""
 
 
+def _compress_for_title(sentence: str) -> str:
+    """Extract a short, punchy title phrase from a root cause sentence.
+
+    Strips speculative openers and verbose preambles, then truncates
+    at a natural clause boundary to fit in ~60 chars.
+    """
+    # Remove leading speculative openers
+    s = re.sub(
+        r"^(?:most likely|likely|probably|possibly|it appears(?: that)?|this suggests(?: that)?)\s+",
+        "",
+        sentence,
+        flags=re.IGNORECASE,
+    ).strip()
+    # Remove verbose subject preambles like "the X was configured with Y that ..."
+    # Keep from the first strong verb clause: "schema validation failed", "missing field", etc.
+    # Try to find a more specific sub-clause after common connectors
+    for connector in (" because ", " due to ", ", but ", " where ", ", causing ", ": "):
+        idx = s.lower().find(connector)
+        if idx != -1:
+            candidate = s[idx + len(connector):].strip()
+            if len(candidate) >= 10:
+                s = candidate
+                break
+    # Take only up to the first comma or semicolon to keep it tight
+    for stop in (",", ";"):
+        idx = s.find(stop)
+        if idx > 15:  # ensure we have enough content before the stop
+            s = s[:idx].strip()
+            break
+    # Capitalize first letter
+    if s:
+        s = s[0].upper() + s[1:]
+    # Hard cap at 60 chars, breaking at a word boundary
+    if len(s) > 60:
+        s = s[:57].rsplit(" ", 1)[0].rstrip(" ,;") + "..."
+    return s
+
+
 def _build_report_title(
     pipeline_name: str, alert_name: str | None, root_cause_sentence: str = ""
 ) -> str:
     """Build a descriptive report title.
 
     Priority:
-    1. Derived from root cause sentence (most specific — the actual error)
+    1. Compressed root cause phrase (most specific — the actual error)
     2. Alert name (stripped of brackets/pipeline prefix)
     3. "{pipeline_name} incident" (generic fallback)
     """
     if root_cause_sentence:
-        # Strip leading speculative words to make it punchy
-        clean = re.sub(r"^(?:most likely|likely|probably|possibly)\s+", "", root_cause_sentence, flags=re.IGNORECASE).strip()
-        # Truncate to ~80 chars at a word boundary
-        if len(clean) > 80:
-            clean = clean[:77].rsplit(" ", 1)[0] + "..."
-        if clean:
-            return f"{pipeline_name}: {clean}"
+        compressed = _compress_for_title(root_cause_sentence)
+        if compressed:
+            return f"{pipeline_name}: {compressed}"
 
     if alert_name and alert_name.lower() not in ("unknown", "unknown alert", ""):
         clean = re.sub(r"^\[.*?\]\s*", "", alert_name).strip()
