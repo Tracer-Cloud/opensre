@@ -238,6 +238,14 @@ def parse_root_cause(response: str) -> RootCauseResult:
     if "ROOT_CAUSE:" in response:
         parts = response.split("ROOT_CAUSE:")[1]
 
+        # Extract the root cause sentence (text before first section header)
+        for delimiter in ("ROOT_CAUSE_CATEGORY:", "VALIDATED_CLAIMS:", "NON_VALIDATED_CLAIMS:", "CAUSAL_CHAIN:"):
+            if delimiter in parts:
+                root_cause = parts.split(delimiter)[0].strip()
+                break
+        else:
+            root_cause = parts.strip()
+
         # Extract validated claims
         if "VALIDATED_CLAIMS:" in parts:
             validated_section = parts.split("VALIDATED_CLAIMS:")[1]
@@ -284,24 +292,6 @@ def parse_root_cause(response: str) -> RootCauseResult:
                 line = line.strip().lstrip("*-• ").strip()
                 if line:
                     causal_chain.append(line)
-
-        # Build root_cause text from all sections
-        root_cause_parts = []
-        if validated_claims:
-            root_cause_parts.append(
-                "VALIDATED CLAIMS:\n" + "\n".join(f"* {c}" for c in validated_claims)
-            )
-        if non_validated_claims:
-            root_cause_parts.append(
-                "NON-VALIDATED CLAIMS:\n" + "\n".join(f"* {c}" for c in non_validated_claims)
-            )
-        if causal_chain:
-            root_cause_parts.append("CAUSAL CHAIN:\n" + "\n".join(f"* {c}" for c in causal_chain))
-
-        if root_cause_parts:
-            root_cause = "\n\n".join(root_cause_parts)
-        else:
-            root_cause = parts.strip()
 
     return RootCauseResult(
         root_cause=root_cause,

@@ -11,7 +11,6 @@ from app.agent.nodes import (
     node_build_context,
     node_diagnose_root_cause,
     node_extract_alert,
-    node_frame_problem,
     node_plan_actions,
     node_publish_findings,
     node_resolve_integrations,
@@ -29,10 +28,7 @@ def _merge_state(state: AgentState, updates: dict[str, Any]) -> None:
     for key, value in updates.items():
         if key == "messages":
             messages = list(state_any.get("messages", []))
-            if isinstance(value, list):
-                messages.extend(value)
-            else:
-                messages.append(value)
+            messages.extend(value) if isinstance(value, list) else messages.append(value)
             state_any["messages"] = messages
             continue
         state_any[key] = value
@@ -42,8 +38,7 @@ def run_chat(state: AgentState, config: RunnableConfig | None = None) -> AgentSt
     """Run chat routing + response without LangGraph (for testing)."""
     cfg = config or {"configurable": {}}
     _merge_state(state, router_node(state))
-    route = state.get("route", "general")
-    if route == "tracer_data":
+    if state.get("route") == "tracer_data":
         _merge_state(state, chat_agent_node(state, cfg))
     else:
         _merge_state(state, general_node(state, cfg))
@@ -59,7 +54,6 @@ def _run_investigation_pipeline(state: AgentState) -> AgentState:
 
     _merge_state(state, node_resolve_integrations(state))
     _merge_state(state, node_build_context(state))
-    _merge_state(state, node_frame_problem(state))
 
     while True:
         _merge_state(state, node_plan_actions(state))
@@ -86,7 +80,4 @@ def run_investigation(
 @dataclass
 class SimpleAgent:
     def invoke(self, state: AgentState, config: RunnableConfig | None = None) -> AgentState:
-        mode = state.get("mode", "investigation")
-        if mode == "chat":
-            return run_chat(state, config)
-        return _run_investigation_pipeline(state)
+        return run_chat(state, config) if state.get("mode") == "chat" else _run_investigation_pipeline(state)

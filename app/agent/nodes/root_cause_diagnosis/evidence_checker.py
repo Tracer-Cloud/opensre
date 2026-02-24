@@ -36,18 +36,20 @@ def check_evidence_availability(
         or evidence.get("lambda_logs")
     )
 
-    # Check for evidence in alert annotations
+    # Check for evidence in alert annotations or raw text
     has_alert_evidence = False
-    if isinstance(raw_alert, dict):
+    if isinstance(raw_alert, str) and len(raw_alert) > 50:
+        has_alert_evidence = True
+    elif isinstance(raw_alert, dict):
         annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
-        if annotations:
-            has_alert_evidence = bool(
-                annotations.get("log_excerpt")
-                or annotations.get("failed_steps")
-                or annotations.get("error")
-                or annotations.get("error_message")
-                or annotations.get("cloudwatch_logs_url")
-            )
+        body = raw_alert.get("body", "") or raw_alert.get("text", "") or raw_alert.get("message", "")
+        has_alert_evidence = bool(
+            body
+            or (annotations and any(
+                annotations.get(k)
+                for k in ("log_excerpt", "failed_steps", "error", "error_message", "cloudwatch_logs_url")
+            ))
+        )
 
     return has_tracer_evidence, has_cloudwatch_evidence, has_alert_evidence
 
