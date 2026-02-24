@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -107,11 +106,17 @@ def resolve_context_sources(state: InvestigationState) -> list[str]:
     if plan_sources:
         return [str(s) for s in plan_sources]
 
-    env_sources = os.getenv("FRAME_PROBLEM_CONTEXT_SOURCES")
-    if env_sources:
-        return [s.strip() for s in env_sources.split(",") if s.strip()]
+    all_sources = list(get_context_registry().names())
 
-    return list(get_context_registry().names())
+    # Skip tracer_web fetch if the alert comes from an external platform (Datadog, Grafana).
+    # resolved_integrations is populated by node_resolve_integrations which runs before build_context.
+    resolved = state.get("resolved_integrations") or {}
+    external_platforms = {"datadog", "grafana"}
+    has_external_platform = any(k in resolved for k in external_platforms)
+    if has_external_platform and "tracer_web" in all_sources:
+        all_sources.remove("tracer_web")
+
+    return all_sources
 
 
 def get_context_registry() -> ContextSourceRegistry:
