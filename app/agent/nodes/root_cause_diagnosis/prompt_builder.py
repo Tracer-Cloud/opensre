@@ -261,7 +261,10 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     raw_alert = state.get("raw_alert", {})
     cloudwatch_url = None
     alert_annotations: dict[str, Any] = {}
-    if isinstance(raw_alert, dict):
+    raw_alert_text: str = ""
+    if isinstance(raw_alert, str):
+        raw_alert_text = raw_alert
+    elif isinstance(raw_alert, dict):
         cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
         alert_annotations = (
             raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
@@ -426,6 +429,10 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
         section = _build_alert_annotations_section(alert_annotations)
         if section:
             sections.append(section)
+
+    # Raw alert text (e.g. Slack/Datadog message received as plain text)
+    if raw_alert_text:
+        sections.append(f"\nAlert Notification Text:\n{raw_alert_text[:2000]}\n")
 
     return "".join(sections)
 

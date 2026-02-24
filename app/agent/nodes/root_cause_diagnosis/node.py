@@ -93,7 +93,9 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
 
     loop_count = state.get("investigation_loop_count", 0) + 1
 
-    problem = state.get("problem_md", "Pipeline failure detected")
+    alert_name = state.get("alert_name", "Unknown alert")
+    pipeline_name = state.get("pipeline_name", "Unknown pipeline")
+    severity = state.get("severity", "unknown")
 
     tracker.complete(
         "diagnose_root_cause",
@@ -102,7 +104,7 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
     )
 
     return {
-        "root_cause": f"{problem}. Limited evidence available for analysis - unable to determine exact root cause without additional diagnostic data.",
+        "root_cause": f"{alert_name} on {pipeline_name} (severity: {severity}). Unable to determine exact root cause - insufficient evidence gathered.",
         "root_cause_category": "unknown",
         "validated_claims": [],
         "non_validated_claims": [
