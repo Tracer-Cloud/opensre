@@ -1,4 +1,4 @@
-"""Models for frame_problem extract."""
+"""Models for alert extraction."""
 
 from pydantic import BaseModel, Field
 
@@ -12,8 +12,13 @@ class AlertExtractionInput(BaseModel):
 class AlertDetails(BaseModel):
     """Structured alert details extracted from raw input."""
 
+    is_noise: bool = Field(description="True if message is noise/chat, False if it's a real alert")
     alert_name: str = Field(description="Name of the alert")
-    pipeline_name: str = Field(description="Primary affected table")
+    pipeline_name: str = Field(description="Primary affected table or pipeline")
     severity: str = Field(description="Severity of the alert (e.g. critical, high, warning, info)")
     environment: str | None = Field(default=None, description="Environment, if present")
     summary: str | None = Field(default=None, description="Short alert summary, if present")
+    # Structured routing fields extracted from alert text
+    kube_namespace: str | None = Field(default=None, description="Kubernetes namespace if mentioned (e.g. tracer-test)")
+    cloudwatch_log_group: str | None = Field(default=None, description="CloudWatch log group if mentioned")
+    error_message: str | None = Field(default=None, description="The actual error message or PIPELINE_ERROR content from the alert")
