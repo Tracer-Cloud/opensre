@@ -56,3 +56,7 @@ class ReportContext(TypedDict, total=False):
 
     # Tool call history for investigation transparency
     executed_hypotheses: list[dict]
+
+    # Integration endpoints (for building deep links)
+    grafana_endpoint: str | None
+    datadog_site: str | None
