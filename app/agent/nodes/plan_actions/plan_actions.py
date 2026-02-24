@@ -46,11 +46,9 @@ def plan_actions(
         audit_key = s3_object["metadata"]["audit_key"]
         bucket = s3_object.get("bucket")
         if bucket and "s3_audit" not in available_sources:
-            # Add audit payload as discoverable S3 source
             available_sources["s3_audit"] = {"bucket": bucket, "key": audit_key}
-            print(f"[DEBUG] Added s3_audit source: s3://{bucket}/{audit_key}")
+            debug_print(f"Added s3_audit source: s3://{bucket}/{audit_key}")
 
-    print(f"[DEBUG] Available sources: {list(available_sources.keys())}")
     debug_print(f"Relevant sources: {list(available_sources.keys())}")
 
     all_actions = get_available_actions()
@@ -86,8 +84,6 @@ def plan_actions(
     ):
         plan.actions.append("get_s3_object")
 
-    print(f"[DEBUG] LLM Plan: {plan.actions}")
-    print(f"[DEBUG] Rationale: {plan.rationale[:200]}")
     debug_print(f"Plan: {plan.actions} | {plan.rationale[:100]}...")
 
     return plan, available_sources, available_action_names, available_actions

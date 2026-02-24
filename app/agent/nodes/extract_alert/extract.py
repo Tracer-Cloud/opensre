@@ -1,4 +1,4 @@
-"""LLM-based alert extraction and classification for the extract_alert node."""
+"""Alert extraction and classification - single LLM call."""
 
 import json
 from typing import Any, cast
@@ -9,71 +9,47 @@ from app.agent.state import InvestigationState
 from app.agent.tools.clients import get_llm
 
 
-def classify_alert(state: InvestigationState) -> bool:
-    """Use the LLM to determine if this message is a real actionable alert.
-
-    Returns True if the message is a real alert worth investigating,
-    False if it's noise (test messages, resolved alerts, info-only, etc.).
-    """
-    raw_alert = state.get("raw_alert")
-    if raw_alert is None:
-        return False
-
-    text = _format_raw_alert(raw_alert) if isinstance(raw_alert, (str, dict)) else str(raw_alert)
-
-    prompt = f"""Classify this message. Should it be investigated?
-
-ALERT (investigate) — default. Includes:
-- Any alert from a monitoring system (Grafana, PagerDuty, CloudWatch, etc.)
-- Firing, resolved, or recovery notifications from monitoring tools
-- Errors, failures, incidents, warnings, OOM, timeouts, threshold breaches
-- Anything that looks like it came from an automated alerting system
-
-NOISE (skip) — only these:
-- Casual human chat, greetings, or questions unrelated to incidents
-- Very short trivial messages with no alert content (e.g. "ok", "thanks")
-- A reply to an existing investigation report (contains "Root Cause" or "Investigation Report")
-
-When in doubt, classify as ALERT.
-
-Message:
-{text}
-
-Respond with ONLY one word: ALERT or NOISE"""
-
-    llm = get_llm()
-    try:
-        response = llm.invoke(prompt)
-        result = response.content.strip().upper()
-        is_alert = "ALERT" in result
-        debug_print(f"Alert classification: {'ALERT' if is_alert else 'NOISE'}")
-        return is_alert
-    except Exception as err:
-        debug_print(f"Alert classification failed, defaulting to ALERT: {err}")
-        return True  # Fail open - investigate if unsure
-
-
 def extract_alert_details(state: InvestigationState) -> AlertDetails:
-    """Use the LLM to extract alert details from raw input."""
+    """Single LLM call: classify noise + extract all routing fields simultaneously."""
     raw_alert = state.get("raw_alert")
     if raw_alert is None:
         raise RuntimeError("raw_alert is required for alert extraction")
 
-    input_data = AlertExtractionInput(raw_alert=_format_raw_alert(raw_alert))
-    prompt = _build_extraction_prompt(input_data.raw_alert)
-    llm = get_llm()
+    text = AlertExtractionInput(raw_alert=_format_raw_alert(raw_alert)).raw_alert
 
+    prompt = f"""Classify and extract fields from this alert message.
+
+is_noise=true ONLY for: casual chat, greetings, trivial messages ("ok", "thanks"), or replies to existing investigation reports.
+is_noise=false (default) for: any alert, error, failure, incident, warning, monitoring notification.
+When in doubt, set is_noise=false.
+
+Extract these fields from the message text:
+- alert_name: The name of the alert (e.g. "Pipeline Error in Logs")
+- pipeline_name: The affected pipeline/table/service name
+- severity: critical/high/warning/info
+- kube_namespace: Kubernetes namespace if mentioned (e.g. "tracer-test" from "kube_namespace:tracer-test")
+- cloudwatch_log_group: AWS CloudWatch log group if mentioned (e.g. "/aws/ecs/my-service")
+- error_message: The actual error line from the alert (e.g. "PIPELINE_ERROR: Schema validation failed: Missing fields ['customer_id']")
+
+Message:
+{text}
+"""
+    llm = get_llm()
     try:
-        structured_llm = llm.with_structured_output(AlertDetails)
-        details = structured_llm.with_config(run_name="LLM – Extract alert fields").invoke(prompt)
+        details = cast(
+            AlertDetails,
+            llm.with_structured_output(AlertDetails)
+               .with_config(run_name="LLM – Classify + extract alert")
+               .invoke(prompt),
+        )
+        debug_print(
+            f"Alert classified: {'NOISE' if details.is_noise else 'ALERT'} | "
+            f"namespace={details.kube_namespace} | error={details.error_message}"
+        )
+        return details
     except Exception as err:
         debug_print(f"LLM alert extraction failed, using fallback: {err}")
         return _fallback_details(state, raw_alert)
-
-    if details is None:
-        raise RuntimeError("LLM returned no alert details")
-
-    return cast(AlertDetails, details)
 
 
 def _fallback_details(state: InvestigationState, raw_alert: str | dict[str, Any]) -> AlertDetails:
@@ -95,31 +71,17 @@ def _fallback_details(state: InvestigationState, raw_alert: str | dict[str, Any]
         severity = labels.get("severity", severity)
 
     return AlertDetails(
+        is_noise=False,
         alert_name=alert_name or "unknown",
         pipeline_name=pipeline_name or "unknown",
         severity=severity or "unknown",
-        environment=None,
-        summary=None,
     )
 
 
 def _format_raw_alert(raw_alert: str | dict[str, Any]) -> str:
-    """Format raw alert input as a string for the LLM."""
     if isinstance(raw_alert, str):
         return raw_alert
+    # For Slack alerts, prefer the human-readable text field
+    if isinstance(raw_alert, dict) and raw_alert.get("text"):
+        return str(raw_alert["text"])
     return json.dumps(raw_alert, indent=2, sort_keys=True)
-
-
-def _build_extraction_prompt(raw_alert: str) -> str:
-    """Build the prompt for extracting alert details."""
-    return f"""You extract alert metadata from raw input.
-The input may be raw text or JSON. Extract:
-- alert_name
-- pipeline_name
-- severity
-- environment (if present)
-- summary (if present)
-
-Raw alert:
-{raw_alert}
-"""
