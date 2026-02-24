@@ -248,7 +248,7 @@ def get_available_actions() -> list[InvestigationAction]:
             parameter_extractor=lambda sources: {
                 "service_name": sources["grafana"]["service_name"],
                 "execution_run_id": sources["grafana"].get("execution_run_id"),
-                "time_range_minutes": 60,
+                "time_range_minutes": sources["grafana"].get("time_range_minutes", 60),
                 "limit": 100,
                 "grafana_endpoint": sources["grafana"].get("grafana_endpoint"),
                 "grafana_api_key": sources["grafana"].get("grafana_api_key"),
@@ -323,7 +323,7 @@ def get_available_actions() -> list[InvestigationAction]:
             ),
             parameter_extractor=lambda sources: {
                 "query": sources.get("datadog", {}).get("default_query", ""),
-                "time_range_minutes": 60,
+                "time_range_minutes": sources.get("datadog", {}).get("time_range_minutes", 60),
                 "limit": 50,
                 "api_key": sources["datadog"].get("api_key"),
                 "app_key": sources["datadog"].get("app_key"),
@@ -355,7 +355,7 @@ def get_available_actions() -> list[InvestigationAction]:
             ),
             parameter_extractor=lambda sources: {
                 "query": sources.get("datadog", {}).get("default_query"),
-                "time_range_minutes": 60,
+                "time_range_minutes": sources.get("datadog", {}).get("time_range_minutes", 60),
                 "api_key": sources["datadog"].get("api_key"),
                 "app_key": sources["datadog"].get("app_key"),
                 "site": sources["datadog"].get("site", "datadoghq.com"),

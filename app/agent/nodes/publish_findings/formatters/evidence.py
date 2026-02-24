@@ -10,7 +10,12 @@ from app.agent.nodes.publish_findings.formatters.base import (
     format_text_block,
     shorten_text,
 )
-from app.agent.nodes.publish_findings.urls.aws import build_cloudwatch_url, build_lambda_console_url
+from app.agent.nodes.publish_findings.urls.aws import (
+    build_cloudwatch_url,
+    build_datadog_logs_url,
+    build_grafana_explore_url,
+    build_lambda_console_url,
+)
 
 # Evidence source labels for display
 EVIDENCE_SOURCE_LABELS = {
@@ -293,14 +298,15 @@ def _format_source_citations(
 def _format_tool_calls_line(ctx: ReportContext) -> str:
     """Summarize tool calls made during investigation from executed_hypotheses.
 
-    Returns a compact line like: "Queries: get_cloudwatch_logs (12 events), get_error_logs (5 logs)"
-    or empty string if nothing was executed.
+    Returns a compact line like: "Queries: cloudwatch logs (12 events), <Grafana Loki|url> (5 logs)"
+    Includes deep links for Grafana and Datadog where endpoints are available.
+    Returns empty string if nothing was executed.
     """
     executed_hypotheses = ctx.get("executed_hypotheses", []) or []
     if not executed_hypotheses:
         return ""
 
-    # Collect all action names across all hypothesis rounds
+    # Collect all action names across all hypothesis rounds (deduped, order preserved)
     all_actions: list[str] = []
     for hyp in executed_hypotheses:
         for action in hyp.get("actions", []):
@@ -311,57 +317,135 @@ def _format_tool_calls_line(ctx: ReportContext) -> str:
         return ""
 
     evidence = ctx.get("evidence", {}) or {}
+    grafana_endpoint = ctx.get("grafana_endpoint") or ""
+    datadog_site = ctx.get("datadog_site") or "datadoghq.com"
 
-    # Build human-readable counts per action
-    ACTION_COUNTS = {
-        "get_cloudwatch_logs": lambda e: (
-            f"{len(e.get('cloudwatch_logs', []))} events" if e.get("cloudwatch_logs") else None
+    def _grafana_logs_count(e: dict) -> str | None:
+        logs = e.get("grafana_logs", [])
+        errors = e.get("grafana_error_logs", [])
+        if not logs and not errors:
+            return None
+        parts = []
+        if logs:
+            parts.append(f"{len(logs)} logs")
+        if errors:
+            parts.append(f"{len(errors)} errors")
+        return ", ".join(parts)
+
+    def _datadog_logs_count(e: dict) -> str | None:
+        logs = e.get("datadog_logs", [])
+        errors = e.get("datadog_error_logs", [])
+        if not logs and not errors:
+            return None
+        parts = []
+        if logs:
+            parts.append(f"{len(logs)} logs")
+        if errors:
+            parts.append(f"{len(errors)} errors")
+        return ", ".join(parts)
+
+    # (label, count_fn, url_fn) — url_fn receives evidence and returns str|None
+    ACTION_DEFS: dict[str, tuple[str, Any, Any]] = {
+        "get_cloudwatch_logs": (
+            "cloudwatch logs",
+            lambda e: f"{len(e.get('cloudwatch_logs', []))} events" if e.get("cloudwatch_logs") else None,
+            None,
         ),
-        "get_error_logs": lambda e: (
-            f"{len(e.get('error_logs', []))} logs" if e.get("error_logs") else None
+        "get_error_logs": (
+            "error logs",
+            lambda e: f"{len(e.get('error_logs', []))} logs" if e.get("error_logs") else None,
+            None,
         ),
-        "get_failed_jobs": lambda e: (
-            f"{len(e.get('failed_jobs', []))} failed" if e.get("failed_jobs") else None
+        "get_failed_jobs": (
+            "batch jobs",
+            lambda e: f"{len(e.get('failed_jobs', []))} failed" if e.get("failed_jobs") else None,
+            None,
         ),
-        "get_failed_tools": lambda e: (
-            f"{len(e.get('failed_tools', []))} failed" if e.get("failed_tools") else None
+        "get_failed_tools": (
+            "tracer tools",
+            lambda e: f"{len(e.get('failed_tools', []))} failed" if e.get("failed_tools") else None,
+            None,
         ),
-        "get_lambda_invocation_logs": lambda e: (
-            f"{len(e.get('lambda_logs', []))} logs" if e.get("lambda_logs") else None
+        "get_lambda_invocation_logs": (
+            "lambda logs",
+            lambda e: f"{len(e.get('lambda_logs', []))} logs" if e.get("lambda_logs") else None,
+            None,
         ),
-        "get_lambda_errors": lambda e: (
-            f"{len(e.get('lambda_errors', []))} errors" if e.get("lambda_errors") else None
+        "get_lambda_errors": (
+            "lambda errors",
+            lambda e: f"{len(e.get('lambda_errors', []))} errors" if e.get("lambda_errors") else None,
+            None,
         ),
-        "inspect_s3_object": lambda e: "found" if (e.get("s3_object") or {}).get("found") else None,
-        "get_s3_object": lambda e: "retrieved" if (e.get("s3_audit_payload") or {}).get("found") else None,
-        "inspect_lambda_function": lambda e: "inspected" if e.get("lambda_function") else None,
-        "query_grafana_logs": lambda e: (
-            f"{len(e.get('grafana_logs', []))} logs" if e.get("grafana_logs") else None
+        "inspect_s3_object": (
+            "S3 object",
+            lambda e: "found" if (e.get("s3_object") or {}).get("found") else None,
+            None,
         ),
-        "query_grafana_traces": lambda e: (
-            f"{len(e.get('grafana_traces', []))} traces" if e.get("grafana_traces") else None
+        "get_s3_object": (
+            "S3 audit payload",
+            lambda e: "retrieved" if (e.get("s3_audit_payload") or {}).get("found") else None,
+            None,
         ),
-        "query_grafana_metrics": lambda e: (
-            f"{len(e.get('grafana_metrics', []))} metrics" if e.get("grafana_metrics") else None
+        "inspect_lambda_function": (
+            "lambda function",
+            lambda e: "inspected" if e.get("lambda_function") else None,
+            None,
         ),
-        "query_datadog_logs": lambda e: (
-            f"{len(e.get('datadog_logs', []))} logs" if e.get("datadog_logs") else None
+        "query_grafana_logs": (
+            "Grafana Loki",
+            _grafana_logs_count,
+            lambda e: build_grafana_explore_url(
+                grafana_endpoint,
+                e.get("grafana_logs_query", ""),
+            ) if grafana_endpoint and e.get("grafana_logs_query") else None,
         ),
-        "query_datadog_monitors": lambda e: (
-            f"{len(e.get('datadog_monitors', []))} monitors" if e.get("datadog_monitors") else None
+        "query_grafana_traces": (
+            "Grafana Tempo",
+            lambda e: f"{len(e.get('grafana_traces', []))} traces" if e.get("grafana_traces") else None,
+            lambda _: f"{grafana_endpoint.rstrip('/')}/explore" if grafana_endpoint else None,
+        ),
+        "query_grafana_metrics": (
+            "Grafana Mimir",
+            lambda e: f"{len(e.get('grafana_metrics', []))} metrics" if e.get("grafana_metrics") else None,
+            lambda _: f"{grafana_endpoint.rstrip('/')}/explore" if grafana_endpoint else None,
+        ),
+        "query_grafana_alert_rules": (
+            "Grafana alerts",
+            lambda e: f"{len(e.get('grafana_alert_rules', []))} rules" if e.get("grafana_alert_rules") else None,
+            lambda _: f"{grafana_endpoint.rstrip('/')}/alerting/list" if grafana_endpoint else None,
+        ),
+        "query_datadog_logs": (
+            "Datadog Logs",
+            _datadog_logs_count,
+            lambda e: build_datadog_logs_url(
+                e.get("datadog_logs_query", ""),
+                datadog_site,
+            ) if e.get("datadog_logs_query") else f"https://app.{datadog_site}/logs",
+        ),
+        "query_datadog_monitors": (
+            "Datadog Monitors",
+            lambda e: f"{len(e.get('datadog_monitors', []))} monitors" if e.get("datadog_monitors") else None,
+            lambda _: f"https://app.{datadog_site}/monitors/manage",
+        ),
+        "query_datadog_events": (
+            "Datadog Events",
+            lambda e: f"{len(e.get('datadog_events', []))} events" if e.get("datadog_events") else None,
+            lambda _: f"https://app.{datadog_site}/event/explorer",
         ),
     }
 
     parts: list[str] = []
     for action in all_actions:
-        count_fn = ACTION_COUNTS.get(action)
-        if count_fn:
+        defn = ACTION_DEFS.get(action)
+        if defn:
+            label, count_fn, url_fn = defn
             count_str = count_fn(evidence)
-            label = action.replace("get_", "").replace("query_", "").replace("inspect_", "").replace("_", " ")
+            url = url_fn(evidence) if url_fn else None
+            display = format_slack_link(label, url) if url else label
             if count_str:
-                parts.append(f"{label} ({count_str})")
+                parts.append(f"{display} ({count_str})")
             else:
-                parts.append(label)
+                parts.append(display)
         else:
             parts.append(action.replace("_", " "))
 
