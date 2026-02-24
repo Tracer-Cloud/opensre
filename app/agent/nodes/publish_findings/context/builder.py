@@ -4,7 +4,11 @@ import time
 from typing import Any
 
 from app.agent.nodes.publish_findings.context.models import ReportContext
-from app.agent.nodes.publish_findings.urls.aws import build_s3_console_url
+from app.agent.nodes.publish_findings.urls.aws import (
+    build_datadog_logs_url,
+    build_grafana_explore_url,
+    build_s3_console_url,
+)
 from app.agent.state import InvestigationState
 
 
@@ -107,6 +111,11 @@ def build_report_context(state: InvestigationState) -> ReportContext:
     batch = evidence.get("batch_jobs", {}) or {}
     s3 = evidence.get("s3", {}) or {}
 
+    # Extract integration endpoints for deep links
+    available_sources = state.get("available_sources", {}) or {}
+    grafana_endpoint: str | None = (available_sources.get("grafana") or {}).get("grafana_endpoint")
+    datadog_site: str | None = (available_sources.get("datadog") or {}).get("site") or "datadoghq.com"
+
     # Extract and filter claims
     validated_claims = _filter_valid_claims(state.get("validated_claims", []))
     non_validated_claims = state.get("non_validated_claims", [])
@@ -204,6 +213,51 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         }
         source_to_id["cloudwatch_logs"] = eid
 
+    # Grafana Loki logs catalog entry
+    grafana_logs = evidence.get("grafana_logs") or []
+    grafana_error_logs = evidence.get("grafana_error_logs") or []
+    grafana_query = evidence.get("grafana_logs_query") or ""
+    grafana_service = evidence.get("grafana_logs_service") or ""
+    if grafana_logs or grafana_error_logs:
+        grafana_url = build_grafana_explore_url(grafana_endpoint or "", grafana_query) if grafana_query else None
+        eid = "evidence/grafana/loki"
+        summary_parts = []
+        if grafana_service:
+            summary_parts.append(grafana_service)
+        if grafana_logs:
+            summary_parts.append(f"{len(grafana_logs)} logs")
+        if grafana_error_logs:
+            summary_parts.append(f"{len(grafana_error_logs)} errors")
+        evidence_catalog[eid] = {
+            "label": "Grafana Loki Logs",
+            "url": grafana_url,
+            "display_id": f"E{len(evidence_catalog) + 1}",
+            "summary": ", ".join(summary_parts) or None,
+            "snippet": _as_snippet(grafana_query) if grafana_query else None,
+        }
+        source_to_id["grafana_logs"] = eid
+
+    # Datadog logs catalog entry
+    datadog_logs = evidence.get("datadog_logs") or []
+    datadog_error_logs = evidence.get("datadog_error_logs") or []
+    datadog_query = evidence.get("datadog_logs_query") or ""
+    if datadog_logs or datadog_error_logs:
+        dd_url = build_datadog_logs_url(datadog_query, datadog_site or "datadoghq.com") if datadog_query else None
+        eid = "evidence/datadog/logs"
+        summary_parts = []
+        if datadog_logs:
+            summary_parts.append(f"{len(datadog_logs)} logs")
+        if datadog_error_logs:
+            summary_parts.append(f"{len(datadog_error_logs)} errors")
+        evidence_catalog[eid] = {
+            "label": "Datadog Logs",
+            "url": dd_url,
+            "display_id": f"E{len(evidence_catalog) + 1}",
+            "summary": ", ".join(summary_parts) or None,
+            "snippet": _as_snippet(datadog_query) if datadog_query else None,
+        }
+        source_to_id["datadog_logs"] = eid
+
     # Attach evidence_ids to claims (validated + non-validated) without mutating originals
     display_map = {eid: entry.get("display_id", eid) for eid, entry in evidence_catalog.items()}
 
@@ -211,6 +265,9 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         "cloudwatch": "cloudwatch_logs",
         "cloudwatch_log": "cloudwatch_logs",
         "cloudwatch_logs": "cloudwatch_logs",
+        "grafana": "grafana_logs",
+        "grafana_loki": "grafana_logs",
+        "datadog": "datadog_logs",
     }
 
     def _attach_ids(claims: list[dict]) -> list[dict]:
@@ -281,4 +338,7 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         "causal_chain": causal_chain,
         # Tool call history for investigation transparency
         "executed_hypotheses": state.get("executed_hypotheses", []),
+        # Integration endpoints for deep links
+        "grafana_endpoint": grafana_endpoint,
+        "datadog_site": datadog_site,
     }
