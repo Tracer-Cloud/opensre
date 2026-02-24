@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
@@ -59,55 +60,58 @@ def build_context_tracer_web(state: InvestigationState) -> ContextSourceResult:
 
 
 def _fetch_tracer_web_run_context(state: InvestigationState | None = None) -> dict:
-    """Fetch context (metadata) about a failed run from Tracer Web App."""
     pipeline_name = _extract_pipeline_hint(state)
-    context = fetch_failed_run(pipeline_name=pipeline_name)
-    return context
+    return fetch_failed_run(pipeline_name=pipeline_name)
 
 
 def build_investigation_context(state: InvestigationState) -> dict:
-    """
-    Build investigation context (metadata that could exist before incident).
-    """
+    """Build investigation context in parallel across all sources."""
     context: dict[str, Any] = {}
     errors: list[ContextSourceError] = []
     sources = resolve_context_sources(state)
     registry = get_context_registry()
 
-    for source_name in sources:
-        source = registry.get(source_name)
-        if not source:
-            errors.append(ContextSourceError(source=source_name, message="Unknown context source"))
-            continue
-        result = source.builder(state)
-        context[source.key] = result.data
-        if result.error:
-            errors.append(result.error)
+    valid_sources: list[ContextSource] = []
+    for name in sources:
+        source = registry.get(name)
+        if source:
+            valid_sources.append(source)
+        else:
+            errors.append(ContextSourceError(source=name, message="Unknown context source"))
+
+    if not valid_sources:
+        evidence = ContextEvidence(**context, context_errors=errors)
+        return evidence.to_state()
+
+    with ThreadPoolExecutor(max_workers=len(valid_sources)) as executor:
+        futures = {executor.submit(source.builder, state): source for source in valid_sources}
+        for future in as_completed(futures):
+            source = futures[future]
+            try:
+                result = future.result()
+            except Exception as exc:
+                result = ContextSourceResult(
+                    data={},
+                    error=ContextSourceError(source=source.name, message=str(exc)),
+                )
+            context[source.key] = result.data
+            if result.error:
+                errors.append(result.error)
 
     evidence = ContextEvidence(**context, context_errors=errors)
     return evidence.to_state()
 
 
 def resolve_context_sources(state: InvestigationState) -> list[str]:
-    """
-    Resolve context sources from state, environment, or registry.
-
-    Priority order:
-    1. plan_sources from state (explicit plan)
-    2. FRAME_PROBLEM_CONTEXT_SOURCES env var (configuration)
-    3. All available sources from registry (default - source-independent)
-    """
     plan_sources = state.get("plan_sources") or []
     if plan_sources:
-        return [str(source) for source in plan_sources]
+        return [str(s) for s in plan_sources]
 
     env_sources = os.getenv("FRAME_PROBLEM_CONTEXT_SOURCES")
     if env_sources:
-        return [source.strip() for source in env_sources.split(",") if source.strip()]
+        return [s.strip() for s in env_sources.split(",") if s.strip()]
 
-    # Default: use all available context sources from registry (source-independent)
-    registry = get_context_registry()
-    return list(registry.names())
+    return list(get_context_registry().names())
 
 
 def get_context_registry() -> ContextSourceRegistry:
@@ -116,21 +120,9 @@ def get_context_registry() -> ContextSourceRegistry:
 
     return ContextSourceRegistry(
         sources=(
-            ContextSource(
-                name="tracer_web",
-                key="tracer_web_run",
-                builder=build_context_tracer_web,
-            ),
-            ContextSource(
-                name="grafana",
-                key="grafana_pre_context",
-                builder=build_context_grafana,
-            ),
-            ContextSource(
-                name="datadog",
-                key="datadog_pre_context",
-                builder=build_context_datadog,
-            ),
+            ContextSource(name="tracer_web", key="tracer_web_run", builder=build_context_tracer_web),
+            ContextSource(name="grafana", key="grafana_pre_context", builder=build_context_grafana),
+            ContextSource(name="datadog", key="datadog_pre_context", builder=build_context_datadog),
         ),
     )
 
@@ -142,38 +134,22 @@ def _extract_pipeline_hint(state: InvestigationState | None) -> str | None:
     raw_alert = state.get("raw_alert")
     if isinstance(raw_alert, dict):
         for key in ("pipeline_name", "pipeline", "pipelineName"):
-            value = raw_alert.get(key)
-            if value:
+            if value := raw_alert.get(key):
                 return str(value)
-        labels = raw_alert.get("labels") if isinstance(raw_alert.get("labels"), dict) else None
-        if labels:
-            for key in ("pipeline_name", "table"):
-                value = labels.get(key)
-                if value:
-                    return str(value)
-        common_labels = (
-            raw_alert.get("commonLabels")
-            if isinstance(raw_alert.get("commonLabels"), dict)
-            else None
-        )
-        if common_labels:
-            for key in ("pipeline_name", "table"):
-                value = common_labels.get(key)
-                if value:
-                    return str(value)
+        for container_key in ("labels", "commonLabels"):
+            container = raw_alert.get(container_key)
+            if isinstance(container, dict):
+                for key in ("pipeline_name", "table"):
+                    if value := container.get(key):
+                        return str(value)
         alerts = raw_alert.get("alerts")
         if isinstance(alerts, list) and alerts:
-            first_alert = alerts[0]
-            if isinstance(first_alert, dict):
-                alert_labels = (
-                    first_alert.get("labels")
-                    if isinstance(first_alert.get("labels"), dict)
-                    else None
-                )
-                if alert_labels:
+            first = alerts[0]
+            if isinstance(first, dict):
+                alert_labels = first.get("labels")
+                if isinstance(alert_labels, dict):
                     for key in ("pipeline_name", "table"):
-                        value = alert_labels.get(key)
-                        if value:
+                        if value := alert_labels.get(key):
                             return str(value)
 
     pipeline_name = state.get("pipeline_name")
