@@ -4,9 +4,50 @@ Scans alert annotations and state context to detect available data sources
 (CloudWatch, S3, local files, Tracer Web, Grafana) and extract their parameters.
 """
 
+from datetime import UTC, datetime
 from typing import Any
 
 from app.agent.tools.tool_actions.grafana.grafana_actions import _map_pipeline_to_service_name
+
+
+def _alert_time_range_minutes(raw_alert: dict[str, Any]) -> int:
+    """Compute time_range_minutes to cover the alert window.
+
+    Extracts startsAt from the alert payload (Alertmanager/Grafana format),
+    calculates how many minutes ago the alert fired, and adds a 30-minute
+    buffer so the query window starts before the alert and ends now.
+
+    Falls back to 60 minutes if the timestamp is missing or unparseable.
+    """
+    starts_at: str | None = None
+
+    # Alertmanager webhook: alerts[0].startsAt
+    alerts = raw_alert.get("alerts", [])
+    if alerts and isinstance(alerts, list):
+        starts_at = alerts[0].get("startsAt")
+
+    # Top-level field (some adapters flatten it)
+    if not starts_at:
+        starts_at = raw_alert.get("startsAt") or raw_alert.get("timestamp")
+
+    # Annotations fallback
+    if not starts_at:
+        annotations = raw_alert.get("annotations") or raw_alert.get("commonAnnotations") or {}
+        starts_at = annotations.get("timestamp")
+
+    if not starts_at:
+        return 60
+
+    try:
+        alert_time = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+        # Zero-value sentinel from Alertmanager ("0001-01-01") — treat as no data
+        if alert_time.year < 2000:
+            return 60
+        minutes_ago = int((datetime.now(UTC) - alert_time).total_seconds() / 60)
+        # Window: from alert time - 5 min (pre-alert context) to now, minimum 60
+        return max(60, minutes_ago + 35)
+    except (ValueError, TypeError):
+        return 60
 
 
 def _match_service_name(pipeline_name: str, available_service_names: list[str]) -> str:
@@ -54,6 +95,9 @@ def detect_sources(
 
     if isinstance(raw_alert, str):
         raw_alert = {}
+
+    # Compute time window that covers the alert (used for Datadog/Grafana queries)
+    alert_time_range_minutes = _alert_time_range_minutes(raw_alert)
 
     # Extract annotations from multiple possible locations
     annotations: dict[str, Any] = {}
@@ -260,6 +304,7 @@ def detect_sources(
                 "grafana_endpoint": endpoint,
                 "grafana_api_key": api_key,
                 "available_service_names": available_service_names,
+                "time_range_minutes": alert_time_range_minutes,
             }
             if execution_run_id:
                 grafana_params["execution_run_id"] = execution_run_id
@@ -287,6 +332,7 @@ def detect_sources(
                 "pipeline_name": pipeline_name,
                 "default_query": default_query,
                 "monitor_query": f"tag:pipeline:{pipeline_name}" if pipeline_name else None,
+                "time_range_minutes": alert_time_range_minutes,
             }
 
             # Include pre-fetched monitor context from build_context

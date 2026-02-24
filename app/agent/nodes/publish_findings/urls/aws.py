@@ -125,3 +125,40 @@ def build_batch_console_url(job_queue: str, region: str = "us-east-1") -> str:
         f"https://{region}.console.aws.amazon.com/batch/home"
         f"?region={region}#queues/detail/{job_queue}"
     )
+
+
+def build_grafana_explore_url(
+    grafana_endpoint: str,
+    query: str,
+) -> str | None:
+    """Build Grafana Explore URL for a Loki log query.
+
+    Args:
+        grafana_endpoint: Base Grafana URL (e.g. https://myorg.grafana.net)
+        query: LogQL query string
+
+    Returns:
+        Grafana Explore URL or None if endpoint is missing
+    """
+    if not grafana_endpoint:
+        return None
+    base = grafana_endpoint.rstrip("/")
+    encoded_query = quote(query, safe="")
+    return f"{base}/explore?left=%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22expr%22%3A%22{encoded_query}%22%7D%5D%7D"
+
+
+def build_datadog_logs_url(
+    query: str,
+    site: str = "datadoghq.com",
+) -> str:
+    """Build Datadog Logs Explorer URL for a log search query.
+
+    Args:
+        query: Datadog log search query
+        site: Datadog site (e.g. datadoghq.com, datadoghq.eu)
+
+    Returns:
+        Datadog Logs Explorer URL
+    """
+    encoded_query = quote(query, safe="")
+    return f"https://app.{site}/logs?query={encoded_query}"
