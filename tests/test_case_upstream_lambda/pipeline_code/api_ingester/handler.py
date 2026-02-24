@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 
@@ -21,25 +22,15 @@ import requests
 s3_client = boto3.client("s3")
 PIPELINE_NAME = "upstream_downstream_pipeline_lambda_ingester"
 
-# Initialize telemetry lazily to avoid circular import with AwsLambdaInstrumentor
-_telemetry = None
-_tracer = None
+class _NoopSpan:
+    def set_attribute(self, *_args, **_kwargs) -> None:
+        return None
 
 
-def _get_telemetry():
-    global _telemetry, _tracer
-    if _telemetry is None:
-        from tracer_telemetry import init_telemetry
-
-        _telemetry = init_telemetry(
-            service_name="lambda-api-ingester",
-            resource_attributes={
-                "pipeline.name": PIPELINE_NAME,
-                "pipeline.framework": "lambda",
-            },
-        )
-        _tracer = _telemetry.tracer
-    return _telemetry, _tracer
+class _NoopTracer:
+    @contextmanager
+    def start_as_current_span(self, *_args, **_kwargs):
+        yield _NoopSpan()
 
 
 def fetch_from_external_api(
@@ -110,10 +101,9 @@ def lambda_handler(event: dict, context: Any) -> dict:
     Returns:
         dict with s3_key, bucket, and status
     """
-    telemetry, tracer = _get_telemetry()
+    tracer = _NoopTracer()
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)  # Ensure logger level is set
-    start_time = time.monotonic()
 
     # Handle API Gateway event format
     if "body" in event and isinstance(event.get("body"), str):
@@ -199,13 +189,6 @@ def lambda_handler(event: dict, context: Any) -> dict:
             "execution_run_id": execution_run_id,
             "error": str(e),
         }))
-        telemetry.record_run(
-            status="failure",
-            duration_seconds=time.monotonic() - start_time,
-            record_count=0,
-            failure_count=1,
-            attributes={"pipeline.name": PIPELINE_NAME},
-        )
         return {
             "statusCode": 500,
             "error": f"External API call failed: {str(e)}",
@@ -272,13 +255,6 @@ def lambda_handler(event: dict, context: Any) -> dict:
             "execution_run_id": execution_run_id,
             "error": str(e),
         }))
-        telemetry.record_run(
-            status="failure",
-            duration_seconds=time.monotonic() - start_time,
-            record_count=len(data),
-            failure_count=1,
-            attributes={"pipeline.name": PIPELINE_NAME},
-        )
         return {
             "statusCode": 500,
             "error": f"S3 write failed: {str(e)}",
@@ -295,16 +271,6 @@ def lambda_handler(event: dict, context: Any) -> dict:
         "schema_version": api_meta.get("schema_version"),
         "schema_change_injected": inject_schema_change,
     }
-
-    telemetry.record_run(
-        status="success",
-        duration_seconds=time.monotonic() - start_time,
-        record_count=len(data),
-        attributes={"pipeline.name": PIPELINE_NAME},
-    )
-
-    # Force flush telemetry before Lambda terminates
-    telemetry.flush()
 
     # Format for API Gateway if called via HTTP
     if "body" in event:

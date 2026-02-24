@@ -11,17 +11,16 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from opentelemetry import trace
+
 from tests.shared.tracer_ingest import emit_tool_event
 from tests.utils.command_runner import MAX_LINE, run_tool
-from tracer_telemetry import init_telemetry
 
 logger = logging.getLogger(__name__)
 
 PIPELINE_NAME = "demo_pipeline_s3_failed_python"
 
-# Initialize telemetry
-_telemetry = None
-_tracer = None
+_tracer = trace.get_tracer("s3-failed-pipeline")
 
 
 def _utc_now_iso() -> str:
@@ -261,18 +260,6 @@ def step5_transform_with_jq(execution_run_id: str, run_id: str, trace_id: str) -
 
 
 def main(log_file: str = "production.log", run_id: str | None = None, trace_id: str | None = None) -> dict:
-    global _telemetry, _tracer
-
-    # Initialize telemetry
-    _telemetry = init_telemetry(
-        service_name="s3-failed-pipeline",
-        resource_attributes={
-            "pipeline.name": PIPELINE_NAME,
-            "pipeline.type": "batch",
-        },
-    )
-    _tracer = _telemetry.tracer
-
     execution_run_id = run_id or str(uuid.uuid4())
     trace_identifier = trace_id or execution_run_id
 
@@ -325,9 +312,6 @@ def main(log_file: str = "production.log", run_id: str | None = None, trace_id: 
             step_name = result["step_name"]
             status_label = "FAILED" if result["exit_code"] != 0 else "SUCCESS"
             logger.info("  %s: %s exit_code=%s", step_name, status_label, result["exit_code"])
-
-    # Flush telemetry for short-lived process
-    _telemetry.flush()
 
     return {
         "pipeline_name": PIPELINE_NAME,

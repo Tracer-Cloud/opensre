@@ -2,8 +2,7 @@ FROM prefecthq/prefect:3-python3.11
 
 WORKDIR /app
 
-# Copy app and config (telemetry is deprecated)
-COPY tracer_telemetry /app/tracer_telemetry
+# Copy app and config
 COPY app/__init__.py /app/app/__init__.py
 COPY config /app/config
 

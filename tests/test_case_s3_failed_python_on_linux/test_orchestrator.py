@@ -47,12 +47,12 @@ def main() -> int:
 
     run_id, trace_id = _get_run_and_trace_ids()
 
-    # If we are in CI, fail hard if TRACER_RUN_ID is missing to avoid polluting data
+    # In CI, prefer TRACER_RUN_ID but degrade gracefully if it's missing.
     is_ci = (os.getenv("CI") or "").strip().lower() in {"1", "true", "yes"}
     if is_ci and not (os.getenv("TRACER_RUN_ID") or "").strip():
-        raise RuntimeError(
-            "CI is true but TRACER_RUN_ID is missing. "
-            "Make sure 'tracer init' ran and the workflow exported TRACER_RUN_ID."
+        print(
+            "WARNING: CI is true but TRACER_RUN_ID is missing. "
+            "Continuing with a fallback run id."
         )
 
     # Pipeline start
