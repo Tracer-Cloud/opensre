@@ -302,7 +302,9 @@ def build_report_context(state: InvestigationState) -> ReportContext:
     return {
         # Core RCA results
         "pipeline_name": state.get("pipeline_name", "unknown"),
+        "alert_name": state.get("alert_name"),
         "root_cause": state.get("root_cause", ""),
+        "root_cause_category": state.get("root_cause_category"),
         "validated_claims": validated_claims,
         "non_validated_claims": non_validated_claims,
         "validity_score": state.get("validity_score", 0.0),

@@ -185,6 +185,7 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
     root_cause_text = ctx.get("root_cause", "") or ""
     validated_claims = ctx.get("validated_claims", [])
 
+    # Prefer a non-speculative root_cause sentence
     if root_cause_text:
         sentence = _first_sentence(root_cause_text)
         if sentence and not _is_speculative(sentence):
@@ -200,6 +201,7 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
         " failure triggered ",
     )
 
+    # Try a validated claim with a causal connector
     for claim_data in validated_claims:
         claim = claim_data.get("claim", "") or ""
         lower = f" {claim.lower()} "
@@ -208,7 +210,81 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
             if sentence:
                 return _first_sentence(_remove_speculative_words(sentence))
 
+    # Fall back to the root_cause text even if speculative — better than "Not determined"
+    if root_cause_text:
+        sentence = _first_sentence(root_cause_text)
+        if sentence:
+            return sentence
+
+    # Last resort: use the first validated claim
+    if validated_claims:
+        claim = validated_claims[0].get("claim", "") or ""
+        sentence = _first_sentence(claim)
+        if sentence:
+            return sentence
+
     return ""
+
+
+def _compress_for_title(sentence: str) -> str:
+    """Extract a short, punchy title phrase from a root cause sentence.
+
+    Strips speculative openers and verbose preambles, then truncates
+    at a natural clause boundary to fit in ~60 chars.
+    """
+    # Remove leading speculative openers
+    s = re.sub(
+        r"^(?:most likely|likely|probably|possibly|it appears(?: that)?|this suggests(?: that)?)\s+",
+        "",
+        sentence,
+        flags=re.IGNORECASE,
+    ).strip()
+    # Remove verbose subject preambles like "the X was configured with Y that ..."
+    # Keep from the first strong verb clause: "schema validation failed", "missing field", etc.
+    # Try to find a more specific sub-clause after common connectors
+    for connector in (" because ", " due to ", ", but ", " where ", ", causing ", ": "):
+        idx = s.lower().find(connector)
+        if idx != -1:
+            candidate = s[idx + len(connector):].strip()
+            if len(candidate) >= 10:
+                s = candidate
+                break
+    # Take only up to the first comma or semicolon to keep it tight
+    for stop in (",", ";"):
+        idx = s.find(stop)
+        if idx > 15:  # ensure we have enough content before the stop
+            s = s[:idx].strip()
+            break
+    # Capitalize first letter
+    if s:
+        s = s[0].upper() + s[1:]
+    # Hard cap at 60 chars, breaking at a word boundary
+    if len(s) > 60:
+        s = s[:57].rsplit(" ", 1)[0].rstrip(" ,;") + "..."
+    return s
+
+
+def _build_report_title(
+    pipeline_name: str, alert_name: str | None, root_cause_sentence: str = ""
+) -> str:
+    """Build a descriptive report title.
+
+    Priority:
+    1. Compressed root cause phrase (most specific — the actual error)
+    2. Alert name (stripped of brackets/pipeline prefix)
+    3. "{pipeline_name} incident" (generic fallback)
+    """
+    if root_cause_sentence:
+        compressed = _compress_for_title(root_cause_sentence)
+        if compressed:
+            return f"{pipeline_name}: {compressed}"
+
+    if alert_name and alert_name.lower() not in ("unknown", "unknown alert", ""):
+        clean = re.sub(r"^\[.*?\]\s*", "", alert_name).strip()
+        if clean:
+            return f"{pipeline_name}: {clean}"
+
+    return f"{pipeline_name} incident"
 
 
 def _remove_speculative_words(text: str) -> str:
@@ -256,8 +332,11 @@ def format_slack_message(ctx: ReportContext) -> str:
     evidence = ctx.get("evidence", {})
 
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
+    alert_name = ctx.get("alert_name")
     alert_id = ctx.get("alert_id")
     duration_seconds = ctx.get("investigation_duration_seconds")
+    root_cause_sentence = _derive_root_cause_sentence(ctx)
+    report_title = _build_report_title(pipeline_name, alert_name, root_cause_sentence)
 
     conclusion_section = _sanitize_for_slack(_format_conclusion_section(ctx, evidence))
     lineage_section = _sanitize_for_slack(format_data_lineage_flow(ctx))
@@ -273,7 +352,7 @@ def format_slack_message(ctx: ReportContext) -> str:
         meta_lines.append(f"*Alert ID:* {alert_id}")
     meta_block = "\n" + "\n".join(meta_lines) if meta_lines else ""
 
-    return f"""[RCA] {pipeline_name} incident
+    return f"""[RCA] {report_title}
 {conclusion_section}
 {causal_chain_section}
 {lineage_section}
@@ -301,15 +380,18 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     non_validated_claims = ctx.get("non_validated_claims", [])
 
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
+    alert_name = ctx.get("alert_name")
     duration_seconds = ctx.get("investigation_duration_seconds")
     alert_id = ctx.get("alert_id")
+    root_cause_sentence = _derive_root_cause_sentence(ctx)
+    report_title = _build_report_title(pipeline_name, alert_name, root_cause_sentence)
 
     blocks: list[dict[str, Any]] = []
 
     # ── Header ──
     blocks.append({
         "type": "header",
-        "text": {"type": "plain_text", "text": f"\U0001f6a8 [RCA] {pipeline_name} incident"},
+        "text": {"type": "plain_text", "text": f"\U0001f6a8 [RCA] {report_title}"},
     })
 
     def _mrkdwn_section(text: str) -> dict[str, Any]:
