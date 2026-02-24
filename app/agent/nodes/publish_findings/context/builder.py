@@ -279,4 +279,6 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         "raw_alert": raw_alert,
         # Upstream causal chain
         "causal_chain": causal_chain,
+        # Tool call history for investigation transparency
+        "executed_hypotheses": state.get("executed_hypotheses", []),
     }

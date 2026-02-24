@@ -27,7 +27,6 @@ EVIDENCE_SOURCE_LABELS = {
     "aws_batch_jobs": "AWS Batch Jobs",
     "tracer_tools": "Tracer Tools",
     "host_metrics": "Host Metrics",
-    "evidence_analysis": "Evidence Summary",
 }
 
 
@@ -107,15 +106,6 @@ def sample_evidence_payload(source: str, evidence: dict) -> Any | None:
 
     if source == "vendor_audit":
         return evidence.get("vendor_audit_from_logs") or evidence.get("s3_audit_payload")
-
-    if source == "evidence_analysis":
-        return {
-            "failed_jobs": len(evidence.get("failed_jobs", [])),
-            "failed_tools": len(evidence.get("failed_tools", [])),
-            "error_logs": len(evidence.get("error_logs", [])),
-            "cloudwatch_logs": len(evidence.get("cloudwatch_logs", [])),
-            "host_metrics": bool(evidence.get("host_metrics", {}).get("data")),
-        }
 
     return None
 
@@ -243,10 +233,6 @@ def _collect_cited_sources(ctx: ReportContext, evidence: dict) -> list[str]:
     if evidence.get("host_metrics", {}).get("data") and "host_metrics" not in sources:
         sources.append("host_metrics")
 
-    # Fallback to generic evidence summary
-    if not sources:
-        sources.append("evidence_analysis")
-
     return sources
 
 
@@ -304,27 +290,103 @@ def _format_source_citations(
     return source_citations
 
 
+def _format_tool_calls_line(ctx: ReportContext) -> str:
+    """Summarize tool calls made during investigation from executed_hypotheses.
+
+    Returns a compact line like: "Queries: get_cloudwatch_logs (12 events), get_error_logs (5 logs)"
+    or empty string if nothing was executed.
+    """
+    executed_hypotheses = ctx.get("executed_hypotheses", []) or []
+    if not executed_hypotheses:
+        return ""
+
+    # Collect all action names across all hypothesis rounds
+    all_actions: list[str] = []
+    for hyp in executed_hypotheses:
+        for action in hyp.get("actions", []):
+            if action not in all_actions:
+                all_actions.append(action)
+
+    if not all_actions:
+        return ""
+
+    evidence = ctx.get("evidence", {}) or {}
+
+    # Build human-readable counts per action
+    ACTION_COUNTS = {
+        "get_cloudwatch_logs": lambda e: (
+            f"{len(e.get('cloudwatch_logs', []))} events" if e.get("cloudwatch_logs") else None
+        ),
+        "get_error_logs": lambda e: (
+            f"{len(e.get('error_logs', []))} logs" if e.get("error_logs") else None
+        ),
+        "get_failed_jobs": lambda e: (
+            f"{len(e.get('failed_jobs', []))} failed" if e.get("failed_jobs") else None
+        ),
+        "get_failed_tools": lambda e: (
+            f"{len(e.get('failed_tools', []))} failed" if e.get("failed_tools") else None
+        ),
+        "get_lambda_invocation_logs": lambda e: (
+            f"{len(e.get('lambda_logs', []))} logs" if e.get("lambda_logs") else None
+        ),
+        "get_lambda_errors": lambda e: (
+            f"{len(e.get('lambda_errors', []))} errors" if e.get("lambda_errors") else None
+        ),
+        "inspect_s3_object": lambda e: "found" if (e.get("s3_object") or {}).get("found") else None,
+        "get_s3_object": lambda e: "retrieved" if (e.get("s3_audit_payload") or {}).get("found") else None,
+        "inspect_lambda_function": lambda e: "inspected" if e.get("lambda_function") else None,
+        "query_grafana_logs": lambda e: (
+            f"{len(e.get('grafana_logs', []))} logs" if e.get("grafana_logs") else None
+        ),
+        "query_grafana_traces": lambda e: (
+            f"{len(e.get('grafana_traces', []))} traces" if e.get("grafana_traces") else None
+        ),
+        "query_grafana_metrics": lambda e: (
+            f"{len(e.get('grafana_metrics', []))} metrics" if e.get("grafana_metrics") else None
+        ),
+        "query_datadog_logs": lambda e: (
+            f"{len(e.get('datadog_logs', []))} logs" if e.get("datadog_logs") else None
+        ),
+        "query_datadog_monitors": lambda e: (
+            f"{len(e.get('datadog_monitors', []))} monitors" if e.get("datadog_monitors") else None
+        ),
+    }
+
+    parts: list[str] = []
+    for action in all_actions:
+        count_fn = ACTION_COUNTS.get(action)
+        if count_fn:
+            count_str = count_fn(evidence)
+            label = action.replace("get_", "").replace("query_", "").replace("inspect_", "").replace("_", " ")
+            if count_str:
+                parts.append(f"{label} ({count_str})")
+            else:
+                parts.append(label)
+        else:
+            parts.append(action.replace("_", " "))
+
+    return "Queries: " + ", ".join(parts)
+
+
 def format_cited_evidence_section(ctx: ReportContext) -> str:
     """Format the cited evidence section of the report.
 
-    Shows evidence sources used to support validated claims, with sample data
-    and console URLs where applicable.
+    Shows only sources with actual data — linked where possible — plus a
+    compact summary of tool calls made during investigation.
 
     Args:
         ctx: Report context containing claims and evidence
 
     Returns:
-        Formatted evidence section with citations
+        Formatted evidence section with citations, or empty string if nothing to show.
     """
     evidence = ctx.get("evidence", {})
     catalog = ctx.get("evidence_catalog") or {}
-    citations: list[str] = []
+    lines: list[str] = []
 
     if catalog:
-        catalog_lines: list[str] = []
         def _sort_key(eid: str) -> str:
-            display = catalog[eid].get("display_id", eid)
-            return str(display)
+            return str(catalog[eid].get("display_id", eid))
 
         for evidence_id in sorted(catalog.keys(), key=_sort_key):
             entry = catalog[evidence_id] or {}
@@ -333,50 +395,26 @@ def format_cited_evidence_section(ctx: ReportContext) -> str:
             url = entry.get("url")
             summary = entry.get("summary")
             snippet = entry.get("snippet")
-            if url:
-                link = format_slack_link(label, url)
-            else:
-                link = label
-            line = f"- {display_id} — {link} — {evidence_id}"
-            details = []
+            link = format_slack_link(label, url) if url else label
+            line = f"- {display_id} — {link}"
             if summary:
-                details.append(summary)
+                line += f" — {summary}"
             if snippet:
-                details.append(f"snippet: {snippet}")
-            if details:
-                line = f"{line} — " + "; ".join(details)
-            catalog_lines.append(line)
+                line += f" — {shorten_text(snippet, max_chars=100)}"
+            lines.append(line)
 
-        if catalog_lines:
-            return "\n*Cited Evidence:*\n" + "\n".join(catalog_lines) + "\n"
-
-    # Format per-claim citations
-    claim_lines: list[str] = []
-    for idx, claim_data in enumerate(ctx.get("validated_claims", []), 1):
-        claim = claim_data.get("claim", "").strip()
-        if not claim:
-            continue
-
-        sources = claim_data.get("evidence_sources", [])
-        claim_citations = _format_source_citations(sources, evidence, ctx, indent_prefix="  ")
-
-        if not claim_citations:
-            continue
-
-        claim_block = [f'{idx}. Claim: "{shorten_text(claim, max_chars=120)}"']
-        claim_block.extend(claim_citations)
-        claim_lines.append("\n".join(claim_block))
-
-    if claim_lines:
-        citations.append("")
-        citations.append("\n\n".join(claim_lines))
     else:
-        # Fallback: show all available evidence sources
+        # Only show sources that have actual data
         sources = _collect_cited_sources(ctx, evidence)
-        fallback_citations = _format_source_citations(sources, evidence, ctx)
-        citations.extend(fallback_citations)
+        source_lines = _format_source_citations(sources, evidence, ctx)
+        lines.extend(source_lines)
 
-    if not citations:
+    # Append tool calls summary line
+    tool_calls_line = _format_tool_calls_line(ctx)
+    if tool_calls_line:
+        lines.append(f"- {tool_calls_line}")
+
+    if not lines:
         return ""
 
-    return "\n*Cited Evidence:*\n" + "\n".join(citations) + "\n"
+    return "\n*Cited Evidence:*\n" + "\n".join(lines) + "\n"

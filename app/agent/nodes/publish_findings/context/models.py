@@ -53,3 +53,6 @@ class ReportContext(TypedDict, total=False):
 
     # Upstream causal chain (from dependency context source)
     causal_chain: dict | None  # dependency_context dict, or None when absent
+
+    # Tool call history for investigation transparency
+    executed_hypotheses: list[dict]
