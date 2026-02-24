@@ -185,6 +185,7 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
     root_cause_text = ctx.get("root_cause", "") or ""
     validated_claims = ctx.get("validated_claims", [])
 
+    # Prefer a non-speculative root_cause sentence
     if root_cause_text:
         sentence = _first_sentence(root_cause_text)
         if sentence and not _is_speculative(sentence):
@@ -200,6 +201,7 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
         " failure triggered ",
     )
 
+    # Try a validated claim with a causal connector
     for claim_data in validated_claims:
         claim = claim_data.get("claim", "") or ""
         lower = f" {claim.lower()} "
@@ -208,7 +210,47 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
             if sentence:
                 return _first_sentence(_remove_speculative_words(sentence))
 
+    # Fall back to the root_cause text even if speculative — better than "Not determined"
+    if root_cause_text:
+        sentence = _first_sentence(root_cause_text)
+        if sentence:
+            return sentence
+
+    # Last resort: use the first validated claim
+    if validated_claims:
+        claim = validated_claims[0].get("claim", "") or ""
+        sentence = _first_sentence(claim)
+        if sentence:
+            return sentence
+
     return ""
+
+
+def _build_report_title(
+    pipeline_name: str, alert_name: str | None, root_cause_sentence: str = ""
+) -> str:
+    """Build a descriptive report title.
+
+    Priority:
+    1. Derived from root cause sentence (most specific — the actual error)
+    2. Alert name (stripped of brackets/pipeline prefix)
+    3. "{pipeline_name} incident" (generic fallback)
+    """
+    if root_cause_sentence:
+        # Strip leading speculative words to make it punchy
+        clean = re.sub(r"^(?:most likely|likely|probably|possibly)\s+", "", root_cause_sentence, flags=re.IGNORECASE).strip()
+        # Truncate to ~80 chars at a word boundary
+        if len(clean) > 80:
+            clean = clean[:77].rsplit(" ", 1)[0] + "..."
+        if clean:
+            return f"{pipeline_name}: {clean}"
+
+    if alert_name and alert_name.lower() not in ("unknown", "unknown alert", ""):
+        clean = re.sub(r"^\[.*?\]\s*", "", alert_name).strip()
+        if clean:
+            return f"{pipeline_name}: {clean}"
+
+    return f"{pipeline_name} incident"
 
 
 def _remove_speculative_words(text: str) -> str:
@@ -256,8 +298,11 @@ def format_slack_message(ctx: ReportContext) -> str:
     evidence = ctx.get("evidence", {})
 
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
+    alert_name = ctx.get("alert_name")
     alert_id = ctx.get("alert_id")
     duration_seconds = ctx.get("investigation_duration_seconds")
+    root_cause_sentence = _derive_root_cause_sentence(ctx)
+    report_title = _build_report_title(pipeline_name, alert_name, root_cause_sentence)
 
     conclusion_section = _sanitize_for_slack(_format_conclusion_section(ctx, evidence))
     lineage_section = _sanitize_for_slack(format_data_lineage_flow(ctx))
@@ -273,7 +318,7 @@ def format_slack_message(ctx: ReportContext) -> str:
         meta_lines.append(f"*Alert ID:* {alert_id}")
     meta_block = "\n" + "\n".join(meta_lines) if meta_lines else ""
 
-    return f"""[RCA] {pipeline_name} incident
+    return f"""[RCA] {report_title}
 {conclusion_section}
 {causal_chain_section}
 {lineage_section}
@@ -301,15 +346,18 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     non_validated_claims = ctx.get("non_validated_claims", [])
 
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
+    alert_name = ctx.get("alert_name")
     duration_seconds = ctx.get("investigation_duration_seconds")
     alert_id = ctx.get("alert_id")
+    root_cause_sentence = _derive_root_cause_sentence(ctx)
+    report_title = _build_report_title(pipeline_name, alert_name, root_cause_sentence)
 
     blocks: list[dict[str, Any]] = []
 
     # ── Header ──
     blocks.append({
         "type": "header",
-        "text": {"type": "plain_text", "text": f"\U0001f6a8 [RCA] {pipeline_name} incident"},
+        "text": {"type": "plain_text", "text": f"\U0001f6a8 [RCA] {report_title}"},
     })
 
     def _mrkdwn_section(text: str) -> dict[str, Any]:
