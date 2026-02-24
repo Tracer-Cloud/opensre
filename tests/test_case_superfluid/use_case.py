@@ -8,9 +8,10 @@ No orchestration, no alert creation, no investigation logic.
 import os
 import uuid
 
+from opentelemetry import trace
+
 from app.agent.nodes.build_context.utils import call_safe
 from app.agent.tools.tool_actions.tracer.tracer_runs import fetch_failed_run
-from tracer_telemetry import init_telemetry
 
 _run_context = {
     "pipeline_name": None,
@@ -21,9 +22,7 @@ _run_context = {
     "found": False,
 }
 
-# Initialize telemetry
-_telemetry = None
-_tracer = None
+_tracer = trace.get_tracer("superfluid-pipeline")
 
 
 def _fetch_failed_run_with_timeout() -> dict:
@@ -59,18 +58,6 @@ def main() -> dict:
         - pipelines_checked: int
         - execution_run_id: str
     """
-    global _telemetry, _tracer
-
-    # Initialize telemetry
-    _telemetry = init_telemetry(
-        service_name="superfluid-pipeline",
-        resource_attributes={
-            "pipeline.name": "superfluid_fetch_runs",
-            "pipeline.type": "api",
-        },
-    )
-    _tracer = _telemetry.tracer
-
     execution_run_id = str(uuid.uuid4())
 
     with _tracer.start_as_current_span("fetch_tracer_runs") as root_span:
@@ -96,9 +83,6 @@ def main() -> dict:
             root_span.set_attribute("found_run", web_run.get("run_name", ""))
 
         root_span.set_attribute("status", "success" if web_run.get("found") else "no_runs_found")
-
-    # Flush telemetry for short-lived process
-    _telemetry.flush()
 
     web_run["execution_run_id"] = execution_run_id
     return web_run

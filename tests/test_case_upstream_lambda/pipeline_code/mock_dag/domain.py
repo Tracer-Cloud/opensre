@@ -1,15 +1,21 @@
-from opentelemetry import trace
+from contextlib import contextmanager
 
 from .errors import DomainError
 from .schemas import InputRecord, ProcessedRecord
 
-try:
-    from tracer_telemetry import get_tracer
-except ImportError:  # pragma: no cover - fallback for local tooling
-    def get_tracer(name: str | None = None) -> trace.Tracer:
-        return trace.get_tracer(name or __name__)
 
-tracer = get_tracer(__name__)
+class _NoopSpan:
+    def set_attribute(self, *_args, **_kwargs) -> None:
+        return None
+
+
+class _NoopTracer:
+    @contextmanager
+    def start_as_current_span(self, *_args, **_kwargs):
+        yield _NoopSpan()
+
+
+tracer = _NoopTracer()
 
 
 def validate_data(raw_records: list[dict], required_fields: list[str]) -> None:

@@ -9,7 +9,7 @@ import os
 import sys
 import uuid
 
-from tracer_telemetry import init_telemetry
+from opentelemetry import trace
 
 _pipeline_context = {
     "pipeline_name": "demo_pipeline_cloudwatch",
@@ -17,8 +17,7 @@ _pipeline_context = {
 }
 
 # Initialize telemetry
-_telemetry = None
-_tracer = None
+_tracer = trace.get_tracer("cloudwatch-demo")
 
 
 def extract_and_validate(input_path: str, execution_run_id: str) -> str:
@@ -61,18 +60,6 @@ def write_output(transformed_data: list[dict], output_path: str, execution_run_i
 
 
 def main() -> dict:
-    global _telemetry, _tracer
-
-    # Initialize telemetry
-    _telemetry = init_telemetry(
-        service_name="cloudwatch-demo",
-        resource_attributes={
-            "pipeline.name": "demo_pipeline_cloudwatch",
-            "pipeline.type": "batch",
-        },
-    )
-    _tracer = _telemetry.tracer
-
     _pipeline_context["initialized"] = True
     execution_run_id = str(uuid.uuid4())
 
@@ -89,9 +76,6 @@ def main() -> dict:
 
         root_span.set_attribute("rows_processed", rows)
         root_span.set_attribute("status", "success")
-
-    # Flush telemetry for short-lived process
-    _telemetry.flush()
 
     return {
         "pipeline_name": _pipeline_context["pipeline_name"],
