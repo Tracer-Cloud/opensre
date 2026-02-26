@@ -24,7 +24,6 @@ class ClerkConfig:
     issuer: str
 
 
-# Clerk configuration constants (public URLs, not secrets)
 CLERK_CONFIG_DEV = ClerkConfig(
     jwks_url="https://superb-jackal-75.clerk.accounts.dev/.well-known/jwks.json",
     issuer="https://superb-jackal-75.clerk.accounts.dev",
