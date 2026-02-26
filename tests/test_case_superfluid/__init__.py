@@ -1,1 +1,0 @@
-"""Superfluid pipeline test case."""
