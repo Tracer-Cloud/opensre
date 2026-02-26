@@ -8,7 +8,6 @@ from typing import Any, cast
 from langchain_core.runnables import RunnableConfig
 
 from app.agent.nodes import (
-    node_build_context,
     node_diagnose_root_cause,
     node_extract_alert,
     node_plan_actions,
@@ -53,7 +52,6 @@ def _run_investigation_pipeline(state: AgentState) -> AgentState:
         return state
 
     _merge_state(state, node_resolve_integrations(state))
-    _merge_state(state, node_build_context(state))
 
     while True:
         _merge_state(state, node_plan_actions(state))
