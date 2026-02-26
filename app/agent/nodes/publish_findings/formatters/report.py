@@ -1,6 +1,5 @@
 """Main report formatting and assembly for Slack messages."""
 
-import os
 import re
 
 from app.agent.nodes.publish_findings.context.models import ReportContext
@@ -14,16 +13,13 @@ from app.agent.nodes.publish_findings.formatters.infrastructure import (
 )
 from app.agent.nodes.publish_findings.formatters.lineage import format_data_lineage_flow
 from app.agent.nodes.publish_findings.urls.aws import build_cloudwatch_url
-from app.agent.utils.auth import extract_org_slug_from_jwt
 from app.config import get_tracer_base_url
 
 
-def get_investigation_url() -> str:
-    """Build investigation URL from JWT org_slug and base URL."""
-    jwt = os.getenv("JWT_TOKEN")
-    slug = extract_org_slug_from_jwt(jwt) if jwt else None
+def get_investigation_url(org_slug: str | None = None) -> str:
+    """Build investigation URL using the organization slug from state."""
     base = get_tracer_base_url()
-    return f"{base}/{slug}/investigations" if slug else f"{base}/investigations"
+    return f"{base}/{org_slug}/investigations" if org_slug else f"{base}/investigations"
 
 
 def render_cloudwatch_link(ctx: ReportContext) -> str:
