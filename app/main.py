@@ -7,9 +7,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from config.grafana_config import load_env
+from dotenv import load_dotenv
 
-load_env()
+load_dotenv(override=False)
 
 from langsmith import traceable  # noqa: E402
 
