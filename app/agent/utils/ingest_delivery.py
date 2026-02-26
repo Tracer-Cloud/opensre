@@ -89,7 +89,7 @@ def send_ingest(state: InvestigationState) -> None:
         logger.debug("[ingest] Missing thread_id; skipping ingest.")
         return
 
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer dev-test-token"}
 
     try:
         response = httpx.post(api_url, json=payload, headers=headers, timeout=10.0)
