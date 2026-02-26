@@ -1,11 +1,9 @@
 """Main report formatting and assembly for Slack messages."""
 
-import os
 import re
 
 from app.agent.nodes.publish_findings.context.models import ReportContext
 from app.agent.nodes.publish_findings.formatters.base import format_slack_link
-from app.agent.nodes.publish_findings.formatters.causal_chain import format_causal_chain_section
 from app.agent.nodes.publish_findings.formatters.evidence import (
     format_cited_evidence_section,
     format_evidence_for_claim,
@@ -15,16 +13,13 @@ from app.agent.nodes.publish_findings.formatters.infrastructure import (
 )
 from app.agent.nodes.publish_findings.formatters.lineage import format_data_lineage_flow
 from app.agent.nodes.publish_findings.urls.aws import build_cloudwatch_url
-from app.agent.utils.auth import extract_org_slug_from_jwt
 from app.config import get_tracer_base_url
 
 
-def get_investigation_url() -> str:
-    """Build investigation URL from JWT org_slug and base URL."""
-    jwt = os.getenv("JWT_TOKEN")
-    slug = extract_org_slug_from_jwt(jwt) if jwt else None
+def get_investigation_url(org_slug: str | None = None) -> str:
+    """Build investigation URL using the organization slug from state."""
     base = get_tracer_base_url()
-    return f"{base}/{slug}/investigations" if slug else f"{base}/investigations"
+    return f"{base}/{org_slug}/investigations" if org_slug else f"{base}/investigations"
 
 
 def render_cloudwatch_link(ctx: ReportContext) -> str:
@@ -343,8 +338,6 @@ def format_slack_message(ctx: ReportContext) -> str:
     infrastructure_section = _sanitize_for_slack(format_infrastructure_correlation(ctx))
     cited_evidence_section = _sanitize_for_slack(format_cited_evidence_section(ctx))
     cloudwatch_link = render_cloudwatch_link(ctx)
-    causal_chain_section = _sanitize_for_slack(format_causal_chain_section(ctx.get("causal_chain")))
-
     meta_lines = []
     if duration_seconds is not None:
         meta_lines.append(f"Timing: {duration_seconds}s")
@@ -354,7 +347,6 @@ def format_slack_message(ctx: ReportContext) -> str:
 
     return f"""[RCA] {report_title}
 {conclusion_section}
-{causal_chain_section}
 {lineage_section}
 {infrastructure_section}
 {cited_evidence_section}

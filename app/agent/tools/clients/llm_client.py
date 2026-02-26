@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -86,12 +87,29 @@ class LLMClient:
         if self._temperature is not None:
             kwargs["temperature"] = self._temperature
 
-        try:
-            response = self._client.messages.create(**kwargs)
-        except AuthenticationError as err:
-            raise RuntimeError(
-                "Anthropic authentication failed. Check ANTHROPIC_API_KEY in your environment or .env."
-            ) from err
+        backoff_seconds = 1.0
+        max_attempts = 3
+        last_err: Exception | None = None
+        for attempt in range(max_attempts):
+            try:
+                response = self._client.messages.create(**kwargs)
+                break
+            except AuthenticationError as err:
+                raise RuntimeError(
+                    "Anthropic authentication failed. Check ANTHROPIC_API_KEY in your environment or .env."
+                ) from err
+            except Exception as err:
+                last_err = err
+                if attempt == max_attempts - 1:
+                    raise RuntimeError(
+                        "Anthropic API is overloaded (HTTP 529) after multiple retries. "
+                        "Try again in a few seconds."
+                    ) from err
+                time.sleep(backoff_seconds)
+                backoff_seconds *= 2
+        else:
+            raise RuntimeError("LLM invocation failed without a concrete error") from last_err
+
         content = _extract_text(response)
         return LLMResponse(content=content)
 

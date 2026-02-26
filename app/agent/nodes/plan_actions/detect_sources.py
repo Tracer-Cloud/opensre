@@ -50,23 +50,6 @@ def _alert_time_range_minutes(raw_alert: dict[str, Any]) -> int:
         return 60
 
 
-def _match_service_name(pipeline_name: str, available_service_names: list[str]) -> str:
-    """Return the best matching service name from the pre-fetched Loki label values.
-
-    Normalizes separators for comparison so "my_pipeline" matches "my-pipeline".
-    Falls back to the first available name if no match is found.
-    """
-    if not available_service_names:
-        return pipeline_name
-
-    normalized = pipeline_name.lower().replace("_", "-").replace(" ", "-")
-    for name in available_service_names:
-        candidate = name.lower().replace("_", "-").replace(" ", "-")
-        if normalized and (normalized in candidate or candidate in normalized):
-            return name
-
-    return available_service_names[0]
-
 
 def detect_sources(
     raw_alert: dict[str, Any] | str,
@@ -95,6 +78,9 @@ def detect_sources(
 
     if isinstance(raw_alert, str):
         raw_alert = {}
+
+    # Determine alert origin platform to avoid querying irrelevant integrations
+    alert_source = raw_alert.get("alert_source", "").lower() if isinstance(raw_alert, dict) else ""
 
     # Compute time window that covers the alert (used for Datadog/Grafana queries)
     alert_time_range_minutes = _alert_time_range_minutes(raw_alert)
@@ -283,7 +269,8 @@ def detect_sources(
         or annotations.get("correlation_id")
     )
 
-    if resolved_integrations and resolved_integrations.get("grafana"):
+    # Only include Grafana when alert came from Grafana, or when source is unknown
+    if resolved_integrations and resolved_integrations.get("grafana") and alert_source in ("grafana", ""):
         grafana_int = resolved_integrations["grafana"]
         endpoint = grafana_int.get("endpoint", "")
         api_key = grafana_int.get("api_key", "")
@@ -291,27 +278,20 @@ def detect_sources(
         if endpoint and api_key:
             service_name = _map_pipeline_to_service_name(pipeline_name) if pipeline_name else ""
 
-            # Use pre-fetched service names from build_context to find the real service name
-            pre_context = context.get("grafana_pre_context", {})
-            available_service_names: list[str] = pre_context.get("service_names", [])
-            if available_service_names:
-                service_name = _match_service_name(service_name, available_service_names)
-
             grafana_params: dict[str, Any] = {
                 "service_name": service_name,
                 "pipeline_name": pipeline_name,
                 "connection_verified": True,
                 "grafana_endpoint": endpoint,
                 "grafana_api_key": api_key,
-                "available_service_names": available_service_names,
                 "time_range_minutes": alert_time_range_minutes,
             }
             if execution_run_id:
                 grafana_params["execution_run_id"] = execution_run_id
             sources["grafana"] = grafana_params
 
-    # Detect Datadog sources from resolved_integrations
-    if resolved_integrations and resolved_integrations.get("datadog"):
+    # Only include Datadog when alert came from Datadog, or when source is unknown
+    if resolved_integrations and resolved_integrations.get("datadog") and alert_source in ("datadog", ""):
         dd_int = resolved_integrations["datadog"]
         dd_api_key = dd_int.get("api_key", "")
         dd_app_key = dd_int.get("app_key", "")
@@ -335,12 +315,6 @@ def detect_sources(
                 "time_range_minutes": alert_time_range_minutes,
             }
 
-            # Include pre-fetched monitor context from build_context
-            dd_pre_context = context.get("datadog_pre_context", {})
-            if dd_pre_context.get("monitors"):
-                dd_params["pre_fetched_monitors"] = dd_pre_context["monitors"]
-                dd_params["pre_fetched_monitors_total"] = dd_pre_context.get("total", 0)
-
             kube_job = annotations.get("kube_job", "") or annotations.get("kube_job_name", "")
             kube_deployment = annotations.get("kube_deployment", "")
             if kube_namespace or kube_job:
@@ -355,22 +329,5 @@ def detect_sources(
                 }
 
             sources["datadog"] = dd_params
-
-    # Surface upstream pipeline failure from dependency_context (built by build_context)
-    dep_ctx = context.get("dependency_context", {})
-    if isinstance(dep_ctx, dict) and dep_ctx.get("causal_chain_detected"):
-        upstream_pipelines = dep_ctx.get("upstream_pipelines", [])
-        hint_parts = [
-            f"{p['name']} failed {p.get('minutes_ago', '?')}min ago on shared asset {p.get('shared_asset', 'unknown')}"
-            for p in upstream_pipelines
-            if p.get("status") in ("failed", "error", "Failed", "Error")
-        ]
-        if hint_parts:
-            sources["upstream_context"] = {
-                "causal_chain_detected": True,
-                "upstream_failure_hint": "; ".join(hint_parts),
-                "upstream_pipelines": upstream_pipelines,
-                "causal_chain_confidence": dep_ctx.get("causal_chain_confidence", 0.85),
-            }
 
     return sources
