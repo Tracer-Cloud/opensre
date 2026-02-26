@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from config.grafana_config import load_env
+from tests.grafana_config import load_env
 
 # Environment loading
 _PROJECT_ROOT = Path(__file__).parent.parent
