@@ -25,7 +25,7 @@ from pathlib import Path
 
 project_root = Path(__file__).resolve().parents[3]
 
-from config.grafana_config import load_env
+from tests.grafana_config import load_env
 from tests.shared.infrastructure_sdk import save_outputs
 from tests.shared.infrastructure_sdk.resources import (
     api_gateway,
