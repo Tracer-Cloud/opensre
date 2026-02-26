@@ -27,6 +27,7 @@ Extract these fields from the message text:
 - alert_name: The name of the alert (e.g. "Pipeline Error in Logs")
 - pipeline_name: The affected pipeline/table/service name
 - severity: critical/high/warning/info
+- alert_source: Which platform fired this alert. Set to "grafana" if the URL/text mentions grafana.net, Grafana alerting, or grafana_folder. Set to "datadog" if it mentions datadoghq.com or Datadog monitors. Set to "cloudwatch" if it mentions AWS CloudWatch alarms. Leave null if unknown.
 - kube_namespace: Kubernetes namespace if mentioned (e.g. "tracer-test" from "kube_namespace:tracer-test")
 - cloudwatch_log_group: AWS CloudWatch log group if mentioned (e.g. "/aws/ecs/my-service")
 - error_message: The actual error line from the alert (e.g. "PIPELINE_ERROR: Schema validation failed: Missing fields ['customer_id']")

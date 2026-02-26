@@ -182,8 +182,8 @@ def get_failure_details_from_logs(trigger_data: dict, run_id: str, trace_id: str
         }
 
 
-def test_agent_investigation(failure_data: dict, run_id: str, trace_id: str) -> bool:
-    """Test agent can investigate the Prefect pipeline failure."""
+def _run_agent_investigation(failure_data: dict, run_id: str, trace_id: str) -> bool:
+    """Run agent investigation of the Prefect pipeline failure."""
     print("\n" + "=" * 60)
     print("Running Agent Investigation")
     print("=" * 60)
@@ -369,7 +369,7 @@ def main():
     failure_data = get_failure_details_from_logs(trigger_data, run_id, trace_id)
 
     # Run agent investigation
-    success = test_agent_investigation(failure_data, run_id, trace_id)
+    success = _run_agent_investigation(failure_data, run_id, trace_id)
 
     print("\n" + "=" * 60)
     if success:

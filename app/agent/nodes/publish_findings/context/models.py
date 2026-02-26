@@ -53,9 +53,6 @@ class ReportContext(TypedDict, total=False):
     evidence: dict  # Raw evidence data for citation
     raw_alert: dict  # Raw alert for infrastructure extraction
 
-    # Upstream causal chain (from dependency context source)
-    causal_chain: dict | None  # dependency_context dict, or None when absent
-
     # Tool call history for investigation transparency
     executed_hypotheses: list[dict]
 
