@@ -4,6 +4,8 @@ from typing import Any, cast
 
 import httpx
 
+from app.agent.utils.auth import extract_org_slug_from_jwt
+
 
 class TracerClientBase:
     """Base HTTP client with common request methods."""
@@ -11,6 +13,7 @@ class TracerClientBase:
     def __init__(self, base_url: str, org_id: str, jwt_token: str):
         self.base_url = base_url.rstrip("/")
         self.org_id = org_id
+        self.organization_slug: str | None = extract_org_slug_from_jwt(jwt_token)
         self._client = httpx.Client(
             timeout=30.0,
             headers={"Authorization": f"Bearer {jwt_token}"},

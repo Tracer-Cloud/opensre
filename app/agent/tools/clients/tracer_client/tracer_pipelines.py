@@ -1,11 +1,8 @@
 """Pipeline and run-related API methods and models."""
 
-import os
 from dataclasses import dataclass
 
 from app.agent.tools.clients.tracer_client.tracer_client_base import TracerClientBase
-
-DEMO_TRACE_ID = "efb797c9-0226-4932-8eb0-704f03d1752f"
 
 
 @dataclass(frozen=True)
@@ -143,10 +140,11 @@ class TracerPipelinesMixin(TracerClientBase):
         data = self._get(f"/api/runs/{trace_id}/airflow", params)
         return data
 
-    def get_latest_run(self, pipeline_name: str | None = None) -> TracerRunResult:  # noqa: ARG002
-        """Get pipeline run from /api/batch-runs endpoint."""
-        trace_id = os.getenv("TRACER_TRACE_ID", DEMO_TRACE_ID)
-        params = {"page": 1, "size": 1, "orgId": self.org_id, "traceId": trace_id}
+    def get_latest_run(self, pipeline_name: str | None = None) -> TracerRunResult:
+        """Get the latest (most recent) run for a pipeline from /api/batch-runs."""
+        params: dict = {"page": 1, "size": 1, "orgId": self.org_id}
+        if pipeline_name:
+            params["pipelineName"] = pipeline_name
         data = self._get("/api/batch-runs", params)
 
         if not data.get("success") or not data.get("data"):

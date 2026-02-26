@@ -61,7 +61,7 @@ def generate_report(state: InvestigationState) -> dict:
     logger.info(
         "slack_ctx: %s", slack_ctx,
     )
-    investigation_url = get_investigation_url()
+    investigation_url = get_investigation_url(state.get("organization_slug"))
     report_blocks = build_slack_blocks(ctx)
     action_blocks = build_action_blocks(investigation_url)
     all_blocks = report_blocks + action_blocks

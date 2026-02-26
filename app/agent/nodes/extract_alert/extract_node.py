@@ -35,6 +35,8 @@ def _enrich_raw_alert(raw_alert: Any, details: AlertDetails) -> Any:
         enriched["cloudwatch_log_group"] = details.cloudwatch_log_group
     if details.error_message:
         enriched["error_message"] = details.error_message
+    if details.alert_source:
+        enriched["alert_source"] = details.alert_source
     return enriched
 
 
@@ -70,7 +72,7 @@ def node_extract_alert(state: InvestigationState) -> dict:
     # Enrich raw_alert with LLM-extracted structured fields so detect_sources can find them
     enriched_alert = _enrich_raw_alert(raw_alert, details)
 
-    tracker.complete("extract_alert", fields_updated=["alert_name", "pipeline_name", "severity", "alert_json", "problem_md", "raw_alert"])
+    tracker.complete("extract_alert", fields_updated=["alert_name", "pipeline_name", "severity", "alert_source", "alert_json", "problem_md", "raw_alert"])
 
     result: dict = {
         "is_noise": False,
@@ -81,6 +83,8 @@ def node_extract_alert(state: InvestigationState) -> dict:
         "raw_alert": enriched_alert,
         "problem_md": _make_problem_md(details),
     }
+    if details.alert_source:
+        result["alert_source"] = details.alert_source
     if not state.get("investigation_started_at"):
         result["investigation_started_at"] = time.monotonic()
     return result

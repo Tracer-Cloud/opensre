@@ -6,7 +6,6 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.agent.nodes import (
-    node_build_context,
     node_diagnose_root_cause,
     node_extract_alert,
     node_plan_actions,
@@ -46,7 +45,6 @@ def build_graph(config: None = None) -> CompiledStateGraph:
 
     graph.add_node("extract_alert", node_extract_alert)
     graph.add_node("resolve_integrations", node_resolve_integrations)
-    graph.add_node("build_context", node_build_context)
     graph.add_node("plan_actions", node_plan_actions)
     graph.add_node("investigate", node_investigate)
     graph.add_node("diagnose", node_diagnose_root_cause)
@@ -62,8 +60,7 @@ def build_graph(config: None = None) -> CompiledStateGraph:
     graph.add_edge("general", END)
 
     graph.add_conditional_edges("extract_alert", route_after_extract, {"end": END, "investigate": "resolve_integrations"})
-    graph.add_edge("resolve_integrations", "build_context")
-    graph.add_edge("build_context", "plan_actions")
+    graph.add_edge("resolve_integrations", "plan_actions")
     graph.add_edge("plan_actions", "investigate")
     graph.add_edge("investigate", "diagnose")
     graph.add_conditional_edges("diagnose", route_investigation_loop, {"investigate": "plan_actions", "publish": "publish"})

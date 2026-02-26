@@ -45,11 +45,11 @@ class AgentState(TypedDict, total=False):
     alert_name: str
     pipeline_name: str
     severity: str
+    alert_source: str  # "grafana", "datadog", "cloudwatch", or "" if unknown
     raw_alert: str | dict[str, Any]
     alert_json: dict[str, Any]
 
     # Investigation planning
-    plan_sources: list[EvidenceSource]
     planned_actions: list[str]
     plan_rationale: str
     available_sources: dict[str, dict]
@@ -103,7 +103,6 @@ STATE_DEFAULTS: dict[str, Any] = {
     "user_name": "",
     "organization_slug": "",
     "messages": [],
-    "plan_sources": [],
     "planned_actions": [],
     "plan_rationale": "",
     "resolved_integrations": {},
