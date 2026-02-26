@@ -19,10 +19,6 @@ install:
 demo:
 	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
 
-# Run Superfluid test case demo
-superfluid-demo:
-	$(PYTHON) -m tests.test_case_superfluid.test_orchestrator
-
 # Run CloudWatch demo
 cloudwatch-demo:
 	$(PYTHON) -m tests.test_case_cloudwatch_demo.test_orchestrator
@@ -204,7 +200,6 @@ help:
 	@echo "  make prefect-demo    - Run Prefect ECS Fargate E2E test (alias for demo)"
 	@echo "  make prefect-local-test - Run Prefect ECS local test (CLOUD=1 for ECS)"
 	@echo "  make flink-demo      - Run Apache Flink ECS E2E test"
-	@echo "  make superfluid-demo - Run Superfluid test case demo"
 	@echo "  make cloudwatch-demo - Run CloudWatch demo"
 	@echo "  make upstream-downstream - Run upstream/downstream Lambda E2E test"
 	@echo ""
