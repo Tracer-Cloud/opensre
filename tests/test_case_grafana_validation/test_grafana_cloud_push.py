@@ -10,7 +10,7 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.trace import TracerProvider
 
 pytestmark = pytest.mark.skip(reason="outbound telemetry has been removed from this project")
-from config.grafana_config import (
+from tests.grafana_config import (
     configure_grafana_cloud,
     get_otlp_auth_header,
     get_otlp_endpoint,

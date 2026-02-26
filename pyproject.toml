@@ -56,4 +56,4 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["app*", "config*", "tests*"]
+include = ["app*", "tests*"]

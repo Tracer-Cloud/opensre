@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from config.grafana_config import (
+from tests.grafana_config import (
     get_account_instance_url,
     get_account_read_token,
     get_hosted_logs_id,
