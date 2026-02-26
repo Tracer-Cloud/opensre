@@ -77,9 +77,9 @@ def send_ingest(state: InvestigationState) -> None:
     token = os.getenv("TRACER_INGEST_TOKEN")
     base_url = os.getenv("TRACER_API_URL") or get_tracer_base_url()
 
-    if not token:
-        logger.debug("[ingest] TRACER_INGEST_TOKEN not set; skipping ingest.")
-        return
+    # if not token:
+    #     logger.debug("[ingest] TRACER_INGEST_TOKEN not set; skipping ingest.")
+    #     return
 
     api_url = f"{base_url.rstrip('/')}/api/investigations/ingest"
     payload = build_ingest_payload(state)
