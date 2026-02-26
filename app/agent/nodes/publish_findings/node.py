@@ -11,6 +11,7 @@ from app.agent.nodes.publish_findings.formatters.report import (
     get_investigation_url,
 )
 from app.agent.nodes.publish_findings.renderers.terminal import render_report
+from app.agent.utils.ingest_delivery import send_ingest
 from app.agent.state import InvestigationState
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,11 @@ def generate_report(state: InvestigationState) -> dict:
         access_token=slack_ctx.get("access_token"),
         blocks=all_blocks,
     )
+
+    try:
+        send_ingest(state)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[publish] Ingest delivery failed: %s", exc)
 
     return {"slack_message": slack_message}
 
