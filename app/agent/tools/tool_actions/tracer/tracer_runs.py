@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterable
 
 from app.agent.tools.clients.tracer_client import (
@@ -13,20 +12,17 @@ from app.agent.tools.clients.tracer_client import (
     get_tracer_web_client,
 )
 from app.agent.tools.tool_decorator import tool
-from app.agent.utils.auth import extract_org_slug_from_jwt
 from app.config import get_tracer_base_url
 
 FAILED_STATUSES = ("failed", "error")
 
 
-def build_tracer_run_url(pipeline_name: str, trace_id: str | None) -> str | None:
-    """Build Tracer run URL with organization slug from JWT."""
+def build_tracer_run_url(pipeline_name: str, trace_id: str | None, org_slug: str | None = None) -> str | None:
+    """Build Tracer run URL using the organization slug from the client."""
     if not trace_id:
         return None
     base = get_tracer_base_url()
-    jwt = os.getenv("JWT_TOKEN")
-    slug = extract_org_slug_from_jwt(jwt) if jwt else None
-    return f"{base}/{slug}/pipelines/{pipeline_name}/batch/{trace_id}" if slug else f"{base}/pipelines/{pipeline_name}/batch/{trace_id}"
+    return f"{base}/{org_slug}/pipelines/{pipeline_name}/batch/{trace_id}" if org_slug else f"{base}/pipelines/{pipeline_name}/batch/{trace_id}"
 
 
 # This function name should not be renamed as such
@@ -44,7 +40,7 @@ def fetch_failed_run(pipeline_name: str | None = None) -> dict:
             "pipelines_checked": len(pipeline_names),
         }
 
-    run_url = build_tracer_run_url(failed_run.pipeline_name, failed_run.trace_id)
+    run_url = build_tracer_run_url(failed_run.pipeline_name, failed_run.trace_id, client.organization_slug)
     return {
         "found": True,
         "pipeline_name": failed_run.pipeline_name,
