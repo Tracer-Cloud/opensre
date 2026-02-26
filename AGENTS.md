@@ -8,11 +8,6 @@
 - Never bypass tests or CI checks
 - Never say "pushed" unless CI is verified green
 
-## Documentation
-
-- Status reports and retrospectives go in `docs/status/`
-- Tests live alongside the code they validate
-
 ## Code Style
 
 - One clear purpose per file (separation of concerns)
