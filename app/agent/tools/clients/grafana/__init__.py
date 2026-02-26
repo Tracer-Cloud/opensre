@@ -28,11 +28,11 @@ def get_grafana_client() -> GrafanaClient:
     Intended for local tests and demo pipelines only — production code should
     use get_grafana_client_from_credentials() with explicit credentials.
     """
-    from config.grafana_config import get_grafana_instance_url, get_grafana_read_token
+    import os
 
     return get_grafana_client_from_credentials(
-        endpoint=get_grafana_instance_url(),
-        api_key=get_grafana_read_token(),
+        endpoint=os.getenv("GRAFANA_INSTANCE_URL", "https://tracerbio.grafana.net"),
+        api_key=os.getenv("GRAFANA_READ_TOKEN", ""),
         account_id="env_default",
     )
 
