@@ -5,7 +5,6 @@ import re
 
 from app.agent.nodes.publish_findings.context.models import ReportContext
 from app.agent.nodes.publish_findings.formatters.base import format_slack_link
-from app.agent.nodes.publish_findings.formatters.causal_chain import format_causal_chain_section
 from app.agent.nodes.publish_findings.formatters.evidence import (
     format_cited_evidence_section,
     format_evidence_for_claim,
@@ -343,8 +342,6 @@ def format_slack_message(ctx: ReportContext) -> str:
     infrastructure_section = _sanitize_for_slack(format_infrastructure_correlation(ctx))
     cited_evidence_section = _sanitize_for_slack(format_cited_evidence_section(ctx))
     cloudwatch_link = render_cloudwatch_link(ctx)
-    causal_chain_section = _sanitize_for_slack(format_causal_chain_section(ctx.get("causal_chain")))
-
     meta_lines = []
     if duration_seconds is not None:
         meta_lines.append(f"Timing: {duration_seconds}s")
@@ -354,7 +351,6 @@ def format_slack_message(ctx: ReportContext) -> str:
 
     return f"""[RCA] {report_title}
 {conclusion_section}
-{causal_chain_section}
 {lineage_section}
 {infrastructure_section}
 {cited_evidence_section}
