@@ -1,13 +1,10 @@
 """Batch jobs-related API methods and models."""
 
-import os
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from app.agent.tools.clients.tracer_client.tracer_client_base import TracerClientBase
-
-DEMO_TRACE_ID = "efb797c9-0226-4932-8eb0-704f03d1752f"
 
 
 @dataclass(frozen=True)
@@ -35,7 +32,7 @@ class AWSBatchJobsMixin(TracerClientBase):
         Get AWS Batch jobs from /api/aws/batch/jobs/completed endpoint.
 
         Args:
-            trace_id: Optional trace ID. If None, uses TRACER_TRACE_ID env var.
+            trace_id: Required trace ID to look up batch jobs.
             statuses: Optional list of statuses to filter by.
             return_dict: If True, returns raw dict response (for web app API usage).
                         If False, returns AWSBatchJobResult (for staging API usage).
@@ -43,8 +40,8 @@ class AWSBatchJobsMixin(TracerClientBase):
         Returns:
             AWSBatchJobResult if return_dict=False, dict if return_dict=True.
         """
-        if trace_id is None:
-            trace_id = os.getenv("TRACER_TRACE_ID", DEMO_TRACE_ID)
+        if not trace_id:
+            return AWSBatchJobResult(found=False) if not return_dict else {"success": False, "data": []}
 
         params: dict[str, Any] = {
             "traceId": trace_id,

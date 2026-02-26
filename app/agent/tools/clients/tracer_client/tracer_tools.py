@@ -1,11 +1,8 @@
 """Tools and tasks-related API methods and models."""
 
-import os
 from dataclasses import dataclass
 
 from app.agent.tools.clients.tracer_client.tracer_client_base import TracerClientBase
-
-DEMO_TRACE_ID = "efb797c9-0226-4932-8eb0-704f03d1752f"
 
 
 @dataclass(frozen=True)
@@ -23,10 +20,9 @@ class TracerTaskResult:
 class TracerToolsMixin(TracerClientBase):
     """Mixin for Tracer tools and tasks-related API methods."""
 
-    def get_run_tasks(self, run_id: str) -> TracerTaskResult:  # noqa: ARG002
+    def get_run_tasks(self, run_id: str) -> TracerTaskResult:
         """Get tasks from /api/tools endpoint."""
-        trace_id = os.getenv("TRACER_TRACE_ID", DEMO_TRACE_ID)
-        data = self._get(f"/api/tools/{trace_id}", {"orgId": self.org_id})
+        data = self._get(f"/api/tools/{run_id}", {"orgId": self.org_id})
 
         if not data.get("success") or not data.get("data"):
             return TracerTaskResult(found=False)
