@@ -56,7 +56,10 @@ def generate_report(state: InvestigationState) -> dict:
         swap_reaction("eyes", "clipboard", _channel, _alert_ts, _token)
 
     try:
-        send_ingest(state)
+        # Send full report text to ingest (problem_md) for storage/analytics
+        state_with_report = dict(state)
+        state_with_report["problem_md"] = slack_message
+        send_ingest(state_with_report)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[publish] Ingest delivery failed: %s", exc)
 
