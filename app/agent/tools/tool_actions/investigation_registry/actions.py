@@ -21,6 +21,7 @@ def get_available_actions() -> list[InvestigationAction]:
         list_s3_objects,
     )
     from app.agent.tools.tool_actions.datadog.datadog_actions import (
+        query_datadog_all,
         query_datadog_events,
         query_datadog_logs,
         query_datadog_monitors,
@@ -313,6 +314,25 @@ def get_available_actions() -> list[InvestigationAction]:
             },
         ),
         # Datadog actions
+        build_action(
+            name="query_datadog_all",
+            func=query_datadog_all,
+            source="datadog",
+            requires=[],
+            availability_check=lambda sources: bool(
+                sources.get("datadog", {}).get("connection_verified")
+            ),
+            parameter_extractor=lambda sources: {
+                "query": sources.get("datadog", {}).get("default_query", ""),
+                "time_range_minutes": sources.get("datadog", {}).get("time_range_minutes", 60),
+                "limit": 75,
+                "monitor_query": sources.get("datadog", {}).get("monitor_query"),
+                "kube_namespace": (sources.get("datadog", {}).get("kubernetes_context") or {}).get("namespace"),
+                "api_key": sources["datadog"].get("api_key"),
+                "app_key": sources["datadog"].get("app_key"),
+                "site": sources["datadog"].get("site", "datadoghq.com"),
+            },
+        ),
         build_action(
             name="query_datadog_logs",
             func=query_datadog_logs,

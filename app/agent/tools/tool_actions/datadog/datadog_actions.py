@@ -5,10 +5,27 @@ Credentials come from the user's Datadog integration stored in the Tracer web ap
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 from typing import Any
 
 from app.agent.tools.clients.datadog import DatadogClient, DatadogConfig
+from app.agent.tools.clients.datadog.client import DatadogAsyncClient
 from app.agent.tools.tool_decorator import tool
+
+_ERROR_KEYWORDS = (
+    "error",
+    "fail",
+    "exception",
+    "traceback",
+    "pipeline_error",
+    "critical",
+    "killed",
+    "oomkilled",
+    "crash",
+    "panic",
+    "timeout",
+)
 
 
 def _resolve_datadog_client(
@@ -19,6 +36,51 @@ def _resolve_datadog_client(
     if not api_key or not app_key:
         return None
     return DatadogClient(DatadogConfig(api_key=api_key, app_key=app_key, site=site))
+
+
+def _resolve_async_client(
+    api_key: str | None = None,
+    app_key: str | None = None,
+    site: str = "datadoghq.com",
+) -> DatadogAsyncClient | None:
+    if not api_key or not app_key:
+        return None
+    return DatadogAsyncClient(DatadogConfig(api_key=api_key, app_key=app_key, site=site))
+
+
+def _run_async(coro: Any) -> Any:
+    """Run a coroutine safely regardless of whether an event loop is already running."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(asyncio.run, coro)
+            return future.result()
+    return asyncio.run(coro)
+
+
+def _extract_pod_from_logs(logs: list[dict]) -> tuple[str | None, str | None, str | None]:
+    """Extract pod_name, container_name, kube_namespace from the first log that has them."""
+    for log in logs:
+        if not isinstance(log, dict):
+            continue
+        pod_name = container_name = kube_namespace = None
+        for tag in log.get("tags", []):
+            if not isinstance(tag, str) or ":" not in tag:
+                continue
+            k, _, v = tag.partition(":")
+            if k == "pod_name":
+                pod_name = v
+            elif k == "container_name":
+                container_name = v
+            elif k == "kube_namespace":
+                kube_namespace = v
+        if pod_name:
+            return pod_name, container_name, kube_namespace
+    return None, None, None
 
 
 def query_datadog_logs(
@@ -72,16 +134,15 @@ def query_datadog_logs(
         }
 
     logs = result.get("logs", [])
-    error_keywords = ("error", "fail", "exception", "traceback", "pipeline_error")
     error_logs = [
-        log for log in logs if any(kw in log.get("message", "").lower() for kw in error_keywords)
+        log for log in logs if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)
     ]
 
     return {
         "source": "datadog_logs",
         "available": True,
         "logs": logs[:50],
-        "error_logs": error_logs[:20],
+        "error_logs": error_logs[:30],
         "total": result.get("total", 0),
         "query": query,
     }
@@ -196,6 +257,113 @@ def query_datadog_events(
     }
 
 
+def query_datadog_all(
+    query: str,
+    time_range_minutes: int = 60,
+    limit: int = 75,
+    monitor_query: str | None = None,
+    kube_namespace: str | None = None,
+    api_key: str | None = None,
+    app_key: str | None = None,
+    site: str = "datadoghq.com",
+    **_kwargs: Any,
+) -> dict:
+    """Fetch Datadog logs, monitors, and events in parallel for fast investigation.
+
+    Runs all three Datadog API calls concurrently so the total wait time equals
+    the slowest single call instead of the sum of all three.
+
+    Useful for:
+    - Full Datadog context in a single fast operation
+    - Kubernetes pod failure investigation (logs + monitors + events together)
+    - Getting the complete picture for root cause analysis
+
+    Args:
+        query: Datadog log search query
+        time_range_minutes: How far back to search in minutes
+        limit: Maximum log entries to return (default 75)
+        monitor_query: Optional monitor filter query (e.g., 'tag:pipeline:foo')
+        kube_namespace: Kubernetes namespace to include in events query
+        api_key: Datadog API key
+        app_key: Datadog application key
+        site: Datadog site (e.g., datadoghq.com)
+
+    Returns:
+        logs, error_logs, monitors, events, fetch_duration_ms, pod_name, container_name, kube_namespace
+    """
+    client = _resolve_async_client(api_key, app_key, site)
+
+    if not client or not client.is_configured:
+        return {
+            "source": "datadog_all",
+            "available": False,
+            "error": "Datadog integration not configured",
+            "logs": [],
+            "error_logs": [],
+            "monitors": [],
+            "events": [],
+        }
+
+    events_query = query
+    if kube_namespace and kube_namespace not in (query or ""):
+        events_query = f"kube_namespace:{kube_namespace}"
+
+    raw = _run_async(
+        client.fetch_all(
+            logs_query=query,
+            time_range_minutes=time_range_minutes,
+            logs_limit=limit,
+            monitor_query=monitor_query,
+            events_query=events_query,
+        )
+    )
+
+    logs_raw = raw.get("logs", {})
+    monitors_raw = raw.get("monitors", {})
+    events_raw = raw.get("events", {})
+
+    fetch_duration_ms: dict[str, int] = {
+        "logs": logs_raw.get("duration_ms", 0),
+        "monitors": monitors_raw.get("duration_ms", 0),
+        "events": events_raw.get("duration_ms", 0),
+    }
+
+    logs = logs_raw.get("logs", []) if logs_raw.get("success") else []
+    monitors = monitors_raw.get("monitors", []) if monitors_raw.get("success") else []
+    events = events_raw.get("events", []) if events_raw.get("success") else []
+
+    error_logs = [
+        log for log in logs if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)
+    ]
+
+    pod_name, container_name, detected_namespace = _extract_pod_from_logs(error_logs or logs)
+
+    errors: dict[str, str] = {}
+    if not logs_raw.get("success") and logs_raw.get("error"):
+        errors["logs"] = logs_raw["error"]
+    if not monitors_raw.get("success") and monitors_raw.get("error"):
+        errors["monitors"] = monitors_raw["error"]
+    if not events_raw.get("success") and events_raw.get("error"):
+        errors["events"] = events_raw["error"]
+
+    return {
+        "source": "datadog_all",
+        "available": True,
+        "logs": logs[:75],
+        "error_logs": error_logs[:30],
+        "total": logs_raw.get("total", len(logs)),
+        "query": query,
+        "monitors": monitors,
+        "events": events,
+        "fetch_duration_ms": fetch_duration_ms,
+        "pod_name": pod_name,
+        "container_name": container_name,
+        "kube_namespace": detected_namespace or kube_namespace,
+        "errors": errors,
+    }
+
+
 query_datadog_logs_tool = tool(query_datadog_logs)
 query_datadog_monitors_tool = tool(query_datadog_monitors)
 query_datadog_events_tool = tool(query_datadog_events)
+query_datadog_all_tool = tool(query_datadog_all)

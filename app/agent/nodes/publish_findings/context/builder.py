@@ -258,6 +258,56 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         }
         source_to_id["datadog_logs"] = eid
 
+    # Datadog monitors catalog entry
+    datadog_monitors = evidence.get("datadog_monitors") or []
+    if datadog_monitors:
+        triggered = [m for m in datadog_monitors if m.get("overall_state") in ("Alert", "Warn", "No Data")]
+        monitor_label = f"Datadog Monitors ({len(triggered)} triggered)" if triggered else f"Datadog Monitors ({len(datadog_monitors)})"
+        eid = "evidence/datadog/monitors"
+        evidence_catalog[eid] = {
+            "label": monitor_label,
+            "url": f"https://app.{datadog_site}/monitors/manage",
+            "display_id": f"E{len(evidence_catalog) + 1}",
+            "summary": f"{len(datadog_monitors)} monitors",
+            "snippet": _as_snippet(", ".join(m.get("name", "") for m in datadog_monitors[:3])),
+        }
+        source_to_id["datadog_monitors"] = eid
+
+    # Datadog events catalog entry
+    datadog_events = evidence.get("datadog_events") or []
+    if datadog_events:
+        eid = "evidence/datadog/events"
+        evidence_catalog[eid] = {
+            "label": f"Datadog Events ({len(datadog_events)})",
+            "url": f"https://app.{datadog_site}/event/explorer",
+            "display_id": f"E{len(evidence_catalog) + 1}",
+            "summary": f"{len(datadog_events)} events",
+            "snippet": _as_snippet(datadog_events[0].get("title", "") if datadog_events else ""),
+        }
+        source_to_id["datadog_events"] = eid
+
+    # Datadog failed pod catalog entry — surface exact pod location when known
+    datadog_pod_name = evidence.get("datadog_pod_name")
+    datadog_container_name = evidence.get("datadog_container_name")
+    datadog_kube_namespace = evidence.get("datadog_kube_namespace")
+    if datadog_pod_name:
+        pod_query = f"pod_name:{datadog_pod_name}"
+        if datadog_kube_namespace:
+            pod_query = f"kube_namespace:{datadog_kube_namespace} pod_name:{datadog_pod_name}"
+        pod_url = build_datadog_logs_url(pod_query, datadog_site or "datadoghq.com")
+        container_part = f" ({datadog_container_name})" if datadog_container_name else ""
+        eid = "evidence/datadog/failed_pod"
+        evidence_catalog[eid] = {
+            "label": f"Failed Pod: {datadog_pod_name}{container_part}",
+            "url": pod_url,
+            "display_id": f"E{len(evidence_catalog) + 1}",
+            "summary": (
+                f"namespace={datadog_kube_namespace}" if datadog_kube_namespace else datadog_pod_name
+            ),
+            "snippet": None,
+        }
+        source_to_id["datadog_pod"] = eid
+
     # Attach evidence_ids to claims (validated + non-validated) without mutating originals
     display_map = {eid: entry.get("display_id", eid) for eid, entry in evidence_catalog.items()}
 

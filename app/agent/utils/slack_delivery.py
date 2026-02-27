@@ -14,6 +14,64 @@ from app.config import SLACK_CHANNEL
 logger = logging.getLogger(__name__)
 
 
+def _call_reactions_api(method: str, token: str, channel: str, timestamp: str, emoji: str) -> bool:
+    """Call Slack reactions.add or reactions.remove.
+
+    Returns True on success, False on expected failures (already_reacted, no_reaction, etc.).
+    """
+    try:
+        resp = httpx.post(
+            f"https://slack.com/api/{method}",
+            json={"channel": channel, "timestamp": timestamp, "name": emoji},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+            timeout=8.0,
+        )
+        data = resp.json()
+        if not data.get("ok"):
+            error = data.get("error", "unknown")
+            if error not in ("already_reacted", "no_reaction", "message_not_found"):
+                logger.warning("[slack] %s(%s) failed: %s", method, emoji, error)
+        return bool(data.get("ok", False))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[slack] %s(%s) exception: %s", method, emoji, exc)
+        return False
+
+
+def add_reaction(
+    emoji: str,
+    channel: str,
+    timestamp: str,
+    token: str,
+) -> None:
+    """Add a reaction emoji to a Slack message."""
+    _call_reactions_api("reactions.add", token, channel, timestamp, emoji)
+
+
+def remove_reaction(
+    emoji: str,
+    channel: str,
+    timestamp: str,
+    token: str,
+) -> None:
+    """Remove a reaction emoji from a Slack message (silently ignores if not present)."""
+    _call_reactions_api("reactions.remove", token, channel, timestamp, emoji)
+
+
+def swap_reaction(
+    remove_emoji: str,
+    add_emoji: str,
+    channel: str,
+    timestamp: str,
+    token: str,
+) -> None:
+    """Remove one emoji reaction and add another atomically (best-effort)."""
+    remove_reaction(remove_emoji, channel, timestamp, token)
+    add_reaction(add_emoji, channel, timestamp, token)
+
+
 def build_action_blocks(investigation_url: str, feedback_url: str | None = None) -> list[dict[str, Any]]:
     """Build Slack Block Kit action blocks with interactive buttons.
 
