@@ -89,12 +89,12 @@ def build_ingest_payload(state: InvestigationState) -> dict[str, Any]:
 
 def send_ingest(state: InvestigationState) -> None:
     """Fire-and-forget delivery to the ingest API."""
-    # token = os.getenv("TRACER_INGEST_TOKEN")
+    token = os.getenv("TRACER_INGEST_TOKEN")
     base_url = os.getenv("TRACER_API_URL") or get_tracer_base_url()
 
-    # if not token:
-    #     logger.debug("[ingest] TRACER_INGEST_TOKEN not set; skipping ingest.")
-    #     return
+    if not token:
+        logger.debug("[ingest] TRACER_INGEST_TOKEN not set; skipping ingest.")
+        return
 
     api_url = f"{base_url.rstrip('/')}/api/investigations/ingest"
     payload = build_ingest_payload(state)
@@ -104,7 +104,7 @@ def send_ingest(state: InvestigationState) -> None:
         logger.debug("[ingest] Missing thread_id; skipping ingest.")
         return
 
-    headers = {"Authorization": "Bearer dev-test-token"}
+    headers = {"Authorization": f"Bearer {token}"}
 
     try:
         response = httpx.post(api_url, json=payload, headers=headers, timeout=10.0)
