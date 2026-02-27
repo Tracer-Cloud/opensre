@@ -22,6 +22,8 @@ def generate_report(state: InvestigationState) -> dict:
     from app.agent.utils.slack_delivery import build_action_blocks, send_slack_report
 
     ctx = build_report_context(state)
+    # Preserve initial short problem_md as summary for list views
+    short_summary = state.get("problem_md")
     slack_message = format_slack_message(ctx)
     render_report(slack_message)
 
@@ -56,9 +58,10 @@ def generate_report(state: InvestigationState) -> dict:
         swap_reaction("eyes", "clipboard", _channel, _alert_ts, _token)
 
     try:
-        # Send full report text to ingest (problem_md) for storage/analytics
+        # Send full report text as problem_report, keep short summary
         state_with_report = dict(state)
-        state_with_report["problem_md"] = slack_message
+        state_with_report["problem_report"] = {"report_md": slack_message}
+        state_with_report["summary"] = short_summary
         send_ingest(state_with_report)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[publish] Ingest delivery failed: %s", exc)

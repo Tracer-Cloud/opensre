@@ -51,8 +51,8 @@ def build_ingest_payload(state: InvestigationState) -> dict[str, Any]:
         "alert_name": state.get("alert_name"),
         "pipeline_name": state.get("pipeline_name") or "",
         "severity": _normalize_severity(state.get("severity")),
-        # Use the full Slack-ready report as summary so it’s visible in UI/ClickHouse
-        "summary": state.get("problem_md") or state.get("root_cause") or state.get("alert_name"),
+        # Keep summary concise (initial problem_md) for list views
+        "summary": state.get("summary") or state.get("problem_md") or state.get("root_cause") or state.get("alert_name"),
         "raw_alert": raw_alert,
         "root_cause": state.get("root_cause") or "",
         "confidence": state.get("validity_score") or 0,
@@ -61,6 +61,10 @@ def build_ingest_payload(state: InvestigationState) -> dict[str, Any]:
         "problem_md": state.get("problem_md") or "",
         "investigation_recommendations": state.get("investigation_recommendations") or [],
     }
+
+    # Attach full report if provided
+    if state.get("problem_report"):
+        investigation_output["problem_report"] = state.get("problem_report")
 
     metadata = {
         "source": _resolve_source(state),
