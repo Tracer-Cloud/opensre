@@ -128,8 +128,21 @@ Audit evidence shows external API interactions. For data pipeline failures:
 
 
 def _extract_k8s_tags_from_evidence(evidence: dict[str, Any]) -> dict[str, str]:
-    """Extract K8s metadata from Datadog log tags (Signal 1 -- primary)."""
+    """Extract K8s metadata from Datadog log tags (Signal 1 -- primary).
+
+    Also picks up pod_name and container_name alongside kube_* tags.
+    Prefers pre-extracted values from query_datadog_all when available.
+    """
     k8s: dict[str, str] = {}
+
+    # Use pre-extracted pod info from query_datadog_all if present
+    if evidence.get("datadog_pod_name"):
+        k8s["pod_name"] = evidence["datadog_pod_name"]
+    if evidence.get("datadog_container_name"):
+        k8s["container_name"] = evidence["datadog_container_name"]
+    if evidence.get("datadog_kube_namespace"):
+        k8s["kube_namespace"] = evidence["datadog_kube_namespace"]
+
     for log_list_key in ("datadog_error_logs", "datadog_logs"):
         for log in evidence.get(log_list_key, []):
             if not isinstance(log, dict):
@@ -138,7 +151,7 @@ def _extract_k8s_tags_from_evidence(evidence: dict[str, Any]) -> dict[str, str]:
                 if not isinstance(tag, str) or ":" not in tag:
                     continue
                 key, _, val = tag.partition(":")
-                if key.startswith("kube_") and key not in k8s:
+                if (key.startswith("kube_") or key in ("pod_name", "container_name")) and key not in k8s:
                     k8s[key] = val
     return k8s
 
@@ -353,17 +366,29 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
                 section += f"  No-data state: {rule.get('no_data_state')}\n"
         sections.append(section)
 
+    # Datadog pod location (from query_datadog_all extraction)
+    datadog_pod_name = evidence.get("datadog_pod_name")
+    datadog_container_name = evidence.get("datadog_container_name")
+    datadog_kube_namespace = evidence.get("datadog_kube_namespace")
+    if datadog_pod_name:
+        pod_parts = [f"pod_name={datadog_pod_name}"]
+        if datadog_container_name:
+            pod_parts.append(f"container={datadog_container_name}")
+        if datadog_kube_namespace:
+            pod_parts.append(f"namespace={datadog_kube_namespace}")
+        sections.append(f"\nFailed Pod Location: {' '.join(pod_parts)}\n")
+
     # Datadog logs
     datadog_error_logs = evidence.get("datadog_error_logs", [])
     datadog_logs = evidence.get("datadog_logs", [])
     if datadog_error_logs:
         section = f"\nDatadog Error Logs ({len(datadog_error_logs)} events):\n"
-        for log in datadog_error_logs[:10]:
+        for log in datadog_error_logs[:15]:
             section += f"- {_format_datadog_log_entry(log)}\n"
         sections.append(section)
     elif datadog_logs:
         section = f"\nDatadog Logs ({len(datadog_logs)} events):\n"
-        for log in datadog_logs[:10]:
+        for log in datadog_logs[:15]:
             section += f"- {_format_datadog_log_entry(log)}\n"
         sections.append(section)
 
@@ -446,12 +471,19 @@ _STRUCTURED_TAG_NAMES = ("pod_name", "container_name", "container_id")
 
 
 def _format_datadog_log_entry(log: Any) -> str:
-    """Format a single Datadog log entry, surfacing structured tags when present."""
+    """Format a single Datadog log entry, surfacing structured tags and timestamp when present."""
     if not isinstance(log, dict):
         return str(log)[:300]
 
     message = log.get("message", "")[:300]
     tags = log.get("tags", [])
+
+    # Extract HH:MM:SS from ISO timestamp for compact display
+    ts_prefix = ""
+    raw_ts = log.get("timestamp", "")
+    if raw_ts and "T" in raw_ts:
+        time_part = raw_ts.split("T", 1)[1][:8]  # "HH:MM:SS"
+        ts_prefix = f"[{time_part}] "
 
     tag_parts: dict[str, str] = {}
     for t in tags:
@@ -463,12 +495,12 @@ def _format_datadog_log_entry(log: Any) -> str:
 
     if tag_parts:
         tag_str = " ".join(f"{k}={v}" for k, v in tag_parts.items())
-        return f"[{tag_str}] {message}"
+        return f"{ts_prefix}[{tag_str}] {message}"
 
     host = log.get("host", "")
     service = log.get("service", "")
     prefix = f"[{service}@{host}] " if service or host else ""
-    return f"{prefix}{message}"
+    return f"{ts_prefix}{prefix}{message}"
 
 
 def _build_s3_object_section(s3_object: dict[str, Any]) -> str:
