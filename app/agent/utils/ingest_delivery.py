@@ -74,6 +74,7 @@ def build_ingest_payload(state: InvestigationState) -> dict[str, Any]:
 
 def send_ingest(state: InvestigationState) -> None:
     """Fire-and-forget delivery to the ingest API."""
+    # token = os.getenv("TRACER_INGEST_TOKEN")
     base_url = os.getenv("TRACER_API_URL") or get_tracer_base_url()
 
     # if not token:
