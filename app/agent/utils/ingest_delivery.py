@@ -44,6 +44,16 @@ def _resolve_thread_id(state: InvestigationState) -> str:
 
 def build_ingest_payload(state: InvestigationState) -> dict[str, Any]:
     raw_alert = state.get("raw_alert") if isinstance(state.get("raw_alert"), dict) else {}
+    # Fill missing fingerprint with a stable per-incident id (thread_id/run_id/alert_id)
+    if isinstance(raw_alert, dict) and not raw_alert.get("fingerprint"):
+        fingerprint = (
+            state.get("thread_id")
+            or state.get("run_id")
+            or raw_alert.get("alert_id")
+            or raw_alert.get("id")
+        )
+        if fingerprint:
+            raw_alert["fingerprint"] = fingerprint
     planned_actions = state.get("planned_actions") or []
 
     investigation_output = {
@@ -51,7 +61,6 @@ def build_ingest_payload(state: InvestigationState) -> dict[str, Any]:
         "alert_name": state.get("alert_name"),
         "pipeline_name": state.get("pipeline_name") or "",
         "severity": _normalize_severity(state.get("severity")),
-        # Keep summary concise (initial problem_md) for list views
         "summary": state.get("summary") or state.get("problem_md") or state.get("root_cause") or state.get("alert_name"),
         "raw_alert": raw_alert,
         "root_cause": state.get("root_cause") or "",
