@@ -62,6 +62,14 @@ def node_extract_alert(state: InvestigationState) -> dict:
     raw_alert = state.get("raw_alert", {})
     alert_id = raw_alert.get("alert_id") if isinstance(raw_alert, dict) else None
 
+    slack_ctx = state.get("slack_context", {}) or {}
+    _ts = slack_ctx.get("ts") or slack_ctx.get("thread_ts")
+    _channel = slack_ctx.get("channel_id")
+    _token = slack_ctx.get("access_token")
+    if _token and _channel and _ts:
+        from app.agent.utils.slack_delivery import add_reaction
+        add_reaction("eyes", _channel, _ts, _token)
+
     debug_print(
         f"Alert: {details.alert_name} | Pipeline: {details.pipeline_name} | "
         f"Severity: {details.severity} | namespace={details.kube_namespace} | Alert ID: {alert_id}"
@@ -69,7 +77,6 @@ def node_extract_alert(state: InvestigationState) -> dict:
 
     render_investigation_header(details.alert_name, details.pipeline_name, details.severity, alert_id=alert_id)
 
-    # Enrich raw_alert with LLM-extracted structured fields so detect_sources can find them
     enriched_alert = _enrich_raw_alert(raw_alert, details)
 
     tracker.complete("extract_alert", fields_updated=["alert_name", "pipeline_name", "severity", "alert_source", "alert_json", "problem_md", "raw_alert"])

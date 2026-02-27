@@ -202,6 +202,24 @@ def _map_datadog_events(data: dict) -> dict:
     }
 
 
+def _map_datadog_all(data: dict) -> dict:
+    monitors = data.get("monitors", [])
+    events = data.get("events", [])
+    return {
+        "datadog_logs": data.get("logs", []),
+        "datadog_error_logs": data.get("error_logs", []),
+        "datadog_logs_query": data.get("query", ""),
+        "datadog_monitors": monitors,
+        "datadog_monitors_count": len(monitors),
+        "datadog_events": events,
+        "datadog_events_count": len(events),
+        "datadog_fetch_ms": data.get("fetch_duration_ms", {}),
+        "datadog_pod_name": data.get("pod_name"),
+        "datadog_container_name": data.get("container_name"),
+        "datadog_kube_namespace": data.get("kube_namespace"),
+    }
+
+
 EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "get_failed_jobs": _map_failed_jobs,
     "get_failed_tools": _map_failed_tools,
@@ -224,6 +242,7 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "query_datadog_logs": _map_datadog_logs,
     "query_datadog_monitors": _map_datadog_monitors,
     "query_datadog_events": _map_datadog_events,
+    "query_datadog_all": _map_datadog_all,
 }
 
 
@@ -333,6 +352,18 @@ def build_evidence_summary(execution_results: dict) -> str:
                 summary_parts.append(f"datadog:{len(data['monitors'])} monitors")
             elif action_name == "query_datadog_events" and data.get("events"):
                 summary_parts.append(f"datadog:{len(data['events'])} events")
+            elif action_name == "query_datadog_all":
+                logs = data.get("logs", [])
+                error_logs = data.get("error_logs", [])
+                monitors = data.get("monitors", [])
+                events = data.get("events", [])
+                fetch_ms = data.get("fetch_duration_ms", {})
+                max_ms = max(fetch_ms.values()) if fetch_ms else 0
+                timing = f" in {max_ms / 1000:.1f}s" if max_ms else ""
+                summary_parts.append(
+                    f"datadog:{len(logs)} logs ({len(error_logs)} errors), "
+                    f"{len(monitors)} monitors, {len(events)} events{timing}"
+                )
         else:
             # Log action failures for debugging
             error_msg = f"{action_name}:FAILED({result.error[:50] if result.error else 'unknown'})"
