@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks
+.PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo
 
 PYTHON = python3
 PIP = python3 -m pip
@@ -22,6 +22,13 @@ demo:
 # Run CloudWatch demo
 cloudwatch-demo:
 	$(PYTHON) -m tests.test_case_cloudwatch_demo.test_orchestrator
+
+# Run Datadog demo (local kind cluster + real DD monitor + investigation agent)
+datadog-demo:
+	$(PYTHON) -m tests.test_case_datadog.test_orchestrator
+
+# Run CrashLoopBackOff  demo
+	$(PYTHON) -m tests.test_case_crashloop.test_orchestrator
 
 # Run Prefect ECS Fargate E2E test (alias for demo)
 prefect-demo:
@@ -201,6 +208,8 @@ help:
 	@echo "  make prefect-local-test - Run Prefect ECS local test (CLOUD=1 for ECS)"
 	@echo "  make flink-demo      - Run Apache Flink ECS E2E test"
 	@echo "  make cloudwatch-demo - Run CloudWatch demo"
+	@echo "  make datadog-demo    - Run Datadog demo (local kind cluster + DD monitor + agent)"
+	@echo "  make crashloop-demo  - Run CrashLoopBackOff/OOMKill demo (no k8s needed, DD + Slack)"
 	@echo "  make upstream-downstream - Run upstream/downstream Lambda E2E test"
 	@echo ""
 	@echo "  KUBERNETES"

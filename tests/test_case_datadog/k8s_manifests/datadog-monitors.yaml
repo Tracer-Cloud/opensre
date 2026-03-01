@@ -1,0 +1,70 @@
+## Datadog monitors for the bioinformatics variant pipeline demo.
+## Both monitors notify @slack-devs-alerts so alerts appear in the Slack channel.
+
+monitors:
+  - name: "[tracer-dd] Variant Pipeline Job Failed"
+    type: metric alert
+    query: >-
+      sum(last_1m):sum:kubernetes_state.job.failed{kube_namespace:tracer-dd} by {kube_job} > 0
+    message: >-
+      {{#is_alert}}
+      :rotating_light: Kubernetes job **{{kube_job.name}}** failed in namespace `tracer-dd`.
+
+      **Pipeline:** bioinformatics_variant_pipeline
+      **Cluster:** tracer-dd-demo
+      **Stage:** validate — schema validation failed on variant records
+
+      Query logs: `PIPELINE_ERROR kube_namespace:tracer-dd`
+
+      @slack-Tracer-devs-alerts
+      {{/is_alert}}
+
+      {{#is_recovery}}
+      :white_check_mark: Job {{kube_job.name}} recovered in `tracer-dd`.
+      @slack-Tracer-devs-alerts
+      {{/is_recovery}}
+    tags:
+      - managed_by:tracer-agent
+      - env:local
+      - pipeline:bioinformatics_variant_pipeline
+      - cluster:tracer-dd-demo
+    priority: 2
+    options:
+      thresholds:
+        critical: 0
+      notify_no_data: false
+      renotify_interval: 0
+      evaluation_delay: 0
+
+  - name: "[tracer-dd] PIPELINE_ERROR in Logs"
+    type: log alert
+    query: >-
+      logs("PIPELINE_ERROR kube_namespace:tracer-dd").index("*").rollup("count").last("5m") > 0
+    message: >-
+      {{#is_alert}}
+      :x: `PIPELINE_ERROR` detected in namespace `tracer-dd`.
+
+      **Pipeline:** bioinformatics_variant_pipeline
+      **Failed stage:** variant-validate
+      **Error:** Schema validation failed — missing fields in variant records
+
+      Search logs: `PIPELINE_ERROR kube_namespace:tracer-dd`
+
+      @slack-Tracer-devs-alerts
+      {{/is_alert}}
+
+      {{#is_recovery}}
+      :white_check_mark: No more `PIPELINE_ERROR` logs in `tracer-dd`.
+      @slack-Tracer-devs-alerts
+      {{/is_recovery}}
+    tags:
+      - managed_by:tracer-agent
+      - env:local
+      - pipeline:bioinformatics_variant_pipeline
+    priority: 2
+    options:
+      thresholds:
+        critical: 0
+      notify_no_data: false
+      renotify_interval: 0
+      enable_logs_sample: true

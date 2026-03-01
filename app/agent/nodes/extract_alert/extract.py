@@ -31,6 +31,7 @@ Extract these fields from the message text:
 - kube_namespace: Kubernetes namespace if mentioned (e.g. "tracer-test" from "kube_namespace:tracer-test")
 - cloudwatch_log_group: AWS CloudWatch log group if mentioned (e.g. "/aws/ecs/my-service")
 - error_message: The actual error line from the alert (e.g. "PIPELINE_ERROR: Schema validation failed: Missing fields ['customer_id']")
+- log_query: The log search query from the alert body — usually the "Search logs:" or "monitored query" line (e.g. "OOMKilled kube_namespace:tracer-cl" or "PIPELINE_ERROR kube_namespace:tracer-test"). Leave null if not present.
 
 Message:
 {text}

@@ -504,6 +504,9 @@ def format_cited_evidence_section(ctx: ReportContext) -> str:
             return str(catalog[eid].get("display_id", eid))
 
         for evidence_id in sorted(catalog.keys(), key=_sort_key):
+            # Per-pod entries are shown in the Failed Pods section — skip them here
+            if evidence_id.startswith("evidence/datadog/failed_pod/"):
+                continue
             entry = catalog[evidence_id] or {}
             display_id = entry.get("display_id", evidence_id)
             label = entry.get("label") or evidence_id

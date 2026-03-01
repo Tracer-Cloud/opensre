@@ -3,7 +3,6 @@
 import json
 
 from adapters.s3 import read_json, write_json
-
 from config import LANDING_BUCKET, S3_KEY, staging_key
 
 
