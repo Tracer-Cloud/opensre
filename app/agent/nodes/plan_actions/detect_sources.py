@@ -297,11 +297,34 @@ def detect_sources(
         dd_app_key = dd_int.get("app_key", "")
 
         if dd_api_key and dd_app_key:
-            # Build a default log query from alert context
-            kube_namespace = annotations.get("kube_namespace", "")
-            alert_query = annotations.get("query", "")
+            # kube_namespace: prefer LLM-injected top-level field, fall back to annotations
+            kube_namespace = (
+                raw_alert.get("kube_namespace", "")
+                or annotations.get("kube_namespace", "")
+            )
+
+            # Build a default log query from alert context.
+            # Priority:
+            #   1. Explicit query field in annotations (e.g., from Datadog monitor webhook body)
+            #   2. LLM-extracted log_query or error_message that looks like a Datadog query
+            #   3. kube_namespace-scoped query (use * to get all logs, not PIPELINE_ERROR only)
+            #   4. pipeline_name as last resort
+            alert_query = (
+                annotations.get("query", "")
+                or annotations.get("log_query", "")
+                or raw_alert.get("log_query", "")
+            )
+            # If the error_message from alert body looks like a Datadog search term, prefer it
+            error_message = raw_alert.get("error_message", "")
+            if not alert_query and error_message and len(error_message) < 200:
+                # Use error keyword + namespace as query (e.g. "OOMKilled kube_namespace:tracer-cl")
+                if kube_namespace and " " not in error_message.strip():
+                    alert_query = f"{error_message.strip()} kube_namespace:{kube_namespace}"
+                elif kube_namespace:
+                    alert_query = f"kube_namespace:{kube_namespace}"
+
             default_query = alert_query or (
-                f"PIPELINE_ERROR kube_namespace:{kube_namespace}" if kube_namespace else pipeline_name or "*"
+                f"kube_namespace:{kube_namespace}" if kube_namespace else pipeline_name or "*"
             )
 
             dd_params: dict[str, Any] = {

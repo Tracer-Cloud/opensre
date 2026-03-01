@@ -10,6 +10,8 @@ from app.agent.nodes.publish_findings.formatters.evidence import (
 )
 from app.agent.nodes.publish_findings.formatters.infrastructure import (
     format_infrastructure_correlation,
+    format_pod_line,
+    get_failed_pods,
 )
 from app.agent.nodes.publish_findings.formatters.lineage import format_data_lineage_flow
 from app.agent.nodes.publish_findings.urls.aws import build_cloudwatch_url
@@ -253,9 +255,9 @@ def _compress_for_title(sentence: str) -> str:
     # Capitalize first letter
     if s:
         s = s[0].upper() + s[1:]
-    # Hard cap at 60 chars, breaking at a word boundary
-    if len(s) > 60:
-        s = s[:57].rsplit(" ", 1)[0].rstrip(" ,;") + "..."
+    # Slack Block Kit header supports up to 150 chars — no artificial truncation
+    if len(s) > 150:
+        s = s[:147].rsplit(" ", 1)[0].rstrip(" ,;") + "..."
     return s
 
 
@@ -404,6 +406,15 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     if not root_cause_sentence:
         root_cause_sentence = "Not determined (insufficient evidence)"
     blocks.append(_mrkdwn_section(f"*Root Cause*\n{root_cause_sentence}"))
+
+    # ── Failed Pods ──
+    datadog_site = ctx.get("datadog_site", "datadoghq.com")
+    all_pods = get_failed_pods(ctx)
+    pod_lines = [line for p in all_pods[:5] if (line := format_pod_line(p, datadog_site, bullet="\u2022 "))]
+    if len(all_pods) > 5:
+        pod_lines.append(f"• ... and {len(all_pods) - 5} more pods")
+    if pod_lines:
+        blocks.append(_mrkdwn_section("*Failed Pods*\n" + "\n".join(pod_lines)))
 
     # ── Validated Claims ──
     if validated_claims:
