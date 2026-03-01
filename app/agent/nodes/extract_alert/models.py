@@ -26,3 +26,4 @@ class AlertDetails(BaseModel):
     kube_namespace: str | None = Field(default=None, description="Kubernetes namespace if mentioned (e.g. tracer-test)")
     cloudwatch_log_group: str | None = Field(default=None, description="CloudWatch log group if mentioned")
     error_message: str | None = Field(default=None, description="The actual error message or PIPELINE_ERROR content from the alert")
+    log_query: str | None = Field(default=None, description="Datadog/log search query from the alert body (e.g. 'OOMKilled kube_namespace:tracer-cl' or 'PIPELINE_ERROR kube_namespace:tracer-test')")

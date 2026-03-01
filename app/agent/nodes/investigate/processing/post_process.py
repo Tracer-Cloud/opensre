@@ -217,6 +217,7 @@ def _map_datadog_all(data: dict) -> dict:
         "datadog_pod_name": data.get("pod_name"),
         "datadog_container_name": data.get("container_name"),
         "datadog_kube_namespace": data.get("kube_namespace"),
+        "datadog_failed_pods": data.get("failed_pods", []),
     }
 
 

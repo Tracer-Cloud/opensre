@@ -1,6 +1,7 @@
 """Main orchestration node for report generation and publishing."""
 
 import logging
+from typing import cast
 
 from langsmith import traceable
 
@@ -59,9 +60,7 @@ def generate_report(state: InvestigationState) -> dict:
 
     try:
         # Send full report text as problem_report, keep short summary
-        state_with_report = dict(state)
-        state_with_report["problem_report"] = {"report_md": slack_message}
-        state_with_report["summary"] = short_summary
+        state_with_report = cast(InvestigationState, {**state, "problem_report": {"report_md": slack_message}, "summary": short_summary})
         send_ingest(state_with_report)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[publish] Ingest delivery failed: %s", exc)

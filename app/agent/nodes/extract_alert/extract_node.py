@@ -37,6 +37,8 @@ def _enrich_raw_alert(raw_alert: Any, details: AlertDetails) -> Any:
         enriched["error_message"] = details.error_message
     if details.alert_source:
         enriched["alert_source"] = details.alert_source
+    if details.log_query:
+        enriched["log_query"] = details.log_query
     return enriched
 
 

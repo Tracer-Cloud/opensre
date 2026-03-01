@@ -1,0 +1,31 @@
+## Datadog Helm chart values for tracer-dd-demo kind cluster
+
+datadog:
+  clusterName: tracer-dd-demo
+  site: datadoghq.com
+  logs:
+    enabled: true
+    containerCollectAll: true
+  kubeStateMetricsCore:
+    enabled: true
+  kubeStateMetricsEnabled: false
+  orchestratorExplorer:
+    enabled: true
+  kubelet:
+    tlsVerify: false
+  criSocketPath: /run/containerd/containerd.sock
+
+clusterAgent:
+  enabled: true
+  replicas: 1
+
+agents:
+  containers:
+    agent:
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "200m"
+        limits:
+          memory: "512Mi"
+          cpu: "500m"
