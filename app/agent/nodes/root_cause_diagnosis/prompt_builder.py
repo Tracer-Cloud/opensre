@@ -370,7 +370,30 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     datadog_pod_name = evidence.get("datadog_pod_name")
     datadog_container_name = evidence.get("datadog_container_name")
     datadog_kube_namespace = evidence.get("datadog_kube_namespace")
-    if datadog_pod_name:
+    datadog_failed_pods = evidence.get("datadog_failed_pods", [])
+
+    if datadog_failed_pods:
+        section = f"\nFailed Pods ({len(datadog_failed_pods)}):\n"
+        for p in datadog_failed_pods:
+            pod_parts = [f"pod={p.get('pod_name', '?')}"]
+            if p.get("container"):
+                pod_parts.append(f"container={p['container']}")
+            if p.get("namespace"):
+                pod_parts.append(f"namespace={p['namespace']}")
+            if p.get("exit_code") is not None:
+                pod_parts.append(f"exit={p['exit_code']}")
+            if p.get("node_name"):
+                node_str = f"node={p['node_name']}"
+                if p.get("node_ip"):
+                    node_str += f" ({p['node_ip']})"
+                pod_parts.append(node_str)
+            if p.get("cluster"):
+                pod_parts.append(f"cluster={p['cluster']}")
+            if p.get("error"):
+                pod_parts.append(f"error={p['error'][:100]}")
+            section += f"- {' | '.join(pod_parts)}\n"
+        sections.append(section)
+    elif datadog_pod_name:
         pod_parts = [f"pod_name={datadog_pod_name}"]
         if datadog_container_name:
             pod_parts.append(f"container={datadog_container_name}")

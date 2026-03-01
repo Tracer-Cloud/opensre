@@ -82,14 +82,18 @@ class DatadogClient:
             logs = []
             for event in data.get("data", []):
                 attrs = event.get("attributes", {})
-                logs.append({
+                custom = attrs.get("attributes", {}) or {}
+                log = {
                     "timestamp": attrs.get("timestamp", ""),
                     "message": attrs.get("message", ""),
                     "status": attrs.get("status", ""),
                     "service": attrs.get("service", ""),
                     "host": attrs.get("host", ""),
                     "tags": attrs.get("tags", []),
-                })
+                }
+                # Merge custom JSON attributes so pod/node fields are top-level
+                log.update({k: v for k, v in custom.items() if isinstance(k, str)})
+                logs.append(log)
 
             return {"success": True, "logs": logs, "total": len(logs)}
         except httpx.HTTPStatusError as e:
@@ -215,14 +219,17 @@ class DatadogAsyncClient:
             logs = []
             for event in data.get("data", []):
                 attrs = event.get("attributes", {})
-                logs.append({
+                custom = attrs.get("attributes", {}) or {}
+                log = {
                     "timestamp": attrs.get("timestamp", ""),
                     "message": attrs.get("message", ""),
                     "status": attrs.get("status", ""),
                     "service": attrs.get("service", ""),
                     "host": attrs.get("host", ""),
                     "tags": attrs.get("tags", []),
-                })
+                }
+                log.update({k: v for k, v in custom.items() if isinstance(k, str)})
+                logs.append(log)
             return {"success": True, "logs": logs, "total": len(logs), "duration_ms": duration_ms}
         except httpx.HTTPStatusError as e:
             duration_ms = int((time.monotonic() - t0) * 1000)

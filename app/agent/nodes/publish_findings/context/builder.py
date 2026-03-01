@@ -286,27 +286,37 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         }
         source_to_id["datadog_events"] = eid
 
-    # Datadog failed pod catalog entry — surface exact pod location when known
-    datadog_pod_name = evidence.get("datadog_pod_name")
-    datadog_container_name = evidence.get("datadog_container_name")
-    datadog_kube_namespace = evidence.get("datadog_kube_namespace")
-    if datadog_pod_name:
-        pod_query = f"pod_name:{datadog_pod_name}"
-        if datadog_kube_namespace:
-            pod_query = f"kube_namespace:{datadog_kube_namespace} pod_name:{datadog_pod_name}"
+    # Datadog failed pods — one evidence catalog entry per pod
+    dd_ns = evidence.get("datadog_kube_namespace")
+    dd_container = evidence.get("datadog_container_name")
+    raw_pods: list[dict] = evidence.get("datadog_failed_pods", [])
+    # Fall back to single pre-extracted pod when the list is empty
+    if not raw_pods and evidence.get("datadog_pod_name"):
+        raw_pods = [{"pod_name": evidence["datadog_pod_name"], "namespace": dd_ns, "container": dd_container}]
+    for idx, pod in enumerate(raw_pods):
+        pname = pod.get("pod_name") or pod.get("name")
+        pns = pod.get("namespace") or pod.get("kube_namespace") or dd_ns
+        pcontainer = pod.get("container") or pod.get("container_name") or dd_container
+        if not pname:
+            continue
+        pod_query = f"kube_namespace:{pns} pod_name:{pname}" if pns else f"pod_name:{pname}"
         pod_url = build_datadog_logs_url(pod_query, datadog_site or "datadoghq.com")
-        container_part = f" ({datadog_container_name})" if datadog_container_name else ""
-        eid = "evidence/datadog/failed_pod"
+        summary_parts = [f"namespace={pns}"] if pns else []
+        if pod.get("exit_code") is not None:
+            summary_parts.append(f"exit={pod['exit_code']}")
+        if pod.get("memory_requested") and pod.get("memory_limit"):
+            summary_parts.append(f"mem requested={pod['memory_requested']} limit={pod['memory_limit']}")
+        container_label = f" ({pcontainer})" if pcontainer else ""
+        eid = f"evidence/datadog/failed_pod/{pname}"
         evidence_catalog[eid] = {
-            "label": f"Failed Pod: {datadog_pod_name}{container_part}",
+            "label": f"Failed Pod: {pname}{container_label}",
             "url": pod_url,
             "display_id": f"E{len(evidence_catalog) + 1}",
-            "summary": (
-                f"namespace={datadog_kube_namespace}" if datadog_kube_namespace else datadog_pod_name
-            ),
-            "snippet": None,
+            "summary": ", ".join(summary_parts) if summary_parts else pname,
+            "snippet": pod.get("error"),
         }
-        source_to_id["datadog_pod"] = eid
+        if idx == 0:
+            source_to_id["datadog_pod"] = eid
 
     # Attach evidence_ids to claims (validated + non-validated) without mutating originals
     display_map = {eid: entry.get("display_id", eid) for eid, entry in evidence_catalog.items()}
@@ -387,4 +397,23 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         # Integration endpoints for deep links
         "grafana_endpoint": grafana_endpoint,
         "datadog_site": datadog_site,
+        # Kubernetes pod details — from Datadog evidence first, then alert annotations
+        "kube_pod_name": (
+            evidence.get("datadog_pod_name")
+            or _safe_get(raw_alert, "annotations", "hostname")
+            or _safe_get(raw_alert, "commonAnnotations", "hostname")
+        ),
+        "kube_container_name": (
+            evidence.get("datadog_container_name")
+            or _safe_get(raw_alert, "annotations", "container_name")
+            or _safe_get(raw_alert, "commonAnnotations", "container_name")
+        ),
+        "kube_namespace": (
+            evidence.get("datadog_kube_namespace")
+            or _safe_get(raw_alert, "annotations", "namespace")
+            or _safe_get(raw_alert, "commonAnnotations", "namespace")
+            or _safe_get(raw_alert, "annotations", "kube_namespace")
+        ),
+        # Multiple failed pods — populated from Datadog evidence when available
+        "kube_failed_pods": evidence.get("datadog_failed_pods", []),
     }

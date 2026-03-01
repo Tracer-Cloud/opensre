@@ -1,0 +1,43 @@
+## Datadog monitor for the CrashLoopBackOff / OOMKilled demo.
+## Fires on OOMKilled logs in namespace tracer-cl and notifies Slack with
+## node-level details so the RCA agent can locate the exact pod.
+
+monitors:
+  - name: "[tracer-cl] OOMKilled Pod — CrashLoopBackOff"
+    type: log alert
+    query: >-
+      logs("OOMKilled kube_namespace:tracer-cl").index("*").rollup("count").last("5m") > 0
+    message: >-
+      {{#is_alert}}
+      :skull: **OOMKilled / CrashLoopBackOff** detected in namespace `tracer-cl`.
+
+      **Pipeline:** genomics_alignment_pipeline
+      **Cluster:** tracer-cl-demo
+      **Namespace:** tracer-cl
+      **Node:** {{@node_name}} (IP: {{@node_ip}})
+      **Pod:** {{@pod_name}}
+      **Container:** {{@container_name}}
+      **Exit code:** 137 (SIGKILL — kernel OOM)
+      **Reason:** Alignment worker exceeded memory limit (8Gi). Requested 24Gi for GRCh38 index load.
+
+      Search logs: `OOMKilled kube_namespace:tracer-cl`
+
+      @slack-Tracer-devs-alerts
+      {{/is_alert}}
+
+      {{#is_recovery}}
+      :white_check_mark: No more OOMKilled events in `tracer-cl`.
+      @slack-Tracer-devs-alerts
+      {{/is_recovery}}
+    tags:
+      - managed_by:tracer-agent
+      - env:local
+      - pipeline:genomics_alignment_pipeline
+      - cluster:tracer-cl-demo
+    priority: 1
+    options:
+      thresholds:
+        critical: 0
+      notify_no_data: false
+      renotify_interval: 0
+      enable_logs_sample: true

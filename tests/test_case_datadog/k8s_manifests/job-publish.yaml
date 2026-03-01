@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: variant-publish
+  namespace: tracer-dd
+  labels:
+    app: variant-pipeline
+    stage: publish
+    tracer: datadog-demo
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: variant-pipeline
+        stage: publish
+    spec:
+      restartPolicy: Never
+      volumes:
+        - name: staging
+          hostPath:
+            path: /tmp/staging
+            type: DirectoryOrCreate
+      containers:
+        - name: publish
+          image: tracer-dd-pipeline:latest
+          imagePullPolicy: Never
+          env:
+            - name: PIPELINE_STAGE
+              value: "publish"
+            - name: PIPELINE_NAME
+              value: "bioinformatics_variant_pipeline"
+            - name: PIPELINE_RUN_ID
+              value: "{{PIPELINE_RUN_ID}}"
+          volumeMounts:
+            - name: staging
+              mountPath: /tmp/staging

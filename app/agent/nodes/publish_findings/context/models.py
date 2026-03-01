@@ -59,3 +59,10 @@ class ReportContext(TypedDict, total=False):
     # Integration endpoints (for building deep links)
     grafana_endpoint: str | None
     datadog_site: str | None
+
+    kube_pod_name: str | None
+    kube_container_name: str | None
+    kube_namespace: str | None
+
+    # Multiple failed pods (for cluster-scale failures)
+    kube_failed_pods: list[dict]  # [{pod_name, container, namespace, exit_code, error}]

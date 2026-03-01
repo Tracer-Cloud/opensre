@@ -1,0 +1,29 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: variant-ingest
+  namespace: tracer-dd
+  labels:
+    app: variant-pipeline
+    stage: ingest
+    tracer: datadog-demo
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: variant-pipeline
+        stage: ingest
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ingest
+          image: tracer-dd-pipeline:latest
+          imagePullPolicy: Never
+          env:
+            - name: PIPELINE_STAGE
+              value: "ingest"
+            - name: PIPELINE_NAME
+              value: "bioinformatics_variant_pipeline"
+            - name: PIPELINE_RUN_ID
+              value: "{{PIPELINE_RUN_ID}}"
