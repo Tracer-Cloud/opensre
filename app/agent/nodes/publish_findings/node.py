@@ -11,6 +11,8 @@ from app.agent.nodes.publish_findings.formatters.report import (
     get_investigation_url,
 )
 from app.agent.nodes.publish_findings.renderers.terminal import render_report
+from typing import cast
+
 from app.agent.state import InvestigationState
 from app.agent.utils.ingest_delivery import send_ingest
 
@@ -59,9 +61,7 @@ def generate_report(state: InvestigationState) -> dict:
 
     try:
         # Send full report text as problem_report, keep short summary
-        state_with_report = dict(state)
-        state_with_report["problem_report"] = {"report_md": slack_message}
-        state_with_report["summary"] = short_summary
+        state_with_report = cast(InvestigationState, {**state, "problem_report": {"report_md": slack_message}, "summary": short_summary})
         send_ingest(state_with_report)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[publish] Ingest delivery failed: %s", exc)
