@@ -1,6 +1,7 @@
 """Main orchestration node for report generation and publishing."""
 
 import logging
+from typing import cast
 
 from langsmith import traceable
 
@@ -11,8 +12,6 @@ from app.agent.nodes.publish_findings.formatters.report import (
     get_investigation_url,
 )
 from app.agent.nodes.publish_findings.renderers.terminal import render_report
-from typing import cast
-
 from app.agent.state import InvestigationState
 from app.agent.utils.ingest_delivery import send_ingest
 
