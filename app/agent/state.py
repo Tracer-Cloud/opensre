@@ -88,6 +88,8 @@ class AgentState(TypedDict, total=False):
     # Outputs
     slack_message: str
     problem_md: str
+    summary: str
+    problem_report: dict[str, Any]
 
 
 # Alias for backward compatibility
