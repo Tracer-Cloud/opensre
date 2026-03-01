@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import re
 from typing import Any
 
 from app.agent.tools.clients.datadog import DatadogClient, DatadogConfig
@@ -81,6 +82,117 @@ def _extract_pod_from_logs(logs: list[dict]) -> tuple[str | None, str | None, st
         if pod_name:
             return pod_name, container_name, kube_namespace
     return None, None, None
+
+
+def _parse_oom_details(message: str) -> dict[str, Any]:
+    """Extract OOM kill memory details (requested/limit) from a log message."""
+    details: dict[str, Any] = {}
+    msg_lower = message.lower()
+    if "oom" not in msg_lower and "memory limit" not in msg_lower:
+        return details
+
+    m = re.search(r"[Rr]equested[=:\s]+([0-9]+\s*[GMKBgmkb]i?)", message)
+    if m:
+        details["memory_requested"] = m.group(1).strip()
+
+    m = re.search(r"[Ll]imit[=:\s]+([0-9]+\s*[GMKBgmkb]i?)", message)
+    if m:
+        details["memory_limit"] = m.group(1).strip()
+
+    m = re.search(r"attempt[=:\s]+(\d+)", message)
+    if m:
+        details["attempt"] = m.group(1)
+
+    return details
+
+
+def _extract_all_failed_pods(logs: list[dict]) -> list[dict]:
+    """Extract all unique failed pods from log tags and JSON attributes."""
+    seen: set[str] = set()
+    pods: list[dict] = []
+    for log in logs:
+        if not isinstance(log, dict):
+            continue
+        pod_name = container_name = kube_namespace = exit_code = kube_job = cluster = None
+        node_name = node_ip = None
+
+        for tag in log.get("tags", []):
+            if not isinstance(tag, str) or ":" not in tag:
+                continue
+            k, _, v = tag.partition(":")
+            if k == "pod_name":
+                pod_name = v
+            elif k == "container_name":
+                container_name = v
+            elif k == "kube_namespace":
+                kube_namespace = v
+            elif k == "exit_code":
+                exit_code = v
+            elif k == "kube_job":
+                kube_job = v
+            elif k == "cluster":
+                cluster = v
+            elif k == "node_name":
+                node_name = v
+            elif k == "node_ip":
+                node_ip = v
+
+        # Fallback to top-level JSON attributes (merged from attributes.attributes by client)
+        pod_name = pod_name or log.get("pod_name")
+        container_name = container_name or log.get("container_name")
+        kube_namespace = kube_namespace or log.get("kube_namespace")
+        if exit_code is None and log.get("exit_code") is not None:
+            exit_code = str(log["exit_code"])
+        kube_job = kube_job or log.get("kube_job")
+        cluster = cluster or log.get("cluster")
+        node_name = node_name or log.get("node_name")
+        node_ip = node_ip or log.get("node_ip")
+
+        if pod_name and pod_name not in seen:
+            seen.add(pod_name)
+            entry: dict[str, Any] = {
+                "pod_name": pod_name,
+                "container": container_name,
+                "namespace": kube_namespace,
+                "exit_code": exit_code,
+            }
+            if kube_job:
+                entry["kube_job"] = kube_job
+            if cluster:
+                entry["cluster"] = cluster
+            if node_name:
+                entry["node_name"] = node_name
+            if node_ip:
+                entry["node_ip"] = node_ip
+            msg = log.get("message", "")
+            if msg and any(kw in msg.lower() for kw in _ERROR_KEYWORDS):
+                entry["error"] = msg[:200]
+                oom = _parse_oom_details(msg)
+                if oom:
+                    entry.update(oom)
+            pods.append(entry)
+
+    # Second pass: enrich pods with OOM details from other logs for the same pod
+    pod_index = {p["pod_name"]: p for p in pods}
+    for log in logs:
+        if not isinstance(log, dict):
+            continue
+        msg = log.get("message", "")
+        if not msg:
+            continue
+        oom = _parse_oom_details(msg)
+        if not oom:
+            continue
+        lp = log.get("pod_name")
+        if not lp:
+            for tag in log.get("tags", []):
+                if isinstance(tag, str) and tag.startswith("pod_name:"):
+                    lp = tag.partition(":")[2]
+                    break
+        if lp and lp in pod_index:
+            pod_index[lp].update({k: v for k, v in oom.items() if k not in pod_index[lp]})
+
+    return pods
 
 
 def query_datadog_logs(
@@ -337,6 +449,9 @@ def query_datadog_all(
     ]
 
     pod_name, container_name, detected_namespace = _extract_pod_from_logs(error_logs or logs)
+    # Scan ALL logs for pod identities so we don't miss pods whose lifecycle logs
+    # don't contain error keywords (e.g. pod-lifecycle status=failed, BackoffLimitExceeded)
+    failed_pods = _extract_all_failed_pods(logs)
 
     errors: dict[str, str] = {}
     if not logs_raw.get("success") and logs_raw.get("error"):
@@ -359,6 +474,7 @@ def query_datadog_all(
         "pod_name": pod_name,
         "container_name": container_name,
         "kube_namespace": detected_namespace or kube_namespace,
+        "failed_pods": failed_pods,
         "errors": errors,
     }
 

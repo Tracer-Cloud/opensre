@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: variant-validate
+  namespace: tracer-dd
+  labels:
+    app: variant-pipeline
+    stage: validate
+    tracer: datadog-demo
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: variant-pipeline
+        stage: validate
+    spec:
+      restartPolicy: Never
+      # Shares /tmp/staging with ingest via hostPath so it can read the raw file.
+      # In a real cluster you'd use a PVC; for kind/demo hostPath is fine.
+      volumes:
+        - name: staging
+          hostPath:
+            path: /tmp/staging
+            type: DirectoryOrCreate
+      containers:
+        - name: validate
+          image: tracer-dd-pipeline:latest
+          imagePullPolicy: Never
+          env:
+            - name: PIPELINE_STAGE
+              value: "validate"
+            - name: PIPELINE_NAME
+              value: "bioinformatics_variant_pipeline"
+            - name: PIPELINE_RUN_ID
+              value: "{{PIPELINE_RUN_ID}}"
+          volumeMounts:
+            - name: staging
+              mountPath: /tmp/staging

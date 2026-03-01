@@ -7,6 +7,66 @@ from app.agent.nodes.publish_findings.formatters.base import format_slack_link
 from app.agent.nodes.publish_findings.urls.aws import build_s3_console_url
 
 
+def get_failed_pods(ctx: ReportContext) -> list[dict]:
+    """Return failed pods list, falling back to single-pod fields."""
+    pods: list[dict] = ctx.get("kube_failed_pods", [])
+    if not pods:
+        name = ctx.get("kube_pod_name")
+        if name:
+            pods = [{"pod_name": name, "namespace": ctx.get("kube_namespace"), "container": ctx.get("kube_container_name")}]
+    return pods
+
+
+def format_pod_line(pod: dict, datadog_site: str | None, *, bullet: str = "") -> str:
+    """Format a single failed pod as a one-line string with a Datadog logs link.
+
+    Returns empty string when pod has no name.
+    """
+    name = pod.get("pod_name") or pod.get("name")
+    if not name:
+        return ""
+
+    ns = pod.get("namespace") or pod.get("kube_namespace")
+    container = pod.get("container") or pod.get("container_name")
+    exit_code = pod.get("exit_code")
+    node = pod.get("node_name")
+    node_ip = pod.get("node_ip")
+    job = pod.get("kube_job")
+    cluster = pod.get("cluster")
+    mem_req = pod.get("memory_requested")
+    mem_lim = pod.get("memory_limit")
+
+    parts: list[str] = []
+    if ns:
+        parts.append(f"namespace={ns}")
+    if container:
+        parts.append(f"container={container}")
+    if exit_code is not None:
+        parts.append(f"exit={exit_code}")
+    if cluster:
+        parts.append(f"cluster={cluster}")
+    if job:
+        parts.append(f"job={job}")
+    if node:
+        parts.append(f"node={node} ({node_ip})" if node_ip else f"node={node}")
+    if mem_req and mem_lim:
+        parts.append(f"memory: requested={mem_req} limit={mem_lim}")
+    elif mem_lim:
+        parts.append(f"memory_limit={mem_lim}")
+
+    meta = f" ({', '.join(parts)})" if parts else ""
+
+    site = datadog_site or "datadoghq.com"
+    if ns:
+        query = f"kube_namespace:{ns} pod_name:{name}"
+        url = f"https://app.{site}/logs?query={query.replace(' ', '+').replace(':', '%3A')}"
+        pod_text = format_slack_link(name, url)
+    else:
+        pod_text = name
+
+    return f"{bullet}{pod_text}{meta}"
+
+
 def extract_infrastructure_assets(ctx: ReportContext) -> dict[str, Any]:
     """Extract infrastructure assets from alert annotations and evidence.
 
@@ -168,6 +228,20 @@ def build_investigation_trace(ctx: ReportContext) -> list[str]:
     if log_groups or evidence.get("cloudwatch_logs") or evidence.get("error_logs"):
         log_source = log_groups[0]["name"] if log_groups else "CloudWatch"
         trace_steps.append(f"{step_num}. Failure detected in {log_source}")
+        step_num += 1
+
+    # Kubernetes pods that experienced errors — show first 3, summarize the rest
+    datadog_site = ctx.get("datadog_site", "datadoghq.com")
+    all_pods = get_failed_pods(ctx)
+    shown, total = 0, len(all_pods)
+    for pod in all_pods[:3]:
+        line = format_pod_line(pod, datadog_site)
+        if line:
+            trace_steps.append(f"{step_num}. Affected pod: {line}")
+            step_num += 1
+            shown += 1
+    if total > 3:
+        trace_steps.append(f"{step_num}. ... and {total - shown} more pods with the same failure")
         step_num += 1
 
     # Step 2: ECS/Batch/Lambda compute that failed
