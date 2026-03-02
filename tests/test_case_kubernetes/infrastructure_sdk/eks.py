@@ -626,10 +626,9 @@ def deploy_trigger_lambda(outputs: dict[str, Any]) -> str:
             code = e.response["Error"]["Code"]
             if code == "ResourceInUseException":
                 break
-            if code == "InvalidRequestException" and "authentication mode" in str(e):
-                if attempt < 9:
-                    time.sleep(10)
-                    continue
+            if code == "InvalidRequestException" and "authentication mode" in str(e) and attempt < 9:
+                time.sleep(10)
+                continue
             raise
 
     with contextlib.suppress(ClientError):
