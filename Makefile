@@ -28,6 +28,7 @@ datadog-demo:
 	$(PYTHON) -m tests.test_case_datadog.test_orchestrator
 
 # Run CrashLoopBackOff  demo
+crashloop-demo:
 	$(PYTHON) -m tests.test_case_crashloop.test_orchestrator
 
 # Run Prefect ECS Fargate E2E test (alias for demo)
