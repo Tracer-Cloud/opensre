@@ -14,40 +14,41 @@ jobs:
   trigger-alert:
     runs-on: ubuntu-latest
     env:
+      AWS_REGION: us-east-1
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
       DD_SITE: datadoghq.com
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
       SLACK_DEVS_ALERTS_CHANNEL_ID: C09S7GDG60J
-      TRIGGER_API_URL: https://dowvqoqx85.execute-api.us-east-1.amazonaws.com/prod
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Trigger pipeline failure via API (~10s)
-        id: trigger
-        run: |
-          echo "trigger_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
-          response=$(curl -sf -X POST "$TRIGGER_API_URL/trigger?inject_error=true")
-          echo "response=$response"
-          echo "pipeline_run_id=$(echo $response | python3 -c 'import sys,json; print(json.load(sys.stdin)["pipeline_run_id"])')" >> "$GITHUB_OUTPUT"
-          echo "s3_key=$(echo $response | python3 -c 'import sys,json; print(json.load(sys.stdin)["s3_key"])')" >> "$GITHUB_OUTPUT"
-
-      - name: Report trigger result
-        run: |
-          echo "Pipeline run: ${{ steps.trigger.outputs.pipeline_run_id }}"
-          echo "S3 key: ${{ steps.trigger.outputs.s3_key }}"
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Set up Python
-        if: ${{ inputs.verify == true || github.event_name == 'schedule' }}
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
           cache: "pip"
 
       - name: Install project
-        if: ${{ inputs.verify == true || github.event_name == 'schedule' }}
         run: pip install -q -e .
+
+      - name: Trigger pipeline failure via centralized config (~10s)
+        id: trigger
+        run: |
+          echo "trigger_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+          python -m tests.test_case_kubernetes.trigger_alert
+
+      - name: Report trigger result
+        run: |
+          echo "Trigger command completed successfully"
 
       - name: Verify Datadog + Slack (~2 min)
         if: ${{ inputs.verify == true || github.event_name == 'schedule' }}

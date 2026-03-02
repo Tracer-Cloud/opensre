@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo
+.PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config
 
 PYTHON = python3
 PIP = python3 -m pip
@@ -68,11 +68,15 @@ test-k8s-eks:
 
 # Fast: trigger a K8s alert in ~15s (fire-and-forget)
 trigger-alert:
-	$(PYTHON) -m tests.test_case_kubernetes.trigger_alert --configure-kubectl
+	$(PYTHON) -m tests.test_case_kubernetes.trigger_alert
+
+# Recreate centralized trigger API config JSON from AWS
+regen-trigger-config:
+	$(PYTHON) -m tests.test_case_kubernetes.trigger_alert --regen-config
 
 # Fast trigger + wait for Slack confirmation
 trigger-alert-verify:
-	$(PYTHON) -m tests.test_case_kubernetes.trigger_alert --configure-kubectl --wait-slack
+	$(PYTHON) -m tests.test_case_kubernetes.trigger_alert --verify
 
 # Run Prefect ECS local test
 prefect-local-test:
