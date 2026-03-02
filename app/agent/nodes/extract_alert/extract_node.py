@@ -59,6 +59,13 @@ def node_extract_alert(state: InvestigationState) -> dict:
     if details.is_noise:
         debug_print("Message classified as noise - skipping investigation")
         tracker.complete("extract_alert", fields_updated=["is_noise"])
+        slack_ctx = state.get("slack_context", {}) or {}
+        _ts = slack_ctx.get("ts") or slack_ctx.get("thread_ts")
+        _channel = slack_ctx.get("channel_id")
+        _token = slack_ctx.get("access_token")
+        if _token and _channel and _ts:
+            from app.agent.utils.slack_delivery import swap_reaction
+            swap_reaction("eyes", "white_check_mark", _channel, _ts, _token)
         return {"is_noise": True}
 
     raw_alert = state.get("raw_alert", {})
