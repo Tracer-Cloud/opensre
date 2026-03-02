@@ -48,7 +48,7 @@ def generate_report(state: InvestigationState) -> dict:
     _alert_ts = slack_ctx.get("ts") or slack_ctx.get("thread_ts")
     slack_delivery_attempted = bool(thread_ts)
 
-    report_posted = send_slack_report(
+    report_posted, delivery_error = send_slack_report(
         slack_message,
         channel=_channel,
         thread_ts=thread_ts,
@@ -61,7 +61,7 @@ def generate_report(state: InvestigationState) -> dict:
         swap_reaction("eyes", "clipboard", _channel, _alert_ts, _token)
     elif slack_delivery_attempted and not report_posted:
         raise RuntimeError(
-            f"[publish] Slack delivery failed for channel={_channel}, thread_ts={thread_ts}"
+            f"[publish] Slack delivery failed: channel={_channel}, thread_ts={thread_ts}, reason={delivery_error}"
         )
 
     try:
