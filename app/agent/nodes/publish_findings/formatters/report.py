@@ -382,18 +382,23 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
 
     blocks: list[dict[str, Any]] = []
 
-    # ── Header ──
+    header_text = f"\U0001f6a8 [RCA] {report_title}"
+    if len(header_text) > 150:
+        header_text = header_text[:147] + "..."
     blocks.append({
         "type": "header",
-        "text": {"type": "plain_text", "text": f"\U0001f6a8 [RCA] {report_title}"},
+        "text": {"type": "plain_text", "text": header_text},
     })
 
-    def _mrkdwn_section(text: str) -> dict[str, Any]:
+    def _mrkdwn_section(text: str) -> dict[str, Any] | None:
         """Build a section block with sanitized mrkdwn text.
 
         Slack section blocks have a 3000 char limit per text field.
+        Returns None when text is empty — caller must skip None results.
         """
-        sanitized = _sanitize_for_slack(text)
+        sanitized = _sanitize_for_slack(text).strip()
+        if not sanitized:
+            return None
         if len(sanitized) > 2990:
             sanitized = sanitized[:2987] + "..."
         return {
@@ -401,11 +406,15 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
             "text": {"type": "mrkdwn", "text": sanitized},
         }
 
+    def _add(block: dict[str, Any] | None) -> None:
+        if block is not None:
+            blocks.append(block)
+
     # ── Root Cause ──
     root_cause_sentence = _derive_root_cause_sentence(ctx)
     if not root_cause_sentence:
         root_cause_sentence = "Not determined (insufficient evidence)"
-    blocks.append(_mrkdwn_section(f"*Root Cause*\n{root_cause_sentence}"))
+    _add(_mrkdwn_section(f"*Root Cause*\n{root_cause_sentence}"))
 
     # ── Failed Pods ──
     datadog_site = ctx.get("datadog_site", "datadoghq.com")
@@ -414,7 +423,7 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     if len(all_pods) > 5:
         pod_lines.append(f"• ... and {len(all_pods) - 5} more pods")
     if pod_lines:
-        blocks.append(_mrkdwn_section("*Failed Pods*\n" + "\n".join(pod_lines)))
+        _add(_mrkdwn_section("*Failed Pods*\n" + "\n".join(pod_lines)))
 
     # ── Validated Claims ──
     if validated_claims:
@@ -434,7 +443,7 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
                     evidence_list.append(format_slack_link(disp, url) if url else disp)
             ev_str = f" [{', '.join(evidence_list)}]" if evidence_list else ""
             claims_lines.append(f"\u2022 {claim}{ev_str}")
-        blocks.append(_mrkdwn_section("*Findings*\n" + "\n".join(claims_lines)))
+        _add(_mrkdwn_section("*Findings*\n" + "\n".join(claims_lines)))
 
     # ── Non-Validated Claims ──
     if non_validated_claims:
@@ -442,29 +451,29 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
         for claim_data in non_validated_claims:
             claim = _sanitize_for_slack(claim_data.get("claim", ""))
             nv_lines.append(f"\u2022 {claim}")
-        blocks.append(_mrkdwn_section("*Inferred (not yet validated)*\n" + "\n".join(nv_lines)))
+        _add(_mrkdwn_section("*Inferred (not yet validated)*\n" + "\n".join(nv_lines)))
 
     # ── Data Lineage ──
     lineage_section = format_data_lineage_flow(ctx).strip()
     if lineage_section:
         blocks.append({"type": "divider"})
-        blocks.append(_mrkdwn_section(lineage_section))
+        _add(_mrkdwn_section(lineage_section))
 
     # ── Investigation Trace ──
     infra_section = format_infrastructure_correlation(ctx).strip()
     if infra_section:
-        blocks.append(_mrkdwn_section(infra_section))
+        _add(_mrkdwn_section(infra_section))
 
     # ── Cited Evidence ──
     cited_section = format_cited_evidence_section(ctx).strip()
     if cited_section:
         blocks.append({"type": "divider"})
-        blocks.append(_mrkdwn_section(cited_section))
+        _add(_mrkdwn_section(cited_section))
 
     # ── CloudWatch link ──
     cw_link = render_cloudwatch_link(ctx).strip()
     if cw_link:
-        blocks.append(_mrkdwn_section(cw_link))
+        _add(_mrkdwn_section(cw_link))
 
     # ── Meta context (duration / alert) at the bottom ──
     meta_parts = []
@@ -478,5 +487,10 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
             "type": "context",
             "elements": [{"type": "mrkdwn", "text": " | ".join(meta_parts)}],
         })
+
+    # Slack hard-limits messages to 50 blocks — truncate from the middle to keep
+    # the header (first block) and meta/actions (last 2 blocks) intact.
+    if len(blocks) > 50:
+        blocks = blocks[:48] + blocks[-2:]
 
     return blocks
