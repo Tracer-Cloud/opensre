@@ -127,7 +127,7 @@ def send_slack_report(
     access_token: str | None = None,
     blocks: list[dict[str, Any]] | None = None,
     **extra: Any,
-) -> bool:
+) -> tuple[bool, str]:
     """
     Post the RCA report as a thread reply in Slack.
 
@@ -143,23 +143,27 @@ def send_slack_report(
         **extra: Any additional Slack API params (e.g. unfurl_links, mrkdwn) merged into the payload.
 
     Returns:
-        True if the report was posted successfully, False otherwise.
+        (success, error_detail) — success is True if posted, error_detail is non-empty on failure.
     """
     if not thread_ts:
         logger.warning("[slack] Delivery skipped: no thread_ts (channel=%s)", channel)
         debug_print("Slack delivery skipped: no thread_ts - refusing to post top-level message.")
-        return False
+        return False, "no_thread_ts"
 
     if access_token and channel:
-        success = _post_direct(
+        success, direct_error = _post_direct(
             slack_message, channel, thread_ts, access_token, blocks=blocks, **extra
         )
         if not success:
-            logger.info("[slack] Direct post failed, falling back to webapp delivery")
-            return _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks, **extra)
-        return success
+            logger.info("[slack] Direct post failed (%s), falling back to webapp delivery", direct_error)
+            webapp_ok = _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks, **extra)
+            if not webapp_ok:
+                return False, f"direct={direct_error}, webapp=failed"
+            return True, ""
+        return True, ""
     else:
-        return _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks, **extra)
+        webapp_ok = _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks, **extra)
+        return (True, "") if webapp_ok else (False, "webapp=failed")
 
 
 def _post_direct(
@@ -170,10 +174,10 @@ def _post_direct(
     *,
     blocks: list[dict[str, Any]] | None = None,
     **extra: Any,
-) -> bool:
+) -> tuple[bool, str]:
     """Post as a thread reply via Slack chat.postMessage.
 
-    Returns True if the message was posted successfully, False otherwise.
+    Returns (success, error_detail) where error_detail is empty on success.
     """
     payload = _merge_payload(channel, text, thread_ts, blocks=blocks, **extra)
 
@@ -195,18 +199,15 @@ def _post_direct(
                 "[slack] Direct post FAILED: error=%s, metadata=%s (channel=%s, thread_ts=%s)",
                 error, response_meta, channel, thread_ts,
             )
-            debug_print(f"Slack direct post failed: {error}")
-            return False
+            return False, f"slack_error={error}"
         warnings = data.get("response_metadata", {}).get("warnings", [])
         if warnings:
             logger.warning("[slack] Reply posted with warnings: %s", warnings)
         logger.info("[slack] Reply posted successfully (thread_ts=%s, ts=%s)", thread_ts, data.get("ts"))
-        debug_print(f"Slack reply posted (thread_ts={thread_ts}, ts={data.get('ts')})")
-        return True
+        return True, ""
     except Exception as exc:  # noqa: BLE001
         logger.error("[slack] Direct post exception: %s", exc)
-        debug_print(f"Slack direct post failed: {exc}")
-        return False
+        return False, f"exception={exc}"
 
 
 def _post_via_webapp(
