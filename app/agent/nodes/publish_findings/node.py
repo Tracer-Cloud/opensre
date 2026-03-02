@@ -43,20 +43,26 @@ def generate_report(state: InvestigationState) -> dict:
 
     logger.info("[publish] Sending report: text_len=%d, blocks=%d", len(slack_message), len(all_blocks))
 
-    send_slack_report(
-        slack_message,
-        channel=slack_ctx.get("channel_id"),
-        thread_ts=thread_ts,
-        access_token=slack_ctx.get("access_token"),
-        blocks=all_blocks,
-    )
-
     _channel = slack_ctx.get("channel_id")
     _token = slack_ctx.get("access_token")
     _alert_ts = slack_ctx.get("ts") or slack_ctx.get("thread_ts")
-    if _token and _channel and _alert_ts:
+    slack_delivery_attempted = bool(thread_ts)
+
+    report_posted = send_slack_report(
+        slack_message,
+        channel=_channel,
+        thread_ts=thread_ts,
+        access_token=_token,
+        blocks=all_blocks,
+    )
+
+    if report_posted and _token and _channel and _alert_ts:
         from app.agent.utils.slack_delivery import swap_reaction
         swap_reaction("eyes", "clipboard", _channel, _alert_ts, _token)
+    elif slack_delivery_attempted and not report_posted:
+        raise RuntimeError(
+            f"[publish] Slack delivery failed for channel={_channel}, thread_ts={thread_ts}"
+        )
 
     try:
         # Send full report text as problem_report, keep short summary

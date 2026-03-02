@@ -127,7 +127,7 @@ def send_slack_report(
     access_token: str | None = None,
     blocks: list[dict[str, Any]] | None = None,
     **extra: Any,
-) -> None:
+) -> bool:
     """
     Post the RCA report as a thread reply in Slack.
 
@@ -141,11 +141,14 @@ def send_slack_report(
         access_token: Slack bot/user OAuth token for direct posting.
         blocks: Optional Slack Block Kit blocks for interactive elements.
         **extra: Any additional Slack API params (e.g. unfurl_links, mrkdwn) merged into the payload.
+
+    Returns:
+        True if the report was posted successfully, False otherwise.
     """
     if not thread_ts:
         logger.warning("[slack] Delivery skipped: no thread_ts (channel=%s)", channel)
         debug_print("Slack delivery skipped: no thread_ts - refusing to post top-level message.")
-        return
+        return False
 
     if access_token and channel:
         success = _post_direct(
@@ -153,9 +156,10 @@ def send_slack_report(
         )
         if not success:
             logger.info("[slack] Direct post failed, falling back to webapp delivery")
-            _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks, **extra)
+            return _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks, **extra)
+        return success
     else:
-        _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks, **extra)
+        return _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks, **extra)
 
 
 def _post_direct(
@@ -212,14 +216,17 @@ def _post_via_webapp(
     *,
     blocks: list[dict[str, Any]] | None = None,
     **extra: Any,
-) -> None:
-    """Fallback: delegate to NextJS /api/slack endpoint."""
+) -> bool:
+    """Fallback: delegate to NextJS /api/slack endpoint.
+
+    Returns True if the message was delivered successfully, False otherwise.
+    """
     base_url = os.getenv("TRACER_API_URL")
     target_channel = channel or SLACK_CHANNEL
 
     if not base_url:
         debug_print("Slack delivery skipped: TRACER_API_URL not set.")
-        return
+        return False
 
     api_url = f"{base_url.rstrip('/')}/api/slack"
     payload = _merge_payload(target_channel, text, thread_ts, blocks=blocks, **extra)
@@ -232,7 +239,10 @@ def _post_via_webapp(
         debug_print(
             f"Slack delivery failed: HTTP {exc.response.status_code if exc.response else 'unknown'}: {detail[:200]}"
         )
+        return False
     except Exception as exc:  # noqa: BLE001
         debug_print(f"Slack delivery failed: {exc}")
+        return False
     else:
         debug_print(f"Slack delivery triggered via NextJS /api/slack (thread_ts={thread_ts}).")
+        return True
