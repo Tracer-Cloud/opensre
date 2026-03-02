@@ -26,6 +26,7 @@ import tempfile
 import uuid
 
 from tests.shared.infrastructure_sdk.config import load_outputs
+from tests.shared.infrastructure_sdk.trigger_config import discover_runtime_outputs
 from tests.test_case_kubernetes.infrastructure_sdk.local import (
     apply_manifest,
     build_image,
@@ -67,7 +68,13 @@ JOB_NAMES = {
 
 
 def _load_config() -> dict:
-    outputs = load_outputs("tracer-eks-k8s-test")
+    try:
+        outputs = load_outputs("tracer-eks-k8s-test")
+    except FileNotFoundError:
+        discovered = discover_runtime_outputs()
+        if not discovered:
+            raise
+        outputs = discovered
     return {
         "landing_bucket": outputs["landing_bucket"],
         "processed_bucket": outputs["processed_bucket"],
