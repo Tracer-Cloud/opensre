@@ -112,10 +112,50 @@ def _delete_job(job_name: str) -> None:
         )
 
 
+def _ensure_namespace_and_service_account() -> None:
+    """Ensure namespace and service account exist for job submissions."""
+    ns_path = f"/api/v1/namespaces/{NAMESPACE}"
+    sa_path = f"/api/v1/namespaces/{NAMESPACE}/serviceaccounts/{SERVICE_ACCOUNT}"
+
+    try:
+        _k8s_request("GET", ns_path)
+    except RuntimeError as err:
+        if '"code":404' in str(err):
+            _k8s_request(
+                "POST",
+                "/api/v1/namespaces",
+                {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": NAMESPACE}},
+            )
+        else:
+            raise
+
+    try:
+        _k8s_request("GET", sa_path)
+    except RuntimeError as err:
+        if '"code":404' in str(err):
+            _k8s_request(
+                "POST",
+                f"/api/v1/namespaces/{NAMESPACE}/serviceaccounts",
+                {"apiVersion": "v1", "kind": "ServiceAccount", "metadata": {"name": SERVICE_ACCOUNT}},
+            )
+        else:
+            raise
+
+
 def _create_job(job_name: str, stage: str, env_vars: dict[str, str]) -> None:
     """Submit a K8s Job for the given pipeline stage."""
     env = [{"name": k, "value": v} for k, v in env_vars.items()]
     env.append({"name": "PIPELINE_STAGE", "value": stage})
+    creds = boto3.Session().get_credentials().get_frozen_credentials()
+    env.extend(
+        [
+            {"name": "AWS_ACCESS_KEY_ID", "value": creds.access_key},
+            {"name": "AWS_SECRET_ACCESS_KEY", "value": creds.secret_key},
+            {"name": "AWS_SESSION_TOKEN", "value": creds.token or ""},
+            {"name": "AWS_REGION", "value": REGION},
+            {"name": "AWS_DEFAULT_REGION", "value": REGION},
+        ]
+    )
 
     manifest = {
         "apiVersion": "batch/v1",
@@ -196,6 +236,9 @@ def lambda_handler(event: dict, context) -> dict:
     try:
         # Upload data to S3
         s3_key, correlation_id = _upload_data(payload)
+
+        # Ensure base namespace primitives exist
+        _ensure_namespace_and_service_account()
 
         # Clean up stale jobs
         for job in ("etl-extract", "etl-transform", "etl-transform-error"):

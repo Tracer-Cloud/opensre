@@ -140,7 +140,14 @@ def deploy_datadog_helm(values_file: str, namespace: str) -> None:
         cmd.extend(["--set", f"datadog.site={site}"])
 
     print("Installing Datadog Helm chart...")
-    _run(cmd, capture=False)
+    try:
+        _run(cmd, capture=False)
+    except subprocess.CalledProcessError:
+        # Datadog operator/cluster-agent can exceed helm --wait timeout on fresh installs.
+        # Retry without blocking wait and let wait_for_datadog_agent handle readiness.
+        cmd_no_wait = [arg for arg in cmd if arg not in {"--wait", "--timeout", "3m"}]
+        print("Helm wait timed out, retrying install without --wait...")
+        _run(cmd_no_wait, capture=False)
     print("Datadog Helm chart installed")
 
 
