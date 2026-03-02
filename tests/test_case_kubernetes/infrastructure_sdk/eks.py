@@ -339,6 +339,38 @@ def update_kubeconfig() -> None:
     )
 
 
+def cluster_exists() -> bool:
+    """Return True if the EKS cluster exists."""
+    eks_client = get_boto3_client("eks", REGION)
+    try:
+        eks_client.describe_cluster(name=CLUSTER_NAME)
+        return True
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "ResourceNotFoundException":
+            return False
+        raise
+
+
+def ensure_nodegroup_capacity() -> None:
+    """Ensure the EKS cluster has an ACTIVE managed node group without redeploying cluster."""
+    status = _cluster_exists()
+    if status != "ACTIVE":
+        raise RuntimeError(
+            f"EKS cluster {CLUSTER_NAME} is not ACTIVE (status={status}). "
+            "Create or recover the cluster before running tests."
+        )
+
+    node_status = _node_group_exists()
+    if node_status == "ACTIVE":
+        return
+
+    node_role = _create_node_role()
+    vpc_info = vpc.get_default_vpc(REGION)
+    subnet_ids = vpc.get_public_subnets(vpc_info["vpc_id"], REGION)
+    subnet_ids = _filter_eks_subnets(subnet_ids)
+    _create_node_group(node_role["arn"], subnet_ids)
+
+
 # ---------------------------------------------------------------------------
 # Subnet filtering
 # ---------------------------------------------------------------------------
@@ -383,9 +415,29 @@ def _enable_api_auth_mode() -> None:
         pass
 
 
+def _wait_for_auth_mode(expected: str, timeout: int = 180) -> bool:
+    """Wait until cluster accessConfig.authenticationMode reaches expected value."""
+    eks_client = get_boto3_client("eks", REGION)
+    start = time.monotonic()
+    while time.monotonic() - start < timeout:
+        try:
+            resp = eks_client.describe_cluster(name=CLUSTER_NAME)
+            mode = resp["cluster"]["accessConfig"]["authenticationMode"]
+            if mode == expected:
+                return True
+        except ClientError:
+            pass
+        time.sleep(5)
+    return False
+
+
 def _grant_ci_access() -> None:
     """Grant the CI IAM principal cluster admin access."""
     eks_client = get_boto3_client("eks", REGION)
+    if not _wait_for_auth_mode("API_AND_CONFIG_MAP", timeout=240):
+        raise RuntimeError(
+            "EKS auth mode did not become API_AND_CONFIG_MAP in time; cannot create access entry yet."
+        )
     try:
         eks_client.create_access_entry(
             clusterName=CLUSTER_NAME,
@@ -559,16 +611,25 @@ def deploy_trigger_lambda(outputs: dict[str, Any]) -> str:
     time.sleep(5)  # IAM propagation
 
     # 2. Grant Lambda role access to EKS cluster
+    _enable_api_auth_mode()
     eks_client = get_boto3_client("eks", REGION)
-    try:
-        eks_client.create_access_entry(
-            clusterName=CLUSTER_NAME,
-            principalArn=role["arn"],
-            type="STANDARD",
-        )
-        print("  Created EKS access entry for Lambda role")
-    except ClientError as e:
-        if e.response["Error"]["Code"] != "ResourceInUseException":
+    for attempt in range(10):
+        try:
+            eks_client.create_access_entry(
+                clusterName=CLUSTER_NAME,
+                principalArn=role["arn"],
+                type="STANDARD",
+            )
+            print("  Created EKS access entry for Lambda role")
+            break
+        except ClientError as e:
+            code = e.response["Error"]["Code"]
+            if code == "ResourceInUseException":
+                break
+            if code == "InvalidRequestException" and "authentication mode" in str(e):
+                if attempt < 9:
+                    time.sleep(10)
+                    continue
             raise
 
     with contextlib.suppress(ClientError):

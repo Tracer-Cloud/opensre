@@ -28,9 +28,11 @@ import sys
 import uuid
 
 from tests.shared.infrastructure_sdk.config import load_outputs
+from tests.shared.infrastructure_sdk.trigger_config import discover_runtime_outputs
 from tests.test_case_kubernetes.infrastructure_sdk.eks import (
     deploy_eks_stack,
     destroy_eks_stack,
+    ensure_nodegroup_capacity,
     get_ecr_image_uri,
     update_kubeconfig,
 )
@@ -99,8 +101,16 @@ def main() -> int:
             deploy_eks_stack()
         else:
             update_kubeconfig()
+            ensure_nodegroup_capacity()
 
-        config = load_outputs("tracer-eks-k8s-test")
+        try:
+            config = load_outputs("tracer-eks-k8s-test")
+        except FileNotFoundError:
+            fallback = discover_runtime_outputs()
+            if not fallback:
+                print("FAIL: Could not resolve EKS runtime outputs from local file or AWS tags")
+                return 1
+            config = fallback
         image_uri = config["ecr_image_uri"]
         print(f"Using ECR image: {image_uri}")
 
