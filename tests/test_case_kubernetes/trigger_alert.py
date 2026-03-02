@@ -25,11 +25,12 @@ import urllib.error
 import urllib.request
 
 import boto3
-from tests.shared.slack_polling import get_channel_id, poll_for_message
+
 from tests.shared.infrastructure_sdk.trigger_config import (
     load_trigger_config,
     regenerate_trigger_config,
 )
+from tests.shared.slack_polling import get_channel_id, poll_for_message
 from tests.test_case_kubernetes.infrastructure_sdk.eks import cluster_exists
 
 
