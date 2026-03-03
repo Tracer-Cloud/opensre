@@ -328,12 +328,16 @@ def _add_datadog_logs(
         f"{len(datadog_logs)} logs" if datadog_logs else None,
         f"{len(datadog_error_logs)} errors" if datadog_error_logs else None,
     ] if p]
+    top_msg = next(
+        (e.get("message", "").strip() for e in (datadog_error_logs or datadog_logs) if e.get("message")),
+        None,
+    )
     eid = "evidence/datadog/logs"
     catalog[eid] = {
         "label": "Datadog Logs",
         "url": build_datadog_logs_url(datadog_query, datadog_site) if datadog_query else None,
         "summary": ", ".join(summary_parts) or None,
-        "snippet": _as_snippet(datadog_query) if datadog_query else None,
+        "snippet": _as_snippet(top_msg) if top_msg else (_as_snippet(datadog_query) if datadog_query else None),
     }
     source_to_id["datadog_logs"] = eid
 
