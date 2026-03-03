@@ -130,6 +130,13 @@ _EVIDENCE_LOG_KEYS: dict[str, list[str]] = {
 }
 
 
+def _extract_log_message(entry: object) -> str:
+    """Extract a plain string message from a log entry that may be a dict or a string."""
+    if isinstance(entry, dict):
+        return (entry.get("message") or "").strip()
+    return str(entry).strip()
+
+
 def _resolve_evidence_tags(text: str, evidence: dict) -> str:
     """Replace [evidence: source] tags with the actual log message in a code span.
 
@@ -141,7 +148,7 @@ def _resolve_evidence_tags(text: str, evidence: dict) -> str:
         for key in _EVIDENCE_LOG_KEYS.get(source, [source]):
             logs = evidence.get(key) or []
             if logs:
-                msg = (logs[0].get("message") or "").strip()
+                msg = _extract_log_message(logs[0])
                 if msg:
                     return f": `{msg}`"
         return ""
@@ -154,7 +161,7 @@ def _get_top_error_log(evidence: dict) -> str | None:
     for key in ("datadog_error_logs", "datadog_logs", "grafana_error_logs", "grafana_logs", "cloudwatch_logs"):
         logs = evidence.get(key) or []
         if logs:
-            msg = (logs[0].get("message") or "").strip()
+            msg = _extract_log_message(logs[0])
             if msg:
                 return msg
     return None
