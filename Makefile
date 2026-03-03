@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config
+.PHONY: install test test-full demo clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca
 
 PYTHON = python3
 PIP = python3 -m pip
@@ -34,6 +34,10 @@ crashloop-demo:
 # Run Prefect ECS Fargate E2E test (alias for demo)
 prefect-demo:
 	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
+
+# Run RCA tests from markdown alert files in tests/rca/ (pass FILE= to run one)
+test-rca:
+	$(PYTHON) -m tests.rca.run_rca_test $(FILE)
 
 # Simulate a Datadog alert locally (no live API calls, exercises full RCA + report formatting)
 simulate-k8s-alert:
@@ -239,6 +243,8 @@ help:
 	@echo "  make test-full       - Run full test suite (CI/CD)"
 	@echo "  make test-cov        - Run tests with coverage"
 	@echo "  make test-grafana    - Run Grafana integration tests"
+	@echo "  make test-rca        - Run all RCA markdown alert tests in tests/rca/"
+	@echo "  make test-rca FILE=pipeline_error_in_logs - Run a single RCA alert test"
 	@echo "  make clean           - Clean up cache files"
 	@echo "  make lint            - Lint code with ruff"
 	@echo "  make format          - Format code with ruff"
