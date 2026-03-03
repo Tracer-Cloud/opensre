@@ -17,10 +17,13 @@ from app.agent.nodes.publish_findings.urls.aws import build_cloudwatch_url
 from app.config import get_tracer_base_url
 
 
-def get_investigation_url(org_slug: str | None = None) -> str:
-    """Build investigation URL using the organization slug from state."""
+def get_investigation_url(org_slug: str | None = None, investigation_id: str | None = None) -> str:
+    """Build investigation URL using the organization slug and optional investigation ID."""
     base = get_tracer_base_url()
-    return f"{base}/{org_slug}/investigations" if org_slug else f"{base}/investigations"
+    prefix = f"{base}/{org_slug}" if org_slug else base
+    if investigation_id:
+        return f"{prefix}/investigations/{investigation_id}"
+    return f"{prefix}/investigations"
 
 
 def render_cloudwatch_link(ctx: ReportContext) -> str:
