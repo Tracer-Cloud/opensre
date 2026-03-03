@@ -1,8 +1,10 @@
 """Extract report context from investigation state.
 
-Phase overview
---------------
-1. _normalize_state     – pull raw dicts out of state, coerce types
+ReportContext is a plain TypedDict (no logic) that carries everything
+the formatters need to render the final RCA report.
+
+build_report_context runs four phases:
+1. _NormalizedState     – pull raw dicts out of state, coerce types
 2. _build_evidence_catalog – populate evidence entries per source
 3. _attach_evidence_to_claims – link claims to catalog entries by source key
 4. build_report_context – assemble the final ReportContext dict
@@ -11,9 +13,8 @@ Phase overview
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, TypedDict
 
-from app.agent.nodes.publish_findings.context.models import ReportContext
 from app.agent.nodes.publish_findings.urls.aws import (
     build_datadog_logs_url,
     build_grafana_explore_url,
@@ -22,8 +23,78 @@ from app.agent.nodes.publish_findings.urls.aws import (
 from app.agent.state import InvestigationState
 
 # ---------------------------------------------------------------------------
+# ReportContext — the schema that all formatters read from
+# ---------------------------------------------------------------------------
+
+class ReportContext(TypedDict, total=False):
+    """Data extracted from state for report formatting.
+
+    Contains all information needed to generate the final RCA report,
+    including pipeline metadata, root cause analysis results, validated claims,
+    infrastructure assets, and evidence references.
+    """
+
+    # Core RCA results
+    pipeline_name: str
+    alert_name: str | None
+    root_cause: str
+    root_cause_category: str | None
+    validated_claims: list[dict]
+    non_validated_claims: list[dict]
+    validity_score: float
+    investigation_recommendations: list[str]
+    remediation_steps: list[str]
+
+    # S3 verification
+    s3_marker_exists: bool
+
+    # Tracer web run metadata
+    tracer_run_status: str | None
+    tracer_run_name: str | None
+    tracer_pipeline_name: str | None
+    tracer_run_cost: float
+    tracer_max_ram_gb: float
+    tracer_user_email: str | None
+    tracer_team: str | None
+    tracer_instance_type: str | None
+    tracer_failed_tasks: int
+
+    # AWS Batch metadata
+    batch_failure_reason: str | None
+    batch_failed_jobs: int
+
+    # CloudWatch metadata
+    cloudwatch_log_group: str | None
+    cloudwatch_log_stream: str | None
+    cloudwatch_logs_url: str | None
+    cloudwatch_region: str | None
+    alert_id: str | None
+    evidence_catalog: dict
+    investigation_duration_seconds: int | None
+
+    # Raw data for deeper inspection
+    evidence: dict  # Raw evidence data for citation
+    raw_alert: dict  # Raw alert for infrastructure extraction
+
+    # Tool call history for investigation transparency
+    executed_hypotheses: list[dict]
+
+    # Integration endpoints (for building deep links)
+    grafana_endpoint: str | None
+    datadog_site: str | None
+
+    kube_pod_name: str | None
+    kube_container_name: str | None
+    kube_namespace: str | None
+
+    # Multiple failed pods (for cluster-scale failures)
+    kube_failed_pods: list[dict]  # [{pod_name, container, namespace, exit_code, error}]
+
+
+# ---------------------------------------------------------------------------
 # Source name aliases used when matching claim.evidence_sources → catalog IDs
 # ---------------------------------------------------------------------------
+
 _SOURCE_ALIASES: dict[str, str] = {
     "cloudwatch": "cloudwatch_logs",
     "cloudwatch_log": "cloudwatch_logs",
@@ -59,7 +130,6 @@ def _as_snippet(value: str | None, max_len: int = 140) -> str | None:
     compact = " ".join(str(value).split())
     compact = compact.replace("{", "").replace("}", "").replace("[", "").replace("]", "")
     return compact[:max_len]
-
 
 
 def _filter_valid_claims(claims: list[dict]) -> list[dict]:

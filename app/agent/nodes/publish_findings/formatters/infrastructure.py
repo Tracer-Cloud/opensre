@@ -2,8 +2,8 @@
 
 from typing import Any
 
-from app.agent.nodes.publish_findings.context.models import ReportContext
 from app.agent.nodes.publish_findings.formatters.base import format_slack_link
+from app.agent.nodes.publish_findings.report_context import ReportContext
 from app.agent.nodes.publish_findings.urls.aws import build_s3_console_url
 
 
