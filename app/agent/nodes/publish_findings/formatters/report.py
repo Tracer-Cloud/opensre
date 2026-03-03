@@ -57,11 +57,12 @@ def _render_claim_lines(ctx: ReportContext) -> tuple[list[str], list[str]]:
     the catalog-lookup and link-formatting logic.
     """
     catalog = ctx.get("evidence_catalog") or {}
+    evidence = ctx.get("evidence") or {}
 
     validated_lines: list[str] = []
     for claim_data in ctx.get("validated_claims", []):
         claim = claim_data.get("claim", "")
-        claim = re.sub(r"\s*\[(?i:evidence):[^\]]*\]", "", claim).strip()
+        claim = _resolve_evidence_tags(claim, evidence)
         claim = _sanitize_for_slack(claim)
         evidence_ids = claim_data.get("evidence_ids", [])
         evidence_labels = claim_data.get("evidence_labels", [])
@@ -115,6 +116,40 @@ def _mrkdwn_section(text: str) -> "dict | None":
 
 
 # ---------------------------------------------------------------------------
+# Evidence tag resolution helpers
+# ---------------------------------------------------------------------------
+
+# Maps LLM source name → ordered list of evidence dict keys to try for a log message
+_EVIDENCE_LOG_KEYS: dict[str, list[str]] = {
+    "datadog_logs":    ["datadog_error_logs", "datadog_logs"],
+    "datadog":         ["datadog_error_logs", "datadog_logs"],
+    "grafana_logs":    ["grafana_error_logs", "grafana_logs"],
+    "grafana":         ["grafana_error_logs", "grafana_logs"],
+    "cloudwatch_logs": ["cloudwatch_logs"],
+    "cloudwatch":      ["cloudwatch_logs"],
+}
+
+
+def _resolve_evidence_tags(text: str, evidence: dict) -> str:
+    """Replace [evidence: source] tags with the actual quoted log message.
+
+    Tries error logs first, then all logs for the named source. If no message
+    is found the tag is removed silently to avoid leaking raw LLM annotations.
+    """
+    def _replace(m: re.Match) -> str:
+        source = m.group(1).strip().lower()
+        for key in _EVIDENCE_LOG_KEYS.get(source, [source]):
+            logs = evidence.get(key) or []
+            if logs:
+                msg = (logs[0].get("message") or "").strip()
+                if msg:
+                    return f': "{msg}"'
+        return ""
+
+    return re.sub(r"\s*\[(?i:evidence):\s*([^\]]+)\]", _replace, text).strip()
+
+
+# ---------------------------------------------------------------------------
 # Root cause derivation helpers
 # ---------------------------------------------------------------------------
 
@@ -152,7 +187,9 @@ def _remove_speculative_words(text: str) -> str:
 
 def _derive_root_cause_sentence(ctx: ReportContext) -> str:
     """Derive a concise, single-sentence root cause with causal preference."""
+    evidence = ctx.get("evidence") or {}
     root_cause_text = ctx.get("root_cause", "") or ""
+    root_cause_text = _resolve_evidence_tags(root_cause_text, evidence)
     validated_claims = ctx.get("validated_claims", [])
 
     if root_cause_text:
