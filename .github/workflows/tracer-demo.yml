@@ -3,6 +3,9 @@ name: Tracer Demo
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   tracer-demo:
     runs-on: ubuntu-latest
