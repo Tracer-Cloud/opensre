@@ -6,7 +6,6 @@ from app.agent.nodes.publish_findings.context.models import ReportContext
 from app.agent.nodes.publish_findings.formatters.base import format_slack_link
 from app.agent.nodes.publish_findings.formatters.evidence import (
     format_cited_evidence_section,
-    format_evidence_for_claim,
 )
 from app.agent.nodes.publish_findings.formatters.infrastructure import (
     format_infrastructure_correlation,
@@ -54,12 +53,11 @@ def render_cloudwatch_link(ctx: ReportContext) -> str:
     return ""
 
 
-def _format_validated_claims_section(ctx: ReportContext, evidence: dict) -> str:
-    """Format the validated claims section with evidence details.
+def _format_validated_claims_section(ctx: ReportContext) -> str:
+    """Format the validated claims section with evidence citation labels.
 
     Args:
         ctx: Report context
-        evidence: Evidence dictionary
 
     Returns:
         Formatted validated claims section
@@ -69,17 +67,14 @@ def _format_validated_claims_section(ctx: ReportContext, evidence: dict) -> str:
         return ""
 
     validated_section = "\n*Validated Claims (Supported by Evidence):*\n"
-    evidence_section = "\n*Evidence Details:*\n"
-    has_catalog = bool(ctx.get("evidence_catalog"))
     catalog = ctx.get("evidence_catalog") or {}
 
-    for idx, claim_data in enumerate(validated_claims, 1):
+    for claim_data in validated_claims:
         claim = claim_data.get("claim", "")
         # Strip legacy inline evidence markers
         claim = re.sub(r"\s*\[(?i:evidence):[^\]]*\]", "", claim).strip()
         evidence_ids = claim_data.get("evidence_ids", [])
         evidence_labels = claim_data.get("evidence_labels", [])
-        # Build clickable labels if possible
         evidence_list = []
         if evidence_ids:
             for eid in evidence_ids:
@@ -89,24 +84,8 @@ def _format_validated_claims_section(ctx: ReportContext, evidence: dict) -> str:
                 evidence_list.append(format_slack_link(disp, url) if url else disp)
         elif evidence_labels:
             evidence_list = evidence_labels
-        # no fallback to sources to avoid duplication
-        else:
-            evidence_list = []
         evidence_str = f" [Evidence: {', '.join(evidence_list)}]" if evidence_list else ""
         validated_section += f"• {claim}{evidence_str}\n"
-
-        # Add evidence details only when no catalog is present (fallback)
-        if not has_catalog:
-            evidence_detail = format_evidence_for_claim(claim_data, evidence, ctx)
-            if evidence_detail:
-                evidence_section += (
-                    f'\n{idx}. Evidence for: "{claim[:80]}{"..." if len(claim) > 80 else ""}"\n'
-                )
-                evidence_section += f"{evidence_detail}\n"
-
-    # Only add evidence section if there's actual evidence to show (and no catalog)
-    if not has_catalog and evidence_section.strip() != "*Evidence Details:*":
-        validated_section += evidence_section
 
     return validated_section
 
@@ -291,8 +270,8 @@ def _remove_speculative_words(text: str) -> str:
     return " ".join(filtered)
 
 
-def _format_conclusion_section(ctx: ReportContext, evidence: dict) -> str:
-    validated_section = _format_validated_claims_section(ctx, evidence)
+def _format_conclusion_section(ctx: ReportContext) -> str:
+    validated_section = _format_validated_claims_section(ctx)
     non_validated_section = _format_non_validated_claims_section(ctx)
 
     # 1) Always show a one-liner root cause (with a safe fallback)
@@ -326,8 +305,6 @@ def format_slack_message(ctx: ReportContext) -> str:
     Returns:
         Formatted Slack message string (plain-text with mrkdwn)
     """
-    evidence = ctx.get("evidence", {})
-
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
     alert_name = ctx.get("alert_name")
     alert_id = ctx.get("alert_id")
@@ -335,7 +312,7 @@ def format_slack_message(ctx: ReportContext) -> str:
     root_cause_sentence = _derive_root_cause_sentence(ctx)
     report_title = _build_report_title(pipeline_name, alert_name, root_cause_sentence)
 
-    conclusion_section = _sanitize_for_slack(_format_conclusion_section(ctx, evidence))
+    conclusion_section = _sanitize_for_slack(_format_conclusion_section(ctx))
     lineage_section = _sanitize_for_slack(format_data_lineage_flow(ctx))
     infrastructure_section = _sanitize_for_slack(format_infrastructure_correlation(ctx))
     cited_evidence_section = _sanitize_for_slack(format_cited_evidence_section(ctx))
