@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from app.agent.nodes.publish_findings.context.builder import build_report_context
+from app.agent.nodes.publish_findings.report_context import build_report_context
 from app.agent.state import InvestigationState
 
 

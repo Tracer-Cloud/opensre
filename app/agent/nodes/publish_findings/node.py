@@ -5,13 +5,13 @@ from typing import cast
 
 from langsmith import traceable
 
-from app.agent.nodes.publish_findings.context import build_report_context
 from app.agent.nodes.publish_findings.formatters.report import (
     build_slack_blocks,
     format_slack_message,
     get_investigation_url,
 )
 from app.agent.nodes.publish_findings.renderers.terminal import render_report
+from app.agent.nodes.publish_findings.report_context import build_report_context
 from app.agent.state import InvestigationState
 from app.agent.utils.ingest_delivery import send_ingest
 
@@ -22,10 +22,16 @@ def generate_report(state: InvestigationState) -> dict:
     """Generate and publish the final RCA report."""
     from app.agent.utils.slack_delivery import build_action_blocks, send_slack_report
 
+    # 1. Extract — pull structured data out of raw investigation state
     ctx = build_report_context(state)
-    # Preserve initial short problem_md as summary for list views
-    short_summary = state.get("problem_md")
+    short_summary = state.get("problem_md")  # preserve short summary for list views
+
+    # 2. Format — render ctx into Slack mrkdwn text + Block Kit blocks
     slack_message = format_slack_message(ctx)
+    investigation_url = get_investigation_url(state.get("organization_slug"))
+    all_blocks = build_slack_blocks(ctx) + build_action_blocks(investigation_url)
+
+    # 3. Deliver — send to terminal, Slack, and ingest API
     render_report(slack_message)
 
     slack_ctx = state.get("slack_context", {})
@@ -37,10 +43,6 @@ def generate_report(state: InvestigationState) -> dict:
         thread_ts,
         bool(slack_ctx.get("access_token")),
     )
-
-    investigation_url = get_investigation_url(state.get("organization_slug"))
-    all_blocks = build_slack_blocks(ctx) + build_action_blocks(investigation_url)
-
     logger.info("[publish] Sending report: text_len=%d, blocks=%d", len(slack_message), len(all_blocks))
 
     _channel = slack_ctx.get("channel_id")
@@ -65,7 +67,6 @@ def generate_report(state: InvestigationState) -> dict:
         )
 
     try:
-        # Send full report text as problem_report, keep short summary
         state_with_report = cast(InvestigationState, {**state, "problem_report": {"report_md": slack_message}, "summary": short_summary})
         send_ingest(state_with_report)
     except Exception as exc:  # noqa: BLE001

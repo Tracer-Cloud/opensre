@@ -2,7 +2,6 @@
 
 import re
 
-from app.agent.nodes.publish_findings.context.models import ReportContext
 from app.agent.nodes.publish_findings.formatters.base import format_slack_link
 from app.agent.nodes.publish_findings.formatters.evidence import (
     format_cited_evidence_section,
@@ -13,6 +12,7 @@ from app.agent.nodes.publish_findings.formatters.infrastructure import (
     get_failed_pods,
 )
 from app.agent.nodes.publish_findings.formatters.lineage import format_data_lineage_flow
+from app.agent.nodes.publish_findings.report_context import ReportContext
 from app.agent.nodes.publish_findings.urls.aws import build_cloudwatch_url
 from app.config import get_tracer_base_url
 
@@ -24,14 +24,7 @@ def get_investigation_url(org_slug: str | None = None) -> str:
 
 
 def render_cloudwatch_link(ctx: ReportContext) -> str:
-    """Render CloudWatch logs link if available in context.
-
-    Args:
-        ctx: Report context
-
-    Returns:
-        Formatted CloudWatch link section or empty string
-    """
+    """Render CloudWatch logs link if available in context."""
     cw_url = ctx.get("cloudwatch_logs_url")
     cw_group = ctx.get("cloudwatch_log_group")
     cw_stream = ctx.get("cloudwatch_log_stream")
@@ -39,7 +32,6 @@ def render_cloudwatch_link(ctx: ReportContext) -> str:
     if cw_url:
         return f"\n*{format_slack_link('CloudWatch Logs', cw_url)}*\n"
     elif cw_group and cw_stream:
-        # Build URL if not provided
         url = build_cloudwatch_url(ctx)
         view_link = format_slack_link("CloudWatch Logs", url) if url else None
         if view_link:
@@ -53,29 +45,27 @@ def render_cloudwatch_link(ctx: ReportContext) -> str:
     return ""
 
 
-def _format_validated_claims_section(ctx: ReportContext) -> str:
-    """Format the validated claims section with evidence citation labels.
+# ---------------------------------------------------------------------------
+# Shared section helpers — called by both text and block renderers
+# ---------------------------------------------------------------------------
 
-    Args:
-        ctx: Report context
+def _render_claim_lines(ctx: ReportContext) -> tuple[list[str], list[str]]:
+    """Return (validated_lines, non_validated_lines) as plain mrkdwn bullet strings.
 
-    Returns:
-        Formatted validated claims section
+    Each validated line includes evidence citations like [E1, E2]. Both renderers
+    (format_slack_message and build_slack_blocks) call this to avoid duplicating
+    the catalog-lookup and link-formatting logic.
     """
-    validated_claims = ctx.get("validated_claims", [])
-    if not validated_claims:
-        return ""
-
-    validated_section = "\n*Validated Claims (Supported by Evidence):*\n"
     catalog = ctx.get("evidence_catalog") or {}
 
-    for claim_data in validated_claims:
+    validated_lines: list[str] = []
+    for claim_data in ctx.get("validated_claims", []):
         claim = claim_data.get("claim", "")
-        # Strip legacy inline evidence markers
         claim = re.sub(r"\s*\[(?i:evidence):[^\]]*\]", "", claim).strip()
+        claim = _sanitize_for_slack(claim)
         evidence_ids = claim_data.get("evidence_ids", [])
         evidence_labels = claim_data.get("evidence_labels", [])
-        evidence_list = []
+        evidence_list: list[str] = []
         if evidence_ids:
             for eid in evidence_ids:
                 entry = catalog.get(eid, {})
@@ -83,32 +73,16 @@ def _format_validated_claims_section(ctx: ReportContext) -> str:
                 url = entry.get("url")
                 evidence_list.append(format_slack_link(disp, url) if url else disp)
         elif evidence_labels:
-            evidence_list = evidence_labels
-        evidence_str = f" [Evidence: {', '.join(evidence_list)}]" if evidence_list else ""
-        validated_section += f"• {claim}{evidence_str}\n"
+            evidence_list = list(evidence_labels)
+        ev_str = f" [{', '.join(evidence_list)}]" if evidence_list else ""
+        validated_lines.append(f"\u2022 {claim}{ev_str}")
 
-    return validated_section
+    non_validated_lines: list[str] = [
+        f"\u2022 {_sanitize_for_slack(cd.get('claim', ''))}"
+        for cd in ctx.get("non_validated_claims", [])
+    ]
 
-
-def _format_non_validated_claims_section(ctx: ReportContext) -> str:
-    """Format the non-validated claims section.
-
-    Args:
-        ctx: Report context
-
-    Returns:
-        Formatted non-validated claims section
-    """
-    non_validated_claims = ctx.get("non_validated_claims", [])
-    if not non_validated_claims:
-        return ""
-
-    non_validated_section = "\n*Non-Validated Claims (Inferred):*\n"
-    for claim_data in non_validated_claims:
-        claim = claim_data.get("claim", "")
-        non_validated_section += f"• {claim}\n"
-
-    return non_validated_section
+    return validated_lines, non_validated_lines
 
 
 def _sanitize_for_slack(text: str) -> str:
@@ -117,23 +91,36 @@ def _sanitize_for_slack(text: str) -> str:
     Slack does not render # headers, ** bold, or other standard markdown.
     This converts common patterns to Slack-native formatting.
     """
-    # Strip markdown headers (# ## ### etc.) → *bold*
     result = re.sub(r"^#{1,6}\s+(.+)$", r"*\1*", text, flags=re.MULTILINE)
-    # Convert **bold** to *bold*
     result = re.sub(r"\*\*(.+?)\*\*", r"*\1*", result)
-    # Convert __bold__ to *bold*
     result = re.sub(r"__(.+?)__", r"*\1*", result)
     return result
 
 
-def _first_sentence(text: str) -> str:
-    """Return the first sentence from text, normalized to one line.
+def _mrkdwn_section(text: str) -> "dict | None":
+    """Build a Slack Block Kit section block with sanitized mrkdwn text.
 
-    Strips markdown headers and structural labels before extracting.
+    Slack section blocks have a 3000 char limit per text field.
+    Returns None when text is empty — caller must skip None results.
     """
-    # Remove markdown headers (at line start or inline after collapse)
+    sanitized = _sanitize_for_slack(text).strip()
+    if not sanitized:
+        return None
+    if len(sanitized) > 2990:
+        sanitized = sanitized[:2987] + "..."
+    return {
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": sanitized},
+    }
+
+
+# ---------------------------------------------------------------------------
+# Root cause derivation helpers
+# ---------------------------------------------------------------------------
+
+def _first_sentence(text: str) -> str:
+    """Return the first sentence from text, normalized to one line."""
     cleaned = re.sub(r"(?:^|\s)#{1,6}\s+", " ", text, flags=re.MULTILINE)
-    # Remove structural labels like "Problem Statement", "Summary", "Context"
     cleaned = re.sub(
         r"\b(?:Problem Statement|Summary|Context|Description|Overview)\b[:\s]*",
         "",
@@ -156,12 +143,18 @@ def _is_speculative(text: str) -> bool:
     return any(term in lower for term in speculative_terms)
 
 
+def _remove_speculative_words(text: str) -> str:
+    speculative = ("may", "might", "likely", "probably", "possibly")
+    words = text.split()
+    filtered = [w for w in words if w.lower() not in speculative]
+    return " ".join(filtered)
+
+
 def _derive_root_cause_sentence(ctx: ReportContext) -> str:
     """Derive a concise, single-sentence root cause with causal preference."""
     root_cause_text = ctx.get("root_cause", "") or ""
     validated_claims = ctx.get("validated_claims", [])
 
-    # Prefer a non-speculative root_cause sentence
     if root_cause_text:
         sentence = _first_sentence(root_cause_text)
         if sentence and not _is_speculative(sentence):
@@ -177,7 +170,6 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
         " failure triggered ",
     )
 
-    # Try a validated claim with a causal connector
     for claim_data in validated_claims:
         claim = claim_data.get("claim", "") or ""
         lower = f" {claim.lower()} "
@@ -186,13 +178,11 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
             if sentence:
                 return _first_sentence(_remove_speculative_words(sentence))
 
-    # Fall back to the root_cause text even if speculative — better than "Not determined"
     if root_cause_text:
         sentence = _first_sentence(root_cause_text)
         if sentence:
             return sentence
 
-    # Last resort: use the first validated claim
     if validated_claims:
         claim = validated_claims[0].get("claim", "") or ""
         sentence = _first_sentence(claim)
@@ -203,21 +193,13 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
 
 
 def _compress_for_title(sentence: str) -> str:
-    """Extract a short, punchy title phrase from a root cause sentence.
-
-    Strips speculative openers and verbose preambles, then truncates
-    at a natural clause boundary to fit in ~60 chars.
-    """
-    # Remove leading speculative openers
+    """Extract a short, punchy title phrase from a root cause sentence."""
     s = re.sub(
         r"^(?:most likely|likely|probably|possibly|it appears(?: that)?|this suggests(?: that)?)\s+",
         "",
         sentence,
         flags=re.IGNORECASE,
     ).strip()
-    # Remove verbose subject preambles like "the X was configured with Y that ..."
-    # Keep from the first strong verb clause: "schema validation failed", "missing field", etc.
-    # Try to find a more specific sub-clause after common connectors
     for connector in (" because ", " due to ", ", but ", " where ", ", causing ", ": "):
         idx = s.lower().find(connector)
         if idx != -1:
@@ -225,16 +207,13 @@ def _compress_for_title(sentence: str) -> str:
             if len(candidate) >= 10:
                 s = candidate
                 break
-    # Take only up to the first comma or semicolon to keep it tight
     for stop in (",", ";"):
         idx = s.find(stop)
-        if idx > 15:  # ensure we have enough content before the stop
+        if idx > 15:
             s = s[:idx].strip()
             break
-    # Capitalize first letter
     if s:
         s = s[0].upper() + s[1:]
-    # Slack Block Kit header supports up to 150 chars — no artificial truncation
     if len(s) > 150:
         s = s[:147].rsplit(" ", 1)[0].rstrip(" ,;") + "..."
     return s
@@ -263,47 +242,15 @@ def _build_report_title(
     return f"{pipeline_name} incident"
 
 
-def _remove_speculative_words(text: str) -> str:
-    speculative = ("may", "might", "likely", "probably", "possibly")
-    words = text.split()
-    filtered = [w for w in words if w.lower() not in speculative]
-    return " ".join(filtered)
-
-
-def _format_conclusion_section(ctx: ReportContext) -> str:
-    validated_section = _format_validated_claims_section(ctx)
-    non_validated_section = _format_non_validated_claims_section(ctx)
-
-    # 1) Always show a one-liner root cause (with a safe fallback)
-    root_cause_sentence = _derive_root_cause_sentence(ctx)
-    if not root_cause_sentence:
-        root_cause_sentence = "Not determined (insufficient evidence)."
-
-    root_cause_block = f"*Root Cause:* {root_cause_sentence}\n"
-
-    # 2) Then add claims (progressive disclosure)
-    separator = "\n" if validated_section and non_validated_section else ""
-
-    claims_block = f"{validated_section}{separator}{non_validated_section}".strip()
-
-    if claims_block:
-        return f"\n{root_cause_block}{claims_block}\n"
-
-    return f"\n{root_cause_block}\n"
-
-
+# ---------------------------------------------------------------------------
+# Text renderer (Slack mrkdwn fallback + terminal + ingest report_md)
+# ---------------------------------------------------------------------------
 
 def format_slack_message(ctx: ReportContext) -> str:
     """Format a plain-text Slack message for the RCA report.
 
-    Used as the `text` fallback (notifications, accessibility) when
-    Block Kit blocks are the primary rendered content.
-
-    Args:
-        ctx: Report context with all investigation data
-
-    Returns:
-        Formatted Slack message string (plain-text with mrkdwn)
+    Used as the `text` fallback (notifications, accessibility, terminal, ingest)
+    when Block Kit blocks are the primary rendered content.
     """
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
     alert_name = ctx.get("alert_name")
@@ -312,7 +259,16 @@ def format_slack_message(ctx: ReportContext) -> str:
     root_cause_sentence = _derive_root_cause_sentence(ctx)
     report_title = _build_report_title(pipeline_name, alert_name, root_cause_sentence)
 
-    conclusion_section = _sanitize_for_slack(_format_conclusion_section(ctx))
+    if not root_cause_sentence:
+        root_cause_sentence = "Not determined (insufficient evidence)."
+    conclusion_block = f"*Root Cause:* {root_cause_sentence}\n"
+
+    validated_lines, non_validated_lines = _render_claim_lines(ctx)
+    if validated_lines:
+        conclusion_block += "\n*Validated Claims (Supported by Evidence):*\n" + "\n".join(validated_lines) + "\n"
+    if non_validated_lines:
+        conclusion_block += "\n*Non-Validated Claims (Inferred):*\n" + "\n".join(non_validated_lines) + "\n"
+
     lineage_section = _sanitize_for_slack(format_data_lineage_flow(ctx))
     infrastructure_section = _sanitize_for_slack(format_infrastructure_correlation(ctx))
     cited_evidence_section = _sanitize_for_slack(format_cited_evidence_section(ctx))
@@ -325,7 +281,8 @@ def format_slack_message(ctx: ReportContext) -> str:
     meta_block = "\n" + "\n".join(meta_lines) if meta_lines else ""
 
     return f"""[RCA] {report_title}
-{conclusion_section}
+
+{conclusion_block}
 {lineage_section}
 {infrastructure_section}
 {cited_evidence_section}
@@ -333,22 +290,17 @@ def format_slack_message(ctx: ReportContext) -> str:
 """
 
 
+# ---------------------------------------------------------------------------
+# Block Kit renderer (Slack interactive cards)
+# ---------------------------------------------------------------------------
+
 def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     """Build Slack Block Kit blocks for the RCA report.
 
     Produces a clean, well-structured message using Slack's native
     formatting: header, sections with mrkdwn, dividers, and context blocks.
-
-    Args:
-        ctx: Report context with all investigation data
-
-    Returns:
-        List of Block Kit block dicts.
     """
     from typing import Any
-
-    validated_claims = ctx.get("validated_claims", [])
-    non_validated_claims = ctx.get("non_validated_claims", [])
 
     pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
     alert_name = ctx.get("alert_name")
@@ -359,6 +311,10 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
 
     blocks: list[dict[str, Any]] = []
 
+    def _add(block: "dict[str, Any] | None") -> None:
+        if block is not None:
+            blocks.append(block)
+
     header_text = f"\U0001f6a8 [RCA] {report_title}"
     if len(header_text) > 150:
         header_text = header_text[:147] + "..."
@@ -367,28 +323,7 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
         "text": {"type": "plain_text", "text": header_text},
     })
 
-    def _mrkdwn_section(text: str) -> dict[str, Any] | None:
-        """Build a section block with sanitized mrkdwn text.
-
-        Slack section blocks have a 3000 char limit per text field.
-        Returns None when text is empty — caller must skip None results.
-        """
-        sanitized = _sanitize_for_slack(text).strip()
-        if not sanitized:
-            return None
-        if len(sanitized) > 2990:
-            sanitized = sanitized[:2987] + "..."
-        return {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": sanitized},
-        }
-
-    def _add(block: dict[str, Any] | None) -> None:
-        if block is not None:
-            blocks.append(block)
-
     # ── Root Cause ──
-    root_cause_sentence = _derive_root_cause_sentence(ctx)
     if not root_cause_sentence:
         root_cause_sentence = "Not determined (insufficient evidence)"
     _add(_mrkdwn_section(f"*Root Cause*\n{root_cause_sentence}"))
@@ -402,33 +337,12 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     if pod_lines:
         _add(_mrkdwn_section("*Failed Pods*\n" + "\n".join(pod_lines)))
 
-    # ── Validated Claims ──
-    if validated_claims:
-        catalog = ctx.get("evidence_catalog") or {}
-        claims_lines = []
-        for claim_data in validated_claims:
-            claim = claim_data.get("claim", "")
-            claim = re.sub(r"\s*\[(?i:evidence):[^\]]*\]", "", claim).strip()
-            claim = _sanitize_for_slack(claim)
-            evidence_ids = claim_data.get("evidence_ids", [])
-            evidence_list = []
-            if evidence_ids:
-                for eid in evidence_ids:
-                    entry = catalog.get(eid, {})
-                    disp = entry.get("display_id", eid)
-                    url = entry.get("url")
-                    evidence_list.append(format_slack_link(disp, url) if url else disp)
-            ev_str = f" [{', '.join(evidence_list)}]" if evidence_list else ""
-            claims_lines.append(f"\u2022 {claim}{ev_str}")
-        _add(_mrkdwn_section("*Findings*\n" + "\n".join(claims_lines)))
-
-    # ── Non-Validated Claims ──
-    if non_validated_claims:
-        nv_lines = []
-        for claim_data in non_validated_claims:
-            claim = _sanitize_for_slack(claim_data.get("claim", ""))
-            nv_lines.append(f"\u2022 {claim}")
-        _add(_mrkdwn_section("*Inferred (not yet validated)*\n" + "\n".join(nv_lines)))
+    # ── Validated Claims (Findings) and Non-Validated Claims ──
+    validated_lines, non_validated_lines = _render_claim_lines(ctx)
+    if validated_lines:
+        _add(_mrkdwn_section("*Findings*\n" + "\n".join(validated_lines)))
+    if non_validated_lines:
+        _add(_mrkdwn_section("*Inferred (not yet validated)*\n" + "\n".join(non_validated_lines)))
 
     # ── Data Lineage ──
     lineage_section = format_data_lineage_flow(ctx).strip()

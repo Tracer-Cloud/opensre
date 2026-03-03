@@ -1,8 +1,12 @@
 """AWS console URL generators for various resources."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from urllib.parse import quote
 
-from app.agent.nodes.publish_findings.context.models import ReportContext
+if TYPE_CHECKING:
+    from app.agent.nodes.publish_findings.report_context import ReportContext
 
 
 def _encode_aws_path(path: str) -> str:
