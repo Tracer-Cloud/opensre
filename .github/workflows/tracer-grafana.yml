@@ -3,6 +3,9 @@ name: Tracer Grafana
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   tracer-grafana:
     runs-on: ubuntu-latest

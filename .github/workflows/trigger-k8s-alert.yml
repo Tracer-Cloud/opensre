@@ -10,6 +10,9 @@ on:
   schedule:
     - cron: "0 9 * * 1"  # every Monday 9am UTC
 
+permissions:
+  contents: read
+
 jobs:
   trigger-alert:
     runs-on: ubuntu-latest
