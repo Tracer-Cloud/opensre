@@ -1,0 +1,6 @@
+{
+  "stack_name": "tracer-eks-k8s-test",
+  "region": "us-east-1",
+  "trigger_api_url": "https://95952qbyk4.execute-api.us-east-1.amazonaws.com/prod",
+  "updated_at": "2026-03-03T06:14:48.985747+00:00"
+}
