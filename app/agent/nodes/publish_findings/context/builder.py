@@ -33,14 +33,6 @@ _SOURCE_ALIASES: dict[str, str] = {
     "datadog": "datadog_logs",
 }
 
-# Fixed display IDs for well-known sources (others get sequential EN)
-_FIXED_DISPLAY_IDS: dict[str, str] = {
-    "s3_metadata": "E1",
-    "s3_audit": "E2",
-    "cloudwatch_logs": "E3",
-    "vendor_audit": "E4",
-}
-
 
 # ---------------------------------------------------------------------------
 # Small utilities
@@ -68,10 +60,6 @@ def _as_snippet(value: str | None, max_len: int = 140) -> str | None:
     compact = compact.replace("{", "").replace("}", "").replace("[", "").replace("]", "")
     return compact[:max_len]
 
-
-def _display_id(source_name: str, catalog_size: int) -> str:
-    """Return a fixed E-id for well-known sources, or the next sequential id."""
-    return _FIXED_DISPLAY_IDS.get(source_name, f"E{catalog_size + 1}")
 
 
 def _filter_valid_claims(claims: list[dict]) -> list[dict]:
@@ -169,7 +157,6 @@ def _add_s3_metadata(
         "label": "S3 Object Metadata",
         "url": build_s3_console_url(str(bucket), str(key), region or "us-east-1"),
         "summary": f"{bucket}/{key}",
-        "display_id": _display_id("s3_metadata", len(catalog)),
         "snippet": _as_snippet(
             f"schema_change_injected={meta.get('schema_change_injected')}, "
             f"schema_version={meta.get('schema_version')}"
@@ -190,7 +177,6 @@ def _add_s3_audit(
     catalog[eid] = {
         "label": "S3 Audit Payload",
         "summary": f"{s3_audit['bucket']}/{s3_audit['key']}",
-        "display_id": _display_id("s3_audit", len(catalog)),
         "snippet": _as_snippet(str(s3_audit.get("content", "")) or None),
     }
     source_to_id["s3_audit"] = eid
@@ -209,7 +195,6 @@ def _add_vendor_audit(
     catalog[eid] = {
         "label": "Vendor Audit",
         "summary": "External vendor audit record",
-        "display_id": _display_id("vendor_audit", len(catalog)),
         "snippet": None,
     }
     source_to_id["vendor_audit"] = eid
@@ -226,7 +211,6 @@ def _add_cloudwatch(
     catalog[eid] = {
         "label": "CloudWatch Logs",
         "url": cloudwatch_url,
-        "display_id": _display_id("cloudwatch_logs", len(catalog)),
         "snippet": None,
     }
     source_to_id["cloudwatch_logs"] = eid
@@ -253,7 +237,6 @@ def _add_grafana_logs(
     catalog[eid] = {
         "label": "Grafana Loki Logs",
         "url": build_grafana_explore_url(grafana_endpoint or "", grafana_query) if grafana_query else None,
-        "display_id": f"E{len(catalog) + 1}",
         "summary": ", ".join(summary_parts) or None,
         "snippet": _as_snippet(grafana_query) if grafana_query else None,
     }
@@ -279,7 +262,6 @@ def _add_datadog_logs(
     catalog[eid] = {
         "label": "Datadog Logs",
         "url": build_datadog_logs_url(datadog_query, datadog_site) if datadog_query else None,
-        "display_id": f"E{len(catalog) + 1}",
         "summary": ", ".join(summary_parts) or None,
         "snippet": _as_snippet(datadog_query) if datadog_query else None,
     }
@@ -305,7 +287,6 @@ def _add_datadog_monitors(
     catalog[eid] = {
         "label": label,
         "url": f"https://app.{datadog_site}/monitors/manage",
-        "display_id": f"E{len(catalog) + 1}",
         "summary": f"{len(datadog_monitors)} monitors",
         "snippet": _as_snippet(", ".join(m.get("name", "") for m in datadog_monitors[:3])),
     }
@@ -325,7 +306,6 @@ def _add_datadog_events(
     catalog[eid] = {
         "label": f"Datadog Events ({len(datadog_events)})",
         "url": f"https://app.{datadog_site}/event/explorer",
-        "display_id": f"E{len(catalog) + 1}",
         "summary": f"{len(datadog_events)} events",
         "snippet": _as_snippet(datadog_events[0].get("title", "")),
     }
@@ -360,7 +340,6 @@ def _add_datadog_failed_pods(
         catalog[eid] = {
             "label": f"Failed Pod: {pname}{f' ({pcontainer})' if pcontainer else ''}",
             "url": build_datadog_logs_url(pod_query, datadog_site),
-            "display_id": f"E{len(catalog) + 1}",
             "summary": ", ".join(summary_parts) if summary_parts else pname,
             "snippet": pod.get("error"),
         }
@@ -371,7 +350,11 @@ def _add_datadog_failed_pods(
 def _build_evidence_catalog(
     ns: _NormalizedState,
 ) -> tuple[dict[str, dict], dict[str, str]]:
-    """Build the full evidence catalog and the source-name → catalog-id index."""
+    """Build the full evidence catalog and the source-name → catalog-id index.
+
+    Display IDs (E1, E2, …) are assigned in a single sequential pass after all
+    entries are added, so they always reflect actual insertion order with no gaps.
+    """
     catalog: dict[str, dict] = {}
     source_to_id: dict[str, str] = {}
 
@@ -384,6 +367,9 @@ def _build_evidence_catalog(
     _add_datadog_monitors(ns.evidence, ns.datadog_site, catalog, source_to_id)
     _add_datadog_events(ns.evidence, ns.datadog_site, catalog, source_to_id)
     _add_datadog_failed_pods(ns.evidence, ns.datadog_site, catalog, source_to_id)
+
+    for i, entry in enumerate(catalog.values()):
+        entry["display_id"] = f"E{i + 1}"
 
     return catalog, source_to_id
 
