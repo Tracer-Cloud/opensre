@@ -131,7 +131,7 @@ _EVIDENCE_LOG_KEYS: dict[str, list[str]] = {
 
 
 def _resolve_evidence_tags(text: str, evidence: dict) -> str:
-    """Replace [evidence: source] tags with the actual quoted log message.
+    """Replace [evidence: source] tags with the actual log message in a code span.
 
     Tries error logs first, then all logs for the named source. If no message
     is found the tag is removed silently to avoid leaking raw LLM annotations.
@@ -143,10 +143,21 @@ def _resolve_evidence_tags(text: str, evidence: dict) -> str:
             if logs:
                 msg = (logs[0].get("message") or "").strip()
                 if msg:
-                    return f': "{msg}"'
+                    return f": `{msg}`"
         return ""
 
     return re.sub(r"\s*\[(?i:evidence):\s*([^\]]+)\]", _replace, text).strip()
+
+
+def _get_top_error_log(evidence: dict) -> str | None:
+    """Return the first error log message from available evidence sources."""
+    for key in ("datadog_error_logs", "datadog_logs", "grafana_error_logs", "grafana_logs", "cloudwatch_logs"):
+        logs = evidence.get(key) or []
+        if logs:
+            msg = (logs[0].get("message") or "").strip()
+            if msg:
+                return msg
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -187,9 +198,8 @@ def _remove_speculative_words(text: str) -> str:
 
 def _derive_root_cause_sentence(ctx: ReportContext) -> str:
     """Derive a concise, single-sentence root cause with causal preference."""
-    evidence = ctx.get("evidence") or {}
     root_cause_text = ctx.get("root_cause", "") or ""
-    root_cause_text = _resolve_evidence_tags(root_cause_text, evidence)
+    root_cause_text = re.sub(r"\s*\[(?i:evidence):[^\]]*\]", "", root_cause_text).strip()
     validated_claims = ctx.get("validated_claims", [])
 
     if root_cause_text:
@@ -209,6 +219,7 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
 
     for claim_data in validated_claims:
         claim = claim_data.get("claim", "") or ""
+        claim = re.sub(r"\s*\[(?i:evidence):[^\]]*\]", "", claim).strip()
         lower = f" {claim.lower()} "
         if any(connector in lower for connector in causal_connectors):
             sentence = _first_sentence(claim)
@@ -222,6 +233,7 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
 
     if validated_claims:
         claim = validated_claims[0].get("claim", "") or ""
+        claim = re.sub(r"\s*\[(?i:evidence):[^\]]*\]", "", claim).strip()
         sentence = _first_sentence(claim)
         if sentence:
             return sentence
@@ -299,6 +311,9 @@ def format_slack_message(ctx: ReportContext) -> str:
     if not root_cause_sentence:
         root_cause_sentence = "Not determined (insufficient evidence)."
     conclusion_block = f"*Root Cause:* {root_cause_sentence}\n"
+    top_log = _get_top_error_log(ctx.get("evidence") or {})
+    if top_log:
+        conclusion_block += f"`{top_log}`\n"
 
     validated_lines, non_validated_lines = _render_claim_lines(ctx)
     if validated_lines:
@@ -363,7 +378,11 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     # ── Root Cause ──
     if not root_cause_sentence:
         root_cause_sentence = "Not determined (insufficient evidence)"
-    _add(_mrkdwn_section(f"*Root Cause*\n{root_cause_sentence}"))
+    rc_text = f"*Root Cause*\n{root_cause_sentence}"
+    top_log = _get_top_error_log(ctx.get("evidence") or {})
+    if top_log:
+        rc_text += f"\n`{top_log}`"
+    _add(_mrkdwn_section(rc_text))
 
     # ── Failed Pods ──
     datadog_site = ctx.get("datadog_site", "datadoghq.com")

@@ -1,0 +1,117 @@
+{
+  "_meta": {
+    "captured_at": "2026-03-03T10:00:34Z",
+    "source": "local-alert-simulation — based on real Datadog log monitor trigger",
+    "datadog_site": "datadoghq.com",
+    "schema_version": 1
+  },
+  "alert": {
+    "title": "[tracer] Pipeline Error in Logs",
+    "state": "alerting",
+    "alert_id": "dd-pipeline-error-local-001",
+    "message": "Pipeline error detected in tracer-test namespace. Review application logs for the PIPELINE_ERROR pattern. @slack-devs-alerts\n\nMore than 0 log events matched in the last 1m against the monitored query: PIPELINE_ERROR kube_namespace:tracer-test\n\nNotified @slack-devs-alerts\n\nTime | Host | Message\n-----------------------------\n10:00:34 UTC | i-0ff575091ceced162 | PIPELINE_ERROR: Schema validation failed: Missing fields ['customer_id'] in record 0",
+    "commonAnnotations": {
+      "kube_namespace": "tracer-test",
+      "kube_job": "etl-transform-error"
+    },
+    "commonLabels": {
+      "alertname": "PipelineErrorInLogs",
+      "severity": "critical",
+      "pipeline_name": "tracer-test"
+    }
+  },
+  "evidence": {
+    "datadog_logs": [
+      {
+        "timestamp": "2026-03-03T10:00:32Z",
+        "message": "[pipeline] stage=transform run_id=fail-customer-id-001",
+        "status": "info",
+        "service": "tracer-test",
+        "host": "i-0ff575091ceced162",
+        "tags": [
+          "kube_namespace:tracer-test",
+          "kube_job:etl-transform-error",
+          "pod_name:etl-transform-error-pdqks",
+          "container_name:transform",
+          "env:test",
+          "service:tracer-test"
+        ]
+      },
+      {
+        "timestamp": "2026-03-03T10:00:33Z",
+        "message": "[transform] Validating 1 records against ['customer_id', 'order_id', 'amount']",
+        "status": "info",
+        "service": "tracer-test",
+        "host": "i-0ff575091ceced162",
+        "tags": [
+          "kube_namespace:tracer-test",
+          "kube_job:etl-transform-error",
+          "pod_name:etl-transform-error-pdqks",
+          "container_name:transform",
+          "env:test",
+          "service:tracer-test"
+        ]
+      },
+      {
+        "timestamp": "2026-03-03T10:00:34Z",
+        "message": "PIPELINE_ERROR: Schema validation failed: Missing fields ['customer_id'] in record 0",
+        "status": "error",
+        "service": "tracer-test",
+        "host": "i-0ff575091ceced162",
+        "tags": [
+          "kube_namespace:tracer-test",
+          "kube_job:etl-transform-error",
+          "pod_name:etl-transform-error-pdqks",
+          "container_name:transform",
+          "env:test",
+          "service:tracer-test"
+        ]
+      }
+    ],
+    "datadog_error_logs": [
+      {
+        "timestamp": "2026-03-03T10:00:34Z",
+        "message": "PIPELINE_ERROR: Schema validation failed: Missing fields ['customer_id'] in record 0",
+        "status": "error",
+        "service": "tracer-test",
+        "host": "i-0ff575091ceced162",
+        "tags": [
+          "kube_namespace:tracer-test",
+          "kube_job:etl-transform-error",
+          "pod_name:etl-transform-error-pdqks",
+          "container_name:transform",
+          "env:test",
+          "service:tracer-test"
+        ]
+      }
+    ],
+    "datadog_monitors": [
+      {
+        "id": null,
+        "name": "[tracer] Pipeline Error in Logs",
+        "type": "log alert",
+        "query": "logs(\"PIPELINE_ERROR kube_namespace:tracer-test\").index(\"*\").rollup(\"count\").last(\"1m\") > 0",
+        "message": "Pipeline error detected in tracer-test namespace. Review application logs for the PIPELINE_ERROR pattern.",
+        "overall_state": "Alert",
+        "tags": [
+          "managed_by:tracer-agent",
+          "env:test",
+          "service:tracer-test"
+        ]
+      }
+    ],
+    "datadog_logs_query": "PIPELINE_ERROR kube_namespace:tracer-test",
+    "datadog_kube_namespace": "tracer-test",
+    "datadog_container_name": "transform",
+    "datadog_pod_name": "etl-transform-error-pdqks",
+    "datadog_failed_pods": [
+      {
+        "pod_name": "etl-transform-error-pdqks",
+        "namespace": "tracer-test",
+        "container": "transform",
+        "exit_code": 1,
+        "error": "PIPELINE_ERROR: Schema validation failed: Missing fields ['customer_id'] in record 0"
+      }
+    ]
+  }
+}
