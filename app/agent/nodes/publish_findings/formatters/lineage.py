@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from app.agent.nodes.publish_findings.context.models import ReportContext
+from app.agent.nodes.publish_findings.report_context import ReportContext
 
 
 def _extract_annotations(raw_alert: dict) -> dict[str, Any]:
