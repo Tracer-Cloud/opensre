@@ -1,4 +1,14 @@
-"""Extract report context from investigation state."""
+"""Extract report context from investigation state.
+
+Phase overview
+--------------
+1. _normalize_state     – pull raw dicts out of state, coerce types
+2. _build_evidence_catalog – populate evidence entries per source
+3. _attach_evidence_to_claims – link claims to catalog entries by source key
+4. build_report_context – assemble the final ReportContext dict
+"""
+
+from __future__ import annotations
 
 import time
 from typing import Any
@@ -11,12 +21,35 @@ from app.agent.nodes.publish_findings.urls.aws import (
 )
 from app.agent.state import InvestigationState
 
+# ---------------------------------------------------------------------------
+# Source name aliases used when matching claim.evidence_sources → catalog IDs
+# ---------------------------------------------------------------------------
+_SOURCE_ALIASES: dict[str, str] = {
+    "cloudwatch": "cloudwatch_logs",
+    "cloudwatch_log": "cloudwatch_logs",
+    "cloudwatch_logs": "cloudwatch_logs",
+    "grafana": "grafana_logs",
+    "grafana_loki": "grafana_logs",
+    "datadog": "datadog_logs",
+}
+
+# Fixed display IDs for well-known sources (others get sequential EN)
+_FIXED_DISPLAY_IDS: dict[str, str] = {
+    "s3_metadata": "E1",
+    "s3_audit": "E2",
+    "cloudwatch_logs": "E3",
+    "vendor_audit": "E4",
+}
+
+
+# ---------------------------------------------------------------------------
+# Small utilities
+# ---------------------------------------------------------------------------
 
 def _safe_get(data: dict[str, Any] | None, *keys: str, default: Any = None) -> Any:
-    """Safely navigate nested dictionaries."""
+    """Safely navigate nested dictionaries without raising."""
     if data is None:
         return default
-
     current: Any = data
     for key in keys:
         if not isinstance(current, dict):
@@ -24,61 +57,25 @@ def _safe_get(data: dict[str, Any] | None, *keys: str, default: Any = None) -> A
         current = current.get(key)
         if current is None:
             return default
-
     return current
 
 
-def _extract_cloudwatch_info(
-    raw_alert: dict[str, Any] | str,
-) -> tuple[str | None, str | None, str | None, str | None, str | None]:
-    """Extract CloudWatch metadata from alert.
+def _as_snippet(value: str | None, max_len: int = 140) -> str | None:
+    """Compact a value to a short, brace-free snippet for display."""
+    if not value:
+        return None
+    compact = " ".join(str(value).split())
+    compact = compact.replace("{", "").replace("}", "").replace("[", "").replace("]", "")
+    return compact[:max_len]
 
-    Returns: (cloudwatch_url, log_group, log_stream, region, alert_id)
-    """
-    if not isinstance(raw_alert, dict):
-        return None, None, None, None, None
 
-    # Try to get annotations from various locations
-    annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
-    if not annotations and raw_alert.get("alerts"):
-        first_alert = raw_alert.get("alerts", [{}])[0]
-        if isinstance(first_alert, dict):
-            annotations = first_alert.get("annotations", {}) or {}
-
-    # Extract CloudWatch URL
-    cloudwatch_url = (
-        raw_alert.get("cloudwatch_logs_url")
-        or raw_alert.get("cloudwatch_url")
-        or _safe_get(annotations, "cloudwatch_logs_url")
-        or _safe_get(annotations, "cloudwatch_url")
-    )
-
-    # Extract log group and stream
-    cloudwatch_group = raw_alert.get("cloudwatch_log_group") or _safe_get(
-        annotations, "cloudwatch_log_group"
-    )
-    cloudwatch_stream = raw_alert.get("cloudwatch_log_stream") or _safe_get(
-        annotations, "cloudwatch_log_stream"
-    )
-
-    # Extract region
-    cloudwatch_region = raw_alert.get("cloudwatch_region") or _safe_get(
-        annotations, "cloudwatch_region"
-    )
-
-    # Extract alert ID
-    alert_id = raw_alert.get("alert_id")
-
-    return cloudwatch_url, cloudwatch_group, cloudwatch_stream, cloudwatch_region, alert_id
+def _display_id(source_name: str, catalog_size: int) -> str:
+    """Return a fixed E-id for well-known sources, or the next sequential id."""
+    return _FIXED_DISPLAY_IDS.get(source_name, f"E{catalog_size + 1}")
 
 
 def _filter_valid_claims(claims: list[dict]) -> list[dict]:
-    """Filter out invalid or junk claims.
-
-    Removes claims that:
-    - Have empty claim text
-    - Start with "NON_" prefix (artifacts)
-    """
+    """Drop claims with empty text or the NON_ artifact prefix."""
     return [
         c
         for c in claims
@@ -86,275 +83,361 @@ def _filter_valid_claims(claims: list[dict]) -> list[dict]:
     ]
 
 
-def build_report_context(state: InvestigationState) -> ReportContext:
-    """Extract data from state.context and state.evidence for report formatting.
+# ---------------------------------------------------------------------------
+# Phase 1: state normalization
+# ---------------------------------------------------------------------------
 
-    Args:
-        state: Investigation state containing context, evidence, and analysis results
+class _NormalizedState:
+    """All raw data extracted from InvestigationState in one place."""
 
-    Returns:
-        ReportContext with all data needed for report generation
+    def __init__(self, state: InvestigationState) -> None:
+        context = state.get("context", {}) or {}
+        evidence = state.get("evidence", {}) or {}
+        raw_alert_value = state.get("raw_alert", {})
 
-    Note:
-        This function uses defensive access patterns to handle missing or malformed
-        data gracefully. Missing fields will use sensible defaults rather than raising
-        exceptions.
-    """
-    # Extract top-level state data
-    context = state.get("context", {}) or {}
-    evidence = state.get("evidence", {}) or {}
-    raw_alert_value = state.get("raw_alert", {})
-    raw_alert: dict[str, Any] = raw_alert_value if isinstance(raw_alert_value, dict) else {}
+        self.evidence: dict[str, Any] = evidence
+        self.raw_alert: dict[str, Any] = raw_alert_value if isinstance(raw_alert_value, dict) else {}
+        self.web_run: dict[str, Any] = context.get("tracer_web_run", {}) or {}
+        self.batch: dict[str, Any] = evidence.get("batch_jobs", {}) or {}
+        self.s3: dict[str, Any] = evidence.get("s3", {}) or {}
 
-    # Extract nested structures
-    web_run = context.get("tracer_web_run", {}) or {}
-    batch = evidence.get("batch_jobs", {}) or {}
-    s3 = evidence.get("s3", {}) or {}
+        available_sources = state.get("available_sources", {}) or {}
+        self.grafana_endpoint: str | None = (available_sources.get("grafana") or {}).get("grafana_endpoint")
+        self.datadog_site: str = (available_sources.get("datadog") or {}).get("site") or "datadoghq.com"
 
-    # Extract integration endpoints for deep links
-    available_sources = state.get("available_sources", {}) or {}
-    grafana_endpoint: str | None = (available_sources.get("grafana") or {}).get("grafana_endpoint")
-    datadog_site: str | None = (available_sources.get("datadog") or {}).get("site") or "datadoghq.com"
+        self.validated_claims: list[dict] = _filter_valid_claims(state.get("validated_claims", []))
+        self.non_validated_claims: list[dict] = state.get("non_validated_claims", [])
 
-    # Extract and filter claims
-    validated_claims = _filter_valid_claims(state.get("validated_claims", []))
-    non_validated_claims = state.get("non_validated_claims", [])
+        self.cloudwatch_url, self.cloudwatch_group, self.cloudwatch_stream, \
+            self.cloudwatch_region, self.alert_id = _extract_cloudwatch_info(self.raw_alert)
 
-    # Extract CloudWatch metadata
-    (
-        cloudwatch_url,
-        cloudwatch_group,
-        cloudwatch_stream,
-        cloudwatch_region,
-        alert_id,
-    ) = _extract_cloudwatch_info(raw_alert)
-
-    duration_seconds: int | None = None
-    started_at = state.get("investigation_started_at")
-    if isinstance(started_at, (int, float)):
-        duration_seconds = max(0, int(round(time.monotonic() - float(started_at))))
-
-    # Build evidence catalog (deduplicated artifacts)
-    evidence_catalog: dict[str, dict] = {}
-    source_to_id: dict[str, str] = {}
-
-    def _as_snippet(value: str | None, max_len: int = 140) -> str | None:
-        if not value:
-            return None
-        compact = " ".join(str(value).split())
-        compact = compact.replace("{", "").replace("}", "").replace("[", "").replace("]", "")
-        return compact[:max_len]
-
-    def _display_id_for(source_name: str, fallback_index: int) -> str:
-        explicit = {
-            "s3_metadata": "E1",
-            "s3_audit": "E2",
-            "cloudwatch_logs": "E3",
-            "vendor_audit": "E4",
-        }
-        return explicit.get(source_name, f"E{fallback_index}")
-
-    s3_obj = evidence.get("s3_object", {}) or {}
-    s3_bucket = s3_obj.get("bucket")
-    s3_key = s3_obj.get("key")
-    if s3_bucket and s3_key:
-        s3_url = build_s3_console_url(
-            str(s3_bucket),
-            str(s3_key),
-            cloudwatch_region or "us-east-1",
+        started_at = state.get("investigation_started_at")
+        self.duration_seconds: int | None = (
+            max(0, int(round(time.monotonic() - float(started_at))))
+            if isinstance(started_at, (int, float))
+            else None
         )
-        eid = "evidence/s3_metadata/landing"
-        evidence_catalog[eid] = {
-            "label": "S3 Object Metadata",
-            "url": s3_url,
-            "summary": f"{s3_obj.get('bucket')}/{s3_obj.get('key')}",
-            "display_id": _display_id_for("s3_metadata", len(evidence_catalog) + 1),
-            "snippet": _as_snippet(
-                ", ".join(
-                    [
-                        f"schema_change_injected={s3_obj.get('metadata', {}).get('schema_change_injected')}",
-                        f"schema_version={s3_obj.get('metadata', {}).get('schema_version')}",
-                    ]
-                ).strip(", ")
-            ),
-        }
-        source_to_id["s3_metadata"] = eid
 
+        self.state = state
+
+
+def _extract_cloudwatch_info(
+    raw_alert: dict[str, Any],
+) -> tuple[str | None, str | None, str | None, str | None, str | None]:
+    """Pull CloudWatch metadata from an alert dict.
+
+    Returns: (url, log_group, log_stream, region, alert_id)
+    """
+    annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
+    if not annotations and raw_alert.get("alerts"):
+        first_alert = raw_alert.get("alerts", [{}])[0]
+        if isinstance(first_alert, dict):
+            annotations = first_alert.get("annotations", {}) or {}
+
+    url = (
+        raw_alert.get("cloudwatch_logs_url")
+        or raw_alert.get("cloudwatch_url")
+        or _safe_get(annotations, "cloudwatch_logs_url")
+        or _safe_get(annotations, "cloudwatch_url")
+    )
+    group = raw_alert.get("cloudwatch_log_group") or _safe_get(annotations, "cloudwatch_log_group")
+    stream = raw_alert.get("cloudwatch_log_stream") or _safe_get(annotations, "cloudwatch_log_stream")
+    region = raw_alert.get("cloudwatch_region") or _safe_get(annotations, "cloudwatch_region")
+    alert_id = raw_alert.get("alert_id")
+    return url, group, stream, region, alert_id
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: evidence catalog construction
+#
+# Each _add_* helper appends to the shared (catalog, source_to_id) accumulators.
+# ---------------------------------------------------------------------------
+
+def _add_s3_metadata(
+    evidence: dict[str, Any],
+    region: str | None,
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
+    s3_obj = evidence.get("s3_object", {}) or {}
+    bucket, key = s3_obj.get("bucket"), s3_obj.get("key")
+    if not (bucket and key):
+        return
+    eid = "evidence/s3_metadata/landing"
+    meta = s3_obj.get("metadata", {}) or {}
+    catalog[eid] = {
+        "label": "S3 Object Metadata",
+        "url": build_s3_console_url(str(bucket), str(key), region or "us-east-1"),
+        "summary": f"{bucket}/{key}",
+        "display_id": _display_id("s3_metadata", len(catalog)),
+        "snippet": _as_snippet(
+            f"schema_change_injected={meta.get('schema_change_injected')}, "
+            f"schema_version={meta.get('schema_version')}"
+        ),
+    }
+    source_to_id["s3_metadata"] = eid
+
+
+def _add_s3_audit(
+    evidence: dict[str, Any],
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
     s3_audit = evidence.get("s3_audit_payload", {}) or {}
-    if s3_audit.get("bucket") and s3_audit.get("key"):
-        eid = "evidence/s3_audit/main"
-        evidence_catalog[eid] = {
-            "label": "S3 Audit Payload",
-            "summary": f"{s3_audit.get('bucket')}/{s3_audit.get('key')}",
-            "display_id": _display_id_for("s3_audit", len(evidence_catalog) + 1),
-            "snippet": _as_snippet(str(s3_audit.get("content", "")) or None),
-        }
-        source_to_id["s3_audit"] = eid
-        source_to_id.setdefault("vendor_audit", eid)
+    if not (s3_audit.get("bucket") and s3_audit.get("key")):
+        return
+    eid = "evidence/s3_audit/main"
+    catalog[eid] = {
+        "label": "S3 Audit Payload",
+        "summary": f"{s3_audit['bucket']}/{s3_audit['key']}",
+        "display_id": _display_id("s3_audit", len(catalog)),
+        "snippet": _as_snippet(str(s3_audit.get("content", "")) or None),
+    }
+    source_to_id["s3_audit"] = eid
+    source_to_id.setdefault("vendor_audit", eid)
 
+
+def _add_vendor_audit(
+    evidence: dict[str, Any],
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
     vendor_audit = evidence.get("vendor_audit_from_logs") or {}
-    if vendor_audit and "vendor_audit" not in source_to_id:
-        eid = "evidence/vendor_audit/main"
-        evidence_catalog[eid] = {
-            "label": "Vendor Audit",
-            "summary": "External vendor audit record",
-            "display_id": _display_id_for("vendor_audit", len(evidence_catalog) + 1),
-            "snippet": None,
-        }
-        source_to_id["vendor_audit"] = eid
+    if not vendor_audit or "vendor_audit" in source_to_id:
+        return
+    eid = "evidence/vendor_audit/main"
+    catalog[eid] = {
+        "label": "Vendor Audit",
+        "summary": "External vendor audit record",
+        "display_id": _display_id("vendor_audit", len(catalog)),
+        "snippet": None,
+    }
+    source_to_id["vendor_audit"] = eid
 
-    if cloudwatch_url:
-        eid = "evidence/cloudwatch/prefect"
-        evidence_catalog[eid] = {
-            "label": "CloudWatch Logs",
-            "url": cloudwatch_url,
-            "display_id": _display_id_for("cloudwatch_logs", len(evidence_catalog) + 1),
-            "snippet": None,
-        }
-        source_to_id["cloudwatch_logs"] = eid
 
-    # Grafana Loki logs catalog entry
+def _add_cloudwatch(
+    cloudwatch_url: str | None,
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
+    if not cloudwatch_url:
+        return
+    eid = "evidence/cloudwatch/prefect"
+    catalog[eid] = {
+        "label": "CloudWatch Logs",
+        "url": cloudwatch_url,
+        "display_id": _display_id("cloudwatch_logs", len(catalog)),
+        "snippet": None,
+    }
+    source_to_id["cloudwatch_logs"] = eid
+
+
+def _add_grafana_logs(
+    evidence: dict[str, Any],
+    grafana_endpoint: str | None,
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
     grafana_logs = evidence.get("grafana_logs") or []
     grafana_error_logs = evidence.get("grafana_error_logs") or []
+    if not (grafana_logs or grafana_error_logs):
+        return
     grafana_query = evidence.get("grafana_logs_query") or ""
     grafana_service = evidence.get("grafana_logs_service") or ""
-    if grafana_logs or grafana_error_logs:
-        grafana_url = build_grafana_explore_url(grafana_endpoint or "", grafana_query) if grafana_query else None
-        eid = "evidence/grafana/loki"
-        summary_parts = []
-        if grafana_service:
-            summary_parts.append(grafana_service)
-        if grafana_logs:
-            summary_parts.append(f"{len(grafana_logs)} logs")
-        if grafana_error_logs:
-            summary_parts.append(f"{len(grafana_error_logs)} errors")
-        evidence_catalog[eid] = {
-            "label": "Grafana Loki Logs",
-            "url": grafana_url,
-            "display_id": f"E{len(evidence_catalog) + 1}",
-            "summary": ", ".join(summary_parts) or None,
-            "snippet": _as_snippet(grafana_query) if grafana_query else None,
-        }
-        source_to_id["grafana_logs"] = eid
+    summary_parts = [p for p in [
+        grafana_service or None,
+        f"{len(grafana_logs)} logs" if grafana_logs else None,
+        f"{len(grafana_error_logs)} errors" if grafana_error_logs else None,
+    ] if p]
+    eid = "evidence/grafana/loki"
+    catalog[eid] = {
+        "label": "Grafana Loki Logs",
+        "url": build_grafana_explore_url(grafana_endpoint or "", grafana_query) if grafana_query else None,
+        "display_id": f"E{len(catalog) + 1}",
+        "summary": ", ".join(summary_parts) or None,
+        "snippet": _as_snippet(grafana_query) if grafana_query else None,
+    }
+    source_to_id["grafana_logs"] = eid
 
-    # Datadog logs catalog entry
+
+def _add_datadog_logs(
+    evidence: dict[str, Any],
+    datadog_site: str,
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
     datadog_logs = evidence.get("datadog_logs") or []
     datadog_error_logs = evidence.get("datadog_error_logs") or []
+    if not (datadog_logs or datadog_error_logs):
+        return
     datadog_query = evidence.get("datadog_logs_query") or ""
-    if datadog_logs or datadog_error_logs:
-        dd_url = build_datadog_logs_url(datadog_query, datadog_site or "datadoghq.com") if datadog_query else None
-        eid = "evidence/datadog/logs"
-        summary_parts = []
-        if datadog_logs:
-            summary_parts.append(f"{len(datadog_logs)} logs")
-        if datadog_error_logs:
-            summary_parts.append(f"{len(datadog_error_logs)} errors")
-        evidence_catalog[eid] = {
-            "label": "Datadog Logs",
-            "url": dd_url,
-            "display_id": f"E{len(evidence_catalog) + 1}",
-            "summary": ", ".join(summary_parts) or None,
-            "snippet": _as_snippet(datadog_query) if datadog_query else None,
-        }
-        source_to_id["datadog_logs"] = eid
+    summary_parts = [p for p in [
+        f"{len(datadog_logs)} logs" if datadog_logs else None,
+        f"{len(datadog_error_logs)} errors" if datadog_error_logs else None,
+    ] if p]
+    eid = "evidence/datadog/logs"
+    catalog[eid] = {
+        "label": "Datadog Logs",
+        "url": build_datadog_logs_url(datadog_query, datadog_site) if datadog_query else None,
+        "display_id": f"E{len(catalog) + 1}",
+        "summary": ", ".join(summary_parts) or None,
+        "snippet": _as_snippet(datadog_query) if datadog_query else None,
+    }
+    source_to_id["datadog_logs"] = eid
 
-    # Datadog monitors catalog entry
+
+def _add_datadog_monitors(
+    evidence: dict[str, Any],
+    datadog_site: str,
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
     datadog_monitors = evidence.get("datadog_monitors") or []
-    if datadog_monitors:
-        triggered = [m for m in datadog_monitors if m.get("overall_state") in ("Alert", "Warn", "No Data")]
-        monitor_label = f"Datadog Monitors ({len(triggered)} triggered)" if triggered else f"Datadog Monitors ({len(datadog_monitors)})"
-        eid = "evidence/datadog/monitors"
-        evidence_catalog[eid] = {
-            "label": monitor_label,
-            "url": f"https://app.{datadog_site}/monitors/manage",
-            "display_id": f"E{len(evidence_catalog) + 1}",
-            "summary": f"{len(datadog_monitors)} monitors",
-            "snippet": _as_snippet(", ".join(m.get("name", "") for m in datadog_monitors[:3])),
-        }
-        source_to_id["datadog_monitors"] = eid
+    if not datadog_monitors:
+        return
+    triggered = [m for m in datadog_monitors if m.get("overall_state") in ("Alert", "Warn", "No Data")]
+    label = (
+        f"Datadog Monitors ({len(triggered)} triggered)"
+        if triggered
+        else f"Datadog Monitors ({len(datadog_monitors)})"
+    )
+    eid = "evidence/datadog/monitors"
+    catalog[eid] = {
+        "label": label,
+        "url": f"https://app.{datadog_site}/monitors/manage",
+        "display_id": f"E{len(catalog) + 1}",
+        "summary": f"{len(datadog_monitors)} monitors",
+        "snippet": _as_snippet(", ".join(m.get("name", "") for m in datadog_monitors[:3])),
+    }
+    source_to_id["datadog_monitors"] = eid
 
-    # Datadog events catalog entry
+
+def _add_datadog_events(
+    evidence: dict[str, Any],
+    datadog_site: str,
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
     datadog_events = evidence.get("datadog_events") or []
-    if datadog_events:
-        eid = "evidence/datadog/events"
-        evidence_catalog[eid] = {
-            "label": f"Datadog Events ({len(datadog_events)})",
-            "url": f"https://app.{datadog_site}/event/explorer",
-            "display_id": f"E{len(evidence_catalog) + 1}",
-            "summary": f"{len(datadog_events)} events",
-            "snippet": _as_snippet(datadog_events[0].get("title", "") if datadog_events else ""),
-        }
-        source_to_id["datadog_events"] = eid
+    if not datadog_events:
+        return
+    eid = "evidence/datadog/events"
+    catalog[eid] = {
+        "label": f"Datadog Events ({len(datadog_events)})",
+        "url": f"https://app.{datadog_site}/event/explorer",
+        "display_id": f"E{len(catalog) + 1}",
+        "summary": f"{len(datadog_events)} events",
+        "snippet": _as_snippet(datadog_events[0].get("title", "")),
+    }
+    source_to_id["datadog_events"] = eid
 
-    # Datadog failed pods — one evidence catalog entry per pod
+
+def _add_datadog_failed_pods(
+    evidence: dict[str, Any],
+    datadog_site: str,
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
     dd_ns = evidence.get("datadog_kube_namespace")
     dd_container = evidence.get("datadog_container_name")
     raw_pods: list[dict] = evidence.get("datadog_failed_pods", [])
-    # Fall back to single pre-extracted pod when the list is empty
     if not raw_pods and evidence.get("datadog_pod_name"):
         raw_pods = [{"pod_name": evidence["datadog_pod_name"], "namespace": dd_ns, "container": dd_container}]
+
     for idx, pod in enumerate(raw_pods):
         pname = pod.get("pod_name") or pod.get("name")
-        pns = pod.get("namespace") or pod.get("kube_namespace") or dd_ns
-        pcontainer = pod.get("container") or pod.get("container_name") or dd_container
         if not pname:
             continue
+        pns = pod.get("namespace") or pod.get("kube_namespace") or dd_ns
+        pcontainer = pod.get("container") or pod.get("container_name") or dd_container
         pod_query = f"kube_namespace:{pns} pod_name:{pname}" if pns else f"pod_name:{pname}"
-        pod_url = build_datadog_logs_url(pod_query, datadog_site or "datadoghq.com")
         summary_parts = [f"namespace={pns}"] if pns else []
         if pod.get("exit_code") is not None:
             summary_parts.append(f"exit={pod['exit_code']}")
         if pod.get("memory_requested") and pod.get("memory_limit"):
             summary_parts.append(f"mem requested={pod['memory_requested']} limit={pod['memory_limit']}")
-        container_label = f" ({pcontainer})" if pcontainer else ""
         eid = f"evidence/datadog/failed_pod/{pname}"
-        evidence_catalog[eid] = {
-            "label": f"Failed Pod: {pname}{container_label}",
-            "url": pod_url,
-            "display_id": f"E{len(evidence_catalog) + 1}",
+        catalog[eid] = {
+            "label": f"Failed Pod: {pname}{f' ({pcontainer})' if pcontainer else ''}",
+            "url": build_datadog_logs_url(pod_query, datadog_site),
+            "display_id": f"E{len(catalog) + 1}",
             "summary": ", ".join(summary_parts) if summary_parts else pname,
             "snippet": pod.get("error"),
         }
         if idx == 0:
             source_to_id["datadog_pod"] = eid
 
-    # Attach evidence_ids to claims (validated + non-validated) without mutating originals
-    display_map = {eid: entry.get("display_id", eid) for eid, entry in evidence_catalog.items()}
 
-    aliases = {
-        "cloudwatch": "cloudwatch_logs",
-        "cloudwatch_log": "cloudwatch_logs",
-        "cloudwatch_logs": "cloudwatch_logs",
-        "grafana": "grafana_logs",
-        "grafana_loki": "grafana_logs",
-        "datadog": "datadog_logs",
-    }
+def _build_evidence_catalog(
+    ns: _NormalizedState,
+) -> tuple[dict[str, dict], dict[str, str]]:
+    """Build the full evidence catalog and the source-name → catalog-id index."""
+    catalog: dict[str, dict] = {}
+    source_to_id: dict[str, str] = {}
 
-    def _attach_ids(claims: list[dict]) -> list[dict]:
-        mapped: list[dict] = []
-        for claim in claims:
-            new_claim = dict(claim)
-            evidence_ids: list[str] = []
-            evidence_labels: list[str] = []
-            for src in claim.get("evidence_sources", []) or []:
-                key = aliases.get(src, src)
-                if key == "evidence_analysis":
-                    continue
-                eid = source_to_id.get(key)
-                if eid and eid not in evidence_ids:
-                    evidence_ids.append(eid)
-                    evidence_labels.append(display_map.get(eid, eid))
-            if evidence_ids:
-                new_claim["evidence_ids"] = evidence_ids
-                new_claim["evidence_labels"] = evidence_labels
-            new_claim["evidence_sources"] = []  # normalize display to E-ids only
-            mapped.append(new_claim)
-        return mapped
+    _add_s3_metadata(ns.evidence, ns.cloudwatch_region, catalog, source_to_id)
+    _add_s3_audit(ns.evidence, catalog, source_to_id)
+    _add_vendor_audit(ns.evidence, catalog, source_to_id)
+    _add_cloudwatch(ns.cloudwatch_url, catalog, source_to_id)
+    _add_grafana_logs(ns.evidence, ns.grafana_endpoint, catalog, source_to_id)
+    _add_datadog_logs(ns.evidence, ns.datadog_site, catalog, source_to_id)
+    _add_datadog_monitors(ns.evidence, ns.datadog_site, catalog, source_to_id)
+    _add_datadog_events(ns.evidence, ns.datadog_site, catalog, source_to_id)
+    _add_datadog_failed_pods(ns.evidence, ns.datadog_site, catalog, source_to_id)
 
-    validated_claims = _attach_ids(validated_claims)
-    non_validated_claims = _attach_ids(non_validated_claims)
+    return catalog, source_to_id
 
-    # Build context dictionary
+
+# ---------------------------------------------------------------------------
+# Phase 3: link claims to catalog entries
+# ---------------------------------------------------------------------------
+
+def _attach_evidence_to_claims(
+    claims: list[dict],
+    source_to_id: dict[str, str],
+    display_map: dict[str, str],
+) -> list[dict]:
+    """Return a copy of claims with evidence_ids, evidence_labels attached."""
+    result: list[dict] = []
+    for claim in claims:
+        new_claim = dict(claim)
+        evidence_ids: list[str] = []
+        evidence_labels: list[str] = []
+        for src in claim.get("evidence_sources", []) or []:
+            key = _SOURCE_ALIASES.get(src, src)
+            if key == "evidence_analysis":
+                continue
+            eid = source_to_id.get(key)
+            if eid and eid not in evidence_ids:
+                evidence_ids.append(eid)
+                evidence_labels.append(display_map.get(eid, eid))
+        if evidence_ids:
+            new_claim["evidence_ids"] = evidence_ids
+            new_claim["evidence_labels"] = evidence_labels
+        new_claim["evidence_sources"] = []  # normalize display to E-ids only
+        result.append(new_claim)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: final context assembly
+# ---------------------------------------------------------------------------
+
+def build_report_context(state: InvestigationState) -> ReportContext:
+    """Build the full ReportContext from an InvestigationState.
+
+    Internally runs four distinct phases:
+    1. Normalize/extract raw data from state.
+    2. Build the evidence catalog per source.
+    3. Attach catalog references to claims.
+    4. Assemble the final dict.
+    """
+    ns = _NormalizedState(state)
+    catalog, source_to_id = _build_evidence_catalog(ns)
+    display_map = {eid: entry.get("display_id", eid) for eid, entry in catalog.items()}
+    validated_claims = _attach_evidence_to_claims(ns.validated_claims, source_to_id, display_map)
+    non_validated_claims = _attach_evidence_to_claims(ns.non_validated_claims, source_to_id, display_map)
+
     return {
         # Core RCA results
         "pipeline_name": state.get("pipeline_name", "unknown"),
@@ -367,53 +450,53 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         "investigation_recommendations": state.get("investigation_recommendations", []),
         "remediation_steps": state.get("remediation_steps", []),
         # S3 verification
-        "s3_marker_exists": s3.get("marker_exists", False),
+        "s3_marker_exists": ns.s3.get("marker_exists", False),
         # Tracer web run metadata
-        "tracer_run_status": web_run.get("status"),
-        "tracer_run_name": web_run.get("run_name"),
-        "tracer_pipeline_name": web_run.get("pipeline_name"),
-        "tracer_run_cost": web_run.get("run_cost", 0),
-        "tracer_max_ram_gb": web_run.get("max_ram_gb", 0),
-        "tracer_user_email": web_run.get("user_email"),
-        "tracer_team": web_run.get("team"),
-        "tracer_instance_type": web_run.get("instance_type"),
-        "tracer_failed_tasks": len(evidence.get("failed_jobs", [])),
+        "tracer_run_status": ns.web_run.get("status"),
+        "tracer_run_name": ns.web_run.get("run_name"),
+        "tracer_pipeline_name": ns.web_run.get("pipeline_name"),
+        "tracer_run_cost": ns.web_run.get("run_cost", 0),
+        "tracer_max_ram_gb": ns.web_run.get("max_ram_gb", 0),
+        "tracer_user_email": ns.web_run.get("user_email"),
+        "tracer_team": ns.web_run.get("team"),
+        "tracer_instance_type": ns.web_run.get("instance_type"),
+        "tracer_failed_tasks": len(ns.evidence.get("failed_jobs", [])),
         # AWS Batch metadata
-        "batch_failure_reason": batch.get("failure_reason"),
-        "batch_failed_jobs": batch.get("failed_jobs", 0),
+        "batch_failure_reason": ns.batch.get("failure_reason"),
+        "batch_failed_jobs": ns.batch.get("failed_jobs", 0),
         # CloudWatch metadata
-        "cloudwatch_log_group": cloudwatch_group,
-        "cloudwatch_log_stream": cloudwatch_stream,
-        "cloudwatch_logs_url": cloudwatch_url,
-        "cloudwatch_region": cloudwatch_region,
-        "alert_id": alert_id,
-        "evidence_catalog": evidence_catalog,
-        "investigation_duration_seconds": duration_seconds,
+        "cloudwatch_log_group": ns.cloudwatch_group,
+        "cloudwatch_log_stream": ns.cloudwatch_stream,
+        "cloudwatch_logs_url": ns.cloudwatch_url,
+        "cloudwatch_region": ns.cloudwatch_region,
+        "alert_id": ns.alert_id,
+        "evidence_catalog": catalog,
+        "investigation_duration_seconds": ns.duration_seconds,
         # Raw data for deeper inspection
-        "evidence": evidence,
-        "raw_alert": raw_alert,
+        "evidence": ns.evidence,
+        "raw_alert": ns.raw_alert,
         # Tool call history for investigation transparency
         "executed_hypotheses": state.get("executed_hypotheses", []),
         # Integration endpoints for deep links
-        "grafana_endpoint": grafana_endpoint,
-        "datadog_site": datadog_site,
+        "grafana_endpoint": ns.grafana_endpoint,
+        "datadog_site": ns.datadog_site,
         # Kubernetes pod details — from Datadog evidence first, then alert annotations
         "kube_pod_name": (
-            evidence.get("datadog_pod_name")
-            or _safe_get(raw_alert, "annotations", "hostname")
-            or _safe_get(raw_alert, "commonAnnotations", "hostname")
+            ns.evidence.get("datadog_pod_name")
+            or _safe_get(ns.raw_alert, "annotations", "hostname")
+            or _safe_get(ns.raw_alert, "commonAnnotations", "hostname")
         ),
         "kube_container_name": (
-            evidence.get("datadog_container_name")
-            or _safe_get(raw_alert, "annotations", "container_name")
-            or _safe_get(raw_alert, "commonAnnotations", "container_name")
+            ns.evidence.get("datadog_container_name")
+            or _safe_get(ns.raw_alert, "annotations", "container_name")
+            or _safe_get(ns.raw_alert, "commonAnnotations", "container_name")
         ),
         "kube_namespace": (
-            evidence.get("datadog_kube_namespace")
-            or _safe_get(raw_alert, "annotations", "namespace")
-            or _safe_get(raw_alert, "commonAnnotations", "namespace")
-            or _safe_get(raw_alert, "annotations", "kube_namespace")
+            ns.evidence.get("datadog_kube_namespace")
+            or _safe_get(ns.raw_alert, "annotations", "namespace")
+            or _safe_get(ns.raw_alert, "commonAnnotations", "namespace")
+            or _safe_get(ns.raw_alert, "annotations", "kube_namespace")
         ),
         # Multiple failed pods — populated from Datadog evidence when available
-        "kube_failed_pods": evidence.get("datadog_failed_pods", []),
+        "kube_failed_pods": ns.evidence.get("datadog_failed_pods", []),
     }
