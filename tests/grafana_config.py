@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from opentelemetry.sdk.resources import Resource
 
@@ -180,9 +181,14 @@ def get_rw_api_key() -> str:
     return get_env("GCLOUD_RW_API_KEY", "")
 
 
+def _is_grafana_hostname(endpoint: str) -> bool:
+    hostname = urlparse(endpoint).hostname or ""
+    return hostname == "grafana.net" or hostname.endswith(".grafana.net") or hostname == "grafana.com" or hostname.endswith(".grafana.com")
+
+
 def is_grafana_otlp_endpoint(value: str | None = None) -> bool:
     endpoint = value if value is not None else get_effective_otlp_endpoint()
-    return "grafana.net" in endpoint or "grafana.com" in endpoint
+    return _is_grafana_hostname(endpoint)
 
 
 def configure_grafana_cloud(env_file: Path | str | None = None) -> None:
@@ -234,7 +240,7 @@ def apply_otel_env_defaults() -> None:
 def validate_grafana_cloud_config() -> bool:
     """Validate that Grafana Cloud configuration is present when using cloud endpoints."""
     endpoint = get_effective_otlp_endpoint()
-    if "grafana.net" in endpoint or "grafana.com" in endpoint:
+    if _is_grafana_hostname(endpoint):
         required_values = {
             "GCLOUD_HOSTED_METRICS_ID": get_hosted_metrics_id(),
             "GCLOUD_HOSTED_METRICS_URL": get_hosted_metrics_url(),
