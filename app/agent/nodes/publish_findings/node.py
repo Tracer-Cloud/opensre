@@ -28,10 +28,19 @@ def generate_report(state: InvestigationState) -> dict:
 
     # 2. Format — render ctx into Slack mrkdwn text + Block Kit blocks
     slack_message = format_slack_message(ctx)
-    investigation_url = get_investigation_url(state.get("organization_slug"))
+
+    # 3. Push to ingest API first to get the investigation_id for the URL
+    investigation_id: str | None = None
+    try:
+        state_with_report = cast(InvestigationState, {**state, "problem_report": {"report_md": slack_message}, "summary": short_summary})
+        investigation_id = send_ingest(state_with_report)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[publish] Ingest delivery failed: %s", exc)
+
+    investigation_url = get_investigation_url(state.get("organization_slug"), investigation_id)
     all_blocks = build_slack_blocks(ctx) + build_action_blocks(investigation_url)
 
-    # 3. Deliver — send to terminal, Slack, and ingest API
+    # 4. Deliver — send to terminal and Slack
     render_report(slack_message)
 
     slack_ctx = state.get("slack_context", {})
@@ -65,12 +74,6 @@ def generate_report(state: InvestigationState) -> dict:
         raise RuntimeError(
             f"[publish] Slack delivery failed: channel={_channel}, thread_ts={thread_ts}, reason={delivery_error}"
         )
-
-    try:
-        state_with_report = cast(InvestigationState, {**state, "problem_report": {"report_md": slack_message}, "summary": short_summary})
-        send_ingest(state_with_report)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[publish] Ingest delivery failed: %s", exc)
 
     return {"slack_message": slack_message}
 

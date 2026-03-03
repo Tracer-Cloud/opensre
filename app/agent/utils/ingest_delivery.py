@@ -87,14 +87,17 @@ def build_ingest_payload(state: InvestigationState) -> dict[str, Any]:
     return {"investigation_output": investigation_output, "metadata": metadata}
 
 
-def send_ingest(state: InvestigationState) -> None:
-    """Fire-and-forget delivery to the ingest API."""
+def send_ingest(state: InvestigationState) -> str | None:
+    """Deliver investigation to the ingest API.
+
+    Returns the investigation ID from the API response, or None on failure.
+    """
     token = os.getenv("TRACER_INGEST_TOKEN")
     base_url = os.getenv("TRACER_API_URL") or get_tracer_base_url()
 
     if not token:
         logger.debug("[ingest] TRACER_INGEST_TOKEN not set; skipping ingest.")
-        return
+        return None
 
     api_url = f"{base_url.rstrip('/')}/api/investigations/ingest"
     payload = build_ingest_payload(state)
@@ -102,16 +105,24 @@ def send_ingest(state: InvestigationState) -> None:
     # thread_id is required for idempotent updates; skip if missing
     if not payload["metadata"].get("thread_id"):
         logger.debug("[ingest] Missing thread_id; skipping ingest.")
-        return
+        return None
 
     headers = {"Authorization": f"Bearer {token}"}
 
     try:
         response = httpx.post(api_url, json=payload, headers=headers, timeout=10.0)
         response.raise_for_status()
-        logger.debug("[ingest] Delivered investigation ingest (thread_id=%s)", payload["metadata"]["thread_id"])
+        data: dict[str, Any] = response.json()
+        investigation_id: str | None = (data.get("data") or {}).get("investigation_id")
+        logger.debug(
+            "[ingest] Delivered investigation ingest (thread_id=%s, id=%s)",
+            payload["metadata"]["thread_id"],
+            investigation_id,
+        )
+        return investigation_id
     except httpx.HTTPStatusError as exc:  # noqa: BLE001
         detail = exc.response.text[:200] if exc.response is not None else str(exc)
         logger.warning("[ingest] HTTP %s: %s", exc.response.status_code if exc.response else "unknown", detail)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[ingest] Delivery failed: %s", exc)
+    return None
