@@ -13,7 +13,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from app.agent.runners import _merge_state, _run_investigation_pipeline
 from app.agent.state import make_initial_state
