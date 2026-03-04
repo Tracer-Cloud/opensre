@@ -85,15 +85,6 @@ def trigger_pipeline_failure(run_id: str, trace_id: str) -> dict:
     print("\nWaiting for ECS task to complete...")
     time.sleep(30)
 
-    return {
-        "correlation_id": correlation_id,
-        "s3_key": s3_key,
-        "audit_key": audit_key,
-        "task_arn": task_arn,
-        "bucket": CONFIG["s3_bucket"],
-    }
-
-
     trigger_timer.finish(
         exit_code=0,
         metadata={

@@ -21,7 +21,6 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[3]
 
 from tests.shared.infrastructure_sdk import save_outputs
-from tests.shared.infrastructure_sdk.deployer import get_boto3_client, get_standard_tags_dict
 from tests.shared.infrastructure_sdk.resources import (
     api_gateway,
     ecr,

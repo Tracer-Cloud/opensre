@@ -38,7 +38,6 @@ from tests.test_case_kubernetes.infrastructure_sdk.local import (
     create_kind_cluster,
     create_or_update_monitor,
     delete_kind_cluster,
-    delete_manifest,
     delete_monitor_by_name,
     deploy_datadog_helm,
     get_pod_logs,

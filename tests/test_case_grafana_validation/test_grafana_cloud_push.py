@@ -1,13 +1,6 @@
-import json
-import logging
 import os
-import uuid
 
 import pytest
-from opentelemetry import metrics as otel_metrics
-from opentelemetry import trace as otel_trace
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.trace import TracerProvider
 
 pytestmark = pytest.mark.skip(reason="outbound telemetry has been removed from this project")
 from tests.grafana_config import (

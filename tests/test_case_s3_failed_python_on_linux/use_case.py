@@ -9,7 +9,6 @@ import os
 import time
 import uuid
 from datetime import UTC, datetime
-from pathlib import Path
 
 from opentelemetry import trace
 

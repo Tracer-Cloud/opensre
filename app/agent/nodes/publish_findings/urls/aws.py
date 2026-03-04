@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import quote
-
-if TYPE_CHECKING:
-    from app.agent.nodes.publish_findings.report_context import ReportContext
 
 
 def _encode_aws_path(path: str) -> str:
@@ -17,7 +15,7 @@ def _encode_aws_path(path: str) -> str:
     return path.replace("/", "$252F")
 
 
-def build_cloudwatch_url(ctx: ReportContext) -> str | None:
+def build_cloudwatch_url(ctx: Mapping[str, Any]) -> str | None:
     """Build CloudWatch logs URL from context.
 
     Priority:
@@ -35,7 +33,7 @@ def build_cloudwatch_url(ctx: ReportContext) -> str | None:
     # Check if URL already provided
     cw_url = ctx.get("cloudwatch_logs_url")
     if cw_url:
-        return cw_url
+        return str(cw_url)
 
     # Extract components
     cw_group = ctx.get("cloudwatch_log_group")

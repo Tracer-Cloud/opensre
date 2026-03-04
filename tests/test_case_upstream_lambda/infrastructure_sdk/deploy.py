@@ -10,7 +10,6 @@ Creates:
 """
 
 import io
-import json
 import os
 import shutil
 import tempfile
@@ -23,7 +22,7 @@ from pathlib import Path
 from botocore.exceptions import ClientError
 
 from tests.shared.infrastructure_sdk.config import save_outputs
-from tests.shared.infrastructure_sdk.deployer import get_boto3_client, get_standard_tags
+from tests.shared.infrastructure_sdk.deployer import get_boto3_client
 from tests.shared.infrastructure_sdk.resources import api_gateway, iam, lambda_, s3
 from tests.shared.infrastructure_sdk.resources.iam import get_account_id, put_role_policy
 from tests.shared.infrastructure_sdk.resources.secrets import get_secret_value
