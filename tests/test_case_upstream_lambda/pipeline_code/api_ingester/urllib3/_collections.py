@@ -13,9 +13,11 @@ if typing.TYPE_CHECKING:
     from typing_extensions import Self
 
     class HasGettableStringKeys(Protocol):
-        def keys(self) -> typing.Iterator[str]: ...
+        def keys(self) -> typing.Iterator[str]: 
+            pass
 
-        def __getitem__(self, key: str) -> str: ...
+        def __getitem__(self, key: str) -> str: 
+            pass
 
 
 __all__ = ["RecentlyUsedContainer", "HTTPHeaderDict"]
@@ -372,10 +374,12 @@ class HTTPHeaderDict(typing.MutableMapping[str, str]):
             self.add(key, value)
 
     @typing.overload
-    def getlist(self, key: str) -> list[str]: ...
+    def getlist(self, key: str) -> list[str]: 
+        pass
 
     @typing.overload
-    def getlist(self, key: str, default: _DT) -> list[str] | _DT: ...
+    def getlist(self, key: str, default: _DT) -> list[str] | _DT: 
+        pass
 
     def getlist(
         self, key: str, default: _Sentinel | _DT = _Sentinel.not_passed

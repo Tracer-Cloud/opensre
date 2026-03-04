@@ -62,7 +62,8 @@ if typing.TYPE_CHECKING:
             socket_options: _TYPE_SOCKET_OPTIONS | None = ...,
             proxy: Url | None = None,
             proxy_config: ProxyConfig | None = None,
-        ) -> None: ...
+        ) -> None: 
+            pass
 
         def set_tunnel(
             self,
@@ -70,9 +71,11 @@ if typing.TYPE_CHECKING:
             port: int | None = None,
             headers: typing.Mapping[str, str] | None = None,
             scheme: str = "http",
-        ) -> None: ...
+        ) -> None: 
+            pass
 
-        def connect(self) -> None: ...
+        def connect(self) -> None: 
+            pass
 
         def request(
             self,
@@ -88,11 +91,14 @@ if typing.TYPE_CHECKING:
             preload_content: bool = True,
             decode_content: bool = True,
             enforce_content_length: bool = True,
-        ) -> None: ...
+        ) -> None: 
+            pass
 
-        def getresponse(self) -> BaseHTTPResponse: ...
+        def getresponse(self) -> BaseHTTPResponse: 
+            pass
 
-        def close(self) -> None: ...
+        def close(self) -> None: 
+            pass
 
         @property
         def is_closed(self) -> bool:

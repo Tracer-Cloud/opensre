@@ -1134,11 +1134,13 @@ def connection_from_url(url: str, **kw: typing.Any) -> HTTPConnectionPool:
 
 
 @typing.overload
-def _normalize_host(host: None, scheme: str | None) -> None: ...
+def _normalize_host(host: None, scheme: str | None) -> None: 
+    pass
 
 
 @typing.overload
-def _normalize_host(host: str, scheme: str | None) -> str: ...
+def _normalize_host(host: str, scheme: str | None) -> str: 
+    pass
 
 
 def _normalize_host(host: str | None, scheme: str | None) -> str | None:
