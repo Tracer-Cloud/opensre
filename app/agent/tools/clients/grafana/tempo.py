@@ -128,7 +128,7 @@ class TempoMixin:
 
                 return {"spans": spans}
         except Exception:
-            pass
+            return {"spans": []}
 
         return {"spans": []}
 
