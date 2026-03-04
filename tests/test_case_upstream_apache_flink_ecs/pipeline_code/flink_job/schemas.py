@@ -45,4 +45,4 @@ class ProcessedRecord:
     def compute_feature_hash(features: dict[str, float]) -> str:
         """Compute deterministic hash of feature vector for versioning."""
         feature_str = json.dumps(features, sort_keys=True)
-        return hashlib.md5(feature_str.encode()).hexdigest()[:8]
+        return hashlib.md5(feature_str.encode(), usedforsecurity=False).hexdigest()[:8]
