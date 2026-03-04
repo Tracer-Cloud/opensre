@@ -1,0 +1,13 @@
+## BST License
+
+Copyright (c) 2026 Vincent Hus
+
+Permission to use, copy, modify, and distribute this software and its
+documentation may be granted only in accordance with the terms defined
+by the BST license.
+
+Unless otherwise stated, the software is provided "as is", without
+warranty of any kind, express or implied.
+
+For full licensing terms and permissions, refer to the official
+documentation or licensing agreement.
