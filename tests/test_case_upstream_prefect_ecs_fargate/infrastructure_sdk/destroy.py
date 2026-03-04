@@ -65,7 +65,8 @@ def stop_running_tasks() -> None:
                 ecs_client.stop_task(cluster=CLUSTER_NAME, task=task_arn, reason="Stack destruction")
                 print(f"  [OK] Stopped task: {task_arn.split('/')[-1]}")
             except ClientError:
-                pass  # Task may have already stopped between list and stop calls
+                # Task may have already stopped between list and stop calls
+                pass
 
         # Wait for tasks to stop
         if task_arns:
@@ -240,7 +241,8 @@ def deregister_task_definitions() -> None:
                     ecs.deregister_task_definition(task_def_arn, REGION)
                     print(f"  [OK] Deregistered: {task_def_arn.split('/')[-1]}")
                 except ClientError:
-                    pass  # Task definition may be already deregistered or in use; skip and continue
+                    # Task definition may be already deregistered or in use; skip and continue
+                    pass
         except ClientError as e:
             print(f"  [WARN] Could not list task definitions for {family}: {e}")
 
@@ -288,7 +290,8 @@ def destroy() -> dict:
         delete_outputs(STACK_NAME)
         print("  [OK] Deleted outputs file")
     except Exception:
-        pass  # Outputs file may not exist if deployment was incomplete
+        # Outputs file may not exist if deployment was incomplete
+        pass
 
     # Also run tag-based cleanup for any missed resources
     print("  Running tag-based cleanup...")
