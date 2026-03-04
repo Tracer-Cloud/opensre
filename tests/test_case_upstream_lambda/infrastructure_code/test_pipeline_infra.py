@@ -33,7 +33,7 @@ def test_happy_path(stack_outputs: dict) -> bool:
 
     # Reset API to good schema
     try:
-        response = requests.post(
+        requests.post(
             f"{stack_outputs['MockApiUrl']}/config",
             json={"inject_schema_change": False},
             timeout=10,

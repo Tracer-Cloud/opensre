@@ -33,7 +33,6 @@ from tests.test_case_kubernetes.infrastructure_sdk.eks import (
     deploy_eks_stack,
     destroy_eks_stack,
     ensure_nodegroup_capacity,
-    get_ecr_image_uri,
     update_kubeconfig,
 )
 from tests.test_case_kubernetes.infrastructure_sdk.local import (

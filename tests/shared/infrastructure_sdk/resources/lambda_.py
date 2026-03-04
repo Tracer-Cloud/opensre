@@ -181,6 +181,7 @@ def create_function(
     # Retry logic for IAM propagation delays
     max_retries = 5
     retry_delay = 10  # seconds
+    response: dict[str, Any] = {}
 
     for attempt in range(max_retries):
         try:
@@ -270,7 +271,6 @@ def update_function_configuration(
     config: dict[str, Any] = {"FunctionName": name}
 
     if environment is not None:
-        merged_env = dict(environment)
         try:
             current_config = lambda_client.get_function_configuration(FunctionName=name)
             current_env = current_config.get("Environment", {}).get("Variables", {})

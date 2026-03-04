@@ -4,7 +4,6 @@ CloudWatch Demo Orchestrator.
 Run with: make cloudwatch-demo
 """
 
-import os
 import sys
 import traceback
 from datetime import UTC, datetime
@@ -81,7 +80,7 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
                 raw_alert=raw_alert,
             )
 
-        result = run_with_alert_id()
+        run_with_alert_id()
 
         print(f"\n✓ CloudWatch logs: {cloudwatch_context['cloudwatch_url']}")
         return 0
