@@ -217,11 +217,13 @@ class SSLTransport:
 
     # func is sslobj.do_handshake or sslobj.unwrap
     @typing.overload
-    def _ssl_io_loop(self, func: typing.Callable[[], None]) -> None: ...
+    def _ssl_io_loop(self, func: typing.Callable[[], None]) -> None:
+        pass
 
     # func is sslobj.write, arg1 is data
     @typing.overload
-    def _ssl_io_loop(self, func: typing.Callable[[bytes], int], arg1: bytes) -> int: ...
+    def _ssl_io_loop(self, func: typing.Callable[[bytes], int], arg1: bytes) -> int:
+        pass
 
     # func is sslobj.read, arg1 is len, arg2 is buffer
     @typing.overload
@@ -230,7 +232,8 @@ class SSLTransport:
         func: typing.Callable[[int, bytearray | None], bytes],
         arg1: int,
         arg2: bytearray | None,
-    ) -> bytes: ...
+    ) -> bytes:
+        pass
 
     def _ssl_io_loop(
         self,
