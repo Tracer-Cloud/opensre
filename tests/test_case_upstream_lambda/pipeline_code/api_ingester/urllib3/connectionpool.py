@@ -282,7 +282,6 @@ class HTTPConnectionPool(ConnectionPool, RequestMethods):
                     self,
                     "Pool is empty and a new connection can't be opened due to blocking mode.",
                 ) from None
-            pass  # Oh well, we'll create a new connection then
 
         # If this is a persistent connection, check if it got disconnected
         if conn and is_connection_dropped(conn):

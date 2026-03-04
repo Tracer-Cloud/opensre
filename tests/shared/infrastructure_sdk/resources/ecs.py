@@ -39,7 +39,7 @@ def create_cluster(name: str, stack_name: str, region: str = DEFAULT_REGION) -> 
             if cluster.get("status") == "INACTIVE":
                 time.sleep(5)  # Give time for cleanup
     except ClientError:
-        pass
+        pass  # Cluster doesn't exist yet; proceed to create
 
     # Create new cluster
     try:
@@ -354,7 +354,7 @@ def delete_service(cluster: str, service: str, region: str = DEFAULT_REGION) -> 
         ecs_client.update_service(cluster=cluster, service=service, desiredCount=0)
         time.sleep(5)
     except ClientError:
-        pass
+        pass  # Service may already be at 0 or not found; proceed with deletion
 
     try:
         ecs_client.delete_service(cluster=cluster, service=service, force=True)

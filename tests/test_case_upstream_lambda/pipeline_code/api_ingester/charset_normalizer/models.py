@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from encodings.aliases import aliases
+from functools import total_ordering
 from hashlib import sha256
 from json import dumps
 from re import sub
@@ -10,6 +11,7 @@ from .constant import RE_POSSIBLE_ENCODING_INDICATION, TOO_BIG_SEQUENCE
 from .utils import iana_name, is_multi_byte_encoding, unicode_range
 
 
+@total_ordering
 class CharsetMatch:
     def __init__(
         self,

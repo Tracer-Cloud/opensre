@@ -218,13 +218,13 @@ def get_recent_invocations(
                             duration_part = message.split("Duration: ")[1].split()[0]
                             current_invocation["duration_ms"] = float(duration_part)
                         except (IndexError, ValueError):
-                            pass
+                            pass  # REPORT line has unexpected format; skip metric
                     if "Memory Used:" in message:
                         try:
                             memory_part = message.split("Memory Used: ")[1].split()[0]
                             current_invocation["memory_used_mb"] = int(memory_part)
                         except (IndexError, ValueError):
-                            pass
+                            pass  # REPORT line has unexpected format; skip metric
                     invocations.append(current_invocation)
                     current_invocation = None
             elif current_invocation:

@@ -249,7 +249,7 @@ def delete_role(name: str, region: str = DEFAULT_REGION) -> None:
         for policy in attached.get("AttachedPolicies", []):
             iam_client.detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
     except ClientError:
-        pass
+        pass  # Role may not exist or policies already detached
 
     # Delete inline policies
     try:
@@ -257,7 +257,7 @@ def delete_role(name: str, region: str = DEFAULT_REGION) -> None:
         for policy_name in inline.get("PolicyNames", []):
             iam_client.delete_role_policy(RoleName=name, PolicyName=policy_name)
     except ClientError:
-        pass
+        pass  # Role may not exist or inline policies already deleted
 
     # Delete role
     try:

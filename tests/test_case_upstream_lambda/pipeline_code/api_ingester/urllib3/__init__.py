@@ -47,7 +47,6 @@ else:
 
 __author__ = "Andrey Petrov (andrey.petrov@shazow.net)"
 __license__ = "MIT"
-__version__ = __version__
 
 __all__ = (
     "HTTPConnectionPool",

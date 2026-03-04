@@ -17,6 +17,7 @@ def failure_data() -> dict:
 
     from tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e import (
         CONFIG,
+        _get_run_and_trace_ids,
         get_failure_details_from_logs,
         trigger_pipeline_failure,
     )
@@ -26,8 +27,9 @@ def failure_data() -> dict:
     if not CONFIG.get("log_group"):
         pytest.skip("Infrastructure not deployed (log_group not configured)")
 
-    data = trigger_pipeline_failure()
+    run_id, trace_id = _get_run_and_trace_ids()
+    data = trigger_pipeline_failure(run_id, trace_id)
     if not data:
         pytest.skip("Could not trigger pipeline failure")
 
-    return get_failure_details_from_logs(data)
+    return get_failure_details_from_logs(data, run_id, trace_id)
