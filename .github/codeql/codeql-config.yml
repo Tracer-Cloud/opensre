@@ -1,0 +1,7 @@
+name: "CodeQL config"
+
+paths-ignore:
+  # Vendored third-party pipeline code in test fixtures — not owned by this project
+  - tests/test_case_upstream_lambda/pipeline_code
+  - tests/test_case_upstream_apache_flink_ecs/pipeline_code
+  - tests/test_case_upstream_prefect_ecs_fargate/pipeline_code
