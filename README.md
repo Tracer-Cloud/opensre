@@ -1,92 +1,146 @@
-[![Linter Check](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-clippy.yml/badge.svg?branch=main)](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-clippy.yml) [![Tests](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-test.yml/badge.svg?branch=main)](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-test.yml) [![Release](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/dev-cross-platform-release-s3.yml/badge.svg?branch=main)](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/dev-cross-platform-release-s3.yml)
-[![Dependency Security](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-audit.yml/badge.svg?branch=main)](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-audit.yml)
+[![Build](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-clippy.yml/badge.svg?branch=main)](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-clippy.yml)
+[![Tests](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-test.yml/badge.svg?branch=main)](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-test.yml)
+[![Security](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-audit.yml/badge.svg?branch=main)](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-audit.yml)
 
-<h2 align="left">
-Tracer Linux Agent: Observability for Scientific HPC Workloads
-</h2>
+<h2 align="left">Tracer — Autonomous SRE Agent for Production Data Pipelines</h2>
 
-![Tracer-Banner](https://github.com/user-attachments/assets/5bbbdcee-11ca-4f09-b042-a5259309b7e4)
+<p align="left">
+  <img src="https://github.com/user-attachments/assets/f4ccf4d4-137a-47a8-a000-a6cffccd8485" alt="Tracer Banner"/>
+</p>
 
-## What Is Tracer and Why Use It?
 
-- Tracer is a system-level monitoring platform purpose-built for scientific computing. It is a a one-line install Linux agent and instant dashboards to give you insights into pipeline performance and cost optimization.
+<p align="left">
+  <strong>No dashboards. No guesswork. No alert fatigue.</strong>
+</p>
 
-- Unlike industry agnostic monitoring agents, Tracer structures DevOps data for scientific pipelines, providing clear visibility into pipeline stages and execution runs. In environments like AWS Batch, where processes and containers are loosely connected, users struggle to understand which processes belong to which pipeline run, and frequently lose logs from failed containers, making debugging difficult.
+<p align="left">
+  Tracer automatically investigates production data pipeline alerts by correlating logs, metrics, configurations, and dependencies across the data platform.
+</p>
 
-- Tracer solves this by intelligently organizing and labeling pipelines, execution runs, and steps. Because it runs directly on Linux, it requires no code changes and supports any programming language, unlike point solutions that work only with one framework. This makes integration effortless even across multi-workload IT environments, including AlphaFold, Slurm, Airflow, Nextflow and also local Bash scripts.
+<p align="left">
+  <strong>
+    <a href="https://app.tracer.cloud/">Getting Started</a> ·
+    <a href="https://tracer.cloud/">Website</a> ·
+    <a href="https://tracer.cloud/docs/">Docs</a> ·
+    <a href="https://trust.tracer.cloud/">Security</a>
+  </strong>
+</p>
 
-- Architected for regulated industries, it ensures enterprise-grade security, with data never leaving your infrastructure, which is not the case with solutions such as DataDog.
+---
 
-<br />
-
-![image](https://s15obc311h0vrt01.public.blob.vercel-storage.com/Github%20Readme%20Preview%20Tracer.png)
-
-<br />
-
-## Key Features
-
-New metrics that help you speed up your pipelines and maximize your budget:
-
-- Time and cost per dataset processed
-- Execution duration and bottleneck identification for each pipeline step
-- Cost attribution across pipelines, teams, and environments (dev, CI/CD, prod)
-  Overall, making sense of scientific toolchains with poor/no observability.
-
-<br />
-
-## Get Started
-
-### 1. Access the Sandbox
-
-The easiest way to get started with Tracer is via our **browser-based sandbox**:  
-👉 [https://sandbox.tracer.cloud/](https://sandbox.tracer.cloud/)
-
-- Click **“Proceed to Onboarding”** to launch a guided onboarding experience tailored to your preferred tech stack — _no AWS credentials or setup required_.
-
-### 2. Install Tracer With One Line of Code
-
-Choose your preferred tech stack from the left-hand menu.
-
-Copy the pre-filled curl command (also shown in the Sandbox) and run it in your terminal:
+## Quick Start
 
 ```bash
-curl -sSL https://install.tracer.cloud | sh
+git clone https://github.com/Tracer-Cloud/tracer-agent-2026
+cd tracer-client
+make install
+tracer start
 ```
 
-### 3. Initialize the Tracer Client (requires token)
+Documentation → `/docs`
 
-Start the Tracer client to initialize a pipeline and enable monitoring. You must provide your Tracer token every time you initialize.
+---
 
-- Get your token from the [Tracer Sandbox](https://sandbox.tracer.cloud/)
-- Then run:
+## The Problem
 
-> **Note:** Root privileges required
+Production data incidents often involve multiple interconnected systems.
 
-```bash
-sudo tracer init --token <paste-your-token-here> --watch-dir "/tmp/tracer"
-```
+Resolving them requires correlating operational signals — logs, metrics, traces, configuration state, and recent changes — across orchestration frameworks, compute engines, and infrastructure.
 
-### 4. Initialize a Pipeline
+This investigation process is typically manual and tool-fragmented.
 
-You can now choose to run any pipeline you want or use 'tracer test' to launch a prepared pipeline.
-Run your own pipeline by following your usual workflow or try with one of our test examples first (https://github.com/Tracer-Cloud/nextflow-test-pipelines):
+---
 
-```bash
-sudo -E tracer demo
-```
+## How Tracer Works
+<img width="2444" height="881" alt="How it works" src="https://github.com/user-attachments/assets/dd79d5ab-e2a4-4ddf-a869-7afa4d7a10dc" />
 
-### 5. Monitor Your Pipeline With Our Dashboard
+### Investigation Workflow
 
-Access the Tracer monitoring dashboard to watch your pipeline in action, including:
+When an alert fires, Tracer:
 
-- Real-time execution metrics
-- Pipeline stages
-- Resource usage across runs
+1. Ingests the alert from monitoring or incident systems
+2. Assembles context from logs, metrics, configs, and dependencies
+3. Frames potential failure modes
+4. Executes investigation queries across connected systems
+5. Evaluates hypotheses based on collected evidence
+6. Delivers a root cause report and recommended next actions
 
-- The sandbox will guide you to your personal dashboard at the bottom of the onboarding page.
+---
 
-<br />
+## Capabilities
 
-## Mission
+- Structured incident investigation
+- Parallel hypothesis execution
+- Cross-system failure correlation
+- Evidence-backed root cause analysis
+- Alert triage and MTTR reduction
 
-> _"The goal of Tracer's Rust agent is to equip scientists and engineers with DevOps intelligence to efficiently harness massive computational power for humanity's most critical challenges."_
+Designed for production data engineering teams operating complex data platforms.
+
+---
+
+## Supported Systems
+
+- Apache Airflow
+- Apache Kafka
+- Apache Spark
+- AWS / GCP / Azure
+- Datadog
+- Prometheus
+
+--- 
+
+## Integrations
+
+Tracer connects to the systems that already power your data platform.
+
+Common integrations include:
+
+- **Observability:** Grafana, Prometheus, Datadog
+- **Infrastructure:** AWS, GCP, Azure
+- **Communication:** Slack, PagerDuty
+- **Knowledge:** runbooks, architecture documentation, investigation guides
+
+---
+
+## Design Principles
+
+- Deterministic investigations
+- Evidence-backed conclusions
+- Parallel hypothesis testing
+- Production-first design
+- Fully auditable workflows
+
+---
+
+## Contributing
+
+We welcome contributors interested in:
+
+- Data platform integrations
+- Investigation engines
+- Observability tooling
+- Deterministic AI systems
+
+See `CONTRIBUTING.md`.
+
+---
+
+## Security
+
+Tracer interacts with production systems.
+
+Recommended:
+
+- Use read-only credentials
+- Restrict network exposure
+- Log all investigations
+- Review reports before automated remediation
+
+See `SECURITY.md` for details.
+
+---
+
+## License
+
+BST — Vincent Hus (see `LICENSE`)
