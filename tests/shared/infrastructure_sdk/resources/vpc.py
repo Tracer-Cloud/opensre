@@ -160,7 +160,8 @@ def create_security_group(
                 "arn": f"arn:aws:ec2:{region}:{sg['OwnerId']}:security-group/{sg['GroupId']}",
             }
     except ClientError:
-        pass  # Security group doesn't exist yet; fall through to create
+        # Security group doesn't exist yet; fall through to create
+        pass
 
     # Create new
     tag_specs = []

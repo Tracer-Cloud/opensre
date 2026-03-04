@@ -162,7 +162,8 @@ def _delete_ecs_service(arn: str, region: str) -> None:
             client.update_service(cluster=cluster, service=service, desiredCount=0)
             time.sleep(5)
         except ClientError:
-            pass  # Service may be draining or already at 0; proceed with deletion
+            # Service may be draining or already at 0; proceed with deletion
+            pass
         client.delete_service(cluster=cluster, service=service, force=True)
 
 
@@ -201,7 +202,8 @@ def _delete_iam_role(arn: str, region: str) -> None:
         for policy in attached.get("AttachedPolicies", []):
             client.detach_role_policy(RoleName=role_name, PolicyArn=policy["PolicyArn"])
     except ClientError:
-        pass  # Role may not exist or policies already detached
+        # Role may not exist or policies already detached
+        pass
 
     # Delete inline policies
     try:
@@ -209,7 +211,8 @@ def _delete_iam_role(arn: str, region: str) -> None:
         for policy_name in inline.get("PolicyNames", []):
             client.delete_role_policy(RoleName=role_name, PolicyName=policy_name)
     except ClientError:
-        pass  # Role may not exist or inline policies already deleted
+        # Role may not exist or inline policies already deleted
+        pass
 
     # Delete instance profiles
     try:
@@ -220,7 +223,8 @@ def _delete_iam_role(arn: str, region: str) -> None:
                 RoleName=role_name,
             )
     except ClientError:
-        pass  # Role may not exist or instance profiles already removed
+        # Role may not exist or instance profiles already removed
+        pass
 
     client.delete_role(RoleName=role_name)
 
