@@ -90,6 +90,14 @@ class LookupDict(dict):
     def __repr__(self):
         return f"<lookup '{self.name}'>"
 
+    def __eq__(self, other):
+        if isinstance(other, LookupDict):
+            return self.name == other.name and dict.__eq__(self, other)
+        return dict.__eq__(self, other)
+
+    def __hash__(self):
+        return hash(self.name)
+
     def __getitem__(self, key):
         # We allow fall-through here, so values default to None
 

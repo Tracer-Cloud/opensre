@@ -115,7 +115,7 @@ def wait_for_condition(
             if check_func():
                 return True
         except Exception:
-            pass
+            pass  # AWS resource may not be ready yet; retry until timeout
         time.sleep(delay_seconds)
 
     raise TimeoutError(f"Timeout waiting for {description} after {max_attempts * delay_seconds}s")

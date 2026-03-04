@@ -59,7 +59,7 @@ def _discover_trigger_api_url() -> str | None:
         if from_outputs:
             return from_outputs
     except FileNotFoundError:
-        pass
+        pass  # Outputs file not written yet; fall through to AWS tag-based discovery
 
     # Fallback: discover API Gateway via AWS tags
     tagger = get_boto3_client("resourcegroupstaggingapi", REGION)
@@ -104,7 +104,7 @@ def discover_runtime_outputs() -> dict[str, str] | None:
                 "ecr_image_uri": outputs["ecr_image_uri"],
             }
     except FileNotFoundError:
-        pass
+        pass  # Outputs file not written yet; fall through to Lambda env-var discovery
 
     lambda_client = get_boto3_client("lambda", REGION)
     try:

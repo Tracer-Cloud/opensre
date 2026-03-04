@@ -162,4 +162,14 @@ if typing.TYPE_CHECKING:
             cert_file: str | None = None,
             key_file: str | None = None,
             key_password: str | None = None,
-        ) -> None: ...
+        ) -> None:
+            super().__init__(
+                host,
+                port=port,
+                timeout=timeout,
+                source_address=source_address,
+                blocksize=blocksize,
+                socket_options=socket_options,
+                proxy=proxy,
+                proxy_config=proxy_config,
+            )

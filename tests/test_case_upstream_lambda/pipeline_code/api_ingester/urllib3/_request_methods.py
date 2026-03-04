@@ -51,14 +51,12 @@ class RequestMethods:
     def __init__(self, headers: typing.Mapping[str, str] | None = None) -> None:
         self.headers = headers or {}
 
-    def urlopen(
+    def urlopen(  # type: ignore[override]
         self,
         method: str,
         url: str,
         body: _TYPE_BODY | None = None,
         headers: typing.Mapping[str, str] | None = None,
-        encode_multipart: bool = True,
-        multipart_boundary: str | None = None,
         **kw: typing.Any,
     ) -> BaseHTTPResponse:  # Abstract
         raise NotImplementedError(
