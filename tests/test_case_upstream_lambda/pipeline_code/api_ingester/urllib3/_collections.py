@@ -13,9 +13,11 @@ if typing.TYPE_CHECKING:
     from typing_extensions import Self
 
     class HasGettableStringKeys(Protocol):
-        def keys(self) -> typing.Iterator[str]: ...
+        def keys(self) -> typing.Iterator[str]:
+            pass
 
-        def __getitem__(self, key: str) -> str: ...
+        def __getitem__(self, key: str) -> str:
+            pass
 
 
 __all__ = ["RecentlyUsedContainer", "HTTPHeaderDict"]
