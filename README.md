@@ -8,11 +8,6 @@
   <img src="https://github.com/user-attachments/assets/f4ccf4d4-137a-47a8-a000-a6cffccd8485" alt="Tracer Banner"/>
 </p>
 
-
-<p align="left">
-  <strong>No dashboards. No guesswork. No alert fatigue.</strong>
-</p>
-
 <p align="left">
   Tracer automatically investigates production data pipeline alerts by correlating logs, metrics, configurations, and dependencies across the data platform.
 </p>
