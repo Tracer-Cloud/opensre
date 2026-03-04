@@ -79,27 +79,28 @@ Designed for production data engineering teams operating complex data platforms.
 
 ---
 
-## Supported Systems
+## Integrations
 
+Tracer integrates with the systems that power modern data platforms.
+
+**Data Platform**
 - Apache Airflow
 - Apache Kafka
 - Apache Spark
-- AWS / GCP / Azure
-- Datadog
+
+**Observability**
+- Grafana
 - Prometheus
+- Datadog
 
---- 
+**Infrastructure**
+- AWS
+- GCP
+- Azure
 
-## Integrations
-
-Tracer connects to the systems that already power your data platform.
-
-Common integrations include:
-
-- **Observability:** Grafana, Prometheus, Datadog
-- **Infrastructure:** AWS, GCP, Azure
-- **Communication:** Slack, PagerDuty
-- **Knowledge:** runbooks, architecture documentation, investigation guides
+**Communication**
+- Slack
+- PagerDuty
 
 ---
 
