@@ -1,6 +1,3 @@
-[![Build](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-clippy.yml/badge.svg?branch=main)](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-clippy.yml)
-[![Tests](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-test.yml/badge.svg?branch=main)](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-test.yml)
-[![Security](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-audit.yml/badge.svg?branch=main)](https://github.com/Tracer-Cloud/tracer-client/actions/workflows/cargo-audit.yml)
 
 <h2 align="left">Tracer — Autonomous SRE Agent for Production Data Pipelines</h2>
 
