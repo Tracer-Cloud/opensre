@@ -214,14 +214,14 @@ class Url(
 def _encode_invalid_chars(
     component: str, allowed_chars: typing.Container[str]
 ) -> str:  # Abstract
-    ...
+    pass
 
 
 @typing.overload
 def _encode_invalid_chars(
     component: None, allowed_chars: typing.Container[str]
 ) -> None:  # Abstract
-    ...
+    pass
 
 
 def _encode_invalid_chars(
@@ -291,11 +291,13 @@ def _remove_path_dot_segments(path: str) -> str:
 
 
 @typing.overload
-def _normalize_host(host: None, scheme: str | None) -> None: ...
+def _normalize_host(host: None, scheme: str | None) -> None: 
+    pass
 
 
 @typing.overload
-def _normalize_host(host: str, scheme: str | None) -> str: ...
+def _normalize_host(host: str, scheme: str | None) -> str: 
+    pass
 
 
 def _normalize_host(host: str | None, scheme: str | None) -> str | None:
