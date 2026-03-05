@@ -1,12 +1,12 @@
 
-<h2 align="left">Tracer — Autonomous SRE Agent for Production Data Pipelines</h2>
+<h2 align="left">Tracer: Autonomous SRE Agent</h2>
 
 <p align="left">
   <img src="https://github.com/user-attachments/assets/f4ccf4d4-137a-47a8-a000-a6cffccd8485" alt="Tracer Banner"/>
 </p>
 
 <p align="left">
-  Tracer automatically investigates production data pipeline alerts by correlating logs, metrics, configurations, and dependencies across the data platform.
+  Tracer automatically investigates production data pipeline alerts by correlating logs, metrics, configurations, and dependencies across your preferred data platform.
 </p>
 
 <p align="left">
