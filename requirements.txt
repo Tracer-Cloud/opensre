@@ -1,5 +1,6 @@
 # Core AI/Agent dependencies
 anthropic>=0.77.1
+openai>=2.0.0
 langsmith>=0.6.8
 langgraph>=0.4.0
 langgraph-sdk

@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from anthropic import Anthropic, AuthenticationError
+from openai import AuthenticationError as OpenAIAuthError
+from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -114,8 +116,79 @@ class LLMClient:
         return LLMResponse(content=content)
 
 
+def _uses_max_completion_tokens(model: str) -> bool:
+    """Reasoning models (o1, o3, o4, gpt-5 series) require max_completion_tokens."""
+    return model.startswith(("o1", "o3", "o4", "gpt-5"))
+
+
+class OpenAILLMClient:
+    def __init__(self, *, model: str, max_tokens: int = 1024, temperature: float | None = None) -> None:
+        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        self._api_key = api_key
+        self._client = OpenAI(api_key=api_key, timeout=60.0)
+        self._model = model
+        self._max_tokens = max_tokens
+        self._temperature = temperature
+
+    def with_config(self, **_kwargs) -> OpenAILLMClient:
+        return self
+
+    def with_structured_output(self, model: type[BaseModel]) -> StructuredOutputClient:
+        return StructuredOutputClient(self, model)
+
+    def bind_tools(self, _tools: list) -> OpenAILLMClient:
+        return self
+
+    def _ensure_client(self) -> None:
+        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        if not api_key:
+            raise RuntimeError(
+                "Missing OPENAI_API_KEY. Set it in your environment or .env before running LLM steps."
+            )
+        if api_key != self._api_key:
+            self._api_key = api_key
+            self._client = OpenAI(api_key=api_key, timeout=60.0)
+
+    def invoke(self, prompt_or_messages: Any) -> LLMResponse:
+        self._ensure_client()
+        messages = _normalize_messages_openai(prompt_or_messages)
+        token_param = "max_completion_tokens" if _uses_max_completion_tokens(self._model) else "max_tokens"
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            token_param: self._max_tokens,
+            "messages": messages,
+        }
+        if self._temperature is not None:
+            kwargs["temperature"] = self._temperature
+
+        backoff_seconds = 1.0
+        max_attempts = 3
+        last_err: Exception | None = None
+        for attempt in range(max_attempts):
+            try:
+                response = self._client.chat.completions.create(**kwargs)
+                break
+            except OpenAIAuthError as err:
+                raise RuntimeError(
+                    "OpenAI authentication failed. Check OPENAI_API_KEY in your environment or .env."
+                ) from err
+            except Exception as err:
+                last_err = err
+                if attempt == max_attempts - 1:
+                    raise RuntimeError(
+                        "OpenAI API request failed after multiple retries. Try again in a few seconds."
+                    ) from err
+                time.sleep(backoff_seconds)
+                backoff_seconds *= 2
+        else:
+            raise RuntimeError("LLM invocation failed without a concrete error") from last_err
+
+        content = response.choices[0].message.content or ""
+        return LLMResponse(content=content.strip())
+
+
 class StructuredOutputClient:
-    def __init__(self, base: LLMClient, model: type[BaseModel]) -> None:
+    def __init__(self, base: LLMClient | OpenAILLMClient, model: type[BaseModel]) -> None:
         self._base = base
         self._model = model
 
@@ -139,6 +212,21 @@ class StructuredOutputClient:
                 fallback = {"actions": payload, "rationale": "LLM returned actions only."}
                 return self._model.model_validate(fallback)
             raise
+
+
+def _normalize_messages_openai(prompt_or_messages: Any) -> list[dict[str, str]]:
+    if isinstance(prompt_or_messages, list):
+        messages: list[dict[str, str]] = []
+        for msg in prompt_or_messages:
+            if isinstance(msg, dict):
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+            else:
+                role = getattr(msg, "role", "user")
+                content = getattr(msg, "content", "")
+            messages.append({"role": str(role), "content": str(content)})
+        return messages
+    return [{"role": "user", "content": str(prompt_or_messages)}]
 
 
 def _normalize_messages(prompt_or_messages: Any) -> tuple[str | None, list[dict[str, str]]]:
@@ -210,25 +298,31 @@ def _extract_json_payload(text: str) -> Any:
 # LLM Client
 # ─────────────────────────────────────────────────────────────────────────────
 
-_llm: LLMClient | None = None
+_llm: LLMClient | OpenAILLMClient | None = None
 
 
-def get_llm() -> LLMClient:
+def get_llm() -> LLMClient | OpenAILLMClient:
     """
     Get or create the LLM client singleton.
 
-    LangSmith tracking is always enabled.
-    All LLM calls will be tracked in LangSmith.
-
-    Returns:
-        LLM client configured for the appropriate model
+    Provider is controlled by the LLM_PROVIDER env var (default: anthropic).
+    Set LLM_PROVIDER=openai to use OpenAI with OPENAI_API_KEY and OPENAI_MODEL.
     """
     global _llm
     if _llm is None:
-        _llm = LLMClient(
-            model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
-            max_tokens=4096,
-        )
+        provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
+        if provider == "openai":
+            _llm = OpenAILLMClient(
+                model="gpt-5.2",
+                max_tokens=4096,
+            )
+        else:
+            from app.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL
+
+            _llm = LLMClient(
+                model=os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL),
+                max_tokens=DEFAULT_MAX_TOKENS,
+            )
     return _llm
 
 
