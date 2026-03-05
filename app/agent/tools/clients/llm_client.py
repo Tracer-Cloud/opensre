@@ -115,6 +115,11 @@ class LLMClient:
         return LLMResponse(content=content)
 
 
+def _uses_max_completion_tokens(model: str) -> bool:
+    """Reasoning models (o1, o3, o4, gpt-5 series) require max_completion_tokens."""
+    return model.startswith(("o1", "o3", "o4", "gpt-5"))
+
+
 class OpenAILLMClient:
     def __init__(self, *, model: str, max_tokens: int = 1024, temperature: float | None = None) -> None:
         api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
@@ -146,9 +151,10 @@ class OpenAILLMClient:
     def invoke(self, prompt_or_messages: Any) -> LLMResponse:
         self._ensure_client()
         messages = _normalize_messages_openai(prompt_or_messages)
+        token_param = "max_completion_tokens" if _uses_max_completion_tokens(self._model) else "max_tokens"
         kwargs: dict[str, Any] = {
             "model": self._model,
-            "max_tokens": self._max_tokens,
+            token_param: self._max_tokens,
             "messages": messages,
         }
         if self._temperature is not None:
@@ -310,9 +316,11 @@ def get_llm() -> LLMClient | OpenAILLMClient:
                 max_tokens=4096,
             )
         else:
+            from app.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL
+
             _llm = LLMClient(
-                model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
-                max_tokens=4096,
+                model=os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL),
+                max_tokens=DEFAULT_MAX_TOKENS,
             )
     return _llm
 

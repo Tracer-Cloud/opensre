@@ -65,7 +65,9 @@ JWT_ALGORITHM = "RS256"
 JWKS_CACHE_TTL_SECONDS = 3600  # Cache JWKS for 1 hour
 
 # LLM Configuration
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
+# Default model used when ANTHROPIC_MODEL is not provided.
+# Sonnet is cheaper/faster; Opus is higher-quality.
+DEFAULT_MODEL = "claude-opus-4-20250514"
 DEFAULT_MAX_TOKENS = 4096
 
 # Tracer API Configuration

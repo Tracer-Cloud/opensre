@@ -87,18 +87,22 @@ def _get_chat_llm(*, with_tools: bool = False) -> ChatAnthropic:
 
     if with_tools:
         if _chat_llm_with_tools is None:
+            from app.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL
+
             base = ChatAnthropic(  # type: ignore[call-arg]
-                model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
-                max_tokens=4096,
+                model=os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL),
+                max_tokens=DEFAULT_MAX_TOKENS,
                 streaming=True,
             )
             _chat_llm_with_tools = base.bind_tools(CHAT_TOOLS)  # type: ignore[assignment]
         return _chat_llm_with_tools  # type: ignore[return-value]
 
     if _chat_llm is None:
+        from app.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL
+
         _chat_llm = ChatAnthropic(  # type: ignore[call-arg]
-            model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
-            max_tokens=4096,
+            model=os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL),
+            max_tokens=DEFAULT_MAX_TOKENS,
             streaming=True,
         )
     return _chat_llm
