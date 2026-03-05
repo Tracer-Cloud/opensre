@@ -14,7 +14,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from anthropic import Anthropic, AuthenticationError
-from openai import OpenAI, AuthenticationError as OpenAIAuthError
+from openai import AuthenticationError as OpenAIAuthError
+from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -187,7 +188,7 @@ class OpenAILLMClient:
 
 
 class StructuredOutputClient:
-    def __init__(self, base: LLMClient, model: type[BaseModel]) -> None:
+    def __init__(self, base: LLMClient | OpenAILLMClient, model: type[BaseModel]) -> None:
         self._base = base
         self._model = model
 
