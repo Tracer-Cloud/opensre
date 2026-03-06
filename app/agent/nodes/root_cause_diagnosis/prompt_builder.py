@@ -131,11 +131,11 @@ def _extract_k8s_tags_from_evidence(evidence: dict[str, Any]) -> dict[str, str]:
     """Extract K8s metadata from Datadog log tags (Signal 1 -- primary).
 
     Also picks up pod_name and container_name alongside kube_* tags.
-    Prefers pre-extracted values from query_datadog_all when available.
+    Prefers pre-extracted values from fetch_datadog_context when available.
     """
     k8s: dict[str, str] = {}
 
-    # Use pre-extracted pod info from query_datadog_all if present
+    # Use pre-extracted pod info from fetch_datadog_context if present
     if evidence.get("datadog_pod_name"):
         k8s["pod_name"] = evidence["datadog_pod_name"]
     if evidence.get("datadog_container_name"):
@@ -366,7 +366,7 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
                 section += f"  No-data state: {rule.get('no_data_state')}\n"
         sections.append(section)
 
-    # Datadog pod location (from query_datadog_all extraction)
+    # Datadog pod location (from fetch_datadog_context extraction)
     datadog_pod_name = evidence.get("datadog_pod_name")
     datadog_container_name = evidence.get("datadog_container_name")
     datadog_kube_namespace = evidence.get("datadog_kube_namespace")

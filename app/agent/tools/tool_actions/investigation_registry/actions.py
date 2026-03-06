@@ -21,11 +21,11 @@ def get_available_actions() -> list[InvestigationAction]:
         list_s3_objects,
     )
     from app.agent.tools.tool_actions.datadog.datadog_actions import (
-        query_datadog_all,
         query_datadog_events,
         query_datadog_logs,
         query_datadog_monitors,
     )
+    from app.agent.tools.tool_actions.datadog.datadog_investigate import fetch_datadog_context
     from app.agent.tools.tool_actions.grafana.grafana_actions import (
         query_grafana_alert_rules,
         query_grafana_logs,
@@ -316,7 +316,7 @@ def get_available_actions() -> list[InvestigationAction]:
         # Datadog actions
         build_action(
             name="query_datadog_all",
-            func=query_datadog_all,
+            func=fetch_datadog_context,
             source="datadog",
             requires=[],
             availability_check=lambda sources: bool(
