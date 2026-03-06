@@ -62,7 +62,7 @@ def _format_tool_calls_line(ctx: ReportContext) -> str:
             parts.append(f"{len(errors)} errors")
         return ", ".join(parts)
 
-    def _datadog_all_count(e: dict) -> str | None:
+    def _datadog_investigate_count(e: dict) -> str | None:
         logs = e.get("datadog_logs", [])
         errors = e.get("datadog_error_logs", [])
         monitors = e.get("datadog_monitors", [])
@@ -157,7 +157,7 @@ def _format_tool_calls_line(ctx: ReportContext) -> str:
         ),
         "query_datadog_all": (
             "Datadog",
-            _datadog_all_count,
+            _datadog_investigate_count,
             lambda e: build_datadog_logs_url(
                 e.get("datadog_logs_query", ""),
                 datadog_site,

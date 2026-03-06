@@ -202,7 +202,7 @@ def _map_datadog_events(data: dict) -> dict:
     }
 
 
-def _map_datadog_all(data: dict) -> dict:
+def _map_datadog_investigate(data: dict) -> dict:
     monitors = data.get("monitors", [])
     events = data.get("events", [])
     return {
@@ -243,7 +243,7 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "query_datadog_logs": _map_datadog_logs,
     "query_datadog_monitors": _map_datadog_monitors,
     "query_datadog_events": _map_datadog_events,
-    "query_datadog_all": _map_datadog_all,
+    "query_datadog_all": _map_datadog_investigate,
 }
 
 

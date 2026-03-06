@@ -1,9 +1,9 @@
 """SRE knowledge retrieval tool action for pipeline incident investigation."""
 
-from app.agent.knowledge.sre_knowledge_base import (
+from app.agent.tools.tool_actions.knowledge_sre_book.sre_knowledge_base import (
     get_sre_guidance as _get_sre_guidance,
 )
-from app.agent.knowledge.sre_knowledge_base import (
+from app.agent.tools.tool_actions.knowledge_sre_book.sre_knowledge_base import (
     get_topics_for_keywords,
 )
 
