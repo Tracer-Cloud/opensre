@@ -4,13 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agent.tools.tool_actions.datadog._client import (
-    api_error,
-    not_configured,
-    resolve_datadog_client,
-)
-
-_SOURCE = "datadog_events"
+from app.agent.tools.tool_actions.datadog._client import make_client, unavailable
 
 
 def query_datadog_events(
@@ -39,16 +33,16 @@ def query_datadog_events(
         events: List of events with timestamp, title, message, tags, source
         total: Total number of events found
     """
-    client = resolve_datadog_client(api_key, app_key, site)
+    client = make_client(api_key, app_key, site)
     if not client:
-        return not_configured(_SOURCE, "events")
+        return unavailable("datadog_events", "events", "Datadog integration not configured")
 
     result = client.get_events(query=query, time_range_minutes=time_range_minutes)
     if not result.get("success"):
-        return api_error(_SOURCE, result.get("error", "Unknown error"), "events")
+        return unavailable("datadog_events", "events", result.get("error", "Unknown error"))
 
     return {
-        "source": _SOURCE,
+        "source": "datadog_events",
         "available": True,
         "events": result.get("events", []),
         "total": result.get("total", 0),

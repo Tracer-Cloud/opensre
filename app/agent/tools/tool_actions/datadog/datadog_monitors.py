@@ -4,13 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agent.tools.tool_actions.datadog._client import (
-    api_error,
-    not_configured,
-    resolve_datadog_client,
-)
-
-_SOURCE = "datadog_monitors"
+from app.agent.tools.tool_actions.datadog._client import make_client, unavailable
 
 
 def query_datadog_monitors(
@@ -38,16 +32,16 @@ def query_datadog_monitors(
         monitors: List of monitors with id, name, type, query, state, tags
         total: Total number of monitors found
     """
-    client = resolve_datadog_client(api_key, app_key, site)
+    client = make_client(api_key, app_key, site)
     if not client:
-        return not_configured(_SOURCE, "monitors")
+        return unavailable("datadog_monitors", "monitors", "Datadog integration not configured")
 
     result = client.list_monitors(query=query)
     if not result.get("success"):
-        return api_error(_SOURCE, result.get("error", "Unknown error"), "monitors")
+        return unavailable("datadog_monitors", "monitors", result.get("error", "Unknown error"))
 
     return {
-        "source": _SOURCE,
+        "source": "datadog_monitors",
         "available": True,
         "monitors": result.get("monitors", []),
         "total": result.get("total", 0),

@@ -7,7 +7,7 @@ import concurrent.futures
 import re
 from typing import Any
 
-from app.agent.tools.tool_actions.datadog._client import resolve_datadog_async_client
+from app.agent.tools.tool_actions.datadog._client import make_async_client
 from app.agent.tools.tool_actions.datadog.datadog_logs import _ERROR_KEYWORDS
 
 
@@ -191,7 +191,7 @@ def fetch_datadog_context(
     Returns:
         logs, error_logs, monitors, events, fetch_duration_ms, pod_name, container_name, kube_namespace
     """
-    client = resolve_datadog_async_client(api_key, app_key, site)
+    client = make_async_client(api_key, app_key, site)
 
     if not client or not client.is_configured:
         return {
