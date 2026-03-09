@@ -1,8 +1,9 @@
-"""Shared Datadog client factory for tool actions."""
+"""Shared Datadog client factories for tool actions."""
 
 from __future__ import annotations
 
 from app.agent.tools.clients.datadog import DatadogClient, DatadogConfig
+from app.agent.tools.clients.datadog.client import DatadogAsyncClient
 
 
 def resolve_datadog_client(
@@ -13,3 +14,34 @@ def resolve_datadog_client(
     if not api_key or not app_key:
         return None
     return DatadogClient(DatadogConfig(api_key=api_key, app_key=app_key, site=site))
+
+
+def resolve_datadog_async_client(
+    api_key: str | None = None,
+    app_key: str | None = None,
+    site: str = "datadoghq.com",
+) -> DatadogAsyncClient | None:
+    if not api_key or not app_key:
+        return None
+    return DatadogAsyncClient(DatadogConfig(api_key=api_key, app_key=app_key, site=site))
+
+
+def not_configured(source: str, empty_key: str) -> dict:
+    """Return a standard unavailable response for a missing Datadog client."""
+    return {
+        "source": source,
+        "available": False,
+        "error": "Datadog integration not configured",
+        empty_key: [],
+    }
+
+
+def api_error(source: str, error: str, empty_key: str, **extra: object) -> dict:
+    """Return a standard unavailable response for a failed Datadog API call."""
+    return {
+        "source": source,
+        "available": False,
+        "error": error,
+        empty_key: [],
+        **extra,
+    }
