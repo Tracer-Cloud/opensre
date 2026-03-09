@@ -23,7 +23,13 @@ This document describes how to propose changes, report bugs, and submit pull req
 1. Fork the repo and create a branch from `main`
 2. Make your changes
 3. Add or update tests (where applicable)
-4. Run the project’s checks locally
+4. Run the project’s checks locally before opening a PR:
+   ```bash
+   make lint        # ruff linter
+   make typecheck   # mypy
+   make test-cov    # pytest with coverage
+   ```
+   All three must pass. CI runs the same checks and a PR cannot be merged if they fail.
 5. Open a pull request
 
 ### Pull request guidelines
