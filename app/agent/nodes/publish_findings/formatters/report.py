@@ -3,15 +3,12 @@
 import re
 
 from app.agent.nodes.publish_findings.formatters.base import format_slack_link
-from app.agent.nodes.publish_findings.formatters.evidence import (
-    format_cited_evidence_section,
-)
+from app.agent.nodes.publish_findings.formatters.evidence import format_cited_evidence_section
 from app.agent.nodes.publish_findings.formatters.infrastructure import (
-    format_infrastructure_correlation,
+    build_investigation_trace,
     format_pod_line,
     get_failed_pods,
 )
-from app.agent.nodes.publish_findings.formatters.lineage import format_data_lineage_flow
 from app.agent.nodes.publish_findings.report_context import ReportContext
 from app.agent.nodes.publish_findings.urls.aws import build_cloudwatch_url
 from app.config import get_tracer_base_url
@@ -148,7 +145,7 @@ def _resolve_evidence_tags(text: str, evidence: dict) -> str:
     """
     def _replace(m: re.Match) -> str:
         source = m.group(1).strip().lower()
-        for key in _EVIDENCE_LOG_KEYS.get(source, [source]):
+        for key in _EVIDENCE_LOG_KEYS.get(source, []):
             logs = evidence.get(key) or []
             if logs:
                 msg = _extract_log_message(logs[0])
@@ -331,9 +328,10 @@ def format_slack_message(ctx: ReportContext) -> str:
     if non_validated_lines:
         conclusion_block += "\n*Non-Validated Claims (Inferred):*\n" + "\n".join(non_validated_lines) + "\n"
 
-    lineage_section = _sanitize_for_slack(format_data_lineage_flow(ctx))
-    infrastructure_section = _sanitize_for_slack(format_infrastructure_correlation(ctx))
-    cited_evidence_section = _sanitize_for_slack(format_cited_evidence_section(ctx))
+    trace_steps = build_investigation_trace(ctx)
+    trace_block = "\n*Investigation Trace*\n" + "\n".join(trace_steps) + "\n" if trace_steps else ""
+
+    cited_section = _sanitize_for_slack(format_cited_evidence_section(ctx))
     cloudwatch_link = render_cloudwatch_link(ctx)
     meta_lines = []
     if duration_seconds is not None:
@@ -344,10 +342,8 @@ def format_slack_message(ctx: ReportContext) -> str:
 
     return f"""[RCA] {report_title}
 
-{conclusion_block}
-{lineage_section}
-{infrastructure_section}
-{cited_evidence_section}
+{conclusion_block}{trace_block}
+{cited_section}
 {cloudwatch_link}{meta_block}
 """
 
@@ -410,16 +406,11 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     if non_validated_lines:
         _add(_mrkdwn_section("*Inferred (not yet validated)*\n" + "\n".join(non_validated_lines)))
 
-    # ── Data Lineage ──
-    lineage_section = format_data_lineage_flow(ctx).strip()
-    if lineage_section:
-        blocks.append({"type": "divider"})
-        _add(_mrkdwn_section(lineage_section))
-
     # ── Investigation Trace ──
-    infra_section = format_infrastructure_correlation(ctx).strip()
-    if infra_section:
-        _add(_mrkdwn_section(infra_section))
+    trace_steps = build_investigation_trace(ctx)
+    if trace_steps:
+        blocks.append({"type": "divider"})
+        _add(_mrkdwn_section("*Investigation Trace*\n" + "\n".join(trace_steps)))
 
     # ── Cited Evidence ──
     cited_section = format_cited_evidence_section(ctx).strip()

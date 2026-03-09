@@ -82,6 +82,15 @@ def detect_sources(
     # Determine alert origin platform to avoid querying irrelevant integrations
     alert_source = raw_alert.get("alert_source", "").lower() if isinstance(raw_alert, dict) else ""
 
+    # Structural detection: Grafana Alertmanager webhooks have externalURL pointing to Grafana
+    if not alert_source and isinstance(raw_alert, dict):
+        external_url = raw_alert.get("externalURL", "") or ""
+        generator_url = raw_alert.get("generatorURL", "")
+        alerts_list = raw_alert.get("alerts", []) or []
+        first_gen = alerts_list[0].get("generatorURL", "") if alerts_list else ""
+        if any("grafana" in str(u).lower() for u in [external_url, generator_url, first_gen]):
+            alert_source = "grafana"
+
     # Compute time window that covers the alert (used for Datadog/Grafana queries)
     alert_time_range_minutes = _alert_time_range_minutes(raw_alert)
 
