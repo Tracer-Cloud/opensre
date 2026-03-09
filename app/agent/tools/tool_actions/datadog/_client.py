@@ -21,7 +21,7 @@ def make_client(
 ) -> DatadogClient | None:
     if not api_key or not app_key:
         return None
-    return DatadogClient(_config(api_key, app_key, site))
+    return DatadogClient(_config(api_key, app_key, site))  # type: ignore[arg-type]
 
 
 def make_async_client(
@@ -31,7 +31,7 @@ def make_async_client(
 ) -> DatadogAsyncClient | None:
     if not api_key or not app_key:
         return None
-    return DatadogAsyncClient(_config(api_key, app_key, site))
+    return DatadogAsyncClient(_config(api_key, app_key, site))  # type: ignore[arg-type]
 
 
 def unavailable(source: str, empty_key: str, error: str, **extra: Any) -> dict[str, Any]:
