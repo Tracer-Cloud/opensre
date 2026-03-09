@@ -19,8 +19,16 @@ Usage (from project root):
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, cast
+
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"),
+    reason="Requires ANTHROPIC_API_KEY - run manually",
+)
 
 from app.agent.nodes import node_extract_alert
 from app.agent.nodes.publish_findings.formatters.report import format_slack_message
