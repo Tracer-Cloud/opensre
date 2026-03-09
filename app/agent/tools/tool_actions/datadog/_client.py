@@ -1,47 +1,39 @@
-"""Shared Datadog client factories for tool actions."""
+"""Shared Datadog client factories and call helpers for tool actions."""
 
 from __future__ import annotations
+
+from typing import Any
 
 from app.agent.tools.clients.datadog import DatadogClient, DatadogConfig
 from app.agent.tools.clients.datadog.client import DatadogAsyncClient
 
+_DEFAULT_SITE = "datadoghq.com"
 
-def resolve_datadog_client(
-    api_key: str | None = None,
-    app_key: str | None = None,
-    site: str = "datadoghq.com",
+
+def _config(api_key: str, app_key: str, site: str) -> DatadogConfig:
+    return DatadogConfig(api_key=api_key, app_key=app_key, site=site)
+
+
+def make_client(
+    api_key: str | None,
+    app_key: str | None,
+    site: str = _DEFAULT_SITE,
 ) -> DatadogClient | None:
     if not api_key or not app_key:
         return None
-    return DatadogClient(DatadogConfig(api_key=api_key, app_key=app_key, site=site))
+    return DatadogClient(_config(api_key, app_key, site))
 
 
-def resolve_datadog_async_client(
-    api_key: str | None = None,
-    app_key: str | None = None,
-    site: str = "datadoghq.com",
+def make_async_client(
+    api_key: str | None,
+    app_key: str | None,
+    site: str = _DEFAULT_SITE,
 ) -> DatadogAsyncClient | None:
     if not api_key or not app_key:
         return None
-    return DatadogAsyncClient(DatadogConfig(api_key=api_key, app_key=app_key, site=site))
+    return DatadogAsyncClient(_config(api_key, app_key, site))
 
 
-def not_configured(source: str, empty_key: str) -> dict:
-    """Return a standard unavailable response for a missing Datadog client."""
-    return {
-        "source": source,
-        "available": False,
-        "error": "Datadog integration not configured",
-        empty_key: [],
-    }
-
-
-def api_error(source: str, error: str, empty_key: str, **extra: object) -> dict:
-    """Return a standard unavailable response for a failed Datadog API call."""
-    return {
-        "source": source,
-        "available": False,
-        "error": error,
-        empty_key: [],
-        **extra,
-    }
+def unavailable(source: str, empty_key: str, error: str, **extra: Any) -> dict[str, Any]:
+    """Standardised unavailable response."""
+    return {"source": source, "available": False, "error": error, empty_key: [], **extra}

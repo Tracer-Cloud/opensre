@@ -4,26 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agent.tools.tool_actions.datadog._client import (
-    api_error,
-    not_configured,
-    resolve_datadog_client,
-)
-
-_SOURCE = "datadog_logs"
+from app.agent.tools.tool_actions.datadog._client import make_client, unavailable
 
 _ERROR_KEYWORDS = (
-    "error",
-    "fail",
-    "exception",
-    "traceback",
-    "pipeline_error",
-    "critical",
-    "killed",
-    "oomkilled",
-    "crash",
-    "panic",
-    "timeout",
+    "error", "fail", "exception", "traceback", "pipeline_error",
+    "critical", "killed", "oomkilled", "crash", "panic", "timeout",
 )
 
 
@@ -57,19 +42,18 @@ def query_datadog_logs(
         error_logs: Filtered subset containing only error-level logs
         total: Total number of logs found
     """
-    client = resolve_datadog_client(api_key, app_key, site)
+    client = make_client(api_key, app_key, site)
     if not client:
-        return not_configured(_SOURCE, "logs")
+        return unavailable("datadog_logs", "logs", "Datadog integration not configured")
 
     result = client.search_logs(query, time_range_minutes=time_range_minutes, limit=limit)
     if not result.get("success"):
-        return api_error(_SOURCE, result.get("error", "Unknown error"), "logs")
+        return unavailable("datadog_logs", "logs", result.get("error", "Unknown error"))
 
     logs = result.get("logs", [])
     error_logs = [log for log in logs if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)]
-
     return {
-        "source": _SOURCE,
+        "source": "datadog_logs",
         "available": True,
         "logs": logs[:50],
         "error_logs": error_logs[:30],

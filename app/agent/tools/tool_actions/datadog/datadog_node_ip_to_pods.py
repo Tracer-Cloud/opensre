@@ -10,13 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agent.tools.tool_actions.datadog._client import (
-    api_error,
-    not_configured,
-    resolve_datadog_client,
-)
-
-_SOURCE = "datadog_node_ip_to_pods"
+from app.agent.tools.tool_actions.datadog._client import make_client, unavailable
 
 
 def get_pods_on_node(
@@ -53,18 +47,18 @@ def get_pods_on_node(
         total: Number of unique pods found
     """
     if not node_ip or not node_ip.strip():
-        return api_error(_SOURCE, "node_ip is required", "pods")
+        return unavailable("datadog_node_ip_to_pods", "pods", "node_ip is required")
 
-    client = resolve_datadog_client(api_key, app_key, site)
+    client = make_client(api_key, app_key, site)
     if not client:
-        return not_configured(_SOURCE, "pods")
+        return unavailable("datadog_node_ip_to_pods", "pods", "Datadog integration not configured")
 
     result = client.get_pods_on_node(node_ip=node_ip, time_range_minutes=time_range_minutes, limit=limit)
     if not result.get("success"):
-        return api_error(_SOURCE, result.get("error", "Unknown error"), "pods", node_ip=node_ip)
+        return unavailable("datadog_node_ip_to_pods", "pods", result.get("error", "Unknown error"), node_ip=node_ip)
 
     return {
-        "source": _SOURCE,
+        "source": "datadog_node_ip_to_pods",
         "available": True,
         "node_ip": node_ip,
         "pods": result.get("pods", []),
