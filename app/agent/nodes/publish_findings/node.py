@@ -10,6 +10,7 @@ from app.agent.nodes.publish_findings.formatters.report import (
     format_slack_message,
     get_investigation_url,
 )
+from app.agent.nodes.publish_findings.renderers.editor import open_in_editor
 from app.agent.nodes.publish_findings.renderers.terminal import render_report
 from app.agent.nodes.publish_findings.report_context import build_report_context
 from app.agent.state import InvestigationState
@@ -46,6 +47,7 @@ def generate_report(state: InvestigationState) -> dict:
 
     all_blocks = build_slack_blocks(ctx) + build_action_blocks(investigation_url)
     render_report(slack_message)
+    open_in_editor(slack_message)
 
     slack_ctx = state.get("slack_context", {})
     thread_ts = slack_ctx.get("thread_ts") or slack_ctx.get("ts")
