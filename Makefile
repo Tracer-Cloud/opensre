@@ -39,9 +39,13 @@ prefect-demo:
 test-rca:
 	$(PYTHON) -m tests.rca.run_rca_test $(FILE)
 
-# Simulate a Datadog alert locally (no live API calls, exercises full RCA + report formatting)
+# Simulate a Datadog alert via local LangGraph server (full pipeline, real API calls)
 simulate-k8s-alert:
-	$(PYTHON) -m pytest tests/test_case_kubernetes_local_alert_simulation/test_simulation.py -s
+	@echo "Starting LangGraph dev server..."
+	langgraph dev --no-browser >/tmp/langgraph-dev.log 2>&1 &
+	$(PYTHON) tests/test_case_kubernetes_local_alert_simulation/wait_for_server.py
+	$(PYTHON) -m pytest tests/test_case_kubernetes_local_alert_simulation/test_simulation.py -s; \
+	EXIT=$$?; kill %1 2>/dev/null; exit $$EXIT
 
 # Run Kubernetes local test (kind)
 test-k8s-local:
