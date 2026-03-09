@@ -7,19 +7,8 @@ import concurrent.futures
 import re
 from typing import Any
 
-from app.agent.tools.clients.datadog import DatadogConfig
-from app.agent.tools.clients.datadog.client import DatadogAsyncClient
+from app.agent.tools.tool_actions.datadog._client import resolve_datadog_async_client
 from app.agent.tools.tool_actions.datadog.datadog_logs import _ERROR_KEYWORDS
-
-
-def _build_client(
-    api_key: str | None = None,
-    app_key: str | None = None,
-    site: str = "datadoghq.com",
-) -> DatadogAsyncClient | None:
-    if not api_key or not app_key:
-        return None
-    return DatadogAsyncClient(DatadogConfig(api_key=api_key, app_key=app_key, site=site))
 
 
 def _run_in_thread(coro: Any) -> Any:
@@ -202,7 +191,7 @@ def fetch_datadog_context(
     Returns:
         logs, error_logs, monitors, events, fetch_duration_ms, pod_name, container_name, kube_namespace
     """
-    client = _build_client(api_key, app_key, site)
+    client = resolve_datadog_async_client(api_key, app_key, site)
 
     if not client or not client.is_configured:
         return {

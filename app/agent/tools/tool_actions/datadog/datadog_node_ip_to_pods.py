@@ -10,7 +10,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agent.tools.tool_actions.datadog._client import resolve_datadog_client
+from app.agent.tools.tool_actions.datadog._client import (
+    api_error,
+    not_configured,
+    resolve_datadog_client,
+)
+
+_SOURCE = "datadog_node_ip_to_pods"
 
 
 def get_pods_on_node(
@@ -42,55 +48,25 @@ def get_pods_on_node(
         source: "datadog_node_ip_to_pods"
         available: bool
         node_ip: The queried node IP
-        pods: List of pod dicts, each with:
-            - pod_name: str
-            - namespace: str | None
-            - container: str | None
-            - node_ip: str
-            - node_name: str | None
-            - exit_code: str | None
-            - status: "running" | "failed"
+        pods: List of pod dicts, each with pod_name, namespace, container,
+              node_ip, node_name, exit_code, status ("running" | "failed")
         total: Number of unique pods found
     """
     if not node_ip or not node_ip.strip():
-        return {
-            "source": "datadog_node_ip_to_pods",
-            "available": False,
-            "error": "node_ip is required",
-            "pods": [],
-        }
+        return api_error(_SOURCE, "node_ip is required", "pods")
 
     client = resolve_datadog_client(api_key, app_key, site)
+    if not client:
+        return not_configured(_SOURCE, "pods")
 
-    if not client or not client.is_configured:
-        return {
-            "source": "datadog_node_ip_to_pods",
-            "available": False,
-            "error": "Datadog integration not configured",
-            "pods": [],
-        }
-
-    result = client.get_pods_on_node(
-        node_ip=node_ip,
-        time_range_minutes=time_range_minutes,
-        limit=limit,
-    )
-
+    result = client.get_pods_on_node(node_ip=node_ip, time_range_minutes=time_range_minutes, limit=limit)
     if not result.get("success"):
-        return {
-            "source": "datadog_node_ip_to_pods",
-            "available": False,
-            "error": result.get("error", "Unknown error"),
-            "node_ip": node_ip,
-            "pods": [],
-        }
+        return api_error(_SOURCE, result.get("error", "Unknown error"), "pods", node_ip=node_ip)
 
     return {
-        "source": "datadog_node_ip_to_pods",
+        "source": _SOURCE,
         "available": True,
         "node_ip": node_ip,
         "pods": result.get("pods", []),
         "total": result.get("total", 0),
     }
-
-

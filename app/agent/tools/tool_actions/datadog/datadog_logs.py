@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agent.tools.tool_actions.datadog._client import resolve_datadog_client
+from app.agent.tools.tool_actions.datadog._client import (
+    api_error,
+    not_configured,
+    resolve_datadog_client,
+)
+
+_SOURCE = "datadog_logs"
 
 _ERROR_KEYWORDS = (
     "error",
@@ -52,32 +58,18 @@ def query_datadog_logs(
         total: Total number of logs found
     """
     client = resolve_datadog_client(api_key, app_key, site)
-
-    if not client or not client.is_configured:
-        return {
-            "source": "datadog_logs",
-            "available": False,
-            "error": "Datadog integration not configured",
-            "logs": [],
-        }
+    if not client:
+        return not_configured(_SOURCE, "logs")
 
     result = client.search_logs(query, time_range_minutes=time_range_minutes, limit=limit)
-
     if not result.get("success"):
-        return {
-            "source": "datadog_logs",
-            "available": False,
-            "error": result.get("error", "Unknown error"),
-            "logs": [],
-        }
+        return api_error(_SOURCE, result.get("error", "Unknown error"), "logs")
 
     logs = result.get("logs", [])
-    error_logs = [
-        log for log in logs if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)
-    ]
+    error_logs = [log for log in logs if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)]
 
     return {
-        "source": "datadog_logs",
+        "source": _SOURCE,
         "available": True,
         "logs": logs[:50],
         "error_logs": error_logs[:30],
