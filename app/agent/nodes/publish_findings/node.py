@@ -44,7 +44,7 @@ def generate_report(state: InvestigationState) -> dict:
         except Exception as exc:  # noqa: BLE001
             logger.warning("[publish] ingest url update failed: %s", exc)
 
-    all_blocks = build_slack_blocks(ctx) + build_action_blocks(investigation_url)
+    all_blocks = build_slack_blocks(ctx) + build_action_blocks(investigation_url, investigation_id)
     render_report(slack_message)
 
     slack_ctx = state.get("slack_context", {})

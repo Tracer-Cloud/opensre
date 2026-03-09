@@ -137,6 +137,75 @@ class DatadogClient:
             logger.warning("[datadog] List monitors error: %s", e)
             return {"success": False, "error": str(e)}
 
+    def get_pods_on_node(
+        self,
+        node_ip: str,
+        time_range_minutes: int = 60,
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        """Query Datadog Infrastructure API for all pods running on a given node IP.
+
+        Uses the Datadog log search API to find pod telemetry tagged with the node IP,
+        then returns the unique set of pods with their last-seen status.
+
+        Args:
+            node_ip: The node's IP address (from an alert, e.g. "10.0.1.42")
+            time_range_minutes: How far back to look for pod activity
+            limit: Max log events to scan for pod tags
+
+        Returns:
+            dict with pods list, each entry containing pod_name, namespace, container,
+            node_ip, node_name, status/exit_code if available.
+        """
+        query = f"host:{node_ip} OR node_ip:{node_ip}"
+        result = self.search_logs(query, time_range_minutes=time_range_minutes, limit=limit)
+
+        if not result.get("success"):
+            return {"success": False, "error": result.get("error", "Unknown error"), "pods": []}
+
+        seen: set[str] = set()
+        pods: list[dict[str, Any]] = []
+        for log in result.get("logs", []):
+            pod_name = container_name = kube_namespace = exit_code = node_name = found_node_ip = None
+            for tag in log.get("tags", []):
+                if not isinstance(tag, str) or ":" not in tag:
+                    continue
+                k, _, v = tag.partition(":")
+                if k == "pod_name":
+                    pod_name = v
+                elif k == "container_name":
+                    container_name = v
+                elif k == "kube_namespace":
+                    kube_namespace = v
+                elif k == "exit_code":
+                    exit_code = v
+                elif k == "node_name":
+                    node_name = v
+                elif k == "node_ip":
+                    found_node_ip = v
+
+            pod_name = pod_name or log.get("pod_name")
+            container_name = container_name or log.get("container_name")
+            kube_namespace = kube_namespace or log.get("kube_namespace")
+            node_name = node_name or log.get("node_name")
+            found_node_ip = found_node_ip or log.get("node_ip", node_ip)
+            if exit_code is None and log.get("exit_code") is not None:
+                exit_code = str(log["exit_code"])
+
+            if pod_name and pod_name not in seen:
+                seen.add(pod_name)
+                pods.append({
+                    "pod_name": pod_name,
+                    "namespace": kube_namespace,
+                    "container": container_name,
+                    "node_ip": found_node_ip or node_ip,
+                    "node_name": node_name,
+                    "exit_code": exit_code,
+                    "status": "failed" if exit_code and exit_code != "0" else "running",
+                })
+
+        return {"success": True, "pods": pods, "total": len(pods), "node_ip": node_ip}
+
     def get_events(
         self,
         query: str | None = None,
