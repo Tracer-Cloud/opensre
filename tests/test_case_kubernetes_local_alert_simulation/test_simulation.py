@@ -20,10 +20,21 @@ from __future__ import annotations
 
 import json
 import os
-import time
-import urllib.error
-import urllib.request
 from pathlib import Path
+from typing import Any, cast
+
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"),
+    reason="Requires ANTHROPIC_API_KEY - run manually",
+)
+
+from app.agent.nodes import node_extract_alert
+from app.agent.nodes.publish_findings.formatters.report import format_slack_message
+from app.agent.nodes.publish_findings.report_context import build_report_context
+from app.agent.nodes.root_cause_diagnosis.node import diagnose_root_cause
+from app.agent.state import InvestigationState, make_initial_state
 
 BASE_URL = "http://localhost:2024"
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "datadog_pipeline_error_alert.json"
