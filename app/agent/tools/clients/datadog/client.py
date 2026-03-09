@@ -44,11 +44,16 @@ class DatadogClient:
 
     def __init__(self, config: DatadogConfig) -> None:
         self.config = config
-        self._client = httpx.Client(
-            base_url=config.base_url,
-            headers=config.headers,
-            timeout=_DEFAULT_TIMEOUT,
-        )
+        self._client: httpx.Client | None = None
+
+    def _get_client(self) -> httpx.Client:
+        if self._client is None:
+            self._client = httpx.Client(
+                base_url=self.config.base_url,
+                headers=self.config.headers,
+                timeout=_DEFAULT_TIMEOUT,
+            )
+        return self._client
 
     @property
     def is_configured(self) -> bool:
@@ -75,7 +80,7 @@ class DatadogClient:
         }
 
         try:
-            resp = self._client.post("/api/v2/logs/events/search", json=payload)
+            resp = self._get_client().post("/api/v2/logs/events/search", json=payload)
             resp.raise_for_status()
             data = resp.json()
 
@@ -113,7 +118,7 @@ class DatadogClient:
             params["query"] = query
 
         try:
-            resp = self._client.get("/api/v1/monitor", params=params)
+            resp = self._get_client().get("/api/v1/monitor", params=params)
             resp.raise_for_status()
             monitors = resp.json()
 
@@ -227,7 +232,7 @@ class DatadogClient:
             payload["filter"]["query"] = query
 
         try:
-            resp = self._client.post("/api/v2/events/search", json=payload)
+            resp = self._get_client().post("/api/v2/events/search", json=payload)
             resp.raise_for_status()
             data = resp.json()
 
