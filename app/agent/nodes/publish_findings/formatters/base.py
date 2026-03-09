@@ -1,37 +1,5 @@
 """Base formatting utilities for report generation."""
 
-import json
-from typing import Any
-
-
-def format_json_payload(data: Any, max_chars: int = 400) -> str:
-    """Render JSON with a size cap for report output.
-
-    Strategy:
-    1. Try pretty-printed JSON (indented)
-    2. Fall back to compact JSON if too large
-    3. Truncate if still too large
-
-    Args:
-        data: Data to serialize as JSON
-        max_chars: Maximum characters in output
-
-    Returns:
-        Formatted JSON string, truncated if necessary
-    """
-    # Try pretty format first
-    pretty_payload = json.dumps(data, default=str, ensure_ascii=True, indent=2, sort_keys=True)
-    if len(pretty_payload) <= max_chars:
-        return pretty_payload
-
-    # Fall back to compact format
-    compact_payload = json.dumps(data, default=str, ensure_ascii=True)
-    if len(compact_payload) <= max_chars:
-        return compact_payload
-
-    # Truncate if still too large
-    return compact_payload[: max_chars - 3] + "..."
-
 
 def format_code_block(payload: str, language: str) -> str:
     """Wrap content in a markdown code block with syntax highlighting.
