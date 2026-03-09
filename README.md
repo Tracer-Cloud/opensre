@@ -1,4 +1,3 @@
-
 <h2 align="left">Tracer: Autonomous SRE Agent</h2>
 
 <p align="left">
@@ -23,10 +22,9 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/Tracer-Cloud/tracer-agent-2026
-cd tracer-client
-make install
-tracer start
+git clone https://github.com/Tracer-Cloud/open-sre-agent
+cd open-sre-agent
+make dev
 ```
 
 Documentation → `/docs`
@@ -44,6 +42,7 @@ This investigation process is typically manual and tool-fragmented.
 ---
 
 ## How Tracer Works
+
 <img width="2444" height="881" alt="How it works" src="https://github.com/user-attachments/assets/dd79d5ab-e2a4-4ddf-a869-7afa4d7a10dc" />
 
 ### Investigation Workflow
@@ -76,21 +75,25 @@ Designed for production data engineering teams operating complex data platforms.
 Tracer integrates with the systems that power modern data platforms.
 
 **Data Platform**
+
 - Apache Airflow
 - Apache Kafka
 - Apache Spark
 
 **Observability**
+
 - Grafana
 - Prometheus
 - Datadog
 
 **Infrastructure**
+
 - AWS
 - GCP
 - Azure
 
 **Communication**
+
 - Slack
 - PagerDuty
 
