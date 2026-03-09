@@ -20,12 +20,11 @@ def get_available_actions() -> list[InvestigationAction]:
         inspect_s3_object,
         list_s3_objects,
     )
-    from app.agent.tools.tool_actions.datadog.datadog_actions import (
-        query_datadog_events,
-        query_datadog_logs,
-        query_datadog_monitors,
-    )
+    from app.agent.tools.tool_actions.datadog.datadog_events import query_datadog_events
     from app.agent.tools.tool_actions.datadog.datadog_investigate import fetch_datadog_context
+    from app.agent.tools.tool_actions.datadog.datadog_logs import query_datadog_logs
+    from app.agent.tools.tool_actions.datadog.datadog_monitors import query_datadog_monitors
+    from app.agent.tools.tool_actions.datadog.datadog_node_ip_to_pods import get_pods_on_node
     from app.agent.tools.tool_actions.grafana.grafana_actions import (
         query_grafana_alert_rules,
         query_grafana_logs,
@@ -42,6 +41,17 @@ def get_available_actions() -> list[InvestigationAction]:
     )
     from app.agent.tools.tool_actions.tracer.tracer_logs import get_error_logs
     from app.agent.tools.tool_actions.tracer.tracer_metrics import get_host_metrics
+
+    def _dd_available(sources: dict) -> bool:
+        return bool(sources.get("datadog", {}).get("connection_verified"))
+
+    def _dd_creds(sources: dict) -> dict:
+        dd = sources["datadog"]
+        return {
+            "api_key": dd.get("api_key"),
+            "app_key": dd.get("app_key"),
+            "site": dd.get("site", "datadoghq.com"),
+        }
 
     return [
         # Tracer actions
@@ -319,18 +329,14 @@ def get_available_actions() -> list[InvestigationAction]:
             func=fetch_datadog_context,
             source="datadog",
             requires=[],
-            availability_check=lambda sources: bool(
-                sources.get("datadog", {}).get("connection_verified")
-            ),
+            availability_check=_dd_available,
             parameter_extractor=lambda sources: {
                 "query": sources.get("datadog", {}).get("default_query", ""),
                 "time_range_minutes": sources.get("datadog", {}).get("time_range_minutes", 60),
                 "limit": 75,
                 "monitor_query": sources.get("datadog", {}).get("monitor_query"),
                 "kube_namespace": (sources.get("datadog", {}).get("kubernetes_context") or {}).get("namespace"),
-                "api_key": sources["datadog"].get("api_key"),
-                "app_key": sources["datadog"].get("app_key"),
-                "site": sources["datadog"].get("site", "datadoghq.com"),
+                **_dd_creds(sources),
             },
         ),
         build_action(
@@ -338,16 +344,12 @@ def get_available_actions() -> list[InvestigationAction]:
             func=query_datadog_logs,
             source="datadog",
             requires=[],
-            availability_check=lambda sources: bool(
-                sources.get("datadog", {}).get("connection_verified")
-            ),
+            availability_check=_dd_available,
             parameter_extractor=lambda sources: {
                 "query": sources.get("datadog", {}).get("default_query", ""),
                 "time_range_minutes": sources.get("datadog", {}).get("time_range_minutes", 60),
                 "limit": 50,
-                "api_key": sources["datadog"].get("api_key"),
-                "app_key": sources["datadog"].get("app_key"),
-                "site": sources["datadog"].get("site", "datadoghq.com"),
+                **_dd_creds(sources),
             },
         ),
         build_action(
@@ -355,14 +357,10 @@ def get_available_actions() -> list[InvestigationAction]:
             func=query_datadog_monitors,
             source="datadog",
             requires=[],
-            availability_check=lambda sources: bool(
-                sources.get("datadog", {}).get("connection_verified")
-            ),
+            availability_check=_dd_available,
             parameter_extractor=lambda sources: {
                 "query": sources.get("datadog", {}).get("monitor_query"),
-                "api_key": sources["datadog"].get("api_key"),
-                "app_key": sources["datadog"].get("app_key"),
-                "site": sources["datadog"].get("site", "datadoghq.com"),
+                **_dd_creds(sources),
             },
         ),
         build_action(
@@ -370,15 +368,25 @@ def get_available_actions() -> list[InvestigationAction]:
             func=query_datadog_events,
             source="datadog",
             requires=[],
-            availability_check=lambda sources: bool(
-                sources.get("datadog", {}).get("connection_verified")
-            ),
+            availability_check=_dd_available,
             parameter_extractor=lambda sources: {
                 "query": sources.get("datadog", {}).get("default_query"),
                 "time_range_minutes": sources.get("datadog", {}).get("time_range_minutes", 60),
-                "api_key": sources["datadog"].get("api_key"),
-                "app_key": sources["datadog"].get("app_key"),
-                "site": sources["datadog"].get("site", "datadoghq.com"),
+                **_dd_creds(sources),
+            },
+        ),
+        build_action(
+            name="get_pods_on_node",
+            func=get_pods_on_node,
+            source="datadog",
+            requires=[],
+            availability_check=lambda sources: bool(
+                _dd_available(sources) and sources.get("datadog", {}).get("node_ip")
+            ),
+            parameter_extractor=lambda sources: {
+                "node_ip": sources.get("datadog", {}).get("node_ip", ""),
+                "time_range_minutes": sources.get("datadog", {}).get("time_range_minutes", 60),
+                **_dd_creds(sources),
             },
         ),
     ]
