@@ -1,7 +1,10 @@
 """Integration tests for SRE knowledge retrieval action."""
 
-from app.agent.tools.tool_actions.knowledge_sre_book.sre_knowledge_base import SRE_TOPICS, get_topics_for_keywords
 from app.agent.tools.tool_actions.knowledge_sre_book.sre_knowledge_actions import get_sre_guidance
+from app.agent.tools.tool_actions.knowledge_sre_book.sre_knowledge_base import (
+    SRE_TOPICS,
+    get_topics_for_keywords,
+)
 
 
 class TestGetSREGuidance:
