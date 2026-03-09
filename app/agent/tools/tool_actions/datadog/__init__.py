@@ -1,25 +1,15 @@
 """Datadog investigation actions."""
 
-from app.agent.tools.tool_actions.datadog.datadog_actions import (
-    query_datadog_events,
-    query_datadog_events_tool,
-    query_datadog_logs,
-    query_datadog_logs_tool,
-    query_datadog_monitors,
-    query_datadog_monitors_tool,
-)
-from app.agent.tools.tool_actions.datadog.datadog_investigate import (
-    fetch_datadog_context,
-    fetch_datadog_context_tool,
-)
+from app.agent.tools.tool_actions.datadog.datadog_events import query_datadog_events
+from app.agent.tools.tool_actions.datadog.datadog_investigate import fetch_datadog_context
+from app.agent.tools.tool_actions.datadog.datadog_logs import query_datadog_logs
+from app.agent.tools.tool_actions.datadog.datadog_monitors import query_datadog_monitors
+from app.agent.tools.tool_actions.datadog.datadog_node_ip_to_pods import get_pods_on_node
 
 __all__ = [
     "fetch_datadog_context",
-    "fetch_datadog_context_tool",
+    "get_pods_on_node",
     "query_datadog_events",
-    "query_datadog_events_tool",
     "query_datadog_logs",
-    "query_datadog_logs_tool",
     "query_datadog_monitors",
-    "query_datadog_monitors_tool",
 ]

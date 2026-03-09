@@ -9,8 +9,7 @@ from typing import Any
 
 from app.agent.tools.clients.datadog import DatadogConfig
 from app.agent.tools.clients.datadog.client import DatadogAsyncClient
-from app.agent.tools.tool_actions.datadog.datadog_actions import _ERROR_KEYWORDS
-from app.agent.tools.tool_decorator import tool
+from app.agent.tools.tool_actions.datadog.datadog_logs import _ERROR_KEYWORDS
 
 
 def _build_client(
@@ -279,4 +278,3 @@ def fetch_datadog_context(
     }
 
 
-fetch_datadog_context_tool = tool(fetch_datadog_context)
