@@ -118,7 +118,7 @@ We welcome contributors interested in:
 - Observability tooling
 - Deterministic AI systems
 
-See `CONTRIBUTING.md`.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -133,10 +133,10 @@ Recommended:
 - Log all investigations
 - Review reports before automated remediation
 
-See `SECURITY.md` for details.
+See [SECURITY.md](SECURITY.md) for details.
 
 ---
 
 ## License
 
-BST — Vincent Hus (see `LICENSE`)
+BST — Vincent Hus (see [LICENSE](LICENSE))
