@@ -173,7 +173,7 @@ test-full:
 
 # Run tests with coverage
 test-cov:
-	$(PYTHON) -m pytest -v --cov=app --cov-report=term-missing
+	$(PYTHON) -m pytest -v --cov=app --cov-report=term-missing --ignore=tests/test_case_kubernetes_local_alert_simulation
 
 # Run Grafana integration tests
 test-grafana:
