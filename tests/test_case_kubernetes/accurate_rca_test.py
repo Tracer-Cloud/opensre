@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from app.agent.nodes import node_extract_alert, node_frame_problem
+from app.agent.nodes import node_extract_alert
 from app.agent.nodes.root_cause_diagnosis.node import diagnose_root_cause
 from app.agent.state import InvestigationState, make_initial_state
 
@@ -46,7 +46,6 @@ def test_accurate_kubernetes_rca():
         raw_alert=fixture["alert"],
     )
     _merge_state(state, node_extract_alert(state))
-    _merge_state(state, node_frame_problem(state))
 
     state_any = cast(dict[str, Any], state)
     state_any["evidence"] = fixture["evidence"]
