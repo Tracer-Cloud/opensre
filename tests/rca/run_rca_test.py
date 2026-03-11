@@ -17,7 +17,7 @@ from typing import Any
 
 from app.agent.runners import _merge_state, _run_investigation_pipeline
 from app.agent.state import make_initial_state
-from app.agent.utils.auth import extract_org_id_from_jwt
+from app.auth.jwt_auth import extract_org_id_from_jwt
 
 RCA_DIR = Path(__file__).parent
 

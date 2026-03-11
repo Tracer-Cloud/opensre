@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import httpx
 
-from app.agent.utils.auth import extract_org_slug_from_jwt
+from app.auth.jwt_auth import extract_org_slug_from_jwt
 
 
 class TracerClientBase:

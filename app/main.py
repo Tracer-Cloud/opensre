@@ -40,7 +40,6 @@ def _run(
         severity,
         raw_alert=raw_alert,
     )
-    # Slack delivery is now handled inside node_publish_findings
     return {
         "slack_message": state["slack_message"],
         "report": state["slack_message"],

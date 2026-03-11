@@ -288,3 +288,29 @@ def verify_jwt(token: str) -> JWTClaims:
     This exists for backwards compatibility but will block the event loop.
     """
     return asyncio.get_event_loop().run_until_complete(verify_jwt_async(token))
+
+
+def _safe_verify_jwt(jwt_token: str) -> JWTClaims | None:
+    """Verify JWT and return claims, or None on failure."""
+    try:
+        return verify_jwt(jwt_token)
+    except (JWTVerificationError, JWTExpiredError, JWTInvalidIssuerError, JWTMissingClaimError):
+        return None
+
+
+def extract_org_slug_from_jwt(jwt_token: str) -> str | None:
+    """Extract organization slug from JWT token using verified claims."""
+    claims = _safe_verify_jwt(jwt_token)
+    if not claims:
+        return None
+    val: Any = claims.organization_slug
+    return val if isinstance(val, str) else None
+
+
+def extract_org_id_from_jwt(jwt_token: str) -> str | None:
+    """Extract organization ID from JWT token using verified claims."""
+    claims = _safe_verify_jwt(jwt_token)
+    if not claims:
+        return None
+    val: Any = claims.organization
+    return val if isinstance(val, str) else None

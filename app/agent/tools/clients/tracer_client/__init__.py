@@ -14,7 +14,7 @@ from app.agent.tools.clients.tracer_client.tracer_pipelines import (
     TracerRunResult,
 )
 from app.agent.tools.clients.tracer_client.tracer_tools import TracerTaskResult
-from app.agent.utils.auth import extract_org_id_from_jwt
+from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.config import get_tracer_base_url
 
 __all__ = [
