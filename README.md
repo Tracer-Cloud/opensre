@@ -139,4 +139,4 @@ See [SECURITY.md](SECURITY.md) for details.
 
 ## License
 
-BST — Vincent Hus (see [LICENSE](LICENSE))
+MIT — Tracer-Cloud (see [LICENSE](LICENSE))
