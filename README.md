@@ -1,17 +1,16 @@
-<h2 align="left">Tracer: Autonomous SRE Agent</h2>
-
-<p align="left">
+<p align="center">
   <img src="https://github.com/user-attachments/assets/f4ccf4d4-137a-47a8-a000-a6cffccd8485" alt="Tracer Banner"/>
 </p>
 
-<p align="left">
+<p align="center">
   Tracer automatically investigates production data pipeline alerts by correlating logs, metrics, configurations, and dependencies across your preferred data platform.
 </p>
 
-<p align="left">
+<p align="center">
   <strong>
+    <a href="https://join.slack.com/t/tracer-cloud/shared_invite/zt-3sajw192q-2RCGVzSlp3EPtkh1SXMJHg">Slack</a> ·
     <a href="https://app.tracer.cloud/">Getting Started</a> ·
-    <a href="https://tracer.cloud/">Website</a> ·
+    <a href="https://tracer.cloud/">Tracer Agent</a> ·
     <a href="https://tracer.cloud/docs/">Docs</a> ·
     <a href="https://trust.tracer.cloud/">Security</a>
   </strong>
