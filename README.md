@@ -23,8 +23,21 @@
 ```bash
 git clone https://github.com/Tracer-Cloud/open-sre-agent
 cd open-sre-agent
+```
+
+Create a `.env` file in the project root and add your Anthropic API key:
+
+```bash
+echo "ANTHROPIC_API_KEY=your_key_here" > .env
+```
+
+Start the dev server:
+
+```bash
 make dev
 ```
+
+> **Windows users:** `make` is not available by default. Run `python -m langgraph dev` instead.
 
 Documentation → `/docs`
 
