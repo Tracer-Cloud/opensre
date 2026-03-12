@@ -161,6 +161,7 @@ def make_chat_state(
 ) -> AgentState:
     """Create initial state for chat mode."""
     return cast(AgentState, {
+        **{k: v for k, v in STATE_DEFAULTS.items() if k != "messages"},
         "mode": "chat",
         "org_id": org_id,
         "user_id": user_id,
