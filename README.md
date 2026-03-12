@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>
-    <a href="https://join.slack.com/t/tracer-cloud/shared_invite/zt-3sajw192q-2RCGVzSlp3EPtkh1SXMJHg">Slack</a> ·
+    <a href="https://tracer-cloud.slack.com/archives/C0AL8S64936">Slack</a> ·
     <a href="https://app.tracer.cloud/">Getting Started</a> ·
     <a href="https://tracer.cloud/">Tracer Agent</a> ·
     <a href="https://tracer.cloud/docs/">Docs</a> ·
