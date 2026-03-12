@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Tracer automatically investigates production data pipeline alerts by correlating logs, metrics, configurations, and dependencies across your preferred data platform.
+  <strong>The open-source SRE agent that investigates and debugs your data pipelines.</strong>
 </p>
 
 <p align="center">
