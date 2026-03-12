@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="app/icons/Banner.png" alt="Tracer Banner"/>
+  <img src="app/icons/BannerGithub.png" alt="Tracer Banner"/>
 </p>
 
 <p align="center">
