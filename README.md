@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/f4ccf4d4-137a-47a8-a000-a6cffccd8485" alt="Tracer Banner"/>
+  <img src="app/icons/Banner.png" alt="Tracer Banner"/>
 </p>
 
 <p align="center">
