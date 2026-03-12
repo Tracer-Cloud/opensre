@@ -74,28 +74,15 @@ Designed for production data engineering teams operating complex data platforms.
 
 Tracer integrates with the systems that power modern data platforms.
 
-**Data Platform**
+| Category | Integrations |
+|----------|-------------|
+| **Data Platform** | Apache Airflow · Apache Kafka · Apache Spark |
+| **Observability** | <img src="app/icons/grafana.webp" width="16"> Grafana · <img src="app/icons/datadog.svg" width="16"> Datadog · <img src="app/icons/cloudwatch.png" width="16"> CloudWatch · <img src="app/icons/sentry.png" width="16"> Sentry |
+| **Infrastructure** | <img src="app/icons/kubernetes.png" width="16"> Kubernetes · <img src="app/icons/aws.png" width="16"> AWS · <img src="app/icons/gcp.jpg" width="16"> GCP · <img src="app/icons/azure.png" width="16"> Azure |
+| **Dev Tools** | <img src="app/icons/github.webp" width="16"> GitHub |
+| **Communication** | <img src="app/icons/slack.png" width="16"> Slack · <img src="app/icons/pagerduty.png" width="16"> PagerDuty |
 
-- Apache Airflow
-- Apache Kafka
-- Apache Spark
 
-**Observability**
-
-- Grafana
-- Prometheus
-- Datadog
-
-**Infrastructure**
-
-- AWS
-- GCP
-- Azure
-
-**Communication**
-
-- Slack
-- PagerDuty
 
 ---
 
