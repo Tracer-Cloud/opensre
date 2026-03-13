@@ -3,7 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>The open-source SRE agent that investigates and debugs your data pipelines.</strong>
+  <strong>The open-source SRE agent that automatically investigates incidents and finds the root cause, before your team gets paged.
+</strong>
 </p>
 
 <p align="center">
@@ -30,13 +31,15 @@ Documentation → `/docs`
 
 ---
 
-## The Problem
+## Why Tracer
 
-Production data incidents often involve multiple interconnected systems.
+When something breaks in production, the investigation is slow because the evidence is scattered. Logs in Datadog, metrics in Grafana, service dependencies in your infra layer, config changes in Git. Each system saw part of what happened, but none of them saw all of it.
 
-Resolving them requires correlating operational signals — logs, metrics, traces, configuration state, and recent changes — across orchestration frameworks, compute engines, and infrastructure.
+So you do it manually. You pull logs, correlate timestamps, ping the colleague who knows the stack and piece together what happened. It takes hours. Under on-call pressure, you ship a patch just to get the system back up.
 
-This investigation process is typically manual and tool-fragmented.
+Tracer connects your systems and runs the investigation automatically. It correlates signals across your stack, builds hypotheses about what went wrong, tests them in parallel, and stops when it has enough confidence to give you a clear answer.
+
+Root cause reports are delivered to Slack out of the box. Want them in PagerDuty, OpsGenie, or wherever your team works? Adding a new integration is one of the most straightforward contributions you can make.
 
 ---
 
