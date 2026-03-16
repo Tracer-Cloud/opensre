@@ -15,7 +15,7 @@ This document describes how to propose changes, report bugs, and submit pull req
 
 - **Bugs & small fixes**: open a GitHub Issue (if one exists) and/or submit a PR.
 - **New features / behavioral changes**: open a GitHub Issue first to discuss the approach.
-- **Questions / “how do I”**: use the docs or email hello@tracer.cloud (GitHub Issues are for actionable engineering work).
+- **Questions / "how do I"**: use the docs or email hello@tracer.cloud (GitHub Issues are for actionable engineering work).
 - **Security issues**: do **not** open a public issue; follow `SECURITY.md`.
 
 ## Development workflow
@@ -23,7 +23,7 @@ This document describes how to propose changes, report bugs, and submit pull req
 1. Fork the repo and create a branch from `main`
 2. Make your changes
 3. Add or update tests (where applicable)
-4. Run the project’s checks locally before opening a PR:
+4. Run the project's checks locally before opening a PR:
    ```bash
    make lint        # ruff linter
    make typecheck   # mypy
@@ -32,7 +32,37 @@ This document describes how to propose changes, report bugs, and submit pull req
    All three must pass. CI runs the same checks and a PR cannot be merged if they fail.
 5. Open a pull request
 
-### Pull request guidelines
+### Windows users
+
+`make` is not available on Windows by default. Use these equivalents in Git Bash:
+
+| make command | Windows equivalent |
+|---|---|
+| `make lint` | `/c/Users/<your-username>/AppData/Roaming/Python/Python313/Scripts/ruff.exe check app/ tests/` |
+| `make typecheck` | `python -m mypy app/` |
+| `make test-cov` | `python -m pytest -v --cov=app --cov-report=term-missing --ignore=tests/test_case_kubernetes_local_alert_simulation` |
+
+> **Tip:** If `ruff` or `mypy` is not found, use the full path shown above or check `python -m ruff` instead.
+
+### Running tests without API keys
+
+Most unit tests run without any API keys. The following CI check **always fails** in contributor PRs - this is a pre-existing infrastructure issue and is **non-blocking**:
+
+- `CI / test-kubernetes` - requires live AWS credentials only the core team has
+
+You can safely ignore this failure in your PR.
+
+### Setting up your .env
+
+Copy the example env file before running the agent:
+
+```bash
+cp .env.example .env
+```
+
+Then add your `ANTHROPIC_API_KEY` to `.env`.
+
+## Pull request guidelines
 
 To keep PRs easy to review:
 
@@ -74,4 +104,4 @@ When filing a bug, include:
 
 ## Licensing
 
-By contributing, you agree that your contributions will be licensed under the project’s license (see `LICENSE`).
+By contributing, you agree that your contributions will be licensed under the project's license (see `LICENSE`).
