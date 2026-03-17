@@ -62,7 +62,7 @@ def _save(data: dict[str, Any]) -> None:
 
 def load_integrations() -> list[dict[str, Any]]:
     """Return all active local integrations."""
-    return _load_raw().get("integrations", [])
+    return list(_load_raw().get("integrations", []))
 
 
 def get_integration(service: str) -> dict[str, Any] | None:

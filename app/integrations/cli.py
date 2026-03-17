@@ -16,7 +16,13 @@ import json
 import sys
 from typing import Any
 
-from app.integrations.store import STORE_PATH, get_integration, list_integrations, remove_integration, upsert_integration
+from app.integrations.store import (
+    STORE_PATH,
+    get_integration,
+    list_integrations,
+    remove_integration,
+    upsert_integration,
+)
 
 _B = "\033[1m"
 _R = "\033[0m"
@@ -130,6 +136,7 @@ SUPPORTED = ", ".join(_HANDLERS)
 def cmd_setup(service: str | None) -> None:
     if not service or service not in _HANDLERS:
         _die(f"Usage: setup <service>. Supported: {SUPPORTED}")
+        return
     print(f"\n  Setting up {_B}{service}{_R}\n")
     _HANDLERS[service]()
     print(f"\n  ✓ Saved → {STORE_PATH}\n")
@@ -138,7 +145,7 @@ def cmd_setup(service: str | None) -> None:
 def cmd_list() -> None:
     items = list_integrations()
     if not items:
-        print(f"  No integrations. Run: python -m app.integrations setup <service>")
+        print("  No integrations. Run: python -m app.integrations setup <service>")
         return
     print(f"\n  {_B}{'SERVICE':<14}STATUS    ID{_R}")
     for i in items:
@@ -149,15 +156,18 @@ def cmd_list() -> None:
 def cmd_show(service: str | None) -> None:
     if not service:
         _die("Usage: show <service>")
+        return
     record = get_integration(service)
     if not record:
         _die(f"No active integration for '{service}'.")
+        return
     print(json.dumps(_mask(record), indent=2))
 
 
 def cmd_remove(service: str | None) -> None:
     if not service:
         _die("Usage: remove <service>")
+        return
     try:
         confirm = input(f"  Remove '{service}'? [y/N]: ").strip().lower()
     except (EOFError, KeyboardInterrupt):

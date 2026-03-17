@@ -103,7 +103,7 @@ def _classify_integrations(
 
 def _resolve_from_local_store(tracker: Any) -> dict:
     """Fall back to ~/.tracer/integrations.json when no auth context."""
-    from app.integrations.store import load_integrations, STORE_PATH
+    from app.integrations.store import STORE_PATH, load_integrations
 
     integrations = load_integrations()
     if not integrations:
