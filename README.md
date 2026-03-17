@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="app/icons/BannerGithub.png" alt="Tracer Banner"/>
+  <img src="https://raw.githubusercontent.com/Tracer-Cloud/open-sre-agent/main/app/icons/BannerGithub.png" alt="Tracer Banner" width="100%">
 </p>
 
 <p align="center">
@@ -13,6 +13,7 @@
     <a href="https://app.tracer.cloud/">Getting Started</a> ·
     <a href="https://tracer.cloud/">Tracer Agent</a> ·
     <a href="https://tracer.cloud/docs/">Docs</a> ·
+    <a href="docs/FAQ.md">FAQ</a> ·
     <a href="https://trust.tracer.cloud/">Security</a>
   </strong>
 </p>

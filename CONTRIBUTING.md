@@ -32,6 +32,26 @@ This document describes how to propose changes, report bugs, and submit pull req
    All three must pass. CI runs the same checks and a PR cannot be merged if they fail.
 5. Open a pull request
 
+## Windows Setup
+
+Windows does not include `make` by default. You need to install it first.
+
+**Step 1 — Open PowerShell as Administrator** (search "PowerShell" in Start Menu → right-click → "Run as administrator")
+
+**Step 2 — Install Chocolatey** (paste this and press Enter):
+
+```powershell
+Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+```
+
+**Step 3 — Install make:**
+
+```powershell
+choco install make
+```
+
+**Step 4 — Restart your terminal**, then continue with the standard setup steps above (`make lint`, `make typecheck`, `make test-cov` will all work).
+
 ### Pull request guidelines
 
 To keep PRs easy to review:
