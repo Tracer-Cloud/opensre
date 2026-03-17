@@ -101,6 +101,29 @@ def _classify_integrations(
     return resolved
 
 
+def _resolve_from_local_store(tracker: Any) -> dict:
+    """Fall back to ~/.tracer/integrations.json when no auth context."""
+    from app.integrations.store import load_integrations, STORE_PATH
+
+    integrations = load_integrations()
+    if not integrations:
+        tracker.complete(
+            "resolve_integrations",
+            fields_updated=["resolved_integrations"],
+            message=f"No auth context and no local integrations found (store: {STORE_PATH})",
+        )
+        return {"resolved_integrations": {}}
+
+    resolved = _classify_integrations(integrations)
+    services = [k for k in resolved if k != "_all"]
+    tracker.complete(
+        "resolve_integrations",
+        fields_updated=["resolved_integrations"],
+        message=f"Resolved local integrations: {services}",
+    )
+    return {"resolved_integrations": resolved}
+
+
 @traceable(name="node_resolve_integrations")
 def node_resolve_integrations(state: InvestigationState) -> dict:
     """Fetch all org integrations and classify them by service.
@@ -116,12 +139,7 @@ def node_resolve_integrations(state: InvestigationState) -> dict:
     auth_token = state.get("_auth_token", "")
 
     if not org_id or not auth_token:
-        tracker.complete(
-            "resolve_integrations",
-            fields_updated=["resolved_integrations"],
-            message="No auth context, skipping integration resolution",
-        )
-        return {"resolved_integrations": {}}
+        return _resolve_from_local_store(tracker)
 
     try:
         from app.agent.tools.clients.tracer_client import get_tracer_client_for_org
