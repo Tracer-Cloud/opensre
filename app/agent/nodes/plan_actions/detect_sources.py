@@ -94,15 +94,16 @@ def detect_sources(
     # Compute time window that covers the alert (used for Datadog/Grafana queries)
     alert_time_range_minutes = _alert_time_range_minutes(raw_alert)
 
-    # Extract annotations from multiple possible locations
+    # Extract annotations from multiple possible locations.
+    # Always merge top-level enriched fields (injected by _enrich_raw_alert) with
+    # nested annotations so EKS/k8s fields extracted by the LLM are visible here.
     annotations: dict[str, Any] = {}
     if isinstance(raw_alert, dict):
-        annotations = (
+        nested = (
             raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
         )
-        # Also check top-level fields
-        if not annotations:
-            annotations = raw_alert
+        # Merge: nested annotations first, then top-level enriched fields override/fill gaps
+        annotations = {**nested, **{k: v for k, v in raw_alert.items() if v and k not in nested}}
 
     # Detect CloudWatch sources
     cloudwatch_log_group = (
@@ -240,6 +241,14 @@ def detect_sources(
         # CloudFormation
         "stack_name",
         "stack_id",
+        # EKS / Kubernetes
+        "eks_cluster",
+        "cluster_name",
+        "kube_namespace",
+        "kubernetes_namespace",
+        "pod_name",
+        "kube_deployment",
+        "node_name",
         # General AWS
         "aws_account_id",
         "aws_region",
@@ -278,7 +287,7 @@ def detect_sources(
         or annotations.get("correlation_id")
     )
 
-    # Only include Grafana when alert came from Grafana, or when source is unknown
+    # Only include Grafana when alert came from Grafana, or when source is truly unknown
     if resolved_integrations and resolved_integrations.get("grafana") and alert_source in ("grafana", ""):
         grafana_int = resolved_integrations["grafana"]
         endpoint = grafana_int.get("endpoint", "")
@@ -299,7 +308,7 @@ def detect_sources(
                 grafana_params["execution_run_id"] = execution_run_id
             sources["grafana"] = grafana_params
 
-    # Only include Datadog when alert came from Datadog, or when source is unknown
+    # Only include Datadog when alert came from Datadog, or when source is truly unknown
     if resolved_integrations and resolved_integrations.get("datadog") and alert_source in ("datadog", ""):
         dd_int = resolved_integrations["datadog"]
         dd_api_key = dd_int.get("api_key", "")
@@ -361,5 +370,40 @@ def detect_sources(
                 }
 
             sources["datadog"] = dd_params
+
+    # Detect EKS: uses the AWS integration (EKS maps to aws in resolve_integrations)
+    _eks_int = (resolved_integrations or {}).get("aws")
+    if _eks_int:
+        eks_cluster = (
+            annotations.get("eks_cluster")
+            or annotations.get("cluster_name")
+        )
+        kube_namespace = (
+            annotations.get("kube_namespace")
+            or annotations.get("kubernetes_namespace")
+            or annotations.get("namespace")
+            or "default"
+        )
+
+        if eks_cluster:
+            sources["eks"] = {
+                "cluster_name": eks_cluster,
+                "namespace": kube_namespace,
+                "pod_name": annotations.get("pod_name", ""),
+                "deployment": (
+                    annotations.get("deployment")
+                    or annotations.get("kube_deployment", "")
+                ),
+                "node_name": annotations.get("node_name", ""),
+                "region": (
+                    annotations.get("aws_region")
+                    or annotations.get("region")
+                    or _eks_int.get("region", "us-east-1")
+                ),
+                "role_arn": _eks_int["role_arn"],
+                "external_id": _eks_int.get("external_id", ""),
+                "cluster_names": _eks_int.get("cluster_names", []),
+                "connection_verified": True,
+            }
 
     return sources

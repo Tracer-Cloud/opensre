@@ -22,6 +22,9 @@ cryptography>=42.0.0
 # AWS
 boto3>=1.34.0  # For CloudWatch logs integration
 
+# Kubernetes
+kubernetes>=28.1.0  
+
 # Utilities
 python-dotenv>=1.0.0
 dotenv

@@ -313,23 +313,25 @@ def format_slack_message(ctx: ReportContext) -> str:
     alert_id = ctx.get("alert_id")
     duration_seconds = ctx.get("investigation_duration_seconds")
     root_cause_sentence = _derive_root_cause_sentence(ctx)
-    report_title = _build_report_title(pipeline_name, alert_name, root_cause_sentence)
 
     if not root_cause_sentence:
         root_cause_sentence = "Not determined (insufficient evidence)."
-    conclusion_block = f"*Root Cause:* {root_cause_sentence}\n"
+    # Start the report directly with the root cause sentence, without a "Root Cause"
+    # heading line, so that section headings below can carry the visual emphasis.
+    conclusion_block = f"{root_cause_sentence}\n"
     top_log = _get_top_error_log(ctx.get("evidence") or {})
     if top_log:
         conclusion_block += f"`{top_log}`\n"
 
     validated_lines, non_validated_lines = _render_claim_lines(ctx)
     if validated_lines:
-        conclusion_block += "\n*Validated Claims (Supported by Evidence):*\n" + "\n".join(validated_lines) + "\n"
+        # Use a larger markdown heading so that "Findings" stands out as a section.
+        conclusion_block += "\n## Findings\n" + "\n".join(validated_lines) + "\n"
     if non_validated_lines:
         conclusion_block += "\n*Non-Validated Claims (Inferred):*\n" + "\n".join(non_validated_lines) + "\n"
 
     trace_steps = build_investigation_trace(ctx)
-    trace_block = "\n*Investigation Trace*\n" + "\n".join(trace_steps) + "\n" if trace_steps else ""
+    trace_block = "\n## Investigation Trace\n" + "\n".join(trace_steps) + "\n" if trace_steps else ""
 
     cited_section = _sanitize_for_slack(format_cited_evidence_section(ctx))
     cloudwatch_link = render_cloudwatch_link(ctx)
@@ -340,9 +342,10 @@ def format_slack_message(ctx: ReportContext) -> str:
         meta_lines.append(f"*Alert ID:* {alert_id}")
     meta_block = "\n" + "\n".join(meta_lines) if meta_lines else ""
 
-    return f"""[RCA] {report_title}
-
-{conclusion_block}{trace_block}
+    # Do not prefix with a separate [RCA] title line; the consumer can render
+    # section headings (Root Cause text, Findings, Investigation Trace) with
+    # larger fonts as needed.
+    return f"""{conclusion_block}{trace_block}
 {cited_section}
 {cloudwatch_link}{meta_block}
 """
@@ -365,26 +368,16 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     duration_seconds = ctx.get("investigation_duration_seconds")
     alert_id = ctx.get("alert_id")
     root_cause_sentence = _derive_root_cause_sentence(ctx)
-    report_title = _build_report_title(pipeline_name, alert_name, root_cause_sentence)
-
     blocks: list[dict[str, Any]] = []
 
     def _add(block: "dict[str, Any] | None") -> None:
         if block is not None:
             blocks.append(block)
 
-    header_text = f"\U0001f6a8 [RCA] {report_title}"
-    if len(header_text) > 150:
-        header_text = header_text[:147] + "..."
-    blocks.append({
-        "type": "header",
-        "text": {"type": "plain_text", "text": header_text},
-    })
-
-    # ── Root Cause ──
+    # ── Root Cause
     if not root_cause_sentence:
         root_cause_sentence = "Not determined (insufficient evidence)"
-    rc_text = f"*Root Cause*\n{root_cause_sentence}"
+    rc_text = root_cause_sentence
     top_log = _get_top_error_log(ctx.get("evidence") or {})
     if top_log:
         rc_text += f"\n`{top_log}`"
@@ -397,12 +390,22 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     if len(all_pods) > 5:
         pod_lines.append(f"• ... and {len(all_pods) - 5} more pods")
     if pod_lines:
-        _add(_mrkdwn_section("*Failed Pods*\n" + "\n".join(pod_lines)))
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "header",
+            "text": {"type": "plain_text", "text": "Failed Pods"},
+        })
+        _add(_mrkdwn_section("\n".join(pod_lines)))
 
     # ── Validated Claims (Findings) and Non-Validated Claims ──
     validated_lines, non_validated_lines = _render_claim_lines(ctx)
     if validated_lines:
-        _add(_mrkdwn_section("*Findings*\n" + "\n".join(validated_lines)))
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "header",
+            "text": {"type": "plain_text", "text": "Findings"},
+        })
+        _add(_mrkdwn_section("\n".join(validated_lines)))
     if non_validated_lines:
         _add(_mrkdwn_section("*Inferred (not yet validated)*\n" + "\n".join(non_validated_lines)))
 
@@ -410,7 +413,11 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     trace_steps = build_investigation_trace(ctx)
     if trace_steps:
         blocks.append({"type": "divider"})
-        _add(_mrkdwn_section("*Investigation Trace*\n" + "\n".join(trace_steps)))
+        blocks.append({
+            "type": "header",
+            "text": {"type": "plain_text", "text": "Investigation Trace"},
+        })
+        _add(_mrkdwn_section("\n".join(trace_steps)))
 
     # ── Cited Evidence ──
     cited_section = format_cited_evidence_section(ctx).strip()

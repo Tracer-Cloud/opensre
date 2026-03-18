@@ -20,6 +20,7 @@ dependencies = [
     # Data validation
     "pydantic>=2.12.5,<3",
     "pydantic-settings>=2.12.0,<3",
+    "kubernetes>=28.1.0",
     # HTTP and async
     "httpx>=0.27.0",
     "aiohttp>=3.9.0",

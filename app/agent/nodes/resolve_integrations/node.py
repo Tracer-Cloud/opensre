@@ -17,13 +17,13 @@ from app.agent.state import InvestigationState
 # Services we skip (already handled by the webhook layer or not queryable)
 _SKIP_SERVICES = {"slack"}
 
-# Mapping from integration service names to resolved_integrations keys
+# Mapping from integration service names to canonical keys (case-insensitive lookup below)
+# EKS uses the same AWS role — no separate EKS integration key
 _SERVICE_KEY_MAP = {
-    "Grafana": "grafana",
     "grafana": "grafana",
-    "AWS": "aws",
     "aws": "aws",
-    "Datadog": "datadog",
+    "eks": "aws",
+    "amazon eks": "aws",
     "datadog": "datadog",
 }
 
@@ -38,7 +38,7 @@ def _classify_integrations(
             "grafana": {"endpoint": "...", "api_key": "...", "integration_id": "..."},
             "aws": {"role_arn": "...", "external_id": "...", "integration_id": "..."},
             ...
-            "_all": [<raw integration records>]  # for extensibility
+            "_all": [<raw integration records>]
         }
     """
     resolved: dict[str, Any] = {}
@@ -51,11 +51,7 @@ def _classify_integrations(
         if service.lower() in _SKIP_SERVICES:
             continue
 
-        key = _SERVICE_KEY_MAP.get(service)
-        if not key:
-            # Store unknown services under their lowercase name for future extensibility
-            key = service.lower()
-
+        key = _SERVICE_KEY_MAP.get(service.lower(), service.lower())
         credentials = integration.get("credentials", {})
 
         if key == "grafana":
@@ -71,7 +67,7 @@ def _classify_integrations(
         elif key == "aws":
             role_arn = integration.get("role_arn", "")
             external_id = integration.get("external_id", "")
-            if role_arn:
+            if role_arn and "aws" not in resolved:
                 resolved["aws"] = {
                     "role_arn": role_arn,
                     "external_id": external_id,
@@ -91,7 +87,6 @@ def _classify_integrations(
                 }
 
         else:
-            # Generic: store credentials under the service key
             resolved[key] = {
                 "credentials": credentials,
                 "integration_id": integration.get("id", ""),
@@ -101,8 +96,97 @@ def _classify_integrations(
     return resolved
 
 
+def _decode_org_id_from_token(token: str) -> str:
+    import base64
+    import json as _json
+
+    try:
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        claims = _json.loads(base64.urlsafe_b64decode(payload_b64))
+        return claims.get("organization") or claims.get("org_id") or ""
+    except Exception:
+        return ""
+
+
+def _strip_bearer(token: str) -> str:
+    if token.lower().startswith("bearer "):
+        return token.split(None, 1)[1].strip()
+    return token
+
+
+@traceable(name="node_resolve_integrations")
+def node_resolve_integrations(state: InvestigationState) -> dict:
+    """Fetch all org integrations and classify them by service.
+
+    Priority:
+      1. _auth_token from state (Slack webhook / inbound request) — remote API only, no local fallback
+      2. JWT_TOKEN env var — remote API, falls back to local store on failure
+      3. Local integrations store (~/.tracer/integrations.json)
+    """
+    import logging
+    import os
+
+    tracker = get_tracker()
+    tracker.start("resolve_integrations", "Fetching org integrations")
+
+    log = logging.getLogger(__name__)
+    org_id = state.get("org_id", "")
+
+    webhook_token = _strip_bearer(state.get("_auth_token", "").strip())
+    if webhook_token:
+        if not org_id:
+            org_id = _decode_org_id_from_token(webhook_token)
+        if not org_id:
+            log.warning("_auth_token present but could not decode org_id")
+            tracker.complete(
+                "resolve_integrations",
+                fields_updated=["resolved_integrations"],
+                message="Auth token present but org_id could not be determined",
+            )
+            return {"resolved_integrations": {}}
+        try:
+            from app.agent.tools.clients.tracer_client import get_tracer_client_for_org
+            all_integrations = get_tracer_client_for_org(org_id, webhook_token).get_all_integrations()
+        except Exception as exc:
+            log.warning("Remote integrations fetch failed: %s", exc)
+            tracker.complete(
+                "resolve_integrations",
+                fields_updated=["resolved_integrations"],
+                message="Remote integrations fetch failed",
+            )
+            return {"resolved_integrations": {}}
+
+    else:
+        # Priority 2: JWT_TOKEN env var
+        env_token = _strip_bearer(os.getenv("JWT_TOKEN", "").strip())
+        if env_token:
+            if not org_id:
+                org_id = _decode_org_id_from_token(env_token)
+            if not org_id:
+                return _resolve_from_local_store(tracker)
+            try:
+                from app.agent.tools.clients.tracer_client import get_tracer_client_for_org
+                all_integrations = get_tracer_client_for_org(org_id, env_token).get_all_integrations()
+            except Exception:
+                return _resolve_from_local_store(tracker)
+        else:
+            # Priority 3: local store only
+            return _resolve_from_local_store(tracker)
+
+    resolved = _classify_integrations(all_integrations)
+    services = [k for k in resolved if k != "_all"]
+
+    tracker.complete(
+        "resolve_integrations",
+        fields_updated=["resolved_integrations"],
+        message=f"Resolved integrations: {services}" if services else "No active integrations found",
+    )
+
+    return {"resolved_integrations": resolved}
+
+
 def _resolve_from_local_store(tracker: Any) -> dict:
-    """Fall back to ~/.tracer/integrations.json when no auth context."""
     from app.integrations.store import STORE_PATH, load_integrations
 
     integrations = load_integrations()
@@ -121,46 +205,4 @@ def _resolve_from_local_store(tracker: Any) -> dict:
         fields_updated=["resolved_integrations"],
         message=f"Resolved local integrations: {services}",
     )
-    return {"resolved_integrations": resolved}
-
-
-@traceable(name="node_resolve_integrations")
-def node_resolve_integrations(state: InvestigationState) -> dict:
-    """Fetch all org integrations and classify them by service.
-
-    Populates state["resolved_integrations"] with structured credentials
-    so downstream nodes (detect_sources, plan_actions) can use them
-    without making additional API calls.
-    """
-    tracker = get_tracker()
-    tracker.start("resolve_integrations", "Fetching org integrations")
-
-    org_id = state.get("org_id", "")
-    auth_token = state.get("_auth_token", "")
-
-    if not org_id or not auth_token:
-        return _resolve_from_local_store(tracker)
-
-    try:
-        from app.agent.tools.clients.tracer_client import get_tracer_client_for_org
-
-        client = get_tracer_client_for_org(org_id, auth_token)
-        all_integrations = client.get_all_integrations()
-    except Exception:
-        tracker.complete(
-            "resolve_integrations",
-            fields_updated=["resolved_integrations"],
-            message="Failed to fetch integrations",
-        )
-        return {"resolved_integrations": {}}
-
-    resolved = _classify_integrations(all_integrations)
-    services = [k for k in resolved if k != "_all"]
-
-    tracker.complete(
-        "resolve_integrations",
-        fields_updated=["resolved_integrations"],
-        message=f"Resolved integrations: {services}" if services else "No active integrations found",
-    )
-
     return {"resolved_integrations": resolved}

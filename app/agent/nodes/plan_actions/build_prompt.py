@@ -122,6 +122,24 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Use query_datadog_events to find deployments and infrastructure changes"""
         )
 
+    if "eks" in available_sources:
+        eks = available_sources["eks"]
+        hints.append(
+            f"""EKS Cluster Available:
+- Cluster: {eks.get("cluster_name")}
+- Namespace: {eks.get("namespace", "unknown")} (may not exist — verify with list_eks_namespaces)
+- Pod: {eks.get("pod_name") or "unknown — use list_eks_pods to discover"}
+- Deployment: {eks.get("deployment") or "unknown — use list_eks_deployments to discover"}
+- Region: {eks.get("region", "us-east-1")}
+IMPORTANT: Always start with discovery actions before fetching specific resources:
+  1. list_eks_namespaces — confirm the namespace exists in the cluster
+  2. list_eks_pods — discover what pods exist and which are failing/crashing
+  3. list_eks_deployments — discover what deployments exist and which are degraded
+  4. get_eks_events — get Warning events (OOMKilled, BackOff, FailedScheduling)
+  5. get_eks_node_health — check node capacity and pressure conditions
+  Only use get_eks_pod_logs / get_eks_deployment_status after confirming the resource exists."""
+        )
+
     if "upstream_context" in available_sources:
         upstream = available_sources["upstream_context"]
         hints.append(

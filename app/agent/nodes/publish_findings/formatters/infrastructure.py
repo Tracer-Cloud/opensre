@@ -294,11 +294,9 @@ def build_investigation_trace(ctx: ReportContext) -> list[str]:
                 )
                 step_num += 1
 
-    # Step 5: S3 marker/processed bucket (if checked)
     s3_marker = ctx.get("s3_marker_exists")
-    if s3_marker is not None:
-        status = "exists" if s3_marker else "missing"
-        trace_steps.append(f"{step_num}. Output verification: processed data {status}")
+    if s3_marker is True:
+        trace_steps.append(f"{step_num}. Output verification: processed data exists")
         step_num += 1
 
     # Step 6: Root cause evidence

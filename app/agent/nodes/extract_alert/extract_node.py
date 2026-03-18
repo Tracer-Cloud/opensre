@@ -27,7 +27,8 @@ def _make_problem_md(details: AlertDetails) -> str:
 def _enrich_raw_alert(raw_alert: Any, details: AlertDetails) -> Any:
     """Inject LLM-extracted structured fields into raw_alert dict so detect_sources can find them."""
     if not isinstance(raw_alert, dict):
-        return raw_alert
+        # Convert string alerts to dict so downstream can find extracted fields
+        raw_alert = {}
     enriched = dict(raw_alert)
     if details.kube_namespace:
         enriched["kube_namespace"] = details.kube_namespace
@@ -39,6 +40,12 @@ def _enrich_raw_alert(raw_alert: Any, details: AlertDetails) -> Any:
         enriched["alert_source"] = details.alert_source
     if details.log_query:
         enriched["log_query"] = details.log_query
+    if details.eks_cluster:
+        enriched["eks_cluster"] = details.eks_cluster
+    if details.pod_name:
+        enriched["pod_name"] = details.pod_name
+    if details.deployment:
+        enriched["deployment"] = details.deployment
     return enriched
 
 

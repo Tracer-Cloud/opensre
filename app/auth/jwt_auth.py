@@ -287,7 +287,17 @@ def verify_jwt(token: str) -> JWTClaims:
     DEPRECATED: Use verify_jwt_async directly in async contexts.
     This exists for backwards compatibility but will block the event loop.
     """
-    return asyncio.get_event_loop().run_until_complete(verify_jwt_async(token))
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Already inside an async context (e.g. LangGraph thread) — run in a new loop
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(asyncio.run, verify_jwt_async(token))
+                return future.result()
+        return loop.run_until_complete(verify_jwt_async(token))
+    except RuntimeError:
+        return asyncio.run(verify_jwt_async(token))
 
 
 def _safe_verify_jwt(jwt_token: str) -> JWTClaims | None:
