@@ -308,8 +308,6 @@ def format_slack_message(ctx: ReportContext) -> str:
     Used as the `text` fallback (notifications, accessibility, terminal, ingest)
     when Block Kit blocks are the primary rendered content.
     """
-    pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
-    alert_name = ctx.get("alert_name")
     alert_id = ctx.get("alert_id")
     duration_seconds = ctx.get("investigation_duration_seconds")
     root_cause_sentence = _derive_root_cause_sentence(ctx)
@@ -363,8 +361,6 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     """
     from typing import Any
 
-    pipeline_name = ctx.get("tracer_pipeline_name") or ctx.get("pipeline_name", "unknown")
-    alert_name = ctx.get("alert_name")
     duration_seconds = ctx.get("investigation_duration_seconds")
     alert_id = ctx.get("alert_id")
     root_cause_sentence = _derive_root_cause_sentence(ctx)
