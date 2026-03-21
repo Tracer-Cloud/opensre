@@ -83,6 +83,20 @@ make install
 
 You can use `.env.example` as a reference for any other optional integrations you want to enable.
 
+### Dry run the CLI (no external calls)
+
+Use dry run to validate an alert payload and preview investigation flow without executing LLM/tool/API actions:
+
+```bash
+python -m app.main --input ./app/alert.json --dry-run
+```
+
+This mode:
+- Parses and validates the input payload
+- Prints planned investigation steps
+- Exits without running the investigation
+
+
 ### Run the LangGraph dev UI
 
 Start the LangGraph dev server:

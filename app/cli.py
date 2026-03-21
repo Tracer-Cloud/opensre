@@ -12,6 +12,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run incident resolution agent.")
     p.add_argument("--input", "-i", default="-", help="Grafana alert JSON (- for stdin)")
     p.add_argument("--output", "-o", default=None, help="Output JSON file (default: stdout)")
+    p.add_argument("--dry-run",action="store_true",help="Preview what the agent would do without executing actions")
     return p.parse_args(argv)
 
 
