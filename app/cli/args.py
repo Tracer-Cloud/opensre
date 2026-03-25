@@ -1,4 +1,4 @@
-"""CLI utilities for the incident resolution agent."""
+"""CLI argument helpers for the incident resolution agent."""
 
 import argparse
 import json
@@ -9,10 +9,10 @@ from typing import Any
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments."""
-    p = argparse.ArgumentParser(description="Run incident resolution agent.")
-    p.add_argument("--input", "-i", default="-", help="Grafana alert JSON (- for stdin)")
-    p.add_argument("--output", "-o", default=None, help="Output JSON file (default: stdout)")
-    return p.parse_args(argv)
+    parser = argparse.ArgumentParser(description="Run incident resolution agent.")
+    parser.add_argument("--input", "-i", default="-", help="Grafana alert JSON (- for stdin)")
+    parser.add_argument("--output", "-o", default=None, help="Output JSON file (default: stdout)")
+    return parser.parse_args(argv)
 
 
 def write_json(data: Any, path: str | None) -> None:

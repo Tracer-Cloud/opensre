@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install test test-full demo local-rca-demo check-docker grafana-local-up grafana-local-down grafana-local-seed local-grafana-live clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca
+.PHONY: install onboard test test-full demo local-rca-demo check-docker grafana-local-up grafana-local-down grafana-local-seed local-grafana-live clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca
 
 PYTHON = python3
 PIP = python3 -m pip
@@ -14,6 +14,10 @@ export PATH := $(USER_BIN):$(PATH)
 install:
 	$(PIP) install $(PIP_INSTALL_FLAGS) -r requirements.txt
 	$(PIP) install $(PIP_INSTALL_FLAGS) -e .
+
+# Run the local onboarding flow
+onboard:
+	opensre onboard
 
 # Run Prefect ECS demo (default demo) - shows Investigation Trace in RCA
 demo:
@@ -265,6 +269,7 @@ help:
 	@echo ""
 	@echo "  LOCAL DEVELOPMENT"
 	@echo "  make install         - Install dependencies"
+	@echo "  make onboard         - Run the OpenSRE onboarding flow"
 	@echo ""
 	@echo "  TESTING & QUALITY"
 	@echo "  make test            - Run fast unit tests + Prefect cloud E2E"

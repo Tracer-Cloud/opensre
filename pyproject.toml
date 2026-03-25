@@ -45,6 +45,9 @@ dependencies = [
     "tracer_decorator",
 ]
 
+[project.scripts]
+opensre = "app.cli.__main__:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
