@@ -82,6 +82,7 @@ def _local_defaults() -> dict[str, str]:
         "provider": _string_value(local.get("provider"), SUPPORTED_PROVIDERS[0].value),
         "model": _string_value(local.get("model")),
         "api_key": _string_value(local.get("api_key")),
+        "api_key_env": _string_value(local.get("api_key_env")),
     }
 
 
@@ -95,19 +96,16 @@ def _step(title: str) -> None:
 
 
 def _choose(prompt: str, choices: list[Choice], *, default: str | None = None) -> str:
-    default_label: str | None = None
     q_choices = []
     for choice in choices:
         suffix = f" ({choice.group})" if choice.group else ""
         label = f"{choice.label}{suffix}"
         q_choices.append(QuestionaryChoice(title=label, value=choice.value))
-        if choice.value == default:
-            default_label = label
 
     result = select_prompt(
         prompt,
         choices=q_choices,
-        default=default_label,
+        default=default,
         style=_STYLE,
         instruction="(Tab, arrows, Enter)",
     ).ask()
@@ -180,7 +178,30 @@ def _parse_csv_values(raw_value: str) -> list[str]:
     return [part.strip() for part in raw_value.split(",") if part.strip()]
 
 
-def _collect_validated_api_key(provider: ProviderOption, model: str, *, default_api_key: str = "") -> str:
+def _collect_validated_api_key(
+    provider: ProviderOption,
+    model: str,
+    *,
+    default_api_key: str = "",
+    auto_use_saved_key: bool = False,
+) -> str:
+    if auto_use_saved_key and default_api_key:
+        with _console.status(f"Validating {provider.label} API key...", spinner="dots"):
+            result = validate_provider_credentials(
+                provider=provider,
+                api_key=default_api_key,
+                model=model,
+            )
+        if result.ok:
+            _console.print(f"[green]Using saved {provider.label} key.[/]")
+            _console.print(f"[dim]{result.detail}[/]")
+            if result.sample_response:
+                _console.print(f"[dim]Sample: {result.sample_response}[/]")
+            return default_api_key
+        _console.print(f"[yellow]Saved {provider.label} key failed validation.[/]")
+        _console.print(f"[dim]{result.detail}[/]")
+        default_api_key = ""
+
     while True:
         api_key = _prompt_value(
             f"{provider.label} API key ({provider.api_key_env})",
@@ -198,7 +219,8 @@ def _collect_validated_api_key(provider: ProviderOption, model: str, *, default_
                 _console.print(f"[dim]{result.detail}[/]")
             return api_key
         _console.print(f"[red]Validation failed: {result.detail}[/]")
-        _console.print("[dim]Enter keeps the current key. Paste a new one to replace it.[/]")
+        _console.print("[dim]Enter retries the current key. Paste a new one to replace it.[/]")
+        default_api_key = api_key
 
 
 def _display_probe(result: ProbeResult) -> None:
@@ -689,8 +711,16 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         default=default_model,
     )
     _step("api key")
+    default_api_key = (
+        defaults["api_key"] if defaults["api_key_env"] == provider.api_key_env else ""
+    )
     try:
-        api_key = _collect_validated_api_key(provider, model, default_api_key=defaults["api_key"])
+        api_key = _collect_validated_api_key(
+            provider,
+            model,
+            default_api_key=default_api_key,
+            auto_use_saved_key=bool(default_api_key),
+        )
     except KeyboardInterrupt:
         _console.print("\n[yellow]Setup cancelled.[/]")
         return 1

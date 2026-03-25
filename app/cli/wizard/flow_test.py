@@ -120,7 +120,7 @@ def test_run_wizard_retries_invalid_api_key(monkeypatch, tmp_path, capsys) -> No
     assert exit_code == 0
     output = capsys.readouterr().out
     assert "Validation failed: bad key" in output
-    assert "Enter keeps the current key. Paste a new one to replace it." in output
+    assert "Enter retries the current key. Paste a new one to replace it." in output
     assert "validated" in output
 
 
@@ -398,6 +398,7 @@ def test_run_wizard_reuses_saved_defaults_when_user_confirms_defaults(monkeypatc
                 "local": {
                     "provider": "openai",
                     "model": "gpt-5-mini",
+                    "api_key_env": "OPENAI_API_KEY",
                     "api_key": "saved-secret",
                 }
             },
@@ -429,3 +430,143 @@ def test_run_wizard_reuses_saved_defaults_when_user_confirms_defaults(monkeypatc
     assert saved["provider"] == "openai"
     assert saved["model"] == "gpt-5-mini"
     assert saved["api_key"] == "saved-secret"
+
+
+def test_run_wizard_uses_saved_matching_provider_key_without_prompt(monkeypatch, tmp_path, capsys) -> None:
+    saved: dict[str, object] = {}
+    password_called = False
+    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-20250514"])
+
+    def _mock_select(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(select_responses)
+        return m
+
+    def _mock_checkbox(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = []
+        return m
+
+    def _mock_password(*_args, **_kwargs):
+        nonlocal password_called
+        password_called = True
+        m = MagicMock()
+        m.ask.return_value = "should-not-be-used"
+        return m
+
+    monkeypatch.setattr(flow, "select_prompt", _mock_select)
+    monkeypatch.setattr(flow, "checkbox_prompt", _mock_checkbox)
+    monkeypatch.setattr(flow.questionary, "password", _mock_password)
+    monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
+    monkeypatch.setattr(
+        flow,
+        "load_local_config",
+        lambda _path: {
+            "wizard": {"mode": "quickstart"},
+            "targets": {
+                "local": {
+                    "provider": "anthropic",
+                    "model": "claude-opus-4-20250514",
+                    "api_key_env": "ANTHROPIC_API_KEY",
+                    "api_key": "saved-anthropic-key",
+                }
+            },
+        },
+    )
+    monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
+    monkeypatch.setattr(
+        flow,
+        "validate_provider_credentials",
+        lambda **kwargs: ValidationResult(
+            ok=True,
+            detail=f"validated {kwargs['api_key']}",
+            sample_response="ready",
+        ),
+    )
+    monkeypatch.setattr(
+        flow,
+        "build_demo_action_response",
+        lambda: {"success": True, "topics": [], "guidance": []},
+    )
+
+    def _save_local_config(**kwargs):
+        saved.update(kwargs)
+        return tmp_path / "opensre.json"
+
+    monkeypatch.setattr(flow, "save_local_config", _save_local_config)
+    monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+
+    exit_code = flow.run_wizard()
+
+    assert exit_code == 0
+    assert password_called is False
+    assert saved["api_key"] == "saved-anthropic-key"
+    output = capsys.readouterr().out
+    assert "Using saved Anthropic key." in output
+
+
+def test_run_wizard_does_not_reuse_saved_key_for_different_provider(monkeypatch, tmp_path) -> None:
+    saved: dict[str, object] = {}
+    password_calls: list[str] = []
+
+    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-20250514"])
+
+    def _mock_select(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(select_responses)
+        return m
+
+    def _mock_checkbox(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = []
+        return m
+
+    def _mock_password(*_args, **_kwargs):
+        password_calls.append("called")
+        m = MagicMock()
+        m.ask.return_value = "fresh-anthropic-key"
+        return m
+
+    monkeypatch.setattr(flow, "select_prompt", _mock_select)
+    monkeypatch.setattr(flow, "checkbox_prompt", _mock_checkbox)
+    monkeypatch.setattr(flow.questionary, "password", _mock_password)
+    monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
+    monkeypatch.setattr(
+        flow,
+        "load_local_config",
+        lambda _path: {
+            "wizard": {"mode": "quickstart"},
+            "targets": {
+                "local": {
+                    "provider": "openai",
+                    "model": "gpt-5-mini",
+                    "api_key_env": "OPENAI_API_KEY",
+                    "api_key": "saved-openai-key",
+                }
+            },
+        },
+    )
+    monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
+    monkeypatch.setattr(
+        flow,
+        "validate_provider_credentials",
+        lambda **_kwargs: ValidationResult(ok=True, detail="validated", sample_response="ready"),
+    )
+    monkeypatch.setattr(
+        flow,
+        "build_demo_action_response",
+        lambda: {"success": True, "topics": [], "guidance": []},
+    )
+
+    def _save_local_config(**kwargs):
+        saved.update(kwargs)
+        return tmp_path / "opensre.json"
+
+    monkeypatch.setattr(flow, "save_local_config", _save_local_config)
+    monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+
+    exit_code = flow.run_wizard()
+
+    assert exit_code == 0
+    assert password_calls == ["called"]
+    assert saved["api_key"] == "fresh-anthropic-key"
