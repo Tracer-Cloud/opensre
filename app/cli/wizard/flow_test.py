@@ -6,7 +6,7 @@ from app.cli.wizard.validation import ValidationResult
 
 
 def test_run_wizard_advanced_remote_falls_back_to_local(monkeypatch, tmp_path, capsys) -> None:
-    responses = iter(["2", "2", "y", "", ""])
+    responses = iter(["2", "2", "y", "", "", ""])
     saved: dict[str, object] = {}
 
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
@@ -49,7 +49,7 @@ def test_run_wizard_advanced_remote_falls_back_to_local(monkeypatch, tmp_path, c
 
 
 def test_run_wizard_retries_invalid_api_key(monkeypatch, tmp_path, capsys) -> None:
-    responses = iter(["", "", ""])
+    responses = iter(["", "", "", ""])
     validations = iter(
         [
             ValidationResult(ok=False, detail="bad key"),
@@ -81,3 +81,81 @@ def test_run_wizard_retries_invalid_api_key(monkeypatch, tmp_path, capsys) -> No
     assert "Validation failed: bad key" in output
     assert "Paste the API key again to retry" in output
     assert "validated" in output
+
+
+def test_run_wizard_configures_optional_integrations(monkeypatch, tmp_path, capsys) -> None:
+    responses = iter(["", "", "", "1,3", "https://grafana.example.com"])
+    secrets = iter(["llm-secret", "grafana-token", "https://hooks.slack.com/services/T000/B000/abc"])
+    saved_integrations: list[tuple[str, dict]] = []
+    synced_env_values: list[dict[str, str]] = []
+
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
+    monkeypatch.setattr(flow.getpass, "getpass", lambda _prompt="": next(secrets))
+    monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
+    monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
+    monkeypatch.setattr(
+        flow,
+        "validate_provider_credentials",
+        lambda **_kwargs: ValidationResult(ok=True, detail="validated", sample_response="OpenSRE ready"),
+    )
+    monkeypatch.setattr(
+        flow,
+        "validate_grafana_integration",
+        lambda **_kwargs: flow.IntegrationHealthResult(ok=True, detail="Grafana ok"),
+    )
+    monkeypatch.setattr(
+        flow,
+        "validate_slack_webhook",
+        lambda **_kwargs: flow.IntegrationHealthResult(ok=True, detail="Slack ok"),
+    )
+    monkeypatch.setattr(flow, "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
+    monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+
+    def _sync_env_values(values: dict[str, str], **_kwargs):
+        synced_env_values.append(values)
+        return tmp_path / ".env"
+
+    monkeypatch.setattr(
+        flow,
+        "sync_env_values",
+        _sync_env_values,
+    )
+    monkeypatch.setattr(
+        flow,
+        "upsert_integration",
+        lambda service, payload: saved_integrations.append((service, payload)),
+    )
+    monkeypatch.setattr(
+        flow,
+        "build_demo_action_response",
+        lambda: {"success": True, "topics": ["recovery_remediation"], "guidance": []},
+    )
+
+    exit_code = flow.run_wizard()
+
+    assert exit_code == 0
+    assert saved_integrations == [
+        (
+            "grafana",
+            {
+                "credentials": {
+                    "endpoint": "https://grafana.example.com",
+                    "api_key": "grafana-token",
+                }
+            },
+        )
+    ]
+    assert synced_env_values == [
+        {
+            "GRAFANA_INSTANCE_URL": "https://grafana.example.com",
+            "GRAFANA_READ_TOKEN": "grafana-token",
+        },
+        {
+            "SLACK_WEBHOOK_URL": "https://hooks.slack.com/services/T000/B000/abc",
+        },
+    ]
+
+    output = capsys.readouterr().out
+    assert "Optional integrations" in output
+    assert "integrations" in output
+    assert "Grafana, Slack" in output

@@ -91,13 +91,13 @@ make install
 
 You can use `.env.example` as a reference for any other optional integrations you want to enable.
 
-If you want help configuring the local LLM provider, run the onboarding flow:
+If you want help configuring the local LLM provider and optional local integrations, run the onboarding flow:
 
 ```bash
 opensre onboard
 ```
 
-The onboarding flow writes your provider choice and default model to `~/.opensre/opensre.json`, then syncs the active local settings into `.env`.
+The onboarding flow writes your provider choice and default model to `~/.opensre/opensre.json`, syncs the active local LLM settings into `.env`, and can also validate and save optional Grafana, Datadog, Slack, and AWS integration settings for local development.
 
 Because this repo is installed in editable mode via `make install`, `opensre onboard` targets your local checkout while you are coding. If you change `pyproject.toml` entrypoints later, rerun `make install` once to refresh the launcher.
 

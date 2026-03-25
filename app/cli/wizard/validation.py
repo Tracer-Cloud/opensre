@@ -33,28 +33,33 @@ def validate_provider_credentials(
     """Run a tiny live request against the selected provider."""
     try:
         if provider.value == "anthropic":
-            client = Anthropic(api_key=api_key, timeout=30.0)
-            response = client.messages.create(
+            anthropic_client = Anthropic(api_key=api_key, timeout=30.0)
+            anthropic_response = anthropic_client.messages.create(
                 model=model,
                 max_tokens=24,
                 messages=[{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],
             )
             sample_text = "".join(
-                block.text for block in getattr(response, "content", []) if getattr(block, "type", None) == "text"
+                block.text
+                for block in getattr(anthropic_response, "content", [])
+                if getattr(block, "type", None) == "text"
             ).strip()
             return ValidationResult(ok=True, detail="Anthropic API key validated.", sample_response=sample_text)
 
-        client = OpenAI(api_key=api_key, timeout=30.0)
-        request_kwargs = {
-            "model": model,
-            "messages": [{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],
-        }
+        openai_client = OpenAI(api_key=api_key, timeout=30.0)
         if model.startswith(("o1", "o3", "o4", "gpt-5")):
-            request_kwargs["max_completion_tokens"] = 24
+            openai_response = openai_client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],
+                max_completion_tokens=24,
+            )
         else:
-            request_kwargs["max_tokens"] = 24
-        response = client.chat.completions.create(**request_kwargs)
-        sample_text = (response.choices[0].message.content or "").strip()
+            openai_response = openai_client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],
+                max_tokens=24,
+            )
+        sample_text = (openai_response.choices[0].message.content or "").strip()
         return ValidationResult(ok=True, detail="OpenAI API key validated.", sample_response=sample_text)
     except AnthropicAuthError:
         return ValidationResult(ok=False, detail="Anthropic rejected the API key.")

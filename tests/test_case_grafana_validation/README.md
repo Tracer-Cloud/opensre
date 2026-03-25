@@ -40,7 +40,7 @@ Prerequisites:
 - `GRAFANA_READ_TOKEN` available in `.env` or environment
 - Optional: `GRAFANA_INSTANCE_URL` (defaults to `https://tracerbio.grafana.net`)
  
-Note: These tests do not skip when configuration is missing.
+Note: These tests skip when configuration is missing, and they also skip when the configured live Grafana credentials are rejected with auth errors such as `401` or `403`.
 
 Run:
 ```

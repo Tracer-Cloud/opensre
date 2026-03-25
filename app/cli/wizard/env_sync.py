@@ -27,6 +27,23 @@ def _set_env_value(lines: list[str], key: str, value: str) -> list[str]:
     return updated
 
 
+def sync_env_values(
+    values: dict[str, str],
+    *,
+    env_path: Path | None = None,
+) -> Path:
+    """Write multiple environment values into the target .env file."""
+    target_path = env_path or PROJECT_ENV_PATH
+    existing = target_path.read_text(encoding="utf-8").splitlines(keepends=True) if target_path.exists() else []
+
+    lines = existing
+    for key, value in values.items():
+        lines = _set_env_value(lines, key, value)
+
+    target_path.write_text("".join(lines), encoding="utf-8")
+    return target_path
+
+
 def sync_provider_env(
     *,
     provider: ProviderOption,
@@ -35,13 +52,11 @@ def sync_provider_env(
     env_path: Path | None = None,
 ) -> Path:
     """Write the selected provider settings into the project .env."""
-    target_path = env_path or PROJECT_ENV_PATH
-    existing = target_path.read_text(encoding="utf-8").splitlines(keepends=True) if target_path.exists() else []
-
-    lines = existing
-    lines = _set_env_value(lines, "LLM_PROVIDER", provider.value)
-    lines = _set_env_value(lines, provider.api_key_env, api_key)
-    lines = _set_env_value(lines, provider.model_env, model)
-
-    target_path.write_text("".join(lines), encoding="utf-8")
-    return target_path
+    return sync_env_values(
+        {
+            "LLM_PROVIDER": provider.value,
+            provider.api_key_env: api_key,
+            provider.model_env: model,
+        },
+        env_path=env_path,
+    )
