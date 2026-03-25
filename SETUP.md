@@ -43,19 +43,13 @@ If you want to see a minimal RCA report against a real local Grafana stack, star
    OPENAI_API_KEY=your-openai-api-key
    ```
 
-4. Start the local Grafana stack:
-
-   ```bash
-   make grafana-local-up
-   ```
-
-5. Run the live local Grafana RCA example:
+4. Run the live local Grafana RCA example:
 
    ```bash
    make local-grafana-live
    ```
 
-This path uses a real local `Grafana + Loki` stack and real local Grafana queries. It still uses a synthetic alert payload and does not require a Tracer account or real Slack, Datadog, or AWS credentials.
+This single command starts the local `Grafana + Loki` stack if needed, seeds failure logs into Loki, and runs the RCA demo. It still uses a synthetic alert payload and does not require a Tracer account or real Slack, Datadog, or AWS credentials.
 
 When you are done, stop the stack:
 

@@ -29,6 +29,7 @@ local-rca-demo:
 
 check-docker:
 	@command -v docker >/dev/null 2>&1 || { echo "Docker is required for the live local Grafana stack. Install Docker Desktop or another Docker-compatible runtime, then rerun this target."; exit 1; }
+	@docker info >/dev/null 2>&1 || { echo "Docker is installed, but the Docker daemon is not running. Start Docker Desktop, OrbStack, or Colima, then rerun this target."; exit 1; }
 
 grafana-local-up: check-docker
 	docker compose -f app/demo/local_grafana_stack/docker-compose.yml up -d
@@ -40,6 +41,7 @@ grafana-local-seed:
 	$(PYTHON) -m app.demo.local_grafana_seed
 
 local-grafana-live:
+local-grafana-live: grafana-local-up
 	$(PYTHON) -m app.demo.local_grafana_seed
 	$(PYTHON) -m app.demo.local_grafana_live
 
@@ -247,7 +249,7 @@ help:
 	@echo "  make demo            - Run Prefect ECS E2E test (default, shows Investigation Trace)"
 	@echo "  make grafana-local-up - Start the local Grafana + Loki stack"
 	@echo "  make grafana-local-seed - Seed failure logs into the local Loki instance"
-	@echo "  make local-grafana-live - Run RCA against the live local Grafana stack"
+	@echo "  make local-grafana-live - Start the local Grafana stack (if needed) and run the live RCA demo"
 	@echo "  make local-rca-demo  - Run the generic bundled local RCA example (no Docker or Tracer account required)"
 	@echo "  make prefect-demo    - Run Prefect ECS Fargate E2E test (alias for demo)"
 	@echo "  make prefect-local-test - Run Prefect ECS local test (CLOUD=1 for ECS)"

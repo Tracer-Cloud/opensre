@@ -50,6 +50,12 @@ class ProgressEvent:
     message: str | None = None
 
 
+def _format_elapsed(elapsed_ms: int) -> str:
+    if elapsed_ms >= 1000:
+        return f"{elapsed_ms / 1000:.2f}s"
+    return f"{elapsed_ms}ms"
+
+
 class ProgressTracker:
     """Tracks progress events during pipeline execution."""
 
@@ -94,12 +100,12 @@ class ProgressTracker:
         if event.status == "started":
             line = f"[{event.node_name}] {event.message or 'Starting...'}"
         elif event.status == "error":
-            line = f"[{event.node_name}] ERROR: {event.message} ({event.elapsed_ms}ms)"
+            line = f"[{event.node_name}] ERROR: {event.message} ({_format_elapsed(event.elapsed_ms)})"
         else:
             fields_str = ", ".join(event.fields_updated[:3]) if event.fields_updated else ""
             if len(event.fields_updated) > 3:
                 fields_str += f" +{len(event.fields_updated) - 3} more"
-            line = f"[{event.node_name}] Done ({event.elapsed_ms}ms)"
+            line = f"[{event.node_name}] Done ({_format_elapsed(event.elapsed_ms)})"
             if fields_str:
                 line += f" -> {fields_str}"
             if event.message:

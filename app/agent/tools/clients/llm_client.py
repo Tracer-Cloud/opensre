@@ -17,15 +17,9 @@ from anthropic import (
     Anthropic,
     AuthenticationError,
 )
-from anthropic import (
-    APIConnectionError as AnthropicAPIConnectionError,
-)
-from anthropic import (
-    APIStatusError as AnthropicAPIStatusError,
-)
-from anthropic import (
-    APITimeoutError as AnthropicAPITimeoutError,
-)
+from anthropic import APIConnectionError as AnthropicAPIConnectionError
+from anthropic import APIStatusError as AnthropicAPIStatusError
+from anthropic import APITimeoutError as AnthropicAPITimeoutError
 from openai import APIConnectionError as OpenAIAPIConnectionError
 from openai import APIStatusError as OpenAIAPIStatusError
 from openai import APITimeoutError as OpenAIAPITimeoutError

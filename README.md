@@ -2,10 +2,6 @@
   <img src="https://raw.githubusercontent.com/Tracer-Cloud/open-sre-agent/main/app/icons/BannerGithub.png" alt="Tracer Banner" width="100%">
 </p>
 <meta name="google-site-verification" content="05niXvrQUSPCpucsCP7t1loNt_Kke3N9i6QIJ_0Gcg8" />
-<p align="center">
-  <strong>The open-source SRE agent that automatically investigates incidents and finds the root cause, before your team gets paged.
-</strong>
-</p>
 <meta name="google-site-verification" content="I3aNPV9RpFv0aanmy5B22oKjsZ9PCamozvrggjFQJq8" />
 <p align="center">
   Open-source SRE agent for automated incident investigation and root cause analysis. Automatically analyzes alerts from Slack, Grafana, Datadog, and other tooling.
@@ -33,13 +29,26 @@ make install
 cp .env.example .env
 # run opensre onboard to configure your local LLM provider
 opensre onboard
-make grafana-local-up
 make local-grafana-live
 ```
 
-Want the live local Grafana path to a first RCA report? Start with [docs/local-grafana-live.md](docs/local-grafana-live.md).
+## Choose a Path
 
-Want a generic no-Docker bundled RCA example instead? See [docs/local-rca-demo.md](docs/local-rca-demo.md).
+1. **Local Grafana RCA Demo**
+   Run Tracer against a real local `Grafana + Loki` stack and get a first RCA report with one command.
+   Start here: [Local Grafana RCA Demo](docs/local-grafana-live.md)
+
+2. **Bundled Local RCA Demo**
+   Skip Docker and run a bundled alert plus bundled evidence fixture locally.
+   Start here: [Bundled Local RCA Demo](docs/local-rca-demo.md)
+
+3. **Full Local Development Setup**
+   Run the LangGraph dev UI locally or connect your own integrations and systems.
+   Start here: [Full Local Setup Guide](SETUP.md)
+
+<p align="center">
+  <img src="docs/assets/local-grafana-live-flow.gif" alt="Live local Grafana flow" width="100%" />
+</p>
 
 Want help configuring a local LLM provider quickly? Run `opensre onboard` after `make install`.
 
