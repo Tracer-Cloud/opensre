@@ -5,6 +5,7 @@ Usage:
     python -m app.integrations list
     python -m app.integrations show <service>
     python -m app.integrations remove <service>
+    python -m app.integrations verify [service] [--send-slack-test]
 
 Supported services: aws, grafana, datadog, slack, opensearch, rds, tracer
 """
@@ -22,6 +23,12 @@ from app.integrations.store import (
     list_integrations,
     remove_integration,
     upsert_integration,
+)
+from app.integrations.verify import (
+    SUPPORTED_VERIFY_SERVICES,
+    format_verification_results,
+    verification_exit_code,
+    verify_integrations,
 )
 
 _B = "\033[1m"
@@ -138,6 +145,7 @@ _HANDLERS: dict[str, Any] = {
 }
 
 SUPPORTED = ", ".join(_HANDLERS)
+SUPPORTED_VERIFY = ", ".join(SUPPORTED_VERIFY_SERVICES)
 
 
 
@@ -187,3 +195,13 @@ def cmd_remove(service: str | None) -> None:
         print(f"  ✓ Removed '{service}'.")
     else:
         print(f"  No integration found for '{service}'.")
+
+
+def cmd_verify(service: str | None, *, send_slack_test: bool = False) -> None:
+    if service and service not in SUPPORTED_VERIFY_SERVICES:
+        _die(f"Usage: verify [service]. Supported: {SUPPORTED_VERIFY}")
+        return
+
+    results = verify_integrations(service=service, send_slack_test=send_slack_test)
+    print(format_verification_results(results))
+    sys.exit(verification_exit_code(results, requested_service=service))

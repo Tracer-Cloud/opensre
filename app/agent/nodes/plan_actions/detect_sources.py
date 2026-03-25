@@ -373,7 +373,7 @@ def detect_sources(
 
     # Detect EKS: uses the AWS integration (EKS maps to aws in resolve_integrations)
     _eks_int = (resolved_integrations or {}).get("aws")
-    if _eks_int:
+    if _eks_int and _eks_int.get("role_arn"):
         eks_cluster = (
             annotations.get("eks_cluster")
             or annotations.get("cluster_name")

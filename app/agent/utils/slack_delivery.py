@@ -137,8 +137,9 @@ def send_slack_report(
     """
     Post the RCA report as a thread reply in Slack.
 
-    Always posts as a thread reply (never a top-level message) to avoid
-    triggering the webhook again and creating an infinite loop.
+    When thread context is available, prefers a thread reply to avoid creating
+    loops for inbound Slack-triggered investigations. For standalone CLI or
+    local investigations, falls back to SLACK_WEBHOOK_URL if configured.
 
     Args:
         slack_message: The formatted RCA report text.
@@ -152,8 +153,19 @@ def send_slack_report(
         (success, error_detail) — success is True if posted, error_detail is non-empty on failure.
     """
     if not thread_ts:
+        webhook_url = os.getenv("SLACK_WEBHOOK_URL", "").strip()
+        if webhook_url:
+            webhook_ok = _post_via_incoming_webhook(
+                slack_message,
+                webhook_url,
+                blocks=blocks,
+                **extra,
+            )
+            return (True, "") if webhook_ok else (False, "webhook=failed")
         logger.warning("[slack] Delivery skipped: no thread_ts (channel=%s)", channel)
-        debug_print("Slack delivery skipped: no thread_ts - refusing to post top-level message.")
+        debug_print(
+            "Slack delivery skipped: no thread_ts and no SLACK_WEBHOOK_URL configured."
+        )
         return False, "no_thread_ts"
 
     if access_token and channel:
@@ -252,4 +264,35 @@ def _post_via_webapp(
         return False
     else:
         debug_print(f"Slack delivery triggered via NextJS /api/slack (thread_ts={thread_ts}).")
+        return True
+
+
+def _post_via_incoming_webhook(
+    text: str,
+    webhook_url: str,
+    *,
+    blocks: list[dict[str, Any]] | None = None,
+    **extra: Any,
+) -> bool:
+    """Post a standalone RCA report via Slack incoming webhook."""
+    payload: dict[str, Any] = {"text": text}
+    if blocks:
+        payload["blocks"] = blocks
+    if extra:
+        payload.update(extra)
+
+    try:
+        response = httpx.post(webhook_url, json=payload, timeout=10.0, follow_redirects=True)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text if exc.response is not None else str(exc)
+        debug_print(
+            f"Slack incoming webhook failed: HTTP {exc.response.status_code if exc.response else 'unknown'}: {detail[:200]}"
+        )
+        return False
+    except Exception as exc:  # noqa: BLE001
+        debug_print(f"Slack incoming webhook failed: {exc}")
+        return False
+    else:
+        debug_print("Slack report posted via incoming webhook.")
         return True

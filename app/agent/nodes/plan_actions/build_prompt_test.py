@@ -72,6 +72,15 @@ def test_build_available_sources_hint_empty():
     assert _build_available_sources_hint({}) == ""
 
 
+def test_build_available_sources_hint_does_not_advertise_generic_aws_action():
+    hint = _build_available_sources_hint(
+        {"aws_metadata": {"service": "rds", "resource_id": "payments-prod"}}
+    )
+
+    assert "AWS Infrastructure Metadata Available" in hint
+    assert "execute_aws_operation" not in hint
+
+
 def test_format_action_metadata():
     """Test formatting action metadata."""
     action = MockAction(

@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install onboard test test-full demo local-rca-demo check-docker grafana-local-up grafana-local-down grafana-local-seed local-grafana-live clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca
+.PHONY: install onboard test test-full demo local-rca-demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed local-grafana-live langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca
 
 PYTHON = python3
 PIP = python3 -m pip
@@ -27,9 +27,25 @@ demo:
 local-rca-demo:
 	$(PYTHON) -m app.demo.local_rca
 
+alert-template:
+	@$(PYTHON) -m app.main --print-template $(or $(TEMPLATE),generic)
+
+investigate-alert:
+	@[ -n "$(ALERT)" ] || { echo "Usage: make investigate-alert ALERT=/path/to/alert.json"; exit 1; }
+	$(PYTHON) -m app.main --input "$(ALERT)"
+
+verify-integrations:
+	$(PYTHON) -m app.integrations verify $(if $(SERVICE),$(SERVICE),) $(if $(SLACK_TEST),--send-slack-test,)
+
 check-docker:
 	@command -v docker >/dev/null 2>&1 || { echo "Docker is required for the live local Grafana stack. Install Docker Desktop or another Docker-compatible runtime, then rerun this target."; exit 1; }
 	@docker info >/dev/null 2>&1 || { echo "Docker is installed, but the Docker daemon is not running. Start Docker Desktop, OrbStack, or Colima, then rerun this target."; exit 1; }
+
+check-langgraph:
+	@command -v langgraph >/dev/null 2>&1 || { echo "The LangGraph CLI is required for this target. Install it with 'pip install langgraph-cli' and rerun."; exit 1; }
+
+check-langsmith-api-key:
+	@[ -n "$$LANGGRAPH_HOST_API_KEY" ] || [ -n "$$LANGSMITH_API_KEY" ] || [ -n "$$LANGCHAIN_API_KEY" ] || { echo "Set LANGSMITH_API_KEY (or LANGGRAPH_HOST_API_KEY / LANGCHAIN_API_KEY) in your environment or .env before deploying to LangGraph."; exit 1; }
 
 grafana-local-up: check-docker
 	docker compose -f app/demo/local_grafana_stack/docker-compose.yml up -d
@@ -40,10 +56,15 @@ grafana-local-down: check-docker
 grafana-local-seed:
 	$(PYTHON) -m app.demo.local_grafana_seed
 
-local-grafana-live:
 local-grafana-live: grafana-local-up
 	$(PYTHON) -m app.demo.local_grafana_seed
 	$(PYTHON) -m app.demo.local_grafana_live
+
+langgraph-build: check-langgraph check-docker
+	langgraph build
+
+langgraph-deploy: check-langgraph check-docker check-langsmith-api-key
+	langgraph deploy
 
 # Run CloudWatch demo
 cloudwatch-demo:
@@ -250,6 +271,11 @@ help:
 	@echo "  make grafana-local-up - Start the local Grafana + Loki stack"
 	@echo "  make grafana-local-seed - Seed failure logs into the local Loki instance"
 	@echo "  make local-grafana-live - Start the local Grafana stack (if needed) and run the live RCA demo"
+	@echo "  make alert-template TEMPLATE=datadog - Print a starter alert JSON template"
+	@echo "  make investigate-alert ALERT=/path/to/alert.json - Run RCA against your own alert payload"
+	@echo "  make verify-integrations - Check local store + .env integrations before running RCA"
+	@echo "  make langgraph-build - Build the LangGraph agent server image locally"
+	@echo "  make langgraph-deploy - Deploy the agent to LangGraph / LangSmith Deployments"
 	@echo "  make local-rca-demo  - Run the generic bundled local RCA example (no Docker or Tracer account required)"
 	@echo "  make prefect-demo    - Run Prefect ECS Fargate E2E test (alias for demo)"
 	@echo "  make prefect-local-test - Run Prefect ECS local test (CLOUD=1 for ECS)"

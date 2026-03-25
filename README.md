@@ -44,7 +44,7 @@ make local-grafana-live
    Start here: [Bundled Local RCA Demo](docs/local-rca-demo.md)
 
 3. **Full Local Development Setup**
-   Run the LangGraph dev UI locally or connect your own integrations and systems.
+   Run the LangGraph dev UI locally or connect your own Datadog, AWS, Slack, and optional Grafana systems.
    Start here: [Full Local Setup Guide](SETUP.md)
 
 <p align="center">
