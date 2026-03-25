@@ -88,7 +88,7 @@ You can use `.env.example` as a reference for any other optional integrations yo
 Use dry run to validate an alert payload and preview investigation flow without executing LLM/tool/API actions:
 
 ```bash
-python -m app.main --input ./app/alert.json --dry-run
+python3 -m app.main --input tests/fixtures/grafana_alert.json --dry-run
 ```
 
 This mode:
