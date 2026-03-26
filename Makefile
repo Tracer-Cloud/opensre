@@ -17,8 +17,7 @@ export PATH := $(USER_BIN):$(PATH)
 
 # Create venv and install dependencies
 install:
-	$(PIP) install $(PIP_INSTALL_FLAGS) -r requirements.txt
-	$(PIP) install $(PIP_INSTALL_FLAGS) -e .
+	$(PIP) install $(PIP_INSTALL_FLAGS) -e ".[dev]"
 
 install-hooks:
 	$(PYTHON) -m pre_commit install

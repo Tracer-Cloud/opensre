@@ -25,8 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff
-          pip install -e .
+          pip install -e ".[dev]"
 
       - name: Lint with ruff
         run: ruff check app/ tests/
@@ -64,8 +63,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
+          pip install -e ".[dev]"
 
       - name: Run pytest with coverage
         run: make test-cov
@@ -86,8 +84,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
+          pip install -e ".[dev]"
 
       - name: Type check with mypy
         run: make typecheck
@@ -113,8 +110,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
+          pip install -e ".[dev]"
 
       - name: Run Kubernetes tests (kind cluster + real S3)
         run: python -m tests.test_case_kubernetes.test_local
@@ -177,8 +173,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
+          pip install -e ".[dev]"
 
       - name: Install tracer CLI
         run: |
