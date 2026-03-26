@@ -10,7 +10,7 @@ else
 PYTHON = python3
 PIP = python3 -m pip
 endif
-PIP_INSTALL_FLAGS = --user --break-system-packages
+# PIP_INSTALL_FLAGS = --user --break-system-packages
 USER_BASE := $(shell $(PYTHON) -m site --user-base)
 USER_BIN := $(USER_BASE)/bin
 export PATH := $(USER_BIN):$(PATH)

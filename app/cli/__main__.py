@@ -47,7 +47,7 @@ def onboard() -> None:
     "input_path",
     default=None,
     type=click.Path(),
-    help="Path to an alert JSON file. Use '-' to read from stdin.",
+    help="Path to an alert file (.json, .md, .txt, …). Use '-' to read from stdin.",
 )
 @click.option("--input-json", default=None, help="Inline alert JSON string.")
 @click.option(
@@ -61,9 +61,6 @@ def onboard() -> None:
     default=None,
     help="Print a starter alert JSON template and exit.",
 )
-@click.option("--alert-name", default=None, help="Alert name override.")
-@click.option("--pipeline-name", default=None, help="Pipeline or service name override.")
-@click.option("--severity", default=None, help="Severity override.")
 @click.option(
     "--output",
     "-o",
@@ -76,9 +73,6 @@ def investigate(
     input_json: str | None,
     interactive: bool,
     print_template: str | None,
-    alert_name: str | None,
-    pipeline_name: str | None,
-    severity: str | None,
     output: str | None,
 ) -> None:
     """Run an RCA investigation against an alert payload."""
@@ -91,12 +85,6 @@ def investigate(
         argv.append("--interactive")
     if print_template is not None:
         argv.extend(["--print-template", print_template])
-    if alert_name is not None:
-        argv.extend(["--alert-name", alert_name])
-    if pipeline_name is not None:
-        argv.extend(["--pipeline-name", pipeline_name])
-    if severity is not None:
-        argv.extend(["--severity", severity])
     if output is not None:
         argv.extend(["--output", output])
 
