@@ -22,7 +22,7 @@ def _run(
     state = run_investigation(alert_name, pipeline_name, severity, raw_alert=raw_alert)
     return {
         "slack_message": state["slack_message"],
-        "report": state["slack_message"],
+        "report": state["report"],
         "problem_md": state["problem_md"],
         "root_cause": state["root_cause"],
     }
@@ -41,7 +41,16 @@ def main(argv: list[str] | None = None) -> int:
         interactive=getattr(args, "interactive", False),
     )
 
-    result = _run(raw_alert=payload)
+    alert_name = payload.get("alert_name", "Incident") if isinstance(payload, dict) else "Incident"
+    pipeline_name = payload.get("pipeline_name", "unknown") if isinstance(payload, dict) else "unknown"
+    severity = payload.get("severity", "warning") if isinstance(payload, dict) else "warning"
+
+    result = _run(
+        raw_alert=payload,
+        alert_name=alert_name,
+        pipeline_name=pipeline_name,
+        severity=severity,
+    )
     write_json(result, args.output)
     return 0
 

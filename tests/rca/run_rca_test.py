@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from app.agent.runners import _merge_state, _run_investigation_pipeline
+import app.agent.runners as runners
 from app.agent.state import make_initial_state
 from app.auth.jwt_auth import extract_org_id_from_jwt
 
@@ -61,9 +61,9 @@ def run_file(path: Path) -> bool:
         raw_alert=alert["raw_alert"],
     )
     # Inject auth so node_resolve_integrations fetches real integrations
-    _merge_state(state, {"org_id": org_id, "_auth_token": jwt_token})
+    runners._merge_state(state, {"org_id": org_id, "auth_token": jwt_token})
 
-    _run_investigation_pipeline(state)
+    runners._run_investigation_pipeline(state)
 
     passed = bool(state.get("root_cause"))
     category = state.get("root_cause_category") or "—"

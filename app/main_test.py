@@ -28,7 +28,7 @@ def test_load_payload_accepts_inline_json() -> None:
     assert payload["severity"] == "critical"
 
 
-def test_load_payload_reads_file(tmp_path) -> None:
+def test_load_payload_reads_file(tmp_path: "pathlib.Path") -> None:
     path = tmp_path / "alert.json"
     path.write_text('{"pipeline_name":"payments_etl"}', encoding="utf-8")
 
@@ -67,4 +67,16 @@ def test_load_file_returns_raw_text_for_plain_markdown(tmp_path) -> None:
 def test_build_alert_template_for_cli_output() -> None:
     payload = build_alert_template("datadog")
     assert payload["alert_source"] == "datadog"
+    assert payload["pipeline_name"] == "payments_etl"
+
+
+def test_build_alert_template_generic_for_cli_output() -> None:
+    payload = build_alert_template("generic")
+    assert payload["alert_source"] == "generic"
+    assert payload["pipeline_name"] == "payments_etl"
+
+
+def test_build_alert_template_grafana_for_cli_output() -> None:
+    payload = build_alert_template("grafana")
+    assert payload["alert_source"] == "grafana"
     assert payload["pipeline_name"] == "payments_etl"

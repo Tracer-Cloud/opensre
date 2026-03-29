@@ -1,4 +1,5 @@
 import pytest
+from _pytest.outcomes import Skipped
 
 from app.agent.tools.clients.grafana import get_grafana_client
 from tests.test_case_grafana_validation.env_requirements import require_grafana_query_env
@@ -45,12 +46,12 @@ def test_grafana_traces_query(grafana_client):
 
 
 def test_assert_query_success_or_skip_auth_skips_unauthorized():
-    with pytest.raises(pytest.skip.Exception, match="credentials were rejected"):
+    with pytest.raises(Skipped, match="credentials were rejected"):
         _assert_query_success_or_skip_auth({"success": False, "error": "403 Forbidden"})
 
 
 def test_assert_query_success_or_skip_auth_skips_timeout():
-    with pytest.raises(pytest.skip.Exception, match="transient network failure"):
+    with pytest.raises(Skipped, match="transient network failure"):
         _assert_query_success_or_skip_auth(
             {
                 "success": False,
