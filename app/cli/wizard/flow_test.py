@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 from app.cli.wizard import flow
+from app.cli.wizard import store as wizard_store
+from app.cli.wizard.env_sync import sync_provider_env
 from app.cli.wizard.probes import ProbeResult
 from app.cli.wizard.validation import ValidationResult
 
@@ -570,3 +573,153 @@ def test_run_wizard_does_not_reuse_saved_key_for_different_provider(monkeypatch,
     assert exit_code == 0
     assert password_calls == ["called"]
     assert saved["api_key"] == "fresh-anthropic-key"
+
+
+def test_run_wizard_persists_matching_local_config_and_env(monkeypatch, tmp_path) -> None:
+    select_responses = iter(["quickstart", "openai", "gpt-5-mini"])
+
+    def _mock_select(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(select_responses)
+        return m
+
+    def _mock_checkbox(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = []
+        return m
+
+    def _mock_password(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = "openai-secret"
+        return m
+
+    store_path = tmp_path / "opensre.json"
+    env_path = tmp_path / ".env"
+
+    monkeypatch.setattr(flow, "select_prompt", _mock_select)
+    monkeypatch.setattr(flow, "checkbox_prompt", _mock_checkbox)
+    monkeypatch.setattr(flow.questionary, "password", _mock_password)
+    monkeypatch.setattr(flow, "get_store_path", lambda: store_path)
+    monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
+    monkeypatch.setattr(
+        flow,
+        "validate_provider_credentials",
+        lambda **_kwargs: ValidationResult(ok=True, detail="validated", sample_response="ready"),
+    )
+    monkeypatch.setattr(
+        flow,
+        "build_demo_action_response",
+        lambda: {"success": True, "topics": [], "guidance": []},
+    )
+    monkeypatch.setattr(
+        flow,
+        "save_local_config",
+        lambda **kwargs: wizard_store.save_local_config(path=store_path, **kwargs),
+    )
+    monkeypatch.setattr(
+        flow,
+        "sync_provider_env",
+        lambda **kwargs: sync_provider_env(env_path=env_path, **kwargs),
+    )
+
+    exit_code = flow.run_wizard()
+
+    assert exit_code == 0
+
+    payload = json.loads(store_path.read_text(encoding="utf-8"))
+    env_values = env_path.read_text(encoding="utf-8")
+
+    assert payload["wizard"]["mode"] == "quickstart"
+    assert payload["targets"]["local"]["provider"] == "openai"
+    assert payload["targets"]["local"]["model"] == "gpt-5-mini"
+    assert payload["targets"]["local"]["api_key_env"] == "OPENAI_API_KEY"
+    assert payload["targets"]["local"]["model_env"] == "OPENAI_MODEL"
+    assert payload["targets"]["local"]["api_key"] == "openai-secret"
+
+    assert "LLM_PROVIDER=openai\n" in env_values
+    assert "OPENAI_API_KEY=openai-secret\n" in env_values
+    assert "OPENAI_MODEL=gpt-5-mini\n" in env_values
+
+
+def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatch, tmp_path) -> None:
+    select_responses = iter(["quickstart", "openai", "gpt-5-mini"])
+
+    def _mock_select(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(select_responses)
+        return m
+
+    def _mock_checkbox(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = []
+        return m
+
+    def _mock_password(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = "fresh-openai-key"
+        return m
+
+    store_path = tmp_path / "opensre.json"
+    env_path = tmp_path / ".env"
+    wizard_store.save_local_config(
+        wizard_mode="quickstart",
+        provider="anthropic",
+        model="claude-opus-4-20250514",
+        api_key_env="ANTHROPIC_API_KEY",
+        model_env="ANTHROPIC_MODEL",
+        api_key="saved-anthropic-key",
+        probes={
+            "local": {"target": "local", "reachable": True, "detail": "ok"},
+            "remote": {"target": "remote", "reachable": False, "detail": "down"},
+        },
+        path=store_path,
+    )
+    env_path.write_text(
+        "LLM_PROVIDER=anthropic\n"
+        "ANTHROPIC_API_KEY=saved-anthropic-key\n"
+        "ANTHROPIC_MODEL=claude-opus-4-20250514\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(flow, "select_prompt", _mock_select)
+    monkeypatch.setattr(flow, "checkbox_prompt", _mock_checkbox)
+    monkeypatch.setattr(flow.questionary, "password", _mock_password)
+    monkeypatch.setattr(flow, "get_store_path", lambda: store_path)
+    monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
+    monkeypatch.setattr(
+        flow,
+        "validate_provider_credentials",
+        lambda **_kwargs: ValidationResult(ok=True, detail="validated", sample_response="ready"),
+    )
+    monkeypatch.setattr(
+        flow,
+        "build_demo_action_response",
+        lambda: {"success": True, "topics": [], "guidance": []},
+    )
+    monkeypatch.setattr(
+        flow,
+        "save_local_config",
+        lambda **kwargs: wizard_store.save_local_config(path=store_path, **kwargs),
+    )
+    monkeypatch.setattr(
+        flow,
+        "sync_provider_env",
+        lambda **kwargs: sync_provider_env(env_path=env_path, **kwargs),
+    )
+
+    exit_code = flow.run_wizard()
+
+    assert exit_code == 0
+
+    payload = json.loads(store_path.read_text(encoding="utf-8"))
+    env_values = env_path.read_text(encoding="utf-8")
+
+    assert payload["targets"]["local"]["provider"] == "openai"
+    assert payload["targets"]["local"]["model"] == "gpt-5-mini"
+    assert payload["targets"]["local"]["api_key_env"] == "OPENAI_API_KEY"
+    assert payload["targets"]["local"]["model_env"] == "OPENAI_MODEL"
+    assert payload["targets"]["local"]["api_key"] == "fresh-openai-key"
+
+    assert "LLM_PROVIDER=openai\n" in env_values
+    assert "OPENAI_API_KEY=fresh-openai-key\n" in env_values
+    assert "OPENAI_MODEL=gpt-5-mini\n" in env_values

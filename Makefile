@@ -10,15 +10,14 @@ else
 PYTHON = python3
 PIP = python3 -m pip
 endif
-PIP_INSTALL_FLAGS = --user --break-system-packages
+# PIP_INSTALL_FLAGS = --user --break-system-packages
 USER_BASE := $(shell $(PYTHON) -m site --user-base)
 USER_BIN := $(USER_BASE)/bin
 export PATH := $(USER_BIN):$(PATH)
 
 # Create venv and install dependencies
 install:
-	$(PIP) install $(PIP_INSTALL_FLAGS) -r requirements.txt
-	$(PIP) install $(PIP_INSTALL_FLAGS) -e .
+	$(PIP) install $(PIP_INSTALL_FLAGS) -e ".[dev]"
 
 install-hooks:
 	$(PYTHON) -m pre_commit install
@@ -232,11 +231,8 @@ test-cov:
 
 # Run Grafana integration tests
 test-grafana:
-	@echo "Running Grafana agent integration tests..."
-	$(PYTHON) -m pytest app/agent/tools/tool_actions/grafana/grafana_actions_test.py tests/test_case_grafana_validation/test_grafana_cloud_queries.py -v
-	@echo ""
-	@echo "Running Grafana live action checks..."
-	$(PYTHON) -m app.agent.tools.tool_actions.grafana.test_agent_grafana_actions
+	@echo "Running Grafana integration tests..."
+	$(PYTHON) -m pytest tests/test_case_grafana_validation/test_grafana_cloud_queries.py -v
 
 # Clean up
 clean:

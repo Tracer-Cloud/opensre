@@ -14,6 +14,7 @@ def build_alert_template(template_name: str) -> dict[str, Any]:
             "alert_name": "High error rate in payments ETL",
             "pipeline_name": "payments_etl",
             "severity": "critical",
+            "alert_source": "generic",
             "message": "payments_etl is failing with repeated database connection errors",
             "commonAnnotations": {
                 "summary": "payments_etl is failing with repeated database connection errors",

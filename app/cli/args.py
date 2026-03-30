@@ -17,7 +17,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--input",
         "-i",
         default=None,
-        help="Path to an alert JSON file. Use - to read JSON from stdin.",
+        help="Path to an alert file (.json, .md, .txt, …). Use - to read from stdin.",
     )
     input_group.add_argument(
         "--input-json",
@@ -34,21 +34,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["generic", "datadog", "grafana"],
         default=None,
         help="Print a starter alert JSON template and exit.",
-    )
-    parser.add_argument(
-        "--alert-name",
-        default=None,
-        help="Optional alert name override.",
-    )
-    parser.add_argument(
-        "--pipeline-name",
-        default=None,
-        help="Optional pipeline or service name override.",
-    )
-    parser.add_argument(
-        "--severity",
-        default=None,
-        help="Optional severity override.",
     )
     parser.add_argument("--output", "-o", default=None, help="Output JSON file (default: stdout)")
     return parser.parse_args(argv)

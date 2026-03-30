@@ -102,6 +102,7 @@ class AgentState(TypedDict, total=False):
     problem_md: str
     summary: str
     problem_report: dict[str, Any]
+    report: str
 
 
 # Alias for backward compatibility
@@ -140,6 +141,7 @@ STATE_DEFAULTS: dict[str, Any] = {
     "_auth_token": "",
     "slack_message": "",
     "problem_md": "",
+    "report": "",
 }
 
 

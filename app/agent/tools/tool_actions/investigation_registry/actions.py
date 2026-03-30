@@ -116,15 +116,6 @@ def get_available_actions() -> list[InvestigationAction]:
     def _sentry_available(sources: dict) -> bool:
         return bool(sources.get("sentry", {}).get("connection_verified"))
 
-    def _sentry_creds(sources: dict) -> dict:
-        sentry = sources["sentry"]
-        return {
-            "organization_slug": sentry.get("organization_slug"),
-            "project_slug": sentry.get("project_slug", ""),
-            "sentry_url": sentry.get("sentry_url", "https://sentry.io"),
-            "sentry_token": sentry.get("sentry_token"),
-        }
-
     actions = [
         # Tracer actions
         build_action(

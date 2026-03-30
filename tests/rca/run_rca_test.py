@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from app.agent.runners import _merge_state, _run_investigation_pipeline
+import app.agent.runners as runners
 from app.agent.state import make_initial_state
 from app.auth.jwt_auth import extract_org_id_from_jwt
 
@@ -49,9 +49,7 @@ def _get_local_auth() -> tuple[str, str]:
 
 
 def run_file(path: Path) -> bool:
-    print(f"\n{'=' * 70}")
-    print(f"RCA TEST: {path.name}")
-    print("=" * 70)
+    print(f"\n  RCA TEST  {path.stem}")
 
     alert = _parse_alert_md(path)
     org_id, jwt_token = _get_local_auth()
@@ -63,17 +61,15 @@ def run_file(path: Path) -> bool:
         raw_alert=alert["raw_alert"],
     )
     # Inject auth so node_resolve_integrations fetches real integrations
-    _merge_state(state, {"org_id": org_id, "_auth_token": jwt_token})
+    runners._merge_state(state, {"org_id": org_id, "auth_token": jwt_token})
 
-    _run_investigation_pipeline(state)
-
-    report = state.get("slack_message", "")
-    print(report)
-    print("=" * 70)
+    runners._run_investigation_pipeline(state)
 
     passed = bool(state.get("root_cause"))
-    status = "PASS" if passed else "FAIL"
-    print(f"{status}: {path.name}  root_cause_category={state.get('root_cause_category')}")
+    category = state.get("root_cause_category") or "—"
+    mark = "\033[1;32m●\033[0m" if passed else "\033[1;31m●\033[0m"
+    status = "pass" if passed else "fail"
+    print(f"\n  {mark}  {status}  {path.stem}  {category}")
     return passed
 
 
@@ -92,8 +88,9 @@ def main() -> None:
 
     results = [run_file(p) for p in targets]
 
-    print(f"\n{'=' * 70}")
-    print(f"Results: {sum(results)}/{len(results)} passed")
+    total, passed = len(results), sum(results)
+    mark = "\033[1;32m●\033[0m" if passed == total else "\033[1;31m●\033[0m"
+    print(f"\n  {mark}  {passed}/{total} passed\n")
     if not all(results):
         sys.exit(1)
 

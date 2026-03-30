@@ -19,14 +19,14 @@ def main(argv: list[str] | None = None) -> int:
 
     payload = load_payload(
         input_path=args.input,
-        input_json=args.input_json,
-        interactive=args.interactive,
+        input_json=getattr(args, "input_json", None),
+        interactive=getattr(args, "interactive", False),
     )
     result = run_investigation_cli(
         raw_alert=payload,
-        alert_name=args.alert_name,
-        pipeline_name=args.pipeline_name,
-        severity=args.severity,
+        alert_name=getattr(args, "alert_name", None),
+        pipeline_name=getattr(args, "pipeline_name", None),
+        severity=getattr(args, "severity", None),
     )
     write_json(result, args.output)
     return 0

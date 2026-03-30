@@ -10,7 +10,7 @@ def test_build_alert_template_generic() -> None:
 
     assert template["alert_name"] == "High error rate in payments ETL"
     assert template["pipeline_name"] == "payments_etl"
-    assert "alert_source" not in template
+    assert template["alert_source"] == "generic"
 
 
 def test_build_alert_template_datadog() -> None:

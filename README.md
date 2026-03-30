@@ -1,13 +1,18 @@
-# Open SRE — Build Your Own AI SRE Agents 
+<div align="center">
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Tracer-Cloud/open-sre-agent/main/app/icons/BannerGithub.png" alt="Tracer Banner" width="100%">
 </p>
-<meta name="google-site-verification" content="05niXvrQUSPCpucsCP7t1loNt_Kke3N9i6QIJ_0Gcg8" />
-<meta name="google-site-verification" content="I3aNPV9RpFv0aanmy5B22oKjsZ9PCamozvrggjFQJq8" />
-<p align="center">
-  An open-source framework so you can build AI-powered SRE agents that automate incident investigation and root cause analysis. Plug in the alerting sources you already use (Slack, Grafana, Datadog, PagerDuty and more), and compose custom workflows tailored to your infrastructure
 
+<h1>Open SRE — Build Your Own AI SRE Agents</h1>
+
+<p>The open-source framework that AI SRE agents are built on. Connect the tools you already run, define your own workflows, and let agents handle incident investigation and root cause analysis - your way, on your infrastructure.</p>
+
+<p>
+  <a href="https://github.com/Tracer-Cloud/opensre/stargazers"><img src="https://img.shields.io/github/stars/Tracer-Cloud/opensre?style=flat-square&color=FF6B00" alt="Stars"></a>
+  <a href="https://github.com/Tracer-Cloud/tracer-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License"></a>
+  <a href="https://github.com/Tracer-Cloud/opensre/blob/main/.github/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Tracer-Cloud/opensre/ci.yml?style=flat-square&label=CI" alt="CI"></a>
+  <img src="https://img.shields.io/badge/open%20source-forever-brightgreen?style=flat-square" alt="Open Source">
 </p>
 
 <p align="center">
@@ -20,6 +25,8 @@
     <a href="https://trust.tracer.cloud/">Security</a>
   </strong>
 </p>
+
+</div>
 
 ---
 
@@ -37,68 +44,53 @@ opensre onboard
 make local-grafana-live
 ```
 
-## Choose a Path
+**Choose a path:**
 
-1. **Local Grafana RCA Demo**
-   Run Tracer against a real local `Grafana + Loki` stack and get a first RCA report with one command.
-   Start here: [Local Grafana RCA Demo](docs/local-grafana-live.md)
-
-2. **Bundled Local RCA Demo**
-   Skip Docker and run a bundled alert plus bundled evidence fixture locally.
-   Start here: [Bundled Local RCA Demo](docs/local-rca-demo.md)
-
-3. **Full Local Development Setup**
-   Run the LangGraph dev UI locally or connect your own Datadog, AWS, Slack, and optional Grafana systems.
-   Start here: [Full Local Setup Guide](SETUP.md)
-
-<p align="center">
-  <img src="docs/assets/local-grafana-live-flow.gif" alt="Live local Grafana flow" width="100%" />
-</p>
-
-Want help configuring a local LLM provider quickly, plus optional Grafana, Datadog, Slack, AWS, GitHub MCP, and Sentry integrations? Run `opensre onboard` after `make install`.
-
-Want to run the LangGraph dev UI or connect your own systems? See [SETUP.md](SETUP.md).
+- 🏃 **Local** - Run Tracer locally with a live Grafana environment, no cloud infra needed
+- ☁️ **Self-hosted** - Deploy to your own infrastructure for continuous monitoring
+- 🔌 **LangGraph / LlamaIndex** - Use Tracer as an agent in your existing AI stack (see [Agent Docs](https://docs.tracer.cloud))
 
 ---
 
-## Why Tracer
+## Why Tracer?
 
-When something breaks in production, the investigation is slow because the evidence is scattered. Logs in Datadog, metrics in Grafana, service dependencies in your infra layer, config changes in Git. Each system saw part of what happened, but none of them saw all of it.
+When something breaks in production, the pressure is immediate - but the evidence is scattered. Logs in Datadog. Metrics in Grafana. Runbooks in Notion. Context in Slack threads already 200 messages deep.
 
-So you do it manually. You pull logs, correlate timestamps, ping the colleague who knows the stack and piece together what happened. It takes hours. Under on-call pressure, you ship a patch just to get the system back up.
+**Tracer is the open-source answer to that chaos.** It's an AI SRE agent that correlates signals across your entire stack, reasons through root cause, and surfaces a clear diagnosis - in the time it used to take just to *find* the right dashboard.
 
-Tracer connects your systems and runs the investigation automatically. It correlates signals across your stack, builds hypotheses about what went wrong, tests them in parallel, and stops when it has enough confidence to give you a clear answer.
+Unlike closed SRE platforms, Tracer is **fully open source and self-hostable**. No vendor lock-in. No black-box reasoning. You own the agent, the data, and the workflow.
 
-Root cause reports are delivered to Slack out of the box. Want them in PagerDuty, OpsGenie, or wherever your team works? Adding a new integration is one of the most straightforward contributions you can make.
+> Whether you're an SRE triaging a P0, a platform engineer building internal tooling, a developer who just got paged, or an EM trying to reduce MTTR - Tracer works for your whole team.
+
+**Built in the open. Trusted in production.**
 
 ---
 
 ## How Tracer Works
 
-<img width="2444" height="881" alt="How it works" src="https://github.com/user-attachments/assets/dd79d5ab-e2a4-4ddf-a869-7afa4d7a10dc" />
+<img width="4096" height="2187" alt="tracer-how-it-works-illustration" src="https://github.com/user-attachments/assets/8b50fe5c-470c-4982-866f-4f90c3e251d1" />
 
 ### Investigation Workflow
 
-When an alert fires, Tracer:
+When an alert fires, Tracer automatically:
 
-1. Ingests the alert from monitoring or incident systems
-2. Assembles context from logs, metrics, configs, and dependencies
-3. Frames potential failure modes
-4. Executes investigation queries across connected systems
-5. Evaluates hypotheses based on collected evidence
-6. Delivers a root cause report and recommended next actions
+1. **Fetches** the alert context and correlated logs, metrics, and traces
+2. **Reasons** across your connected systems to identify anomalies
+3. **Generates** a structured investigation report with probable root cause
+4. **Suggests** next steps and, optionally, executes remediation actions
+5. **Posts** a summary directly to Slack or PagerDuty - no context switching needed
 
 ---
 
 ## Capabilities
 
-- Structured incident investigation
-- Parallel hypothesis execution
-- Cross-system failure correlation
-- Evidence-backed root cause analysis
-- Alert triage and MTTR reduction
-
-Designed for production data engineering teams operating complex data platforms.
+| | |
+|---|---|
+| 🔍 **Structured incident investigation** | Correlated root-cause analysis across all your signals |
+| 📋 **Runbook-aware reasoning** | Tracer reads your runbooks and applies them automatically |
+| 🔮 **Predictive failure detection** | Catch emerging issues before they page you |
+| 🔗 **Evidence-backed root cause** | Every conclusion is linked to the data behind it |
+| 🤖 **Full LLM flexibility** | Bring your own model - OpenAI, Anthropic, and more |
 
 ---
 
@@ -106,34 +98,39 @@ Designed for production data engineering teams operating complex data platforms.
 
 Tracer integrates with the systems that power modern data platforms.
 
-| Category           | Integrations                                                                                                                                                                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Data Platform**  | Apache Airflow · Apache Kafka · Apache Spark                                                                                                                                                                                   |
-| **Observability**  | <img src="app/icons/grafana.webp" width="16"> Grafana · <img src="app/icons/datadog.svg" width="16"> Datadog · <img src="app/icons/cloudwatch.png" width="16"> CloudWatch · <img src="app/icons/sentry.png" width="16"> Sentry |
-| **Infrastructure** | <img src="app/icons/kubernetes.png" width="16"> Kubernetes · <img src="app/icons/aws.png" width="16"> AWS · <img src="app/icons/gcp.jpg" width="16"> GCP · <img src="app/icons/azure.png" width="16"> Azure                    |
-| **Dev Tools**      | <img src="app/icons/github.webp" width="16"> GitHub                                                                                                                                                                            |
-| **Communication**  | <img src="app/icons/slack.png" width="16"> Slack · <img src="app/icons/pagerduty.png" width="16"> PagerDuty                                                                                                                    |
+| Category | Integrations |
+|---|---|
+| **Data Platform** | Apache Airflow · Apache Kafka · Apache Spark |
+| **Observability** | <img src="app/icons/grafana.webp" width="16"> Grafana · <img src="app/icons/datadog.svg" width="16"> Datadog · <img src="app/icons/cloudwatch.png" width="16"> CloudWatch · <img src="app/icons/sentry.png" width="16"> Sentry |
+| **Infrastructure** | <img src="app/icons/kubernetes.png" width="16"> Kubernetes · <img src="app/icons/aws.png" width="16"> AWS · <img src="app/icons/gcp.jpg" width="16"> GCP · <img src="app/icons/azure.png" width="16"> Azure |
+| **Dev Tools** | <img src="app/icons/github.webp" width="16"> GitHub |
+| **Communication** | <img src="app/icons/slack.png" width="16"> Slack · <img src="app/icons/pagerduty.png" width="16"> PagerDuty |
 
 ---
 
 ## Design Principles
 
-- Deterministic investigations
-- Evidence-backed conclusions
-- Parallel hypothesis testing
-- Production-first design
-- Fully auditable workflows
+We've tried to be intentional about how Tracer is built, not just what it does.
+
+- **Real-world testing over mocks** - we're big fans of end-to-end testing against real environments, whether that's a local observability stack (Grafana, Prometheus) or actual cloud infrastructure. If it doesn't work in the real world, it doesn't count.
+- **Show your work** - every conclusion Tracer reaches should be traceable back to the signals that led there. No black boxes.
+- **Bring your own everything** - your LLM, your tools, your runbooks. Tracer fits around your stack, not the other way around.
+- **Open by default** - the code is yours to read, fork, and improve. We'd rather have a smaller, more trusted tool than a bigger, opaque one.
 
 ---
 
 ## Contributing
 
-We welcome contributors interested in:
+Tracer is community-built. Every integration, improvement, and bug fix makes it better for thousands of engineers. We actively review PRs and welcome contributors of all experience levels.
 
-- Data platform integrations
-- Investigation engines
-- Observability tooling
-- Deterministic AI systems
+Good first issues are labeled [`good first issue`](https://github.com/Tracer-Cloud/tracer-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). Ways to contribute:
+
+- 🐛 Report bugs or missing edge cases
+- 🔌 Add a new tool integration
+- 📖 Improve documentation or runbook examples
+- ⭐ Star the repo - it helps other engineers find Tracer
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 
 Thanks goes to these amazing people:
 
@@ -141,25 +138,27 @@ Thanks goes to these amazing people:
   <img src="https://contrib.rocks/image?repo=Tracer-Cloud/open-sre-agent" />
 </a>
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
 ---
 
 ## Security
 
-Tracer interacts with production systems.
+Tracer is designed with production environments in mind:
 
-Recommended:
+- No storing of raw log data beyond the investigation session
+- All LLM calls use structured, auditable prompts
+- Log transcripts are kept locally - never sent externally by default
 
-- Use read-only credentials
-- Restrict network exposure
-- Log all investigations
-- Review reports before automated remediation
-
-See [SECURITY.md](SECURITY.md) for details.
+See [SECURITY.md](SECURITY.md) for responsible disclosure.
 
 ---
 
 ## License
 
-Apache License 2.0 — Tracer-Cloud (see [LICENSE](LICENSE))
+Apache 2.0 - see [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ by the Tracer team and contributors worldwide.</sub><br>
+  <sub>⭐ Star us on GitHub — it helps more engineers find Tracer.</sub>
+</div>

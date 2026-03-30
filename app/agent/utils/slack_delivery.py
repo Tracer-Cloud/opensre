@@ -162,7 +162,7 @@ def send_slack_report(
                 **extra,
             )
             return (True, "") if webhook_ok else (False, "webhook=failed")
-        logger.warning("[slack] Delivery skipped: no thread_ts (channel=%s)", channel)
+        logger.debug("[slack] Delivery skipped: no thread_ts (channel=%s)", channel)
         debug_print(
             "Slack delivery skipped: no thread_ts and no SLACK_WEBHOOK_URL configured."
         )
