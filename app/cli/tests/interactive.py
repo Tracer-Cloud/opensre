@@ -26,6 +26,13 @@ except ModuleNotFoundError:  # pragma: no cover - depends on optional interactiv
     _select_prompt = None
 
 _console = Console()
+_BACK = object()
+_EXIT = object()
+
+
+class _GoBack(Exception):
+    """Return to the previous interactive menu."""
+
 
 _STYLE = (
     _QuestionaryStyle(
@@ -74,23 +81,12 @@ def _choose_category() -> str:
         choices=choices,
         default="all",
         style=_STYLE,
-        instruction="(Tab, arrows, Enter)",
+        instruction="(Tab, arrows, Enter, Esc exit)",
+        escape_result=_EXIT,
     ).ask()
-    if result is None:
+    if result is None or result is _EXIT:
         raise KeyboardInterrupt
     return str(result)
-
-
-def _prompt_search_term() -> str:
-    result = _questionary_api().text(
-        "Optional search filter:",
-        default="",
-        style=_STYLE,
-        instruction="(Press Enter to show all matches)",
-    ).ask()
-    if result is None:
-        raise KeyboardInterrupt
-    return str(result).strip()
 
 
 def _item_title(item: TestCatalogItem) -> str:
@@ -99,17 +95,20 @@ def _item_title(item: TestCatalogItem) -> str:
     return f"{item.display_name}{suffix}"
 
 
-def _select_item(items: list[TestCatalogItem], *, prompt: str) -> TestCatalogItem:
+def _select_item(items: list[TestCatalogItem], *, prompt: str, allow_back: bool = False) -> TestCatalogItem:
     _require_interactive_dependencies()
     choices = [_QuestionaryChoice(title=_item_title(item), value=item.id) for item in items]
     result = _select_prompt(
         prompt,
         choices=choices,
         style=_STYLE,
-        instruction="(Tab, arrows, Enter)",
+        instruction="(Tab, arrows, Enter, Esc back)" if allow_back else "(Tab, arrows, Enter)",
+        escape_result=_BACK if allow_back else None,
     ).ask()
     if result is None:
         raise KeyboardInterrupt
+    if result is _BACK:
+        raise _GoBack
     selected_id = str(result)
     for item in items:
         if item.id == selected_id:
@@ -140,7 +139,11 @@ def _resolve_suite_selection(
     matching_children = _matching_children(item, category=category, search=search) or list(item.children)
     if len(matching_children) == 1:
         return matching_children[0]
-    return _select_item(matching_children, prompt=f"Select a scenario from {item.display_name}:")
+    return _select_item(
+        matching_children,
+        prompt=f"Select a scenario from {item.display_name}:",
+        allow_back=True,
+    )
 
 
 def _confirm_run(item: TestCatalogItem) -> bool:
@@ -157,24 +160,41 @@ def _confirm_run(item: TestCatalogItem) -> bool:
     if item.command:
         _console.print(f"[cyan]Command:[/] {format_command(item)}")
 
-    result = _questionary_api().confirm("Run this test?", default=True, style=_STYLE).ask()
+    result = _select_prompt(
+        "Run this test?",
+        choices=[
+            _QuestionaryChoice(title="Yes", value=True),
+            _QuestionaryChoice(title="No", value=False),
+        ],
+        default=True,
+        style=_STYLE,
+        instruction="(Tab, arrows, Enter, Esc back)",
+        escape_result=_BACK,
+    ).ask()
     if result is None:
         raise KeyboardInterrupt
+    if result is _BACK:
+        raise _GoBack
     return bool(result)
 
 
 def choose_interactive_item(catalog: TestCatalog) -> TestCatalogItem:
-    category = _choose_category()
-    search = _prompt_search_term()
-    filtered = catalog.filter(category=category, search=search)
-    if not filtered:
-        raise ValueError("No tests matched the selected filters.")
+    while True:
+        category = _choose_category()
+        search = ""
+        filtered = catalog.filter(category=category, search=search)
+        if not filtered:
+            raise ValueError("No tests matched the selected category.")
 
-    if len(filtered) == 1:
-        return _resolve_suite_selection(filtered[0], category=category, search=search)
+        while True:
+            try:
+                if len(filtered) == 1:
+                    return _resolve_suite_selection(filtered[0], category=category, search=search)
 
-    selected = _select_item(filtered, prompt="Choose a test or suite:")
-    return _resolve_suite_selection(selected, category=category, search=search)
+                selected = _select_item(filtered, prompt="Choose a test or suite:", allow_back=True)
+                return _resolve_suite_selection(selected, category=category, search=search)
+            except _GoBack:
+                break
 
 
 def run_interactive_picker(catalog: TestCatalog) -> int:
@@ -182,7 +202,14 @@ def run_interactive_picker(catalog: TestCatalog) -> int:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise RuntimeError("Interactive terminal required. Use `opensre tests list` or `opensre tests run <id>`.")
 
-    item = choose_interactive_item(catalog)
-    if not _confirm_run(item):
+    try:
+        while True:
+            item = choose_interactive_item(catalog)
+            try:
+                if not _confirm_run(item):
+                    return 0
+            except _GoBack:
+                continue
+            return run_catalog_item(item)
+    except KeyboardInterrupt:
         return 0
-    return run_catalog_item(item)

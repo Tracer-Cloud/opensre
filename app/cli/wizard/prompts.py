@@ -68,9 +68,10 @@ def select(
     message: str,
     choices: Sequence[Choice],
     *,
-    default: str | None = None,
+    default: Any | None = None,
     style: Style | None = None,
     instruction: str | None = None,
+    escape_result: Any | None = None,
 ) -> Question:
     """Render a single-select prompt with Tab navigation."""
     ic = InquirerControl(
@@ -91,6 +92,12 @@ def select(
         return tokens
 
     bindings = _base_bindings(ic)
+
+    if escape_result is not None:
+
+        @bindings.add(Keys.Escape, eager=True)
+        def _escape(event: Any) -> None:
+            event.app.exit(result=escape_result)
 
     @bindings.add(Keys.ControlM, eager=True)
     def _submit(event: Any) -> None:
