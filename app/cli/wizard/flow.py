@@ -13,25 +13,76 @@ from rich.console import Console
 
 from app.cli.wizard.config import PROVIDER_BY_VALUE, SUPPORTED_PROVIDERS, ProviderOption
 from app.cli.wizard.env_sync import sync_env_values, sync_provider_env
-from app.cli.wizard.integration_health import (
-    IntegrationHealthResult,
-    validate_aws_integration,
-    validate_datadog_integration,
-    validate_github_mcp_integration,
-    validate_grafana_integration,
-    validate_sentry_integration,
-    validate_slack_webhook,
-)
 from app.cli.wizard.probes import ProbeResult, probe_local_target, probe_remote_target
 from app.cli.wizard.prompts import checkbox as checkbox_prompt
 from app.cli.wizard.prompts import select as select_prompt
 from app.cli.wizard.store import get_store_path, load_local_config, save_local_config
-from app.cli.wizard.validation import build_demo_action_response, validate_provider_credentials
-from app.integrations.github_mcp import DEFAULT_GITHUB_MCP_MODE, DEFAULT_GITHUB_MCP_URL
-from app.integrations.sentry import DEFAULT_SENTRY_URL, get_sentry_auth_recommendations
 from app.integrations.store import get_integration, upsert_integration
 
 _console = Console()
+DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
+DEFAULT_GITHUB_MCP_MODE = "streamable-http"
+DEFAULT_SENTRY_URL = "https://sentry.io"
+
+
+def validate_provider_credentials(**kwargs):
+    from app.cli.wizard.validation import validate_provider_credentials as _validate
+
+    return _validate(**kwargs)
+
+
+def build_demo_action_response():
+    from app.cli.wizard.validation import build_demo_action_response as _build
+
+    return _build()
+
+
+def validate_grafana_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_grafana_integration as _validate
+
+    return _validate(**kwargs)
+
+
+def validate_datadog_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_datadog_integration as _validate
+
+    return _validate(**kwargs)
+
+
+def validate_slack_webhook(**kwargs):
+    from app.cli.wizard.integration_health import validate_slack_webhook as _validate
+
+    return _validate(**kwargs)
+
+
+def validate_aws_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_aws_integration as _validate
+
+    return _validate(**kwargs)
+
+
+def validate_github_mcp_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_github_mcp_integration as _validate
+
+    return _validate(**kwargs)
+
+
+def validate_sentry_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_sentry_integration as _validate
+
+    return _validate(**kwargs)
+
+
+def get_sentry_auth_recommendations():
+    from app.integrations.sentry import get_sentry_auth_recommendations as _get
+
+    return _get()
+
+
+@dataclass(frozen=True)
+class IntegrationHealthResult:
+    ok: bool
+    detail: str
 
 _STYLE = Style(
     [
@@ -274,10 +325,12 @@ def _render_saved_summary(
 
 
 def _render_integration_result(service_label: str, result: IntegrationHealthResult) -> None:
-    color = "green" if result.ok else "red"
-    prefix = "Connected" if result.ok else "Failed"
+    ok = bool(result.ok)
+    detail = str(result.detail)
+    color = "green" if ok else "red"
+    prefix = "Connected" if ok else "Failed"
     _console.print(f"[{color}]{service_label} · {prefix}[/]")
-    _console.print(f"[dim]{result.detail}[/]")
+    _console.print(f"[dim]{detail}[/]")
 
 
 def _configure_grafana() -> tuple[str, str]:
