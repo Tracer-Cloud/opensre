@@ -1,0 +1,19 @@
+root_cause_category: resource_exhaustion
+required_keywords:
+  - connection
+  - max_connections
+  - idle
+  - client sessions
+model_response: |
+  ROOT_CAUSE: The database hit connection exhaustion because leaked client sessions consumed nearly all available max_connections even though CPU remained moderate. The outage came from session pressure, not a compute bottleneck.
+  ROOT_CAUSE_CATEGORY: resource_exhaustion
+  VALIDATED_CLAIMS:
+  - DatabaseConnections stayed near 490 out of 500 allowed sessions. [evidence: rds_metrics]
+  - CPUUtilization remained moderate during the incident window. [evidence: rds_metrics]
+  - Performance Insights points to idle client sessions waiting on ClientRead rather than an expensive SQL statement. [evidence: performance_insights]
+  NON_VALIDATED_CLAIMS:
+  - Tightening pool limits or terminating leaked sessions would likely restore service quickly.
+  CAUSAL_CHAIN:
+  - A client-side pool leak kept many sessions open.
+  - Available connection slots dropped to nearly zero as idle client sessions accumulated.
+  - New application requests could not connect and the alert fired on max_connections exhaustion.

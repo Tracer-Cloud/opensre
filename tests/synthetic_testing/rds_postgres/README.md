@@ -6,9 +6,6 @@ This suite benchmarks RDS PostgreSQL root-cause analysis against bundled telemet
 
 - `001-replication-lag`
 - `002-connection-exhaustion`
-- `003-storage-full`
-- `004-cpu-saturation-bad-queries`
-- `005-failover`
 
 Each scenario folder contains:
 
@@ -17,7 +14,7 @@ Each scenario folder contains:
 - `rds_events.json`: RDS event stream for the incident window
 - `performance_insights.json`: top SQL and wait-event evidence
 - `fault_script.sh`: reference script showing how the failure was induced
-- `answer.txt`: expected category, required keywords, and a canonical model response
+- `answer.yml`: expected category, required keywords, and a canonical model response
 
 ## Running
 
@@ -44,5 +41,5 @@ python -m tests.synthetic_testing.rds_postgres.run_suite --json
 Each scenario passes when all of the following are true:
 
 - the model returns a non-empty root cause
-- the predicted `ROOT_CAUSE_CATEGORY` matches `answer.txt`
-- every required keyword from `answer.txt` appears in the root cause, validated claims, non-validated claims, or causal chain
+- the predicted `ROOT_CAUSE_CATEGORY` matches `answer.yml`
+- every required keyword from `answer.yml` appears in the root cause, validated claims, non-validated claims, or causal chain

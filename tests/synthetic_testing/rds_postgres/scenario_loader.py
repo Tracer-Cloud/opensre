@@ -5,6 +5,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import yaml
+
+from tests.synthetic_testing.schemas import (
+    validate_alert,
+    validate_answer_key,
+    validate_cloudwatch_metrics,
+    validate_performance_insights,
+    validate_rds_events,
+)
+
 SUITE_DIR = Path(__file__).resolve().parent
 
 
@@ -33,48 +43,15 @@ def _read_json(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _parse_answer_text(path: Path) -> ScenarioAnswerKey:
-    raw_text = path.read_text(encoding="utf-8")
-    if "MODEL_RESPONSE:" not in raw_text:
-        raise ValueError(f"Missing MODEL_RESPONSE in {path}")
-
-    metadata_text, model_response = raw_text.split("MODEL_RESPONSE:", 1)
-    lines = metadata_text.splitlines()
-
-    category = ""
-    required_keywords: list[str] = []
-    section = ""
-
-    for line in lines:
-        stripped = line.strip()
-        if stripped == "REQUIRED_KEYWORDS:":
-            section = "required_keywords"
-            continue
-        if stripped.startswith("ROOT_CAUSE_CATEGORY:"):
-            category = stripped.split(":", 1)[1].strip()
-            section = ""
-            continue
-
-        if section == "required_keywords":
-            if stripped.startswith("- "):
-                required_keywords.append(stripped[2:].strip())
-            elif stripped:
-                raise ValueError(f"Unexpected line in REQUIRED_KEYWORDS section of {path}: {line}")
-            continue
-
-    if not category:
-        raise ValueError(f"Missing ROOT_CAUSE_CATEGORY in {path}")
-    if not required_keywords:
-        raise ValueError(f"Missing REQUIRED_KEYWORDS in {path}")
-
-    model_response = model_response.strip()
-    if not model_response:
-        raise ValueError(f"Missing MODEL_RESPONSE in {path}")
-
+def _parse_answer_yaml(path: Path) -> ScenarioAnswerKey:
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"Expected YAML object in {path}")
+    validated = validate_answer_key(payload)
     return ScenarioAnswerKey(
-        root_cause_category=category,
-        required_keywords=required_keywords,
-        model_response=model_response,
+        root_cause_category=validated["root_cause_category"].strip(),
+        required_keywords=[k.strip() for k in validated["required_keywords"]],
+        model_response=validated["model_response"].strip(),
     )
 
 
@@ -129,11 +106,11 @@ def _build_evidence(
 
 
 def load_scenario(scenario_dir: Path) -> ScenarioFixture:
-    alert = _read_json(scenario_dir / "alert.json")
-    cloudwatch_metrics = _read_json(scenario_dir / "cloudwatch_metrics.json")
-    rds_events = _read_json(scenario_dir / "rds_events.json")
-    performance_insights = _read_json(scenario_dir / "performance_insights.json")
-    answer_key = _parse_answer_text(scenario_dir / "answer.txt")
+    alert = validate_alert(_read_json(scenario_dir / "alert.json"))
+    cloudwatch_metrics = validate_cloudwatch_metrics(_read_json(scenario_dir / "cloudwatch_metrics.json"))
+    rds_events = validate_rds_events(_read_json(scenario_dir / "rds_events.json"))
+    performance_insights = validate_performance_insights(_read_json(scenario_dir / "performance_insights.json"))
+    answer_key = _parse_answer_yaml(scenario_dir / "answer.yml")
     fault_script = (scenario_dir / "fault_script.sh").read_text(encoding="utf-8")
 
     scenario_id = scenario_dir.name

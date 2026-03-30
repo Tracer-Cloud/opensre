@@ -26,16 +26,13 @@ class _FakeLLM:
         raise AssertionError("Scenario id not found in diagnosis prompt")
 
 
-def test_load_all_scenarios_reads_five_benchmark_cases() -> None:
+def test_load_all_scenarios_reads_two_benchmark_cases() -> None:
     fixtures = load_all_scenarios()
 
-    assert len(fixtures) == 5
+    assert len(fixtures) == 2
     assert [fixture.scenario_id for fixture in fixtures] == [
         "001-replication-lag",
         "002-connection-exhaustion",
-        "003-storage-full",
-        "004-cpu-saturation-bad-queries",
-        "005-failover",
     ]
 
 
