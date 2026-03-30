@@ -57,7 +57,7 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
 
         from langsmith import traceable
 
-        from app.main import _run
+        from app.cli.investigate import run_investigation_cli
 
         print("Running investigation...")
 
@@ -73,7 +73,7 @@ def main(test_name: str = "demo-pipeline-empty-file-error") -> int:
             },
         )
         def run_with_alert_id():
-            return _run(
+            return run_investigation_cli(
                 alert_name=f"Pipeline failure: {pipeline_name}",
                 pipeline_name=pipeline_name,
                 severity="critical",

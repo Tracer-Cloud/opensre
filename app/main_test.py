@@ -6,17 +6,17 @@ from io import StringIO
 import pytest
 
 from app.alert_templates import build_alert_template
-from app.cli.payload import _parse_json, load_file, load_payload
+from app.cli.payload import load_file, load_payload, parse_payload_text
 
 
-def test_parse_json_rejects_invalid_json() -> None:
-    with pytest.raises(SystemExit, match="Invalid JSON"):
-        _parse_json("{bad json", "test")
+def test_parse_payload_text_rejects_invalid_json() -> None:
+    with pytest.raises(SystemExit, match="Invalid alert JSON"):
+        parse_payload_text("{bad json", "test")
 
 
-def test_parse_json_rejects_non_object_json() -> None:
+def test_parse_payload_text_rejects_non_object_json() -> None:
     with pytest.raises(SystemExit, match="must be a JSON object"):
-        _parse_json('["not", "an", "object"]', "test")
+        parse_payload_text('["not", "an", "object"]', "test")
 
 
 def test_load_payload_accepts_inline_json() -> None:
@@ -38,8 +38,12 @@ def test_load_payload_reads_file(tmp_path: pathlib.Path) -> None:
 
 
 def test_load_payload_missing_file_exits_cleanly() -> None:
-    with pytest.raises(SystemExit, match="File not found"):
-        load_payload(input_path="/tmp/does-not-exist-alert.json", input_json=None, interactive=False)
+    with pytest.raises(SystemExit, match="Alert file not found"):
+        load_payload(
+            input_path="/tmp/does-not-exist-alert.json",
+            input_json=None,
+            interactive=False,
+        )
 
 
 def test_load_payload_reads_interactive_input(monkeypatch) -> None:

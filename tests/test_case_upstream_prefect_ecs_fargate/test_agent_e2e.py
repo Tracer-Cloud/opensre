@@ -20,7 +20,7 @@ import requests
 from langsmith import traceable
 
 from app.agent.tools.clients.grafana import get_grafana_client
-from app.main import _run
+from app.cli.investigate import run_investigation_cli
 from tests.shared.stack_config import get_prefect_config
 from tests.shared.tracer_ingest import StepTimer, emit_tool_event
 from tests.utils.alert_factory import create_alert
@@ -240,7 +240,7 @@ def _run_agent_investigation(failure_data: dict, run_id: str, trace_id: str) -> 
         },
     )
     def run_investigation():
-        return _run(
+        return run_investigation_cli(
             alert_name=alert.get("labels", {}).get("alertname", "PrefectFlowFailure"),
             pipeline_name="upstream_downstream_pipeline_prefect",
             severity="critical",

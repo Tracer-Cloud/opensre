@@ -13,7 +13,7 @@ import boto3
 import requests
 from langsmith import traceable
 
-from app.main import _run
+from app.cli.investigate import run_investigation_cli
 from tests.utils.alert_factory import create_alert
 from tests.utils.conftest import UPSTREAM_DOWNSTREAM_CONFIG
 
@@ -166,7 +166,7 @@ def test_agent_investigation(failure_data: dict) -> bool:
         },
     )
     def run_investigation():
-        return _run(
+        return run_investigation_cli(
             alert_name=f"Pipeline failure: {pipeline_name}",
             pipeline_name=pipeline_name,
             severity="critical",
