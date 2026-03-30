@@ -10,7 +10,7 @@
 
 <p>
   <a href="https://github.com/Tracer-Cloud/opensre/stargazers"><img src="https://img.shields.io/github/stars/Tracer-Cloud/opensre?style=flat-square&color=FF6B00" alt="Stars"></a>
-  <a href="https://github.com/Tracer-Cloud/tracer-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License"></a>
+  <a href="https://github.com/Tracer-Cloud/opensre/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License"></a>
   <a href="https://github.com/Tracer-Cloud/opensre/blob/main/.github/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Tracer-Cloud/opensre/ci.yml?style=flat-square&label=CI" alt="CI"></a>
   <img src="https://img.shields.io/badge/open%20source-forever-brightgreen?style=flat-square" alt="Open Source">
 </p>
@@ -134,9 +134,100 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 
 Thanks goes to these amazing people:
 
-<a href="https://github.com/Tracer-Cloud/open-sre-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Tracer-Cloud/open-sre-agent" />
-</a>
+<!-- readme: collaborators,contributors -start -->
+<table>
+	<tbody>
+		<tr>
+            <td align="center">
+                <a href="https://github.com/jellithorpe">
+                    <img src="https://avatars.githubusercontent.com/u/506082?v=4" width="100;" alt="jellithorpe"/>
+                    <br />
+                    <sub><b>John Ellithorpe</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/ayushsinghal90">
+                    <img src="https://avatars.githubusercontent.com/u/35574860?v=4" width="100;" alt="ayushsinghal90"/>
+                    <br />
+                    <sub><b>Ayush Singhal</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/VaibhavUpreti">
+                    <img src="https://avatars.githubusercontent.com/u/85568177?v=4" width="100;" alt="VaibhavUpreti"/>
+                    <br />
+                    <sub><b>Vaibhav Upreti</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/Maame-codes">
+                    <img src="https://avatars.githubusercontent.com/u/98717263?v=4" width="100;" alt="Maame-codes"/>
+                    <br />
+                    <sub><b>Maame Afua A.P Fordjour</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/paultracer">
+                    <img src="https://avatars.githubusercontent.com/u/214484440?v=4" width="100;" alt="paultracer"/>
+                    <br />
+                    <sub><b>paultracer</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/aliya-tracer">
+                    <img src="https://avatars.githubusercontent.com/u/233726347?v=4" width="100;" alt="aliya-tracer"/>
+                    <br />
+                    <sub><b>aliya-tracer</b></sub>
+                </a>
+            </td>
+		</tr>
+		<tr>
+            <td align="center">
+                <a href="https://github.com/kylie-tracer">
+                    <img src="https://avatars.githubusercontent.com/u/256781109?v=4" width="100;" alt="kylie-tracer"/>
+                    <br />
+                    <sub><b>kylie-tracer</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/Gust-svg">
+                    <img src="https://avatars.githubusercontent.com/u/265007695?v=4" width="100;" alt="Gust-svg"/>
+                    <br />
+                    <sub><b>Gust-svg</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/davincios">
+                    <img src="https://avatars.githubusercontent.com/u/33206282?v=4" width="100;" alt="davincios"/>
+                    <br />
+                    <sub><b>vincenthus</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/arnetracer">
+                    <img src="https://avatars.githubusercontent.com/u/203629234?v=4" width="100;" alt="arnetracer"/>
+                    <br />
+                    <sub><b>arnetracer</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/iamkalio">
+                    <img src="https://avatars.githubusercontent.com/u/89003403?v=4" width="100;" alt="iamkalio"/>
+                    <br />
+                    <sub><b>Kalio</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/zeel2104">
+                    <img src="https://avatars.githubusercontent.com/u/72783325?v=4" width="100;" alt="zeel2104"/>
+                    <br />
+                    <sub><b>Zeel Desai</b></sub>
+                </a>
+            </td>
+		</tr>
+	<tbody>
+</table>
+<!-- readme: collaborators,contributors -end -->
 
 ---
 
