@@ -23,6 +23,20 @@ def _has_any_logs(evidence: dict[str, Any]) -> bool:
     )
 
 
+def _has_rds_metrics(evidence: dict[str, Any]) -> bool:
+    metrics = evidence.get("rds_metrics", {})
+    return bool(metrics and (metrics.get("metrics") or metrics.get("observations")))
+
+
+def _has_rds_events(evidence: dict[str, Any]) -> bool:
+    return bool(evidence.get("rds_events"))
+
+
+def _has_performance_insights(evidence: dict[str, Any]) -> bool:
+    insights = evidence.get("performance_insights", {})
+    return bool(insights and (insights.get("top_sql") or insights.get("wait_events") or insights.get("observations")))
+
+
 def _datadog_logs_contain(evidence: dict[str, Any], keywords: tuple[str, ...]) -> bool:
     """Check if any Datadog log message contains at least one of the given keywords."""
     for log in evidence.get("datadog_error_logs", []) + evidence.get("datadog_logs", []):
@@ -43,8 +57,30 @@ def validate_claim(claim: str, evidence: dict[str, Any]) -> bool:
 
     if ("memory" in claim_lower or "cpu" in claim_lower) and not (
         evidence.get("host_metrics", {}).get("data")
+        or _has_rds_metrics(evidence)
+        or _has_performance_insights(evidence)
         or any(kw in claim_lower for kw in ("monitor", "datadog")) and has_dd
     ):
+        return False
+
+    if any(
+        kw in claim_lower
+        for kw in (
+            "rds",
+            "postgres",
+            "database",
+            "replica",
+            "replication lag",
+            "connection",
+            "storage",
+            "disk",
+            "failover",
+            "reboot",
+        )
+    ) and not (_has_rds_metrics(evidence) or _has_rds_events(evidence) or _has_performance_insights(evidence)):
+        return False
+
+    if ("query" in claim_lower or "sql" in claim_lower or "wait event" in claim_lower) and not _has_performance_insights(evidence):
         return False
 
     if ("job" in claim_lower or "batch" in claim_lower) and not (
@@ -104,6 +140,15 @@ def extract_evidence_sources(claim: str, evidence: dict[str, Any]) -> list[str]:
         sources.append("tracer_tools")
     if ("metric" in claim_lower or "memory" in claim_lower or "cpu" in claim_lower) and evidence.get("host_metrics", {}).get("data"):
         sources.append("host_metrics")
+    if any(
+        kw in claim_lower
+        for kw in ("metric", "replica", "replication lag", "connection", "storage", "disk", "database", "rds")
+    ) and _has_rds_metrics(evidence):
+        sources.append("rds_metrics")
+    if any(kw in claim_lower for kw in ("event", "failover", "reboot", "promotion", "availability zone")) and _has_rds_events(evidence):
+        sources.append("rds_events")
+    if any(kw in claim_lower for kw in ("query", "sql", "db load", "wait event", "cpu", "load")) and _has_performance_insights(evidence):
+        sources.append("performance_insights")
     if ("lambda" in claim_lower or "function" in claim_lower) and (
         evidence.get("lambda_logs") or evidence.get("lambda_function")
     ):

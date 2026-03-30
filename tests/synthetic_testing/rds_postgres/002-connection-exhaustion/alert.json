@@ -1,0 +1,23 @@
+{
+  "title": "[synthetic-rds] Connection Exhaustion On payments-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSDatabaseConnectionsHigh",
+    "severity": "critical",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "DatabaseConnections reached 98% of max_connections and application traffic started receiving too many clients errors.",
+    "error": "remaining connection slots are reserved for non-replication superuser connections",
+    "suspected_symptom": "API requests intermittently fail because the pool cannot obtain new sessions.",
+    "db_instance_identifier": "payments-prod",
+    "db_instance": "payments-prod",
+    "db_cluster": "payments-cluster",
+    "cloudwatch_region": "us-east-1",
+    "rds_failure_mode": "connection_exhaustion",
+    "context_sources": "cloudwatch"
+  }
+}

@@ -12,6 +12,9 @@ ALLOWED_EVIDENCE_SOURCES = [
     "logs",
     "cloudwatch_logs",
     "host_metrics",
+    "rds_metrics",
+    "rds_events",
+    "performance_insights",
     "lambda_logs",
     "lambda_code",
     "lambda_config",
@@ -225,6 +228,9 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     error_logs = evidence.get("error_logs", [])[:10]
     cloudwatch_logs = evidence.get("cloudwatch_logs", [])[:5]
     host_metrics = evidence.get("host_metrics", {})
+    rds_metrics = evidence.get("rds_metrics", {})
+    rds_events = evidence.get("rds_events", [])
+    performance_insights = evidence.get("performance_insights", {})
     lambda_logs = evidence.get("lambda_logs", [])[:10]
     lambda_function = evidence.get("lambda_function", {})
     lambda_config = evidence.get("lambda_config", {})
@@ -279,6 +285,15 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     # Host metrics (only show if data exists)
     if host_metrics and host_metrics.get("data"):
         sections.append("\nHost Metrics: Available (CPU, memory, disk)\n")
+
+    if rds_metrics:
+        sections.append(_build_rds_metrics_section(rds_metrics))
+
+    if rds_events:
+        sections.append(_build_rds_events_section(rds_events))
+
+    if performance_insights:
+        sections.append(_build_performance_insights_section(performance_insights))
 
     # Lambda logs
     if lambda_logs:
@@ -469,6 +484,95 @@ def _build_lambda_function_section(lambda_function: dict[str, Any]) -> str:
                 if isinstance(file_content, str):
                     code_snippet = file_content[:1000]
                     section += f"\nHandler Code Snippet ({handler_file}):\n{code_snippet}\n"
+
+    return section
+
+
+def _build_rds_metrics_section(rds_metrics: dict[str, Any]) -> str:
+    """Build RDS CloudWatch metrics evidence section."""
+    section = "\nRDS CloudWatch Metrics:\n"
+
+    db_instance = rds_metrics.get("db_instance_identifier")
+    if db_instance:
+        section += f"- DB instance: {db_instance}\n"
+
+    metric_entries = rds_metrics.get("metrics", [])
+    for metric in metric_entries[:8]:
+        if not isinstance(metric, dict):
+            continue
+        metric_name = metric.get("metric_name", "unknown")
+        summary = metric.get("summary")
+        unit = metric.get("unit")
+        if summary:
+            section += f"- {metric_name}: {summary}\n"
+        else:
+            datapoints = metric.get("recent_datapoints", [])
+            section += f"- {metric_name}: {len(datapoints)} recent datapoints"
+            if unit:
+                section += f" [{unit}]"
+            section += "\n"
+
+    observations = rds_metrics.get("observations", [])
+    for observation in observations[:5]:
+        section += f"- Observation: {observation}\n"
+
+    return section
+
+
+def _build_rds_events_section(rds_events: list[dict[str, Any]]) -> str:
+    """Build RDS event evidence section."""
+    section = f"\nRDS Events ({len(rds_events)}):\n"
+    for event in rds_events[:8]:
+        if not isinstance(event, dict):
+            continue
+        timestamp = event.get("date") or event.get("timestamp") or "unknown-time"
+        message = event.get("message", "No message")
+        source = event.get("source_identifier") or event.get("source_type")
+        section += f"- {timestamp}: {message}"
+        if source:
+            section += f" [{source}]"
+        section += "\n"
+    return section
+
+
+def _build_performance_insights_section(performance_insights: dict[str, Any]) -> str:
+    """Build RDS Performance Insights evidence section."""
+    section = "\nPerformance Insights:\n"
+
+    if performance_insights.get("db_instance_identifier"):
+        section += f"- DB instance: {performance_insights['db_instance_identifier']}\n"
+
+    for observation in performance_insights.get("observations", [])[:5]:
+        section += f"- Observation: {observation}\n"
+
+    top_sql = performance_insights.get("top_sql", [])
+    if top_sql:
+        section += "Top SQL:\n"
+        for item in top_sql[:5]:
+            if not isinstance(item, dict):
+                continue
+            sql = str(item.get("sql", ""))[:180]
+            db_load = item.get("db_load")
+            wait_event = item.get("wait_event")
+            section += f"- sql={sql}"
+            if db_load is not None:
+                section += f" | db_load={db_load}"
+            if wait_event:
+                section += f" | wait_event={wait_event}"
+            section += "\n"
+
+    wait_events = performance_insights.get("wait_events", [])
+    if wait_events:
+        section += "Top Wait Events:\n"
+        for item in wait_events[:5]:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name", "unknown")
+            db_load = item.get("db_load")
+            section += f"- {name}"
+            if db_load is not None:
+                section += f" | db_load={db_load}"
+            section += "\n"
 
     return section
 

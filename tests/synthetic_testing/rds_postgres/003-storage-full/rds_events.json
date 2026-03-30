@@ -1,0 +1,16 @@
+{
+  "events": [
+    {
+      "date": "2026-03-26T12:57:00Z",
+      "message": "DB instance payments-prod is low on free storage space.",
+      "source_identifier": "payments-prod",
+      "source_type": "db-instance"
+    },
+    {
+      "date": "2026-03-26T13:01:00Z",
+      "message": "Write activity on payments-prod encountered storage allocation failures.",
+      "source_identifier": "payments-prod",
+      "source_type": "db-instance"
+    }
+  ]
+}

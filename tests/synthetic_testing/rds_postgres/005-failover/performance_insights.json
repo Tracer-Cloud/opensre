@@ -1,0 +1,8 @@
+{
+  "db_instance_identifier": "payments-prod",
+  "observations": [
+    "Performance Insights shows a short gap in captured load during the failover window rather than a sustained CPU or storage bottleneck."
+  ],
+  "top_sql": [],
+  "wait_events": []
+}

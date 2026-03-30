@@ -1,0 +1,24 @@
+{
+  "title": "[synthetic-rds] Replication Lag On payments-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSReplicationLagHigh",
+    "severity": "critical",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "Read replica lag exceeded 900 seconds on payments-prod-replica-1 while primary write throughput remained elevated.",
+    "error": "Replica lag breached alert threshold for 15 minutes.",
+    "suspected_symptom": "Replica-backed reads are stale and analytics queries are delayed.",
+    "db_instance_identifier": "payments-prod",
+    "db_instance": "payments-prod",
+    "db_cluster": "payments-cluster",
+    "read_replica": "payments-prod-replica-1",
+    "cloudwatch_region": "us-east-1",
+    "rds_failure_mode": "replication_lag",
+    "context_sources": "cloudwatch"
+  }
+}

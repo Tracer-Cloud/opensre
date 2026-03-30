@@ -1,0 +1,20 @@
+{
+  "db_instance_identifier": "payments-prod",
+  "observations": [
+    "No single query dominated DB load; the problem was many idle-in-transaction sessions holding connections open.",
+    "Average active sessions was 7.1, far below the number of open client connections."
+  ],
+  "top_sql": [
+    {
+      "sql": "BEGIN; SELECT * FROM invoices WHERE account_id = $1",
+      "db_load": 6.2,
+      "wait_event": "Client:ClientRead"
+    }
+  ],
+  "wait_events": [
+    {
+      "name": "Client:ClientRead",
+      "db_load": 5.8
+    }
+  ]
+}

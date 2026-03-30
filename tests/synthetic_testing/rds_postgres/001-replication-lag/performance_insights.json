@@ -1,0 +1,19 @@
+{
+  "db_instance_identifier": "payments-prod",
+  "observations": [
+    "Top DB load came from bulk UPDATE statements writing order status changes in large batches."
+  ],
+  "top_sql": [
+    {
+      "sql": "UPDATE orders SET status = 'settled', updated_at = now() WHERE settlement_batch_id = $1",
+      "db_load": 84.2,
+      "wait_event": "IO:WALWrite"
+    }
+  ],
+  "wait_events": [
+    {
+      "name": "IO:WALWrite",
+      "db_load": 61.7
+    }
+  ]
+}

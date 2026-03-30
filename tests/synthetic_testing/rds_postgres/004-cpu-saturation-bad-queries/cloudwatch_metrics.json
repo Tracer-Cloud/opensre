@@ -1,0 +1,27 @@
+{
+  "db_instance_identifier": "payments-prod",
+  "observations": [
+    "CPUUtilization held between 95% and 99% while ReadLatency rose above 1.6 seconds.",
+    "DatabaseConnections remained stable, which rules out a connection storm as the primary issue."
+  ],
+  "metrics": [
+    {
+      "metric_name": "CPUUtilization",
+      "unit": "Percent",
+      "summary": "CPUUtilization stayed above 95% for 20 minutes, peaking at 99.1%.",
+      "recent_datapoints": [
+        {"timestamp": "2026-03-26T13:20:00Z", "maximum": 96.7},
+        {"timestamp": "2026-03-26T13:25:00Z", "maximum": 98.4},
+        {"timestamp": "2026-03-26T13:30:00Z", "maximum": 99.1}
+      ]
+    },
+    {
+      "metric_name": "ReadLatency",
+      "unit": "Seconds",
+      "summary": "ReadLatency crossed 1.6 seconds during the same period.",
+      "recent_datapoints": [
+        {"timestamp": "2026-03-26T13:30:00Z", "average": 1.63}
+      ]
+    }
+  ]
+}

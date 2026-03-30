@@ -1,0 +1,26 @@
+{
+  "db_instance_identifier": "payments-prod",
+  "observations": [
+    "DatabaseConnections dropped to near zero for two minutes and then recovered on the new primary.",
+    "ReplicaLag reset after promotion because the standby became the writer."
+  ],
+  "metrics": [
+    {
+      "metric_name": "DatabaseConnections",
+      "unit": "Count",
+      "summary": "Connections briefly collapsed during the role transition and recovered within five minutes.",
+      "recent_datapoints": [
+        {"timestamp": "2026-03-26T13:45:00Z", "minimum": 8},
+        {"timestamp": "2026-03-26T13:50:00Z", "maximum": 312}
+      ]
+    },
+    {
+      "metric_name": "ReplicaLag",
+      "unit": "Seconds",
+      "summary": "ReplicaLag reset on the promoted standby immediately after the failover event.",
+      "recent_datapoints": [
+        {"timestamp": "2026-03-26T13:46:00Z", "maximum": 0}
+      ]
+    }
+  ]
+}

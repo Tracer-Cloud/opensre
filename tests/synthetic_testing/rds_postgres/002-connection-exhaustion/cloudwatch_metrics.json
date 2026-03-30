@@ -1,0 +1,27 @@
+{
+  "db_instance_identifier": "payments-prod",
+  "observations": [
+    "DatabaseConnections climbed to 490 while max_connections on the instance is 500.",
+    "CPUUtilization stayed moderate, which indicates the immediate issue is session exhaustion rather than CPU starvation."
+  ],
+  "metrics": [
+    {
+      "metric_name": "DatabaseConnections",
+      "unit": "Count",
+      "summary": "DatabaseConnections remained between 486 and 494 for 20 minutes, leaving almost no free sessions.",
+      "recent_datapoints": [
+        {"timestamp": "2026-03-26T12:00:00Z", "maximum": 486},
+        {"timestamp": "2026-03-26T12:05:00Z", "maximum": 492},
+        {"timestamp": "2026-03-26T12:10:00Z", "maximum": 494}
+      ]
+    },
+    {
+      "metric_name": "CPUUtilization",
+      "unit": "Percent",
+      "summary": "CPUUtilization stayed below 52%, so the database still had compute headroom while client sessions were exhausted.",
+      "recent_datapoints": [
+        {"timestamp": "2026-03-26T12:10:00Z", "average": 49.8}
+      ]
+    }
+  ]
+}

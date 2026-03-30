@@ -1,0 +1,19 @@
+ROOT_CAUSE_CATEGORY: infrastructure
+REQUIRED_KEYWORDS:
+- failover
+- reboot
+- promoted
+- primary
+MODEL_RESPONSE:
+ROOT_CAUSE: The alert was caused by a deliberate Multi-AZ failover after the primary instance was rebooted with failover. Application connections reset briefly while the standby was promoted to become the new primary.
+ROOT_CAUSE_CATEGORY: infrastructure
+VALIDATED_CLAIMS:
+- RDS events show an operator-requested reboot with failover followed by standby promotion. [evidence: rds_events]
+- DatabaseConnections dropped sharply during the role transition and then recovered. [evidence: rds_metrics]
+- Performance Insights does not show a sustained resource bottleneck, which fits a short infrastructure role transition. [evidence: performance_insights]
+NON_VALIDATED_CLAIMS:
+- Client retries may need tuning if this failover window is longer than the application budget.
+CAUSAL_CHAIN:
+- The primary was rebooted with failover.
+- RDS promoted the Multi-AZ standby to primary during the transition.
+- Client sessions reset briefly and the failover alert triggered.

@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install install-hooks onboard test test-full demo local-rca-demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed local-grafana-live langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca
+.PHONY: install install-hooks onboard test test-full demo local-rca-demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed local-grafana-live langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rds-synthetic
 
 ifneq ($(wildcard .venv/bin/python),)
 PYTHON = .venv/bin/python
@@ -92,6 +92,10 @@ prefect-demo:
 # Run RCA tests from markdown alert files in tests/rca/ (pass FILE= to run one)
 test-rca:
 	$(PYTHON) -m tests.rca.run_rca_test $(FILE)
+
+# Run synthetic RDS PostgreSQL RCA benchmark suite
+test-rds-synthetic:
+	$(PYTHON) -m tests.synthetic_testing.rds_postgres.run_suite $(if $(SCENARIO),--scenario $(SCENARIO),)
 
 # Simulate a Datadog alert via local LangGraph server (full pipeline, real API calls)
 simulate-k8s-alert:
@@ -316,6 +320,7 @@ help:
 	@echo "  make test-grafana    - Run Grafana integration tests"
 	@echo "  make test-rca        - Run all RCA markdown alert tests in tests/rca/"
 	@echo "  make test-rca FILE=pipeline_error_in_logs - Run a single RCA alert test"
+	@echo "  make test-rds-synthetic - Run the synthetic RDS PostgreSQL RCA suite"
 	@echo "  make clean           - Clean up cache files"
 	@echo "  make lint            - Lint code with ruff"
 	@echo "  make format          - Format code with ruff"

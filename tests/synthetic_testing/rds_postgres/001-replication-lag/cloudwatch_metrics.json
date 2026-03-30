@@ -1,0 +1,36 @@
+{
+  "db_instance_identifier": "payments-prod",
+  "observations": [
+    "ReplicaLag rose from 12 seconds to 1140 seconds during the same window that WriteIOPS and TransactionLogsGeneration spiked on the primary.",
+    "DatabaseConnections remained below max_connections, so the primary was reachable while replicas fell behind."
+  ],
+  "metrics": [
+    {
+      "metric_name": "ReplicaLag",
+      "unit": "Seconds",
+      "summary": "ReplicaLag for payments-prod-replica-1 sustained between 900 and 1140 seconds for 15 minutes.",
+      "recent_datapoints": [
+        {"timestamp": "2026-03-26T11:35:00Z", "maximum": 912},
+        {"timestamp": "2026-03-26T11:40:00Z", "maximum": 1088},
+        {"timestamp": "2026-03-26T11:45:00Z", "maximum": 1140}
+      ]
+    },
+    {
+      "metric_name": "WriteIOPS",
+      "unit": "Count/Second",
+      "summary": "WriteIOPS on the primary climbed above 18000, indicating a write-heavy workload saturating WAL generation.",
+      "recent_datapoints": [
+        {"timestamp": "2026-03-26T11:35:00Z", "average": 17620},
+        {"timestamp": "2026-03-26T11:40:00Z", "average": 18295}
+      ]
+    },
+    {
+      "metric_name": "TransactionLogsGeneration",
+      "unit": "Bytes/Second",
+      "summary": "TransactionLogsGeneration peaked at 245 MB/s, consistent with the replica falling behind WAL replay.",
+      "recent_datapoints": [
+        {"timestamp": "2026-03-26T11:40:00Z", "average": 256901120}
+      ]
+    }
+  ]
+}

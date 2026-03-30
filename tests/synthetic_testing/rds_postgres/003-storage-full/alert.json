@@ -1,0 +1,23 @@
+{
+  "title": "[synthetic-rds] Storage Almost Full On payments-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSFreeStorageSpaceLow",
+    "severity": "critical",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "FreeStorageSpace fell below 5 GiB and write operations began failing on payments-prod.",
+    "error": "could not extend file: No space left on device",
+    "suspected_symptom": "Writes and vacuum activity are failing because storage is exhausted.",
+    "db_instance_identifier": "payments-prod",
+    "db_instance": "payments-prod",
+    "db_cluster": "payments-cluster",
+    "cloudwatch_region": "us-east-1",
+    "rds_failure_mode": "storage_full",
+    "context_sources": "cloudwatch"
+  }
+}
