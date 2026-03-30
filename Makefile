@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install install-hooks onboard test test-full demo local-rca-demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed local-grafana-live langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca
+.PHONY: install install-hooks onboard test test-full demo local-rca-demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed local-grafana-live langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana
 
 ifneq ($(wildcard .venv/bin/python),)
 PYTHON = .venv/bin/python
@@ -92,6 +92,11 @@ prefect-demo:
 # Run RCA tests from markdown alert files in tests/rca/ (pass FILE= to run one)
 test-rca:
 	$(PYTHON) -m tests.rca.run_rca_test $(FILE)
+
+# Boot local Grafana+Loki, seed deterministic test logs, then run the RCA pipeline
+# Requires GRAFANA_INSTANCE_URL + GRAFANA_READ_TOKEN in .env (see .env.example for local defaults)
+test-rca-grafana: grafana-local-up grafana-local-seed
+	$(PYTHON) -m tests.rca.run_rca_test grafana_pipeline_failure
 
 # Simulate a Datadog alert via local LangGraph server (full pipeline, real API calls)
 simulate-k8s-alert:
