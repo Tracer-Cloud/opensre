@@ -120,7 +120,17 @@ class RDSRCAEnv:
 
     @property
     def action_space(self) -> list[Action]:
-        return list(Action)
+        """Return actions available for the active scenario.
+
+        Gather actions are restricted to evidence sources declared in
+        scenario.yml:available_evidence so unavailable sources are never
+        offered to the agent. Falls back to all actions before reset().
+        """
+        if self._fixture is None:
+            return list(Action)
+        available = self._fixture.metadata.available_evidence
+        gather_actions = [a for a, key in _EVIDENCE_KEY.items() if key in available]
+        return gather_actions + [Action.SUBMIT_DIAGNOSIS]
 
     @property
     def fixture(self) -> ScenarioFixture | None:
@@ -184,9 +194,15 @@ class RDSRCAEnv:
                 info=info,
             )
 
-        # Gather-evidence action: unlock the corresponding source (idempotent)
+        # Gather-evidence action: unlock the corresponding source (idempotent).
+        # If the source is absent from this scenario's available_evidence, the
+        # action is a no-op so the agent incurs only the step cost.
         evidence_key = _EVIDENCE_KEY.get(action)
-        if evidence_key and evidence_key not in self._gathered_evidence:
+        if (
+            evidence_key
+            and evidence_key not in self._gathered_evidence
+            and evidence_key in self._fixture.metadata.available_evidence
+        ):
             self._gathered_evidence[evidence_key] = self._fixture.evidence.get(evidence_key)
 
         if self._step >= MAX_STEPS:

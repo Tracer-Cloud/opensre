@@ -1,10 +1,18 @@
 {
   "events": [
     {
-      "date": "2026-03-26T12:06:00Z",
-      "message": "Application clients reported 'remaining connection slots are reserved' on payments-prod.",
+      "date": "2026-03-26T11:58:00Z",
+      "message": "DB instance payments-prod is approaching max_connections limit. Current connections: 469 of 500.",
       "source_identifier": "payments-prod",
-      "source_type": "db-instance"
+      "source_type": "db-instance",
+      "event_categories": ["notification"]
+    },
+    {
+      "date": "2026-03-26T12:06:00Z",
+      "message": "Application clients reported 'remaining connection slots are reserved for non-replication superuser connections' on payments-prod.",
+      "source_identifier": "payments-prod",
+      "source_type": "db-instance",
+      "event_categories": ["failure", "notification"]
     }
   ]
 }

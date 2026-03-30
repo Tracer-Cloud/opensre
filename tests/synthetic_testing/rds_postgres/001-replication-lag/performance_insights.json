@@ -1,19 +1,64 @@
 {
   "db_instance_identifier": "payments-prod",
-  "observations": [
-    "Top DB load came from bulk UPDATE statements writing order status changes in large batches."
-  ],
+  "start_time": "2026-03-26T11:20:00Z",
+  "end_time": "2026-03-26T11:35:00Z",
+  "db_load": {
+    "timestamps": [
+      "2026-03-26T11:20:00Z", "2026-03-26T11:21:00Z", "2026-03-26T11:22:00Z",
+      "2026-03-26T11:23:00Z", "2026-03-26T11:24:00Z", "2026-03-26T11:25:00Z",
+      "2026-03-26T11:26:00Z", "2026-03-26T11:27:00Z", "2026-03-26T11:28:00Z",
+      "2026-03-26T11:29:00Z", "2026-03-26T11:30:00Z", "2026-03-26T11:31:00Z",
+      "2026-03-26T11:32:00Z", "2026-03-26T11:33:00Z", "2026-03-26T11:34:00Z"
+    ],
+    "values": [0.8, 2.1, 4.4, 6.2, 7.8, 9.1, 9.6, 9.9, 10.1, 9.8, 10.2, 9.7, 10.0, 9.9, 10.1],
+    "unit": "db_load|avg"
+  },
   "top_sql": [
     {
-      "sql": "UPDATE orders SET status = 'settled', updated_at = now() WHERE settlement_batch_id = $1",
-      "db_load": 84.2,
-      "wait_event": "IO:WALWrite"
+      "statement": "UPDATE orders SET status = 'settled', updated_at = now() WHERE settlement_batch_id = $1",
+      "db_load_avg": 84.2,
+      "wait_events": [
+        {"name": "IO:WALWrite", "type": "IO", "db_load_avg": 61.7},
+        {"name": "CPU", "type": "CPU", "db_load_avg": 19.3},
+        {"name": "Lock:relation", "type": "Lock", "db_load_avg": 3.2}
+      ],
+      "calls_per_sec": 12.4
+    },
+    {
+      "statement": "SELECT id, amount, status FROM orders WHERE account_id = $1 AND status = $2 LIMIT $3",
+      "db_load_avg": 8.6,
+      "wait_events": [
+        {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 6.1},
+        {"name": "CPU", "type": "CPU", "db_load_avg": 2.5}
+      ],
+      "calls_per_sec": 84.7
+    },
+    {
+      "statement": "INSERT INTO audit_log (entity_type, entity_id, action, created_at) VALUES ($1, $2, $3, now())",
+      "db_load_avg": 5.1,
+      "wait_events": [
+        {"name": "IO:WALWrite", "type": "IO", "db_load_avg": 4.2},
+        {"name": "CPU", "type": "CPU", "db_load_avg": 0.9}
+      ],
+      "calls_per_sec": 24.8
     }
   ],
-  "wait_events": [
-    {
-      "name": "IO:WALWrite",
-      "db_load": 61.7
-    }
+  "top_wait_events": [
+    {"name": "IO:WALWrite", "type": "IO", "db_load_avg": 65.9},
+    {"name": "CPU", "type": "CPU", "db_load_avg": 22.1},
+    {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 6.1},
+    {"name": "Lock:relation", "type": "Lock", "db_load_avg": 3.2},
+    {"name": "IPC:MessageQueueReceive", "type": "IPC", "db_load_avg": 1.4},
+    {"name": "Client:ClientRead", "type": "Client", "db_load_avg": 1.3}
+  ],
+  "top_users": [
+    {"name": "payments_service", "db_load_avg": 82.1},
+    {"name": "settlement_worker", "db_load_avg": 14.6},
+    {"name": "readonly_replica", "db_load_avg": 3.3}
+  ],
+  "top_hosts": [
+    {"id": "10.0.1.15", "db_load_avg": 51.3},
+    {"id": "10.0.1.22", "db_load_avg": 33.8},
+    {"id": "10.0.1.31", "db_load_avg": 14.9}
   ]
 }

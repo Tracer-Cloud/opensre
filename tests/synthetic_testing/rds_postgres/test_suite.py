@@ -5,6 +5,7 @@ import pytest
 from app.agent.tools.clients import llm_client
 from tests.synthetic_testing.rds_postgres.run_suite import run_scenario
 from tests.synthetic_testing.rds_postgres.scenario_loader import load_all_scenarios
+from tests.synthetic_testing.schemas import VALID_EVIDENCE_SOURCES
 
 
 class _FakeLLMResponse:
@@ -34,6 +35,31 @@ def test_load_all_scenarios_reads_two_benchmark_cases() -> None:
         "001-replication-lag",
         "002-connection-exhaustion",
     ]
+
+
+def test_scenario_metadata_is_valid() -> None:
+    fixtures = load_all_scenarios()
+
+    for fixture in fixtures:
+        meta = fixture.metadata
+        assert meta.schema_version, f"{fixture.scenario_id}: schema_version must be set"
+        assert meta.engine, f"{fixture.scenario_id}: engine must be set"
+        assert meta.failure_mode, f"{fixture.scenario_id}: failure_mode must be set"
+        assert meta.region, f"{fixture.scenario_id}: region must be set"
+        assert meta.available_evidence, f"{fixture.scenario_id}: available_evidence must not be empty"
+        unknown = set(meta.available_evidence) - VALID_EVIDENCE_SOURCES
+        assert not unknown, f"{fixture.scenario_id}: unknown evidence sources {unknown}"
+
+
+def test_scenario_evidence_matches_available_evidence() -> None:
+    fixtures = load_all_scenarios()
+
+    for fixture in fixtures:
+        evidence_dict = fixture.evidence.as_dict()
+        assert set(evidence_dict.keys()) == set(fixture.metadata.available_evidence), (
+            f"{fixture.scenario_id}: evidence keys {set(evidence_dict.keys())} "
+            f"do not match available_evidence {fixture.metadata.available_evidence}"
+        )
 
 
 @pytest.mark.parametrize("fixture", load_all_scenarios(), ids=lambda fixture: fixture.scenario_id)

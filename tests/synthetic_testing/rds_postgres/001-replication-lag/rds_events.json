@@ -4,13 +4,15 @@
       "date": "2026-03-26T11:31:00Z",
       "message": "DB instance payments-prod-replica-1 replication lag exceeded 600 seconds.",
       "source_identifier": "payments-prod-replica-1",
-      "source_type": "db-instance"
+      "source_type": "db-instance",
+      "event_categories": ["read replica"]
     },
     {
       "date": "2026-03-26T11:43:00Z",
       "message": "Read replica replay is behind the source instance due to sustained transaction log generation on payments-prod.",
       "source_identifier": "payments-prod",
-      "source_type": "db-instance"
+      "source_type": "db-instance",
+      "event_categories": ["read replica", "notification"]
     }
   ]
 }

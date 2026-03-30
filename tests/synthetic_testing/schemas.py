@@ -2,15 +2,26 @@
 Centralized schema definitions for synthetic testing fixtures.
 
 All scenario fixture files (alert.json, cloudwatch_metrics.json, rds_events.json,
-performance_insights.json, answer.yml) must conform to these TypedDicts.
+performance_insights.json, answer.yml, scenario.yml) must conform to these TypedDicts.
 Validators enforce required fields so every scenario is structurally consistent.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, NotRequired
 
 from typing_extensions import TypedDict
+
+# ---------------------------------------------------------------------------
+# Controlled vocabularies for scenario metadata
+# ---------------------------------------------------------------------------
+
+VALID_ENGINES = frozenset({"postgres", "mysql", "aurora-postgres", "aurora-mysql", "mariadb"})
+VALID_FAILURE_MODES = frozenset(
+    {"replication_lag", "connection_exhaustion", "storage_full", "cpu_saturation", "failover"}
+)
+VALID_EVIDENCE_SOURCES = frozenset({"rds_metrics", "rds_events", "performance_insights"})
 
 # ---------------------------------------------------------------------------
 # Alert fixture  (alert.json)
@@ -48,33 +59,40 @@ class AlertFixture(TypedDict):
 
 # ---------------------------------------------------------------------------
 # CloudWatch metrics fixture  (cloudwatch_metrics.json)
+# Models the AWS GetMetricData API response shape.
 # ---------------------------------------------------------------------------
 
 
-class MetricDatapoint(TypedDict, total=False):
-    timestamp: str
-    maximum: float
-    minimum: float
-    average: float
-    sum: float
-    sample_count: float
+class MetricDimension(TypedDict):
+    Name: str
+    Value: str
 
 
-class MetricRecord(TypedDict):
+class MetricDataResult(TypedDict):
+    """One metric query result, combining query context with response data."""
+
+    id: str
+    label: str
     metric_name: str
+    dimensions: list[MetricDimension]
+    stat: str
     unit: str
-    summary: str
-    recent_datapoints: list[MetricDatapoint]
+    status_code: str
+    timestamps: list[str]
+    values: list[float]
 
 
 class CloudWatchMetricsFixture(TypedDict):
-    db_instance_identifier: str
-    observations: list[str]
-    metrics: list[MetricRecord]
+    namespace: str
+    period: int
+    start_time: str
+    end_time: str
+    metric_data_results: list[MetricDataResult]
 
 
 # ---------------------------------------------------------------------------
 # RDS events fixture  (rds_events.json)
+# Models the AWS DescribeEvents API response shape.
 # ---------------------------------------------------------------------------
 
 
@@ -83,6 +101,7 @@ class RDSEvent(TypedDict):
     message: str
     source_identifier: str
     source_type: str
+    event_categories: list[str]
 
 
 class RDSEventsFixture(TypedDict):
@@ -91,25 +110,54 @@ class RDSEventsFixture(TypedDict):
 
 # ---------------------------------------------------------------------------
 # Performance insights fixture  (performance_insights.json)
+# Models the AWS GetResourceMetrics + DescribeDimensionKeys API response shape.
 # ---------------------------------------------------------------------------
 
 
-class TopSQL(TypedDict):
-    sql: str
-    db_load: float
-    wait_event: str
+class DBLoadTimeSeries(TypedDict):
+    timestamps: list[str]
+    values: list[float]
+    unit: str
 
 
-class WaitEvent(TypedDict):
+class TopSQLWaitEvent(TypedDict):
     name: str
-    db_load: float
+    type: str
+    db_load_avg: float
+
+
+class TopSQL(TypedDict):
+    statement: str
+    db_load_avg: float
+    wait_events: list[TopSQLWaitEvent]
+    calls_per_sec: float
+
+
+class TopWaitEvent(TypedDict):
+    name: str
+    type: str
+    db_load_avg: float
+
+
+class TopUser(TypedDict):
+    name: str
+    db_load_avg: float
+
+
+class TopHost(TypedDict):
+    id: str
+    db_load_avg: float
 
 
 class PerformanceInsightsFixture(TypedDict):
     db_instance_identifier: str
-    observations: list[str]
+    start_time: str
+    end_time: str
+    db_load: DBLoadTimeSeries
     top_sql: list[TopSQL]
-    wait_events: list[WaitEvent]
+    top_wait_events: list[TopWaitEvent]
+    top_users: list[TopUser]
+    top_hosts: list[TopHost]
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +169,57 @@ class AnswerKeySchema(TypedDict):
     root_cause_category: str
     required_keywords: list[str]
     model_response: str
+
+
+# ---------------------------------------------------------------------------
+# Scenario metadata  (scenario.yml)
+# ---------------------------------------------------------------------------
+
+
+class ScenarioMetadataSchema(TypedDict):
+    schema_version: str
+    scenario_id: str
+    engine: str
+    engine_version: str
+    instance_class: str
+    region: str
+    db_instance_identifier: str
+    failure_mode: str
+    severity: str
+    available_evidence: list[str]
+    db_cluster: NotRequired[str]
+
+
+# ---------------------------------------------------------------------------
+# Typed evidence container
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ScenarioEvidence:
+    """Typed container for all evidence sources in a scenario fixture.
+
+    Each attribute is None when the corresponding file was not listed in
+    scenario.yml:available_evidence, making evidence presence explicit.
+    """
+
+    rds_metrics: CloudWatchMetricsFixture | None
+    rds_events: list[RDSEvent] | None
+    performance_insights: PerformanceInsightsFixture | None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return only the non-None sources as a plain dict."""
+        result: dict[str, Any] = {}
+        if self.rds_metrics is not None:
+            result["rds_metrics"] = self.rds_metrics
+        if self.rds_events is not None:
+            result["rds_events"] = self.rds_events
+        if self.performance_insights is not None:
+            result["performance_insights"] = self.performance_insights
+        return result
+
+    def get(self, key: str) -> Any:
+        return self.as_dict().get(key)
 
 
 # ---------------------------------------------------------------------------
@@ -140,18 +239,30 @@ def validate_alert(data: dict[str, Any]) -> AlertFixture:
 
 
 def validate_cloudwatch_metrics(data: dict[str, Any]) -> CloudWatchMetricsFixture:
-    _require_str(data, "db_instance_identifier", ctx="cloudwatch_metrics.json")
-    if not isinstance(data.get("observations"), list):
-        raise ValueError("cloudwatch_metrics.json: 'observations' must be a list")
-    if not isinstance(data.get("metrics"), list):
-        raise ValueError("cloudwatch_metrics.json: 'metrics' must be a list")
-    for i, metric in enumerate(data["metrics"]):
-        ctx = f"cloudwatch_metrics.json:metrics[{i}]"
-        _require_str(metric, "metric_name", ctx=ctx)
-        _require_str(metric, "unit", ctx=ctx)
-        _require_str(metric, "summary", ctx=ctx)
-        if not isinstance(metric.get("recent_datapoints"), list):
-            raise ValueError(f"{ctx}: 'recent_datapoints' must be a list")
+    ctx = "cloudwatch_metrics.json"
+    _require_str(data, "namespace", ctx=ctx)
+    _require_str(data, "start_time", ctx=ctx)
+    _require_str(data, "end_time", ctx=ctx)
+    if not isinstance(data.get("period"), int):
+        raise ValueError(f"{ctx}: 'period' must be an integer (seconds)")
+    results = data.get("metric_data_results")
+    if not isinstance(results, list) or not results:
+        raise ValueError(f"{ctx}: 'metric_data_results' must be a non-empty list")
+    for i, result in enumerate(results):
+        rctx = f"{ctx}:metric_data_results[{i}]"
+        for field in ("id", "label", "metric_name", "stat", "unit", "status_code"):
+            _require_str(result, field, ctx=rctx)
+        if not isinstance(result.get("dimensions"), list):
+            raise ValueError(f"{rctx}: 'dimensions' must be a list")
+        for dim in result["dimensions"]:
+            _require_str(dim, "Name", ctx=rctx)
+            _require_str(dim, "Value", ctx=rctx)
+        if not isinstance(result.get("timestamps"), list):
+            raise ValueError(f"{rctx}: 'timestamps' must be a list")
+        if not isinstance(result.get("values"), list):
+            raise ValueError(f"{rctx}: 'values' must be a list")
+        if len(result["timestamps"]) != len(result["values"]):
+            raise ValueError(f"{rctx}: 'timestamps' and 'values' must have the same length")
     return data  # type: ignore[return-value]
 
 
@@ -164,17 +275,33 @@ def validate_rds_events(data: dict[str, Any]) -> RDSEventsFixture:
         _require_str(event, "message", ctx=ctx)
         _require_str(event, "source_identifier", ctx=ctx)
         _require_str(event, "source_type", ctx=ctx)
+        if not isinstance(event.get("event_categories"), list):
+            raise ValueError(f"{ctx}: 'event_categories' must be a list")
     return data  # type: ignore[return-value]
 
 
 def validate_performance_insights(data: dict[str, Any]) -> PerformanceInsightsFixture:
-    _require_str(data, "db_instance_identifier", ctx="performance_insights.json")
-    if not isinstance(data.get("observations"), list):
-        raise ValueError("performance_insights.json: 'observations' must be a list")
+    ctx = "performance_insights.json"
+    _require_str(data, "db_instance_identifier", ctx=ctx)
+    _require_str(data, "start_time", ctx=ctx)
+    _require_str(data, "end_time", ctx=ctx)
+    db_load = data.get("db_load")
+    if not isinstance(db_load, dict):
+        raise ValueError(f"{ctx}: 'db_load' must be an object")
+    if not isinstance(db_load.get("timestamps"), list):
+        raise ValueError(f"{ctx}: 'db_load.timestamps' must be a list")
+    if not isinstance(db_load.get("values"), list):
+        raise ValueError(f"{ctx}: 'db_load.values' must be a list")
+    if len(db_load["timestamps"]) != len(db_load["values"]):
+        raise ValueError(f"{ctx}: 'db_load.timestamps' and 'db_load.values' must have the same length")
     if not isinstance(data.get("top_sql"), list):
-        raise ValueError("performance_insights.json: 'top_sql' must be a list")
-    if not isinstance(data.get("wait_events"), list):
-        raise ValueError("performance_insights.json: 'wait_events' must be a list")
+        raise ValueError(f"{ctx}: 'top_sql' must be a list")
+    if not isinstance(data.get("top_wait_events"), list):
+        raise ValueError(f"{ctx}: 'top_wait_events' must be a list")
+    if not isinstance(data.get("top_users"), list):
+        raise ValueError(f"{ctx}: 'top_users' must be a list")
+    if not isinstance(data.get("top_hosts"), list):
+        raise ValueError(f"{ctx}: 'top_hosts' must be a list")
     return data  # type: ignore[return-value]
 
 
@@ -186,6 +313,29 @@ def validate_answer_key(data: dict[str, Any]) -> AnswerKeySchema:
     if not all(isinstance(k, str) and k.strip() for k in keywords):
         raise ValueError("answer.yml: all required_keywords must be non-empty strings")
     _require_str(data, "model_response", ctx="answer.yml")
+    return data  # type: ignore[return-value]
+
+
+def validate_scenario_metadata(data: dict[str, Any]) -> ScenarioMetadataSchema:
+    ctx = "scenario.yml"
+    for field in ("schema_version", "scenario_id", "engine", "engine_version", "instance_class", "region", "db_instance_identifier", "failure_mode", "severity"):
+        _require_str(data, field, ctx=ctx)
+
+    engine = data["engine"]
+    if engine not in VALID_ENGINES:
+        raise ValueError(f"{ctx}: unknown engine {engine!r}; expected one of {sorted(VALID_ENGINES)}")
+
+    failure_mode = data["failure_mode"]
+    if failure_mode not in VALID_FAILURE_MODES:
+        raise ValueError(f"{ctx}: unknown failure_mode {failure_mode!r}; expected one of {sorted(VALID_FAILURE_MODES)}")
+
+    sources = data.get("available_evidence")
+    if not isinstance(sources, list) or not sources:
+        raise ValueError(f"{ctx}: 'available_evidence' must be a non-empty list")
+    unknown = [s for s in sources if s not in VALID_EVIDENCE_SOURCES]
+    if unknown:
+        raise ValueError(f"{ctx}: unknown evidence source(s) {unknown}; expected subset of {sorted(VALID_EVIDENCE_SOURCES)}")
+
     return data  # type: ignore[return-value]
 
 

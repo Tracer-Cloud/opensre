@@ -8,14 +8,32 @@ from typing import Any
 import yaml
 
 from tests.synthetic_testing.schemas import (
+    ScenarioEvidence,
+    ScenarioMetadataSchema,
     validate_alert,
     validate_answer_key,
     validate_cloudwatch_metrics,
     validate_performance_insights,
     validate_rds_events,
+    validate_scenario_metadata,
 )
 
 SUITE_DIR = Path(__file__).resolve().parent
+
+
+@dataclass(frozen=True)
+class ScenarioMetadata:
+    schema_version: str
+    scenario_id: str
+    engine: str
+    engine_version: str
+    instance_class: str
+    region: str
+    db_instance_identifier: str
+    db_cluster: str
+    failure_mode: str
+    severity: str
+    available_evidence: list[str]
 
 
 @dataclass(frozen=True)
@@ -30,7 +48,8 @@ class ScenarioFixture:
     scenario_id: str
     scenario_dir: Path
     alert: dict[str, Any]
-    evidence: dict[str, Any]
+    evidence: ScenarioEvidence
+    metadata: ScenarioMetadata
     answer_key: ScenarioAnswerKey
     fault_script: str
     problem_md: str
@@ -43,10 +62,33 @@ def _read_json(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _parse_answer_yaml(path: Path) -> ScenarioAnswerKey:
+def _read_yaml(path: Path) -> dict[str, Any]:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError(f"Expected YAML object in {path}")
+    return payload
+
+
+def _parse_scenario_yaml(path: Path) -> ScenarioMetadata:
+    raw = _read_yaml(path)
+    validated: ScenarioMetadataSchema = validate_scenario_metadata(raw)
+    return ScenarioMetadata(
+        schema_version=validated["schema_version"],
+        scenario_id=validated["scenario_id"],
+        engine=validated["engine"],
+        engine_version=validated["engine_version"],
+        instance_class=validated["instance_class"],
+        region=validated["region"],
+        db_instance_identifier=validated["db_instance_identifier"],
+        db_cluster=validated.get("db_cluster", ""),
+        failure_mode=validated["failure_mode"],
+        severity=validated["severity"],
+        available_evidence=list(validated["available_evidence"]),
+    )
+
+
+def _parse_answer_yaml(path: Path) -> ScenarioAnswerKey:
+    payload = _read_yaml(path)
     validated = validate_answer_key(payload)
     return ScenarioAnswerKey(
         root_cause_category=validated["root_cause_category"].strip(),
@@ -55,28 +97,23 @@ def _parse_answer_yaml(path: Path) -> ScenarioAnswerKey:
     )
 
 
-def _build_problem_md(alert: dict[str, Any], scenario_id: str) -> str:
-    title = str(alert.get("title") or scenario_id)
-    labels = alert.get("commonLabels", {}) or {}
+def _build_problem_md(alert: dict[str, Any], metadata: ScenarioMetadata) -> str:
+    title = str(alert.get("title") or metadata.scenario_id)
     annotations = alert.get("commonAnnotations", {}) or {}
 
     parts = [
         f"# {title}",
         (
-            "Service: RDS PostgreSQL"
-            f" | Severity: {labels.get('severity', 'critical')}"
-            f" | Scenario: {annotations.get('rds_failure_mode', scenario_id)}"
+            f"Service: RDS {metadata.engine.upper()}"
+            f" | Severity: {metadata.severity}"
+            f" | Scenario: {metadata.failure_mode}"
         ),
-        f"Scenario ID: {scenario_id}",
+        f"Scenario ID: {metadata.scenario_id}",
+        f"DB instance: {metadata.db_instance_identifier}",
     ]
 
-    db_instance = annotations.get("db_instance_identifier") or annotations.get("db_instance")
-    if db_instance:
-        parts.append(f"DB instance: {db_instance}")
-
-    db_cluster = annotations.get("db_cluster")
-    if db_cluster:
-        parts.append(f"DB cluster: {db_cluster}")
+    if metadata.db_cluster:
+        parts.append(f"DB cluster: {metadata.db_cluster}")
 
     summary = annotations.get("summary")
     if summary:
@@ -94,34 +131,47 @@ def _build_problem_md(alert: dict[str, Any], scenario_id: str) -> str:
 
 
 def _build_evidence(
-    cloudwatch_metrics: dict[str, Any],
-    rds_events: dict[str, Any],
-    performance_insights: dict[str, Any],
-) -> dict[str, Any]:
-    return {
-        "rds_metrics": cloudwatch_metrics,
-        "rds_events": rds_events.get("events", []),
-        "performance_insights": performance_insights,
-    }
+    scenario_dir: Path,
+    available_evidence: list[str],
+) -> ScenarioEvidence:
+    """Load only the evidence sources declared in scenario.yml:available_evidence."""
+    rds_metrics = None
+    rds_events = None
+    performance_insights = None
+
+    if "rds_metrics" in available_evidence:
+        rds_metrics = validate_cloudwatch_metrics(_read_json(scenario_dir / "cloudwatch_metrics.json"))
+
+    if "rds_events" in available_evidence:
+        raw_events = validate_rds_events(_read_json(scenario_dir / "rds_events.json"))
+        rds_events = raw_events.get("events", [])
+
+    if "performance_insights" in available_evidence:
+        performance_insights = validate_performance_insights(
+            _read_json(scenario_dir / "performance_insights.json")
+        )
+
+    return ScenarioEvidence(
+        rds_metrics=rds_metrics,
+        rds_events=rds_events,
+        performance_insights=performance_insights,
+    )
 
 
 def load_scenario(scenario_dir: Path) -> ScenarioFixture:
+    metadata = _parse_scenario_yaml(scenario_dir / "scenario.yml")
     alert = validate_alert(_read_json(scenario_dir / "alert.json"))
-    cloudwatch_metrics = validate_cloudwatch_metrics(_read_json(scenario_dir / "cloudwatch_metrics.json"))
-    rds_events = validate_rds_events(_read_json(scenario_dir / "rds_events.json"))
-    performance_insights = validate_performance_insights(_read_json(scenario_dir / "performance_insights.json"))
+    evidence = _build_evidence(scenario_dir, metadata.available_evidence)
     answer_key = _parse_answer_yaml(scenario_dir / "answer.yml")
     fault_script = (scenario_dir / "fault_script.sh").read_text(encoding="utf-8")
-
-    scenario_id = scenario_dir.name
-    problem_md = _build_problem_md(alert, scenario_id)
-    evidence = _build_evidence(cloudwatch_metrics, rds_events, performance_insights)
+    problem_md = _build_problem_md(alert, metadata)
 
     return ScenarioFixture(
-        scenario_id=scenario_id,
+        scenario_id=scenario_dir.name,
         scenario_dir=scenario_dir,
         alert=alert,
         evidence=evidence,
+        metadata=metadata,
         answer_key=answer_key,
         fault_script=fault_script,
         problem_md=problem_md,
@@ -130,5 +180,7 @@ def load_scenario(scenario_dir: Path) -> ScenarioFixture:
 
 def load_all_scenarios(root_dir: Path | None = None) -> list[ScenarioFixture]:
     base_dir = root_dir or SUITE_DIR
-    scenario_dirs = sorted(path for path in base_dir.iterdir() if path.is_dir() and path.name[:3].isdigit())
+    scenario_dirs = sorted(
+        path for path in base_dir.iterdir() if path.is_dir() and path.name[:3].isdigit()
+    )
     return [load_scenario(path) for path in scenario_dirs]

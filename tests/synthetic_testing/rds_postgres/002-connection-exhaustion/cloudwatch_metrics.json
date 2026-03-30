@@ -1,27 +1,110 @@
 {
-  "db_instance_identifier": "payments-prod",
-  "observations": [
-    "DatabaseConnections climbed to 490 while max_connections on the instance is 500.",
-    "CPUUtilization stayed moderate, which indicates the immediate issue is session exhaustion rather than CPU starvation."
-  ],
-  "metrics": [
+  "namespace": "AWS/RDS",
+  "period": 60,
+  "start_time": "2026-03-26T11:50:00Z",
+  "end_time": "2026-03-26T12:05:00Z",
+  "metric_data_results": [
     {
+      "id": "m_db_connections",
+      "label": "DatabaseConnections",
       "metric_name": "DatabaseConnections",
+      "dimensions": [{"Name": "DBInstanceIdentifier", "Value": "payments-prod"}],
+      "stat": "Maximum",
       "unit": "Count",
-      "summary": "DatabaseConnections remained between 486 and 494 for 20 minutes, leaving almost no free sessions.",
-      "recent_datapoints": [
-        {"timestamp": "2026-03-26T12:00:00Z", "maximum": 486},
-        {"timestamp": "2026-03-26T12:05:00Z", "maximum": 492},
-        {"timestamp": "2026-03-26T12:10:00Z", "maximum": 494}
-      ]
+      "status_code": "Complete",
+      "timestamps": [
+        "2026-03-26T11:50:00Z", "2026-03-26T11:51:00Z", "2026-03-26T11:52:00Z",
+        "2026-03-26T11:53:00Z", "2026-03-26T11:54:00Z", "2026-03-26T11:55:00Z",
+        "2026-03-26T11:56:00Z", "2026-03-26T11:57:00Z", "2026-03-26T11:58:00Z",
+        "2026-03-26T11:59:00Z", "2026-03-26T12:00:00Z", "2026-03-26T12:01:00Z",
+        "2026-03-26T12:02:00Z", "2026-03-26T12:03:00Z", "2026-03-26T12:04:00Z"
+      ],
+      "values": [312.0, 341.0, 368.0, 392.0, 411.0, 429.0, 444.0, 458.0, 469.0, 477.0, 484.0, 489.0, 492.0, 493.0, 494.0]
     },
     {
+      "id": "m_cpu",
+      "label": "CPUUtilization",
       "metric_name": "CPUUtilization",
+      "dimensions": [{"Name": "DBInstanceIdentifier", "Value": "payments-prod"}],
+      "stat": "Average",
       "unit": "Percent",
-      "summary": "CPUUtilization stayed below 52%, so the database still had compute headroom while client sessions were exhausted.",
-      "recent_datapoints": [
-        {"timestamp": "2026-03-26T12:10:00Z", "average": 49.8}
-      ]
+      "status_code": "Complete",
+      "timestamps": [
+        "2026-03-26T11:50:00Z", "2026-03-26T11:51:00Z", "2026-03-26T11:52:00Z",
+        "2026-03-26T11:53:00Z", "2026-03-26T11:54:00Z", "2026-03-26T11:55:00Z",
+        "2026-03-26T11:56:00Z", "2026-03-26T11:57:00Z", "2026-03-26T11:58:00Z",
+        "2026-03-26T11:59:00Z", "2026-03-26T12:00:00Z", "2026-03-26T12:01:00Z",
+        "2026-03-26T12:02:00Z", "2026-03-26T12:03:00Z", "2026-03-26T12:04:00Z"
+      ],
+      "values": [38.4, 40.1, 42.6, 44.8, 46.3, 47.9, 48.5, 49.1, 49.6, 49.8, 50.1, 49.9, 50.2, 49.7, 50.0]
+    },
+    {
+      "id": "m_replica_lag",
+      "label": "ReplicaLag",
+      "metric_name": "ReplicaLag",
+      "dimensions": [{"Name": "DBInstanceIdentifier", "Value": "payments-prod-replica-1"}],
+      "stat": "Maximum",
+      "unit": "Seconds",
+      "status_code": "Complete",
+      "timestamps": [
+        "2026-03-26T11:50:00Z", "2026-03-26T11:51:00Z", "2026-03-26T11:52:00Z",
+        "2026-03-26T11:53:00Z", "2026-03-26T11:54:00Z", "2026-03-26T11:55:00Z",
+        "2026-03-26T11:56:00Z", "2026-03-26T11:57:00Z", "2026-03-26T11:58:00Z",
+        "2026-03-26T11:59:00Z", "2026-03-26T12:00:00Z", "2026-03-26T12:01:00Z",
+        "2026-03-26T12:02:00Z", "2026-03-26T12:03:00Z", "2026-03-26T12:04:00Z"
+      ],
+      "values": [1.2, 1.4, 1.1, 1.3, 1.5, 1.2, 1.4, 1.3, 1.2, 1.4, 1.3, 1.5, 1.2, 1.4, 1.3]
+    },
+    {
+      "id": "m_free_storage",
+      "label": "FreeStorageSpace",
+      "metric_name": "FreeStorageSpace",
+      "dimensions": [{"Name": "DBInstanceIdentifier", "Value": "payments-prod"}],
+      "stat": "Minimum",
+      "unit": "Bytes",
+      "status_code": "Complete",
+      "timestamps": [
+        "2026-03-26T11:50:00Z", "2026-03-26T11:51:00Z", "2026-03-26T11:52:00Z",
+        "2026-03-26T11:53:00Z", "2026-03-26T11:54:00Z", "2026-03-26T11:55:00Z",
+        "2026-03-26T11:56:00Z", "2026-03-26T11:57:00Z", "2026-03-26T11:58:00Z",
+        "2026-03-26T11:59:00Z", "2026-03-26T12:00:00Z", "2026-03-26T12:01:00Z",
+        "2026-03-26T12:02:00Z", "2026-03-26T12:03:00Z", "2026-03-26T12:04:00Z"
+      ],
+      "values": [193273528320.0, 193273528320.0, 193273528320.0, 193273528320.0, 193273528320.0, 193273528320.0, 193273528320.0, 193273528320.0, 193273528320.0, 193273528320.0, 193273528320.0, 193273528320.0, 193273528320.0, 193273528320.0, 193273528320.0]
+    },
+    {
+      "id": "m_write_latency",
+      "label": "WriteLatency",
+      "metric_name": "WriteLatency",
+      "dimensions": [{"Name": "DBInstanceIdentifier", "Value": "payments-prod"}],
+      "stat": "Average",
+      "unit": "Seconds",
+      "status_code": "Complete",
+      "timestamps": [
+        "2026-03-26T11:50:00Z", "2026-03-26T11:51:00Z", "2026-03-26T11:52:00Z",
+        "2026-03-26T11:53:00Z", "2026-03-26T11:54:00Z", "2026-03-26T11:55:00Z",
+        "2026-03-26T11:56:00Z", "2026-03-26T11:57:00Z", "2026-03-26T11:58:00Z",
+        "2026-03-26T11:59:00Z", "2026-03-26T12:00:00Z", "2026-03-26T12:01:00Z",
+        "2026-03-26T12:02:00Z", "2026-03-26T12:03:00Z", "2026-03-26T12:04:00Z"
+      ],
+      "values": [0.0028, 0.0031, 0.0034, 0.0038, 0.0041, 0.0044, 0.0046, 0.0048, 0.0049, 0.0051, 0.0052, 0.0051, 0.0053, 0.0052, 0.0054]
+    },
+    {
+      "id": "m_read_iops",
+      "label": "ReadIOPS",
+      "metric_name": "ReadIOPS",
+      "dimensions": [{"Name": "DBInstanceIdentifier", "Value": "payments-prod"}],
+      "stat": "Average",
+      "unit": "Count/Second",
+      "status_code": "Complete",
+      "timestamps": [
+        "2026-03-26T11:50:00Z", "2026-03-26T11:51:00Z", "2026-03-26T11:52:00Z",
+        "2026-03-26T11:53:00Z", "2026-03-26T11:54:00Z", "2026-03-26T11:55:00Z",
+        "2026-03-26T11:56:00Z", "2026-03-26T11:57:00Z", "2026-03-26T11:58:00Z",
+        "2026-03-26T11:59:00Z", "2026-03-26T12:00:00Z", "2026-03-26T12:01:00Z",
+        "2026-03-26T12:02:00Z", "2026-03-26T12:03:00Z", "2026-03-26T12:04:00Z"
+      ],
+      "values": [218.0, 224.0, 231.0, 228.0, 235.0, 229.0, 226.0, 232.0, 228.0, 231.0, 227.0, 233.0, 229.0, 230.0, 228.0]
     }
   ]
 }

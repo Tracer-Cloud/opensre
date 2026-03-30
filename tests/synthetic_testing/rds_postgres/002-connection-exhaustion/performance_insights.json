@@ -1,20 +1,62 @@
 {
   "db_instance_identifier": "payments-prod",
-  "observations": [
-    "No single query dominated DB load; the problem was many idle-in-transaction sessions holding connections open.",
-    "Average active sessions was 7.1, far below the number of open client connections."
-  ],
+  "start_time": "2026-03-26T11:50:00Z",
+  "end_time": "2026-03-26T12:05:00Z",
+  "db_load": {
+    "timestamps": [
+      "2026-03-26T11:50:00Z", "2026-03-26T11:51:00Z", "2026-03-26T11:52:00Z",
+      "2026-03-26T11:53:00Z", "2026-03-26T11:54:00Z", "2026-03-26T11:55:00Z",
+      "2026-03-26T11:56:00Z", "2026-03-26T11:57:00Z", "2026-03-26T11:58:00Z",
+      "2026-03-26T11:59:00Z", "2026-03-26T12:00:00Z", "2026-03-26T12:01:00Z",
+      "2026-03-26T12:02:00Z", "2026-03-26T12:03:00Z", "2026-03-26T12:04:00Z"
+    ],
+    "values": [2.8, 3.1, 3.6, 4.2, 4.9, 5.4, 5.9, 6.3, 6.7, 6.9, 7.1, 7.2, 7.1, 7.3, 7.2],
+    "unit": "db_load|avg"
+  },
   "top_sql": [
     {
-      "sql": "BEGIN; SELECT * FROM invoices WHERE account_id = $1",
-      "db_load": 6.2,
-      "wait_event": "Client:ClientRead"
+      "statement": "BEGIN; SELECT * FROM invoices WHERE account_id = $1",
+      "db_load_avg": 6.2,
+      "wait_events": [
+        {"name": "Client:ClientRead", "type": "Client", "db_load_avg": 5.8},
+        {"name": "CPU", "type": "CPU", "db_load_avg": 0.4}
+      ],
+      "calls_per_sec": 0.3
+    },
+    {
+      "statement": "SELECT id, status, total FROM orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+      "db_load_avg": 0.6,
+      "wait_events": [
+        {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 0.4},
+        {"name": "CPU", "type": "CPU", "db_load_avg": 0.2}
+      ],
+      "calls_per_sec": 18.4
+    },
+    {
+      "statement": "UPDATE user_sessions SET last_seen_at = $1 WHERE session_id = $2",
+      "db_load_avg": 0.3,
+      "wait_events": [
+        {"name": "IO:WALWrite", "type": "IO", "db_load_avg": 0.2},
+        {"name": "CPU", "type": "CPU", "db_load_avg": 0.1}
+      ],
+      "calls_per_sec": 9.1
     }
   ],
-  "wait_events": [
-    {
-      "name": "Client:ClientRead",
-      "db_load": 5.8
-    }
+  "top_wait_events": [
+    {"name": "Client:ClientRead", "type": "Client", "db_load_avg": 5.8},
+    {"name": "CPU", "type": "CPU", "db_load_avg": 0.7},
+    {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 0.4},
+    {"name": "IO:WALWrite", "type": "IO", "db_load_avg": 0.2},
+    {"name": "Lock:relation", "type": "Lock", "db_load_avg": 0.1}
+  ],
+  "top_users": [
+    {"name": "api_service", "db_load_avg": 5.9},
+    {"name": "payments_service", "db_load_avg": 0.9},
+    {"name": "readonly_replica", "db_load_avg": 0.4}
+  ],
+  "top_hosts": [
+    {"id": "10.0.2.44", "db_load_avg": 3.2},
+    {"id": "10.0.2.51", "db_load_avg": 2.8},
+    {"id": "10.0.2.38", "db_load_avg": 1.2}
   ]
 }

@@ -59,10 +59,10 @@ def prepare_scenario_state(fixture: ScenarioFixture) -> InvestigationState:
     )
     state["problem_md"] = fixture.problem_md
     state["alert_source"] = str(alert.get("alert_source") or "cloudwatch")
-    state["evidence"] = fixture.evidence
+    state["evidence"] = fixture.evidence.as_dict()
     state["context"] = {
         "service": "rds",
-        "engine": "postgres",
+        "engine": fixture.metadata.engine,
         "fault_script": fixture.fault_script,
     }
 
