@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import sys
 from typing import Any
 
@@ -8,22 +9,26 @@ from rich.console import Console
 from app.cli.tests.catalog import TestCatalog, TestCatalogItem
 from app.cli.tests.runner import format_command, run_catalog_item
 
-_questionary: Any
-_QuestionaryChoice: Any
-_QuestionaryStyle: Any
-_select_prompt: Any
+_questionary_module: Any
+_questionary_choice: Any
+_questionary_style: Any
+_select_prompt_impl: Any
 
 try:
-    import questionary as _questionary
-    from questionary import Choice as _QuestionaryChoice
-    from questionary import Style as _QuestionaryStyle
-
-    from app.cli.wizard.prompts import select as _select_prompt
+    _questionary_module = importlib.import_module("questionary")
+    _questionary_choice = _questionary_module.Choice
+    _questionary_style = _questionary_module.Style
+    _select_prompt_impl = importlib.import_module("app.cli.wizard.prompts").select
 except ModuleNotFoundError:  # pragma: no cover - depends on optional interactive deps
-    _questionary = None
-    _QuestionaryChoice = None
-    _QuestionaryStyle = None
-    _select_prompt = None
+    _questionary_module = None
+    _questionary_choice = None
+    _questionary_style = None
+    _select_prompt_impl = None
+
+_questionary: Any = _questionary_module
+_QuestionaryChoice: Any = _questionary_choice
+_QuestionaryStyle: Any = _questionary_style
+_select_prompt: Any = _select_prompt_impl
 
 _console = Console()
 _BACK = object()
