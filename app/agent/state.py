@@ -7,7 +7,19 @@ from typing import Annotated, Any, Literal, TypedDict, cast
 
 from langgraph.graph import add_messages
 
-EvidenceSource = Literal["storage", "batch", "tracer_web", "cloudwatch", "aws_sdk", "knowledge", "grafana", "datadog", "eks"]
+EvidenceSource = Literal[
+    "storage",
+    "batch",
+    "tracer_web",
+    "cloudwatch",
+    "aws_sdk",
+    "knowledge",
+    "grafana",
+    "datadog",
+    "eks",
+    "github",
+    "sentry",
+]
 AgentMode = Literal["chat", "investigation"]
 
 
@@ -90,6 +102,7 @@ class AgentState(TypedDict, total=False):
     problem_md: str
     summary: str
     problem_report: dict[str, Any]
+    report: str
 
 
 # Alias for backward compatibility
@@ -128,6 +141,7 @@ STATE_DEFAULTS: dict[str, Any] = {
     "_auth_token": "",
     "slack_message": "",
     "problem_md": "",
+    "report": "",
 }
 
 

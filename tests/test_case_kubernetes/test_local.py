@@ -100,6 +100,11 @@ def _resolve_aws_creds() -> dict[str, str]:
     return result
 
 
+def _should_skip_in_ci() -> bool:
+    """Skip the infra-backed CI run when AWS credentials are unavailable."""
+    return bool(os.getenv("CI")) and not _resolve_aws_creds()
+
+
 def _render_manifest(
     manifest_path: str,
     *,
@@ -269,6 +274,10 @@ def main() -> int:
     args = parser.parse_args()
 
     run_both = not args.success and not args.fail
+
+    if _should_skip_in_ci():
+        print("Skipping Kubernetes infra test in CI: AWS credentials are not configured.")
+        return 0
 
     missing = check_prerequisites_basic()
     if missing:

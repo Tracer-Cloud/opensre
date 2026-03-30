@@ -1,10 +1,13 @@
+# Open SRE — Build Your Own AI SRE Agents 
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/Tracer-Cloud/open-sre-agent/main/app/icons/BannerGithub.png" alt="Tracer Banner" width="100%">
 </p>
-
+<meta name="google-site-verification" content="05niXvrQUSPCpucsCP7t1loNt_Kke3N9i6QIJ_0Gcg8" />
+<meta name="google-site-verification" content="I3aNPV9RpFv0aanmy5B22oKjsZ9PCamozvrggjFQJq8" />
 <p align="center">
-  <strong>The open-source SRE agent that automatically investigates incidents and finds the root cause, before your team gets paged.
-</strong>
+  An open-source framework so you can build AI-powered SRE agents that automate incident investigation and root cause analysis. Plug in the alerting sources you already use (Slack, Grafana, Datadog, PagerDuty and more), and compose custom workflows tailored to your infrastructure
+
 </p>
 
 <p align="center">
@@ -26,14 +29,33 @@
 git clone https://github.com/Tracer-Cloud/open-sre-agent
 cd open-sre-agent
 make install
+make install-hooks
 cp .env.example .env
-# set ANTHROPIC_API_KEY or OPENAI_API_KEY in .env
-make local-grafana-demo
+# run opensre onboard to configure your local LLM provider
+# and optionally validate/save Grafana, Datadog, Slack, AWS, GitHub MCP, and Sentry integrations
+opensre onboard
+make local-grafana-live
 ```
 
-Want the fastest Grafana-first path to a first RCA report? Start with [docs/local-grafana-demo.md](docs/local-grafana-demo.md).
+## Choose a Path
 
-Want the generic bundled RCA example instead? See [docs/local-rca-demo.md](docs/local-rca-demo.md).
+1. **Local Grafana RCA Demo**
+   Run Tracer against a real local `Grafana + Loki` stack and get a first RCA report with one command.
+   Start here: [Local Grafana RCA Demo](docs/local-grafana-live.md)
+
+2. **Bundled Local RCA Demo**
+   Skip Docker and run a bundled alert plus bundled evidence fixture locally.
+   Start here: [Bundled Local RCA Demo](docs/local-rca-demo.md)
+
+3. **Full Local Development Setup**
+   Run the LangGraph dev UI locally or connect your own Datadog, AWS, Slack, and optional Grafana systems.
+   Start here: [Full Local Setup Guide](SETUP.md)
+
+<p align="center">
+  <img src="docs/assets/local-grafana-live-flow.gif" alt="Live local Grafana flow" width="100%" />
+</p>
+
+Want help configuring a local LLM provider quickly, plus optional Grafana, Datadog, Slack, AWS, GitHub MCP, and Sentry integrations? Run `opensre onboard` after `make install`.
 
 Want to run the LangGraph dev UI or connect your own systems? See [SETUP.md](SETUP.md).
 
@@ -53,7 +75,7 @@ Root cause reports are delivered to Slack out of the box. Want them in PagerDuty
 
 ## How Tracer Works
 
-<img width="2444" height="881" alt="How it works" src="https://github.com/user-attachments/assets/dd79d5ab-e2a4-4ddf-a869-7afa4d7a10dc" />
+<img width="4096" height="2187" alt="tracer-how-it-works-illustration" src="https://github.com/user-attachments/assets/8b50fe5c-470c-4982-866f-4f90c3e251d1" />
 
 ### Investigation Workflow
 
@@ -107,7 +129,8 @@ Tracer integrates with the systems that power modern data platforms.
 ## Contributing
 
 We welcome contributors interested in:
-
+- The creation of Reinforcement Learning Environments for agentic workflows
+- Distributed infrastructure simulations 
 - Data platform integrations
 - Investigation engines
 - Observability tooling

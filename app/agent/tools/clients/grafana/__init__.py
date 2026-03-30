@@ -79,16 +79,16 @@ def get_grafana_client_from_credentials(
         )
         client = GrafanaClient(config=config)
         logger.info(
-            "[grafana] Client ready for %s with discovered UIDs: loki=%s tempo=%s mimir=%s",
-            endpoint,
+            "[grafana] Client ready for account_id=%s with datasource discovery status: loki=%s tempo=%s mimir=%s",
+            account_id,
             config.loki_datasource_uid,
             config.tempo_datasource_uid,
             config.mimir_datasource_uid,
         )
     else:
         logger.warning(
-            "[grafana] Could not discover datasource UIDs for %s — queries will fail",
-            endpoint,
+            "[grafana] Could not discover datasource UIDs for account_id=%s — queries will fail",
+            account_id,
         )
 
     _grafana_client_cache[cache_key] = client

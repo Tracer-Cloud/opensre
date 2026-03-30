@@ -90,8 +90,7 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
         hints.append(
             f"""AWS Infrastructure Metadata Available:
 {chr(10).join(metadata_items)}
-- Use execute_aws_operation to investigate any AWS resource dynamically
-- Examples: ecs.describe_tasks, rds.describe_db_instances, ec2.describe_instances"""
+- Use this metadata to narrow the investigation and choose only the concrete AWS actions listed below"""
         )
 
     if "grafana" in available_sources:

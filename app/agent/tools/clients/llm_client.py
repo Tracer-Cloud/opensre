@@ -103,10 +103,7 @@ class LLMClient:
             except Exception as err:
                 last_err = err
                 if attempt == max_attempts - 1:
-                    raise RuntimeError(
-                        "Anthropic API is overloaded (HTTP 529) after multiple retries. "
-                        "Try again in a few seconds."
-                    ) from err
+                    raise RuntimeError(_format_anthropic_retry_error(err)) from err
                 time.sleep(backoff_seconds)
                 backoff_seconds *= 2
         else:
@@ -114,6 +111,23 @@ class LLMClient:
 
         content = _extract_text(response)
         return LLMResponse(content=content)
+
+
+def _format_anthropic_retry_error(err: Exception) -> str:
+    """Format a user-facing Anthropic retry failure message."""
+    error_name = type(err).__name__
+    status_code = getattr(err, "status_code", None)
+    if error_name == "APIConnectionError":
+        return (
+            "Anthropic API connection failed after multiple retries. "
+            "Check network access and try again."
+        )
+    if status_code == 529:
+        return (
+            "Anthropic API is overloaded (HTTP 529) after multiple retries. "
+            "Try again in a few seconds."
+        )
+    return f"Anthropic API request failed after multiple retries: {error_name}."
 
 
 def _uses_max_completion_tokens(model: str) -> bool:
@@ -312,9 +326,11 @@ def get_llm() -> LLMClient | OpenAILLMClient:
     if _llm is None:
         provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
         if provider == "openai":
+            from app.config import DEFAULT_MAX_TOKENS, DEFAULT_OPENAI_MODEL
+
             _llm = OpenAILLMClient(
-                model="gpt-5.2",
-                max_tokens=4096,
+                model=os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
+                max_tokens=DEFAULT_MAX_TOKENS,
             )
         else:
             from app.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL

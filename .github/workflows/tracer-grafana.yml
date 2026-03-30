@@ -20,17 +20,17 @@ jobs:
       LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
       AWS_REGION: us-east-1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install -e ".[dev]"
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4

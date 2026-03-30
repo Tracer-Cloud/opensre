@@ -15,6 +15,17 @@ from langchain_core.tools import StructuredTool
 from app.agent.prompts import ROUTER_PROMPT, SYSTEM_PROMPT
 from app.agent.state import AgentState, ChatMessage
 from app.agent.tools.clients import get_llm
+from app.agent.tools.tool_actions.github.github_mcp_actions import (
+    get_github_file_contents,
+    get_github_repository_tree,
+    list_github_commits,
+    search_github_code,
+)
+from app.agent.tools.tool_actions.sentry.sentry_actions import (
+    get_sentry_issue_details,
+    list_sentry_issue_events,
+    search_sentry_issues,
+)
 from app.agent.tools.tool_actions.tracer.tracer_jobs import (
     get_failed_jobs,
     get_failed_tools,
@@ -39,6 +50,13 @@ _CHAT_FUNCTIONS: list[Callable[..., Any]] = [
     get_error_logs,
     get_batch_statistics,
     get_host_metrics,
+    search_github_code,
+    get_github_file_contents,
+    get_github_repository_tree,
+    list_github_commits,
+    search_sentry_issues,
+    get_sentry_issue_details,
+    list_sentry_issue_events,
 ]
 
 CHAT_TOOLS: list[StructuredTool] = [

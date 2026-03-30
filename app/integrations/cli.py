@@ -5,16 +5,18 @@ Usage:
     python -m app.integrations list
     python -m app.integrations show <service>
     python -m app.integrations remove <service>
+    python -m app.integrations verify [service] [--send-slack-test]
 
-Supported services: aws, grafana, datadog, opensearch, rds, tracer
+Supported services: aws, grafana, datadog, slack, opensearch, rds, tracer, github, sentry
 """
 
 from __future__ import annotations
 
-import getpass
 import json
 import sys
 from typing import Any
+
+import questionary
 
 from app.integrations.store import (
     STORE_PATH,
@@ -23,21 +25,40 @@ from app.integrations.store import (
     remove_integration,
     upsert_integration,
 )
+from app.integrations.verify import (
+    SUPPORTED_VERIFY_SERVICES,
+    format_verification_results,
+    verification_exit_code,
+    verify_integrations,
+)
 
 _B = "\033[1m"
 _R = "\033[0m"
-_SECRET_KEYS = frozenset({"api_key", "app_key", "password", "secret_access_key", "session_token", "jwt_token"})
+_SECRET_KEYS = frozenset({
+    "api_key",
+    "app_key",
+    "password",
+    "secret_access_key",
+    "session_token",
+    "jwt_token",
+    "webhook_url",
+    "auth_token",
+})
 
 
 def _p(label: str, default: str = "", secret: bool = False) -> str:
-    hint = f" [{default}]" if default else ""
-    prompt = f"  {_B}{label}{_R}{hint}: "
     try:
-        value = getpass.getpass(prompt) if secret else input(prompt).strip()
+        if secret:
+            result = questionary.password(f"  {label}").ask()
+        else:
+            result = questionary.text(f"  {label}", default=default).ask()
     except (EOFError, KeyboardInterrupt):
         print("\nAborted.")
         sys.exit(1)
-    return value or default
+    if result is None:
+        print("\nAborted.")
+        sys.exit(1)
+    return result.strip() or default
 
 
 def _die(msg: str) -> None:
@@ -73,8 +94,17 @@ def _setup_datadog() -> None:
 
 
 def _setup_aws() -> None:
-    print("  1) IAM Role ARN  2) Access Key + Secret")
-    choice = _p("Choice", default="1")
+    choice = questionary.select(
+        "AWS authentication method:",
+        choices=[
+            questionary.Choice("IAM Role ARN", value="1"),
+            questionary.Choice("Access Key + Secret", value="2"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if choice is None:
+        print("\nAborted.")
+        sys.exit(1)
     region = _p("Region", default="us-east-1")
     if choice == "1":
         role_arn = _p("IAM Role ARN")
@@ -89,11 +119,28 @@ def _setup_aws() -> None:
         upsert_integration("aws", {"credentials": {"access_key_id": access_key, "secret_access_key": secret_key, "session_token": _p("Session token (optional)"), "region": region}})
 
 
+def _setup_slack() -> None:
+    webhook_url = _p("Slack webhook URL", secret=True)
+    if not webhook_url:
+        _die("webhook_url is required.")
+    upsert_integration("slack", {"credentials": {"webhook_url": webhook_url}})
+
+
 def _setup_opensearch() -> None:
     endpoint = _p("Endpoint (e.g. https://my-cluster.us-east-1.es.amazonaws.com)")
-    print("  1) Username + Password  2) API key")
     creds: dict[str, Any] = {"endpoint": endpoint}
-    if _p("Choice", default="1") == "2":
+    auth_choice = questionary.select(
+        "OpenSearch authentication method:",
+        choices=[
+            questionary.Choice("Username + Password", value="1"),
+            questionary.Choice("API key", value="2"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if auth_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    if auth_choice == "2":
         creds["api_key"] = _p("API key", secret=True)
     else:
         creds["username"] = _p("Username", default="admin")
@@ -120,16 +167,66 @@ def _setup_tracer() -> None:
     upsert_integration("tracer", {"credentials": {"base_url": base_url, "jwt_token": jwt_token}})
 
 
+def _setup_github() -> None:
+    print("  1) SSE  2) Streamable HTTP  3) stdio")
+    choice = _p("Choice", default="2")
+    mode = {"1": "sse", "2": "streamable-http", "3": "stdio"}.get(choice, "streamable-http")
+    credentials: dict[str, Any] = {"mode": mode}
+    if mode == "stdio":
+        command = _p("Command", default="github-mcp-server")
+        args = _p("Args", default="stdio --toolsets repos,issues,pull_requests,actions")
+        if not command:
+            _die("command is required for stdio mode.")
+        credentials["command"] = command
+        credentials["args"] = [part for part in args.split() if part]
+    else:
+        url = _p("MCP URL", default="https://api.githubcopilot.com/mcp/")
+        if not url:
+            _die("url is required for remote MCP modes.")
+        credentials["url"] = url
+    credentials["auth_token"] = _p(
+        "GitHub PAT / auth token (optional if the server authenticates upstream)",
+        secret=True,
+    )
+    toolsets = _p("Toolsets", default="repos,issues,pull_requests,actions")
+    credentials["toolsets"] = [part.strip() for part in toolsets.split(",") if part.strip()]
+    upsert_integration("github", {"credentials": credentials})
+
+
+def _setup_sentry() -> None:
+    base_url = _p("Sentry URL", default="https://sentry.io")
+    organization_slug = _p("Organization slug")
+    auth_token = _p("Auth token", secret=True)
+    project_slug = _p("Project slug (optional)")
+    if not organization_slug or not auth_token:
+        _die("organization_slug and auth_token are required.")
+    upsert_integration(
+        "sentry",
+        {
+            "credentials": {
+                "base_url": base_url,
+                "organization_slug": organization_slug,
+                "auth_token": auth_token,
+                "project_slug": project_slug,
+            }
+        },
+    )
+
+
 _HANDLERS: dict[str, Any] = {
     "aws": _setup_aws,
     "datadog": _setup_datadog,
     "grafana": _setup_grafana,
+    "slack": _setup_slack,
     "opensearch": _setup_opensearch,
     "rds": _setup_rds,
     "tracer": _setup_tracer,
+    "github": _setup_github,
+    "sentry": _setup_sentry,
 }
 
 SUPPORTED = ", ".join(_HANDLERS)
+SUPPORTED_VERIFY = ", ".join(SUPPORTED_VERIFY_SERVICES)
 
 
 
@@ -169,13 +266,23 @@ def cmd_remove(service: str | None) -> None:
         _die("Usage: remove <service>")
         return
     try:
-        confirm = input(f"  Remove '{service}'? [y/N]: ").strip().lower()
+        confirmed = questionary.confirm(f"  Remove '{service}'?", default=False).ask()
     except (EOFError, KeyboardInterrupt):
         return
-    if confirm not in ("y", "yes"):
+    if not confirmed:
         print("  Cancelled.")
         return
     if remove_integration(service):
         print(f"  ✓ Removed '{service}'.")
     else:
         print(f"  No integration found for '{service}'.")
+
+
+def cmd_verify(service: str | None, *, send_slack_test: bool = False) -> None:
+    if service and service not in SUPPORTED_VERIFY_SERVICES:
+        _die(f"Usage: verify [service]. Supported: {SUPPORTED_VERIFY}")
+        return
+
+    results = verify_integrations(service=service, send_slack_test=send_slack_test)
+    print(format_verification_results(results))
+    sys.exit(verification_exit_code(results, requested_service=service))

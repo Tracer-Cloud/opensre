@@ -132,10 +132,10 @@ def run_demo(argv: list[str] | None = None) -> str:
     fixture = load_demo_fixture(Path(args.fixture))
     state = prepare_demo_state(fixture)
 
-    diagnosis = diagnose_root_cause(state)
+    diagnosis = cast(InvestigationState, diagnose_root_cause(state))
     state.update(diagnosis)
 
-    report = generate_report(state)["slack_message"]
+    report = str(generate_report(state)["slack_message"])
     if args.output:
         Path(args.output).write_text(report + "\n", encoding="utf-8")
     return report

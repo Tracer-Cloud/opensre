@@ -1,1 +1,1 @@
-"""Bundled local demos for the Tracer agent."""
+"""Local demos for the Tracer agent."""

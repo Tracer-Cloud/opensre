@@ -5,13 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tracer-agent-2026"
 version = "0.1.0"
-description = "Tracer Agent 2026"
+description = "Open-source SRE agent for automated incident investigation and root cause analysis. Automatically analyzes alerts from Slack, Grafana, Datadog, and other tooling."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     # Core AI/Agent
     "anthropic>=0.77.1",
-    "openai>=1.0.0",
+    "mcp>=1.20.0",
+    "openai>=2.0.0",
     "langsmith>=0.6.8",
     "langgraph>=0.4.0",
     "langgraph-sdk",
@@ -32,7 +33,9 @@ dependencies = [
     # Utilities
     "python-dotenv>=1.0.0",
     "dotenv",
+    "click>=8.1.0",
     "rich>=13.0.0",
+    "questionary>=2.1.0",
     "PyYAML>=6.0",
     # OpenTelemetry
     "opentelemetry-api>=1.20.0",
@@ -45,6 +48,9 @@ dependencies = [
     "tracer_decorator",
 ]
 
+[project.scripts]
+opensre = "app.cli.__main__:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
@@ -52,6 +58,7 @@ dev = [
     "pytest-cov>=4.0.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
+    "pre-commit>=4.5.1",
     "types-requests",
     "types-PyYAML",
     "boto3-stubs[essential]",

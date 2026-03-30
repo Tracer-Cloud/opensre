@@ -6,6 +6,7 @@ Scans alert annotations and state context to detect available data sources
 
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 from app.agent.tools.tool_actions.grafana.grafana_actions import _map_pipeline_to_service_name
 
@@ -48,6 +49,38 @@ def _alert_time_range_minutes(raw_alert: dict[str, Any]) -> int:
         return max(60, minutes_ago + 35)
     except (ValueError, TypeError):
         return 60
+
+
+def _split_repo_full_name(value: str) -> tuple[str, str]:
+    cleaned = value.strip().strip("/")
+    if cleaned.count("/") < 1:
+        return "", ""
+    owner, repo = cleaned.split("/", 1)
+    return owner.strip(), repo.strip().removesuffix(".git")
+
+
+def _parse_repo_url(value: str) -> tuple[str, str]:
+    parsed = urlparse(value.strip())
+    if "github.com" not in parsed.netloc.lower():
+        return "", ""
+    path = parsed.path.strip("/")
+    if not path:
+        return "", ""
+    parts = path.split("/")
+    if len(parts) < 2:
+        return "", ""
+    return parts[0].strip(), parts[1].strip().removesuffix(".git")
+
+
+def _extract_issue_id_from_url(value: str) -> str:
+    parsed = urlparse(value.strip())
+    parts = [part for part in parsed.path.split("/") if part]
+    if "issues" not in parts:
+        return ""
+    index = parts.index("issues")
+    if index + 1 >= len(parts):
+        return ""
+    return parts[index + 1].strip()
 
 
 
@@ -373,7 +406,7 @@ def detect_sources(
 
     # Detect EKS: uses the AWS integration (EKS maps to aws in resolve_integrations)
     _eks_int = (resolved_integrations or {}).get("aws")
-    if _eks_int:
+    if _eks_int and _eks_int.get("role_arn"):
         eks_cluster = (
             annotations.get("eks_cluster")
             or annotations.get("cluster_name")
@@ -403,6 +436,100 @@ def detect_sources(
                 "role_arn": _eks_int["role_arn"],
                 "external_id": _eks_int.get("external_id", ""),
                 "cluster_names": _eks_int.get("cluster_names", []),
+                "connection_verified": True,
+            }
+
+    github_int = (resolved_integrations or {}).get("github")
+    if github_int:
+        repo_url = (
+            str(annotations.get("repo_url") or annotations.get("repository_url") or raw_alert.get("repo_url", ""))
+        )
+        owner = str(
+            annotations.get("github_owner")
+            or annotations.get("repo_owner")
+            or raw_alert.get("github_owner", "")
+        ).strip()
+        repo = str(
+            annotations.get("github_repo")
+            or annotations.get("repo_name")
+            or raw_alert.get("github_repo", "")
+        ).strip()
+        full_name = str(
+            annotations.get("repository")
+            or annotations.get("repo")
+            or raw_alert.get("repository", "")
+        ).strip()
+        if not owner or not repo:
+            owner, repo = _split_repo_full_name(full_name)
+        if (not owner or not repo) and repo_url:
+            owner, repo = _parse_repo_url(repo_url)
+
+        if owner and repo:
+            github_query = str(
+                annotations.get("github_query")
+                or annotations.get("code_query")
+                or raw_alert.get("error_message", "")
+                or raw_alert.get("alert_name", "")
+            ).strip()
+            sources["github"] = {
+                "owner": owner,
+                "repo": repo,
+                "sha": str(
+                    annotations.get("commit_sha")
+                    or annotations.get("github_sha")
+                    or raw_alert.get("sha", "")
+                ).strip(),
+                "ref": str(
+                    annotations.get("branch")
+                    or annotations.get("github_ref")
+                    or raw_alert.get("branch", "")
+                ).strip(),
+                "path": str(
+                    annotations.get("file_path")
+                    or annotations.get("github_path")
+                    or raw_alert.get("file_path", "")
+                ).strip(),
+                "query": github_query or "exception OR error",
+                "github_url": str(github_int.get("url", "")).strip(),
+                "github_mode": str(github_int.get("mode", "streamable-http")).strip(),
+                "github_token": str(github_int.get("auth_token", "")).strip(),
+                "github_command": str(github_int.get("command", "")).strip(),
+                "github_args": github_int.get("args", []),
+                "connection_verified": True,
+            }
+
+    sentry_int = (resolved_integrations or {}).get("sentry")
+    if sentry_int:
+        issue_id = str(
+            annotations.get("sentry_issue_id")
+            or annotations.get("issue_id")
+            or raw_alert.get("sentry_issue_id", "")
+        ).strip()
+        if not issue_id:
+            issue_id = _extract_issue_id_from_url(
+                str(
+                    annotations.get("sentry_issue_url")
+                    or annotations.get("issue_url")
+                    or raw_alert.get("sentry_issue_url", "")
+                )
+            )
+
+        sentry_query = str(
+            annotations.get("sentry_query")
+            or raw_alert.get("error_message", "")
+            or raw_alert.get("alert_name", "")
+        ).strip()
+        if issue_id or sentry_query:
+            sources["sentry"] = {
+                "organization_slug": str(sentry_int.get("organization_slug", "")).strip(),
+                "project_slug": str(
+                    annotations.get("sentry_project")
+                    or sentry_int.get("project_slug", "")
+                ).strip(),
+                "issue_id": issue_id,
+                "query": sentry_query,
+                "sentry_url": str(sentry_int.get("base_url", "https://sentry.io")).strip(),
+                "sentry_token": str(sentry_int.get("auth_token", "")).strip(),
                 "connection_verified": True,
             }
 

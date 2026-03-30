@@ -1,7 +1,11 @@
 """Registry of all available investigation actions."""
 
+import logging
+
 from app.agent.tools.tool_actions.investigation_registry.action_builder import build_action
 from app.agent.tools.tool_actions.investigation_registry.models import InvestigationAction
+
+logger = logging.getLogger(__name__)
 
 
 def get_available_actions() -> list[InvestigationAction]:
@@ -25,20 +29,11 @@ def get_available_actions() -> list[InvestigationAction]:
     from app.agent.tools.tool_actions.datadog.datadog_logs import query_datadog_logs
     from app.agent.tools.tool_actions.datadog.datadog_monitors import query_datadog_monitors
     from app.agent.tools.tool_actions.datadog.datadog_node_ip_to_pods import get_pods_on_node
-    from app.agent.tools.tool_actions.eks.eks_cluster_actions import (
-        describe_eks_addon,
-        describe_eks_cluster,
-        get_eks_nodegroup_health,
-        list_eks_clusters,
-    )
-    from app.agent.tools.tool_actions.eks.eks_workload_actions import (
-        get_eks_deployment_status,
-        get_eks_events,
-        get_eks_node_health,
-        get_eks_pod_logs,
-        list_eks_deployments,
-        list_eks_namespaces,
-        list_eks_pods,
+    from app.agent.tools.tool_actions.github.github_mcp_actions import (
+        get_github_file_contents,
+        get_github_repository_tree,
+        list_github_commits,
+        search_github_code,
     )
     from app.agent.tools.tool_actions.grafana.grafana_actions import (
         query_grafana_alert_rules,
@@ -50,12 +45,38 @@ def get_available_actions() -> list[InvestigationAction]:
     from app.agent.tools.tool_actions.knowledge_sre_book.sre_knowledge_actions import (
         get_sre_guidance,
     )
+    from app.agent.tools.tool_actions.sentry.sentry_actions import (
+        get_sentry_issue_details,
+        list_sentry_issue_events,
+        search_sentry_issues,
+    )
     from app.agent.tools.tool_actions.tracer.tracer_jobs import (
         get_failed_jobs,
         get_failed_tools,
     )
     from app.agent.tools.tool_actions.tracer.tracer_logs import get_error_logs
     from app.agent.tools.tool_actions.tracer.tracer_metrics import get_host_metrics
+
+    try:
+        from app.agent.tools.tool_actions.eks.eks_cluster_actions import (
+            describe_eks_addon,
+            describe_eks_cluster,
+            get_eks_nodegroup_health,
+            list_eks_clusters,
+        )
+        from app.agent.tools.tool_actions.eks.eks_workload_actions import (
+            get_eks_deployment_status,
+            get_eks_events,
+            get_eks_node_health,
+            get_eks_pod_logs,
+            list_eks_deployments,
+            list_eks_namespaces,
+            list_eks_pods,
+        )
+        eks_actions_available = True
+    except ModuleNotFoundError as exc:
+        logger.warning("[actions] EKS actions unavailable: %s", exc)
+        eks_actions_available = False
 
     def _dd_available(sources: dict) -> bool:
         return bool(sources.get("datadog", {}).get("connection_verified"))
@@ -79,7 +100,23 @@ def get_available_actions() -> list[InvestigationAction]:
             "region": eks.get("region", "us-east-1"),
         }
 
-    return [
+    def _gh_available(sources: dict) -> bool:
+        return bool(sources.get("github", {}).get("connection_verified"))
+
+    def _gh_creds(sources: dict) -> dict:
+        github = sources["github"]
+        return {
+            "github_url": github.get("github_url"),
+            "github_mode": github.get("github_mode", "streamable-http"),
+            "github_token": github.get("github_token"),
+            "github_command": github.get("github_command", ""),
+            "github_args": github.get("github_args", []),
+        }
+
+    def _sentry_available(sources: dict) -> bool:
+        return bool(sources.get("sentry", {}).get("connection_verified"))
+
+    actions = [
         # Tracer actions
         build_action(
             name="get_failed_jobs",
@@ -259,7 +296,10 @@ def get_available_actions() -> list[InvestigationAction]:
             func=execute_aws_operation,
             source="aws_sdk",
             requires=["service", "operation"],
-            availability_check=lambda sources: bool(sources.get("aws_metadata")),
+            # Keep the generic AWS SDK action out of automatic planning until
+            # we have a safe way to derive service/operation inputs from alert
+            # context. Otherwise the planner can select an action it cannot run.
+            availability_check=lambda _sources: False,
             parameter_extractor=None,
         ),
         # Knowledge action
@@ -415,134 +455,262 @@ def get_available_actions() -> list[InvestigationAction]:
                 **_dd_creds(sources),
             },
         ),
-        # EKS actions
         build_action(
-            name="list_eks_clusters",
-            func=list_eks_clusters,
-            source="eks",
-            requires=[],
-            availability_check=_eks_available,
+            name="search_github_code",
+            func=search_github_code,
+            source="github",
+            requires=["owner", "repo", "query"],
+            availability_check=lambda sources: bool(
+                _gh_available(sources)
+                and sources.get("github", {}).get("owner")
+                and sources.get("github", {}).get("repo")
+            ),
             parameter_extractor=lambda sources: {
-                "cluster_names": sources["eks"].get("cluster_names", []),
-                **_eks_creds(sources),
+                "owner": sources["github"]["owner"],
+                "repo": sources["github"]["repo"],
+                "query": sources["github"].get("query") or "exception OR error",
+                **_gh_creds(sources),
             },
         ),
         build_action(
-            name="describe_eks_cluster",
-            func=describe_eks_cluster,
-            source="eks",
-            requires=["cluster_name"],
-            availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("cluster_name")),
+            name="get_github_file_contents",
+            func=get_github_file_contents,
+            source="github",
+            requires=["owner", "repo", "path"],
+            availability_check=lambda sources: bool(
+                _gh_available(sources)
+                and sources.get("github", {}).get("owner")
+                and sources.get("github", {}).get("repo")
+                and sources.get("github", {}).get("path")
+            ),
             parameter_extractor=lambda sources: {
-                "cluster_name": sources["eks"]["cluster_name"],
-                **_eks_creds(sources),
+                "owner": sources["github"]["owner"],
+                "repo": sources["github"]["repo"],
+                "path": sources["github"]["path"],
+                "ref": sources["github"].get("ref", ""),
+                "sha": sources["github"].get("sha", ""),
+                **_gh_creds(sources),
             },
         ),
         build_action(
-            name="get_eks_nodegroup_health",
-            func=get_eks_nodegroup_health,
-            source="eks",
-            requires=["cluster_name"],
-            availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("cluster_name")),
+            name="get_github_repository_tree",
+            func=get_github_repository_tree,
+            source="github",
+            requires=["owner", "repo"],
+            availability_check=lambda sources: bool(
+                _gh_available(sources)
+                and sources.get("github", {}).get("owner")
+                and sources.get("github", {}).get("repo")
+            ),
             parameter_extractor=lambda sources: {
-                "cluster_name": sources["eks"]["cluster_name"],
-                **_eks_creds(sources),
+                "owner": sources["github"]["owner"],
+                "repo": sources["github"]["repo"],
+                "path_filter": sources["github"].get("path", ""),
+                "tree_sha": sources["github"].get("sha") or sources["github"].get("ref", ""),
+                "recursive": True,
+                **_gh_creds(sources),
             },
         ),
         build_action(
-            name="describe_eks_addon",
-            func=describe_eks_addon,
-            source="eks",
-            requires=["cluster_name"],
-            availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("cluster_name")),
+            name="list_github_commits",
+            func=list_github_commits,
+            source="github",
+            requires=["owner", "repo"],
+            availability_check=lambda sources: bool(
+                _gh_available(sources)
+                and sources.get("github", {}).get("owner")
+                and sources.get("github", {}).get("repo")
+            ),
             parameter_extractor=lambda sources: {
-                "cluster_name": sources["eks"]["cluster_name"],
-                "addon_name": "coredns",
-                **_eks_creds(sources),
+                "owner": sources["github"]["owner"],
+                "repo": sources["github"]["repo"],
+                "path": sources["github"].get("path", ""),
+                "sha": sources["github"].get("sha") or sources["github"].get("ref", ""),
+                "per_page": 10,
+                **_gh_creds(sources),
             },
         ),
         build_action(
-            name="get_eks_pod_logs",
-            func=get_eks_pod_logs,
-            source="eks",
-            requires=["cluster_name", "pod_name"],
-            availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("pod_name")),
+            name="search_sentry_issues",
+            func=search_sentry_issues,
+            source="sentry",
+            requires=["organization_slug", "sentry_token"],
+            availability_check=_sentry_available,
             parameter_extractor=lambda sources: {
-                "cluster_name": sources["eks"]["cluster_name"],
-                "namespace": sources["eks"].get("namespace", "default"),
-                "pod_name": sources["eks"]["pod_name"],
-                **_eks_creds(sources),
+                "organization_slug": sources["sentry"]["organization_slug"],
+                "sentry_token": sources["sentry"]["sentry_token"],
+                "query": sources["sentry"].get("query", ""),
+                "sentry_url": sources["sentry"].get("sentry_url", "https://sentry.io"),
+                "project_slug": sources["sentry"].get("project_slug", ""),
+                "limit": 10,
             },
         ),
         build_action(
-            name="get_eks_events",
-            func=get_eks_events,
-            source="eks",
-            requires=["cluster_name"],
-            availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("cluster_name")),
+            name="get_sentry_issue_details",
+            func=get_sentry_issue_details,
+            source="sentry",
+            requires=["organization_slug", "sentry_token", "issue_id"],
+            availability_check=lambda sources: bool(
+                _sentry_available(sources) and sources.get("sentry", {}).get("issue_id")
+            ),
             parameter_extractor=lambda sources: {
-                "cluster_name": sources["eks"]["cluster_name"],
-                "namespace": sources["eks"].get("namespace", "default"),
-                **_eks_creds(sources),
+                "organization_slug": sources["sentry"]["organization_slug"],
+                "sentry_token": sources["sentry"]["sentry_token"],
+                "issue_id": sources["sentry"]["issue_id"],
+                "sentry_url": sources["sentry"].get("sentry_url", "https://sentry.io"),
+                "project_slug": sources["sentry"].get("project_slug", ""),
             },
         ),
         build_action(
-            name="get_eks_deployment_status",
-            func=get_eks_deployment_status,
-            source="eks",
-            requires=["cluster_name", "deployment_name"],
-            availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("deployment")),
+            name="list_sentry_issue_events",
+            func=list_sentry_issue_events,
+            source="sentry",
+            requires=["organization_slug", "sentry_token", "issue_id"],
+            availability_check=lambda sources: bool(
+                _sentry_available(sources) and sources.get("sentry", {}).get("issue_id")
+            ),
             parameter_extractor=lambda sources: {
-                "cluster_name": sources["eks"]["cluster_name"],
-                "namespace": sources["eks"].get("namespace", "default"),
-                "deployment_name": sources["eks"]["deployment"],
-                **_eks_creds(sources),
-            },
-        ),
-        build_action(
-            name="get_eks_node_health",
-            func=get_eks_node_health,
-            source="eks",
-            requires=["cluster_name"],
-            availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("cluster_name")),
-            parameter_extractor=lambda sources: {
-                "cluster_name": sources["eks"]["cluster_name"],
-                **_eks_creds(sources),
-            },
-        ),
-        build_action(
-            name="list_eks_pods",
-            func=list_eks_pods,
-            source="eks",
-            requires=["cluster_name"],
-            availability_check=_eks_available,
-            parameter_extractor=lambda sources: {
-                "cluster_name": sources["eks"]["cluster_name"],
-                "namespace": sources["eks"].get("namespace") or "all",
-                **_eks_creds(sources),
-            },
-        ),
-        build_action(
-            name="list_eks_deployments",
-            func=list_eks_deployments,
-            source="eks",
-            requires=["cluster_name"],
-            availability_check=_eks_available,
-            parameter_extractor=lambda sources: {
-                "cluster_name": sources["eks"]["cluster_name"],
-                "namespace": sources["eks"].get("namespace") or "all",
-                **_eks_creds(sources),
-            },
-        ),
-        build_action(
-            name="list_eks_namespaces",
-            func=list_eks_namespaces,
-            source="eks",
-            requires=["cluster_name"],
-            availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("cluster_name")),
-            parameter_extractor=lambda sources: {
-                "cluster_name": sources["eks"]["cluster_name"],
-                **_eks_creds(sources),
+                "organization_slug": sources["sentry"]["organization_slug"],
+                "sentry_token": sources["sentry"]["sentry_token"],
+                "issue_id": sources["sentry"]["issue_id"],
+                "sentry_url": sources["sentry"].get("sentry_url", "https://sentry.io"),
+                "project_slug": sources["sentry"].get("project_slug", ""),
+                "limit": 10,
             },
         ),
     ]
+
+    if eks_actions_available:
+        actions.extend([
+            build_action(
+                name="list_eks_clusters",
+                func=list_eks_clusters,
+                source="eks",
+                requires=[],
+                availability_check=_eks_available,
+                parameter_extractor=lambda sources: {
+                    "cluster_names": sources["eks"].get("cluster_names", []),
+                    **_eks_creds(sources),
+                },
+            ),
+            build_action(
+                name="describe_eks_cluster",
+                func=describe_eks_cluster,
+                source="eks",
+                requires=["cluster_name"],
+                availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("cluster_name")),
+                parameter_extractor=lambda sources: {
+                    "cluster_name": sources["eks"]["cluster_name"],
+                    **_eks_creds(sources),
+                },
+            ),
+            build_action(
+                name="get_eks_nodegroup_health",
+                func=get_eks_nodegroup_health,
+                source="eks",
+                requires=["cluster_name"],
+                availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("cluster_name")),
+                parameter_extractor=lambda sources: {
+                    "cluster_name": sources["eks"]["cluster_name"],
+                    **_eks_creds(sources),
+                },
+            ),
+            build_action(
+                name="describe_eks_addon",
+                func=describe_eks_addon,
+                source="eks",
+                requires=["cluster_name"],
+                availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("cluster_name")),
+                parameter_extractor=lambda sources: {
+                    "cluster_name": sources["eks"]["cluster_name"],
+                    "addon_name": "coredns",
+                    **_eks_creds(sources),
+                },
+            ),
+            build_action(
+                name="get_eks_pod_logs",
+                func=get_eks_pod_logs,
+                source="eks",
+                requires=["cluster_name", "pod_name"],
+                availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("pod_name")),
+                parameter_extractor=lambda sources: {
+                    "cluster_name": sources["eks"]["cluster_name"],
+                    "namespace": sources["eks"].get("namespace", "default"),
+                    "pod_name": sources["eks"]["pod_name"],
+                    **_eks_creds(sources),
+                },
+            ),
+            build_action(
+                name="get_eks_events",
+                func=get_eks_events,
+                source="eks",
+                requires=["cluster_name"],
+                availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("cluster_name")),
+                parameter_extractor=lambda sources: {
+                    "cluster_name": sources["eks"]["cluster_name"],
+                    "namespace": sources["eks"].get("namespace", "default"),
+                    **_eks_creds(sources),
+                },
+            ),
+            build_action(
+                name="get_eks_deployment_status",
+                func=get_eks_deployment_status,
+                source="eks",
+                requires=["cluster_name", "deployment_name"],
+                availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("deployment")),
+                parameter_extractor=lambda sources: {
+                    "cluster_name": sources["eks"]["cluster_name"],
+                    "namespace": sources["eks"].get("namespace", "default"),
+                    "deployment_name": sources["eks"]["deployment"],
+                    **_eks_creds(sources),
+                },
+            ),
+            build_action(
+                name="get_eks_node_health",
+                func=get_eks_node_health,
+                source="eks",
+                requires=["cluster_name"],
+                availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("cluster_name")),
+                parameter_extractor=lambda sources: {
+                    "cluster_name": sources["eks"]["cluster_name"],
+                    **_eks_creds(sources),
+                },
+            ),
+            build_action(
+                name="list_eks_pods",
+                func=list_eks_pods,
+                source="eks",
+                requires=["cluster_name"],
+                availability_check=_eks_available,
+                parameter_extractor=lambda sources: {
+                    "cluster_name": sources["eks"]["cluster_name"],
+                    "namespace": sources["eks"].get("namespace") or "all",
+                    **_eks_creds(sources),
+                },
+            ),
+            build_action(
+                name="list_eks_deployments",
+                func=list_eks_deployments,
+                source="eks",
+                requires=["cluster_name"],
+                availability_check=_eks_available,
+                parameter_extractor=lambda sources: {
+                    "cluster_name": sources["eks"]["cluster_name"],
+                    "namespace": sources["eks"].get("namespace") or "all",
+                    **_eks_creds(sources),
+                },
+            ),
+            build_action(
+                name="list_eks_namespaces",
+                func=list_eks_namespaces,
+                source="eks",
+                requires=["cluster_name"],
+                availability_check=lambda s: _eks_available(s) and bool(s.get("eks", {}).get("cluster_name")),
+                parameter_extractor=lambda sources: {
+                    "cluster_name": sources["eks"]["cluster_name"],
+                    **_eks_creds(sources),
+                },
+            ),
+        ])
+
+    return actions

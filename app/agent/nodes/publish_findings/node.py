@@ -71,7 +71,7 @@ def generate_report(state: InvestigationState) -> dict:
             f"[publish] Slack delivery failed: channel={_channel}, thread_ts={thread_ts}, reason={delivery_error}"
         )
 
-    return {"slack_message": slack_message}
+    return {"slack_message": slack_message, "report": slack_message}
 
 
 @traceable(name="node_publish_findings")
