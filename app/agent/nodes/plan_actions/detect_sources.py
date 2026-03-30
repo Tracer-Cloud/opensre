@@ -313,7 +313,12 @@ def detect_sources(
         sources["aws_metadata"] = aws_metadata
 
     # Detect Grafana sources from resolved_integrations
-    pipeline_name = annotations.get("pipeline_name") or context.get("pipeline_name", "")
+    common_labels = raw_alert.get("commonLabels", {}) if isinstance(raw_alert, dict) else {}
+    pipeline_name = (
+        annotations.get("pipeline_name")
+        or common_labels.get("pipeline_name")
+        or context.get("pipeline_name", "")
+    )
     execution_run_id = (
         annotations.get("execution_run_id")
         or annotations.get("executionRunId")
@@ -321,12 +326,20 @@ def detect_sources(
     )
 
     # Only include Grafana when alert came from Grafana, or when source is truly unknown
-    if resolved_integrations and resolved_integrations.get("grafana") and alert_source in ("grafana", ""):
-        grafana_int = resolved_integrations["grafana"]
+    grafana_int = None
+    grafana_local = False
+    if resolved_integrations and alert_source in ("grafana", ""):
+        if resolved_integrations.get("grafana_local"):
+            grafana_int = resolved_integrations["grafana_local"]
+            grafana_local = True
+        elif resolved_integrations.get("grafana"):
+            grafana_int = resolved_integrations["grafana"]
+
+    if grafana_int:
         endpoint = grafana_int.get("endpoint", "")
         api_key = grafana_int.get("api_key", "")
-
-        if endpoint and api_key:
+        # Local Grafana uses anonymous auth (empty api_key is valid for localhost)
+        if endpoint and (api_key or grafana_local):
             service_name = _map_pipeline_to_service_name(pipeline_name) if pipeline_name else ""
 
             grafana_params: dict[str, Any] = {
@@ -336,6 +349,7 @@ def detect_sources(
                 "grafana_endpoint": endpoint,
                 "grafana_api_key": api_key,
                 "time_range_minutes": alert_time_range_minutes,
+                "loki_only": grafana_local,  # signals no Tempo/Prometheus in local stack
             }
             if execution_run_id:
                 grafana_params["execution_run_id"] = execution_run_id

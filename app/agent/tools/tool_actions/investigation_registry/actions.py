@@ -324,6 +324,7 @@ def get_available_actions() -> list[InvestigationAction]:
             ),
             parameter_extractor=lambda sources: {
                 "service_name": sources["grafana"]["service_name"],
+                "pipeline_name": sources["grafana"].get("pipeline_name"),
                 "execution_run_id": sources["grafana"].get("execution_run_id"),
                 "time_range_minutes": sources["grafana"].get("time_range_minutes", 60),
                 "limit": 100,

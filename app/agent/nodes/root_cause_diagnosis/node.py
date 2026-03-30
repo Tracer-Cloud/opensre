@@ -91,16 +91,25 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
     """Handle case when no evidence is available."""
     debug_print("Warning: Limited evidence available")
 
-    loop_count = state.get("investigation_loop_count", 0) + 1
+    loop_count = state.get("investigation_loop_count", 0)
+    evidence = state.get("evidence", {})
 
     alert_name = state.get("alert_name", "Unknown alert")
     pipeline_name = state.get("pipeline_name", "Unknown pipeline")
     severity = state.get("severity", "unknown")
 
+    # If Grafana service names were just discovered but logs haven't been fetched yet,
+    # loop back so node_plan_actions can query logs with the correct service name.
+    recommendations: list[str] = []
+    if evidence.get("grafana_service_names") and not evidence.get("grafana_logs") and loop_count < 3:
+        recommendations.append("Query Grafana logs using discovered service names")
+
+    next_loop_count = loop_count + 1
+
     tracker.complete(
         "diagnose_root_cause",
         fields_updated=["root_cause"],
-        message="Insufficient evidence",
+        message="Insufficient evidence" + (f" — retrying ({next_loop_count})" if recommendations else ""),
     )
 
     return {
@@ -114,9 +123,9 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
             }
         ],
         "validity_score": 0.0,
-        "investigation_recommendations": [],
+        "investigation_recommendations": recommendations,
         "remediation_steps": [],
-        "investigation_loop_count": loop_count,
+        "investigation_loop_count": next_loop_count,
     }
 
 

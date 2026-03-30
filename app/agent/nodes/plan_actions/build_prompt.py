@@ -95,12 +95,14 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 
     if "grafana" in available_sources:
         grafana = available_sources["grafana"]
+        loki_only = grafana.get("loki_only", False)
+        grafana_label = "Grafana Local (Loki only)" if loki_only else "Grafana Cloud"
+        traces_hint = "" if loki_only else "\n- Use query_grafana_traces to find distributed traces in Tempo"
         hints.append(
-            f"""Grafana Cloud Available:
+            f"""{grafana_label} Available:
 - Service Name: {grafana.get("service_name")}
 - Pipeline: {grafana.get("pipeline_name")}
-- Use query_grafana_logs to search Loki for pipeline errors
-- Use query_grafana_traces to find distributed traces in Tempo
+- Use query_grafana_logs to search Loki for pipeline errors{traces_hint}
 - Use query_grafana_alert_rules to inspect alert configuration"""
         )
 

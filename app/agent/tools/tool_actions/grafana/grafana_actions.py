@@ -39,6 +39,7 @@ def query_grafana_logs(
     limit: int = 100,
     grafana_endpoint: str | None = None,
     grafana_api_key: str | None = None,
+    pipeline_name: str | None = None,
     **_kwargs,
 ) -> dict:
     """Query Grafana Cloud Loki for pipeline logs."""
@@ -60,11 +61,23 @@ def query_grafana_logs(
             "logs": [],
         }
 
-    query = f'{{service_name="{service_name}"}}'
-    if execution_run_id:
-        query = f'{{service_name="{service_name}"}} |= "{execution_run_id}"'
+    def _build_query(label: str, value: str) -> str:
+        if execution_run_id:
+            return f'{{{label}="{value}"}} |= "{execution_run_id}"'
+        return f'{{{label}="{value}"}}'
 
+    query = _build_query("service_name", service_name)
     result = client.query_loki(query, time_range_minutes=time_range_minutes, limit=limit)
+
+    # If service_name label yields no results, fall back to pipeline_name label.
+    # This handles cases where Loki streams use pipeline_name as the primary label
+    # rather than service_name (e.g. local demo stack).
+    if result.get("success") and not result.get("logs") and pipeline_name:
+        fallback_query = _build_query("pipeline_name", pipeline_name)
+        fallback_result = client.query_loki(fallback_query, time_range_minutes=time_range_minutes, limit=limit)
+        if fallback_result.get("success") and fallback_result.get("logs"):
+            result = fallback_result
+            query = fallback_query
 
     if not result.get("success"):
         return {

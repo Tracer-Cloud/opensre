@@ -57,6 +57,23 @@ def node_investigate(state: InvestigationState) -> dict:
         rationale=plan_rationale,
     )
 
+    # If we just discovered Grafana service names and the current service_name is still
+    # the raw pipeline name (no logs found yet), update it so the next loop queries logs
+    # with the real service name that exists in Loki.
+    discovered_services = evidence.get("grafana_service_names", [])
+    if discovered_services and available_sources.get("grafana"):
+        current_service = available_sources["grafana"].get("service_name", "")
+        pipeline_name = available_sources["grafana"].get("pipeline_name", "")
+        no_logs_yet = not evidence.get("grafana_logs")
+        # Only update if the current service_name doesn't match anything in Loki
+        if no_logs_yet and current_service not in discovered_services:
+            # Prefer a service that contains the pipeline name, otherwise take the first
+            best = next(
+                (s for s in discovered_services if pipeline_name and pipeline_name in s),
+                discovered_services[0],
+            )
+            available_sources["grafana"]["service_name"] = best
+
     tracker.complete(
         "investigate",
         fields_updated=["evidence", "executed_hypotheses"],
@@ -64,4 +81,4 @@ def node_investigate(state: InvestigationState) -> dict:
     )
 
     output = InvestigateOutput(evidence=evidence, executed_hypotheses=executed_hypotheses)
-    return output.to_dict()
+    return {**output.to_dict(), "available_sources": available_sources}
