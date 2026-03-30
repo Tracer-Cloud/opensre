@@ -166,7 +166,7 @@ def _choose(prompt: str, choices: list[Choice], *, default: str | None = None) -
     return str(result)
 
 
-def _choose_many(prompt: str, choices: list[Choice]) -> list[str]:
+def _choose_many(prompt: str, choices: list[Choice], *, default: list[str] | None = None) -> list[str]:
     q_choices = [QuestionaryChoice(title=choice.label, value=choice.value) for choice in choices]
 
     result = checkbox_prompt(
@@ -174,6 +174,7 @@ def _choose_many(prompt: str, choices: list[Choice]) -> list[str]:
         choices=q_choices,
         style=_STYLE,
         instruction="(Space to select, Enter to confirm)",
+        default=default or [],
     ).ask()
 
     if result is None:
@@ -721,6 +722,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             Choice(value="github", label="GitHub MCP"),
             Choice(value="sentry", label="Sentry"),
         ],
+        default=["grafana_local"],
     )
 
     handlers = {
