@@ -9,5 +9,4 @@ def run_wizard(*args, **kwargs):
 
     return _run_wizard(*args, **kwargs)
 
-
 __all__ = ["run_wizard"]

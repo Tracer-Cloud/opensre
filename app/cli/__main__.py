@@ -24,6 +24,7 @@ def cli() -> None:
     Quick start:
       opensre onboard                        Configure LLM provider and integrations
       opensre investigate -i alert.json      Run RCA against an alert payload
+      opensre tests                          Browse and run inventoried tests
       opensre integrations list              Show configured integrations
 
     \b
@@ -163,6 +164,61 @@ def verify(service: str | None, send_slack_test: bool) -> None:
     from app.integrations.cli import cmd_verify
 
     cmd_verify(service, send_slack_test=send_slack_test)
+
+
+@cli.group(invoke_without_command=True)
+@click.pass_context
+def tests(ctx: click.Context) -> None:
+    """Browse and run inventoried tests from the terminal."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    from app.cli.tests.discover import load_test_catalog
+    from app.cli.tests.interactive import run_interactive_picker
+
+    raise SystemExit(run_interactive_picker(load_test_catalog()))
+
+
+@tests.command(name="list")
+@click.option(
+    "--category",
+    type=click.Choice(["all", "rca", "demo", "infra-heavy", "ci-safe"]),
+    default="all",
+    show_default=True,
+    help="Filter the inventory by category tag.",
+)
+@click.option("--search", default="", help="Case-insensitive text filter.")
+def list_tests(category: str, search: str) -> None:
+    """List available tests and suites."""
+    from app.cli.tests.discover import load_test_catalog
+
+    def _echo_item(item, *, indent: int = 0) -> None:
+        prefix = "  " * indent
+        tag_text = f" [{', '.join(item.tags)}]" if item.tags else ""
+        click.echo(f"{prefix}{item.id} - {item.display_name}{tag_text}")
+        if item.description:
+            click.echo(f"{prefix}  {item.description}")
+        if item.children:
+            for child in item.children:
+                _echo_item(child, indent=indent + 1)
+
+    catalog = load_test_catalog()
+    for item in catalog.filter(category=category, search=search):
+        _echo_item(item)
+
+
+@tests.command()
+@click.argument("test_id")
+@click.option("--dry-run", is_flag=True, help="Print the selected command without running it.")
+def run(test_id: str, dry_run: bool) -> None:
+    """Run a test or suite by stable inventory id."""
+    from app.cli.tests.runner import find_test_item, run_catalog_item
+
+    item = find_test_item(test_id)
+    if item is None:
+        raise click.ClickException(f"Unknown test id: {test_id}")
+
+    raise SystemExit(run_catalog_item(item, dry_run=dry_run))
 
 
 def main(argv: list[str] | None = None) -> int:

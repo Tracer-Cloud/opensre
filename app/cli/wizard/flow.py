@@ -73,16 +73,16 @@ def validate_sentry_integration(**kwargs):
     return _validate(**kwargs)
 
 
-class IntegrationHealthResult:
-    def __init__(self, ok: bool, detail: str) -> None:
-        self.ok = ok
-        self.detail = detail
-
-
 def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
 
     return _get()
+
+
+@dataclass(frozen=True)
+class IntegrationHealthResult:
+    ok: bool
+    detail: str
 
 _STYLE = Style(
     [
