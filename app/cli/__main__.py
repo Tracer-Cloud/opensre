@@ -264,7 +264,7 @@ def tests(ctx: click.Context) -> None:
     raise SystemExit(run_interactive_picker(load_test_catalog()))
 
 
-@tests.command(name="test-rds-synthetic")
+@tests.command(name="synthetic")
 @click.option(
     "--scenario",
     default="",
@@ -274,10 +274,16 @@ def tests(ctx: click.Context) -> None:
 @click.option(
     "--mock-grafana",
     is_flag=True,
+    default=True,
+    show_default=True,
     help="Serve fixture data via FixtureGrafanaBackend instead of real Grafana calls.",
 )
 def test_rds_synthetic(scenario: str, output_json: bool, mock_grafana: bool) -> None:
     """Run the synthetic RDS PostgreSQL RCA benchmark."""
+    from dotenv import load_dotenv
+
+    load_dotenv(override=False)
+
     argv: list[str] = []
     if scenario:
         argv.extend(["--scenario", scenario])

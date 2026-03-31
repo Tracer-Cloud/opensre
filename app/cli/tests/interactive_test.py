@@ -32,9 +32,10 @@ def test_choose_interactive_item_returns_single_match_without_extra_prompt(monke
 
     monkeypatch.setattr(interactive, "_select_item", _mock_select_item)
 
-    item = interactive.choose_interactive_item(catalog)
+    item, auto_selected = interactive.choose_interactive_item(catalog)
 
     assert item.id == "make:test-cov"
+    assert auto_selected is True
     assert selected_prompts == []
 
 
@@ -53,9 +54,10 @@ def test_choose_interactive_item_prompts_when_multiple_matches_exist(monkeypatch
 
     monkeypatch.setattr(interactive, "_select_item", _mock_select_item)
 
-    item = interactive.choose_interactive_item(catalog)
+    item, auto_selected = interactive.choose_interactive_item(catalog)
 
     assert item.id == selected_item_ids[0][0]
+    assert auto_selected is False
     assert selected_prompts == ["Choose a test or suite:"]
     assert "make:test-cov" in selected_item_ids[0]
 
@@ -116,7 +118,7 @@ def test_choose_interactive_item_reselects_category_after_escape(monkeypatch) ->
 
     monkeypatch.setattr(interactive, "_select_item", _mock_select_item)
 
-    item = interactive.choose_interactive_item(catalog)
+    item, _ = interactive.choose_interactive_item(catalog)
 
     assert item.id == "make:demo"
     assert selected_prompts == ["Choose a test or suite:"]
@@ -172,7 +174,7 @@ def test_choose_interactive_item_returns_to_parent_list_after_escape(monkeypatch
 
     monkeypatch.setattr(interactive, "_select_item", _mock_select_item)
 
-    item = interactive.choose_interactive_item(catalog)
+    item, _ = interactive.choose_interactive_item(catalog)
 
     assert item.id == "make:demo"
     assert selected_prompts == [
@@ -188,7 +190,7 @@ def test_run_interactive_picker_returns_zero_on_escape(monkeypatch) -> None:
     monkeypatch.setattr(interactive, "_require_interactive_dependencies", lambda: None)
     monkeypatch.setattr(interactive.sys, "stdin", SimpleNamespace(isatty=lambda: True))
     monkeypatch.setattr(interactive.sys, "stdout", SimpleNamespace(isatty=lambda: True))
-    monkeypatch.setattr(interactive, "choose_interactive_item", lambda _catalog: (_ for _ in ()).throw(KeyboardInterrupt()))
+    monkeypatch.setattr(interactive, "choose_interactive_item", lambda _catalog: (_ for _ in ()).throw(KeyboardInterrupt()))  # noqa: E501
 
     assert interactive.run_interactive_picker(catalog) == 0
 
@@ -210,7 +212,7 @@ def test_run_interactive_picker_returns_to_selection_after_escape_from_confirm(m
         command=("make", "test-full"),
         tags=("ci-safe",),
     )
-    selections = iter([first, second])
+    selections = iter([(first, False), (second, False)])
 
     monkeypatch.setattr(interactive, "_require_interactive_dependencies", lambda: None)
     monkeypatch.setattr(interactive.sys, "stdin", SimpleNamespace(isatty=lambda: True))

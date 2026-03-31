@@ -59,6 +59,7 @@ _STYLE = (
 _CATEGORY_OPTIONS: list[tuple[str, str]] = [
     ("all", "All"),
     ("rca", "RCA"),
+    ("synthetic", "Synthetics"),
     ("demo", "Demos"),
     ("infra-heavy", "Infra-heavy"),
     ("ci-safe", "CI-safe"),
@@ -183,7 +184,8 @@ def _confirm_run(item: TestCatalogItem) -> bool:
     return bool(result)
 
 
-def choose_interactive_item(catalog: TestCatalog) -> TestCatalogItem:
+def choose_interactive_item(catalog: TestCatalog) -> tuple[TestCatalogItem, bool]:
+    """Return (item, auto_selected) where auto_selected=True means only one item matched."""
     while True:
         category = _choose_category()
         search = ""
@@ -194,10 +196,10 @@ def choose_interactive_item(catalog: TestCatalog) -> TestCatalogItem:
         while True:
             try:
                 if len(filtered) == 1:
-                    return _resolve_suite_selection(filtered[0], category=category, search=search)
+                    return _resolve_suite_selection(filtered[0], category=category, search=search), True
 
                 selected = _select_item(filtered, prompt="Choose a test or suite:", allow_back=True)
-                return _resolve_suite_selection(selected, category=category, search=search)
+                return _resolve_suite_selection(selected, category=category, search=search), False
             except _GoBack:
                 break
 
@@ -209,7 +211,10 @@ def run_interactive_picker(catalog: TestCatalog) -> int:
 
     try:
         while True:
-            item = choose_interactive_item(catalog)
+            item, auto_selected = choose_interactive_item(catalog)
+            if auto_selected:
+                # Single item in category — skip confirmation and run immediately.
+                return run_catalog_item(item)
             try:
                 if not _confirm_run(item):
                     return 0

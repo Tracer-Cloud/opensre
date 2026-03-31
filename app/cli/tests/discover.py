@@ -296,8 +296,50 @@ def discover_rca_files() -> list[TestCatalogItem]:
     return items
 
 
+def _discover_rds_synthetic_scenarios() -> list[TestCatalogItem]:
+    """One catalog item per RDS synthetic scenario directory."""
+    scenarios_dir = REPO_ROOT / "tests" / "synthetic_testing" / "rds_postgres"
+    items: list[TestCatalogItem] = []
+    req = TestRequirement(env_vars=("ANTHROPIC_API_KEY",))
+    for scenario_dir in sorted(scenarios_dir.iterdir()):
+        if not scenario_dir.is_dir() or scenario_dir.name.startswith("_"):
+            continue
+        scenario_id = scenario_dir.name
+        # Read display name from scenario.yml if present, else use directory name.
+        display_name = scenario_id
+        scenario_yml = scenario_dir / "scenario.yml"
+        if scenario_yml.exists():
+            try:
+                import yaml  # type: ignore[import-untyped]
+                meta = yaml.safe_load(scenario_yml.read_text()) or {}
+                failure_mode = meta.get("failure_mode", "")
+                if failure_mode:
+                    display_name = f"{scenario_id}  [{failure_mode}]"
+            except Exception:
+                pass
+        items.append(
+            TestCatalogItem(
+                id=f"synthetic:{scenario_id}",
+                kind="cli_command",
+                display_name=display_name,
+                description=f"Run the '{scenario_id}' synthetic RCA scenario against the mock backend.",
+                command=("opensre", "tests", "synthetic", "--scenario", scenario_id),
+                tags=("synthetic", "rds", "test"),
+                source_path=str(scenario_dir),
+                requirements=req,
+            )
+        )
+    return items
+
+
+def discover_cli_commands() -> list[TestCatalogItem]:
+    """Catalog entries for opensre sub-commands that have no Makefile equivalent."""
+    return _discover_rds_synthetic_scenarios()
+
+
 def load_test_catalog() -> TestCatalog:
     items: list[TestCatalogItem] = []
+    items.extend(discover_cli_commands())
     items.extend(discover_make_targets())
     items.extend(discover_rca_files())
     items.sort(key=lambda item: item.display_name.lower())
