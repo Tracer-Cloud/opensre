@@ -61,11 +61,21 @@ class FixtureGrafanaBackend:
         self._fixture = fixture
 
     def query_timeseries(self, **_: Any) -> dict[str, Any]:
-        metrics = cast(dict[str, Any], self._fixture.evidence.rds_metrics or {})
+        if self._fixture.evidence.rds_metrics is None:
+            raise ValueError(
+                f"{self._fixture.scenario_id}: query_timeseries called but "
+                "'rds_metrics' is not declared in available_evidence"
+            )
+        metrics = cast(dict[str, Any], self._fixture.evidence.rds_metrics)
         return format_mimir_query_range(metrics)
 
     def query_logs(self, **_: Any) -> dict[str, Any]:
-        return format_loki_query_range({"events": self._fixture.evidence.rds_events or []})
+        if self._fixture.evidence.rds_events is None:
+            raise ValueError(
+                f"{self._fixture.scenario_id}: query_logs called but "
+                "'rds_events' is not declared in available_evidence"
+            )
+        return format_loki_query_range({"events": self._fixture.evidence.rds_events})
 
     def query_alert_rules(self, **_: Any) -> dict[str, Any]:
         return format_ruler_rules(self._fixture.alert)

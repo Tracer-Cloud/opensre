@@ -1,8 +1,7 @@
 root_cause_category: healthy
 required_keywords:
-  - healthy
-  - normal
-  - no anomaly
+  - normal bounds
+  - no failure
 model_response: |
   ROOT_CAUSE: The database is operating within normal parameters. All metrics are within expected bounds: CPU at 15-20%, connections at ~93 (well below the 5000 limit), ReplicaLag stable at under 2 seconds, FreeStorageSpace unchanged at 200 GB, and WriteIOPS at a steady baseline. Performance Insights shows a db_load average of 1.1 against 8 available vCPUs, with a balanced wait event distribution dominated by normal IO:DataFileRead and CPU waits. No anomaly detected.
   ROOT_CAUSE_CATEGORY: healthy

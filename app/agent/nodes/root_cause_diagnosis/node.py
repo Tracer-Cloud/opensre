@@ -1,5 +1,7 @@
 """Root cause diagnosis node - orchestration and entry point."""
 
+import os
+
 from langsmith import traceable
 
 from app.agent.output import debug_print, get_tracker
@@ -7,8 +9,17 @@ from app.agent.state import InvestigationState
 from app.agent.tools.clients import get_llm, parse_root_cause
 
 from .claim_validator import calculate_validity_score, validate_and_categorize_claims
-from .evidence_checker import check_evidence_availability, check_vendor_evidence_missing
+from .evidence_checker import (
+    check_evidence_availability,
+    check_vendor_evidence_missing,
+    is_clearly_healthy,
+)
 from .prompt_builder import build_diagnosis_prompt
+
+
+def _short_circuit_enabled() -> bool:
+    """Return True when the healthy short-circuit is active (default: on)."""
+    return os.getenv("HEALTHY_SHORT_CIRCUIT", "true").lower() == "true"
 
 
 def diagnose_root_cause(state: InvestigationState) -> dict:
@@ -37,6 +48,10 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     raw_alert = state.get("raw_alert", {})
 
     has_tracer, has_cloudwatch, has_alert = check_evidence_availability(context, evidence, raw_alert)
+
+    if _short_circuit_enabled() and is_clearly_healthy(raw_alert, evidence):
+        debug_print("Short-circuit: alert is clearly healthy, skipping LLM")
+        return _handle_healthy_finding(state, tracker, evidence)
 
     if not has_tracer and not has_cloudwatch and not has_alert:
         return _handle_insufficient_evidence(state, tracker)
@@ -84,6 +99,47 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
         "investigation_recommendations": recommendations,
         "remediation_steps": [],
         "investigation_loop_count": next_loop_count,
+    }
+
+
+def _handle_healthy_finding(
+    state: InvestigationState, tracker, evidence: dict
+) -> dict:
+    """Return a deterministic healthy finding, bypassing the LLM.
+
+    Called when is_clearly_healthy() confirms the alert is informational and all
+    evidence keys are within normal operating bounds. Records "healthy_short_circuit"
+    in the tracker so it appears in LangSmith traces.
+    """
+    alert_name = state.get("alert_name", "Health check")
+    loop_count = state.get("investigation_loop_count", 0)
+
+    validated_claims = [
+        {"claim": f"{k} data confirmed within normal operating bounds", "validation_status": "validated"}
+        for k in evidence
+        if evidence[k]
+    ]
+
+    tracker.complete(
+        "diagnose_root_cause",
+        fields_updated=["root_cause", "root_cause_category"],
+        message="healthy_short_circuit=true",
+    )
+
+    return {
+        "root_cause": f"{alert_name}: All monitored metrics are within normal bounds. No failure detected.",
+        "root_cause_category": "healthy",
+        "causal_chain": [
+            "Health check alert fired as a scheduled verification.",
+            "All telemetry signals are stable and within normal operating ranges.",
+            "No root cause exists.",
+        ],
+        "validated_claims": validated_claims,
+        "non_validated_claims": [],
+        "validity_score": 1.0,
+        "investigation_recommendations": [],
+        "remediation_steps": [],
+        "investigation_loop_count": loop_count,
     }
 
 

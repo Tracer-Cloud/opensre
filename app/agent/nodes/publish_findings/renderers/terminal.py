@@ -106,7 +106,7 @@ def _render_rich_evidence_item(console: Console, line: str) -> None:
 # Main render entry points
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render_report(slack_message: str) -> None:
+def render_report(slack_message: str, root_cause_category: str | None = None) -> None:
     """Render the final RCA report to terminal."""
     fmt = get_output_format()
 
@@ -118,19 +118,23 @@ def render_report(slack_message: str) -> None:
         return
 
     if fmt == "rich":
-        _render_rich_report(slack_message)
+        _render_rich_report(slack_message, root_cause_category=root_cause_category)
     else:
-        _render_plain_report(slack_message)
+        _render_plain_report(slack_message, root_cause_category=root_cause_category)
 
 
-def _render_rich_report(slack_message: str) -> None:
+def _render_rich_report(slack_message: str, root_cause_category: str | None = None) -> None:
     console = Console()
     console.print()
 
-    # Completion dot at the top
+    # Header varies by outcome
     done = Text()
-    done.append("  ● ", style="bold green")
-    done.append("Investigation complete", style="bold white")
+    if root_cause_category == "healthy":
+        done.append("  ✓ ", style="bold green")
+        done.append("Systems healthy", style="bold green")
+    else:
+        done.append("  ● ", style="bold green")
+        done.append("Investigation complete", style="bold white")
     console.print(done)
     console.print()
 
@@ -196,9 +200,12 @@ def _render_rich_report(slack_message: str) -> None:
     console.print()
 
 
-def _render_plain_report(slack_message: str) -> None:
+def _render_plain_report(slack_message: str, root_cause_category: str | None = None) -> None:
     print()
-    print("Investigation complete")
+    if root_cause_category == "healthy":
+        print("✓ Systems healthy")
+    else:
+        print("Investigation complete")
     print()
     clean = _strip_slack_links(_strip_mrkdwn(slack_message))
     print(clean)

@@ -97,10 +97,10 @@ def test_scenario_evidence_matches_available_evidence() -> None:
         )
 
 
-_FAULT_SCENARIOS = [f for f in load_all_scenarios() if f.metadata.failure_mode != "healthy"]
+_ALL_SCENARIOS = load_all_scenarios()
 
 
-@pytest.mark.parametrize("fixture", _FAULT_SCENARIOS, ids=lambda fixture: fixture.scenario_id)
+@pytest.mark.parametrize("fixture", _ALL_SCENARIOS, ids=lambda fixture: fixture.scenario_id)
 def test_run_scenario_scores_expected_rds_answer(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
     # Key responses by scenario_id AND alert title so the fake LLM can match on whichever
     # identifier ends up in the diagnosis prompt (depends on whether the full pipeline runs

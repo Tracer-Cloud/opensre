@@ -92,7 +92,8 @@ ROOT_CAUSE:
 <1–2 sentences. If not proven, say "Most likely ..." and state what's missing. Do not say only "Unable to determine".>
 
 ROOT_CAUSE_CATEGORY:
-<one of: configuration_error, code_defect, data_quality, resource_exhaustion, dependency_failure, infrastructure, unknown>
+<one of: configuration_error, code_defect, data_quality, resource_exhaustion, dependency_failure, infrastructure, healthy, unknown>
+(Use "healthy" when all monitored metrics are within normal bounds, no errors are detected, and the alert is informational or has resolved. When evidence is mixed — alert resolved but some metrics are elevated — use your judgment; you may still choose healthy or another category.)
 
 VALIDATED_CLAIMS:
 - <one factual claim> [evidence: <one of {", ".join(ALLOWED_EVIDENCE_SOURCES)}>]

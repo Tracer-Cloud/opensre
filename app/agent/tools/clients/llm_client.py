@@ -30,6 +30,7 @@ _VALID_ROOT_CAUSE_CATEGORIES = frozenset({
     "resource_exhaustion",
     "dependency_failure",
     "infrastructure",
+    "healthy",
     "unknown",
 })
 
