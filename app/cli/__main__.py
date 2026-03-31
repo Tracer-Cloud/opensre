@@ -226,7 +226,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cli(args=argv, standalone_mode=True)
     except SystemExit as exc:
-        return exc.code if isinstance(exc.code, int) else 0
+        if isinstance(exc.code, int):
+            return exc.code
+        if exc.code is not None:
+            import click
+            click.echo(exc.code, err=True)
+            return 1
+        return 0
     return 0
 
 
