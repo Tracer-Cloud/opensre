@@ -325,21 +325,28 @@ def detect_sources(
         or annotations.get("correlation_id")
     )
 
-    # Only include Grafana when alert came from Grafana, or when source is truly unknown
+    # Only include Grafana when alert came from Grafana, or when source is truly unknown,
+    # or when a pre-injected backend is present (e.g. FixtureGrafanaBackend for synthetic tests).
     grafana_int = None
     grafana_local = False
-    if resolved_integrations and alert_source in ("grafana", ""):
+    if resolved_integrations:
         if resolved_integrations.get("grafana_local"):
             grafana_int = resolved_integrations["grafana_local"]
             grafana_local = True
         elif resolved_integrations.get("grafana"):
             grafana_int = resolved_integrations["grafana"]
 
+    # When a _backend is injected we allow any alert_source; otherwise restrict to Grafana/unknown.
+    _has_injected_backend = bool(grafana_int and "_backend" in grafana_int)
+    if grafana_int and not (_has_injected_backend or alert_source in ("grafana", "")):
+        grafana_int = None  # suppress real Grafana for non-Grafana alerts
+
     if grafana_int:
         endpoint = grafana_int.get("endpoint", "")
         api_key = grafana_int.get("api_key", "")
-        # Local Grafana uses anonymous auth (empty api_key is valid for localhost)
-        if endpoint and (api_key or grafana_local):
+        has_backend = "_backend" in grafana_int
+        # Local Grafana uses anonymous auth; injected backends don't need credentials at all.
+        if has_backend or (endpoint and (api_key or grafana_local)):
             service_name = _map_pipeline_to_service_name(pipeline_name) if pipeline_name else ""
 
             grafana_params: dict[str, Any] = {
@@ -353,6 +360,8 @@ def detect_sources(
             }
             if execution_run_id:
                 grafana_params["execution_run_id"] = execution_run_id
+            if has_backend:
+                grafana_params["_backend"] = grafana_int["_backend"]
             sources["grafana"] = grafana_params
 
     # Only include Datadog when alert came from Datadog, or when source is truly unknown

@@ -1,0 +1,71 @@
+"""GrafanaBackend Protocol and FixtureGrafanaBackend for synthetic testing.
+
+The Protocol defines the minimal surface the RDS agent uses to query observability
+data.  FixtureGrafanaBackend satisfies it by serving scenario fixture data formatted
+as Grafana wire-format responses — zero HTTP calls required.
+
+Usage in run_suite.py
+---------------------
+    state["grafana_backend"] = FixtureGrafanaBackend(fixture)
+
+The production resolver in grafana_actions._resolve_grafana_backend reads this key
+first, falling back to real HTTP calls when absent.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
+
+from tests.synthetic_testing.mock_grafana.formatters import (
+    format_loki_query_range,
+    format_mimir_query_range,
+    format_ruler_rules,
+)
+
+if TYPE_CHECKING:
+    from tests.synthetic_testing.rds_postgres.scenario_loader import ScenarioFixture
+
+
+@runtime_checkable
+class GrafanaBackend(Protocol):
+    """Minimal observability interface used by the RDS investigation agent.
+
+    Three methods — one per evidence pillar:
+        query_timeseries  → Mimir/Prometheus matrix response
+        query_logs        → Loki streams response
+        query_alert_rules → Grafana Ruler rules response
+    """
+
+    def query_timeseries(self, query: str = "", **kwargs: Any) -> dict[str, Any]:
+        """Return a Mimir-compatible query_range response."""
+        ...
+
+    def query_logs(self, query: str = "", **kwargs: Any) -> dict[str, Any]:
+        """Return a Loki-compatible query_range response."""
+        ...
+
+    def query_alert_rules(self, **kwargs: Any) -> dict[str, Any]:
+        """Return a Grafana Ruler /api/v1/rules response."""
+        ...
+
+
+class FixtureGrafanaBackend:
+    """GrafanaBackend implementation backed by a ScenarioFixture.
+
+    All three methods delegate to the pure formatter functions, converting
+    AWS-faithful fixture data into the Grafana wire format the agent expects.
+    No HTTP calls, no external dependencies.
+    """
+
+    def __init__(self, fixture: ScenarioFixture) -> None:
+        self._fixture = fixture
+
+    def query_timeseries(self, **_: Any) -> dict[str, Any]:
+        metrics = cast(dict[str, Any], self._fixture.evidence.rds_metrics or {})
+        return format_mimir_query_range(metrics)
+
+    def query_logs(self, **_: Any) -> dict[str, Any]:
+        return format_loki_query_range({"events": self._fixture.evidence.rds_events or []})
+
+    def query_alert_rules(self, **_: Any) -> dict[str, Any]:
+        return format_ruler_rules(self._fixture.alert)

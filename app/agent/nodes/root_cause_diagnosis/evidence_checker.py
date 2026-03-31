@@ -34,6 +34,9 @@ def check_evidence_availability(
         or evidence.get("s3_marker")
         or evidence.get("lambda_function")
         or evidence.get("lambda_logs")
+        or evidence.get("rds_metrics")
+        or evidence.get("rds_events")
+        or evidence.get("performance_insights")
     )
 
     # Check for evidence in alert annotations or raw text

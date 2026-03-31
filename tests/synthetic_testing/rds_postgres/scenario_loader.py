@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -159,7 +159,7 @@ def _build_evidence(
 
 def load_scenario(scenario_dir: Path) -> ScenarioFixture:
     metadata = _parse_scenario_yaml(scenario_dir / "scenario.yml")
-    alert = validate_alert(_read_json(scenario_dir / "alert.json"))
+    alert = cast(dict[str, Any], validate_alert(_read_json(scenario_dir / "alert.json")))
     evidence = _build_evidence(scenario_dir, metadata.available_evidence)
     answer_key = _parse_answer_yaml(scenario_dir / "answer.yml")
     problem_md = _build_problem_md(alert, metadata)

@@ -264,6 +264,33 @@ def tests(ctx: click.Context) -> None:
     raise SystemExit(run_interactive_picker(load_test_catalog()))
 
 
+@tests.command(name="test-rds-synthetic")
+@click.option(
+    "--scenario",
+    default="",
+    help="Pin to a single scenario directory, e.g. 001-replication-lag.",
+)
+@click.option("--json", "output_json", is_flag=True, help="Print machine-readable JSON results.")
+@click.option(
+    "--mock-grafana",
+    is_flag=True,
+    help="Serve fixture data via FixtureGrafanaBackend instead of real Grafana calls.",
+)
+def test_rds_synthetic(scenario: str, output_json: bool, mock_grafana: bool) -> None:
+    """Run the synthetic RDS PostgreSQL RCA benchmark."""
+    argv: list[str] = []
+    if scenario:
+        argv.extend(["--scenario", scenario])
+    if output_json:
+        argv.append("--json")
+    if mock_grafana:
+        argv.append("--mock-grafana")
+
+    from tests.synthetic_testing.rds_postgres.run_suite import main as run_suite_main
+
+    raise SystemExit(run_suite_main(argv))
+
+
 @tests.command(name="list")
 @click.option(
     "--category",

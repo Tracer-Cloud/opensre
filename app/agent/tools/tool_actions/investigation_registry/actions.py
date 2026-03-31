@@ -330,6 +330,7 @@ def get_available_actions() -> list[InvestigationAction]:
                 "limit": 100,
                 "grafana_endpoint": sources["grafana"].get("grafana_endpoint"),
                 "grafana_api_key": sources["grafana"].get("grafana_api_key"),
+                "grafana_backend": sources["grafana"].get("_backend"),
             },
         ),
         build_action(
@@ -346,6 +347,7 @@ def get_available_actions() -> list[InvestigationAction]:
                 "limit": 20,
                 "grafana_endpoint": sources["grafana"].get("grafana_endpoint"),
                 "grafana_api_key": sources["grafana"].get("grafana_api_key"),
+                "grafana_backend": sources["grafana"].get("_backend"),
             },
         ),
         build_action(
@@ -361,6 +363,7 @@ def get_available_actions() -> list[InvestigationAction]:
                 "service_name": sources.get("grafana", {}).get("service_name"),
                 "grafana_endpoint": sources.get("grafana", {}).get("grafana_endpoint"),
                 "grafana_api_key": sources.get("grafana", {}).get("grafana_api_key"),
+                "grafana_backend": sources.get("grafana", {}).get("_backend"),
             },
         ),
         build_action(
@@ -375,6 +378,7 @@ def get_available_actions() -> list[InvestigationAction]:
                 "folder": sources.get("grafana", {}).get("pipeline_name"),
                 "grafana_endpoint": sources.get("grafana", {}).get("grafana_endpoint"),
                 "grafana_api_key": sources.get("grafana", {}).get("grafana_api_key"),
+                "grafana_backend": sources.get("grafana", {}).get("_backend"),
             },
         ),
         build_action(
@@ -388,6 +392,7 @@ def get_available_actions() -> list[InvestigationAction]:
             parameter_extractor=lambda sources: {
                 "grafana_endpoint": sources.get("grafana", {}).get("grafana_endpoint"),
                 "grafana_api_key": sources.get("grafana", {}).get("grafana_api_key"),
+                "grafana_backend": sources.get("grafana", {}).get("_backend"),
             },
         ),
         # Datadog actions

@@ -5,10 +5,8 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from app.agent.nodes.plan_actions.detect_sources import detect_sources
-from app.agent.nodes.root_cause_diagnosis.node import diagnose_root_cause
-from app.agent.state import InvestigationState, make_initial_state
-from tests.synthetic_testing.evidence_adapter import adapt_evidence_for_prompt
+from app.agent.runners import run_investigation
+from tests.synthetic_testing.mock_grafana.backend import FixtureGrafanaBackend
 from tests.synthetic_testing.rds_postgres.scenario_loader import (
     SUITE_DIR,
     ScenarioFixture,
@@ -40,57 +38,55 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Print machine-readable JSON results.",
     )
+    parser.add_argument(
+        "--mock-grafana",
+        action="store_true",
+        dest="mock_grafana",
+        help="Serve fixture data via FixtureGrafanaBackend instead of real Grafana calls.",
+    )
     return parser.parse_args(argv)
 
 
-def prepare_scenario_state(fixture: ScenarioFixture) -> InvestigationState:
-    alert = fixture.alert
-    labels = alert.get("commonLabels", {}) or {}
-    annotations = alert.get("commonAnnotations", {}) or {}
+def _build_resolved_integrations(
+    fixture: ScenarioFixture,
+    use_mock_grafana: bool,
+) -> dict[str, Any] | None:
+    """Build pre-resolved integrations to inject into run_investigation.
 
-    alert_name = str(alert.get("title") or labels.get("alertname") or fixture.scenario_id)
-    pipeline_name = str(labels.get("pipeline_name") or "rds-postgres-synthetic")
-    severity = str(labels.get("severity") or "critical")
-
-    state = make_initial_state(
-        alert_name=alert_name,
-        pipeline_name=pipeline_name,
-        severity=severity,
-        raw_alert=alert,
-    )
-    state["problem_md"] = fixture.problem_md
-    state["alert_source"] = str(alert.get("alert_source") or "cloudwatch")
-    state["evidence"] = adapt_evidence_for_prompt(fixture.evidence.as_dict())
-    state["context"] = {
-        "service": "rds",
-        "engine": fixture.metadata.engine,
+    When use_mock_grafana is True, injects a FixtureGrafanaBackend so the
+    full agentic pipeline (plan → investigate → diagnose) uses fixture data
+    instead of making real Grafana API calls.
+    """
+    if not use_mock_grafana:
+        return None
+    return {
+        "grafana": {
+            "endpoint": "",
+            "api_key": "",
+            "_backend": FixtureGrafanaBackend(fixture),
+        }
     }
-
-    detected_sources = detect_sources(alert, state["context"], resolved_integrations=None)
-    aws_metadata = dict(detected_sources.get("aws_metadata", {}))
-    aws_metadata.setdefault("service", "rds")
-    if annotations.get("db_instance_identifier"):
-        aws_metadata.setdefault("resource_id", annotations["db_instance_identifier"])
-    detected_sources["aws_metadata"] = aws_metadata
-    state["available_sources"] = detected_sources
-    return state
 
 
 def _normalize_text(value: str) -> str:
     return " ".join(value.lower().split())
 
 
-def score_result(fixture: ScenarioFixture, diagnosis: dict[str, Any]) -> ScenarioScore:
-    root_cause = str(diagnosis.get("root_cause") or "").strip()
-    actual_category = str(diagnosis.get("root_cause_category") or "unknown").strip()
+def score_result(fixture: ScenarioFixture, final_state: dict[str, Any]) -> ScenarioScore:
+    root_cause = str(final_state.get("root_cause") or "").strip()
+    actual_category = str(final_state.get("root_cause_category") or "unknown").strip()
     root_cause_present = bool(root_cause and root_cause.lower() != "unable to determine root cause")
 
     evidence_text = " ".join(
         [
             root_cause,
-            " ".join(claim.get("claim", "") for claim in diagnosis.get("validated_claims", [])),
-            " ".join(claim.get("claim", "") for claim in diagnosis.get("non_validated_claims", [])),
-            " ".join(diagnosis.get("causal_chain", [])),
+            " ".join(
+                claim.get("claim", "") for claim in final_state.get("validated_claims", [])
+            ),
+            " ".join(
+                claim.get("claim", "") for claim in final_state.get("non_validated_claims", [])
+            ),
+            " ".join(final_state.get("causal_chain", [])),
         ]
     )
     normalized_output = _normalize_text(evidence_text)
@@ -101,7 +97,9 @@ def score_result(fixture: ScenarioFixture, diagnosis: dict[str, Any]) -> Scenari
         if _normalize_text(keyword) in normalized_output
     ]
     missing_keywords = [
-        keyword for keyword in fixture.answer_key.required_keywords if keyword not in matched_keywords
+        keyword
+        for keyword in fixture.answer_key.required_keywords
+        if keyword not in matched_keywords
     ]
 
     passed = (
@@ -121,11 +119,28 @@ def score_result(fixture: ScenarioFixture, diagnosis: dict[str, Any]) -> Scenari
     )
 
 
-def run_scenario(fixture: ScenarioFixture) -> tuple[dict[str, Any], ScenarioScore]:
-    state = prepare_scenario_state(fixture)
-    diagnosis = diagnose_root_cause(state)
-    state.update(diagnosis)
-    return diagnosis, score_result(fixture, diagnosis)
+def run_scenario(
+    fixture: ScenarioFixture,
+    use_mock_grafana: bool = False,
+) -> tuple[dict[str, Any], ScenarioScore]:
+    alert = fixture.alert
+    labels = alert.get("commonLabels", {}) or {}
+
+    alert_name = str(alert.get("title") or labels.get("alertname") or fixture.scenario_id)
+    pipeline_name = str(labels.get("pipeline_name") or "rds-postgres-synthetic")
+    severity = str(labels.get("severity") or "critical")
+
+    resolved_integrations = _build_resolved_integrations(fixture, use_mock_grafana)
+
+    final_state = run_investigation(
+        alert_name=alert_name,
+        pipeline_name=pipeline_name,
+        severity=severity,
+        raw_alert=alert,
+        resolved_integrations=resolved_integrations,
+    )
+    state_dict = dict(final_state)
+    return state_dict, score_result(fixture, state_dict)
 
 
 def run_suite(argv: list[str] | None = None) -> list[ScenarioScore]:
@@ -138,7 +153,7 @@ def run_suite(argv: list[str] | None = None) -> list[ScenarioScore]:
 
     results: list[ScenarioScore] = []
     for fixture in fixtures:
-        _, score = run_scenario(fixture)
+        _, score = run_scenario(fixture, use_mock_grafana=args.mock_grafana)
         results.append(score)
 
     if args.json:

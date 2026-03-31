@@ -6,6 +6,8 @@ Datasource UIDs are auto-discovered from the user's Grafana instance.
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.agent.tools.clients.grafana import get_grafana_client_from_credentials
 from app.agent.tools.tool_decorator import tool
 
@@ -32,6 +34,50 @@ def _resolve_grafana_client(
     )
 
 
+class HttpGrafanaBackend:
+    """GrafanaBackend adapter wrapping the real GrafanaClient.
+
+    Satisfies the GrafanaBackend Protocol via structural duck-typing.
+    Used by _resolve_grafana_backend when no injected backend is present in state.
+    """
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    def query_timeseries(self, query: str = "", **kwargs: Any) -> dict[str, Any]:
+        result = self._client.query_mimir(query, **kwargs)
+        return result if isinstance(result, dict) else {}
+
+    def query_logs(self, query: str = "", **kwargs: Any) -> dict[str, Any]:
+        result = self._client.query_loki(query, **kwargs)
+        return result if isinstance(result, dict) else {}
+
+    def query_alert_rules(self, **kwargs: Any) -> dict[str, Any]:
+        rules = self._client.query_alert_rules(**kwargs)
+        return {"groups": rules} if isinstance(rules, list) else (rules or {})
+
+
+def _resolve_grafana_backend(state: dict[str, Any]) -> Any:
+    """Resolve the Grafana backend for the current investigation state.
+
+    Checks state["grafana_backend"] first — this allows synthetic tests to inject a
+    FixtureGrafanaBackend without touching production credentials. Falls back to an
+    HttpGrafanaBackend wrapping the real GrafanaClient when the key is absent.
+
+    Returns None if Grafana credentials are not configured and no backend is injected.
+    """
+    if backend := state.get("grafana_backend"):
+        return backend
+
+    endpoint = state.get("grafana_endpoint") or ""
+    api_key = state.get("grafana_api_key") or ""
+    if not endpoint:
+        return None
+
+    client = get_grafana_client_from_credentials(endpoint=endpoint, api_key=api_key)
+    return HttpGrafanaBackend(client)
+
+
 def query_grafana_logs(
     service_name: str,
     execution_run_id: str | None = None,
@@ -40,9 +86,14 @@ def query_grafana_logs(
     grafana_endpoint: str | None = None,
     grafana_api_key: str | None = None,
     pipeline_name: str | None = None,
+    grafana_backend: Any = None,
     **_kwargs,
 ) -> dict:
     """Query Grafana Cloud Loki for pipeline logs."""
+    if grafana_backend is not None:
+        raw = grafana_backend.query_logs(service_name=service_name)
+        return {"source": "grafana_loki", "available": True, "raw": raw}
+
     client = _resolve_grafana_client(grafana_endpoint, grafana_api_key)
 
     if not client or not client.is_configured:
@@ -187,9 +238,14 @@ def query_grafana_metrics(
     service_name: str | None = None,
     grafana_endpoint: str | None = None,
     grafana_api_key: str | None = None,
+    grafana_backend: Any = None,
     **_kwargs,
 ) -> dict:
     """Query Grafana Cloud Mimir for pipeline metrics."""
+    if grafana_backend is not None:
+        raw = grafana_backend.query_timeseries(metric_name=metric_name, service_name=service_name)
+        return {"source": "grafana_mimir", "available": True, "raw": raw}
+
     client = _resolve_grafana_client(grafana_endpoint, grafana_api_key)
 
     if not client or not client.is_configured:
@@ -233,6 +289,7 @@ def query_grafana_alert_rules(
     folder: str | None = None,
     grafana_endpoint: str | None = None,
     grafana_api_key: str | None = None,
+    grafana_backend: Any = None,
     **_kwargs,
 ) -> dict:
     """Query Grafana alert rules to understand what's being monitored.
@@ -240,6 +297,10 @@ def query_grafana_alert_rules(
     Useful for DatasourceNoData alerts to find the exact PromQL/LogQL query
     that triggered the alert and understand the monitoring configuration.
     """
+    if grafana_backend is not None:
+        raw = grafana_backend.query_alert_rules()
+        return {"source": "grafana_alerts", "available": True, "raw": raw}
+
     client = _resolve_grafana_client(grafana_endpoint, grafana_api_key)
 
     if not client or not client.is_configured:
@@ -264,6 +325,7 @@ def query_grafana_alert_rules(
 def query_grafana_service_names(
     grafana_endpoint: str | None = None,
     grafana_api_key: str | None = None,
+    grafana_backend: Any = None,
     **_kwargs,
 ) -> dict:
     """Discover available service names in Loki.
@@ -271,6 +333,9 @@ def query_grafana_service_names(
     Useful when the pipeline's service_name doesn't match or returns no logs.
     Lists all service_name values that have log data in Grafana Loki.
     """
+    if grafana_backend is not None:
+        return {"source": "grafana_loki_labels", "available": True, "service_names": []}
+
     client = _resolve_grafana_client(grafana_endpoint, grafana_api_key)
 
     if not client or not client.is_configured:

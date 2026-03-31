@@ -51,7 +51,8 @@ def _run_investigation_pipeline(state: AgentState) -> AgentState:
     if state.get("is_noise"):
         return state
 
-    _merge_state(state, node_resolve_integrations(state))
+    if not state.get("resolved_integrations"):
+        _merge_state(state, node_resolve_integrations(state))
 
     while True:
         _merge_state(state, node_plan_actions(state))
@@ -69,9 +70,18 @@ def run_investigation(
     pipeline_name: str,
     severity: str,
     raw_alert: str | dict[str, Any] | None = None,
+    resolved_integrations: dict[str, Any] | None = None,
 ) -> AgentState:
-    """Run investigation pipeline. Pure function: inputs in, state out."""
+    """Run investigation pipeline. Pure function: inputs in, state out.
+
+    Args:
+        resolved_integrations: Optional pre-resolved integrations dict. When provided,
+            node_resolve_integrations is skipped — useful for synthetic testing where a
+            FixtureGrafanaBackend should be injected without real credential resolution.
+    """
     initial = make_initial_state(alert_name, pipeline_name, severity, raw_alert=raw_alert)
+    if resolved_integrations is not None:
+        cast(dict[str, Any], initial)["resolved_integrations"] = resolved_integrations
     return cast(AgentState, _run_investigation_pipeline(initial))
 
 
