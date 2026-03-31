@@ -31,8 +31,6 @@ See **[SETUP.md](docs/SETUP.md)** for detailed setup instructions including Wind
 
 ---
 
-## Development Workflow
-
 **The basic flow:**
 
 1. **Find or create an issue** — Bug? Feature? Improvement? Create or comment on an issue first
