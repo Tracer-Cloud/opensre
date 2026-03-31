@@ -26,7 +26,7 @@ See **[SETUP.md](docs/SETUP.md)** for detailed setup instructions including Wind
 
 **Quick start:**
 1. Clone the repo and create a virtual environment
-2. Install dependencies: `pip install -e “.[dev]”`
+2. Install dependencies: `pip install -e ".[dev]"`
 3. Run checks: `make lint && make typecheck && make test-cov`
 
 ---
