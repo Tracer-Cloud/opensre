@@ -30,12 +30,6 @@ def _render_help() -> None:
     console = Console(highlight=False)
 
     console.print()
-    console.print(Text.assemble(("  ", ""), ("OpenSRE", "bold white")))
-    console.print(Text.assemble(
-        ("  ", ""),
-        "open-source SRE agent for automated incident investigation and root cause analysis",
-    ))
-    console.print()
 
     console.print(Text.assemble(("  Usage: "), ("opensre", "bold white"), (" [OPTIONS] COMMAND [ARGS]...")))
     console.print()
