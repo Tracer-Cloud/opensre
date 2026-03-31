@@ -1,0 +1,90 @@
+name: Bug Report
+description: Report something that isn't working
+title: "[BUG] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please include **observed** behavior and repro steps — guesses make triage slower.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One-line description of the bug. Be specific (e.g. agent fails when `.env` contains `=` in values). Avoid vague phrases like "something doesn't work."
+      placeholder: "Example: Agent fails to parse config when .env vars contain special characters"
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected vs actual behavior
+      description: What should happen, and what happens instead? Include exact errors, exit codes, or unexpected output where relevant.
+      placeholder: |
+        **Expected:** …
+
+        **Actual:** …
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps that consistently trigger the bug (commands, config snippets — redact secrets).
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: dropdown
+    id: reproducible
+    attributes:
+      label: Can you reproduce it consistently?
+      options:
+        - "Yes"
+        - "No"
+        - "Sometimes"
+    validations:
+      required: true
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often does it occur?
+      options:
+        - Every time
+        - Intermittent
+        - Under specific conditions
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      description: Pick the closest match.
+      options:
+        - macOS
+        - Linux
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and error output
+      description: Full error message and relevant logs. Redact API keys, tokens, and passwords.
+      placeholder: |
+        ```
+        [paste error / logs]
+        ```
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, related issues (`#123`), what you were trying to do when this happened.
+    validations:
+      required: false

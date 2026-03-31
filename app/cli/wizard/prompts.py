@@ -120,14 +120,25 @@ def checkbox(
     style: Style | None = None,
     instruction: str | None = None,
     initial_choice: str | None = None,
+    default: Any | None = None,
 ) -> Question:
     """Render a multi-select prompt with Tab navigation."""
+    # If no explicit initial_choice, place cursor on first choice
+    if initial_choice is None and choices:
+        first = choices[0]
+        initial_choice = first.value if isinstance(first, Choice) else None
+
     ic = InquirerControl(
         choices,
         pointer=">",
         initial_choice=initial_choice,
         show_description=False,
     )
+
+    # Pre-select any values passed in default
+    if default:
+        valid_values = {c.value for c in choices if isinstance(c, Choice)}
+        ic.selected_options = [v for v in default if v in valid_values]
 
     def _tokens() -> list[tuple[str, str]]:
         tokens = [("class:qmark", "?"), ("class:question", f" {message} ")]

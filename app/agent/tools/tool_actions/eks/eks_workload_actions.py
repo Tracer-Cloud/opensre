@@ -38,7 +38,17 @@ def get_eks_pod_logs(
             "error": None,
         }
     except Exception as e:
-        logger.error("[eks] get_eks_pod_logs FAILED: %s", e, exc_info=True)
+        logger.error(
+            "[eks] get_eks_pod_logs failed "
+            "cluster=%s namespace=%s pod=%s region=%s error=%s "
+            "(check pod existence, RBAC, and cluster access)",
+            cluster_name,
+            namespace,
+            pod_name,
+            region,
+            e,
+            exc_info=True,
+        )
         return {
             "source": "eks",
             "available": False,

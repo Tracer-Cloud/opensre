@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "Questions or Support"
+    url: https://github.com/Tracer-Cloud/open-sre-agent/discussions
+    about: "Ask questions or get help in Discussions"
+  - name: "Security Issue"
+    url: https://github.com/Tracer-Cloud/open-sre-agent/security/policy
+    about: "Report a security vulnerability safely"

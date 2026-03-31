@@ -114,7 +114,11 @@ async def _open_github_mcp_session(config: GitHubMCPConfig) -> AsyncIterator[Cli
     try:
         if config.mode == "stdio":
             if not config.command:
-                raise ValueError("GitHub MCP stdio mode requires a command.")
+                raise ValueError(
+                    "Invalid GitHub MCP config: mode=stdio requires command "
+                    "(set OPENSRE_GITHUB_MCP_COMMAND or pass command "
+                    "in config)."
+                )
             server_params = StdioServerParameters(
                 command=config.command,
                 args=list(config.args),
@@ -126,7 +130,11 @@ async def _open_github_mcp_session(config: GitHubMCPConfig) -> AsyncIterator[Cli
             read_stream, write_stream = await stack.enter_async_context(stdio_client(server_params))
         elif config.mode == "sse":
             if not config.url:
-                raise ValueError("GitHub MCP SSE mode requires a URL.")
+                raise ValueError(
+                    "Invalid GitHub MCP config: mode=sse requires url "
+                    "(set OPENSRE_GITHUB_MCP_URL, "
+                    "for example https://.../sse)."
+                )
             read_stream, write_stream = await stack.enter_async_context(
                 sse_client(
                     config.url,
@@ -137,7 +145,11 @@ async def _open_github_mcp_session(config: GitHubMCPConfig) -> AsyncIterator[Cli
             )
         elif config.mode == "streamable-http":
             if not config.url:
-                raise ValueError("GitHub MCP streamable-http mode requires a URL.")
+                raise ValueError(
+                    "Invalid GitHub MCP config: "
+                    "mode=streamable-http requires url "
+                    "(set OPENSRE_GITHUB_MCP_URL)."
+                )
             http_client = await stack.enter_async_context(
                 httpx.AsyncClient(
                     headers=config.request_headers,
@@ -148,7 +160,10 @@ async def _open_github_mcp_session(config: GitHubMCPConfig) -> AsyncIterator[Cli
                 streamable_http_client(config.url, http_client=http_client)
             )
         else:
-            raise ValueError(f"Unsupported GitHub MCP mode: {config.mode}")
+            raise ValueError(
+                f"Unsupported GitHub MCP mode '{config.mode}'. "
+                "Supported modes: stdio, sse, streamable-http."
+            )
 
         session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
         await session.initialize()

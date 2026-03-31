@@ -32,16 +32,16 @@
 
 ## Quick Start
 
+> **New to Tracer?** See [SETUP.md](SETUP.md) for detailed platform-specific setup instructions, including Windows setup, environment configuration, and more.
+
 ```bash
-git clone https://github.com/Tracer-Cloud/open-sre-agent
-cd open-sre-agent
+git clone https://github.com/Tracer-Cloud/opensre
+cd opensre
 make install
-make install-hooks
-cp .env.example .env
 # run opensre onboard to configure your local LLM provider
 # and optionally validate/save Grafana, Datadog, Slack, AWS, GitHub MCP, and Sentry integrations
 opensre onboard
-make local-grafana-live
+opensre investigate -i tests/fixtures/grafana_local_alert.json
 ```
 
 **Choose a path:**
@@ -56,7 +56,7 @@ make local-grafana-live
 
 When something breaks in production, the pressure is immediate - but the evidence is scattered. Logs in Datadog. Metrics in Grafana. Runbooks in Notion. Context in Slack threads already 200 messages deep.
 
-**Tracer is the open-source answer to that chaos.** It's an AI SRE agent that correlates signals across your entire stack, reasons through root cause, and surfaces a clear diagnosis - in the time it used to take just to *find* the right dashboard.
+**Tracer is the open-source answer to that chaos.** It's an AI SRE agent that correlates signals across your entire stack, reasons through root cause, and surfaces a clear diagnosis - in the time it used to take just to _find_ the right dashboard.
 
 Unlike closed SRE platforms, Tracer is **fully open source and self-hostable**. No vendor lock-in. No black-box reasoning. You own the agent, the data, and the workflow.
 
@@ -84,13 +84,13 @@ When an alert fires, Tracer automatically:
 
 ## Capabilities
 
-| | |
-|---|---|
-| 🔍 **Structured incident investigation** | Correlated root-cause analysis across all your signals |
-| 📋 **Runbook-aware reasoning** | Tracer reads your runbooks and applies them automatically |
-| 🔮 **Predictive failure detection** | Catch emerging issues before they page you |
-| 🔗 **Evidence-backed root cause** | Every conclusion is linked to the data behind it |
-| 🤖 **Full LLM flexibility** | Bring your own model - OpenAI, Anthropic, and more |
+|                                          |                                                           |
+| ---------------------------------------- | --------------------------------------------------------- |
+| 🔍 **Structured incident investigation** | Correlated root-cause analysis across all your signals    |
+| 📋 **Runbook-aware reasoning**           | Tracer reads your runbooks and applies them automatically |
+| 🔮 **Predictive failure detection**      | Catch emerging issues before they page you                |
+| 🔗 **Evidence-backed root cause**        | Every conclusion is linked to the data behind it          |
+| 🤖 **Full LLM flexibility**              | Bring your own model - OpenAI, Anthropic, and more        |
 
 ---
 
@@ -98,13 +98,13 @@ When an alert fires, Tracer automatically:
 
 Tracer integrates with the systems that power modern data platforms.
 
-| Category | Integrations |
-|---|---|
-| **Data Platform** | Apache Airflow · Apache Kafka · Apache Spark |
-| **Observability** | <img src="docs/assets/icons/grafana.webp" width="16"> Grafana · <img src="docs/assets/icons/datadog.svg" width="16"> Datadog · <img src="docs/assets/icons/cloudwatch.png" width="16"> CloudWatch · <img src="docs/assets/icons/sentry.png" width="16"> Sentry |
-| **Infrastructure** | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS · <img src="docs/assets/icons/gcp.jpg" width="16"> GCP · <img src="docs/assets/icons/azure.png" width="16"> Azure |
-| **Dev Tools** | <img src="docs/assets/icons/github.webp" width="16"> GitHub |
-| **Communication** | <img src="docs/assets/icons/slack.png" width="16"> Slack · <img src="docs/assets/icons/pagerduty.png" width="16"> PagerDuty |
+| Category           | Integrations                                                                                                                                                                                                                                                   |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Data Platform**  | Apache Airflow · Apache Kafka · Apache Spark                                                                                                                                                                                                                   |
+| **Observability**  | <img src="docs/assets/icons/grafana.webp" width="16"> Grafana · <img src="docs/assets/icons/datadog.svg" width="16"> Datadog · <img src="docs/assets/icons/cloudwatch.png" width="16"> CloudWatch · <img src="docs/assets/icons/sentry.png" width="16"> Sentry |
+| **Infrastructure** | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS · <img src="docs/assets/icons/gcp.jpg" width="16"> GCP · <img src="docs/assets/icons/azure.png" width="16"> Azure                    |
+| **Dev Tools**      | <img src="docs/assets/icons/github.webp" width="16"> GitHub                                                                                                                                                                                                    |
+| **Communication**  | <img src="docs/assets/icons/slack.png" width="16"> Slack · <img src="docs/assets/icons/pagerduty.png" width="16"> PagerDuty                                                                                                                                    |
 
 ---
 
@@ -123,7 +123,7 @@ We've tried to be intentional about how Tracer is built, not just what it does.
 
 Tracer is community-built. Every integration, improvement, and bug fix makes it better for thousands of engineers. We actively review PRs and welcome contributors of all experience levels.
 
-Good first issues are labeled [`good first issue`](https://github.com/Tracer-Cloud/tracer-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). Ways to contribute:
+Good first issues are labeled [`good first issue`](https://github.com/Tracer-Cloud/opensre/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). Ways to contribute:
 
 - 🐛 Report bugs or missing edge cases
 - 🔌 Add a new tool integration
@@ -134,22 +134,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 
 Thanks goes to these amazing people:
 
-<!-- readme: collaborators,contributors -start -->
+<!-- readme: contributors -start -->
 <table>
 	<tbody>
 		<tr>
             <td align="center">
-                <a href="https://github.com/jellithorpe">
-                    <img src="https://avatars.githubusercontent.com/u/506082?v=4" width="100;" alt="jellithorpe"/>
+                <a href="https://github.com/davincios">
+                    <img src="https://avatars.githubusercontent.com/u/33206282?v=4" width="100;" alt="davincios"/>
                     <br />
-                    <sub><b>John Ellithorpe</b></sub>
-                </a>
-            </td>
-            <td align="center">
-                <a href="https://github.com/ayushsinghal90">
-                    <img src="https://avatars.githubusercontent.com/u/35574860?v=4" width="100;" alt="ayushsinghal90"/>
-                    <br />
-                    <sub><b>Ayush Singhal</b></sub>
+                    <sub><b>vincenthus</b></sub>
                 </a>
             </td>
             <td align="center">
@@ -160,47 +153,10 @@ Thanks goes to these amazing people:
                 </a>
             </td>
             <td align="center">
-                <a href="https://github.com/Maame-codes">
-                    <img src="https://avatars.githubusercontent.com/u/98717263?v=4" width="100;" alt="Maame-codes"/>
-                    <br />
-                    <sub><b>Maame Afua A.P Fordjour</b></sub>
-                </a>
-            </td>
-            <td align="center">
-                <a href="https://github.com/paultracer">
-                    <img src="https://avatars.githubusercontent.com/u/214484440?v=4" width="100;" alt="paultracer"/>
-                    <br />
-                    <sub><b>paultracer</b></sub>
-                </a>
-            </td>
-            <td align="center">
                 <a href="https://github.com/aliya-tracer">
                     <img src="https://avatars.githubusercontent.com/u/233726347?v=4" width="100;" alt="aliya-tracer"/>
                     <br />
                     <sub><b>aliya-tracer</b></sub>
-                </a>
-            </td>
-		</tr>
-		<tr>
-            <td align="center">
-                <a href="https://github.com/kylie-tracer">
-                    <img src="https://avatars.githubusercontent.com/u/256781109?v=4" width="100;" alt="kylie-tracer"/>
-                    <br />
-                    <sub><b>kylie-tracer</b></sub>
-                </a>
-            </td>
-            <td align="center">
-                <a href="https://github.com/Gust-svg">
-                    <img src="https://avatars.githubusercontent.com/u/265007695?v=4" width="100;" alt="Gust-svg"/>
-                    <br />
-                    <sub><b>Gust-svg</b></sub>
-                </a>
-            </td>
-            <td align="center">
-                <a href="https://github.com/davincios">
-                    <img src="https://avatars.githubusercontent.com/u/33206282?v=4" width="100;" alt="davincios"/>
-                    <br />
-                    <sub><b>vincenthus</b></sub>
                 </a>
             </td>
             <td align="center">
@@ -211,10 +167,40 @@ Thanks goes to these amazing people:
                 </a>
             </td>
             <td align="center">
+                <a href="https://github.com/kylie-tracer">
+                    <img src="https://avatars.githubusercontent.com/u/256781109?v=4" width="100;" alt="kylie-tracer"/>
+                    <br />
+                    <sub><b>kylie-tracer</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/paultracer">
+                    <img src="https://avatars.githubusercontent.com/u/214484440?v=4" width="100;" alt="paultracer"/>
+                    <br />
+                    <sub><b>paultracer</b></sub>
+                </a>
+            </td>
+		</tr>
+		<tr>
+            <td align="center">
+                <a href="https://github.com/w3joe">
+                    <img src="https://avatars.githubusercontent.com/u/84664178?v=4" width="100;" alt="w3joe"/>
+                    <br />
+                    <sub><b>Tan Wee Joe</b></sub>
+                </a>
+            </td>
+            <td align="center">
                 <a href="https://github.com/iamkalio">
                     <img src="https://avatars.githubusercontent.com/u/89003403?v=4" width="100;" alt="iamkalio"/>
                     <br />
                     <sub><b>Kalio</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/yeoreums">
+                    <img src="https://avatars.githubusercontent.com/u/62932875?v=4" width="100;" alt="yeoreums"/>
+                    <br />
+                    <sub><b>Yeoreum Song</b></sub>
                 </a>
             </td>
             <td align="center">
@@ -227,7 +213,7 @@ Thanks goes to these amazing people:
 		</tr>
 	<tbody>
 </table>
-<!-- readme: collaborators,contributors -end -->
+<!-- readme: contributors -end -->
 
 ---
 
@@ -242,6 +228,23 @@ Tracer is designed with production environments in mind:
 See [SECURITY.md](SECURITY.md) for responsible disclosure.
 
 ---
+
+## Telemetry
+
+`opensre` collects anonymous usage statistics with Posthog to help us understand adoption
+and demonstrate traction to sponsors and investors who fund the project.
+What we collect: command name, CLI version, Python version, and OS family.
+A randomly generated anonymous ID is created on first run and stored in
+`~/.config/opensre/`. We never collect alert contents, hostnames,
+credentials, or any personally identifiable information.
+
+We follow the [Console Do Not Track](https://consoledonottrack.com/) standard.
+
+To opt out, set the environment variable before running:
+
+```bash
+export OPENSRE_NO_TELEMETRY=1
+```
 
 ## License
 

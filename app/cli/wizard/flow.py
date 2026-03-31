@@ -17,7 +17,7 @@ from app.cli.wizard.probes import ProbeResult, probe_local_target, probe_remote_
 from app.cli.wizard.prompts import checkbox as checkbox_prompt
 from app.cli.wizard.prompts import select as select_prompt
 from app.cli.wizard.store import get_store_path, load_local_config, save_local_config
-from app.integrations.store import get_integration, upsert_integration
+from app.integrations.store import get_integration, remove_integration, upsert_integration
 
 _console = Console()
 DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
@@ -166,14 +166,15 @@ def _choose(prompt: str, choices: list[Choice], *, default: str | None = None) -
     return str(result)
 
 
-def _choose_many(prompt: str, choices: list[Choice]) -> list[str]:
+def _choose_many(prompt: str, choices: list[Choice], *, default: list[str] | None = None) -> list[str]:
     q_choices = [QuestionaryChoice(title=choice.label, value=choice.value) for choice in choices]
 
     result = checkbox_prompt(
         prompt,
         choices=q_choices,
         style=_STYLE,
-        instruction="(Space, Tab, Enter)",
+        instruction="(Space to select, Enter to confirm)",
+        default=default or [],
     ).ask()
 
     if result is None:
@@ -315,13 +316,16 @@ def _render_saved_summary(
     env_path: str,
     configured_integrations: list[str],
 ) -> None:
+    from app.integrations.store import STORE_PATH
+
     integrations = ", ".join(configured_integrations) or "none"
     _console.print("\n[green]Done.[/]")
-    _console.print(f"[dim]provider  {provider_label}[/]")
-    _console.print(f"[dim]model     {model}[/]")
-    _console.print(f"[dim]services  {integrations}[/]")
-    _console.print(f"[dim]config    {saved_path}[/]")
-    _console.print(f"[dim]env       {env_path}[/]")
+    _console.print(f"[dim]provider      {provider_label}[/]")
+    _console.print(f"[dim]model         {model}[/]")
+    _console.print(f"[dim]services      {integrations}[/]")
+    _console.print(f"[dim]config        {saved_path}[/]")
+    _console.print(f"[dim]env           {env_path}[/]")
+    _console.print(f"[dim]integrations  {STORE_PATH}[/]")
 
 
 def _render_integration_result(service_label: str, result: IntegrationHealthResult) -> None:
@@ -358,6 +362,60 @@ def _configure_grafana() -> tuple[str, str]:
             )
             return "Grafana", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
+def _configure_grafana_local() -> tuple[str, str]:
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    if not shutil.which("docker"):
+        _console.print("[red]Docker not found.[/]")
+        _console.print("[dim]Install Docker Desktop and retry.[/]")
+        return "Grafana Local (skipped)", ""
+
+    # Check Docker daemon is actually running
+    ping = subprocess.run(
+        ["docker", "info"],
+        capture_output=True,
+        text=True,
+    )
+    if ping.returncode != 0:
+        _console.print("[red]Docker is not running.[/]")
+        _console.print("[dim]Start Docker Desktop, then run [bold]opensre onboard[/bold] again.[/]")
+        return "Grafana Local (skipped)", ""
+
+    compose_file = str(Path(__file__).parents[3] / "app/demo/local_grafana_stack/docker-compose.yml")
+    with _console.status("Starting Grafana + Loki (docker compose up -d)...", spinner="dots"):
+        result = subprocess.run(
+            ["docker", "compose", "-f", compose_file, "up", "-d"],
+            capture_output=True,
+            text=True,
+        )
+    if result.returncode != 0:
+        _console.print("[red]Docker compose failed.[/]")
+        _console.print(result.stderr or result.stdout)
+        return "Grafana Local (skipped)", ""
+
+    with _console.status("Waiting for Loki to be ready and seeding logs...", spinner="dots"):
+        try:
+            from app.demo.local_grafana_seed import seed_logs
+            seed_logs()
+        except (SystemExit, Exception) as exc:
+            _console.print(f"[red]Loki seed failed: {exc}[/]")
+            return "Grafana Local (skipped)", ""
+
+    endpoint = "http://localhost:3000"
+    api_key = ""
+    remove_integration("grafana")  # clean up any stale grafana record pointing to localhost
+    upsert_integration("grafana_local", {"credentials": {"endpoint": endpoint, "api_key": api_key}})
+    env_path = sync_env_values({"GRAFANA_INSTANCE_URL": endpoint, "GRAFANA_READ_TOKEN": api_key})
+    _console.print("[green]Grafana Local · ready[/]")
+    _console.print(f"[dim]UI: {endpoint}[/]")
+    _console.print("[dim]Loki seeded with events_fact pipeline failure logs.[/]")
+    _console.print("[dim]Run RCA:[/]")
+    _console.print("[bold]  opensre investigate -i tests/fixtures/grafana_local_alert.json[/]")
+    return "Grafana Local", str(env_path)
 
 
 def _configure_datadog() -> tuple[str, str]:
@@ -649,24 +707,26 @@ def _configure_sentry() -> tuple[str, str]:
 
 
 def _configure_selected_integrations() -> tuple[list[str], str | None]:
+    configured: list[str] = []
+    last_env_path: str | None = None
+
+    _console.print("[dim]Use Space to select, Enter to confirm.[/]")
     selected = _choose_many(
-        "Optional integrations:",
+        "Integrations (optional):",
         [
-            Choice(value="grafana", label="Grafana"),
+            Choice(value="grafana_local", label="Grafana Local (Docker) — starts Grafana + Loki, seeds test data"),
+            Choice(value="grafana", label="Grafana Cloud / self-hosted"),
             Choice(value="datadog", label="Datadog"),
             Choice(value="slack", label="Slack"),
             Choice(value="aws", label="AWS"),
             Choice(value="github", label="GitHub MCP"),
             Choice(value="sentry", label="Sentry"),
         ],
+        default=["grafana_local"],
     )
-    if not selected:
-        return [], None
-
-    configured: list[str] = []
-    last_env_path: str | None = None
 
     handlers = {
+        "grafana_local": _configure_grafana_local,
         "grafana": _configure_grafana,
         "datadog": _configure_datadog,
         "slack": _configure_slack,
@@ -674,12 +734,23 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "github": _configure_github_mcp,
         "sentry": _configure_sentry,
     }
-
+    _SERVICE_LABELS = {
+        "grafana_local": "grafana local",
+        "grafana": "grafana",
+        "datadog": "datadog",
+        "slack": "slack",
+        "aws": "aws",
+        "github": "github mcp",
+        "sentry": "sentry",
+    }
     for index, service in enumerate(selected, start=1):
-        _step(f"service {index}/{len(selected)} · {service}")
-        label, env_path = handlers[service]()
-        configured.append(label)
-        last_env_path = env_path
+        _step(f"service {index}/{len(selected)} · {_SERVICE_LABELS.get(service, service)}")
+        try:
+            label, env_path = handlers[service]()
+            configured.append(label)
+            last_env_path = env_path
+        except KeyboardInterrupt:
+            _console.print(f"[yellow]{_SERVICE_LABELS.get(service, service)} setup skipped.[/]")
 
     return configured, last_env_path
 
@@ -702,7 +773,7 @@ def _render_demo_response(demo_response: dict) -> None:
 def _render_next_steps() -> None:
     _console.print("\n[bold]next[/]")
     _console.print("[dim]opensre onboard[/]")
-    _console.print("[dim]make run -- --input path/to/alert.json[/]")
+    _console.print("[dim]opensre investigate -i tests/fixtures/grafana_local_alert.json[/]")
 
 
 def run_wizard(_argv: list[str] | None = None) -> int:

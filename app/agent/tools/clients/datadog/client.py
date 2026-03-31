@@ -102,10 +102,21 @@ class DatadogClient:
 
             return {"success": True, "logs": logs, "total": len(logs)}
         except httpx.HTTPStatusError as e:
-            logger.warning("[datadog] Log search failed: %s", e.response.status_code)
+            logger.warning(
+                "[datadog] Log search HTTP failure status=%s query=%r window=%sm "
+                "(check API/app key permissions and query syntax)",
+                e.response.status_code,
+                query,
+                time_range_minutes,
+            )
             return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
         except Exception as e:
-            logger.warning("[datadog] Log search error: %s", e)
+            logger.warning(
+                "[datadog] Log search request error type=%s detail=%s "
+                "(network/auth/timeout likely)",
+                type(e).__name__,
+                e,
+            )
             return {"success": False, "error": str(e)}
 
     def list_monitors(
@@ -136,10 +147,19 @@ class DatadogClient:
 
             return {"success": True, "monitors": results, "total": len(results)}
         except httpx.HTTPStatusError as e:
-            logger.warning("[datadog] List monitors failed: %s", e.response.status_code)
+            logger.warning(
+                "[datadog] List monitors HTTP failure status=%s query=%r "
+                "(verify monitor.read scope and org/site)",
+                e.response.status_code,
+                query,
+            )
             return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
         except Exception as e:
-            logger.warning("[datadog] List monitors error: %s", e)
+            logger.warning(
+                "[datadog] List monitors request error type=%s detail=%s",
+                type(e).__name__,
+                e,
+            )
             return {"success": False, "error": str(e)}
 
     def get_pods_on_node(

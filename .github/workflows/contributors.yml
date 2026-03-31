@@ -18,5 +18,7 @@ jobs:
 
       - name: Update contributors list
         uses: akhilmhdh/contributors-readme-action@v2.3.10
+        with:
+          sort_order: ASC
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

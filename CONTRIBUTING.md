@@ -2,121 +2,214 @@
 
 Thanks for your interest in contributing to Tracer.
 
-This document describes how to propose changes, report bugs, and submit pull requests in a way that keeps review fast and the project reliable.
+This document describes how to set up your environment, propose changes, report bugs, and submit pull requests in a way that keeps review fast and the project reliable.
 
-## Quick links
+## Quick Links
 
-- Docs: https://www.tracer.cloud/docs
-- Support / contact: hello@tracer.cloud
-- Book a demo: https://www.tracer.cloud/demo
-- Trust Center: https://trust.tracer.cloud/
+- **Docs:** https://www.tracer.cloud/docs
+- **Support / Contact:** hello@tracer.cloud
+- **Security Issues:** See `SECURITY.md` (do not open public issues)
 
-## Choose the right channel
+## Before You Start
 
-- **Bugs & small fixes**: open a GitHub Issue (if one exists) and/or submit a PR.
-- **New features / behavioral changes**: open a GitHub Issue first to discuss the approach.
-- **Questions / “how do I”**: use the docs or email hello@tracer.cloud (GitHub Issues are for actionable engineering work).
-- **Security issues**: do **not** open a public issue; follow `SECURITY.md`.
+### How to Contribute
 
-## Development workflow
+- **Bugs & small fixes:** Open a GitHub Issue using the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md) and/or submit a PR
+- **New features / behavioral changes:** Open a GitHub Issue using the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md) first to discuss the approach
+- **Improvements / refactoring:** Open a GitHub Issue using the [improvement template](.github/ISSUE_TEMPLATE/improvement.md)
+- **Questions / “how do I”:** Use the docs or email hello@tracer.cloud (Issues are for actionable work)
+- **Security issues:** Follow `SECURITY.md` — do not open a public issue
 
-1. Fork the repo and create a branch from `main`
-2. Make your changes
-3. Add or update tests (where applicable)
-4. Run the project’s checks locally before opening a PR:
-   ```bash
-   make lint        # ruff linter
-   make typecheck   # mypy
-   make test-cov    # pytest with coverage
-   ```
-   All three must pass. CI runs the same checks and a PR cannot be merged if they fail.
-5. Open a pull request
+### Environment Setup
 
-## Windows Setup
+See **[SETUP.md](docs/SETUP.md)** for detailed setup instructions including Windows-specific guidance.
 
-Windows does not include `make` by default. We use `make` as a task runner for common development, testing, demo, and infrastructure commands, so you need to install it first.
+**Quick start:**
+1. Clone the repo and create a virtual environment
+2. Install dependencies: `pip install -e ".[dev]"`
+3. Run checks: `make lint && make typecheck && make test-cov`
 
-**Step 1 — Open PowerShell as Administrator** (search "PowerShell" in Start Menu → right-click → "Run as administrator")
+---
 
-### Option 1 — Chocolatey
+**The basic flow:**
 
-**Step 2 — Install Chocolatey** (paste this and press Enter):
+1. **Find or create an issue** — Bug? Feature? Improvement? Create or comment on an issue first
+2. **Discuss (if needed)** — For features/changes, discuss approach in the issue before coding
+3. **Fork and branch** — Create a branch for your work: `git checkout -b issue/123-description`
+4. **Code and test** — Make changes, add tests, ensure all checks pass
+5. **Submit a PR** — Open a pull request linked to the issue; use the PR template
+6. **Review & iterate** — Respond to feedback, make changes as needed
+7. **Merge** — Maintainer merges once approved
 
-⚠️ This command executes a remote script from Chocolatey. Review it before running.
+**Detailed steps:** See “Development Workflow” section below.
 
-```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-```
+---
 
-**Step 3 — Install make:**
+## Development Workflow
 
-```powershell
-choco install make
-```
-
-### Option 2 — winget
-
-Install `make` with `winget`:
-
-```powershell
-winget install GnuWin32.Make
-```
-
-**Step 4 — Restart your terminal** to ensure `make` is available in your `PATH`.
-
-**Step 5 — Verify the installation:**
+### 1. Create a Branch
 
 ```bash
-make --version
+git checkout -b issue/123-short-description
 ```
 
-You can now run the standard checks:
+Use `issue/` or `fix/` prefix. Branch names should be lowercase with hyphens.
+
+### 2. Make Changes
+
+- Keep commits focused and logical
+- Write clear commit messages: `"Fix: CLI returns error on incomplete commands"`
+- One concern per commit when possible
+
+### 3. Add or Update Tests
+
+- Bug fixes should include a test that would have caught the bug
+- New features should have corresponding tests
+- Aim for >80% code coverage (run `make test-cov` to check)
+
+### 4. Run Local Checks (Required Before PR)
 
 ```bash
-make lint
-make typecheck
-make test-cov
+make lint        # ruff: check code style
+make typecheck   # mypy: check type annotations
+make test-cov    # pytest: run tests with coverage report
 ```
 
-### Pull request guidelines
+All three must pass. **CI will block merging if any fail.**
 
-To keep PRs easy to review:
+### 5. Open a Pull Request
 
-- Keep PRs **focused** (one logical change per PR)
-- Describe **what** changed and **why**
-- Include relevant context (links to issues, logs, screenshots)
-- Avoid drive-by refactors mixed with functional changes
+Follow the PR template (see below). Link the relevant issue and describe what changed and why.
 
-If your PR changes user-visible behavior or output, include:
 
-- **Before** and **after** evidence (screenshots, logs, CLI output, etc.)
+## Pull Request Guidelines
 
-## Code quality expectations
+### How to Write a Good PR Description
 
-- Prefer clarity over cleverness
-- Add tests for bug fixes and non-trivial logic
-- Keep public APIs stable; call out breaking changes explicitly
-- Update documentation when behavior or configuration changes
+Use the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** (automatically provided when you open a PR). Key sections:
 
-## AI-assisted contributions
+- **Issue link:** `Fixes #123` (auto-closes the issue when merged)
+- **Type of Change:** Select bug fix, feature, breaking change, or docs (helps categorize)
+- **Description:** What changed and why
+- **Testing:** How you tested it with specific steps and evidence
+- **Impact Analysis:** Is it backward compatible? Any breaking changes? Performance impact?
 
-AI-assisted PRs are welcome.
+### PR Checklist Before Submitting
 
-If you used an AI tool to generate any portion of the change, please include:
+- [ ] Linked to the relevant issue
+- [ ] All local checks pass: `make lint && make typecheck && make test-cov`
+- [ ] Added tests for bug fixes or new features
+- [ ] Updated documentation if behavior changed
+- [ ] Code follows project style (see **Code Quality** section below)
+- [ ] Self-reviewed your own code first
+- [ ] Considered edge cases
 
-- A note in the PR description that it is **AI-assisted**
-- The level of testing performed (untested / lightly tested / fully tested)
-- Anything a reviewer should double-check (assumptions, edge cases)
+### If Your PR Includes Screenshots or Logs
 
-## Reporting bugs
+Provide **before** and **after** examples when:
+- Changing CLI output or error messages
+- Updating agent behavior
+- Fixing a bug with visible impact
 
-When filing a bug, include:
+### AI-Assisted PRs
 
-- What you expected to happen
-- What actually happened
-- Steps to reproduce (minimal repro if possible)
-- Environment details (OS, version, relevant config)
-- Logs or error output (redact secrets)
+If you used AI tools (Claude, ChatGPT, Copilot, etc.) to generate code, the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** requires you to confirm:
+
+- [ ] I reviewed **every single line** of AI-generated code (not just skimmed)
+- [ ] I understand the logic and can explain it in my own words
+- [ ] I tested edge cases (what could break?)
+- [ ] I modified output to match project conventions ([Code Quality Standards](#code-quality-standards))
+- [ ] Verified tests pass with the AI-generated code
+
+This ensures you understand the code, not just copied it. Reviewers will pay extra attention to AI-assisted code.
+
+## Code Quality Standards
+
+- **Clarity over cleverness:** Code should be easy to understand and maintain
+- **DRY principle:** Don't repeat yourself; extract common patterns
+- **Strong typing:** Use type hints for all function parameters and returns
+- **One responsibility:** Each function/class should do one thing well
+- **Comments for "why":** Explain non-obvious logic; code already shows the "what"
+- **Breaking changes:** Call them out explicitly in PR descriptions and docs
+
+### Style & Formatting
+
+We use:
+- **ruff** for linting and import sorting
+- **mypy** for strict type checking
+- **Black-compatible** formatting (4-space indents)
+- **pytest** for testing with coverage tracking
+
+Run these before every commit:
+
+```bash
+make lint        # Auto-fixes many style issues
+make typecheck   # Catches type errors
+make test-cov    # Ensures tests pass and coverage is tracked
+```
+
+## Reporting Bugs
+
+Use the **[bug report template](.github/ISSUE_TEMPLATE/bug_report.md)** when creating an issue. It guides you to include:
+
+- **Summary:** One-line description of the bug (specific, not vague)
+- **Expected behavior:** What should happen
+- **Actual behavior:** What actually happens (with error message)
+- **Reproduction steps:** Clear, minimal steps to consistently trigger the bug
+- **Can you reproduce it consistently?** Every time / Intermittent / Sometimes
+- **Environment:** OS, Python version, agent version, install method, relevant config
+- **Error output:** Full error messages and logs (redact secrets like API keys)
+- **Workarounds:** If you found a way to work around it
+- **Context:** What were you trying to do? Is this blocking your work?
+
+**Example:**
+
+```
+### Expected Behavior
+`opensre investigate --org myorg` should return investigation results
+
+### Actual Behavior
+Command exits silently with no output
+Error: exit code 0
+
+### Steps to Reproduce
+1. Run `opensre investigate --org myorg`
+2. Observe output
+
+### Environment
+- OS: macOS 14.2
+- Python: 3.11.5
+- opensre version: v0.2.1
+```
+
+## Requesting Features
+
+Use the **[feature request template](.github/ISSUE_TEMPLATE/feature_request.md)** to propose new functionality. It guides you to clarify:
+
+- **Problem statement:** Why do we need this? (focus on the problem, not solution)
+- **Proposed solution:** How should it work? (specific and concrete with examples)
+- **Acceptance criteria:** What needs to be true for this to be "done"?
+- **Alternative approaches:** Other solutions you considered and why you prefer this one
+- **Backward compatible?** Yes / No / Breaking changes (describe what changes)
+- **Impact:** Which modules? New dependencies?
+
+## Suggesting Improvements
+
+Use the **[improvement template](.github/ISSUE_TEMPLATE/improvement.md)** to propose refactors, optimizations, or quality improvements. It requires:
+
+- **Current state:** How does it work now? (with code references)
+- **Desired state:** How should it work instead?
+- **Why it matters:** Performance? Maintainability? Reliability?
+- **Scope:** One focused concern per issue (not bundled work)
+- **Acceptance criteria:** How will we measure success?
+- **Metrics:** Before and after values (e.g., "15ms → <1ms")
+
+## Need Help?
+
+- **Setup issues?** Check this guide first, then open an issue with details
+- **How do I...?** Check the project docs or ask in a Discussion
+- **Found a bug?** Open a bug report issue with the template
+- **Have an idea?** Start a Discussion to gauge interest before opening an issue
 
 ## Licensing
 

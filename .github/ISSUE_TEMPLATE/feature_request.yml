@@ -1,0 +1,21 @@
+name: Feature Request
+description: Suggest a new feature or capability
+title: "[FEATURE] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: Why is this needed? User pain, limitation, or gap today (not the solution yet).
+      placeholder: "Example: Users can't export agent logs to external systems without custom scripts."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should it work? Commands, APIs, UX, inputs/outputs, example snippets.
+    validations:
+      required: true

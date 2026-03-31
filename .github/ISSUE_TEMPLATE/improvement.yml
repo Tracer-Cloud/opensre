@@ -1,0 +1,20 @@
+name: Improvement
+description: Suggest a refactor, optimization, or quality improvement
+title: "[IMPROVEMENT] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: current
+    attributes:
+      label: Current state
+      description: How does it work now? Link to code (`file:line`), snippets, or behavior/architecture.
+    validations:
+      required: true
+  - type: textarea
+    id: desired
+    attributes:
+      label: Desired state
+      description: What should change, why it is better (metrics if possible), and any architectural notes.
+    validations:
+      required: true

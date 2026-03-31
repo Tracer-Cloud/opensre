@@ -22,13 +22,14 @@ _SKIP_SERVICES = {"slack"}
 # EKS uses the same AWS role — no separate EKS integration key
 _SERVICE_KEY_MAP = {
     "grafana": "grafana",
+    "grafana_local": "grafana_local",
     "aws": "aws",
     "eks": "aws",
     "amazon eks": "aws",
     "datadog": "datadog",
-     "github": "github",
-     "github_mcp": "github",
-     "sentry": "sentry",
+    "github": "github",
+    "github_mcp": "github",
+    "sentry": "sentry",
 }
 
 
@@ -58,10 +59,22 @@ def _classify_integrations(
         key = _SERVICE_KEY_MAP.get(service.lower(), service.lower())
         credentials = integration.get("credentials", {})
 
-        if key == "grafana":
+        if key in ("grafana", "grafana_local"):
+            from urllib.parse import urlparse as _urlparse
             endpoint = credentials.get("endpoint", "")
             api_key = credentials.get("api_key", "")
-            if endpoint and api_key:
+            if not endpoint:
+                continue
+            host = _urlparse(endpoint).hostname or ""
+            is_local = host in {"localhost", "127.0.0.1", "0.0.0.0"}
+            if is_local:
+                # Always treat localhost Grafana as grafana_local (Loki only, anonymous auth)
+                resolved["grafana_local"] = {
+                    "endpoint": endpoint,
+                    "api_key": "",
+                    "integration_id": integration.get("id", ""),
+                }
+            elif api_key and api_key != "local":
                 resolved["grafana"] = {
                     "endpoint": endpoint,
                     "api_key": api_key,
@@ -361,7 +374,8 @@ def _resolve_from_local_sources(tracker: Any) -> dict:
     from app.integrations.store import STORE_PATH, load_integrations
 
     store_integrations = load_integrations()
-    env_integrations = _load_env_integrations()
+    # Env vars are only used as a fallback when the store has no integrations at all.
+    env_integrations = _load_env_integrations() if not store_integrations else []
     integrations = _merge_local_integrations(store_integrations, env_integrations)
     if not integrations:
         tracker.complete(
