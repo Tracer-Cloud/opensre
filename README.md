@@ -229,6 +229,23 @@ See [SECURITY.md](SECURITY.md) for responsible disclosure.
 
 ---
 
+## Telemetry
+
+`opensre` collects anonymous usage statistics to help us understand adoption
+and demonstrate traction to sponsors and investors who fund the project.
+What we collect: command name, CLI version, Python version, and OS family.
+A randomly generated anonymous ID is created on first run and stored in
+`~/.config/opensre/`. We never collect alert contents, hostnames,
+credentials, or any personally identifiable information.
+
+We follow the [Console Do Not Track](https://consoledonottrack.com/) standard.
+
+To opt out, set the environment variable before running:
+
+```bash
+export OPENSRE_NO_TELEMETRY=1
+```
+
 ## License
 
 Apache 2.0 - see [LICENSE](LICENSE) for details.
