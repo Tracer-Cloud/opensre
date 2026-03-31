@@ -190,6 +190,13 @@ Thanks goes to these amazing people:
                 </a>
             </td>
             <td align="center">
+                <a href="https://github.com/anandgupta1202">
+                    <img src="https://avatars.githubusercontent.com/u/39819996?v=4" width="100;" alt="anandgupta1202"/>
+                    <br />
+                    <sub><b>Anand Gupta</b></sub>
+                </a>
+            </td>
+            <td align="center">
                 <a href="https://github.com/iamkalio">
                     <img src="https://avatars.githubusercontent.com/u/89003403?v=4" width="100;" alt="iamkalio"/>
                     <br />
@@ -237,8 +244,6 @@ What we collect: command name, CLI version, Python version, and OS family.
 A randomly generated anonymous ID is created on first run and stored in
 `~/.config/opensre/`. We never collect alert contents, hostnames,
 credentials, or any personally identifiable information.
-
-We follow the [Console Do Not Track](https://consoledonottrack.com/) standard.
 
 To opt out, set the environment variable before running:
 

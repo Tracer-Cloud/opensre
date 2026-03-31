@@ -97,7 +97,7 @@ class _RichGroup(click.Group):
     context_settings={"help_option_names": ["-h", "--help"]},
     invoke_without_command=True,
 )
-@click.version_option(package_name="tracer-agent-2026", prog_name="opensre")
+@click.version_option(package_name="opensre", prog_name="opensre")
 @click.pass_context
 def cli(ctx: click.Context) -> None:
     """OpenSRE — open-source SRE agent for automated incident investigation and root cause analysis.

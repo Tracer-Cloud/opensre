@@ -25,9 +25,11 @@ This document describes how to set up your environment, propose changes, report 
 See **[SETUP.md](docs/SETUP.md)** for detailed setup instructions including Windows-specific guidance.
 
 **Quick start:**
+
 1. Clone the repo and create a virtual environment
 2. Install dependencies: `pip install -e ".[dev]"`
 3. Run checks: `make lint && make typecheck && make test-cov`
+4. Build release artifacts when needed: `make build`
 
 ---
 
@@ -81,7 +83,6 @@ All three must pass. **CI will block merging if any fail.**
 
 Follow the PR template (see below). Link the relevant issue and describe what changed and why.
 
-
 ## Pull Request Guidelines
 
 ### How to Write a Good PR Description
@@ -107,6 +108,7 @@ Use the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** (automatically provi
 ### If Your PR Includes Screenshots or Logs
 
 Provide **before** and **after** examples when:
+
 - Changing CLI output or error messages
 - Updating agent behavior
 - Fixing a bug with visible impact
@@ -135,6 +137,7 @@ This ensures you understand the code, not just copied it. Reviewers will pay ext
 ### Style & Formatting
 
 We use:
+
 - **ruff** for linting and import sorting
 - **mypy** for strict type checking
 - **Black-compatible** formatting (4-space indents)
@@ -146,6 +149,12 @@ Run these before every commit:
 make lint        # Auto-fixes many style issues
 make typecheck   # Catches type errors
 make test-cov    # Ensures tests pass and coverage is tracked
+```
+
+To verify the package can be shipped, run:
+
+```bash
+make build
 ```
 
 ## Reporting Bugs
