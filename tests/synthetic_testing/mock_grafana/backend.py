@@ -38,15 +38,15 @@ class GrafanaBackend(Protocol):
 
     def query_timeseries(self, query: str = "", **kwargs: Any) -> dict[str, Any]:
         """Return a Mimir-compatible query_range response."""
-        ...
+        pass
 
     def query_logs(self, query: str = "", **kwargs: Any) -> dict[str, Any]:
         """Return a Loki-compatible query_range response."""
-        ...
+        pass
 
     def query_alert_rules(self, **kwargs: Any) -> dict[str, Any]:
         """Return a Grafana Ruler /api/v1/rules response."""
-        ...
+        pass
 
 
 class FixtureGrafanaBackend:
