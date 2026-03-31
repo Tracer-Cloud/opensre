@@ -1,10 +1,4 @@
-"""
-Reinforcement Learning environment for RDS root-cause analysis.
-
-The agent starts each episode with only the alert visible. It must choose
-which evidence sources to inspect before submitting a diagnosis. A step cost
-encourages efficient investigation; the terminal reward is based on diagnosis
-accuracy (category match + keyword coverage).
+"""RDSRCAEnv — gym-style RL environment for RDS root-cause analysis.
 
 Episode lifecycle
 -----------------
@@ -31,67 +25,12 @@ Reward structure
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
-from enum import IntEnum
 from typing import Any
 
 from tests.synthetic_testing.rds_postgres.scenario_loader import ScenarioFixture, load_all_scenarios
-
-# ---------------------------------------------------------------------------
-# Action space
-# ---------------------------------------------------------------------------
-
-MAX_STEPS = 10
-STEP_COST = -0.05
-
-
-class Action(IntEnum):
-    INSPECT_METRICS = 0
-    INSPECT_EVENTS = 1
-    INSPECT_PERFORMANCE_INSIGHTS = 2
-    SUBMIT_DIAGNOSIS = 3
-
-
-# Maps gather-actions to the evidence key they unlock
-_EVIDENCE_KEY: dict[Action, str] = {
-    Action.INSPECT_METRICS: "rds_metrics",
-    Action.INSPECT_EVENTS: "rds_events",
-    Action.INSPECT_PERFORMANCE_INSIGHTS: "performance_insights",
-}
-
-
-# ---------------------------------------------------------------------------
-# Observation and step result
-# ---------------------------------------------------------------------------
-
-@dataclass
-class Observation:
-    """Everything the agent can see at a given step."""
-
-    alert: dict[str, Any]
-    """The triggering alert (always visible from step 0)."""
-
-    gathered_evidence: dict[str, Any]
-    """Evidence unlocked so far; keys are a subset of rds_metrics / rds_events / performance_insights."""
-
-    step: int
-    """Current step index within the episode (0 = after reset)."""
-
-    done: bool
-    """True when the episode has ended."""
-
-
-@dataclass
-class StepResult:
-    observation: Observation
-    reward: float
-    done: bool
-    info: dict[str, Any] = field(default_factory=dict)
-
-
-# ---------------------------------------------------------------------------
-# Environment
-# ---------------------------------------------------------------------------
+from tests.synthetic_testing.rl_env.actions import EVIDENCE_KEY, MAX_STEPS, STEP_COST, Action
+from tests.synthetic_testing.rl_env.scoring import score_diagnosis
+from tests.synthetic_testing.rl_env.types import Observation, StepResult
 
 
 class RDSRCAEnv:
@@ -129,7 +68,7 @@ class RDSRCAEnv:
         if self._fixture is None:
             return list(Action)
         available = self._fixture.metadata.available_evidence
-        gather_actions = [a for a, key in _EVIDENCE_KEY.items() if key in available]
+        gather_actions = [a for a, key in EVIDENCE_KEY.items() if key in available]
         return gather_actions + [Action.SUBMIT_DIAGNOSIS]
 
     @property
@@ -185,7 +124,7 @@ class RDSRCAEnv:
         self._step += 1
 
         if action == Action.SUBMIT_DIAGNOSIS:
-            reward, info = self._score_diagnosis(diagnosis or {})
+            reward, info = score_diagnosis(diagnosis or {}, self._fixture.answer_key)
             self._done = True
             return StepResult(
                 observation=self._observation(),
@@ -197,7 +136,7 @@ class RDSRCAEnv:
         # Gather-evidence action: unlock the corresponding source (idempotent).
         # If the source is absent from this scenario's available_evidence, the
         # action is a no-op so the agent incurs only the step cost.
-        evidence_key = _EVIDENCE_KEY.get(action)
+        evidence_key = EVIDENCE_KEY.get(action)
         if (
             evidence_key
             and evidence_key not in self._gathered_evidence
@@ -232,38 +171,3 @@ class RDSRCAEnv:
             step=self._step,
             done=self._done,
         )
-
-    def _score_diagnosis(self, diagnosis: dict[str, Any]) -> tuple[float, dict[str, Any]]:
-        """Return (reward, info) for a submitted diagnosis."""
-        assert self._fixture is not None
-        answer = self._fixture.answer_key
-
-        root_cause = str(diagnosis.get("root_cause") or "").strip()
-        actual_category = str(diagnosis.get("root_cause_category") or "").strip()
-        root_cause_present = bool(
-            root_cause and root_cause.lower() != "unable to determine root cause"
-        )
-
-        if not root_cause_present or actual_category != answer.root_cause_category:
-            return 0.0, {
-                "passed": False,
-                "expected_category": answer.root_cause_category,
-                "actual_category": actual_category,
-                "keyword_score": 0.0,
-                "matched_keywords": [],
-                "missing_keywords": list(answer.required_keywords),
-            }
-
-        normalized = " ".join(root_cause.lower().split())
-        matched = [k for k in answer.required_keywords if k.lower() in normalized]
-        missing = [k for k in answer.required_keywords if k not in matched]
-        keyword_score = len(matched) / len(answer.required_keywords) if answer.required_keywords else 1.0
-
-        return keyword_score, {
-            "passed": not missing,
-            "expected_category": answer.root_cause_category,
-            "actual_category": actual_category,
-            "keyword_score": keyword_score,
-            "matched_keywords": matched,
-            "missing_keywords": missing,
-        }

@@ -8,6 +8,7 @@ from typing import Any
 from app.agent.nodes.plan_actions.detect_sources import detect_sources
 from app.agent.nodes.root_cause_diagnosis.node import diagnose_root_cause
 from app.agent.state import InvestigationState, make_initial_state
+from tests.synthetic_testing.evidence_adapter import adapt_evidence_for_prompt
 from tests.synthetic_testing.rds_postgres.scenario_loader import (
     SUITE_DIR,
     ScenarioFixture,
@@ -59,7 +60,7 @@ def prepare_scenario_state(fixture: ScenarioFixture) -> InvestigationState:
     )
     state["problem_md"] = fixture.problem_md
     state["alert_source"] = str(alert.get("alert_source") or "cloudwatch")
-    state["evidence"] = fixture.evidence.as_dict()
+    state["evidence"] = adapt_evidence_for_prompt(fixture.evidence.as_dict())
     state["context"] = {
         "service": "rds",
         "engine": fixture.metadata.engine,
