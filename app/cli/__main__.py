@@ -30,6 +30,12 @@ def _render_help() -> None:
     console = Console(highlight=False)
 
     console.print()
+    console.print(Text.assemble(("  ", ""), ("OpenSRE", "bold white")))
+    console.print(Text.assemble(
+        ("  ", ""),
+        "open-source SRE agent for automated incident investigation and root cause analysis",
+    ))
+    console.print()
 
     console.print(Text.assemble(("  Usage: "), ("opensre", "bold white"), (" [OPTIONS] COMMAND [ARGS]...")))
     console.print()
@@ -42,12 +48,12 @@ def _render_help() -> None:
         ("integrations",  "Manage local integration credentials."),
     ]
     for name, desc in subcommands:
-        console.print(Text.assemble(("    ", ""), (f"{name:<16}", "bold cyan"), (desc, "dim")))
+        console.print(Text.assemble(("    ", ""), (f"{name:<16}", "bold cyan"), desc))
     console.print()
 
     console.print(Text.assemble(("  Options:", "bold white")))
-    console.print(Text.assemble(("    ", ""), (f"{'--version':<16}", "bold cyan"), ("Show the version and exit.", "dim")))
-    console.print(Text.assemble(("    ", ""), (f"{'-h, --help':<16}", "bold cyan"), ("Show this message and exit.", "dim")))
+    console.print(Text.assemble(("    ", ""), (f"{'--version':<16}", "bold cyan"), "Show the version and exit."))
+    console.print(Text.assemble(("    ", ""), (f"{'-h, --help':<16}", "bold cyan"), "Show this message and exit."))
     console.print()
 
 
@@ -63,7 +69,7 @@ def _render_landing() -> None:
     console.print()
     console.print(Text.assemble(
         ("  ", ""),
-        ("open-source SRE agent for automated incident investigation and root cause analysis", "dim"),
+        "open-source SRE agent for automated incident investigation and root cause analysis",
     ))
     console.print()
 
@@ -78,12 +84,12 @@ def _render_landing() -> None:
         ("opensre integrations list",         "Show configured integrations"),
     ]
     for cmd, desc in quick_start:
-        console.print(Text.assemble(("    ", ""), (f"{cmd:<42}", "bold cyan"), (desc, "dim")))
+        console.print(Text.assemble(("    ", ""), (f"{cmd:<42}", "bold cyan"), desc))
     console.print()
 
     console.print(Text.assemble(("  Options:", "bold white")))
-    console.print(Text.assemble(("    ", ""), (f"{'--version':<42}", "bold cyan"), ("Show the version and exit.", "dim")))
-    console.print(Text.assemble(("    ", ""), (f"{'-h, --help':<42}", "bold cyan"), ("Show this message and exit.", "dim")))
+    console.print(Text.assemble(("    ", ""), (f"{'--version':<42}", "bold cyan"), "Show the version and exit."))
+    console.print(Text.assemble(("    ", ""), (f"{'-h, --help':<42}", "bold cyan"), "Show this message and exit."))
     console.print()
 
 
