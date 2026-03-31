@@ -12,7 +12,7 @@ from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 
-from app.agent.prompts import ROUTER_PROMPT, SYSTEM_PROMPT
+from app.agent.prompts import GENERAL_SYSTEM_PROMPT, ROUTER_PROMPT, SYSTEM_PROMPT
 from app.agent.state import AgentState, ChatMessage
 from app.agent.tools.clients import get_llm
 from app.agent.tools.tool_actions.github.github_mcp_actions import (
@@ -174,7 +174,7 @@ def general_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:  
         for m in msgs
     )
     if not has_system:
-        msgs = [SystemMessage(content=SYSTEM_PROMPT), *msgs]
+        msgs = [SystemMessage(content=GENERAL_SYSTEM_PROMPT), *msgs]
 
     llm = _get_chat_llm(with_tools=False)
     response = llm.invoke(msgs)
