@@ -32,6 +32,8 @@
 
 ## Quick Start
 
+> **New to Tracer?** See [SETUP.md](SETUP.md) for detailed platform-specific setup instructions, including Windows setup, environment configuration, and more.
+
 ```bash
 git clone https://github.com/Tracer-Cloud/open-sre-agent
 cd open-sre-agent
