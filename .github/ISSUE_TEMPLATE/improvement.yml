@@ -1,0 +1,93 @@
+name: Improvement
+description: Suggest a refactor, optimization, or quality improvement
+title: "[IMPROVEMENT] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One focused improvement per issue makes review and delivery easier.
+  - type: textarea
+    id: current
+    attributes:
+      label: Current state
+      description: How does it work now? Link to code (`file:line`), snippets, or behavior/architecture.
+    validations:
+      required: true
+  - type: textarea
+    id: desired
+    attributes:
+      label: Desired state
+      description: What should change, why it is better (metrics if possible), and any architectural notes.
+    validations:
+      required: true
+  - type: checkboxes
+    id: why_categories
+    attributes:
+      label: Why this matters (check all that apply)
+      description: Use the next field to elaborate with numbers or examples where you can.
+      options:
+        - label: Performance
+        - label: Maintainability
+        - label: User experience
+        - label: Tech debt
+        - label: Testing
+        - label: Reliability
+    validations:
+      required: false
+  - type: textarea
+    id: why_detail
+    attributes:
+      label: Why this matters — details
+      description: Quantify if possible (latency, error rate, duplication). What is the impact of not doing it?
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope_check
+    attributes:
+      label: Scope sanity check
+      options:
+        - label: One developer could reasonably complete this in about 1–2 days
+        - label: Single, clear success metric
+        - label: No hard dependency on other open improvements
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Specific outcomes (e.g. benchmarks, tests, compatibility).
+      placeholder: |
+        - e.g. Config lookup <1ms with 1000+ options
+        - e.g. Backward compatible or migration documented
+        - e.g. Tests updated for changed code
+    validations:
+      required: true
+  - type: textarea
+    id: affected
+    attributes:
+      label: Affected areas
+      description: Files/modules and whether docs need updates.
+    validations:
+      required: false
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Breaking changes?
+      options:
+        - "No"
+        - "Yes — describe migration in affected areas / below"
+    validations:
+      required: true
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Metrics
+      description: Before/after targets and how you will measure (e.g. benchmark command, test suite).
+      placeholder: |
+        Before: …
+        After: …
+        Measured by: …
+    validations:
+      required: false

@@ -1,0 +1,74 @@
+name: Feature Request
+description: Suggest a new feature or capability
+title: "[FEATURE] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Focus on the **problem** first, then your proposed solution. That helps prioritize and design.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: Why is this needed? User pain, limitation, or gap today (not the solution yet).
+      placeholder: "Example: Users can't export agent logs to external systems without custom scripts."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should it work? Commands, APIs, UX, inputs/outputs, example snippets.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_must
+    attributes:
+      label: Acceptance criteria — must have
+      description: Specific, measurable outcomes required for "done" (one per line or short list).
+      placeholder: |
+        - CLI accepts --export flag
+        - JSON output validates against documented schema
+        - Tests cover happy path and error cases
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_nice
+    attributes:
+      label: Acceptance criteria — nice to have
+      description: Optional follow-ups if time permits.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative approaches
+      description: Other options you considered and why you prefer your proposal.
+    validations:
+      required: false
+  - type: dropdown
+    id: backward_compat
+    attributes:
+      label: Backward compatible?
+      options:
+        - "Yes"
+        - "No"
+        - "Unsure"
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Impact and scope
+      description: Which areas change (agent-core, CLI, config, storage)? Breaking changes or migrations? New dependencies?
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Related issues, discussions, other tools, design notes.
+    validations:
+      required: false

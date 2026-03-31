@@ -1,0 +1,134 @@
+name: Bug Report
+description: Report something that isn't working
+title: "[BUG] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please include **observed** behavior and repro steps — guesses make triage slower.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One-line description of the bug. Be specific (e.g. agent fails when `.env` contains `=` in values). Avoid vague phrases like "something doesn't work."
+      placeholder: "Example: Agent fails to parse config when .env vars contain special characters"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen? Be concrete; include expected output or state if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happens? Include exact errors, exit codes, or unexpected output.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps that consistently trigger the bug (commands, config snippets — redact secrets).
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: dropdown
+    id: reproducible
+    attributes:
+      label: Can you reproduce it consistently?
+      options:
+        - "Yes"
+        - "No"
+        - "Sometimes"
+    validations:
+      required: true
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often does it occur?
+      options:
+        - Every time
+        - Intermittent
+        - Under specific conditions
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      description: Pick the closest match; add details below if needed.
+      options:
+        - macOS
+        - Linux
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: python_version
+    attributes:
+      label: Python version
+      description: Output of `python --version` (or runtime you use).
+      placeholder: e.g. Python 3.12.2
+    validations:
+      required: true
+  - type: input
+    id: agent_version
+    attributes:
+      label: Agent version
+      description: Version tag, package version, or `git rev-parse HEAD`.
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      options:
+        - pip
+        - from source
+        - Docker
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment_extra
+    attributes:
+      label: Environment details
+      description: OS version if not obvious, relevant `opensre` / app config, env vars (redact secrets), or anything needed to reproduce.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and error output
+      description: Full error message and relevant logs. Redact API keys, tokens, and passwords.
+      placeholder: |
+        ```
+        [paste error / logs]
+        ```
+    validations:
+      required: false
+  - type: textarea
+    id: workarounds
+    attributes:
+      label: Workarounds
+      description: If you found a workaround, describe it. If none, say so.
+      placeholder: None found, or describe what you tried
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, related issues (`#123`), what you were trying to do when this happened.
+    validations:
+      required: false
