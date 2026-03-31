@@ -122,7 +122,13 @@ def send_ingest(state: InvestigationState) -> str | None:
         return investigation_id
     except httpx.HTTPStatusError as exc:  # noqa: BLE001
         detail = exc.response.text[:200] if exc.response is not None else str(exc)
-        logger.warning("[ingest] HTTP %s: %s", exc.response.status_code if exc.response else "unknown", detail)
+        logger.warning(
+            "[ingest] Delivery HTTP failure status=%s thread_id=%s url=%s response_snippet=%s",
+            exc.response.status_code if exc.response else "unknown",
+            payload["metadata"].get("thread_id"),
+            api_url,
+            detail,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("[ingest] Delivery failed: %s", exc)
     return None

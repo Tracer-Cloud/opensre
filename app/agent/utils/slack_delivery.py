@@ -224,7 +224,14 @@ def _post_direct(
         logger.info("[slack] Reply posted successfully (thread_ts=%s, ts=%s)", thread_ts, data.get("ts"))
         return True, ""
     except Exception as exc:  # noqa: BLE001
-        logger.error("[slack] Direct post exception: %s", exc)
+        logger.error(
+            "[slack] Direct post exception type=%s channel=%s thread_ts=%s detail=%s "
+            "(caller may attempt fallback)",
+            type(exc).__name__,
+            channel,
+            thread_ts,
+            exc,
+        )
         return False, f"exception={exc}"
 
 
