@@ -15,9 +15,91 @@ _SETUP_SERVICES = ["aws", "datadog", "grafana", "opensearch", "rds", "slack", "t
 _VERIFY_SERVICES = ["aws", "datadog", "grafana", "slack", "tracer"]
 
 
-@click.group(context_settings={"help_option_names": ["-h", "--help"]})
+_ASCII_HEADER = """\
+  ___  ____  _____ _   _ ____  ____  _____
+ / _ \\|  _ \\| ____| \\ | / ___||  _ \\| ____|
+| | | | |_) |  _| |  \\| \\___ \\| |_) |  _|
+| |_| |  __/| |___| |\\  |___) |  _ <| |___
+ \\___/|_|   |_____|_| \\_|____/|_| \\_\\_____|"""
+
+
+def _render_help() -> None:
+    from rich.console import Console
+    from rich.text import Text
+
+    console = Console(highlight=False)
+
+    console.print()
+
+    console.print(Text.assemble(("  Usage: "), ("opensre", "bold white"), (" [OPTIONS] COMMAND [ARGS]...")))
+    console.print()
+
+    console.print(Text.assemble(("  Commands:", "bold white")))
+    subcommands = [
+        ("onboard",       "Run the interactive onboarding wizard."),
+        ("investigate",   "Run an RCA investigation against an alert payload."),
+        ("tests",         "Browse and run inventoried tests from the terminal."),
+        ("integrations",  "Manage local integration credentials."),
+    ]
+    for name, desc in subcommands:
+        console.print(Text.assemble(("    ", ""), (f"{name:<16}", "bold cyan"), (desc, "dim")))
+    console.print()
+
+    console.print(Text.assemble(("  Options:", "bold white")))
+    console.print(Text.assemble(("    ", ""), (f"{'--version':<16}", "bold cyan"), ("Show the version and exit.", "dim")))
+    console.print(Text.assemble(("    ", ""), (f"{'-h, --help':<16}", "bold cyan"), ("Show this message and exit.", "dim")))
+    console.print()
+
+
+def _render_landing() -> None:
+    from rich.console import Console
+    from rich.text import Text
+
+    console = Console(highlight=False)
+
+    console.print()
+    for line in _ASCII_HEADER.splitlines():
+        console.print(Text.assemble(("  ", ""), (line, "bold cyan")))
+    console.print()
+    console.print(Text.assemble(
+        ("  ", ""),
+        ("open-source SRE agent for automated incident investigation and root cause analysis", "dim"),
+    ))
+    console.print()
+
+    console.print(Text.assemble(("  Usage: "), ("opensre", "bold white"), (" [OPTIONS] COMMAND [ARGS]...")))
+    console.print()
+
+    console.print(Text.assemble(("  Quick start:", "bold white")))
+    quick_start = [
+        ("opensre onboard",                   "Configure LLM provider and integrations"),
+        ("opensre investigate -i alert.json", "Run RCA against an alert payload"),
+        ("opensre tests",                     "Browse and run inventoried tests"),
+        ("opensre integrations list",         "Show configured integrations"),
+    ]
+    for cmd, desc in quick_start:
+        console.print(Text.assemble(("    ", ""), (f"{cmd:<42}", "bold cyan"), (desc, "dim")))
+    console.print()
+
+    console.print(Text.assemble(("  Options:", "bold white")))
+    console.print(Text.assemble(("    ", ""), (f"{'--version':<42}", "bold cyan"), ("Show the version and exit.", "dim")))
+    console.print(Text.assemble(("    ", ""), (f"{'-h, --help':<42}", "bold cyan"), ("Show this message and exit.", "dim")))
+    console.print()
+
+
+class _RichGroup(click.Group):
+    def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:  # noqa: ARG002
+        _render_help()
+
+
+@click.group(
+    cls=_RichGroup,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    invoke_without_command=True,
+)
 @click.version_option(package_name="tracer-agent-2026", prog_name="opensre")
-def cli() -> None:
+@click.pass_context
+def cli(ctx: click.Context) -> None:
     """OpenSRE — open-source SRE agent for automated incident investigation and root cause analysis.
 
     \b
@@ -31,6 +113,9 @@ def cli() -> None:
     Enable tab-completion (add to your shell profile):
       eval "$(_OPENSRE_COMPLETE=zsh_source opensre)"
     """
+    if ctx.invoked_subcommand is None:
+        _render_landing()
+        raise SystemExit(0)
 
 
 @cli.command()
