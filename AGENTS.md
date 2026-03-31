@@ -2,10 +2,8 @@
 
 ## Build and Run commands
 
-- Root: `yarn dev` - Run all services in parallel
-- Rails: `cd apps/rails && yarn dev` or `bundle exec rails s -p 3001 -b 0.0.0.0`
-- Expo: `cd apps/expo && yarn dev`
-- NextJS: `cd apps/nextjs && yarn dev`
+- Build `make install`
+- Run `opensre`
 
 ## Lint & Format
 

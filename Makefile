@@ -19,6 +19,9 @@ export PATH := $(USER_BIN):$(PATH)
 install:
 	$(PIP) install $(PIP_INSTALL_FLAGS) -e ".[dev]"
 
+build:
+	$(PYTHON) -m build
+
 install-hooks:
 	$(PYTHON) -m pre_commit install
 
