@@ -238,8 +238,6 @@ A randomly generated anonymous ID is created on first run and stored in
 `~/.config/opensre/`. We never collect alert contents, hostnames,
 credentials, or any personally identifiable information.
 
-We follow the [Console Do Not Track](https://consoledonottrack.com/) standard.
-
 To opt out, set the environment variable before running:
 
 ```bash

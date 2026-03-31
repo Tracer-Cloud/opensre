@@ -3,11 +3,16 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tracer-agent-2026"
+name = "opensre"
 version = "0.1.0"
 description = "Open-source SRE agent for automated incident investigation and root cause analysis. Automatically analyzes alerts from Slack, Grafana, Datadog, and other tooling."
 readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [
+  { name = "Tracer Cloud", email = "support@tracer.cloud" },
+]
+keywords = ["sre", "devops", "incident", "rca", "llm", "ai", "agent", "observability"]
 dependencies = [
     # Core AI/Agent
     "anthropic>=0.77.1",
@@ -47,6 +52,12 @@ dependencies = [
     # Tracer
     "tracer_decorator",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Tracer-Cloud/opensre"
+Repository = "https://github.com/Tracer-Cloud/opensre"
+Issues = "https://github.com/Tracer-Cloud/opensre/issues"
+Changelog = "https://github.com/Tracer-Cloud/opensre/releases"
 
 [project.scripts]
 opensre = "app.cli.__main__:main"
