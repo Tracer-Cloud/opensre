@@ -1,0 +1,21 @@
+root_cause_category: healthy
+required_keywords:
+  - healthy
+  - normal
+  - no anomaly
+model_response: |
+  ROOT_CAUSE: The database is operating within normal parameters. All metrics are within expected bounds: CPU at 15-20%, connections at ~93 (well below the 5000 limit), ReplicaLag stable at under 2 seconds, FreeStorageSpace unchanged at 200 GB, and WriteIOPS at a steady baseline. Performance Insights shows a db_load average of 1.1 against 8 available vCPUs, with a balanced wait event distribution dominated by normal IO:DataFileRead and CPU waits. No anomaly detected.
+  ROOT_CAUSE_CATEGORY: healthy
+
+  VALIDATED_CLAIMS:
+  - CPUUtilization held between 16-19% throughout the 15-minute window with no upward trend. [evidence: rds_metrics]
+  - DatabaseConnections remained at ~93, far below the instance connection ceiling. [evidence: rds_metrics]
+  - ReplicaLag on payments-prod-replica-1 stayed under 2 seconds — consistent with normal replication heartbeat. [evidence: rds_metrics]
+  - Performance Insights db_load averaged 1.1 active sessions against 8 vCPUs — well under saturation. [evidence: performance_insights]
+  - RDS events show only routine activity: automated backup completion and a parameter group notification. [evidence: rds_events]
+
+  NON_VALIDATED_CLAIMS:
+  - The slight increase in ReadIOPS at 10:12 may indicate a scheduled analytics query but is within normal variance.
+
+  CAUSAL_CHAIN:
+  - Health check fired as a scheduled verification. All telemetry signals are stable and within normal operating ranges. No root cause exists.

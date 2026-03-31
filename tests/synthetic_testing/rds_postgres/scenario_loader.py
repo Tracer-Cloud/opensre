@@ -51,7 +51,6 @@ class ScenarioFixture:
     evidence: ScenarioEvidence
     metadata: ScenarioMetadata
     answer_key: ScenarioAnswerKey
-    fault_script: str
     problem_md: str
 
 
@@ -163,7 +162,6 @@ def load_scenario(scenario_dir: Path) -> ScenarioFixture:
     alert = validate_alert(_read_json(scenario_dir / "alert.json"))
     evidence = _build_evidence(scenario_dir, metadata.available_evidence)
     answer_key = _parse_answer_yaml(scenario_dir / "answer.yml")
-    fault_script = (scenario_dir / "fault_script.sh").read_text(encoding="utf-8")
     problem_md = _build_problem_md(alert, metadata)
 
     return ScenarioFixture(
@@ -173,7 +171,6 @@ def load_scenario(scenario_dir: Path) -> ScenarioFixture:
         evidence=evidence,
         metadata=metadata,
         answer_key=answer_key,
-        fault_script=fault_script,
         problem_md=problem_md,
     )
 

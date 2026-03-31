@@ -19,7 +19,7 @@ from typing_extensions import TypedDict
 
 VALID_ENGINES = frozenset({"postgres", "mysql", "aurora-postgres", "aurora-mysql", "mariadb"})
 VALID_FAILURE_MODES = frozenset(
-    {"replication_lag", "connection_exhaustion", "storage_full", "cpu_saturation", "failover"}
+    {"replication_lag", "connection_exhaustion", "storage_full", "cpu_saturation", "failover", "healthy"}
 )
 VALID_EVIDENCE_SOURCES = frozenset({"rds_metrics", "rds_events", "performance_insights"})
 

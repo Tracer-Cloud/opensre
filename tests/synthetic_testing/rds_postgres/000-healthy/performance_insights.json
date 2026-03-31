@@ -1,0 +1,71 @@
+{
+  "db_instance_identifier": "payments-prod",
+  "start_time": "2026-03-26T10:00:00Z",
+  "end_time": "2026-03-26T10:15:00Z",
+  "db_load": {
+    "timestamps": [
+      "2026-03-26T10:00:00Z", "2026-03-26T10:01:00Z", "2026-03-26T10:02:00Z",
+      "2026-03-26T10:03:00Z", "2026-03-26T10:04:00Z", "2026-03-26T10:05:00Z",
+      "2026-03-26T10:06:00Z", "2026-03-26T10:07:00Z", "2026-03-26T10:08:00Z",
+      "2026-03-26T10:09:00Z", "2026-03-26T10:10:00Z", "2026-03-26T10:11:00Z",
+      "2026-03-26T10:12:00Z", "2026-03-26T10:13:00Z", "2026-03-26T10:14:00Z"
+    ],
+    "values": [1.1, 1.2, 0.9, 1.3, 1.0, 1.2, 1.1, 1.4, 1.0, 1.2, 1.1, 0.8, 1.3, 1.0, 1.2],
+    "unit": "db_load|avg"
+  },
+  "top_sql": [
+    {
+      "statement": "SELECT id, amount, status FROM orders WHERE account_id = $1 AND status = $2 LIMIT $3",
+      "db_load_avg": 38.4,
+      "wait_events": [
+        {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 22.1},
+        {"name": "CPU", "type": "CPU", "db_load_avg": 16.3}
+      ],
+      "calls_per_sec": 91.2
+    },
+    {
+      "statement": "INSERT INTO audit_log (entity_type, entity_id, action, created_at) VALUES ($1, $2, $3, now())",
+      "db_load_avg": 21.7,
+      "wait_events": [
+        {"name": "IO:WALWrite", "type": "IO", "db_load_avg": 14.8},
+        {"name": "CPU", "type": "CPU", "db_load_avg": 6.9}
+      ],
+      "calls_per_sec": 28.4
+    },
+    {
+      "statement": "UPDATE orders SET updated_at = now() WHERE id = $1",
+      "db_load_avg": 18.9,
+      "wait_events": [
+        {"name": "IO:WALWrite", "type": "IO", "db_load_avg": 11.2},
+        {"name": "CPU", "type": "CPU", "db_load_avg": 7.7}
+      ],
+      "calls_per_sec": 19.6
+    },
+    {
+      "statement": "SELECT COUNT(*) FROM payments WHERE status = $1 AND created_at > $2",
+      "db_load_avg": 12.3,
+      "wait_events": [
+        {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 8.4},
+        {"name": "CPU", "type": "CPU", "db_load_avg": 3.9}
+      ],
+      "calls_per_sec": 14.1
+    }
+  ],
+  "top_wait_events": [
+    {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 30.5},
+    {"name": "CPU", "type": "CPU", "db_load_avg": 34.8},
+    {"name": "IO:WALWrite", "type": "IO", "db_load_avg": 26.0},
+    {"name": "Lock:relation", "type": "Lock", "db_load_avg": 5.2},
+    {"name": "Client:ClientRead", "type": "Client", "db_load_avg": 3.5}
+  ],
+  "top_users": [
+    {"name": "payments_service", "db_load_avg": 61.3},
+    {"name": "settlement_worker", "db_load_avg": 24.8},
+    {"name": "readonly_replica", "db_load_avg": 13.9}
+  ],
+  "top_hosts": [
+    {"id": "10.0.1.15", "db_load_avg": 39.2},
+    {"id": "10.0.1.22", "db_load_avg": 36.1},
+    {"id": "10.0.1.31", "db_load_avg": 24.7}
+  ]
+}

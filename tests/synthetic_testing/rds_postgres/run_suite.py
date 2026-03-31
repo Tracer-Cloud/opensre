@@ -64,7 +64,6 @@ def prepare_scenario_state(fixture: ScenarioFixture) -> InvestigationState:
     state["context"] = {
         "service": "rds",
         "engine": fixture.metadata.engine,
-        "fault_script": fixture.fault_script,
     }
 
     detected_sources = detect_sources(alert, state["context"], resolved_integrations=None)

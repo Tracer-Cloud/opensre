@@ -1,0 +1,18 @@
+{
+  "events": [
+    {
+      "date": "2026-03-26T03:14:00Z",
+      "message": "Automated backup finished for DB instance payments-prod.",
+      "source_identifier": "payments-prod",
+      "source_type": "db-instance",
+      "event_categories": ["backup"]
+    },
+    {
+      "date": "2026-03-26T06:02:00Z",
+      "message": "DB parameter group payments-prod-pg applied. The DB instance needs to be rebooted for the changes to take effect.",
+      "source_identifier": "payments-prod",
+      "source_type": "db-instance",
+      "event_categories": ["configuration change"]
+    }
+  ]
+}

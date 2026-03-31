@@ -1,0 +1,24 @@
+{
+  "title": "[synthetic-rds] Scheduled Health Check — payments-prod",
+  "state": "normal",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSScheduledHealthCheck",
+    "severity": "info",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "Periodic health check passed. All RDS metrics within normal operating bounds.",
+    "error": "",
+    "suspected_symptom": "None — database is operating normally.",
+    "db_instance_identifier": "payments-prod",
+    "db_instance": "payments-prod",
+    "db_cluster": "payments-cluster",
+    "read_replica": "payments-prod-replica-1",
+    "cloudwatch_region": "us-east-1",
+    "rds_failure_mode": "healthy",
+    "context_sources": "cloudwatch"
+  }
+}

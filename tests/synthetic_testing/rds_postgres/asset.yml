@@ -1,0 +1,97 @@
+schema_version: "1.0"
+asset_type: rds_postgres
+display_name: Amazon RDS PostgreSQL
+
+# Failure modes this asset model can exhibit
+failure_modes:
+  - replication_lag       # replica falls behind primary due to high write throughput
+  - connection_exhaustion # max_connections ceiling reached, new connections rejected
+  - storage_full          # FreeStorageSpace → 0, writes begin to fail
+  - cpu_saturation        # sustained CPU > 90%, driven by bad queries or batch jobs
+  - failover              # Multi-AZ automatic failover or manual promotion
+
+# Telemetry sources available on AWS for this asset type
+telemetry:
+  timeseries:
+    aws_api: cloudwatch:GetMetricData
+    namespace: AWS/RDS
+    key_metrics:
+      - CPUUtilization
+      - DatabaseConnections
+      - FreeStorageSpace
+      - FreeableMemory
+      - ReadIOPS
+      - WriteIOPS
+      - ReadLatency
+      - WriteLatency
+      - ReplicaLag
+      - TransactionLogsGeneration
+      - NetworkTransmitThroughput
+
+  events:
+    aws_api: rds:DescribeEvents
+    event_categories:
+      - availability
+      - backup
+      - configuration change
+      - creation
+      - deletion
+      - failover
+      - failure
+      - maintenance
+      - notification
+      - read replica
+      - recovery
+      - restoration
+      - security
+
+  traces:
+    aws_api: "pi:GetResourceMetrics,pi:DescribeDimensionKeys"
+    display_name: Performance Insights
+    dimensions:
+      - db.sql          # top SQL statements by DB load
+      - db.wait_event   # wait event breakdown
+      - db.user         # top users by DB load
+      - db.host         # top client hosts by DB load
+
+# Instance class connection limits (max_connections = LEAST(DBInstanceClassMemory/9531392, 5000))
+instance_connection_limits:
+  db.t3.micro: 112
+  db.t3.small: 225
+  db.t3.medium: 450
+  db.t3.large: 901
+  db.r6g.large: 1802
+  db.r6g.xlarge: 3604
+  db.r6g.2xlarge: 5000
+  db.r6g.4xlarge: 5000
+  db.r6g.8xlarge: 5000
+
+# Storage types and their throughput/IOPS characteristics
+storage_types:
+  gp2:
+    baseline_iops_per_gb: 3
+    burst_iops: 3000
+    max_iops: 16000
+    max_throughput_mb_per_s: 250
+  gp3:
+    baseline_iops: 3000
+    max_iops: 64000
+    max_throughput_mb_per_s: 1000
+    iops_configurable: true
+  io1:
+    max_iops: 256000
+    max_throughput_mb_per_s: 4000
+    iops_configurable: true
+
+# Which topology features must be present for a failure mode to be possible
+topology_constraints:
+  replication_lag:
+    requires: read_replicas
+  failover:
+    requires: multi_az
+  storage_full:
+    requires: always
+  connection_exhaustion:
+    requires: always
+  cpu_saturation:
+    requires: always

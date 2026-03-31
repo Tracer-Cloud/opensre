@@ -27,14 +27,13 @@ class _FakeLLM:
         raise AssertionError("Scenario id not found in diagnosis prompt")
 
 
-def test_load_all_scenarios_reads_two_benchmark_cases() -> None:
+def test_load_all_scenarios_reads_benchmark_cases() -> None:
     fixtures = load_all_scenarios()
 
-    assert len(fixtures) == 2
-    assert [fixture.scenario_id for fixture in fixtures] == [
-        "001-replication-lag",
-        "002-connection-exhaustion",
-    ]
+    scenario_ids = [fixture.scenario_id for fixture in fixtures]
+    assert "000-healthy" in scenario_ids
+    assert "001-replication-lag" in scenario_ids
+    assert "002-connection-exhaustion" in scenario_ids
 
 
 def test_scenario_metadata_is_valid() -> None:
@@ -62,7 +61,10 @@ def test_scenario_evidence_matches_available_evidence() -> None:
         )
 
 
-@pytest.mark.parametrize("fixture", load_all_scenarios(), ids=lambda fixture: fixture.scenario_id)
+_FAULT_SCENARIOS = [f for f in load_all_scenarios() if f.metadata.failure_mode != "healthy"]
+
+
+@pytest.mark.parametrize("fixture", _FAULT_SCENARIOS, ids=lambda fixture: fixture.scenario_id)
 def test_run_scenario_scores_expected_rds_answer(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
     responses = {current.scenario_id: current.answer_key.model_response for current in load_all_scenarios()}
     monkeypatch.setattr(llm_client, "_llm", _FakeLLM(responses))
