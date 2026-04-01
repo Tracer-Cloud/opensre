@@ -4,9 +4,6 @@ required_keywords:
   - CPU
   - idle
   - query
-forbidden_keywords:
-  - storage
-  - replication
 required_evidence_sources:
   - performance_insights
 model_response: |

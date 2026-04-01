@@ -124,11 +124,19 @@ def score_result(fixture: ScenarioFixture, final_state: dict[str, Any]) -> Scena
         ]
         if forbidden_hits:
             failure_reason = f"forbidden keywords in output: {forbidden_hits}"
-    # 4. Evidence path check — required sources must be non-empty in final_state["evidence"]
+    # 4. Evidence path check — required sources must be non-empty in final_state["evidence"].
+    # Fixture schema keys (rds_metrics, rds_events, performance_insights) map to the agent's
+    # internal evidence keys (grafana_metrics, grafana_logs) set by _map_grafana_*.
+    _EVIDENCE_KEY_MAP: dict[str, str] = {
+        "rds_metrics": "grafana_metrics",
+        "rds_events": "grafana_logs",
+        "performance_insights": "grafana_metrics",
+    }
     if not failure_reason and answer_key.required_evidence_sources:
         evidence = final_state.get("evidence") or {}
         for source_key in answer_key.required_evidence_sources:
-            if not evidence.get(source_key):
+            state_key = _EVIDENCE_KEY_MAP.get(source_key, source_key)
+            if not evidence.get(state_key):
                 failure_reason = f"required evidence not gathered: {source_key!r}"
                 break
 

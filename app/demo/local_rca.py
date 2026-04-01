@@ -18,7 +18,7 @@ from app.agent.state import InvestigationState, make_initial_state  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FIXTURE_PATH = (
-    REPO_ROOT / "tests" / "kubernetes" / "fixtures" / "datadog_k8s_alert.json"
+    REPO_ROOT / "tests" / "e2e" / "kubernetes" / "fixtures" / "datadog_k8s_alert.json"
 )
 
 

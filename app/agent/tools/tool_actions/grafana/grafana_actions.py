@@ -92,7 +92,24 @@ def query_grafana_logs(
     """Query Grafana Cloud Loki for pipeline logs."""
     if grafana_backend is not None:
         raw = grafana_backend.query_logs(service_name=service_name)
-        return {"source": "grafana_loki", "available": True, "raw": raw}
+        # Parse Loki wire format into the same shape as the real client path so
+        # _map_grafana_logs (which reads "logs") sees non-empty data.
+        logs: list[dict] = []
+        for stream in raw.get("data", {}).get("result", []):
+            stream_labels = stream.get("stream", {})
+            for ts_ns, line in stream.get("values", []):
+                logs.append({"timestamp": ts_ns, "message": line, **stream_labels})
+        error_keywords = ("error", "fail", "exception", "traceback")
+        error_logs = [log for log in logs if any(kw in log.get("message", "").lower() for kw in error_keywords)]
+        return {
+            "source": "grafana_loki",
+            "available": True,
+            "logs": logs[:50],
+            "error_logs": error_logs[:20],
+            "total_logs": len(logs),
+            "service_name": service_name,
+            "query": "",
+        }
 
     client = _resolve_grafana_client(grafana_endpoint, grafana_api_key)
 
@@ -244,7 +261,17 @@ def query_grafana_metrics(
     """Query Grafana Cloud Mimir for pipeline metrics."""
     if grafana_backend is not None:
         raw = grafana_backend.query_timeseries(metric_name=metric_name, service_name=service_name)
-        return {"source": "grafana_mimir", "available": True, "raw": raw}
+        # Parse Mimir wire format into the same shape as the real client path so
+        # _map_grafana_metrics (which reads "metrics") sees non-empty data.
+        metrics = raw.get("data", {}).get("result", [])
+        return {
+            "source": "grafana_mimir",
+            "available": True,
+            "metrics": metrics,
+            "total_series": len(metrics),
+            "metric_name": metric_name,
+            "service_name": service_name,
+        }
 
     client = _resolve_grafana_client(grafana_endpoint, grafana_api_key)
 

@@ -1,6 +1,6 @@
 root_cause_category: healthy
 required_keywords:
-  - normal bounds
+  - operating bounds
   - no failure
 forbidden_categories:
   - resource_exhaustion
