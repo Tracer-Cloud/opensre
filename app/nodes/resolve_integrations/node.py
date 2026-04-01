@@ -329,7 +329,7 @@ def node_resolve_integrations(state: InvestigationState) -> dict:
             )
             return {"resolved_integrations": {}}
         try:
-            from app.tools.clients.tracer_client import get_tracer_client_for_org
+            from app.integrations.clients.tracer_client import get_tracer_client_for_org
             all_integrations = get_tracer_client_for_org(org_id, webhook_token).get_all_integrations()
         except Exception as exc:
             log.warning("Remote integrations fetch failed: %s", exc)
@@ -349,7 +349,7 @@ def node_resolve_integrations(state: InvestigationState) -> dict:
             if not org_id:
                 return _resolve_from_local_sources(tracker)
             try:
-                from app.tools.clients.tracer_client import get_tracer_client_for_org
+                from app.integrations.clients.tracer_client import get_tracer_client_for_org
                 all_integrations = get_tracer_client_for_org(org_id, env_token).get_all_integrations()
             except Exception:
                 return _resolve_from_local_sources(tracker)

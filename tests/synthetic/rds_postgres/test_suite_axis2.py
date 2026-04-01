@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.tools.clients import llm_client
+from app.integrations.clients import llm_client
 from tests.synthetic.mock_grafana_backend.selective_backend import SelectiveGrafanaBackend
 from tests.synthetic.rds_postgres.run_suite import run_scenario, score_reasoning
 from tests.synthetic.rds_postgres.scenario_loader import load_all_scenarios

@@ -12,25 +12,25 @@ from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 
+from app.integrations.clients import get_llm_for_tools
 from app.prompts import GENERAL_SYSTEM_PROMPT, ROUTER_PROMPT, SYSTEM_PROMPT
 from app.state import AgentState, ChatMessage
-from app.tools.clients import get_llm_for_tools
-from app.tools.tool_actions.base import BaseTool
-from app.tools.tool_actions.GitHubCommitsTool import list_github_commits
-from app.tools.tool_actions.GitHubFileContentsTool import get_github_file_contents
-from app.tools.tool_actions.GitHubRepositoryTreeTool import get_github_repository_tree
-from app.tools.tool_actions.GitHubSearchCodeTool import search_github_code
-from app.tools.tool_actions.SentryIssueDetailsTool import get_sentry_issue_details
-from app.tools.tool_actions.SentryIssueEventsTool import list_sentry_issue_events
-from app.tools.tool_actions.SentrySearchIssuesTool import search_sentry_issues
-from app.tools.tool_actions.TracerBatchStatisticsTool import get_batch_statistics
-from app.tools.tool_actions.TracerErrorLogsTool import get_error_logs
-from app.tools.tool_actions.TracerFailedJobsTool import get_failed_jobs
-from app.tools.tool_actions.TracerFailedRunTool import fetch_failed_run
-from app.tools.tool_actions.TracerFailedToolsTool import get_failed_tools
-from app.tools.tool_actions.TracerHostMetricsTool import get_host_metrics
-from app.tools.tool_actions.TracerRunTool import get_tracer_run
-from app.tools.tool_actions.TracerTasksTool import get_tracer_tasks
+from app.tools.base import BaseTool
+from app.tools.GitHubCommitsTool import list_github_commits
+from app.tools.GitHubFileContentsTool import get_github_file_contents
+from app.tools.GitHubRepositoryTreeTool import get_github_repository_tree
+from app.tools.GitHubSearchCodeTool import search_github_code
+from app.tools.SentryIssueDetailsTool import get_sentry_issue_details
+from app.tools.SentryIssueEventsTool import list_sentry_issue_events
+from app.tools.SentrySearchIssuesTool import search_sentry_issues
+from app.tools.TracerBatchStatisticsTool import get_batch_statistics
+from app.tools.TracerErrorLogsTool import get_error_logs
+from app.tools.TracerFailedJobsTool import get_failed_jobs
+from app.tools.TracerFailedRunTool import fetch_failed_run
+from app.tools.TracerFailedToolsTool import get_failed_tools
+from app.tools.TracerHostMetricsTool import get_host_metrics
+from app.tools.TracerRunTool import get_tracer_run
+from app.tools.TracerTasksTool import get_tracer_tasks
 
 _CHAT_FUNCTIONS: list[Callable[..., Any]] = [
     fetch_failed_run,

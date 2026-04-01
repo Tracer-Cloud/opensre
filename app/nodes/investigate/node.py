@@ -9,7 +9,7 @@ from app.nodes.investigate.processing import (
 )
 from app.output import debug_print, get_tracker
 from app.state import InvestigationState
-from app.tools.tool_actions.investigation_registry import get_available_actions
+from app.tools.investigation_registry import get_available_actions
 
 
 @traceable(name="node_investigate")
