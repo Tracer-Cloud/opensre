@@ -13,6 +13,13 @@ from tests.synthetic.rds_postgres.scenario_loader import (
     load_all_scenarios,
 )
 
+# Maps fixture schema evidence keys to the agent's internal state keys.
+_EVIDENCE_KEY_MAP: dict[str, str] = {
+    "rds_metrics": "grafana_metrics",
+    "rds_events": "grafana_logs",
+    "performance_insights": "grafana_metrics",
+}
+
 
 @dataclass(frozen=True)
 class TrajectoryScore:
@@ -182,11 +189,6 @@ def score_result(fixture: ScenarioFixture, final_state: dict[str, Any]) -> Scena
     # 4. Evidence path check — required sources must be non-empty in final_state["evidence"].
     # Fixture schema keys (rds_metrics, rds_events, performance_insights) map to the agent's
     # internal evidence keys (grafana_metrics, grafana_logs) set by _map_grafana_*.
-    _EVIDENCE_KEY_MAP: dict[str, str] = {
-        "rds_metrics": "grafana_metrics",
-        "rds_events": "grafana_logs",
-        "performance_insights": "grafana_metrics",
-    }
     if not failure_reason and answer_key.required_evidence_sources:
         evidence = final_state.get("evidence") or {}
         for source_key in answer_key.required_evidence_sources:

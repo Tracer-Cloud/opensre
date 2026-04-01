@@ -475,7 +475,6 @@ def process_scenario(scenario_id: str, config: dict) -> None:
 
     n = config["n"]
     start = config["start"]
-    config.get("existing", set())
     skip_baseline = config.get("skip_baseline", set())
 
     # -----------------------------------------------------------------------
