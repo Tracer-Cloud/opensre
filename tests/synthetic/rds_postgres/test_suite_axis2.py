@@ -95,13 +95,43 @@ class _FakeLLM:
 
 _ALL_SCENARIOS = load_all_scenarios()
 
+# Difficulty threshold above which a real LLM is expected to fail.
+# The fake-LLM infrastructure tests always pass regardless.
+# With a real LLM, failures at or above this difficulty are the gap signal —
+# they should not gate CI (strict=False xfail).
+_XFAIL_DIFFICULTY = 3
 
-def _axis2_scenarios():
-    """Return all scenarios that declare Axis 2 fields (difficulty >= 3 or has ruling_out/required_queries)."""
-    return [
-        f for f in _ALL_SCENARIOS
-        if f.answer_key.ruling_out_keywords or f.answer_key.required_queries
-    ]
+
+def _axis2_scenarios() -> list:
+    """Return pytest params for all Axis 2 scenarios.
+
+    Scenarios at difficulty >= _XFAIL_DIFFICULTY are wrapped with
+    pytest.mark.xfail(strict=False) so that:
+    - Failures with a real LLM keep CI green (expected, part of the gap metric).
+    - Passes with a real LLM are recorded as bonuses (xpass).
+    - The fake-LLM infrastructure tests always xpass (fine with strict=False).
+    """
+    params = []
+    for f in _ALL_SCENARIOS:
+        if not (f.answer_key.ruling_out_keywords or f.answer_key.required_queries):
+            continue
+        if f.metadata.scenario_difficulty >= _XFAIL_DIFFICULTY:
+            params.append(
+                pytest.param(
+                    f,
+                    id=f.scenario_id,
+                    marks=pytest.mark.xfail(
+                        strict=False,
+                        reason=(
+                            f"difficulty={f.metadata.scenario_difficulty}: "
+                            "expected to challenge real LLMs — failure is the gap signal"
+                        ),
+                    ),
+                )
+            )
+        else:
+            params.append(pytest.param(f, id=f.scenario_id))
+    return params
 
 
 def _run_axis2_scenario_test(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
