@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from app.agent.nodes.publish_findings.urls.aws import (
     _encode_aws_path,
     build_batch_console_url,
@@ -60,7 +62,9 @@ class TestBuildCloudwatchUrl:
         }
         url = build_cloudwatch_url(ctx)
         assert url is not None
-        assert "us-west-2.console.aws.amazon.com/cloudwatch" in url
+        parsed = urlparse(url)
+        assert parsed.netloc == "us-west-2.console.aws.amazon.com"
+        assert parsed.path.startswith("/cloudwatch")
         assert "region=us-west-2" in url
         assert "$252Faws$252Flambda$252Fmy-func" in url
         assert "log-events/" in url
@@ -72,7 +76,9 @@ class TestBuildCloudwatchUrl:
         }
         url = build_cloudwatch_url(ctx)
         assert url is not None
-        assert "ap-south-1.console.aws.amazon.com/cloudwatch" in url
+        parsed = urlparse(url)
+        assert parsed.netloc == "ap-south-1.console.aws.amazon.com"
+        assert parsed.path.startswith("/cloudwatch")
         assert "$252Fecs$252Fmy-service" in url
         assert "log-events" not in url
 
@@ -80,7 +86,7 @@ class TestBuildCloudwatchUrl:
         ctx = {"cloudwatch_log_group": "/my/group"}
         url = build_cloudwatch_url(ctx)
         assert url is not None
-        assert "us-east-1.console.aws.amazon.com" in url
+        assert urlparse(url).netloc == "us-east-1.console.aws.amazon.com"
         assert "region=us-east-1" in url
 
     def test_empty_region_defaults_to_us_east_1(self) -> None:
@@ -95,7 +101,9 @@ class TestBuildS3ConsoleUrl:
 
     def test_basic_url(self) -> None:
         url = build_s3_console_url("my-bucket", "path/to/file.csv")
-        assert "s3.console.aws.amazon.com/s3/object/my-bucket" in url
+        parsed = urlparse(url)
+        assert parsed.netloc == "s3.console.aws.amazon.com"
+        assert parsed.path.startswith("/s3/object/my-bucket")
         assert "region=us-east-1" in url
         assert "prefix=path%2Fto%2Ffile.csv" in url
 
@@ -115,7 +123,9 @@ class TestBuildLambdaConsoleUrl:
 
     def test_basic_url(self) -> None:
         url = build_lambda_console_url("my-function")
-        assert "us-east-1.console.aws.amazon.com/lambda" in url
+        parsed = urlparse(url)
+        assert parsed.netloc == "us-east-1.console.aws.amazon.com"
+        assert parsed.path.startswith("/lambda")
         assert "functions/my-function" in url
         assert "tab=code" in url
 
@@ -130,7 +140,9 @@ class TestBuildEcsConsoleUrl:
 
     def test_basic_url(self) -> None:
         url = build_ecs_console_url("prod-cluster")
-        assert "us-east-1.console.aws.amazon.com/ecs/v2/clusters/prod-cluster" in url
+        parsed = urlparse(url)
+        assert parsed.netloc == "us-east-1.console.aws.amazon.com"
+        assert parsed.path.startswith("/ecs/v2/clusters/prod-cluster")
         assert "region=us-east-1" in url
 
     def test_custom_region(self) -> None:
@@ -143,7 +155,9 @@ class TestBuildBatchConsoleUrl:
 
     def test_basic_url(self) -> None:
         url = build_batch_console_url("my-queue")
-        assert "us-east-1.console.aws.amazon.com/batch" in url
+        parsed = urlparse(url)
+        assert parsed.netloc == "us-east-1.console.aws.amazon.com"
+        assert parsed.path.startswith("/batch")
         assert "queues/detail/my-queue" in url
 
     def test_custom_region(self) -> None:
