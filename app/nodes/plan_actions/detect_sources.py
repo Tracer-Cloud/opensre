@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
-from app.tools.tool_actions.grafana.grafana_actions import _map_pipeline_to_service_name
+from app.tools.tool_actions.GrafanaLogsTool import _map_pipeline_to_service_name
 
 
 def _alert_time_range_minutes(raw_alert: dict[str, Any]) -> int:
