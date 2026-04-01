@@ -14,34 +14,25 @@ from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 
 from app.config import OPENAI_LLM_CONFIG
+from app.integrations.clients import get_llm_for_tools
 from app.prompts import GENERAL_SYSTEM_PROMPT, ROUTER_PROMPT, SYSTEM_PROMPT
 from app.state import AgentState, ChatMessage
-from app.tools.clients import get_llm_for_tools
-from app.tools.tool_actions.github.github_mcp_actions import (
-    get_github_file_contents,
-    get_github_repository_tree,
-    list_github_commits,
-    search_github_code,
-)
-from app.tools.tool_actions.sentry.sentry_actions import (
-    get_sentry_issue_details,
-    list_sentry_issue_events,
-    search_sentry_issues,
-)
-from app.tools.tool_actions.tracer.tracer_jobs import (
-    get_failed_jobs,
-    get_failed_tools,
-)
-from app.tools.tool_actions.tracer.tracer_logs import get_error_logs
-from app.tools.tool_actions.tracer.tracer_metrics import (
-    get_batch_statistics,
-    get_host_metrics,
-)
-from app.tools.tool_actions.tracer.tracer_runs import (
-    fetch_failed_run,
-    get_tracer_run,
-    get_tracer_tasks,
-)
+from app.tools.base import BaseTool
+from app.tools.GitHubCommitsTool import list_github_commits
+from app.tools.GitHubFileContentsTool import get_github_file_contents
+from app.tools.GitHubRepositoryTreeTool import get_github_repository_tree
+from app.tools.GitHubSearchCodeTool import search_github_code
+from app.tools.SentryIssueDetailsTool import get_sentry_issue_details
+from app.tools.SentryIssueEventsTool import list_sentry_issue_events
+from app.tools.SentrySearchIssuesTool import search_sentry_issues
+from app.tools.TracerBatchStatisticsTool import get_batch_statistics
+from app.tools.TracerErrorLogsTool import get_error_logs
+from app.tools.TracerFailedJobsTool import get_failed_jobs
+from app.tools.TracerFailedRunTool import fetch_failed_run
+from app.tools.TracerFailedToolsTool import get_failed_tools
+from app.tools.TracerHostMetricsTool import get_host_metrics
+from app.tools.TracerRunTool import get_tracer_run
+from app.tools.TracerTasksTool import get_tracer_tasks
 
 _CHAT_FUNCTIONS: list[Callable[..., Any]] = [
     fetch_failed_run,
@@ -61,9 +52,19 @@ _CHAT_FUNCTIONS: list[Callable[..., Any]] = [
     list_sentry_issue_events,
 ]
 
-CHAT_TOOLS: list[StructuredTool] = [
-    StructuredTool.from_function(fn, return_direct=False) for fn in _CHAT_FUNCTIONS
-]
+def _to_structured_tool(fn: Callable[..., Any] | BaseTool) -> StructuredTool:
+    """Build a StructuredTool from a plain callable or a BaseTool instance."""
+    if isinstance(fn, BaseTool):
+        return StructuredTool.from_function(
+            func=fn.run,  # type: ignore[attr-defined]
+            name=fn.name,
+            description=fn.description,
+            return_direct=False,
+        )
+    return StructuredTool.from_function(fn, return_direct=False)
+
+
+CHAT_TOOLS: list[StructuredTool] = [_to_structured_tool(fn) for fn in _CHAT_FUNCTIONS]
 
 # LangChain type -> ChatMessage role mapping
 _TYPE_TO_ROLE: dict[str, str] = {

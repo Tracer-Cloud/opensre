@@ -1,5 +1,7 @@
 """Investigate node - execute planned actions and post-process evidence."""
 
+import logging
+
 from langsmith import traceable
 
 from app.nodes.investigate.execution import execute_actions
@@ -9,7 +11,9 @@ from app.nodes.investigate.processing import (
 )
 from app.output import debug_print, get_tracker
 from app.state import InvestigationState
-from app.tools.tool_actions.investigation_registry import get_available_actions
+from app.tools.investigation_registry import get_available_actions
+
+logger = logging.getLogger(__name__)
 
 
 @traceable(name="node_investigate")
@@ -45,7 +49,7 @@ def node_investigate(state: InvestigationState) -> dict:
         if name in actions_by_name:
             available_actions[name] = actions_by_name[name]
         else:
-            print(f"[WARNING] Planned action '{name}' not found in action registry")
+            logger.warning("Planned action '%s' not found in action registry", name)
 
     # Execute actions and summarize results
     execution_results = execute_actions(planned_actions, available_actions, available_sources)

@@ -11,6 +11,8 @@ import requests
 
 from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.config import get_tracer_base_url
+from app.integrations.clients.datadog.client import DatadogClient, DatadogConfig
+from app.integrations.clients.tracer_client.client import TracerClient
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
@@ -19,8 +21,6 @@ from app.nodes.resolve_integrations.node import (
     _load_env_integrations,
     _merge_local_integrations,
 )
-from app.tools.clients.datadog.client import DatadogClient, DatadogConfig
-from app.tools.clients.tracer_client.client import TracerClient
 
 SUPPORTED_VERIFY_SERVICES = ("grafana", "datadog", "aws", "slack", "tracer", "github", "sentry")
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "aws"})

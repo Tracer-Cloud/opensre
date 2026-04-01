@@ -3,7 +3,7 @@ required_keywords:
   - storage
   - FreeStorageSpace
 required_evidence_sources:
-  - rds_events
+  - aws_rds_events
 optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs
@@ -14,10 +14,10 @@ model_response: |
   ROOT_CAUSE_CATEGORY: resource_exhaustion
 
   VALIDATED_CLAIMS:
-  - FreeStorageSpace on orders-prod dropped monotonically from ~15 GB to ~500 MB over 15 minutes. [evidence: rds_metrics]
-  - WriteIOPS peaked at 8100 and then collapsed to near-zero as writes were blocked by the full disk. [evidence: rds_metrics]
-  - RDS event at 02:12:33Z confirmed "DB instance ran out of storage space". [evidence: rds_events]
-  - Performance Insights shows an INSERT archival query as the dominant load with IO:DataFileWrite as the top wait event. [evidence: performance_insights]
+  - FreeStorageSpace on orders-prod dropped monotonically from ~15 GB to ~500 MB over 15 minutes. [evidence: aws_cloudwatch_metrics]
+  - WriteIOPS peaked at 8100 and then collapsed to near-zero as writes were blocked by the full disk. [evidence: aws_cloudwatch_metrics]
+  - RDS event at 02:12:33Z confirmed "DB instance ran out of storage space". [evidence: aws_rds_events]
+  - Performance Insights shows an INSERT archival query as the dominant load with IO:DataFileWrite as the top wait event. [evidence: aws_performance_insights]
 
   NON_VALIDATED_CLAIMS:
   - Expanding storage volume or enabling storage autoscaling would prevent recurrence.

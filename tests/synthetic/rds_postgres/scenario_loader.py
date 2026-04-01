@@ -78,8 +78,63 @@ def _read_yaml(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _parse_scenario_yaml(path: Path) -> ScenarioMetadata:
-    raw = _read_yaml(path)
+# ---------------------------------------------------------------------------
+# Base-inheritance helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_base_dir(suite_dir: Path, base_id: str) -> Path:
+    """Find the base scenario directory by its directory name (e.g. '000-healthy')."""
+    base_dir = suite_dir / base_id
+    if not base_dir.is_dir():
+        raise ValueError(
+            f"Base scenario '{base_id}' not found at {base_dir}"
+        )
+    base_raw = _read_yaml(base_dir / "scenario.yml")
+    if "base" in base_raw:
+        raise ValueError(
+            f"Chained inheritance is not supported: base scenario '{base_id}' "
+            f"itself declares base '{base_raw['base']}'"
+        )
+    return base_dir
+
+
+def _merge_scenario_yaml(
+    base_raw: dict[str, Any], scenario_raw: dict[str, Any],
+) -> dict[str, Any]:
+    """Shallow-merge scenario overrides on top of base metadata.
+
+    scenario_raw values win. The ``base`` directive is consumed and removed.
+    """
+    merged = {**base_raw, **{k: v for k, v in scenario_raw.items() if k != "base"}}
+    merged.pop("base", None)
+    return merged
+
+
+def _resolve_evidence_file(
+    scenario_dir: Path, base_dir: Path | None, filename: str,
+) -> Path:
+    """Return the scenario's own file if it exists, otherwise the base's."""
+    local = scenario_dir / filename
+    if local.exists():
+        return local
+    if base_dir is not None:
+        fallback = base_dir / filename
+        if fallback.exists():
+            return fallback
+    raise FileNotFoundError(
+        f"Evidence file '{filename}' not found in {scenario_dir}"
+        + (f" or base {base_dir}" if base_dir else "")
+    )
+
+
+# ---------------------------------------------------------------------------
+# Parsing helpers
+# ---------------------------------------------------------------------------
+
+
+def _validated_metadata(raw: dict[str, Any]) -> ScenarioMetadata:
+    """Validate a (possibly merged) raw dict and return a ScenarioMetadata."""
     validated: ScenarioMetadataSchema = validate_scenario_metadata(raw)
     return ScenarioMetadata(
         schema_version=validated["schema_version"],
@@ -97,6 +152,25 @@ def _parse_scenario_yaml(path: Path) -> ScenarioMetadata:
         adversarial_signals=list(validated.get("adversarial_signals") or []),
         depends_on=validated.get("depends_on", ""),  # type: ignore[arg-type]
     )
+
+
+def _parse_scenario_yaml(path: Path) -> tuple[ScenarioMetadata, Path | None]:
+    """Parse scenario.yml, resolving base inheritance if declared.
+
+    Returns (metadata, base_dir) where base_dir is the resolved base scenario
+    directory, or None if no ``base`` field was declared.
+    """
+    raw = _read_yaml(path)
+    base_id = raw.get("base")
+    base_dir: Path | None = None
+
+    if base_id:
+        suite_dir = path.parent.parent
+        base_dir = _resolve_base_dir(suite_dir, base_id)
+        base_raw = _read_yaml(base_dir / "scenario.yml")
+        raw = _merge_scenario_yaml(base_raw, raw)
+
+    return _validated_metadata(raw), base_dir
 
 
 def _parse_answer_yaml(path: Path) -> ScenarioAnswerKey:
@@ -152,35 +226,44 @@ def _build_problem_md(alert: dict[str, Any], metadata: ScenarioMetadata) -> str:
 def _build_evidence(
     scenario_dir: Path,
     available_evidence: list[str],
+    base_dir: Path | None = None,
 ) -> ScenarioEvidence:
-    """Load only the evidence sources declared in scenario.yml:available_evidence."""
-    rds_metrics = None
-    rds_events = None
-    performance_insights = None
+    """Load only the evidence sources declared in scenario.yml:available_evidence.
 
-    if "rds_metrics" in available_evidence:
-        rds_metrics = validate_cloudwatch_metrics(_read_json(scenario_dir / "cloudwatch_metrics.json"))
+    When *base_dir* is set, evidence files missing from *scenario_dir* are
+    resolved from the base scenario directory (file-level fallback).
+    """
+    aws_cloudwatch_metrics = None
+    aws_rds_events = None
+    aws_performance_insights = None
 
-    if "rds_events" in available_evidence:
-        raw_events = validate_rds_events(_read_json(scenario_dir / "rds_events.json"))
-        rds_events = raw_events.get("events", [])
+    if "aws_cloudwatch_metrics" in available_evidence:
+        path = _resolve_evidence_file(scenario_dir, base_dir, "aws_cloudwatch_metrics.json")
+        aws_cloudwatch_metrics = validate_cloudwatch_metrics(_read_json(path))
 
-    if "performance_insights" in available_evidence:
-        performance_insights = validate_performance_insights(
-            _read_json(scenario_dir / "performance_insights.json")
-        )
+    if "aws_rds_events" in available_evidence:
+        path = _resolve_evidence_file(scenario_dir, base_dir, "aws_rds_events.json")
+        raw_events = validate_rds_events(_read_json(path))
+        aws_rds_events = raw_events.get("events", [])
+
+    if "aws_performance_insights" in available_evidence:
+        path = _resolve_evidence_file(scenario_dir, base_dir, "aws_performance_insights.json")
+        aws_performance_insights = validate_performance_insights(_read_json(path))
 
     return ScenarioEvidence(
-        rds_metrics=rds_metrics,
-        rds_events=rds_events,
-        performance_insights=performance_insights,
+        aws_cloudwatch_metrics=aws_cloudwatch_metrics,
+        aws_rds_events=aws_rds_events,
+        aws_performance_insights=aws_performance_insights,
     )
 
 
 def load_scenario(scenario_dir: Path) -> ScenarioFixture:
-    metadata = _parse_scenario_yaml(scenario_dir / "scenario.yml")
-    alert = cast(dict[str, Any], validate_alert(_read_json(scenario_dir / "alert.json")))
-    evidence = _build_evidence(scenario_dir, metadata.available_evidence)
+    metadata, base_dir = _parse_scenario_yaml(scenario_dir / "scenario.yml")
+
+    alert_path = _resolve_evidence_file(scenario_dir, base_dir, "alert.json")
+    alert = cast(dict[str, Any], validate_alert(_read_json(alert_path)))
+
+    evidence = _build_evidence(scenario_dir, metadata.available_evidence, base_dir)
     answer_key = _parse_answer_yaml(scenario_dir / "answer.yml")
     problem_md = _build_problem_md(alert, metadata)
 

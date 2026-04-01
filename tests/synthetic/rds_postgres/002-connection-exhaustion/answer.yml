@@ -15,9 +15,9 @@ model_response: |
   ROOT_CAUSE: The database hit connection exhaustion because leaked client sessions consumed nearly all available max_connections. The outage came from session pressure, not a compute bottleneck. CPUUtilization showed mild elevation (~35-50%) from minute 4 onward, but this is a symptom of accumulated idle client sessions making periodic lightweight queries — not an independent CPU saturation event.
   ROOT_CAUSE_CATEGORY: resource_exhaustion
   VALIDATED_CLAIMS:
-  - DatabaseConnections stayed near 490 out of 500 allowed sessions. [evidence: rds_metrics]
-  - CPUUtilization rose to 35-50% beginning at minute 4, correlated with — and caused by — the growth in idle client sessions. This is not independent CPU saturation; Performance Insights confirms Client:ClientRead as the dominant wait event. [evidence: rds_metrics, performance_insights]
-  - Performance Insights points to idle client sessions waiting on ClientRead rather than an expensive SQL statement. [evidence: performance_insights]
+  - DatabaseConnections stayed near 490 out of 500 allowed sessions. [evidence: aws_cloudwatch_metrics]
+  - CPUUtilization rose to 35-50% beginning at minute 4, correlated with — and caused by — the growth in idle client sessions. This is not independent CPU saturation; Performance Insights confirms Client:ClientRead as the dominant wait event. [evidence: aws_cloudwatch_metrics, aws_performance_insights]
+  - Performance Insights points to idle client sessions waiting on ClientRead rather than an expensive SQL statement. [evidence: aws_performance_insights]
   NON_VALIDATED_CLAIMS:
   - Tightening pool limits or terminating leaked sessions would likely restore service quickly.
   CAUSAL_CHAIN:

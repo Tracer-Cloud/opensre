@@ -16,7 +16,7 @@ import sys
 
 import requests
 
-from app.tools.clients.grafana import get_grafana_client
+from app.integrations.clients.grafana import get_grafana_client
 from tests.shared.stack_config import get_prefect_config
 from tests.utils.s3_upload_validate import (
     INVALID_PAYLOAD,

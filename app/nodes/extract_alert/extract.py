@@ -3,10 +3,10 @@
 import json
 from typing import Any, cast
 
+from app.integrations.clients import get_llm_for_reasoning
 from app.nodes.extract_alert.models import AlertDetails, AlertExtractionInput
 from app.output import debug_print
 from app.state import InvestigationState
-from app.tools.clients import get_llm_for_reasoning
 
 
 def extract_alert_details(state: InvestigationState) -> AlertDetails:

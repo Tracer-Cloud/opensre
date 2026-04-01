@@ -5,7 +5,7 @@ required_keywords:
   - LWLock
   - WAL
 required_evidence_sources:
-  - performance_insights
+  - aws_performance_insights
 forbidden_categories:
   - cpu_saturation
 ruling_out_keywords:
@@ -25,16 +25,16 @@ model_response: |
   ROOT_CAUSE_CATEGORY: resource_exhaustion
 
   VALIDATED_CLAIMS:
-  - Performance Insights shows autovacuum VACUUM FREEZE on billing_events as the dominant process at 7.8 AAS — accounting for 79% of all database load. [evidence: performance_insights]
-  - The dominant wait event is LWLock:BufferMapping at 3.9 AAS, followed by IO:WALWrite at 2.4 AAS and IO:DataFileWrite at 1.4 AAS. CPU:user is only 0.2 AAS — confirming this is an I/O-bound, not a CPU-bound, workload. [evidence: performance_insights]
-  - WriteIOPS spiked from 890 to 25,000+ at 22:02Z — coinciding with the VACUUM FREEZE start. This is the checkpoint flush storm writing dirty pages to disk. [evidence: rds_metrics]
-  - DiskQueueDepth reached 44.6, indicating severe I/O saturation from the checkpoint write storm. [evidence: rds_metrics]
-  - WriteLatency grew from 1ms to 168ms over 20 minutes — consistent with I/O queuing from checkpoint-driven write amplification. [evidence: rds_metrics]
-  - TransactionLogsGeneration grew from 4.5 MB/s to ~200 MB/s — consistent with massive WAL output from VACUUM FREEZE processing billions of tuples. [evidence: rds_metrics]
-  - FreeStorageSpace is declining at ~1.3 GB/min — a secondary effect of the VACUUM FREEZE generating WAL and temporary files. Not yet critical at 82 GB remaining. [evidence: rds_metrics]
-  - CPUUtilization reached 92% — this is the effect of the kernel thrashing on I/O waits and buffer management, not an application query consuming CPU. The rdsadmin user (autovacuum) accounts for 7.9 AAS, confirming the load is internal. [evidence: rds_metrics, performance_insights]
-  - Application queries (billing_writer INSERT at 1.2 AAS) are blocked on Lock:relation — the VACUUM FREEZE holds table-level locks that block normal writes. [evidence: performance_insights]
-  - DatabaseConnections are growing (98 → 254) because application threads are accumulating waiting on the blocked INSERT workload, not from a connection pool issue. [evidence: rds_metrics]
+  - Performance Insights shows autovacuum VACUUM FREEZE on billing_events as the dominant process at 7.8 AAS — accounting for 79% of all database load. [evidence: aws_performance_insights]
+  - The dominant wait event is LWLock:BufferMapping at 3.9 AAS, followed by IO:WALWrite at 2.4 AAS and IO:DataFileWrite at 1.4 AAS. CPU:user is only 0.2 AAS — confirming this is an I/O-bound, not a CPU-bound, workload. [evidence: aws_performance_insights]
+  - WriteIOPS spiked from 890 to 25,000+ at 22:02Z — coinciding with the VACUUM FREEZE start. This is the checkpoint flush storm writing dirty pages to disk. [evidence: aws_cloudwatch_metrics]
+  - DiskQueueDepth reached 44.6, indicating severe I/O saturation from the checkpoint write storm. [evidence: aws_cloudwatch_metrics]
+  - WriteLatency grew from 1ms to 168ms over 20 minutes — consistent with I/O queuing from checkpoint-driven write amplification. [evidence: aws_cloudwatch_metrics]
+  - TransactionLogsGeneration grew from 4.5 MB/s to ~200 MB/s — consistent with massive WAL output from VACUUM FREEZE processing billions of tuples. [evidence: aws_cloudwatch_metrics]
+  - FreeStorageSpace is declining at ~1.3 GB/min — a secondary effect of the VACUUM FREEZE generating WAL and temporary files. Not yet critical at 82 GB remaining. [evidence: aws_cloudwatch_metrics]
+  - CPUUtilization reached 92% — this is the effect of the kernel thrashing on I/O waits and buffer management, not an application query consuming CPU. The rdsadmin user (autovacuum) accounts for 7.9 AAS, confirming the load is internal. [evidence: aws_cloudwatch_metrics, aws_performance_insights]
+  - Application queries (billing_writer INSERT at 1.2 AAS) are blocked on Lock:relation — the VACUUM FREEZE holds table-level locks that block normal writes. [evidence: aws_performance_insights]
+  - DatabaseConnections are growing (98 → 254) because application threads are accumulating waiting on the blocked INSERT workload, not from a connection pool issue. [evidence: aws_cloudwatch_metrics]
 
   NON_VALIDATED_CLAIMS:
   - SwapUsage growing (~83MB → 289MB) may indicate the shared_buffers pool is being repurposed for the vacuum, causing some memory-mapped pages to swap. Not a primary cause.

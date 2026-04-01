@@ -4,8 +4,8 @@ required_keywords:
   - WAL
   - replica
 required_evidence_sources:
-  - rds_events
-  - performance_insights
+  - aws_rds_events
+  - aws_performance_insights
 optimal_trajectory:
   - query_grafana_logs
   - query_grafana_metrics
@@ -16,11 +16,11 @@ model_response: |
   ROOT_CAUSE_CATEGORY: resource_exhaustion
 
   VALIDATED_CLAIMS:
-  - WriteIOPS spiked from 410 to 19,530 at 07:01Z and sustained, consistent with a large bulk write workload. [evidence: rds_metrics]
-  - TransactionLogsGeneration reached ~200 MB/s, indicating WAL production far exceeding typical replica replay capacity. [evidence: rds_metrics]
-  - ReplicaLag metric is absent from CloudWatch (not published for this replica instance). Root cause is inferred from indirect signals. [evidence: rds_metrics]
-  - RDS events confirm: replication lag exceeded 900s at 07:06Z and 1800s at 07:11Z on reporting-prod-replica-1. [evidence: rds_events]
-  - Performance Insights identifies an ETL INSERT statement as the top load consumer (6.1 AAS) with WAL:Lock as the dominant wait event — confirming WAL-heavy write workload. [evidence: performance_insights]
+  - WriteIOPS spiked from 410 to 19,530 at 07:01Z and sustained, consistent with a large bulk write workload. [evidence: aws_cloudwatch_metrics]
+  - TransactionLogsGeneration reached ~200 MB/s, indicating WAL production far exceeding typical replica replay capacity. [evidence: aws_cloudwatch_metrics]
+  - ReplicaLag metric is absent from CloudWatch (not published for this replica instance). Root cause is inferred from indirect signals. [evidence: aws_cloudwatch_metrics]
+  - RDS events confirm: replication lag exceeded 900s at 07:06Z and 1800s at 07:11Z on reporting-prod-replica-1. [evidence: aws_rds_events]
+  - Performance Insights identifies an ETL INSERT statement as the top load consumer (6.1 AAS) with WAL:Lock as the dominant wait event — confirming WAL-heavy write workload. [evidence: aws_performance_insights]
 
   NON_VALIDATED_CLAIMS:
   - Throttling the ETL batch size or scheduling it outside of reporting hours would reduce WAL generation and allow the replica to catch up.

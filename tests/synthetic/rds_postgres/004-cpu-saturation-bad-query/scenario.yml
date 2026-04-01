@@ -1,14 +1,8 @@
-schema_version: "1.0"
+base: 000-healthy
 scenario_id: 004-cpu-saturation-bad-query
-engine: postgres
-engine_version: "15"
-instance_class: db.r6g.2xlarge
 region: us-west-2
 db_instance_identifier: catalog-prod
+db_cluster: ""
 failure_mode: cpu_saturation
 severity: critical
 scenario_difficulty: 1
-available_evidence:
-  - rds_metrics
-  - rds_events
-  - performance_insights

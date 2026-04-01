@@ -12,9 +12,9 @@ ALLOWED_EVIDENCE_SOURCES = [
     "logs",
     "cloudwatch_logs",
     "host_metrics",
-    "rds_metrics",
-    "rds_events",
-    "performance_insights",
+    "aws_cloudwatch_metrics",
+    "aws_rds_events",
+    "aws_performance_insights",
     "lambda_logs",
     "lambda_code",
     "lambda_config",
@@ -229,9 +229,9 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     error_logs = evidence.get("error_logs", [])[:10]
     cloudwatch_logs = evidence.get("cloudwatch_logs", [])[:5]
     host_metrics = evidence.get("host_metrics", {})
-    rds_metrics = evidence.get("rds_metrics", {})
-    rds_events = evidence.get("rds_events", [])
-    performance_insights = evidence.get("performance_insights", {})
+    rds_metrics = evidence.get("aws_cloudwatch_metrics", {})
+    rds_events = evidence.get("aws_rds_events", [])
+    performance_insights = evidence.get("aws_performance_insights", {})
     lambda_logs = evidence.get("lambda_logs", [])[:10]
     lambda_function = evidence.get("lambda_function", {})
     lambda_config = evidence.get("lambda_config", {})
@@ -612,7 +612,7 @@ def _format_datadog_log_entry(log: Any) -> str:
     if isinstance(raw_ts, str) and "T" in raw_ts:
         time_part = raw_ts.split("T", 1)[1][:8]  # "HH:MM:SS"
         ts_prefix = f"[{time_part}] "
-    elif isinstance(raw_ts, (int, float)):
+    elif isinstance(raw_ts, int | float):
         import datetime
         ts_prefix = f"[{datetime.datetime.utcfromtimestamp(raw_ts / 1000 if raw_ts > 1e10 else raw_ts).strftime('%H:%M:%S')}] "
 

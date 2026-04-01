@@ -80,7 +80,7 @@ def _format_tool_calls_line(ctx: ReportContext) -> str:
             parts.append(f"{len(events)} events")
         fetch_ms = e.get("datadog_fetch_ms", {})
         if fetch_ms:
-            max_ms = max(v for v in fetch_ms.values() if isinstance(v, (int, float)))
+            max_ms = max(v for v in fetch_ms.values() if isinstance(v, int | float))
             if max_ms > 0:
                 parts.append(f"fetched in {max_ms / 1000:.1f}s")
         return ", ".join(parts)
