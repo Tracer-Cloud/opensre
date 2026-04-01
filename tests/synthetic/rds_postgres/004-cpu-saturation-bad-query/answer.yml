@@ -5,6 +5,8 @@ required_keywords:
   - Performance Insights
 required_evidence_sources:
   - performance_insights
+forbidden_categories:
+  - connection_exhaustion
 optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs

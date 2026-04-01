@@ -4,6 +4,8 @@ required_keywords:
   - write-heavy workload
   - replica
   - wal
+forbidden_categories:
+  - cpu_saturation
 optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs
