@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 SUITE_DIR = Path(__file__).parent.parent
