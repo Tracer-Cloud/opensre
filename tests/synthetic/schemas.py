@@ -165,6 +165,11 @@ class PerformanceInsightsFixture(TypedDict):
 # ---------------------------------------------------------------------------
 
 
+VALID_TRAJECTORY_ACTIONS = frozenset(
+    {"query_grafana_metrics", "query_grafana_logs", "query_grafana_alert_rules"}
+)
+
+
 class AnswerKeySchema(TypedDict):
     root_cause_category: str
     required_keywords: list[str]
@@ -173,6 +178,9 @@ class AnswerKeySchema(TypedDict):
     forbidden_categories: NotRequired[list[str]]      # root_cause_category must NOT be any of these
     forbidden_keywords: NotRequired[list[str]]         # none of these may appear in evidence_text
     required_evidence_sources: NotRequired[list[str]]  # these keys must be non-empty in final_state["evidence"]
+    # Trajectory efficiency (Axis 1)
+    optimal_trajectory: NotRequired[list[str]]        # ordered action names the agent should call
+    max_investigation_loops: NotRequired[int]          # how many investigation loops is acceptable
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +332,19 @@ def validate_answer_key(data: dict[str, Any]) -> AnswerKeySchema:
         val = data.get(opt_list_field)
         if val is not None and not isinstance(val, list):
             raise ValueError(f"answer.yml: '{opt_list_field}' must be a list when present")
+    trajectory = data.get("optimal_trajectory")
+    if trajectory is not None:
+        if not isinstance(trajectory, list) or not trajectory:
+            raise ValueError("answer.yml: 'optimal_trajectory' must be a non-empty list when present")
+        unknown_actions = [a for a in trajectory if a not in VALID_TRAJECTORY_ACTIONS]
+        if unknown_actions:
+            raise ValueError(
+                f"answer.yml: unknown action(s) in optimal_trajectory {unknown_actions}; "
+                f"expected subset of {sorted(VALID_TRAJECTORY_ACTIONS)}"
+            )
+    max_loops = data.get("max_investigation_loops")
+    if max_loops is not None and (not isinstance(max_loops, int) or max_loops < 1):
+        raise ValueError("answer.yml: 'max_investigation_loops' must be a positive integer when present")
     return data  # type: ignore[return-value]
 
 
@@ -353,7 +374,6 @@ def validate_scenario_metadata(data: dict[str, Any]) -> ScenarioMetadataSchema:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
 
 def _require_str(obj: dict[str, Any], key: str, ctx: str = "") -> None:
     value = obj.get(key)

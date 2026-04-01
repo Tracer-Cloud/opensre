@@ -7,6 +7,12 @@ from tests.synthetic.rds_postgres.run_suite import run_scenario
 from tests.synthetic.rds_postgres.scenario_loader import load_all_scenarios
 from tests.synthetic.schemas import VALID_EVIDENCE_SOURCES
 
+_DEFAULT_PLANNING_ACTIONS = [
+    "query_grafana_logs",
+    "query_grafana_metrics",
+    "query_grafana_alert_rules",
+]
+
 
 class _FakeLLMResponse:
     def __init__(self, content: str) -> None:
@@ -21,8 +27,9 @@ class _FakeStructuredLLM:
     from state (set by make_initial_state) and puts the real alert title into problem_md.
     """
 
-    def __init__(self, model: object) -> None:
+    def __init__(self, model: object, planning_actions: list[str]) -> None:
         self._model = model
+        self._planning_actions = planning_actions
 
     def with_config(self, **_kwargs) -> _FakeStructuredLLM:
         return self
@@ -34,23 +41,26 @@ class _FakeStructuredLLM:
             # alert_name from state populates problem_md (needed for _FakeLLM matching).
             raise ValueError("Fake LLM: use _fallback_details for alert extraction")
 
-        # For InvestigationPlan: return grafana actions so mock evidence is gathered.
+        # For InvestigationPlan: use per-scenario planning actions (from optimal_trajectory).
+        planning_actions = self._planning_actions
+
         class _Plan:
-            actions = ["query_grafana_logs", "query_grafana_metrics", "query_grafana_alert_rules"]
+            actions = planning_actions
             rationale = "Fake plan for synthetic test"
 
         return _Plan()
 
 
 class _FakeLLM:
-    def __init__(self, responses: dict[str, str]) -> None:
+    def __init__(self, responses: dict[str, str], planning_actions: list[str]) -> None:
         self._responses = responses
+        self._planning_actions = planning_actions
 
     def with_config(self, **_kwargs) -> _FakeLLM:
         return self
 
     def with_structured_output(self, model: object) -> _FakeStructuredLLM:
-        return _FakeStructuredLLM(model)
+        return _FakeStructuredLLM(model, self._planning_actions)
 
     def invoke(self, prompt: str) -> _FakeLLMResponse:
         # Match on any key that appears in the prompt (covers scenario_id and alert title).
@@ -115,7 +125,11 @@ def _run_scenario_test(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
         title = str(current.alert.get("title", ""))
         if title:
             responses[title] = current.answer_key.model_response
-    monkeypatch.setattr(llm_client, "_llm", _FakeLLM(responses))
+
+    # Use the scenario's declared optimal_trajectory as the fake LLM's plan so that the
+    # trajectory score captures exactly what each scenario expects from the agent.
+    planning_actions = list(fixture.answer_key.optimal_trajectory) or _DEFAULT_PLANNING_ACTIONS
+    monkeypatch.setattr(llm_client, "_llm", _FakeLLM(responses, planning_actions))
 
     # use_mock_grafana=True runs the full pipeline: plan → investigate (mock backend) → diagnose.
     final_state, score = run_scenario(fixture, use_mock_grafana=True)
@@ -126,6 +140,15 @@ def _run_scenario_test(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
         f"  actual_category={score.actual_category!r}  "
         f"  missing_keywords={score.missing_keywords}"
     )
+
+    if score.trajectory is not None:
+        assert score.trajectory.efficiency_score >= 1.0, (
+            f"{fixture.scenario_id} TRAJECTORY FAIL: "
+            f"sequencing={score.trajectory.sequencing_ok} "
+            f"calibration={score.trajectory.calibration_ok}\n"
+            f"  expected={score.trajectory.expected_sequence}\n"
+            f"  actual={score.trajectory.actual_sequence}"
+        )
 
     monkeypatch.setattr(llm_client, "_llm", None)
 

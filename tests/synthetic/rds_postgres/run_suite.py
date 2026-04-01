@@ -15,6 +15,17 @@ from tests.synthetic.rds_postgres.scenario_loader import (
 
 
 @dataclass(frozen=True)
+class TrajectoryScore:
+    actual_sequence: list[str]    # flattened actions from executed_hypotheses
+    expected_sequence: list[str]  # from answer_key.optimal_trajectory
+    loops_used: int
+    max_loops: int
+    sequencing_ok: bool           # actual_sequence starts with expected_sequence prefix
+    calibration_ok: bool          # loops_used <= max_loops
+    efficiency_score: float       # mean(sequencing_ok, calibration_ok)
+
+
+@dataclass(frozen=True)
 class ScenarioScore:
     scenario_id: str
     passed: bool
@@ -25,6 +36,7 @@ class ScenarioScore:
     matched_keywords: list[str]
     root_cause: str
     failure_reason: str = ""
+    trajectory: TrajectoryScore | None = None
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -71,6 +83,49 @@ def _build_resolved_integrations(
 
 def _normalize_text(value: str) -> str:
     return " ".join(value.lower().split())
+
+
+def score_trajectory(
+    fixture: ScenarioFixture,
+    final_state: dict[str, Any],
+) -> TrajectoryScore | None:
+    """Score the agent's investigation trajectory against the expected sequence.
+
+    Returns None when no optimal_trajectory is declared for the scenario.
+    """
+    expected = list(fixture.answer_key.optimal_trajectory)
+    if not expected:
+        return None
+
+    max_loops = fixture.answer_key.max_investigation_loops
+
+    # Flatten all actions across every investigation loop (order preserved)
+    executed_hypotheses: list[dict[str, Any]] = final_state.get("executed_hypotheses") or []
+    actual_sequence: list[str] = []
+    for hyp in executed_hypotheses:
+        for action in hyp.get("actions", []):
+            actual_sequence.append(action)
+
+    loops_used: int = int(final_state.get("investigation_loop_count") or len(executed_hypotheses))
+
+    # Sequencing: all expected actions must appear in the actual sequence.
+    # Actions run in parallel so completion order is non-deterministic; we check
+    # coverage (set membership) rather than position.  When a real LLM is used,
+    # it may skip actions entirely — that will surface as sequencing_ok=False.
+    sequencing_ok = set(expected) <= set(actual_sequence)
+
+    calibration_ok = loops_used <= max_loops
+    efficiency_score = (int(sequencing_ok) + int(calibration_ok)) / 2.0
+
+    return TrajectoryScore(
+        actual_sequence=actual_sequence,
+        expected_sequence=expected,
+        loops_used=loops_used,
+        max_loops=max_loops,
+        sequencing_ok=sequencing_ok,
+        calibration_ok=calibration_ok,
+        efficiency_score=efficiency_score,
+    )
 
 
 def score_result(fixture: ScenarioFixture, final_state: dict[str, Any]) -> ScenarioScore:
@@ -141,6 +196,7 @@ def score_result(fixture: ScenarioFixture, final_state: dict[str, Any]) -> Scena
                 break
 
     passed = not failure_reason
+    trajectory = score_trajectory(fixture, final_state)
     return ScenarioScore(
         scenario_id=fixture.scenario_id,
         passed=passed,
@@ -151,6 +207,7 @@ def score_result(fixture: ScenarioFixture, final_state: dict[str, Any]) -> Scena
         matched_keywords=matched_keywords,
         root_cause=root_cause,
         failure_reason=failure_reason,
+        trajectory=trajectory,
     )
 
 

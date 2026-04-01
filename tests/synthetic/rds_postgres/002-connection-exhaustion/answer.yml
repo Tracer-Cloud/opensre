@@ -4,6 +4,11 @@ required_keywords:
   - max_connections
   - idle
   - client sessions
+optimal_trajectory:
+  - query_grafana_metrics
+  - query_grafana_logs
+  - query_grafana_alert_rules
+max_investigation_loops: 3
 model_response: |
   ROOT_CAUSE: The database hit connection exhaustion because leaked client sessions consumed nearly all available max_connections even though CPU remained moderate. The outage came from session pressure, not a compute bottleneck.
   ROOT_CAUSE_CATEGORY: resource_exhaustion
