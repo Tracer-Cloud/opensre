@@ -144,7 +144,9 @@ def _run_axis2_scenario_test(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
             responses[title] = current.answer_key.model_response
 
     planning_actions = list(fixture.answer_key.optimal_trajectory) or _DEFAULT_PLANNING_ACTIONS
-    monkeypatch.setattr(llm_client, "_llm", _FakeLLM(responses, planning_actions))
+    fake_llm = _FakeLLM(responses, planning_actions)
+    monkeypatch.setattr(llm_client, "_llm", fake_llm)
+    monkeypatch.setattr(llm_client, "_llm_for_tools", fake_llm)
 
     backend = SelectiveGrafanaBackend(fixture)
 
@@ -187,6 +189,7 @@ def _run_axis2_scenario_test(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
         )
 
     monkeypatch.setattr(llm_client, "_llm", None)
+    monkeypatch.setattr(llm_client, "_llm_for_tools", None)
 
 
 @pytest.mark.axis2

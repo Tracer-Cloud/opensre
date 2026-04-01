@@ -129,7 +129,9 @@ def _run_scenario_test(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
     # Use the scenario's declared optimal_trajectory as the fake LLM's plan so that the
     # trajectory score captures exactly what each scenario expects from the agent.
     planning_actions = list(fixture.answer_key.optimal_trajectory) or _DEFAULT_PLANNING_ACTIONS
-    monkeypatch.setattr(llm_client, "_llm", _FakeLLM(responses, planning_actions))
+    fake_llm = _FakeLLM(responses, planning_actions)
+    monkeypatch.setattr(llm_client, "_llm", fake_llm)
+    monkeypatch.setattr(llm_client, "_llm_for_tools", fake_llm)
 
     # use_mock_grafana=True runs the full pipeline: plan → investigate (mock backend) → diagnose.
     final_state, score = run_scenario(fixture, use_mock_grafana=True)
@@ -151,6 +153,7 @@ def _run_scenario_test(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
         )
 
     monkeypatch.setattr(llm_client, "_llm", None)
+    monkeypatch.setattr(llm_client, "_llm_for_tools", None)
 
 
 @pytest.mark.synthetic

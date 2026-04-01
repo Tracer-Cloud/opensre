@@ -52,11 +52,11 @@ def sync_provider_env(
     env_path: Path | None = None,
 ) -> Path:
     """Write the selected provider settings into the project .env."""
-    return sync_env_values(
-        {
-            "LLM_PROVIDER": provider.value,
-            provider.api_key_env: api_key,
-            provider.model_env: model,
-        },
-        env_path=env_path,
-    )
+    values: dict[str, str] = {
+        "LLM_PROVIDER": provider.value,
+        provider.api_key_env: api_key,
+        provider.model_env: model,
+    }
+    if provider.legacy_model_env:
+        values[provider.legacy_model_env] = model
+    return sync_env_values(values, env_path=env_path)

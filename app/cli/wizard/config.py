@@ -30,6 +30,8 @@ class ProviderOption:
     model_env: str
     default_model: str
     models: tuple[ModelOption, ...]
+    #: If set, ``sync_provider_env`` also writes this key (same value) for legacy .env files.
+    legacy_model_env: str | None = None
 
 
 ANTHROPIC_MODELS = (
@@ -39,6 +41,7 @@ ANTHROPIC_MODELS = (
 
 OPENAI_MODELS = (
     ModelOption(value=OPENAI_REASONING_MODEL, label="GPT-4o"),
+    ModelOption(value="gpt-5-mini", label="GPT-5 mini"),
     ModelOption(value="gpt-4-turbo", label="GPT-4 Turbo"),
     ModelOption(value="gpt-4", label="GPT-4"),
 )
@@ -52,6 +55,7 @@ SUPPORTED_PROVIDERS = (
         model_env="ANTHROPIC_REASONING_MODEL",
         default_model=REASONING_MODEL,
         models=ANTHROPIC_MODELS,
+        legacy_model_env="ANTHROPIC_MODEL",
     ),
     ProviderOption(
         value="openai",
@@ -61,6 +65,7 @@ SUPPORTED_PROVIDERS = (
         model_env="OPENAI_REASONING_MODEL",
         default_model=OPENAI_REASONING_MODEL,
         models=OPENAI_MODELS,
+        legacy_model_env="OPENAI_MODEL",
     ),
 )
 

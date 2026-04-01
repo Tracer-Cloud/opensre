@@ -25,4 +25,5 @@ def test_sync_provider_env_updates_provider_specific_keys(tmp_path) -> None:
     assert content.count("LLM_PROVIDER=") == 1
     assert "LLM_PROVIDER=openai\n" in content
     assert "OPENAI_API_KEY=new-key\n" in content
+    assert "OPENAI_REASONING_MODEL=gpt-5-mini\n" in content
     assert "OPENAI_MODEL=gpt-5-mini\n" in content

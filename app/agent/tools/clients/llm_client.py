@@ -317,6 +317,22 @@ _llm: LLMClient | OpenAILLMClient | None = None
 _llm_for_tools: LLMClient | OpenAILLMClient | None = None
 
 
+def reset_llm_singletons() -> None:
+    """Clear cached LLM clients (tests, benchmarks, alternate configs)."""
+    global _llm, _llm_for_tools
+    _llm = None
+    _llm_for_tools = None
+
+
+def _env_or(*keys: str, default: str) -> str:
+    """First non-empty environment value among *keys*, else *default*."""
+    for key in keys:
+        val = (os.getenv(key) or "").strip()
+        if val:
+            return val
+    return default
+
+
 def get_llm_for_reasoning() -> LLMClient | OpenAILLMClient:
     """
     Get or create the LLM client singleton for complex reasoning tasks.
@@ -334,15 +350,25 @@ def get_llm_for_reasoning() -> LLMClient | OpenAILLMClient:
         if provider == "openai":
             from app.config import DEFAULT_MAX_TOKENS, OPENAI_REASONING_MODEL
 
+            model = _env_or(
+                "OPENAI_REASONING_MODEL",
+                "OPENAI_MODEL",
+                default=OPENAI_REASONING_MODEL,
+            )
             _llm = OpenAILLMClient(
-                model=os.getenv("OPENAI_REASONING_MODEL", OPENAI_REASONING_MODEL),
+                model=model,
                 max_tokens=DEFAULT_MAX_TOKENS,
             )
         else:
             from app.config import DEFAULT_MAX_TOKENS, REASONING_MODEL
 
+            model = _env_or(
+                "ANTHROPIC_REASONING_MODEL",
+                "ANTHROPIC_MODEL",
+                default=REASONING_MODEL,
+            )
             _llm = LLMClient(
-                model=os.getenv("ANTHROPIC_REASONING_MODEL", REASONING_MODEL),
+                model=model,
                 max_tokens=DEFAULT_MAX_TOKENS,
             )
     return _llm
@@ -361,15 +387,27 @@ def get_llm_for_tools() -> LLMClient | OpenAILLMClient:
         if provider == "openai":
             from app.config import DEFAULT_MAX_TOKENS, OPENAI_TOOLCALL_MODEL
 
+            model = _env_or(
+                "OPENAI_TOOLCALL_MODEL",
+                "OPENAI_REASONING_MODEL",
+                "OPENAI_MODEL",
+                default=OPENAI_TOOLCALL_MODEL,
+            )
             _llm_for_tools = OpenAILLMClient(
-                model=os.getenv("OPENAI_TOOLCALL_MODEL", OPENAI_TOOLCALL_MODEL),
+                model=model,
                 max_tokens=DEFAULT_MAX_TOKENS,
             )
         else:
             from app.config import DEFAULT_MAX_TOKENS, TOOLCALL_MODEL
 
+            model = _env_or(
+                "ANTHROPIC_TOOLCALL_MODEL",
+                "ANTHROPIC_REASONING_MODEL",
+                "ANTHROPIC_MODEL",
+                default=TOOLCALL_MODEL,
+            )
             _llm_for_tools = LLMClient(
-                model=os.getenv("ANTHROPIC_TOOLCALL_MODEL", TOOLCALL_MODEL),
+                model=model,
                 max_tokens=DEFAULT_MAX_TOKENS,
             )
     return _llm_for_tools

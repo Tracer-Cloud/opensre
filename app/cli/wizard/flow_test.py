@@ -633,11 +633,12 @@ def test_run_wizard_persists_matching_local_config_and_env(monkeypatch, tmp_path
     assert payload["targets"]["local"]["provider"] == "openai"
     assert payload["targets"]["local"]["model"] == "gpt-5-mini"
     assert payload["targets"]["local"]["api_key_env"] == "OPENAI_API_KEY"
-    assert payload["targets"]["local"]["model_env"] == "OPENAI_MODEL"
+    assert payload["targets"]["local"]["model_env"] == "OPENAI_REASONING_MODEL"
     assert payload["targets"]["local"]["api_key"] == "openai-secret"
 
     assert "LLM_PROVIDER=openai\n" in env_values
     assert "OPENAI_API_KEY=openai-secret\n" in env_values
+    assert "OPENAI_REASONING_MODEL=gpt-5-mini\n" in env_values
     assert "OPENAI_MODEL=gpt-5-mini\n" in env_values
 
 
@@ -717,9 +718,10 @@ def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatc
     assert payload["targets"]["local"]["provider"] == "openai"
     assert payload["targets"]["local"]["model"] == "gpt-5-mini"
     assert payload["targets"]["local"]["api_key_env"] == "OPENAI_API_KEY"
-    assert payload["targets"]["local"]["model_env"] == "OPENAI_MODEL"
+    assert payload["targets"]["local"]["model_env"] == "OPENAI_REASONING_MODEL"
     assert payload["targets"]["local"]["api_key"] == "fresh-openai-key"
 
     assert "LLM_PROVIDER=openai\n" in env_values
     assert "OPENAI_API_KEY=fresh-openai-key\n" in env_values
+    assert "OPENAI_REASONING_MODEL=gpt-5-mini\n" in env_values
     assert "OPENAI_MODEL=gpt-5-mini\n" in env_values

@@ -19,6 +19,7 @@ from langchain_core.runnables import RunnableConfig
 import app.agent.graph_pipeline as graph_pipeline
 import app.agent.tools.clients.llm_client as llm_mod
 from app.agent.state import AgentState, make_initial_state
+from app.agent.tools.clients.llm_client import reset_llm_singletons as _reset_llm_singletons
 from tests.benchmarks.toolcall_model_benchmark.pricing import estimate_run_cost_usd
 from tests.synthetic.rds_postgres.run_suite import _build_resolved_integrations
 from tests.synthetic.rds_postgres.scenario_loader import (
@@ -79,8 +80,8 @@ class LangGraphBenchmarkRun:
 
 
 def reset_llm_singletons() -> None:
-    llm_mod._llm = None
-    llm_mod._llm_for_tools = None
+    """Reset LangChain/Anthropic singletons; delegates to app llm_client."""
+    _reset_llm_singletons()
 
 
 def configure_split_models() -> None:
