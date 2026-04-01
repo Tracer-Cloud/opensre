@@ -414,7 +414,7 @@ def _configure_grafana_local() -> tuple[str, str]:
     _console.print(f"[dim]UI: {endpoint}[/]")
     _console.print("[dim]Loki seeded with events_fact pipeline failure logs.[/]")
     _console.print("[dim]Run RCA:[/]")
-    _console.print("[bold]  opensre investigate -i tests/fixtures/grafana_local_alert.json[/]")
+    _console.print("[bold]  opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json[/]")
     return "Grafana Local", str(env_path)
 
 
@@ -773,7 +773,7 @@ def _render_demo_response(demo_response: dict) -> None:
 def _render_next_steps() -> None:
     _console.print("\n[bold]next[/]")
     _console.print("[dim]opensre onboard[/]")
-    _console.print("[dim]opensre investigate -i tests/fixtures/grafana_local_alert.json[/]")
+    _console.print("[dim]opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json[/]")
 
 
 def run_wizard(_argv: list[str] | None = None) -> int:

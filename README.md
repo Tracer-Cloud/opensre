@@ -41,7 +41,7 @@ make install
 # run opensre onboard to configure your local LLM provider
 # and optionally validate/save Grafana, Datadog, Slack, AWS, GitHub MCP, and Sentry integrations
 opensre onboard
-opensre investigate -i tests/fixtures/grafana_local_alert.json
+opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 ```
 
 **Choose a path:**
