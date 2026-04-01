@@ -14,7 +14,7 @@ from langchain_core.tools import StructuredTool
 
 from app.agent.prompts import GENERAL_SYSTEM_PROMPT, ROUTER_PROMPT, SYSTEM_PROMPT
 from app.agent.state import AgentState, ChatMessage
-from app.agent.tools.clients import get_llm
+from app.agent.tools.clients import get_llm_for_tools
 from app.agent.tools.tool_actions.github.github_mcp_actions import (
     get_github_file_contents,
     get_github_repository_tree,
@@ -105,10 +105,10 @@ def _get_chat_llm(*, with_tools: bool = False) -> ChatAnthropic:
 
     if with_tools:
         if _chat_llm_with_tools is None:
-            from app.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL
+            from app.config import DEFAULT_MAX_TOKENS, TOOLCALL_MODEL
 
             base = ChatAnthropic(  # type: ignore[call-arg]
-                model=os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL),
+                model=os.getenv("ANTHROPIC_TOOLCALL_MODEL", TOOLCALL_MODEL),
                 max_tokens=DEFAULT_MAX_TOKENS,
                 streaming=True,
             )
@@ -116,10 +116,10 @@ def _get_chat_llm(*, with_tools: bool = False) -> ChatAnthropic:
         return _chat_llm_with_tools  # type: ignore[return-value]
 
     if _chat_llm is None:
-        from app.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL
+        from app.config import DEFAULT_MAX_TOKENS, REASONING_MODEL
 
         _chat_llm = ChatAnthropic(  # type: ignore[call-arg]
-            model=os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL),
+            model=os.getenv("ANTHROPIC_REASONING_MODEL", REASONING_MODEL),
             max_tokens=DEFAULT_MAX_TOKENS,
             streaming=True,
         )
@@ -135,7 +135,7 @@ def router_node(state: AgentState) -> dict[str, Any]:
     if not msgs or msgs[-1].get("role") != "user":
         return {"route": "general"}
 
-    response = get_llm().invoke([
+    response = get_llm_for_tools().invoke([
         {"role": "system", "content": ROUTER_PROMPT},
         {"role": "user", "content": str(msgs[-1].get("content", ""))},
     ])

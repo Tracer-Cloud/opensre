@@ -19,7 +19,7 @@ import httpx
 from mcp import ClientSession, StdioServerParameters, types  # type: ignore[import-not-found]
 from mcp.client.sse import sse_client  # type: ignore[import-not-found]
 from mcp.client.stdio import stdio_client  # type: ignore[import-not-found]
-from mcp.client.streamable_http import streamable_http_client  # type: ignore[import-not-found]
+from mcp.client.streamable_http import streamablehttp_client  # type: ignore[import-not-found]
 
 DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 DEFAULT_GITHUB_MCP_MODE = "streamable-http"
@@ -157,7 +157,7 @@ async def _open_github_mcp_session(config: GitHubMCPConfig) -> AsyncIterator[Cli
                 )
             )
             read_stream, write_stream, _ = await stack.enter_async_context(
-                streamable_http_client(config.url, http_client=http_client)
+                streamablehttp_client(config.url, http_client=http_client)  # type: ignore[call-arg]
             )
         else:
             raise ValueError(

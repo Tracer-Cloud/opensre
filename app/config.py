@@ -63,8 +63,10 @@ def get_clerk_config() -> ClerkConfig:
 # JWT Configuration
 JWT_ALGORITHM = "RS256"
 JWKS_CACHE_TTL_SECONDS = 3600
-DEFAULT_MODEL = "claude-opus-4-20250514"
-DEFAULT_OPENAI_MODEL = "gpt-5.2"
+REASONING_MODEL = "claude-opus-4-20250514"
+TOOLCALL_MODEL = "claude-haiku-4-5-20251001"
+OPENAI_REASONING_MODEL = "gpt-4o"
+OPENAI_TOOLCALL_MODEL = "gpt-4o-mini"
 DEFAULT_MAX_TOKENS = 4096
 
 # Tracer API Configuration

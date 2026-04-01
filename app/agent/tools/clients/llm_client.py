@@ -314,33 +314,65 @@ def _extract_json_payload(text: str) -> Any:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _llm: LLMClient | OpenAILLMClient | None = None
+_llm_for_tools: LLMClient | OpenAILLMClient | None = None
 
 
-def get_llm() -> LLMClient | OpenAILLMClient:
+def get_llm_for_reasoning() -> LLMClient | OpenAILLMClient:
     """
-    Get or create the LLM client singleton.
+    Get or create the LLM client singleton for complex reasoning tasks.
+
+    Uses the full-capability model (e.g., Claude Opus, GPT-4o) for:
+    - Root cause diagnosis and multi-step analysis
+    - Evidence categorization and claim validation
 
     Provider is controlled by the LLM_PROVIDER env var (default: anthropic).
-    Set LLM_PROVIDER=openai to use OpenAI with OPENAI_API_KEY and OPENAI_MODEL.
+    Set LLM_PROVIDER=openai to use OpenAI with OPENAI_API_KEY and OPENAI_REASONING_MODEL.
     """
     global _llm
     if _llm is None:
         provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
         if provider == "openai":
-            from app.config import DEFAULT_MAX_TOKENS, DEFAULT_OPENAI_MODEL
+            from app.config import DEFAULT_MAX_TOKENS, OPENAI_REASONING_MODEL
 
             _llm = OpenAILLMClient(
-                model=os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
+                model=os.getenv("OPENAI_REASONING_MODEL", OPENAI_REASONING_MODEL),
                 max_tokens=DEFAULT_MAX_TOKENS,
             )
         else:
-            from app.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL
+            from app.config import DEFAULT_MAX_TOKENS, REASONING_MODEL
 
             _llm = LLMClient(
-                model=os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL),
+                model=os.getenv("ANTHROPIC_REASONING_MODEL", REASONING_MODEL),
                 max_tokens=DEFAULT_MAX_TOKENS,
             )
     return _llm
+
+
+def get_llm_for_tools() -> LLMClient | OpenAILLMClient:
+    """
+    Get or create a lightweight LLM client for tool selection and action planning.
+
+    Uses TOOLCALL_MODEL (default: Claude Haiku for Anthropic, GPT-4o mini for OpenAI)
+    for lower cost and faster inference on simple routing decisions.
+    """
+    global _llm_for_tools
+    if _llm_for_tools is None:
+        provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
+        if provider == "openai":
+            from app.config import DEFAULT_MAX_TOKENS, OPENAI_TOOLCALL_MODEL
+
+            _llm_for_tools = OpenAILLMClient(
+                model=os.getenv("OPENAI_TOOLCALL_MODEL", OPENAI_TOOLCALL_MODEL),
+                max_tokens=DEFAULT_MAX_TOKENS,
+            )
+        else:
+            from app.config import DEFAULT_MAX_TOKENS, TOOLCALL_MODEL
+
+            _llm_for_tools = LLMClient(
+                model=os.getenv("ANTHROPIC_TOOLCALL_MODEL", TOOLCALL_MODEL),
+                max_tokens=DEFAULT_MAX_TOKENS,
+            )
+    return _llm_for_tools
 
 
 # ─────────────────────────────────────────────────────────────────────────────

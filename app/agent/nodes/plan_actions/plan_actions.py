@@ -11,7 +11,7 @@ from app.agent.nodes.plan_actions.build_prompt import (
 from app.agent.nodes.plan_actions.detect_sources import detect_sources
 from app.agent.nodes.plan_actions.extract_keywords import extract_keywords
 from app.agent.output import debug_print
-from app.agent.tools.clients import get_llm
+from app.agent.tools.clients import get_llm_for_tools
 from app.agent.tools.tool_actions.investigation_registry import (
     get_available_actions,
     get_prioritized_actions,
@@ -64,7 +64,7 @@ def plan_actions(
     if not available_action_names:
         return None, available_sources, available_action_names, available_actions
 
-    llm = get_llm()
+    llm = get_llm_for_tools()
 
     plan = plan_actions_with_llm(
         llm=llm,

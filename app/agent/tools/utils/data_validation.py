@@ -19,6 +19,8 @@ class ValidationIssue:
 class MetricsValidator:
     """Validates and normalizes metrics data from APIs."""
 
+    issues: list[ValidationIssue]
+
     # Define reasonable bounds for metrics
     METRIC_BOUNDS = {
         "memory_percent": (0, 100),
@@ -29,8 +31,8 @@ class MetricsValidator:
     # Common unit conversion patterns
     LIKELY_BYTE_TO_PERCENT_THRESHOLD = 1000  # If "percent" > 1000, probably bytes
 
-    def __init__(self):
-        self.issues: list[ValidationIssue] = []
+    def __init__(self) -> None:
+        self.issues = []
 
     def validate_metrics(self, metrics: dict) -> dict:
         """

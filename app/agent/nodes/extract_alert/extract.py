@@ -6,7 +6,7 @@ from typing import Any, cast
 from app.agent.nodes.extract_alert.models import AlertDetails, AlertExtractionInput
 from app.agent.output import debug_print
 from app.agent.state import InvestigationState
-from app.agent.tools.clients import get_llm
+from app.agent.tools.clients import get_llm_for_reasoning
 
 
 def extract_alert_details(state: InvestigationState) -> AlertDetails:
@@ -39,7 +39,7 @@ Extract these fields from the message text:
 Message:
 {text}
 """
-    llm = get_llm()
+    llm = get_llm_for_reasoning()
     try:
         details = cast(
             AlertDetails,

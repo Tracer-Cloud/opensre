@@ -6,7 +6,7 @@ from langsmith import traceable
 
 from app.agent.output import debug_print, get_tracker
 from app.agent.state import InvestigationState
-from app.agent.tools.clients import get_llm, parse_root_cause
+from app.agent.tools.clients import get_llm_for_reasoning, parse_root_cause
 
 from .claim_validator import calculate_validity_score, validate_and_categorize_claims
 from .evidence_checker import (
@@ -59,7 +59,7 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     prompt = build_diagnosis_prompt(state, evidence, "")
 
     debug_print("Invoking LLM for root cause analysis...")
-    llm = get_llm()
+    llm = get_llm_for_reasoning()
     response = llm.with_config(run_name="LLM – Analyze evidence and propose root cause").invoke(
         prompt
     )
