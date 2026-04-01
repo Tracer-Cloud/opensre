@@ -4,7 +4,7 @@ required_keywords:
   - autoscal
   - no active
 required_evidence_sources:
-  - rds_events
+  - aws_rds_events
 ruling_out_keywords:
   # "recovered" — agent must note the storage has recovered to a safe level
   # "autoscal" — agent must attribute the resolution to storage autoscaling
@@ -22,14 +22,14 @@ model_response: |
   ROOT_CAUSE_CATEGORY: healthy
 
   VALIDATED_CLAIMS:
-  - FreeStorageSpace dropped from 30 GB to 3.5 GB between 15:00Z and 15:11Z, driven by a write burst reaching 8,100 WriteIOPS. [evidence: rds_metrics]
-  - RDS events confirm storage autoscaling was triggered at 15:08Z and completed at 15:13Z, expanding allocated storage from 100 GB to 200 GB. FreeStorageSpace jumped back to ~110 GB at 15:13Z. [evidence: rds_events]
-  - At investigation time (15:15Z onward), FreeStorageSpace shows 200 GB — the full post-expansion value — confirming the recovery is complete. No active storage pressure exists. [evidence: rds_metrics]
-  - CPUUtilization is at 18% — entirely normal for this instance class and workload pattern. There is no CPU saturation. [evidence: rds_metrics]
-  - DatabaseConnections are stable at 87-93 — well within normal range and not approaching any ceiling. There is no connection exhaustion. [evidence: rds_metrics]
-  - WriteLatency peaked at 21ms during the storage pressure window (15:08-15:12Z) and returned to 1ms baseline after autoscaling completed. No active latency issue remains. [evidence: rds_metrics]
-  - Performance Insights shows normal write workload (1.4 AAS on INSERT, IO:DataFileWrite dominant) with db_load of 0.7-0.8 AAS post-recovery — well within normal bounds. [evidence: performance_insights]
-  - ReplicaLag remained under 2 seconds throughout, peaking briefly at 2.1s during the write burst. No replication issue. [evidence: rds_metrics]
+  - FreeStorageSpace dropped from 30 GB to 3.5 GB between 15:00Z and 15:11Z, driven by a write burst reaching 8,100 WriteIOPS. [evidence: aws_cloudwatch_metrics]
+  - RDS events confirm storage autoscaling was triggered at 15:08Z and completed at 15:13Z, expanding allocated storage from 100 GB to 200 GB. FreeStorageSpace jumped back to ~110 GB at 15:13Z. [evidence: aws_rds_events]
+  - At investigation time (15:15Z onward), FreeStorageSpace shows 200 GB — the full post-expansion value — confirming the recovery is complete. No active storage pressure exists. [evidence: aws_cloudwatch_metrics]
+  - CPUUtilization is at 18% — entirely normal for this instance class and workload pattern. There is no CPU saturation. [evidence: aws_cloudwatch_metrics]
+  - DatabaseConnections are stable at 87-93 — well within normal range and not approaching any ceiling. There is no connection exhaustion. [evidence: aws_cloudwatch_metrics]
+  - WriteLatency peaked at 21ms during the storage pressure window (15:08-15:12Z) and returned to 1ms baseline after autoscaling completed. No active latency issue remains. [evidence: aws_cloudwatch_metrics]
+  - Performance Insights shows normal write workload (1.4 AAS on INSERT, IO:DataFileWrite dominant) with db_load of 0.7-0.8 AAS post-recovery — well within normal bounds. [evidence: aws_performance_insights]
+  - ReplicaLag remained under 2 seconds throughout, peaking briefly at 2.1s during the write burst. No replication issue. [evidence: aws_cloudwatch_metrics]
 
   NON_VALIDATED_CLAIMS:
   - The write burst that triggered the storage pressure appears to be a normal order processing peak rather than a runaway process — the write rate returned to baseline without intervention.

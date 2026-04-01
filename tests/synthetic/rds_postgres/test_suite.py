@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import json
+import textwrap
+from pathlib import Path
+
 import pytest
 
 from app.integrations.clients import llm_client
 from tests.synthetic.rds_postgres.run_suite import run_scenario
-from tests.synthetic.rds_postgres.scenario_loader import load_all_scenarios
+from tests.synthetic.rds_postgres.scenario_loader import (
+    SUITE_DIR,
+    load_all_scenarios,
+    load_scenario,
+)
 from tests.synthetic.schemas import VALID_EVIDENCE_SOURCES
 
 _DEFAULT_PLANNING_ACTIONS = [
@@ -182,3 +190,177 @@ def test_level3_scenario(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
 def test_level4_scenario(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
     """Level 4 — compositional fault, two failure modes causally linked."""
     _run_scenario_test(monkeypatch, fixture)
+
+
+# ---------------------------------------------------------------------------
+# Scenario inheritance unit tests
+# ---------------------------------------------------------------------------
+
+
+def _write_minimal_answer_yml(scenario_dir: Path) -> None:
+    (scenario_dir / "answer.yml").write_text(textwrap.dedent("""\
+        root_cause_category: test_category
+        required_keywords:
+          - test_keyword
+        model_response: "Test model response."
+    """))
+
+
+class TestScenarioInheritance:
+    """Verify base-inheritance and evidence-file fallback in scenario_loader."""
+
+    def test_metadata_inherited_from_base(self, tmp_path: Path) -> None:
+        """Scenario with base: 000-healthy inherits metadata fields it omits."""
+        scenario_dir = tmp_path / "999-test-inherit"
+        scenario_dir.mkdir()
+
+        (scenario_dir / "scenario.yml").write_text(textwrap.dedent("""\
+            base: 000-healthy
+            scenario_id: 999-test-inherit
+            failure_mode: cpu_saturation
+            severity: critical
+        """))
+        _write_minimal_answer_yml(scenario_dir)
+
+        # Symlink the suite directory so _resolve_base_dir can find 000-healthy.
+        # We place our scenario inside the real suite dir temporarily.
+        real_dir = SUITE_DIR / "999-test-inherit"
+        real_dir.mkdir(exist_ok=True)
+        try:
+            for f in scenario_dir.iterdir():
+                (real_dir / f.name).write_bytes(f.read_bytes())
+
+            fixture = load_scenario(real_dir)
+
+            assert fixture.metadata.scenario_id == "999-test-inherit"
+            assert fixture.metadata.failure_mode == "cpu_saturation"
+            assert fixture.metadata.severity == "critical"
+            # These should be inherited from 000-healthy:
+            assert fixture.metadata.engine == "postgres"
+            assert fixture.metadata.engine_version == "15"
+            assert fixture.metadata.instance_class == "db.r6g.2xlarge"
+            assert fixture.metadata.region == "us-east-1"
+            assert fixture.metadata.db_instance_identifier == "payments-prod"
+            assert fixture.metadata.db_cluster == "payments-cluster"
+            assert fixture.metadata.schema_version == "1.0"
+            assert "aws_cloudwatch_metrics" in fixture.metadata.available_evidence
+        finally:
+            for f in real_dir.iterdir():
+                f.unlink()
+            real_dir.rmdir()
+
+    def test_evidence_falls_back_to_base(self) -> None:
+        """Scenario without evidence files loads them from the base."""
+        real_dir = SUITE_DIR / "999-test-fallback"
+        real_dir.mkdir(exist_ok=True)
+        try:
+            (real_dir / "scenario.yml").write_text(textwrap.dedent("""\
+                base: 000-healthy
+                scenario_id: 999-test-fallback
+                failure_mode: healthy
+                severity: info
+            """))
+            _write_minimal_answer_yml(real_dir)
+
+            fixture = load_scenario(real_dir)
+
+            # Evidence should come from 000-healthy (non-None since base has all three)
+            assert fixture.evidence.aws_cloudwatch_metrics is not None
+            assert fixture.evidence.aws_rds_events is not None
+            assert fixture.evidence.aws_performance_insights is not None
+
+            # Alert should also fall back to 000-healthy's
+            assert fixture.alert["state"] == "normal"
+            assert "payments-prod" in fixture.alert["title"]
+        finally:
+            for f in real_dir.iterdir():
+                f.unlink()
+            real_dir.rmdir()
+
+    def test_local_evidence_overrides_base(self) -> None:
+        """Scenario with its own evidence file uses it instead of the base's."""
+        real_dir = SUITE_DIR / "999-test-override"
+        real_dir.mkdir(exist_ok=True)
+        try:
+            (real_dir / "scenario.yml").write_text(textwrap.dedent("""\
+                base: 000-healthy
+                scenario_id: 999-test-override
+                failure_mode: healthy
+                severity: info
+            """))
+            _write_minimal_answer_yml(real_dir)
+
+            custom_events = {"events": [{
+                "date": "2026-04-01T00:00:00Z",
+                "message": "Custom test event",
+                "source_identifier": "payments-prod",
+                "source_type": "db-instance",
+                "event_categories": ["notification"],
+            }]}
+            (real_dir / "aws_rds_events.json").write_text(json.dumps(custom_events))
+
+            fixture = load_scenario(real_dir)
+
+            assert fixture.evidence.aws_rds_events is not None
+            assert len(fixture.evidence.aws_rds_events) == 1
+            assert fixture.evidence.aws_rds_events[0]["message"] == "Custom test event"
+        finally:
+            for f in real_dir.iterdir():
+                f.unlink()
+            real_dir.rmdir()
+
+    def test_chained_inheritance_rejected(self) -> None:
+        """Declaring base on a scenario that itself has a base raises ValueError."""
+        real_dir = SUITE_DIR / "999-test-chain-a"
+        real_dir_b = SUITE_DIR / "999-test-chain-b"
+        real_dir.mkdir(exist_ok=True)
+        real_dir_b.mkdir(exist_ok=True)
+        try:
+            (real_dir.joinpath("scenario.yml")).write_text(textwrap.dedent("""\
+                base: 000-healthy
+                scenario_id: 999-test-chain-a
+                failure_mode: healthy
+                severity: info
+            """))
+            (real_dir_b / "scenario.yml").write_text(textwrap.dedent("""\
+                base: 999-test-chain-a
+                scenario_id: 999-test-chain-b
+                failure_mode: healthy
+                severity: info
+            """))
+            _write_minimal_answer_yml(real_dir_b)
+
+            with pytest.raises(ValueError, match="Chained inheritance is not supported"):
+                load_scenario(real_dir_b)
+        finally:
+            for d in (real_dir, real_dir_b):
+                for f in d.iterdir():
+                    f.unlink()
+                d.rmdir()
+
+    def test_missing_base_raises(self) -> None:
+        """Referencing a non-existent base scenario raises ValueError."""
+        real_dir = SUITE_DIR / "999-test-missing-base"
+        real_dir.mkdir(exist_ok=True)
+        try:
+            (real_dir / "scenario.yml").write_text(textwrap.dedent("""\
+                base: 999-nonexistent
+                scenario_id: 999-test-missing-base
+                failure_mode: healthy
+                severity: info
+            """))
+            _write_minimal_answer_yml(real_dir)
+
+            with pytest.raises(ValueError, match="Base scenario '999-nonexistent' not found"):
+                load_scenario(real_dir)
+        finally:
+            for f in real_dir.iterdir():
+                f.unlink()
+            real_dir.rmdir()
+
+    def test_no_base_works_unchanged(self) -> None:
+        """Scenarios without a base field still load normally."""
+        fixture = load_scenario(SUITE_DIR / "000-healthy")
+        assert fixture.metadata.scenario_id == "000-healthy"
+        assert fixture.metadata.failure_mode == "healthy"
+        assert fixture.evidence.aws_cloudwatch_metrics is not None

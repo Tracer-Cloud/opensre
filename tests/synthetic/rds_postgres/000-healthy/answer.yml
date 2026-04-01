@@ -12,11 +12,11 @@ model_response: |
   ROOT_CAUSE_CATEGORY: healthy
 
   VALIDATED_CLAIMS:
-  - CPUUtilization held between 16-19% throughout the 15-minute window with no upward trend. [evidence: rds_metrics]
-  - DatabaseConnections remained at ~93, far below the instance connection ceiling. [evidence: rds_metrics]
-  - ReplicaLag on payments-prod-replica-1 stayed under 2 seconds — consistent with normal replication heartbeat. [evidence: rds_metrics]
-  - Performance Insights db_load averaged 1.1 active sessions against 8 vCPUs — well under saturation. [evidence: performance_insights]
-  - RDS events show only routine activity: automated backup completion and a parameter group notification. [evidence: rds_events]
+  - CPUUtilization held between 16-19% throughout the 15-minute window with no upward trend. [evidence: aws_cloudwatch_metrics]
+  - DatabaseConnections remained at ~93, far below the instance connection ceiling. [evidence: aws_cloudwatch_metrics]
+  - ReplicaLag on payments-prod-replica-1 stayed under 2 seconds — consistent with normal replication heartbeat. [evidence: aws_cloudwatch_metrics]
+  - Performance Insights db_load averaged 1.1 active sessions against 8 vCPUs — well under saturation. [evidence: aws_performance_insights]
+  - RDS events show only routine activity: automated backup completion and a parameter group notification. [evidence: aws_rds_events]
 
   NON_VALIDATED_CLAIMS:
   - The slight increase in ReadIOPS at 10:12 may indicate a scheduled analytics query but is within normal variance.

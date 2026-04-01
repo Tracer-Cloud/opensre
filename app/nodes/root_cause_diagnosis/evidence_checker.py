@@ -17,9 +17,9 @@ _INVESTIGATED_EVIDENCE_KEYS = frozenset({
     "grafana_logs",
     "grafana_metrics",
     "grafana_alert_rules",
-    "rds_metrics",
-    "rds_events",
-    "performance_insights",
+    "aws_cloudwatch_metrics",
+    "aws_rds_events",
+    "aws_performance_insights",
     "cloudwatch_logs",
     "datadog_logs",
     "datadog_monitors",
@@ -57,9 +57,9 @@ def check_evidence_availability(
         or evidence.get("s3_marker")
         or evidence.get("lambda_function")
         or evidence.get("lambda_logs")
-        or evidence.get("rds_metrics")
-        or evidence.get("rds_events")
-        or evidence.get("performance_insights")
+        or evidence.get("aws_cloudwatch_metrics")
+        or evidence.get("aws_rds_events")
+        or evidence.get("aws_performance_insights")
     )
 
     # Check for evidence in alert annotations or raw text

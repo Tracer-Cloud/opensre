@@ -12,9 +12,6 @@ _ERROR_KEYWORDS = (
     "critical", "killed", "oomkilled", "crash", "panic", "timeout",
 )
 
-_DD_CREDS_KEYS = ("api_key", "app_key", "site")
-
-
 def _dd_creds(dd: dict) -> dict:
     return {
         "api_key": dd.get("api_key"),

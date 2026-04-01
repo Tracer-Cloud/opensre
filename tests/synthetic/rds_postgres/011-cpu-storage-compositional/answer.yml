@@ -5,7 +5,7 @@ required_keywords:
   - analytics
   - audit_log
 required_evidence_sources:
-  - performance_insights
+  - aws_performance_insights
 forbidden_categories:
   - connection_exhaustion
 ruling_out_keywords:
@@ -25,11 +25,11 @@ model_response: |
   ROOT_CAUSE_CATEGORY: resource_exhaustion
 
   VALIDATED_CLAIMS:
-  - CPUUtilization rose from 21% to 91% in 5 minutes, driven by the analytics_reader SELECT query consuming 6.8 AAS with CPU:user as the dominant wait event at 5.9 AAS. [evidence: rds_metrics, performance_insights]
-  - FreeStorageSpace dropped from 50 GB to 8.3 GB across the 20-minute window — a rate of ~2.1 GB/min — driven by 847 audit_log INSERT calls/sec generating IO:DataFileWrite load at 3.8 AAS. [evidence: rds_metrics, performance_insights]
-  - DatabaseConnections grew from 148 to 563 — a consequence of writers blocking behind the growing write queue, not an independent connection pool leak. Connection exhaustion is ruled out as a root cause. [evidence: rds_metrics]
-  - ReplicaLag grew from 1s to 196s because the replica cannot keep up with the high write WAL volume from the audit_log bursts. This is a downstream symptom of the storage/write fault, not an independent replication problem. [evidence: rds_metrics]
-  - RDS events confirm two independent warnings: CPU threshold crossed at 09:08Z and low storage events began at 09:11Z. [evidence: rds_events]
+  - CPUUtilization rose from 21% to 91% in 5 minutes, driven by the analytics_reader SELECT query consuming 6.8 AAS with CPU:user as the dominant wait event at 5.9 AAS. [evidence: aws_cloudwatch_metrics, aws_performance_insights]
+  - FreeStorageSpace dropped from 50 GB to 8.3 GB across the 20-minute window — a rate of ~2.1 GB/min — driven by 847 audit_log INSERT calls/sec generating IO:DataFileWrite load at 3.8 AAS. [evidence: aws_cloudwatch_metrics, aws_performance_insights]
+  - DatabaseConnections grew from 148 to 563 — a consequence of writers blocking behind the growing write queue, not an independent connection pool leak. Connection exhaustion is ruled out as a root cause. [evidence: aws_cloudwatch_metrics]
+  - ReplicaLag grew from 1s to 196s because the replica cannot keep up with the high write WAL volume from the audit_log bursts. This is a downstream symptom of the storage/write fault, not an independent replication problem. [evidence: aws_cloudwatch_metrics]
+  - RDS events confirm two independent warnings: CPU threshold crossed at 09:08Z and low storage events began at 09:11Z. [evidence: aws_rds_events]
 
   NON_VALIDATED_CLAIMS:
   - The two faults starting simultaneously is likely coincidental — the analytics report job and the audit_log write burst appear to be unrelated scheduled jobs that happened to run at the same time.

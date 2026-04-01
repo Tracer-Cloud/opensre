@@ -6,7 +6,7 @@ required_keywords:
 forbidden_categories:
   - cpu_saturation
 required_evidence_sources:
-  - performance_insights
+  - aws_performance_insights
 optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs
@@ -17,10 +17,10 @@ model_response: |
   ROOT_CAUSE_CATEGORY: resource_exhaustion
 
   VALIDATED_CLAIMS:
-  - ReplicaLag grew monotonically from 15 seconds to 1,248 seconds over 20 minutes. [evidence: rds_metrics]
-  - WriteIOPS and TransactionLogsGeneration both spiked sharply at 10:01Z, coinciding with the start of lag growth. [evidence: rds_metrics]
-  - CPUUtilization rose to 75-85% but the rise began after the lag was already accumulating, and the CPU-intensive query is a read-only analytics SELECT. [evidence: rds_metrics]
-  - Performance Insights shows two distinct workloads: a bulk UPDATE generating WAL:Lock waits (5.9 AAS, the root cause) and an analytics SELECT consuming CPU:user (1.8 AAS, the confounder). These are causally independent. [evidence: performance_insights]
+  - ReplicaLag grew monotonically from 15 seconds to 1,248 seconds over 20 minutes. [evidence: aws_cloudwatch_metrics]
+  - WriteIOPS and TransactionLogsGeneration both spiked sharply at 10:01Z, coinciding with the start of lag growth. [evidence: aws_cloudwatch_metrics]
+  - CPUUtilization rose to 75-85% but the rise began after the lag was already accumulating, and the CPU-intensive query is a read-only analytics SELECT. [evidence: aws_cloudwatch_metrics]
+  - Performance Insights shows two distinct workloads: a bulk UPDATE generating WAL:Lock waits (5.9 AAS, the root cause) and an analytics SELECT consuming CPU:user (1.8 AAS, the confounder). These are causally independent. [evidence: aws_performance_insights]
 
   NON_VALIDATED_CLAIMS:
   - Throttling the batch UPDATE or scheduling it during off-peak hours would eliminate the lag.

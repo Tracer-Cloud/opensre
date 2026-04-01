@@ -54,7 +54,7 @@ def _to_structured_tool(fn: Callable[..., Any] | BaseTool) -> StructuredTool:
     """Build a StructuredTool from a plain callable or a BaseTool instance."""
     if isinstance(fn, BaseTool):
         return StructuredTool.from_function(
-            func=fn.run,
+            func=fn.run,  # type: ignore[attr-defined]
             name=fn.name,
             description=fn.description,
             return_direct=False,

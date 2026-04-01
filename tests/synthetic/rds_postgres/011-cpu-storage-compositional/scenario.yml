@@ -1,17 +1,10 @@
-schema_version: "1.0"
+base: 000-healthy
 scenario_id: 011-cpu-storage-compositional
-engine: postgres
-engine_version: "15"
-instance_class: db.r6g.2xlarge
-region: us-east-1
 db_instance_identifier: analytics-prod
+db_cluster: ""
 failure_mode: cpu_saturation
 severity: critical
 scenario_difficulty: 4
 adversarial_signals:
   - DatabaseConnections spikes that suggest connection exhaustion but are caused by blocked writers
   - ReplicaLag elevation from write stall, not an independent replication problem
-available_evidence:
-  - rds_metrics
-  - rds_events
-  - performance_insights

@@ -129,21 +129,21 @@ failure_mode_signatures:
     primary_signals: [ReplicaLag, TransactionLogsGeneration]
     corroborating_signals: [WriteIOPS]
     typical_confounders: [CPUUtilization]
-    required_evidence: [rds_metrics, performance_insights]
+    required_evidence: [aws_cloudwatch_metrics, aws_performance_insights]
     mece_basis: "primary_signal × rate × corroborating_presence"
 
   connection_exhaustion:
     primary_signals: [DatabaseConnections]
     corroborating_signals: [CPUUtilization]
     typical_confounders: [CPUUtilization]
-    required_evidence: [rds_metrics, performance_insights]
+    required_evidence: [aws_cloudwatch_metrics, aws_performance_insights]
     mece_basis: "primary_signal × saturation_level × wait_event_type"
 
   storage_full:
     primary_signals: [FreeStorageSpace]
     corroborating_signals: [WriteIOPS, WriteLatency]
     typical_confounders: [WriteIOPS]  # low IOPS does NOT rule out storage_full
-    required_evidence: [rds_events]   # events alone can confirm when metric is absent
+    required_evidence: [aws_rds_events]   # events alone can confirm when metric is absent
     mece_note: >
       003 and 008 share this failure mode. Distinct fingerprint: 003 has metric
       present+fast-declining with elevated WriteIOPS; 008 has FreeStorageSpace absent
@@ -153,12 +153,12 @@ failure_mode_signatures:
     primary_signals: [CPUUtilization]
     corroborating_signals: [ReadIOPS]
     typical_confounders: [DatabaseConnections]
-    required_evidence: [rds_metrics, performance_insights]
+    required_evidence: [aws_cloudwatch_metrics, aws_performance_insights]
     mece_basis: "primary_signal × query_fingerprint_in_PI"
 
   failover:
     primary_signals: []                # control-plane event IS the decisive signal
     corroborating_signals: [DatabaseConnections]
     typical_confounders: [CPUUtilization, ReplicaLag]
-    required_evidence: [rds_events]
+    required_evidence: [aws_rds_events]
     mece_basis: "event_sequence: Multi-AZ failover initiated → in progress → completed"

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Any, ClassVar
 
 from app.state import EvidenceSource
@@ -17,6 +17,11 @@ class BaseTool(ABC):
     the old ``availability_check`` / ``parameter_extractor`` lambdas.
 
     Instances are directly callable; ``tool(**kwargs)`` delegates to ``run()``.
+
+    Subclasses define ``run()`` with their own explicit signatures for type
+    safety and readability.  The method is **not** declared here to avoid
+    forcing every subclass into a single ``**kwargs`` signature — the
+    ``__call__`` protocol provides the uniform dispatch contract instead.
     """
 
     name: ClassVar[str]
@@ -36,13 +41,8 @@ class BaseTool(ABC):
             for param, info in props.items()
         }
 
-    @abstractmethod
-    def run(self, **kwargs: Any) -> dict[str, Any]:
-        """Execute the tool and return a result dict."""
-        ...
-
     def __call__(self, **kwargs: Any) -> dict[str, Any]:
-        return self.run(**kwargs)
+        return self.run(**kwargs)  # type: ignore[attr-defined, no-any-return]
 
     def is_available(self, _sources: dict[str, dict]) -> bool:
         """Return True when required data sources are present.
