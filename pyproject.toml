@@ -49,6 +49,8 @@ dependencies = [
     "opentelemetry-instrumentation>=0.40b0",
     "opentelemetry-instrumentation-botocore>=0.40b0",
     "opentelemetry-instrumentation-requests>=0.40b0",
+    # Analytics
+    "posthog>=3.0.0",
     # Tracer
     "tracer_decorator",
 ]

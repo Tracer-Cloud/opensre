@@ -18,6 +18,7 @@ export PATH := $(USER_BIN):$(PATH)
 # Create venv and install dependencies
 install:
 	$(PIP) install $(PIP_INSTALL_FLAGS) -e ".[dev]"
+	$(PYTHON) -m app.analytics.install
 
 build:
 	$(PYTHON) -m build
