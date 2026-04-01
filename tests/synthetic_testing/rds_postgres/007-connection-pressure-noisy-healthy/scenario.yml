@@ -1,0 +1,19 @@
+schema_version: "1.0"
+scenario_id: 007-connection-pressure-noisy-healthy
+engine: postgres
+engine_version: "15"
+instance_class: db.r6g.xlarge
+region: us-west-2
+db_instance_identifier: users-prod
+failure_mode: healthy
+severity: warning
+scenario_difficulty: 2
+adversarial_signals:
+  - CPUUtilization
+  - DatabaseConnections
+  - ReadLatency
+depends_on: healthy_rca_state
+available_evidence:
+  - rds_metrics
+  - rds_events
+  - performance_insights

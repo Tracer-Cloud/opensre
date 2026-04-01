@@ -169,6 +169,10 @@ class AnswerKeySchema(TypedDict):
     root_cause_category: str
     required_keywords: list[str]
     model_response: str
+    # Optional adversarial constraints (level 2+ scenarios)
+    forbidden_categories: NotRequired[list[str]]      # root_cause_category must NOT be any of these
+    forbidden_keywords: NotRequired[list[str]]         # none of these may appear in evidence_text
+    required_evidence_sources: NotRequired[list[str]]  # these keys must be non-empty in final_state["evidence"]
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +192,9 @@ class ScenarioMetadataSchema(TypedDict):
     severity: str
     available_evidence: list[str]
     db_cluster: NotRequired[str]
+    scenario_difficulty: NotRequired[int]        # 1–4 curriculum level
+    adversarial_signals: NotRequired[list[str]]  # metrics that are intentional confounders
+    depends_on: NotRequired[str]                 # e.g. "healthy_rca_state" — CI skip flag
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +320,10 @@ def validate_answer_key(data: dict[str, Any]) -> AnswerKeySchema:
     if not all(isinstance(k, str) and k.strip() for k in keywords):
         raise ValueError("answer.yml: all required_keywords must be non-empty strings")
     _require_str(data, "model_response", ctx="answer.yml")
+    for opt_list_field in ("forbidden_categories", "forbidden_keywords", "required_evidence_sources"):
+        val = data.get(opt_list_field)
+        if val is not None and not isinstance(val, list):
+            raise ValueError(f"answer.yml: '{opt_list_field}' must be a list when present")
     return data  # type: ignore[return-value]
 
 

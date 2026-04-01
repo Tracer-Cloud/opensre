@@ -1,0 +1,22 @@
+{
+  "title": "[synthetic-rds] CPU Saturation On catalog-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSCPUUtilizationHigh",
+    "severity": "critical",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "CPUUtilization on catalog-prod has been above 88% for 20 minutes. Database response times are degraded.",
+    "error": "CPU sustained above critical threshold (85%) for 20 consecutive minutes.",
+    "suspected_symptom": "Query response times have increased 10x. Application timeouts are occurring.",
+    "db_instance_identifier": "catalog-prod",
+    "db_instance": "catalog-prod",
+    "cloudwatch_region": "us-west-2",
+    "rds_failure_mode": "cpu_saturation",
+    "context_sources": "cloudwatch"
+  }
+}

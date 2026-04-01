@@ -1,0 +1,32 @@
+{
+  "events": [
+    {
+      "date": "2026-03-27T02:06:12Z",
+      "message": "DB instance storage is getting low. Free storage space: 7.4 GB remaining.",
+      "source_identifier": "orders-prod",
+      "source_type": "db-instance",
+      "event_categories": ["notification", "failure"]
+    },
+    {
+      "date": "2026-03-27T02:09:48Z",
+      "message": "DB instance storage is critically low. Free storage space: 2.5 GB remaining.",
+      "source_identifier": "orders-prod",
+      "source_type": "db-instance",
+      "event_categories": ["notification", "failure"]
+    },
+    {
+      "date": "2026-03-27T02:12:33Z",
+      "message": "DB instance ran out of storage space.",
+      "source_identifier": "orders-prod",
+      "source_type": "db-instance",
+      "event_categories": ["failure"]
+    },
+    {
+      "date": "2026-03-27T02:12:44Z",
+      "message": "DB instance is in an incompatible-restore state due to insufficient storage space. No connections accepted.",
+      "source_identifier": "orders-prod",
+      "source_type": "db-instance",
+      "event_categories": ["failure", "availability"]
+    }
+  ]
+}

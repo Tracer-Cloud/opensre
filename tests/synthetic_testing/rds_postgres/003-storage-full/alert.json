@@ -1,0 +1,22 @@
+{
+  "title": "[synthetic-rds] Storage Space Critical On orders-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSFreeStorageSpaceLow",
+    "severity": "critical",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "FreeStorageSpace on orders-prod dropped from 15 GB to under 500 MB in 15 minutes during a bulk insert workload.",
+    "error": "DB instance storage is critically low. Writes may fail imminently.",
+    "suspected_symptom": "Write operations are slowing and will begin failing as disk reaches capacity.",
+    "db_instance_identifier": "orders-prod",
+    "db_instance": "orders-prod",
+    "cloudwatch_region": "us-east-1",
+    "rds_failure_mode": "storage_full",
+    "context_sources": "cloudwatch"
+  }
+}

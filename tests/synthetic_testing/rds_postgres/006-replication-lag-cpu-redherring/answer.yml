@@ -1,0 +1,27 @@
+root_cause_category: resource_exhaustion
+required_keywords:
+  - replication
+  - WAL
+  - replica
+forbidden_categories:
+  - cpu_saturation
+required_evidence_sources:
+  - performance_insights
+model_response: |
+  ROOT_CAUSE: Replication lag on analytics-prod-replica-1 caused by a write-heavy batch UPDATE job generating WAL faster than the replica could replay. The CPUUtilization elevation (70-85%) is a confounder from an unrelated analytics SELECT query running concurrently — it is not the root cause.
+  ROOT_CAUSE_CATEGORY: resource_exhaustion
+
+  VALIDATED_CLAIMS:
+  - ReplicaLag grew monotonically from 15 seconds to 1,248 seconds over 20 minutes. [evidence: rds_metrics]
+  - WriteIOPS and TransactionLogsGeneration both spiked sharply at 10:01Z, coinciding with the start of lag growth. [evidence: rds_metrics]
+  - CPUUtilization rose to 75-85% but the rise began after the lag was already accumulating, and the CPU-intensive query is a read-only analytics SELECT. [evidence: rds_metrics]
+  - Performance Insights shows two distinct workloads: a bulk UPDATE generating WAL:Lock waits (5.9 AAS, the root cause) and an analytics SELECT consuming CPU:user (1.8 AAS, the confounder). These are causally independent. [evidence: performance_insights]
+
+  NON_VALIDATED_CLAIMS:
+  - Throttling the batch UPDATE or scheduling it during off-peak hours would eliminate the lag.
+
+  CAUSAL_CHAIN:
+  - A batch UPDATE job began processing event_stream at 10:01Z, generating ~180 MB/s of WAL.
+  - The replica (analytics-prod-replica-1) could not replay WAL at this rate, accumulating lag.
+  - An unrelated analytics aggregation query (sales_fact GROUP BY) ran concurrently, elevating CPU to 75-85%.
+  - The CPU elevation is coincidental — the analytics query has no write activity and no causal relationship to the replication lag.

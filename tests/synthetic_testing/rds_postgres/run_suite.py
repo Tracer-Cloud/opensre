@@ -24,6 +24,7 @@ class ScenarioScore:
     missing_keywords: list[str]
     matched_keywords: list[str]
     root_cause: str
+    failure_reason: str = ""
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -102,11 +103,36 @@ def score_result(fixture: ScenarioFixture, final_state: dict[str, Any]) -> Scena
         if keyword not in matched_keywords
     ]
 
-    passed = (
-        root_cause_present
-        and actual_category == fixture.answer_key.root_cause_category
-        and not missing_keywords
-    )
+    answer_key = fixture.answer_key
+    failure_reason = ""
+
+    # 1. Category match
+    if not root_cause_present:
+        failure_reason = "no root cause in output"
+    elif actual_category != answer_key.root_cause_category:
+        failure_reason = f"wrong category: got {actual_category!r}, expected {answer_key.root_cause_category!r}"
+    elif missing_keywords:
+        failure_reason = f"missing required keywords: {missing_keywords}"
+    # 2. Forbidden category check (level 2+ adversarial)
+    elif answer_key.forbidden_categories and actual_category in answer_key.forbidden_categories:
+        failure_reason = f"forbidden category in output: {actual_category!r}"
+    # 3. Forbidden keyword check — none of these may appear in evidence_text
+    elif answer_key.forbidden_keywords:
+        forbidden_hits = [
+            kw for kw in answer_key.forbidden_keywords
+            if _normalize_text(kw) in normalized_output
+        ]
+        if forbidden_hits:
+            failure_reason = f"forbidden keywords in output: {forbidden_hits}"
+    # 4. Evidence path check — required sources must be non-empty in final_state["evidence"]
+    if not failure_reason and answer_key.required_evidence_sources:
+        evidence = final_state.get("evidence") or {}
+        for source_key in answer_key.required_evidence_sources:
+            if not evidence.get(source_key):
+                failure_reason = f"required evidence not gathered: {source_key!r}"
+                break
+
+    passed = not failure_reason
     return ScenarioScore(
         scenario_id=fixture.scenario_id,
         passed=passed,
@@ -116,6 +142,7 @@ def score_result(fixture: ScenarioFixture, final_state: dict[str, Any]) -> Scena
         missing_keywords=missing_keywords,
         matched_keywords=matched_keywords,
         root_cause=root_cause,
+        failure_reason=failure_reason,
     )
 
 
@@ -161,11 +188,8 @@ def run_suite(argv: list[str] | None = None) -> list[ScenarioScore]:
     else:
         for result in results:
             status = "PASS" if result.passed else "FAIL"
-            print(
-                f"{status} {result.scenario_id} "
-                f"category={result.actual_category} "
-                f"missing_keywords={len(result.missing_keywords)}"
-            )
+            detail = f"reason={result.failure_reason!r}" if result.failure_reason else f"category={result.actual_category}"
+            print(f"{status} {result.scenario_id} {detail}")
 
         passed_count = sum(1 for result in results if result.passed)
         print(f"\nResults: {passed_count}/{len(results)} passed")

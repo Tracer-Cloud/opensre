@@ -1,0 +1,24 @@
+{
+  "title": "[synthetic-rds] Replication Lag And High CPU On analytics-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSReplicationLagHigh",
+    "severity": "critical",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "ReplicaLag on analytics-prod-replica-1 exceeded 1000 seconds. CPUUtilization is also elevated at 75–85%, suggesting potential resource contention.",
+    "error": "Replication lag and elevated CPU detected simultaneously. Root cause unclear.",
+    "suspected_symptom": "Read replica is returning stale data. Analytics dashboards show data from 20 minutes ago.",
+    "db_instance_identifier": "analytics-prod",
+    "db_instance": "analytics-prod",
+    "db_cluster": "analytics-cluster",
+    "read_replica": "analytics-prod-replica-1",
+    "cloudwatch_region": "us-east-1",
+    "rds_failure_mode": "replication_lag",
+    "context_sources": "cloudwatch"
+  }
+}

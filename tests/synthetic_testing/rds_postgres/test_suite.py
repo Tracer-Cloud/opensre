@@ -100,8 +100,12 @@ def test_scenario_evidence_matches_available_evidence() -> None:
 _ALL_SCENARIOS = load_all_scenarios()
 
 
-@pytest.mark.parametrize("fixture", _ALL_SCENARIOS, ids=lambda fixture: fixture.scenario_id)
-def test_run_scenario_scores_expected_rds_answer(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
+def _by_difficulty(level: int) -> list:
+    return [f for f in _ALL_SCENARIOS if f.metadata.scenario_difficulty == level]
+
+
+def _run_scenario_test(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
+    """Shared core logic: wire fake LLM and assert the scenario passes scoring."""
     # Key responses by scenario_id AND alert title so the fake LLM can match on whichever
     # identifier ends up in the diagnosis prompt (depends on whether the full pipeline runs
     # through node_extract_alert or uses the scenario's own problem_md).
@@ -117,8 +121,34 @@ def test_run_scenario_scores_expected_rds_answer(monkeypatch: pytest.MonkeyPatch
     final_state, score = run_scenario(fixture, use_mock_grafana=True)
 
     assert final_state["root_cause"]
-    assert score.actual_category == fixture.answer_key.root_cause_category
-    assert score.missing_keywords == []
-    assert score.passed is True
+    assert score.passed is True, (
+        f"{fixture.scenario_id} FAILED: {score.failure_reason}\n"
+        f"  actual_category={score.actual_category!r}  "
+        f"  missing_keywords={score.missing_keywords}"
+    )
 
     monkeypatch.setattr(llm_client, "_llm", None)
+
+
+@pytest.mark.parametrize("fixture", _by_difficulty(1), ids=lambda f: f.scenario_id)
+def test_level1_scenario(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
+    """Level 1 — single dominant signal, all evidence consistent."""
+    _run_scenario_test(monkeypatch, fixture)
+
+
+@pytest.mark.parametrize("fixture", _by_difficulty(2), ids=lambda f: f.scenario_id)
+def test_level2_scenario(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
+    """Level 2 — one confounder present, second evidence source needed to rule it out."""
+    _run_scenario_test(monkeypatch, fixture)
+
+
+@pytest.mark.parametrize("fixture", _by_difficulty(3), ids=lambda f: f.scenario_id)
+def test_level3_scenario(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
+    """Level 3 — absent or indirect evidence, key metric missing."""
+    _run_scenario_test(monkeypatch, fixture)
+
+
+@pytest.mark.parametrize("fixture", _by_difficulty(4), ids=lambda f: f.scenario_id)
+def test_level4_scenario(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
+    """Level 4 — compositional fault, two failure modes causally linked."""
+    _run_scenario_test(monkeypatch, fixture)

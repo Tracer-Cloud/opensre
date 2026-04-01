@@ -1,0 +1,24 @@
+root_cause_category: infrastructure
+required_keywords:
+  - failover
+  - Multi-AZ
+required_evidence_sources:
+  - rds_events
+model_response: |
+  ROOT_CAUSE: A Multi-AZ automatic failover occurred on payments-prod, triggered by a health check failure on the primary host. The connection drop lasted approximately 45 seconds — the expected duration for a Multi-AZ promotion. The RDS control-plane event sequence is the decisive signal.
+  ROOT_CAUSE_CATEGORY: infrastructure
+
+  VALIDATED_CLAIMS:
+  - DatabaseConnections dropped to 0 at 08:05Z and recovered fully by 08:07Z. [evidence: rds_metrics]
+  - CPUUtilization and WriteIOPS both dropped to near-zero during the same window, confirming the instance was unavailable (not a connection pool issue). [evidence: rds_metrics]
+  - RDS events show: failover initiated (08:04:18Z) → in progress (08:04:21Z) → completed (08:04:58Z) → available (08:05:04Z). [evidence: rds_events]
+  - Performance Insights shows no anomalous queries before or after the failover window. Workload resumed normally afterward. [evidence: performance_insights]
+
+  NON_VALIDATED_CLAIMS:
+  - Application connection retry logic should be reviewed to minimize reconnection time after future failovers.
+
+  CAUSAL_CHAIN:
+  - AWS RDS detected a health check failure on the primary instance in us-east-1a.
+  - Multi-AZ automatic failover was initiated, promoting the standby in us-east-1b to primary.
+  - The DNS endpoint was updated, causing a ~45-second connection interruption.
+  - The instance became available in us-east-1b and workload resumed normally.

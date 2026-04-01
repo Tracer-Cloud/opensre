@@ -1,0 +1,15 @@
+schema_version: "1.0"
+scenario_id: 005-failover
+engine: postgres
+engine_version: "15"
+instance_class: db.r6g.2xlarge
+region: us-east-1
+db_instance_identifier: payments-prod
+db_cluster: payments-cluster
+failure_mode: failover
+severity: critical
+scenario_difficulty: 1
+available_evidence:
+  - rds_metrics
+  - rds_events
+  - performance_insights

@@ -1,0 +1,22 @@
+{
+  "title": "[synthetic-rds] Connection Exhaustion And CPU Saturation On search-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSConnectionsAndCPUCritical",
+    "severity": "critical",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "search-prod is approaching connection limit (95%+ of max) while CPUUtilization is simultaneously at 88-94%. Both metrics crossed critical thresholds. Cause unclear — may be two independent issues or causally linked.",
+    "error": "Dual resource exhaustion: connections and CPU both critical. New connections are being refused.",
+    "suspected_symptom": "Search API is returning 503 errors. Existing queries are slow due to CPU contention.",
+    "db_instance_identifier": "search-prod",
+    "db_instance": "search-prod",
+    "cloudwatch_region": "us-east-1",
+    "rds_failure_mode": "connection_exhaustion",
+    "context_sources": "cloudwatch"
+  }
+}

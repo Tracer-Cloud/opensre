@@ -1,0 +1,11 @@
+{
+  "events": [
+    {
+      "date": "2026-03-27T10:08:41Z",
+      "message": "Read replica analytics-prod-replica-1 replication lag has exceeded 900 seconds.",
+      "source_identifier": "analytics-prod-replica-1",
+      "source_type": "db-instance",
+      "event_categories": ["read replica", "notification"]
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "db_instance_identifier": "search-prod",
+  "start_time": "2026-03-27T20:00:00Z",
+  "end_time": "2026-03-27T20:20:00Z",
+  "db_load": {
+    "timestamps": [
+      "2026-03-27T20:00:00Z", "2026-03-27T20:01:00Z", "2026-03-27T20:02:00Z",
+      "2026-03-27T20:03:00Z", "2026-03-27T20:04:00Z", "2026-03-27T20:05:00Z",
+      "2026-03-27T20:06:00Z", "2026-03-27T20:07:00Z", "2026-03-27T20:08:00Z",
+      "2026-03-27T20:09:00Z", "2026-03-27T20:10:00Z", "2026-03-27T20:11:00Z",
+      "2026-03-27T20:12:00Z", "2026-03-27T20:13:00Z", "2026-03-27T20:14:00Z",
+      "2026-03-27T20:15:00Z", "2026-03-27T20:16:00Z", "2026-03-27T20:17:00Z",
+      "2026-03-27T20:18:00Z", "2026-03-27T20:19:00Z"
+    ],
+    "values": [
+      5.8, 6.1, 6.4, 6.7, 6.9, 7.1, 7.2, 7.3, 7.4, 7.5,
+      7.5, 7.6, 7.6, 7.6, 7.7, 7.7, 7.7, 7.8, 7.8, 7.8
+    ],
+    "unit": "Average Active Sessions"
+  },
+  "top_sql": [
+    {
+      "statement": "SELECT * FROM search_index WHERE user_id = $1 AND status = $2 ORDER BY relevance_score DESC",
+      "db_load_avg": 5.2,
+      "wait_events": [
+        {"name": "Client:ClientRead", "type": "Client", "db_load_avg": 4.1},
+        {"name": "CPU:user", "type": "CPU", "db_load_avg": 1.1}
+      ],
+      "calls_per_sec": 2.1
+    },
+    {
+      "statement": "SELECT si.*, u.name FROM search_index si JOIN users u ON si.user_id = u.id WHERE si.query_hash = $1",
+      "db_load_avg": 2.4,
+      "wait_events": [
+        {"name": "Client:ClientRead", "type": "Client", "db_load_avg": 1.8},
+        {"name": "CPU:user", "type": "CPU", "db_load_avg": 0.6}
+      ],
+      "calls_per_sec": 1.4
+    }
+  ],
+  "top_wait_events": [
+    {"name": "Client:ClientRead", "type": "Client", "db_load_avg": 5.9},
+    {"name": "CPU:user", "type": "CPU", "db_load_avg": 1.7},
+    {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 0.2}
+  ],
+  "top_users": [
+    {"name": "search_svc", "db_load_avg": 7.0},
+    {"name": "search_api", "db_load_avg": 0.6}
+  ],
+  "top_hosts": [
+    {"id": "10.0.7.21", "db_load_avg": 2.6},
+    {"id": "10.0.7.22", "db_load_avg": 2.4},
+    {"id": "10.0.7.23", "db_load_avg": 1.4},
+    {"id": "10.0.7.24", "db_load_avg": 1.2}
+  ]
+}

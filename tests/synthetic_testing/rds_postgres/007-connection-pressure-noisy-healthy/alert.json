@@ -1,0 +1,21 @@
+{
+  "title": "[synthetic-rds] Connection Count Warning On users-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSDatabaseConnectionsHigh",
+    "severity": "warning",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "DatabaseConnections on users-prod oscillating between 55-65% of maximum over the past 20 minutes. No errors reported. Alert fired on warning threshold.",
+    "suspected_symptom": "Connection count is elevated relative to warning threshold. No connection failures observed.",
+    "db_instance_identifier": "users-prod",
+    "db_instance": "users-prod",
+    "cloudwatch_region": "us-west-2",
+    "rds_failure_mode": "healthy",
+    "context_sources": "cloudwatch"
+  }
+}

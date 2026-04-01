@@ -1,0 +1,32 @@
+{
+  "events": [
+    {
+      "date": "2026-03-27T08:04:18Z",
+      "message": "Multi-AZ instance failover initiated. Reason: health check failure on primary host.",
+      "source_identifier": "payments-prod",
+      "source_type": "db-instance",
+      "event_categories": ["failover", "availability"]
+    },
+    {
+      "date": "2026-03-27T08:04:21Z",
+      "message": "DB instance restarting. Multi-AZ failover in progress.",
+      "source_identifier": "payments-prod",
+      "source_type": "db-instance",
+      "event_categories": ["failover", "availability"]
+    },
+    {
+      "date": "2026-03-27T08:04:58Z",
+      "message": "Multi-AZ instance failover completed. payments-prod now running on standby host us-east-1b.",
+      "source_identifier": "payments-prod",
+      "source_type": "db-instance",
+      "event_categories": ["failover", "availability"]
+    },
+    {
+      "date": "2026-03-27T08:05:04Z",
+      "message": "DB instance is available. Accepting connections on new primary in us-east-1b.",
+      "source_identifier": "payments-prod",
+      "source_type": "db-instance",
+      "event_categories": ["availability"]
+    }
+  ]
+}

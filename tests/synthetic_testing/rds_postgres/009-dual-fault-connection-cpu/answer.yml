@@ -1,0 +1,32 @@
+root_cause_category: resource_exhaustion
+required_keywords:
+  - connection
+  - CPU
+  - idle
+  - query
+forbidden_keywords:
+  - storage
+  - replication
+required_evidence_sources:
+  - performance_insights
+model_response: |
+  ROOT_CAUSE: A connection pool leak is causing both the connection exhaustion and CPU saturation simultaneously — they share a single causal root. Leaked connections are holding open long-running search queries that never return results to their callers (Client:ClientRead wait). These idle-but-open connections accumulate, exhausting the connection ceiling while also consuming CPU due to the scan-heavy queries they hold.
+  ROOT_CAUSE_CATEGORY: resource_exhaustion
+
+  VALIDATED_CLAIMS:
+  - DatabaseConnections grew monotonically from 4,612 to 4,998 (99.96% of 5,000 max), with new connections being refused by 20:14Z. [evidence: rds_metrics]
+  - CPUUtilization rose concurrently from 88% to 94% — correlated with, not independent of, the connection growth. [evidence: rds_metrics]
+  - ReadIOPS also rose monotonically (12,840 → 15,320), consistent with increasing scan load from accumulated connections. [evidence: rds_metrics]
+  - Performance Insights shows Client:ClientRead as the dominant wait event at 5.9 AAS — the queries have completed server-side processing but the client is not reading the results, confirming idle-but-open connections. [evidence: performance_insights]
+  - The top two SQL statements are both full-table scans on search_index with no filtering index, each consuming 1-2 CPU AAS per query. At 4,000+ such connections, cumulative CPU reaches saturation. [evidence: performance_insights]
+  - No storage or replication metrics deviate from normal. No infrastructure events. [evidence: rds_metrics, rds_events]
+
+  NON_VALIDATED_CLAIMS:
+  - The connection pool leak likely originates from a search_svc deployment that introduced unbounded connection creation without proper cleanup on query timeout.
+
+  CAUSAL_CHAIN:
+  - A search_svc connection pool bug creates connections faster than it releases them.
+  - Each leaked connection holds an open search_index query waiting on Client:ClientRead (server has finished; client is gone or hung).
+  - As connections accumulate, each one continues to consume CPU from the periodic full-table scans.
+  - The dual signal (connections at ceiling + CPU at 94%) are not two independent faults — they are the same leaked-connection fault expressing itself through two metrics.
+  - Fixing the connection pool cleanup will resolve both the connection exhaustion and the CPU saturation.

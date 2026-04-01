@@ -1,0 +1,26 @@
+root_cause_category: resource_exhaustion
+required_keywords:
+  - CPU
+  - query
+  - Performance Insights
+required_evidence_sources:
+  - performance_insights
+model_response: |
+  ROOT_CAUSE: CPU saturation on catalog-prod caused by a full table scan query (SELECT * FROM orders WHERE status = ?) running at 7.2 out of 8 available vCPUs. The query lacks a selective index on the status column, forcing sequential scans at 16,000–18,000 ReadIOPS.
+  ROOT_CAUSE_CATEGORY: resource_exhaustion
+
+  VALIDATED_CLAIMS:
+  - CPUUtilization sustained 88–97% over the full 20-minute window. [evidence: rds_metrics]
+  - ReadIOPS peaked at 18,100 consistent with repeated full table scans. [evidence: rds_metrics]
+  - DatabaseConnections remained stable at ~160, ruling out connection exhaustion as a factor. [evidence: rds_metrics]
+  - Performance Insights shows "SELECT * FROM orders WHERE status = $1" consuming 7.2 avg active sessions, with CPU:user as the dominant wait event (5.9 AAS). [evidence: performance_insights]
+  - No RDS infrastructure events occurred during the window. [evidence: rds_events]
+
+  NON_VALIDATED_CLAIMS:
+  - Adding a partial index on (status) for non-completed orders would likely reduce CPU load by 80%+.
+
+  CAUSAL_CHAIN:
+  - The orders table has no index on the status column.
+  - api_reader sessions execute repeated full-table scans at 3.8 calls/sec.
+  - Each scan reads ~18,000 IOPS worth of data pages, saturating the CPU at 90%+.
+  - Query response times degraded, causing application-level timeouts.

@@ -1,0 +1,23 @@
+{
+  "title": "[synthetic-rds] Connection Drop Detected On payments-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSDatabaseConnectionsDrop",
+    "severity": "critical",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "DatabaseConnections on payments-prod dropped to 0 for approximately 45 seconds before recovering. Payment processing was interrupted.",
+    "error": "Connection count dropped to zero unexpectedly. Brief outage window detected.",
+    "suspected_symptom": "Payment transactions failed during the connection gap. Services are now reconnecting.",
+    "db_instance_identifier": "payments-prod",
+    "db_instance": "payments-prod",
+    "db_cluster": "payments-cluster",
+    "cloudwatch_region": "us-east-1",
+    "rds_failure_mode": "failover",
+    "context_sources": "cloudwatch"
+  }
+}

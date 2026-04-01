@@ -1,0 +1,22 @@
+{
+  "title": "[synthetic-rds] Write Latency Critical On billing-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSWriteLatencyCritical",
+    "severity": "critical",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "WriteLatency on billing-prod has risen to 30+ seconds and WriteIOPS dropped to zero. CloudWatch storage metric collection appears to have a gap.",
+    "error": "Write operations appear to be blocked. Database may be in an unrecoverable state.",
+    "suspected_symptom": "Billing transactions are failing. Write queries are timing out. Root cause unclear from alert alone.",
+    "db_instance_identifier": "billing-prod",
+    "db_instance": "billing-prod",
+    "cloudwatch_region": "eu-west-1",
+    "rds_failure_mode": "storage_full",
+    "context_sources": "cloudwatch"
+  }
+}

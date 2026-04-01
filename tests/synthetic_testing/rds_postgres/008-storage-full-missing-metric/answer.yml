@@ -1,0 +1,26 @@
+root_cause_category: resource_exhaustion
+required_keywords:
+  - storage
+  - storage space
+required_evidence_sources:
+  - rds_events
+model_response: |
+  ROOT_CAUSE: The RDS instance ran out of storage space. FreeStorageSpace was not captured in the CloudWatch metric fixture (simulating a collection gap), but the root cause is definitively confirmed by: (1) the RDS event "DB instance ran out of storage space" at 03:08:44Z, (2) WriteIOPS collapsing to zero at T+8 min, and (3) WriteLatency climbing to 34 seconds as write queries stalled waiting for disk space that was never available.
+  ROOT_CAUSE_CATEGORY: resource_exhaustion
+
+  VALIDATED_CLAIMS:
+  - WriteIOPS dropped from 1,840 to 0 between 03:07Z and 03:10Z — consistent with writes being blocked by a full disk. [evidence: rds_metrics]
+  - WriteLatency rose from <1ms to 34 seconds over the same window, with writes hanging indefinitely on Lock:relation waits. [evidence: rds_metrics]
+  - CPUUtilization fell from ~31% to under 1% as database activity ceased — the instance was not CPU-bound. [evidence: rds_metrics]
+  - RDS event at 03:08:44Z explicitly states "DB instance ran out of storage space". [evidence: rds_events]
+  - Performance Insights shows write queries accumulating Lock:relation waits (10.1 AAS) with 0 calls/sec throughput — the queries are blocked, not completing. [evidence: performance_insights]
+
+  NON_VALIDATED_CLAIMS:
+  - FreeStorageSpace metric was absent from CloudWatch collection during this window (collection gap). The diagnosis relies on indirect evidence.
+
+  CAUSAL_CHAIN:
+  - Billing write workload gradually consumed storage on billing-prod.
+  - At approximately 03:07Z, FreeStorageSpace reached a critically low threshold.
+  - At 03:08:44Z, the disk became completely full — all write operations began blocking on Lock:relation.
+  - WriteIOPS collapsed to zero as the storage engine could no longer commit any write.
+  - WriteLatency climbed to 34+ seconds as transactions waited indefinitely for storage that was unavailable.

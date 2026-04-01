@@ -1,0 +1,11 @@
+{
+  "events": [
+    {
+      "date": "2026-03-27T16:02:14Z",
+      "message": "Automatic backup for DB instance users-prod completed successfully.",
+      "source_identifier": "users-prod",
+      "source_type": "db-instance",
+      "event_categories": ["backup"]
+    }
+  ]
+}

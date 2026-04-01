@@ -1,0 +1,50 @@
+{
+  "db_instance_identifier": "billing-prod",
+  "start_time": "2026-03-27T03:00:00Z",
+  "end_time": "2026-03-27T03:15:00Z",
+  "db_load": {
+    "timestamps": [
+      "2026-03-27T03:00:00Z", "2026-03-27T03:01:00Z", "2026-03-27T03:02:00Z",
+      "2026-03-27T03:03:00Z", "2026-03-27T03:04:00Z", "2026-03-27T03:05:00Z",
+      "2026-03-27T03:06:00Z", "2026-03-27T03:07:00Z", "2026-03-27T03:08:00Z",
+      "2026-03-27T03:09:00Z", "2026-03-27T03:10:00Z", "2026-03-27T03:11:00Z",
+      "2026-03-27T03:12:00Z", "2026-03-27T03:13:00Z", "2026-03-27T03:14:00Z"
+    ],
+    "values": [
+      1.4, 1.6, 1.5, 1.7, 1.6, 1.8, 1.7, 1.9, 3.8, 7.4, 9.2, 11.4, 12.1, 12.4, 12.3
+    ],
+    "unit": "Average Active Sessions"
+  },
+  "top_sql": [
+    {
+      "statement": "INSERT INTO invoice_line_items (invoice_id, product_id, quantity, unit_price) VALUES ($1, $2, $3, $4)",
+      "db_load_avg": 8.9,
+      "wait_events": [
+        {"name": "Lock:relation", "type": "Lock", "db_load_avg": 7.2},
+        {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 1.7}
+      ],
+      "calls_per_sec": 0.0
+    },
+    {
+      "statement": "UPDATE invoices SET status = $1, updated_at = NOW() WHERE id = $2",
+      "db_load_avg": 3.1,
+      "wait_events": [
+        {"name": "Lock:relation", "type": "Lock", "db_load_avg": 2.9},
+        {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 0.2}
+      ],
+      "calls_per_sec": 0.0
+    }
+  ],
+  "top_wait_events": [
+    {"name": "Lock:relation", "type": "Lock", "db_load_avg": 10.1},
+    {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 1.9}
+  ],
+  "top_users": [
+    {"name": "billing_svc", "db_load_avg": 8.9},
+    {"name": "invoice_writer", "db_load_avg": 3.1}
+  ],
+  "top_hosts": [
+    {"id": "10.0.6.44", "db_load_avg": 8.9},
+    {"id": "10.0.6.45", "db_load_avg": 3.1}
+  ]
+}

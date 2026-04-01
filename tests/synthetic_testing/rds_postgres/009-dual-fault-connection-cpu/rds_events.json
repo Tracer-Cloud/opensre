@@ -1,0 +1,18 @@
+{
+  "events": [
+    {
+      "date": "2026-03-27T20:09:14Z",
+      "message": "DB instance search-prod has 4948 connections, approaching the maximum of 5000.",
+      "source_identifier": "search-prod",
+      "source_type": "db-instance",
+      "event_categories": ["notification"]
+    },
+    {
+      "date": "2026-03-27T20:14:22Z",
+      "message": "DB instance search-prod connection count at 4988. New connections may be refused.",
+      "source_identifier": "search-prod",
+      "source_type": "db-instance",
+      "event_categories": ["notification", "failure"]
+    }
+  ]
+}

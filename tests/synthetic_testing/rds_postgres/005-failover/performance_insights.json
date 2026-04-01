@@ -1,0 +1,52 @@
+{
+  "db_instance_identifier": "payments-prod",
+  "start_time": "2026-03-27T08:00:00Z",
+  "end_time": "2026-03-27T08:15:00Z",
+  "db_load": {
+    "timestamps": [
+      "2026-03-27T08:00:00Z", "2026-03-27T08:01:00Z", "2026-03-27T08:02:00Z",
+      "2026-03-27T08:03:00Z", "2026-03-27T08:04:00Z", "2026-03-27T08:05:00Z",
+      "2026-03-27T08:06:00Z", "2026-03-27T08:07:00Z", "2026-03-27T08:08:00Z",
+      "2026-03-27T08:09:00Z", "2026-03-27T08:10:00Z", "2026-03-27T08:11:00Z",
+      "2026-03-27T08:12:00Z", "2026-03-27T08:13:00Z", "2026-03-27T08:14:00Z"
+    ],
+    "values": [
+      2.1, 2.3, 2.0, 2.2, 0.0, 0.0, 1.8, 2.1, 2.3, 2.2,
+      2.0, 2.1, 2.2, 2.3, 2.1
+    ],
+    "unit": "Average Active Sessions"
+  },
+  "top_sql": [
+    {
+      "statement": "INSERT INTO payment_transactions (id, amount, status, created_at) VALUES ($1, $2, $3, $4)",
+      "db_load_avg": 1.2,
+      "wait_events": [
+        {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 0.8},
+        {"name": "CPU:user", "type": "CPU", "db_load_avg": 0.4}
+      ],
+      "calls_per_sec": 142.8
+    },
+    {
+      "statement": "SELECT id, amount, status FROM payment_transactions WHERE id = $1",
+      "db_load_avg": 0.8,
+      "wait_events": [
+        {"name": "CPU:user", "type": "CPU", "db_load_avg": 0.5},
+        {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 0.3}
+      ],
+      "calls_per_sec": 218.4
+    }
+  ],
+  "top_wait_events": [
+    {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 0.9},
+    {"name": "CPU:user", "type": "CPU", "db_load_avg": 0.9},
+    {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 0.3}
+  ],
+  "top_users": [
+    {"name": "payments_svc", "db_load_avg": 1.8},
+    {"name": "payments_read", "db_load_avg": 0.3}
+  ],
+  "top_hosts": [
+    {"id": "10.0.3.11", "db_load_avg": 1.2},
+    {"id": "10.0.3.12", "db_load_avg": 0.9}
+  ]
+}

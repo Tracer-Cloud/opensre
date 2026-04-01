@@ -95,3 +95,70 @@ topology_constraints:
     requires: always
   cpu_saturation:
     requires: always
+
+# ---------------------------------------------------------------------------
+# Scenario curriculum
+# ---------------------------------------------------------------------------
+# 4-level difficulty progression replacing the binary efficiency/reasoning split.
+# Level is per-scenario; a failure in level 2 points to a different weakness than
+# a failure in level 4 (noise-immunity vs causal reasoning).
+difficulty_levels:
+  1: "Single dominant signal — all evidence consistent, root cause identifiable in one step"
+  2: "One confounder present — second evidence source needed to rule it out"
+  3: "Absent or indirect evidence — key metric missing, agent must infer from what remains"
+  4: "Compositional fault — two failure modes active and causally linked, agent must explain both"
+
+known_gaps:
+  - temporal_ordering: >
+      All scenarios deliver evidence as a static snapshot. Production delivers evidence
+      incrementally (alert fires → query metrics → query events → …). Testing temporal
+      ordering requires architectural changes to the fixture backend and is out of scope.
+
+# ---------------------------------------------------------------------------
+# Failure-mode signatures
+# ---------------------------------------------------------------------------
+# Describes what each failure mode looks like in telemetry. Used as reference for
+# fixture authoring and for evaluating whether the agent consulted the right evidence.
+#
+# MECE note: uniqueness is on (primary_signal × rate × corroborating_presence ×
+# event_presence), not on primary_signal alone. 003 and 008 both map to storage_full
+# but have distinct fingerprints: 003 has FreeStorageSpace present and trending to 0
+# with elevated WriteIOPS; 008 has FreeStorageSpace absent from the fixture entirely.
+failure_mode_signatures:
+  replication_lag:
+    primary_signals: [ReplicaLag, TransactionLogsGeneration]
+    corroborating_signals: [WriteIOPS]
+    typical_confounders: [CPUUtilization]
+    required_evidence: [rds_metrics, performance_insights]
+    mece_basis: "primary_signal × rate × corroborating_presence"
+
+  connection_exhaustion:
+    primary_signals: [DatabaseConnections]
+    corroborating_signals: [CPUUtilization]
+    typical_confounders: [CPUUtilization]
+    required_evidence: [rds_metrics, performance_insights]
+    mece_basis: "primary_signal × saturation_level × wait_event_type"
+
+  storage_full:
+    primary_signals: [FreeStorageSpace]
+    corroborating_signals: [WriteIOPS, WriteLatency]
+    typical_confounders: [WriteIOPS]  # low IOPS does NOT rule out storage_full
+    required_evidence: [rds_events]   # events alone can confirm when metric is absent
+    mece_note: >
+      003 and 008 share this failure mode. Distinct fingerprint: 003 has metric
+      present+fast-declining with elevated WriteIOPS; 008 has FreeStorageSpace absent
+      from the fixture entirely — agent must infer from events + PI write latency.
+
+  cpu_saturation:
+    primary_signals: [CPUUtilization]
+    corroborating_signals: [ReadIOPS]
+    typical_confounders: [DatabaseConnections]
+    required_evidence: [rds_metrics, performance_insights]
+    mece_basis: "primary_signal × query_fingerprint_in_PI"
+
+  failover:
+    primary_signals: []                # control-plane event IS the decisive signal
+    corroborating_signals: [DatabaseConnections]
+    typical_confounders: [CPUUtilization, ReplicaLag]
+    required_evidence: [rds_events]
+    mece_basis: "event_sequence: Multi-AZ failover initiated → in progress → completed"

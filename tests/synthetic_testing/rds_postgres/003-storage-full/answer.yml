@@ -1,0 +1,24 @@
+root_cause_category: resource_exhaustion
+required_keywords:
+  - storage
+  - FreeStorageSpace
+required_evidence_sources:
+  - rds_events
+model_response: |
+  ROOT_CAUSE: The RDS instance ran out of storage space during a bulk INSERT archival job. FreeStorageSpace collapsed from 15 GB to 0 in 15 minutes driven by elevated WriteIOPS. The RDS control plane confirmed the outage with a "DB instance ran out of storage space" event.
+  ROOT_CAUSE_CATEGORY: resource_exhaustion
+
+  VALIDATED_CLAIMS:
+  - FreeStorageSpace on orders-prod dropped monotonically from ~15 GB to ~500 MB over 15 minutes. [evidence: rds_metrics]
+  - WriteIOPS peaked at 8100 and then collapsed to near-zero as writes were blocked by the full disk. [evidence: rds_metrics]
+  - RDS event at 02:12:33Z confirmed "DB instance ran out of storage space". [evidence: rds_events]
+  - Performance Insights shows an INSERT archival query as the dominant load with IO:DataFileWrite as the top wait event. [evidence: performance_insights]
+
+  NON_VALIDATED_CLAIMS:
+  - Expanding storage volume or enabling storage autoscaling would prevent recurrence.
+
+  CAUSAL_CHAIN:
+  - A scheduled bulk INSERT archival job ran at 02:00Z writing large volumes of data.
+  - WriteIOPS sustained 6000-8100 IOPS depleting the 100 GB volume in 15 minutes.
+  - FreeStorageSpace reached 0, causing the RDS engine to reject all further writes.
+  - The instance entered an incompatible-restore state and stopped accepting connections.

@@ -34,6 +34,9 @@ class ScenarioMetadata:
     failure_mode: str
     severity: str
     available_evidence: list[str]
+    scenario_difficulty: int = 1
+    adversarial_signals: list[str] = ()  # type: ignore[assignment]
+    depends_on: str = ""
 
 
 @dataclass(frozen=True)
@@ -41,6 +44,9 @@ class ScenarioAnswerKey:
     root_cause_category: str
     required_keywords: list[str]
     model_response: str
+    forbidden_categories: list[str] = ()  # type: ignore[assignment]
+    forbidden_keywords: list[str] = ()  # type: ignore[assignment]
+    required_evidence_sources: list[str] = ()  # type: ignore[assignment]
 
 
 @dataclass(frozen=True)
@@ -83,6 +89,9 @@ def _parse_scenario_yaml(path: Path) -> ScenarioMetadata:
         failure_mode=validated["failure_mode"],
         severity=validated["severity"],
         available_evidence=list(validated["available_evidence"]),
+        scenario_difficulty=validated.get("scenario_difficulty", 1),  # type: ignore[arg-type]
+        adversarial_signals=list(validated.get("adversarial_signals") or []),
+        depends_on=validated.get("depends_on", ""),  # type: ignore[arg-type]
     )
 
 
@@ -93,6 +102,9 @@ def _parse_answer_yaml(path: Path) -> ScenarioAnswerKey:
         root_cause_category=validated["root_cause_category"].strip(),
         required_keywords=[k.strip() for k in validated["required_keywords"]],
         model_response=validated["model_response"].strip(),
+        forbidden_categories=list(validated.get("forbidden_categories") or []),
+        forbidden_keywords=list(validated.get("forbidden_keywords") or []),
+        required_evidence_sources=list(validated.get("required_evidence_sources") or []),
     )
 
 

@@ -1,0 +1,14 @@
+schema_version: "1.0"
+scenario_id: 009-dual-fault-connection-cpu
+engine: postgres
+engine_version: "15"
+instance_class: db.r6g.2xlarge
+region: us-east-1
+db_instance_identifier: search-prod
+failure_mode: connection_exhaustion
+severity: critical
+scenario_difficulty: 4
+available_evidence:
+  - rds_metrics
+  - rds_events
+  - performance_insights

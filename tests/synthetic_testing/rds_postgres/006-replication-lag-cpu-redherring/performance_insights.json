@@ -1,0 +1,56 @@
+{
+  "db_instance_identifier": "analytics-prod",
+  "start_time": "2026-03-27T10:00:00Z",
+  "end_time": "2026-03-27T10:20:00Z",
+  "db_load": {
+    "timestamps": [
+      "2026-03-27T10:00:00Z", "2026-03-27T10:01:00Z", "2026-03-27T10:02:00Z",
+      "2026-03-27T10:03:00Z", "2026-03-27T10:04:00Z", "2026-03-27T10:05:00Z",
+      "2026-03-27T10:06:00Z", "2026-03-27T10:07:00Z", "2026-03-27T10:08:00Z",
+      "2026-03-27T10:09:00Z", "2026-03-27T10:10:00Z", "2026-03-27T10:11:00Z",
+      "2026-03-27T10:12:00Z", "2026-03-27T10:13:00Z", "2026-03-27T10:14:00Z",
+      "2026-03-27T10:15:00Z", "2026-03-27T10:16:00Z", "2026-03-27T10:17:00Z",
+      "2026-03-27T10:18:00Z", "2026-03-27T10:19:00Z"
+    ],
+    "values": [
+      1.2, 2.8, 5.4, 6.8, 7.2, 7.6, 7.8, 7.7, 7.6, 7.5,
+      7.4, 7.3, 7.4, 7.5, 7.6, 7.5, 7.4, 7.3, 7.3, 7.4
+    ],
+    "unit": "Average Active Sessions"
+  },
+  "top_sql": [
+    {
+      "statement": "UPDATE event_stream SET processed = TRUE WHERE event_id IN (SELECT event_id FROM event_queue WHERE batch_id = $1)",
+      "db_load_avg": 5.9,
+      "wait_events": [
+        {"name": "WAL:Lock", "type": "WAL", "db_load_avg": 3.8},
+        {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 1.4},
+        {"name": "CPU:user", "type": "CPU", "db_load_avg": 0.7}
+      ],
+      "calls_per_sec": 8.4
+    },
+    {
+      "statement": "SELECT COUNT(*), AVG(revenue), MAX(revenue) FROM sales_fact WHERE event_date >= $1 AND event_date < $2 GROUP BY region_id",
+      "db_load_avg": 1.8,
+      "wait_events": [
+        {"name": "CPU:user", "type": "CPU", "db_load_avg": 1.6},
+        {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 0.2}
+      ],
+      "calls_per_sec": 0.4
+    }
+  ],
+  "top_wait_events": [
+    {"name": "WAL:Lock", "type": "WAL", "db_load_avg": 3.8},
+    {"name": "CPU:user", "type": "CPU", "db_load_avg": 2.3},
+    {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 1.4},
+    {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 0.2}
+  ],
+  "top_users": [
+    {"name": "stream_writer", "db_load_avg": 5.9},
+    {"name": "analytics_reader", "db_load_avg": 1.8}
+  ],
+  "top_hosts": [
+    {"id": "10.0.4.21", "db_load_avg": 5.9},
+    {"id": "10.0.4.30", "db_load_avg": 1.8}
+  ]
+}
