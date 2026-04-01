@@ -105,13 +105,13 @@ def _get_chat_llm(*, with_tools: bool = False) -> ChatAnthropic:
 
     if with_tools:
         if _chat_llm_with_tools is None:
-            from app.config import DEFAULT_MAX_TOKENS, TOOLCALL_MODEL
+            from app.config import ANTHROPIC_TOOLCALL_MODEL, DEFAULT_MAX_TOKENS
 
             tool_model = (
                 (os.getenv("ANTHROPIC_TOOLCALL_MODEL") or "").strip()
                 or (os.getenv("ANTHROPIC_REASONING_MODEL") or "").strip()
                 or (os.getenv("ANTHROPIC_MODEL") or "").strip()
-                or TOOLCALL_MODEL
+                or ANTHROPIC_TOOLCALL_MODEL
             )
             base = ChatAnthropic(  # type: ignore[call-arg]
                 model=tool_model,
@@ -122,12 +122,12 @@ def _get_chat_llm(*, with_tools: bool = False) -> ChatAnthropic:
         return _chat_llm_with_tools  # type: ignore[return-value]
 
     if _chat_llm is None:
-        from app.config import DEFAULT_MAX_TOKENS, REASONING_MODEL
+        from app.config import ANTHROPIC_REASONING_MODEL, DEFAULT_MAX_TOKENS
 
         reasoning_model = (
             (os.getenv("ANTHROPIC_REASONING_MODEL") or "").strip()
             or (os.getenv("ANTHROPIC_MODEL") or "").strip()
-            or REASONING_MODEL
+            or ANTHROPIC_REASONING_MODEL
         )
         _chat_llm = ChatAnthropic(  # type: ignore[call-arg]
             model=reasoning_model,

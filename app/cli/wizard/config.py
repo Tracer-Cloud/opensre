@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.config import OPENAI_REASONING_MODEL, REASONING_MODEL
+from app.config import ANTHROPIC_REASONING_MODEL, OPENAI_REASONING_MODEL
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PROJECT_ENV_PATH = PROJECT_ROOT / ".env"
@@ -35,7 +35,7 @@ class ProviderOption:
 
 
 ANTHROPIC_MODELS = (
-    ModelOption(value=REASONING_MODEL, label="Claude Opus 4"),
+    ModelOption(value=ANTHROPIC_REASONING_MODEL, label="Claude Opus 4"),
     ModelOption(value="claude-sonnet-4-20250514", label="Claude Sonnet 4"),
 )
 
@@ -53,7 +53,7 @@ SUPPORTED_PROVIDERS = (
         group="Hosted providers",
         api_key_env="ANTHROPIC_API_KEY",
         model_env="ANTHROPIC_REASONING_MODEL",
-        default_model=REASONING_MODEL,
+        default_model=ANTHROPIC_REASONING_MODEL,
         models=ANTHROPIC_MODELS,
         legacy_model_env="ANTHROPIC_MODEL",
     ),
