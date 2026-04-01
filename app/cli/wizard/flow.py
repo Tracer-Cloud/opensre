@@ -385,7 +385,7 @@ def _configure_grafana_local() -> tuple[str, str]:
         _console.print("[dim]Start Docker Desktop, then run [bold]opensre onboard[/bold] again.[/]")
         return "Grafana Local (skipped)", ""
 
-    compose_file = str(Path(__file__).parents[3] / "app/demo/local_grafana_stack/docker-compose.yml")
+    compose_file = str(Path(__file__).parent / "local_grafana_stack/docker-compose.yml")
     with _console.status("Starting Grafana + Loki (docker compose up -d)...", spinner="dots"):
         result = subprocess.run(
             ["docker", "compose", "-f", compose_file, "up", "-d"],
@@ -399,7 +399,7 @@ def _configure_grafana_local() -> tuple[str, str]:
 
     with _console.status("Waiting for Loki to be ready and seeding logs...", spinner="dots"):
         try:
-            from app.demo.local_grafana_seed import seed_logs
+            from app.cli.wizard.grafana_seed import seed_logs
             seed_logs()
         except (SystemExit, Exception) as exc:
             _console.print(f"[red]Loki seed failed: {exc}[/]")
