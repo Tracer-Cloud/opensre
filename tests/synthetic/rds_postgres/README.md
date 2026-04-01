@@ -89,9 +89,9 @@ python -m tests.synthetic.rds_postgres.run_suite --mock-grafana --axis2
 
 - `scenario.yml`: scenario metadata (engine, difficulty, adversarial_signals, depends_on)
 - `alert.json`: synthetic alert payload
-- `cloudwatch_metrics.json`: CloudWatch metric evidence (may omit metrics to simulate collection gaps)
-- `rds_events.json`: RDS event stream for the incident window
-- `performance_insights.json`: top SQL and wait-event evidence
+- `aws_cloudwatch_metrics.json`: CloudWatch metric evidence (may omit metrics to simulate collection gaps)
+- `aws_rds_events.json`: RDS event stream for the incident window
+- `aws_performance_insights.json`: top SQL and wait-event evidence
 - `answer.yml`: expected category, required keywords, optional forbidden constraints, required evidence sources
 
 ## Running

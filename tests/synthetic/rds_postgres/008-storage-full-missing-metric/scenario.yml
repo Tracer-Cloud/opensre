@@ -1,16 +1,11 @@
-schema_version: "1.0"
+base: 000-healthy
 scenario_id: 008-storage-full-missing-metric
-engine: postgres
-engine_version: "15"
 instance_class: db.r6g.large
 region: eu-west-1
 db_instance_identifier: billing-prod
+db_cluster: ""
 failure_mode: storage_full
 severity: critical
 scenario_difficulty: 3
 adversarial_signals:
   - FreeStorageSpace_absent
-available_evidence:
-  - rds_metrics
-  - rds_events
-  - performance_insights

@@ -15,11 +15,11 @@ model_response: |
   ROOT_CAUSE_CATEGORY: healthy
 
   VALIDATED_CLAIMS:
-  - DatabaseConnections oscillated between 1,984 and 2,247 — 55–62% of the 3,604 maximum for db.r6g.xlarge. No connection failures observed. [evidence: rds_metrics]
-  - CPUUtilization ranged 41–72%, oscillating with traffic load. No sustained saturation above 85%. [evidence: rds_metrics]
-  - ReadLatency p99 peaked briefly at 21ms during peak CPU moments, returning to 5-10ms baseline. Not indicative of a failure. [evidence: rds_metrics]
-  - No error or availability events in RDS event log. Only a routine automated backup. [evidence: rds_events]
-  - Performance Insights shows well-distributed, indexed queries with no dominant wait event or resource-ceiling pattern. DB load averaged 2.5 AAS against 8 vCPUs available. [evidence: performance_insights]
+  - DatabaseConnections oscillated between 1,984 and 2,247 — 55–62% of the 3,604 maximum for db.r6g.xlarge. No connection failures observed. [evidence: aws_cloudwatch_metrics]
+  - CPUUtilization ranged 41–72%, oscillating with traffic load. No sustained saturation above 85%. [evidence: aws_cloudwatch_metrics]
+  - ReadLatency p99 peaked briefly at 21ms during peak CPU moments, returning to 5-10ms baseline. Not indicative of a failure. [evidence: aws_cloudwatch_metrics]
+  - No error or availability events in RDS event log. Only a routine automated backup. [evidence: aws_rds_events]
+  - Performance Insights shows well-distributed, indexed queries with no dominant wait event or resource-ceiling pattern. DB load averaged 2.5 AAS against 8 vCPUs available. [evidence: aws_performance_insights]
 
   NON_VALIDATED_CLAIMS:
   - Alert threshold may benefit from adjustment to avoid warning fatigue at normal peak-hour traffic.

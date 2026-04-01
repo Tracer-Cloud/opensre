@@ -12,6 +12,6 @@ adversarial_signals:
   - RDS events contain a completed failover from 2 hours before the alert — likely to mislead toward infrastructure/failover diagnosis
   - Mild CPU elevation (~40%) from the same write workload — superficially looks like cpu_saturation
 available_evidence:
-  - rds_metrics
-  - rds_events
-  - performance_insights
+  - aws_cloudwatch_metrics
+  - aws_rds_events
+  - aws_performance_insights

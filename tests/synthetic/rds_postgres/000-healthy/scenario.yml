@@ -9,6 +9,6 @@ db_cluster: payments-cluster
 failure_mode: healthy
 severity: info
 available_evidence:
-  - rds_metrics
-  - rds_events
-  - performance_insights
+  - aws_cloudwatch_metrics
+  - aws_rds_events
+  - aws_performance_insights
