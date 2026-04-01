@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 import pytest
 import requests
 
-from tests.grafana_config import load_env
+from app.outbound_telemetry.config import load_env
 from tests.utils.alert_factory.factory import create_alert, from_pipeline_run
 from tests.utils.alert_factory.formatters.grafana import format_as_grafana
 from tests.utils.alert_factory.intent import AlertIntent

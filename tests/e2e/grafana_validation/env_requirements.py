@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.grafana_config import (
+from app.outbound_telemetry.config import (
     get_account_instance_url,
     get_account_read_token,
     get_hosted_logs_id,

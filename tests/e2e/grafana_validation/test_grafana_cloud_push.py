@@ -3,13 +3,13 @@ import os
 import pytest
 
 pytestmark = pytest.mark.skip(reason="outbound telemetry has been removed from this project")
-from tests.e2e.grafana_validation.env_requirements import require_grafana_cloud_env
-from tests.grafana_config import (
+from app.outbound_telemetry.config import (
     configure_grafana_cloud,
     get_otlp_auth_header,
     get_otlp_endpoint,
     load_env,
 )
+from tests.e2e.grafana_validation.env_requirements import require_grafana_cloud_env
 
 
 def _assert_force_flush(provider, *, name: str) -> None:

@@ -172,7 +172,7 @@ def validate_and_report(
 if __name__ == "__main__":
     from pathlib import Path
 
-    from tests.grafana_config import load_env
+    from app.outbound_telemetry.config import load_env
 
     load_env(Path(__file__).resolve().parent.parent.parent / ".env")
 
