@@ -10,6 +10,27 @@ Enable shell tab-completion (add to your shell profile for persistence):
 from __future__ import annotations
 
 import click
+from dotenv import load_dotenv
+
+from app.analytics.cli import (
+    capture_cli_invoked,
+    capture_integration_removed,
+    capture_integration_setup_completed,
+    capture_integration_setup_started,
+    capture_integration_verified,
+    capture_integrations_listed,
+    capture_investigation_completed,
+    capture_investigation_failed,
+    capture_investigation_started,
+    capture_onboard_completed,
+    capture_onboard_failed,
+    capture_onboard_started,
+    capture_test_run_started,
+    capture_test_synthetic_started,
+    capture_tests_listed,
+    capture_tests_picker_opened,
+)
+from app.analytics.provider import capture_first_run_if_needed, shutdown_analytics
 
 # Heavy application imports are kept inside command functions so the CLI starts
 # fast and so that load_dotenv() in main() runs before any app module reads env.
@@ -107,8 +128,6 @@ def cli(ctx: click.Context) -> None:
       eval "$(_OPENSRE_COMPLETE=zsh_source opensre)"
     """
     if ctx.invoked_subcommand is None:
-        from app.analytics.cli import capture_cli_invoked
-
         capture_cli_invoked()
         _render_landing()
         raise SystemExit(0)
@@ -117,11 +136,6 @@ def cli(ctx: click.Context) -> None:
 @cli.command()
 def onboard() -> None:
     """Run the interactive onboarding wizard."""
-    from app.analytics.cli import (
-        capture_onboard_completed,
-        capture_onboard_failed,
-        capture_onboard_started,
-    )
     from app.cli.wizard import run_wizard
     from app.cli.wizard.store import get_store_path, load_local_config
 
@@ -162,11 +176,6 @@ def investigate(
     output: str | None,
 ) -> None:
     """Run an RCA investigation against an alert payload."""
-    from app.analytics.cli import (
-        capture_investigation_completed,
-        capture_investigation_failed,
-        capture_investigation_started,
-    )
     from app.main import main as investigate_main
 
     argv: list[str] = []
@@ -207,15 +216,8 @@ def integrations() -> None:
 @click.argument("service", type=click.Choice(_SETUP_SERVICES))
 def setup(service: str) -> None:
     """Set up credentials for a service."""
-    from dotenv import load_dotenv
-
-    from app.analytics.cli import (
-        capture_integration_setup_completed,
-        capture_integration_setup_started,
-    )
     from app.integrations.cli import cmd_setup
 
-    load_dotenv(override=False)
     capture_integration_setup_started(service)
     cmd_setup(service)
     capture_integration_setup_completed(service)
@@ -224,12 +226,8 @@ def setup(service: str) -> None:
 @integrations.command(name="list")
 def list_cmd() -> None:
     """List all configured integrations."""
-    from dotenv import load_dotenv
-
-    from app.analytics.cli import capture_integrations_listed
     from app.integrations.cli import cmd_list
 
-    load_dotenv(override=False)
     capture_integrations_listed()
     cmd_list()
 
@@ -238,11 +236,8 @@ def list_cmd() -> None:
 @click.argument("service", type=click.Choice(_SETUP_SERVICES))
 def show(service: str) -> None:
     """Show details for a configured integration."""
-    from dotenv import load_dotenv
-
     from app.integrations.cli import cmd_show
 
-    load_dotenv(override=False)
     cmd_show(service)
 
 
@@ -250,12 +245,8 @@ def show(service: str) -> None:
 @click.argument("service", type=click.Choice(_SETUP_SERVICES))
 def remove(service: str) -> None:
     """Remove a configured integration."""
-    from dotenv import load_dotenv
-
-    from app.analytics.cli import capture_integration_removed
     from app.integrations.cli import cmd_remove
 
-    load_dotenv(override=False)
     cmd_remove(service)
     capture_integration_removed(service)
 
@@ -265,12 +256,8 @@ def remove(service: str) -> None:
 @click.option("--send-slack-test", is_flag=True, help="Send a test message to the configured Slack webhook.")
 def verify(service: str | None, send_slack_test: bool) -> None:
     """Verify integration connectivity (all services, or a specific one)."""
-    from dotenv import load_dotenv
-
-    from app.analytics.cli import capture_integration_verified
     from app.integrations.cli import cmd_verify
 
-    load_dotenv(override=False)
     cmd_verify(service, send_slack_test=send_slack_test)
     capture_integration_verified(service or "all")
 
@@ -282,7 +269,6 @@ def tests(ctx: click.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
 
-    from app.analytics.cli import capture_tests_picker_opened
     from app.cli.tests.discover import load_test_catalog
     from app.cli.tests.interactive import run_interactive_picker
 
@@ -299,12 +285,6 @@ def tests(ctx: click.Context) -> None:
 )
 def test_rds_synthetic(scenario: str, output_json: bool, mock_grafana: bool) -> None:
     """Run the synthetic RDS PostgreSQL RCA benchmark."""
-    from dotenv import load_dotenv
-
-    from app.analytics.cli import capture_test_synthetic_started
-
-    load_dotenv(override=False)
-
     argv: list[str] = []
     if scenario:
         argv.extend(["--scenario", scenario])
@@ -330,7 +310,6 @@ def test_rds_synthetic(scenario: str, output_json: bool, mock_grafana: bool) -> 
 @click.option("--search", default="", help="Case-insensitive text filter.")
 def list_tests(category: str, search: str) -> None:
     """List available tests and suites."""
-    from app.analytics.cli import capture_tests_listed
     from app.cli.tests.discover import load_test_catalog
 
     capture_tests_listed(category, search=bool(search))
@@ -355,7 +334,6 @@ def list_tests(category: str, search: str) -> None:
 @click.option("--dry-run", is_flag=True, help="Print the selected command without running it.")
 def run(test_id: str, dry_run: bool) -> None:
     """Run a test or suite by stable inventory id."""
-    from app.analytics.cli import capture_test_run_started
     from app.cli.tests.runner import find_test_item, run_catalog_item
 
     item = find_test_item(test_id)
@@ -368,12 +346,7 @@ def run(test_id: str, dry_run: bool) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``opensre`` console script."""
-    # Load .env first so all env vars are available before any app module is
-    # imported and before the analytics singleton is created.
-    from dotenv import load_dotenv
     load_dotenv(override=False)
-
-    from app.analytics.provider import capture_first_run_if_needed, shutdown_analytics
     capture_first_run_if_needed()
 
     try:
