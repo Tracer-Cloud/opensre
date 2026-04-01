@@ -93,6 +93,42 @@ OPENAI_LLM_CONFIG = LLMModelConfig(
     max_tokens=DEFAULT_MAX_TOKENS,
 )
 
+# Base URLs for OpenAI-compatible providers
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+
+# OpenRouter model constants
+OPENROUTER_REASONING_MODEL = "anthropic/claude-opus-4"
+OPENROUTER_TOOLCALL_MODEL = "anthropic/claude-haiku-4-5"
+
+# Gemini model constants
+GEMINI_REASONING_MODEL = "gemini-2.5-pro"
+GEMINI_TOOLCALL_MODEL = "gemini-2.5-flash"
+
+# NVIDIA NIM model constants
+NVIDIA_REASONING_MODEL = "meta/llama-4-maverick-17b-128e-instruct"
+NVIDIA_TOOLCALL_MODEL = "meta/llama-4-scout-17b-16e-instruct"
+
+# LLMModelConfig instances
+OPENROUTER_LLM_CONFIG = LLMModelConfig(
+    reasoning_model=OPENROUTER_REASONING_MODEL,
+    toolcall_model=OPENROUTER_TOOLCALL_MODEL,
+    max_tokens=DEFAULT_MAX_TOKENS,
+)
+
+GEMINI_LLM_CONFIG = LLMModelConfig(
+    reasoning_model=GEMINI_REASONING_MODEL,
+    toolcall_model=GEMINI_TOOLCALL_MODEL,
+    max_tokens=DEFAULT_MAX_TOKENS,
+)
+
+NVIDIA_LLM_CONFIG = LLMModelConfig(
+    reasoning_model=NVIDIA_REASONING_MODEL,
+    toolcall_model=NVIDIA_TOOLCALL_MODEL,
+    max_tokens=DEFAULT_MAX_TOKENS,
+)
+
 # Tracer API Configuration
 TRACER_BASE_URL_DEV = "https://staging.tracer.cloud"
 TRACER_BASE_URL_PROD = "https://app.tracer.cloud"

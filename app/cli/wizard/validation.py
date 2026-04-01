@@ -48,6 +48,23 @@ class ValidationResult:
     sample_response: str = ""
 
 
+def _get_provider_base_url(provider_value: str) -> str | None:
+    """Get the base_url for OpenAI-compatible non-OpenAI providers, or None for native OpenAI."""
+    if provider_value == "openrouter":
+        from app.config import OPENROUTER_BASE_URL
+
+        return OPENROUTER_BASE_URL
+    if provider_value == "gemini":
+        from app.config import GEMINI_BASE_URL
+
+        return GEMINI_BASE_URL
+    if provider_value == "nvidia":
+        from app.config import NVIDIA_BASE_URL
+
+        return NVIDIA_BASE_URL
+    return None
+
+
 def validate_provider_credentials(
     *,
     provider: ProviderOption,
@@ -73,8 +90,11 @@ def validate_provider_credentials(
             ).strip()
             return ValidationResult(ok=True, detail="Anthropic API key validated.", sample_response=sample_text)
 
-        openai_client = openai_client_cls(api_key=api_key, timeout=30.0)
-        if model.startswith(("o1", "o3", "o4", "gpt-5")):
+        # All OpenAI-compatible providers (openai, openrouter, gemini, nvidia)
+        base_url = _get_provider_base_url(provider.value)
+        openai_client = openai_client_cls(api_key=api_key, base_url=base_url, timeout=30.0)
+        # Only native OpenAI reasoning models use max_completion_tokens; others use max_tokens
+        if provider.value == "openai" and model.startswith(("o1", "o3", "o4", "gpt-5")):
             openai_response = openai_client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],
@@ -87,11 +107,11 @@ def validate_provider_credentials(
                 max_tokens=24,
             )
         sample_text = (openai_response.choices[0].message.content or "").strip()
-        return ValidationResult(ok=True, detail="OpenAI API key validated.", sample_response=sample_text)
+        return ValidationResult(ok=True, detail=f"{provider.label} API key validated.", sample_response=sample_text)
     except anthropic_auth_error:
         return ValidationResult(ok=False, detail="Anthropic rejected the API key.")
     except openai_auth_error:
-        return ValidationResult(ok=False, detail="OpenAI rejected the API key.")
+        return ValidationResult(ok=False, detail=f"{provider.label} rejected the API key.")
     except Exception as err:
         return ValidationResult(ok=False, detail=f"Validation request failed: {err}")
 
