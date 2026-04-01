@@ -26,6 +26,9 @@ class TracerRunTool(BaseTool):
         "required": [],
     }
 
+    def is_available(self, sources: dict) -> bool:
+        return bool(sources.get("tracer_web"))
+
     def run(self, pipeline_name: str | None = None, **_kwargs) -> TracerRunResult:
         client = get_tracer_client()
         return client.get_latest_run(pipeline_name)

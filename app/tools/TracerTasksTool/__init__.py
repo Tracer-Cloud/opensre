@@ -26,6 +26,9 @@ class TracerTasksTool(BaseTool):
         "required": ["run_id"],
     }
 
+    def is_available(self, sources: dict) -> bool:
+        return bool(sources.get("tracer_web"))
+
     def run(self, run_id: str, **_kwargs) -> TracerTaskResult:
         client = get_tracer_client()
         return client.get_run_tasks(run_id)
