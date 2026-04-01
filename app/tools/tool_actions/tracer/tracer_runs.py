@@ -1,4 +1,4 @@
-"""Tracer runs/tasks tool actions - LangChain tool implementation."""
+"""Tracer pipeline run and task tools."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from app.tools.clients.tracer_client import (
     get_tracer_client,
     get_tracer_web_client,
 )
+from app.tools.tool_actions.base import BaseTool
 from app.tools.tool_decorator import tool
 
 FAILED_STATUSES = ("failed", "error")
@@ -22,86 +23,18 @@ def build_tracer_run_url(pipeline_name: str, trace_id: str | None, org_slug: str
     if not trace_id:
         return None
     base = get_tracer_base_url()
-    return f"{base}/{org_slug}/pipelines/{pipeline_name}/batch/{trace_id}" if org_slug else f"{base}/pipelines/{pipeline_name}/batch/{trace_id}"
-
-
-# This function name should not be renamed as such
-def fetch_failed_run(pipeline_name: str | None = None) -> dict:
-    """Fetch context (metadata) about a failed run from Tracer Web App."""
-    client = get_tracer_web_client()
-    pipeline_names = _list_pipeline_names(client, pipeline_name)
-
-    failed_run = _find_failed_run(client, pipeline_names)
-
-    if not failed_run:
-        return {
-            "found": False,
-            "error": "No failed runs found",
-            "pipelines_checked": len(pipeline_names),
-        }
-
-    run_url = build_tracer_run_url(failed_run.pipeline_name, failed_run.trace_id, client.organization_slug)
-    return {
-        "found": True,
-        "pipeline_name": failed_run.pipeline_name,
-        "run_id": failed_run.run_id,
-        "run_name": failed_run.run_name,
-        "trace_id": failed_run.trace_id,
-        "status": failed_run.status,
-        "start_time": failed_run.start_time,
-        "end_time": failed_run.end_time,
-        "run_cost": failed_run.run_cost,
-        "tool_count": failed_run.tool_count,
-        "user_email": failed_run.user_email,
-        "instance_type": failed_run.instance_type,
-        "region": failed_run.region,
-        "log_file_count": failed_run.log_file_count,
-        "run_url": run_url,
-        "pipelines_checked": len(pipeline_names),
-    }
-
-
-def get_tracer_run(pipeline_name: str | None = None) -> TracerRunResult:
-    """
-    Get the latest pipeline run from Tracer API.
-
-    Use this tool to retrieve the most recent run information for a Tracer pipeline,
-    including run status, tasks, and metadata. This is essential for understanding
-    the current state of a pipeline execution.
-
-    Args:
-        pipeline_name: Optional pipeline name to filter runs. If None, returns latest run.
-
-    Returns:
-        TracerRunResult with run details including status, run_id, and tasks
-    """
-    client = get_tracer_client()
-    return client.get_latest_run(pipeline_name)
-
-
-def get_tracer_tasks(run_id: str) -> TracerTaskResult:
-    """
-    Get tasks for a specific pipeline run from Tracer API.
-
-    Use this tool to retrieve detailed task information for a pipeline run, including
-    task status, execution details, and any errors. This helps understand which
-    specific tasks failed or succeeded in a pipeline execution.
-
-    Args:
-        run_id: The unique identifier for the pipeline run
-
-    Returns:
-        TracerTaskResult with task details and execution status
-    """
-    client = get_tracer_client()
-    return client.get_run_tasks(run_id)
+    return (
+        f"{base}/{org_slug}/pipelines/{pipeline_name}/batch/{trace_id}"
+        if org_slug
+        else f"{base}/pipelines/{pipeline_name}/batch/{trace_id}"
+    )
 
 
 def _list_pipeline_names(client, pipeline_name: str | None) -> list[str]:
     if pipeline_name:
         return [pipeline_name]
     pipelines = client.get_pipelines(page=1, size=50)
-    return [pipeline.pipeline_name for pipeline in pipelines if pipeline.pipeline_name]
+    return [p.pipeline_name for p in pipelines if p.pipeline_name]
 
 
 def _find_failed_run(client, pipeline_names: Iterable[str]) -> PipelineRunSummary | None:
@@ -110,13 +43,116 @@ def _find_failed_run(client, pipeline_names: Iterable[str]) -> PipelineRunSummar
         for run in runs:
             if not isinstance(run, PipelineRunSummary):
                 continue
-            status = (run.status or "").lower()
-            if status in FAILED_STATUSES:
+            if (run.status or "").lower() in FAILED_STATUSES:
                 return run
     return None
 
 
-# Create LangChain tools from the functions
+class TracerFailedRunTool(BaseTool):
+    """Fetch context (metadata) about a failed run from Tracer Web App."""
+
+    name = "fetch_failed_run"
+    source = "tracer_web"
+    description = "Fetch context (metadata) about a failed run from the Tracer Web App."
+    use_cases = [
+        "Getting details of the most recent failed pipeline run",
+        "Finding the trace_id needed for deeper investigation",
+    ]
+    requires = []
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "pipeline_name": {"type": "string", "description": "Optional pipeline name to filter runs"},
+        },
+        "required": [],
+    }
+
+    def run(self, pipeline_name: str | None = None, **_kwargs) -> dict:
+        client = get_tracer_web_client()
+        pipeline_names = _list_pipeline_names(client, pipeline_name)
+        failed_run = _find_failed_run(client, pipeline_names)
+
+        if not failed_run:
+            return {
+                "found": False,
+                "error": "No failed runs found",
+                "pipelines_checked": len(pipeline_names),
+            }
+
+        run_url = build_tracer_run_url(failed_run.pipeline_name, failed_run.trace_id, client.organization_slug)
+        return {
+            "found": True,
+            "pipeline_name": failed_run.pipeline_name,
+            "run_id": failed_run.run_id,
+            "run_name": failed_run.run_name,
+            "trace_id": failed_run.trace_id,
+            "status": failed_run.status,
+            "start_time": failed_run.start_time,
+            "end_time": failed_run.end_time,
+            "run_cost": failed_run.run_cost,
+            "tool_count": failed_run.tool_count,
+            "user_email": failed_run.user_email,
+            "instance_type": failed_run.instance_type,
+            "region": failed_run.region,
+            "log_file_count": failed_run.log_file_count,
+            "run_url": run_url,
+            "pipelines_checked": len(pipeline_names),
+        }
+
+
+class TracerRunTool(BaseTool):
+    """Get the latest pipeline run from the Tracer API."""
+
+    name = "get_tracer_run"
+    source = "tracer_web"
+    description = "Get the latest pipeline run from the Tracer API."
+    use_cases = [
+        "Retrieving the most recent run information for a Tracer pipeline",
+        "Checking current pipeline run status and metadata",
+    ]
+    requires = []
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "pipeline_name": {"type": "string"},
+        },
+        "required": [],
+    }
+
+    def run(self, pipeline_name: str | None = None, **_kwargs) -> TracerRunResult:
+        client = get_tracer_client()
+        return client.get_latest_run(pipeline_name)
+
+
+class TracerTasksTool(BaseTool):
+    """Get tasks for a specific pipeline run from the Tracer API."""
+
+    name = "get_tracer_tasks"
+    source = "tracer_web"
+    description = "Get tasks for a specific pipeline run from the Tracer API."
+    use_cases = [
+        "Retrieving detailed task information for a pipeline run",
+        "Understanding which specific tasks failed or succeeded",
+    ]
+    requires = ["run_id"]
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "run_id": {"type": "string", "description": "The unique identifier for the pipeline run"},
+        },
+        "required": ["run_id"],
+    }
+
+    def run(self, run_id: str, **_kwargs) -> TracerTaskResult:
+        client = get_tracer_client()
+        return client.get_run_tasks(run_id)
+
+
+# Backward-compatible aliases
+fetch_failed_run = TracerFailedRunTool()
+get_tracer_run = TracerRunTool()
+get_tracer_tasks = TracerTasksTool()
+
 fetch_failed_run_tool = tool(fetch_failed_run)
 get_tracer_run_tool = tool(get_tracer_run)
 get_tracer_tasks_tool = tool(get_tracer_tasks)

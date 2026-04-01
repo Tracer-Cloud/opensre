@@ -15,6 +15,7 @@ from langchain_core.tools import StructuredTool
 from app.prompts import GENERAL_SYSTEM_PROMPT, ROUTER_PROMPT, SYSTEM_PROMPT
 from app.state import AgentState, ChatMessage
 from app.tools.clients import get_llm_for_tools
+from app.tools.tool_actions.base import BaseTool
 from app.tools.tool_actions.github.github_mcp_actions import (
     get_github_file_contents,
     get_github_repository_tree,
@@ -59,9 +60,19 @@ _CHAT_FUNCTIONS: list[Callable[..., Any]] = [
     list_sentry_issue_events,
 ]
 
-CHAT_TOOLS: list[StructuredTool] = [
-    StructuredTool.from_function(fn, return_direct=False) for fn in _CHAT_FUNCTIONS
-]
+def _to_structured_tool(fn: Callable[..., Any] | BaseTool) -> StructuredTool:
+    """Build a StructuredTool from a plain callable or a BaseTool instance."""
+    if isinstance(fn, BaseTool):
+        return StructuredTool.from_function(
+            func=fn.run,
+            name=fn.name,
+            description=fn.description,
+            return_direct=False,
+        )
+    return StructuredTool.from_function(fn, return_direct=False)
+
+
+CHAT_TOOLS: list[StructuredTool] = [_to_structured_tool(fn) for fn in _CHAT_FUNCTIONS]
 
 # LangChain type -> ChatMessage role mapping
 _TYPE_TO_ROLE: dict[str, str] = {

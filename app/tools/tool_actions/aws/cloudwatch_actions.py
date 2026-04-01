@@ -1,177 +1,175 @@
-"""
-CloudWatch tool actions - LangChain tool implementation.
+"""CloudWatch investigation tools."""
 
-No printing, no LLM calls. Just fetch data and return typed results.
-All functions are decorated with @tool for LangChain/LangGraph compatibility.
-"""
+from __future__ import annotations
+
+import time
 
 import boto3
 
 from app.tools.clients.cloudwatch_client import get_metric_statistics
+from app.tools.tool_actions.base import BaseTool
 from app.tools.tool_decorator import tool
 
 
-def get_cloudwatch_logs(
-    log_group: str,
-    log_stream: str | None = None,
-    filter_pattern: str | None = None,
-    limit: int = 100,
-) -> dict:
-    """
-    Fetch error logs from AWS CloudWatch Logs.
+class CloudWatchLogsTool(BaseTool):
+    """Fetch error logs from AWS CloudWatch Logs."""
 
-    Use this when the alert includes CloudWatch log details.
-    Essential for investigating pipeline failures logged to CloudWatch.
+    name = "get_cloudwatch_logs"
+    source = "cloudwatch"
+    description = "Fetch error logs from AWS CloudWatch Logs."
+    use_cases = [
+        "Retrieving error tracebacks from CloudWatch",
+        "Analyzing application-level errors",
+        "Investigating file not found errors",
+        "Understanding pipeline failure root causes",
+        "Auto-discovering recent logs from ECS tasks, Lambda functions, etc.",
+        "Searching for logs by correlation ID or error pattern",
+    ]
+    requires = []
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "log_group": {"type": "string", "description": "CloudWatch log group name (required)"},
+            "log_stream": {"type": "string", "description": "Log stream name (optional — auto-discovered if absent)"},
+            "filter_pattern": {"type": "string", "description": "Pattern to filter logs (e.g., correlation_id, error text)"},
+            "limit": {"type": "integer", "default": 100},
+        },
+        "required": ["log_group"],
+    }
 
-    If log_stream is not provided, automatically discovers the most recent
-    log stream in the log group. If filter_pattern is provided (e.g., a
-    correlation_id), searches across all streams for matching logs.
+    def is_available(self, sources: dict) -> bool:
+        return bool(sources.get("cloudwatch", {}).get("log_group"))
 
-    Useful for:
-    - Retrieving error tracebacks from CloudWatch
-    - Analyzing application-level errors
-    - Investigating file not found errors
-    - Understanding pipeline failure root causes
-    - Auto-discovering recent logs from ECS tasks, Lambda functions, etc.
-    - Searching for logs by correlation ID or error pattern
+    def extract_params(self, sources: dict) -> dict:
+        cw = sources.get("cloudwatch", {})
+        return {
+            "log_group": cw.get("log_group"),
+            "log_stream": cw.get("log_stream"),
+            "filter_pattern": cw.get("correlation_id"),
+            "limit": 100,
+        }
 
-    Args:
-        log_group: CloudWatch log group name (required)
-        log_stream: CloudWatch log stream name (optional - will auto-discover if not provided)
-        filter_pattern: Pattern to filter logs (e.g., correlation_id, error text)
-        limit: Maximum number of log events to fetch
+    def run(
+        self,
+        log_group: str,
+        log_stream: str | None = None,
+        filter_pattern: str | None = None,
+        limit: int = 100,
+        **_kwargs,
+    ) -> dict:
+        if not log_group:
+            return {"error": "log_group is required"}
 
-    Returns:
-        Dictionary with log events (logs, event_count, latest_log)
-    """
-    if not log_group:
-        return {"error": "log_group is required"}
+        try:
+            client = boto3.client("logs")
 
-    try:
-        client = boto3.client("logs")
+            if filter_pattern:
+                response = client.filter_log_events(
+                    logGroupName=log_group,
+                    filterPattern=filter_pattern,
+                    limit=limit,
+                    startTime=int((time.time() - 7200) * 1000),
+                )
+                events = response.get("events", [])
+                if not events:
+                    return {
+                        "found": False,
+                        "log_group": log_group,
+                        "filter_pattern": filter_pattern,
+                        "message": f"No log events found matching pattern: {filter_pattern}",
+                    }
+            else:
+                if not log_stream:
+                    streams_response = client.describe_log_streams(
+                        logGroupName=log_group, orderBy="LastEventTime", descending=True, limit=1
+                    )
+                    if not streams_response.get("logStreams"):
+                        return {"found": False, "log_group": log_group, "message": "No log streams found in log group"}
+                    log_stream = streams_response["logStreams"][0]["logStreamName"]
 
-        # If filter_pattern is provided, use filter_log_events to search across all streams
-        if filter_pattern:
-            import time
-
-            response = client.filter_log_events(
-                logGroupName=log_group,
-                filterPattern=filter_pattern,
-                limit=limit,
-                startTime=int((time.time() - 7200) * 1000),  # Last 2 hours
-            )
-            events = response.get("events", [])
+                response = client.get_log_events(
+                    logGroupName=log_group, logStreamName=log_stream, limit=limit, startFromHead=False
+                )
+                events = response.get("events", [])
 
             if not events:
                 return {
                     "found": False,
                     "log_group": log_group,
+                    "log_stream": log_stream if not filter_pattern else None,
                     "filter_pattern": filter_pattern,
-                    "message": f"No log events found matching pattern: {filter_pattern}",
+                    "message": "No log events found",
                 }
-        else:
-            # Auto-discover log stream if not provided
-            if not log_stream:
-                streams_response = client.describe_log_streams(
-                    logGroupName=log_group, orderBy="LastEventTime", descending=True, limit=1
-                )
 
-                if not streams_response.get("logStreams"):
-                    return {
-                        "found": False,
-                        "log_group": log_group,
-                        "message": "No log streams found in log group",
-                    }
-
-                log_stream = streams_response["logStreams"][0]["logStreamName"]
-
-            response = client.get_log_events(
-                logGroupName=log_group, logStreamName=log_stream, limit=limit, startFromHead=False
-            )
-            events = response.get("events", [])
-
-        if not events:
-            return {
-                "found": False,
+            log_messages = [event.get("message", "") for event in events]
+            result = {
+                "found": True,
                 "log_group": log_group,
-                "log_stream": log_stream if not filter_pattern else None,
-                "filter_pattern": filter_pattern,
-                "message": "No log events found",
+                "event_count": len(events),
+                "error_logs": log_messages,
+                "latest_error": log_messages[0] if log_messages else None,
+            }
+            if filter_pattern:
+                result["filter_pattern"] = filter_pattern
+                result["searched_all_streams"] = True
+            else:
+                result["log_stream"] = log_stream
+            return result
+
+        except Exception as e:
+            return {
+                "error": str(e),
+                "log_group": log_group,
+                "log_stream": log_stream if log_stream else "auto-discovery",
             }
 
-        log_messages = [event.get("message", "") for event in events]
 
-        result = {
-            "found": True,
-            "log_group": log_group,
-            "event_count": len(events),
-            "error_logs": log_messages,
-            "latest_error": log_messages[0] if log_messages else None,
-        }
+class CloudWatchBatchMetricsTool(BaseTool):
+    """Get CloudWatch metrics for AWS Batch jobs."""
 
-        if filter_pattern:
-            result["filter_pattern"] = filter_pattern
-            result["searched_all_streams"] = True
-        else:
-            result["log_stream"] = log_stream
+    name = "get_cloudwatch_batch_metrics"
+    source = "cloudwatch"
+    description = "Get CloudWatch metrics for AWS Batch jobs."
+    use_cases = [
+        "Proving resource constraint hypothesis",
+        "Understanding batch job performance",
+        "Identifying AWS infrastructure issues",
+    ]
+    requires = ["job_queue"]
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "job_queue": {"type": "string", "description": "The AWS Batch job queue name"},
+            "metric_type": {"type": "string", "enum": ["cpu", "memory"], "default": "cpu"},
+        },
+        "required": ["job_queue"],
+    }
 
-        return result
+    def run(self, job_queue: str, metric_type: str = "cpu", **_kwargs) -> dict:
+        if not job_queue:
+            return {"error": "job_queue is required"}
+        if metric_type not in ["cpu", "memory"]:
+            return {"error": "metric_type must be 'cpu' or 'memory'"}
 
-    except Exception as e:
-        return {
-            "error": str(e),
-            "log_group": log_group,
-            "log_stream": log_stream if log_stream else "auto-discovery",
-        }
-
-
-def get_cloudwatch_batch_metrics(job_queue: str, metric_type: str = "cpu") -> dict:
-    """
-    Get CloudWatch metrics for AWS Batch jobs.
-
-    Useful for:
-    - Proving resource constraint hypothesis
-    - Understanding batch job performance
-    - Identifying AWS infrastructure issues
-
-    Args:
-        job_queue: The AWS Batch job queue name
-        metric_type: Either 'cpu' or 'memory'
-
-    Returns:
-        Dictionary with CloudWatch metrics
-    """
-    if not job_queue:
-        return {"error": "job_queue is required"}
-
-    if metric_type not in ["cpu", "memory"]:
-        return {"error": "metric_type must be 'cpu' or 'memory'"}
-
-    try:
-        if metric_type == "cpu":
+        try:
+            metric_name = "CPUUtilization" if metric_type == "cpu" else "MemoryUtilization"
             metrics = get_metric_statistics(
                 namespace="AWS/Batch",
-                metric_name="CPUUtilization",
+                metric_name=metric_name,
                 dimensions=[{"Name": "JobQueue", "Value": job_queue}],
                 statistics=["Average", "Maximum"],
             )
-        else:
-            metrics = get_metric_statistics(
-                namespace="AWS/Batch",
-                metric_name="MemoryUtilization",
-                dimensions=[{"Name": "JobQueue", "Value": job_queue}],
-                statistics=["Average", "Maximum"],
-            )
-
-        return {
-            "metrics": metrics,
-            "metric_type": metric_type,
-            "job_queue": job_queue,
-            "source": "AWS CloudWatch API",
-        }
-    except Exception as e:
-        return {"error": f"CloudWatch not available: {str(e)}"}
+            return {
+                "metrics": metrics,
+                "metric_type": metric_type,
+                "job_queue": job_queue,
+                "source": "AWS CloudWatch API",
+            }
+        except Exception as e:
+            return {"error": f"CloudWatch not available: {str(e)}"}
 
 
-# Create LangChain tool from the function
+# Backward-compatible aliases
+get_cloudwatch_logs = CloudWatchLogsTool()
+get_cloudwatch_batch_metrics = CloudWatchBatchMetricsTool()
 get_cloudwatch_batch_metrics_tool = tool(get_cloudwatch_batch_metrics)

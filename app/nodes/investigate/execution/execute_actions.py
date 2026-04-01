@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
-from app.tools.tool_actions.investigation_registry import InvestigationAction
+from app.tools.tool_actions.base import BaseTool as InvestigationAction
 
 
 @dataclass
@@ -44,18 +44,10 @@ def _execute_with_retry(
     """Execute action with exponential backoff retry for transient failures."""
     last_error = None
 
-    if action.parameter_extractor is None:
-        return ActionExecutionResult(
-            action_name=action_name,
-            success=False,
-            data={},
-            error="Action has no parameter extractor and cannot be executed automatically",
-        )
-
     for attempt in range(max_attempts):
         try:
-            kwargs = action.parameter_extractor(available_sources)
-            data = action.function(**kwargs)
+            kwargs = action.extract_params(available_sources)
+            data = action.run(**kwargs)
 
             if isinstance(data, dict):
                 # Actions that use "available" field (e.g. Grafana) are successful
@@ -153,7 +145,7 @@ def execute_actions(
 
         action = available_actions_map[action_name]
 
-        if action.availability_check and not action.availability_check(available_sources):
+        if not action.is_available(available_sources):
             results[action_name] = ActionExecutionResult(
                 action_name=action_name,
                 success=False,

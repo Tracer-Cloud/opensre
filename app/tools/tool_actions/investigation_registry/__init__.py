@@ -1,4 +1,4 @@
-"""Investigation actions registry - centralized action metadata and prioritization."""
+"""Investigation actions registry — centralized action metadata and prioritization."""
 
 from app.tools.tool_actions.investigation_registry.actions import get_available_actions
 from app.tools.tool_actions.investigation_registry.models import InvestigationAction

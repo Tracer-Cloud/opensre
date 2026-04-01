@@ -1,4 +1,4 @@
-"""Sentry issue and event lookup actions."""
+"""Sentry issue and event investigation tools."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from app.integrations.sentry import (
 from app.integrations.sentry import (
     list_sentry_issue_events as sentry_list_issue_events,
 )
+from app.tools.tool_actions.base import BaseTool
 
 
 def _resolve_config(
@@ -34,132 +35,179 @@ def _resolve_config(
     return config
 
 
-def search_sentry_issues(
-    organization_slug: str,
-    sentry_token: str,
-    query: str = "",
-    sentry_url: str = "",
-    project_slug: str = "",
-    limit: int = 10,
-    **_kwargs: Any,
-) -> dict[str, Any]:
-    """Search Sentry issues related to an incident or failure signature.
+def _sentry_available(sources: dict) -> bool:
+    return bool(sources.get("sentry", {}).get("connection_verified"))
 
-    Useful for:
-    - Checking whether an alert maps to a known Sentry issue
-    - Finding unresolved error groups for a service or environment
-    - Looking up recent crash reports that match an incident symptom
 
-    Args:
-        organization_slug: Sentry organization slug
-        sentry_token: Sentry auth token with event read access
-        query: Sentry issue search query
-        sentry_url: Sentry base URL
-        project_slug: Optional Sentry project slug
-        limit: Maximum number of issues to return
-
-    Returns:
-        issues: Matching Sentry issues
-    """
-    config = _resolve_config(sentry_url, organization_slug, sentry_token, project_slug)
-    if config is None:
-        return {
-            "source": "sentry",
-            "available": False,
-            "error": "Sentry integration is not configured.",
-            "issues": [],
-        }
-
-    issues = list_sentry_issues(config=config, query=query, limit=limit)
+def _sentry_creds(sentry: dict) -> dict:
     return {
-        "source": "sentry",
-        "available": True,
-        "issues": issues,
-        "query": query,
+        "organization_slug": sentry["organization_slug"],
+        "sentry_token": sentry["sentry_token"],
+        "sentry_url": sentry.get("sentry_url", "https://sentry.io"),
+        "project_slug": sentry.get("project_slug", ""),
     }
 
 
-def get_sentry_issue_details(
-    organization_slug: str,
-    sentry_token: str,
-    issue_id: str,
-    sentry_url: str = "",
-    project_slug: str = "",
-    **_kwargs: Any,
-) -> dict[str, Any]:
-    """Fetch full details for a Sentry issue.
+class SentrySearchIssuesTool(BaseTool):
+    """Search Sentry issues related to an incident or failure signature."""
 
-    Useful for:
-    - Inspecting the main error group linked to an alert
-    - Reviewing culprit, level, and regression details
-    - Understanding whether an incident matches an existing issue
-
-    Args:
-        organization_slug: Sentry organization slug
-        sentry_token: Sentry auth token with event read access
-        issue_id: Sentry issue ID
-        sentry_url: Sentry base URL
-        project_slug: Optional Sentry project slug
-
-    Returns:
-        issue: Sentry issue details
-    """
-    config = _resolve_config(sentry_url, organization_slug, sentry_token, project_slug)
-    if config is None:
-        return {
-            "source": "sentry",
-            "available": False,
-            "error": "Sentry integration is not configured.",
-            "issue": {},
-        }
-
-    issue = get_sentry_issue(config=config, issue_id=issue_id)
-    return {
-        "source": "sentry",
-        "available": True,
-        "issue": issue,
+    name = "search_sentry_issues"
+    source = "sentry"
+    description = "Search Sentry issues related to an incident or failure signature."
+    use_cases = [
+        "Checking whether an alert maps to a known Sentry issue",
+        "Finding unresolved error groups for a service or environment",
+        "Looking up recent crash reports that match an incident symptom",
+    ]
+    requires = ["organization_slug", "sentry_token"]
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "organization_slug": {"type": "string"},
+            "sentry_token": {"type": "string"},
+            "query": {"type": "string", "default": ""},
+            "sentry_url": {"type": "string", "default": ""},
+            "project_slug": {"type": "string", "default": ""},
+            "limit": {"type": "integer", "default": 10},
+        },
+        "required": ["organization_slug", "sentry_token"],
     }
 
+    def is_available(self, sources: dict) -> bool:
+        return _sentry_available(sources)
 
-def list_sentry_issue_events(
-    organization_slug: str,
-    sentry_token: str,
-    issue_id: str,
-    sentry_url: str = "",
-    project_slug: str = "",
-    limit: int = 10,
-    **_kwargs: Any,
-) -> dict[str, Any]:
-    """List recent events for a Sentry issue.
-
-    Useful for:
-    - Reviewing the latest stack traces attached to an issue
-    - Checking whether new events appeared during an incident window
-    - Comparing repeated failures grouped under the same issue
-
-    Args:
-        organization_slug: Sentry organization slug
-        sentry_token: Sentry auth token with event read access
-        issue_id: Sentry issue ID
-        sentry_url: Sentry base URL
-        project_slug: Optional Sentry project slug
-        limit: Maximum number of issue events to return
-
-    Returns:
-        events: Recent Sentry events for the issue
-    """
-    config = _resolve_config(sentry_url, organization_slug, sentry_token, project_slug)
-    if config is None:
+    def extract_params(self, sources: dict) -> dict:
+        sentry = sources["sentry"]
         return {
-            "source": "sentry",
-            "available": False,
-            "error": "Sentry integration is not configured.",
-            "events": [],
+            **_sentry_creds(sentry),
+            "query": sentry.get("query", ""),
+            "limit": 10,
         }
 
-    events = sentry_list_issue_events(config=config, issue_id=issue_id, limit=limit)
-    return {
-        "source": "sentry",
-        "available": True,
-        "events": events,
+    def run(
+        self,
+        organization_slug: str,
+        sentry_token: str,
+        query: str = "",
+        sentry_url: str = "",
+        project_slug: str = "",
+        limit: int = 10,
+        **_kwargs: Any,
+    ) -> dict[str, Any]:
+        config = _resolve_config(sentry_url, organization_slug, sentry_token, project_slug)
+        if config is None:
+            return {"source": "sentry", "available": False, "error": "Sentry integration is not configured.", "issues": []}
+
+        issues = list_sentry_issues(config=config, query=query, limit=limit)
+        return {"source": "sentry", "available": True, "issues": issues, "query": query}
+
+
+class SentryIssueDetailsTool(BaseTool):
+    """Fetch full details for a Sentry issue."""
+
+    name = "get_sentry_issue_details"
+    source = "sentry"
+    description = "Fetch full details for a Sentry issue."
+    use_cases = [
+        "Inspecting the main error group linked to an alert",
+        "Reviewing culprit, level, and regression details",
+        "Understanding whether an incident matches an existing issue",
+    ]
+    requires = ["organization_slug", "sentry_token", "issue_id"]
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "organization_slug": {"type": "string"},
+            "sentry_token": {"type": "string"},
+            "issue_id": {"type": "string"},
+            "sentry_url": {"type": "string", "default": ""},
+            "project_slug": {"type": "string", "default": ""},
+        },
+        "required": ["organization_slug", "sentry_token", "issue_id"],
     }
+
+    def is_available(self, sources: dict) -> bool:
+        return bool(_sentry_available(sources) and sources.get("sentry", {}).get("issue_id"))
+
+    def extract_params(self, sources: dict) -> dict:
+        sentry = sources["sentry"]
+        return {
+            **_sentry_creds(sentry),
+            "issue_id": sentry["issue_id"],
+        }
+
+    def run(
+        self,
+        organization_slug: str,
+        sentry_token: str,
+        issue_id: str,
+        sentry_url: str = "",
+        project_slug: str = "",
+        **_kwargs: Any,
+    ) -> dict[str, Any]:
+        config = _resolve_config(sentry_url, organization_slug, sentry_token, project_slug)
+        if config is None:
+            return {"source": "sentry", "available": False, "error": "Sentry integration is not configured.", "issue": {}}
+
+        issue = get_sentry_issue(config=config, issue_id=issue_id)
+        return {"source": "sentry", "available": True, "issue": issue}
+
+
+class SentryIssueEventsTool(BaseTool):
+    """List recent events for a Sentry issue."""
+
+    name = "list_sentry_issue_events"
+    source = "sentry"
+    description = "List recent events for a Sentry issue."
+    use_cases = [
+        "Reviewing the latest stack traces attached to an issue",
+        "Checking whether new events appeared during an incident window",
+        "Comparing repeated failures grouped under the same issue",
+    ]
+    requires = ["organization_slug", "sentry_token", "issue_id"]
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "organization_slug": {"type": "string"},
+            "sentry_token": {"type": "string"},
+            "issue_id": {"type": "string"},
+            "sentry_url": {"type": "string", "default": ""},
+            "project_slug": {"type": "string", "default": ""},
+            "limit": {"type": "integer", "default": 10},
+        },
+        "required": ["organization_slug", "sentry_token", "issue_id"],
+    }
+
+    def is_available(self, sources: dict) -> bool:
+        return bool(_sentry_available(sources) and sources.get("sentry", {}).get("issue_id"))
+
+    def extract_params(self, sources: dict) -> dict:
+        sentry = sources["sentry"]
+        return {
+            **_sentry_creds(sentry),
+            "issue_id": sentry["issue_id"],
+            "limit": 10,
+        }
+
+    def run(
+        self,
+        organization_slug: str,
+        sentry_token: str,
+        issue_id: str,
+        sentry_url: str = "",
+        project_slug: str = "",
+        limit: int = 10,
+        **_kwargs: Any,
+    ) -> dict[str, Any]:
+        config = _resolve_config(sentry_url, organization_slug, sentry_token, project_slug)
+        if config is None:
+            return {"source": "sentry", "available": False, "error": "Sentry integration is not configured.", "events": []}
+
+        events = sentry_list_issue_events(config=config, issue_id=issue_id, limit=limit)
+        return {"source": "sentry", "available": True, "events": events}
+
+
+# Backward-compatible aliases
+search_sentry_issues = SentrySearchIssuesTool()
+get_sentry_issue_details = SentryIssueDetailsTool()
+list_sentry_issue_events = SentryIssueEventsTool()

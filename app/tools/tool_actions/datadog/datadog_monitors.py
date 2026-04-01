@@ -1,49 +1,79 @@
-"""Datadog monitor listing action."""
+"""Datadog monitor listing tool."""
 
 from __future__ import annotations
 
 from typing import Any
 
+from app.tools.tool_actions.base import BaseTool
 from app.tools.tool_actions.datadog._client import make_client, unavailable
 
 
-def query_datadog_monitors(
-    query: str | None = None,
-    api_key: str | None = None,
-    app_key: str | None = None,
-    site: str = "datadoghq.com",
-    **_kwargs: Any,
-) -> dict:
-    """List Datadog monitors to understand alerting configuration and current states.
-
-    Useful for:
-    - Understanding which monitors triggered an alert
-    - Finding the exact query behind a Datadog alert
-    - Checking monitor states (OK, Alert, Warn, No Data)
-    - Reviewing monitor configuration for pipeline monitoring
-
-    Args:
-        query: Optional monitor filter (e.g., 'tag:pipeline:tracer-ai-agent')
-        api_key: Datadog API key
-        app_key: Datadog application key
-        site: Datadog site
-
-    Returns:
-        monitors: List of monitors with id, name, type, query, state, tags
-        total: Total number of monitors found
-    """
-    client = make_client(api_key, app_key, site)
-    if not client:
-        return unavailable("datadog_monitors", "monitors", "Datadog integration not configured")
-
-    result = client.list_monitors(query=query)
-    if not result.get("success"):
-        return unavailable("datadog_monitors", "monitors", result.get("error", "Unknown error"))
-
+def _dd_creds(dd: dict) -> dict:
     return {
-        "source": "datadog_monitors",
-        "available": True,
-        "monitors": result.get("monitors", []),
-        "total": result.get("total", 0),
-        "query_filter": query,
+        "api_key": dd.get("api_key"),
+        "app_key": dd.get("app_key"),
+        "site": dd.get("site", "datadoghq.com"),
     }
+
+
+class DataDogMonitorsTool(BaseTool):
+    """List Datadog monitors to understand alerting configuration and current states."""
+
+    name = "query_datadog_monitors"
+    source = "datadog"
+    description = "List Datadog monitors to understand alerting configuration and current states."
+    use_cases = [
+        "Understanding which monitors triggered an alert",
+        "Finding the exact query behind a Datadog alert",
+        "Checking monitor states (OK, Alert, Warn, No Data)",
+        "Reviewing monitor configuration for pipeline monitoring",
+    ]
+    requires = []
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Optional monitor filter (e.g., 'tag:pipeline:tracer-ai-agent')"},
+            "api_key": {"type": "string"},
+            "app_key": {"type": "string"},
+            "site": {"type": "string", "default": "datadoghq.com"},
+        },
+        "required": [],
+    }
+
+    def is_available(self, sources: dict) -> bool:
+        return bool(sources.get("datadog", {}).get("connection_verified"))
+
+    def extract_params(self, sources: dict) -> dict:
+        dd = sources["datadog"]
+        return {
+            "query": dd.get("monitor_query"),
+            **_dd_creds(dd),
+        }
+
+    def run(
+        self,
+        query: str | None = None,
+        api_key: str | None = None,
+        app_key: str | None = None,
+        site: str = "datadoghq.com",
+        **_kwargs: Any,
+    ) -> dict:
+        client = make_client(api_key, app_key, site)
+        if not client:
+            return unavailable("datadog_monitors", "monitors", "Datadog integration not configured")
+
+        result = client.list_monitors(query=query)
+        if not result.get("success"):
+            return unavailable("datadog_monitors", "monitors", result.get("error", "Unknown error"))
+
+        return {
+            "source": "datadog_monitors",
+            "available": True,
+            "monitors": result.get("monitors", []),
+            "total": result.get("total", 0),
+            "query_filter": query,
+        }
+
+
+# Backward-compatible alias
+query_datadog_monitors = DataDogMonitorsTool()
