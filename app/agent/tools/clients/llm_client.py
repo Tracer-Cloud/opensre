@@ -199,14 +199,15 @@ class OpenAILLMClient:
                 response = self._client.chat.completions.create(**kwargs)
                 break
             except OpenAIAuthError as err:
+                provider_label = self._api_key_env.removesuffix("_API_KEY").replace("_", " ").title()
                 raise RuntimeError(
-                    f"OpenAI authentication failed. Check {self._api_key_env} in your environment or .env."
+                    f"{provider_label} authentication failed. Check {self._api_key_env} in your environment or .env."
                 ) from err
             except Exception as err:
                 last_err = err
                 if attempt == max_attempts - 1:
                     raise RuntimeError(
-                        "OpenAI API request failed after multiple retries. Try again in a few seconds."
+                        "LLM API request failed after multiple retries. Try again in a few seconds."
                     ) from err
                 time.sleep(backoff_seconds)
                 backoff_seconds *= 2
