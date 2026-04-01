@@ -8,7 +8,7 @@ from app.cli.tests.catalog import TestCatalog, TestCatalogItem, TestRequirement
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MAKEFILE_PATH = REPO_ROOT / "Makefile"
-RCA_DIR = REPO_ROOT / "tests" / "rca"
+RCA_DIR = REPO_ROOT / "tests" / "e2e" / "rca"
 
 _TARGETS_TO_INDEX = (
     "test",
