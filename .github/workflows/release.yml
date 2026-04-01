@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install build twine
+
+      - name: Run release checks
+        run: |
+          make lint
+          make typecheck
+          make test-cov
+
+      - name: Build distribution artifacts
+        run: python -m build
+
+      - name: Validate distribution metadata
+        run: twine check dist/*
+
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/*
+          if-no-files-found: error
+
+  github-release:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+
+      - name: Create GitHub release and upload assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="manual-${GITHUB_SHA::7}"
+          fi
+
+          gh release create "$TAG_NAME" \
+            dist/* \
+            --repo "${{ github.repository }}" \
+            --target "${GITHUB_SHA}" \
+            --title "$TAG_NAME" \
+            --generate-notes
+
+  publish-pypi:
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') && secrets.PYPI_API_TOKEN != ''
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
