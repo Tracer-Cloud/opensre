@@ -1,0 +1,20 @@
+schema_version: "1.0"
+scenario_id: 014-checkpoint-storm-cpu-saturation
+engine: postgres
+engine_version: "15"
+instance_class: db.r6g.xlarge
+region: us-west-2
+db_instance_identifier: billing-prod
+failure_mode: cpu_saturation
+severity: critical
+scenario_difficulty: 4
+adversarial_signals:
+  - CPUUtilization is at 92% — the alert fired on CPU and it is the most obvious metric
+  - An agent that concludes "cpu_saturation" from CPU alone gets the causal chain backwards
+  - True cause is a runaway VACUUM FREEZE on a large table that triggered checkpoint storms
+  - Checkpoint storms produce massive I/O (IO:WALWrite, IO:DataFileWrite) which saturate CPU
+  - The dominant wait event in Performance Insights is LWLock:BufferMapping, not CPU:user
+available_evidence:
+  - rds_metrics
+  - rds_events
+  - performance_insights

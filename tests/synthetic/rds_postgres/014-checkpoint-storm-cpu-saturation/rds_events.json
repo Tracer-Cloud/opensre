@@ -1,0 +1,39 @@
+{
+  "events": [
+    {
+      "date": "2026-03-29T22:00:48Z",
+      "message": "DB instance billing-prod: Enhanced Monitoring is reporting high I/O wait. DiskQueueDepth has exceeded normal threshold.",
+      "source_identifier": "billing-prod",
+      "source_type": "db-instance",
+      "event_categories": ["notification"]
+    },
+    {
+      "date": "2026-03-29T22:02:14Z",
+      "message": "DB instance billing-prod CPU utilization has exceeded 50%.",
+      "source_identifier": "billing-prod",
+      "source_type": "db-instance",
+      "event_categories": ["notification"]
+    },
+    {
+      "date": "2026-03-29T22:08:31Z",
+      "message": "DB instance billing-prod CPU utilization has been above 85% for 5 consecutive minutes.",
+      "source_identifier": "billing-prod",
+      "source_type": "db-instance",
+      "event_categories": ["notification"]
+    },
+    {
+      "date": "2026-03-29T22:09:02Z",
+      "message": "DB instance billing-prod low storage space: 99.0 GB remaining of 200 GB.",
+      "source_identifier": "billing-prod",
+      "source_type": "db-instance",
+      "event_categories": ["low storage"]
+    },
+    {
+      "date": "2026-03-29T22:18:44Z",
+      "message": "DB instance billing-prod low storage space: 82.2 GB remaining of 200 GB. Monitor storage consumption.",
+      "source_identifier": "billing-prod",
+      "source_type": "db-instance",
+      "event_categories": ["low storage"]
+    }
+  ]
+}

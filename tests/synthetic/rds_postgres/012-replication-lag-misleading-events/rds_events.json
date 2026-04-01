@@ -1,28 +1,70 @@
 {
   "events": [
     {
-      "date": "2026-03-28T11:04:18Z",
-      "message": "A Multi-AZ failover has been initiated for DB instance reporting-prod.",
+      "date": "2026-03-28T05:02:14Z",
+      "message": "DB instance reporting-prod will undergo scheduled maintenance in the next maintenance window.",
+      "source_identifier": "reporting-prod",
+      "source_type": "db-instance",
+      "event_categories": ["maintenance"]
+    },
+    {
+      "date": "2026-03-28T05:08:31Z",
+      "message": "Applying minor version upgrade to reporting-prod. Instance will be unavailable for approximately 5 minutes.",
+      "source_identifier": "reporting-prod",
+      "source_type": "db-instance",
+      "event_categories": ["maintenance", "availability"]
+    },
+    {
+      "date": "2026-03-28T05:14:02Z",
+      "message": "Maintenance complete. DB instance reporting-prod is available.",
+      "source_identifier": "reporting-prod",
+      "source_type": "db-instance",
+      "event_categories": ["maintenance", "availability"]
+    },
+    {
+      "date": "2026-03-28T08:10:47Z",
+      "message": "A Multi-AZ failover has been initiated for DB instance reporting-prod. Instance is being promoted.",
       "source_identifier": "reporting-prod",
       "source_type": "db-instance",
       "event_categories": ["failover", "availability"]
     },
     {
-      "date": "2026-03-28T11:04:51Z",
+      "date": "2026-03-28T08:11:22Z",
       "message": "Multi-AZ failover in progress for DB instance reporting-prod.",
       "source_identifier": "reporting-prod",
       "source_type": "db-instance",
       "event_categories": ["failover", "availability"]
     },
     {
-      "date": "2026-03-28T11:05:22Z",
+      "date": "2026-03-28T08:11:58Z",
       "message": "DB instance reporting-prod has finished a Multi-AZ failover and is available at a new endpoint.",
       "source_identifier": "reporting-prod",
       "source_type": "db-instance",
       "event_categories": ["failover", "availability"]
     },
     {
-      "date": "2026-03-28T11:06:04Z",
+      "date": "2026-03-28T08:12:14Z",
+      "message": "DB instance reporting-prod is available.",
+      "source_identifier": "reporting-prod",
+      "source_type": "db-instance",
+      "event_categories": ["availability"]
+    },
+    {
+      "date": "2026-03-28T11:04:18Z",
+      "message": "Read replica reporting-prod-replica-2 is being promoted to a standalone instance as part of planned replica rotation.",
+      "source_identifier": "reporting-prod-replica-2",
+      "source_type": "db-instance",
+      "event_categories": ["read replica", "configuration change"]
+    },
+    {
+      "date": "2026-03-28T11:05:03Z",
+      "message": "Read replica reporting-prod-replica-2 has been successfully promoted. Replica reporting-prod-replica-1 continues replication.",
+      "source_identifier": "reporting-prod-replica-2",
+      "source_type": "db-instance",
+      "event_categories": ["read replica", "configuration change"]
+    },
+    {
+      "date": "2026-03-28T11:06:14Z",
       "message": "DB instance reporting-prod is available.",
       "source_identifier": "reporting-prod",
       "source_type": "db-instance",

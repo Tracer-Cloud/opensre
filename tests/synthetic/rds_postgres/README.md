@@ -22,13 +22,14 @@ This suite benchmarks RDS PostgreSQL root-cause analysis against bundled telemet
 
 ### Axis 2 — Reasoning (marker: `axis2`)
 
-Axis 2 scenarios use `SelectiveGrafanaBackend` — the backend returns only the metric series matching the agent's `metric_name` query. The agent must ask for the right metrics and explicitly rule out alternative hypotheses.
+Axis 2 scenarios use `SelectiveGrafanaBackend`. The agent must ask for the right metrics and explicitly rule out alternative hypotheses. Each scenario has `ruling_out_keywords` that must appear in the agent's output.
 
-| ID  | Name                               | Difficulty | True root cause     | Red herring / adversarial element                           | Must rule out                            |
-| --- | ---------------------------------- | ---------- | ------------------- | ----------------------------------------------------------- | ---------------------------------------- |
-| 011 | cpu-storage-compositional          | 4          | resource_exhaustion | ReplicaLag elevation and connection spike as side effects   | connection_exhaustion, replication       |
-| 012 | replication-lag-misleading-events  | 3          | resource_exhaustion | Historical failover in event stream (2 hrs before lag)      | infrastructure (failover as root cause)  |
-| 013 | storage-recovery-false-alert       | 3          | healthy             | FreeStorageSpace spike + WriteLatency brief elevation       | resource_exhaustion (already recovered)  |
+| ID  | Name                               | Difficulty | True root cause     | Red herring / adversarial element                                    | Must rule out                             |
+| --- | ---------------------------------- | ---------- | ------------------- | -------------------------------------------------------------------- | ----------------------------------------- |
+| 011 | cpu-storage-compositional          | 4          | resource_exhaustion | ReplicaLag elevation and connection spike as side effects            | connection_exhaustion, replication        |
+| 012 | replication-lag-misleading-events  | 3          | resource_exhaustion | Three historical infra events in event stream (none are root cause)  | infrastructure (failover as root cause)   |
+| 013 | storage-recovery-false-alert       | 3          | healthy             | FreeStorageSpace spike + WriteLatency brief elevation                | resource_exhaustion (already recovered)   |
+| 014 | checkpoint-storm-cpu-saturation    | 4          | resource_exhaustion | CPU at 92% — alert fires on CPU but cause is VACUUM checkpoint storm | cpu_saturation (CPU is symptom, not root) |
 
 ## Difficulty levels
 

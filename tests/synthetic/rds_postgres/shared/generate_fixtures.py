@@ -198,6 +198,14 @@ BASELINE_DEFS: list[dict] = [
     {"metric_name": "DatabaseConnections",     "id": "m_db_conn_base",   "dim": "payments-prod",         "stat": "Average", "unit": "Count",            "mean": 93.0,   "noise": 0.10, "floor": 60.0, "ceil": 130.0},
     {"metric_name": "FreeStorageSpace",        "id": "m_free_storage",   "dim": "payments-prod",         "stat": "Minimum", "unit": "Bytes",            "mean": 214748364800.0, "noise": 0.0, "special": "flat"},  # 200 GB
     {"metric_name": "ReplicaLag",              "id": "m_replica_lag_base","dim": "payments-prod-replica-1","stat": "Maximum","unit": "Seconds",          "mean": 1.2,    "noise": 0.20, "floor": 0.4, "ceil": 3.0},
+    # --- Decoy metrics (adversarial noise layer) ---
+    # Each is real and observable but not the root cause in any current scenario.
+    # They create plausible-looking false leads the agent must consider and dismiss.
+    {"metric_name": "SwapUsage",               "id": "m_swap",           "dim": "payments-prod",         "stat": "Maximum", "unit": "Bytes",            "mean": 83886080.0, "noise": 0.08, "floor": 0.0},          # ~80 MB — visible but not alarming
+    {"metric_name": "BinLogDiskUsage",         "id": "m_binlog",         "dim": "payments-prod",         "stat": "Average", "unit": "Bytes",            "mean": 524288000.0,"noise": 0.07},                         # ~500 MB binlog accumulation
+    {"metric_name": "MaximumUsedTransactionIDs","id": "m_max_xid",       "dim": "payments-prod",         "stat": "Maximum", "unit": "Count",            "mean": 198000000.0, "noise": 0.002, "floor": 190000000.0}, # ~198M XID — healthy but drifting upward
+    {"metric_name": "ReadThroughput",          "id": "m_read_tput",      "dim": "payments-prod",         "stat": "Average", "unit": "Bytes/Second",     "mean": 52428800.0, "noise": 0.09},                         # ~50 MB/s read activity
+    {"metric_name": "WriteThroughput",         "id": "m_write_tput",     "dim": "payments-prod",         "stat": "Average", "unit": "Bytes/Second",     "mean": 20971520.0, "noise": 0.11},                         # ~20 MB/s write activity
 ]
 
 # ---------------------------------------------------------------------------

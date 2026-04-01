@@ -10,9 +10,10 @@ required_evidence_sources:
 forbidden_categories:
   - infrastructure
 ruling_out_keywords:
-  # "failover" — agent must mention the failover but explain it completed 2 hours before the lag began
+  # "failover" — agent must mention the failovers/maintenance but explain all completed before the lag
   # "WAL" — agent must identify WAL replay bottleneck as the active root cause
   # "replica" — agent must address the replica specifically
+  # "historical" OR "completed" OR "resolved" — agent must characterise events as past/resolved
   - failover
   - WAL
   - replica
@@ -22,7 +23,7 @@ optimal_trajectory:
   - query_grafana_alert_rules
 max_investigation_loops: 3
 model_response: |
-  ROOT_CAUSE: Replication lag on reporting-prod-replica-1 caused by an ETL bulk INSERT job generating WAL at ~195 MB/s — faster than the replica can replay. The RDS event stream contains a Multi-AZ failover that completed at 11:05Z (approximately 2 hours before the alert), but this failover is a historical event and is not the active root cause. The current lag began at 13:00Z with the ETL workload, not with the failover.
+  ROOT_CAUSE: Replication lag on reporting-prod-replica-1 caused by an ETL bulk INSERT job generating WAL at ~195 MB/s — faster than the replica can replay. The RDS event stream contains three historical infrastructure events that are distractors: (1) a scheduled maintenance/minor-version upgrade at 05:08Z (completed 05:14Z), (2) a Multi-AZ failover at 08:10Z (completed 08:12Z), and (3) a replica promotion of reporting-prod-replica-2 at 11:04Z (completed 11:05Z). All three events resolved hours before the current lag began at 13:00Z and are not the active root cause.
   ROOT_CAUSE_CATEGORY: resource_exhaustion
 
   VALIDATED_CLAIMS:
@@ -30,7 +31,7 @@ model_response: |
   - TransactionLogsGeneration reached ~196 MB/s by 13:02Z, sustained at this level throughout — far exceeding normal replica replay capacity. [evidence: rds_metrics]
   - WriteIOPS spiked from 420 to 20,500 at 13:01Z and sustained — consistent with a large bulk write workload. [evidence: rds_metrics]
   - Performance Insights shows the ETL INSERT query as the dominant load (4.2 AAS) with WAL:Lock as the primary wait event (3.1 AAS) — confirming WAL replay is the bottleneck mechanism. [evidence: performance_insights]
-  - The Multi-AZ failover in RDS events completed at 11:05Z — nearly 2 hours before the lag began. The failover is historical and resolved; the instance was healthy and available from 11:06Z onward. The failover did not cause the current replication lag. [evidence: rds_events]
+  - The RDS event stream contains three historical events: scheduled maintenance completed at 05:14Z, Multi-AZ failover completed at 08:12Z, and replica-2 promotion completed at 11:05Z. All three are resolved and the instance was available and stable from 11:06Z onward. None caused the current replication lag. [evidence: rds_events]
   - CPUUtilization is elevated at ~41% — a direct consequence of the write-heavy ETL workload, not an independent CPU saturation event. [evidence: rds_metrics]
   - DatabaseConnections are stable at ~99-103, ruling out any connection exhaustion contribution. [evidence: rds_metrics]
 
@@ -38,7 +39,9 @@ model_response: |
   - The parameter group change at 13:00Z is routine maintenance and unrelated to the lag onset.
 
   CAUSAL_CHAIN:
+  - A scheduled maintenance/version upgrade ran at 05:08Z and completed cleanly at 05:14Z — historical, irrelevant.
+  - A Multi-AZ failover occurred at 08:10Z and completed at 08:12Z — historical, irrelevant.
+  - A read replica promotion of replica-2 completed at 11:05Z — historical, irrelevant. Replica-1 continues replication normally.
   - An ETL job began loading reporting_events at 13:00Z, generating ~196 MB/s of WAL on reporting-prod.
   - The read replica (reporting-prod-replica-1) cannot replay WAL at this rate, accumulating lag from 12s to 1,468s.
-  - A Multi-AZ failover occurred at 11:04Z and completed successfully at 11:05Z — nearly 2 hours earlier. This is a historical event unrelated to the current replication lag.
-  - The CPU elevation is a symptom of the write-heavy ETL workload, not an independent saturation root cause.
+  - The CPU elevation and moderate connection count are direct symptoms of the write-heavy ETL workload.

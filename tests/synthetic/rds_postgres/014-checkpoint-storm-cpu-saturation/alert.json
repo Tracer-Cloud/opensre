@@ -1,0 +1,22 @@
+{
+  "title": "[synthetic-rds] High CPU on billing-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSCPUUtilizationHigh",
+    "severity": "critical",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "CPUUtilization on billing-prod has been above 88% for 15 minutes. Query response times are degraded.",
+    "error": "CPU sustained above critical threshold (85%) for 15 consecutive minutes.",
+    "suspected_symptom": "Billing service reporting slow invoice generation. Background jobs timing out.",
+    "db_instance_identifier": "billing-prod",
+    "db_instance": "billing-prod",
+    "cloudwatch_region": "us-west-2",
+    "rds_failure_mode": "cpu_saturation",
+    "context_sources": "cloudwatch"
+  }
+}
