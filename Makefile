@@ -92,9 +92,9 @@ crashloop-demo:
 prefect-demo:
 	$(PYTHON) -m tests.e2e.upstream_prefect_ecs_fargate.test_agent_e2e
 
-# Run RCA tests from markdown alert files in tests/rca/ (pass FILE= to run one)
+# Run RCA tests from markdown alert files in tests/e2e/rca/ (pass FILE= to run one)
 test-rca:
-	$(PYTHON) -m tests.rca.run_rca_test $(FILE)
+	$(PYTHON) -m tests.e2e.rca.run_rca_test $(FILE)
 
 # Run synthetic tests via pytest markers (fixture-based, no live infra required)
 test-synthetic:
@@ -107,7 +107,7 @@ test-rds-synthetic:
 # Boot local Grafana+Loki, seed deterministic test logs, then run the RCA pipeline
 # Requires GRAFANA_INSTANCE_URL + GRAFANA_READ_TOKEN in .env (see .env.example for local defaults)
 test-rca-grafana: grafana-local-up grafana-local-seed
-	$(PYTHON) -m tests.rca.run_rca_test grafana_pipeline_failure
+	$(PYTHON) -m tests.e2e.rca.run_rca_test grafana_pipeline_failure
 
 # Simulate a Datadog alert via local LangGraph server (full pipeline, real API calls)
 simulate-k8s-alert:
@@ -330,7 +330,7 @@ help:
 	@echo "  make test-full       - Run full test suite (CI/CD)"
 	@echo "  make test-cov        - Run tests with coverage"
 	@echo "  make test-grafana    - Run Grafana integration tests"
-	@echo "  make test-rca        - Run all RCA markdown alert tests in tests/rca/"
+	@echo "  make test-rca        - Run all RCA markdown alert tests in tests/e2e/rca/"
 	@echo "  make test-rca FILE=pipeline_error_in_logs - Run a single RCA alert test"
 	@echo "  make test-rds-synthetic - Run the synthetic RDS PostgreSQL RCA suite"
 	@echo "  make clean           - Clean up cache files"

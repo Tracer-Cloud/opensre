@@ -1,7 +1,7 @@
 # Alert: [FIRING:1] Pipeline Load Failure — events_fact
 
 <!--
-  RCA test file — parsed by tests/rca/run_rca_test.py
+  RCA test file — parsed by tests/e2e/rca/run_rca_test.py
   Run via: make test-rca-grafana
   Infra: make grafana-local-up seeds Loki with events_fact pipeline logs.
   Required fields (in the ## Alert Metadata JSON block):

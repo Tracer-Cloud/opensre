@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Run RCA investigations from markdown alert files in tests/rca/.
+"""Run RCA investigations from markdown alert files in tests/e2e/rca/.
 
 Usage:
-    python -m tests.rca.run_rca_test                    # run all .md files
-    python -m tests.rca.run_rca_test pipeline_error_in_logs  # run one (with or without .md)
+    python -m tests.e2e.rca.run_rca_test                    # run all .md files
+    python -m tests.e2e.rca.run_rca_test pipeline_error_in_logs  # run one (with or without .md)
 """
 
 from __future__ import annotations
