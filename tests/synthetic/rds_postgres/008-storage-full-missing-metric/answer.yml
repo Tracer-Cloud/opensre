@@ -3,7 +3,7 @@ required_keywords:
   - storage
   - storage space
 required_evidence_sources:
-  - rds_events
+  - aws_rds_events
 optimal_trajectory:
   - query_grafana_logs
   - query_grafana_metrics
@@ -14,11 +14,11 @@ model_response: |
   ROOT_CAUSE_CATEGORY: resource_exhaustion
 
   VALIDATED_CLAIMS:
-  - WriteIOPS dropped from 1,840 to 0 between 03:07Z and 03:10Z — consistent with writes being blocked by a full disk. [evidence: rds_metrics]
-  - WriteLatency rose from <1ms to 34 seconds over the same window, with writes hanging indefinitely on Lock:relation waits. [evidence: rds_metrics]
-  - CPUUtilization fell from ~31% to under 1% as database activity ceased — the instance was not CPU-bound. [evidence: rds_metrics]
-  - RDS event at 03:08:44Z explicitly states "DB instance ran out of storage space". [evidence: rds_events]
-  - Performance Insights shows write queries accumulating Lock:relation waits (10.1 AAS) with 0 calls/sec throughput — the queries are blocked, not completing. [evidence: performance_insights]
+  - WriteIOPS dropped from 1,840 to 0 between 03:07Z and 03:10Z — consistent with writes being blocked by a full disk. [evidence: aws_cloudwatch_metrics]
+  - WriteLatency rose from <1ms to 34 seconds over the same window, with writes hanging indefinitely on Lock:relation waits. [evidence: aws_cloudwatch_metrics]
+  - CPUUtilization fell from ~31% to under 1% as database activity ceased — the instance was not CPU-bound. [evidence: aws_cloudwatch_metrics]
+  - RDS event at 03:08:44Z explicitly states "DB instance ran out of storage space". [evidence: aws_rds_events]
+  - Performance Insights shows write queries accumulating Lock:relation waits (10.1 AAS) with 0 calls/sec throughput — the queries are blocked, not completing. [evidence: aws_performance_insights]
 
   NON_VALIDATED_CLAIMS:
   - FreeStorageSpace metric was absent from CloudWatch collection during this window (collection gap). The diagnosis relies on indirect evidence.

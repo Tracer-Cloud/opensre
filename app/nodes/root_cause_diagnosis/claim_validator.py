@@ -24,16 +24,16 @@ def _has_any_logs(evidence: dict[str, Any]) -> bool:
 
 
 def _has_rds_metrics(evidence: dict[str, Any]) -> bool:
-    metrics = evidence.get("rds_metrics", {})
+    metrics = evidence.get("aws_cloudwatch_metrics", {})
     return bool(metrics and (metrics.get("metrics") or metrics.get("observations")))
 
 
 def _has_rds_events(evidence: dict[str, Any]) -> bool:
-    return bool(evidence.get("rds_events"))
+    return bool(evidence.get("aws_rds_events"))
 
 
 def _has_performance_insights(evidence: dict[str, Any]) -> bool:
-    insights = evidence.get("performance_insights", {})
+    insights = evidence.get("aws_performance_insights", {})
     return bool(insights and (insights.get("top_sql") or insights.get("wait_events") or insights.get("observations")))
 
 
@@ -144,11 +144,11 @@ def extract_evidence_sources(claim: str, evidence: dict[str, Any]) -> list[str]:
         kw in claim_lower
         for kw in ("metric", "replica", "replication lag", "connection", "storage", "disk", "database", "rds")
     ) and _has_rds_metrics(evidence):
-        sources.append("rds_metrics")
+        sources.append("aws_cloudwatch_metrics")
     if any(kw in claim_lower for kw in ("event", "failover", "reboot", "promotion", "availability zone")) and _has_rds_events(evidence):
-        sources.append("rds_events")
+        sources.append("aws_rds_events")
     if any(kw in claim_lower for kw in ("query", "sql", "db load", "wait event", "cpu", "load")) and _has_performance_insights(evidence):
-        sources.append("performance_insights")
+        sources.append("aws_performance_insights")
     if ("lambda" in claim_lower or "function" in claim_lower) and (
         evidence.get("lambda_logs") or evidence.get("lambda_function")
     ):

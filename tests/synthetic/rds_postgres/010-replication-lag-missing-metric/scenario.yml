@@ -1,9 +1,5 @@
-schema_version: "1.0"
+base: 000-healthy
 scenario_id: 010-replication-lag-missing-metric
-engine: postgres
-engine_version: "15"
-instance_class: db.r6g.2xlarge
-region: us-east-1
 db_instance_identifier: reporting-prod
 db_cluster: reporting-cluster
 failure_mode: replication_lag
@@ -11,7 +7,3 @@ severity: critical
 scenario_difficulty: 3
 adversarial_signals:
   - ReplicaLag_absent
-available_evidence:
-  - rds_metrics
-  - rds_events
-  - performance_insights

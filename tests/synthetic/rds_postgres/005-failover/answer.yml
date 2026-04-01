@@ -3,7 +3,7 @@ required_keywords:
   - failover
   - Multi-AZ
 required_evidence_sources:
-  - rds_events
+  - aws_rds_events
 optimal_trajectory:
   - query_grafana_logs
   - query_grafana_metrics
@@ -14,10 +14,10 @@ model_response: |
   ROOT_CAUSE_CATEGORY: infrastructure
 
   VALIDATED_CLAIMS:
-  - DatabaseConnections dropped to 0 at 08:05Z and recovered fully by 08:07Z. [evidence: rds_metrics]
-  - CPUUtilization and WriteIOPS both dropped to near-zero during the same window, confirming the instance was unavailable (not a connection pool issue). [evidence: rds_metrics]
-  - RDS events show: failover initiated (08:04:18Z) → in progress (08:04:21Z) → completed (08:04:58Z) → available (08:05:04Z). [evidence: rds_events]
-  - Performance Insights shows no anomalous queries before or after the failover window. Workload resumed normally afterward. [evidence: performance_insights]
+  - DatabaseConnections dropped to 0 at 08:05Z and recovered fully by 08:07Z. [evidence: aws_cloudwatch_metrics]
+  - CPUUtilization and WriteIOPS both dropped to near-zero during the same window, confirming the instance was unavailable (not a connection pool issue). [evidence: aws_cloudwatch_metrics]
+  - RDS events show: failover initiated (08:04:18Z) → in progress (08:04:21Z) → completed (08:04:58Z) → available (08:05:04Z). [evidence: aws_rds_events]
+  - Performance Insights shows no anomalous queries before or after the failover window. Workload resumed normally afterward. [evidence: aws_performance_insights]
 
   NON_VALIDATED_CLAIMS:
   - Application connection retry logic should be reviewed to minimize reconnection time after future failovers.

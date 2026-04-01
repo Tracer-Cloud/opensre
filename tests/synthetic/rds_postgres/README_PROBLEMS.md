@@ -1,0 +1,8 @@
+- Synthetic data needs to be complemented with the synthetic world and the real world, but the models learn how to bridge these worlds. 
+- The idea is to have many synthetic problems and you will see improvements, but those will plateau and that moment is when you need to stop adding synthetic data or recreate a different synthetic data generator. 
+- But once you add more real world cases. 
+- The problem is that we need to overwhelm the models with data
+- They are obviously going to find the right solution, if we give them only the selection of data points that contain the answer
+- We need to give them a large degree of freedom of what too choose from 
+- The problem is making the right decisions
+- 

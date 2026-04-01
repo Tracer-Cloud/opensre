@@ -252,7 +252,7 @@ def select_actions(
     available_actions = [
         action
         for action in actions
-        if action.availability_check is None or action.availability_check(available_sources)
+        if action.is_available(available_sources)
     ]
 
     executed_actions_flat = set()

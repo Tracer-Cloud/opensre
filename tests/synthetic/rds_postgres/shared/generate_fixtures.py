@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate expanded cloudwatch_metrics.json fixtures for all RDS synthetic scenarios.
+"""Generate expanded aws_cloudwatch_metrics.json fixtures for all RDS synthetic scenarios.
 
 Applies three layers of realism:
   Phase 1 — Add missing baseline metrics (15 series) to each faulty scenario.
@@ -10,7 +10,7 @@ Applies three layers of realism:
 Run from the repo root:
   python3 tests/synthetic/rds_postgres/shared/generate_fixtures.py
 
-Writes output to tests/synthetic/rds_postgres/<scenario>/cloudwatch_metrics.json.
+Writes output to tests/synthetic/rds_postgres/<scenario>/aws_cloudwatch_metrics.json.
 Idempotent: safe to re-run.
 """
 from __future__ import annotations
@@ -475,7 +475,7 @@ def _patch_onset(series: dict, patch: dict, n: int, start_iso: str) -> dict:
 
 def process_scenario(scenario_id: str, config: dict) -> None:
     scenario_dir = SUITE_DIR / scenario_id
-    metrics_path = scenario_dir / "cloudwatch_metrics.json"
+    metrics_path = scenario_dir / "aws_cloudwatch_metrics.json"
 
     data = json.loads(metrics_path.read_text())
     existing_results = data["metric_data_results"]
