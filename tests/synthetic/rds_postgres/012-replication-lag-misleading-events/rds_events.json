@@ -1,0 +1,53 @@
+{
+  "events": [
+    {
+      "date": "2026-03-28T11:04:18Z",
+      "message": "A Multi-AZ failover has been initiated for DB instance reporting-prod.",
+      "source_identifier": "reporting-prod",
+      "source_type": "db-instance",
+      "event_categories": ["failover", "availability"]
+    },
+    {
+      "date": "2026-03-28T11:04:51Z",
+      "message": "Multi-AZ failover in progress for DB instance reporting-prod.",
+      "source_identifier": "reporting-prod",
+      "source_type": "db-instance",
+      "event_categories": ["failover", "availability"]
+    },
+    {
+      "date": "2026-03-28T11:05:22Z",
+      "message": "DB instance reporting-prod has finished a Multi-AZ failover and is available at a new endpoint.",
+      "source_identifier": "reporting-prod",
+      "source_type": "db-instance",
+      "event_categories": ["failover", "availability"]
+    },
+    {
+      "date": "2026-03-28T11:06:04Z",
+      "message": "DB instance reporting-prod is available.",
+      "source_identifier": "reporting-prod",
+      "source_type": "db-instance",
+      "event_categories": ["availability"]
+    },
+    {
+      "date": "2026-03-28T13:00:18Z",
+      "message": "DB cluster parameter group rds-postgres15-reporting has been updated.",
+      "source_identifier": "reporting-prod",
+      "source_type": "db-instance",
+      "event_categories": ["configuration change"]
+    },
+    {
+      "date": "2026-03-28T13:01:04Z",
+      "message": "Replication lag on reporting-prod-replica-1 has exceeded 60 seconds.",
+      "source_identifier": "reporting-prod-replica-1",
+      "source_type": "db-instance",
+      "event_categories": ["read replica"]
+    },
+    {
+      "date": "2026-03-28T13:07:42Z",
+      "message": "Replication lag on reporting-prod-replica-1 has exceeded 900 seconds. Replica is significantly behind primary.",
+      "source_identifier": "reporting-prod-replica-1",
+      "source_type": "db-instance",
+      "event_categories": ["read replica"]
+    }
+  ]
+}

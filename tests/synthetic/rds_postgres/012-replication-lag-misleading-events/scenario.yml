@@ -1,0 +1,17 @@
+schema_version: "1.0"
+scenario_id: 012-replication-lag-misleading-events
+engine: postgres
+engine_version: "15"
+instance_class: db.r6g.xlarge
+region: us-east-1
+db_instance_identifier: reporting-prod
+failure_mode: replication_lag
+severity: critical
+scenario_difficulty: 3
+adversarial_signals:
+  - RDS events contain a completed failover from 2 hours before the alert — likely to mislead toward infrastructure/failover diagnosis
+  - Mild CPU elevation (~40%) from the same write workload — superficially looks like cpu_saturation
+available_evidence:
+  - rds_metrics
+  - rds_events
+  - performance_insights

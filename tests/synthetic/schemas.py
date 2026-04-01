@@ -181,6 +181,9 @@ class AnswerKeySchema(TypedDict):
     # Trajectory efficiency (Axis 1)
     optimal_trajectory: NotRequired[list[str]]        # ordered action names the agent should call
     max_investigation_loops: NotRequired[int]          # how many investigation loops is acceptable
+    # Adversarial reasoning (Axis 2)
+    ruling_out_keywords: NotRequired[list[str]]       # agent output must contain these tokens (proof it dismissed alternatives)
+    required_queries: NotRequired[list[str]]           # metric names agent must have specifically requested via query_timeseries
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +348,13 @@ def validate_answer_key(data: dict[str, Any]) -> AnswerKeySchema:
     max_loops = data.get("max_investigation_loops")
     if max_loops is not None and (not isinstance(max_loops, int) or max_loops < 1):
         raise ValueError("answer.yml: 'max_investigation_loops' must be a positive integer when present")
+    for axis2_list_field in ("ruling_out_keywords", "required_queries"):
+        val = data.get(axis2_list_field)
+        if val is not None:
+            if not isinstance(val, list) or not val:
+                raise ValueError(f"answer.yml: '{axis2_list_field}' must be a non-empty list when present")
+            if not all(isinstance(k, str) and k.strip() for k in val):
+                raise ValueError(f"answer.yml: all '{axis2_list_field}' entries must be non-empty strings")
     return data  # type: ignore[return-value]
 
 

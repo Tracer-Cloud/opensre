@@ -1,0 +1,55 @@
+{
+  "db_instance_identifier": "reporting-prod",
+  "start_time": "2026-03-28T13:00:00Z",
+  "end_time": "2026-03-28T13:20:00Z",
+  "db_load": {
+    "timestamps": [
+      "2026-03-28T13:00:00Z","2026-03-28T13:01:00Z","2026-03-28T13:02:00Z",
+      "2026-03-28T13:03:00Z","2026-03-28T13:04:00Z","2026-03-28T13:05:00Z",
+      "2026-03-28T13:06:00Z","2026-03-28T13:07:00Z","2026-03-28T13:08:00Z",
+      "2026-03-28T13:09:00Z","2026-03-28T13:10:00Z","2026-03-28T13:11:00Z",
+      "2026-03-28T13:12:00Z","2026-03-28T13:13:00Z","2026-03-28T13:14:00Z",
+      "2026-03-28T13:15:00Z","2026-03-28T13:16:00Z","2026-03-28T13:17:00Z",
+      "2026-03-28T13:18:00Z","2026-03-28T13:19:00Z"
+    ],
+    "values": [0.4, 3.2, 4.8, 5.1, 5.2, 5.3, 5.2, 5.4, 5.3, 5.2,
+               5.4, 5.3, 5.2, 5.4, 5.3, 5.2, 5.4, 5.3, 5.2, 5.3],
+    "unit": "AAS"
+  },
+  "top_sql": [
+    {
+      "statement": "INSERT INTO reporting_events (event_id, user_id, properties, created_at) SELECT gen_random_uuid(), user_id, properties, NOW() FROM raw_events WHERE processed = FALSE",
+      "db_load_avg": 4.2,
+      "wait_events": [
+        {"name": "WAL:Lock", "type": "WAL", "db_load_avg": 3.1},
+        {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 0.8},
+        {"name": "CPU:user", "type": "CPU", "db_load_avg": 0.3}
+      ],
+      "calls_per_sec": 0.9
+    },
+    {
+      "statement": "SELECT user_id, COUNT(*), SUM(amount) FROM transactions WHERE created_at > $1 GROUP BY user_id",
+      "db_load_avg": 0.8,
+      "wait_events": [
+        {"name": "CPU:user", "type": "CPU", "db_load_avg": 0.6},
+        {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 0.2}
+      ],
+      "calls_per_sec": 3.2
+    }
+  ],
+  "top_wait_events": [
+    {"name": "WAL:Lock", "type": "WAL", "db_load_avg": 3.1},
+    {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 0.8},
+    {"name": "CPU:user", "type": "CPU", "db_load_avg": 0.9},
+    {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 0.2}
+  ],
+  "top_users": [
+    {"name": "etl_writer", "db_load_avg": 4.3},
+    {"name": "reporting_reader", "db_load_avg": 0.8},
+    {"name": "rdsadmin", "db_load_avg": 0.2}
+  ],
+  "top_hosts": [
+    {"id": "etl-pipeline-1.internal", "db_load_avg": 4.4},
+    {"id": "reporting-svc-2.internal", "db_load_avg": 0.8}
+  ]
+}

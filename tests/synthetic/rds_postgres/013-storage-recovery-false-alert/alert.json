@@ -1,0 +1,22 @@
+{
+  "title": "[synthetic-rds] Low FreeStorageSpace on orders-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSLowFreeStorageSpace",
+    "severity": "warning",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "FreeStorageSpace on orders-prod dropped below 10 GB threshold. Storage autoscaling triggered and volume has been expanded.",
+    "error": "FreeStorageSpace fell below 10 GB warning threshold at 15:08Z. Storage autoscaling completed expansion at 15:14Z.",
+    "suspected_symptom": "Brief write latency increase observed during the storage-full window. Alert is being investigated for root cause and recurrence risk.",
+    "db_instance_identifier": "orders-prod",
+    "db_instance": "orders-prod",
+    "cloudwatch_region": "eu-west-1",
+    "rds_failure_mode": "healthy",
+    "context_sources": "cloudwatch"
+  }
+}

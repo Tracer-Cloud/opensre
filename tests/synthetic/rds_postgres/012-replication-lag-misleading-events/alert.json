@@ -1,0 +1,22 @@
+{
+  "title": "[synthetic-rds] Replication Lag Critical on reporting-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSReplicaLagCritical",
+    "severity": "critical",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "ReplicaLag on reporting-prod-replica-1 has exceeded 900 seconds. Replica reads are severely stale.",
+    "error": "ReplicaLag sustained above 900s threshold for 8 consecutive minutes.",
+    "suspected_symptom": "Reporting dashboards showing stale data. Replica reads are lagging 15+ minutes behind primary.",
+    "db_instance_identifier": "reporting-prod",
+    "db_instance": "reporting-prod",
+    "cloudwatch_region": "us-east-1",
+    "rds_failure_mode": "replication_lag",
+    "context_sources": "cloudwatch"
+  }
+}

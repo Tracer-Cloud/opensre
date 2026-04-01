@@ -1,0 +1,66 @@
+{
+  "db_instance_identifier": "analytics-prod",
+  "start_time": "2026-03-28T09:00:00Z",
+  "end_time": "2026-03-28T09:20:00Z",
+  "db_load": {
+    "timestamps": [
+      "2026-03-28T09:00:00Z","2026-03-28T09:01:00Z","2026-03-28T09:02:00Z",
+      "2026-03-28T09:03:00Z","2026-03-28T09:04:00Z","2026-03-28T09:05:00Z",
+      "2026-03-28T09:06:00Z","2026-03-28T09:07:00Z","2026-03-28T09:08:00Z",
+      "2026-03-28T09:09:00Z","2026-03-28T09:10:00Z","2026-03-28T09:11:00Z",
+      "2026-03-28T09:12:00Z","2026-03-28T09:13:00Z","2026-03-28T09:14:00Z",
+      "2026-03-28T09:15:00Z","2026-03-28T09:16:00Z","2026-03-28T09:17:00Z",
+      "2026-03-28T09:18:00Z","2026-03-28T09:19:00Z"
+    ],
+    "values": [1.2, 1.8, 3.4, 5.8, 7.2, 8.1, 9.4, 10.8, 11.2, 11.9,
+               12.4, 12.8, 13.1, 13.4, 13.7, 13.9, 14.1, 14.3, 14.5, 14.6],
+    "unit": "AAS"
+  },
+  "top_sql": [
+    {
+      "statement": "SELECT report_id, customer_id, SUM(revenue) FROM analytics_events WHERE event_date >= $1 GROUP BY report_id, customer_id ORDER BY SUM(revenue) DESC",
+      "db_load_avg": 6.8,
+      "wait_events": [
+        {"name": "CPU:user", "type": "CPU", "db_load_avg": 5.9},
+        {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 0.9}
+      ],
+      "calls_per_sec": 2.4
+    },
+    {
+      "statement": "INSERT INTO audit_log (event_type, payload, created_at) VALUES ($1, $2, NOW())",
+      "db_load_avg": 5.1,
+      "wait_events": [
+        {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 3.8},
+        {"name": "Lock:relation", "type": "Lock", "db_load_avg": 1.3}
+      ],
+      "calls_per_sec": 847.3
+    },
+    {
+      "statement": "SELECT * FROM orders WHERE created_at > $1 AND status = $2",
+      "db_load_avg": 1.4,
+      "wait_events": [
+        {"name": "CPU:user", "type": "CPU", "db_load_avg": 0.9},
+        {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 0.5}
+      ],
+      "calls_per_sec": 18.7
+    }
+  ],
+  "top_wait_events": [
+    {"name": "CPU:user", "type": "CPU", "db_load_avg": 6.8},
+    {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 3.8},
+    {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 1.4},
+    {"name": "Lock:relation", "type": "Lock", "db_load_avg": 1.3},
+    {"name": "Client:ClientRead", "type": "Client", "db_load_avg": 0.7}
+  ],
+  "top_users": [
+    {"name": "analytics_reader", "db_load_avg": 6.9},
+    {"name": "app_writer", "db_load_avg": 5.2},
+    {"name": "api_reader", "db_load_avg": 1.4},
+    {"name": "rdsadmin", "db_load_avg": 0.2}
+  ],
+  "top_hosts": [
+    {"id": "analytics-svc-1.internal", "db_load_avg": 7.1},
+    {"id": "app-backend-3.internal", "db_load_avg": 5.1},
+    {"id": "api-gateway-2.internal", "db_load_avg": 1.4}
+  ]
+}

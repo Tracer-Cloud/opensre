@@ -1,0 +1,22 @@
+{
+  "title": "[synthetic-rds] High CPU and Disk Pressure on analytics-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSCompositeResourcePressure",
+    "severity": "critical",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "analytics-prod is showing simultaneous high CPU (91%) and rapidly declining FreeStorageSpace (8 GB remaining). Application is timing out.",
+    "error": "Two independent resource limits are being hit simultaneously: compute and storage.",
+    "suspected_symptom": "Write queries are failing. Read queries are timing out. Connection pool is backing up.",
+    "db_instance_identifier": "analytics-prod",
+    "db_instance": "analytics-prod",
+    "cloudwatch_region": "us-east-1",
+    "rds_failure_mode": "cpu_saturation",
+    "context_sources": "cloudwatch"
+  }
+}

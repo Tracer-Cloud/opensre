@@ -49,6 +49,8 @@ class ScenarioAnswerKey:
     required_evidence_sources: list[str] = ()  # type: ignore[assignment]
     optimal_trajectory: list[str] = ()  # type: ignore[assignment]
     max_investigation_loops: int = 1
+    ruling_out_keywords: list[str] = ()  # type: ignore[assignment]
+    required_queries: list[str] = ()     # type: ignore[assignment]
 
 
 @dataclass(frozen=True)
@@ -109,6 +111,8 @@ def _parse_answer_yaml(path: Path) -> ScenarioAnswerKey:
         required_evidence_sources=list(validated.get("required_evidence_sources") or []),
         optimal_trajectory=list(validated.get("optimal_trajectory") or []),
         max_investigation_loops=int(validated.get("max_investigation_loops") or 1),
+        ruling_out_keywords=list(validated.get("ruling_out_keywords") or []),
+        required_queries=list(validated.get("required_queries") or []),
     )
 
 

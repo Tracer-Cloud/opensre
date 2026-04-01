@@ -1,0 +1,32 @@
+{
+  "events": [
+    {
+      "date": "2026-03-28T15:08:12Z",
+      "message": "DB instance orders-prod free storage space is low (3.6 GB remaining of 100 GB). Storage autoscaling initiated.",
+      "source_identifier": "orders-prod",
+      "source_type": "db-instance",
+      "event_categories": ["low storage"]
+    },
+    {
+      "date": "2026-03-28T15:09:44Z",
+      "message": "Storage autoscaling is in progress for DB instance orders-prod. Increasing allocated storage from 100 GB to 200 GB.",
+      "source_identifier": "orders-prod",
+      "source_type": "db-instance",
+      "event_categories": ["configuration change", "notification"]
+    },
+    {
+      "date": "2026-03-28T15:13:21Z",
+      "message": "Storage autoscaling completed for DB instance orders-prod. Allocated storage has been increased from 100 GB to 200 GB. FreeStorageSpace is now ~110 GB.",
+      "source_identifier": "orders-prod",
+      "source_type": "db-instance",
+      "event_categories": ["configuration change"]
+    },
+    {
+      "date": "2026-03-28T15:14:08Z",
+      "message": "DB instance orders-prod is available.",
+      "source_identifier": "orders-prod",
+      "source_type": "db-instance",
+      "event_categories": ["availability"]
+    }
+  ]
+}

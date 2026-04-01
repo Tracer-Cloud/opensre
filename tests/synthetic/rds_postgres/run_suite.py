@@ -27,9 +27,24 @@ class TrajectoryScore:
     expected_sequence: list[str]  # from answer_key.optimal_trajectory
     loops_used: int
     max_loops: int
-    sequencing_ok: bool           # actual_sequence starts with expected_sequence prefix
+    sequencing_ok: bool           # all expected actions appear in actual (set membership)
     calibration_ok: bool          # loops_used <= max_loops
     efficiency_score: float       # mean(sequencing_ok, calibration_ok)
+
+
+@dataclass(frozen=True)
+class ReasoningScore:
+    """Axis 2 adversarial reasoning quality score.
+
+    ruling_out_ok: every ruling_out_keywords token was found in agent output.
+    queries_ok: every required_queries metric name was requested via query_timeseries.
+    reasoning_score: mean(ruling_out_ok, queries_ok); 1.0 = full pass.
+    """
+    ruling_out_ok: bool
+    queries_ok: bool
+    missing_ruling_out: list[str]
+    missing_queries: list[str]
+    reasoning_score: float
 
 
 @dataclass(frozen=True)
@@ -44,6 +59,7 @@ class ScenarioScore:
     root_cause: str
     failure_reason: str = ""
     trajectory: TrajectoryScore | None = None
+    reasoning: ReasoningScore | None = None
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -64,26 +80,33 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         dest="mock_grafana",
         help="Serve fixture data via FixtureGrafanaBackend instead of real Grafana calls.",
     )
+    parser.add_argument(
+        "--axis2",
+        action="store_true",
+        help="Print Axis 1 vs Axis 2 gap report (requires results from both suites).",
+    )
     return parser.parse_args(argv)
 
 
 def _build_resolved_integrations(
     fixture: ScenarioFixture,
     use_mock_grafana: bool,
+    grafana_backend: Any = None,
 ) -> dict[str, Any] | None:
     """Build pre-resolved integrations to inject into run_investigation.
 
-    When use_mock_grafana is True, injects a FixtureGrafanaBackend so the
-    full agentic pipeline (plan → investigate → diagnose) uses fixture data
-    instead of making real Grafana API calls.
+    Accepts an optional pre-built grafana_backend (e.g. SelectiveGrafanaBackend)
+    so callers can instrument the backend before injection.  Falls back to a fresh
+    FixtureGrafanaBackend when use_mock_grafana=True and no backend is provided.
     """
-    if not use_mock_grafana:
+    if not use_mock_grafana and grafana_backend is None:
         return None
+    backend = grafana_backend or FixtureGrafanaBackend(fixture)
     return {
         "grafana": {
             "endpoint": "",
             "api_key": "",
-            "_backend": FixtureGrafanaBackend(fixture),
+            "_backend": backend,
         }
     }
 
@@ -135,7 +158,76 @@ def score_trajectory(
     )
 
 
-def score_result(fixture: ScenarioFixture, final_state: dict[str, Any]) -> ScenarioScore:
+def score_reasoning(
+    fixture: ScenarioFixture,
+    final_state: dict[str, Any],
+    queried_metrics: list[str] | None = None,
+) -> ReasoningScore | None:
+    """Score Axis 2 adversarial reasoning quality.
+
+    Returns None when neither ruling_out_keywords nor required_queries are
+    declared for the scenario.
+
+    Args:
+        fixture: The scenario fixture containing the answer key.
+        final_state: The agent's final investigation state dict.
+        queried_metrics: List of metric_name values the agent requested via
+            query_timeseries (from SelectiveGrafanaBackend.queried_metrics).
+            Pass None or [] when the backend does not record queries (Axis 1).
+    """
+    has_ruling_out = bool(fixture.answer_key.ruling_out_keywords)
+    has_required_queries = bool(fixture.answer_key.required_queries)
+    if not has_ruling_out and not has_required_queries:
+        return None
+
+    # --- ruling_out_keywords: check each token appears anywhere in agent output ---
+    evidence_text = " ".join(
+        [
+            str(final_state.get("root_cause") or ""),
+            " ".join(
+                claim.get("claim", "") for claim in final_state.get("validated_claims", [])
+            ),
+            " ".join(
+                claim.get("claim", "") for claim in final_state.get("non_validated_claims", [])
+            ),
+            " ".join(final_state.get("causal_chain", [])),
+        ]
+    )
+    normalized_output = _normalize_text(evidence_text)
+
+    missing_ruling_out: list[str] = []
+    if has_ruling_out:
+        for token in fixture.answer_key.ruling_out_keywords:
+            if token.lower() not in normalized_output:
+                missing_ruling_out.append(token)
+
+    # --- required_queries: each token must appear in at least one queried metric name ---
+    missing_queries: list[str] = []
+    if has_required_queries:
+        audited = queried_metrics or []
+        for required in fixture.answer_key.required_queries:
+            token = required.lower()
+            if not any(token in q.lower() for q in audited):
+                missing_queries.append(required)
+
+    ruling_out_ok = not missing_ruling_out
+    queries_ok = not missing_queries
+    reasoning_score = (int(ruling_out_ok) + int(queries_ok)) / 2.0
+
+    return ReasoningScore(
+        ruling_out_ok=ruling_out_ok,
+        queries_ok=queries_ok,
+        missing_ruling_out=missing_ruling_out,
+        missing_queries=missing_queries,
+        reasoning_score=reasoning_score,
+    )
+
+
+def score_result(
+    fixture: ScenarioFixture,
+    final_state: dict[str, Any],
+    queried_metrics: list[str] | None = None,
+) -> ScenarioScore:
     root_cause = str(final_state.get("root_cause") or "").strip()
     actual_category = str(final_state.get("root_cause_category") or "unknown").strip()
     root_cause_present = bool(root_cause and root_cause.lower() != "unable to determine root cause")
@@ -199,6 +291,7 @@ def score_result(fixture: ScenarioFixture, final_state: dict[str, Any]) -> Scena
 
     passed = not failure_reason
     trajectory = score_trajectory(fixture, final_state)
+    reasoning = score_reasoning(fixture, final_state, queried_metrics)
     return ScenarioScore(
         scenario_id=fixture.scenario_id,
         passed=passed,
@@ -210,12 +303,14 @@ def score_result(fixture: ScenarioFixture, final_state: dict[str, Any]) -> Scena
         root_cause=root_cause,
         failure_reason=failure_reason,
         trajectory=trajectory,
+        reasoning=reasoning,
     )
 
 
 def run_scenario(
     fixture: ScenarioFixture,
     use_mock_grafana: bool = False,
+    grafana_backend: Any = None,
 ) -> tuple[dict[str, Any], ScenarioScore]:
     alert = fixture.alert
     labels = alert.get("commonLabels", {}) or {}
@@ -224,7 +319,9 @@ def run_scenario(
     pipeline_name = str(labels.get("pipeline_name") or "rds-postgres-synthetic")
     severity = str(labels.get("severity") or "critical")
 
-    resolved_integrations = _build_resolved_integrations(fixture, use_mock_grafana)
+    resolved_integrations = _build_resolved_integrations(
+        fixture, use_mock_grafana, grafana_backend=grafana_backend
+    )
 
     final_state = run_investigation(
         alert_name=alert_name,
@@ -234,7 +331,46 @@ def run_scenario(
         resolved_integrations=resolved_integrations,
     )
     state_dict = dict(final_state)
-    return state_dict, score_result(fixture, state_dict)
+
+    # Extract query audit log from SelectiveGrafanaBackend if one was injected.
+    queried_metrics: list[str] | None = None
+    if grafana_backend is not None and hasattr(grafana_backend, "queried_metrics"):
+        queried_metrics = list(grafana_backend.queried_metrics)
+
+    return state_dict, score_result(fixture, state_dict, queried_metrics=queried_metrics)
+
+
+def _print_gap_report(
+    axis1_results: list[ScenarioScore],
+    axis2_results: list[ScenarioScore],
+    all_fixtures: list[ScenarioFixture],
+) -> None:
+    """Print Axis 1 vs Axis 2 pass-rate gap, overall and per difficulty level."""
+    difficulty_map = {f.scenario_id: f.metadata.scenario_difficulty for f in all_fixtures}
+
+    def _pass_rate(results: list[ScenarioScore]) -> float:
+        return sum(1 for r in results if r.passed) / len(results) * 100 if results else 0.0
+
+    ax1_pct = _pass_rate(axis1_results)
+    ax2_pct = _pass_rate(axis2_results)
+    gap = ax1_pct - ax2_pct
+
+    print("\n=== Axis 1 vs Axis 2 Gap Report ===")
+    print(f"  Axis 1 (all scenarios, full data):  {ax1_pct:.0f}%  ({sum(r.passed for r in axis1_results)}/{len(axis1_results)})")
+    print(f"  Axis 2 (adversarial, selective):    {ax2_pct:.0f}%  ({sum(r.passed for r in axis2_results)}/{len(axis2_results)})")
+    print(f"  Gap:                                {gap:+.0f}pp")
+
+    print("\n  Per difficulty level:")
+    for level in sorted({difficulty_map.get(r.scenario_id, 0) for r in axis1_results + axis2_results}):
+        ax1_level = [r for r in axis1_results if difficulty_map.get(r.scenario_id, 0) == level]
+        ax2_level = [r for r in axis2_results if difficulty_map.get(r.scenario_id, 0) == level]
+        ax1_pct_l = _pass_rate(ax1_level)
+        ax2_pct_l = _pass_rate(ax2_level)
+        gap_l = ax1_pct_l - ax2_pct_l
+        print(
+            f"    Difficulty {level}: Axis1={ax1_pct_l:.0f}% ({len(ax1_level)} scenarios)  "
+            f"Axis2={ax2_pct_l:.0f}% ({len(ax2_level)} scenarios)  gap={gap_l:+.0f}pp"
+        )
 
 
 def run_suite(argv: list[str] | None = None) -> list[ScenarioScore]:

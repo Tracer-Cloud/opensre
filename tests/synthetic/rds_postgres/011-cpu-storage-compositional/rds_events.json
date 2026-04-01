@@ -1,0 +1,39 @@
+{
+  "events": [
+    {
+      "date": "2026-03-28T09:02:14Z",
+      "message": "DB instance analytics-prod CPU exceeded 50% threshold. Monitoring elevated activity.",
+      "source_identifier": "analytics-prod",
+      "source_type": "db-instance",
+      "event_categories": ["notification"]
+    },
+    {
+      "date": "2026-03-28T09:04:31Z",
+      "message": "DB instance analytics-prod storage space is at 80% utilization (42.6 GB free of 200 GB). Monitor storage consumption.",
+      "source_identifier": "analytics-prod",
+      "source_type": "db-instance",
+      "event_categories": ["notification"]
+    },
+    {
+      "date": "2026-03-28T09:08:02Z",
+      "message": "DB instance analytics-prod CPU utilization has been above 85% for 5 consecutive minutes.",
+      "source_identifier": "analytics-prod",
+      "source_type": "db-instance",
+      "event_categories": ["notification"]
+    },
+    {
+      "date": "2026-03-28T09:11:45Z",
+      "message": "DB instance analytics-prod storage space is critically low (23.3 GB free of 200 GB). Consider expanding storage.",
+      "source_identifier": "analytics-prod",
+      "source_type": "db-instance",
+      "event_categories": ["low storage"]
+    },
+    {
+      "date": "2026-03-28T09:18:52Z",
+      "message": "DB instance analytics-prod storage space is critically low (8.3 GB free of 200 GB). Writes may fail imminently.",
+      "source_identifier": "analytics-prod",
+      "source_type": "db-instance",
+      "event_categories": ["low storage"]
+    }
+  ]
+}
