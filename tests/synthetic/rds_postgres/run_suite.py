@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from app.agent.runners import run_investigation
-from tests.synthetic.mock_grafana.backend import FixtureGrafanaBackend
+from tests.synthetic.mock_grafana_backend.backend import FixtureGrafanaBackend
 from tests.synthetic.rds_postgres.scenario_loader import (
     SUITE_DIR,
     ScenarioFixture,

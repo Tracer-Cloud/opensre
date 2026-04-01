@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
-from tests.synthetic.mock_grafana.formatters import (
+from tests.synthetic.mock_grafana_backend.formatters import (
     format_loki_query_range,
     format_mimir_query_range,
     format_ruler_rules,
