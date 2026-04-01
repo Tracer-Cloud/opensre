@@ -70,4 +70,4 @@ jobs:
       - name: Run Prefect ECS Demo
         continue-on-error: true
         run: |
-          python -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
+          python -m tests.e2e.upstream_prefect_ecs_fargate.test_agent_e2e

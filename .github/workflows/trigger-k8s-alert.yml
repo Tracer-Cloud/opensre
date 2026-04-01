@@ -47,7 +47,7 @@ jobs:
         id: trigger
         run: |
           echo "trigger_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
-          python -m tests.test_case_kubernetes.trigger_alert
+          python -m tests.e2e.kubernetes.trigger_alert
 
       - name: Report trigger result
         run: |
@@ -56,6 +56,6 @@ jobs:
       - name: Verify Datadog + Slack (~2 min)
         if: ${{ inputs.verify == true || github.event_name == 'schedule' }}
         run: |
-          python -m tests.test_case_kubernetes.trigger_alert \
+          python -m tests.e2e.kubernetes.trigger_alert \
             --verify-only \
             --since-epoch ${{ steps.trigger.outputs.trigger_epoch }}

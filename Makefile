@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install install-hooks onboard test test-full demo local-rca-demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed local-grafana-live langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-rds-synthetic
+.PHONY: install install-hooks onboard test test-full demo local-rca-demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed local-grafana-live langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic
 
 ifneq ($(wildcard .venv/bin/python),)
 PYTHON = .venv/bin/python
@@ -31,7 +31,7 @@ onboard:
 
 # Run Prefect ECS demo (default demo) - shows Investigation Trace in RCA
 demo:
-	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
+	$(PYTHON) -m tests.e2e.upstream_prefect_ecs_fargate.test_agent_e2e
 
 # Run bundled local RCA example with sample alert and evidence
 local-rca-demo:
@@ -78,27 +78,31 @@ langgraph-deploy: check-langgraph check-docker check-langsmith-api-key
 
 # Run CloudWatch demo
 cloudwatch-demo:
-	$(PYTHON) -m tests.test_case_cloudwatch_demo.test_orchestrator
+	$(PYTHON) -m tests.e2e.cloudwatch_demo.test_orchestrator
 
 # Run Datadog demo (local kind cluster + real DD monitor + investigation agent)
 datadog-demo:
-	$(PYTHON) -m tests.test_case_datadog.test_orchestrator
+	$(PYTHON) -m tests.e2e.datadog.test_orchestrator
 
 # Run CrashLoopBackOff  demo
 crashloop-demo:
-	$(PYTHON) -m tests.test_case_crashloop.test_orchestrator
+	$(PYTHON) -m tests.e2e.crashloop.test_orchestrator
 
 # Run Prefect ECS Fargate E2E test (alias for demo)
 prefect-demo:
-	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
+	$(PYTHON) -m tests.e2e.upstream_prefect_ecs_fargate.test_agent_e2e
 
 # Run RCA tests from markdown alert files in tests/rca/ (pass FILE= to run one)
 test-rca:
 	$(PYTHON) -m tests.rca.run_rca_test $(FILE)
 
-# Run synthetic RDS PostgreSQL RCA benchmark suite
+# Run synthetic tests via pytest markers (fixture-based, no live infra required)
+test-synthetic:
+	$(PYTHON) -m pytest -m synthetic -v tests/synthetic/
+
+# Run synthetic RDS PostgreSQL RCA benchmark suite via the CLI runner (supports --json, --scenario)
 test-rds-synthetic:
-	$(PYTHON) -m tests.synthetic_testing.rds_postgres.run_suite $(if $(SCENARIO),--scenario $(SCENARIO),)
+	$(PYTHON) -m tests.synthetic.rds_postgres.run_suite $(if $(SCENARIO),--scenario $(SCENARIO),)
 
 # Boot local Grafana+Loki, seed deterministic test logs, then run the RCA pipeline
 # Requires GRAFANA_INSTANCE_URL + GRAFANA_READ_TOKEN in .env (see .env.example for local defaults)
@@ -109,68 +113,68 @@ test-rca-grafana: grafana-local-up grafana-local-seed
 simulate-k8s-alert:
 	@echo "Starting LangGraph dev server..."
 	langgraph dev --no-browser >/tmp/langgraph-dev.log 2>&1 &
-	$(PYTHON) tests/test_case_kubernetes_local_alert_simulation/wait_for_server.py
-	$(PYTHON) -m pytest tests/test_case_kubernetes_local_alert_simulation/test_simulation.py -s; \
+	$(PYTHON) tests/e2e/kubernetes_local_alert_simulation/wait_for_server.py
+	$(PYTHON) -m pytest tests/e2e/kubernetes_local_alert_simulation/test_simulation.py -s; \
 	EXIT=$$?; kill %1 2>/dev/null; exit $$EXIT
 
 # Run Kubernetes local test (kind)
 test-k8s-local:
-	$(PYTHON) -m tests.test_case_kubernetes.test_local --both
+	$(PYTHON) -m tests.e2e.kubernetes.test_local --both
 
 # Run Kubernetes test (matches CI)
 test-k8s:
-	$(PYTHON) -m tests.test_case_kubernetes.test_local
+	$(PYTHON) -m tests.e2e.kubernetes.test_local
 
 # Run Kubernetes + Datadog test (kind + DD Agent)
 test-k8s-datadog:
-	$(PYTHON) -m tests.test_case_kubernetes.test_datadog
+	$(PYTHON) -m tests.e2e.kubernetes.test_datadog
 
 # Deploy Datadog monitors (requires DD_API_KEY + DD_APP_KEY)
 deploy-dd-monitors:
-	$(PYTHON) -c "from tests.test_case_kubernetes.test_datadog import deploy_monitors; deploy_monitors()"
+	$(PYTHON) -c "from tests.e2e.kubernetes.test_datadog import deploy_monitors; deploy_monitors()"
 
 # Remove Datadog monitors created by tracer tests
 cleanup-dd-monitors:
-	$(PYTHON) -c "from tests.test_case_kubernetes.test_datadog import cleanup_monitors; cleanup_monitors()"
+	$(PYTHON) -c "from tests.e2e.kubernetes.test_datadog import cleanup_monitors; cleanup_monitors()"
 
 # Deploy EKS cluster + ECR image for Kubernetes tests
 deploy-eks:
-	$(PYTHON) -c "from tests.test_case_kubernetes.infrastructure_sdk.eks import deploy_eks_stack; deploy_eks_stack()"
+	$(PYTHON) -c "from tests.e2e.kubernetes.infrastructure_sdk.eks import deploy_eks_stack; deploy_eks_stack()"
 
 # Destroy EKS cluster and all associated resources
 destroy-eks:
-	$(PYTHON) -c "from tests.test_case_kubernetes.infrastructure_sdk.eks import destroy_eks_stack; destroy_eks_stack()"
+	$(PYTHON) -c "from tests.e2e.kubernetes.infrastructure_sdk.eks import destroy_eks_stack; destroy_eks_stack()"
 
 # Run Kubernetes + Datadog test on EKS
 test-k8s-eks:
-	$(PYTHON) -m tests.test_case_kubernetes.test_eks
+	$(PYTHON) -m tests.e2e.kubernetes.test_eks
 
 # Fast: trigger a K8s alert in ~15s (fire-and-forget)
 trigger-alert:
-	$(PYTHON) -m tests.test_case_kubernetes.trigger_alert
+	$(PYTHON) -m tests.e2e.kubernetes.trigger_alert
 
 # Recreate centralized trigger API config JSON from AWS
 regen-trigger-config:
-	$(PYTHON) -m tests.test_case_kubernetes.trigger_alert --regen-config
+	$(PYTHON) -m tests.e2e.kubernetes.trigger_alert --regen-config
 
 # Fast trigger + wait for Slack confirmation
 trigger-alert-verify:
-	$(PYTHON) -m tests.test_case_kubernetes.trigger_alert --verify
+	$(PYTHON) -m tests.e2e.kubernetes.trigger_alert --verify
 
 # Run Prefect ECS local test
 prefect-local-test:
-	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_local $(if $(CLOUD),--cloud,)
+	$(PYTHON) -m tests.e2e.upstream_prefect_ecs_fargate.test_local $(if $(CLOUD),--cloud,)
 
 # Run upstream/downstream pipeline E2E test
 upstream-downstream:
-	$(PYTHON) -m tests.test_case_upstream_lambda.test_agent_e2e
+	$(PYTHON) -m tests.e2e.upstream_lambda.test_agent_e2e
 
 # Run Apache Flink ECS E2E test
 flink-demo:
-	$(PYTHON) -m tests.test_case_upstream_apache_flink_ecs.test_agent_e2e
+	$(PYTHON) -m tests.e2e.upstream_apache_flink_ecs.test_agent_e2e
 
 grafana-demo:
-	$(PYTHON) -m tests.test_case_grafana.grafana_pipeline
+	$(PYTHON) -m tests.e2e.grafana.grafana_pipeline
 
 # Run the generic CLI (reads from stdin or --input)
 run:
@@ -183,55 +187,55 @@ dev:
 # Deploy all test case infrastructure in parallel (SDK - fast!)
 deploy:
 	@echo "Deploying all stacks in parallel..."
-	@$(PYTHON) -m tests.test_case_upstream_lambda.infrastructure_sdk.deploy & \
-	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.infrastructure_sdk.deploy & \
-	$(PYTHON) -m tests.test_case_upstream_apache_flink_ecs.infrastructure_sdk.deploy & \
+	@$(PYTHON) -m tests.e2e.upstream_lambda.infrastructure_sdk.deploy & \
+	$(PYTHON) -m tests.e2e.upstream_prefect_ecs_fargate.infrastructure_sdk.deploy & \
+	$(PYTHON) -m tests.e2e.upstream_apache_flink_ecs.infrastructure_sdk.deploy & \
 	wait
 	@echo "All stacks deployed."
 
 # Deploy Lambda test case
 deploy-lambda:
 	@echo "Deploying Lambda stack..."
-	$(PYTHON) -m tests.test_case_upstream_lambda.infrastructure_sdk.deploy
+	$(PYTHON) -m tests.e2e.upstream_lambda.infrastructure_sdk.deploy
 
 # Deploy Prefect ECS test case
 deploy-prefect:
 	@echo "Deploying Prefect ECS stack..."
-	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.infrastructure_sdk.deploy
+	$(PYTHON) -m tests.e2e.upstream_prefect_ecs_fargate.infrastructure_sdk.deploy
 
 # Deploy Flink ECS test case
 deploy-flink:
 	@echo "Deploying Flink ECS stack..."
-	$(PYTHON) -m tests.test_case_upstream_apache_flink_ecs.infrastructure_sdk.deploy
+	$(PYTHON) -m tests.e2e.upstream_apache_flink_ecs.infrastructure_sdk.deploy
 
 # Destroy all test case infrastructure in parallel
 destroy:
 	@echo "Destroying all stacks in parallel..."
-	@$(PYTHON) -m tests.test_case_upstream_lambda.infrastructure_sdk.destroy & \
-	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.infrastructure_sdk.destroy & \
-	$(PYTHON) -m tests.test_case_upstream_apache_flink_ecs.infrastructure_sdk.destroy & \
+	@$(PYTHON) -m tests.e2e.upstream_lambda.infrastructure_sdk.destroy & \
+	$(PYTHON) -m tests.e2e.upstream_prefect_ecs_fargate.infrastructure_sdk.destroy & \
+	$(PYTHON) -m tests.e2e.upstream_apache_flink_ecs.infrastructure_sdk.destroy & \
 	wait
 	@echo "All stacks destroyed."
 
 # Destroy Lambda test case
 destroy-lambda:
 	@echo "Destroying Lambda stack..."
-	$(PYTHON) -m tests.test_case_upstream_lambda.infrastructure_sdk.destroy
+	$(PYTHON) -m tests.e2e.upstream_lambda.infrastructure_sdk.destroy
 
 # Destroy Prefect ECS test case
 destroy-prefect:
 	@echo "Destroying Prefect ECS stack..."
-	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.infrastructure_sdk.destroy
+	$(PYTHON) -m tests.e2e.upstream_prefect_ecs_fargate.infrastructure_sdk.destroy
 
 # Destroy Flink ECS test case
 destroy-flink:
 	@echo "Destroying Flink ECS stack..."
-	$(PYTHON) -m tests.test_case_upstream_apache_flink_ecs.infrastructure_sdk.destroy
+	$(PYTHON) -m tests.e2e.upstream_apache_flink_ecs.infrastructure_sdk.destroy
 
 # Run fast tests + Prefect cloud E2E
 test:
 	$(PYTHON) -m pytest -v app tests/utils
-	$(PYTHON) -m tests.test_case_upstream_prefect_ecs_fargate.test_agent_e2e
+	$(PYTHON) -m tests.e2e.upstream_prefect_ecs_fargate.test_agent_e2e
 
 # Run full test suite (CI/CD)
 test-full:
@@ -239,12 +243,12 @@ test-full:
 
 # Run tests with coverage
 test-cov:
-	$(PYTHON) -m pytest -v --cov=app --cov-report=term-missing --ignore=tests/test_case_kubernetes_local_alert_simulation
+	$(PYTHON) -m pytest -v --cov=app --cov-report=term-missing --ignore=tests/e2e/kubernetes_local_alert_simulation
 
 # Run Grafana integration tests
 test-grafana:
 	@echo "Running Grafana integration tests..."
-	$(PYTHON) -m pytest tests/test_case_grafana_validation/test_grafana_cloud_queries.py -v
+	$(PYTHON) -m pytest tests/e2e/grafana_validation/test_grafana_cloud_queries.py -v
 
 # Clean up
 clean:

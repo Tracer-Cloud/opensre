@@ -1,0 +1,56 @@
+{
+  "db_instance_identifier": "reporting-prod",
+  "start_time": "2026-03-28T07:00:00Z",
+  "end_time": "2026-03-28T07:20:00Z",
+  "db_load": {
+    "timestamps": [
+      "2026-03-28T07:00:00Z", "2026-03-28T07:01:00Z", "2026-03-28T07:02:00Z",
+      "2026-03-28T07:03:00Z", "2026-03-28T07:04:00Z", "2026-03-28T07:05:00Z",
+      "2026-03-28T07:06:00Z", "2026-03-28T07:07:00Z", "2026-03-28T07:08:00Z",
+      "2026-03-28T07:09:00Z", "2026-03-28T07:10:00Z", "2026-03-28T07:11:00Z",
+      "2026-03-28T07:12:00Z", "2026-03-28T07:13:00Z", "2026-03-28T07:14:00Z",
+      "2026-03-28T07:15:00Z", "2026-03-28T07:16:00Z", "2026-03-28T07:17:00Z",
+      "2026-03-28T07:18:00Z", "2026-03-28T07:19:00Z"
+    ],
+    "values": [
+      0.9, 3.2, 6.1, 6.8, 7.1, 7.3, 7.4, 7.3, 7.2, 7.1,
+      7.0, 7.0, 6.9, 6.9, 6.8, 6.8, 6.7, 6.7, 6.6, 6.6
+    ],
+    "unit": "Average Active Sessions"
+  },
+  "top_sql": [
+    {
+      "statement": "INSERT INTO reporting_events SELECT * FROM staging_events WHERE processed = FALSE AND event_time < $1",
+      "db_load_avg": 6.1,
+      "wait_events": [
+        {"name": "WAL:Lock", "type": "WAL", "db_load_avg": 4.2},
+        {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 1.4},
+        {"name": "CPU:user", "type": "CPU", "db_load_avg": 0.5}
+      ],
+      "calls_per_sec": 6.2
+    },
+    {
+      "statement": "SELECT report_id, metric_name, value FROM reporting_events WHERE report_date = $1",
+      "db_load_avg": 0.7,
+      "wait_events": [
+        {"name": "CPU:user", "type": "CPU", "db_load_avg": 0.5},
+        {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 0.2}
+      ],
+      "calls_per_sec": 38.4
+    }
+  ],
+  "top_wait_events": [
+    {"name": "WAL:Lock", "type": "WAL", "db_load_avg": 4.2},
+    {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 1.4},
+    {"name": "CPU:user", "type": "CPU", "db_load_avg": 1.0},
+    {"name": "IO:DataFileRead", "type": "IO", "db_load_avg": 0.2}
+  ],
+  "top_users": [
+    {"name": "etl_loader", "db_load_avg": 6.1},
+    {"name": "reporting_api", "db_load_avg": 0.7}
+  ],
+  "top_hosts": [
+    {"id": "10.0.8.31", "db_load_avg": 6.1},
+    {"id": "10.0.8.32", "db_load_avg": 0.7}
+  ]
+}

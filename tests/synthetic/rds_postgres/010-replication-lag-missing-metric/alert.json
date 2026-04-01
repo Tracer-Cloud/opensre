@@ -1,0 +1,24 @@
+{
+  "title": "[synthetic-rds] Replica Stale Reads On reporting-prod",
+  "state": "alerting",
+  "alert_source": "cloudwatch",
+  "commonLabels": {
+    "alertname": "RDSReplicaStaleness",
+    "severity": "critical",
+    "pipeline_name": "rds-postgres-synthetic",
+    "service": "rds",
+    "engine": "postgres"
+  },
+  "commonAnnotations": {
+    "summary": "Read replica reporting-prod-replica-1 is returning stale data. ReplicaLag CloudWatch metric is not publishing (replica was recently provisioned). Alert triggered by application-level staleness check.",
+    "error": "Replica lag metric unavailable. Staleness detected by read-after-write consistency checks failing in application.",
+    "suspected_symptom": "Reporting dashboards show data 30+ minutes stale. ReplicaLag CloudWatch metric not available for this replica.",
+    "db_instance_identifier": "reporting-prod",
+    "db_instance": "reporting-prod",
+    "db_cluster": "reporting-cluster",
+    "read_replica": "reporting-prod-replica-1",
+    "cloudwatch_region": "us-east-1",
+    "rds_failure_mode": "replication_lag",
+    "context_sources": "cloudwatch"
+  }
+}

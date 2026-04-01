@@ -7,14 +7,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from tests.shared.infrastructure_sdk.config import OUTPUTS_DIR, load_outputs
-from tests.shared.infrastructure_sdk.deployer import get_boto3_client
-from tests.test_case_kubernetes.infrastructure_sdk.eks import (
+from tests.e2e.kubernetes.infrastructure_sdk.eks import (
     ECR_REPO_NAME,
     REGION,
     STACK_NAME,
     TRIGGER_LAMBDA_NAME,
 )
+from tests.shared.infrastructure_sdk.config import OUTPUTS_DIR, load_outputs
+from tests.shared.infrastructure_sdk.deployer import get_boto3_client
 
 TRIGGER_CONFIG_NAME = "tracer-k8s-trigger"
 TRIGGER_CONFIG_PATH = OUTPUTS_DIR / f"{TRIGGER_CONFIG_NAME}.json"

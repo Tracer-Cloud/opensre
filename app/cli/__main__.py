@@ -292,7 +292,7 @@ def test_rds_synthetic(scenario: str, output_json: bool, mock_grafana: bool) -> 
     if mock_grafana:
         argv.append("--mock-grafana")
 
-    from tests.synthetic_testing.rds_postgres.run_suite import main as run_suite_main
+    from tests.synthetic.rds_postgres.run_suite import main as run_suite_main
 
     raise SystemExit(run_suite_main(argv))
 

@@ -1,0 +1,27 @@
+root_cause_category: resource_exhaustion
+required_keywords:
+  - replication
+  - WAL
+  - replica
+required_evidence_sources:
+  - rds_events
+  - performance_insights
+model_response: |
+  ROOT_CAUSE: Replication lag on reporting-prod-replica-1 caused by a sustained bulk INSERT ETL job generating WAL faster than the replica can replay. The ReplicaLag CloudWatch metric is unavailable (collection gap on a recently provisioned replica), but the diagnosis is confirmed indirectly by: (1) RDS events explicitly reporting lag exceeding 900s then 1800s, (2) TransactionLogsGeneration sustaining ~195 MB/s on the primary, and (3) Performance Insights showing WAL:Lock as the dominant wait event at 4.2 AAS.
+  ROOT_CAUSE_CATEGORY: resource_exhaustion
+
+  VALIDATED_CLAIMS:
+  - WriteIOPS spiked from 410 to 19,530 at 07:01Z and sustained, consistent with a large bulk write workload. [evidence: rds_metrics]
+  - TransactionLogsGeneration reached ~200 MB/s, indicating WAL production far exceeding typical replica replay capacity. [evidence: rds_metrics]
+  - ReplicaLag metric is absent from CloudWatch (not published for this replica instance). Root cause is inferred from indirect signals. [evidence: rds_metrics]
+  - RDS events confirm: replication lag exceeded 900s at 07:06Z and 1800s at 07:11Z on reporting-prod-replica-1. [evidence: rds_events]
+  - Performance Insights identifies an ETL INSERT statement as the top load consumer (6.1 AAS) with WAL:Lock as the dominant wait event — confirming WAL-heavy write workload. [evidence: performance_insights]
+
+  NON_VALIDATED_CLAIMS:
+  - Throttling the ETL batch size or scheduling it outside of reporting hours would reduce WAL generation and allow the replica to catch up.
+
+  CAUSAL_CHAIN:
+  - An ETL bulk INSERT job began loading reporting_events at 07:01Z, generating ~195 MB/s of WAL on the primary.
+  - The read replica (reporting-prod-replica-1) cannot replay WAL at this rate, accumulating lag.
+  - The ReplicaLag CloudWatch metric is not being published for this replica (provisioned too recently for the metric to appear in CloudWatch).
+  - RDS control-plane events and PI WAL:Lock dominance confirm the lag is caused by WAL replay falling behind, not by a replica failure.

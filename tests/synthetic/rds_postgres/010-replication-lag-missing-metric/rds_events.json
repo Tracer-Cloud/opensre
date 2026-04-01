@@ -1,0 +1,18 @@
+{
+  "events": [
+    {
+      "date": "2026-03-28T07:06:18Z",
+      "message": "Read replica reporting-prod-replica-1 replication lag has exceeded 900 seconds. Replica may be falling behind due to high primary write throughput.",
+      "source_identifier": "reporting-prod-replica-1",
+      "source_type": "db-instance",
+      "event_categories": ["read replica", "notification"]
+    },
+    {
+      "date": "2026-03-28T07:11:42Z",
+      "message": "Read replica reporting-prod-replica-1 replication lag has exceeded 1800 seconds. Replica is significantly behind the primary.",
+      "source_identifier": "reporting-prod-replica-1",
+      "source_type": "db-instance",
+      "event_categories": ["read replica", "notification"]
+    }
+  ]
+}
