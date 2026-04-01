@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.agent.nodes.auth import _extract_auth, inject_auth_node
+from app.nodes.auth import _extract_auth, inject_auth_node
 
 
 def _make_config(

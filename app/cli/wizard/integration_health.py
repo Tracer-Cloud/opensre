@@ -7,10 +7,10 @@ from urllib.parse import urlparse
 
 import requests
 
-from app.agent.tools.clients.datadog import DatadogClient, DatadogConfig
-from app.agent.tools.clients.grafana import get_grafana_client_from_credentials
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
+from app.tools.clients.datadog import DatadogClient, DatadogConfig
+from app.tools.clients.grafana import get_grafana_client_from_credentials
 
 
 @dataclass(frozen=True)

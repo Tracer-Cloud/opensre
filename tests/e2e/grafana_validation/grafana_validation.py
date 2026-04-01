@@ -44,7 +44,7 @@ def validate_grafana_telemetry(
         - missing_spans: list (if expected_spans provided)
         - passed: bool (overall validation result)
     """
-    from app.agent.tools.tool_actions.grafana.grafana_actions import (
+    from app.tools.tool_actions.grafana.grafana_actions import (
         query_grafana_logs,
         query_grafana_traces,
     )

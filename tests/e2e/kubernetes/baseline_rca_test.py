@@ -15,9 +15,9 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from app.agent.nodes import node_extract_alert
-from app.agent.nodes.root_cause_diagnosis.node import diagnose_root_cause
-from app.agent.state import InvestigationState, make_initial_state
+from app.nodes import node_extract_alert
+from app.nodes.root_cause_diagnosis.node import diagnose_root_cause
+from app.state import InvestigationState, make_initial_state
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "datadog_k8s_alert.json"
 

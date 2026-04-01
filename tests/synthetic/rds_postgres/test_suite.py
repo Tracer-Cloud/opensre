@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.agent.tools.clients import llm_client
+from app.tools.clients import llm_client
 from tests.synthetic.rds_postgres.run_suite import run_scenario
 from tests.synthetic.rds_postgres.scenario_loader import load_all_scenarios
 from tests.synthetic.schemas import VALID_EVIDENCE_SOURCES
