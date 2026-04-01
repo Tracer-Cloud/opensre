@@ -155,6 +155,7 @@ class OpenAILLMClient:
         self._api_key = api_key
         self._base_url = base_url
         self._api_key_env = api_key_env
+        self._provider_label = api_key_env.removesuffix("_API_KEY").replace("_", " ").title()
         self._client = OpenAI(api_key=api_key, base_url=base_url, timeout=60.0)
         self._model = model
         self._max_tokens = max_tokens
@@ -199,9 +200,8 @@ class OpenAILLMClient:
                 response = self._client.chat.completions.create(**kwargs)
                 break
             except OpenAIAuthError as err:
-                provider_label = self._api_key_env.removesuffix("_API_KEY").replace("_", " ").title()
                 raise RuntimeError(
-                    f"{provider_label} authentication failed. Check {self._api_key_env} in your environment or .env."
+                    f"{self._provider_label} authentication failed. Check {self._api_key_env} in your environment or .env."
                 ) from err
             except Exception as err:
                 last_err = err
