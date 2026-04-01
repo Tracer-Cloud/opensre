@@ -28,76 +28,14 @@ from __future__ import annotations
 
 import pytest
 
-from app.integrations.clients import llm_client
 from tests.synthetic.mock_grafana_backend.selective_backend import SelectiveGrafanaBackend
 from tests.synthetic.rds_postgres.run_suite import run_scenario, score_reasoning
 from tests.synthetic.rds_postgres.scenario_loader import load_all_scenarios
 
-_DEFAULT_PLANNING_ACTIONS = [
-    "query_grafana_logs",
-    "query_grafana_metrics",
-    "query_grafana_alert_rules",
-]
-
-
-class _FakeLLMResponse:
-    def __init__(self, content: str) -> None:
-        self.content = content
-
-
-class _FakeStructuredLLM:
-    """Fake structured output client for node_plan_actions.
-
-    Same semantics as in test_suite.py — raises for AlertDetails so
-    _fallback_details fires, returns _Plan for InvestigationPlan.
-    """
-
-    def __init__(self, model: object, planning_actions: list[str]) -> None:
-        self._model = model
-        self._planning_actions = planning_actions
-
-    def with_config(self, **_kwargs) -> _FakeStructuredLLM:
-        return self
-
-    def invoke(self, _prompt: str) -> object:
-        model_name = getattr(self._model, "__name__", "")
-        if model_name == "AlertDetails":
-            raise ValueError("Fake LLM: use _fallback_details for alert extraction")
-
-        planning_actions = self._planning_actions
-
-        class _Plan:
-            actions = planning_actions
-            rationale = "Axis 2 fake plan"
-
-        return _Plan()
-
-
-class _FakeLLM:
-    def __init__(self, responses: dict[str, str], planning_actions: list[str]) -> None:
-        self._responses = responses
-        self._planning_actions = planning_actions
-
-    def with_config(self, **_kwargs) -> _FakeLLM:
-        return self
-
-    def with_structured_output(self, model: object) -> _FakeStructuredLLM:
-        return _FakeStructuredLLM(model, self._planning_actions)
-
-    def invoke(self, prompt: str) -> _FakeLLMResponse:
-        for key, response in self._responses.items():
-            if key and key in prompt:
-                return _FakeLLMResponse(response)
-        if self._responses:
-            return _FakeLLMResponse(next(iter(self._responses.values())))
-        raise AssertionError("No responses configured in _FakeLLM")
-
-
 _ALL_SCENARIOS = load_all_scenarios()
 
-# Difficulty threshold above which a real LLM is expected to fail.
-# The fake-LLM infrastructure tests always pass regardless.
-# With a real LLM, failures at or above this difficulty are the gap signal —
+# Difficulty threshold above which the LLM is expected to struggle.
+# Failures at or above this difficulty are the gap signal —
 # they should not gate CI (strict=False xfail).
 _XFAIL_DIFFICULTY = 3
 
@@ -107,9 +45,8 @@ def _axis2_scenarios() -> list:
 
     Scenarios at difficulty >= _XFAIL_DIFFICULTY are wrapped with
     pytest.mark.xfail(strict=False) so that:
-    - Failures with a real LLM keep CI green (expected, part of the gap metric).
-    - Passes with a real LLM are recorded as bonuses (xpass).
-    - The fake-LLM infrastructure tests always xpass (fine with strict=False).
+    - Failures keep CI green (expected, part of the gap metric).
+    - Passes are recorded as bonuses (xpass).
     """
     params = []
     for f in _ALL_SCENARIOS:
@@ -134,25 +71,12 @@ def _axis2_scenarios() -> list:
     return params
 
 
-def _run_axis2_scenario_test(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
-    """Core Axis 2 test logic: wire SelectiveGrafanaBackend + fake LLM, assert reasoning."""
-    responses: dict[str, str] = {}
-    for current in _ALL_SCENARIOS:
-        responses[current.scenario_id] = current.answer_key.model_response
-        title = str(current.alert.get("title", ""))
-        if title:
-            responses[title] = current.answer_key.model_response
-
-    planning_actions = list(fixture.answer_key.optimal_trajectory) or _DEFAULT_PLANNING_ACTIONS
-    fake_llm = _FakeLLM(responses, planning_actions)
-    monkeypatch.setattr(llm_client, "_llm", fake_llm)
-    monkeypatch.setattr(llm_client, "_llm_for_tools", fake_llm)
-
+def _run_axis2_scenario_test(fixture) -> None:
+    """Run Axis 2 scenario with real LLM, SelectiveGrafanaBackend, and assert reasoning."""
     backend = SelectiveGrafanaBackend(fixture)
 
     final_state, score = run_scenario(fixture, use_mock_grafana=True, grafana_backend=backend)
 
-    # --- Standard Axis 1 assertions ---
     assert final_state["root_cause"], (
         f"{fixture.scenario_id}: agent produced no root_cause"
     )
@@ -162,7 +86,6 @@ def _run_axis2_scenario_test(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
         f"  missing_keywords={score.missing_keywords}"
     )
 
-    # --- Axis 2: trajectory ---
     if score.trajectory is not None:
         assert score.trajectory.efficiency_score >= 1.0, (
             f"{fixture.scenario_id} TRAJECTORY FAIL: "
@@ -172,8 +95,6 @@ def _run_axis2_scenario_test(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
             f"  actual={score.trajectory.actual_sequence}"
         )
 
-    # --- Axis 2: reasoning quality ---
-    # Re-score with the backend's audit log so required_queries is checked.
     reasoning = score_reasoning(fixture, final_state, queried_metrics=backend.queried_metrics)
 
     if reasoning is not None:
@@ -188,12 +109,9 @@ def _run_axis2_scenario_test(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
             f"  queried_metrics audit log: {backend.unique_queried_metrics}"
         )
 
-    monkeypatch.setattr(llm_client, "_llm", None)
-    monkeypatch.setattr(llm_client, "_llm_for_tools", None)
-
 
 @pytest.mark.axis2
 @pytest.mark.parametrize("fixture", _axis2_scenarios(), ids=lambda f: f.scenario_id)
-def test_axis2_scenario(monkeypatch: pytest.MonkeyPatch, fixture) -> None:
+def test_axis2_scenario(fixture) -> None:
     """Axis 2 adversarial test: selective backend + reasoning quality checks."""
-    _run_axis2_scenario_test(monkeypatch, fixture)
+    _run_axis2_scenario_test(fixture)
