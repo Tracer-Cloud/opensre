@@ -57,12 +57,6 @@ When you are done, stop the stack:
 make grafana-local-down
 ```
 
-If you want a generic no-Docker bundled RCA example instead, run:
-
-```bash
-make local-rca-demo
-```
-
 ## 2. Full local development setup
 
 Use this path when you want to run the agent locally with your Tracer account and your own integrations.

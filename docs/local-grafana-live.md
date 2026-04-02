@@ -1,6 +1,6 @@
 # Local Grafana Live
 
-This path runs Tracer against a real local Grafana instance instead of bundled Grafana evidence.
+This path runs Tracer against a real local Grafana + Loki stack using live log queries.
 
 ![Live local Grafana flow](assets/local-grafana-live-flow.gif)
 
@@ -23,6 +23,13 @@ Level 1 scope:
 
 ```bash
 make local-grafana-live
+```
+
+To seed or run the RCA step alone (same code the Makefile calls):
+
+```bash
+python -m app.cli.wizard.local_demos grafana-seed
+python -m app.cli.wizard.local_demos grafana-live --output /tmp/tracer-local-grafana-rca.md
 ```
 
 This will:

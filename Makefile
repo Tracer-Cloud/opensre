@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install install-hooks onboard test test-full demo local-rca-demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed local-grafana-live langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic
+.PHONY: install install-hooks onboard test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed local-grafana-live langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic
 
 ifneq ($(wildcard .venv/bin/python),)
 PYTHON = .venv/bin/python
@@ -34,10 +34,6 @@ onboard:
 demo:
 	$(PYTHON) -m tests.e2e.upstream_prefect_ecs_fargate.test_agent_e2e
 
-# Run bundled local RCA example with sample alert and evidence
-local-rca-demo:
-	$(PYTHON) -m app.demo.local_rca
-
 alert-template:
 	opensre investigate --print-template $(or $(TEMPLATE),generic)
 
@@ -59,17 +55,17 @@ check-langsmith-api-key:
 	@[ -n "$$LANGGRAPH_HOST_API_KEY" ] || [ -n "$$LANGSMITH_API_KEY" ] || [ -n "$$LANGCHAIN_API_KEY" ] || { echo "Set LANGSMITH_API_KEY (or LANGGRAPH_HOST_API_KEY / LANGCHAIN_API_KEY) in your environment or .env before deploying to LangGraph."; exit 1; }
 
 grafana-local-up: check-docker
-	docker compose -f app/demo/local_grafana_stack/docker-compose.yml up -d
+	docker compose -f app/cli/wizard/local_grafana_stack/docker-compose.yml up -d
 
 grafana-local-down: check-docker
-	docker compose -f app/demo/local_grafana_stack/docker-compose.yml down
+	docker compose -f app/cli/wizard/local_grafana_stack/docker-compose.yml down
 
 grafana-local-seed:
-	$(PYTHON) -m app.demo.local_grafana_seed
+	$(PYTHON) -m app.cli.wizard.local_demos grafana-seed
 
 local-grafana-live: grafana-local-up
-	$(PYTHON) -m app.demo.local_grafana_seed
-	$(PYTHON) -m app.demo.local_grafana_live
+	$(PYTHON) -m app.cli.wizard.local_demos grafana-seed
+	$(PYTHON) -m app.cli.wizard.local_demos grafana-live
 
 langgraph-build: check-langgraph check-docker
 	langgraph build
@@ -297,7 +293,6 @@ help:
 	@echo "  make verify-integrations - Check local store + .env integrations before running RCA"
 	@echo "  make langgraph-build - Build the LangGraph agent server image locally"
 	@echo "  make langgraph-deploy - Deploy the agent to LangGraph / LangSmith Deployments"
-	@echo "  make local-rca-demo  - Run the generic bundled local RCA example (no Docker or Tracer account required)"
 	@echo "  make prefect-demo    - Run Prefect ECS Fargate E2E test (alias for demo)"
 	@echo "  make prefect-local-test - Run Prefect ECS local test (CLOUD=1 for ECS)"
 	@echo "  make flink-demo      - Run Apache Flink ECS E2E test"
