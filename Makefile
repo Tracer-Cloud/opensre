@@ -242,9 +242,9 @@ test:
 test-full:
 	$(PYTHON) -m pytest -v
 
-# Run tests with coverage
+# Run tests with coverage (synthetic tests excluded — they have a dedicated CI job)
 test-cov:
-	$(PYTHON) -m pytest -v --cov=app --cov-report=term-missing --ignore=tests/e2e/kubernetes_local_alert_simulation
+	$(PYTHON) -m pytest -v --cov=app --cov-report=term-missing --ignore=tests/e2e/kubernetes_local_alert_simulation -m "not synthetic"
 
 # Run Grafana integration tests
 test-grafana:

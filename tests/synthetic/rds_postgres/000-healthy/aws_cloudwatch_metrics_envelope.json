@@ -1,0 +1,6 @@
+{
+  "namespace": "AWS/RDS",
+  "period": 60,
+  "start_time": "2026-03-26T10:00:00Z",
+  "end_time": "2026-03-26T10:15:00Z"
+}

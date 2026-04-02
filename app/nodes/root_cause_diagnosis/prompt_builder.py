@@ -1,0 +1,701 @@
+"""Prompt construction for root cause diagnosis."""
+
+import json
+from typing import Any
+
+from app.state import InvestigationState
+
+# Allowed evidence sources the model can reference (keeps grounding consistent)
+ALLOWED_EVIDENCE_SOURCES = [
+    "aws_batch_jobs",
+    "tracer_tools",
+    "logs",
+    "cloudwatch_logs",
+    "host_metrics",
+    "aws_cloudwatch_metrics",
+    "aws_rds_events",
+    "aws_performance_insights",
+    "lambda_logs",
+    "lambda_code",
+    "lambda_config",
+    "s3_metadata",
+    "s3_audit",
+    "vendor_audit",
+    "grafana_logs",
+    "grafana_traces",
+    "grafana_metrics",
+    "grafana_alert_rules",
+    "datadog_logs",
+    "datadog_monitors",
+    "datadog_events",
+]
+
+
+def build_diagnosis_prompt(
+    state: InvestigationState, evidence: dict[str, Any], memory_context: str = ""
+) -> str:
+    """
+    Build an evidence-based prompt for root cause analysis.
+
+    Args:
+        state: Investigation state with problem and hypotheses
+        evidence: Collected evidence dictionary
+        memory_context: Optional memory context from prior investigations
+
+    Returns:
+        Formatted prompt string for LLM
+    """
+    problem = state.get("problem_md", "")
+    hypotheses = state.get("hypotheses", [])
+
+    # Build directive sections
+    upstream_directive = _build_upstream_directive(evidence)
+    kubernetes_directive = _build_kubernetes_directive(state, evidence)
+    memory_section = _build_memory_section(memory_context)
+
+    # Build evidence sections
+    evidence_text = _build_evidence_sections(state, evidence)
+
+    # Construct final prompt
+    prompt = f"""You are an experienced SRE writing a short RCA (root cause analysis) for a data pipeline incident.
+
+Goal: Be helpful and accurate. Prefer evidence-backed explanations over speculation.
+If the exact root cause cannot be proven, provide the most likely explanation based on observed evidence,
+and clearly state what is unknown.
+{upstream_directive}{kubernetes_directive}{memory_section}
+DEFINITIONS:
+- VALIDATED_CLAIMS: Directly supported by the evidence shown below (observed facts).
+- NON_VALIDATED_CLAIMS: Plausible hypotheses or contributing factors that are NOT directly proven by the evidence.
+
+RULES:
+- Do NOT introduce external domain knowledge that is not visible in the evidence (e.g., what a tool usually does).
+- Do NOT reference source code files or line numbers unless they appear explicitly in the log evidence below.
+- You can ONLY use information present in the evidence logs shown below. If a traceback shows file names and line numbers, you may reference them.
+- VALIDATED_CLAIMS should be factual and specific (no "maybe", "likely", "appears").
+- NON_VALIDATED_CLAIMS may include "likely/maybe", but must stay consistent with evidence.
+- Keep each claim to one sentence.
+- When possible, mention which evidence source supports a validated claim using one of:
+  {", ".join(ALLOWED_EVIDENCE_SOURCES)}.
+
+PROBLEM:
+{problem}
+
+HYPOTHESES TO CONSIDER (may be incomplete):
+{chr(10).join(f"- {h}" for h in hypotheses[:5]) if hypotheses else "- None"}
+
+EVIDENCE:
+{evidence_text}
+
+OUTPUT FORMAT (follow exactly):
+
+ROOT_CAUSE:
+<1–2 sentences. If not proven, say "Most likely ..." and state what's missing. Do not say only "Unable to determine".>
+
+ROOT_CAUSE_CATEGORY:
+<one of: configuration_error, code_defect, data_quality, resource_exhaustion, dependency_failure, infrastructure, healthy, unknown>
+(Use "healthy" when all monitored metrics are within normal bounds, no errors are detected, and the alert is informational or has resolved. When evidence is mixed — alert resolved but some metrics are elevated — use your judgment; you may still choose healthy or another category.)
+
+VALIDATED_CLAIMS:
+- <one factual claim> [evidence: <one of {", ".join(ALLOWED_EVIDENCE_SOURCES)}>]
+- <another factual claim> [evidence: <one of {", ".join(ALLOWED_EVIDENCE_SOURCES)}>]
+
+NON_VALIDATED_CLAIMS:
+- <one plausible hypothesis consistent with evidence>
+- <another plausible hypothesis>
+(If you include hypotheses, focus on explaining the failure mechanism and what data is missing to confirm it.)
+
+CAUSAL_CHAIN:
+- <step 1: the trigger or misconfiguration>
+- <step 2: how it propagated>
+- <step N: the observable symptom or alert>
+(Trace the error from root cause through to the alert that triggered this investigation. Each step should be one sentence.)
+"""
+
+    return prompt
+
+
+def _build_upstream_directive(evidence: dict[str, Any]) -> str:
+    """Build upstream tracing directive if audit evidence is present."""
+    s3_audit_payload = evidence.get("s3_audit_payload", {})
+    vendor_audit_from_logs = evidence.get("vendor_audit_from_logs", {})
+
+    if s3_audit_payload.get("found") or vendor_audit_from_logs:
+        return """
+**CRITICAL: Upstream Root Cause Tracing**
+Audit evidence shows external API interactions. For data pipeline failures:
+- The root cause is often upstream (external API schema changes, missing fields, breaking changes)
+- S3 audit payload and vendor audit logs contain the source of truth
+- Validated claims should reference the external API request/response details
+- Explain how the external change propagated downstream to cause the pipeline failure
+"""
+    return ""
+
+
+def _extract_k8s_tags_from_evidence(evidence: dict[str, Any]) -> dict[str, str]:
+    """Extract K8s metadata from Datadog log tags (Signal 1 -- primary).
+
+    Also picks up pod_name and container_name alongside kube_* tags.
+    Prefers pre-extracted values from fetch_datadog_context when available.
+    """
+    k8s: dict[str, str] = {}
+
+    # Use pre-extracted pod info from fetch_datadog_context if present
+    if evidence.get("datadog_pod_name"):
+        k8s["pod_name"] = evidence["datadog_pod_name"]
+    if evidence.get("datadog_container_name"):
+        k8s["container_name"] = evidence["datadog_container_name"]
+    if evidence.get("datadog_kube_namespace"):
+        k8s["kube_namespace"] = evidence["datadog_kube_namespace"]
+
+    for log_list_key in ("datadog_error_logs", "datadog_logs"):
+        for log in evidence.get(log_list_key, []):
+            if not isinstance(log, dict):
+                continue
+            for tag in log.get("tags", []):
+                if not isinstance(tag, str) or ":" not in tag:
+                    continue
+                key, _, val = tag.partition(":")
+                if (key.startswith("kube_") or key in ("pod_name", "container_name")) and key not in k8s:
+                    k8s[key] = val
+    return k8s
+
+
+def _detect_k8s_from_monitors(evidence: dict[str, Any]) -> bool:
+    """Check Datadog monitors for kubernetes_state queries (Signal 2 -- secondary)."""
+    for mon in evidence.get("datadog_monitors", []):
+        if isinstance(mon, dict) and "kubernetes_state" in mon.get("query", ""):
+            return True
+    return False
+
+
+def _build_kubernetes_directive(state: InvestigationState, evidence: dict[str, Any]) -> str:
+    """Build K8s diagnostic directive when Kubernetes context is detected.
+
+    Detection cascade (strict priority):
+    1. Tags: kube_* tags in Datadog log entries (most reliable)
+    2. Monitors: kubernetes_state in Datadog monitor queries
+    3. Alert text: "kubernetes" in raw alert (fallback only)
+    """
+    k8s_tags = _extract_k8s_tags_from_evidence(evidence)
+
+    if not k8s_tags and not _detect_k8s_from_monitors(evidence):
+        raw_alert = state.get("raw_alert", "")
+        if "kubernetes" not in str(raw_alert).lower():
+            return ""
+
+    metadata_lines = [f"- {k}: {v}" for k, v in k8s_tags.items()] if k8s_tags else []
+    metadata_block = "\n".join(metadata_lines)
+    metadata_section = f"\n{metadata_block}\n" if metadata_block else ""
+
+    return f"""
+**Kubernetes Context Detected:**{metadata_section}
+For Kubernetes workload failures, distinguish clearly between:
+- SYMPTOM: The workload (Job/Pod/Deployment) entered a failed state
+- ROOT CAUSE: The underlying reason the application process failed
+
+Common root cause categories for K8s workload failures:
+- Configuration error: environment variables, ConfigMaps, or manifest settings that cause the application to reject valid input or fail validation
+- Resource issue: OOM, CPU throttling, storage limits
+- Image/dependency: wrong image tag, missing dependencies, startup crash
+- Input data: upstream data quality or missing data
+
+Key distinction for schema/validation failures:
+When logs show the application validating data against a configured list of required fields, and a field in that list is missing from the data, the root cause is typically a configuration error (the required fields list was misconfigured in the Job manifest or environment variables), not a data quality issue. Data quality issues manifest as malformed values or corrupted records, not as a mismatch between a configured field list and the data schema.
+
+Identify which category fits the evidence and trace the error chain from configuration/input through to the observed failure.
+"""
+
+
+def _build_memory_section(memory_context: str) -> str:
+    """Build memory section if context is available."""
+    if not memory_context:
+        return ""
+
+    return f"""
+**Prior Root Cause Patterns (from memory):**
+{memory_context[:1500]}
+
+Use these patterns to recognize similar failure modes and accelerate diagnosis.
+"""
+
+
+def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]) -> str:
+    """Build all evidence sections for the prompt."""
+    sections: list[str] = []
+
+    # Extract evidence components
+    failed_jobs = evidence.get("failed_jobs", [])
+    failed_tools = evidence.get("failed_tools", [])
+    error_logs = evidence.get("error_logs", [])[:10]
+    cloudwatch_logs = evidence.get("cloudwatch_logs", [])[:5]
+    host_metrics = evidence.get("host_metrics", {})
+    rds_metrics = evidence.get("aws_cloudwatch_metrics", {})
+    rds_events = evidence.get("aws_rds_events", [])
+    performance_insights = evidence.get("aws_performance_insights", {})
+    lambda_logs = evidence.get("lambda_logs", [])[:10]
+    lambda_function = evidence.get("lambda_function", {})
+    lambda_config = evidence.get("lambda_config", {})
+    s3_object = evidence.get("s3_object", {})
+    s3_audit_payload = evidence.get("s3_audit_payload", {})
+    vendor_audit_from_logs = evidence.get("vendor_audit_from_logs", {})
+
+    # Extract alert annotations
+    raw_alert = state.get("raw_alert", {})
+    cloudwatch_url = None
+    alert_annotations: dict[str, Any] = {}
+    raw_alert_text: str = ""
+    if isinstance(raw_alert, str):
+        raw_alert_text = raw_alert
+    elif isinstance(raw_alert, dict):
+        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
+        alert_annotations = (
+            raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
+        )
+
+    # CloudWatch logs
+    if cloudwatch_logs:
+        section = f"\nCloudWatch Error Logs ({len(cloudwatch_logs)} events):\n"
+        for log in cloudwatch_logs:
+            section += f"{log}\n"
+        if cloudwatch_url:
+            section += f"\n[Citation: View full logs at {cloudwatch_url}]\n"
+        section += "\n"
+        sections.append(section)
+
+    # AWS Batch jobs (only show if data exists)
+    if failed_jobs:
+        section = f"\nAWS Batch Failed Jobs ({len(failed_jobs)}):\n"
+        for job in failed_jobs[:5]:
+            section += f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
+        sections.append(section)
+
+    # Failed tools (only show if data exists)
+    if failed_tools:
+        section = f"\nFailed Tools ({len(failed_tools)}):\n"
+        for tool in failed_tools[:5]:
+            section += f"- {tool.get('tool_name', 'Unknown')}: exit_code={tool.get('exit_code')}\n"
+        sections.append(section)
+
+    # Error logs (only show if data exists)
+    if error_logs:
+        section = f"\nError Logs ({len(error_logs)}):\n"
+        for log in error_logs[:5]:
+            section += f"- {log.get('message', '')[:200]}\n"
+        sections.append(section)
+
+    # Host metrics (only show if data exists)
+    if host_metrics and host_metrics.get("data"):
+        sections.append("\nHost Metrics: Available (CPU, memory, disk)\n")
+
+    if rds_metrics:
+        sections.append(_build_rds_metrics_section(rds_metrics))
+
+    if rds_events:
+        sections.append(_build_rds_events_section(rds_events))
+
+    if performance_insights:
+        sections.append(_build_performance_insights_section(performance_insights))
+
+    # Lambda logs
+    if lambda_logs:
+        section = f"\nLambda Invocation Logs ({len(lambda_logs)} events):\n"
+        for log in lambda_logs[:10]:
+            message = log.get("message", "") if isinstance(log, dict) else str(log)
+            section += f"- {message[:300]}\n"
+        sections.append(section)
+
+    # Lambda function details
+    if lambda_function and lambda_function.get("function_name"):
+        section = _build_lambda_function_section(lambda_function)
+        sections.append(section)
+
+    # Lambda configuration
+    if lambda_config and lambda_config.get("function_name"):
+        section = _build_lambda_config_section(lambda_config)
+        sections.append(section)
+
+    # S3 object details
+    if s3_object and s3_object.get("found"):
+        section = _build_s3_object_section(s3_object)
+        sections.append(section)
+
+    # S3 audit payload
+    if s3_audit_payload and s3_audit_payload.get("found"):
+        section = _build_s3_audit_section(s3_audit_payload)
+        sections.append(section)
+
+    # Vendor audit from logs
+    if vendor_audit_from_logs and vendor_audit_from_logs.get("requests"):
+        section = _build_vendor_audit_section(vendor_audit_from_logs)
+        sections.append(section)
+
+    # Grafana logs
+    grafana_error_logs = evidence.get("grafana_error_logs", [])
+    grafana_logs = evidence.get("grafana_logs", [])
+    if grafana_error_logs:
+        section = f"\nGrafana Error Logs ({len(grafana_error_logs)} events):\n"
+        for log in grafana_error_logs[:10]:
+            message = log.get("message", "") if isinstance(log, dict) else str(log)
+            section += f"- {message[:300]}\n"
+        sections.append(section)
+    elif grafana_logs:
+        section = f"\nGrafana Logs ({len(grafana_logs)} events):\n"
+        for log in grafana_logs[:10]:
+            message = log.get("message", "") if isinstance(log, dict) else str(log)
+            section += f"- {message[:300]}\n"
+        sections.append(section)
+
+    # Grafana traces
+    grafana_spans = evidence.get("grafana_pipeline_spans", [])
+    if grafana_spans:
+        section = f"\nGrafana Pipeline Spans ({len(grafana_spans)}):\n"
+        for span in grafana_spans[:10]:
+            run_id = span.get("execution_run_id", "")
+            records = span.get("record_count", "")
+            section += f"- {span.get('span_name', 'unknown')}"
+            if run_id:
+                section += f" (run_id={run_id})"
+            if records:
+                section += f" records={records}"
+            section += "\n"
+        sections.append(section)
+
+    # Grafana metrics
+    grafana_metrics = evidence.get("grafana_metrics", [])
+    if grafana_metrics:
+        metric_name = evidence.get("grafana_metric_name", "unknown")
+        section = f"\nGrafana Metrics ({metric_name}):\n"
+        for metric in grafana_metrics[:5]:
+            section += f"- {json.dumps(metric, default=str)[:200]}\n"
+        sections.append(section)
+
+    # Grafana alert rules
+    grafana_alert_rules = evidence.get("grafana_alert_rules", [])
+    if grafana_alert_rules:
+        section = f"\nGrafana Alert Rules ({len(grafana_alert_rules)}):\n"
+        for rule in grafana_alert_rules[:5]:
+            section += f"- {rule.get('rule_name', 'unknown')} [{rule.get('state', '')}]\n"
+            section += f"  Folder: {rule.get('folder', '')}, Group: {rule.get('group', '')}\n"
+            for query in rule.get("queries", [])[:2]:
+                section += f"  Query ({query.get('ref_id', '')}): {query.get('expr', '')[:200]}\n"
+            if rule.get("no_data_state"):
+                section += f"  No-data state: {rule.get('no_data_state')}\n"
+        sections.append(section)
+
+    # Datadog pod location (from fetch_datadog_context extraction)
+    datadog_pod_name = evidence.get("datadog_pod_name")
+    datadog_container_name = evidence.get("datadog_container_name")
+    datadog_kube_namespace = evidence.get("datadog_kube_namespace")
+    datadog_failed_pods = evidence.get("datadog_failed_pods", [])
+
+    if datadog_failed_pods:
+        section = f"\nFailed Pods ({len(datadog_failed_pods)}):\n"
+        for p in datadog_failed_pods:
+            pod_parts = [f"pod={p.get('pod_name', '?')}"]
+            if p.get("container"):
+                pod_parts.append(f"container={p['container']}")
+            if p.get("namespace"):
+                pod_parts.append(f"namespace={p['namespace']}")
+            if p.get("exit_code") is not None:
+                pod_parts.append(f"exit={p['exit_code']}")
+            if p.get("node_name"):
+                node_str = f"node={p['node_name']}"
+                if p.get("node_ip"):
+                    node_str += f" ({p['node_ip']})"
+                pod_parts.append(node_str)
+            if p.get("cluster"):
+                pod_parts.append(f"cluster={p['cluster']}")
+            if p.get("error"):
+                pod_parts.append(f"error={p['error'][:100]}")
+            section += f"- {' | '.join(pod_parts)}\n"
+        sections.append(section)
+    elif datadog_pod_name:
+        pod_parts = [f"pod_name={datadog_pod_name}"]
+        if datadog_container_name:
+            pod_parts.append(f"container={datadog_container_name}")
+        if datadog_kube_namespace:
+            pod_parts.append(f"namespace={datadog_kube_namespace}")
+        sections.append(f"\nFailed Pod Location: {' '.join(pod_parts)}\n")
+
+    # Datadog logs
+    datadog_error_logs = evidence.get("datadog_error_logs", [])
+    datadog_logs = evidence.get("datadog_logs", [])
+    if datadog_error_logs:
+        section = f"\nDatadog Error Logs ({len(datadog_error_logs)} events):\n"
+        for log in datadog_error_logs[:15]:
+            section += f"- {_format_datadog_log_entry(log)}\n"
+        sections.append(section)
+    elif datadog_logs:
+        section = f"\nDatadog Logs ({len(datadog_logs)} events):\n"
+        for log in datadog_logs[:15]:
+            section += f"- {_format_datadog_log_entry(log)}\n"
+        sections.append(section)
+
+    # Datadog monitors
+    datadog_monitors = evidence.get("datadog_monitors", [])
+    if datadog_monitors:
+        section = f"\nDatadog Monitors ({len(datadog_monitors)}):\n"
+        for monitor in datadog_monitors[:5]:
+            section += f"- {monitor.get('name', 'unknown')} [{monitor.get('overall_state', '')}]\n"
+            section += f"  Type: {monitor.get('type', '')}, Query: {monitor.get('query', '')[:200]}\n"
+        sections.append(section)
+
+    # Datadog events
+    datadog_events = evidence.get("datadog_events", [])
+    if datadog_events:
+        section = f"\nDatadog Events ({len(datadog_events)}):\n"
+        for event in datadog_events[:5]:
+            section += f"- {event.get('title', 'unknown')}\n"
+            if event.get("message"):
+                section += f"  {event['message'][:200]}\n"
+        sections.append(section)
+
+    # Alert annotations
+    if alert_annotations:
+        section = _build_alert_annotations_section(alert_annotations)
+        if section:
+            sections.append(section)
+
+    # Raw alert text (e.g. Slack/Datadog message received as plain text)
+    if raw_alert_text:
+        sections.append(f"\nAlert Notification Text:\n{raw_alert_text[:2000]}\n")
+
+    return "".join(sections)
+
+
+def _build_lambda_function_section(lambda_function: dict[str, Any]) -> str:
+    """Build Lambda function evidence section."""
+    section = "\nLambda Function Configuration:\n"
+    section += f"- Function: {lambda_function.get('function_name')}\n"
+    section += f"- Runtime: {lambda_function.get('runtime')}\n"
+    section += f"- Handler: {lambda_function.get('handler')}\n"
+
+    if lambda_function.get("environment_variables"):
+        env_vars = lambda_function.get("environment_variables", {})
+        section += f"- Environment Variables: {', '.join(env_vars.keys())}\n"
+
+    if lambda_function.get("code", {}).get("files"):
+        code_files = lambda_function.get("code", {}).get("files", {})
+        if isinstance(code_files, dict) and code_files:
+            section += f"- Code Files: {', '.join(list(code_files.keys())[:5])}\n"
+            # Include handler code snippet if available
+            handler_file = lambda_function.get("handler", "").split(".")[0] + ".py"
+            if handler_file in code_files:
+                file_content = code_files.get(handler_file, "")
+                if isinstance(file_content, str):
+                    code_snippet = file_content[:1000]
+                    section += f"\nHandler Code Snippet ({handler_file}):\n{code_snippet}\n"
+
+    return section
+
+
+def _build_rds_metrics_section(rds_metrics: dict[str, Any]) -> str:
+    """Build RDS CloudWatch metrics evidence section."""
+    section = "\nRDS CloudWatch Metrics:\n"
+
+    db_instance = rds_metrics.get("db_instance_identifier")
+    if db_instance:
+        section += f"- DB instance: {db_instance}\n"
+
+    metric_entries = rds_metrics.get("metrics", [])
+    for metric in metric_entries[:8]:
+        if not isinstance(metric, dict):
+            continue
+        metric_name = metric.get("metric_name", "unknown")
+        summary = metric.get("summary")
+        unit = metric.get("unit")
+        if summary:
+            section += f"- {metric_name}: {summary}\n"
+        else:
+            datapoints = metric.get("recent_datapoints", [])
+            section += f"- {metric_name}: {len(datapoints)} recent datapoints"
+            if unit:
+                section += f" [{unit}]"
+            section += "\n"
+
+    observations = rds_metrics.get("observations", [])
+    for observation in observations[:5]:
+        section += f"- Observation: {observation}\n"
+
+    return section
+
+
+def _build_rds_events_section(rds_events: list[dict[str, Any]]) -> str:
+    """Build RDS event evidence section."""
+    section = f"\nRDS Events ({len(rds_events)}):\n"
+    for event in rds_events[:8]:
+        if not isinstance(event, dict):
+            continue
+        timestamp = event.get("date") or event.get("timestamp") or "unknown-time"
+        message = event.get("message", "No message")
+        source = event.get("source_identifier") or event.get("source_type")
+        section += f"- {timestamp}: {message}"
+        if source:
+            section += f" [{source}]"
+        section += "\n"
+    return section
+
+
+def _build_performance_insights_section(performance_insights: dict[str, Any]) -> str:
+    """Build RDS Performance Insights evidence section."""
+    section = "\nPerformance Insights:\n"
+
+    if performance_insights.get("db_instance_identifier"):
+        section += f"- DB instance: {performance_insights['db_instance_identifier']}\n"
+
+    for observation in performance_insights.get("observations", [])[:5]:
+        section += f"- Observation: {observation}\n"
+
+    top_sql = performance_insights.get("top_sql", [])
+    if top_sql:
+        section += "Top SQL:\n"
+        for item in top_sql[:5]:
+            if not isinstance(item, dict):
+                continue
+            sql = str(item.get("sql", ""))[:180]
+            db_load = item.get("db_load")
+            wait_event = item.get("wait_event")
+            section += f"- sql={sql}"
+            if db_load is not None:
+                section += f" | db_load={db_load}"
+            if wait_event:
+                section += f" | wait_event={wait_event}"
+            section += "\n"
+
+    wait_events = performance_insights.get("wait_events", [])
+    if wait_events:
+        section += "Top Wait Events:\n"
+        for item in wait_events[:5]:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name", "unknown")
+            db_load = item.get("db_load")
+            section += f"- {name}"
+            if db_load is not None:
+                section += f" | db_load={db_load}"
+            section += "\n"
+
+    return section
+
+
+def _build_lambda_config_section(lambda_config: dict[str, Any]) -> str:
+    """Build Lambda configuration evidence section."""
+    section = "\nLambda Configuration:\n"
+    section += f"- Function: {lambda_config.get('function_name')}\n"
+    section += f"- Runtime: {lambda_config.get('runtime')}\n"
+    section += f"- Handler: {lambda_config.get('handler')}\n"
+
+    env_vars = lambda_config.get("environment_variables", {})
+    if env_vars:
+        section += "- Environment Variables:\n"
+        for key, value in list(env_vars.items())[:10]:
+            section += f"  - {key}: {value}\n"
+
+    return section
+
+
+_STRUCTURED_TAG_PREFIXES = ("kube_",)
+_STRUCTURED_TAG_NAMES = ("pod_name", "container_name", "container_id")
+
+
+def _format_datadog_log_entry(log: Any) -> str:
+    """Format a single Datadog log entry, surfacing structured tags and timestamp when present."""
+    if not isinstance(log, dict):
+        return str(log)[:300]
+
+    message = log.get("message", "")[:300]
+    tags = log.get("tags", [])
+
+    # Extract HH:MM:SS from ISO timestamp for compact display
+    ts_prefix = ""
+    raw_ts = log.get("timestamp", "")
+    if isinstance(raw_ts, str) and "T" in raw_ts:
+        time_part = raw_ts.split("T", 1)[1][:8]  # "HH:MM:SS"
+        ts_prefix = f"[{time_part}] "
+    elif isinstance(raw_ts, (int, float)):
+        import datetime
+        ts_prefix = f"[{datetime.datetime.utcfromtimestamp(raw_ts / 1000 if raw_ts > 1e10 else raw_ts).strftime('%H:%M:%S')}] "
+
+    tag_parts: dict[str, str] = {}
+    for t in tags:
+        if not isinstance(t, str) or ":" not in t:
+            continue
+        k, _, v = t.partition(":")
+        if any(k.startswith(p) for p in _STRUCTURED_TAG_PREFIXES) or k in _STRUCTURED_TAG_NAMES:
+            tag_parts[k] = v
+
+    if tag_parts:
+        tag_str = " ".join(f"{k}={v}" for k, v in tag_parts.items())
+        return f"{ts_prefix}[{tag_str}] {message}"
+
+    host = log.get("host", "")
+    service = log.get("service", "")
+    prefix = f"[{service}@{host}] " if service or host else ""
+    return f"{ts_prefix}{prefix}{message}"
+
+
+def _build_s3_object_section(s3_object: dict[str, Any]) -> str:
+    """Build S3 object evidence section."""
+    section = "\nS3 Object Details:\n"
+    section += f"- Bucket: {s3_object.get('bucket')}\n"
+    section += f"- Key: {s3_object.get('key')}\n"
+    section += f"- Size: {s3_object.get('size')} bytes\n"
+    section += f"- Content Type: {s3_object.get('content_type')}\n"
+
+    metadata = s3_object.get("metadata", {})
+    if metadata:
+        section += f"- Metadata: {json.dumps(metadata, indent=2)}\n"
+
+    sample = s3_object.get("sample")
+    if s3_object.get("is_text") and isinstance(sample, str):
+        section += f"\nS3 Object Sample:\n{sample[:500]}\n"
+
+    return section
+
+
+def _build_s3_audit_section(s3_audit_payload: dict[str, Any]) -> str:
+    """Build S3 audit payload evidence section."""
+    section = "\nS3 Audit Payload (External API Lineage):\n"
+    section += f"- Bucket: {s3_audit_payload.get('bucket')}\n"
+    section += f"- Key: {s3_audit_payload.get('key')}\n"
+
+    audit_content = s3_audit_payload.get("content")
+    if audit_content:
+        try:
+            audit_data = (
+                json.loads(audit_content) if isinstance(audit_content, str) else audit_content
+            )
+            section += f"- Content: {json.dumps(audit_data, indent=2)[:1500]}\n"
+        except (json.JSONDecodeError, TypeError):
+            section += f"- Content: {str(audit_content)[:500]}\n"
+
+    return section
+
+
+def _build_vendor_audit_section(vendor_audit_from_logs: dict[str, Any]) -> str:
+    """Build vendor audit evidence section."""
+    section = "\nExternal Vendor API Audit (from Lambda logs):\n"
+    for req in vendor_audit_from_logs.get("requests", [])[:5]:
+        section += f"- {req.get('type')} {req.get('url')}\n"
+        section += f"  Status: {req.get('status_code')}\n"
+        if req.get("response_body"):
+            response_str = json.dumps(req.get("response_body"), indent=2)[:500]
+            section += f"  Response: {response_str}\n"
+
+    return section
+
+
+def _build_alert_annotations_section(alert_annotations: dict[str, Any]) -> str:
+    """Build alert annotations evidence section."""
+    sections = []
+
+    if alert_annotations.get("log_excerpt"):
+        sections.append(f"\nLog Excerpt from Alert:\n{alert_annotations['log_excerpt'][:1000]}\n")
+
+    if alert_annotations.get("failed_steps"):
+        sections.append(f"\nFailed Steps Summary:\n{alert_annotations['failed_steps']}\n")
+
+    if alert_annotations.get("error"):
+        sections.append(f"\nError Message:\n{alert_annotations['error']}\n")
+
+    return "".join(sections)

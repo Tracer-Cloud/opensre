@@ -11,7 +11,7 @@ def test_save_local_config_writes_versioned_payload(tmp_path) -> None:
     saved_path = save_local_config(
         wizard_mode="quickstart",
         provider="anthropic",
-        model="claude-opus-4-20250514",
+        model="claude-opus-4-5",
         api_key_env="ANTHROPIC_API_KEY",
         model_env="ANTHROPIC_MODEL",
         api_key="test-key",
@@ -29,6 +29,6 @@ def test_save_local_config_writes_versioned_payload(tmp_path) -> None:
     assert payload["wizard"]["mode"] == "quickstart"
     assert payload["wizard"]["configured_target"] == "local"
     assert payload["targets"]["local"]["provider"] == "anthropic"
-    assert payload["targets"]["local"]["model"] == "claude-opus-4-20250514"
+    assert payload["targets"]["local"]["model"] == "claude-opus-4-5"
     assert payload["targets"]["local"]["api_key"] == "test-key"
     assert payload["probes"]["remote"]["reachable"] is False

@@ -16,9 +16,9 @@ model_response: |
   ROOT_CAUSE_CATEGORY: resource_exhaustion
 
   VALIDATED_CLAIMS:
-  - ReplicaLag stayed above 900 seconds on payments-prod-replica-1. [evidence: rds_metrics]
-  - WriteIOPS and transaction log generation spiked on the primary during the same window. [evidence: rds_metrics]
-  - Performance Insights shows bulk UPDATE statements dominated DB load with WAL write waits. [evidence: performance_insights]
+  - ReplicaLag stayed above 900 seconds on payments-prod-replica-1. [evidence: aws_cloudwatch_metrics]
+  - WriteIOPS and transaction log generation spiked on the primary during the same window. [evidence: aws_cloudwatch_metrics]
+  - Performance Insights shows bulk UPDATE statements dominated DB load with WAL write waits. [evidence: aws_performance_insights]
 
   NON_VALIDATED_CLAIMS:
   - Reducing batch size or adding replica capacity would likely reduce the lag more quickly.

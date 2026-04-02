@@ -5,8 +5,8 @@ required_keywords:
   - replica
   - ETL
 required_evidence_sources:
-  - rds_events
-  - performance_insights
+  - aws_rds_events
+  - aws_performance_insights
 forbidden_categories:
   - infrastructure
 ruling_out_keywords:
@@ -27,13 +27,13 @@ model_response: |
   ROOT_CAUSE_CATEGORY: resource_exhaustion
 
   VALIDATED_CLAIMS:
-  - ReplicaLag grew monotonically from 12s to 1,468s over 20 minutes, starting at 13:00Z — coinciding precisely with the ETL INSERT job start. [evidence: rds_metrics]
-  - TransactionLogsGeneration reached ~196 MB/s by 13:02Z, sustained at this level throughout — far exceeding normal replica replay capacity. [evidence: rds_metrics]
-  - WriteIOPS spiked from 420 to 20,500 at 13:01Z and sustained — consistent with a large bulk write workload. [evidence: rds_metrics]
-  - Performance Insights shows the ETL INSERT query as the dominant load (4.2 AAS) with WAL:Lock as the primary wait event (3.1 AAS) — confirming WAL replay is the bottleneck mechanism. [evidence: performance_insights]
-  - The RDS event stream contains three historical events: scheduled maintenance completed at 05:14Z, Multi-AZ failover completed at 08:12Z, and replica-2 promotion completed at 11:05Z. All three are resolved and the instance was available and stable from 11:06Z onward. None caused the current replication lag. [evidence: rds_events]
-  - CPUUtilization is elevated at ~41% — a direct consequence of the write-heavy ETL workload, not an independent CPU saturation event. [evidence: rds_metrics]
-  - DatabaseConnections are stable at ~99-103, ruling out any connection exhaustion contribution. [evidence: rds_metrics]
+  - ReplicaLag grew monotonically from 12s to 1,468s over 20 minutes, starting at 13:00Z — coinciding precisely with the ETL INSERT job start. [evidence: aws_cloudwatch_metrics]
+  - TransactionLogsGeneration reached ~196 MB/s by 13:02Z, sustained at this level throughout — far exceeding normal replica replay capacity. [evidence: aws_cloudwatch_metrics]
+  - WriteIOPS spiked from 420 to 20,500 at 13:01Z and sustained — consistent with a large bulk write workload. [evidence: aws_cloudwatch_metrics]
+  - Performance Insights shows the ETL INSERT query as the dominant load (4.2 AAS) with WAL:Lock as the primary wait event (3.1 AAS) — confirming WAL replay is the bottleneck mechanism. [evidence: aws_performance_insights]
+  - The RDS event stream contains three historical events: scheduled maintenance completed at 05:14Z, Multi-AZ failover completed at 08:12Z, and replica-2 promotion completed at 11:05Z. All three are resolved and the instance was available and stable from 11:06Z onward. None caused the current replication lag. [evidence: aws_rds_events]
+  - CPUUtilization is elevated at ~41% — a direct consequence of the write-heavy ETL workload, not an independent CPU saturation event. [evidence: aws_cloudwatch_metrics]
+  - DatabaseConnections are stable at ~99-103, ruling out any connection exhaustion contribution. [evidence: aws_cloudwatch_metrics]
 
   NON_VALIDATED_CLAIMS:
   - The parameter group change at 13:00Z is routine maintenance and unrelated to the lag onset.

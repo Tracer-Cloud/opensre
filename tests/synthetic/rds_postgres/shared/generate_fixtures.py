@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate expanded cloudwatch_metrics.json fixtures for all RDS synthetic scenarios.
+"""Generate expanded aws_cloudwatch_metrics.json fixtures for all RDS synthetic scenarios.
 
 Applies three layers of realism:
   Phase 1 — Add missing baseline metrics (15 series) to each faulty scenario.
@@ -10,7 +10,8 @@ Applies three layers of realism:
 Run from the repo root:
   python3 tests/synthetic/rds_postgres/shared/generate_fixtures.py
 
-Writes output to tests/synthetic/rds_postgres/<scenario>/cloudwatch_metrics.json.
+For 000-healthy, writes per-metric files to aws_cloudwatch_metrics/ directory.
+For other scenarios, writes to aws_cloudwatch_metrics.json (single file).
 Idempotent: safe to re-run.
 """
 from __future__ import annotations
@@ -475,7 +476,7 @@ def _patch_onset(series: dict, patch: dict, n: int, start_iso: str) -> dict:
 
 def process_scenario(scenario_id: str, config: dict) -> None:
     scenario_dir = SUITE_DIR / scenario_id
-    metrics_path = scenario_dir / "cloudwatch_metrics.json"
+    metrics_path = scenario_dir / "aws_cloudwatch_metrics.json"
 
     data = json.loads(metrics_path.read_text())
     existing_results = data["metric_data_results"]
@@ -549,7 +550,6 @@ def process_scenario(scenario_id: str, config: dict) -> None:
 
 def generate_shared_baseline() -> None:
     """Write shared/baseline_metrics.json using the 000-healthy time window as reference."""
-    # Use 000-healthy window as the canonical reference
     out: list[dict] = []
     n = 15
     start = "2026-03-26T10:00:00Z"
@@ -562,9 +562,36 @@ def generate_shared_baseline() -> None:
     print(f"  shared/baseline_metrics.json: {len(out)} series written")
 
 
+def generate_healthy_per_metric_files() -> None:
+    """Write 000-healthy/aws_cloudwatch_metrics_<Metric>.json files."""
+    n = 15
+    start = "2026-03-26T10:00:00Z"
+    out_dir = SUITE_DIR / "000-healthy"
+
+    envelope = {
+        "namespace": "AWS/RDS",
+        "period": 60,
+        "start_time": start,
+        "end_time": "2026-03-26T10:15:00Z",
+    }
+    (out_dir / "aws_cloudwatch_metrics_envelope.json").write_text(
+        json.dumps(envelope, indent=2) + "\n"
+    )
+
+    for defn in BASELINE_DEFS:
+        series = _gen_baseline_series(defn, "000-healthy", n, start)
+        fname = f"aws_cloudwatch_metrics_{defn['metric_name']}.json"
+        (out_dir / fname).write_text(json.dumps(series, indent=2) + "\n")
+
+    print(f"  000-healthy/: {len(BASELINE_DEFS)} aws_cloudwatch_metrics_*.json files + envelope")
+
+
 def main() -> None:
     print("=== Generating shared baseline ===")
     generate_shared_baseline()
+
+    print("\n=== Generating 000-healthy per-metric files ===")
+    generate_healthy_per_metric_files()
 
     print("\n=== Expanding scenario fixtures ===")
     for scenario_id, config in SCENARIOS.items():

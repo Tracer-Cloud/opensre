@@ -11,7 +11,7 @@ from app.cli.wizard.validation import ValidationResult
 
 
 def test_run_wizard_advanced_remote_falls_back_to_local(monkeypatch, tmp_path, capsys) -> None:
-    select_responses = iter(["advanced", "remote", "anthropic", "claude-opus-4-20250514"])
+    select_responses = iter(["advanced", "remote", "anthropic", "claude-opus-4-5"])
     confirm_responses = iter([True])
 
     def _mock_select(*_args, **_kwargs):
@@ -66,7 +66,7 @@ def test_run_wizard_advanced_remote_falls_back_to_local(monkeypatch, tmp_path, c
     assert exit_code == 0
     assert saved["wizard_mode"] == "advanced"
     assert saved["provider"] == "anthropic"
-    assert saved["model"] == "claude-opus-4-20250514"
+    assert saved["model"] == "claude-opus-4-5"
     assert saved["api_key"] == "secret-key"
 
     output = capsys.readouterr().out
@@ -83,7 +83,7 @@ def test_run_wizard_retries_invalid_api_key(monkeypatch, tmp_path, capsys) -> No
         ]
     )
 
-    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-20250514"])
+    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-5"])
 
     def _mock_select(*_args, **_kwargs):
         m = MagicMock()
@@ -128,7 +128,7 @@ def test_run_wizard_retries_invalid_api_key(monkeypatch, tmp_path, capsys) -> No
 
 
 def test_run_wizard_configures_optional_integrations(monkeypatch, tmp_path, capsys) -> None:
-    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-20250514", "role"])
+    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-5", "role"])
     saved_integrations: list[tuple[str, dict]] = []
     synced_env_values: list[dict[str, str]] = []
 
@@ -231,7 +231,7 @@ def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, caps
     select_responses = iter([
         "quickstart",
         "anthropic",
-        "claude-opus-4-20250514",
+        "claude-opus-4-5",
         flow.DEFAULT_GITHUB_MCP_MODE,
     ])
     text_responses = iter([
@@ -438,7 +438,7 @@ def test_run_wizard_reuses_saved_defaults_when_user_confirms_defaults(monkeypatc
 def test_run_wizard_uses_saved_matching_provider_key_without_prompt(monkeypatch, tmp_path, capsys) -> None:
     saved: dict[str, object] = {}
     password_called = False
-    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-20250514"])
+    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-5"])
 
     def _mock_select(*_args, **_kwargs):
         m = MagicMock()
@@ -469,7 +469,7 @@ def test_run_wizard_uses_saved_matching_provider_key_without_prompt(monkeypatch,
             "targets": {
                 "local": {
                     "provider": "anthropic",
-                    "model": "claude-opus-4-20250514",
+                    "model": "claude-opus-4-5",
                     "api_key_env": "ANTHROPIC_API_KEY",
                     "api_key": "saved-anthropic-key",
                 }
@@ -512,7 +512,7 @@ def test_run_wizard_does_not_reuse_saved_key_for_different_provider(monkeypatch,
     saved: dict[str, object] = {}
     password_calls: list[str] = []
 
-    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-20250514"])
+    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-5"])
 
     def _mock_select(*_args, **_kwargs):
         m = MagicMock()
@@ -665,7 +665,7 @@ def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatc
     wizard_store.save_local_config(
         wizard_mode="quickstart",
         provider="anthropic",
-        model="claude-opus-4-20250514",
+        model="claude-opus-4-5",
         api_key_env="ANTHROPIC_API_KEY",
         model_env="ANTHROPIC_MODEL",
         api_key="saved-anthropic-key",
@@ -678,7 +678,7 @@ def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatc
     env_path.write_text(
         "LLM_PROVIDER=anthropic\n"
         "ANTHROPIC_API_KEY=saved-anthropic-key\n"
-        "ANTHROPIC_MODEL=claude-opus-4-20250514\n",
+        "ANTHROPIC_MODEL=claude-opus-4-5\n",
         encoding="utf-8",
     )
 

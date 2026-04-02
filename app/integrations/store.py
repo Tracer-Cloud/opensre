@@ -35,9 +35,12 @@ sources without any special-casing.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 STORE_PATH = Path.home() / ".tracer" / "integrations.json"
 _VERSION = 1
@@ -52,6 +55,7 @@ def _load_raw() -> dict[str, Any]:
             return {"version": _VERSION, "integrations": []}
         return data
     except (json.JSONDecodeError, OSError):
+        logger.warning("Failed to read integrations store at %s", STORE_PATH, exc_info=True)
         return {"version": _VERSION, "integrations": []}
 
 

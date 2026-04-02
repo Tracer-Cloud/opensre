@@ -5,7 +5,7 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from app.agent.runners import run_investigation
+from app.runners import run_investigation
 from tests.synthetic.mock_grafana_backend.backend import FixtureGrafanaBackend
 from tests.synthetic.rds_postgres.scenario_loader import (
     SUITE_DIR,
@@ -15,9 +15,9 @@ from tests.synthetic.rds_postgres.scenario_loader import (
 
 # Maps fixture schema evidence keys to the agent's internal state keys.
 _EVIDENCE_KEY_MAP: dict[str, str] = {
-    "rds_metrics": "grafana_metrics",
-    "rds_events": "grafana_logs",
-    "performance_insights": "grafana_metrics",
+    "aws_cloudwatch_metrics": "grafana_metrics",
+    "aws_rds_events": "grafana_logs",
+    "aws_performance_insights": "grafana_metrics",
 }
 
 
@@ -279,7 +279,7 @@ def score_result(
         if forbidden_hits:
             failure_reason = f"forbidden keywords in output: {forbidden_hits}"
     # 4. Evidence path check — required sources must be non-empty in final_state["evidence"].
-    # Fixture schema keys (rds_metrics, rds_events, performance_insights) map to the agent's
+    # Fixture schema keys (aws_cloudwatch_metrics, aws_rds_events, aws_performance_insights) map to the agent's
     # internal evidence keys (grafana_metrics, grafana_logs) set by _map_grafana_*.
     if not failure_reason and answer_key.required_evidence_sources:
         evidence = final_state.get("evidence") or {}

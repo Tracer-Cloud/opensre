@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import atexit
 import contextlib
-import importlib.metadata
 import os
 import platform
 import queue
@@ -18,6 +17,7 @@ import httpx
 
 from app.analytics.events import Event
 from app.cli.wizard.store import get_store_path
+from app.version import get_version
 
 _CONFIG_DIR = get_store_path().parent
 _ANONYMOUS_ID_PATH = _CONFIG_DIR / "anonymous_id"
@@ -73,10 +73,7 @@ def _touch_once(path: Path) -> bool:
 
 
 def _cli_version() -> str:
-    try:
-        return importlib.metadata.version("opensre")
-    except importlib.metadata.PackageNotFoundError:
-        return "unknown"
+    return get_version()
 
 
 _BASE_PROPERTIES: Final[Properties] = {

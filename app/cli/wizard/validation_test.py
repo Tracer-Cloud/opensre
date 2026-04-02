@@ -88,7 +88,7 @@ def test_validate_provider_credentials_returns_failure_for_bad_anthropic_key(mon
     result = validate_provider_credentials(
         provider=PROVIDER_BY_VALUE["anthropic"],
         api_key="bad-key",
-        model="claude-opus-4-20250514",
+        model="claude-opus-4-5",
     )
 
     assert result.ok is False
@@ -104,7 +104,7 @@ def test_validate_provider_credentials_returns_success_for_valid_anthropic_key(m
     result = validate_provider_credentials(
         provider=PROVIDER_BY_VALUE["anthropic"],
         api_key="good-key",
-        model="claude-opus-4-20250514",
+        model="claude-opus-4-5",
     )
 
     assert result.ok is True

@@ -6,8 +6,8 @@ JSON envelope that the corresponding real Grafana datasource proxy endpoint
 would return.  No HTTP server is required — tests can call these directly.
 
 Endpoints modelled:
-    Mimir  /api/v1/query_range          ← cloudwatch_metrics.json
-    Loki   /loki/api/v1/query_range     ← rds_events.json
+    Mimir  /api/v1/query_range          ← aws_cloudwatch_metrics.json
+    Loki   /loki/api/v1/query_range     ← aws_rds_events.json
     Ruler  /api/v1/rules                ← alert.json
 """
 
@@ -68,7 +68,7 @@ def format_mimir_query_range(cw_fixture: dict[str, Any]) -> dict[str, Any]:
     Values follow Prometheus convention: [unix_epoch_float, "string_value"].
 
     Args:
-        cw_fixture: Parsed cloudwatch_metrics.json content matching
+        cw_fixture: Parsed aws_cloudwatch_metrics.json content matching
                     CloudWatchMetricsFixture schema.
 
     Returns:
@@ -113,7 +113,7 @@ def format_loki_query_range(rds_events_fixture: dict[str, Any]) -> dict[str, Any
     stream entry with multiple log lines, matching real Loki behaviour.
 
     Args:
-        rds_events_fixture: Parsed rds_events.json content matching
+        rds_events_fixture: Parsed aws_rds_events.json content matching
                             RDSEventsFixture schema.
 
     Returns:

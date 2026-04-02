@@ -136,6 +136,7 @@ TRACER_BASE_URL_DEV = "https://staging.tracer.cloud"
 TRACER_BASE_URL_PROD = "https://app.tracer.cloud"
 SLACK_CHANNEL = "tracer-rca-report-alerts"
 
+
 def get_tracer_base_url() -> str:
     """Get Tracer base URL for current environment."""
     return TRACER_BASE_URL_PROD if get_environment() == Environment.PRODUCTION else TRACER_BASE_URL_DEV

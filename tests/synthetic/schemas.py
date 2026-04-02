@@ -1,8 +1,8 @@
 """
 Centralized schema definitions for synthetic testing fixtures.
 
-All scenario fixture files (alert.json, cloudwatch_metrics.json, rds_events.json,
-performance_insights.json, answer.yml, scenario.yml) must conform to these TypedDicts.
+All scenario fixture files (alert.json, aws_cloudwatch_metrics.json, aws_rds_events.json,
+aws_performance_insights.json, answer.yml, scenario.yml) must conform to these TypedDicts.
 Validators enforce required fields so every scenario is structurally consistent.
 """
 
@@ -21,7 +21,7 @@ VALID_ENGINES = frozenset({"postgres", "mysql", "aurora-postgres", "aurora-mysql
 VALID_FAILURE_MODES = frozenset(
     {"replication_lag", "connection_exhaustion", "storage_full", "cpu_saturation", "failover", "healthy"}
 )
-VALID_EVIDENCE_SOURCES = frozenset({"rds_metrics", "rds_events", "performance_insights"})
+VALID_EVIDENCE_SOURCES = frozenset({"aws_cloudwatch_metrics", "aws_rds_events", "aws_performance_insights"})
 
 # ---------------------------------------------------------------------------
 # Alert fixture  (alert.json)
@@ -58,7 +58,7 @@ class AlertFixture(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# CloudWatch metrics fixture  (cloudwatch_metrics.json)
+# CloudWatch metrics fixture  (aws_cloudwatch_metrics.json)
 # Models the AWS GetMetricData API response shape.
 # ---------------------------------------------------------------------------
 
@@ -91,7 +91,7 @@ class CloudWatchMetricsFixture(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# RDS events fixture  (rds_events.json)
+# RDS events fixture  (aws_rds_events.json)
 # Models the AWS DescribeEvents API response shape.
 # ---------------------------------------------------------------------------
 
@@ -109,7 +109,7 @@ class RDSEventsFixture(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# Performance insights fixture  (performance_insights.json)
+# Performance insights fixture  (aws_performance_insights.json)
 # Models the AWS GetResourceMetrics + DescribeDimensionKeys API response shape.
 # ---------------------------------------------------------------------------
 
@@ -221,19 +221,19 @@ class ScenarioEvidence:
     scenario.yml:available_evidence, making evidence presence explicit.
     """
 
-    rds_metrics: CloudWatchMetricsFixture | None
-    rds_events: list[RDSEvent] | None
-    performance_insights: PerformanceInsightsFixture | None
+    aws_cloudwatch_metrics: CloudWatchMetricsFixture | None
+    aws_rds_events: list[RDSEvent] | None
+    aws_performance_insights: PerformanceInsightsFixture | None
 
     def as_dict(self) -> dict[str, Any]:
         """Return only the non-None sources as a plain dict."""
         result: dict[str, Any] = {}
-        if self.rds_metrics is not None:
-            result["rds_metrics"] = self.rds_metrics
-        if self.rds_events is not None:
-            result["rds_events"] = self.rds_events
-        if self.performance_insights is not None:
-            result["performance_insights"] = self.performance_insights
+        if self.aws_cloudwatch_metrics is not None:
+            result["aws_cloudwatch_metrics"] = self.aws_cloudwatch_metrics
+        if self.aws_rds_events is not None:
+            result["aws_rds_events"] = self.aws_rds_events
+        if self.aws_performance_insights is not None:
+            result["aws_performance_insights"] = self.aws_performance_insights
         return result
 
     def get(self, key: str) -> Any:
@@ -257,7 +257,7 @@ def validate_alert(data: dict[str, Any]) -> AlertFixture:
 
 
 def validate_cloudwatch_metrics(data: dict[str, Any]) -> CloudWatchMetricsFixture:
-    ctx = "cloudwatch_metrics.json"
+    ctx = "aws_cloudwatch_metrics.json"
     _require_str(data, "namespace", ctx=ctx)
     _require_str(data, "start_time", ctx=ctx)
     _require_str(data, "end_time", ctx=ctx)
@@ -286,9 +286,9 @@ def validate_cloudwatch_metrics(data: dict[str, Any]) -> CloudWatchMetricsFixtur
 
 def validate_rds_events(data: dict[str, Any]) -> RDSEventsFixture:
     if not isinstance(data.get("events"), list):
-        raise ValueError("rds_events.json: 'events' must be a list")
+        raise ValueError("aws_rds_events.json: 'events' must be a list")
     for i, event in enumerate(data["events"]):
-        ctx = f"rds_events.json:events[{i}]"
+        ctx = f"aws_rds_events.json:events[{i}]"
         _require_str(event, "date", ctx=ctx)
         _require_str(event, "message", ctx=ctx)
         _require_str(event, "source_identifier", ctx=ctx)
@@ -299,7 +299,7 @@ def validate_rds_events(data: dict[str, Any]) -> RDSEventsFixture:
 
 
 def validate_performance_insights(data: dict[str, Any]) -> PerformanceInsightsFixture:
-    ctx = "performance_insights.json"
+    ctx = "aws_performance_insights.json"
     _require_str(data, "db_instance_identifier", ctx=ctx)
     _require_str(data, "start_time", ctx=ctx)
     _require_str(data, "end_time", ctx=ctx)

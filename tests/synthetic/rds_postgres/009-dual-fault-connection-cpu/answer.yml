@@ -5,7 +5,7 @@ required_keywords:
   - idle
   - query
 required_evidence_sources:
-  - performance_insights
+  - aws_performance_insights
 optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs
@@ -16,12 +16,12 @@ model_response: |
   ROOT_CAUSE_CATEGORY: resource_exhaustion
 
   VALIDATED_CLAIMS:
-  - DatabaseConnections grew monotonically from 4,612 to 4,998 (99.96% of 5,000 max), with new connections being refused by 20:14Z. [evidence: rds_metrics]
-  - CPUUtilization rose concurrently from 88% to 94% — correlated with, not independent of, the connection growth. [evidence: rds_metrics]
-  - ReadIOPS also rose monotonically (12,840 → 15,320), consistent with increasing scan load from accumulated connections. [evidence: rds_metrics]
-  - Performance Insights shows Client:ClientRead as the dominant wait event at 5.9 AAS — the queries have completed server-side processing but the client is not reading the results, confirming idle-but-open connections. [evidence: performance_insights]
-  - The top two SQL statements are both full-table scans on search_index with no filtering index, each consuming 1-2 CPU AAS per query. At 4,000+ such connections, cumulative CPU reaches saturation. [evidence: performance_insights]
-  - No storage or replication metrics deviate from normal. No infrastructure events. [evidence: rds_metrics, rds_events]
+  - DatabaseConnections grew monotonically from 4,612 to 4,998 (99.96% of 5,000 max), with new connections being refused by 20:14Z. [evidence: aws_cloudwatch_metrics]
+  - CPUUtilization rose concurrently from 88% to 94% — correlated with, not independent of, the connection growth. [evidence: aws_cloudwatch_metrics]
+  - ReadIOPS also rose monotonically (12,840 → 15,320), consistent with increasing scan load from accumulated connections. [evidence: aws_cloudwatch_metrics]
+  - Performance Insights shows Client:ClientRead as the dominant wait event at 5.9 AAS — the queries have completed server-side processing but the client is not reading the results, confirming idle-but-open connections. [evidence: aws_performance_insights]
+  - The top two SQL statements are both full-table scans on search_index with no filtering index, each consuming 1-2 CPU AAS per query. At 4,000+ such connections, cumulative CPU reaches saturation. [evidence: aws_performance_insights]
+  - No storage or replication metrics deviate from normal. No infrastructure events. [evidence: aws_cloudwatch_metrics, aws_rds_events]
 
   NON_VALIDATED_CLAIMS:
   - The connection pool leak likely originates from a search_svc deployment that introduced unbounded connection creation without proper cleanup on query timeout.

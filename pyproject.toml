@@ -80,6 +80,11 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["app*", "tests*"]
 
+[tool.pytest.ini_options]
+markers = [
+    "synthetic: LLM-based synthetic RCA scenario tests (non-deterministic)",
+]
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "S"]
 

@@ -30,7 +30,37 @@
 
 ---
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.sh | bash
+```
+
+```bash
+brew install Tracer-Cloud/opensre/opensre
+```
+
+```powershell
+irm https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.ps1 | iex
+```
+
+<!--
+```bash
+pipx install opensre
+``` -->
+
+---
+
 ## Quick Start
+
+```bash
+opensre onboard
+opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
+```
+
+---
+
+## Development
 
 > **New to Tracer?** See [SETUP.md](SETUP.md) for detailed platform-specific setup instructions, including Windows setup, environment configuration, and more.
 
@@ -48,7 +78,7 @@ opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 
 - 🏃 **Local** - Run Tracer locally with a live Grafana environment, no cloud infra needed
 - ☁️ **Self-hosted** - Deploy to your own infrastructure for continuous monitoring
-- 🔌 **LangGraph / LlamaIndex** - Use Tracer as an agent in your existing AI stack (see [Agent Docs](https://tracer.cloud/docs))
+- 🔌 **LangGraph** - Use Tracer as an agent in your existing AI stack (see [Agent Docs](https://tracer.cloud/docs))
 
 ---
 
@@ -139,6 +169,20 @@ Thanks goes to these amazing people:
 	<tbody>
 		<tr>
             <td align="center">
+        <a href="https://github.com/cerencamkiran">
+            <img src="https://avatars.githubusercontent.com/u/150190567?v=4" width="100;" alt="cerencamkiran"/>
+            <br />
+            <sub><b>cerencamkiran</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/vrk7">
+            <img src="https://avatars.githubusercontent.com/u/108936058?v=4" width="100;" alt="vrk7"/>
+            <br />
+            <sub><b>vrk7</b></sub>
+        </a>
+    </td>
+            <td align="center">
         <a href="https://github.com/rrajan94">
             <img src="https://avatars.githubusercontent.com/u/25589618?v=4" width="100;" alt="rrajan94"/>
             <br />
@@ -166,6 +210,8 @@ Thanks goes to these amazing people:
             <sub><b>w3joe</b></sub>
         </a>
     </td>
+		</tr>
+		<tr>
             <td align="center">
         <a href="https://github.com/iamkalio">
             <img src="https://avatars.githubusercontent.com/u/89003403?v=4" width="100;" alt="iamkalio"/>
@@ -180,8 +226,6 @@ Thanks goes to these amazing people:
             <sub><b>zeel2104</b></sub>
         </a>
     </td>
-		</tr>
-		<tr>
             <td align="center">
         <a href="https://github.com/paultracer">
             <img src="https://avatars.githubusercontent.com/u/214484440?v=4" width="100;" alt="paultracer"/>
@@ -210,6 +254,8 @@ Thanks goes to these amazing people:
             <sub><b>aliya-tracer</b></sub>
         </a>
     </td>
+		</tr>
+		<tr>
             <td align="center">
         <a href="https://github.com/VaibhavUpreti">
             <img src="https://avatars.githubusercontent.com/u/85568177?v=4" width="100;" alt="VaibhavUpreti"/>

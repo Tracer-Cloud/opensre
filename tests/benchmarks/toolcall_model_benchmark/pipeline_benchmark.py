@@ -16,9 +16,9 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
-import app.agent.graph_pipeline as graph_pipeline
-import app.agent.tools.clients.llm_client as llm_mod
-from app.agent.state import AgentState, make_initial_state
+import app.graph_pipeline as graph_pipeline
+import app.integrations.clients.llm_client as llm_mod
+from app.state import AgentState, make_initial_state
 from tests.benchmarks.toolcall_model_benchmark.pricing import estimate_run_cost_usd
 from tests.synthetic.rds_postgres.run_suite import _build_resolved_integrations
 from tests.synthetic.rds_postgres.scenario_loader import (

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from langsmith import traceable
 
 if TYPE_CHECKING:
-    from app.agent.state import AgentState
+    from app.state import AgentState
 
 
 def _call_run_investigation(
@@ -18,7 +18,7 @@ def _call_run_investigation(
     raw_alert: dict[str, Any],
 ) -> AgentState:
     """Import the heavy investigation runner only when execution starts."""
-    from app.agent.runners import run_investigation
+    from app.runners import run_investigation
 
     return run_investigation(
         alert_name,

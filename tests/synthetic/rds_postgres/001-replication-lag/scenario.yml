@@ -1,14 +1,4 @@
-schema_version: "1.0"
+base: 000-healthy
 scenario_id: 001-replication-lag
-engine: postgres
-engine_version: "15"
-instance_class: db.r6g.2xlarge
-region: us-east-1
-db_instance_identifier: payments-prod
-db_cluster: payments-cluster
 failure_mode: replication_lag
 severity: critical
-available_evidence:
-  - rds_metrics
-  - rds_events
-  - performance_insights

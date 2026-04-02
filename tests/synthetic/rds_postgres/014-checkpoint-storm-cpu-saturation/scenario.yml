@@ -15,6 +15,6 @@ adversarial_signals:
   - Checkpoint storms produce massive I/O (IO:WALWrite, IO:DataFileWrite) which saturate CPU
   - The dominant wait event in Performance Insights is LWLock:BufferMapping, not CPU:user
 available_evidence:
-  - rds_metrics
-  - rds_events
-  - performance_insights
+  - aws_cloudwatch_metrics
+  - aws_rds_events
+  - aws_performance_insights

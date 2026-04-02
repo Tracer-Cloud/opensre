@@ -31,6 +31,7 @@ from app.analytics.cli import (
     capture_tests_picker_opened,
 )
 from app.analytics.provider import capture_first_run_if_needed, shutdown_analytics
+from app.version import get_version
 
 # Heavy application imports are kept inside command functions so the CLI starts
 # fast and so that load_dotenv() in main() runs before any app module reads env.
@@ -111,7 +112,7 @@ class _RichGroup(click.Group):
     context_settings={"help_option_names": ["-h", "--help"]},
     invoke_without_command=True,
 )
-@click.version_option(package_name="opensre", prog_name="opensre")
+@click.version_option(version=get_version(), prog_name="opensre")
 @click.pass_context
 def cli(ctx: click.Context) -> None:
     """OpenSRE — open-source SRE agent for automated incident investigation and root cause analysis.
@@ -338,7 +339,8 @@ def run(test_id: str, dry_run: bool) -> None:
 
     item = find_test_item(test_id)
     if item is None:
-        raise click.ClickException(f"Unknown test id: {test_id}")
+        raise click.ClickException(
+    f"Unknown test id: {test_id}. Run 'opensre tests list' to see available test ids.")
 
     capture_test_run_started(test_id, dry_run=dry_run)
     raise SystemExit(run_catalog_item(item, dry_run=dry_run))

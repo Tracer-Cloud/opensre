@@ -13,6 +13,6 @@ adversarial_signals:
   - WriteLatency shows brief elevation during the spike — could be confused for a persistent write problem
   - The alert fired during the spike window, not at the time of investigation
 available_evidence:
-  - rds_metrics
-  - rds_events
-  - performance_insights
+  - aws_cloudwatch_metrics
+  - aws_rds_events
+  - aws_performance_insights

@@ -1,14 +1,8 @@
-schema_version: "1.0"
+base: 000-healthy
 scenario_id: 003-storage-full
-engine: postgres
-engine_version: "15"
 instance_class: db.r6g.xlarge
-region: us-east-1
 db_instance_identifier: orders-prod
+db_cluster: ""
 failure_mode: storage_full
 severity: critical
 scenario_difficulty: 1
-available_evidence:
-  - rds_metrics
-  - rds_events
-  - performance_insights
