@@ -111,19 +111,64 @@ def _merge_scenario_yaml(
     return merged
 
 
-def _resolve_evidence_file(
+def _resolve_evidence_path(
     scenario_dir: Path, base_dir: Path | None, filename: str,
 ) -> Path:
-    """Return the scenario's own file if it exists, otherwise the base's."""
-    local = scenario_dir / filename
-    if local.exists():
-        return local
-    if base_dir is not None:
-        fallback = base_dir / filename
-        if fallback.exists():
-            return fallback
+    """Return the scenario's own evidence file if it exists, otherwise the base's."""
+    for search_dir in (scenario_dir, base_dir):
+        if search_dir is None:
+            continue
+        candidate = search_dir / filename
+        if candidate.exists():
+            return candidate
     raise FileNotFoundError(
-        f"Evidence file '{filename}' not found in {scenario_dir}"
+        f"Evidence '{filename}' not found in {scenario_dir}"
+        + (f" or base {base_dir}" if base_dir else "")
+    )
+
+
+def _has_split_cloudwatch_metrics(scenario_dir: Path) -> bool:
+    """Check whether a directory uses per-metric prefixed files."""
+    return (scenario_dir / "aws_cloudwatch_metrics_envelope.json").exists()
+
+
+def _load_cloudwatch_metrics_split(scenario_dir: Path) -> dict[str, Any]:
+    """Assemble CloudWatch metrics from prefixed per-metric files.
+
+    Expects ``aws_cloudwatch_metrics_envelope.json`` (shared metadata) and
+    ``aws_cloudwatch_metrics_<MetricName>.json`` files in *scenario_dir*.
+    """
+    envelope = _read_json(scenario_dir / "aws_cloudwatch_metrics_envelope.json")
+    prefix = "aws_cloudwatch_metrics_"
+    metrics = []
+    for f in sorted(scenario_dir.glob(f"{prefix}*.json")):
+        if f.name == f"{prefix}envelope.json":
+            continue
+        metrics.append(_read_json(f))
+    envelope["metric_data_results"] = metrics
+    return envelope
+
+
+def _load_cloudwatch_metrics(
+    scenario_dir: Path, base_dir: Path | None,
+) -> dict[str, Any]:
+    """Load CloudWatch metrics — consolidated file or per-metric split."""
+    # 1. Scenario has a consolidated file
+    single = scenario_dir / "aws_cloudwatch_metrics.json"
+    if single.is_file():
+        return _read_json(single)
+    # 2. Scenario has per-metric split files
+    if _has_split_cloudwatch_metrics(scenario_dir):
+        return _load_cloudwatch_metrics_split(scenario_dir)
+    # 3. Fall back to base
+    if base_dir is not None:
+        base_single = base_dir / "aws_cloudwatch_metrics.json"
+        if base_single.is_file():
+            return _read_json(base_single)
+        if _has_split_cloudwatch_metrics(base_dir):
+            return _load_cloudwatch_metrics_split(base_dir)
+    raise FileNotFoundError(
+        f"CloudWatch metrics not found in {scenario_dir}"
         + (f" or base {base_dir}" if base_dir else "")
     )
 
@@ -238,16 +283,16 @@ def _build_evidence(
     aws_performance_insights = None
 
     if "aws_cloudwatch_metrics" in available_evidence:
-        path = _resolve_evidence_file(scenario_dir, base_dir, "aws_cloudwatch_metrics.json")
-        aws_cloudwatch_metrics = validate_cloudwatch_metrics(_read_json(path))
+        raw = _load_cloudwatch_metrics(scenario_dir, base_dir)
+        aws_cloudwatch_metrics = validate_cloudwatch_metrics(raw)
 
     if "aws_rds_events" in available_evidence:
-        path = _resolve_evidence_file(scenario_dir, base_dir, "aws_rds_events.json")
+        path = _resolve_evidence_path(scenario_dir, base_dir, "aws_rds_events.json")
         raw_events = validate_rds_events(_read_json(path))
         aws_rds_events = raw_events.get("events", [])
 
     if "aws_performance_insights" in available_evidence:
-        path = _resolve_evidence_file(scenario_dir, base_dir, "aws_performance_insights.json")
+        path = _resolve_evidence_path(scenario_dir, base_dir, "aws_performance_insights.json")
         aws_performance_insights = validate_performance_insights(_read_json(path))
 
     return ScenarioEvidence(
@@ -260,7 +305,7 @@ def _build_evidence(
 def load_scenario(scenario_dir: Path) -> ScenarioFixture:
     metadata, base_dir = _parse_scenario_yaml(scenario_dir / "scenario.yml")
 
-    alert_path = _resolve_evidence_file(scenario_dir, base_dir, "alert.json")
+    alert_path = _resolve_evidence_path(scenario_dir, base_dir, "alert.json")
     alert = cast(dict[str, Any], validate_alert(_read_json(alert_path)))
 
     evidence = _build_evidence(scenario_dir, metadata.available_evidence, base_dir)
