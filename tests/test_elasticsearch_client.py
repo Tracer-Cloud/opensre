@@ -283,7 +283,8 @@ class TestGetClusterHealth:
 # ── package exports ───────────────────────────────────────────────────────────
 
 def test_package_exports() -> None:
-    from app.integrations.clients.elasticsearch import ElasticsearchClient as C, ElasticsearchConfig as Cfg  # noqa: F401
+    from app.integrations.clients.elasticsearch import ElasticsearchClient as C  # noqa: F401
+    from app.integrations.clients.elasticsearch import ElasticsearchConfig as Cfg
     assert C is not None
     assert Cfg is not None
 
@@ -297,8 +298,8 @@ def test_make_client_returns_none_without_url() -> None:
 
 
 def test_make_client_returns_client_with_url() -> None:
-    from app.tools.ElasticsearchLogsTool._client import make_client
     from app.integrations.clients.elasticsearch import ElasticsearchClient
+    from app.tools.ElasticsearchLogsTool._client import make_client
     client = make_client("http://localhost:9200")
     assert isinstance(client, ElasticsearchClient)
 
@@ -350,8 +351,8 @@ def test_tool_run_returns_unavailable_without_url() -> None:
 
 
 def test_tool_run_returns_logs_on_success() -> None:
-    from app.tools.ElasticsearchLogsTool import ElasticsearchLogsTool
     import app.tools.ElasticsearchLogsTool as tool_module
+    from app.tools.ElasticsearchLogsTool import ElasticsearchLogsTool
 
     t = ElasticsearchLogsTool()
     mock_client = MagicMock()
