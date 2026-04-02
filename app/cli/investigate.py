@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 from langsmith import traceable
 
+from app.config import LLMSettings
+
 if TYPE_CHECKING:
     from app.state import AgentState
 
@@ -52,6 +54,7 @@ def run_investigation_cli(
     severity: str | None = None,
 ) -> dict[str, Any]:
     """Run the investigation and return the CLI-facing JSON payload."""
+    LLMSettings.from_env()
     resolved_alert_name, resolved_pipeline_name, resolved_severity = resolve_investigation_context(
         raw_alert=raw_alert,
         alert_name=alert_name,

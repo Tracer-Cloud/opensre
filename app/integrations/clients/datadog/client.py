@@ -9,22 +9,28 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
+from pydantic import field_validator
+
+from app.strict_config import StrictConfigModel
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 30
 
 
-@dataclass
-class DatadogConfig:
+class DatadogConfig(StrictConfigModel):
     api_key: str
     app_key: str
     site: str = "datadoghq.com"
+
+    @field_validator("site", mode="before")
+    @classmethod
+    def _normalize_site(cls, value: object) -> str:
+        return str(value or "datadoghq.com").strip() or "datadoghq.com"
 
     @property
     def base_url(self) -> str:

@@ -21,7 +21,11 @@ from pydantic import BaseModel, ValidationError
 
 from app.config import (
     ANTHROPIC_LLM_CONFIG,
+    GEMINI_BASE_URL,
+    NVIDIA_BASE_URL,
     OPENAI_LLM_CONFIG,
+    OPENROUTER_BASE_URL,
+    LLMSettings,
 )
 
 logger = logging.getLogger(__name__)
@@ -345,35 +349,18 @@ def reset_llm_singletons() -> None:
     _llm_for_tools = None
 
 
-def _env_or(*keys: str, default: str) -> str:
-    """First non-empty environment value among *keys*, else *default*."""
-    for key in keys:
-        val = (os.getenv(key) or "").strip()
-        if val:
-            return val
-    return default
-
-
-def _create_llm_client(
-    model_type: str,
-    openai_env_keys: tuple[str, ...],
-    anthropic_env_keys: tuple[str, ...],
-) -> LLMClient | OpenAILLMClient:
-    provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
+def _create_llm_client(model_type: str) -> LLMClient | OpenAILLMClient:
+    settings = LLMSettings.from_env()
+    provider = settings.provider
     if provider == "openai":
         config = OPENAI_LLM_CONFIG
-        default_model = config.reasoning_model if model_type == "reasoning" else config.toolcall_model
-        model = _env_or(*openai_env_keys, default=default_model)
+        model = settings.openai_reasoning_model if model_type == "reasoning" else settings.openai_toolcall_model
         return OpenAILLMClient(model=model, max_tokens=config.max_tokens)
     elif provider == "openrouter":
-        from app.config import OPENROUTER_BASE_URL, OPENROUTER_LLM_CONFIG
+        from app.config import OPENROUTER_LLM_CONFIG
 
         config = OPENROUTER_LLM_CONFIG
-        default_model = config.reasoning_model if model_type == "reasoning" else config.toolcall_model
-        if model_type == "reasoning":
-            model = _env_or("OPENROUTER_REASONING_MODEL", "OPENROUTER_MODEL", default=default_model)
-        else:
-            model = _env_or("OPENROUTER_TOOLCALL_MODEL", "OPENROUTER_MODEL", default=default_model)
+        model = settings.openrouter_reasoning_model if model_type == "reasoning" else settings.openrouter_toolcall_model
         return OpenAILLMClient(
             model=model,
             max_tokens=config.max_tokens,
@@ -381,14 +368,10 @@ def _create_llm_client(
             api_key_env="OPENROUTER_API_KEY",
         )
     elif provider == "gemini":
-        from app.config import GEMINI_BASE_URL, GEMINI_LLM_CONFIG
+        from app.config import GEMINI_LLM_CONFIG
 
         config = GEMINI_LLM_CONFIG
-        default_model = config.reasoning_model if model_type == "reasoning" else config.toolcall_model
-        if model_type == "reasoning":
-            model = _env_or("GEMINI_REASONING_MODEL", "GEMINI_MODEL", default=default_model)
-        else:
-            model = _env_or("GEMINI_TOOLCALL_MODEL", "GEMINI_MODEL", default=default_model)
+        model = settings.gemini_reasoning_model if model_type == "reasoning" else settings.gemini_toolcall_model
         return OpenAILLMClient(
             model=model,
             max_tokens=config.max_tokens,
@@ -396,14 +379,10 @@ def _create_llm_client(
             api_key_env="GEMINI_API_KEY",
         )
     elif provider == "nvidia":
-        from app.config import NVIDIA_BASE_URL, NVIDIA_LLM_CONFIG
+        from app.config import NVIDIA_LLM_CONFIG
 
         config = NVIDIA_LLM_CONFIG
-        default_model = config.reasoning_model if model_type == "reasoning" else config.toolcall_model
-        if model_type == "reasoning":
-            model = _env_or("NVIDIA_REASONING_MODEL", "NVIDIA_MODEL", default=default_model)
-        else:
-            model = _env_or("NVIDIA_TOOLCALL_MODEL", "NVIDIA_MODEL", default=default_model)
+        model = settings.nvidia_reasoning_model if model_type == "reasoning" else settings.nvidia_toolcall_model
         return OpenAILLMClient(
             model=model,
             max_tokens=config.max_tokens,
@@ -412,8 +391,7 @@ def _create_llm_client(
         )
     else:
         config = ANTHROPIC_LLM_CONFIG
-        default_model = config.reasoning_model if model_type == "reasoning" else config.toolcall_model
-        model = _env_or(*anthropic_env_keys, default=default_model)
+        model = settings.anthropic_reasoning_model if model_type == "reasoning" else settings.anthropic_toolcall_model
         return LLMClient(model=model, max_tokens=config.max_tokens)
 
 
@@ -430,11 +408,7 @@ def get_llm_for_reasoning() -> LLMClient | OpenAILLMClient:
     """
     global _llm
     if _llm is None:
-        _llm = _create_llm_client(
-            model_type="reasoning",
-            openai_env_keys=("OPENAI_REASONING_MODEL", "OPENAI_MODEL"),
-            anthropic_env_keys=("ANTHROPIC_REASONING_MODEL", "ANTHROPIC_MODEL"),
-        )
+        _llm = _create_llm_client(model_type="reasoning")
     return _llm
 
 
@@ -447,11 +421,7 @@ def get_llm_for_tools() -> LLMClient | OpenAILLMClient:
     """
     global _llm_for_tools
     if _llm_for_tools is None:
-        _llm_for_tools = _create_llm_client(
-            model_type="toolcall",
-            openai_env_keys=("OPENAI_TOOLCALL_MODEL", "OPENAI_MODEL"),
-            anthropic_env_keys=("ANTHROPIC_TOOLCALL_MODEL", "ANTHROPIC_MODEL"),
-        )
+        _llm_for_tools = _create_llm_client(model_type="toolcall")
     return _llm_for_tools
 
 

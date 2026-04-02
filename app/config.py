@@ -5,12 +5,16 @@ These are public endpoints and issuer URLs, not secrets.
 """
 
 import os
-from dataclasses import dataclass
+from difflib import get_close_matches
 from enum import Enum
+from typing import Literal
+
+from pydantic import Field, field_validator, model_validator
+
+from app.strict_config import StrictConfigModel
 
 
-@dataclass(frozen=True)
-class LLMModelConfig:
+class LLMModelConfig(StrictConfigModel):
     """Configuration for an LLM provider's model variants."""
 
     reasoning_model: str
@@ -25,8 +29,7 @@ class Environment(Enum):
     PRODUCTION = "production"
 
 
-@dataclass(frozen=True)
-class ClerkConfig:
+class ClerkConfig(StrictConfigModel):
     """Clerk JWT configuration for a specific environment."""
 
     jwks_url: str
@@ -100,6 +103,116 @@ NVIDIA_TOOLCALL_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+
+LLMProvider = Literal["anthropic", "openai", "openrouter", "gemini", "nvidia"]
+
+
+class LLMSettings(StrictConfigModel):
+    """Strict runtime configuration for selecting and authenticating an LLM provider."""
+
+    provider: LLMProvider = "anthropic"
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    openrouter_api_key: str = ""
+    gemini_api_key: str = ""
+    nvidia_api_key: str = ""
+    anthropic_reasoning_model: str = ANTHROPIC_REASONING_MODEL
+    anthropic_toolcall_model: str = ANTHROPIC_TOOLCALL_MODEL
+    openai_reasoning_model: str = OPENAI_REASONING_MODEL
+    openai_toolcall_model: str = OPENAI_TOOLCALL_MODEL
+    openrouter_reasoning_model: str = OPENROUTER_REASONING_MODEL
+    openrouter_toolcall_model: str = OPENROUTER_TOOLCALL_MODEL
+    gemini_reasoning_model: str = GEMINI_REASONING_MODEL
+    gemini_toolcall_model: str = GEMINI_TOOLCALL_MODEL
+    nvidia_reasoning_model: str = NVIDIA_REASONING_MODEL
+    nvidia_toolcall_model: str = NVIDIA_TOOLCALL_MODEL
+    max_tokens: int = Field(default=DEFAULT_MAX_TOKENS, gt=0)
+
+    @field_validator("provider", mode="before")
+    @classmethod
+    def _normalize_provider(cls, value: object) -> str:
+        provider = str(value or "anthropic").strip().lower() or "anthropic"
+        valid_providers = ("anthropic", "openai", "openrouter", "gemini", "nvidia")
+        if provider in valid_providers:
+            return provider
+        suggestion = get_close_matches(provider, valid_providers, n=1)
+        if suggestion:
+            raise ValueError(f"Unsupported LLM provider '{provider}'. Did you mean '{suggestion[0]}'?")
+        raise ValueError(
+            f"Unsupported LLM provider '{provider}'. Expected one of: {', '.join(valid_providers)}."
+        )
+
+    @model_validator(mode="after")
+    def _require_api_key_for_selected_provider(self) -> "LLMSettings":
+        provider_to_key = {
+            "anthropic": self.anthropic_api_key,
+            "openai": self.openai_api_key,
+            "openrouter": self.openrouter_api_key,
+            "gemini": self.gemini_api_key,
+            "nvidia": self.nvidia_api_key,
+        }
+        if provider_to_key[self.provider]:
+            return self
+
+        env_var = {
+            "anthropic": "ANTHROPIC_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "openrouter": "OPENROUTER_API_KEY",
+            "gemini": "GEMINI_API_KEY",
+            "nvidia": "NVIDIA_API_KEY",
+        }[self.provider]
+        raise ValueError(f"LLM provider '{self.provider}' requires {env_var} to be set.")
+
+    @classmethod
+    def from_env(cls) -> "LLMSettings":
+        """Build validated LLM settings from environment variables."""
+        return cls.model_validate({
+            "provider": os.getenv("LLM_PROVIDER", "anthropic").strip().lower() or "anthropic",
+            "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY", ""),
+            "openai_api_key": os.getenv("OPENAI_API_KEY", ""),
+            "openrouter_api_key": os.getenv("OPENROUTER_API_KEY", ""),
+            "gemini_api_key": os.getenv("GEMINI_API_KEY", ""),
+            "nvidia_api_key": os.getenv("NVIDIA_API_KEY", ""),
+            "anthropic_reasoning_model": os.getenv("ANTHROPIC_REASONING_MODEL", ANTHROPIC_REASONING_MODEL).strip()
+            or ANTHROPIC_REASONING_MODEL,
+            "anthropic_toolcall_model": os.getenv("ANTHROPIC_TOOLCALL_MODEL", ANTHROPIC_TOOLCALL_MODEL).strip()
+            or ANTHROPIC_TOOLCALL_MODEL,
+            "openai_reasoning_model": os.getenv("OPENAI_REASONING_MODEL", OPENAI_REASONING_MODEL).strip()
+            or OPENAI_REASONING_MODEL,
+            "openai_toolcall_model": os.getenv("OPENAI_TOOLCALL_MODEL", OPENAI_TOOLCALL_MODEL).strip()
+            or OPENAI_TOOLCALL_MODEL,
+            "openrouter_reasoning_model": os.getenv(
+                "OPENROUTER_REASONING_MODEL",
+                os.getenv("OPENROUTER_MODEL", OPENROUTER_REASONING_MODEL),
+            ).strip()
+            or OPENROUTER_REASONING_MODEL,
+            "openrouter_toolcall_model": os.getenv(
+                "OPENROUTER_TOOLCALL_MODEL",
+                os.getenv("OPENROUTER_MODEL", OPENROUTER_TOOLCALL_MODEL),
+            ).strip()
+            or OPENROUTER_TOOLCALL_MODEL,
+            "gemini_reasoning_model": os.getenv(
+                "GEMINI_REASONING_MODEL",
+                os.getenv("GEMINI_MODEL", GEMINI_REASONING_MODEL),
+            ).strip()
+            or GEMINI_REASONING_MODEL,
+            "gemini_toolcall_model": os.getenv(
+                "GEMINI_TOOLCALL_MODEL",
+                os.getenv("GEMINI_MODEL", GEMINI_TOOLCALL_MODEL),
+            ).strip()
+            or GEMINI_TOOLCALL_MODEL,
+            "nvidia_reasoning_model": os.getenv(
+                "NVIDIA_REASONING_MODEL",
+                os.getenv("NVIDIA_MODEL", NVIDIA_REASONING_MODEL),
+            ).strip()
+            or NVIDIA_REASONING_MODEL,
+            "nvidia_toolcall_model": os.getenv(
+                "NVIDIA_TOOLCALL_MODEL",
+                os.getenv("NVIDIA_MODEL", NVIDIA_TOOLCALL_MODEL),
+            ).strip()
+            or NVIDIA_TOOLCALL_MODEL,
+            "max_tokens": DEFAULT_MAX_TOKENS,
+        })
 # LLM Provider Configs
 ANTHROPIC_LLM_CONFIG = LLMModelConfig(
     reasoning_model=ANTHROPIC_REASONING_MODEL,

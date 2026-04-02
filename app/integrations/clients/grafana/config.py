@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from pydantic import field_validator
 
-@dataclass(frozen=True)
-class GrafanaAccountConfig:
+from app.strict_config import StrictConfigModel
+
+
+class GrafanaAccountConfig(StrictConfigModel):
     """Configuration for a Grafana Cloud account."""
 
     account_id: str
@@ -17,6 +19,11 @@ class GrafanaAccountConfig:
     tempo_datasource_uid: str = ""
     mimir_datasource_uid: str = ""
     description: str = ""
+
+    @field_validator("instance_url", mode="before")
+    @classmethod
+    def _normalize_instance_url(cls, value: object) -> str:
+        return str(value or "").strip().rstrip("/")
 
     @property
     def uses_local_anonymous_auth(self) -> bool:

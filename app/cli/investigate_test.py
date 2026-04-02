@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from app.cli.investigate import resolve_investigation_context, run_investigation_cli
 
 
@@ -40,6 +43,7 @@ def test_run_investigation_cli_shapes_agent_state(monkeypatch) -> None:
             "root_cause": "bad deploy",
         }
 
+    monkeypatch.setattr("app.cli.investigate.LLMSettings.from_env", lambda: object())
     monkeypatch.setattr("app.cli.investigate._call_run_investigation", fake_run_investigation)
 
     result = run_investigation_cli(
@@ -61,3 +65,15 @@ def test_run_investigation_cli_shapes_agent_state(monkeypatch) -> None:
         "problem_md": "# problem",
         "root_cause": "bad deploy",
     }
+
+
+def test_run_investigation_cli_fails_fast_for_invalid_llm_config(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "app.cli.investigate._call_run_investigation",
+        lambda *_args, **_kwargs: pytest.fail("investigation should not start"),
+    )
+
+    with pytest.raises(ValidationError, match="OPENAI_API_KEY"):
+        run_investigation_cli(raw_alert={"alert_name": "PayloadAlert"})
