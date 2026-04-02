@@ -115,7 +115,7 @@ def _sanitize_response(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
         return sanitized
 
     # Handle lists/tuples
-    if isinstance(data, (list, tuple)):
+    if isinstance(data, list | tuple):
         if len(data) > MAX_LIST_ITEMS:
             truncated = [
                 _sanitize_response(item, depth + 1, max_depth) for item in data[:MAX_LIST_ITEMS]

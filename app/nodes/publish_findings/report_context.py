@@ -172,7 +172,7 @@ class _NormalizedState:
         started_at = state.get("investigation_started_at")
         self.duration_seconds: int | None = (
             max(0, int(round(time.monotonic() - float(started_at))))
-            if isinstance(started_at, (int, float))
+            if isinstance(started_at, int | float)
             else None
         )
 

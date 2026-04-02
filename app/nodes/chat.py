@@ -9,9 +9,11 @@ from typing import Any
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, ToolMessage
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.tools import StructuredTool
+from langchain_openai import ChatOpenAI
 
+from app.config import OPENAI_LLM_CONFIG
 from app.integrations.clients import get_llm_for_tools
 from app.prompts import GENERAL_SYSTEM_PROMPT, ROUTER_PROMPT, SYSTEM_PROMPT
 from app.state import AgentState, ChatMessage
@@ -94,14 +96,56 @@ def _normalize_messages(msgs: list[Any]) -> list[ChatMessage]:
     return result
 
 
-# ── Chat LLM (LangChain ChatAnthropic for real-time streaming) ──────────
+# ── Chat LLM (LangChain chat model; for real-time streaming) ───────────
 
-_chat_llm: ChatAnthropic | None = None
-_chat_llm_with_tools: ChatAnthropic | None = None
+_chat_llm: Runnable | None = None
+_chat_llm_with_tools: Runnable | None = None
 
 
-def _get_chat_llm(*, with_tools: bool = False) -> ChatAnthropic:
-    """Get a LangChain ChatAnthropic for chat nodes (supports streaming)."""
+def _get_chat_llm(*, with_tools: bool = False) -> Runnable:
+    """LangChain chat model for chat nodes (streaming; tools via bind_tools when requested)."""
+    provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
+    if provider == "openai":
+        return _get_openai_chat_llm(with_tools=with_tools)
+    return _get_anthropic_chat_llm(with_tools=with_tools)
+
+
+def _get_openai_chat_llm(*, with_tools: bool) -> Runnable:
+    global _chat_llm, _chat_llm_with_tools
+
+    from app.config import DEFAULT_MAX_TOKENS
+
+    if with_tools:
+        if _chat_llm_with_tools is None:
+            tool_model = (
+                (os.getenv("OPENAI_TOOLCALL_MODEL") or "").strip()
+                or (os.getenv("OPENAI_REASONING_MODEL") or "").strip()
+                or (os.getenv("OPENAI_MODEL") or "").strip()
+                or OPENAI_LLM_CONFIG.toolcall_model
+            )
+            base = ChatOpenAI(  # type: ignore[call-arg]
+                model=tool_model,
+                max_tokens=DEFAULT_MAX_TOKENS,
+                streaming=True,
+            )
+            _chat_llm_with_tools = base.bind_tools(CHAT_TOOLS)
+        return _chat_llm_with_tools
+
+    if _chat_llm is None:
+        reasoning_model = (
+            (os.getenv("OPENAI_REASONING_MODEL") or "").strip()
+            or (os.getenv("OPENAI_MODEL") or "").strip()
+            or OPENAI_LLM_CONFIG.reasoning_model
+        )
+        _chat_llm = ChatOpenAI(  # type: ignore[call-arg]
+            model=reasoning_model,
+            max_tokens=DEFAULT_MAX_TOKENS,
+            streaming=True,
+        )
+    return _chat_llm
+
+
+def _get_anthropic_chat_llm(*, with_tools: bool) -> Runnable:
     global _chat_llm, _chat_llm_with_tools
 
     if with_tools:
@@ -120,7 +164,7 @@ def _get_chat_llm(*, with_tools: bool = False) -> ChatAnthropic:
                 streaming=True,
             )
             _chat_llm_with_tools = base.bind_tools(CHAT_TOOLS)  # type: ignore[assignment]
-        return _chat_llm_with_tools  # type: ignore[return-value]
+        return _chat_llm_with_tools
 
     if _chat_llm is None:
         from app.config import ANTHROPIC_REASONING_MODEL, DEFAULT_MAX_TOKENS
@@ -158,8 +202,8 @@ def router_node(state: AgentState) -> dict[str, Any]:
 def chat_agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
     """Chat agent with tools for Tracer data queries.
 
-    Uses ChatAnthropic with bound tools. The LLM can make tool_calls
-    which will be executed by the tool_executor node.
+    Uses the configured provider chat model (Anthropic or OpenAI) with bound tools.
+    The LLM can make tool_calls which will be executed by the tool_executor node.
     """
     msgs = list(state.get("messages", []))
 
