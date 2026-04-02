@@ -12,13 +12,7 @@ from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.tools import StructuredTool
 
-from app.config import (
-    ANTHROPIC_REASONING_MODEL,
-    ANTHROPIC_TOOLCALL_MODEL,
-    DEFAULT_MAX_TOKENS,
-    OPENAI_REASONING_MODEL,
-    OPENAI_TOOLCALL_MODEL,
-)
+from app.config import ANTHROPIC_LLM_CONFIG, DEFAULT_MAX_TOKENS, OPENAI_LLM_CONFIG
 from app.integrations.clients import get_llm_for_tools
 from app.prompts import GENERAL_SYSTEM_PROMPT, ROUTER_PROMPT, SYSTEM_PROMPT
 from app.state import AgentState, ChatMessage
@@ -114,94 +108,76 @@ _chat_llm_with_tools_provider: str | None = None
 
 
 def _resolve_models(provider: str) -> tuple[str, str]:
-    match provider:
-        case "openai":
-            tool_model = CfgHelpers.first_env_or_default(
+    """Resolve tool and reasoning model names for the active provider."""
+    if provider == "openai":
+        return (
+            CfgHelpers.first_env_or_default(
                 env_keys=(
                     "OPENAI_TOOLCALL_MODEL",
                     "OPENAI_REASONING_MODEL",
                     "OPENAI_MODEL",
                 ),
-                default=OPENAI_TOOLCALL_MODEL,
-            )
-            reasoning_model = CfgHelpers.first_env_or_default(
-                env_keys=(
-                    "OPENAI_REASONING_MODEL",
-                    "OPENAI_MODEL",
-                ),
-                default=OPENAI_REASONING_MODEL,
-            )
-            return tool_model, reasoning_model
-        case "anthropic":
-            tool_model = CfgHelpers.first_env_or_default(
+                default=OPENAI_LLM_CONFIG.toolcall_model,
+            ),
+            CfgHelpers.first_env_or_default(
+                env_keys=("OPENAI_REASONING_MODEL", "OPENAI_MODEL"),
+                default=OPENAI_LLM_CONFIG.reasoning_model,
+            ),
+        )
+    if provider == "anthropic":
+        return (
+            CfgHelpers.first_env_or_default(
                 env_keys=(
                     "ANTHROPIC_TOOLCALL_MODEL",
                     "ANTHROPIC_REASONING_MODEL",
                     "ANTHROPIC_MODEL",
                 ),
-                default=ANTHROPIC_TOOLCALL_MODEL,
-            )
-            reasoning_model = CfgHelpers.first_env_or_default(
-                env_keys=(
-                    "ANTHROPIC_REASONING_MODEL",
-                    "ANTHROPIC_MODEL",
-                ),
-                default=ANTHROPIC_REASONING_MODEL,
-            )
-            return tool_model, reasoning_model
-        case _:
-            raise ValueError(f"Unsupported chat model provider: {provider}")
+                default=ANTHROPIC_LLM_CONFIG.toolcall_model,
+            ),
+            CfgHelpers.first_env_or_default(
+                env_keys=("ANTHROPIC_REASONING_MODEL", "ANTHROPIC_MODEL"),
+                default=ANTHROPIC_LLM_CONFIG.reasoning_model,
+            ),
+        )
+    raise ValueError(f"Unsupported chat model provider: {provider}")
 
 
 def _build_chat_model(*, provider: str, model_name: str) -> BaseChatModel:
-    """Lazy-build chat model depending on provider and model name.
-    Args:
-        provider (str): The resolved provider name.
-        model_name (str): The model name.
-    Returns:
-        BaseChatModel: The chat model.
-    """
-    match provider:
-        case "openai":
-            openai_module = import_module("langchain_openai")
-            chat_openai_cls: Any = openai_module.ChatOpenAI
-            return cast(
-                BaseChatModel,
-                chat_openai_cls(
-                    model=model_name,
-                    max_tokens=DEFAULT_MAX_TOKENS,
-                    streaming=True,
-                ),
-            )
-        case "anthropic":
-            anthropic_module = import_module("langchain_anthropic")
-            chat_anthropic_cls: Any = anthropic_module.ChatAnthropic
-            return cast(
-                BaseChatModel,
-                chat_anthropic_cls(
-                    model=model_name,
-                    max_tokens=DEFAULT_MAX_TOKENS,
-                    streaming=True,
-                ),
-            )
-        case _:
-            raise ValueError(f"Unsupported chat model provider: {provider}")
+    """Lazy-build a provider-specific chat model for the chat nodes."""
+    if provider == "openai":
+        openai_module = import_module("langchain_openai")
+        chat_openai_cls: Any = openai_module.ChatOpenAI
+        return cast(
+            BaseChatModel,
+            chat_openai_cls(
+                model=model_name,
+                max_tokens=DEFAULT_MAX_TOKENS,
+                streaming=True,
+            ),
+        )
+    if provider == "anthropic":
+        anthropic_module = import_module("langchain_anthropic")
+        chat_anthropic_cls: Any = anthropic_module.ChatAnthropic
+        return cast(
+            BaseChatModel,
+            chat_anthropic_cls(
+                model=model_name,
+                max_tokens=DEFAULT_MAX_TOKENS,
+                streaming=True,
+            ),
+        )
+    raise ValueError(f"Unsupported chat model provider: {provider}")
 
 
 def _get_chat_llm(*, with_tools: bool = False) -> BaseChatModel | ToolEnabledChatModel:
-    """Get chat model used by chat nodes.
-    Args:
-        with_tools (bool): Whether to include tools in the chat model.
-    Returns:
-        BaseChatModel | ToolEnabledChatModel: The base chat model.
-    """
+    """Get the provider-aware chat model used by chat nodes."""
     global _chat_llm, _chat_llm_with_tools, _chat_llm_provider, _chat_llm_with_tools_provider
+
     provider = CfgHelpers.resolve_llm_provider()
     tool_model, reasoning_model = _resolve_models(provider)
 
     if with_tools:
-        # None = first-time build
-        # inequality = possible cache invalidation, provider changed therefore rebuild is needed
+        # Rebuild the cache when switching providers between requests.
         if _chat_llm_with_tools is None or _chat_llm_with_tools_provider != provider:
             base = _build_chat_model(provider=provider, model_name=tool_model)
             _chat_llm_with_tools = base.bind_tools(CHAT_TOOLS)  # type: ignore[assignment]

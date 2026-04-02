@@ -72,14 +72,34 @@ def get_clerk_config() -> ClerkConfig:
 # JWT Configuration
 JWT_ALGORITHM = "RS256"
 JWKS_CACHE_TTL_SECONDS = 3600
-ANTHROPIC_REASONING_MODEL = "claude-opus-4-5"
-ANTHROPIC_TOOLCALL_MODEL = "claude-sonnet-4-20250514"
-OPENAI_REASONING_MODEL = "gpt-4o"
-OPENAI_TOOLCALL_MODEL = "gpt-4o-mini"
-DEFAULT_MODEL = ANTHROPIC_REASONING_MODEL
-DEFAULT_OPENAI_MODEL = OPENAI_REASONING_MODEL
+
+# LLM Model Constants
 DEFAULT_MAX_TOKENS = 4096
 
+# Anthropic model constants
+ANTHROPIC_REASONING_MODEL = "claude-sonnet-4-6"
+ANTHROPIC_TOOLCALL_MODEL = "claude-haiku-4-5-20251001"
+
+# OpenAI model constants
+OPENAI_REASONING_MODEL = "gpt-5.4"
+OPENAI_TOOLCALL_MODEL = "gpt-5.4-mini"
+
+# OpenRouter model constants
+OPENROUTER_REASONING_MODEL = "openrouter/auto"
+OPENROUTER_TOOLCALL_MODEL = "openrouter/auto"
+
+# Gemini model constants (Google AI preview IDs; OpenAI-compatible endpoint)
+GEMINI_REASONING_MODEL = "gemini-3.1-pro-preview"
+GEMINI_TOOLCALL_MODEL = "gemini-3.1-flash-lite-preview"
+
+# NVIDIA NIM model constants
+NVIDIA_REASONING_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+NVIDIA_TOOLCALL_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
+
+# Base URLs for OpenAI-compatible providers
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 # LLM Provider Configs
 ANTHROPIC_LLM_CONFIG = LLMModelConfig(
     reasoning_model=ANTHROPIC_REASONING_MODEL,
@@ -93,10 +113,29 @@ OPENAI_LLM_CONFIG = LLMModelConfig(
     max_tokens=DEFAULT_MAX_TOKENS,
 )
 
+OPENROUTER_LLM_CONFIG = LLMModelConfig(
+    reasoning_model=OPENROUTER_REASONING_MODEL,
+    toolcall_model=OPENROUTER_TOOLCALL_MODEL,
+    max_tokens=DEFAULT_MAX_TOKENS,
+)
+
+GEMINI_LLM_CONFIG = LLMModelConfig(
+    reasoning_model=GEMINI_REASONING_MODEL,
+    toolcall_model=GEMINI_TOOLCALL_MODEL,
+    max_tokens=DEFAULT_MAX_TOKENS,
+)
+
+NVIDIA_LLM_CONFIG = LLMModelConfig(
+    reasoning_model=NVIDIA_REASONING_MODEL,
+    toolcall_model=NVIDIA_TOOLCALL_MODEL,
+    max_tokens=DEFAULT_MAX_TOKENS,
+)
+
 # Tracer API Configuration
 TRACER_BASE_URL_DEV = "https://staging.tracer.cloud"
 TRACER_BASE_URL_PROD = "https://app.tracer.cloud"
 SLACK_CHANNEL = "tracer-rca-report-alerts"
+
 
 def get_tracer_base_url() -> str:
     """Get Tracer base URL for current environment."""

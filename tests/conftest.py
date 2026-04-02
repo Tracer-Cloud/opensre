@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from app.outbound_telemetry.config import load_env
+from app.utils.config import load_env
 
 _PROJECT_ROOT = Path(__file__).parent.parent
 _ENV_PATH = _PROJECT_ROOT / ".env"

@@ -102,11 +102,41 @@ make install-hooks
 
 At this stage, only one LLM API key is mandatory. Everything else depends on which path you want to test:
 
-- Required for any RCA run: `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
+- Required for any RCA run: `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` or one of the providers below
 - Required only for the `Tracer Web App path`: `JWT_TOKEN`
 - Optional per system: `DD_*`, `GRAFANA_*`, `AWS_*`, `GITHUB_MCP_*`, `SENTRY_*`
 - Optional only for Slack delivery: `SLACK_WEBHOOK_URL`
 - Optional only for LangGraph deploy: `LANGSMITH_API_KEY`
+
+#### Additional LLM Providers
+
+Beyond Anthropic and OpenAI, you can use OpenRouter, Google Gemini, or NVIDIA NIM. All three use OpenAI-compatible APIs, so they work as drop-in replacements.
+
+**OpenRouter** (supports 100+ models via a single API):
+```bash
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_REASONING_MODEL=anthropic/claude-opus-4
+OPENROUTER_TOOLCALL_MODEL=anthropic/claude-haiku-4-5
+```
+
+**Google Gemini** (using OpenAI-compatible endpoint):
+```bash
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your-google-api-key
+GEMINI_REASONING_MODEL=gemini-2.5-pro
+GEMINI_TOOLCALL_MODEL=gemini-2.5-flash
+```
+
+**NVIDIA NIM** (Inference Microservices):
+```bash
+LLM_PROVIDER=nvidia
+NVIDIA_API_KEY=your-nvidia-api-key
+NVIDIA_REASONING_MODEL=meta/llama-4-maverick-17b-128e-instruct
+NVIDIA_TOOLCALL_MODEL=meta/llama-4-scout-17b-16e-instruct
+```
+
+You can also pick these providers interactively via `opensre onboard`.
 
 ### Choose an integration source
 

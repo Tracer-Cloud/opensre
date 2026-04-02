@@ -169,6 +169,13 @@ Thanks goes to these amazing people:
 	<tbody>
 		<tr>
             <td align="center">
+        <a href="https://github.com/edgarmb14">
+            <img src="https://avatars.githubusercontent.com/u/268297669?v=4" width="100;" alt="edgarmb14"/>
+            <br />
+            <sub><b>edgarmb14</b></sub>
+        </a>
+    </td>
+            <td align="center">
         <a href="https://github.com/cerencamkiran">
             <img src="https://avatars.githubusercontent.com/u/150190567?v=4" width="100;" alt="cerencamkiran"/>
             <br />
@@ -203,6 +210,8 @@ Thanks goes to these amazing people:
             <sub><b>yeoreums</b></sub>
         </a>
     </td>
+		</tr>
+		<tr>
             <td align="center">
         <a href="https://github.com/w3joe">
             <img src="https://avatars.githubusercontent.com/u/84664178?v=4" width="100;" alt="w3joe"/>
@@ -210,8 +219,6 @@ Thanks goes to these amazing people:
             <sub><b>w3joe</b></sub>
         </a>
     </td>
-		</tr>
-		<tr>
             <td align="center">
         <a href="https://github.com/iamkalio">
             <img src="https://avatars.githubusercontent.com/u/89003403?v=4" width="100;" alt="iamkalio"/>
@@ -247,6 +254,8 @@ Thanks goes to these amazing people:
             <sub><b>arnetracer</b></sub>
         </a>
     </td>
+		</tr>
+		<tr>
             <td align="center">
         <a href="https://github.com/aliya-tracer">
             <img src="https://avatars.githubusercontent.com/u/233726347?v=4" width="100;" alt="aliya-tracer"/>
@@ -254,8 +263,6 @@ Thanks goes to these amazing people:
             <sub><b>aliya-tracer</b></sub>
         </a>
     </td>
-		</tr>
-		<tr>
             <td align="center">
         <a href="https://github.com/VaibhavUpreti">
             <img src="https://avatars.githubusercontent.com/u/85568177?v=4" width="100;" alt="VaibhavUpreti"/>

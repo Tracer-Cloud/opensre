@@ -612,7 +612,7 @@ def _format_datadog_log_entry(log: Any) -> str:
     if isinstance(raw_ts, str) and "T" in raw_ts:
         time_part = raw_ts.split("T", 1)[1][:8]  # "HH:MM:SS"
         ts_prefix = f"[{time_part}] "
-    elif isinstance(raw_ts, (int, float)):
+    elif isinstance(raw_ts, int | float):
         import datetime
         ts_prefix = f"[{datetime.datetime.utcfromtimestamp(raw_ts / 1000 if raw_ts > 1e10 else raw_ts).strftime('%H:%M:%S')}] "
 

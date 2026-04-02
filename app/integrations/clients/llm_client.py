@@ -145,10 +145,21 @@ def _uses_max_completion_tokens(model: str) -> bool:
 
 
 class OpenAILLMClient:
-    def __init__(self, *, model: str, max_tokens: int = 1024, temperature: float | None = None) -> None:
-        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    def __init__(
+        self,
+        *,
+        model: str,
+        max_tokens: int = 1024,
+        temperature: float | None = None,
+        base_url: str | None = None,
+        api_key_env: str = "OPENAI_API_KEY",
+    ) -> None:
+        api_key = (os.getenv(api_key_env) or "").strip()
         self._api_key = api_key
-        self._client = OpenAI(api_key=api_key, timeout=60.0)
+        self._base_url = base_url
+        self._api_key_env = api_key_env
+        self._provider_label = api_key_env.removesuffix("_API_KEY").replace("_", " ").title()
+        self._client = OpenAI(api_key=api_key, base_url=base_url, timeout=60.0)
         self._model = model
         self._max_tokens = max_tokens
         self._temperature = temperature
@@ -163,14 +174,14 @@ class OpenAILLMClient:
         return self
 
     def _ensure_client(self) -> None:
-        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        api_key = (os.getenv(self._api_key_env) or "").strip()
         if not api_key:
             raise RuntimeError(
-                "Missing OPENAI_API_KEY. Set it in your environment or .env before running LLM steps."
+                f"Missing {self._api_key_env}. Set it in your environment or .env before running LLM steps."
             )
         if api_key != self._api_key:
             self._api_key = api_key
-            self._client = OpenAI(api_key=api_key, timeout=60.0)
+            self._client = OpenAI(api_key=api_key, base_url=self._base_url, timeout=60.0)
 
     def invoke(self, prompt_or_messages: Any) -> LLMResponse:
         self._ensure_client()
@@ -193,13 +204,13 @@ class OpenAILLMClient:
                 break
             except OpenAIAuthError as err:
                 raise RuntimeError(
-                    "OpenAI authentication failed. Check OPENAI_API_KEY in your environment or .env."
+                    f"{self._provider_label} authentication failed. Check {self._api_key_env} in your environment or .env."
                 ) from err
             except Exception as err:
                 last_err = err
                 if attempt == max_attempts - 1:
                     raise RuntimeError(
-                        "OpenAI API request failed after multiple retries. Try again in a few seconds."
+                        "LLM API request failed after multiple retries. Try again in a few seconds."
                     ) from err
                 time.sleep(backoff_seconds)
                 backoff_seconds *= 2
@@ -354,6 +365,51 @@ def _create_llm_client(
         default_model = config.reasoning_model if model_type == "reasoning" else config.toolcall_model
         model = _env_or(*openai_env_keys, default=default_model)
         return OpenAILLMClient(model=model, max_tokens=config.max_tokens)
+    elif provider == "openrouter":
+        from app.config import OPENROUTER_BASE_URL, OPENROUTER_LLM_CONFIG
+
+        config = OPENROUTER_LLM_CONFIG
+        default_model = config.reasoning_model if model_type == "reasoning" else config.toolcall_model
+        if model_type == "reasoning":
+            model = _env_or("OPENROUTER_REASONING_MODEL", "OPENROUTER_MODEL", default=default_model)
+        else:
+            model = _env_or("OPENROUTER_TOOLCALL_MODEL", "OPENROUTER_MODEL", default=default_model)
+        return OpenAILLMClient(
+            model=model,
+            max_tokens=config.max_tokens,
+            base_url=OPENROUTER_BASE_URL,
+            api_key_env="OPENROUTER_API_KEY",
+        )
+    elif provider == "gemini":
+        from app.config import GEMINI_BASE_URL, GEMINI_LLM_CONFIG
+
+        config = GEMINI_LLM_CONFIG
+        default_model = config.reasoning_model if model_type == "reasoning" else config.toolcall_model
+        if model_type == "reasoning":
+            model = _env_or("GEMINI_REASONING_MODEL", "GEMINI_MODEL", default=default_model)
+        else:
+            model = _env_or("GEMINI_TOOLCALL_MODEL", "GEMINI_MODEL", default=default_model)
+        return OpenAILLMClient(
+            model=model,
+            max_tokens=config.max_tokens,
+            base_url=GEMINI_BASE_URL,
+            api_key_env="GEMINI_API_KEY",
+        )
+    elif provider == "nvidia":
+        from app.config import NVIDIA_BASE_URL, NVIDIA_LLM_CONFIG
+
+        config = NVIDIA_LLM_CONFIG
+        default_model = config.reasoning_model if model_type == "reasoning" else config.toolcall_model
+        if model_type == "reasoning":
+            model = _env_or("NVIDIA_REASONING_MODEL", "NVIDIA_MODEL", default=default_model)
+        else:
+            model = _env_or("NVIDIA_TOOLCALL_MODEL", "NVIDIA_MODEL", default=default_model)
+        return OpenAILLMClient(
+            model=model,
+            max_tokens=config.max_tokens,
+            base_url=NVIDIA_BASE_URL,
+            api_key_env="NVIDIA_API_KEY",
+        )
     else:
         config = ANTHROPIC_LLM_CONFIG
         default_model = config.reasoning_model if model_type == "reasoning" else config.toolcall_model
