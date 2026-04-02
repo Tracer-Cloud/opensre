@@ -41,7 +41,7 @@ Distributed failures are slower, noisier, and harder to simulate and evaluate th
 
 OpenSRE is building _that_ missing layer:
 
-> an open reinforcement learning environment for infrastructure incident response, with end-to-end tests and synthetic incident simulations for realistic production failures
+> an open reinforcement learning environment for agentic infrastructure incident response, with end-to-end tests and synthetic incident simulations for realistic production failures
 
 
 We do that by:
