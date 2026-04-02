@@ -4,9 +4,10 @@
   <img width="2136" height="476" alt="github-readme-tracer-banner" src="https://github.com/user-attachments/assets/fac67ac2-e40e-4d58-8421-829ed0ce2a4d" />
 </p>
 
-<h1>Open SRE — Build Your Own AI SRE Agents</h1>
+<h1>OpenSRE: Build and Evaluate Your Own AI SRE Agents</h1>
 
-<p>The open-source framework that AI SRE agents are built on. Connect the tools you already run, define your own workflows, and let agents handle incident investigation and root cause analysis - your way, on your infrastructure.</p>
+<p>The open-source framework for AI SRE agents, and the training and evaluation environment they need to improve. Connect the tools you already run, define your own workflows, and investigate incidents on your own infrastructure.</p>
+
 
 <p>
   <a href="https://github.com/Tracer-Cloud/opensre/stargazers"><img src="https://img.shields.io/github/stars/Tracer-Cloud/opensre?style=flat-square&color=FF6B00" alt="Stars"></a>
@@ -82,7 +83,7 @@ opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 
 ---
 
-## Why Tracer?
+## Why Open SRE?
 
 When something breaks in production, the pressure is immediate - but the evidence is scattered. Logs in Datadog. Metrics in Grafana. Runbooks in Notion. Context in Slack threads already 200 messages deep.
 
@@ -92,11 +93,27 @@ Unlike closed SRE platforms, Tracer is **fully open source and self-hostable**. 
 
 > Whether you're an SRE triaging a P0, a platform engineer building internal tooling, a developer who just got paged, or an EM trying to reduce MTTR - Tracer works for your whole team.
 
+## How is Open SRE different?
+
+[SWE-smith](https://arxiv.org/abs/2504.21798) gave coding agents scalable training data and clear feedback. Production incident response still has no equivalent.
+
+Distributed failures are slower, noisier, and harder to simulate and evaluate than local code tasks, which is why AI SRE, and AI for production debugging more broadly, remains unsolved.
+
+Open SRE is building that missing layer: an open reinforcement learning environment for infrastructure incident response, with end-to-end tests and synthetic incident simulations for realistic production failures.
+
+We do that by:
+- running [scored synthetic RCA suites](tests/synthetic/rds_postgres/README.md) for RDS PostgreSQL that check root-cause accuracy, required evidence, and adversarial red herrings
+- running [Kubernetes end-to-end tests](tests/e2e/kubernetes/) and the [`test-thorough` CI matrix](.github/workflows/ci.yml) across cloud-backed scenarios like CloudWatch, Lambda, ECS Fargate, and Flink
+
+Our goal is to scale this into thousands of realistic infrastructure failure scenarios and become the benchmark and training ground for AI SRE.
+
+You can contribute by adding new failure modes to existing cloud assets or building new suites for novel assets. Right now, our highest-priority areas are database asset models and new Kubernetes failure modes.
+
 **Built in the open. Trusted in production.**
 
 ---
 
-## How Tracer Works
+## How OpenSRE Works
 
 <img width="4096" height="2187" alt="tracer-how-it-works-illustration" src="https://github.com/user-attachments/assets/8b50fe5c-470c-4982-866f-4f90c3e251d1" />
 
