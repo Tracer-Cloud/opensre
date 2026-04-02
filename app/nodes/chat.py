@@ -164,25 +164,25 @@ def _build_chat_model(*, provider: str, model_name: str) -> BaseChatModel:
     match provider:
         case "openai":
             openai_module = import_module("langchain_openai")
-            chat_openai_cls = cast(
-                type[BaseChatModel],
-                openai_module.ChatOpenAI,
-            )
-            return chat_openai_cls(
-                model=model_name,
-                max_tokens=DEFAULT_MAX_TOKENS,
-                streaming=True,
+            chat_openai_cls: Any = openai_module.ChatOpenAI
+            return cast(
+                BaseChatModel,
+                chat_openai_cls(
+                    model=model_name,
+                    max_tokens=DEFAULT_MAX_TOKENS,
+                    streaming=True,
+                ),
             )
         case "anthropic":
             anthropic_module = import_module("langchain_anthropic")
-            chat_anthropic_cls = cast(
-                type[BaseChatModel],
-                anthropic_module.ChatAnthropic,
-            )
-            return chat_anthropic_cls(
-                model=model_name,
-                max_tokens=DEFAULT_MAX_TOKENS,
-                streaming=True,
+            chat_anthropic_cls: Any = anthropic_module.ChatAnthropic
+            return cast(
+                BaseChatModel,
+                chat_anthropic_cls(
+                    model=model_name,
+                    max_tokens=DEFAULT_MAX_TOKENS,
+                    streaming=True,
+                ),
             )
         case _:
             raise ValueError(f"Unsupported chat model provider: {provider}")
