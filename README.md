@@ -31,6 +31,31 @@
 
 ---
 
+## Why Open SRE?
+
+When something breaks in production, the pressure is immediate, but the evidence is scattered. Logs in Datadog. Metrics in Grafana. Runbooks in Notion. Context in Slack threads already 200 messages deep.
+
+Open SRE is the open-source answer to that chaos. It's an AI SRE agent that correlates signals across your entire stack, reasons through root cause, and surfaces a clear diagnosis - in the time it used to take just to _find_ the right dashboard.
+
+Unlike closed SRE platforms, Open SRE is **fully open source and self-hostable**. No vendor lock-in. No black-box reasoning. You own the agent, the data, and the workflow.
+
+> Whether you're an SRE triaging a P0, a platform engineer building internal tooling, a developer who just got paged, or an EM trying to reduce MTTR - Open SRE works for your whole team.
+
+SWE-bench<sup>1</sup> gave coding agents scalable training data and clear feedback. Production incident response still has no equivalent. Distributed failures are slower, noisier, and harder to simulate and evaluate than local code tasks, which is why AI SRE, and AI for production debugging more broadly, remains unsolved.
+
+Open SRE is building that missing layer:
+
+> an open reinforcement learning environment for infrastructure incident response, with end-to-end tests and synthetic incident simulations for realistic production failures
+
+We do that by:
+- running scored synthetic RCA suites that check root-cause accuracy, required evidence, and adversarial red herrings [(tests/synthetic)](tests/synthetic/rds_postgres)
+- running real-world end-to-end tests across cloud-backed scenarios including Kubernetes, EC2, CloudWatch, Lambda, ECS Fargate, and Flink [(tests/e2e)](tests/e2e)
+
+Our goal is to scale this into thousands of realistic infrastructure failure scenarios and become the benchmark and training ground for AI SRE.
+
+<sup>1</sup> https://arxiv.org/abs/2310.06770
+
+
 ## Install
 
 ```bash
@@ -74,34 +99,6 @@ make install
 opensre onboard
 opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 ```
----
-
-## Why Open SRE?
-
-When something breaks in production, the pressure is immediate - but the evidence is scattered. Logs in Datadog. Metrics in Grafana. Runbooks in Notion. Context in Slack threads already 200 messages deep.
-
-**Tracer is the open-source answer to that chaos.** It's an AI SRE agent that correlates signals across your entire stack, reasons through root cause, and surfaces a clear diagnosis - in the time it used to take just to _find_ the right dashboard.
-
-Unlike closed SRE platforms, Tracer is **fully open source and self-hostable**. No vendor lock-in. No black-box reasoning. You own the agent, the data, and the workflow.
-
-> Whether you're an SRE triaging a P0, a platform engineer building internal tooling, a developer who just got paged, or an EM trying to reduce MTTR - Tracer works for your whole team.
-
-
-## How is Open SRE different?
-
-SWE-bench<sup>1</sup> gave coding agents scalable training data and clear feedback. Production incident response still has no equivalent. Distributed failures are slower, noisier, and harder to simulate and evaluate than local code tasks, which is why AI SRE, and AI for production debugging more broadly, remains unsolved.
-
-OpenSRE is building that missing layer:
-
-> an open reinforcement learning environment for infrastructure incident response, with end-to-end tests and synthetic incident simulations for realistic production failures
-
-We do that by:
-- running scored synthetic RCA suites that check root-cause accuracy, required evidence, and adversarial red herrings [(tests/synthetic)](tests/synthetic/rds_postgres)
-- running real-world end-to-end tests across cloud-backed scenarios including Kubernetes, EC2, CloudWatch, Lambda, ECS Fargate, and Flink [(tests/e2e)](tests/e2e)
-
-Our goal is to scale this into thousands of realistic infrastructure failure scenarios and become the benchmark and training ground for AI SRE.
-
-<sup>1</sup> https://arxiv.org/abs/2310.06770
 
 ---
 
