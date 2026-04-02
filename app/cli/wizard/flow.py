@@ -12,7 +12,7 @@ from questionary import Style
 from rich.console import Console
 from rich.text import Text
 
-from app.cli.wizard.config import PROVIDER_BY_VALUE, SUPPORTED_PROVIDERS, ProviderOption
+from app.cli.wizard.config import PROVIDER_BY_VALUE, SUPPORTED_PROVIDERS
 from app.cli.wizard.env_sync import sync_env_values, sync_provider_env
 from app.cli.wizard.probes import ProbeResult, probe_local_target, probe_remote_target
 from app.cli.wizard.prompts import select as select_prompt
@@ -30,11 +30,6 @@ _ASCII_HEADER = """\
 | |_| |  __/| |___| |\\  |___) |  _ <| |___
  \\___/|_|   |_____|_| \\_|____/|_| \\_\\_____|"""
 
-
-def validate_provider_credentials(**kwargs):
-    from app.cli.wizard.validation import validate_provider_credentials as _validate
-
-    return _validate(**kwargs)
 
 
 def build_demo_action_response():
@@ -132,14 +127,15 @@ def _joined_values(value: object, *, separator: str, fallback: str) -> str:
     return fallback
 
 
-def _local_defaults() -> dict[str, str]:
+def _local_defaults() -> dict[str, str | None]:
     stored = load_local_config(get_store_path())
     wizard = _as_mapping(stored.get("wizard"))
     targets = _as_mapping(stored.get("targets"))
     local = _as_mapping(targets.get("local"))
+    raw_provider = local.get("provider")
     return {
         "wizard_mode": _string_value(wizard.get("mode"), "quickstart"),
-        "provider": _string_value(local.get("provider"), SUPPORTED_PROVIDERS[0].value),
+        "provider": _string_value(raw_provider) if raw_provider else None,
         "model": _string_value(local.get("model")),
         "api_key": _string_value(local.get("api_key")),
         "api_key_env": _string_value(local.get("api_key_env")),
@@ -236,50 +232,6 @@ def _prompt_value(
 def _parse_csv_values(raw_value: str) -> list[str]:
     return [part.strip() for part in raw_value.split(",") if part.strip()]
 
-
-def _collect_validated_api_key(
-    provider: ProviderOption,
-    model: str,
-    *,
-    default_api_key: str = "",
-    auto_use_saved_key: bool = False,
-) -> str:
-    if auto_use_saved_key and default_api_key:
-        with _console.status(f"Validating {provider.label} API key...", spinner="dots"):
-            result = validate_provider_credentials(
-                provider=provider,
-                api_key=default_api_key,
-                model=model,
-            )
-        if result.ok:
-            _console.print(f"[green]Using saved {provider.label} key.[/]")
-            _console.print(f"[dim]{result.detail}[/]")
-            if result.sample_response:
-                _console.print(f"[dim]Sample: {result.sample_response}[/]")
-            return default_api_key
-        _console.print(f"[yellow]Saved {provider.label} key failed validation.[/]")
-        _console.print(f"[dim]{result.detail}[/]")
-        default_api_key = ""
-
-    while True:
-        api_key = _prompt_value(
-            f"{provider.label} API key ({provider.api_key_env})",
-            default=default_api_key,
-            secret=True,
-        )
-        with _console.status(f"Validating {provider.label} API key...", spinner="dots"):
-            result = validate_provider_credentials(provider=provider, api_key=api_key, model=model)
-        if result.ok:
-            _console.print("[green]Connected.[/]")
-            if result.sample_response:
-                _console.print(f"[dim]{result.detail}[/]")
-                _console.print(f"[dim]Sample: {result.sample_response}[/]")
-            else:
-                _console.print(f"[dim]{result.detail}[/]")
-            return api_key
-        _console.print(f"[red]Validation failed: {result.detail}[/]")
-        _console.print("[dim]Enter retries the current key. Paste a new one to replace it.[/]")
-        default_api_key = api_key
 
 
 def _display_probe(result: ProbeResult) -> None:
@@ -819,9 +771,8 @@ def run_wizard(_argv: list[str] | None = None) -> int:
     """Run the interactive wizard."""
     _render_header()
     defaults = _local_defaults()
-    default_provider_value = defaults["provider"]
-    if default_provider_value not in PROVIDER_BY_VALUE:
-        default_provider_value = SUPPORTED_PROVIDERS[0].value
+    saved_provider_value = defaults["provider"]
+    default_provider_value = saved_provider_value if saved_provider_value in PROVIDER_BY_VALUE else SUPPORTED_PROVIDERS[0].value
 
     _step("Setup Mode")
     wizard_mode = _choose(
@@ -854,43 +805,45 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         return 1
 
     _step("LLM Provider")
-    provider = PROVIDER_BY_VALUE[
-        _choose(
-            "Choose your LLM provider",
-            [
-                Choice(
-                    value=provider.value,
-                    label=provider.label,
-                    hint=provider.group,
-                )
-                for provider in SUPPORTED_PROVIDERS
-            ],
-            default=default_provider_value,
-        )
-    ]
-    _step("Model")
-    default_model = defaults["model"]
-    if default_model not in {option.value for option in provider.models}:
-        default_model = provider.default_model
-    model = _choose(
-        f"Choose a model for {provider.label}",
-        [Choice(value=option.value, label=option.label, hint=option.value) for option in provider.models],
-        default=default_model,
-    )
-    _step("API Key")
-    default_api_key = (
-        defaults["api_key"] if defaults["api_key_env"] == provider.api_key_env else ""
-    )
-    try:
-        api_key = _collect_validated_api_key(
-            provider,
-            model,
-            default_api_key=default_api_key,
-            auto_use_saved_key=bool(default_api_key),
-        )
-    except KeyboardInterrupt:
-        _console.print("\n[yellow]Setup cancelled.[/]")
-        return 1
+    saved_provider = PROVIDER_BY_VALUE.get(saved_provider_value) if saved_provider_value else None
+    if saved_provider is not None:
+        current_model = defaults["model"] or saved_provider.default_model
+        _console.print(f"[dim]current provider  {saved_provider.label}  ·  {current_model}[/]")
+        change_provider = _confirm("Change provider?", default=False)
+    else:
+        change_provider = True
+
+    if change_provider:
+        provider = PROVIDER_BY_VALUE[
+            _choose(
+                "Choose your LLM provider",
+                [
+                    Choice(
+                        value=p.value,
+                        label=p.label,
+                        hint=p.group,
+                    )
+                    for p in SUPPORTED_PROVIDERS
+                ],
+                default=default_provider_value,
+            )
+        ]
+        model = provider.default_model
+        _step("API Key")
+        try:
+            api_key = _prompt_value(
+                f"{provider.label} API key ({provider.api_key_env})",
+                default=defaults["api_key"] or "",
+                secret=True,
+            )
+        except KeyboardInterrupt:
+            _console.print("\n[yellow]Setup cancelled.[/]")
+            return 1
+    else:
+        assert saved_provider is not None
+        provider = saved_provider
+        model = defaults["model"] or provider.default_model
+        api_key = defaults["api_key"] or ""
 
     probes = {
         "local": local_probe.as_dict(),
