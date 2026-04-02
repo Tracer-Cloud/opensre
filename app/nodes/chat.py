@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable
-from typing import Any
+from importlib import import_module
+from typing import Any, TypeAlias
+from typing import cast
 
-from langchain_anthropic import ChatAnthropic
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import SystemMessage, ToolMessage
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.tools import StructuredTool
 
+from app.config import (
+    ANTHROPIC_TOOLCALL_MODEL,
+    ANTHROPIC_REASONING_MODEL,
+    DEFAULT_MAX_TOKENS,
+    OPENAI_REASONING_MODEL,
+    OPENAI_TOOLCALL_MODEL,
+)
 from app.integrations.clients import get_llm_for_tools
 from app.prompts import GENERAL_SYSTEM_PROMPT, ROUTER_PROMPT, SYSTEM_PROMPT
 from app.state import AgentState, ChatMessage
@@ -31,6 +39,7 @@ from app.tools.TracerFailedToolsTool import get_failed_tools
 from app.tools.TracerHostMetricsTool import get_host_metrics
 from app.tools.TracerRunTool import get_tracer_run
 from app.tools.TracerTasksTool import get_tracer_tasks
+from app.utils.cfg_helpers import CfgHelpers
 
 _CHAT_FUNCTIONS: list[Callable[..., Any]] = [
     fetch_failed_run,
@@ -49,6 +58,7 @@ _CHAT_FUNCTIONS: list[Callable[..., Any]] = [
     get_sentry_issue_details,
     list_sentry_issue_events,
 ]
+
 
 def _to_structured_tool(fn: Callable[..., Any] | BaseTool) -> StructuredTool:
     """Build a StructuredTool from a plain callable or a BaseTool instance."""
@@ -94,47 +104,112 @@ def _normalize_messages(msgs: list[Any]) -> list[ChatMessage]:
     return result
 
 
-# ── Chat LLM (LangChain ChatAnthropic for real-time streaming) ──────────
+# ── Chat LLM ─────────────────────────────────────────────────────────────
 
-_chat_llm: ChatAnthropic | None = None
-_chat_llm_with_tools: ChatAnthropic | None = None
+ToolEnabledChatModel: TypeAlias = Runnable[object, object]
+
+_chat_llm: BaseChatModel | None = None
+_chat_llm_with_tools: ToolEnabledChatModel | None = None
+_chat_llm_provider: str | None = None
+_chat_llm_with_tools_provider: str | None = None
 
 
-def _get_chat_llm(*, with_tools: bool = False) -> ChatAnthropic:
-    """Get a LangChain ChatAnthropic for chat nodes (supports streaming)."""
-    global _chat_llm, _chat_llm_with_tools
-
-    if with_tools:
-        if _chat_llm_with_tools is None:
-            from app.config import ANTHROPIC_TOOLCALL_MODEL, DEFAULT_MAX_TOKENS
-
-            tool_model = (
-                (os.getenv("ANTHROPIC_TOOLCALL_MODEL") or "").strip()
-                or (os.getenv("ANTHROPIC_REASONING_MODEL") or "").strip()
-                or (os.getenv("ANTHROPIC_MODEL") or "").strip()
-                or ANTHROPIC_TOOLCALL_MODEL
+def _resolve_models(provider: str) -> tuple[str, str]:
+    match provider:
+        case "openai":
+            tool_model = CfgHelpers.first_env_or_default(
+                env_keys=(
+                    "OPENAI_TOOLCALL_MODEL",
+                    "OPENAI_REASONING_MODEL",
+                    "OPENAI_MODEL",
+                ),
+                default=OPENAI_TOOLCALL_MODEL,
             )
-            base = ChatAnthropic(  # type: ignore[call-arg]
-                model=tool_model,
+            reasoning_model = CfgHelpers.first_env_or_default(
+                env_keys=(
+                    "OPENAI_REASONING_MODEL",
+                    "OPENAI_MODEL",
+                ),
+                default=OPENAI_REASONING_MODEL,
+            )
+            return tool_model, reasoning_model
+        case "anthropic":
+            tool_model = CfgHelpers.first_env_or_default(
+                env_keys=(
+                    "ANTHROPIC_TOOLCALL_MODEL",
+                    "ANTHROPIC_REASONING_MODEL",
+                    "ANTHROPIC_MODEL",
+                ),
+                default=ANTHROPIC_TOOLCALL_MODEL,
+            )
+            reasoning_model = CfgHelpers.first_env_or_default(
+                env_keys=(
+                    "ANTHROPIC_REASONING_MODEL",
+                    "ANTHROPIC_MODEL",
+                ),
+                default=ANTHROPIC_REASONING_MODEL,
+            )
+            return tool_model, reasoning_model
+        case _:
+            raise ValueError(f"Unsupported chat model provider: {provider}")
+
+
+def _build_chat_model(*, provider: str, model_name: str) -> BaseChatModel:
+    """Lazy-build chat model depending on provider and model name.
+    Args:
+        provider (str): The resolved provider name.
+        model_name (str): The model name.
+    Returns:
+        BaseChatModel: The chat model.
+    """
+    match provider:
+        case "openai":
+            chat_openai_cls = cast(
+                type[BaseChatModel],
+                getattr(import_module("langchain_openai"), "ChatOpenAI"),
+            )
+            return chat_openai_cls(
+                model=model_name,
                 max_tokens=DEFAULT_MAX_TOKENS,
                 streaming=True,
             )
+        case "anthropic":
+            chat_anthropic_cls = cast(
+                type[BaseChatModel],
+                getattr(import_module("langchain_anthropic"), "ChatAnthropic"),
+            )
+            return chat_anthropic_cls(
+                model=model_name,
+                max_tokens=DEFAULT_MAX_TOKENS,
+                streaming=True,
+            )
+        case _:
+            raise ValueError(f"Unsupported chat model provider: {provider}")
+
+
+def _get_chat_llm(*, with_tools: bool = False) -> BaseChatModel | ToolEnabledChatModel:
+    """Get chat model used by chat nodes.
+    Args:
+        with_tools (bool): Whether to include tools in the chat model.
+    Returns:
+        BaseChatModel | ToolEnabledChatModel: The base chat model.
+    """
+    global _chat_llm, _chat_llm_with_tools, _chat_llm_provider, _chat_llm_with_tools_provider
+    provider = CfgHelpers.resolve_llm_provider()
+    tool_model, reasoning_model = _resolve_models(provider)
+
+    if with_tools:
+        # None = first-time build
+        # inequality = possible cache invalidation, provider changed therefore rebuild is needed
+        if _chat_llm_with_tools is None or _chat_llm_with_tools_provider != provider:
+            base = _build_chat_model(provider=provider, model_name=tool_model)
             _chat_llm_with_tools = base.bind_tools(CHAT_TOOLS)  # type: ignore[assignment]
+            _chat_llm_with_tools_provider = provider
         return _chat_llm_with_tools  # type: ignore[return-value]
 
-    if _chat_llm is None:
-        from app.config import ANTHROPIC_REASONING_MODEL, DEFAULT_MAX_TOKENS
-
-        reasoning_model = (
-            (os.getenv("ANTHROPIC_REASONING_MODEL") or "").strip()
-            or (os.getenv("ANTHROPIC_MODEL") or "").strip()
-            or ANTHROPIC_REASONING_MODEL
-        )
-        _chat_llm = ChatAnthropic(  # type: ignore[call-arg]
-            model=reasoning_model,
-            max_tokens=DEFAULT_MAX_TOKENS,
-            streaming=True,
-        )
+    if _chat_llm is None or _chat_llm_provider != provider:
+        _chat_llm = _build_chat_model(provider=provider, model_name=reasoning_model)
+        _chat_llm_provider = provider
     return _chat_llm
 
 
@@ -147,18 +222,22 @@ def router_node(state: AgentState) -> dict[str, Any]:
     if not msgs or msgs[-1].get("role") != "user":
         return {"route": "general"}
 
-    response = get_llm_for_tools().invoke([
-        {"role": "system", "content": ROUTER_PROMPT},
-        {"role": "user", "content": str(msgs[-1].get("content", ""))},
-    ])
+    response = get_llm_for_tools().invoke(
+        [
+            {"role": "system", "content": ROUTER_PROMPT},
+            {"role": "user", "content": str(msgs[-1].get("content", ""))},
+        ]
+    )
     route = str(response.content).strip().lower()
     return {"route": route if route in ("tracer_data", "general") else "general"}
 
 
-def chat_agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
+def chat_agent_node(
+    state: AgentState, config: RunnableConfig
+) -> dict[str, Any]:  # noqa: ARG001
     """Chat agent with tools for Tracer data queries.
 
-    Uses ChatAnthropic with bound tools. The LLM can make tool_calls
+    Uses the configured provider with bound tools. The LLM can make tool calls
     which will be executed by the tool_executor node.
     """
     msgs = list(state.get("messages", []))
@@ -176,7 +255,9 @@ def chat_agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]
     return {"messages": [response]}
 
 
-def general_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
+def general_node(
+    state: AgentState, config: RunnableConfig
+) -> dict[str, Any]:  # noqa: ARG001
     """Direct LLM response without tools for general questions."""
     msgs = list(state.get("messages", []))
 
