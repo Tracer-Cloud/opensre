@@ -28,7 +28,7 @@ def init_sentry() -> None:
         _initialised = True
         return
 
-    import sentry_sdk
+    import sentry_sdk  # type: ignore[import-not-found]
 
     from app.config import get_environment
     from app.version import get_version

@@ -101,10 +101,8 @@ def _normalize_messages(msgs: list[Any]) -> list[ChatMessage]:
 
 type ToolEnabledChatModel = Runnable[object, object]
 
-_chat_llm: BaseChatModel | None = None
-_chat_llm_with_tools: ToolEnabledChatModel | None = None
-_chat_llm_provider: str | None = None
-_chat_llm_with_tools_provider: str | None = None
+_chat_llm_cache: dict[str, BaseChatModel] = {}
+_chat_llm_with_tools_cache: dict[str, ToolEnabledChatModel] = {}
 
 
 def _resolve_models(provider: str) -> tuple[str, str]:
@@ -171,23 +169,24 @@ def _build_chat_model(*, provider: str, model_name: str) -> BaseChatModel:
 
 def _get_chat_llm(*, with_tools: bool = False) -> BaseChatModel | ToolEnabledChatModel:
     """Get the provider-aware chat model used by chat nodes."""
-    global _chat_llm, _chat_llm_with_tools, _chat_llm_provider, _chat_llm_with_tools_provider
-
     provider = CfgHelpers.resolve_llm_provider()
     tool_model, reasoning_model = _resolve_models(provider)
 
     if with_tools:
-        # Rebuild the cache when switching providers between requests.
-        if _chat_llm_with_tools is None or _chat_llm_with_tools_provider != provider:
+        cached_tool_model = _chat_llm_with_tools_cache.get(provider)
+        if cached_tool_model is None:
             base = _build_chat_model(provider=provider, model_name=tool_model)
-            _chat_llm_with_tools = base.bind_tools(CHAT_TOOLS)  # type: ignore[assignment]
-            _chat_llm_with_tools_provider = provider
-        return _chat_llm_with_tools  # type: ignore[return-value]
+            cached_tool_model = cast(ToolEnabledChatModel, base.bind_tools(CHAT_TOOLS))
+            _chat_llm_with_tools_cache[provider] = cached_tool_model
+        return cached_tool_model
 
-    if _chat_llm is None or _chat_llm_provider != provider:
-        _chat_llm = _build_chat_model(provider=provider, model_name=reasoning_model)
-        _chat_llm_provider = provider
-    return _chat_llm
+    cached_reasoning_model = _chat_llm_cache.get(provider)
+    if cached_reasoning_model is None:
+        cached_reasoning_model = _build_chat_model(
+            provider=provider, model_name=reasoning_model
+        )
+        _chat_llm_cache[provider] = cached_reasoning_model
+    return cached_reasoning_model
 
 
 # ── Node functions ───────────────────────────────────────────────────────

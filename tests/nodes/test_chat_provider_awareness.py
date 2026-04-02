@@ -144,10 +144,8 @@ def _reset_chat_cache(monkeypatch) -> None:
     Returns:
         None.
     """
-    monkeypatch.setattr(chat, "_chat_llm", None)
-    monkeypatch.setattr(chat, "_chat_llm_with_tools", None)
-    monkeypatch.setattr(chat, "_chat_llm_provider", None)
-    monkeypatch.setattr(chat, "_chat_llm_with_tools_provider", None)
+    monkeypatch.setattr(chat, "_chat_llm_cache", {})
+    monkeypatch.setattr(chat, "_chat_llm_with_tools_cache", {})
 
 
 def test_get_chat_llm_uses_openai_toolcall_model_when_provider_openai(

@@ -11,10 +11,8 @@ from app.nodes import chat as chat_mod
 
 def _clear_chat_llm_singletons() -> None:
     """Reset module-level chat model cache (isolated test runs)."""
-    chat_mod._chat_llm = None
-    chat_mod._chat_llm_with_tools = None
-    chat_mod._chat_llm_provider = None
-    chat_mod._chat_llm_with_tools_provider = None
+    chat_mod._chat_llm_cache.clear()
+    chat_mod._chat_llm_with_tools_cache.clear()
 
 
 class _OpenAIModule:
