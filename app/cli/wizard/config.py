@@ -53,8 +53,24 @@ OPENAI_MODELS = (
 )
 
 OPENROUTER_MODELS = (
-    ModelOption(value=OPENROUTER_REASONING_MODEL, label="GPT-5.4 (via OpenRouter)"),
+    ModelOption(value=OPENROUTER_REASONING_MODEL, label="OpenRouter Auto (smart routing)"),
+    ModelOption(value="openai/gpt-5.2", label="GPT-5.2 (via OpenRouter)"),
     ModelOption(value="anthropic/claude-opus-4.6", label="Claude Opus 4.6 (via OpenRouter)"),
+    ModelOption(value="anthropic/claude-sonnet-4.5", label="Claude Sonnet 4.5 (via OpenRouter)"),
+    ModelOption(value="anthropic/claude-haiku-4.5", label="Claude Haiku 4.5 (via OpenRouter)"),
+    ModelOption(value="google/gemini-3.1-pro-preview", label="Gemini 3.1 Pro (preview, via OpenRouter)"),
+    ModelOption(value="google/gemini-3-flash-preview", label="Gemini 3 Flash (preview, via OpenRouter)"),
+    ModelOption(value="google/gemini-3.1-flash-lite-preview", label="Gemini 3.1 Flash-Lite (preview, via OpenRouter)"),
+    ModelOption(value="google/gemini-3.1-flash-image-preview", label="Gemini 3.1 Flash Image (preview, via OpenRouter)"),
+    ModelOption(value="google/gemini-3-pro-image-preview", label="Gemini 3 Pro Image (preview, via OpenRouter)"),
+    ModelOption(value="meta-llama/llama-4-maverick", label="Llama 4 Maverick (via OpenRouter)"),
+    ModelOption(value="meta-llama/llama-4-scout", label="Llama 4 Scout (via OpenRouter)"),
+    ModelOption(value="mistralai/mistral-large-2512", label="Mistral Large 3 (via OpenRouter)"),
+    ModelOption(value="x-ai/grok-4", label="Grok 4 (via OpenRouter)"),
+    ModelOption(value="x-ai/grok-4-fast", label="Grok 4 Fast (via OpenRouter)"),
+    ModelOption(value="moonshotai/kimi-k2.5", label="Kimi K2.5 (via OpenRouter)"),
+    ModelOption(value="z-ai/glm-4.7", label="GLM 4.7 (via OpenRouter)"),
+    ModelOption(value="minimax/minimax-m2", label="MiniMax M2 (via OpenRouter)"),
     ModelOption(value="deepseek/deepseek-v3.2", label="DeepSeek V3.2 (via OpenRouter)"),
     ModelOption(value="qwen/qwen-3.6-plus-preview", label="Qwen 3.6 Plus (via OpenRouter)"),
 )

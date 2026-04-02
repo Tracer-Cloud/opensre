@@ -365,7 +365,10 @@ def _create_llm_client(
 
         config = OPENROUTER_LLM_CONFIG
         default_model = config.reasoning_model if model_type == "reasoning" else config.toolcall_model
-        model = _env_or(*openai_env_keys, default=default_model)
+        if model_type == "reasoning":
+            model = _env_or("OPENROUTER_REASONING_MODEL", "OPENROUTER_MODEL", default=default_model)
+        else:
+            model = _env_or("OPENROUTER_TOOLCALL_MODEL", "OPENROUTER_MODEL", default=default_model)
         return OpenAILLMClient(
             model=model,
             max_tokens=config.max_tokens,
