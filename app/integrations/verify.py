@@ -14,6 +14,13 @@ from app.config import get_tracer_base_url
 from app.integrations.clients.datadog.client import DatadogClient, DatadogConfig
 from app.integrations.clients.tracer_client.client import TracerClient
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
+from app.integrations.models import (
+    AWSIntegrationConfig,
+    EffectiveIntegrations,
+    GrafanaIntegrationConfig,
+    SlackWebhookConfig,
+    TracerIntegrationConfig,
+)
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
 from app.nodes.resolve_integrations.node import (
@@ -90,9 +97,10 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
 
     slack_webhook_url = os.getenv("SLACK_WEBHOOK_URL", "").strip()
     if slack_webhook_url:
+        slack_config = SlackWebhookConfig.model_validate({"webhook_url": slack_webhook_url})
         effective["slack"] = {
             "source": "local env",
-            "config": {"webhook_url": slack_webhook_url},
+            "config": slack_config.model_dump(),
         }
 
     github_integration = classified_integrations.get("github")
@@ -121,12 +129,13 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
             },
         }
 
-    return effective
+    return EffectiveIntegrations.model_validate(effective).model_dump(exclude_none=True)
 
 
 def _verify_grafana(source: str, config: dict[str, Any]) -> dict[str, str]:
-    endpoint = str(config.get("endpoint", "")).rstrip("/")
-    api_key = str(config.get("api_key", "")).strip()
+    grafana_config = GrafanaIntegrationConfig.model_validate(config)
+    endpoint = grafana_config.endpoint
+    api_key = grafana_config.api_key
     if not endpoint or not api_key:
         return _result("grafana", source, "missing", "Missing endpoint or API token.")
 
@@ -167,13 +176,7 @@ def _verify_grafana(source: str, config: dict[str, Any]) -> dict[str, str]:
 
 
 def _verify_datadog(source: str, config: dict[str, Any]) -> dict[str, str]:
-    datadog_client = DatadogClient(
-        DatadogConfig(
-            api_key=str(config.get("api_key", "")).strip(),
-            app_key=str(config.get("app_key", "")).strip(),
-            site=str(config.get("site", "datadoghq.com")).strip() or "datadoghq.com",
-        )
-    )
+    datadog_client = DatadogClient(DatadogConfig.model_validate(config))
     if not datadog_client.is_configured:
         return _result("datadog", source, "missing", "Missing API key or application key.")
 
@@ -195,9 +198,10 @@ def _verify_datadog(source: str, config: dict[str, Any]) -> dict[str, str]:
 
 
 def _build_sts_client(config: dict[str, Any]) -> tuple[Any, str, str]:
-    region = str(config.get("region", "us-east-1")).strip() or "us-east-1"
-    role_arn = str(config.get("role_arn", "")).strip()
-    external_id = str(config.get("external_id", "")).strip()
+    aws_config = AWSIntegrationConfig.model_validate(config)
+    region = aws_config.region
+    role_arn = aws_config.role_arn
+    external_id = aws_config.external_id
     if role_arn:
         base_sts_client = boto3.client("sts", region_name=region)
         assume_role_args: dict[str, str] = {
@@ -219,14 +223,14 @@ def _build_sts_client(config: dict[str, Any]) -> tuple[Any, str, str]:
             region,
         )
 
-    credentials = config.get("credentials", {})
+    credentials = aws_config.credentials
     return (
         boto3.client(
             "sts",
             region_name=region,
-            aws_access_key_id=str(credentials.get("access_key_id", "")).strip(),
-            aws_secret_access_key=str(credentials.get("secret_access_key", "")).strip(),
-            aws_session_token=str(credentials.get("session_token", "")).strip() or None,
+            aws_access_key_id=credentials.access_key_id if credentials else "",
+            aws_secret_access_key=credentials.secret_access_key if credentials else "",
+            aws_session_token=(credentials.session_token if credentials else "") or None,
         ),
         "access-keys",
         region,
@@ -259,9 +263,11 @@ def _verify_slack(
     *,
     send_slack_test: bool,
 ) -> dict[str, str]:
-    webhook_url = str(config.get("webhook_url", "")).strip()
-    if not webhook_url:
+    try:
+        slack_config = SlackWebhookConfig.model_validate(config)
+    except Exception:
         return _result("slack", source, "missing", "SLACK_WEBHOOK_URL is not configured.")
+    webhook_url = slack_config.webhook_url
 
     if not send_slack_test:
         return _result(
@@ -290,12 +296,12 @@ def _verify_slack(
 
 
 def _verify_tracer(source: str, config: dict[str, Any]) -> dict[str, str]:
-    base_url = str(config.get("base_url", "")).strip() or get_tracer_base_url()
-    jwt_token = str(config.get("jwt_token", "")).strip()
-    if jwt_token.lower().startswith("bearer "):
-        jwt_token = jwt_token.split(None, 1)[1].strip()
-    if not jwt_token:
+    try:
+        tracer_config = TracerIntegrationConfig.model_validate(config)
+    except Exception:
         return _result("tracer", source, "missing", "Missing JWT token for Tracer web app access.")
+    base_url = tracer_config.base_url or get_tracer_base_url()
+    jwt_token = tracer_config.jwt_token
 
     org_id = extract_org_id_from_jwt(jwt_token)
     if not org_id:

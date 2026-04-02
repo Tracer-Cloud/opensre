@@ -13,6 +13,13 @@ from typing import Any
 
 from langsmith import traceable
 
+from app.integrations.github_mcp import build_github_mcp_config
+from app.integrations.models import (
+    AWSIntegrationConfig,
+    DatadogIntegrationConfig,
+    GrafanaIntegrationConfig,
+)
+from app.integrations.sentry import build_sentry_config
 from app.output import get_tracker
 from app.state import InvestigationState
 
@@ -63,95 +70,89 @@ def _classify_integrations(
         credentials = integration.get("credentials", {})
 
         if key in ("grafana", "grafana_local"):
-            from urllib.parse import urlparse as _urlparse
-            endpoint = credentials.get("endpoint", "")
-            api_key = credentials.get("api_key", "")
-            if not endpoint:
+            try:
+                grafana_config = GrafanaIntegrationConfig.model_validate({
+                    "endpoint": credentials.get("endpoint", ""),
+                    "api_key": credentials.get("api_key", ""),
+                    "integration_id": integration.get("id", ""),
+                })
+            except Exception:
                 continue
-            host = _urlparse(endpoint).hostname or ""
-            is_local = host in {"localhost", "127.0.0.1", "0.0.0.0"}
-            if is_local:
+            if not grafana_config.endpoint:
+                continue
+            if grafana_config.is_local:
                 # Always treat localhost Grafana as grafana_local (Loki only, anonymous auth)
                 resolved["grafana_local"] = {
-                    "endpoint": endpoint,
+                    "endpoint": grafana_config.endpoint,
                     "api_key": "",
-                    "integration_id": integration.get("id", ""),
+                    "integration_id": grafana_config.integration_id,
                 }
-            elif api_key and api_key != "local":
-                resolved["grafana"] = {
-                    "endpoint": endpoint,
-                    "api_key": api_key,
-                    "integration_id": integration.get("id", ""),
-                }
+            elif grafana_config.api_key and grafana_config.api_key != "local":
+                resolved["grafana"] = grafana_config.model_dump()
 
         elif key == "aws":
-            role_arn = integration.get("role_arn", "")
-            external_id = integration.get("external_id", "")
-            region = credentials.get("region", "us-east-1")
-            access_key_id = credentials.get("access_key_id", "")
-            secret_access_key = credentials.get("secret_access_key", "")
-            session_token = credentials.get("session_token", "")
-            if role_arn and "aws" not in resolved:
-                resolved["aws"] = {
-                    "role_arn": role_arn,
-                    "external_id": external_id,
-                    "region": region,
-                    "integration_id": integration.get("id", ""),
+            if "aws" in resolved:
+                continue
+            raw_config: dict[str, Any] = {
+                "region": credentials.get("region", "us-east-1"),
+                "role_arn": integration.get("role_arn", ""),
+                "external_id": integration.get("external_id", ""),
+                "integration_id": integration.get("id", ""),
+            }
+            if credentials.get("access_key_id") and credentials.get("secret_access_key"):
+                raw_config["credentials"] = {
+                    "access_key_id": credentials.get("access_key_id", ""),
+                    "secret_access_key": credentials.get("secret_access_key", ""),
+                    "session_token": credentials.get("session_token", ""),
                 }
-            elif access_key_id and secret_access_key and "aws" not in resolved:
-                resolved["aws"] = {
-                    "region": region,
-                    "credentials": {
-                        "access_key_id": access_key_id,
-                        "secret_access_key": secret_access_key,
-                        "session_token": session_token,
-                    },
-                    "integration_id": integration.get("id", ""),
-                }
+            try:
+                resolved["aws"] = AWSIntegrationConfig.model_validate(raw_config).model_dump(
+                    exclude_none=True
+                )
+            except Exception:
+                continue
 
         elif key == "datadog":
-            api_key = credentials.get("api_key", "")
-            app_key = credentials.get("app_key", "")
-            site = credentials.get("site", "datadoghq.com")
-            if api_key and app_key:
-                resolved["datadog"] = {
-                    "api_key": api_key,
-                    "app_key": app_key,
-                    "site": site,
+            try:
+                datadog_config = DatadogIntegrationConfig.model_validate({
+                    "api_key": credentials.get("api_key", ""),
+                    "app_key": credentials.get("app_key", ""),
+                    "site": credentials.get("site", "datadoghq.com"),
                     "integration_id": integration.get("id", ""),
-                }
+                })
+            except Exception:
+                continue
+            if datadog_config.api_key and datadog_config.app_key:
+                resolved["datadog"] = datadog_config.model_dump()
 
         elif key == "github":
-            url = credentials.get("url", "")
-            mode = credentials.get("mode", "streamable-http")
-            command = credentials.get("command", "")
-            args = credentials.get("args", [])
-            auth_token = credentials.get("auth_token", "")
-            toolsets = credentials.get("toolsets", [])
-            if (url and mode != "stdio") or (mode == "stdio" and command):
-                resolved["github"] = {
-                    "url": url,
-                    "mode": mode,
-                    "command": command,
-                    "args": args,
-                    "auth_token": auth_token,
-                    "toolsets": toolsets,
+            try:
+                github_config = build_github_mcp_config({
+                    "url": credentials.get("url", ""),
+                    "mode": credentials.get("mode", "streamable-http"),
+                    "command": credentials.get("command", ""),
+                    "args": credentials.get("args", []),
+                    "auth_token": credentials.get("auth_token", ""),
+                    "toolsets": credentials.get("toolsets", []),
                     "integration_id": integration.get("id", ""),
-                }
+                })
+            except Exception:
+                continue
+            resolved["github"] = github_config.model_dump()
 
         elif key == "sentry":
-            base_url = credentials.get("base_url", "https://sentry.io")
-            organization_slug = credentials.get("organization_slug", "")
-            auth_token = credentials.get("auth_token", "")
-            project_slug = credentials.get("project_slug", "")
-            if organization_slug and auth_token:
-                resolved["sentry"] = {
-                    "base_url": base_url,
-                    "organization_slug": organization_slug,
-                    "auth_token": auth_token,
-                    "project_slug": project_slug,
+            try:
+                sentry_config = build_sentry_config({
+                    "base_url": credentials.get("base_url", "https://sentry.io"),
+                    "organization_slug": credentials.get("organization_slug", ""),
+                    "auth_token": credentials.get("auth_token", ""),
+                    "project_slug": credentials.get("project_slug", ""),
                     "integration_id": integration.get("id", ""),
-                }
+                })
+            except Exception:
+                continue
+            if sentry_config.organization_slug and sentry_config.auth_token:
+                resolved["sentry"] = sentry_config.model_dump()
 
         else:
             resolved[key] = {
@@ -190,13 +191,17 @@ def _load_env_integrations() -> list[dict[str, Any]]:
     grafana_endpoint = os.getenv("GRAFANA_INSTANCE_URL", "").strip()
     grafana_api_key = os.getenv("GRAFANA_READ_TOKEN", "").strip()
     if grafana_endpoint and grafana_api_key:
+        grafana_config = GrafanaIntegrationConfig.model_validate({
+            "endpoint": grafana_endpoint,
+            "api_key": grafana_api_key,
+        })
         integrations.append({
             "id": "env-grafana",
             "service": "grafana",
             "status": "active",
             "credentials": {
-                "endpoint": grafana_endpoint,
-                "api_key": grafana_api_key,
+                "endpoint": grafana_config.endpoint,
+                "api_key": grafana_config.api_key,
             },
         })
 
@@ -204,15 +209,16 @@ def _load_env_integrations() -> list[dict[str, Any]]:
     datadog_app_key = os.getenv("DD_APP_KEY", "").strip()
     datadog_site = os.getenv("DD_SITE", "datadoghq.com").strip() or "datadoghq.com"
     if datadog_api_key and datadog_app_key:
+        datadog_config = DatadogIntegrationConfig.model_validate({
+            "api_key": datadog_api_key,
+            "app_key": datadog_app_key,
+            "site": datadog_site,
+        })
         integrations.append({
             "id": "env-datadog",
             "service": "datadog",
             "status": "active",
-            "credentials": {
-                "api_key": datadog_api_key,
-                "app_key": datadog_app_key,
-                "site": datadog_site,
-            },
+            "credentials": datadog_config.model_dump(exclude={"integration_id"}),
         })
 
     aws_role_arn = os.getenv("AWS_ROLE_ARN", "").strip()
@@ -222,24 +228,39 @@ def _load_env_integrations() -> list[dict[str, Any]]:
     aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
     aws_session_token = os.getenv("AWS_SESSION_TOKEN", "").strip()
     if aws_role_arn:
+        aws_config = AWSIntegrationConfig.model_validate({
+            "role_arn": aws_role_arn,
+            "external_id": aws_external_id,
+            "region": aws_region,
+        })
         integrations.append({
             "id": "env-aws",
             "service": "aws",
             "status": "active",
-            "role_arn": aws_role_arn,
-            "external_id": aws_external_id,
-            "credentials": {"region": aws_region},
+            "role_arn": aws_config.role_arn,
+            "external_id": aws_config.external_id,
+            "credentials": {"region": aws_config.region},
         })
     elif aws_access_key_id and aws_secret_access_key:
+        aws_config = AWSIntegrationConfig.model_validate({
+            "region": aws_region,
+            "credentials": {
+                "access_key_id": aws_access_key_id,
+                "secret_access_key": aws_secret_access_key,
+                "session_token": aws_session_token,
+            },
+        })
+        aws_credentials = aws_config.credentials
+        assert aws_credentials is not None
         integrations.append({
             "id": "env-aws",
             "service": "aws",
             "status": "active",
             "credentials": {
-                "access_key_id": aws_access_key_id,
-                "secret_access_key": aws_secret_access_key,
-                "session_token": aws_session_token,
-                "region": aws_region,
+                "access_key_id": aws_credentials.access_key_id,
+                "secret_access_key": aws_credentials.secret_access_key,
+                "session_token": aws_credentials.session_token,
+                "region": aws_config.region,
             },
         })
 
@@ -250,33 +271,35 @@ def _load_env_integrations() -> list[dict[str, Any]]:
     github_auth_token = os.getenv("GITHUB_MCP_AUTH_TOKEN", "").strip()
     github_toolsets = os.getenv("GITHUB_MCP_TOOLSETS", "").strip()
     if (github_mode == "stdio" and github_command) or (github_mode != "stdio" and github_url):
+        github_config = build_github_mcp_config({
+            "url": github_url,
+            "mode": github_mode,
+            "command": github_command,
+            "args": [part for part in github_args.split() if part],
+            "auth_token": github_auth_token,
+            "toolsets": [part.strip() for part in github_toolsets.split(",") if part.strip()],
+        })
         integrations.append({
             "id": "env-github",
             "service": "github",
             "status": "active",
-            "credentials": {
-                "url": github_url,
-                "mode": github_mode,
-                "command": github_command,
-                "args": [part for part in github_args.split() if part],
-                "auth_token": github_auth_token,
-                "toolsets": [part.strip() for part in github_toolsets.split(",") if part.strip()],
-            },
+            "credentials": github_config.model_dump(exclude={"integration_id"}),
         })
 
     sentry_org_slug = os.getenv("SENTRY_ORG_SLUG", "").strip()
     sentry_auth_token = os.getenv("SENTRY_AUTH_TOKEN", "").strip()
     if sentry_org_slug and sentry_auth_token:
+        sentry_config = build_sentry_config({
+            "base_url": os.getenv("SENTRY_URL", "https://sentry.io").strip() or "https://sentry.io",
+            "organization_slug": sentry_org_slug,
+            "auth_token": sentry_auth_token,
+            "project_slug": os.getenv("SENTRY_PROJECT_SLUG", "").strip(),
+        })
         integrations.append({
             "id": "env-sentry",
             "service": "sentry",
             "status": "active",
-            "credentials": {
-                "base_url": os.getenv("SENTRY_URL", "https://sentry.io").strip() or "https://sentry.io",
-                "organization_slug": sentry_org_slug,
-                "auth_token": sentry_auth_token,
-                "project_slug": os.getenv("SENTRY_PROJECT_SLUG", "").strip(),
-            },
+            "credentials": sentry_config.model_dump(exclude={"integration_id"}),
         })
 
     return integrations

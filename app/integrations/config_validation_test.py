@@ -6,6 +6,11 @@ from pydantic import ValidationError
 from app.integrations.clients.datadog.client import DatadogConfig
 from app.integrations.clients.grafana.config import GrafanaAccountConfig
 from app.integrations.github_mcp import build_github_mcp_config
+from app.integrations.models import (
+    AWSIntegrationConfig,
+    SlackWebhookConfig,
+    TracerIntegrationConfig,
+)
 from app.integrations.sentry import build_sentry_config
 
 
@@ -50,3 +55,22 @@ def test_grafana_config_rejects_unknown_fields_with_suggestion() -> None:
             "read_token": "token",
             "instnce_url": "https://grafana.example.com",
         })
+
+
+def test_aws_config_requires_auth_method() -> None:
+    with pytest.raises(ValidationError, match="requires either role_arn or credentials"):
+        AWSIntegrationConfig.model_validate({"region": "us-east-1"})
+
+
+def test_slack_config_rejects_non_slack_host() -> None:
+    with pytest.raises(ValidationError, match="Slack webhook host must be a Slack domain"):
+        SlackWebhookConfig.model_validate({"webhook_url": "https://example.com/webhook"})
+
+
+def test_tracer_config_strips_bearer_prefix() -> None:
+    config = TracerIntegrationConfig.model_validate({
+        "base_url": "https://app.tracer.cloud",
+        "jwt_token": "Bearer test-token",
+    })
+
+    assert config.jwt_token == "test-token"

@@ -23,6 +23,7 @@ class SentryConfig(StrictConfigModel):
     auth_token: str = ""
     project_slug: str = ""
     timeout_seconds: float = Field(default=15.0, gt=0)
+    integration_id: str = ""
 
     @field_validator("base_url", mode="before")
     @classmethod

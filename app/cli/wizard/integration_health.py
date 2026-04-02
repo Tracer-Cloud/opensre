@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
 import requests
 
 from app.integrations.clients.datadog import DatadogClient, DatadogConfig
 from app.integrations.clients.grafana import get_grafana_client_from_credentials
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
+from app.integrations.models import (
+    AWSIntegrationConfig,
+    GrafanaIntegrationConfig,
+    SlackWebhookConfig,
+)
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 
 
@@ -24,9 +28,10 @@ class IntegrationHealthResult:
 def validate_grafana_integration(*, endpoint: str, api_key: str) -> IntegrationHealthResult:
     """Validate Grafana credentials by discovering datasource UIDs."""
     try:
+        grafana_config = GrafanaIntegrationConfig.model_validate({"endpoint": endpoint, "api_key": api_key})
         client = get_grafana_client_from_credentials(
-            endpoint=endpoint,
-            api_key=api_key,
+            endpoint=grafana_config.endpoint,
+            api_key=grafana_config.api_key,
             account_id="opensre_onboard_probe",
         )
         discovered = client.discover_datasource_uids()
@@ -62,14 +67,13 @@ def validate_datadog_integration(*, api_key: str, app_key: str, site: str) -> In
 
 def validate_slack_webhook(*, webhook_url: str) -> IntegrationHealthResult:
     """Validate Slack webhook format and do a non-posting reachability probe."""
-    parsed = urlparse(webhook_url)
-    if parsed.scheme != "https" or not parsed.netloc:
-        return IntegrationHealthResult(ok=False, detail="Slack webhook must be a valid HTTPS URL.")
-    if "slack.com" not in parsed.netloc:
-        return IntegrationHealthResult(ok=False, detail="Slack webhook host must be a Slack domain.")
+    try:
+        slack_config = SlackWebhookConfig.model_validate({"webhook_url": webhook_url})
+    except Exception as err:
+        return IntegrationHealthResult(ok=False, detail=str(err))
 
     try:
-        response = requests.get(webhook_url, timeout=10, allow_redirects=False)
+        response = requests.get(slack_config.webhook_url, timeout=10, allow_redirects=False)
     except requests.RequestException as err:
         return IntegrationHealthResult(ok=False, detail=f"Slack webhook validation failed: {err}")
 
@@ -102,18 +106,32 @@ def validate_aws_integration(
         return IntegrationHealthResult(ok=False, detail="AWS validation failed: boto3 is not installed.")
 
     try:
+        aws_config = AWSIntegrationConfig.model_validate({
+            "region": region,
+            "role_arn": role_arn,
+            "external_id": external_id,
+            "credentials": (
+                {
+                    "access_key_id": access_key_id,
+                    "secret_access_key": secret_access_key,
+                    "session_token": session_token,
+                }
+                if access_key_id or secret_access_key or session_token
+                else None
+            ),
+        })
         if role_arn:
-            sts = boto3.client("sts", region_name=region)
+            sts = boto3.client("sts", region_name=aws_config.region)
             assume_kwargs: dict[str, str] = {
-                "RoleArn": role_arn,
+                "RoleArn": aws_config.role_arn,
                 "RoleSessionName": "opensre-onboard-check",
             }
-            if external_id:
-                assume_kwargs["ExternalId"] = external_id
+            if aws_config.external_id:
+                assume_kwargs["ExternalId"] = aws_config.external_id
             creds = sts.assume_role(**assume_kwargs)["Credentials"]
             assumed = boto3.client(
                 "sts",
-                region_name=region,
+                region_name=aws_config.region,
                 aws_access_key_id=creds["AccessKeyId"],
                 aws_secret_access_key=creds["SecretAccessKey"],
                 aws_session_token=creds["SessionToken"],
@@ -126,10 +144,10 @@ def validate_aws_integration(
 
         sts = boto3.client(
             "sts",
-            region_name=region,
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_access_key,
-            aws_session_token=session_token or None,
+            region_name=aws_config.region,
+            aws_access_key_id=aws_config.credentials.access_key_id if aws_config.credentials else "",
+            aws_secret_access_key=aws_config.credentials.secret_access_key if aws_config.credentials else "",
+            aws_session_token=(aws_config.credentials.session_token if aws_config.credentials else "") or None,
         )
         identity = sts.get_caller_identity()
         return IntegrationHealthResult(

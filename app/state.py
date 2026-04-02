@@ -6,6 +6,9 @@ import time
 from typing import Annotated, Any, Literal, TypedDict, cast
 
 from langgraph.graph import add_messages
+from pydantic import ConfigDict, Field
+
+from app.strict_config import StrictConfigModel
 
 EvidenceSource = Literal[
     "storage",
@@ -27,6 +30,12 @@ class ChatMessage(TypedDict, total=False):
     role: Literal["system", "user", "assistant"]
     content: str
     tool_calls: list[dict[str, Any]]
+
+
+class ChatMessageModel(StrictConfigModel):
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str = ""
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AgentState(TypedDict, total=False):
@@ -108,6 +117,55 @@ class AgentState(TypedDict, total=False):
 # Alias for backward compatibility
 InvestigationState = AgentState
 
+
+class AgentStateModel(StrictConfigModel):
+    """Runtime-validated state envelope used by state constructors."""
+
+    model_config = ConfigDict(extra="forbid", protected_namespaces=(), populate_by_name=True)
+
+    mode: AgentMode = "chat"
+    route: str = ""
+    org_id: str = ""
+    user_id: str = ""
+    user_email: str = ""
+    user_name: str = ""
+    organization_slug: str = ""
+    messages: list[ChatMessageModel] = Field(default_factory=list)
+    is_noise: bool = False
+    alert_name: str = ""
+    pipeline_name: str = ""
+    severity: str = ""
+    alert_source: str = ""
+    raw_alert: str | dict[str, Any] = Field(default_factory=dict)
+    alert_json: dict[str, Any] = Field(default_factory=dict)
+    planned_actions: list[str] = Field(default_factory=list)
+    plan_rationale: str = ""
+    available_sources: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    available_action_names: list[str] = Field(default_factory=list)
+    resolved_integrations: dict[str, Any] = Field(default_factory=dict)
+    context: dict[str, Any] = Field(default_factory=dict)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    root_cause: str = ""
+    root_cause_category: str = ""
+    validated_claims: list[dict[str, Any]] = Field(default_factory=list)
+    non_validated_claims: list[dict[str, Any]] = Field(default_factory=list)
+    validity_score: float = 0.0
+    investigation_recommendations: list[str] = Field(default_factory=list)
+    remediation_steps: list[str] = Field(default_factory=list)
+    investigation_loop_count: int = 0
+    hypotheses: list[str] = Field(default_factory=list)
+    executed_hypotheses: list[dict[str, Any]] = Field(default_factory=list)
+    investigation_started_at: float = 0.0
+    slack_context: dict[str, Any] = Field(default_factory=dict)
+    thread_id: str = ""
+    run_id: str = ""
+    auth_token: str = Field(default="", alias="_auth_token")
+    slack_message: str = ""
+    problem_md: str = ""
+    summary: str = ""
+    problem_report: dict[str, Any] = Field(default_factory=dict)
+    report: str = ""
+
 STATE_DEFAULTS: dict[str, Any] = {
     "mode": "chat",
     "route": "",
@@ -152,17 +210,16 @@ def make_initial_state(
     raw_alert: str | dict[str, Any] | None = None,
 ) -> AgentState:
     """Create initial state for investigation mode."""
-    state = cast(AgentState, {
+    state = AgentStateModel.model_validate({
         "mode": "investigation",
         "alert_name": alert_name,
         "pipeline_name": pipeline_name,
         "severity": severity,
+        "raw_alert": raw_alert if raw_alert is not None else {},
         "investigation_started_at": time.monotonic(),
         **{k: v for k, v in STATE_DEFAULTS.items() if k not in ("mode", "messages")},
     })
-    if raw_alert is not None:
-        state["raw_alert"] = raw_alert
-    return state
+    return cast(AgentState, state.model_dump(mode="python", by_alias=True, exclude_none=True))
 
 
 def make_chat_state(
@@ -174,7 +231,7 @@ def make_chat_state(
     messages: list[ChatMessage] | None = None,
 ) -> AgentState:
     """Create initial state for chat mode."""
-    return cast(AgentState, {
+    state = AgentStateModel.model_validate({
         "mode": "chat",
         "org_id": org_id,
         "user_id": user_id,
@@ -184,3 +241,4 @@ def make_chat_state(
         "messages": messages or [],
         "context": {},
     })
+    return cast(AgentState, state.model_dump(mode="python", by_alias=True, exclude_none=True))

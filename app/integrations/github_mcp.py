@@ -46,6 +46,7 @@ class GitHubMCPConfig(StrictConfigModel):
     headers: dict[str, str] = Field(default_factory=dict)
     toolsets: tuple[str, ...] = DEFAULT_GITHUB_MCP_TOOLSETS
     timeout_seconds: float = Field(default=15.0, gt=0)
+    integration_id: str = ""
 
     @field_validator("url", mode="before")
     @classmethod

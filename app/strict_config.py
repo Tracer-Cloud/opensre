@@ -26,14 +26,19 @@ class StrictConfigModel(BaseModel):
         if not isinstance(data, dict):
             return data
 
-        allowed_fields = set(cls.model_fields)
+        field_aliases = {
+            name: field.alias
+            for name, field in cls.model_fields.items()
+            if field.alias and field.alias != name
+        }
+        allowed_fields = set(cls.model_fields) | set(field_aliases.values())
         extras = sorted(key for key in data if key not in allowed_fields)
         if not extras:
             return data
 
         details = []
         for field_name in extras:
-            suggestion = get_close_matches(field_name, cls.model_fields, n=1)
+            suggestion = get_close_matches(field_name, list(allowed_fields), n=1)
             if suggestion:
                 details.append(f"'{field_name}' (did you mean '{suggestion[0]}'?)")
             else:
