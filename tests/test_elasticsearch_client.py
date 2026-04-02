@@ -278,3 +278,11 @@ class TestGetClusterHealth:
 
         assert result["success"] is False
         assert "error" in result
+
+
+# ── package exports ───────────────────────────────────────────────────────────
+
+def test_package_exports() -> None:
+    from app.integrations.clients.elasticsearch import ElasticsearchClient as C, ElasticsearchConfig as Cfg  # noqa: F401
+    assert C is not None
+    assert Cfg is not None
