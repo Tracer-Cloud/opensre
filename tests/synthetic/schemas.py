@@ -346,7 +346,6 @@ def validate_answer_key(data: dict[str, Any]) -> AnswerKeySchema:
         raise ValueError("answer.yml: 'max_investigation_loops' must be a positive integer when present")
     for axis2_list_field in ("ruling_out_keywords", "required_queries"):
         _require_non_empty_str_list(data, axis2_list_field, "answer.yml")
-        
     return data  # type: ignore[return-value]
 
 
