@@ -317,3 +317,54 @@ def test_unavailable_response_shape() -> None:
     assert result["source"] == "elasticsearch_logs"
     assert result["logs"] == []
     assert result["error"] == "not configured"
+
+
+# ── BaseTool wrapper ──────────────────────────────────────────────────────────
+
+def test_tool_name_and_source() -> None:
+    from app.tools.ElasticsearchLogsTool import ElasticsearchLogsTool
+    t = ElasticsearchLogsTool()
+    assert t.name == "query_elasticsearch_logs"
+    assert t.source == "elasticsearch"
+
+
+def test_tool_is_available_when_connection_verified() -> None:
+    from app.tools.ElasticsearchLogsTool import ElasticsearchLogsTool
+    t = ElasticsearchLogsTool()
+    sources = {"elasticsearch": {"connection_verified": True, "url": "http://localhost:9200"}}
+    assert t.is_available(sources) is True
+
+
+def test_tool_is_not_available_without_source() -> None:
+    from app.tools.ElasticsearchLogsTool import ElasticsearchLogsTool
+    t = ElasticsearchLogsTool()
+    assert t.is_available({}) is False
+
+
+def test_tool_run_returns_unavailable_without_url() -> None:
+    from app.tools.ElasticsearchLogsTool import ElasticsearchLogsTool
+    t = ElasticsearchLogsTool()
+    result = t.run(query="error", url=None)
+    assert result["available"] is False
+    assert result["source"] == "elasticsearch_logs"
+
+
+def test_tool_run_returns_logs_on_success() -> None:
+    from app.tools.ElasticsearchLogsTool import ElasticsearchLogsTool
+    import app.tools.ElasticsearchLogsTool as tool_module
+
+    t = ElasticsearchLogsTool()
+    mock_client = MagicMock()
+    mock_client.search_logs.return_value = {
+        "success": True,
+        "logs": [{"timestamp": "2024-01-01T00:00:00Z", "message": "hello"}],
+        "total": 1,
+        "query": "error",
+    }
+
+    with patch.object(tool_module, "make_client", return_value=mock_client):
+        result = t.run(query="error", url="http://localhost:9200")
+
+    assert result["available"] is True
+    assert result["source"] == "elasticsearch_logs"
+    assert len(result["logs"]) == 1
