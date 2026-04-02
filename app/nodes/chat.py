@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from importlib import import_module
-from typing import Any, TypeAlias
-from typing import cast
+from typing import Any, cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import SystemMessage, ToolMessage
@@ -14,8 +13,8 @@ from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.tools import StructuredTool
 
 from app.config import (
-    ANTHROPIC_TOOLCALL_MODEL,
     ANTHROPIC_REASONING_MODEL,
+    ANTHROPIC_TOOLCALL_MODEL,
     DEFAULT_MAX_TOKENS,
     OPENAI_REASONING_MODEL,
     OPENAI_TOOLCALL_MODEL,
@@ -106,7 +105,7 @@ def _normalize_messages(msgs: list[Any]) -> list[ChatMessage]:
 
 # ── Chat LLM ─────────────────────────────────────────────────────────────
 
-ToolEnabledChatModel: TypeAlias = Runnable[object, object]
+type ToolEnabledChatModel = Runnable[object, object]
 
 _chat_llm: BaseChatModel | None = None
 _chat_llm_with_tools: ToolEnabledChatModel | None = None
@@ -164,9 +163,10 @@ def _build_chat_model(*, provider: str, model_name: str) -> BaseChatModel:
     """
     match provider:
         case "openai":
+            openai_module = import_module("langchain_openai")
             chat_openai_cls = cast(
                 type[BaseChatModel],
-                getattr(import_module("langchain_openai"), "ChatOpenAI"),
+                openai_module.ChatOpenAI,
             )
             return chat_openai_cls(
                 model=model_name,
@@ -174,9 +174,10 @@ def _build_chat_model(*, provider: str, model_name: str) -> BaseChatModel:
                 streaming=True,
             )
         case "anthropic":
+            anthropic_module = import_module("langchain_anthropic")
             chat_anthropic_cls = cast(
                 type[BaseChatModel],
-                getattr(import_module("langchain_anthropic"), "ChatAnthropic"),
+                anthropic_module.ChatAnthropic,
             )
             return chat_anthropic_cls(
                 model=model_name,
@@ -232,9 +233,7 @@ def router_node(state: AgentState) -> dict[str, Any]:
     return {"route": route if route in ("tracer_data", "general") else "general"}
 
 
-def chat_agent_node(
-    state: AgentState, config: RunnableConfig
-) -> dict[str, Any]:  # noqa: ARG001
+def chat_agent_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any]:
     """Chat agent with tools for Tracer data queries.
 
     Uses the configured provider with bound tools. The LLM can make tool calls
@@ -255,9 +254,7 @@ def chat_agent_node(
     return {"messages": [response]}
 
 
-def general_node(
-    state: AgentState, config: RunnableConfig
-) -> dict[str, Any]:  # noqa: ARG001
+def general_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any]:
     """Direct LLM response without tools for general questions."""
     msgs = list(state.get("messages", []))
 
@@ -305,7 +302,7 @@ def tool_executor_node(state: AgentState) -> dict[str, Any]:
                 result = tool_fn.invoke(tool_args)
                 if not isinstance(result, str):
                     result = json.dumps(result, default=str)
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError, KeyError) as e:
             result = json.dumps({"error": str(e)})
 
         tool_messages.append(

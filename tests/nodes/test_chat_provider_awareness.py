@@ -171,7 +171,7 @@ def test_get_chat_llm_uses_openai_toolcall_model_when_provider_openai(
     _patch_llm_imports(monkeypatch)
     _reset_chat_cache(monkeypatch)
 
-    llm = getattr(chat, "_get_chat_llm")(with_tools=True)
+    llm = chat._get_chat_llm(with_tools=True)
     assert getattr(llm, "provider", "") == "openai"
     assert getattr(llm, "model", "") == "gpt-openai-tools"
 
@@ -195,7 +195,7 @@ def test_get_chat_llm_uses_openai_reasoning_model_when_without_tools(
     _patch_llm_imports(monkeypatch)
     _reset_chat_cache(monkeypatch)
 
-    llm = getattr(chat, "_get_chat_llm")(with_tools=False)
+    llm = chat._get_chat_llm(with_tools=False)
     assert getattr(llm, "provider", "") == "openai"
     assert getattr(llm, "model", "") == "gpt-openai-reasoning"
 
@@ -217,8 +217,8 @@ def test_get_chat_llm_uses_anthropic_models(monkeypatch) -> None:
     _patch_llm_imports(monkeypatch)
     _reset_chat_cache(monkeypatch)
 
-    tool_llm = getattr(chat, "_get_chat_llm")(with_tools=True)
-    reasoning_llm = getattr(chat, "_get_chat_llm")(with_tools=False)
+    tool_llm = chat._get_chat_llm(with_tools=True)
+    reasoning_llm = chat._get_chat_llm(with_tools=False)
 
     assert getattr(tool_llm, "provider", "") == "anthropic"
     assert getattr(tool_llm, "model", "") == "claude-tools"
@@ -243,10 +243,10 @@ def test_get_chat_llm_rebuilds_when_provider_changes(monkeypatch) -> None:
     _reset_chat_cache(monkeypatch)
 
     monkeypatch.setenv("LLM_PROVIDER", "openai")
-    llm_openai = getattr(chat, "_get_chat_llm")(with_tools=True)
+    llm_openai = chat._get_chat_llm(with_tools=True)
 
     monkeypatch.setenv("LLM_PROVIDER", "anthropic")
-    llm_anthropic = getattr(chat, "_get_chat_llm")(with_tools=True)
+    llm_anthropic = chat._get_chat_llm(with_tools=True)
 
     assert getattr(llm_openai, "provider", "") == "openai"
     assert getattr(llm_anthropic, "provider", "") == "anthropic"
@@ -266,4 +266,4 @@ def test_get_chat_llm_raises_for_unsupported_provider(monkeypatch) -> None:
     _reset_chat_cache(monkeypatch)
 
     with pytest.raises(ValueError):
-        getattr(chat, "_get_chat_llm")(with_tools=True)
+        chat._get_chat_llm(with_tools=True)
