@@ -70,7 +70,6 @@ GEMINI_MODELS = (
 NVIDIA_MODELS = (
     ModelOption(value=NVIDIA_REASONING_MODEL, label="Nemotron 3 Super 120B (5x higher throughput for agentic AI)"),
     ModelOption(value="nvidia/nemotron-3-nano-30b-a3b", label="Nemotron 3 Nano 30B"),
-    ModelOption(value="nvidia/nemotron-3-ultra", label="Nemotron 3 Ultra (coming soon)"),
 )
 
 SUPPORTED_PROVIDERS = (
