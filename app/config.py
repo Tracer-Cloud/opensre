@@ -74,12 +74,32 @@ JWT_ALGORITHM = "RS256"
 JWKS_CACHE_TTL_SECONDS = 3600
 
 # LLM Model Constants
-ANTHROPIC_REASONING_MODEL = "claude-opus-4-20250514"
-ANTHROPIC_TOOLCALL_MODEL = "claude-haiku-4-5-20251001"
-OPENAI_REASONING_MODEL = "gpt-4o"
-OPENAI_TOOLCALL_MODEL = "gpt-4o-mini"
 DEFAULT_MAX_TOKENS = 4096
 
+# Anthropic model constants
+ANTHROPIC_REASONING_MODEL = "claude-sonnet-4-6"
+ANTHROPIC_TOOLCALL_MODEL = "claude-haiku-4-5-20251001"
+
+# OpenAI model constants
+OPENAI_REASONING_MODEL = "gpt-5.4"
+OPENAI_TOOLCALL_MODEL = "gpt-5.4-mini"
+
+# OpenRouter model constants
+OPENROUTER_REASONING_MODEL = "openrouter/auto"
+OPENROUTER_TOOLCALL_MODEL = "openrouter/auto"
+
+# Gemini model constants
+GEMINI_REASONING_MODEL = "gemini-3.1-pro"
+GEMINI_TOOLCALL_MODEL = "gemini-3.1-flash"
+
+# NVIDIA NIM model constants
+NVIDIA_REASONING_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+NVIDIA_TOOLCALL_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
+
+# Base URLs for OpenAI-compatible providers
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 # LLM Provider Configs
 ANTHROPIC_LLM_CONFIG = LLMModelConfig(
     reasoning_model=ANTHROPIC_REASONING_MODEL,
@@ -93,24 +113,6 @@ OPENAI_LLM_CONFIG = LLMModelConfig(
     max_tokens=DEFAULT_MAX_TOKENS,
 )
 
-# Base URLs for OpenAI-compatible providers
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
-
-# OpenRouter model constants
-OPENROUTER_REASONING_MODEL = "anthropic/claude-opus-4"
-OPENROUTER_TOOLCALL_MODEL = "anthropic/claude-haiku-4-5"
-
-# Gemini model constants
-GEMINI_REASONING_MODEL = "gemini-2.5-pro"
-GEMINI_TOOLCALL_MODEL = "gemini-2.5-flash"
-
-# NVIDIA NIM model constants
-NVIDIA_REASONING_MODEL = "meta/llama-4-maverick-17b-128e-instruct"
-NVIDIA_TOOLCALL_MODEL = "meta/llama-4-scout-17b-16e-instruct"
-
-# LLMModelConfig instances
 OPENROUTER_LLM_CONFIG = LLMModelConfig(
     reasoning_model=OPENROUTER_REASONING_MODEL,
     toolcall_model=OPENROUTER_TOOLCALL_MODEL,

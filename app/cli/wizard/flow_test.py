@@ -400,7 +400,7 @@ def test_run_wizard_reuses_saved_defaults_when_user_confirms_defaults(monkeypatc
             "targets": {
                 "local": {
                     "provider": "openai",
-                    "model": "gpt-5-mini",
+                    "model": "gpt-5.4",
                     "api_key_env": "OPENAI_API_KEY",
                     "api_key": "saved-secret",
                 }
@@ -431,7 +431,7 @@ def test_run_wizard_reuses_saved_defaults_when_user_confirms_defaults(monkeypatc
     assert exit_code == 0
     assert saved["wizard_mode"] == "quickstart"
     assert saved["provider"] == "openai"
-    assert saved["model"] == "gpt-5-mini"
+    assert saved["model"] == "gpt-5.4"
     assert saved["api_key"] == "saved-secret"
 
 
@@ -542,7 +542,7 @@ def test_run_wizard_does_not_reuse_saved_key_for_different_provider(monkeypatch,
             "targets": {
                 "local": {
                     "provider": "openai",
-                    "model": "gpt-5-mini",
+                    "model": "gpt-5.4",
                     "api_key_env": "OPENAI_API_KEY",
                     "api_key": "saved-openai-key",
                 }
@@ -576,7 +576,7 @@ def test_run_wizard_does_not_reuse_saved_key_for_different_provider(monkeypatch,
 
 
 def test_run_wizard_persists_matching_local_config_and_env(monkeypatch, tmp_path) -> None:
-    select_responses = iter(["quickstart", "openai", "gpt-5-mini"])
+    select_responses = iter(["quickstart", "openai", "gpt-5.4"])
 
     def _mock_select(*_args, **_kwargs):
         m = MagicMock()
@@ -631,19 +631,19 @@ def test_run_wizard_persists_matching_local_config_and_env(monkeypatch, tmp_path
 
     assert payload["wizard"]["mode"] == "quickstart"
     assert payload["targets"]["local"]["provider"] == "openai"
-    assert payload["targets"]["local"]["model"] == "gpt-5-mini"
+    assert payload["targets"]["local"]["model"] == "gpt-5.4"
     assert payload["targets"]["local"]["api_key_env"] == "OPENAI_API_KEY"
     assert payload["targets"]["local"]["model_env"] == "OPENAI_REASONING_MODEL"
     assert payload["targets"]["local"]["api_key"] == "openai-secret"
 
     assert "LLM_PROVIDER=openai\n" in env_values
     assert "OPENAI_API_KEY=openai-secret\n" in env_values
-    assert "OPENAI_REASONING_MODEL=gpt-5-mini\n" in env_values
-    assert "OPENAI_MODEL=gpt-5-mini\n" in env_values
+    assert "OPENAI_REASONING_MODEL=gpt-5.4\n" in env_values
+    assert "OPENAI_MODEL=gpt-5.4\n" in env_values
 
 
 def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatch, tmp_path) -> None:
-    select_responses = iter(["quickstart", "openai", "gpt-5-mini"])
+    select_responses = iter(["quickstart", "openai", "gpt-5.4"])
 
     def _mock_select(*_args, **_kwargs):
         m = MagicMock()
@@ -716,12 +716,12 @@ def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatc
     env_values = env_path.read_text(encoding="utf-8")
 
     assert payload["targets"]["local"]["provider"] == "openai"
-    assert payload["targets"]["local"]["model"] == "gpt-5-mini"
+    assert payload["targets"]["local"]["model"] == "gpt-5.4"
     assert payload["targets"]["local"]["api_key_env"] == "OPENAI_API_KEY"
     assert payload["targets"]["local"]["model_env"] == "OPENAI_REASONING_MODEL"
     assert payload["targets"]["local"]["api_key"] == "fresh-openai-key"
 
     assert "LLM_PROVIDER=openai\n" in env_values
     assert "OPENAI_API_KEY=fresh-openai-key\n" in env_values
-    assert "OPENAI_REASONING_MODEL=gpt-5-mini\n" in env_values
-    assert "OPENAI_MODEL=gpt-5-mini\n" in env_values
+    assert "OPENAI_REASONING_MODEL=gpt-5.4\n" in env_values
+    assert "OPENAI_MODEL=gpt-5.4\n" in env_values

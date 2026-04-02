@@ -46,29 +46,29 @@ ANTHROPIC_MODELS = (
 )
 
 OPENAI_MODELS = (
-    ModelOption(value=OPENAI_REASONING_MODEL, label="GPT-4o"),
-    ModelOption(value="gpt-5-mini", label="GPT-5 mini"),
-    ModelOption(value="gpt-4-turbo", label="GPT-4 Turbo"),
-    ModelOption(value="gpt-4", label="GPT-4"),
+    ModelOption(value=OPENAI_REASONING_MODEL, label="GPT-5.4"),
+    ModelOption(value="gpt-5.4-mini", label="GPT-5.4 mini"),
+    ModelOption(value="gpt-5.4-nano", label="GPT-5.4 nano"),
+    ModelOption(value="gpt-5.3-codex", label="GPT-5.3-Codex"),
 )
 
 OPENROUTER_MODELS = (
-    ModelOption(value=OPENROUTER_REASONING_MODEL, label="Claude Opus 4 (via OpenRouter)"),
-    ModelOption(value="openai/gpt-4o", label="GPT-4o (via OpenRouter)"),
-    ModelOption(value="google/gemini-2.5-pro", label="Gemini 2.5 Pro (via OpenRouter)"),
-    ModelOption(value="meta-llama/llama-4-maverick:free", label="Llama 4 Maverick (free)"),
+    ModelOption(value=OPENROUTER_REASONING_MODEL, label="GPT-5.4 (via OpenRouter)"),
+    ModelOption(value="anthropic/claude-opus-4.6", label="Claude Opus 4.6 (via OpenRouter)"),
+    ModelOption(value="deepseek/deepseek-v3.2", label="DeepSeek V3.2 (via OpenRouter)"),
+    ModelOption(value="qwen/qwen-3.6-plus-preview", label="Qwen 3.6 Plus (via OpenRouter)"),
 )
 
 GEMINI_MODELS = (
-    ModelOption(value=GEMINI_REASONING_MODEL, label="Gemini 2.5 Pro"),
-    ModelOption(value="gemini-2.5-flash", label="Gemini 2.5 Flash"),
-    ModelOption(value="gemini-2.0-flash", label="Gemini 2.0 Flash"),
+    ModelOption(value=GEMINI_REASONING_MODEL, label="Gemini 3.1 Pro"),
+    ModelOption(value="gemini-3.1-flash", label="Gemini 3.1 Flash"),
+    ModelOption(value="gemini-3.0-pro", label="Gemini 3.0 Pro"),
 )
 
 NVIDIA_MODELS = (
-    ModelOption(value=NVIDIA_REASONING_MODEL, label="Llama 4 Maverick 17B"),
-    ModelOption(value="nvidia/llama-3.1-nemotron-ultra-253b-v1", label="Nemotron Ultra 253B"),
-    ModelOption(value="qwen/qwen3-235b-a22b", label="Qwen3 235B"),
+    ModelOption(value=NVIDIA_REASONING_MODEL, label="Nemotron 3 Super 120B (5x higher throughput for agentic AI)"),
+    ModelOption(value="nvidia/nemotron-3-nano-30b-a3b", label="Nemotron 3 Nano 30B"),
+    ModelOption(value="nvidia/nemotron-3-ultra", label="Nemotron 3 Ultra (coming soon)"),
 )
 
 SUPPORTED_PROVIDERS = (
@@ -95,7 +95,7 @@ SUPPORTED_PROVIDERS = (
     ProviderOption(
         value="openrouter",
         label="OpenRouter",
-        group="OpenAI-compatible",
+        group="Hosted providers",
         api_key_env="OPENROUTER_API_KEY",
         model_env="OPENROUTER_REASONING_MODEL",
         default_model=OPENROUTER_REASONING_MODEL,
@@ -105,7 +105,7 @@ SUPPORTED_PROVIDERS = (
     ProviderOption(
         value="gemini",
         label="Google Gemini",
-        group="OpenAI-compatible",
+        group="Hosted providers",
         api_key_env="GEMINI_API_KEY",
         model_env="GEMINI_REASONING_MODEL",
         default_model=GEMINI_REASONING_MODEL,
@@ -115,7 +115,7 @@ SUPPORTED_PROVIDERS = (
     ProviderOption(
         value="nvidia",
         label="NVIDIA NIM",
-        group="OpenAI-compatible",
+        group="Hosted providers",
         api_key_env="NVIDIA_API_KEY",
         model_env="NVIDIA_REASONING_MODEL",
         default_model=NVIDIA_REASONING_MODEL,
