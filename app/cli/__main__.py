@@ -339,7 +339,8 @@ def run(test_id: str, dry_run: bool) -> None:
 
     item = find_test_item(test_id)
     if item is None:
-        raise click.ClickException(f"Unknown test id: {test_id}")
+        raise click.ClickException(
+    f"Unknown test id: {test_id}. Run 'opensre tests list' to see available test ids.")
 
     capture_test_run_started(test_id, dry_run=dry_run)
     raise SystemExit(run_catalog_item(item, dry_run=dry_run))
