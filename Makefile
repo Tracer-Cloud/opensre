@@ -242,9 +242,11 @@ test:
 test-full:
 	$(PYTHON) -m pytest -v
 
-# Run tests with coverage (synthetic tests excluded — they have a dedicated CI job)
+# Run tests with coverage.
+# Keep tests/synthetic excluded here to match GitHub CI; marker filtering alone is
+# not enough because some synthetic tests are collected without the synthetic mark.
 test-cov:
-	$(PYTHON) -m pytest -v --cov=app --cov-report=term-missing --ignore=tests/e2e/kubernetes_local_alert_simulation -m "not synthetic"
+	$(PYTHON) -m pytest -v --cov=app --cov-report=term-missing --ignore=tests/e2e/kubernetes_local_alert_simulation --ignore=tests/synthetic -m "not synthetic"
 
 # Run Grafana integration tests
 test-grafana:

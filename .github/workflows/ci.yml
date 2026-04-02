@@ -66,6 +66,12 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run pytest with coverage
+        env:
+          # Keep the synthetic suite out of the main CI pipeline.
+          # Synthetic coverage runs in .github/workflows/synthetic-tests.yml instead,
+          # and some synthetic tests are not excluded by marker filtering alone.
+          # Do not add tests/synthetic back into this workflow.
+          PYTEST_ADDOPTS: --ignore=tests/synthetic
         run: make test-cov
         continue-on-error: false
 
