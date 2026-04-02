@@ -54,7 +54,7 @@ def _is_editable_install() -> bool:
         if direct_url_text:
             info = json.loads(direct_url_text)
             return bool(info.get("dir_info", {}).get("editable", False))
-    except Exception:
+    except (importlib.metadata.PackageNotFoundError, json.JSONDecodeError, OSError):
         pass
     return False
 
