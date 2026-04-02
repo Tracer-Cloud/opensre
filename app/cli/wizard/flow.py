@@ -414,7 +414,7 @@ def _configure_grafana_local() -> tuple[str, str]:
     _console.print(f"[dim]UI: {endpoint}[/]")
     _console.print("[dim]Loki seeded with events_fact pipeline failure logs.[/]")
     _console.print("[dim]Run RCA:[/]")
-    _console.print("[bold]  opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json[/]")
+    _console.print("[bold]  opensre investigate -i tests/fixtures/grafana_local_alert.json[/]")
     return "Grafana Local", str(env_path)
 
 

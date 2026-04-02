@@ -43,13 +43,14 @@ If you want to see a minimal RCA report against a real local Grafana stack, star
    OPENAI_API_KEY=your-openai-api-key
    ```
 
-4. Run the live local Grafana RCA example:
+4. Start the local Grafana stack and seed test logs:
 
    ```bash
-   make local-grafana-live
+   opensre onboard
+   # select "Grafana Local (Docker)"
    ```
 
-This single command starts the local `Grafana + Loki` stack if needed, seeds failure logs into Loki, and runs the RCA demo. It still uses a synthetic alert payload and does not require a Tracer account or real Slack, Datadog, or AWS credentials.
+This onboarding path starts the local `Grafana + Loki` stack and seeds failure logs into Loki for local testing. It does not require a Tracer account or real Slack, Datadog, or AWS credentials.
 
 When you are done, stop the stack:
 
@@ -286,8 +287,8 @@ With `SLACK_WEBHOOK_URL` configured, CLI investigations that do not have Slack t
 - You see `[actions] EKS actions unavailable: No module named 'kubernetes'`
   This does not block Datadog, Grafana, AWS, or Slack paths. Install all dependencies with `make install` if you need EKS actions.
 
-- `make local-grafana-live` says the Docker daemon is not running
-  Start Docker Desktop, OrbStack, or Colima, then rerun the command.
+- `opensre onboard` with `Grafana Local (Docker)` says Docker is not running
+  Start Docker Desktop, OrbStack, or Colima, then rerun onboarding.
 
 - `make langgraph-build` or `make langgraph-deploy` fails immediately
   Check that Docker is running, `langgraph` is installed, and `LANGSMITH_API_KEY` is set.

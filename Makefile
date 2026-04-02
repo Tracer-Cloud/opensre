@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install install-hooks onboard test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed local-grafana-live langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic
+.PHONY: install install-hooks onboard test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic
 
 ifneq ($(wildcard .venv/bin/python),)
 PYTHON = .venv/bin/python
@@ -61,11 +61,7 @@ grafana-local-down: check-docker
 	docker compose -f app/cli/wizard/local_grafana_stack/docker-compose.yml down
 
 grafana-local-seed:
-	$(PYTHON) -m app.cli.wizard.local_demos grafana-seed
-
-local-grafana-live: grafana-local-up
-	$(PYTHON) -m app.cli.wizard.local_demos grafana-seed
-	$(PYTHON) -m app.cli.wizard.local_demos grafana-live
+	$(PYTHON) -m app.cli.wizard.grafana_seed
 
 langgraph-build: check-langgraph check-docker
 	langgraph build
@@ -287,7 +283,6 @@ help:
 	@echo "  make demo            - Run Prefect ECS E2E test (default, shows Investigation Trace)"
 	@echo "  make grafana-local-up - Start the local Grafana + Loki stack"
 	@echo "  make grafana-local-seed - Seed failure logs into the local Loki instance"
-	@echo "  make local-grafana-live - Start the local Grafana stack (if needed) and run the live RCA demo"
 	@echo "  make alert-template TEMPLATE=datadog - Print a starter alert JSON template"
 	@echo "  make investigate-alert ALERT=/path/to/alert.json - Run RCA against your own alert payload"
 	@echo "  make verify-integrations - Check local store + .env integrations before running RCA"
