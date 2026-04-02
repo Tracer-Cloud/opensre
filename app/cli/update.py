@@ -33,10 +33,12 @@ def _fetch_latest_version() -> str:
 
 def _is_update_available(current: str, latest: str) -> bool:
     try:
-        from packaging.version import Version
-
+        from packaging.version import InvalidVersion, Version
+    except ImportError:
+        return current != latest
+    try:
         return Version(latest) > Version(current)
-    except Exception:
+    except InvalidVersion:
         return current != latest
 
 
@@ -55,7 +57,7 @@ def _is_editable_install() -> bool:
             info = json.loads(direct_url_text)
             return bool(info.get("dir_info", {}).get("editable", False))
     except (importlib.metadata.PackageNotFoundError, json.JSONDecodeError, OSError):
-        pass
+        return False
     return False
 
 
