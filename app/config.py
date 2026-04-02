@@ -88,9 +88,9 @@ OPENAI_TOOLCALL_MODEL = "gpt-5.4-mini"
 OPENROUTER_REASONING_MODEL = "openrouter/auto"
 OPENROUTER_TOOLCALL_MODEL = "openrouter/auto"
 
-# Gemini model constants
-GEMINI_REASONING_MODEL = "gemini-3.1-pro"
-GEMINI_TOOLCALL_MODEL = "gemini-3.1-flash"
+# Gemini model constants (Google AI preview IDs; OpenAI-compatible endpoint)
+GEMINI_REASONING_MODEL = "gemini-3.1-pro-preview"
+GEMINI_TOOLCALL_MODEL = "gemini-3.1-flash-lite-preview"
 
 # NVIDIA NIM model constants
 NVIDIA_REASONING_MODEL = "nvidia/nemotron-3-super-120b-a12b"

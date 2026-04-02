@@ -60,9 +60,11 @@ OPENROUTER_MODELS = (
 )
 
 GEMINI_MODELS = (
-    ModelOption(value=GEMINI_REASONING_MODEL, label="Gemini 3.1 Pro"),
-    ModelOption(value="gemini-3.1-flash", label="Gemini 3.1 Flash"),
-    ModelOption(value="gemini-3.0-pro", label="Gemini 3.0 Pro"),
+    ModelOption(value=GEMINI_REASONING_MODEL, label="Gemini 3.1 Pro (preview)"),
+    ModelOption(value="gemini-3-flash-preview", label="Gemini 3 Flash (preview)"),
+    ModelOption(value="gemini-3.1-flash-lite-preview", label="Gemini 3.1 Flash-Lite (preview)"),
+    ModelOption(value="gemini-3.1-flash-image-preview", label="Gemini 3.1 Flash Image (preview)"),
+    ModelOption(value="gemini-3-pro-image-preview", label="Gemini 3 Pro Image (preview)"),
 )
 
 NVIDIA_MODELS = (

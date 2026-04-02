@@ -377,7 +377,10 @@ def _create_llm_client(
 
         config = GEMINI_LLM_CONFIG
         default_model = config.reasoning_model if model_type == "reasoning" else config.toolcall_model
-        model = _env_or(*openai_env_keys, default=default_model)
+        if model_type == "reasoning":
+            model = _env_or("GEMINI_REASONING_MODEL", "GEMINI_MODEL", default=default_model)
+        else:
+            model = _env_or("GEMINI_TOOLCALL_MODEL", "GEMINI_MODEL", default=default_model)
         return OpenAILLMClient(
             model=model,
             max_tokens=config.max_tokens,
