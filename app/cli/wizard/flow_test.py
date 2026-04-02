@@ -11,7 +11,7 @@ from app.cli.wizard.validation import ValidationResult
 
 
 def test_run_wizard_advanced_remote_falls_back_to_local(monkeypatch, tmp_path, capsys) -> None:
-    select_responses = iter(["advanced", "remote", "anthropic", "claude-opus-4-5"])
+    select_responses = iter(["advanced", "remote", "anthropic", "claude-opus-4-5", "skip"])
     confirm_responses = iter([True])
 
     def _mock_select(*_args, **_kwargs):
@@ -24,11 +24,6 @@ def test_run_wizard_advanced_remote_falls_back_to_local(monkeypatch, tmp_path, c
         m.ask.return_value = next(confirm_responses)
         return m
 
-    def _mock_checkbox(*_args, **_kwargs):
-        m = MagicMock()
-        m.ask.return_value = []
-        return m
-
     def _mock_password(*_args, **_kwargs):
         m = MagicMock()
         m.ask.return_value = "secret-key"
@@ -38,7 +33,6 @@ def test_run_wizard_advanced_remote_falls_back_to_local(monkeypatch, tmp_path, c
 
     monkeypatch.setattr(flow, "select_prompt", _mock_select)
     monkeypatch.setattr(flow.questionary, "confirm", _mock_confirm)
-    monkeypatch.setattr(flow, "checkbox_prompt", _mock_checkbox)
     monkeypatch.setattr(flow.questionary, "password", _mock_password)
     monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
     monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
@@ -83,16 +77,11 @@ def test_run_wizard_retries_invalid_api_key(monkeypatch, tmp_path, capsys) -> No
         ]
     )
 
-    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-5"])
+    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-5", "skip"])
 
     def _mock_select(*_args, **_kwargs):
         m = MagicMock()
         m.ask.return_value = next(select_responses)
-        return m
-
-    def _mock_checkbox(*_args, **_kwargs):
-        m = MagicMock()
-        m.ask.return_value = []
         return m
 
     def _mock_password(*_args, **_kwargs):
@@ -101,7 +90,6 @@ def test_run_wizard_retries_invalid_api_key(monkeypatch, tmp_path, capsys) -> No
         return m
 
     monkeypatch.setattr(flow, "select_prompt", _mock_select)
-    monkeypatch.setattr(flow, "checkbox_prompt", _mock_checkbox)
     monkeypatch.setattr(flow.questionary, "password", _mock_password)
     monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
     monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
@@ -128,7 +116,7 @@ def test_run_wizard_retries_invalid_api_key(monkeypatch, tmp_path, capsys) -> No
 
 
 def test_run_wizard_configures_optional_integrations(monkeypatch, tmp_path, capsys) -> None:
-    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-5", "role"])
+    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-5", "grafana"])
     saved_integrations: list[tuple[str, dict]] = []
     synced_env_values: list[dict[str, str]] = []
 
@@ -137,15 +125,9 @@ def test_run_wizard_configures_optional_integrations(monkeypatch, tmp_path, caps
         m.ask.return_value = next(select_responses)
         return m
 
-    def _mock_checkbox(*_args, **_kwargs):
-        m = MagicMock()
-        m.ask.return_value = ["grafana", "slack"]
-        return m
-
     password_responses = iter([
         "llm-secret",
         "grafana-token",
-        "https://hooks.slack.com/services/T000/B000/abc",
     ])
     text_responses = iter(["https://grafana.example.com"])
 
@@ -160,7 +142,6 @@ def test_run_wizard_configures_optional_integrations(monkeypatch, tmp_path, caps
         return m
 
     monkeypatch.setattr(flow, "select_prompt", _mock_select)
-    monkeypatch.setattr(flow, "checkbox_prompt", _mock_checkbox)
     monkeypatch.setattr(flow.questionary, "password", _mock_password)
     monkeypatch.setattr(flow.questionary, "text", _mock_text)
     monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
@@ -218,13 +199,9 @@ def test_run_wizard_configures_optional_integrations(monkeypatch, tmp_path, caps
             "GRAFANA_INSTANCE_URL": "https://grafana.example.com",
             "GRAFANA_READ_TOKEN": "grafana-token",
         },
-        {
-            "SLACK_WEBHOOK_URL": "https://hooks.slack.com/services/T000/B000/abc",
-        },
     ]
-
     output = capsys.readouterr().out
-    assert "Grafana, Slack" in output
+    assert "Grafana" in output
 
 
 def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, capsys) -> None:
@@ -232,19 +209,16 @@ def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, caps
         "quickstart",
         "anthropic",
         "claude-opus-4-5",
+        "github",
         flow.DEFAULT_GITHUB_MCP_MODE,
     ])
     text_responses = iter([
         flow.DEFAULT_GITHUB_MCP_URL,
         "repos,issues,pull_requests,actions",
-        flow.DEFAULT_SENTRY_URL,
-        "demo-org",
-        "payments",
     ])
     password_responses = iter([
         "llm-secret",
         "ghp_test",
-        "sntrys_test",
     ])
     saved_integrations: list[tuple[str, dict]] = []
     synced_env_values: list[dict[str, str]] = []
@@ -252,11 +226,6 @@ def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, caps
     def _mock_select(*_args, **_kwargs):
         m = MagicMock()
         m.ask.return_value = next(select_responses)
-        return m
-
-    def _mock_checkbox(*_args, **_kwargs):
-        m = MagicMock()
-        m.ask.return_value = ["github", "sentry"]
         return m
 
     def _mock_password(*_args, **_kwargs):
@@ -270,7 +239,6 @@ def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, caps
         return m
 
     monkeypatch.setattr(flow, "select_prompt", _mock_select)
-    monkeypatch.setattr(flow, "checkbox_prompt", _mock_checkbox)
     monkeypatch.setattr(flow.questionary, "password", _mock_password)
     monkeypatch.setattr(flow.questionary, "text", _mock_text)
     monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
@@ -287,10 +255,7 @@ def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, caps
     )
     monkeypatch.setattr(
         flow,
-        "validate_sentry_integration",
-        lambda **_kwargs: flow.IntegrationHealthResult(ok=True, detail="Sentry ok"),
-    )
-    monkeypatch.setattr(flow, "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
+        "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
     monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
 
     def _sync_env_values(values: dict[str, str], **_kwargs):
@@ -330,17 +295,6 @@ def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, caps
                 }
             },
         ),
-        (
-            "sentry",
-            {
-                "credentials": {
-                    "base_url": flow.DEFAULT_SENTRY_URL,
-                    "organization_slug": "demo-org",
-                    "auth_token": "sntrys_test",
-                    "project_slug": "payments",
-                }
-            },
-        ),
     ]
     assert synced_env_values == [
         {
@@ -351,17 +305,10 @@ def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, caps
             "GITHUB_MCP_AUTH_TOKEN": "ghp_test",
             "GITHUB_MCP_TOOLSETS": "repos,issues,pull_requests,actions",
         },
-        {
-            "SENTRY_URL": flow.DEFAULT_SENTRY_URL,
-            "SENTRY_ORG_SLUG": "demo-org",
-            "SENTRY_PROJECT_SLUG": "payments",
-            "SENTRY_AUTH_TOKEN": "sntrys_test",
-        },
     ]
 
     output = capsys.readouterr().out
     assert "GitHub MCP" in output
-    assert "Sentry" in output
 
 
 def test_run_wizard_reuses_saved_defaults_when_user_confirms_defaults(monkeypatch, tmp_path) -> None:
@@ -369,18 +316,14 @@ def test_run_wizard_reuses_saved_defaults_when_user_confirms_defaults(monkeypatc
 
     def _mock_select(*_args, choices=None, default=None, **_kwargs):
         m = MagicMock()
-        selected_value = default
+        prompt = str(_args[0]) if _args else ""
+        selected_value = "skip" if "integration" in prompt.lower() else default
         if choices is not None:
             for choice in choices:
-                if getattr(choice, "title", None) == default:
+                if getattr(choice, "title", None) == selected_value:
                     selected_value = choice.value
                     break
         m.ask.return_value = selected_value
-        return m
-
-    def _mock_checkbox(*_args, **_kwargs):
-        m = MagicMock()
-        m.ask.return_value = []
         return m
 
     def _mock_password(*_args, default="", **_kwargs):
@@ -389,7 +332,6 @@ def test_run_wizard_reuses_saved_defaults_when_user_confirms_defaults(monkeypatc
         return m
 
     monkeypatch.setattr(flow, "select_prompt", _mock_select)
-    monkeypatch.setattr(flow, "checkbox_prompt", _mock_checkbox)
     monkeypatch.setattr(flow.questionary, "password", _mock_password)
     monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
     monkeypatch.setattr(
@@ -438,16 +380,11 @@ def test_run_wizard_reuses_saved_defaults_when_user_confirms_defaults(monkeypatc
 def test_run_wizard_uses_saved_matching_provider_key_without_prompt(monkeypatch, tmp_path, capsys) -> None:
     saved: dict[str, object] = {}
     password_called = False
-    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-5"])
+    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-5", "skip"])
 
     def _mock_select(*_args, **_kwargs):
         m = MagicMock()
         m.ask.return_value = next(select_responses)
-        return m
-
-    def _mock_checkbox(*_args, **_kwargs):
-        m = MagicMock()
-        m.ask.return_value = []
         return m
 
     def _mock_password(*_args, **_kwargs):
@@ -458,7 +395,6 @@ def test_run_wizard_uses_saved_matching_provider_key_without_prompt(monkeypatch,
         return m
 
     monkeypatch.setattr(flow, "select_prompt", _mock_select)
-    monkeypatch.setattr(flow, "checkbox_prompt", _mock_checkbox)
     monkeypatch.setattr(flow.questionary, "password", _mock_password)
     monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
     monkeypatch.setattr(
@@ -512,16 +448,11 @@ def test_run_wizard_does_not_reuse_saved_key_for_different_provider(monkeypatch,
     saved: dict[str, object] = {}
     password_calls: list[str] = []
 
-    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-5"])
+    select_responses = iter(["quickstart", "anthropic", "claude-opus-4-5", "skip"])
 
     def _mock_select(*_args, **_kwargs):
         m = MagicMock()
         m.ask.return_value = next(select_responses)
-        return m
-
-    def _mock_checkbox(*_args, **_kwargs):
-        m = MagicMock()
-        m.ask.return_value = []
         return m
 
     def _mock_password(*_args, **_kwargs):
@@ -531,7 +462,6 @@ def test_run_wizard_does_not_reuse_saved_key_for_different_provider(monkeypatch,
         return m
 
     monkeypatch.setattr(flow, "select_prompt", _mock_select)
-    monkeypatch.setattr(flow, "checkbox_prompt", _mock_checkbox)
     monkeypatch.setattr(flow.questionary, "password", _mock_password)
     monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
     monkeypatch.setattr(
@@ -576,16 +506,11 @@ def test_run_wizard_does_not_reuse_saved_key_for_different_provider(monkeypatch,
 
 
 def test_run_wizard_persists_matching_local_config_and_env(monkeypatch, tmp_path) -> None:
-    select_responses = iter(["quickstart", "openai", "gpt-5.4"])
+    select_responses = iter(["quickstart", "openai", "gpt-5.4", "skip"])
 
     def _mock_select(*_args, **_kwargs):
         m = MagicMock()
         m.ask.return_value = next(select_responses)
-        return m
-
-    def _mock_checkbox(*_args, **_kwargs):
-        m = MagicMock()
-        m.ask.return_value = []
         return m
 
     def _mock_password(*_args, **_kwargs):
@@ -597,7 +522,6 @@ def test_run_wizard_persists_matching_local_config_and_env(monkeypatch, tmp_path
     env_path = tmp_path / ".env"
 
     monkeypatch.setattr(flow, "select_prompt", _mock_select)
-    monkeypatch.setattr(flow, "checkbox_prompt", _mock_checkbox)
     monkeypatch.setattr(flow.questionary, "password", _mock_password)
     monkeypatch.setattr(flow, "get_store_path", lambda: store_path)
     monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
@@ -643,16 +567,11 @@ def test_run_wizard_persists_matching_local_config_and_env(monkeypatch, tmp_path
 
 
 def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatch, tmp_path) -> None:
-    select_responses = iter(["quickstart", "openai", "gpt-5.4"])
+    select_responses = iter(["quickstart", "openai", "gpt-5.4", "skip"])
 
     def _mock_select(*_args, **_kwargs):
         m = MagicMock()
         m.ask.return_value = next(select_responses)
-        return m
-
-    def _mock_checkbox(*_args, **_kwargs):
-        m = MagicMock()
-        m.ask.return_value = []
         return m
 
     def _mock_password(*_args, **_kwargs):
@@ -683,7 +602,6 @@ def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatc
     )
 
     monkeypatch.setattr(flow, "select_prompt", _mock_select)
-    monkeypatch.setattr(flow, "checkbox_prompt", _mock_checkbox)
     monkeypatch.setattr(flow.questionary, "password", _mock_password)
     monkeypatch.setattr(flow, "get_store_path", lambda: store_path)
     monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))

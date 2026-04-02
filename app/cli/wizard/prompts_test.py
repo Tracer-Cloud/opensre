@@ -16,6 +16,8 @@ def test_select_prompt_registers_tab_navigation() -> None:
 
     assert (Keys.ControlI,) in bindings
     assert (Keys.BackTab,) in bindings
+    assert (Keys.Right,) in bindings
+    assert (Keys.Left,) in bindings
 
 
 def test_select_prompt_tab_navigation_changes_selection() -> None:
@@ -36,6 +38,23 @@ def test_select_prompt_tab_navigation_changes_selection() -> None:
     assert result == "openai"
 
 
+def test_select_prompt_arrow_navigation_changes_selection() -> None:
+    choices = [Choice("Anthropic", value="anthropic"), Choice("OpenAI", value="openai")]
+    question = select("Provider", choices)
+
+    with create_pipe_input() as pipe_input:
+        pipe_input.send_bytes(b"\x1b[B")
+        pipe_input.send_text("\n")
+
+        application = question.application
+        application.input = pipe_input
+        application.output = DummyOutput()
+
+        result = application.run()
+
+    assert result == "openai"
+
+
 def test_checkbox_prompt_registers_tab_navigation() -> None:
     question = checkbox("Integrations", [Choice("Grafana", value="grafana"), Choice("Slack", value="slack")])
     key_bindings = question.application.key_bindings
@@ -44,3 +63,21 @@ def test_checkbox_prompt_registers_tab_navigation() -> None:
 
     assert (Keys.ControlI,) in bindings
     assert (Keys.BackTab,) in bindings
+    assert (Keys.Right,) in bindings
+    assert (Keys.Left,) in bindings
+
+
+def test_checkbox_prompt_space_toggles_current_choice() -> None:
+    choices = [Choice("Grafana", value="grafana"), Choice("Slack", value="slack")]
+    question = checkbox("Integrations", choices)
+
+    with create_pipe_input() as pipe_input:
+        pipe_input.send_text(" \n")
+
+        application = question.application
+        application.input = pipe_input
+        application.output = DummyOutput()
+
+        result = application.run()
+
+    assert result == ["grafana"]

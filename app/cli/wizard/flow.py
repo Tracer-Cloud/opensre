@@ -10,11 +10,11 @@ import questionary
 from questionary import Choice as QuestionaryChoice
 from questionary import Style
 from rich.console import Console
+from rich.text import Text
 
 from app.cli.wizard.config import PROVIDER_BY_VALUE, SUPPORTED_PROVIDERS, ProviderOption
 from app.cli.wizard.env_sync import sync_env_values, sync_provider_env
 from app.cli.wizard.probes import ProbeResult, probe_local_target, probe_remote_target
-from app.cli.wizard.prompts import checkbox as checkbox_prompt
 from app.cli.wizard.prompts import select as select_prompt
 from app.cli.wizard.store import get_store_path, load_local_config, save_local_config
 from app.integrations.store import get_integration, remove_integration, upsert_integration
@@ -23,6 +23,12 @@ _console = Console()
 DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 DEFAULT_GITHUB_MCP_MODE = "streamable-http"
 DEFAULT_SENTRY_URL = "https://sentry.io"
+_ASCII_HEADER = """\
+  ___  ____  _____ _   _ ____  ____  _____
+ / _ \\|  _ \\| ____| \\ | / ___||  _ \\| ____|
+| | | | |_) |  _| |  \\| \\___ \\| |_) |  _|
+| |_| |  __/| |___| |\\  |___) |  _ <| |___
+ \\___/|_|   |_____|_| \\_|____/|_| \\_\\_____|"""
 
 
 def validate_provider_credentials(**kwargs):
@@ -86,13 +92,15 @@ class IntegrationHealthResult:
 
 _STYLE = Style(
     [
-        ("qmark", "fg:cyan bold"),
-        ("question", "bold"),
-        ("answer", "fg:cyan bold"),
-        ("pointer", "fg:cyan bold"),
-        ("highlighted", "fg:cyan bold"),
-        ("selected", "fg:green"),
-        ("separator", "fg:cyan"),
+        ("qmark", "fg:#5c7cfa bold"),
+        ("question", "fg:#f8f9fa bold"),
+        ("answer", "fg:#ffd166 bold"),
+        ("pointer", "fg:#ffd166 bold"),
+        ("highlighted", "fg:#0b1020 bg:#ffd166 bold"),
+        ("selected", "fg:#f8f9fa bg:default bold"),
+        ("separator", "fg:#74c0fc"),
+        ("text", "fg:#d9dee7 bg:default"),
+        ("disabled", "fg:#6c757d bg:default italic"),
         ("instruction", "fg:#858585 italic"),
     ]
 )
@@ -105,6 +113,7 @@ class Choice:
     value: str
     label: str
     group: str | None = None
+    hint: str | None = None
 
 
 def _as_mapping(value: object) -> Mapping[str, object]:
@@ -143,43 +152,41 @@ def _integration_defaults(service: str) -> tuple[Mapping[str, object], Mapping[s
 
 
 def _step(title: str) -> None:
-    _console.print(f"\n[bold]{title.lower()}[/]")
+    _console.print(f"\n[bold]{title}[/]")
+
+
+def _choice_title(choice: Choice) -> str:
+    return choice.label
+
+
+def _choice_description(choice: Choice) -> str | None:
+    if choice.hint:
+        return choice.hint
+    return choice.group
+
+
+def _questionary_choice(choice: Choice) -> QuestionaryChoice:
+    return QuestionaryChoice(
+        title=_choice_title(choice),
+        value=choice.value,
+        description=_choice_description(choice),
+    )
 
 
 def _choose(prompt: str, choices: list[Choice], *, default: str | None = None) -> str:
-    q_choices = []
-    for choice in choices:
-        suffix = f" ({choice.group})" if choice.group else ""
-        label = f"{choice.label}{suffix}"
-        q_choices.append(QuestionaryChoice(title=label, value=choice.value))
+    q_choices = [_questionary_choice(choice) for choice in choices]
 
     result = select_prompt(
         prompt,
         choices=q_choices,
         default=default,
         style=_STYLE,
-        instruction="(Tab, arrows, Enter)",
+        instruction="(Use arrows to move, Enter to choose)",
     ).ask()
 
     if result is None:
         raise KeyboardInterrupt
     return str(result)
-
-
-def _choose_many(prompt: str, choices: list[Choice], *, default: list[str] | None = None) -> list[str]:
-    q_choices = [QuestionaryChoice(title=choice.label, value=choice.value) for choice in choices]
-
-    result = checkbox_prompt(
-        prompt,
-        choices=q_choices,
-        style=_STYLE,
-        instruction="(Space to select, Enter to confirm)",
-        default=default or [],
-    ).ask()
-
-    if result is None:
-        raise KeyboardInterrupt
-    return list(result)
 
 
 def _confirm(prompt: str, *, default: bool = True) -> bool:
@@ -304,8 +311,18 @@ def _select_target_for_advanced(local_probe: ProbeResult, remote_probe: ProbeRes
 
 
 def _render_header() -> None:
-    _console.print("[bold]OpenSRE[/]")
-    _console.print("[dim]Set up local AI and integrations.[/]")
+    _console.print()
+    for line in _ASCII_HEADER.splitlines():
+        _console.print(Text.assemble(("  ", ""), (line, "bold cyan")))
+    _console.print()
+    _console.print(Text.assemble(
+        ("  ", ""),
+        "open-source SRE agent for automated incident investigation and root cause analysis",
+    ))
+    _console.print()
+    _console.print(Text.assemble(("  Setup", "bold white")))
+    _console.print(Text.assemble(("    ", ""), ("Configure your local AI stack and optional integrations.", "dim")))
+    _console.print()
 
 
 def _render_saved_summary(
@@ -710,20 +727,32 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
     configured: list[str] = []
     last_env_path: str | None = None
 
-    _console.print("[dim]Use Space to select, Enter to confirm.[/]")
-    selected = _choose_many(
-        "Integrations (optional):",
-        [
-            Choice(value="grafana_local", label="Grafana Local (Docker) — starts Grafana + Loki, seeds test data"),
-            Choice(value="grafana", label="Grafana Cloud / self-hosted"),
-            Choice(value="datadog", label="Datadog"),
-            Choice(value="slack", label="Slack"),
-            Choice(value="aws", label="AWS"),
-            Choice(value="github", label="GitHub MCP"),
-            Choice(value="sentry", label="Sentry"),
-        ],
-        default=["grafana_local"],
+    _console.print("[dim]Pick one integration to wire up now, or skip this step and come back later.[/]")
+    integration_choices = [
+        Choice(
+            value="grafana_local",
+            label="Grafana Local (Docker)",
+            hint="Starts Grafana + Loki and seeds demo alerts",
+        ),
+        Choice(
+            value="grafana",
+            label="Grafana Cloud / self-hosted",
+            hint="Connect an existing Grafana instance",
+        ),
+        Choice(value="datadog", label="Datadog", hint="Logs, monitors, and Kubernetes context"),
+        Choice(value="slack", label="Slack", hint="Send findings to a webhook or channel"),
+        Choice(value="aws", label="AWS", hint="Inspect CloudWatch, EKS, and account resources"),
+        Choice(value="github", label="GitHub MCP", hint="Let the agent inspect repos, PRs, and issues"),
+        Choice(value="sentry", label="Sentry", hint="Investigate errors, events, and issue history"),
+        Choice(value="skip", label="Skip for now", hint="Finish onboarding without configuring an integration"),
+    ]
+    selected_service = _choose(
+        "Choose an integration to configure",
+        integration_choices,
+        default="grafana_local",
     )
+    if selected_service == "skip":
+        return configured, last_env_path
 
     handlers = {
         "grafana_local": _configure_grafana_local,
@@ -743,15 +772,15 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "github": "github mcp",
         "sentry": "sentry",
     }
-    for index, service in enumerate(selected, start=1):
-        _step(f"service {index}/{len(selected)} · {_SERVICE_LABELS.get(service, service)}")
-        try:
-            label, env_path = handlers[service]()
-            configured.append(label)
-            last_env_path = env_path
-            _track_integration_added(service)
-        except KeyboardInterrupt:
-            _console.print(f"[yellow]{_SERVICE_LABELS.get(service, service)} setup skipped.[/]")
+
+    _step(f"Service · {_SERVICE_LABELS.get(selected_service, selected_service)}")
+    try:
+        label, env_path = handlers[selected_service]()
+        configured.append(label)
+        last_env_path = env_path
+        _track_integration_added(selected_service)
+    except KeyboardInterrupt:
+        _console.print(f"[yellow]{_SERVICE_LABELS.get(selected_service, selected_service)} setup skipped.[/]")
 
     return configured, last_env_path
 
@@ -794,12 +823,12 @@ def run_wizard(_argv: list[str] | None = None) -> int:
     if default_provider_value not in PROVIDER_BY_VALUE:
         default_provider_value = SUPPORTED_PROVIDERS[0].value
 
-    _step("mode")
+    _step("Setup Mode")
     wizard_mode = _choose(
-        "Setup mode",
+        "How do you want to get started?",
         [
-            Choice(value="quickstart", label="Quickstart"),
-            Choice(value="advanced", label="Advanced"),
+            Choice(value="quickstart", label="Quickstart", hint="Local setup with the usual defaults"),
+            Choice(value="advanced", label="Advanced", hint="Show probes and choose the target explicitly"),
         ],
         default=defaults["wizard_mode"],
     )
@@ -824,27 +853,31 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         print("Only local configuration is supported today.", file=sys.stderr)
         return 1
 
-    _step("provider")
+    _step("LLM Provider")
     provider = PROVIDER_BY_VALUE[
         _choose(
-            "Provider",
+            "Choose your LLM provider",
             [
-                Choice(value=provider.value, label=provider.label, group=provider.group)
+                Choice(
+                    value=provider.value,
+                    label=provider.label,
+                    hint=provider.group,
+                )
                 for provider in SUPPORTED_PROVIDERS
             ],
             default=default_provider_value,
         )
     ]
-    _step("model")
+    _step("Model")
     default_model = defaults["model"]
     if default_model not in {option.value for option in provider.models}:
         default_model = provider.default_model
     model = _choose(
-        "Model",
-        [Choice(value=option.value, label=option.label) for option in provider.models],
+        f"Choose a model for {provider.label}",
+        [Choice(value=option.value, label=option.label, hint=option.value) for option in provider.models],
         default=default_model,
     )
-    _step("api key")
+    _step("API Key")
     default_api_key = (
         defaults["api_key"] if defaults["api_key_env"] == provider.api_key_env else ""
     )
@@ -874,7 +907,7 @@ def run_wizard(_argv: list[str] | None = None) -> int:
     )
     env_path = sync_provider_env(provider=provider, api_key=api_key, model=model)
 
-    _step("integrations")
+    _step("Integrations")
     try:
         configured_integrations, integration_env_path = _configure_selected_integrations()
     except KeyboardInterrupt:
