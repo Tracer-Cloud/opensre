@@ -2,7 +2,6 @@
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -44,5 +43,4 @@ def write_json(data: Any, path: str | None) -> None:
     if path:
         Path(path).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     else:
-        json.dump(data, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        print(json.dumps(data, indent=2))
