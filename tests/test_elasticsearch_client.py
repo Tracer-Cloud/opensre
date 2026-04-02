@@ -286,3 +286,34 @@ def test_package_exports() -> None:
     from app.integrations.clients.elasticsearch import ElasticsearchClient as C, ElasticsearchConfig as Cfg  # noqa: F401
     assert C is not None
     assert Cfg is not None
+
+
+# ── tool factory helpers ──────────────────────────────────────────────────────
+
+def test_make_client_returns_none_without_url() -> None:
+    from app.tools.ElasticsearchLogsTool._client import make_client
+    assert make_client(None) is None
+    assert make_client("") is None
+
+
+def test_make_client_returns_client_with_url() -> None:
+    from app.tools.ElasticsearchLogsTool._client import make_client
+    from app.integrations.clients.elasticsearch import ElasticsearchClient
+    client = make_client("http://localhost:9200")
+    assert isinstance(client, ElasticsearchClient)
+
+
+def test_make_client_passes_api_key() -> None:
+    from app.tools.ElasticsearchLogsTool._client import make_client
+    client = make_client("http://localhost:9200", api_key="abc123")
+    assert client is not None
+    assert client.config.api_key == "abc123"
+
+
+def test_unavailable_response_shape() -> None:
+    from app.tools.ElasticsearchLogsTool._client import unavailable
+    result = unavailable("elasticsearch_logs", "logs", "not configured")
+    assert result["available"] is False
+    assert result["source"] == "elasticsearch_logs"
+    assert result["logs"] == []
+    assert result["error"] == "not configured"
