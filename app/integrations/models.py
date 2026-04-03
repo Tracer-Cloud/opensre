@@ -144,6 +144,24 @@ class TracerIntegrationConfig(StrictConfigModel):
             token = token.split(None, 1)[1].strip()
         return token
 
+class JiraIntegrationConfig(StrictConfigModel):
+    """Normalized Jira credentials used by resolution and verification flows."""
+    base_url: str
+    email: str
+    api_token: str
+    project_key: str
+    integration_id: str = ""
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: object) -> str:
+        return str(value or "").strip().rstrip("/")
+
+    @field_validator("email", "api_token", "project_key", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
 
 class EffectiveIntegrationEntry(StrictConfigModel):
     """Resolved integration entry with source metadata."""
@@ -164,3 +182,4 @@ class EffectiveIntegrations(StrictConfigModel):
     tracer: EffectiveIntegrationEntry | None = None
     github: EffectiveIntegrationEntry | None = None
     sentry: EffectiveIntegrationEntry | None = None
+    jira: EffectiveIntegrationEntry | None = None
