@@ -179,3 +179,28 @@ def test_debug_mode_logs_payload_without_network_send(monkeypatch, tmp_path: Pat
     assert "api_key" not in output
     assert "super-secret-token" not in output
     assert '"access_token": "[REDACTED]"' in output
+
+
+def test_debug_mode_redacts_sensitive_key_substrings(monkeypatch, tmp_path: Path, capsys) -> None:
+    _clear_telemetry_env(monkeypatch)
+    _configure_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("OPENSRE_TELEMETRY_DEBUG", "1")
+    def fail_post(*_args, **_kwargs):
+        raise AssertionError("debug mode should not send telemetry")
+
+    monkeypatch.setattr(provider.httpx, "post", fail_post)
+
+    provider.capture(
+        Event.COMMAND_COMPLETED,
+        {
+            "command": "health",
+            "duration_ms": 1,
+            "exit_code": 0,
+            "oauth_refresh_token": "do-not-leak",
+            "success": True,
+        },
+    )
+    output = capsys.readouterr().err
+
+    assert "do-not-leak" not in output
+    assert '"oauth_refresh_token": "[REDACTED]"' in output

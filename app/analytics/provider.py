@@ -46,6 +46,26 @@ _SENSITIVE_DEBUG_KEYS: Final[frozenset[str]] = frozenset(
         "token",
     }
 )
+# Substrings for keys like user_password / oauth_token (not only exact matches).
+_SENSITIVE_KEY_SUBSTRINGS: Final[tuple[str, ...]] = (
+    "password",
+    "passwd",
+    "secret",
+    "credential",
+    "token",
+    "apikey",
+    "authorization",
+    "bearer",
+    "private_key",
+    "oauth",
+)
+
+
+def _is_sensitive_key(key: str) -> bool:
+    k = key.lower().replace("-", "_")
+    if k in _SENSITIVE_DEBUG_KEYS:
+        return True
+    return any(part in k for part in _SENSITIVE_KEY_SUBSTRINGS)
 _SEND_TIMEOUT = 1.0
 
 type PropertyValue = str | bool | int
@@ -137,7 +157,7 @@ def _redact_sensitive_values(value: object) -> object:
     if isinstance(value, dict):
         redacted: dict[str, object] = {}
         for key, nested_value in value.items():
-            if key.lower() in _SENSITIVE_DEBUG_KEYS:
+            if _is_sensitive_key(key):
                 redacted[key] = _DEBUG_REDACTED_VALUE
             else:
                 redacted[key] = _redact_sensitive_values(nested_value)
