@@ -161,8 +161,6 @@ class GoogleDocsIntegrationConfig(StrictConfigModel):
     @field_validator("timeout_seconds", mode="before")
     @classmethod
     def _validate_timeout(cls, value: object) -> int:
-        """Validate timeout is a positive integer with reasonable bounds."""
-        # Handle string or numeric input
         if isinstance(value, str):
             try:
                 timeout = int(value)
@@ -172,7 +170,6 @@ class GoogleDocsIntegrationConfig(StrictConfigModel):
             timeout = int(value)
         else:
             return 30
-        # Enforce reasonable bounds: 5 seconds minimum, 300 seconds maximum
         return max(5, min(timeout, 300))
 
 
@@ -188,6 +185,19 @@ class OpsGenieIntegrationConfig(StrictConfigModel):
     def _normalize_region(cls, value: object) -> str:
         raw = str(value or "us").strip().lower()
         return raw if raw in ("us", "eu") else "us"
+
+
+class NotionIntegrationConfig(StrictConfigModel):
+    """Normalized Notion credentials used by resolution and verification flows."""
+
+    api_key: str
+    database_id: str
+    integration_id: str = ""
+
+    @field_validator("api_key", "database_id", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
 
 
 class EffectiveIntegrationEntry(StrictConfigModel):
@@ -212,3 +222,4 @@ class EffectiveIntegrations(StrictConfigModel):
     google_docs: EffectiveIntegrationEntry | None = None
     vercel: EffectiveIntegrationEntry | None = None
     opsgenie: EffectiveIntegrationEntry | None = None
+    notion: EffectiveIntegrationEntry | None = None
