@@ -45,10 +45,6 @@ def onboard() -> None:
 @cli.command()
 def health() -> None:
     """Show a quick health summary of the local agent setup."""
-    from dotenv import load_dotenv
-
-    load_dotenv(override=False)
-
     from app.config import get_environment
     from app.integrations.store import STORE_PATH
     from app.integrations.verify import format_verification_results, verify_integrations
