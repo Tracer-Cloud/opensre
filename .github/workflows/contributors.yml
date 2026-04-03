@@ -21,12 +21,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 << 'EOF'
-                    import sys
+          import sys
           import json
           import re
-                    import time
-                    import urllib.error
-                    import urllib.request
+          import time
+          import urllib.error
+          import urllib.request
 
           headers = {
               "Authorization": "token ${{ secrets.GITHUB_TOKEN }}",
