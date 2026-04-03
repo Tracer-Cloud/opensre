@@ -85,6 +85,10 @@ def validate_sentry_integration(**kwargs):
 
     return _validate(**kwargs)
 
+def validate_jira_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_jira_integration as _validate
+
+    return _validate(**kwargs)
 
 def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
@@ -779,6 +783,40 @@ def _configure_sentry() -> tuple[str, str]:
             return "Sentry", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
+def _configure_jira() -> tuple[str, str]:
+    _, credentials = _integration_defaults("jira")
+    _console.print("\n[bold]Jira Integration[/bold]")
+    _console.print("Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens\n")
+
+    base_url = _prompt("Jira base URL (e.g. https://myteam.atlassian.net)")
+    email = _prompt("Jira account email")
+    api_token = _prompt("Jira API token", password=True)
+    project_key = _prompt("Jira project key (e.g. OPS)")
+
+    with _console.status("Validating Jira connection...", spinner="dots"):
+        result = validate_jira_integration(
+            base_url=base_url,
+            email=email,
+            api_token=api_token,
+            project_key=project_key,
+        )
+    _render_integration_result("Jira", result)
+
+    if result.ok:
+        upsert_integration("jira", {"credentials": {
+            "base_url": base_url,
+            "email": email,
+            "api_token": api_token,
+            "project_key": project_key,
+        }})
+        env_path = sync_env_values({
+            "JIRA_BASE_URL": base_url,
+            "JIRA_EMAIL": email,
+            "JIRA_API_TOKEN": api_token,
+            "JIRA_PROJECT_KEY": project_key,
+        })
+        return "Jira", str(env_path)
+    return "Jira", ""
 
 def _configure_selected_integrations() -> tuple[list[str], str | None]:
     configured: list[str] = []
@@ -803,6 +841,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         Choice(value="aws", label="AWS", hint="Inspect CloudWatch, EKS, and account resources"),
         Choice(value="github", label="GitHub MCP", hint="Let the agent inspect repos, PRs, and issues"),
         Choice(value="sentry", label="Sentry", hint="Investigate errors, events, and issue history"),
+        Choice(value="jira", label="Jira", hint="File and update incident tickets automatically"),
         Choice(value="skip", label="Skip for now", hint="Finish onboarding without configuring an integration"),
     ]
     selected_service = _choose(
@@ -823,6 +862,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "aws": _configure_aws,
         "github": _configure_github_mcp,
         "sentry": _configure_sentry,
+        "jira": _configure_jira,
     }
     _SERVICE_LABELS = {
         "grafana_local": "grafana local",
@@ -834,6 +874,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "aws": "aws",
         "github": "github mcp",
         "sentry": "sentry",
+        "jira": "jira",
     }
 
     _step(f"Service · {_SERVICE_LABELS.get(selected_service, selected_service)}")
