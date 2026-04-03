@@ -145,6 +145,17 @@ class TracerIntegrationConfig(StrictConfigModel):
         return token
 
 
+class NotionIntegrationConfig(StrictConfigModel):
+    """Normalized Notion credentials used by resolution and verification flows."""
+    api_key: str
+    database_id: str
+    integration_id: str = ""
+
+    @field_validator("api_key", "database_id", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
 class EffectiveIntegrationEntry(StrictConfigModel):
     """Resolved integration entry with source metadata."""
 
@@ -164,3 +175,4 @@ class EffectiveIntegrations(StrictConfigModel):
     tracer: EffectiveIntegrationEntry | None = None
     github: EffectiveIntegrationEntry | None = None
     sentry: EffectiveIntegrationEntry | None = None
+    notion: EffectiveIntegrationEntry | None = None
