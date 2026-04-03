@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
+
+from _pytest.monkeypatch import MonkeyPatch
+
 from app.integrations.opensre_mcp import run_rca
 
 
@@ -11,14 +15,14 @@ def test_run_rca_malformed_input() -> None:
     assert result["error"]
 
 
-def test_run_rca_happy_path(monkeypatch) -> None:
+def test_run_rca_happy_path(monkeypatch: MonkeyPatch) -> None:
     def fake_run_cli(
-        payload: dict,
+        payload: dict[str, Any],
         *,
         alert_name: str | None = None,
         pipeline_name: str | None = None,
         severity: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         return {
             "slack_message": "RCA complete",
             "report": "RCA complete",
@@ -34,7 +38,7 @@ def test_run_rca_happy_path(monkeypatch) -> None:
 
     monkeypatch.setattr("app.integrations.opensre_mcp._run_cli", fake_run_cli)
 
-    payload = {
+    payload: dict[str, Any] = {
         "title": "CPU alert",
         "state": "firing",
         "alert_source": "grafana",
