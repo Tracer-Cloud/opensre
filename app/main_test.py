@@ -85,3 +85,15 @@ def test_build_alert_template_grafana_for_cli_output() -> None:
     payload = build_alert_template("grafana")
     assert payload["alert_source"] == "grafana"
     assert payload["pipeline_name"] == "payments_etl"
+
+
+def test_build_alert_template_honeycomb_for_cli_output() -> None:
+    payload = build_alert_template("honeycomb")
+    assert payload["alert_source"] == "honeycomb"
+    assert payload["pipeline_name"] == "checkout_api"
+
+
+def test_build_alert_template_coralogix_for_cli_output() -> None:
+    payload = build_alert_template("coralogix")
+    assert payload["alert_source"] == "coralogix"
+    assert payload["pipeline_name"] == "payments_worker"

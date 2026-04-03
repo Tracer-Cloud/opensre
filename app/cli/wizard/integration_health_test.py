@@ -5,9 +5,11 @@ import types
 
 from app.cli.wizard.integration_health import (
     validate_aws_integration,
+    validate_coralogix_integration,
     validate_datadog_integration,
     validate_github_mcp_integration,
     validate_grafana_integration,
+    validate_honeycomb_integration,
     validate_sentry_integration,
     validate_slack_webhook,
 )
@@ -75,6 +77,43 @@ def test_validate_datadog_integration_fails(monkeypatch) -> None:
 
     assert result.ok is False
     assert "http 403" in result.detail.lower()
+
+
+def test_validate_honeycomb_integration_succeeds(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.cli.wizard.integration_health.HoneycombClient.validate_access",
+        lambda _self: {"success": True, "environment": {"slug": "prod"}},
+    )
+    monkeypatch.setattr(
+        "app.cli.wizard.integration_health.HoneycombClient.run_query",
+        lambda _self, *_args, **_kwargs: {"success": True, "results": [{}]},
+    )
+
+    result = validate_honeycomb_integration(
+        api_key="hny_test",
+        dataset="prod-api",
+        base_url="https://api.honeycomb.io",
+    )
+
+    assert result.ok is True
+    assert "dataset prod-api" in result.detail.lower()
+
+
+def test_validate_coralogix_integration_fails(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.cli.wizard.integration_health.CoralogixClient.validate_access",
+        lambda _self: {"success": False, "error": "HTTP 401"},
+    )
+
+    result = validate_coralogix_integration(
+        api_key="cx_test",
+        base_url="https://api.coralogix.com",
+        application_name="payments",
+        subsystem_name="worker",
+    )
+
+    assert result.ok is False
+    assert "http 401" in result.detail.lower()
 
 
 def test_validate_slack_webhook_succeeds_with_non_posting_probe(monkeypatch) -> None:

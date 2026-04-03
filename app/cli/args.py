@@ -30,7 +30,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     input_group.add_argument(
         "--print-template",
-        choices=["generic", "datadog", "grafana"],
+        choices=["generic", "datadog", "grafana", "honeycomb", "coralogix"],
         default=None,
         help="Print a starter alert JSON template and exit.",
     )

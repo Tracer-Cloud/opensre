@@ -221,6 +221,29 @@ def _map_datadog_investigate(data: dict) -> dict:
     }
 
 
+def _map_honeycomb_traces(data: dict) -> dict:
+    return {
+        "honeycomb_traces": data.get("traces", []),
+        "honeycomb_trace_count": data.get("total_traces", 0),
+        "honeycomb_dataset": data.get("dataset", ""),
+        "honeycomb_service_name": data.get("service_name", ""),
+        "honeycomb_trace_id": data.get("trace_id", ""),
+        "honeycomb_query_url": data.get("query_url", ""),
+    }
+
+
+def _map_coralogix_logs(data: dict) -> dict:
+    return {
+        "coralogix_logs": data.get("logs", []),
+        "coralogix_error_logs": data.get("error_logs", []),
+        "coralogix_logs_query": data.get("query", ""),
+        "coralogix_logs_count": data.get("total", 0),
+        "coralogix_application_name": data.get("application_name", ""),
+        "coralogix_subsystem_name": data.get("subsystem_name", ""),
+        "coralogix_trace_id": data.get("trace_id", ""),
+    }
+
+
 EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "get_failed_jobs": _map_failed_jobs,
     "get_failed_tools": _map_failed_tools,
@@ -244,6 +267,8 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "query_datadog_monitors": _map_datadog_monitors,
     "query_datadog_events": _map_datadog_events,
     "query_datadog_all": _map_datadog_investigate,
+    "query_honeycomb_traces": _map_honeycomb_traces,
+    "query_coralogix_logs": _map_coralogix_logs,
 }
 
 
@@ -365,6 +390,11 @@ def build_evidence_summary(execution_results: dict) -> str:
                     f"datadog:{len(logs)} logs ({len(error_logs)} errors), "
                     f"{len(monitors)} monitors, {len(events)} events{timing}"
                 )
+            elif action_name == "query_honeycomb_traces" and data.get("traces"):
+                summary_parts.append(f"honeycomb:{len(data['traces'])} traces")
+            elif action_name == "query_coralogix_logs" and data.get("logs"):
+                error_count = len(data.get("error_logs", []))
+                summary_parts.append(f"coralogix:{len(data['logs'])} logs ({error_count} errors)")
         else:
             # Log action failures for debugging
             error_msg = f"{action_name}:FAILED({result.error[:50] if result.error else 'unknown'})"

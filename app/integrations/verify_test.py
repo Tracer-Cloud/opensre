@@ -6,9 +6,11 @@ import pytest
 
 from app.integrations.verify import (
     _verify_aws,
+    _verify_coralogix,
     _verify_datadog,
     _verify_github,
     _verify_grafana,
+    _verify_honeycomb,
     _verify_sentry,
     _verify_tracer,
     resolve_effective_integrations,
@@ -55,6 +57,22 @@ def test_resolve_effective_integrations_prefers_local_store(monkeypatch: pytest.
     assert effective["tracer"]["source"] == "local env"
 
 
+def test_resolve_effective_integrations_includes_honeycomb_and_coralogix_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.integrations.verify.load_integrations", lambda: [])
+    monkeypatch.setenv("HONEYCOMB_API_KEY", "hny_test")
+    monkeypatch.setenv("HONEYCOMB_DATASET", "prod-api")
+    monkeypatch.setenv("CORALOGIX_API_KEY", "cx_test")
+    monkeypatch.setenv("CORALOGIX_APPLICATION_NAME", "payments")
+    monkeypatch.setenv("CORALOGIX_SUBSYSTEM_NAME", "worker")
+
+    effective = resolve_effective_integrations()
+
+    assert effective["honeycomb"]["config"]["dataset"] == "prod-api"
+    assert effective["coralogix"]["config"]["application_name"] == "payments"
+
+
 def test_verify_grafana_passes_with_supported_datasource(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fake_requests_get(*_args: Any, **_kwargs: Any) -> _FakeResponse:
         return _FakeResponse(
@@ -95,6 +113,45 @@ def test_verify_datadog_reports_api_failure(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert result["status"] == "failed"
     assert "403" in result["detail"]
+
+
+def test_verify_honeycomb_uses_auth_and_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.integrations.verify.HoneycombClient.validate_access",
+        lambda _self: {"success": True, "environment": {"slug": "prod"}},
+    )
+    monkeypatch.setattr(
+        "app.integrations.verify.HoneycombClient.run_query",
+        lambda _self, *_args, **_kwargs: {"success": True, "results": [{}]},
+    )
+
+    result = _verify_honeycomb(
+        "local env",
+        {"api_key": "hny_test", "dataset": "prod-api", "base_url": "https://api.honeycomb.io"},
+    )
+
+    assert result["status"] == "passed"
+    assert "prod-api" in result["detail"]
+
+
+def test_verify_coralogix_reports_api_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.integrations.verify.CoralogixClient.validate_access",
+        lambda _self: {"success": False, "error": "HTTP 401: unauthorized"},
+    )
+
+    result = _verify_coralogix(
+        "local env",
+        {
+            "api_key": "cx_test",
+            "base_url": "https://api.coralogix.com",
+            "application_name": "payments",
+            "subsystem_name": "worker",
+        },
+    )
+
+    assert result["status"] == "failed"
+    assert "401" in result["detail"]
 
 
 def test_verify_aws_assume_role_passes(monkeypatch: pytest.MonkeyPatch) -> None:

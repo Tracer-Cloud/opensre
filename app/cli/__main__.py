@@ -174,7 +174,7 @@ def onboard() -> None:
 @click.option("--interactive", is_flag=True, help="Paste an alert JSON payload into the terminal.")
 @click.option(
     "--print-template",
-    type=click.Choice(["generic", "datadog", "grafana"]),
+    type=click.Choice(["generic", "datadog", "grafana", "honeycomb", "coralogix"]),
     default=None,
     help="Print a starter alert JSON template and exit.",
 )

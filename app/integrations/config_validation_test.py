@@ -8,6 +8,8 @@ from app.integrations.clients.grafana.config import GrafanaAccountConfig
 from app.integrations.github_mcp import build_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
+    CoralogixIntegrationConfig,
+    HoneycombIntegrationConfig,
     SlackWebhookConfig,
     TracerIntegrationConfig,
 )
@@ -44,6 +46,22 @@ def test_datadog_config_rejects_unknown_fields_with_suggestion() -> None:
             "api_key": "dd-api",
             "app_key": "dd-app",
             "siet": "datadoghq.com",
+        })
+
+
+def test_honeycomb_config_rejects_unknown_fields_with_suggestion() -> None:
+    with pytest.raises(ValidationError, match="datset.*dataset"):
+        HoneycombIntegrationConfig.model_validate({
+            "api_key": "hny_test",
+            "datset": "prod-api",
+        })
+
+
+def test_coralogix_config_rejects_unknown_fields_with_suggestion() -> None:
+    with pytest.raises(ValidationError, match="base_ul.*base_url"):
+        CoralogixIntegrationConfig.model_validate({
+            "api_key": "cx_test",
+            "base_ul": "https://api.coralogix.com",
         })
 
 

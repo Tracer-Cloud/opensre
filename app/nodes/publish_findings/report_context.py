@@ -102,6 +102,8 @@ _SOURCE_ALIASES: dict[str, str] = {
     "grafana": "grafana_logs",
     "grafana_loki": "grafana_logs",
     "datadog": "datadog_logs",
+    "honeycomb": "honeycomb_traces",
+    "coralogix": "coralogix_logs",
 }
 
 
@@ -421,6 +423,67 @@ def _add_datadog_failed_pods(
             source_to_id["datadog_pod"] = eid
 
 
+def _add_honeycomb_traces(
+    evidence: dict[str, Any],
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
+    honeycomb_traces = evidence.get("honeycomb_traces") or []
+    if not honeycomb_traces:
+        return
+    dataset = evidence.get("honeycomb_dataset") or "__all__"
+    service_name = evidence.get("honeycomb_service_name") or ""
+    trace_id = evidence.get("honeycomb_trace_id") or ""
+    summary_parts = [part for part in [
+        f"dataset={dataset}" if dataset else None,
+        service_name or None,
+        trace_id or None,
+        f"{len(honeycomb_traces)} traces",
+    ] if part]
+    eid = "evidence/honeycomb/traces"
+    catalog[eid] = {
+        "label": "Honeycomb Traces",
+        "url": evidence.get("honeycomb_query_url") or None,
+        "summary": ", ".join(summary_parts) or None,
+        "snippet": None,
+    }
+    source_to_id["honeycomb_traces"] = eid
+
+
+def _add_coralogix_logs(
+    evidence: dict[str, Any],
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
+    coralogix_logs = evidence.get("coralogix_logs") or []
+    coralogix_error_logs = evidence.get("coralogix_error_logs") or []
+    if not (coralogix_logs or coralogix_error_logs):
+        return
+    application_name = evidence.get("coralogix_application_name") or ""
+    subsystem_name = evidence.get("coralogix_subsystem_name") or ""
+    summary_parts = [part for part in [
+        application_name or None,
+        subsystem_name or None,
+        f"{len(coralogix_logs)} logs" if coralogix_logs else None,
+        f"{len(coralogix_error_logs)} errors" if coralogix_error_logs else None,
+    ] if part]
+    top_msg = next(
+        (
+            entry.get("message", "").strip()
+            for entry in (coralogix_error_logs or coralogix_logs)
+            if entry.get("message")
+        ),
+        None,
+    )
+    eid = "evidence/coralogix/logs"
+    catalog[eid] = {
+        "label": "Coralogix Logs",
+        "summary": ", ".join(summary_parts) or None,
+        "snippet": _as_snippet(top_msg) if top_msg else _as_snippet(evidence.get("coralogix_logs_query")),
+    }
+    source_to_id["coralogix_logs"] = eid
+
+
 def _build_evidence_catalog(
     ns: _NormalizedState,
 ) -> tuple[dict[str, dict], dict[str, str]]:
@@ -441,6 +504,8 @@ def _build_evidence_catalog(
     _add_datadog_monitors(ns.evidence, ns.datadog_site, catalog, source_to_id)
     _add_datadog_events(ns.evidence, ns.datadog_site, catalog, source_to_id)
     _add_datadog_failed_pods(ns.evidence, ns.datadog_site, catalog, source_to_id)
+    _add_honeycomb_traces(ns.evidence, catalog, source_to_id)
+    _add_coralogix_logs(ns.evidence, catalog, source_to_id)
 
     for i, entry in enumerate(catalog.values()):
         entry["display_id"] = f"E{i + 1}"

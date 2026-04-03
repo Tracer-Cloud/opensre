@@ -176,6 +176,162 @@ def test_run_wizard_configures_optional_integrations(monkeypatch, tmp_path, caps
     assert "Grafana" in output
 
 
+def test_run_wizard_configures_honeycomb(monkeypatch, tmp_path) -> None:
+    select_responses = iter(["quickstart", "anthropic", "honeycomb"])
+    password_responses = iter(["llm-secret", "hny_test"])
+    text_responses = iter(["prod-api", "https://api.honeycomb.io"])
+    saved_integrations: list[tuple[str, dict]] = []
+    synced_env_values: list[dict[str, str]] = []
+
+    def _mock_select(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(select_responses)
+        return m
+
+    def _mock_password(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(password_responses)
+        return m
+
+    def _mock_text(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(text_responses)
+        return m
+
+    monkeypatch.setattr(flow, "select_prompt", _mock_select)
+    monkeypatch.setattr(flow.questionary, "password", _mock_password)
+    monkeypatch.setattr(flow.questionary, "text", _mock_text)
+    monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
+    monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
+    monkeypatch.setattr(
+        flow,
+        "validate_honeycomb_integration",
+        lambda **_kwargs: flow.IntegrationHealthResult(ok=True, detail="Honeycomb ok"),
+    )
+    monkeypatch.setattr(flow, "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
+    monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+
+    def _sync_env_values(values: dict[str, str], **_kwargs):
+        synced_env_values.append(values)
+        return tmp_path / ".env"
+
+    monkeypatch.setattr(flow, "sync_env_values", _sync_env_values)
+    monkeypatch.setattr(
+        flow,
+        "upsert_integration",
+        lambda service, payload: saved_integrations.append((service, payload)),
+    )
+    monkeypatch.setattr(
+        flow,
+        "build_demo_action_response",
+        lambda: {"success": True, "topics": [], "guidance": []},
+    )
+
+    exit_code = flow.run_wizard()
+
+    assert exit_code == 0
+    assert saved_integrations == [
+        (
+            "honeycomb",
+            {
+                "credentials": {
+                    "api_key": "hny_test",
+                    "dataset": "prod-api",
+                    "base_url": "https://api.honeycomb.io",
+                }
+            },
+        )
+    ]
+    assert synced_env_values == [
+        {
+            "HONEYCOMB_API_KEY": "hny_test",
+            "HONEYCOMB_DATASET": "prod-api",
+            "HONEYCOMB_API_URL": "https://api.honeycomb.io",
+        }
+    ]
+
+
+def test_run_wizard_configures_coralogix(monkeypatch, tmp_path) -> None:
+    select_responses = iter(["quickstart", "anthropic", "coralogix"])
+    password_responses = iter(["llm-secret", "cx_test"])
+    text_responses = iter([
+        "https://api.coralogix.com",
+        "payments",
+        "worker",
+    ])
+    saved_integrations: list[tuple[str, dict]] = []
+    synced_env_values: list[dict[str, str]] = []
+
+    def _mock_select(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(select_responses)
+        return m
+
+    def _mock_password(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(password_responses)
+        return m
+
+    def _mock_text(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(text_responses)
+        return m
+
+    monkeypatch.setattr(flow, "select_prompt", _mock_select)
+    monkeypatch.setattr(flow.questionary, "password", _mock_password)
+    monkeypatch.setattr(flow.questionary, "text", _mock_text)
+    monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
+    monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
+    monkeypatch.setattr(
+        flow,
+        "validate_coralogix_integration",
+        lambda **_kwargs: flow.IntegrationHealthResult(ok=True, detail="Coralogix ok"),
+    )
+    monkeypatch.setattr(flow, "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
+    monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+
+    def _sync_env_values(values: dict[str, str], **_kwargs):
+        synced_env_values.append(values)
+        return tmp_path / ".env"
+
+    monkeypatch.setattr(flow, "sync_env_values", _sync_env_values)
+    monkeypatch.setattr(
+        flow,
+        "upsert_integration",
+        lambda service, payload: saved_integrations.append((service, payload)),
+    )
+    monkeypatch.setattr(
+        flow,
+        "build_demo_action_response",
+        lambda: {"success": True, "topics": [], "guidance": []},
+    )
+
+    exit_code = flow.run_wizard()
+
+    assert exit_code == 0
+    assert saved_integrations == [
+        (
+            "coralogix",
+            {
+                "credentials": {
+                    "api_key": "cx_test",
+                    "base_url": "https://api.coralogix.com",
+                    "application_name": "payments",
+                    "subsystem_name": "worker",
+                }
+            },
+        )
+    ]
+    assert synced_env_values == [
+        {
+            "CORALOGIX_API_KEY": "cx_test",
+            "CORALOGIX_API_URL": "https://api.coralogix.com",
+            "CORALOGIX_APPLICATION_NAME": "payments",
+            "CORALOGIX_SUBSYSTEM_NAME": "worker",
+        }
+    ]
+
+
 def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, capsys) -> None:
     select_responses = iter([
         "quickstart",

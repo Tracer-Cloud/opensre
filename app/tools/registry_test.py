@@ -157,6 +157,11 @@ def test_real_registry_discovers_migrated_sre_guidance_tool() -> None:
     assert "get_sre_guidance" in action_names
 
 
+def test_real_registry_discovers_honeycomb_and_coralogix_tools() -> None:
+    action_names = {tool_def.name for tool_def in get_available_actions()}
+    assert {"query_honeycomb_traces", "query_coralogix_logs"} <= action_names
+
+
 def test_real_registry_preserves_existing_chat_tool_surface() -> None:
     chat_names = {tool_def.name for tool_def in get_registered_tools("chat")}
     assert {"fetch_failed_run", "get_tracer_run", "search_github_code"} <= chat_names
