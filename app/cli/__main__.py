@@ -26,6 +26,7 @@ def cli() -> None:
       opensre investigate -i alert.json      Run RCA against an alert payload
       opensre tests                          Browse and run inventoried tests
       opensre integrations list              Show configured integrations
+      opensre health                         Check integration and agent setup status
 
     \b
     Enable tab-completion (add to your shell profile):
@@ -39,6 +40,28 @@ def onboard() -> None:
     from app.cli.wizard import run_wizard
 
     raise SystemExit(run_wizard())
+
+
+@cli.command()
+def health() -> None:
+    """Show a quick health summary of the local agent setup."""
+    from dotenv import load_dotenv
+
+    load_dotenv(override=False)
+
+    from app.config import get_environment
+    from app.integrations.store import STORE_PATH
+    from app.integrations.verify import format_verification_results, verify_integrations
+
+    results = verify_integrations()
+
+    click.echo("")
+    click.echo("OpenSRE Health")
+    click.echo("")
+    click.echo("CLI")
+    click.echo(f"  environment: {get_environment().value}")
+    click.echo(f"  integration store: {STORE_PATH}")
+    click.echo(format_verification_results(results))
 
 
 @cli.command()
