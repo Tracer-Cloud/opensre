@@ -2,30 +2,33 @@
 
 from __future__ import annotations
 
-from app.tools.base import BaseTool
+from typing import Any
+
 from app.tools.SREGuidanceTool.knowledge_base import (
     get_sre_guidance as _get_sre_guidance,
 )
 from app.tools.SREGuidanceTool.knowledge_base import (
     get_topics_for_keywords,
 )
+from app.tools.tool_decorator import tool
 
 
-class SREGuidanceTool(BaseTool):
-    """Retrieve SRE best practices for data pipeline incidents."""
+def _extract_guidance_params(sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    return {"keywords": sources.get("problem_keywords", [])}
 
-    name = "get_sre_guidance"
-    source = "knowledge"
-    description = "Retrieve SRE best practices for data pipeline incidents."
-    use_cases = [
+
+@tool(
+    name="get_sre_guidance",
+    source="knowledge",
+    description="Retrieve SRE best practices for data pipeline incidents.",
+    use_cases=[
         "Understanding pipeline failure patterns (delayed data, corrupt data)",
         "Applying SLO concepts to data freshness and correctness issues",
         "Identifying hotspotting and resource contention patterns",
         "Getting remediation guidance for common pipeline failures",
         "Structuring postmortem findings and recommendations",
-    ]
-    requires = []
-    input_schema = {
+    ],
+    input_schema={
         "type": "object",
         "properties": {
             "topic": {
@@ -40,18 +43,16 @@ class SREGuidanceTool(BaseTool):
             "max_topics": {"type": "integer", "default": 3},
         },
         "required": [],
-    }
+    },
+    extract_params=_extract_guidance_params,
+)
+def get_sre_guidance(
+    topic: str | None = None,
+    keywords: list[str] | None = None,
+    max_topics: int = 3,
+) -> dict[str, Any]:
+    """Retrieve SRE best practices for data pipeline incidents."""
+    return _get_sre_guidance(topic=topic, keywords=keywords, max_topics=max_topics)
 
-    def is_available(self, _sources: dict) -> bool:
-        return True
 
-    def extract_params(self, sources: dict) -> dict:
-        return {"keywords": sources.get("problem_keywords", [])}
-
-    def run(self, topic: str | None = None, keywords: list[str] | None = None, max_topics: int = 3, **_kwargs) -> dict:
-        return _get_sre_guidance(topic=topic, keywords=keywords, max_topics=max_topics)
-
-
-get_sre_guidance = SREGuidanceTool()
-
-__all__ = ["SREGuidanceTool", "get_sre_guidance", "get_topics_for_keywords"]
+__all__ = ["get_sre_guidance", "get_topics_for_keywords"]
