@@ -13,6 +13,7 @@ from typing import Any
 
 from langsmith import traceable
 
+from app.integrations.clients.vercel import VercelConfig
 from app.integrations.github_mcp import build_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
@@ -45,6 +46,7 @@ _SERVICE_KEY_MAP = {
     "github": "github",
     "github_mcp": "github",
     "sentry": "sentry",
+    "vercel": "vercel",
 }
 
 
@@ -185,6 +187,18 @@ def _classify_integrations(
                 continue
             if sentry_config.organization_slug and sentry_config.auth_token:
                 resolved["sentry"] = sentry_config.model_dump()
+
+        elif key == "vercel":
+            try:
+                vercel_config = VercelConfig.model_validate({
+                    "api_token": credentials.get("api_token", ""),
+                    "team_id": credentials.get("team_id", ""),
+                    "integration_id": integration.get("id", ""),
+                })
+            except Exception:
+                continue
+            if vercel_config.api_token:
+                resolved["vercel"] = vercel_config.model_dump()
 
         else:
             resolved[key] = {
@@ -361,6 +375,19 @@ def _load_env_integrations() -> list[dict[str, Any]]:
             "service": "sentry",
             "status": "active",
             "credentials": sentry_config.model_dump(exclude={"integration_id"}),
+        })
+
+    vercel_api_token = os.getenv("VERCEL_API_TOKEN", "").strip()
+    if vercel_api_token:
+        vercel_config = VercelConfig.model_validate({
+            "api_token": vercel_api_token,
+            "team_id": os.getenv("VERCEL_TEAM_ID", "").strip(),
+        })
+        integrations.append({
+            "id": "env-vercel",
+            "service": "vercel",
+            "status": "active",
+            "credentials": vercel_config.model_dump(exclude={"integration_id"}),
         })
 
     return integrations

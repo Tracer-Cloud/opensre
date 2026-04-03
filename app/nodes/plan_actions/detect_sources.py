@@ -618,6 +618,27 @@ def detect_sources(
                 "connection_verified": True,
             }
 
+    vercel_int = (resolved_integrations or {}).get("vercel")
+    if vercel_int:
+        vercel_project_id = str(
+            annotations.get("vercel_project_id")
+            or annotations.get("project_id")
+            or raw_alert.get("vercel_project_id", "")
+        ).strip()
+        vercel_deployment_id = str(
+            annotations.get("vercel_deployment_id")
+            or annotations.get("deployment_id")
+            or raw_alert.get("vercel_deployment_id", "")
+        ).strip()
+        if vercel_project_id or vercel_deployment_id:
+            sources["vercel"] = {
+                "api_token": str(vercel_int.get("api_token", "")).strip(),
+                "team_id": str(vercel_int.get("team_id", "")).strip(),
+                "project_id": vercel_project_id,
+                "deployment_id": vercel_deployment_id,
+                "connection_verified": True,
+            }
+
     sentry_int = (resolved_integrations or {}).get("sentry")
     if sentry_int:
         issue_id = str(

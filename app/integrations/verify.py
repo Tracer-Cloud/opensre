@@ -15,6 +15,7 @@ from app.integrations.clients.coralogix import CoralogixClient
 from app.integrations.clients.datadog.client import DatadogClient, DatadogConfig
 from app.integrations.clients.honeycomb import HoneycombClient
 from app.integrations.clients.tracer_client.client import TracerClient
+from app.integrations.clients.vercel.client import VercelClient, VercelConfig
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
@@ -26,6 +27,7 @@ from app.integrations.models import (
     HoneycombIntegrationConfig,
     SlackWebhookConfig,
     TracerIntegrationConfig,
+    VercelIntegrationConfig,
 )
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
@@ -46,6 +48,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "github",
     "sentry",
     "google_docs",
+    "vercel",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -208,6 +211,26 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 "config": {
                     "credentials_file": credentials_file,
                     "folder_id": folder_id,
+                },
+            }
+
+    vercel_integration = classified_integrations.get("vercel")
+    if isinstance(vercel_integration, dict):
+        effective["vercel"] = {
+            "source": source_by_service.get("vercel", "local env"),
+            "config": {
+                "api_token": str(vercel_integration.get("api_token", "")).strip(),
+                "team_id": str(vercel_integration.get("team_id", "")).strip(),
+            },
+        }
+    else:
+        vercel_api_token = os.getenv("VERCEL_API_TOKEN", "").strip()
+        if vercel_api_token:
+            effective["vercel"] = {
+                "source": "local env",
+                "config": {
+                    "api_token": vercel_api_token,
+                    "team_id": os.getenv("VERCEL_TEAM_ID", "").strip(),
                 },
             }
 
@@ -549,6 +572,32 @@ def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_vercel(source: str, config: dict[str, Any]) -> dict[str, str]:
+    try:
+        vercel_config = VercelIntegrationConfig.model_validate(config)
+    except Exception:
+        return _result("vercel", source, "missing", "Missing API token for Vercel access.")
+    if not vercel_config.api_token:
+        return _result("vercel", source, "missing", "Missing API token for Vercel access.")
+
+    client = VercelClient(VercelConfig.model_validate(config))
+    result = client.list_projects()
+    if not result.get("success"):
+        return _result(
+            "vercel",
+            source,
+            "failed",
+            f"Vercel project list failed: {result.get('error', 'unknown error')}",
+        )
+
+    return _result(
+        "vercel",
+        source,
+        "passed",
+        f"Connected to Vercel API and listed {result.get('total', 0)} project(s).",
+    )
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -603,6 +652,8 @@ def verify_integrations(
             results.append(_verify_sentry(source, config))
         elif current_service == "google_docs":
             results.append(_verify_google_docs(source, config))
+        elif current_service == "vercel":
+            results.append(_verify_vercel(source, config))
 
     return results
 
