@@ -1,5 +1,5 @@
 # Production Dockerfile for OpenSRE
-# Builds a container image that runs the LangGraph-based OpenSRE agent server.
+# Builds a container image that runs the LangGraph API server in production.
 #
 # Usage:
 #   docker build -t opensre:latest .
@@ -14,42 +14,29 @@
 #   - POST /threads/{id}/runs - Execute agent runs
 #   - GET  /threads/{id}/state  - Get run state and results
 
-FROM python:3.11-slim
+FROM langchain/langgraph-api:3.11
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+# Add the application source for installation and runtime loading.
+ADD . /deps/agent
 
-WORKDIR /app
+# Install the package and its dependencies into the API image.
+RUN PYTHONDONTWRITEBYTECODE=1 \
+    pip install --no-cache-dir -c /api/constraints.txt /deps/agent
 
-# Install system dependencies for build
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+# Configure the LangGraph API server to load the app graph and auth handler.
+ENV LANGGRAPH_AUTH='{"path":"/deps/agent/app/auth/auth.py:auth"}' \
+    LANGSERVE_GRAPHS='{"agent":"/deps/agent/app/graph_pipeline.py:build_graph"}'
 
-# Copy dependency files first for layer caching
-COPY pyproject.toml ./
-COPY app/ ./app/
-COPY langgraph.json ./
+# Ensure app dependencies do not shadow the bundled LangGraph runtime packages.
+RUN mkdir -p /api/langgraph_api /api/langgraph_runtime /api/langgraph_license \
+    && touch /api/langgraph_api/__init__.py /api/langgraph_runtime/__init__.py /api/langgraph_license/__init__.py \
+    && PYTHONDONTWRITEBYTECODE=1 pip install --no-cache-dir --no-deps /api
 
-# Install Python dependencies and the package
-# Install both production dependencies and langgraph-cli for the server
-RUN pip install -e "." langgraph-cli
-
-# Create non-root user for security
-RUN useradd -m -u 1000 opensre && chown -R opensre:opensre /app
-USER opensre
+WORKDIR /deps/agent
 
 # Expose the LangGraph API port
 EXPOSE 2024
 
-# Health check - LangGraph server exposes /ok endpoint
+# Health check - the LangGraph API server exposes /ok.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:2024/ok', timeout=5)" || exit 1
-
-# Start the LangGraph server
-# Uses the configuration from langgraph.json
-# Note: 'langgraph dev' is the standard command to run the LangGraph API server
-CMD ["langgraph", "dev", "--host", "0.0.0.0", "--no-browser"]

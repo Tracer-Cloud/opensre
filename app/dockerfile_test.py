@@ -23,25 +23,27 @@ def test_dockerfile_exists(dockerfile_path: Path) -> None:
     assert dockerfile_path.is_file(), "Dockerfile is not a file"
 
 
-def test_dockerfile_has_python_base(dockerfile_path: Path) -> None:
-    """The Dockerfile must use Python 3.11+ as base image."""
+def test_dockerfile_uses_langgraph_api_base(dockerfile_path: Path) -> None:
+    """The Dockerfile must use the production LangGraph API base image."""
     content = dockerfile_path.read_text()
-    assert "FROM python:3.11" in content, "Should use Python 3.11+ base image"
-
-
-def test_dockerfile_installs_dependencies(dockerfile_path: Path) -> None:
-    """The Dockerfile must install dependencies from pyproject.toml."""
-    content = dockerfile_path.read_text()
-    assert "pyproject.toml" in content, "Should copy pyproject.toml"
-    assert 'pip install -e "."' in content or "pip install -e ." in content, (
-        "Should install package from pyproject.toml"
+    assert "FROM langchain/langgraph-api:3.11" in content, (
+        "Should use the production LangGraph API base image"
     )
 
 
-def test_dockerfile_installs_langgraph_cli(dockerfile_path: Path) -> None:
-    """The Dockerfile must install langgraph-cli for the server."""
+def test_dockerfile_installs_dependencies(dockerfile_path: Path) -> None:
+    """The Dockerfile must install the package without editable mode."""
     content = dockerfile_path.read_text()
-    assert "langgraph-cli" in content, "Should install langgraph-cli"
+    assert "pip install" in content, "Should install the package"
+    assert "/deps/agent" in content, "Should install from the copied application path"
+    assert "pip install -e" not in content, "Should avoid editable installs in production"
+
+
+def test_dockerfile_configures_langgraph_runtime(dockerfile_path: Path) -> None:
+    """The Dockerfile must configure the graph and auth handlers for the API server."""
+    content = dockerfile_path.read_text()
+    assert "LANGSERVE_GRAPHS" in content, "Should configure graph loading"
+    assert "LANGGRAPH_AUTH" in content, "Should configure auth loading"
 
 
 def test_dockerfile_exposes_port_2024(dockerfile_path: Path) -> None:
@@ -65,23 +67,26 @@ def test_dockerfile_healthcheck_uses_ok_endpoint(dockerfile_path: Path) -> None:
 def test_dockerfile_copies_app_code(dockerfile_path: Path) -> None:
     """The Dockerfile must copy the application code."""
     content = dockerfile_path.read_text()
-    assert "COPY app/" in content, "Should copy app directory"
+    assert "ADD . /deps/agent" in content, "Should add the repository into the image"
 
 
 def test_dockerfile_copies_langgraph_config(dockerfile_path: Path) -> None:
-    """The Dockerfile must copy the langgraph.json configuration."""
+    """The Dockerfile must point the API server at the application graph."""
     content = dockerfile_path.read_text()
-    assert "COPY langgraph.json" in content, "Should copy langgraph.json"
+    assert "app/graph_pipeline.py:build_graph" in content, (
+        "Should configure the graph entrypoint"
+    )
 
 
 def test_dockerfile_uses_non_root_user(dockerfile_path: Path) -> None:
-    """The Dockerfile should run as non-root user for security."""
+    """The Dockerfile should preserve the bundled runtime packages."""
     content = dockerfile_path.read_text()
-    assert "USER" in content, "Should set a non-root USER"
+    assert "pip install --no-cache-dir --no-deps /api" in content, (
+        "Should re-install the bundled API package without extra deps"
+    )
 
 
 def test_dockerfile_has_cmd_to_start_server(dockerfile_path: Path) -> None:
-    """The Dockerfile must have a CMD to start the LangGraph server."""
+    """The Dockerfile must not start the development server in production."""
     content = dockerfile_path.read_text()
-    assert "CMD" in content, "Should have CMD instruction"
-    assert "langgraph" in content.lower(), "CMD should start langgraph"
+    assert "langgraph dev" not in content, "Should not use the LangGraph dev server"
