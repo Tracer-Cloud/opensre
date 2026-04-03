@@ -54,6 +54,9 @@ dependencies = [
     "posthog>=3.0.0",
     # Tracer
     "tracer_decorator",
+    # Google APIs
+    "google-api-python-client>=2.0.0,<3.0.0",
+    "google-auth>=2.0.0,<3.0.0",
 ]
 
 [project.urls]

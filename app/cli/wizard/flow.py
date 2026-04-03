@@ -31,7 +31,6 @@ _ASCII_HEADER = """\
  \\___/|_|   |_____|_| \\_|____/|_| \\_\\_____|"""
 
 
-
 def build_demo_action_response():
     from app.cli.wizard.validation import build_demo_action_response as _build
 
@@ -86,6 +85,12 @@ def validate_sentry_integration(**kwargs):
     return _validate(**kwargs)
 
 
+def validate_google_docs_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_google_docs_integration as _validate
+
+    return _validate(**kwargs)
+
+
 def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
 
@@ -96,6 +101,7 @@ def get_sentry_auth_recommendations():
 class IntegrationHealthResult:
     ok: bool
     detail: str
+
 
 _STYLE = Style(
     [
@@ -245,7 +251,6 @@ def _parse_csv_values(raw_value: str) -> list[str]:
     return [part.strip() for part in raw_value.split(",") if part.strip()]
 
 
-
 def _display_probe(result: ProbeResult) -> None:
     status = "[green]reachable[/]" if result.reachable else "[red]unreachable[/]"
     _console.print(f"{result.target}: {status} [dim]({result.detail})[/]")
@@ -279,13 +284,19 @@ def _render_header() -> None:
     for line in _ASCII_HEADER.splitlines():
         _console.print(Text.assemble(("  ", ""), (line, "bold cyan")))
     _console.print()
-    _console.print(Text.assemble(
-        ("  ", ""),
-        "open-source SRE agent for automated incident investigation and root cause analysis",
-    ))
+    _console.print(
+        Text.assemble(
+            ("  ", ""),
+            "open-source SRE agent for automated incident investigation and root cause analysis",
+        )
+    )
     _console.print()
     _console.print(Text.assemble(("  Setup", "bold white")))
-    _console.print(Text.assemble(("    ", ""), ("Configure your local AI stack and optional integrations.", "dim")))
+    _console.print(
+        Text.assemble(
+            ("    ", ""), ("Configure your local AI stack and optional integrations.", "dim")
+        )
+    )
     _console.print()
 
 
@@ -334,7 +345,9 @@ def _configure_grafana() -> tuple[str, str]:
             result = validate_grafana_integration(endpoint=endpoint, api_key=api_key)
         _render_integration_result("Grafana", result)
         if result.ok:
-            upsert_integration("grafana", {"credentials": {"endpoint": endpoint, "api_key": api_key}})
+            upsert_integration(
+                "grafana", {"credentials": {"endpoint": endpoint, "api_key": api_key}}
+            )
             env_path = sync_env_values(
                 {
                     "GRAFANA_INSTANCE_URL": endpoint,
@@ -381,6 +394,7 @@ def _configure_grafana_local() -> tuple[str, str]:
     with _console.status("Waiting for Loki to be ready and seeding logs...", spinner="dots"):
         try:
             from app.cli.wizard.grafana_seed import seed_logs
+
             seed_logs()
         except (SystemExit, Exception) as exc:
             _console.print(f"[red]Loki seed failed: {exc}[/]")
@@ -713,14 +727,16 @@ def _configure_github_mcp() -> tuple[str, str]:
                 "toolsets": toolsets,
             }
             upsert_integration("github", {"credentials": credentials})
-            env_path = sync_env_values({
-                "GITHUB_MCP_URL": url,
-                "GITHUB_MCP_MODE": mode,
-                "GITHUB_MCP_COMMAND": command,
-                "GITHUB_MCP_ARGS": " ".join(args),
-                "GITHUB_MCP_AUTH_TOKEN": auth_token,
-                "GITHUB_MCP_TOOLSETS": ",".join(toolsets),
-            })
+            env_path = sync_env_values(
+                {
+                    "GITHUB_MCP_URL": url,
+                    "GITHUB_MCP_MODE": mode,
+                    "GITHUB_MCP_COMMAND": command,
+                    "GITHUB_MCP_ARGS": " ".join(args),
+                    "GITHUB_MCP_AUTH_TOKEN": auth_token,
+                    "GITHUB_MCP_TOOLSETS": ",".join(toolsets),
+                }
+            )
             return "GitHub MCP", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
@@ -770,13 +786,52 @@ def _configure_sentry() -> tuple[str, str]:
                 "project_slug": project_slug,
             }
             upsert_integration("sentry", {"credentials": credentials})
-            env_path = sync_env_values({
-                "SENTRY_URL": base_url,
-                "SENTRY_ORG_SLUG": organization_slug,
-                "SENTRY_PROJECT_SLUG": project_slug,
-                "SENTRY_AUTH_TOKEN": auth_token,
-            })
+            env_path = sync_env_values(
+                {
+                    "SENTRY_URL": base_url,
+                    "SENTRY_ORG_SLUG": organization_slug,
+                    "SENTRY_PROJECT_SLUG": project_slug,
+                    "SENTRY_AUTH_TOKEN": auth_token,
+                }
+            )
             return "Sentry", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
+def _configure_google_docs() -> tuple[str, str]:
+    _, credentials = _integration_defaults("google_docs")
+    while True:
+        credentials_file = _prompt_value(
+            "Path to Google service account credentials JSON file",
+            default=_string_value(credentials.get("credentials_file")),
+        )
+        folder_id = _prompt_value(
+            "Google Drive folder ID for incident reports",
+            default=_string_value(credentials.get("folder_id")),
+        )
+        with _console.status("Validating Google Docs integration...", spinner="dots"):
+            result = validate_google_docs_integration(
+                credentials_file=credentials_file,
+                folder_id=folder_id,
+            )
+        _render_integration_result("Google Docs", result)
+        if result.ok:
+            upsert_integration(
+                "google_docs",
+                {
+                    "credentials": {
+                        "credentials_file": credentials_file,
+                        "folder_id": folder_id,
+                    }
+                },
+            )
+            env_path = sync_env_values(
+                {
+                    "GOOGLE_CREDENTIALS_FILE": credentials_file,
+                    "GOOGLE_DRIVE_FOLDER_ID": folder_id,
+                }
+            )
+            return "Google Docs", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
@@ -784,7 +839,9 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
     configured: list[str] = []
     last_env_path: str | None = None
 
-    _console.print("[dim]Pick one integration to wire up now, or skip this step and come back later.[/]")
+    _console.print(
+        "[dim]Pick one integration to wire up now, or skip this step and come back later.[/]"
+    )
     integration_choices = [
         Choice(
             value="grafana_local",
@@ -801,9 +858,22 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         Choice(value="coralogix", label="Coralogix", hint="Query logs from Coralogix DataPrime"),
         Choice(value="slack", label="Slack", hint="Send findings to a webhook or channel"),
         Choice(value="aws", label="AWS", hint="Inspect CloudWatch, EKS, and account resources"),
-        Choice(value="github", label="GitHub MCP", hint="Let the agent inspect repos, PRs, and issues"),
-        Choice(value="sentry", label="Sentry", hint="Investigate errors, events, and issue history"),
-        Choice(value="skip", label="Skip for now", hint="Finish onboarding without configuring an integration"),
+        Choice(
+            value="github", label="GitHub MCP", hint="Let the agent inspect repos, PRs, and issues"
+        ),
+        Choice(
+            value="sentry", label="Sentry", hint="Investigate errors, events, and issue history"
+        ),
+        Choice(
+            value="google_docs",
+            label="Google Docs",
+            hint="Create shareable incident postmortem reports",
+        ),
+        Choice(
+            value="skip",
+            label="Skip for now",
+            hint="Finish onboarding without configuring an integration",
+        ),
     ]
     selected_service = _choose(
         "Choose an integration to configure",
@@ -823,6 +893,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "aws": _configure_aws,
         "github": _configure_github_mcp,
         "sentry": _configure_sentry,
+        "google_docs": _configure_google_docs,
     }
     _SERVICE_LABELS = {
         "grafana_local": "grafana local",
@@ -834,6 +905,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "aws": "aws",
         "github": "github mcp",
         "sentry": "sentry",
+        "google_docs": "google docs",
     }
 
     _step(f"Service · {_SERVICE_LABELS.get(selected_service, selected_service)}")
@@ -843,7 +915,9 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         last_env_path = env_path
         _track_integration_added(selected_service)
     except KeyboardInterrupt:
-        _console.print(f"[yellow]{_SERVICE_LABELS.get(selected_service, selected_service)} setup skipped.[/]")
+        _console.print(
+            f"[yellow]{_SERVICE_LABELS.get(selected_service, selected_service)} setup skipped.[/]"
+        )
 
     return configured, last_env_path
 
@@ -860,7 +934,10 @@ def _track_integration_added(service: str) -> None:
 def _render_demo_response(demo_response: dict) -> None:
     topics = ", ".join(demo_response.get("topics", [])) or "none"
     guidance = demo_response.get("guidance") or []
-    summary = [f"demo      {'ready' if demo_response.get('success') else 'failed'}", f"topics    {topics}"]
+    summary = [
+        f"demo      {'ready' if demo_response.get('success') else 'failed'}",
+        f"topics    {topics}",
+    ]
     if guidance:
         first = guidance[0]
         summary.append(f"sample    {first.get('topic', 'unknown')}")
@@ -875,7 +952,9 @@ def _render_demo_response(demo_response: dict) -> None:
 def _render_next_steps() -> None:
     _console.print("\n[bold]next[/]")
     _console.print("[dim]opensre onboard[/]")
-    _console.print("[dim]opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json[/]")
+    _console.print(
+        "[dim]opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json[/]"
+    )
 
 
 def run_wizard(_argv: list[str] | None = None) -> int:
@@ -883,14 +962,24 @@ def run_wizard(_argv: list[str] | None = None) -> int:
     _render_header()
     defaults = _local_defaults()
     saved_provider_value = defaults["provider"]
-    default_provider_value = saved_provider_value if saved_provider_value in PROVIDER_BY_VALUE else SUPPORTED_PROVIDERS[0].value
+    default_provider_value = (
+        saved_provider_value
+        if saved_provider_value in PROVIDER_BY_VALUE
+        else SUPPORTED_PROVIDERS[0].value
+    )
 
     _step("Setup Mode")
     wizard_mode = _choose(
         "How do you want to get started?",
         [
-            Choice(value="quickstart", label="Quickstart", hint="Local setup with the usual defaults"),
-            Choice(value="advanced", label="Advanced", hint="Show probes and choose the target explicitly"),
+            Choice(
+                value="quickstart", label="Quickstart", hint="Local setup with the usual defaults"
+            ),
+            Choice(
+                value="advanced",
+                label="Advanced",
+                hint="Show probes and choose the target explicitly",
+            ),
         ],
         default=defaults["wizard_mode"],
     )

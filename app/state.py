@@ -24,6 +24,7 @@ EvidenceSource = Literal[
     "eks",
     "github",
     "sentry",
+    "google_docs",
 ]
 AgentMode = Literal["chat", "investigation"]
 
@@ -68,7 +69,9 @@ class AgentState(TypedDict, total=False):
     alert_name: str
     pipeline_name: str
     severity: str
-    alert_source: str  # "grafana", "datadog", "honeycomb", "coralogix", "cloudwatch", or "" if unknown
+    alert_source: (
+        str  # "grafana", "datadog", "honeycomb", "coralogix", "cloudwatch", or "" if unknown
+    )
     raw_alert: str | dict[str, Any]
     alert_json: dict[str, Any]
 
@@ -168,6 +171,7 @@ class AgentStateModel(StrictConfigModel):
     problem_report: dict[str, Any] = Field(default_factory=dict)
     report: str = ""
 
+
 STATE_DEFAULTS: dict[str, Any] = {
     "mode": "chat",
     "route": "",
@@ -212,15 +216,17 @@ def make_initial_state(
     raw_alert: str | dict[str, Any] | None = None,
 ) -> AgentState:
     """Create initial state for investigation mode."""
-    state = AgentStateModel.model_validate({
-        "mode": "investigation",
-        "alert_name": alert_name,
-        "pipeline_name": pipeline_name,
-        "severity": severity,
-        "raw_alert": raw_alert if raw_alert is not None else {},
-        "investigation_started_at": time.monotonic(),
-        **{k: v for k, v in STATE_DEFAULTS.items() if k not in ("mode", "messages")},
-    })
+    state = AgentStateModel.model_validate(
+        {
+            "mode": "investigation",
+            "alert_name": alert_name,
+            "pipeline_name": pipeline_name,
+            "severity": severity,
+            "raw_alert": raw_alert if raw_alert is not None else {},
+            "investigation_started_at": time.monotonic(),
+            **{k: v for k, v in STATE_DEFAULTS.items() if k not in ("mode", "messages")},
+        }
+    )
     return cast(AgentState, state.model_dump(mode="python", by_alias=True, exclude_none=True))
 
 
@@ -233,14 +239,16 @@ def make_chat_state(
     messages: list[ChatMessage] | None = None,
 ) -> AgentState:
     """Create initial state for chat mode."""
-    state = AgentStateModel.model_validate({
-        "mode": "chat",
-        "org_id": org_id,
-        "user_id": user_id,
-        "user_email": user_email,
-        "user_name": user_name,
-        "organization_slug": organization_slug,
-        "messages": messages or [],
-        "context": {},
-    })
+    state = AgentStateModel.model_validate(
+        {
+            "mode": "chat",
+            "org_id": org_id,
+            "user_id": user_id,
+            "user_email": user_email,
+            "user_name": user_name,
+            "organization_slug": organization_slug,
+            "messages": messages or [],
+            "context": {},
+        }
+    )
     return cast(AgentState, state.model_dump(mode="python", by_alias=True, exclude_none=True))
