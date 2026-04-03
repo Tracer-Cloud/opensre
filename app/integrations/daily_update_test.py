@@ -9,7 +9,6 @@ from app.integrations.daily_update import (
     _name_looks_like_bot,
     build_daily_update,
     build_fallback_highlights,
-    build_slack_payload,
     compute_daily_window,
     format_name_list,
     render_markdown,
@@ -118,13 +117,11 @@ def test_render_outputs_include_expected_sections() -> None:
         ),
     )
 
-    payload = build_slack_payload(update)
     markdown = render_markdown(update)
 
-    assert payload["text"].startswith("Daily opensre update")
-    assert "Thanks to everyone who contributed today: Alice and Bob :pray::rocket:" in payload["text"]
-    assert "*Main updates shipped:*" in payload["blocks"][2]["text"]["text"]
     assert "# Daily opensre update" in markdown
+    assert "Thanks to everyone who contributed today: Alice and Bob :pray::rocket:" in markdown
+    assert "## Main updates shipped" in markdown
     assert "## Source pull requests" in markdown
     assert "[#101](https://github.com/Tracer-Cloud/opensre/pull/101)" in markdown
 
