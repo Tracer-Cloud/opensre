@@ -17,6 +17,7 @@ from app.cli.wizard.env_sync import sync_env_values, sync_provider_env
 from app.cli.wizard.probes import ProbeResult, probe_local_target, probe_remote_target
 from app.cli.wizard.prompts import select as select_prompt
 from app.cli.wizard.store import get_store_path, load_local_config, save_local_config
+from app.cli.wizard.integration_health import validate_notion_integration
 from app.integrations.store import get_integration, remove_integration, upsert_integration
 
 _console = Console()
@@ -85,6 +86,10 @@ def validate_sentry_integration(**kwargs):
 
     return _validate(**kwargs)
 
+def validate_notion_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_notion_integration as _validate
+
+    return _validate(**kwargs)
 
 def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
@@ -724,6 +729,28 @@ def _configure_github_mcp() -> tuple[str, str]:
             return "GitHub MCP", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
+def _configure_notion() -> tuple[str, str]:
+    _, credentials = _integration_defaults("notion")
+    _console.print("\n[bold]Notion Integration[/bold]")
+    _console.print("Create an internal integration at https://www.notion.so/my-integrations")
+    _console.print("then share your target database with the integration.\n")
+
+    api_key = _prompt("Notion API key (secret_...)", password=True)
+    database_id = _prompt("Notion database ID")
+
+    with _console.status("Validating Notion connection...", spinner="dots"):
+        result = validate_notion_integration(api_key=api_key, database_id=database_id)
+    _render_integration_result("Notion", result)
+
+    if result.ok:
+        upsert_integration("notion", {"credentials": {"api_key": api_key, "database_id": database_id}})
+        env_path = sync_env_values({
+            "NOTION_API_KEY": api_key,
+            "NOTION_DATABASE_ID": database_id,
+        })
+        return "Notion", str(env_path)
+    return "Notion", ""
+
 
 def _configure_sentry() -> tuple[str, str]:
     _, credentials = _integration_defaults("sentry")
@@ -804,6 +831,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         Choice(value="github", label="GitHub MCP", hint="Let the agent inspect repos, PRs, and issues"),
         Choice(value="sentry", label="Sentry", hint="Investigate errors, events, and issue history"),
         Choice(value="skip", label="Skip for now", hint="Finish onboarding without configuring an integration"),
+        Choice(value="notion", label="Notion", hint="Post investigation reports to a Notion database"),
     ]
     selected_service = _choose(
         "Choose an integration to configure",
@@ -823,6 +851,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "aws": _configure_aws,
         "github": _configure_github_mcp,
         "sentry": _configure_sentry,
+        "notion": _configure_notion,
     }
     _SERVICE_LABELS = {
         "grafana_local": "grafana local",
@@ -834,6 +863,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "aws": "aws",
         "github": "github mcp",
         "sentry": "sentry",
+        "notion": "notion",
     }
 
     _step(f"Service · {_SERVICE_LABELS.get(selected_service, selected_service)}")
