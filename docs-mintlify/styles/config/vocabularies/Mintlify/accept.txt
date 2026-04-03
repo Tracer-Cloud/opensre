@@ -20,6 +20,7 @@ Datadog
 datalake
 denylists
 eBPF
+events_read
 faidx
 FASTQs
 fastquorum
@@ -32,8 +33,10 @@ Grafana
 gzipped
 Heatmap
 hotspots
+logs_read_data
+logs_read_index_data
 materializations
-Mintlify
+monitors_read
 namespace
 namespaces
 Nextflow
@@ -64,14 +67,10 @@ systemwide
 toolchain
 underperforming
 underuse
+(?i)underutilis.*
 underutilization
 underutilize
-(?i)underutilis.*
 userland
 vCPUs
 walkthrough
 whoever
-events_read
-logs_read_data
-logs_read_index_data
-monitors_read
