@@ -7,6 +7,7 @@ from app.version import PACKAGE_NAME, get_version
 
 _RELEASES_API = "https://api.github.com/repos/Tracer-Cloud/opensre/releases/latest"
 _INSTALL_SCRIPT = "https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.sh"
+_INSTALL_SCRIPT_PS1 = "https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.ps1"
 _RELEASE_URL = "https://github.com/Tracer-Cloud/opensre/releases/tag/v{}"
 
 
@@ -46,6 +47,10 @@ def _is_binary_install() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
+def _is_windows() -> bool:
+    return sys.platform == "win32"
+
+
 def _is_editable_install() -> bool:
     import importlib.metadata
     import json
@@ -70,6 +75,7 @@ def _upgrade_via_pip() -> int:
 
 
 def run_update(*, check_only: bool = False, yes: bool = False) -> int:
+    # To skip this check in CI or automated environments, set OPENSRE_NO_UPDATE_CHECK=1.
     current = get_version()
 
     try:
@@ -96,7 +102,10 @@ def run_update(*, check_only: bool = False, yes: bool = False) -> int:
     if _is_binary_install():
         print("  automatic update is not supported for binary installs.")
         print("  to update, re-run the install script:")
-        print(f"    curl -fsSL {_INSTALL_SCRIPT} | bash")
+        if _is_windows():
+            print(f"    irm {_INSTALL_SCRIPT_PS1} | iex")
+        else:
+            print(f"    curl -fsSL {_INSTALL_SCRIPT} | bash")
         return 1
 
     if _is_editable_install():
@@ -117,6 +126,7 @@ def run_update(*, check_only: bool = False, yes: bool = False) -> int:
     rc = _upgrade_via_pip()
     if rc == 0:
         print(f"  updated: {current} -> {latest}")
+        print(f"  release notes: {_RELEASE_URL.format(latest)}")
     else:
         print(f"  pip upgrade failed (exit {rc}).", file=sys.stderr)
         print(

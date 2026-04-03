@@ -29,6 +29,9 @@ from app.analytics.cli import (
     capture_test_synthetic_started,
     capture_tests_listed,
     capture_tests_picker_opened,
+    capture_update_completed,
+    capture_update_failed,
+    capture_update_started,
 )
 from app.analytics.provider import capture_first_run_if_needed, shutdown_analytics
 from app.version import get_version
@@ -143,7 +146,13 @@ def update(check_only: bool, yes: bool) -> None:
     """Check for a newer version and update if one is available."""
     from app.cli.update import run_update
 
-    raise SystemExit(run_update(check_only=check_only, yes=yes))
+    capture_update_started(check_only=check_only)
+    rc = run_update(check_only=check_only, yes=yes)
+    if rc == 0:
+        capture_update_completed()
+    else:
+        capture_update_failed()
+    raise SystemExit(rc)
 
 
 @cli.command()

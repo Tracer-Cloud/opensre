@@ -144,3 +144,15 @@ def capture_tests_listed(category: str, *, search: bool) -> None:
 
 def capture_test_run_started(test_id: str, *, dry_run: bool) -> None:
     get_analytics().capture(Event.TEST_RUN_STARTED, {"test_id": test_id, "dry_run": dry_run})
+
+
+def capture_update_started(*, check_only: bool) -> None:
+    get_analytics().capture(Event.UPDATE_STARTED, {"check_only": check_only})
+
+
+def capture_update_completed() -> None:
+    get_analytics().capture(Event.UPDATE_COMPLETED)
+
+
+def capture_update_failed() -> None:
+    get_analytics().capture(Event.UPDATE_FAILED)

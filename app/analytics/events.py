@@ -33,3 +33,8 @@ class Event(StrEnum):
     TESTS_LISTED = "tests_listed"
     TEST_RUN_STARTED = "test_run_started"
     TEST_SYNTHETIC_STARTED = "test_synthetic_started"
+
+    # Update
+    UPDATE_STARTED = "update_started"
+    UPDATE_COMPLETED = "update_completed"
+    UPDATE_FAILED = "update_failed"
