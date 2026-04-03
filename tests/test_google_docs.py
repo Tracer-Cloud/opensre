@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from app.integrations.clients.google_docs import GoogleDocsClient, build_google_docs_client_from_env
 from app.integrations.clients.google_docs.client import GoogleDocsIntegrationConfig

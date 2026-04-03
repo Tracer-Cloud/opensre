@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.integrations.models import GoogleDocsIntegrationConfig
 
@@ -99,8 +100,14 @@ class GoogleDocsClient:
         """Lazy-load and return (docs_service, drive_service)."""
         if self._docs_service is None or self._drive_service is None:
             try:
-                from google.oauth2 import service_account  # type: ignore[import-untyped]
-                from googleapiclient.discovery import build  # type: ignore[import-not-found]
+                service_account = cast(
+                    Any,
+                    importlib.import_module("google.oauth2.service_account"),
+                )
+                googleapiclient_discovery = cast(
+                    Any,
+                    importlib.import_module("googleapiclient.discovery"),
+                )
 
                 credentials = service_account.Credentials.from_service_account_file(
                     self.config.credentials_file,
@@ -109,8 +116,16 @@ class GoogleDocsClient:
                         "https://www.googleapis.com/auth/drive",
                     ],
                 )
-                self._docs_service = build("docs", "v1", credentials=credentials)
-                self._drive_service = build("drive", "v3", credentials=credentials)
+                self._docs_service = googleapiclient_discovery.build(
+                    "docs",
+                    "v1",
+                    credentials=credentials,
+                )
+                self._drive_service = googleapiclient_discovery.build(
+                    "drive",
+                    "v3",
+                    credentials=credentials,
+                )
             except Exception as exc:
                 logger.error("Failed to initialize Google services: %s", exc)
                 raise
