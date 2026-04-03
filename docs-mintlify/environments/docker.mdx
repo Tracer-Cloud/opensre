@@ -1,0 +1,79 @@
+---
+title: "Docker"
+description: "Install Tracer within your Docker under two minutes"
+---
+
+<Accordion title="Recommended System Requirements">
+
+For optimal Docker performance, we recommend a system with at least **4 CPU cores** and **8GB RAM**, running Docker Desktop or Docker Engine on Linux Ubuntu 22.04 or higher.
+
+</Accordion>
+
+## Prerequisites
+
+Make sure you have Docker installed on your system. If not, please install it first:
+
+<CardGroup cols={2}>
+  <Card href="https://docs.docker.com/desktop/install/mac-install/">
+    <img src="/images/other_logos/Apple-Black.png" className="block dark:hidden" alt="Apple" style={{ width: '50px', marginBottom: '10px' }} />
+    <img src="/images/other_logos/Apple-Black.png" className="hidden dark:block" alt="Apple" style={{ width: '50px', marginBottom: '10px' }} />
+    **Docker Desktop for Mac**<br/>
+    Install Docker Desktop on macOS
+  </Card>
+  <Card href="https://docs.docker.com/engine/install/ubuntu/">
+    <img src="/images/other_logos/Ubuntu-Black.png" className="block dark:hidden" alt="Ubuntu" style={{ width: '50px', marginBottom: '10px' }} />
+    <img src="/images/other_logos/Ubuntu-Black.png" className="hidden dark:block" alt="Ubuntu" style={{ width: '50px', marginBottom: '10px' }} />
+    **Docker Engine for Ubuntu**<br/>
+    Install Docker Engine on Ubuntu
+  </Card>
+</CardGroup>
+
+## 1. Pull the Tracer Docker image
+
+Run the following command to pull the latest Tracer Docker image:
+
+```bash
+docker pull tracercloud/tracer:latest
+```
+
+## 2. Run the Tracer container
+
+Start a Tracer container with the following command:
+
+```bash
+docker run -d --rm \
+  --name tracer \
+  --privileged \
+  --pid=host \
+  -p 8080:8080 \
+  -v /lib/modules:/lib/modules:ro \
+  -v /usr/src:/usr/src:ro \
+  -v /sys/kernel/debug:/sys/kernel/debug:rw \
+  -v /sys/kernel/btf/vmlinux:/sys/kernel/btf/vmlinux:ro \
+  tracercloud/tracer:latest
+```
+
+## 3. Access Tracer
+
+<Card href="https://app.tracer.cloud/">
+  <img
+    className="block dark:hidden"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+  <img
+    className="hidden dark:block"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+
+  <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1rem', color: 'inherit' }}>
+    Once the container is running, you can access Tracer
+  </div>
+
+  <div style={{ color: 'inherit' }}>
+    View real-time metrics, resource usage, and performance insights for your pipeline runs.
+  </div>
+</Card>

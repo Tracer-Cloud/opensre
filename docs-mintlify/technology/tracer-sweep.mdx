@@ -1,0 +1,190 @@
+---
+title: 'Tracer/sweep'
+sidebarTitle: 'Tracer/sweep'
+description: 'Systemwide cloud waste detection based on real execution activity'
+---
+
+Tracer/sweep analyzes runtime behavior across your cloud compute environment to identify resources that are running but not performing useful work. It uses execution-level signals collected from each instance to locate idle machines, underutilized compute, and other forms of waste that are not visible through billing or utilization summaries.
+
+<Note>Tracer/sweep does not modify workloads or infrastructure. It only reads execution metadata and cloud billing information to provide findings.</Note>
+
+## What Tracer/sweep does
+
+Tracer/sweep performs a read-only scan of your compute environment and:
+
+- Map it to pipeline and execution activity from Tracer/collect (if setup)
+- Evaluates CPU, memory, process, I/O, and container-level behavior
+- Detects periods where machines are running without active work
+- Identifies resources that appear active but have no meaningful execution
+- Prioritizes findings by estimated impact
+
+The analysis requires minimal setup and does not depend on tagging rules or external configuration.
+
+## Idle Instance Scanning
+
+### Overview
+
+Idle Instance Scanning identifies EC2 instances that remain online without running active processes or tasks. This helps teams locate compute resources that can be shut down, consolidated, or resized.
+
+<Frame>
+  <img src="/images/features/idle-resource-detection.webp" alt="Idle resource detection showing unutilized compute" />
+</Frame>
+
+### How it works
+
+Tracer/sweep relies on execution signals collected from each instance. These include:
+
+- CPU scheduling activity
+- Memory activity and pressure
+- Process start and stop events
+- Disk and network I/O
+- Container and namespace activity
+- GPU job activity when present
+
+Using these signals, Tracer/sweep identifies:
+
+- Instances with no running processes
+- Machines that remain idle after a workflow or task completes
+- Instances where tasks have exited or stalled but the machine continues running
+- GPU nodes with no scheduled workloads
+- Instances with periodic spikes but no sustained execution
+
+When an instance meets the idle criteria, Tracer/sweep records:
+
+- The detection timestamp
+- The reason for classification
+- The duration of the idle period (when available)
+
+<Tip>These findings appear in the Tracer UI as part of the waste summary.</Tip>
+
+## What Tracer/sweep finds
+
+Tracer/sweep highlights several categories of unused or inefficient compute, including:
+
+<AccordionGroup>
+  <Accordion title="Idle instances" icon="power-off">
+    Instances running without active processes or useful work.
+  </Accordion>
+  <Accordion title="Underutilized instances" icon="chart-pie">
+    Machines that appear busy in high-level metrics but show little or no execution activity inside the OS.
+  </Accordion>
+  <Accordion title="Orphaned or forgotten resources" icon="ghost">
+    Instances left running after workflow changes, testing, or deployments.
+  </Accordion>
+  <Accordion title="Inactive GPU nodes" icon="microchip">
+    GPU servers without active kernels or workloads.
+  </Accordion>
+</AccordionGroup>
+
+<Note>All findings are based on observed execution behavior, not estimates or predictive heuristics.</Note>
+
+## Outputs
+
+Tracer/sweep provides:
+
+- A ranked list of potential cost-saving opportunities
+- The detection reason for each idle or underutilized instance
+- Estimated impact ranges based on observed activity
+- Suggested next steps such as resizing or shutting down instances
+
+<Tip>Findings are designed to be auditable. Each result is backed by measurable signals.</Tip>
+
+## What Tracer/sweep does not do
+
+Tracer/sweep is read-only. It does not:
+
+<Warning>
+- Start, stop, or terminate instances
+- Apply predictive shutdown rules
+- Modify workloads or configurations
+- Replace cloud billing tools
+</Warning>
+
+<Tip>It surfaces evidence. Decisions remain with the user.</Tip>
+
+## Requirements
+
+Tracer/sweep requires:
+
+- Tracer/collect installed on instances to provide execution signals
+- A read-only IAM role to access cloud cost and usage data (AWS supported)
+- Access to the Tracer UI
+
+No application changes, tagging, or instrumentation are needed.
+
+## Installation
+
+Follow these steps to connect your AWS account.
+
+### Before you begin
+
+Ensure you have:
+
+- An AWS account with permission to create IAM roles
+- Access to the Tracer UI
+
+<Steps>
+  <Step title="Create a read-only IAM role">
+    In the Tracer UI, open the provided CloudFormation link.
+    
+    1. Deploy the CloudFormation stack.
+    2. The External ID is pre-filled.
+    
+    The stack creates a read-only role with the permissions required by Tracer/sweep.
+  </Step>
+  <Step title="Provide the Role ARN">
+    After deployment, locate the `TracerReadRoleArn` output.
+    
+    1. Copy the Role ARN.
+    2. Paste it into the Tracer UI and save.
+    
+    Tracer will use this role to read cost and usage metadata.
+  </Step>
+  <Step title="Review results">
+    Once connected, Tracer/sweep analyzes your environment so you can:
+    
+    - Review historical cloud usage (up to 90 days)
+    - Identify idle or low-activity instances
+    - View current execution activity
+    - Inspect estimated waste
+    
+    Findings appear automatically in the Tracer UI.
+  </Step>
+</Steps>
+
+## Security model
+
+- The IAM role is read-only
+- No application data or secrets are accessed
+- Tracer does not modify infrastructure
+- You can revoke access at any time by deleting the IAM role
+
+## What happens next
+
+After setup, Tracer/sweep continues to evaluate execution activity and update findings. Idle Instance Scanning runs continuously in the background.
+
+For workload-specific optimization, see Tracer/tune.
+
+## Summary
+
+Tracer/sweep detects unused or underutilized compute by analyzing real execution activity from each instance. This makes it possible to locate idle machines and other forms of waste that do not appear in billing summaries or coarse utilization metrics. The tool is read-only, requires minimal setup, and provides evidence-backed findings that are easy to verify.
+
+<CardGroup cols={2}>
+  <Card href="/technology/tracer-collect">
+    <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
+    </span>
+    <br />
+    Learn how execution signals are captured
+  </Card>
+  <Card href="/technology/tracer-tune">
+    <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
+    </span>
+    <br />
+    Optimize specific pipelines and workloads
+  </Card>
+</CardGroup>
+
+<div style={{ height: '50vh' }}></div>
+

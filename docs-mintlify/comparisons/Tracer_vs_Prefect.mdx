@@ -1,0 +1,130 @@
+---
+title: "How to use Tracer with Prefect"
+sidebarTitle: "Prefect"
+description: 'Runtime visibility beneath flow state'
+---
+
+Prefect orchestrates data and scientific workflows by defining flows, tasks, and execution state across compute environments. It determines what runs, when it runs, and whether it succeeded, but it does not observe how tasks behave while executing inside processes, containers, or the operating system.
+
+Tracer complements Prefect by exposing execution behavior: CPU, memory, disk, and network usage, during flow runs, without modifying flow definitions or task code.
+
+<Note>
+For a conceptual overview, see [How Tracer fits in your stack](/comparisons/overview).
+</Note>
+
+## What Prefect does well
+
+Prefect provides orchestration and state management for workflows, including:
+
+- Flow and task definitions
+- Scheduling and triggering of runs
+- Task retries, caching, and failure handling
+- Task logs, states, and execution history
+
+These capabilities make Prefect effective for coordinating and monitoring workflow execution. They focus on control flow and state, not on runtime behavior.
+
+## What Prefect does not see at runtime
+
+While Prefect tracks task state, it does not observe execution inside tasks. It does not show:
+
+- CPU usage versus requested or available capacity
+- Memory pressure or over-allocation during task execution
+- Disk and network I/O contention
+- Short-lived subprocesses spawned within tasks
+- Idle time while tasks wait on I/O or external systems
+
+This information exists below the orchestration layer, inside the container and operating system.
+
+## Why this gap matters in practice
+
+Prefect tasks often wrap complex tools, scripts, or libraries. Resource requirements are typically estimated conservatively to avoid failures.
+
+Without execution-level visibility, teams struggle to answer:
+
+- Why a task runs slower than expected
+- Whether allocated resources are actively used
+- Whether performance is limited by CPU, memory, disk, or network
+- Whether tasks are idle while still consuming infrastructure
+
+As a result, workflows may complete successfully but waste time and compute budget.
+
+## What Tracer adds
+
+Tracer observes execution directly from the host and container runtime and adds:
+
+- Observed CPU, memory, disk, and network usage per task
+- Visibility into subprocesses and nested tools invoked by tasks
+- Detection of stalls, idle execution, and contention
+- Attribution of resource usage by flow run, task, and execution unit
+
+These insights are derived from observed behavior, not from task metadata or configuration.
+
+<iframe
+  src="https://vakisr.github.io/tracer-radar-chart/quadrant-chart-prefect.html"
+  width="100%"
+  height="1500"
+  style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
+  title="Prefect + Tracer Pipeline Intelligence"
+/>
+
+## Example: diagnosing slow Prefect tasks
+
+A Prefect task reports a long runtime but no errors. Tracer shows:
+
+- Low CPU utilization
+- Frequent blocking on disk or network I/O
+- Subprocesses that run briefly but repeatedly
+
+This indicates an I/O-bound or externally constrained task rather than insufficient compute. Increasing CPU allocation would not improve performance.
+
+Tracer makes this distinction explicit by observing runtime behavior rather than inferring it from task duration alone.
+
+## Using execution insight to tune workflows
+
+With execution-level data, teams can make informed adjustments, such as:
+
+- Reducing CPU or memory allocations for underutilized tasks
+- Isolating I/O-heavy tasks onto appropriate instance types
+- Separating compute-heavy and coordination-heavy tasks
+- Identifying tasks that block on external systems
+
+These changes can reduce cost, stabilize runtimes, or both.
+
+## Observability comparison
+
+<iframe
+  src="https://vakisr.github.io/tracer-radar-chart/radar-chart-prefect.html"
+  width="100%"
+  height="700px"
+  style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
+  title="Prefect vs Tracer+Prefect Radar Chart"
+/>
+
+This comparison highlights the difference between task-state visibility and execution-level observation.
+
+## What Tracer does not replace
+
+Tracer is not a workflow orchestrator.
+
+- It does not replace Prefect
+- It does not schedule, retry, or manage task state
+- It does not modify flow definitions or task logic
+
+Prefect remains responsible for orchestration. Tracer makes runtime behavior visible.
+
+## When to use Tracer with Prefect
+
+Tracer is most useful when teams need to:
+
+- Explain slow or inconsistent task runtimes
+- Identify idle or inefficient task execution
+- Diagnose performance issues beyond logs and task states
+- Attribute resource usage and cost to specific flows or tasks
+
+Tracer operates independently of Prefect and supports workflows written in any language or toolchain.
+
+## Summary
+
+Prefect defines and orchestrates workflows through flows and tasks. Tracer adds execution-level visibility that shows how those tasks actually behave at runtime. Together, they provide both control and insight, without changes to existing workflows.
+
+<div style={{ height: '50vh' }}></div>

@@ -1,0 +1,12 @@
+---
+title: "Right Sizing"
+description: "Optimize resource allocation based on actual usage patterns"
+---
+
+Right-Sizing in Tracer optimizes scientific compute by using actual CPU and RAM usage from previous runs rather than static rules or guesswork. After each workflow execution, Tracer analyzes per-step utilization and compares it with current cloud instance pricing to recommend the most cost-efficient instance for the next run.
+
+![Rightsizing](/images/Rightsizing.png)
+
+Tracer uses statistical models to predict RAM requirements and account for variability, minimizing memory-related failures that AWS’s native tools cannot anticipate. The system detects idle CPU, excess memory headroom, and under-provisioned configurations, then maps each workflow to an instance type that fits both performance and cost.
+
+As more runs complete, recommendations become increasingly accurate, lowering compute spend, reducing over-provisioning, and preventing failures caused by mis-sized infrastructure.

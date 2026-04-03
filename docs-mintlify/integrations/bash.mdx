@@ -1,0 +1,74 @@
+---
+title: "Bash"
+description: "Using Tracer with Bash scripts"
+---
+
+Tracer can monitor any Bash-based pipeline, from small scripts to large chained commands, giving instant visibility into each command’s behavior.
+
+## Why use Tracer in combination with Bash
+
+Many scientific or data pipelines rely on simple shell scripts that lack structured logging.
+Tracer automatically adds observability:
+
+- Traces every subprocess (even background jobs)
+- Captures CPU, memory, and I/O usage for each command
+- Provides a single timeline of all steps
+- Enables root-cause debugging for failures or stalls
+- Works for scripts, loops, and complex shell pipelines
+
+## Getting started
+### Prerequisites
+
+- Bash 4.0 or higher
+- Tracer installed on [your operating system](/environments/overview)
+
+### Just run your pipeline, Tracer will automatically attach
+
+If Tracer is already installed on your operating system, you only need to enable the Tracer agent for pipelines that have not been run with Tracer before.<br/>
+In that case, run the following command:
+
+```bash
+sudo tracer init --token <your-token>
+```
+<Info> Go to our [onboarding](https://app.tracer.cloud/dashboard) to get your own personal token</Info>
+
+When running this command, you will be asked to name your pipeline for clear labeling in the dashboard.
+
+## Examples
+
+Run a Bash script under Tracer:
+
+```bash
+bash my_analysis.sh
+```
+
+or launch the Tracer demo workflow:
+
+```bash
+sudo tracer demo
+```
+
+Once the pipeline starts, open the Tracer dashboard, and you’ll see each command as a timeline step updating in real time.
+
+<Card href="https://app.tracer.cloud/">
+  <img
+    className="block dark:hidden"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+  <img
+    className="hidden dark:block"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+
+  <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1 rem', color: 'inherit' }}>
+    Watch your pipeline run in the Tracer dashboard
+  </div>
+
+  <div style={{ color: 'inherit' }}>
+    View real-time metrics, resource usage, and performance insights for your pipeline runs.
+  </div>
+</Card>

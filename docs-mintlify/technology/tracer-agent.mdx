@@ -1,0 +1,12 @@
+---
+title: "Tracer Agent"
+description: "Learn about the Tracer Agent architecture and capabilities"
+---
+Why Tracer’s Architecture Is Unique
+
+The Tracer Agent is the heart of Tracer’s platform, a lightweight process that runs on your compute nodes and observes pipeline execution from the kernel upward.
+
+Most monitoring systems rely on application-level hooks or SDKs that require code changes and introduce overhead.
+In scientific workloads, where thousands of short-lived processes execute complex binaries (BLAST, BWA, GATK, TensorFlow, etc.), this approach simply doesn’t scale.
+
+Tracer solves this by leveraging eBPF (Extended Berkeley Packet Filter) technology to monitor workloads directly from the Linux kernel, safely and with minimal overhead.

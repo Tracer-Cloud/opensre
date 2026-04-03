@@ -1,0 +1,75 @@
+---
+title: "Nextflow"
+description: "Monitor Nextflow pipelines with Tracer"
+---
+
+Tracer integrates with Nextflow to provide step-level visibility into every process and container.<br/>
+Once installed, it automatically detects all Nextflow processes and displays real-time metrics, performance traces, and cost data for each task.
+
+## Why use Tracer when running Nextflow pipelines
+
+Many teams running Nextflow also rely on Seqera Platform to orchestrate and monitor workflows across different environments.<br/>
+
+Because both tools appear in the same setups, we’ve prepared an objective comparison that explains how Tracer and Seqera differ in focus and how they can complement each other effectively.
+You can read the full comparison here: [Tracer vs Seqera](/comparisons/Tracer_vs_Seqera)
+
+Nextflow orchestrates complex scientific workflows efficiently, but it doesn’t provide full visibility into why certain tasks run slowly, stall, or waste compute. Tracer fills that gap:
+
+- Real-time insight into every process, container, and tool
+- Performance metrics (CPU, memory, I/O, GPU) per task
+- Automatic detection of idle or blocked tasks
+- AI-native logging for easy debugging and root-cause analysis
+- Works across local, HPC, or cloud environments without changes to your Nextflow code
+
+## Getting Started
+
+### Prerequisites
+
+- Nextflow installed and working (`nextflow run hello` test passes)
+- Tracer installed on [your operating system](/environments/overview)
+
+### Just run your pipeline, Tracer will automatically attach
+
+If Tracer is already installed on your operating system, you only need to enable the Tracer agent for pipelines that have not been run with Tracer before.<br/>
+In that case, run the following command:
+
+```bash
+sudo tracer init --token <your-token>
+```
+<Info> Go to our [onboarding](https://app.tracer.cloud/dashboard) to get your own personal token</Info>
+
+When running this command, you will be asked to name your pipeline for clear labeling in the dashboard.
+
+## Examples
+
+Launch the Tracer demo workflow:
+
+```bash
+sudo tracer demo
+```
+Or run any Nextflow pipeline as usual.
+
+Once the pipeline starts, open the Tracer dashboard, and you’ll see each Nextflow process as a timeline step updating in real time.
+
+<Card href="https://app.tracer.cloud/tracer-bioinformatics">
+  <img
+    className="block dark:hidden"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+  <img
+    className="hidden dark:block"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+
+  <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1 rem', color: 'inherit' }}>
+    Watch your pipeline run in the Tracer dashboard
+  </div>
+
+  <div style={{ color: 'inherit' }}>
+    View real-time metrics, resource usage, and performance insights for your pipeline runs.
+  </div>
+</Card>

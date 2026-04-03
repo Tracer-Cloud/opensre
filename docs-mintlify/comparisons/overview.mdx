@@ -1,0 +1,125 @@
+---
+title: 'How Tracer fits in your stack'
+sidebarTitle: 'Overview'
+description: 'Where Tracer fits in modern scientific and data platforms'
+---
+
+Modern scientific and data platforms are built from multiple layers: workflow orchestration, execution environments, infrastructure, and observability tooling. Each layer answers different questions, but gaps often appear between them, especially at runtime.
+
+Tracer is designed to sit between orchestration and infrastructure, observing what actually executes on the system and mapping that behavior back to pipelines, runs, tasks, and tools.
+
+This page explains where Tracer fits, what it adds, and how it complements the tools already in your stack.
+
+## The typical stack (and where gaps appear)
+
+Most bioinformatics, data, and HPC environments include some combination of:
+
+- **Workflow orchestration**: Tools such as Seqera, Nextflow, Prefect, Dagster, Airflow, Flyte, or Slurm define what should run and when
+- **Execution environments**: Containers, batch systems, Kubernetes, cloud instances, or HPC clusters execute the work
+- **Observability and monitoring**: Tools such as Grafana, Prometheus, Datadog, or AWS CloudWatch collect and visualize reported metrics, logs, and traces
+
+Each layer is effective within its scope, but none are designed to fully explain how execution actually behaves at runtime, especially for short-lived, heterogeneous scientific workloads.
+
+## Where Tracer fits
+
+Tracer observes execution directly from the host and container runtime. It does not replace orchestration or monitoring tools. Instead, it adds a missing layer:
+
+**Execution-level visibility, grounded in what the operating system actually runs.**
+
+Tracer answers questions such as:
+
+- What is each pipeline step doing while it runs?
+- Which tools are CPU-bound, I/O-bound, stalled, or idle?
+- Which runs, tasks, or tools consumed resources and cost?
+- Which infrastructure is active, idle, or orphaned after execution completes?
+
+This visibility is derived from observed system behavior, not from reported metrics, labels, or manual instrumentation.
+
+## How Tracer complements workflow orchestration
+
+Workflow engines define pipeline structure, scheduling, retries, and state. They do not observe low-level execution behavior inside containers or processes.
+
+Tracer complements orchestration tools by:
+
+- Observing execution inside containers and hosts
+- Capturing short-lived processes and subprocesses
+- Mapping runtime behavior back to pipeline runs and tasks
+- Providing execution context without modifying workflows
+
+<Card title="Workflow orchestration tools" icon="diagram-project" href="/comparisons/workflow-orchestration">
+  See how Tracer works with Airflow, Dagster, Flyte, Prefect, and Seqera
+</Card>
+
+## How Tracer complements observability and monitoring tools
+
+Observability platforms collect telemetry that systems and applications report. They organize data around hosts, services, and metrics.
+
+Tracer complements these tools by:
+
+- Observing execution behavior directly, not via exporters
+- Organizing data around pipelines, runs, tasks, and tools
+- Providing cost and performance attribution at execution-unit granularity
+- Surfacing behavior that occurs between metric scrapes or outside service boundaries
+
+<Card title="Observability and telemetry tools" icon="chart-line" href="/comparisons/observability-tools">
+  See how Tracer works with Datadog, Grafana, and Prometheus
+</Card>
+
+## How Tracer complements cloud-native monitoring
+
+Cloud-native monitoring services such as AWS CloudWatch collect metrics, logs, and events from managed infrastructure. They are tightly integrated with cloud platforms but remain resource-centric rather than execution-aware.
+
+Tracer complements these tools by:
+
+- Observing execution behavior inside cloud workloads
+- Mapping resource consumption to pipelines, tasks, and tools
+- Providing visibility into short-lived and containerized execution
+- Attributing cost to actual work, not just instance uptime
+
+<Card title="Cloud-native monitoring" icon="cloud" href="/comparisons/cloud-native-monitoring">
+  See how Tracer works with AWS CloudWatch
+</Card>
+
+## What Tracer does not try to be
+
+Tracer is intentionally scoped. It does not aim to replace:
+
+- Workflow orchestration engines
+- General-purpose metric storage systems
+- Organization-wide dashboarding for unrelated services
+- Arbitrary business or application analytics
+
+Tracer focuses on execution behavior, not on replacing every tool upstream or downstream.
+
+## A shared mental model
+
+A useful way to think about the stack:
+
+| Layer | Role |
+|-------|------|
+| **Orchestration tools** | Define intent |
+| **Infrastructure** | Execute work |
+| **Monitoring tools** | Report signals |
+| **Tracer** | Observe reality |
+
+Tracer bridges intent and reality by showing how execution actually unfolds on the system.
+
+## Where to go next
+
+Choose the page that matches the tools in your environment:
+
+<CardGroup cols={2}>
+  <Card title="Workflow orchestration tools" icon="diagram-project" href="/comparisons/workflow-orchestration">
+    Airflow, Dagster, Flyte, Prefect, Seqera
+  </Card>
+  <Card title="Observability and telemetry tools" icon="chart-line" href="/comparisons/observability-tools">
+    Datadog, Grafana, Prometheus
+  </Card>
+  <Card title="Cloud-native monitoring" icon="cloud" href="/comparisons/cloud-native-monitoring">
+    AWS CloudWatch
+  </Card>
+</CardGroup>
+
+Each page explains what that tool does well, where execution-level visibility becomes important, and how Tracer integrates without changing existing workflows.
+
+<div style={{ height: '50vh' }}></div>

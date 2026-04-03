@@ -1,0 +1,350 @@
+---
+title: "AWS Batch"
+description: "Install Tracer on AWS Batch (Multi-Node) under two minutes"
+---
+
+<style>
+  {`
+  .capability-comparison-table td {
+    vertical-align: middle !important;
+    text-align: left !important;
+  }
+  .capability-comparison-table th {
+    vertical-align: middle !important;
+    text-align: left !important;
+    color: inherit !important;
+  }
+  .prerequisites-table table {
+    border: none !important;
+  }
+  .prerequisites-table td,
+  .prerequisites-table th {
+    border: none !important;
+    padding: 0.25rem 1rem 0.25rem 0 !important;
+  }
+  .prerequisites-table thead {
+    display: none !important;
+  }
+`}
+</style>
+
+Try Tracer in Your AWS Batch Workloads
+
+<Tabs>
+  <Tab title="CloudFormation">
+
+<Info>
+  Use CloudFormation to set up AWS Batch infrastructure for bioinformatics and
+  HPC pipelines.
+</Info>
+
+### 1. Connect AWS Integration
+
+Open the following link to connect your AWS account automatically to Tracer. This will allow Tracer to monitor your AWS Batch jobs.
+
+[→ Connect AWS](https://app.tracer.cloud/onboarding/linux-cloud-multi)
+
+### 2. Locate the EC2 LaunchTemplate UserData
+
+In your CloudFormation template, find the `UserData` field within the Launch Template used by your AWS Batch compute environment.
+
+Reference example: [CloudFormation Template](https://github.com/Tracer-Cloud/nextflow-test-pipelines/blob/f2fea612adfb3cd9a17ea6baedd953d0c7e9ec01/infrastructure/aws_batch/cloudformation.yml#L323)
+
+```
+Resources:
+  NextflowLaunchTemplate:
+    Properties:
+      LaunchTemplateData:
+        UserData: !Base64 |
+          #cloud-config
+          runcmd:
+            - ...
+```
+
+### 3. Append Tracer install in EC2 Launch Template UserData
+
+Add these commands to the `runcmd`: section in your UserData:
+
+```bash
+- curl -sSL https://install.tracer.cloud | sh
+```
+
+```bash
+- tracer init --token YOUR_TOKEN_HERE \
+     --pipeline-name YOUR_PIPELINE_NAME \
+     --pipeline-type YOUR_PIPELINE_TYPE \
+     --environment aws_batch \
+     --watch-dir="/var/log"
+```
+
+<Info>
+  {" "}
+  Go to our [onboarding](https://app.tracer.cloud/onboarding/linux-cloud-multi)
+  to get your own personal token
+</Info>
+
+### 4. Validate, apply change set, then verify instance
+
+```bash
+aws cloudformation validate-template \
+  --template-body file://YOUR_TEMPLATE.yaml
+```
+
+```bash
+aws cloudformation create-change-set \
+  --stack-name YOUR_STACK_NAME \
+  --template-body file://YOUR_TEMPLATE.yaml \
+  --change-set-name tracer-userdata-update \
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
+```bash
+aws cloudformation execute-change-set \
+  --stack-name YOUR_STACK_NAME \
+  --change-set-name tracer-userdata-update
+```
+
+### 5. Configure Nextflow batch.config with Trace ID
+
+In your Nextflow `batch.config` file, you need to:
+
+1. Add a `params` section to generate a UUID that will be shared across all jobs in the workflow
+2. Add `containerOptions` in the `process` section to pass the trace ID as an environment variable to each container
+
+This allows Tracer to correlate all jobs from the same workflow execution.
+
+```bash
+// 1. Add params section to generate UUID
+params {customUUID = java.util.UUID.randomUUID().toString()}
+
+process {executor = 'awsbatch'
+    queue = 'NextflowCPU'
+
+// 2. Add containerOptions to pass trace ID to containers
+containerOptions = "--env TRACER_TRACE_ID=${params.customUUID}"
+
+resourceLabels = ['custom-session-uuid': "${params.customUUID}"]
+}
+
+aws {region = 'YOUR_REGION'
+  batch
+  {cliPath = '/usr/local/aws-cli/v2/current/bin/aws'}
+}
+```
+
+### Monitor and Optimize Your Pipeline
+
+<Card href="https://app.tracer.cloud/">
+  <img
+    className="block dark:hidden"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+  <img
+    className="hidden dark:block"
+    src="/images/logo/tracer/Tracer Full Body - White.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+
+<div
+  style={{
+    fontSize: "1.3rem",
+    fontWeight: "700",
+    marginBottom: "1 rem",
+    color: "inherit",
+  }}
+>
+  Watch your pipeline run in the Tracer dashboard
+</div>
+
+  <div style={{ color: 'inherit' }}>
+    View real-time metrics, resource usage, and performance insights for your pipeline runs.
+  </div>
+</Card>
+
+  </Tab>
+  <Tab title="Terraform">
+
+<Info>
+  Use Terraform to provision infrastructure and run RNA-seq pipeline on AWS
+  Batch.
+</Info>
+
+<Accordion title="Prerequisites">
+Make sure these tools are installed locally before proceeding.
+
+<table
+  style={{
+    border: "none",
+    marginTop: "0",
+    width: "100%",
+    tableLayout: "fixed",
+  }}
+>
+  <tbody>
+    <tr style={{ border: "none" }}>
+      <td
+        style={{
+          border: "none",
+          padding: "0.25rem 1rem 0.25rem 0",
+          width: "18%",
+        }}
+      >
+        • AWS CLI v2
+      </td>
+      <td
+        style={{
+          border: "none",
+          padding: "0.25rem 1rem 0.25rem 0",
+          width: "18%",
+        }}
+      >
+        • Terraform
+      </td>
+      <td
+        style={{
+          border: "none",
+          padding: "0.25rem 1rem 0.25rem 0",
+          width: "18%",
+        }}
+      >
+        • Nextflow
+      </td>
+      <td
+        style={{
+          border: "none",
+          padding: "0.25rem 1rem 0.25rem 0",
+          width: "18%",
+        }}
+      >
+        • Java
+      </td>
+      <td
+        style={{
+          border: "none",
+          padding: "0.25rem 1rem 0.25rem 0",
+          width: "25%",
+        }}
+      >
+        • Docker (optional)
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+</Accordion>
+
+### 1. Connect AWS Integration
+
+Open the following link to connect your AWS account automatically to Tracer. This will allow Tracer to monitor your AWS Batch jobs.
+
+[→ Connect AWS](https://app.tracer.cloud/onboarding/linux-cloud-multi)
+
+### 2. Clone the repository
+
+Clone the nextflow-test-pipelines repository to get access to the AWS Batch RNA-seq pipeline configuration.
+
+```bash
+git clone https://github.com/Tracer-Cloud/nextflow-test-pipelines.git
+cd nextflow-test-pipelines/pipelines/aws-batch/rnaseq
+```
+
+### 3. Update user_data_mime.sh
+
+Update the user_data_mime.sh file to include your Tracer user ID. Navigate to the terraform directory and edit the file:
+
+```bash
+cd nextflow-test-pipelines/pipelines/aws-batch/rnaseq/terraform
+vim user_data_mime.sh
+```
+
+<Info>
+**Important:** Find line 120 in the file and update it with your user ID:
+
+```bash
+tracer init --token YOUR_TOKEN_HERE
+--pipeline-name aws_batch_rnaseq
+--pipeline-type RNA-SEQ
+--environment aws-batch
+--watch-dir="/var/log"
+```
+
+<Info>
+  {" "}
+  Go to our [onboarding](https://app.tracer.cloud/onboarding/linux-cloud-multi)
+  to get your own personal token
+</Info>
+
+**Note:** If you need to change this later, you'll need to refresh the infrastructure.
+
+</Info>
+
+[View the exact line to update](https://github.com/Tracer-Cloud/nextflow-test-pipelines/blob/dab93c3ba17a04c0e6a945264e90e2b69d1fca02/pipelines/aws-batch/rnaseq/terraform/user_data_mime.sh#L120)
+
+### 4. Setup infrastructure
+
+Run the setup script to create the AWS infrastructure (VPC, S3, Batch, etc.):
+
+```bash
+cd nextflow-test-pipelines/pipelines/aws-batch/rnaseq
+./run.sh setup
+```
+
+<Info>
+  **What this does:** Creates VPC with public/private subnets, AWS Batch compute
+  environment, S3 buckets for work directory and outputs, IAM roles and
+  policies, security groups, and EC2 Instance Connect endpoint.
+</Info>
+
+<Info>
+  **Alternative for Tracer AWS Account Users:** If you have access to Tracer's
+  AWS account, you can skip the infrastructure setup and run the pipeline
+  directly: ```bash cd nextflow-test-pipelines/pipelines/aws-batch/rnaseq
+  ./run.sh tracer run ```
+</Info>
+
+### 5. Run the RNA-seq pipeline
+
+Execute the RNA-seq pipeline using the run script:
+
+```bash
+cd nextflow-test-pipelines/pipelines/aws-batch/rnaseq
+./run.sh run
+```
+
+### Monitor and Optimize Your Pipeline
+
+<Card href="https://app.tracer.cloud/">
+  <img
+    className="block dark:hidden"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+  <img
+    className="hidden dark:block"
+    src="/images/logo/tracer/Tracer Full Body - White.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+
+<div
+  style={{
+    fontSize: "1.3rem",
+    fontWeight: "700",
+    marginBottom: "1 rem",
+    color: "inherit",
+  }}
+>
+  Watch your pipeline run in the Tracer dashboard
+</div>
+
+  <div style={{ color: 'inherit' }}>
+    View real-time metrics, resource usage, and performance insights for your pipeline runs.
+  </div>
+</Card>
+
+  </Tab>
+</Tabs>

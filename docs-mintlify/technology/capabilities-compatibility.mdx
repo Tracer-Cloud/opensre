@@ -1,0 +1,177 @@
+---
+title: 'Capabilities and compatibility'
+sidebarTitle: 'Capabilities and compatibility'
+description: 'What Tracer supports and guarantees'
+---
+
+Tracer is an execution-level observability platform designed for scientific and compute-intensive workloads. This page describes the capabilities, compatibility, and guarantees that apply across all Tracer products.
+
+For details on how execution data is collected, analyzed, or acted on, see:
+
+<CardGroup cols={3}>
+  <Card href="/technology/tracer-collect">
+    <div style={{ textAlign: 'center' }}>
+      <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+        <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
+      </span>
+    </div>
+  </Card>
+  <Card href="/technology/tracer-tune">
+    <div style={{ textAlign: 'center' }}>
+      <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+        <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
+      </span>
+    </div>
+  </Card>
+  <Card href="/technology/tracer-sweep">
+    <div style={{ textAlign: 'center' }}>
+      <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+        <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #4436BD, #5646E2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
+      </span>
+    </div>
+  </Card>
+</CardGroup>
+
+## Execution-level observability
+
+Tracer observes workloads at the operating system level. It captures how processes execute and use resources, rather than relying on workflow metadata, logs, or application instrumentation.
+
+<CardGroup cols={3}>
+  <Card title="Real behavior" icon="eye">
+    Observes real execution behavior, not configuration intent
+  </Card>
+  <Card title="Zero changes" icon="code">
+    Works without modifying code, containers, or workflows
+  </Card>
+  <Card title="No tagging" icon="tag">
+    Does not require tagging or framework-specific integration
+  </Card>
+</CardGroup>
+
+<Note>This execution-first approach is consistent whether Tracer is used for pipeline analysis, optimization, or systemwide cost discovery.</Note>
+
+## Supported environments
+
+Tracer is designed to work in real production environments with heterogeneous tooling.
+
+### Operating system
+
+- Linux hosts only
+
+### Infrastructure
+
+- Cloud compute (for example, AWS EC2 and AWS Batch)
+- On-premises Linux clusters
+- Hybrid cloud and on-prem environments
+
+### Workload types
+
+- Containerized and non-containerized workloads
+- Batch processing systems
+- Interactive compute sessions
+- Pipelines with many short-lived processes
+- Legacy tools and custom binaries
+
+If a workload runs on Linux, Tracer can observe it.
+
+## Framework and workflow support
+
+Tracer is framework-agnostic. It does not depend on workflow engine metadata and does not require configuration for specific systems.
+
+Commonly used with:
+
+- Nextflow
+- Snakemake
+- CWL
+- Slurm
+- Custom scripts and pipelines
+- AWS Batch–managed workloads
+
+This list is illustrative, not exhaustive.
+
+## Installation guarantees
+
+Across all supported environments:
+
+<CardGroup cols={3}>
+  <Card title="No code changes" icon="code">
+    Works with existing code as-is
+  </Card>
+  <Card title="No instrumentation" icon="wrench">
+    No application wrappers required
+  </Card>
+  <Card title="No tagging" icon="tag">
+    No annotation or tagging required
+  </Card>
+</CardGroup>
+
+<Tip>Once Tracer is installed, execution visibility is available automatically on the next run. See [Quickstart](/quickstart) for setup instructions.</Tip>
+
+## Security and data boundaries
+
+Tracer is designed to minimize data exposure.
+
+<Warning>
+**Across all products, Tracer:**
+- Collects system-level execution metadata only
+- Does not inspect application payloads or scientific data
+- Does not read file contents or memory
+- Does not collect environment variables or secrets
+</Warning>
+
+Detailed data-collection limits and privacy boundaries are documented in [Limits and privacy](/technology/limits-privacy).
+
+Information about kernel-level safety and isolation is covered in [eBPF and security](/technology/ebpf-security).
+
+## Performance characteristics
+
+Tracer is built for continuous use in compute-heavy cloud environments. (Also works locally)
+
+General characteristics:
+
+- **Low overhead** — Less than 2% runtime overhead
+- **No re-runs** — No need to re-run pipelines to collect data
+- **Scales well** — Handles thousands of short-lived processes
+
+Specific performance details depend on workload characteristics and are documented in [Tracer/collect](/technology/tracer-collect).
+
+## What this page is for
+
+This page answers:
+
+- Will Tracer work in my environment?
+- What are the system requirements and guarantees?
+- What assumptions does Tracer make about workflows and infrastructure?
+
+It intentionally does not describe product-specific behavior or UI features.
+
+## Summary
+
+Tracer provides execution-level observability across diverse scientific and compute environments. Its capabilities are defined by what it supports, what it guarantees, and what it deliberately does not require, independent of any specific workflow engine or cloud provider.
+
+<CardGroup cols={3}>
+  <Card href="/technology/tracer-collect">
+    <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
+    </span>
+    <br />
+    Learn how execution signals are captured at the kernel level
+  </Card>
+  <Card href="/technology/tracer-tune">
+    <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
+    </span>
+    <br />
+    Analyze and optimize pipeline performance and resource usage
+  </Card>
+  <Card href="/technology/tracer-sweep">
+    <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #4436BD, #5646E2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
+    </span>
+    <br />
+    Uncover systemwide cloud waste using real execution behavior
+  </Card>
+</CardGroup>
+
+<div style={{ height: '50vh' }}></div>
+

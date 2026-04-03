@@ -1,0 +1,65 @@
+---
+title: "Metrics"
+description: "Track and analyze comprehensive pipeline metrics with Tracer"
+---
+
+## Overview
+
+Tracer automatically captures detailed metrics for every process in your pipeline, providing deep visibility into resource usage, performance, and execution patterns without requiring any code changes.
+
+## Key Metrics Tracked
+### Resource Utilization
+
+- CPU Usage: Per-process utilization, saturation levels, and hotspots
+- Memory Usage: Allocation, peak consumption, and memory efficiency
+- I/O Ops: Disk reads/writes, throughput, and bottleneck detection
+- Network Activity: Bandwidth usage, transfer volume, and congestion
+- GPU Utilization: Compute load and VRAM usage (when applicable)
+
+<video
+  autoPlay
+  loop
+  muted
+  playsInline
+  style={{ width: '100%', maxWidth: '100%' }}
+>
+  <source src="/images/Metrics.mp4" type="video/mp4" />
+  Your browser does not support the video tag.
+</video>
+
+### Performance Metrics
+
+- Execution Time: Wall-clock, CPU, and wait times per task
+- Throughput: Data processed per unit time (e.g., samples/hour)
+- Latency: Startup delays, scheduling lag, and queueing overhead
+- Parallelization: Concurrency levels and contention across workers
+
+### Cost Metrics
+
+- Compute Costs: Per-task and per-pipeline cost attribution
+- Resource Costs: Storage, network, and transfer charges
+- Efficiency: Cost per sample, cost per GB processed
+- Waste Detection: Idle resources, over-provisioning, and inefficiencies
+
+<video
+  autoPlay
+  loop
+  muted
+  playsInline
+  style={{ width: '100%', maxWidth: '100%' }}
+>
+  <source src="/images/Costs.mp4" type="video/mp4" />
+  Your browser does not support the video tag.
+</video>
+
+## Real-Time Monitoring
+
+Inspect live metrics as your pipeline runs, with immediate visibility into performance, utilization, and potential bottlenecks.
+
+## Historical Analysis
+
+- Analyze past runs to uncover long-term patterns and optimization opportunities:
+- Performance Trends: How execution times shift across versions
+- Utilization Patterns: Persistent over/under-use of compute or memory
+- Cost Evolution: Impact of configuration changes on total spend
+- Regression Detection: Automatic alerts for performance degradation

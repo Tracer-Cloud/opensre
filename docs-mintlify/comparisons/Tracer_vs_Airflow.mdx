@@ -1,0 +1,130 @@
+---
+title: 'How to use Tracer with Apache Airflow'
+sidebarTitle: 'Apache Airflow'
+description: 'What DAGs does not show at runtime'
+---
+
+Apache Airflow orchestrates workflows by defining Directed Acyclic Graphs (DAGs), scheduling tasks, and tracking execution state. It determines what runs and when it runs, but it does not observe how tasks behave while executing inside processes, containers, or the operating system.
+
+Tracer complements Airflow by exposing execution behavior: CPU, memory, disk, and network usage, during task execution, without changing DAG definitions or operator configuration.
+
+<Note>
+For a conceptual overview, see [How Tracer fits in your stack](/comparisons/overview).
+</Note>
+
+## What Airflow does well
+
+Airflow provides reliable orchestration and scheduling for workflows, including:
+
+- DAG definitions and task dependencies
+- Scheduling, retries, and backfills
+- Task state, logs, and exit status
+- Integration with many execution backends
+
+These capabilities make Airflow effective for coordinating workflows and managing execution order. They focus on control flow and task state.
+
+## What Airflow does not see at runtime
+
+Airflow tracks task success or failure, but it does not observe execution inside the runtime environment. It does not show:
+
+- CPU utilization during task execution
+- Memory pressure or over-allocation
+- Disk or network I/O contention
+- Short-lived subprocesses spawned by tasks
+- Idle time while tasks wait on I/O or external systems
+
+This execution behavior occurs below the DAG and operator layer and is not visible through task state or logs alone.
+
+## Why this gap matters in practice
+
+Airflow tasks often wrap complex logic: data transformations, external tools, database queries, or containerized workloads. Resource requirements are commonly set conservatively to avoid failures.
+
+Without execution-level visibility, teams struggle to answer:
+
+- Why a task consistently runs slower than expected
+- Whether allocated resources are actually used
+- Whether performance is limited by compute, I/O, or memory
+- Why infrastructure cost grows even when DAGs remain unchanged
+
+As a result, workflows may be correct and stable, yet inefficient.
+
+## What Tracer adds
+
+Tracer observes execution directly from the host and container runtime and adds:
+
+- Observed CPU, memory, disk, and network usage per task
+- Visibility into subprocesses and nested tools invoked by operators
+- Detection of stalls, idle execution, and contention
+- Attribution of resource usage by DAG, task, and run
+
+These insights are derived from observed execution behavior, not from task metadata or scheduling configuration.
+
+<iframe
+  src="https://vakisr.github.io/tracer-radar-chart/quadrant-chart-airflow.html"
+  width="100%"
+  height="1450"
+  style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
+  title="Airflow + Tracer Pipeline Intelligence"
+/>
+
+## Example: diagnosing a slow Airflow task
+
+An Airflow task consistently exceeds its expected runtime. Logs show normal progress. Tracer reveals:
+
+- Low CPU utilization
+- Memory usage well below allocation
+- High disk I/O wait time
+
+This indicates an I/O-bound workload rather than insufficient compute. Increasing CPU or memory would not improve performance.
+
+Tracer makes this distinction explicit by observing runtime behavior instead of inferring it from task duration alone.
+
+## Using execution insight to tune DAGs
+
+With execution-level data, teams can make informed changes, such as:
+
+- Reducing CPU or memory allocations for underutilized tasks
+- Selecting instance types better suited for I/O-heavy workloads
+- Separating compute-heavy and I/O-heavy tasks
+- Identifying operators that block on external systems
+
+These adjustments can reduce cost, improve runtime stability, or both.
+
+## Observability comparison
+
+<iframe
+  src="https://vakisr.github.io/tracer-radar-chart/radar-chart-airflow.html"
+  width="100%"
+  height="700px"
+  style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
+  title="Airflow vs Tracer+Airflow Radar Chart"
+/>
+
+This chart contrasts DAG- and task-level orchestration visibility with execution-level observation.
+
+## What Tracer does not replace
+
+Tracer is not an orchestration system.
+
+- It does not replace Apache Airflow
+- It does not schedule tasks or manage DAGs
+- It does not modify operators or execution logic
+
+Airflow remains responsible for orchestration. Tracer makes execution behavior visible.
+
+## When to use Tracer with Airflow
+
+Tracer is most useful when teams need to:
+
+- Explain slow or inconsistent task runtimes
+- Identify idle or inefficient execution within DAGs
+- Diagnose performance issues beyond logs and task state
+- Attribute resource usage and cost to specific tasks or runs
+
+Tracer operates independently of Airflow and supports tasks written in any language or toolchain.
+
+## Summary
+
+Apache Airflow defines and schedules workflows. Tracer adds execution-level visibility that shows how tasks actually behave at runtime. Together, they provide both control and insight, without changes to existing DAGs.
+
+<div style={{ height: '50vh' }}></div>

@@ -1,0 +1,73 @@
+---
+title: "WDL"
+description: "Using Tracer with WDL workflows"
+---
+
+
+Tracer integrates with WDL (Workflow Description Language) pipelines executed through engines like Cromwell or miniWDL.
+It automatically traces all WDL tasks as they run, giving per-task performance data and cross-node visibility without modifying workflow definitions.
+
+## Why use Tracer in combination with WDL
+
+While WDL focuses on portability and reproducibility, it lacks system-level telemetry.
+Tracer adds observability that helps teams debug and optimize large WDL workflows:
+- Step-level execution graphs for each WDL task
+- Real-time metrics for CPU, memory, I/O, and storage
+- Correlated logs and system traces even if task logs are minimal
+- Cost and resource attribution by sample, node, or step
+- Works locally, in HPC, or in cloud environments (AWS, GCP, Azure)
+
+
+## Getting Started
+
+### Prerequisites
+
+- WDL engine installed and working (e.g., Cromwell or miniWDL)
+- Tracer installed on [your operating system](/environments/overview)
+
+### Just run your pipeline, Tracer will automatically attach
+
+If Tracer is already installed on your operating system, you only need to enable the Tracer agent for pipelines that have not been run with Tracer before.<br/>
+In that case, run the following command:
+
+```bash
+sudo tracer init --token <your-token>
+```
+<Info> Go to our [onboarding](https://app.tracer.cloud/dashboard) to get your own personal token</Info>
+
+When running this command, you will be asked to name your pipeline for clear labeling in the dashboard.
+
+## Examples
+
+Launch the Tracer demo workflow:
+
+```bash
+sudo tracer demo
+```
+
+Or run your WDL pipeline as usual.
+
+Once the pipeline starts, open the Tracer dashboard, and you’ll see each WDL task as a timeline step updating in real time.
+
+<Card href="https://app.tracer.cloud/">
+  <img
+    className="block dark:hidden"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+  <img
+    className="hidden dark:block"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+
+  <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1rem', color: 'inherit' }}>
+    Watch your pipeline run in the Tracer dashboard
+  </div>
+
+  <div style={{ color: 'inherit' }}>
+    View real-time metrics, resource usage, and performance insights for your pipeline runs.
+  </div>
+</Card>

@@ -1,0 +1,216 @@
+{
+  "$schema": "https://docs.tracer.cloud/docs.json",
+  "theme": "maple",
+  "name": "Tracer Documentation",
+  "modeToggle": {
+    "default": "dark",
+    "isHidden": false
+  },
+  "colors": {
+    "primary": "#000000",
+    "light": "#FFFFFF",
+    "dark": "#000000"
+  },
+  "favicon": "/favicon.ico",
+  "logo": {
+    "light": "/images/logo/tracer/tracer-docs-dark.svg",
+    "dark": "/images/logo/tracer/tracer-docs-light.svg"
+  },
+  "styles": {
+    "css": "/custom.css"
+  },
+  "scripts": [
+    "/toc-actions.js",
+    "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js",
+    "/radar-chart.js"
+  ],
+  "background": {
+    "color": {
+      "light": "#FBFBFB",
+      "dark": "#060606"
+    }
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting started",
+        "pages": [
+          "quickstart"
+        ]
+      },
+      {
+        "group": "Integrations",
+        "pages": [
+          "intergrations-overview",
+          "datadog",
+          "grafana",
+          "slack"
+        ]
+      },
+      {
+        "group": "Investigations",
+        "pages": [
+          "investigation-overview"
+        ]
+      },
+      {
+        "group": "Monitoring",
+        "pages": [
+          {
+            "group": "Getting started",
+            "pages": [
+              "introduction-monitoring",
+              "quickstart-monitoring"
+            ]
+          },
+          {
+            "group": "Key Use Cases",
+            "pages": [
+              "use-cases/logging",
+              "use-cases/metrics",
+              "use-cases/cost-optimization",
+              "use-cases/right-sizing",
+              "use-cases/cost-center-mapping",
+              "use-cases/datalake"
+            ]
+          },
+          {
+            "group": "Tutorials",
+            "pages": [
+              "tutorials/viewing-task-status",
+              "tutorials/investigating-task-failures",
+              "tutorials/fastquorum-debugging"
+            ]
+          },
+          {
+            "group": "Frameworks",
+            "pages": [
+              "integrations/overview",
+              "integrations/nextflow",
+              "integrations/wdl",
+              "integrations/bash",
+              "integrations/snakemake",
+              "integrations/slurm"
+            ]
+          },
+          {
+            "group": "How Tracer fits in your stack",
+            "pages": [
+              "comparisons/overview",
+              {
+                "group": "Workflow orchestration tools",
+                "pages": [
+                  "comparisons/workflow-orchestration",
+                  "comparisons/Tracer_vs_Airflow",
+                  "comparisons/Tracer_vs_Dagster",
+                  "comparisons/Tracer_vs_Flyte",
+                  "comparisons/Tracer_vs_Prefect",
+                  "comparisons/Tracer_vs_Seqera"
+                ]
+              },
+              {
+                "group": "Observability and telemetry tools",
+                "pages": [
+                  "comparisons/observability-tools",
+                  "comparisons/Tracer_vs_Datadog",
+                  "comparisons/Tracer_vs_Grafana",
+                  "comparisons/Tracer_vs_Prometheus"
+                ]
+              },
+              {
+                "group": "Cloud-native monitoring",
+                "pages": [
+                  "comparisons/cloud-native-monitoring",
+                  "comparisons/Tracer_vs_AWS_CloudWatch"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Technology",
+            "pages": [
+              "technology/end-to-end",
+              {
+                "group": "Tracer Products",
+                "pages": [
+                  "technology/tracer-collect",
+                  "technology/tracer-tune",
+                  "technology/tracer-sweep"
+                ]
+              },
+              "technology/ebpf-security",
+              "technology/data-model",
+              "technology/limits-privacy",
+              "technology/capabilities-compatibility"
+            ]
+          },
+          {
+            "group": "Deployment Environments",
+            "pages": [
+              "environments/overview",
+              "environments/codespaces",
+              "environments/linux-cloud",
+              "environments/aws-batch",
+              "environments/google-batch",
+              "environments/docker",
+              "environments/linux-local",
+              "environments/macos",
+              "environments/windows-local"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Sign up",
+        "href": "https://app.tracer.cloud/sign-up"
+      }
+    ]
+  },
+  "contextual": {
+    "options": []
+  },
+  "footer": {
+    "socials": {
+      "website": "https://www.tracer.cloud",
+      "github": "https://github.com/Tracer-Cloud",
+      "linkedin": "https://linkedin.com/company/tracercloud",
+      "slack": "https://join.slack.com/t/tracer-cloud/shared_invite/zt-3ifakcs2e-igoUEH8ygMlfxgJGLxsqeA"
+    },
+    "copyright": "© 2025 Tracer Cloud. All rights reserved."
+  },
+  "integrations": {
+    "posthog": {
+      "apiKey": "phc_zutpVhmQw7oUmMkbawKNdYCKQWjpfASATtf5ywB75W2",
+      "apiHost": "https://us.i.posthog.com",
+      "sessionRecording": true
+    },
+    "hotjar": {
+      "hjid": "6568352",
+      "hjsv": "6"
+    }
+  },
+  "seo": {
+    "indexing": "all",
+    "metatags": {
+      "canonical": "https://tracer.cloud"
+    }
+  },
+  "fonts": {
+    "heading": {
+      "family": "Britti Sans Trial",
+      "source": "/images/fonts/BrittiSansTrial-Regular-BF6757bfd47ffbf copy.woff2",
+      "format": "woff2",
+      "weight": 400
+    },
+    "body": {
+      "family": "Britti Sans Trial",
+      "source": "/images/fonts/BrittiSansTrial-Regular-BF6757bfd47ffbf copy.woff2",
+      "format": "woff2",
+      "weight": 400
+    }
+  }
+}

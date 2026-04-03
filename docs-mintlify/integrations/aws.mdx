@@ -1,0 +1,20 @@
+---
+title: "AWS Integration"
+description: "Using Tracer with AWS services"
+---
+
+Tracer is built to monitor cloud batch jobs (such as AWS Batch) across multiple instances.<br/>
+It transparently correlates tasks even when they run on different machines. To integrate with AWS Batch, include the Tracer agent in your compute environment and initialize it in each job.
+<Info>For example, add it to the AMI or Docker image used by your jobs</Info>
+Once Tracer is running in the AWS Batch environment, it will track the entire multi-node workflow. The Tracer sandbox demo includes an example AWS Batch RNA-Seq pipeline that you can trigger to see this in action. The key benefit is that Tracer “correlates jobs across instances” (a capability not found in generic observability tools). You will get end-to-end traces of your batch pipelines, and the Tracer dashboard will show per-job cost and performance metrics across all AWS nodes.
+
+## Steps to get started:
+
+1. **Prepare your AWS Batch environment**: Ensure the Tracer agent is available to your Batch compute instances (for example, install it via user data or a custom Docker image).
+
+2. **Initialize Tracer in jobs**: In the commands that run on each node (or as part of job startup), call `tracer init --token <token>` to start the agent.
+
+3. **Run your AWS Batch workflow**: Submit your Batch jobs as usual. The Tracer agent will link tasks across nodes into a single pipeline trace.
+
+4. **Monitor in Dashboard**: View the running jobs in the Tracer dashboard. You’ll see aggregated metrics (CPU, memory, I/O, costs) for the entire AWS Batch run, with dependencies across instances visualized.
+

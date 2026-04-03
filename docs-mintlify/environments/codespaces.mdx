@@ -1,0 +1,105 @@
+---
+title: "Our Demo Environment"
+description: "Run Tracer in our demo environment within minutes"
+---
+
+Our demo environment is built on GitHub with no local installation required.
+
+## 1. Open GitHub Codespaces
+
+Codespaces will be your coding environment to run any pipeline as an alternative to installing Tracer into your own system.
+
+<Card href="https://github.com/codespaces">
+  <img
+    className="block dark:hidden"
+    src="/images/other_logos/GitHub-Black.png"
+    alt="GitHub Logo"
+    style={{ width: '5%', height: 'auto', marginTop: '0rem', marginBottom: '1rem' }}
+  />
+  <img
+    className="hidden dark:block"
+    src="/images/other_logos/GitHub-Black.png"
+    alt="GitHub Logo"
+    style={{ width: '5%', height: 'auto', marginTop: '0rem', marginBottom: '1rem' }}
+  />
+
+  <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1rem', color: 'inherit' }}>
+    Open GitHub Codespaces
+  </div>
+
+  <div style={{ color: 'inherit' }}>
+    Launch your cloud development environment
+  </div>
+</Card>
+
+<Accordion title="Machine Type Options">
+
+You can change the machine type options to whichever configuration you prefer for running pipelines. Higher-spec machines will provide better performance for compute-intensive workflows.
+
+</Accordion>
+
+## 2. Install Tracer
+
+Run the following command to install Tracer:
+
+```bash
+curl -sSL https://install.tracer.cloud | sh
+```
+
+## 3. Start Tracer agent
+
+To start tracking a pipeline, run the following command:
+
+```bash
+tracer init --token <your-token>
+```
+<Info> Go to our [onboarding](https://app.tracer.cloud/onboarding/github-codespaces) to get your own personal token</Info>
+
+You will be prompted to configure the pipeline name. Filling this out ensures that each pipeline is uniquely identifiable, customizable, and easy to search later on.
+
+<Tip>
+**Tracer is now tracking your pipeline.**
+
+Every run you launch for this pipeline will be automatically monitored.
+
+**Note:** You will only need to run `tracer init` again for a new pipeline, not per pipeline run.
+</Tip>
+
+## 4. Launch pipeline
+
+You can now choose to run any pipeline you want or use `tracer demo` to launch a prepared pipeline.
+
+Run your own pipeline by following your usual workflow or **run this line in your terminal**:
+
+```bash
+tracer demo
+```
+
+<Info>
+`tracer demo` will run an nf-core fastquorum pipeline. This pipeline requires minimum 2GB RAM, 1 core vCPU, and 30GB storage to run efficiently.
+</Info>
+
+## 5. Monitor and Optimize Your Pipeline
+
+<Card href="https://app.tracer.cloud/">
+  <img
+    className="block dark:hidden"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+  <img
+    className="hidden dark:block"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="Tracer Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+
+  <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1 rem', color: 'inherit' }}>
+    Watch your pipeline run in the Tracer dashboard
+  </div>
+
+  <div style={{ color: 'inherit' }}>
+    View real-time metrics, resource usage, and performance insights for your pipeline runs.
+  </div>
+</Card>

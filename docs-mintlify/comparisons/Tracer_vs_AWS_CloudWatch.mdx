@@ -1,0 +1,143 @@
+---
+title: "How to use Tracer with AWS CloudWatch"
+sidebarTitle: "AWS CloudWatch"
+description: 'Execution-level insight beneath cloud-native infrastructure monitoring'
+---
+
+AWS CloudWatch is a cloud-native monitoring service that reports the health, state, and utilization of AWS infrastructure and managed services. It provides metrics, logs, and events for resources such as EC2, ECS, EKS, AWS Batch, and storage services.
+
+Tracer complements CloudWatch by observing how workloads actually execute on that infrastructure and by attributing resource usage and cost to pipelines, tasks, and runs rather than to infrastructure alone.
+
+<Note>
+If you're new to Tracer or want a conceptual overview, see [How Tracer fits in your stack](/comparisons/overview).
+</Note>
+
+## What cloud-native monitoring does well
+
+Cloud-native monitoring tools such as CloudWatch are designed to report the state of cloud resources. They provide:
+
+- Metrics emitted by AWS services and infrastructure
+- Instance, container, and service health signals
+- Logs and events from managed resources
+- Alerts based on thresholds and service state
+
+These capabilities make CloudWatch effective for operating AWS environments and ensuring infrastructure and services are available and healthy.
+
+## Where cloud-native metrics stop
+
+Cloud-native monitoring relies on service-reported metrics and resource state. It does not observe execution behavior inside workloads and does not have awareness of pipeline or task semantics. It does not show:
+
+- What individual processes or containers are doing at runtime
+- Whether allocated resources are actively used or idle
+- Execution stalls caused by I/O or network contention
+- Short-lived jobs that complete between reporting intervals
+- Why infrastructure remains allocated after workloads finish
+- How cost maps to specific pipelines, tasks, or tools
+
+As a result, performance issues and cost increases are often attributed to resources or time windows, rather than to the execution units that caused them.
+
+## Infrastructure state versus execution behavior
+
+Cloud-native monitoring answers questions such as:
+
+- Which instances are running?
+- How much capacity is allocated?
+- Are services healthy?
+
+It does not answer:
+
+- Which task or process consumed those resources
+- Whether work was compute-bound, I/O-bound, or idle
+- Why infrastructure remained allocated without active execution
+
+Understanding these differences requires observing execution from the host, not just reporting infrastructure state.
+
+## What Tracer adds
+
+Tracer observes execution directly from the operating system and container runtime. When used alongside cloud-native monitoring, it adds:
+
+- Execution-level visibility for pipelines, runs, tasks, and tools
+- Observed CPU, memory, disk, and network behavior
+- Insight into stalls, idle execution, and contention
+- Attribution of resource usage and cost to observed execution
+
+Tracer focuses on how resources are used, not just whether they exist.
+
+## Infrastructure state analysis with Tracer/sweep
+
+Tracer/sweep extends Tracer's visibility to cloud infrastructure state using read-only access. It identifies:
+
+- Idle compute resources with no active execution
+- Orphaned nodes no longer associated with schedulers or clusters
+- Unattached or residual storage left behind by completed workloads
+
+These resources may not appear clearly in service-level dashboards once detached from active services.
+
+Tracer/sweep operates at the same cloud-account scope as cloud-native monitoring, but evaluates infrastructure state through observed execution rather than service metadata.
+
+## Automation and control boundaries
+
+Tracer's products do not perform automated actions.
+
+- They do not start, stop, or resize infrastructure
+- They do not make predictions about future workload requirements
+- They do not act on forecasts or heuristics
+
+Recommendations are derived from observed execution behavior and infrastructure state. All decisions remain under user control.
+
+## Example: service metrics versus observed execution
+
+CloudWatch shows high instance utilization during a pipeline run. Tracer reveals that:
+
+- CPU usage remains low
+- Tasks spend most of their time blocked on disk I/O
+- Instances remain allocated after execution completes
+
+This indicates execution inefficiency and infrastructure waste rather than insufficient capacity.
+
+## Observability comparison
+
+<iframe
+  src="https://vakisr.github.io/tracer-radar-chart/radar-chart-cloudwatch.html"
+  width="100%"
+  height="700px"
+  style={{ border: 'none', borderRadius: '8px' }}
+  title="CloudWatch vs CloudWatch+Tracer capabilities comparison"
+/>
+
+This comparison highlights the difference between cloud service metrics and execution-level observation.
+
+## What Tracer does not replace
+
+Tracer is not a cloud control plane.
+
+- It does not replace CloudWatch metrics, logs, or alarms
+- It does not manage AWS resources or services
+- It does not replace AWS-native monitoring outside execution behavior
+
+CloudWatch continues to provide cloud-native infrastructure monitoring.
+
+## When to use Tracer with cloud-native monitoring
+
+Tracer is most useful alongside CloudWatch when teams need to:
+
+- Explain slow or inconsistent pipeline runtimes
+- Distinguish execution bottlenecks from infrastructure waste
+- Identify idle or orphaned compute and storage resources
+- Attribute cost to pipelines, tasks, or tools rather than instances
+
+Tracer focuses on execution behavior. Cloud-native monitoring continues to report infrastructure state and service health.
+
+You can think of cloud-native monitoring as a financial summary. It shows what infrastructure exists, what is active, and how much is being spent. It answers questions such as "What is our current infrastructure state?" and "Is anything unhealthy?"
+
+When the question becomes "Why is this expensive?" or "What work actually caused this cost?", infrastructure metrics alone are not enough. Even with extensive tagging, cloud-native metrics typically attribute cost to resources and time windows, not to the execution units that consumed them.
+
+Tracer provides an execution-level view that explains how resources were used, which tasks ran, and where time and cost were actually consumed, without requiring manual tagging or assumptions about how metrics map to execution.
+
+Cloud-native monitoring shows the bill. Tracer explains the line items.
+
+## Summary
+
+Cloud-native monitoring shows what infrastructure is provisioned and healthy. Tracer shows how workloads actually execute on that infrastructure and how cost maps to real work. Together, they provide both infrastructure state and execution truth, without overlap.
+
+<div style={{ height: '50vh' }}></div>

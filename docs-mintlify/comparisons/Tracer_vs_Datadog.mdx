@@ -1,0 +1,111 @@
+---
+title: 'Tracer and Datadog'
+sidebarTitle: 'Datadog'
+description: 'Execution-aware insight beneath general-purpose observability'
+---
+
+Datadog provides a general-purpose observability platform for metrics, logs, traces, dashboards, and alerting across infrastructure and applications. In bioinformatics, data, and HPC environments, it is often used to monitor system and application telemetry for compute-intensive workloads running in cloud or hybrid infrastructure.
+
+Tracer complements Datadog by observing how tasks, tools, and processes actually execute at runtime and organizing this behavior by pipeline, run, and execution unit.
+
+<Note>
+If you're new to Tracer or want a conceptual overview, see [How Tracer fits in your stack](/comparisons/overview).
+</Note>
+
+## What Datadog does well
+
+Datadog is designed to provide broad observability across many systems and services. It provides:
+
+- Centralized dashboards for metrics, logs, and traces
+- Agent-based telemetry collection across hosts, containers, and services
+- Alerting based on thresholds, anomalies, and service health
+- Integrations across cloud platforms, orchestration systems, and application frameworks
+
+These capabilities make Datadog effective for organization-wide observability and monitoring across heterogeneous environments.
+
+## What Datadog does not observe
+
+Datadog organizes telemetry around services, hosts, and applications. While it can collect detailed telemetry, it does not natively observe execution behavior in terms of pipeline or task semantics. It does not show:
+
+- Execution behavior inside processes or containers as execution units
+- CPU vs I/O vs memory contention during individual tasks
+- Short-lived subprocesses that do not align with service boundaries
+- Idle or blocked execution hidden by aggregate utilization
+- How telemetry maps directly to pipeline runs, tasks, or tools
+- How cost relates to observed execution rather than to infrastructure or services
+
+Understanding execution behavior typically requires manual correlation across metrics, logs, and traces.
+
+## Why this gap matters
+
+Scientific and data pipelines often involve heterogeneous tools, nested execution, and short-lived processes orchestrated by workflow engines or schedulers.
+
+When relying on general-purpose observability alone:
+
+- Performance bottlenecks must be inferred from service-level telemetry
+- Idle or blocked execution can appear as normal utilization
+- Cost is attributed to infrastructure or services rather than execution units
+- Diagnosing variability between runs requires manual investigation
+
+These approaches are useful, but they have limits when execution behavior is not directly observed.
+
+## What Tracer adds
+
+Tracer observes execution directly from the host and container runtime and adds:
+
+- Observed CPU, memory, disk, and network behavior
+- Visibility into short-lived processes and nested tools
+- Attribution by pipeline, run, task, or execution unit
+- Cost mapping aligned with observed runtime activity
+
+These insights are derived from observed execution, not inferred from service-level telemetry.
+
+## Example: service telemetry versus observed execution
+
+Datadog dashboards show elevated resource usage during pipeline runs. Tracer reveals that:
+
+- CPU usage is low across most tasks
+- Execution time is dominated by disk I/O wait
+- Multiple short-lived helper processes drive runtime variability
+
+This indicates an execution-level bottleneck that is not visible from service-centric telemetry alone.
+
+## Observability comparison
+
+<iframe
+  src="https://vakisr.github.io/tracer-radar-chart/radar-chart-datadog.html"
+  width="100%"
+  height="750"
+  style={{ border: 'none', borderRadius: '8px' }}
+  title="Datadog vs Datadog+Tracer capabilities comparison"
+/>
+
+This comparison highlights the difference between service-level observability and execution-level observation.
+
+## What Tracer does not replace
+
+Tracer is not a general-purpose observability platform.
+
+- It does not replace Datadog for monitoring unrelated services or applications
+- It does not replace dashboards built from arbitrary business or application metrics
+- It does not replace organization-wide alerting across all systems
+- Its alerting is focused on execution behavior, not all service events
+
+Tracer stores and analyzes execution-derived metrics it observes, scoped to pipeline workloads.
+
+## When to use Tracer with Datadog
+
+Tracer is most useful alongside Datadog when teams need to:
+
+- Understand pipeline behavior beyond service-level telemetry
+- Diagnose performance issues involving short-lived or nested execution
+- Attribute resource usage and cost to workflows or tools
+- Reduce manual correlation across metrics, logs, and traces
+
+Tracer focuses on execution behavior. Datadog continues to provide broad observability and alerting across systems.
+
+## Summary
+
+Datadog provides comprehensive observability across infrastructure and applications. Tracer adds execution-level visibility that shows how pipelines, tasks, and tools actually behave at runtime and how resource usage and cost map to real work. Together, they provide complementary views without overlap.
+
+<div style={{ height: '50vh' }}></div>

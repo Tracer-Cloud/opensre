@@ -1,0 +1,113 @@
+---
+title: 'Cloud-native monitoring integrations'
+sidebarTitle: 'Overview'
+description: 'How Tracer adds execution-level and host-observed insight beyond cloud service metrics'
+---
+
+Cloud-native monitoring tools report the health and usage of cloud resources such as instances, containers, volumes, and managed services. They are effective at showing what cloud infrastructure is provisioned and active, and at supporting alerts based on service-reported metrics.
+
+Tracer complements cloud-native monitoring by observing how workloads actually execute on those resources. It captures execution behavior directly from the host and container runtime and relates that behavior to pipelines, tasks, and runs.
+
+<Note>
+If you're new to Tracer or want a conceptual overview, see [How Tracer fits in your stack](/comparisons/overview).
+</Note>
+
+## What cloud-native monitoring tools do well
+
+Cloud-native monitoring platforms are designed to:
+
+- Report metrics emitted by cloud services and infrastructure
+- Track instance, container, and service health
+- Collect logs and events from managed resources
+- Trigger alerts based on thresholds and service state
+
+They provide a cloud-provider view of infrastructure and service utilization.
+
+## Where cloud-reported metrics stop
+
+Because cloud-native monitoring relies on service-reported metrics and resource state, it often lacks visibility into:
+
+- What individual processes and containers are doing at runtime
+- Whether allocated resources are actively used or idle
+- Execution stalls caused by I/O or network contention
+- Short-lived jobs that complete between reporting intervals
+- Infrastructure that remains allocated after workloads finish
+
+As a result, performance issues and cost increases are often attributed to resources or time windows, rather than to the execution units that caused them.
+
+## Execution behavior versus infrastructure state
+
+Cloud-native monitoring answers questions such as:
+
+- Which instances are running?
+- How much CPU or memory is allocated?
+- Are services healthy?
+
+It does not answer:
+
+- Which task or process consumed those resources
+- Whether work was compute-bound, I/O-bound, or idle
+- Why infrastructure remains allocated without active execution
+
+Understanding these differences requires observing execution from the host, not just reporting infrastructure state.
+
+## What Tracer adds
+
+Tracer observes execution directly from the operating system and container runtime. When used alongside cloud-native monitoring, it adds:
+
+- Execution-level visibility for pipelines, runs, tasks, and tools
+- Observed CPU, memory, disk, and network behavior
+- Insight into stalls, idle execution, and contention
+- Attribution of resource usage and cost to actual work
+
+Tracer focuses on how resources are used, not just whether they exist.
+
+## Infrastructure state analysis with Tracer/sweep
+
+Tracer/sweep extends Tracer's visibility to infrastructure state. It observes cloud resources directly using read-only access and identifies:
+
+- Idle compute resources with no active execution
+- Orphaned nodes no longer associated with schedulers or clusters
+- Unattached or residual storage left behind by completed workloads
+
+These resources may not appear clearly in service-level dashboards once detached from active services.
+
+<Info>
+Tracer/sweep does not modify or delete resources automatically.
+</Info>
+
+Tracer and Tracer/sweep do not perform automated actions. They surface recommendations based on what actually ran, such as idle time, contention, and resource usage, rather than on metadata, static configuration, or heuristics.
+
+All decisions remain under user control.
+
+<Warning>
+Tracer does not make predictions about future workload requirements or automatically act on forecasted behavior. Recommendations are derived from observed execution and infrastructure state, not from predictive models. This avoids actions based on assumptions about future usage, such as shutting down resources that may still be required. Tracer is observational and advisory by design.
+</Warning>
+
+## Supported cloud-native monitoring integrations
+
+The integration below describes how Tracer works alongside common cloud-native monitoring platforms.
+
+<Card title="Tracer and AWS CloudWatch" icon="cloud" href="/comparisons/Tracer_vs_AWS_CloudWatch">
+  **Execution insight beyond service-level metrics**
+  
+  Tracer observes execution behavior and infrastructure state that CloudWatch does not expose.
+</Card>
+
+## When Tracer is useful with cloud-native monitoring
+
+Tracer is most useful alongside cloud-native monitoring when teams need to:
+
+- Explain slow or inconsistent pipeline runtimes
+- Distinguish execution bottlenecks from infrastructure waste
+- Identify idle or orphaned compute and storage resources
+- Attribute cost to pipelines, tasks, or tools rather than instances
+
+Tracer focuses on execution behavior. Cloud-native monitoring continues to provide service-level metrics, logs, and alerts.
+
+## Where to go next
+
+- [How Tracer fits in your stack](/comparisons/overview) – conceptual overview
+- [AWS CloudWatch integration](/comparisons/Tracer_vs_AWS_CloudWatch) – execution and infrastructure visibility on AWS
+
+<div style={{ height: '50vh' }}></div>

@@ -1,0 +1,225 @@
+---
+title: 'Limits and privacy'
+sidebarTitle: 'Limits and privacy'
+description: 'What Tracer does and does not collect'
+---
+
+Tracer is designed to provide execution insight while minimizing data exposure. It observes how workloads run, not what they compute or the data they process.
+
+This page explains Tracer's intentional limits, privacy boundaries, and data handling principles.
+
+## What Tracer collects
+
+Tracer collects execution metadata derived from operating system–level signals.
+
+<CardGroup cols={3}>
+  <Card title="CPU & scheduling" icon="microchip">
+    CPU usage and scheduling behavior
+  </Card>
+  <Card title="Memory" icon="memory">
+    Memory usage and peak memory
+  </Card>
+  <Card title="I/O activity" icon="hard-drive">
+    Disk and network I/O activity
+  </Card>
+  <Card title="Process lifecycle" icon="clock">
+    Process start and stop times
+  </Card>
+  <Card title="Process relationships" icon="diagram-project">
+    Parent–child process relationships
+  </Card>
+  <Card title="Container context" icon="cube">
+    Container, namespace, and cgroup context
+  </Card>
+  <Card title="Cloud cost data" icon="cloud">
+    Cloud cost and usage identifiers (from supported providers)
+  </Card>
+</CardGroup>
+
+This data is used to reconstruct execution timelines and resource usage patterns.
+
+## What Tracer does not collect
+
+Tracer explicitly does not collect or inspect:
+
+<AccordionGroup>
+  <Accordion title="Application and scientific data" icon="database">
+    - Input data files
+    - Output data or results
+    - Sample, patient, or experimental data
+    - File contents or payloads
+
+    <Note>Tracer may observe that a file was accessed, but never reads or captures file contents. This behavior can be verified in the open-source Tracer/collect implementation.</Note>
+  </Accordion>
+  <Accordion title="Source code and runtime internals" icon="code">
+    - Source code or scripts
+    - Function calls or call stacks
+    - Variables, objects, or in-memory data
+    - Language-level execution traces
+
+    <Note>Tracer operates at the process and kernel level, not inside language runtimes.</Note>
+  </Accordion>
+  <Accordion title="Secrets and sensitive configuration" icon="key">
+    - Environment variables
+    - Credentials or API keys
+    - Tokens, passwords, or certificates
+
+    <Note>Tracer does not inspect process memory or application configuration.</Note>
+  </Accordion>
+  <Accordion title="Application- or domain-level semantics" icon="microscope">
+    - Biological meaning or correctness
+    - Algorithmic intent
+    - Business or scientific interpretation of results
+
+    <Note>While Tracer can observe which binaries or commands were executed, it does not infer what those commands mean within an application or domain.</Note>
+  </Accordion>
+</AccordionGroup>
+
+## Command visibility (clarification)
+
+Tracer may observe:
+
+- Which binaries were executed
+- Command-line arguments passed to those binaries
+
+This visibility is limited to execution metadata and is required to correlate processes to tools and pipeline steps.
+
+Tracer does not:
+
+- Inspect data passed through those commands
+- Parse command arguments for domain meaning
+- Access application payloads
+
+## Data minimization
+
+Tracer follows a data-minimization approach:
+
+<CardGroup cols={2}>
+  <Card title="Minimal collection" icon="filter">
+    Only metadata required for execution analysis is collected
+  </Card>
+  <Card title="Early filtering" icon="bolt">
+    Filtering occurs as early as possible to reduce volume
+  </Card>
+  <Card title="No payload inspection" icon="shield-check">
+    No payload inspection or deep packet capture is performed
+  </Card>
+  <Card title="Resource-focused" icon="chart-simple">
+    Collection focuses on resource behavior, not content
+  </Card>
+</CardGroup>
+
+<Tip>This keeps the data footprint small and purpose-limited.</Tip>
+
+## Maintained allowlists and denylists
+
+Tracer maintains a small set of internal allowlists and denylists to focus collection on meaningful execution activity and reduce unnecessary data.
+
+These lists are used to:
+
+- Include known scientific tools, workflow binaries, and execution patterns relevant for pipeline observability
+- Exclude generic system activity that does not contribute to understanding workload execution (for example, background OS services)
+
+The purpose of these lists is signal quality and data minimization, not access control.
+
+### What these lists contain
+
+Depending on configuration and environment, the lists may include:
+
+- Common scientific and ML tools and runtimes
+- Workflow-related binaries and schedulers
+- Known helper processes that are part of pipeline execution
+
+These identifiers are used only to classify execution activity and improve correlation.
+
+### What these lists do not contain
+
+The lists do not include:
+
+- File contents or data values
+- User-defined secrets or identifiers
+- Sample, patient, or experiment metadata
+- Application payloads or outputs
+
+They are not used to inspect, filter, or interpret application data.
+
+### How the lists are used
+
+- Lists are applied early in the collection process to reduce event volume
+- Classification happens at the level of process metadata, not data content
+- The lists do not change application behavior or execution outcomes
+
+In environments with custom tools or binaries, these lists can be extended or refined without redeploying workloads.
+
+### Why this matters
+
+Maintaining explicit allowlists and denylists helps Tracer:
+
+- Minimize data collection to what is operationally relevant
+- Reduce overhead in high-throughput environments
+- Avoid collecting noisy or unrelated system activity
+- Preserve clear privacy and security boundaries
+
+This approach supports accurate execution insight while keeping collection conservative and purpose-limited.
+
+## Data handling and storage
+
+- Execution signals are captured locally and aggregated into structured telemetry
+- Only derived metadata is transmitted to the Tracer backend
+- Payload data is never exported
+- Data retention and access are governed by account-level configuration
+
+Tracer separates collection, correlation, and analysis to reduce exposure.
+
+## Product boundaries
+
+Tracer is intentionally scoped.
+
+<Warning>
+**It does not:**
+- Modify application behavior
+- Control execution or scheduling
+- Start, stop, or terminate workloads
+- Replace IAM, RBAC, or cloud security controls
+</Warning>
+
+Tracer observes execution within the boundaries enforced by the operating system, container runtime, and cloud provider.
+
+## Transparency and open source
+
+The core Tracer agent (Tracer/collect) is open source. The repository documents how execution signals are collected, filtered, and structured, and makes it possible to independently review what data is gathered and what is explicitly excluded.
+
+This transparency supports security reviews and helps teams verify Tracer's data-collection boundaries.
+
+<Card title="Tracer/collect on GitHub" icon="github" href="https://github.com/Tracer-Cloud/tracer-client">
+  Review the open-source implementation
+</Card>
+
+## When this matters
+
+This page is especially relevant if you:
+
+- Operate in regulated or security-sensitive environments
+- Need to complete security or privacy reviews
+- Evaluate Tracer's suitability for production workloads
+- Want clarity on data collection boundaries
+
+<CardGroup cols={2}>
+  <Card href="/technology/ebpf-security">
+    eBPF and security
+    <br />
+    <span style={{ color: '#888' }}>How execution is observed safely</span>
+  </Card>
+  <Card href="/technology/data-model">
+    Data model
+    <br />
+    <span style={{ color: '#888' }}>How execution data is structured</span>
+  </Card>
+</CardGroup>
+
+## Summary
+
+Tracer provides execution visibility without inspecting application data. By limiting collection to system-level execution metadata, applying conservative filtering, and enforcing clear boundaries, Tracer delivers performance and cost insight while preserving privacy and security.
+
+<div style={{ height: '50vh' }}></div>
+

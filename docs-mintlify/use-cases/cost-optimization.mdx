@@ -1,0 +1,69 @@
+---
+title: "Cost Optimization"
+description: "Tools for understanding and reducing compute costs"
+---
+
+Tracer provides cost-related metrics and execution data to help teams understand how compute resources are used and where waste occurs. These features do not modify workloads. They make it easier to make informed decisions about scaling, allocation, and configuration.
+
+## Cost Analysis
+
+Cost Analysis shows compute spend at the cluster, namespace, and workload levels. Tracer combines cloud billing information with execution signals such as CPU usage, memory usage, and process activity.
+
+<Frame>
+  <img src="/images/Cost overview.webp" alt="Cost Overview dashboard showing pipeline costs broken down by user, department, environment, and pipeline type" />
+</Frame>
+
+This allows you to:
+
+- Review cost patterns over time
+- Identify workloads that consistently use more or fewer resources than expected
+- Compare cost across pipeline runs
+- Pinpoint costs by container, tool, job, and run
+- Detect over-allocated or under-allocated configurations
+- Attribute costs by pipeline type, user, environment, or cost department
+
+<Frame>
+  <img src="/images/cost-by-tool.webp" alt="Cost breakdown by tool showing resource usage across different computational tools" />
+</Frame>
+
+Tracer displays these metrics using simple graphs that relate cost to observed execution behavior. This helps determine whether a workload is constrained, over-provisioned, or operating as expected.
+
+<Tip>You can use historical data to compare configuration changes or evaluate different instance types before adjusting compute resources.</Tip>
+
+For more information on how costs are attributed, see [Cost Center Mapping](/use-cases/cost-center-mapping).
+
+## Resource Efficiency Detection
+
+Tracer evaluates runtime behavior to highlight potential inefficiencies. Examples include:
+
+- Instances that use only a fraction of their allocated CPU or memory
+- Workloads with low execution activity relative to provisioned capacity
+- Containers that remain active after their tasks complete
+- Nodes that stay online without active workloads
+
+<Note>These findings are based on measured execution signals, not predictions or estimates. They can help identify where right-sizing or consolidation may reduce cost.</Note>
+
+## No Automatic Optimization
+
+Tracer does not apply automatic scaling decisions, shut down resources, or change workload configurations. All adjustments remain under your control. The platform provides execution and cost information that can be used to guide manual optimization efforts.
+
+You can also explore related capabilities in Tracer/tune and Tracer/sweep:
+
+<CardGroup cols={2}>
+  <Card href="/technology/tracer-tune">
+    <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
+    </span>
+    <br />
+    Optimize specific pipelines and workloads
+  </Card>
+  <Card href="/technology/tracer-sweep">
+    <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
+    </span>
+    <br />
+    Systemwide cloud waste detection
+  </Card>
+</CardGroup>
+
+<div style={{ height: '50vh' }}></div>
