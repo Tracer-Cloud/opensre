@@ -50,6 +50,18 @@ def validate_datadog_integration(**kwargs):
     return _validate(**kwargs)
 
 
+def validate_honeycomb_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_honeycomb_integration as _validate
+
+    return _validate(**kwargs)
+
+
+def validate_coralogix_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_coralogix_integration as _validate
+
+    return _validate(**kwargs)
+
+
 def validate_slack_webhook(**kwargs):
     from app.cli.wizard.integration_health import validate_slack_webhook as _validate
 
@@ -422,6 +434,99 @@ def _configure_datadog() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_honeycomb() -> tuple[str, str]:
+    _, credentials = _integration_defaults("honeycomb")
+    while True:
+        api_key = _prompt_value(
+            "Honeycomb configuration API key",
+            default=_string_value(credentials.get("api_key")),
+            secret=True,
+        )
+        dataset = _prompt_value(
+            "Honeycomb dataset slug or __all__",
+            default=_string_value(credentials.get("dataset"), "__all__"),
+        )
+        base_url = _prompt_value(
+            "Honeycomb API URL",
+            default=_string_value(credentials.get("base_url"), "https://api.honeycomb.io"),
+        )
+        with _console.status("Validating Honeycomb integration...", spinner="dots"):
+            result = validate_honeycomb_integration(
+                api_key=api_key,
+                dataset=dataset,
+                base_url=base_url,
+            )
+        _render_integration_result("Honeycomb", result)
+        if result.ok:
+            upsert_integration(
+                "honeycomb",
+                {"credentials": {"api_key": api_key, "dataset": dataset, "base_url": base_url}},
+            )
+            env_path = sync_env_values(
+                {
+                    "HONEYCOMB_API_KEY": api_key,
+                    "HONEYCOMB_DATASET": dataset,
+                    "HONEYCOMB_API_URL": base_url,
+                }
+            )
+            return "Honeycomb", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
+def _configure_coralogix() -> tuple[str, str]:
+    _, credentials = _integration_defaults("coralogix")
+    while True:
+        api_key = _prompt_value(
+            "Coralogix DataPrime API key",
+            default=_string_value(credentials.get("api_key")),
+            secret=True,
+        )
+        base_url = _prompt_value(
+            "Coralogix API URL",
+            default=_string_value(credentials.get("base_url"), "https://api.coralogix.com"),
+        )
+        application_name = _prompt_value(
+            "Coralogix application name (optional)",
+            default=_string_value(credentials.get("application_name")),
+            allow_empty=True,
+        )
+        subsystem_name = _prompt_value(
+            "Coralogix subsystem name (optional)",
+            default=_string_value(credentials.get("subsystem_name")),
+            allow_empty=True,
+        )
+        with _console.status("Validating Coralogix integration...", spinner="dots"):
+            result = validate_coralogix_integration(
+                api_key=api_key,
+                base_url=base_url,
+                application_name=application_name,
+                subsystem_name=subsystem_name,
+            )
+        _render_integration_result("Coralogix", result)
+        if result.ok:
+            upsert_integration(
+                "coralogix",
+                {
+                    "credentials": {
+                        "api_key": api_key,
+                        "base_url": base_url,
+                        "application_name": application_name,
+                        "subsystem_name": subsystem_name,
+                    }
+                },
+            )
+            env_path = sync_env_values(
+                {
+                    "CORALOGIX_API_KEY": api_key,
+                    "CORALOGIX_API_URL": base_url,
+                    "CORALOGIX_APPLICATION_NAME": application_name,
+                    "CORALOGIX_SUBSYSTEM_NAME": subsystem_name,
+                }
+            )
+            return "Coralogix", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_slack() -> tuple[str, str]:
     _, credentials = _integration_defaults("slack")
     while True:
@@ -692,6 +797,8 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             hint="Connect an existing Grafana instance",
         ),
         Choice(value="datadog", label="Datadog", hint="Logs, monitors, and Kubernetes context"),
+        Choice(value="honeycomb", label="Honeycomb", hint="Query traces and spans from Honeycomb"),
+        Choice(value="coralogix", label="Coralogix", hint="Query logs from Coralogix DataPrime"),
         Choice(value="slack", label="Slack", hint="Send findings to a webhook or channel"),
         Choice(value="aws", label="AWS", hint="Inspect CloudWatch, EKS, and account resources"),
         Choice(value="github", label="GitHub MCP", hint="Let the agent inspect repos, PRs, and issues"),
@@ -710,6 +817,8 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "grafana_local": _configure_grafana_local,
         "grafana": _configure_grafana,
         "datadog": _configure_datadog,
+        "honeycomb": _configure_honeycomb,
+        "coralogix": _configure_coralogix,
         "slack": _configure_slack,
         "aws": _configure_aws,
         "github": _configure_github_mcp,
@@ -719,6 +828,8 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "grafana_local": "grafana local",
         "grafana": "grafana",
         "datadog": "datadog",
+        "honeycomb": "honeycomb",
+        "coralogix": "coralogix",
         "slack": "slack",
         "aws": "aws",
         "github": "github mcp",

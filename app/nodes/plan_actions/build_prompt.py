@@ -123,6 +123,26 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Use query_datadog_events to find deployments and infrastructure changes"""
         )
 
+    if "honeycomb" in available_sources:
+        honeycomb = available_sources["honeycomb"]
+        hints.append(
+            f"""Honeycomb Available:
+- Dataset: {honeycomb.get("dataset")}
+- Service Name: {honeycomb.get("service_name") or "unknown"}
+- Trace ID: {honeycomb.get("trace_id") or "unknown"}
+- Use query_honeycomb_traces to inspect trace/span groups and identify slow or failing traces"""
+        )
+
+    if "coralogix" in available_sources:
+        coralogix = available_sources["coralogix"]
+        hints.append(
+            f"""Coralogix Available:
+- Application: {coralogix.get("application_name") or "unknown"}
+- Subsystem: {coralogix.get("subsystem_name") or "unknown"}
+- Default Query: {coralogix.get("default_query")}
+- Use query_coralogix_logs to search Coralogix DataPrime logs for the failing service or error signature"""
+        )
+
     if "eks" in available_sources:
         eks = available_sources["eks"]
         hints.append(

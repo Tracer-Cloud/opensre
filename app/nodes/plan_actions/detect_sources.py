@@ -1,13 +1,15 @@
 """Data source detection for dynamic investigation.
 
 Scans alert annotations and state context to detect available data sources
-(CloudWatch, S3, local files, Tracer Web, Grafana) and extract their parameters.
+(CloudWatch, S3, local files, Tracer Web, Grafana, Honeycomb, Coralogix)
+and extract their parameters.
 """
 
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
+from app.integrations.clients.coralogix import build_coralogix_logs_query
 from app.tools.GrafanaLogsTool import _map_pipeline_to_service_name
 
 
@@ -121,8 +123,13 @@ def detect_sources(
         generator_url = raw_alert.get("generatorURL", "")
         alerts_list = raw_alert.get("alerts", []) or []
         first_gen = alerts_list[0].get("generatorURL", "") if alerts_list else ""
-        if any("grafana" in str(u).lower() for u in [external_url, generator_url, first_gen]):
+        candidate_urls = [external_url, generator_url, first_gen]
+        if any("grafana" in str(u).lower() for u in candidate_urls):
             alert_source = "grafana"
+        elif any("honeycomb" in str(u).lower() for u in candidate_urls):
+            alert_source = "honeycomb"
+        elif any("coralogix" in str(u).lower() for u in candidate_urls):
+            alert_source = "coralogix"
 
     # Compute time window that covers the alert (used for Datadog/Grafana queries)
     alert_time_range_minutes = _alert_time_range_minutes(raw_alert)
@@ -324,6 +331,20 @@ def detect_sources(
         or annotations.get("executionRunId")
         or annotations.get("correlation_id")
     )
+    trace_id = str(
+        annotations.get("trace_id")
+        or annotations.get("traceId")
+        or raw_alert.get("trace_id", "")
+        or raw_alert.get("traceId", "")
+        or context.get("trace_id", "")
+    ).strip()
+    service_name = str(
+        annotations.get("service_name")
+        or annotations.get("service")
+        or raw_alert.get("service_name", "")
+        or raw_alert.get("service", "")
+        or pipeline_name
+    ).strip()
 
     # Only include Grafana when alert came from Grafana, or when source is truly unknown,
     # or when a pre-injected backend is present (e.g. FixtureGrafanaBackend for synthetic tests).
@@ -426,6 +447,82 @@ def detect_sources(
                 }
 
             sources["datadog"] = dd_params
+
+    if resolved_integrations and resolved_integrations.get("honeycomb") and alert_source in ("honeycomb", ""):
+        honeycomb_int = resolved_integrations["honeycomb"]
+        honeycomb_api_key = str(honeycomb_int.get("api_key", "")).strip()
+        honeycomb_dataset = str(honeycomb_int.get("dataset", "__all__")).strip() or "__all__"
+        honeycomb_base_url = str(
+            honeycomb_int.get("base_url", "https://api.honeycomb.io")
+        ).strip()
+        if honeycomb_api_key:
+            sources["honeycomb"] = {
+                "dataset": honeycomb_dataset,
+                "service_name": service_name,
+                "trace_id": trace_id,
+                "error_hint": str(
+                    raw_alert.get("error_message", "")
+                    or raw_alert.get("alert_name", "")
+                    or annotations.get("summary", "")
+                ).strip(),
+                "honeycomb_api_key": honeycomb_api_key,
+                "honeycomb_base_url": honeycomb_base_url,
+                "time_range_seconds": alert_time_range_minutes * 60,
+                "connection_verified": True,
+            }
+
+    if resolved_integrations and resolved_integrations.get("coralogix") and alert_source in ("coralogix", ""):
+        coralogix_int = resolved_integrations["coralogix"]
+        coralogix_api_key = str(coralogix_int.get("api_key", "")).strip()
+        coralogix_base_url = str(
+            coralogix_int.get("base_url", "https://api.coralogix.com")
+        ).strip()
+        if coralogix_api_key and coralogix_base_url:
+            application_name = str(
+                annotations.get("application_name")
+                or annotations.get("applicationname")
+                or raw_alert.get("application_name", "")
+                or raw_alert.get("applicationname", "")
+                or coralogix_int.get("application_name", "")
+                or pipeline_name
+            ).strip()
+            subsystem_name = str(
+                annotations.get("subsystem_name")
+                or annotations.get("subsystemname")
+                or raw_alert.get("subsystem_name", "")
+                or raw_alert.get("subsystemname", "")
+                or coralogix_int.get("subsystem_name", "")
+            ).strip()
+            raw_query = str(
+                annotations.get("query", "")
+                or annotations.get("log_query", "")
+                or raw_alert.get("log_query", "")
+            ).strip()
+            text_query = ""
+            if not raw_query:
+                text_query = str(
+                    raw_alert.get("error_message", "")
+                    or raw_alert.get("alert_name", "")
+                    or annotations.get("summary", "")
+                ).strip()
+
+            sources["coralogix"] = {
+                "application_name": application_name,
+                "subsystem_name": subsystem_name,
+                "trace_id": trace_id,
+                "default_query": build_coralogix_logs_query(
+                    raw_query=raw_query,
+                    application_name=application_name,
+                    subsystem_name=subsystem_name,
+                    text_query=text_query,
+                    trace_id=trace_id,
+                    limit=50,
+                ),
+                "coralogix_api_key": coralogix_api_key,
+                "coralogix_base_url": coralogix_base_url,
+                "time_range_minutes": alert_time_range_minutes,
+                "connection_verified": True,
+            }
 
     # Detect EKS: uses the AWS integration (EKS maps to aws in resolve_integrations)
     _eks_int = (resolved_integrations or {}).get("aws")
