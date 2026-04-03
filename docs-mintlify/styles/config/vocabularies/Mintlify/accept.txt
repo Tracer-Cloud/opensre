@@ -74,3 +74,24 @@ userland
 vCPUs
 walkthrough
 whoever
+# Mintlify docs terms
+blockquote
+Blockquotes
+Cloudinary
+config
+dev
+favicon
+Infisical
+Mintlify
+Multiline
+onboarding
+repo
+Singleline
+SSH'ing
+stderr
+stdout
+Strikethrough
+strikethrough
+topbar
+url
+VSCode
