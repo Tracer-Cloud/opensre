@@ -26,7 +26,8 @@ def tool(
     outputs: dict[str, str] | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
-) -> BaseTool: ...
+) -> BaseTool:
+    pass
 
 
 @overload
@@ -43,7 +44,8 @@ def tool(  # noqa: UP047
     outputs: dict[str, str] | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
-) -> F: ...
+) -> F:
+    pass
 
 
 @overload
@@ -60,7 +62,8 @@ def tool(  # noqa: UP047
     outputs: dict[str, str] | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
-) -> Callable[[F], F]: ...
+) -> Callable[[F], F]:
+    pass
 
 
 def tool(  # noqa: UP047

@@ -10,20 +10,14 @@ import app.tools.registry as registry_module
 from app.tools.base import BaseTool
 from app.tools.investigation_registry.actions import get_available_actions
 from app.tools.registered_tool import REGISTERED_TOOL_ATTR, RegisteredTool
-from app.tools.registry import (
-    _collect_registered_tools_from_module,
-    clear_tool_registry_cache,
-    get_registered_tool_map,
-    get_registered_tools,
-)
 from app.tools.tool_decorator import tool
 
 
 @pytest.fixture(autouse=True)
 def _reset_registry_cache() -> Generator[None, None, None]:
-    clear_tool_registry_cache()
+    registry_module.clear_tool_registry_cache()
     yield
-    clear_tool_registry_cache()
+    registry_module.clear_tool_registry_cache()
 
 
 def test_tool_decorator_registers_function_tool_with_inferred_schema() -> None:
@@ -41,7 +35,7 @@ def test_tool_decorator_registers_function_tool_with_inferred_schema() -> None:
     lookup_incident.__module__ = module.__name__
     module.lookup_incident = lookup_incident
 
-    tools = _collect_registered_tools_from_module(module)
+    tools = registry_module._collect_registered_tools_from_module(module)
 
     assert [tool_def.name for tool_def in tools] == ["lookup_incident"]
     registered = tools[0]
@@ -141,13 +135,13 @@ def test_auto_discovery_populates_investigation_and_chat_surfaces(
     monkeypatch.setattr(registry_module, "_iter_tool_module_names", lambda: ["fake_discovered_tool"])
     monkeypatch.setattr(registry_module, "_import_tool_module", lambda _name: module)
 
-    assert [tool_def.name for tool_def in get_registered_tools("investigation")] == [
+    assert [tool_def.name for tool_def in registry_module.get_registered_tools("investigation")] == [
         "get_incident_metadata"
     ]
-    assert [tool_def.name for tool_def in get_registered_tools("chat")] == [
+    assert [tool_def.name for tool_def in registry_module.get_registered_tools("chat")] == [
         "get_incident_metadata"
     ]
-    assert get_registered_tool_map("chat")["get_incident_metadata"].run("inc-1") == {
+    assert registry_module.get_registered_tool_map("chat")["get_incident_metadata"].run("inc-1") == {
         "incident_id": "inc-1"
     }
 
@@ -163,5 +157,5 @@ def test_real_registry_discovers_honeycomb_and_coralogix_tools() -> None:
 
 
 def test_real_registry_preserves_existing_chat_tool_surface() -> None:
-    chat_names = {tool_def.name for tool_def in get_registered_tools("chat")}
+    chat_names = {tool_def.name for tool_def in registry_module.get_registered_tools("chat")}
     assert {"fetch_failed_run", "get_tracer_run", "search_github_code"} <= chat_names
