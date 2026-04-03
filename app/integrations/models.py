@@ -11,6 +11,9 @@ from app.config import get_tracer_base_url
 from app.strict_config import StrictConfigModel
 
 _LOCAL_GRAFANA_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0"}
+DEFAULT_HONEYCOMB_BASE_URL = "https://api.honeycomb.io"
+DEFAULT_HONEYCOMB_DATASET = "__all__"
+DEFAULT_CORALOGIX_BASE_URL = "https://api.coralogix.com"
 
 
 class GrafanaIntegrationConfig(StrictConfigModel):
@@ -38,6 +41,42 @@ class DatadogIntegrationConfig(StrictConfigModel):
     app_key: str
     site: str = "datadoghq.com"
     integration_id: str = ""
+
+
+class HoneycombIntegrationConfig(StrictConfigModel):
+    """Normalized Honeycomb credentials used by resolution and verification flows."""
+
+    api_key: str
+    dataset: str = DEFAULT_HONEYCOMB_DATASET
+    base_url: str = DEFAULT_HONEYCOMB_BASE_URL
+    integration_id: str = ""
+
+    @field_validator("dataset", mode="before")
+    @classmethod
+    def _normalize_dataset(cls, value: object) -> str:
+        return str(value or DEFAULT_HONEYCOMB_DATASET).strip() or DEFAULT_HONEYCOMB_DATASET
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: object) -> str:
+        normalized = str(value or DEFAULT_HONEYCOMB_BASE_URL).strip().rstrip("/")
+        return normalized or DEFAULT_HONEYCOMB_BASE_URL
+
+
+class CoralogixIntegrationConfig(StrictConfigModel):
+    """Normalized Coralogix credentials used by resolution and verification flows."""
+
+    api_key: str
+    base_url: str = DEFAULT_CORALOGIX_BASE_URL
+    application_name: str = ""
+    subsystem_name: str = ""
+    integration_id: str = ""
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: object) -> str:
+        normalized = str(value or DEFAULT_CORALOGIX_BASE_URL).strip().rstrip("/")
+        return normalized or DEFAULT_CORALOGIX_BASE_URL
 
 
 class AWSStaticCredentials(StrictConfigModel):
@@ -118,6 +157,8 @@ class EffectiveIntegrations(StrictConfigModel):
 
     grafana: EffectiveIntegrationEntry | None = None
     datadog: EffectiveIntegrationEntry | None = None
+    honeycomb: EffectiveIntegrationEntry | None = None
+    coralogix: EffectiveIntegrationEntry | None = None
     aws: EffectiveIntegrationEntry | None = None
     slack: EffectiveIntegrationEntry | None = None
     tracer: EffectiveIntegrationEntry | None = None

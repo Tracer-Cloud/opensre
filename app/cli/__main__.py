@@ -36,8 +36,18 @@ from app.version import get_version
 # Heavy application imports are kept inside command functions so the CLI starts
 # fast and so that load_dotenv() in main() runs before any app module reads env.
 
-_SETUP_SERVICES = ["aws", "datadog", "grafana", "opensearch", "rds", "slack", "tracer"]
-_VERIFY_SERVICES = ["aws", "datadog", "grafana", "slack", "tracer"]
+_SETUP_SERVICES = [
+    "aws",
+    "coralogix",
+    "datadog",
+    "grafana",
+    "honeycomb",
+    "opensearch",
+    "rds",
+    "slack",
+    "tracer",
+]
+_VERIFY_SERVICES = ["aws", "coralogix", "datadog", "grafana", "honeycomb", "slack", "tracer"]
 
 
 _ASCII_HEADER = """\

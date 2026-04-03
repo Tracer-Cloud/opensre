@@ -19,6 +19,8 @@ EvidenceSource = Literal[
     "knowledge",
     "grafana",
     "datadog",
+    "honeycomb",
+    "coralogix",
     "eks",
     "github",
     "sentry",
@@ -66,7 +68,7 @@ class AgentState(TypedDict, total=False):
     alert_name: str
     pipeline_name: str
     severity: str
-    alert_source: str  # "grafana", "datadog", "cloudwatch", or "" if unknown
+    alert_source: str  # "grafana", "datadog", "honeycomb", "coralogix", "cloudwatch", or "" if unknown
     raw_alert: str | dict[str, Any]
     alert_json: dict[str, Any]
 

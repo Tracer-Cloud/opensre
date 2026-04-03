@@ -11,13 +11,17 @@ import requests
 
 from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.config import get_tracer_base_url
+from app.integrations.clients.coralogix import CoralogixClient
 from app.integrations.clients.datadog.client import DatadogClient, DatadogConfig
+from app.integrations.clients.honeycomb import HoneycombClient
 from app.integrations.clients.tracer_client.client import TracerClient
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
+    CoralogixIntegrationConfig,
     EffectiveIntegrations,
     GrafanaIntegrationConfig,
+    HoneycombIntegrationConfig,
     SlackWebhookConfig,
     TracerIntegrationConfig,
 )
@@ -29,8 +33,18 @@ from app.nodes.resolve_integrations.node import (
     _merge_local_integrations,
 )
 
-SUPPORTED_VERIFY_SERVICES = ("grafana", "datadog", "aws", "slack", "tracer", "github", "sentry")
-CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "aws"})
+SUPPORTED_VERIFY_SERVICES = (
+    "grafana",
+    "datadog",
+    "honeycomb",
+    "coralogix",
+    "aws",
+    "slack",
+    "tracer",
+    "github",
+    "sentry",
+)
+CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
 
 
@@ -73,6 +87,29 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 "source": source_by_service.get(service, "local env"),
                 "config": resolved_integration,
             }
+
+    honeycomb_integration = classified_integrations.get("honeycomb")
+    if isinstance(honeycomb_integration, dict):
+        effective["honeycomb"] = {
+            "source": source_by_service.get("honeycomb", "local env"),
+            "config": {
+                "api_key": str(honeycomb_integration.get("api_key", "")).strip(),
+                "dataset": str(honeycomb_integration.get("dataset", "")).strip(),
+                "base_url": str(honeycomb_integration.get("base_url", "")).strip(),
+            },
+        }
+
+    coralogix_integration = classified_integrations.get("coralogix")
+    if isinstance(coralogix_integration, dict):
+        effective["coralogix"] = {
+            "source": source_by_service.get("coralogix", "local env"),
+            "config": {
+                "api_key": str(coralogix_integration.get("api_key", "")).strip(),
+                "base_url": str(coralogix_integration.get("base_url", "")).strip(),
+                "application_name": str(coralogix_integration.get("application_name", "")).strip(),
+                "subsystem_name": str(coralogix_integration.get("subsystem_name", "")).strip(),
+            },
+        }
 
     tracer_integration = classified_integrations.get("tracer")
     if isinstance(tracer_integration, dict):
@@ -194,6 +231,82 @@ def _verify_datadog(source: str, config: dict[str, Any]) -> dict[str, str]:
         source,
         "passed",
         f"Connected to api.{datadog_client.config.site} and listed {result.get('total', 0)} monitors.",
+    )
+
+
+def _verify_honeycomb(source: str, config: dict[str, Any]) -> dict[str, str]:
+    honeycomb_config = HoneycombIntegrationConfig.model_validate(config)
+    honeycomb_client = HoneycombClient(honeycomb_config)
+    if not honeycomb_client.is_configured:
+        return _result("honeycomb", source, "missing", "Missing Honeycomb API key or dataset.")
+
+    auth_result = honeycomb_client.validate_access()
+    if not auth_result.get("success"):
+        return _result(
+            "honeycomb",
+            source,
+            "failed",
+            f"Auth check failed: {auth_result.get('error', 'unknown error')}",
+        )
+
+    query_result = honeycomb_client.run_query(
+        {
+            "calculations": [{"op": "COUNT"}],
+            "time_range": 900,
+        },
+        limit=1,
+    )
+    if not query_result.get("success"):
+        return _result(
+            "honeycomb",
+            source,
+            "failed",
+            f"Query check failed: {query_result.get('error', 'unknown error')}",
+        )
+
+    environment = auth_result.get("environment", {})
+    environment_slug = str(environment.get("slug", "")).strip() if isinstance(environment, dict) else ""
+    environment_label = environment_slug or "classic"
+    return _result(
+        "honeycomb",
+        source,
+        "passed",
+        (
+            f"Connected to {honeycomb_config.base_url} "
+            f"(environment {environment_label}) and queried dataset {honeycomb_config.dataset}."
+        ),
+    )
+
+
+def _verify_coralogix(source: str, config: dict[str, Any]) -> dict[str, str]:
+    coralogix_config = CoralogixIntegrationConfig.model_validate(config)
+    coralogix_client = CoralogixClient(coralogix_config)
+    if not coralogix_client.is_configured:
+        return _result("coralogix", source, "missing", "Missing Coralogix API key or API URL.")
+
+    result = coralogix_client.validate_access()
+    if not result.get("success"):
+        return _result(
+            "coralogix",
+            source,
+            "failed",
+            f"DataPrime check failed: {result.get('error', 'unknown error')}",
+        )
+
+    scope: list[str] = []
+    if coralogix_config.application_name:
+        scope.append(f"application {coralogix_config.application_name}")
+    if coralogix_config.subsystem_name:
+        scope.append(f"subsystem {coralogix_config.subsystem_name}")
+    scope_detail = f" ({', '.join(scope)})" if scope else ""
+    return _result(
+        "coralogix",
+        source,
+        "passed",
+        (
+            f"Connected to {coralogix_config.base_url}{scope_detail}; "
+            f"DataPrime returned {result.get('total', 0)} row(s)."
+        ),
     )
 
 
@@ -379,6 +492,10 @@ def verify_integrations(
             results.append(_verify_grafana(source, config))
         elif current_service == "datadog":
             results.append(_verify_datadog(source, config))
+        elif current_service == "honeycomb":
+            results.append(_verify_honeycomb(source, config))
+        elif current_service == "coralogix":
+            results.append(_verify_coralogix(source, config))
         elif current_service == "aws":
             results.append(_verify_aws(source, config))
         elif current_service == "tracer":

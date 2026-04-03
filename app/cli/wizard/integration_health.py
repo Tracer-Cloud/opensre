@@ -6,12 +6,16 @@ from dataclasses import dataclass
 
 import requests
 
+from app.integrations.clients.coralogix import CoralogixClient
 from app.integrations.clients.datadog import DatadogClient, DatadogConfig
 from app.integrations.clients.grafana import get_grafana_client_from_credentials
+from app.integrations.clients.honeycomb import HoneycombClient
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
+    CoralogixIntegrationConfig,
     GrafanaIntegrationConfig,
+    HoneycombIntegrationConfig,
     SlackWebhookConfig,
 )
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
@@ -62,6 +66,90 @@ def validate_datadog_integration(*, api_key: str, app_key: str, site: str) -> In
     return IntegrationHealthResult(
         ok=False,
         detail=f"Datadog validation failed: {result.get('error', 'unknown error')}",
+    )
+
+
+def validate_honeycomb_integration(
+    *,
+    api_key: str,
+    dataset: str,
+    base_url: str,
+) -> IntegrationHealthResult:
+    """Validate Honeycomb credentials with auth and a lightweight query."""
+    try:
+        honeycomb_config = HoneycombIntegrationConfig.model_validate({
+            "api_key": api_key,
+            "dataset": dataset,
+            "base_url": base_url,
+        })
+    except Exception as err:
+        return IntegrationHealthResult(ok=False, detail=str(err))
+
+    client = HoneycombClient(honeycomb_config)
+    auth_result = client.validate_access()
+    if not auth_result.get("success"):
+        return IntegrationHealthResult(
+            ok=False,
+            detail=f"Honeycomb auth failed: {auth_result.get('error', 'unknown error')}",
+        )
+
+    query_result = client.run_query(
+        {"calculations": [{"op": "COUNT"}], "time_range": 900},
+        limit=1,
+    )
+    if not query_result.get("success"):
+        return IntegrationHealthResult(
+            ok=False,
+            detail=f"Honeycomb query failed: {query_result.get('error', 'unknown error')}",
+        )
+
+    return IntegrationHealthResult(
+        ok=True,
+        detail=(
+            f"Honeycomb validated against dataset {honeycomb_config.dataset} "
+            f"at {honeycomb_config.base_url}."
+        ),
+    )
+
+
+def validate_coralogix_integration(
+    *,
+    api_key: str,
+    base_url: str,
+    application_name: str = "",
+    subsystem_name: str = "",
+) -> IntegrationHealthResult:
+    """Validate Coralogix access with a lightweight DataPrime query."""
+    try:
+        coralogix_config = CoralogixIntegrationConfig.model_validate({
+            "api_key": api_key,
+            "base_url": base_url,
+            "application_name": application_name,
+            "subsystem_name": subsystem_name,
+        })
+    except Exception as err:
+        return IntegrationHealthResult(ok=False, detail=str(err))
+
+    client = CoralogixClient(coralogix_config)
+    result = client.validate_access()
+    if not result.get("success"):
+        return IntegrationHealthResult(
+            ok=False,
+            detail=f"Coralogix validation failed: {result.get('error', 'unknown error')}",
+        )
+
+    scope: list[str] = []
+    if coralogix_config.application_name:
+        scope.append(f"application {coralogix_config.application_name}")
+    if coralogix_config.subsystem_name:
+        scope.append(f"subsystem {coralogix_config.subsystem_name}")
+    scope_suffix = f" ({', '.join(scope)})" if scope else ""
+    return IntegrationHealthResult(
+        ok=True,
+        detail=(
+            f"Coralogix validated against {coralogix_config.base_url}{scope_suffix}; "
+            f"DataPrime returned {result.get('total', 0)} row(s)."
+        ),
     )
 
 

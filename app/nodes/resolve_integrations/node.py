@@ -16,8 +16,10 @@ from langsmith import traceable
 from app.integrations.github_mcp import build_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
+    CoralogixIntegrationConfig,
     DatadogIntegrationConfig,
     GrafanaIntegrationConfig,
+    HoneycombIntegrationConfig,
 )
 from app.integrations.sentry import build_sentry_config
 from app.output import get_tracker
@@ -37,6 +39,9 @@ _SERVICE_KEY_MAP = {
     "eks": "aws",
     "amazon eks": "aws",
     "datadog": "datadog",
+    "honeycomb": "honeycomb",
+    "coralogix": "coralogix",
+    "carologix": "coralogix",
     "github": "github",
     "github_mcp": "github",
     "sentry": "sentry",
@@ -124,6 +129,33 @@ def _classify_integrations(
                 continue
             if datadog_config.api_key and datadog_config.app_key:
                 resolved["datadog"] = datadog_config.model_dump()
+
+        elif key == "honeycomb":
+            try:
+                honeycomb_config = HoneycombIntegrationConfig.model_validate({
+                    "api_key": credentials.get("api_key", ""),
+                    "dataset": credentials.get("dataset", ""),
+                    "base_url": credentials.get("base_url", ""),
+                    "integration_id": integration.get("id", ""),
+                })
+            except Exception:
+                continue
+            if honeycomb_config.api_key:
+                resolved["honeycomb"] = honeycomb_config.model_dump()
+
+        elif key == "coralogix":
+            try:
+                coralogix_config = CoralogixIntegrationConfig.model_validate({
+                    "api_key": credentials.get("api_key", ""),
+                    "base_url": credentials.get("base_url", ""),
+                    "application_name": credentials.get("application_name", ""),
+                    "subsystem_name": credentials.get("subsystem_name", ""),
+                    "integration_id": integration.get("id", ""),
+                })
+            except Exception:
+                continue
+            if coralogix_config.api_key:
+                resolved["coralogix"] = coralogix_config.model_dump()
 
         elif key == "github":
             try:
@@ -219,6 +251,35 @@ def _load_env_integrations() -> list[dict[str, Any]]:
             "service": "datadog",
             "status": "active",
             "credentials": datadog_config.model_dump(exclude={"integration_id"}),
+        })
+
+    honeycomb_api_key = os.getenv("HONEYCOMB_API_KEY", "").strip()
+    if honeycomb_api_key:
+        honeycomb_config = HoneycombIntegrationConfig.model_validate({
+            "api_key": honeycomb_api_key,
+            "dataset": os.getenv("HONEYCOMB_DATASET", "").strip(),
+            "base_url": os.getenv("HONEYCOMB_API_URL", "").strip(),
+        })
+        integrations.append({
+            "id": "env-honeycomb",
+            "service": "honeycomb",
+            "status": "active",
+            "credentials": honeycomb_config.model_dump(exclude={"integration_id"}),
+        })
+
+    coralogix_api_key = os.getenv("CORALOGIX_API_KEY", "").strip()
+    if coralogix_api_key:
+        coralogix_config = CoralogixIntegrationConfig.model_validate({
+            "api_key": coralogix_api_key,
+            "base_url": os.getenv("CORALOGIX_API_URL", "").strip(),
+            "application_name": os.getenv("CORALOGIX_APPLICATION_NAME", "").strip(),
+            "subsystem_name": os.getenv("CORALOGIX_SUBSYSTEM_NAME", "").strip(),
+        })
+        integrations.append({
+            "id": "env-coralogix",
+            "service": "coralogix",
+            "status": "active",
+            "credentials": coralogix_config.model_dump(exclude={"integration_id"}),
         })
 
     aws_role_arn = os.getenv("AWS_ROLE_ARN", "").strip()

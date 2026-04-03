@@ -7,7 +7,7 @@ Usage:
     python -m app.integrations remove <service>
     python -m app.integrations verify [service] [--send-slack-test]
 
-Supported services: aws, grafana, datadog, slack, opensearch, rds, tracer, github, sentry
+Supported services: aws, coralogix, datadog, grafana, honeycomb, slack, opensearch, rds, tracer, github, sentry
 """
 
 from __future__ import annotations
@@ -91,6 +91,38 @@ def _setup_datadog() -> None:
     if not api_key or not app_key:
         _die("api_key and app_key are required.")
     upsert_integration("datadog", {"credentials": {"api_key": api_key, "app_key": app_key, "site": site}})
+
+
+def _setup_honeycomb() -> None:
+    api_key = _p("Configuration API key", secret=True)
+    dataset = _p("Dataset slug or __all__", default="__all__")
+    base_url = _p("API URL", default="https://api.honeycomb.io")
+    if not api_key:
+        _die("api_key is required.")
+    upsert_integration(
+        "honeycomb",
+        {"credentials": {"api_key": api_key, "dataset": dataset, "base_url": base_url}},
+    )
+
+
+def _setup_coralogix() -> None:
+    api_key = _p("DataPrime API key", secret=True)
+    base_url = _p("API URL", default="https://api.coralogix.com")
+    application_name = _p("Application name (optional)")
+    subsystem_name = _p("Subsystem name (optional)")
+    if not api_key or not base_url:
+        _die("api_key and base_url are required.")
+    upsert_integration(
+        "coralogix",
+        {
+            "credentials": {
+                "api_key": api_key,
+                "base_url": base_url,
+                "application_name": application_name,
+                "subsystem_name": subsystem_name,
+            }
+        },
+    )
 
 
 def _setup_aws() -> None:
@@ -215,8 +247,10 @@ def _setup_sentry() -> None:
 
 _HANDLERS: dict[str, Any] = {
     "aws": _setup_aws,
+    "coralogix": _setup_coralogix,
     "datadog": _setup_datadog,
     "grafana": _setup_grafana,
+    "honeycomb": _setup_honeycomb,
     "slack": _setup_slack,
     "opensearch": _setup_opensearch,
     "rds": _setup_rds,
