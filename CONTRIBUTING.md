@@ -6,7 +6,7 @@ This document describes how to set up your environment, propose changes, report 
 
 ## Quick Links
 
-- **Docs:** https://opensre.com
+- **Docs:** https://tracer.mintlify.app
 - **Support / Contact:** hello@tracer.cloud
 - **Security Issues:** See `SECURITY.md` (do not open public issues)
 
