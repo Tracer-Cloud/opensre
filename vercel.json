@@ -1,0 +1,19 @@
+{
+  "rewrites": [
+    {
+      "source": "/docs",
+      "destination": "https://tracer.mintlify.dev/docs"
+    },
+    {
+      "source": "/docs/:match*",
+      "destination": "https://tracer.mintlify.dev/docs/:match*"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/docs",
+      "permanent": false
+    }
+  ]
+}
