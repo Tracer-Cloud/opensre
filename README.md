@@ -126,7 +126,9 @@ When an alert fires, Tracer automatically:
 
 Generate the benchmark report:
 
+```shell
 make benchmark
+```
 
 Output:
 - docs/benchmarks/results.md

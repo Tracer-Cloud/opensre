@@ -52,11 +52,16 @@ class SummaryMetrics:
 
 
 def _resolve_models() -> tuple[str, str]:
-    """Resolve reasoning/tool model IDs from active provider environment settings."""
     settings = LLMSettings.from_env()
     provider = settings.provider
-    reasoning_model = getattr(settings, f"{provider}_reasoning_model")
-    tool_model = getattr(settings, f"{provider}_toolcall_model")
+    reasoning_attr = f"{provider}_reasoning_model"
+    tool_attr = f"{provider}_toolcall_model"
+    reasoning_model = getattr(settings, reasoning_attr, None)
+    tool_model = getattr(settings, tool_attr, None)
+    if reasoning_model is None or tool_model is None:
+        raise ValueError(
+            f"Provider {provider!r} is missing attributes {reasoning_attr!r} or {tool_attr!r} on LLMSettings."
+        )
     return str(reasoning_model), str(tool_model)
 
 
@@ -86,11 +91,19 @@ def _summarize(cases: list[CaseMetrics]) -> SummaryMetrics:
 
 
 def _sanitize_error_for_markdown(error: str) -> str:
-    """Normalize error text for compact one-cell markdown output."""
+    """Normalize error text for single-line markdown table rendering."""
     cleaned = error.replace("\n", " ").replace("|", "\\|").strip()
-    if len(cleaned) > 120:
-        return cleaned[:117] + "..."
+    if len(cleaned) > 140:
+        return cleaned[:137] + "..."
     return cleaned
+
+
+def _scope_line(cases: list[CaseMetrics]) -> str:
+    """Build scope text from executed scenarios to avoid misleading hardcoded output."""
+    ids = [c.scenario_id for c in cases]
+    if not ids:
+        return "Scope: no scenarios executed."
+    return f"Scope: {', '.join(ids)}."
 
 
 def render_markdown(cases: list[CaseMetrics], summary: SummaryMetrics) -> str:
@@ -98,13 +111,15 @@ def render_markdown(cases: list[CaseMetrics], summary: SummaryMetrics) -> str:
     lines: list[str] = []
     lines.append("# OpenSRE Benchmark")
     lines.append("")
-    lines.append("Scope: fixed synthetic cases 001, 002, 003.")
+    lines.append(_scope_line(cases))
     lines.append("Metrics reported: duration, token usage, estimated LLM cost.")
     lines.append("Not measured: accuracy, false positives, false negatives.")
     lines.append("")
     lines.append("## Per-case Metrics")
     lines.append("")
-    lines.append("| Scenario | Status | Duration (s) | Input Tokens | Output Tokens | Total Tokens | Est. Cost (USD) | Error |")
+    lines.append(
+        "| Scenario | Status | Duration (s) | Input Tokens | Output Tokens | Total Tokens | Est. Cost (USD) | Error |"
+    )
     lines.append("|---|---|---:|---:|---:|---:|---:|---|")
     for c in cases:
         err = _sanitize_error_for_markdown(c.error) if c.error else ""
@@ -172,6 +187,7 @@ def run_benchmark(
                 )
             )
         except Exception as exc:
+            print(f"[benchmark] FAILED {sid}: {exc}", flush=True)
             cases.append(
                 CaseMetrics(
                     scenario_id=sid,
