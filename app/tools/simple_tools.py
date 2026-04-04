@@ -89,4 +89,4 @@ def echo(message: str, uppercase: bool = False) -> dict[str, Any]:
         Dictionary containing the echoed message
     """
     result = message.upper() if uppercase else message
-    return {"message": result, "original": message, "transformed": uppercase}
+    return {"message": result, "original": message, "uppercase": uppercase}
