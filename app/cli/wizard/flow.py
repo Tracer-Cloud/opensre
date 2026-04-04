@@ -870,6 +870,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             hint="Create shareable incident postmortem reports",
         ),
         Choice(
+            value="jira",
+            label="Jira",
+            hint="Create and update Jira tickets for incident management",
+        ),
+        Choice(
             value="skip",
             label="Skip for now",
             hint="Finish onboarding without configuring an integration",
@@ -894,6 +899,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "github": _configure_github_mcp,
         "sentry": _configure_sentry,
         "google_docs": _configure_google_docs,
+        "jira": _configure_jira,
     }
     _SERVICE_LABELS = {
         "grafana_local": "grafana local",

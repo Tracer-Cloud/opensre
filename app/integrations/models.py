@@ -183,6 +183,35 @@ class EffectiveIntegrationEntry(StrictConfigModel):
     config: dict[str, Any]
 
 
+class JiraIntegrationConfig(StrictConfigModel):
+    """Normalized Jira credentials used by incident ticket management."""
+
+    base_url: str
+    email: str
+    api_token: str
+    project_key: str = ""
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: object) -> str:
+        return str(value or "").strip().rstrip("/")
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_email(cls, value: object) -> str:
+        return str(value or "").strip().lower()
+
+    @field_validator("api_token", mode="before")
+    @classmethod
+    def _normalize_api_token(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("project_key", mode="before")
+    @classmethod
+    def _normalize_project_key(cls, value: object) -> str:
+        return str(value or "").strip().upper()
+
+
 class EffectiveIntegrations(StrictConfigModel):
     """Strict container for normalized effective integrations."""
 
@@ -196,3 +225,4 @@ class EffectiveIntegrations(StrictConfigModel):
     github: EffectiveIntegrationEntry | None = None
     sentry: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
+    jira: EffectiveIntegrationEntry | None = None

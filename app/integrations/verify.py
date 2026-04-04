@@ -45,6 +45,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "github",
     "sentry",
     "google_docs",
+    "jira",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
