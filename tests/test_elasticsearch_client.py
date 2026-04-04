@@ -5,7 +5,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
 from app.state import EvidenceSource
 
@@ -352,9 +351,8 @@ def test_tool_run_returns_unavailable_without_url() -> None:
 
 def test_tool_run_returns_logs_on_success() -> None:
     import app.tools.ElasticsearchLogsTool as tool_module
-    from app.tools.ElasticsearchLogsTool import ElasticsearchLogsTool
 
-    t = ElasticsearchLogsTool()
+    t = tool_module.ElasticsearchLogsTool()
     mock_client = MagicMock()
     mock_client.search_logs.return_value = {
         "success": True,
