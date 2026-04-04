@@ -43,6 +43,7 @@ _SECRET_KEYS = frozenset({
     "jwt_token",
     "webhook_url",
     "auth_token",
+    "connection_string",
 })
 
 

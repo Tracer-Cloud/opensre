@@ -23,7 +23,6 @@ from app.integrations.models import (
     GoogleDocsIntegrationConfig,
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
-    MongoDBIntegrationConfig,
     SlackWebhookConfig,
     TracerIntegrationConfig,
 )

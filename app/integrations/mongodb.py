@@ -164,17 +164,17 @@ def get_current_ops(
 ) -> dict[str, Any]:
     """Retrieve currently running operations above a duration threshold.
 
-    Read-only: uses ``currentOp`` admin command with ``secs_running`` filter.
+    Read-only: uses ``currentOp`` admin command with ``microsecs_running`` filter for sub-second precision.
     Results are capped at ``config.max_results``.
     """
     if not config.is_configured:
         return {"source": "mongodb", "available": False, "error": "Not configured."}
 
-    threshold_secs = max(0, threshold_ms / 1000)
+    threshold_microsecs = max(0, threshold_ms * 1000)
     try:
         client = _get_client(config)
         try:
-            result = client.admin.command("currentOp", {"secs_running": {"$gte": threshold_secs}})
+            result = client.admin.command("currentOp", {"microsecs_running": {"$gte": threshold_microsecs}})
             ops = result.get("inprog", [])
             # Cap results and strip potentially sensitive fields
             capped_ops = []
