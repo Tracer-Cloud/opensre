@@ -73,6 +73,32 @@ def test_resolve_effective_integrations_includes_honeycomb_and_coralogix_env(
     assert effective["coralogix"]["config"]["application_name"] == "payments"
 
 
+def test_resolve_effective_integrations_keeps_incomplete_datadog_store_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.integrations.verify.load_integrations",
+        lambda: [
+            {
+                "id": "datadog-local",
+                "service": "datadog",
+                "status": "active",
+                "credentials": {
+                    "api_key": "",
+                    "app_key": "",
+                    "site": "datadoghq.com",
+                },
+            }
+        ],
+    )
+
+    effective = resolve_effective_integrations()
+
+    assert effective["datadog"]["source"] == "local store"
+    assert effective["datadog"]["config"]["integration_id"] == "datadog-local"
+    assert effective["datadog"]["config"]["api_key"] == ""
+
+
 def test_verify_grafana_passes_with_supported_datasource(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fake_requests_get(*_args: Any, **_kwargs: Any) -> _FakeResponse:
         return _FakeResponse(
@@ -113,6 +139,21 @@ def test_verify_datadog_reports_api_failure(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert result["status"] == "failed"
     assert "403" in result["detail"]
+
+
+def test_verify_datadog_accepts_integration_id() -> None:
+    result = _verify_datadog(
+        "local store",
+        {
+            "api_key": "",
+            "app_key": "",
+            "site": "datadoghq.com",
+            "integration_id": "datadog-local",
+        },
+    )
+
+    assert result["status"] == "missing"
+    assert "Missing API key" in result["detail"]
 
 
 def test_verify_honeycomb_uses_auth_and_query(monkeypatch: pytest.MonkeyPatch) -> None:

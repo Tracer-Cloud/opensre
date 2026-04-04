@@ -1,19 +1,19 @@
 ---
 title: 'Debugging nf-core demo pipeline'
-description: 'Using Tracer to diagnose and optimize UMI-based consensus sequencing'
+description: 'Using OpenSRE to diagnose and optimize UMI-based consensus sequencing'
 ---
 
-This tutorial walks a bioinformatics engineer through real-time observability of the nf-core/fastquorum pipeline using Tracer's eBPF-powered monitoring. We simulate a small but realistic UMI-based duplex sequencing workflow on a single chromosome (chr17.fa), run it in a GitHub Codespace, and use Tracer to detect resource bottlenecks, identify redundant I/O, and explain why the pipeline completed in 1m 36s despite only 12 processes.
+This tutorial walks a bioinformatics engineer through real-time observability of the nf-core/fastquorum pipeline using OpenSRE's eBPF-powered monitoring. We simulate a small but realistic UMI-based duplex sequencing workflow on a single chromosome (chr17.fa), run it in a GitHub Codespace, and use OpenSRE to detect resource bottlenecks, identify redundant I/O, and explain why the pipeline completed in 1m 36s despite only 12 processes.
 
 ## What You'll Learn
 
-- Connect a live Codespace to the Tracer sandbox
+- Connect a live Codespace to the OpenSRE sandbox
 - Auto-instrument a Nextflow pipeline with zero code changes
 - Visualize per-process CPU, memory, and I/O in real time
 - Extract actionable optimization insights
 
 <Info>
-**Why this matters:** fastquorum is complex (UMI grouping, consensus calling, dual alignment). Without OS-level visibility, engineers guess where time is spent. Tracer shows exactly which process is the bottleneck — no logs, no profiling flags.
+**Why this matters:** fastquorum is complex (UMI grouping, consensus calling, dual alignment). Without OS-level visibility, engineers guess where time is spent. OpenSRE shows exactly which process is the bottleneck — no logs, no profiling flags.
 </Info>
 
 ## Tools Used
@@ -24,9 +24,9 @@ This tutorial walks a bioinformatics engineer through real-time observability of
 - **Container:** Docker
 - **Genome:** chr17.fa (subset of GRCh38)
 
-## 1. Login & Setup: Tracer Sandbox + GitHub Codespaces
+## 1. Login & Setup: OpenSRE Sandbox + GitHub Codespaces
 
-We begin in a GitHub Codespace — a reproducible, cloud-based dev environment that mimics a local VM. Tracer's eBPF agent runs natively here and streams metrics to the Tracer Sandbox Dashboard (https://dev.sandbox.tracer.cloud) in real time.
+We begin in a GitHub Codespace — a reproducible, cloud-based dev environment that mimics a local VM. OpenSRE's eBPF agent runs natively here and streams metrics to the OpenSRE Sandbox Dashboard (https://dev.sandbox.tracer.cloud) in real time.
 
 <Steps>
   <Step title="Open GitHub Codespaces">
@@ -41,7 +41,7 @@ We begin in a GitHub Codespace — a reproducible, cloud-based dev environment t
     *Fig 1: Codespace display with the cloned nf-core pipeline repository*
   </Step>
 
-  <Step title="Install Tracer (One-Liner with Dev Branch & User Token)">
+  <Step title="Install OpenSRE (One-Liner with Dev Branch & User Token)">
     In the Codespaces terminal, run:
 
     ```bash
@@ -49,7 +49,7 @@ We begin in a GitHub Codespace — a reproducible, cloud-based dev environment t
     ```
   </Step>
 
-  <Step title="Start Tracer Agent">
+  <Step title="Start OpenSRE Agent">
     To start tracking a pipeline, run the following command:
 
     ```bash
@@ -65,7 +65,7 @@ We begin in a GitHub Codespace — a reproducible, cloud-based dev environment t
     *Fig 2: You will see something like this upon successful connection (Snapshot of tracer init command which connecting to tracer)*
 
     <Tip>
-    With Tracer agent connected, input validated, and genome indexed, we now execute the full nf-core/fastquorum pipeline. No code changes are required — Tracer's eBPF hooks automatically detect nextflow launches, label processes, and stream OS-level metrics (CPU, RAM, I/O, syscalls) to your sandbox dashboard in real time.
+    With OpenSRE agent connected, input validated, and genome indexed, we now execute the full nf-core/fastquorum pipeline. No code changes are required — OpenSRE's eBPF hooks automatically detect nextflow launches, label processes, and stream OS-level metrics (CPU, RAM, I/O, syscalls) to your sandbox dashboard in real time.
     </Tip>
   </Step>
 </Steps>
@@ -93,7 +93,7 @@ A correctly formatted `samplesheet.csv` is constructed with mandatory columns: `
 </Accordion>
 
 <Accordion title="Pre-build Genome Index">
-To eliminate I/O noise during the observed run, the genome index (BWA-MEM1, SAMtools FAIDX, and DICT) is pre-built locally and stored for reuse, ensuring clean, reproducible eBPF telemetry from Tracer.
+To eliminate I/O noise during the observed run, the genome index (BWA-MEM1, SAMtools FAIDX, and DICT) is pre-built locally and stored for reuse, ensuring clean, reproducible eBPF telemetry from OpenSRE.
 </Accordion>
 
 ## 3. Launch the Pipeline
@@ -122,9 +122,9 @@ nextflow run . \
 | `-with-trace` | Nextflow-native trace (optional) |
 | `-with-report results/report.html` | HTML execution report |
 
-## 4. Live Visualization: Tracer Dashboard During Execution
+## 4. Live Visualization: OpenSRE Dashboard During Execution
 
-With the nf-core/fastquorum pipeline launched and Tracer's eBPF agent actively streaming OS-level events, the Tracer Sandbox Dashboard becomes a real-time observability cockpit. No polling, no logs — just continuous, kernel-level telemetry delivered via WebSocket every 2 seconds.
+With the nf-core/fastquorum pipeline launched and OpenSRE's eBPF agent actively streaming OS-level events, the OpenSRE Sandbox Dashboard becomes a real-time observability cockpit. No polling, no logs — just continuous, kernel-level telemetry delivered via WebSocket every 2 seconds.
 
 ### Dashboard Entry Point: Run Overview
 
@@ -145,7 +145,7 @@ Upon launching `nextflow run .`, a new run card appears instantly:
 ![Compact Summary](/images/tutorials/observability-driven/compact-summary.webp)
 
 <Info>
-This compact summary is the first signal that Tracer has auto-detected the Nextflow executor and attached to all child processes — no `-with-trace` or config changes needed. The progress bar fills as tasks complete, and resource meters update in real time.
+This compact summary is the first signal that OpenSRE has auto-detected the Nextflow executor and attached to all child processes — no `-with-trace` or config changes needed. The progress bar fills as tasks complete, and resource meters update in real time.
 </Info>
 
 ### System Specs & Cost Panel
@@ -161,7 +161,7 @@ This compact summary is the first signal that Tracer has auto-detected the Nextf
 ![System Specs & Cost Panel](/images/tutorials/observability-driven/specs&cost.webp)
 
 <Tip>
-This panel confirms the GitHub Codespaces environment: a 4-core, 16 GB VM with ample headroom. The cost meter at $0.00 reflects that this is a non-billable sandbox run, but in production (e.g., AWS EC2), Tracer would estimate hourly cost based on instance type and utilization.
+This panel confirms the GitHub Codespaces environment: a 4-core, 16 GB VM with ample headroom. The cost meter at $0.00 reflects that this is a non-billable sandbox run, but in production (e.g., AWS EC2), OpenSRE would estimate hourly cost based on instance type and utilization.
 </Tip>
 
 ### Tool Table: Real-Time Process Monitoring
@@ -255,11 +255,11 @@ The pipeline completes in **1m 36s** with **12 successful tasks**. Now we analyz
 
 ## 6. Conclusion
 
-In the fast-evolving landscape of bioinformatics, where pipelines demand precision amid mounting computational complexity, **Tracer emerges as an indispensable ally** for bioinformaticians seeking deeper, actionable insights without the burden of invasive instrumentation.
+In the fast-evolving landscape of bioinformatics, where pipelines demand precision amid mounting computational complexity, **OpenSRE emerges as an indispensable ally** for bioinformaticians seeking deeper, actionable insights without the burden of invasive instrumentation.
 
 ### Key Benefits
 
-By harnessing **eBPF technology** at the operating system level, Tracer delivers:
+By harnessing **eBPF technology** at the operating system level, OpenSRE delivers:
 
 - **Real-time observability** into every facet of your workflows (Nextflow, WDL, Bash, or CWL)
 - **Automatic detection** of hangs, crashes, and silent failures that traditional logs often overlook
@@ -272,7 +272,7 @@ Imagine pinpointing the exact genome file or tool process causing a crash in a d
 </Accordion>
 
 <Accordion title="Resource Optimization">
-Tracer excels in resource orchestration, spotlighting inefficiencies like redundant I/O in alignment steps or overprovisioned instances.
+OpenSRE excels in resource orchestration, spotlighting inefficiencies like redundant I/O in alignment steps or overprovisioned instances.
 </Accordion>
 
 <Accordion title="AI-Driven Recommendations">
@@ -281,10 +281,10 @@ AI-driven recommendations enable right-sizing of compute environments in mere cl
 
 ### Your Next Steps
 
-For bioinformaticians juggling high-throughput NGS data, evolving dependencies, and the pressure to derive reproducible insights from vast datasets, **Tracer isn't just a monitoring tool — it's a superpower** that shifts focus from infrastructure headaches to scientific discovery, fostering scalable, cost-effective workflows that accelerate breakthroughs in genomics, proteomics, and beyond.
+For bioinformaticians juggling high-throughput NGS data, evolving dependencies, and the pressure to derive reproducible insights from vast datasets, **OpenSRE isn't just a monitoring tool — it's a superpower** that shifts focus from infrastructure headaches to scientific discovery, fostering scalable, cost-effective workflows that accelerate breakthroughs in genomics, proteomics, and beyond.
 
-<Card title="Try Tracer Sandbox" icon="flask" href="https://tracer.bio">
-  Dive into the Tracer sandbox today and experience how effortless observability can redefine your pipeline mastery.
+<Card title="Try OpenSRE Sandbox" icon="flask" href="https://tracer.bio">
+  Dive into the OpenSRE sandbox today and experience how effortless observability can redefine your pipeline mastery.
 </Card>
 
 ## Related Tutorials

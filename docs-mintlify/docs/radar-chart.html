@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light dark">
-    <title>Seqera vs Tracer+Seqera Radar Chart</title>
+    <title>Seqera vs OpenSRE+Seqera Radar Chart</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-radar@4.4.0/dist/chartjs-chart-radar.min.js"></script>
     <style>
@@ -147,7 +147,7 @@
             </div>
             <div class="legend-item">
                 <div class="legend-color" style="background: #27BF9F;"></div>
-                <span>Seqera + Tracer</span>
+                <span>Seqera + OpenSRE</span>
             </div>
         </div>
         <div class="hint">Hover over the chart to see detailed descriptions</div>
@@ -196,7 +196,7 @@
                     ]
                 },
                 {
-                    label: 'Seqera + Tracer',
+                    label: 'Seqera + OpenSRE',
                     data: [5, 5, 5, 5, 5, 5, 5, 5, 5],
                     borderColor: '#27BF9F',
                     backgroundColor: 'rgba(39, 191, 159, 0.15)',
@@ -338,7 +338,7 @@
             if (isPointInPolygon(mouseX, mouseY, polygon0)) {
                 return 0;
             }
-            // Then check Seqera + Tracer (index 1)
+            // Then check Seqera + OpenSRE (index 1)
             const polygon1 = getDatasetPolygon(chartInstance, 1);
             if (isPointInPolygon(mouseX, mouseY, polygon1)) {
                 return 1;

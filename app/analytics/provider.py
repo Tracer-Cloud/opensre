@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import atexit
 import contextlib
-import json
+import importlib.metadata
 import os
 import platform
-import sys
+import queue
+import threading
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -15,7 +18,6 @@ import httpx
 
 from app.analytics.events import Event
 from app.cli.wizard.store import get_store_path
-from app.version import get_version
 
 _CONFIG_DIR = get_store_path().parent
 _ANONYMOUS_ID_PATH = _CONFIG_DIR / "anonymous_id"
@@ -23,59 +25,26 @@ _FIRST_RUN_PATH = _CONFIG_DIR / "installed"
 
 _POSTHOG_API_KEY = "phc_zutpVhmQw7oUmMkbawKNdYCKQWjpfASATtf5ywB75W2"
 _POSTHOG_HOST = "https://us.i.posthog.com"
-_CI_ENV_VARS: Final[tuple[str, ...]] = (
-    "GITHUB_ACTIONS",
-    "GITLAB_CI",
-    "BUILDKITE",
-    "CIRCLECI",
-    "TRAVIS",
-    "JENKINS_URL",
-    "TEAMCITY_VERSION",
-)
-_DEBUG_PREFIX = "[telemetry]"
-_DEBUG_REDACTED_VALUE = "[REDACTED]"
-_SENSITIVE_DEBUG_KEYS: Final[frozenset[str]] = frozenset(
-    {
-        "access_token",
-        "api_key",
-        "authorization",
-        "client_secret",
-        "password",
-        "refresh_token",
-        "secret",
-        "token",
-    }
-)
-_SEND_TIMEOUT = 1.0
 
-type PropertyValue = str | bool | int
+_QUEUE_SIZE = 128
+_SEND_TIMEOUT = 2.0
+_SHUTDOWN_WAIT = 1.0
+
+type PropertyValue = str | bool
 type Properties = dict[str, PropertyValue]
 
 
-def _env_truthy(name: str) -> bool:
-    return os.getenv(name, "") not in ("", "0", "false", "False")
-
-
-def _is_ci_environment() -> bool:
-    return any(_env_truthy(name) for name in _CI_ENV_VARS)
-
-
-def _is_test_environment() -> bool:
-    return _env_truthy("PYTEST_CURRENT_TEST")
+@dataclass(frozen=True, slots=True)
+class _Envelope:
+    event: str
+    properties: Properties
 
 
 def _is_opted_out() -> bool:
     return (
-        _env_truthy("OPENSRE_NO_TELEMETRY")
-        or _env_truthy("OPENSRE_ANALYTICS_DISABLED")
-        or _env_truthy("DO_NOT_TRACK")
-        or _is_test_environment()
-        or _is_ci_environment()
+        os.getenv("OPENSRE_ANALYTICS_DISABLED", "0") == "1"
+        or os.getenv("DO_NOT_TRACK", "0") == "1"
     )
-
-
-def _is_debug_enabled() -> bool:
-    return _env_truthy("OPENSRE_TELEMETRY_DEBUG")
 
 
 def _get_or_create_anonymous_id() -> str:
@@ -104,84 +73,135 @@ def _touch_once(path: Path) -> bool:
 
 
 def _cli_version() -> str:
-    return get_version()
+    try:
+        return importlib.metadata.version("opensre")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
 
 
-def _base_properties() -> Properties:
-    return {
-        "cli_version": _cli_version(),
-        "python_version": platform.python_version(),
-        "os_family": platform.system().lower(),
-        "os_version": platform.release(),
-        "machine_arch": platform.machine().lower(),
-        "$process_person_profile": False,
-    }
+_BASE_PROPERTIES: Final[Properties] = {
+    "cli_version": _cli_version(),
+    "python_version": platform.python_version(),
+    "os_family": platform.system().lower(),
+    "os_version": platform.release(),
+    "$process_person_profile": False,
+}
 
 
-def _build_event_data(event: Event, properties: Properties | None = None) -> dict[str, object] | None:
-    if _is_opted_out():
-        return None
+class Analytics:
+    def __init__(self) -> None:
+        self._disabled = _is_opted_out()
+        self._anonymous_id = _get_or_create_anonymous_id()
+        self._queue: queue.Queue[_Envelope | None] = queue.Queue(maxsize=_QUEUE_SIZE)
+        self._pending_lock = threading.Lock()
+        self._pending = 0
+        self._drained = threading.Event()
+        self._drained.set()
+        self._worker: threading.Thread | None = None
+        self._shutdown = False
 
-    return {
-        "event": event.value,
-        "properties": {
-            "distinct_id": _get_or_create_anonymous_id(),
-            "$lib": "opensre-cli",
-            **_base_properties(),
-            **(properties or {}),
-        },
-    }
+        if not self._disabled:
+            atexit.register(self.shutdown)
+
+    def capture(self, event: Event, properties: Properties | None = None) -> None:
+        if self._disabled or self._shutdown:
+            return
+        envelope = _Envelope(
+            event=event.value,
+            properties=_BASE_PROPERTIES | (properties or {}),
+        )
+        self._ensure_worker()
+        try:
+            with self._pending_lock:
+                self._pending += 1
+                self._drained.clear()
+            self._queue.put_nowait(envelope)
+        except queue.Full:
+            self._mark_done()
+
+    def shutdown(self, *, flush: bool = True, timeout: float = _SHUTDOWN_WAIT) -> None:
+        if self._disabled or self._shutdown:
+            return
+        self._shutdown = True
+        self._ensure_worker()
+        with contextlib.suppress(queue.Full):
+            self._queue.put_nowait(None)
+        if flush and self._worker is not None:
+            self._drained.wait(timeout=timeout)
+            self._worker.join(timeout=timeout)
+
+    def _ensure_worker(self) -> None:
+        if self._worker is not None:
+            return
+        worker = threading.Thread(target=self._worker_loop, name="opensre-analytics", daemon=True)
+        worker.start()
+        self._worker = worker
+
+    def _worker_loop(self) -> None:
+        with httpx.Client(timeout=_SEND_TIMEOUT) as client:
+            while True:
+                item = self._queue.get()
+                if item is None:
+                    self._queue.task_done()
+                    break
+                try:
+                    self._send(client, item)
+                finally:
+                    self._queue.task_done()
+                    self._mark_done()
+            while True:
+                try:
+                    item = self._queue.get_nowait()
+                except queue.Empty:
+                    return
+                try:
+                    if item is not None:
+                        self._send(client, item)
+                finally:
+                    self._queue.task_done()
+                    self._mark_done()
+
+    def _send(self, client: httpx.Client, item: _Envelope) -> None:
+        payload = {
+            "api_key": _POSTHOG_API_KEY,
+            "event": item.event,
+            "properties": {
+                "distinct_id": self._anonymous_id,
+                "$lib": "opensre-cli",
+                **item.properties,
+            },
+        }
+        with contextlib.suppress(Exception):
+            client.post(f"{_POSTHOG_HOST}/capture/", json=payload).raise_for_status()
+
+    def _mark_done(self) -> None:
+        with self._pending_lock:
+            self._pending = max(0, self._pending - 1)
+            if self._pending == 0:
+                self._drained.set()
 
 
-def _redact_sensitive_values(value: object) -> object:
-    if isinstance(value, dict):
-        redacted: dict[str, object] = {}
-        for key, nested_value in value.items():
-            if key.lower() in _SENSITIVE_DEBUG_KEYS:
-                redacted[key] = _DEBUG_REDACTED_VALUE
-            else:
-                redacted[key] = _redact_sensitive_values(nested_value)
-        return redacted
-    if isinstance(value, list):
-        return [_redact_sensitive_values(item) for item in value]
-    return value
+_instance: Analytics | None = None
 
 
-def _debug_log(event_data: dict[str, object]) -> None:
-    safe = _redact_sensitive_values(event_data)
-    print(f"{_DEBUG_PREFIX} {json.dumps(safe, sort_keys=True)}", file=sys.stderr)
+def get_analytics() -> Analytics:
+    global _instance  # noqa: PLW0603
+    if _instance is None:
+        _instance = Analytics()
+    return _instance
 
 
-def capture(event: Event, properties: Properties | None = None) -> None:
-    event_data = _build_event_data(event, properties)
-    if event_data is None:
-        return
-
-    if _is_debug_enabled():
-        _debug_log(event_data)
-        return
-
-    payload = {"api_key": _POSTHOG_API_KEY, **event_data}
-    with contextlib.suppress(Exception):
-        httpx.post(f"{_POSTHOG_HOST}/capture/", json=payload, timeout=_SEND_TIMEOUT).raise_for_status()
+def shutdown_analytics(*, flush: bool = True) -> None:
+    if _instance is not None:
+        _instance.shutdown(flush=flush)
 
 
 def mark_install_detected() -> None:
-    if _is_opted_out():
-        return
     with contextlib.suppress(OSError):
         _FIRST_RUN_PATH.parent.mkdir(parents=True, exist_ok=True)
         _FIRST_RUN_PATH.touch(exist_ok=True)
 
 
 def capture_first_run_if_needed() -> None:
-    if _is_opted_out():
-        return
     if _touch_once(_FIRST_RUN_PATH):
-        capture(
-            Event.INSTALL_DETECTED,
-            {
-                "install_source": "first_run",
-                "entrypoint": "opensre",
-            },
-        )
+        get_analytics().capture(Event.INSTALL_DETECTED)

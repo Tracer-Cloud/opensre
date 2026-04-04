@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from app.utils.config import load_env
 
 _PROJECT_ROOT = Path(__file__).parent.parent
@@ -14,6 +16,12 @@ def _load_env() -> None:
 
 
 _load_env()
+
+
+@pytest.fixture(autouse=True)
+def _disable_system_keyring(monkeypatch) -> None:
+    """Keep tests isolated from any real developer keychain entries."""
+    monkeypatch.setenv("OPENSRE_DISABLE_KEYRING", "1")
 
 
 def pytest_configure(config):  # noqa: ARG001

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from app.config import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-PROJECT_ENV_PATH = PROJECT_ROOT / ".env"
+PROJECT_ENV_PATH = Path(os.getenv("OPENSRE_PROJECT_ENV_PATH", PROJECT_ROOT / ".env"))
 
 
 @dataclass(frozen=True)

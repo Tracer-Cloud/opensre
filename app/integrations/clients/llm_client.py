@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import time
 from dataclasses import dataclass
@@ -27,6 +26,7 @@ from app.config import (
     OPENROUTER_BASE_URL,
     LLMSettings,
 )
+from app.llm_credentials import resolve_llm_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class LLMResponse:
 
 class LLMClient:
     def __init__(self, *, model: str, max_tokens: int = 1024, temperature: float | None = None) -> None:
-        api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+        api_key = resolve_llm_api_key("ANTHROPIC_API_KEY")
         self._api_key = api_key
         self._client = Anthropic(api_key=api_key, timeout=60.0)
         self._model = model
@@ -80,10 +80,10 @@ class LLMClient:
         return self
 
     def _ensure_client(self) -> None:
-        api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+        api_key = resolve_llm_api_key("ANTHROPIC_API_KEY")
         if not api_key:
             raise RuntimeError(
-                "Missing ANTHROPIC_API_KEY. Set it in your environment or .env before running LLM steps."
+                "Missing ANTHROPIC_API_KEY. Set it in your environment, .env, or secure local keychain before running LLM steps."
             )
         if api_key != self._api_key:
             self._api_key = api_key
@@ -158,7 +158,7 @@ class OpenAILLMClient:
         base_url: str | None = None,
         api_key_env: str = "OPENAI_API_KEY",
     ) -> None:
-        api_key = (os.getenv(api_key_env) or "").strip()
+        api_key = resolve_llm_api_key(api_key_env)
         self._api_key = api_key
         self._base_url = base_url
         self._api_key_env = api_key_env
@@ -178,10 +178,10 @@ class OpenAILLMClient:
         return self
 
     def _ensure_client(self) -> None:
-        api_key = (os.getenv(self._api_key_env) or "").strip()
+        api_key = resolve_llm_api_key(self._api_key_env)
         if not api_key:
             raise RuntimeError(
-                f"Missing {self._api_key_env}. Set it in your environment or .env before running LLM steps."
+                f"Missing {self._api_key_env}. Set it in your environment, .env, or secure local keychain before running LLM steps."
             )
         if api_key != self._api_key:
             self._api_key = api_key
@@ -208,7 +208,7 @@ class OpenAILLMClient:
                 break
             except OpenAIAuthError as err:
                 raise RuntimeError(
-                    f"{self._provider_label} authentication failed. Check {self._api_key_env} in your environment or .env."
+                    f"{self._provider_label} authentication failed. Check {self._api_key_env} in your environment, .env, or secure local keychain."
                 ) from err
             except Exception as err:
                 last_err = err

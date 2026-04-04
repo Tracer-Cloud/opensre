@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -19,15 +20,15 @@ def get_store_path() -> Path:
 def _load_raw(path: Path | None = None) -> dict[str, Any]:
     store_path = path or get_store_path()
     if not store_path.exists():
-        return dict(_EMPTY_CONFIG)
+        return deepcopy(_EMPTY_CONFIG)
 
     try:
         data = json.loads(store_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return dict(_EMPTY_CONFIG)
+        return deepcopy(_EMPTY_CONFIG)
 
     if not isinstance(data, dict):
-        return dict(_EMPTY_CONFIG)
+        return deepcopy(_EMPTY_CONFIG)
     return data
 
 
@@ -43,7 +44,6 @@ def save_local_config(
     model: str,
     api_key_env: str,
     model_env: str,
-    api_key: str,
     probes: dict[str, dict[str, object]],
     path: Path | None = None,
 ) -> Path:
@@ -63,7 +63,6 @@ def save_local_config(
         "model": model,
         "api_key_env": api_key_env,
         "model_env": model_env,
-        "api_key": api_key,
         "updated_at": timestamp,
     }
     data["probes"] = probes

@@ -1,7 +1,7 @@
 {
-  "$schema": "https://opensre.com/docs.json",
+  "$schema": "https://mintlify.com/docs.json",
   "theme": "maple",
-  "name": "Tracer Documentation",
+  "name": "OpenSRE Documentation",
   "modeToggle": {
     "default": "dark",
     "isHidden": false
@@ -94,7 +94,7 @@
             ]
           },
           {
-            "group": "How Tracer fits in your stack",
+            "group": "How OpenSRE fits in your stack",
             "pages": [
               "comparisons/overview",
               {
@@ -131,7 +131,7 @@
             "pages": [
               "technology/end-to-end",
               {
-                "group": "Tracer Products",
+                "group": "OpenSRE Products",
                 "pages": [
                   "technology/tracer-collect",
                   "technology/tracer-tune",
@@ -165,7 +165,7 @@
   "navbar": {
     "links": [
       {
-        "label": "Sign up",
+        "label": "Try Tracer",
         "href": "https://app.tracer.cloud/sign-up"
       }
     ]
@@ -175,7 +175,7 @@
   },
   "footer": {
     "socials": {
-      "website": "https://www.tracer.cloud",
+      "website": "https://tracer.cloud",
       "github": "https://github.com/Tracer-Cloud",
       "linkedin": "https://linkedin.com/company/tracercloud",
       "slack": "https://join.slack.com/t/tracer-cloud/shared_invite/zt-3ifakcs2e-igoUEH8ygMlfxgJGLxsqeA"
@@ -195,9 +195,7 @@
   },
   "seo": {
     "indexing": "all",
-    "metatags": {
-      "canonical": "https://tracer.cloud"
-    }
+    "metatags": {}
   },
   "fonts": {
     "heading": {

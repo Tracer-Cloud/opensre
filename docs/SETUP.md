@@ -122,3 +122,32 @@ make lint && make typecheck && make test-cov
 ```
 
 If all three pass, you're ready to start developing! See `CONTRIBUTING.md` for the development workflow.
+
+
+---
+
+## Running OpenSRE MCP Server
+
+You can start the MCP server with:
+```bash
+opensre-mcp
+```
+
+This exposes the `run_rca` tool for MCP clients (e.g., OpenClaw).
+
+### OpenClaw MCP Configuration (Example)
+```json
+{
+  "mcpServers": {
+    "opensre": {
+      "command": "opensre-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+### Demo Alert Payload
+
+A realistic example alert payload is available at:
+`tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json`

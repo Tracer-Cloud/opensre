@@ -10,11 +10,6 @@ on:
         description: "Optional London date to generate (YYYY-MM-DD). For manual reruns, defaults to yesterday in Europe/London."
         required: false
         type: string
-      post_to_slack:
-        description: "Post the generated update to Slack."
-        required: false
-        default: true
-        type: boolean
 
 permissions:
   contents: write
@@ -25,14 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       LLM_PROVIDER: ${{ vars.DAILY_UPDATE_LLM_PROVIDER || 'anthropic' }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-      DAILY_UPDATE_POST_TO_SLACK: "1"
 
     steps:
       - uses: actions/checkout@v5
@@ -73,12 +66,6 @@ jobs:
             else
               echo "DAILY_UPDATE_DATE=$(TZ=Europe/London date -d 'yesterday' +%F)" >> "$GITHUB_ENV"
             fi
-
-            if [ "${{ inputs.post_to_slack }}" = "true" ]; then
-              echo "DAILY_UPDATE_POST_TO_SLACK=1" >> "$GITHUB_ENV"
-            else
-              echo "DAILY_UPDATE_POST_TO_SLACK=0" >> "$GITHUB_ENV"
-            fi
           fi
 
       - name: Install dependencies
@@ -87,7 +74,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Generate archive and Slack update
+      - name: Generate archive
         if: steps.gate.outputs.should_run == 'true'
         id: generate
         run: python -m app.integrations.daily_update

@@ -19,6 +19,7 @@ from app.integrations.github_mcp import build_github_mcp_config, validate_github
 from app.integrations.models import (
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
+    DatadogIntegrationConfig,
     EffectiveIntegrations,
     GoogleDocsIntegrationConfig,
     GrafanaIntegrationConfig,
@@ -74,6 +75,7 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
     classified_integrations = _classify_integrations(merged_integrations)
 
     source_by_service: dict[str, str] = {}
+    store_integration_by_service: dict[str, dict[str, Any]] = {}
     for integration in env_integrations:
         service = str(integration.get("service", "")).strip().lower()
         if service:
@@ -82,6 +84,7 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
         service = str(integration.get("service", "")).strip().lower()
         if service:
             source_by_service[service] = "local store"
+            store_integration_by_service.setdefault(service, integration)
 
     effective: dict[str, dict[str, Any]] = {}
     for service in CORE_VERIFY_SERVICES:
@@ -91,6 +94,22 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 "source": source_by_service.get(service, "local env"),
                 "config": resolved_integration,
             }
+
+    if "datadog" not in effective:
+        datadog_store_integration = store_integration_by_service.get("datadog")
+        if isinstance(datadog_store_integration, dict):
+            datadog_credentials = datadog_store_integration.get("credentials", {})
+            if isinstance(datadog_credentials, dict):
+                effective["datadog"] = {
+                    "source": "local store",
+                    "config": {
+                        "api_key": str(datadog_credentials.get("api_key", "")).strip(),
+                        "app_key": str(datadog_credentials.get("app_key", "")).strip(),
+                        "site": str(datadog_credentials.get("site", "datadoghq.com")).strip()
+                        or "datadoghq.com",
+                        "integration_id": str(datadog_store_integration.get("id", "")).strip(),
+                    },
+                }
 
     honeycomb_integration = classified_integrations.get("honeycomb")
     if isinstance(honeycomb_integration, dict):
@@ -266,7 +285,12 @@ def _verify_grafana(source: str, config: dict[str, Any]) -> dict[str, str]:
 
 
 def _verify_datadog(source: str, config: dict[str, Any]) -> dict[str, str]:
-    datadog_client = DatadogClient(DatadogConfig.model_validate(config))
+    datadog_integration_config = DatadogIntegrationConfig.model_validate(config)
+    datadog_client = DatadogClient(
+        DatadogConfig.model_validate(
+            datadog_integration_config.model_dump(exclude={"integration_id"})
+        )
+    )
     if not datadog_client.is_configured:
         return _result("datadog", source, "missing", "Missing API key or application key.")
 

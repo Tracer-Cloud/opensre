@@ -34,7 +34,7 @@
     <priority>0.80</priority>
   </url>
   <url>
-    <loc>https://opensre.com</loc>
+    <loc>https://tracer.mintlify.app</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.80</priority>
   </url>
@@ -164,172 +164,172 @@
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/introduction</loc>
+    <loc>https://tracer.mintlify.app/introduction</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/quickstart</loc>
+    <loc>https://tracer.mintlify.app/quickstart</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/use-cases/logging</loc>
+    <loc>https://tracer.mintlify.app/use-cases/logging</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/use-cases/metrics</loc>
+    <loc>https://tracer.mintlify.app/use-cases/metrics</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/use-cases/cost-optimization</loc>
+    <loc>https://tracer.mintlify.app/use-cases/cost-optimization</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/use-cases/right-sizing</loc>
+    <loc>https://tracer.mintlify.app/use-cases/right-sizing</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/use-cases/cost-center-mapping</loc>
+    <loc>https://tracer.mintlify.app/use-cases/cost-center-mapping</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/use-cases/datalake</loc>
+    <loc>https://tracer.mintlify.app/use-cases/datalake</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/integrations/overview</loc>
+    <loc>https://tracer.mintlify.app/integrations/overview</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/integrations/nextflow</loc>
+    <loc>https://tracer.mintlify.app/integrations/nextflow</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/integrations/wdl</loc>
+    <loc>https://tracer.mintlify.app/integrations/wdl</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/integrations/bash</loc>
+    <loc>https://tracer.mintlify.app/integrations/bash</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/integrations/snakemake</loc>
+    <loc>https://tracer.mintlify.app/integrations/snakemake</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/integrations/slurm</loc>
+    <loc>https://tracer.mintlify.app/integrations/slurm</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/technology/value-opportunity</loc>
+    <loc>https://tracer.mintlify.app/technology/value-opportunity</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/technology/how-it-works</loc>
+    <loc>https://tracer.mintlify.app/technology/how-it-works</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/technology/why-ebpf</loc>
+    <loc>https://tracer.mintlify.app/technology/why-ebpf</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/technology/tracer-agent</loc>
+    <loc>https://tracer.mintlify.app/technology/tracer-agent</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/technology/our-features</loc>
+    <loc>https://tracer.mintlify.app/technology/our-features</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/tutorials/viewing-task-status</loc>
+    <loc>https://tracer.mintlify.app/tutorials/viewing-task-status</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/tutorials/investigating-task-failures</loc>
+    <loc>https://tracer.mintlify.app/tutorials/investigating-task-failures</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/comparisons/Tracer_vs_Seqera</loc>
+    <loc>https://tracer.mintlify.app/comparisons/Tracer_vs_Seqera</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/comparisons/Tracer_vs_Prefect</loc>
+    <loc>https://tracer.mintlify.app/comparisons/Tracer_vs_Prefect</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/comparisons/Tracer_vs_Dagster</loc>
+    <loc>https://tracer.mintlify.app/comparisons/Tracer_vs_Dagster</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/comparisons/Tracer_vs_Grafana</loc>
+    <loc>https://tracer.mintlify.app/comparisons/Tracer_vs_Grafana</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/comparisons/Tracer_vs_AWS_CloudWatch</loc>
+    <loc>https://tracer.mintlify.app/comparisons/Tracer_vs_AWS_CloudWatch</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/environments/overview</loc>
+    <loc>https://tracer.mintlify.app/environments/overview</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/environments/codespaces</loc>
+    <loc>https://tracer.mintlify.app/environments/codespaces</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/environments/linux-cloud</loc>
+    <loc>https://tracer.mintlify.app/environments/linux-cloud</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/environments/aws-batch</loc>
+    <loc>https://tracer.mintlify.app/environments/aws-batch</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/environments/docker</loc>
+    <loc>https://tracer.mintlify.app/environments/docker</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/environments/linux-local</loc>
+    <loc>https://tracer.mintlify.app/environments/linux-local</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/environments/macos</loc>
+    <loc>https://tracer.mintlify.app/environments/macos</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://opensre.com/environments/windows-local</loc>
+    <loc>https://tracer.mintlify.app/environments/windows-local</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>

@@ -1,4 +1,4 @@
-// Radar Chart for Seqera vs Tracer comparison
+// Radar Chart for Seqera vs OpenSRE comparison
 // This script initializes the radar chart when the page loads
 
 function initRadarChart() {
@@ -61,7 +61,7 @@ function initRadarChart() {
         ]
       },
       {
-        label: 'Seqera + Tracer',
+        label: 'Seqera + OpenSRE',
         data: [5, 5, 5, 5, 5, 5, 5, 5, 5],
         borderColor: '#27BF9F',
         backgroundColor: 'rgba(39, 191, 159, 0.15)',
@@ -172,7 +172,7 @@ function initRadarChart() {
     if (isPointInPolygon(mouseX, mouseY, polygon0)) {
       return 0;
     }
-    // Then check Seqera + Tracer (index 1)
+    // Then check Seqera + OpenSRE (index 1)
     const polygon1 = getDatasetPolygon(chartInstance, 1);
     if (isPointInPolygon(mouseX, mouseY, polygon1)) {
       return 1;
