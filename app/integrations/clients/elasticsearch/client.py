@@ -81,20 +81,13 @@ class ElasticsearchClient:
 
     def list_indices(self) -> dict[str, Any]:
         """List all indices via GET /_cat/indices?format=json."""
-        try:
-            resp = self._get_client().get("/_cat/indices", params={"format": "json"})
-            resp.raise_for_status()
-            raw: list[dict[str, Any]] = resp.json()
-            indices = [
-                {
-                    "index": idx.get("index", ""),
-                    "health": idx.get("health", ""),
-                    "status": idx.get("status", ""),
-                    "docs_count": idx.get("docs.count", ""),
-                    "store_size": idx.get("store.size", ""),
-                }
-                for idx in raw
-            ]
+            if resp.status_code == 200:
+                security_enabled = False
+            elif resp.status_code == 401:
+                security_enabled = True
+            else:
+                return {"success": False, "error": f"Unexpected status {resp.status_code} from /_cluster/health"}
+            return {"success": True, "security_enabled": security_enabled}
             return {"success": True, "indices": indices, "total": len(indices)}
         except httpx.HTTPStatusError as e:
             logger.warning(
