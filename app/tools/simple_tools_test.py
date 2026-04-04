@@ -7,12 +7,9 @@ to prevent hardcoded demo data from being used in investigations.
 
 from __future__ import annotations
 
-import pytest
-
-from app.tools.registered_tool import REGISTERED_TOOL_ATTR, RegisteredTool
-
 # Import directly from module - not via registry (simple_tools is skipped in production)
 from app.tools import simple_tools
+from app.tools.registered_tool import REGISTERED_TOOL_ATTR, RegisteredTool
 
 
 def test_simple_tools_excluded_from_registry() -> None:
