@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
+
+import pytest
 
 import app.integrations.clients.tracer_client.tracer_client_base as tracer_client_base
 
@@ -21,15 +24,15 @@ class _FakeResponse:
 class _FakeHttpClient:
     def __init__(self) -> None:
         self.last_url = ""
-        self.last_params: dict[str, Any] = {}
+        self.last_params: Mapping[str, Any] = {}
 
-    def get(self, url: str, params: dict[str, Any]) -> _FakeResponse:
+    def get(self, url: str, params: Mapping[str, Any]) -> _FakeResponse:
         self.last_url = url
         self.last_params = params
         return _FakeResponse({"success": True, "data": []})
 
 
-def test_get_uses_base_url_and_params(monkeypatch: Any) -> None:
+def test_get_uses_base_url_and_params(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = _FakeHttpClient()
 
     monkeypatch.setattr(
@@ -56,7 +59,7 @@ def test_get_uses_base_url_and_params(monkeypatch: Any) -> None:
     assert fake_client.last_params == {"orgId": "org_123", "size": 50}
 
 
-def test_get_defaults_to_empty_params(monkeypatch: Any) -> None:
+def test_get_defaults_to_empty_params(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = _FakeHttpClient()
 
     monkeypatch.setattr(
