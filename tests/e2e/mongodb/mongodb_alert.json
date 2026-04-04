@@ -1,0 +1,44 @@
+{
+  "title": "[FIRING:1] MongoDB High Connections Alert",
+  "state": "alerting",
+  "commonLabels": {
+    "alertname": "MongoDBHighConnections",
+    "severity": "warning",
+    "cluster": "prod-mongo-cluster",
+    "environment": "production",
+    "mongodb_instance": "prod-primary.mongodb.net"
+  },
+  "commonAnnotations": {
+    "summary": "MongoDB instance has high number of active connections (850/900)",
+    "description": "MongoDB cluster prod-mongo-cluster primary node is experiencing elevated connection count. Current connections: 850, Available: 50. Threshold: 750 connections.",
+    "runbook": "https://wiki.example.com/mongodb/high-connections",
+    "dashboard": "https://monitoring.example.com/d/mongodb-cluster",
+    "instance": "prod-primary.mongodb.net:27017",
+    "mongodb_database": "application_db",
+    "mongodb_collection": "events",
+    "timestamp": "2024-01-15T10:30:00Z",
+    "correlation_id": "mongo-alert-correlation-001"
+  },
+  "externalURL": "https://monitoring.example.com",
+  "version": "4",
+  "groupKey": "{}:{alertname=\"MongoDBHighConnections\"}",
+  "truncatedAlerts": 0,
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "MongoDBHighConnections",
+        "severity": "warning",
+        "cluster": "prod-mongo-cluster",
+        "mongodb_instance": "prod-primary.mongodb.net"
+      },
+      "annotations": {
+        "summary": "MongoDB instance has high number of active connections (850/900)",
+        "description": "MongoDB cluster prod-mongo-cluster primary node is experiencing elevated connection count.",
+        "instance": "prod-primary.mongodb.net:27017"
+      },
+      "startsAt": "2024-01-15T10:25:00Z",
+      "endsAt": "0001-01-01T00:00:00Z"
+    }
+  ]
+}
