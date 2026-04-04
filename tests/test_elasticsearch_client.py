@@ -350,9 +350,9 @@ def test_tool_run_returns_unavailable_without_url() -> None:
 
 
 def test_tool_run_returns_logs_on_success() -> None:
-    import app.tools.ElasticsearchLogsTool as tool_module
+    from app.tools.ElasticsearchLogsTool import ElasticsearchLogsTool
 
-    t = tool_module.ElasticsearchLogsTool()
+    t = ElasticsearchLogsTool()
     mock_client = MagicMock()
     mock_client.search_logs.return_value = {
         "success": True,
@@ -361,7 +361,7 @@ def test_tool_run_returns_logs_on_success() -> None:
         "query": "error",
     }
 
-    with patch.object(tool_module, "make_client", return_value=mock_client):
+    with patch("app.tools.ElasticsearchLogsTool.make_client", return_value=mock_client):
         result = t.run(query="error", url="http://localhost:9200")
 
     assert result["available"] is True
