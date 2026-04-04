@@ -7,7 +7,7 @@ Usage:
     python -m app.integrations remove <service>
     python -m app.integrations verify [service] [--send-slack-test]
 
-Supported services: aws, coralogix, datadog, grafana, honeycomb, slack, opensearch, rds, tracer, github, sentry
+Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, slack, opensearch, rds, tracer, github, sentry
 """
 
 from __future__ import annotations
@@ -245,6 +245,27 @@ def _setup_sentry() -> None:
     )
 
 
+def _setup_mongodb() -> None:
+    connection_string = _p("Connection string (e.g. mongodb+srv://user:pass@cluster.example.net)", secret=True)
+    database = _p("Database name")
+    auth_source = _p("Auth source", default="admin")
+    tls_choice = _p("TLS enabled? (yes/no)", default="yes")
+    tls = tls_choice.lower() in ("yes", "y", "true", "1")
+    if not connection_string:
+        _die("connection_string is required.")
+    upsert_integration(
+        "mongodb",
+        {
+            "credentials": {
+                "connection_string": connection_string,
+                "database": database,
+                "auth_source": auth_source,
+                "tls": tls,
+            }
+        },
+    )
+
+
 _HANDLERS: dict[str, Any] = {
     "aws": _setup_aws,
     "coralogix": _setup_coralogix,
@@ -257,6 +278,7 @@ _HANDLERS: dict[str, Any] = {
     "tracer": _setup_tracer,
     "github": _setup_github,
     "sentry": _setup_sentry,
+    "mongodb": _setup_mongodb,
 }
 
 SUPPORTED = ", ".join(_HANDLERS)
@@ -265,6 +287,16 @@ SUPPORTED_VERIFY = ", ".join(SUPPORTED_VERIFY_SERVICES)
 
 
 def cmd_setup(service: str | None) -> None:
+    if not service:
+        try:
+            service = questionary.select(
+                "Which service would you like to set up?",
+                choices=sorted(_HANDLERS),
+                instruction="(use arrow keys)",
+            ).ask()
+        except (EOFError, KeyboardInterrupt):
+            print("\nAborted.")
+            sys.exit(1)
     if not service or service not in _HANDLERS:
         _die(f"Usage: setup <service>. Supported: {SUPPORTED}")
         return
