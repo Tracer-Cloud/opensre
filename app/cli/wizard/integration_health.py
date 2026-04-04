@@ -11,6 +11,7 @@ from app.integrations.clients.datadog import DatadogClient, DatadogConfig
 from app.integrations.clients.grafana import get_grafana_client_from_credentials
 from app.integrations.clients.honeycomb import HoneycombClient
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
+from app.integrations.gitlab import build_gitlab_config, validate_gitlab_config
 from app.integrations.models import (
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
@@ -20,7 +21,6 @@ from app.integrations.models import (
     SlackWebhookConfig,
 )
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
-from app.integrations.gitlab import build_gitlab_config, validate_gitlab_config
 
 
 @dataclass(frozen=True)

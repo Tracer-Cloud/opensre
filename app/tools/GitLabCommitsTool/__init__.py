@@ -6,11 +6,12 @@ from typing import Any
 
 from app.integrations.gitlab import (
     GitlabConfig,
-    gitlab_config_from_env,
     build_gitlab_config,
     get_gitlab_commits,
+    gitlab_config_from_env,
 )
 from app.tools.tool_decorator import tool
+
 
 def _gl_creds(gl: dict) -> dict:
     return {
@@ -95,4 +96,4 @@ def list_gitlab_commits(
         since=since,
         per_page=per_page
     )
-    return {"source": "gitlab", "available": True, "commits": result} 
+    return {"source": "gitlab", "available": True, "commits": result}

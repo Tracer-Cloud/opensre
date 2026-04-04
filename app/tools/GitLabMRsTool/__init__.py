@@ -7,11 +7,7 @@ from typing import Any
 from app.integrations.gitlab import (
     get_gitlab_mrs,
 )
-from app.tools.GitLabCommitsTool import (
-    _gl_creds,
-    _gitlab_available,
-    _resolve_config
-)
+from app.tools.GitLabCommitsTool import _gitlab_available, _gl_creds, _resolve_config
 from app.tools.tool_decorator import tool
 
 
