@@ -31,6 +31,7 @@ dependencies = [
     # HTTP and async
     "httpx>=0.27.0",
     "aiohttp>=3.9.0",
+    "fastapi>=0.135.3",
     # Authentication
     "PyJWT>=2.8.0",
     "cryptography>=42.0.0",

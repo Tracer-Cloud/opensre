@@ -7,6 +7,9 @@
   "auth": {
     "path": "./app/auth/auth.py:auth"
   },
+  "http": {
+    "app": "./app/webapp.py:app"
+  },
   "env": ".env",
   "image_distro": "wolfi"
 }
