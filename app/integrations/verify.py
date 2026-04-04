@@ -23,10 +23,12 @@ from app.integrations.models import (
     GoogleDocsIntegrationConfig,
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
+    MongoDBIntegrationConfig,
     SlackWebhookConfig,
     TracerIntegrationConfig,
 )
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
+from app.integrations.mongodb import build_mongodb_config, validate_mongodb_config
 from app.integrations.store import load_integrations
 from app.nodes.resolve_integrations.node import (
     _classify_integrations,
@@ -44,6 +46,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "tracer",
     "github",
     "sentry",
+    "mongodb",
     "google_docs",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
@@ -167,6 +170,31 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 "project_slug": str(sentry_integration.get("project_slug", "")).strip(),
             },
         }
+
+    mongodb_integration = classified_integrations.get("mongodb")
+    if isinstance(mongodb_integration, dict):
+        effective["mongodb"] = {
+            "source": source_by_service.get("mongodb", "local env"),
+            "config": {
+                "connection_string": str(mongodb_integration.get("connection_string", "")).strip(),
+                "database": str(mongodb_integration.get("database", "")).strip(),
+                "auth_source": str(mongodb_integration.get("auth_source", "admin")).strip(),
+                "tls": mongodb_integration.get("tls", True),
+            },
+        }
+    else:
+        # Check env vars
+        mongodb_conn = os.getenv("MONGODB_CONNECTION_STRING", "").strip()
+        if mongodb_conn:
+            effective["mongodb"] = {
+                "source": "local env",
+                "config": {
+                    "connection_string": mongodb_conn,
+                    "database": os.getenv("MONGODB_DATABASE", "").strip(),
+                    "auth_source": os.getenv("MONGODB_AUTH_SOURCE", "admin").strip() or "admin",
+                    "tls": os.getenv("MONGODB_TLS", "true").strip().lower() in ("true", "1", "yes"),
+                },
+            }
 
     google_docs_integration = classified_integrations.get("google_docs")
     if isinstance(google_docs_integration, dict):
@@ -486,6 +514,17 @@ def _verify_sentry(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_mongodb(source: str, config: dict[str, Any]) -> dict[str, str]:
+    mongodb_config = build_mongodb_config(config)
+    result = validate_mongodb_config(mongodb_config)
+    return _result(
+        "mongodb",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
     """Validate Google Docs credentials and folder access."""
     from app.integrations.clients.google_docs import GoogleDocsClient
@@ -577,6 +616,8 @@ def verify_integrations(
             results.append(_verify_github(source, config))
         elif current_service == "sentry":
             results.append(_verify_sentry(source, config))
+        elif current_service == "mongodb":
+            results.append(_verify_mongodb(source, config))
         elif current_service == "google_docs":
             results.append(_verify_google_docs(source, config))
 
