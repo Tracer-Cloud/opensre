@@ -788,35 +788,36 @@ def _configure_jira() -> tuple[str, str]:
     _console.print("\n[bold]Jira Integration[/bold]")
     _console.print("Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens\n")
 
-    base_url = _prompt_value("Jira base URL (e.g. https://myteam.atlassian.net)")
-    email = _prompt_value("Jira account email")
-    api_token = _prompt_value("Jira API token", secret=True)
-    project_key = _prompt_value("Jira project key (e.g. OPS)")
+    while True:
+        base_url = _prompt_value("Jira base URL (e.g. https://myteam.atlassian.net)")
+        email = _prompt_value("Jira account email")
+        api_token = _prompt_value("Jira API token", secret=True)
+        project_key = _prompt_value("Jira project key (e.g. OPS)")
 
-    with _console.status("Validating Jira connection...", spinner="dots"):
-        result = validate_jira_integration(
-            base_url=base_url,
-            email=email,
-            api_token=api_token,
-            project_key=project_key,
-        )
-    _render_integration_result("Jira", result)
+        with _console.status("Validating Jira connection...", spinner="dots"):
+            result = validate_jira_integration(
+                base_url=base_url,
+                email=email,
+                api_token=api_token,
+                project_key=project_key,
+            )
+        _render_integration_result("Jira", result)
 
-    if result.ok:
-        upsert_integration("jira", {"credentials": {
-            "base_url": base_url,
-            "email": email,
-            "api_token": api_token,
-            "project_key": project_key,
-        }})
-        env_path = sync_env_values({
-            "JIRA_BASE_URL": base_url,
-            "JIRA_EMAIL": email,
-            "JIRA_API_TOKEN": api_token,
-            "JIRA_PROJECT_KEY": project_key,
-        })
-        return "Jira", str(env_path)
-    return "Jira", ""
+        if result.ok:
+            upsert_integration("jira", {"credentials": {
+                "base_url": base_url,
+                "email": email,
+                "api_token": api_token,
+                "project_key": project_key,
+            }})
+            env_path = sync_env_values({
+                "JIRA_BASE_URL": base_url,
+                "JIRA_EMAIL": email,
+                "JIRA_API_TOKEN": api_token,
+                "JIRA_PROJECT_KEY": project_key,
+            })
+            return "Jira", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 def _configure_selected_integrations() -> tuple[list[str], str | None]:
     configured: list[str] = []

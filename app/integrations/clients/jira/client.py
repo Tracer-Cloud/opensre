@@ -6,44 +6,17 @@ import logging
 from typing import Any
 
 import httpx
-from pydantic import field_validator
 
-from app.strict_config import StrictConfigModel
+from app.integrations.models import JiraIntegrationConfig
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 30
 
-
-class JiraConfig(StrictConfigModel):
-    base_url: str
-    email: str
-    api_token: str
-    project_key: str
-
-    @field_validator("base_url", mode="before")
-    @classmethod
-    def _normalize_base_url(cls, value: object) -> str:
-        return str(value or "").strip().rstrip("/")
-
-    @field_validator("email", "api_token", "project_key", mode="before")
-    @classmethod
-    def _normalize_str(cls, value: object) -> str:
-        return str(value or "").strip()
-
-    @property
-    def auth(self) -> tuple[str, str]:
-        return (self.email, self.api_token)
-
-    @property
-    def api_base(self) -> str:
-        return f"{self.base_url}/rest/api/3"
-
-
 class JiraClient:
     """Client for filing and updating Jira issues from investigation findings."""
 
-    def __init__(self, config: JiraConfig) -> None:
+    def __init__(self, config: JiraIntegrationConfig) -> None:
         self.config = config
 
     @property
@@ -57,7 +30,7 @@ class JiraClient:
 
     def _get_client(self) -> httpx.Client:
         return httpx.Client(
-            auth=self.config.auth,
+            auth=(self.config.email, self.config.api_token),
             headers={"Content-Type": "application/json", "Accept": "application/json"},
             timeout=_DEFAULT_TIMEOUT,
         )

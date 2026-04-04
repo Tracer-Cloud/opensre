@@ -162,6 +162,14 @@ class JiraIntegrationConfig(StrictConfigModel):
     def _normalize_str(cls, value: object) -> str:
         return str(value or "").strip()
 
+    @property
+    def auth(self) -> tuple[str, str]:
+        return (self.email, self.api_token)
+
+    @property
+    def api_base(self) -> str:
+        return f"{self.base_url}/rest/api/3"
+
 
 class EffectiveIntegrationEntry(StrictConfigModel):
     """Resolved integration entry with source metadata."""
