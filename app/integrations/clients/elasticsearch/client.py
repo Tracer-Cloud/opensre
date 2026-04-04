@@ -63,13 +63,19 @@ class ElasticsearchClient:
         Makes an unauthenticated GET /_cluster/health request.
         - HTTP 200  → security disabled (no credentials required)
         - HTTP 401  → security enabled  (credentials required)
+        - anything else → error
         """
         try:
             resp = httpx.get(
                 f"{self.config.base_url}/_cluster/health",
                 timeout=_DEFAULT_TIMEOUT,
             )
-            security_enabled = resp.status_code == 401
+            if resp.status_code == 200:
+                security_enabled = False
+            elif resp.status_code == 401:
+                security_enabled = True
+            else:
+                return {"success": False, "error": f"Unexpected status {resp.status_code} from /_cluster/health"}
             return {"success": True, "security_enabled": security_enabled}
         except Exception as e:
             logger.warning(
@@ -81,13 +87,20 @@ class ElasticsearchClient:
 
     def list_indices(self) -> dict[str, Any]:
         """List all indices via GET /_cat/indices?format=json."""
-            if resp.status_code == 200:
-                security_enabled = False
-            elif resp.status_code == 401:
-                security_enabled = True
-            else:
-                return {"success": False, "error": f"Unexpected status {resp.status_code} from /_cluster/health"}
-            return {"success": True, "security_enabled": security_enabled}
+        try:
+            resp = self._get_client().get("/_cat/indices", params={"format": "json"})
+            resp.raise_for_status()
+            raw: list[dict[str, Any]] = resp.json()
+            indices = [
+                {
+                    "index": idx.get("index", ""),
+                    "health": idx.get("health", ""),
+                    "status": idx.get("status", ""),
+                    "docs_count": idx.get("docs.count", ""),
+                    "store_size": idx.get("store.size", ""),
+                }
+                for idx in raw
+            ]
             return {"success": True, "indices": indices, "total": len(indices)}
         except httpx.HTTPStatusError as e:
             logger.warning(

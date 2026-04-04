@@ -89,6 +89,17 @@ class TestCheckSecurity:
         assert result["success"] is False
         assert "error" in result
 
+    def test_check_security_unexpected_status_returns_error(self) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 503
+
+        with patch("app.integrations.clients.elasticsearch.client.httpx.get", return_value=mock_resp):
+            client = ElasticsearchClient(ElasticsearchConfig(url="http://localhost:9200"))
+            result = client.check_security()
+
+        assert result["success"] is False
+        assert "Unexpected status" in result["error"]
+
 
 # ── list_indices ──────────────────────────────────────────────────────────────
 
