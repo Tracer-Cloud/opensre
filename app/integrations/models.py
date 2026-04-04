@@ -145,6 +145,27 @@ class TracerIntegrationConfig(StrictConfigModel):
         return token
 
 
+class MongoDBIntegrationConfig(StrictConfigModel):
+    """Normalized MongoDB credentials used by resolution and verification flows."""
+
+    connection_string: str
+    database: str = ""
+    auth_source: str = "admin"
+    tls: bool = True
+    integration_id: str = ""
+
+    @field_validator("connection_string", mode="before")
+    @classmethod
+    def _normalize_connection_string(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("auth_source", mode="before")
+    @classmethod
+    def _normalize_auth_source(cls, value: object) -> str:
+        normalized = str(value or "admin").strip()
+        return normalized or "admin"
+
+
 class GoogleDocsIntegrationConfig(StrictConfigModel):
     """Normalized Google Docs (Drive API) credentials for incident report generation."""
 
@@ -195,4 +216,5 @@ class EffectiveIntegrations(StrictConfigModel):
     tracer: EffectiveIntegrationEntry | None = None
     github: EffectiveIntegrationEntry | None = None
     sentry: EffectiveIntegrationEntry | None = None
+    mongodb: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
