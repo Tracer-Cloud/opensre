@@ -7,7 +7,10 @@ from keyring.backend import KeyringBackend  # type: ignore[import-untyped]
 
 class MemoryKeyring(KeyringBackend):
     priority = 1.0
-    _entries: dict[tuple[str, str], str] = {}
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._entries: dict[tuple[str, str], str] = {}
 
     def get_password(self, service: str, username: str) -> str | None:
         return self._entries.get((service, username))
