@@ -21,6 +21,7 @@ from app.integrations.models import (
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
 )
+from app.integrations.mongodb import build_mongodb_config
 from app.integrations.sentry import build_sentry_config
 from app.output import get_tracker
 from app.state import InvestigationState
@@ -45,6 +46,8 @@ _SERVICE_KEY_MAP = {
     "github": "github",
     "github_mcp": "github",
     "sentry": "sentry",
+    "mongodb": "mongodb",
+    "mongo": "mongodb",
 }
 
 
@@ -66,12 +69,16 @@ def _classify_integrations(
     active = [i for i in integrations if i.get("status") == "active"]
 
     for integration in active:
-        service = integration.get("service", "")
-
-        if service.lower() in _SKIP_SERVICES:
+        service = str(integration.get("service") or "").strip()
+        if not service:
             continue
 
-        key = _SERVICE_KEY_MAP.get(service.lower(), service.lower())
+        service_lower = service.lower()
+
+        if service_lower in _SKIP_SERVICES:
+            continue
+
+        key = _SERVICE_KEY_MAP.get(service_lower, service_lower)
         credentials = integration.get("credentials", {})
 
         if key in ("grafana", "grafana_local"):
@@ -185,6 +192,20 @@ def _classify_integrations(
                 continue
             if sentry_config.organization_slug and sentry_config.auth_token:
                 resolved["sentry"] = sentry_config.model_dump()
+
+        elif key == "mongodb":
+            try:
+                mongodb_config = build_mongodb_config({
+                    "connection_string": credentials.get("connection_string", ""),
+                    "database": credentials.get("database", ""),
+                    "auth_source": credentials.get("auth_source", "admin"),
+                    "tls": credentials.get("tls", True),
+                    "integration_id": integration.get("id", ""),
+                })
+            except Exception:
+                continue
+            if mongodb_config.connection_string:
+                resolved["mongodb"] = mongodb_config.model_dump()
 
         else:
             resolved[key] = {
@@ -361,6 +382,21 @@ def _load_env_integrations() -> list[dict[str, Any]]:
             "service": "sentry",
             "status": "active",
             "credentials": sentry_config.model_dump(exclude={"integration_id"}),
+        })
+
+    mongodb_connection_string = os.getenv("MONGODB_CONNECTION_STRING", "").strip()
+    if mongodb_connection_string:
+        mongodb_config = build_mongodb_config({
+            "connection_string": mongodb_connection_string,
+            "database": os.getenv("MONGODB_DATABASE", "").strip(),
+            "auth_source": os.getenv("MONGODB_AUTH_SOURCE", "admin").strip() or "admin",
+            "tls": os.getenv("MONGODB_TLS", "true").strip().lower() in ("true", "1", "yes"),
+        })
+        integrations.append({
+            "id": "env-mongodb",
+            "service": "mongodb",
+            "status": "active",
+            "credentials": mongodb_config.model_dump(exclude={"integration_id"}),
         })
 
     return integrations
