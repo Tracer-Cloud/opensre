@@ -175,7 +175,7 @@
   },
   "footer": {
     "socials": {
-      "website": "https://tracer.mintlify.app",
+      "website": "https://tracer.cloud",
       "github": "https://github.com/Tracer-Cloud",
       "linkedin": "https://linkedin.com/company/tracercloud",
       "slack": "https://join.slack.com/t/tracer-cloud/shared_invite/zt-3ifakcs2e-igoUEH8ygMlfxgJGLxsqeA"
@@ -195,9 +195,7 @@
   },
   "seo": {
     "indexing": "all",
-    "metatags": {
-      "canonical": "https://tracer.mintlify.app"
-    }
+    "metatags": {}
   },
   "fonts": {
     "heading": {
