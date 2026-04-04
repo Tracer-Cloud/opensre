@@ -20,7 +20,7 @@
     <a href="https://tracer-cloud.slack.com/archives/C0AL8S64936">Slack</a> ·
     <a href="https://app.tracer.cloud/">Getting Started</a> ·
     <a href="https://tracer.cloud/">Tracer Agent</a> ·
-    <a href="https://opensre.com/docs">Docs</a> ·
+    <a href="https://opensre.com">Docs</a> ·
     <a href="docs/FAQ.md">FAQ</a> ·
     <a href="https://trust.tracer.cloud/">Security</a>
   </strong>
