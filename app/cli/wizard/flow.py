@@ -861,10 +861,7 @@ def _configure_vercel() -> tuple[str, str]:
                 "vercel",
                 {"credentials": {"api_token": api_token, "team_id": team_id}},
             )
-            env_path = sync_env_values({
-                "VERCEL_API_TOKEN": api_token,
-                "VERCEL_TEAM_ID": team_id,
-            })
+            env_path = sync_env_values({})
             return "Vercel", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
