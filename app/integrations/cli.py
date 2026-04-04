@@ -250,8 +250,18 @@ def _setup_mongodb() -> None:
     connection_string = _p("Connection string (e.g. mongodb+srv://user:pass@cluster.example.net)", secret=True)
     database = _p("Database name")
     auth_source = _p("Auth source", default="admin")
-    tls_choice = _p("TLS enabled? (yes/no)", default="yes")
-    tls = tls_choice.lower() in ("yes", "y", "true", "1")
+    tls_choice = questionary.select(
+        "TLS enabled?",
+        choices=[
+            questionary.Choice("Yes", value="1"),
+            questionary.Choice("No", value="0"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if tls_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    tls = tls_choice == "1"
     if not connection_string:
         _die("connection_string is required.")
     upsert_integration(

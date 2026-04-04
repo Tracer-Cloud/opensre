@@ -56,7 +56,7 @@ dependencies = [
     "google-api-python-client>=2.0.0,<3.0.0",
     "google-auth>=2.0.0,<3.0.0",
     # MongoDB
-    "pymongo>=4.6.0",
+    "pymongo>=4.6.0,<6.0.0",
 ]
 
 [project.urls]
