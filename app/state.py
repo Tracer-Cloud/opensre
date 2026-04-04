@@ -23,6 +23,7 @@ EvidenceSource = Literal[
     "coralogix",
     "eks",
     "github",
+    "gitlab",
     "sentry",
     "google_docs",
 ]
