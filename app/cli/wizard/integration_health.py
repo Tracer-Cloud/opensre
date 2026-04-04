@@ -298,7 +298,7 @@ def validate_jira_integration(*, base_url: str, email: str, api_token: str, proj
         if resp.status_code == 200:
             data = resp.json()
             display = data.get("displayName") or data.get("emailAddress") or email
-            return IntegrationHealthResult(ok=True, detail=f"Jira connected as {display}.")
+            return IntegrationHealthResult(ok=True, detail=f"Jira connected as {display} (project: {project_key}).")
         if resp.status_code == 401:
             return IntegrationHealthResult(ok=False, detail="Jira credentials invalid. Check email and API token.")
         if resp.status_code == 404:

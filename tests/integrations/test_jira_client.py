@@ -103,3 +103,30 @@ def test_get_issue_success(client: JiraClient) -> None:
     assert result["success"] is True
     assert result["issue_key"] == "OPS-42"
     assert result["status"] == "Open"
+
+def test_update_issue_success(client: JiraClient) -> None:
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch("httpx.Client.put", return_value=mock_resp):
+        result = client.update_issue("OPS-42", {"priority": {"name": "Low"}})
+
+    assert result["success"] is True
+    assert result["issue_key"] == "OPS-42"
+
+
+def test_update_issue_http_error(client: JiraClient) -> None:
+    import httpx
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 400
+    mock_resp.text = "Bad Request"
+
+    with patch(
+        "httpx.Client.put",
+        side_effect=httpx.HTTPStatusError("err", request=MagicMock(), response=mock_resp),
+    ):
+        result = client.update_issue("OPS-42", {"priority": {"name": "Low"}})
+
+    assert result["success"] is False
+    assert "400" in result["error"]

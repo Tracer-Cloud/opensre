@@ -788,10 +788,10 @@ def _configure_jira() -> tuple[str, str]:
     _console.print("\n[bold]Jira Integration[/bold]")
     _console.print("Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens\n")
 
-    base_url = _prompt("Jira base URL (e.g. https://myteam.atlassian.net)")
-    email = _prompt("Jira account email")
-    api_token = _prompt("Jira API token", password=True)
-    project_key = _prompt("Jira project key (e.g. OPS)")
+    base_url = _prompt_value("Jira base URL (e.g. https://myteam.atlassian.net)")
+    email = _prompt_value("Jira account email")
+    api_token = _prompt_value("Jira API token", secret=True)
+    project_key = _prompt_value("Jira project key (e.g. OPS)")
 
     with _console.status("Validating Jira connection...", spinner="dots"):
         result = validate_jira_integration(
