@@ -326,10 +326,11 @@ def test_make_vercel_client_forwards_team_id() -> None:
 
 
 def test_context_manager_closes_on_exception() -> None:
-    import contextlib
-
     c = _client()
     _ = c._get_client()
-    with contextlib.suppress(ValueError), c:
-        raise ValueError("test error")
+    try:
+        with c:
+            raise ValueError("test error")
+    except ValueError:
+        pass
     assert c._client is None
