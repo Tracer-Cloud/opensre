@@ -21,6 +21,7 @@ _console = Console()
 DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 DEFAULT_GITHUB_MCP_MODE = "streamable-http"
 DEFAULT_SENTRY_URL = "https://sentry.io"
+DEFAULT_GITLAB_BASE_URL = "https://gitlab.com/api/v4"
 _ASCII_HEADER = """\
   ___  ____  _____ _   _ ____  ____  _____
  / _ \\|  _ \\| ____| \\ | / ___||  _ \\| ____|
@@ -73,6 +74,12 @@ def validate_aws_integration(**kwargs):
 
 def validate_github_mcp_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_github_mcp_integration as _validate
+
+    return _validate(**kwargs)
+
+
+def validate_gitlab_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_gitlab_integration as _validate
 
     return _validate(**kwargs)
 
@@ -739,6 +746,42 @@ def _configure_github_mcp() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_gitlab() -> tuple[str, str]:
+    _, credentials = _integration_defaults("gitlab")
+
+    while True:
+        base_url = _prompt_value(
+            "Gitlab base URL",
+            default=_string_value(credentials.get("base_url"), DEFAULT_GITLAB_BASE_URL),
+        )
+        auth_token = _prompt_value(
+            "Gitlab access token",
+            default=_string_value(credentials.get("auth_token")),
+            secret=True,
+        )
+
+        with _console.status("Validating Gitlab integration...", spinner="dots"):
+            result = validate_gitlab_integration(
+                base_url=base_url,
+                auth_token=auth_token
+            )
+        _render_integration_result("Gitlab", result)
+        if result.ok:
+            credentials = {
+                "base_url": base_url,
+                "auth_token": auth_token
+            }
+            upsert_integration("gitlab", {"credentials": credentials})
+            env_path = sync_env_values(
+                {
+                    "GITLAB_BASE_URL": base_url,
+                    "GITLAB_ACCESS_TOKEN": auth_token,
+                }
+            )
+            return "Gitlab", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_sentry() -> tuple[str, str]:
     _, credentials = _integration_defaults("sentry")
     guidance = get_sentry_auth_recommendations()
@@ -863,6 +906,9 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             value="sentry", label="Sentry", hint="Investigate errors, events, and issue history"
         ),
         Choice(
+            value="gitlab", label="Gitlab", hint="Let the agent inspect repos, PRs, and issues"
+        ),
+        Choice(
             value="google_docs",
             label="Google Docs",
             hint="Create shareable incident postmortem reports",
@@ -891,6 +937,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "aws": _configure_aws,
         "github": _configure_github_mcp,
         "sentry": _configure_sentry,
+        "gitlab": _configure_gitlab,
         "google_docs": _configure_google_docs,
     }
     _SERVICE_LABELS = {
@@ -903,6 +950,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "aws": "aws",
         "github": "github mcp",
         "sentry": "sentry",
+        "gitlab": "gitlab",
         "google_docs": "google docs",
     }
 
@@ -1017,16 +1065,20 @@ def run_wizard(_argv: list[str] | None = None) -> int:
             )
         ]
         model = provider.default_model
-        _step("API Key")
-        try:
-            api_key = _prompt_value(
-                f"{provider.label} API key ({provider.api_key_env})",
-                default=defaults["api_key"] or "",
-                secret=True,
-            )
-        except KeyboardInterrupt:
-            _console.print("\n[yellow]Setup cancelled.[/]")
-            return 1
+        if provider.value == "lmstudio":
+            api_key = "lm-studio"
+            _console.print("[dim]LM Studio does not require an API key — using placeholder 'lm-studio'.[/]")
+        else:
+            _step("API Key")
+            try:
+                api_key = _prompt_value(
+                    f"{provider.label} API key ({provider.api_key_env})",
+                    default=defaults["api_key"] or "",
+                    secret=True,
+                )
+            except KeyboardInterrupt:
+                _console.print("\n[yellow]Setup cancelled.[/]")
+                return 1
     else:
         assert saved_provider is not None
         provider = saved_provider

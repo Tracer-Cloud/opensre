@@ -20,6 +20,7 @@ from app.integrations.models import (
     SlackWebhookConfig,
 )
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
+from app.integrations.gitlab import build_gitlab_config, validate_gitlab_config
 
 
 @dataclass(frozen=True)
@@ -311,6 +312,21 @@ def validate_sentry_integration(
     result = validate_sentry_config(config)
     return IntegrationHealthResult(ok=result.ok, detail=result.detail)
 
+
+def validate_gitlab_integration(
+    *,
+    base_url: str,
+    auth_token: str,
+) -> IntegrationHealthResult:
+    """Validate Sentry connectivity with an organization issues query."""
+    config = build_gitlab_config(
+        {
+            "base_url": base_url,
+            "auth_token": auth_token
+        }
+    )
+    result = validate_gitlab_config(config)
+    return IntegrationHealthResult(ok=result.ok, detail=result.detail)
 
 def validate_google_docs_integration(
     *,
