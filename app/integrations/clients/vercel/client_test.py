@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from app.integrations.clients.vercel.client import VercelClient, VercelConfig
+from app.integrations.clients.vercel.client import VercelClient, VercelConfig, make_vercel_client
 
 
 class _FakeResponse:
@@ -280,3 +280,54 @@ def test_get_deployment_events_text_is_always_string(monkeypatch: pytest.MonkeyP
     result = _client().get_deployment_events("dpl_xyz")
     assert isinstance(result["events"][0]["text"], str)
     assert result["events"][0]["text"] == "42"
+
+
+def test_close_releases_http_client() -> None:
+    c = _client()
+    # Force-initialize the internal client
+    _ = c._get_client()
+    assert c._client is not None
+    c.close()
+    assert c._client is None
+
+
+def test_close_is_idempotent() -> None:
+    c = _client()
+    c.close()
+    c.close()  # should not raise
+
+
+def test_context_manager_closes_on_exit() -> None:
+    with _client() as c:
+        _ = c._get_client()
+        assert c._client is not None
+    assert c._client is None
+
+
+def test_make_vercel_client_returns_client_with_valid_token() -> None:
+    client = make_vercel_client("tok_test")
+    assert client is not None
+    assert client.is_configured is True
+
+
+def test_make_vercel_client_returns_none_for_empty_token() -> None:
+    assert make_vercel_client("") is None
+    assert make_vercel_client(None) is None
+
+
+def test_make_vercel_client_returns_none_for_whitespace_token() -> None:
+    assert make_vercel_client("   ") is None
+
+
+def test_make_vercel_client_forwards_team_id() -> None:
+    client = make_vercel_client("tok_test", "team_xyz")
+    assert client is not None
+    assert client.config.team_id == "team_xyz"
+
+
+def test_context_manager_closes_on_exception() -> None:
+    c = _client()
+    with pytest.raises(ValueError), c:
+        _ = c._get_client()
+        raise ValueError("test error")
+    assert c._client is None

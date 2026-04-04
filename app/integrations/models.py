@@ -183,24 +183,6 @@ class EffectiveIntegrationEntry(StrictConfigModel):
     config: dict[str, Any]
 
 
-class VercelIntegrationConfig(StrictConfigModel):
-    """Normalized Vercel credentials used by resolution and verification flows."""
-
-    api_token: str
-    team_id: str = ""
-    integration_id: str = ""
-
-    @field_validator("api_token", mode="before")
-    @classmethod
-    def _normalize_token(cls, value: object) -> str:
-        return str(value or "").strip()
-
-    @field_validator("team_id", mode="before")
-    @classmethod
-    def _normalize_team_id(cls, value: object) -> str:
-        return str(value or "").strip()
-
-
 class EffectiveIntegrations(StrictConfigModel):
     """Strict container for normalized effective integrations."""
 

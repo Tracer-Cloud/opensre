@@ -11,7 +11,24 @@ _VERCEL_INT = {
 }
 
 
-def test_vercel_source_detected_from_annotations() -> None:
+def test_vercel_source_always_created_when_integration_configured() -> None:
+    # Vercel source is created whenever the integration is present, regardless of annotations
+    alert = {
+        "annotations": {
+            "cloudwatch_log_group": "/aws/lambda/fn",
+            "s3_bucket": "my-bucket",
+        }
+    }
+    sources = detect_sources(alert, {}, {"vercel": _VERCEL_INT})
+    vercel = sources.get("vercel")
+    assert vercel is not None
+    assert vercel["connection_verified"] is True
+    assert vercel["api_token"] == "tok_test"
+    assert vercel["project_id"] == ""
+    assert vercel["deployment_id"] == ""
+
+
+def test_vercel_source_detected_from_prefixed_annotations() -> None:
     alert = {
         "annotations": {
             "vercel_project_id": "proj_frontend",
@@ -29,27 +46,18 @@ def test_vercel_source_detected_from_annotations() -> None:
     assert vercel["connection_verified"] is True
 
 
-def test_vercel_source_detected_with_generic_project_id_key() -> None:
+def test_vercel_source_ignores_generic_project_id_key() -> None:
+    # Generic project_id must NOT be used — it collides with Kubernetes/Datadog annotations
     alert = {"annotations": {"project_id": "proj_api"}}
     sources = detect_sources(alert, {}, {"vercel": _VERCEL_INT})
-    assert sources.get("vercel", {}).get("project_id") == "proj_api"
+    assert sources.get("vercel", {}).get("project_id") == ""
 
 
-def test_vercel_source_detected_with_generic_deployment_id_key() -> None:
+def test_vercel_source_ignores_generic_deployment_id_key() -> None:
+    # Generic deployment_id must NOT be used — it collides with other integrations
     alert = {"annotations": {"deployment_id": "dpl_xyz"}}
     sources = detect_sources(alert, {}, {"vercel": _VERCEL_INT})
-    assert sources.get("vercel", {}).get("deployment_id") == "dpl_xyz"
-
-
-def test_vercel_source_not_created_when_no_vercel_annotations() -> None:
-    alert = {
-        "annotations": {
-            "cloudwatch_log_group": "/aws/lambda/fn",
-            "s3_bucket": "my-bucket",
-        }
-    }
-    sources = detect_sources(alert, {}, {"vercel": _VERCEL_INT})
-    assert "vercel" not in sources
+    assert sources.get("vercel", {}).get("deployment_id") == ""
 
 
 def test_vercel_source_not_created_without_integration() -> None:
@@ -61,6 +69,13 @@ def test_vercel_source_not_created_without_integration() -> None:
 def test_vercel_source_not_created_when_no_resolved_integrations() -> None:
     alert = {"annotations": {"vercel_project_id": "proj_frontend"}}
     sources = detect_sources(alert, {}, None)
+    assert "vercel" not in sources
+
+
+def test_vercel_source_not_created_when_token_missing() -> None:
+    # Integration entry without api_token should not create a vercel source
+    alert = {"annotations": {"vercel_project_id": "proj_x"}}
+    sources = detect_sources(alert, {}, {"vercel": {"api_token": "", "team_id": ""}})
     assert "vercel" not in sources
 
 

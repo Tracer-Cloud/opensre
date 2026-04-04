@@ -63,6 +63,18 @@ class VercelClient:
             )
         return self._client
 
+    def close(self) -> None:
+        """Close the underlying HTTP connection pool."""
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+
+    def __enter__(self) -> VercelClient:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
     @property
     def is_configured(self) -> bool:
         return bool(self.config.api_token)
@@ -240,3 +252,14 @@ class VercelClient:
         except Exception as e:
             logger.warning("[vercel] get_runtime_logs error type=%s detail=%s", type(e).__name__, e)
             return {"success": False, "error": str(e)}
+
+
+def make_vercel_client(api_token: str | None, team_id: str | None = None) -> VercelClient | None:
+    """Build a configured VercelClient, returning None if the token is absent."""
+    token = (api_token or "").strip()
+    if not token:
+        return None
+    try:
+        return VercelClient(VercelConfig(api_token=token, team_id=team_id or ""))
+    except Exception:
+        return None

@@ -4,20 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.integrations.clients.vercel import VercelClient, VercelConfig
+from app.integrations.clients.vercel import make_vercel_client
 from app.tools.base import BaseTool
 
 _ERROR_KEYWORDS = ("error", "failed", "exception", "fatal", "crash", "panic", "unhandled")
-
-
-def _make_client(api_token: str | None, team_id: str | None) -> VercelClient | None:
-    token = (api_token or "").strip()
-    if not token:
-        return None
-    try:
-        return VercelClient(VercelConfig(api_token=token, team_id=team_id or ""))
-    except Exception:
-        return None
 
 
 class VercelLogsTool(BaseTool):
@@ -66,8 +56,7 @@ class VercelLogsTool(BaseTool):
     }
 
     def is_available(self, sources: dict) -> bool:
-        vercel = sources.get("vercel", {})
-        return bool(vercel.get("connection_verified") and vercel.get("deployment_id"))
+        return bool(sources.get("vercel", {}).get("connection_verified"))
 
     def extract_params(self, sources: dict) -> dict[str, Any]:
         vercel = sources["vercel"]
@@ -88,7 +77,17 @@ class VercelLogsTool(BaseTool):
         limit: int = 100,
         **_kwargs: Any,
     ) -> dict[str, Any]:
-        client = _make_client(api_token, team_id)
+        if not deployment_id:
+            return {
+                "source": "vercel",
+                "available": False,
+                "error": "deployment_id is required to fetch logs. Run vercel_deployment_status first to find a deployment ID.",
+                "events": [],
+                "runtime_logs": [],
+                "error_events": [],
+                "deployment": {},
+            }
+        client = make_vercel_client(api_token, team_id)
         if client is None:
             return {
                 "source": "vercel",
@@ -100,24 +99,25 @@ class VercelLogsTool(BaseTool):
                 "deployment": {},
             }
 
-        deployment_result = client.get_deployment(deployment_id)
-        deployment = deployment_result.get("deployment", {}) if deployment_result.get("success") else {}
+        with client:
+            deployment_result = client.get_deployment(deployment_id)
+            deployment = deployment_result.get("deployment", {}) if deployment_result.get("success") else {}
 
-        events_result = client.get_deployment_events(deployment_id, limit=limit)
-        events: list[dict[str, Any]] = []
-        if events_result.get("success"):
-            events = events_result.get("events", [])
+            events_result = client.get_deployment_events(deployment_id, limit=limit)
+            events: list[dict[str, Any]] = []
+            if events_result.get("success"):
+                events = events_result.get("events", [])
+
+            runtime_logs: list[dict[str, Any]] = []
+            if include_runtime_logs:
+                logs_result = client.get_runtime_logs(deployment_id, limit=limit)
+                if logs_result.get("success"):
+                    runtime_logs = logs_result.get("logs", [])
 
         error_events = [
             ev for ev in events
             if any(kw in str(ev.get("text", "")).lower() for kw in _ERROR_KEYWORDS)
         ]
-
-        runtime_logs: list[dict[str, Any]] = []
-        if include_runtime_logs:
-            logs_result = client.get_runtime_logs(deployment_id, limit=limit)
-            if logs_result.get("success"):
-                runtime_logs = logs_result.get("logs", [])
 
         return {
             "source": "vercel",

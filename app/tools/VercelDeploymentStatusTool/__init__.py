@@ -4,20 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.integrations.clients.vercel import VercelClient, VercelConfig
+from app.integrations.clients.vercel import make_vercel_client
 from app.tools.base import BaseTool
 
 _ERROR_STATES = {"ERROR", "CANCELED"}
-
-
-def _make_client(api_token: str | None, team_id: str | None) -> VercelClient | None:
-    token = (api_token or "").strip()
-    if not token:
-        return None
-    try:
-        return VercelClient(VercelConfig(api_token=token, team_id=team_id or ""))
-    except Exception:
-        return None
 
 
 class VercelDeploymentStatusTool(BaseTool):
@@ -87,7 +77,7 @@ class VercelDeploymentStatusTool(BaseTool):
         state: str = "",
         **_kwargs: Any,
     ) -> dict[str, Any]:
-        client = _make_client(api_token, team_id)
+        client = make_vercel_client(api_token, team_id)
         if client is None:
             return {
                 "source": "vercel",
@@ -98,7 +88,9 @@ class VercelDeploymentStatusTool(BaseTool):
                 "total": 0,
             }
 
-        result = client.list_deployments(project_id=project_id, limit=limit, state=state)
+        with client:
+            result = client.list_deployments(project_id=project_id, limit=limit, state=state)
+
         if not result.get("success"):
             return {
                 "source": "vercel",
@@ -119,6 +111,7 @@ class VercelDeploymentStatusTool(BaseTool):
             "total": result.get("total", 0),
             "project_id": project_id,
         }
+
 
 
 vercel_deployment_status = VercelDeploymentStatusTool()

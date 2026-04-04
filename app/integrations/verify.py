@@ -27,7 +27,6 @@ from app.integrations.models import (
     HoneycombIntegrationConfig,
     SlackWebhookConfig,
     TracerIntegrationConfig,
-    VercelIntegrationConfig,
 )
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
@@ -223,16 +222,6 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 "team_id": str(vercel_integration.get("team_id", "")).strip(),
             },
         }
-    else:
-        vercel_api_token = os.getenv("VERCEL_API_TOKEN", "").strip()
-        if vercel_api_token:
-            effective["vercel"] = {
-                "source": "local env",
-                "config": {
-                    "api_token": vercel_api_token,
-                    "team_id": os.getenv("VERCEL_TEAM_ID", "").strip(),
-                },
-            }
 
     return EffectiveIntegrations.model_validate(effective).model_dump(exclude_none=True)
 
@@ -574,13 +563,13 @@ def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
 
 def _verify_vercel(source: str, config: dict[str, Any]) -> dict[str, str]:
     try:
-        vercel_config = VercelIntegrationConfig.model_validate(config)
+        vercel_config = VercelConfig.model_validate(config)
     except Exception:
         return _result("vercel", source, "missing", "Missing API token for Vercel access.")
     if not vercel_config.api_token:
         return _result("vercel", source, "missing", "Missing API token for Vercel access.")
 
-    client = VercelClient(VercelConfig.model_validate(config))
+    client = VercelClient(vercel_config)
     result = client.list_projects()
     if not result.get("success"):
         return _result(
