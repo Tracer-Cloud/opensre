@@ -14,6 +14,7 @@ from app.config import get_tracer_base_url
 from app.integrations.clients.coralogix import CoralogixClient
 from app.integrations.clients.datadog.client import DatadogClient, DatadogConfig
 from app.integrations.clients.honeycomb import HoneycombClient
+from app.integrations.clients.opsgenie import OpsGenieClient, OpsGenieConfig
 from app.integrations.clients.tracer_client.client import TracerClient
 from app.integrations.clients.vercel.client import VercelClient, VercelConfig
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
@@ -48,6 +49,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "sentry",
     "google_docs",
     "vercel",
+    "opsgenie",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -220,6 +222,16 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
             "config": {
                 "api_token": str(vercel_integration.get("api_token", "")).strip(),
                 "team_id": str(vercel_integration.get("team_id", "")).strip(),
+            },
+        }
+
+    opsgenie_integration = classified_integrations.get("opsgenie")
+    if isinstance(opsgenie_integration, dict):
+        effective["opsgenie"] = {
+            "source": source_by_service.get("opsgenie", "local env"),
+            "config": {
+                "api_key": str(opsgenie_integration.get("api_key", "")).strip(),
+                "region": str(opsgenie_integration.get("region", "us")).strip(),
             },
         }
 
@@ -588,6 +600,33 @@ def _verify_vercel(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
+    try:
+        opsgenie_config = OpsGenieConfig.model_validate({
+            "api_key": config.get("api_key", ""),
+            "region": config.get("region", "us"),
+        })
+    except Exception as err:
+        return _result("opsgenie", source, "missing", str(err))
+
+    client = OpsGenieClient(opsgenie_config)
+    if not client.is_configured:
+        return _result("opsgenie", source, "missing", "Missing API key.")
+
+    with client:
+        result = client.list_alerts(limit=1)
+    if not result.get("success"):
+        return _result(
+            "opsgenie", source, "failed",
+            f"Alert list check failed: {result.get('error', 'unknown error')}",
+        )
+
+    return _result(
+        "opsgenie", source, "passed",
+        f"Connected to OpsGenie ({opsgenie_config.region.upper()} region); API key accepted.",
+    )
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -644,6 +683,8 @@ def verify_integrations(
             results.append(_verify_google_docs(source, config))
         elif current_service == "vercel":
             results.append(_verify_vercel(source, config))
+        elif current_service == "opsgenie":
+            results.append(_verify_opsgenie(source, config))
 
     return results
 

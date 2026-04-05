@@ -669,4 +669,22 @@ def detect_sources(
                 "connection_verified": True,
             }
 
+    opsgenie_int = (resolved_integrations or {}).get("opsgenie")
+    if opsgenie_int and str(opsgenie_int.get("api_key", "")).strip():
+        alert_id = str(
+            annotations.get("opsgenie_alert_id")
+            or raw_alert.get("opsgenie_alert_id", "")
+        ).strip()
+        opsgenie_query = str(
+            annotations.get("opsgenie_query")
+            or raw_alert.get("alert_name", "")
+        ).strip()
+        sources["opsgenie"] = {
+            "api_key": str(opsgenie_int.get("api_key", "")).strip(),
+            "region": str(opsgenie_int.get("region", "us")).strip(),
+            "alert_id": alert_id,
+            "query": opsgenie_query,
+            "connection_verified": True,
+        }
+
     return sources
