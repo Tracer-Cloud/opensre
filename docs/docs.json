@@ -45,6 +45,7 @@
           "intergrations-overview",
           "datadog",
           "grafana",
+          "mongodb",
           "slack"
         ]
       },
