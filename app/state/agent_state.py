@@ -7,7 +7,7 @@ from typing import Annotated, Any, TypedDict
 from langgraph.graph import add_messages
 from pydantic import ConfigDict, Field
 
-from app.state.types import AgentMode, ChatMessageModel, EvidenceSource  # noqa: F401
+from app.state.types import AgentMode, ChatMessageModel
 from app.strict_config import StrictConfigModel
 
 
