@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install onboard benchmark test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke deploy-langsmith destroy-langsmith test-langsmith deploy-vercel destroy-vercel test-vercel deploy-ec2 destroy-ec2 test-ec2 deploy-bedrock destroy-bedrock test-bedrock
+.PHONY: install onboard benchmark benchmark-update-readme test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke deploy-langsmith destroy-langsmith test-langsmith deploy-vercel destroy-vercel test-vercel deploy-ec2 destroy-ec2 test-ec2 deploy-bedrock destroy-bedrock test-bedrock
 
 ifneq ($(wildcard .venv/bin/python),)
 PYTHON = .venv/bin/python
@@ -36,6 +36,10 @@ demo:
 # Run Benchmarking Script based on Synthetic Scenarios
 benchmark:
 	$(PYTHON) -m tests.benchmarks.toolcall_model_benchmark.benchmark_generator
+
+# Update README benchmark section from cached results (no LLM calls)
+benchmark-update-readme:
+	$(PYTHON) -m tests.benchmarks.toolcall_model_benchmark.readme_updater
 
 alert-template:
 	opensre investigate --print-template $(or $(TEMPLATE),generic)
@@ -396,3 +400,4 @@ help:
 	@echo "  make typecheck       - Type check with mypy"
 	@echo "  make check           - Run all checks"
 	@echo "  make benchmark		  - Run benchmark report generation"
+	@echo "  make benchmark-update-readme - Update README from cached benchmark results"

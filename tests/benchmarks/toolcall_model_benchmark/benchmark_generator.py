@@ -117,6 +117,29 @@ def _scope_line(cases: list[CaseMetrics]) -> str:
     return f"Scope: {', '.join(ids)}."
 
 
+def render_readme_summary(cases: list[CaseMetrics], summary: SummaryMetrics) -> str:
+    """Render a compact markdown snippet suitable for injection into README.md."""
+    lines: list[str] = []
+    lines.append(
+        "| Scenario | Status | Duration (s) | Tokens | Est. Cost (USD) |"
+    )
+    lines.append("|---|---|---:|---:|---:|")
+    for c in cases:
+        lines.append(
+            f"| {c.scenario_id} | {c.run_status} | {c.duration_seconds:.2f} "
+            f"| {c.total_tokens} | {c.estimated_cost_usd:.6f} |"
+        )
+    lines.append("")
+    lines.append(
+        f"**{summary.success_count}/{summary.case_count} passed** "
+        f"| Total cost: ${summary.total_estimated_cost_usd:.4f} "
+        f"| Total duration: {summary.total_duration_seconds:.1f}s"
+    )
+    lines.append("")
+    lines.append("Full report: [docs/benchmarks/results.md](docs/benchmarks/results.md)")
+    return "\n".join(lines)
+
+
 def render_markdown(cases: list[CaseMetrics], summary: SummaryMetrics) -> str:
     """Render a markdown benchmark report with per-case metrics and summary."""
     lines: list[str] = []
@@ -235,6 +258,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--reasoning-usd-per-mtok", type=float, default=DEFAULT_REASONING_USD_PER_MTOK
     )
     parser.add_argument("--tool-usd-per-mtok", type=float, default=DEFAULT_TOOL_USD_PER_MTOK)
+    parser.add_argument(
+        "--no-update-readme",
+        action="store_true",
+        default=False,
+        help="Skip updating the README.md benchmark section.",
+    )
+    parser.add_argument(
+        "--readme-path",
+        default=None,
+        help="Path to README.md. Default: auto-detect repo root.",
+    )
     return parser.parse_args(argv)
 
 
@@ -257,6 +291,19 @@ def main(argv: list[str] | None = None) -> int:
     md_out.write_text(render_markdown(cases, summary), encoding="utf-8")
 
     logger.info("Wrote markdown report: %s", md_out)
+
+    if not args.no_update_readme:
+        from tests.benchmarks.toolcall_model_benchmark.readme_updater import (
+            _find_repo_root,
+            update_readme_benchmarks,
+        )
+
+        if args.readme_path:
+            readme_path = Path(args.readme_path)
+        else:
+            readme_path = _find_repo_root() / "README.md"
+        snippet = render_readme_summary(cases, summary)
+        update_readme_benchmarks(readme_path, snippet)
 
     return 0 if summary.error_count == 0 else 1
 
