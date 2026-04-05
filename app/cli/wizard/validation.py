@@ -65,6 +65,48 @@ def _get_provider_base_url(provider_value: str) -> str | None:
     return None
 
 
+def _check_ollama(host: str, model: str) -> ValidationResult:
+    """Check Ollama server connectivity and verify model responds to inference."""
+    import httpx
+
+    tags_url = f"{host.rstrip('/')}/api/tags"
+    try:
+        r = httpx.get(tags_url, timeout=5.0)
+        r.raise_for_status()
+    except Exception as err:
+        return ValidationResult(
+            ok=False,
+            detail=f"Cannot reach Ollama at {host}. Is it running? Try: ollama serve\n({err})",
+        )
+    available = [m["name"] for m in r.json().get("models", [])]
+    if model not in available:
+        listed = ", ".join(available) or "none pulled yet"
+        return ValidationResult(
+            ok=False,
+            detail=f"Model '{model}' not found. Run: ollama pull {model}\nAvailable: {listed}",
+        )
+    # Verify the model actually responds to an inference request
+    chat_url = f"{host.rstrip('/')}/v1/chat/completions"
+    try:
+        resp = httpx.post(
+            chat_url,
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],
+                "max_tokens": 24,
+            },
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+        sample_text = (resp.json()["choices"][0]["message"]["content"] or "").strip()
+    except Exception as err:
+        return ValidationResult(
+            ok=False,
+            detail=f"Model '{model}' is pulled but failed to respond: {err}",
+        )
+    return ValidationResult(ok=True, detail=f"Ollama reachable. Model '{model}' is ready.", sample_response=sample_text)
+
+
 def validate_provider_credentials(
     *,
     provider: ProviderOption,
@@ -72,6 +114,9 @@ def validate_provider_credentials(
     model: str,
 ) -> ValidationResult:
     """Run a tiny live request against the selected provider."""
+    if provider.value == "ollama":
+        return _check_ollama(host=api_key, model=model)
+
     anthropic_client_cls, anthropic_auth_error = _load_anthropic_client()
     openai_client_cls, openai_auth_error = _load_openai_client()
 

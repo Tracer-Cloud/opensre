@@ -157,9 +157,11 @@ class OpenAILLMClient:
         temperature: float | None = None,
         base_url: str | None = None,
         api_key_env: str = "OPENAI_API_KEY",
+        api_key_default: str = "",
     ) -> None:
-        api_key = resolve_llm_api_key(api_key_env)
+        api_key = resolve_llm_api_key(api_key_env) or api_key_default
         self._api_key = api_key
+        self._api_key_default = api_key_default
         self._base_url = base_url
         self._api_key_env = api_key_env
         self._provider_label = api_key_env.removesuffix("_API_KEY").replace("_", " ").title()
@@ -178,7 +180,7 @@ class OpenAILLMClient:
         return self
 
     def _ensure_client(self) -> None:
-        api_key = resolve_llm_api_key(self._api_key_env)
+        api_key = resolve_llm_api_key(self._api_key_env) or self._api_key_default
         if not api_key:
             raise RuntimeError(
                 f"Missing {self._api_key_env}. Set it in your environment, .env, or secure local keychain before running LLM steps."
@@ -388,6 +390,18 @@ def _create_llm_client(model_type: str) -> LLMClient | OpenAILLMClient:
             max_tokens=config.max_tokens,
             base_url=NVIDIA_BASE_URL,
             api_key_env="NVIDIA_API_KEY",
+        )
+    elif provider == "ollama":
+        from app.config import OLLAMA_LLM_CONFIG
+
+        config = OLLAMA_LLM_CONFIG
+        host = settings.ollama_host.rstrip("/")
+        return OpenAILLMClient(
+            model=settings.ollama_model,
+            max_tokens=config.max_tokens,
+            base_url=f"{host}/v1",
+            api_key_env="OLLAMA_API_KEY",
+            api_key_default="ollama",
         )
     else:
         config = ANTHROPIC_LLM_CONFIG

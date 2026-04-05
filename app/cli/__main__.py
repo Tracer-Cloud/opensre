@@ -161,9 +161,12 @@ def update(check_only: bool, yes: bool) -> None:
     raise SystemExit(rc)
 
 
-@cli.command()
-def onboard() -> None:
+@cli.group(invoke_without_command=True)
+@click.pass_context
+def onboard(ctx: click.Context) -> None:
     """Run the interactive onboarding wizard."""
+    if ctx.invoked_subcommand is not None:
+        return
     from app.cli.wizard import run_wizard
     from app.cli.wizard.store import get_store_path, load_local_config
 
@@ -179,6 +182,27 @@ def onboard() -> None:
     else:
         capture_onboard_failed()
     raise SystemExit(exit_code)
+
+
+@onboard.command("local_llm")
+def onboard_local_llm() -> None:
+    """Zero-config local LLM setup via Ollama. No API key required."""
+    from app.cli.local_llm.command import run_local_llm_setup
+
+    capture_onboard_started()
+    try:
+        rc = run_local_llm_setup()
+    except Exception:
+        capture_onboard_failed()
+        raise
+    if rc == 0:
+        from app.cli.wizard.store import get_store_path, load_local_config
+
+        cfg = load_local_config(get_store_path())
+        capture_onboard_completed(cfg)
+    else:
+        capture_onboard_failed()
+    raise SystemExit(rc)
 
 
 @cli.command()
