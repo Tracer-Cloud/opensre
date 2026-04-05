@@ -222,6 +222,18 @@ destroy-flink:
 	@echo "Destroying Flink ECS stack..."
 	$(PYTHON) -m tests.e2e.upstream_apache_flink_ecs.infrastructure_sdk.destroy
 
+# Deploy Bedrock Agent test case
+deploy-bedrock:
+	$(PYTHON) -m tests.deployment.bedrock.infrastructure_sdk.deploy
+
+# Destroy Bedrock Agent test case
+destroy-bedrock:
+	$(PYTHON) -m tests.deployment.bedrock.infrastructure_sdk.destroy
+
+# Run Bedrock Agent deployment tests
+test-bedrock:
+	$(PYTHON) -m pytest tests/deployment/bedrock/ -v -s
+
 # Run fast tests + Prefect cloud E2E
 test:
 	$(PYTHON) -m pytest -v app tests/utils
@@ -271,6 +283,11 @@ check: lint typecheck test-full
 # Show help
 help:
 	@echo "Available commands:"
+	@echo ""
+	@echo "  DEPLOYMENT TESTS (Bedrock)"
+	@echo "  make deploy-bedrock  - Deploy Bedrock Agent stack"
+	@echo "  make destroy-bedrock - Destroy Bedrock Agent stack"
+	@echo "  make test-bedrock    - Run Bedrock Agent deployment tests"
 	@echo ""
 	@echo "  DEPLOYMENT (AWS SDK - fast!)"
 	@echo "  make deploy          - Deploy all test case infrastructure"
