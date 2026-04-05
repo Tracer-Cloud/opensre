@@ -489,7 +489,92 @@ def ec2(down: bool, branch: str) -> None:
             click.echo("\n  Remote URL saved. You can now run:\n    opensre remote health")
 
 
-@cli.group()
+def _run_remote_interactive(ctx: click.Context) -> None:
+    """Interactive menu for opensre remote when no subcommand is given."""
+    import questionary
+    from rich.console import Console
+
+    from app.cli.wizard.store import load_remote_url
+
+    console = Console(highlight=False)
+    url = ctx.obj.get("url") or load_remote_url()
+    status = f"  connected to {url}" if url else "  no remote URL configured"
+
+    console.print()
+    console.print(f"  [bold cyan]Remote Agent[/bold cyan]  {status}")
+    console.print()
+
+    actions = [
+        questionary.Choice("Check health", value="health"),
+        questionary.Choice("Run investigation", value="investigate"),
+        questionary.Choice("List investigations", value="list"),
+        questionary.Choice("Pull investigation reports", value="pull"),
+        questionary.Choice("Configure remote URL", value="configure"),
+        questionary.Separator(),
+        questionary.Choice("Exit", value="exit"),
+    ]
+
+    action = questionary.select(
+        "What would you like to do?",
+        choices=actions,
+        style=questionary.Style([
+            ("qmark", "fg:cyan bold"),
+            ("question", "bold"),
+            ("pointer", "fg:cyan bold"),
+            ("highlighted", "fg:cyan bold"),
+        ]),
+    ).ask()
+
+    if action is None or action == "exit":
+        return
+
+    if action == "configure":
+        new_url = questionary.text(
+            "Remote URL:",
+            default=url or "",
+            style=questionary.Style([("answer", "fg:cyan bold")]),
+        ).ask()
+        if new_url:
+            from app.cli.wizard.store import save_remote_url
+
+            save_remote_url(new_url)
+            click.echo(f"  Saved: {new_url}")
+        return
+
+    if action == "health":
+        ctx.invoke(remote_health)
+    elif action == "investigate":
+        alert_input = questionary.text(
+            "Alert JSON payload:",
+            style=questionary.Style([("answer", "fg:cyan bold")]),
+        ).ask()
+        if alert_input:
+            ctx.invoke(remote_investigate, alert_json=alert_input)
+        else:
+            click.echo("  No payload provided.")
+    elif action == "list":
+        ctx.invoke(remote_pull, latest=False, pull_all=False, output_dir="./investigations")
+    elif action == "pull":
+        mode = questionary.select(
+            "Which investigations?",
+            choices=[
+                questionary.Choice("Latest only", value="latest"),
+                questionary.Choice("All", value="all"),
+            ],
+            style=questionary.Style([
+                ("qmark", "fg:cyan bold"),
+                ("question", "bold"),
+                ("pointer", "fg:cyan bold"),
+                ("highlighted", "fg:cyan bold"),
+            ]),
+        ).ask()
+        if mode == "latest":
+            ctx.invoke(remote_pull, latest=True, pull_all=False, output_dir="./investigations")
+        elif mode == "all":
+            ctx.invoke(remote_pull, latest=False, pull_all=True, output_dir="./investigations")
+
+
+@cli.group(invoke_without_command=True)
 @click.option("--url", default=None, help="Remote agent base URL (e.g. 1.2.3.4 or http://host:2024).")
 @click.option("--api-key", default=None, envvar="OPENSRE_API_KEY", help="API key for the remote agent.")
 @click.pass_context
@@ -498,6 +583,9 @@ def remote(ctx: click.Context, url: str | None, api_key: str | None) -> None:
     ctx.ensure_object(dict)
     ctx.obj["url"] = url
     ctx.obj["api_key"] = api_key
+
+    if ctx.invoked_subcommand is None:
+        _run_remote_interactive(ctx)
 
 
 @remote.command(name="health")
