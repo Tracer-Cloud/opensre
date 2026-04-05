@@ -9,22 +9,28 @@ Enable shell tab-completion (add to your shell profile for persistence):
 
 from __future__ import annotations
 
-import sys
-import time
-
 import click
 from dotenv import load_dotenv
 
 from app.analytics.cli import (
-    capture_command_completed,
-    current_command_context,
-    investigation_properties,
-    onboard_properties,
-    reset_command_context,
-    set_command_context,
-    update_command_context,
+    capture_cli_invoked,
+    capture_integration_removed,
+    capture_integration_setup_completed,
+    capture_integration_setup_started,
+    capture_integration_verified,
+    capture_integrations_listed,
+    capture_investigation_completed,
+    capture_investigation_failed,
+    capture_investigation_started,
+    capture_onboard_completed,
+    capture_onboard_failed,
+    capture_onboard_started,
+    capture_test_run_started,
+    capture_test_synthetic_started,
+    capture_tests_listed,
+    capture_tests_picker_opened,
 )
-from app.analytics.provider import capture_first_run_if_needed
+from app.analytics.provider import capture_first_run_if_needed, shutdown_analytics
 from app.version import get_version
 
 # Heavy application imports are kept inside command functions so the CLI starts
@@ -113,27 +119,6 @@ class _RichGroup(click.Group):
         _render_help()
 
 
-def _fallback_command(argv: list[str]) -> str:
-    tokens = [arg for arg in argv if not arg.startswith("-")]
-    if tokens:
-        if tokens[0] in {"integrations", "tests"} and len(tokens) > 1:
-            return f"{tokens[0]} {tokens[1]}"
-        return tokens[0]
-    if "--version" in argv:
-        return "version"
-    if any(arg in {"-h", "--help"} for arg in argv):
-        return "help"
-    return "opensre"
-
-
-def _exit_code(value: object) -> int:
-    if isinstance(value, int):
-        return value
-    if value is None:
-        return 0
-    return 1
-
-
 @click.group(
     cls=_RichGroup,
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -157,7 +142,7 @@ def cli(ctx: click.Context) -> None:
       eval "$(_OPENSRE_COMPLETE=zsh_source opensre)"
     """
     if ctx.invoked_subcommand is None:
-        set_command_context("opensre")
+        capture_cli_invoked()
         _render_landing()
         raise SystemExit(0)
 
@@ -169,7 +154,7 @@ def update(check_only: bool, yes: bool) -> None:
     """Check for a newer version and update if one is available."""
     from app.cli.update import run_update
 
-    set_command_context("update", {"check_only": check_only})
+    capture_cli_invoked()
     rc = run_update(check_only=check_only, yes=yes)
     raise SystemExit(rc)
 
@@ -180,14 +165,17 @@ def onboard() -> None:
     from app.cli.wizard import run_wizard
     from app.cli.wizard.store import get_store_path, load_local_config
 
-    set_command_context("onboard")
+    capture_onboard_started()
     try:
         exit_code = run_wizard()
     except Exception:
+        capture_onboard_failed()
         raise
     if exit_code == 0:
         cfg = load_local_config(get_store_path())
-        update_command_context(onboard_properties(cfg))
+        capture_onboard_completed(cfg)
+    else:
+        capture_onboard_failed()
     raise SystemExit(exit_code)
 
 
@@ -198,7 +186,7 @@ def health() -> None:
     from app.integrations.store import STORE_PATH
     from app.integrations.verify import format_verification_results, verify_integrations
 
-    set_command_context("health")
+    capture_cli_invoked()
     results = verify_integrations()
 
     click.echo("")
@@ -235,16 +223,6 @@ def investigate(
     """Run an RCA investigation against an alert payload."""
     from app.main import main as investigate_main
 
-    set_command_context(
-        "investigate",
-        investigation_properties(
-            input_path=input_path,
-            input_json=input_json,
-            interactive=interactive,
-            print_template=print_template,
-            output=output,
-        ),
-    )
     argv: list[str] = []
     if input_path is not None:
         argv.extend(["--input", input_path])
@@ -257,10 +235,20 @@ def investigate(
     if output is not None:
         argv.extend(["--output", output])
 
+    capture_investigation_started(
+        input_path=input_path,
+        input_json=input_json,
+        interactive=interactive,
+    )
     try:
         exit_code = investigate_main(argv)
     except Exception:
+        capture_investigation_failed()
         raise
+    if exit_code == 0:
+        capture_investigation_completed()
+    else:
+        capture_investigation_failed()
     raise SystemExit(exit_code)
 
 
@@ -275,8 +263,9 @@ def setup(service: str) -> None:
     """Set up credentials for a service."""
     from app.integrations.cli import cmd_setup
 
-    set_command_context("integrations setup", {"service": service})
+    capture_integration_setup_started(service)
     cmd_setup(service)
+    capture_integration_setup_completed(service)
 
 
 @integrations.command(name="list")
@@ -284,7 +273,7 @@ def list_cmd() -> None:
     """List all configured integrations."""
     from app.integrations.cli import cmd_list
 
-    set_command_context("integrations list")
+    capture_integrations_listed()
     cmd_list()
 
 
@@ -294,7 +283,6 @@ def show(service: str) -> None:
     """Show details for a configured integration."""
     from app.integrations.cli import cmd_show
 
-    set_command_context("integrations show", {"service": service})
     cmd_show(service)
 
 
@@ -304,8 +292,8 @@ def remove(service: str) -> None:
     """Remove a configured integration."""
     from app.integrations.cli import cmd_remove
 
-    set_command_context("integrations remove", {"service": service})
     cmd_remove(service)
+    capture_integration_removed(service)
 
 
 @integrations.command()
@@ -315,14 +303,8 @@ def verify(service: str | None, send_slack_test: bool) -> None:
     """Verify integration connectivity (all services, or a specific one)."""
     from app.integrations.cli import cmd_verify
 
-    set_command_context(
-        "integrations verify",
-        {
-            "service": service or "all",
-            "send_slack_test": send_slack_test,
-        },
-    )
     cmd_verify(service, send_slack_test=send_slack_test)
+    capture_integration_verified(service or "all")
 
 
 @cli.group(invoke_without_command=True)
@@ -335,7 +317,7 @@ def tests(ctx: click.Context) -> None:
     from app.cli.tests.discover import load_test_catalog
     from app.cli.tests.interactive import run_interactive_picker
 
-    set_command_context("tests")
+    capture_tests_picker_opened()
     raise SystemExit(run_interactive_picker(load_test_catalog()))
 
 
@@ -348,14 +330,6 @@ def tests(ctx: click.Context) -> None:
 )
 def test_rds_synthetic(scenario: str, output_json: bool, mock_grafana: bool) -> None:
     """Run the synthetic RDS PostgreSQL RCA benchmark."""
-    set_command_context(
-        "tests synthetic",
-        {
-            "scenario": scenario or "all",
-            "mock_grafana": mock_grafana,
-            "output_json": output_json,
-        },
-    )
     argv: list[str] = []
     if scenario:
         argv.extend(["--scenario", scenario])
@@ -363,6 +337,8 @@ def test_rds_synthetic(scenario: str, output_json: bool, mock_grafana: bool) -> 
         argv.append("--json")
     if mock_grafana:
         argv.append("--mock-grafana")
+
+    capture_test_synthetic_started(scenario or "all", mock_grafana=mock_grafana)
 
     from tests.synthetic.rds_postgres.run_suite import main as run_suite_main
 
@@ -381,7 +357,7 @@ def list_tests(category: str, search: str) -> None:
     """List available tests and suites."""
     from app.cli.tests.discover import load_test_catalog
 
-    set_command_context("tests list", {"category": category, "search": bool(search)})
+    capture_tests_listed(category, search=bool(search))
 
     def _echo_item(item, *, indent: int = 0) -> None:
         prefix = "  " * indent
@@ -405,46 +381,31 @@ def run(test_id: str, dry_run: bool) -> None:
     """Run a test or suite by stable inventory id."""
     from app.cli.tests.runner import find_test_item, run_catalog_item
 
-    set_command_context("tests run", {"test_id": test_id, "dry_run": dry_run})
     item = find_test_item(test_id)
     if item is None:
         raise click.ClickException(
     f"Unknown test id: {test_id}. Run 'opensre tests list' to see available test ids.")
 
+    capture_test_run_started(test_id, dry_run=dry_run)
     raise SystemExit(run_catalog_item(item, dry_run=dry_run))
 
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``opensre`` console script."""
-    raw_args = list(sys.argv[1:] if argv is None else argv)
     load_dotenv(override=False)
     capture_first_run_if_needed()
-    reset_command_context(_fallback_command(raw_args))
-    started_at = time.perf_counter()
-    exit_code = 0
 
     try:
         cli(args=argv, standalone_mode=True)
     except SystemExit as exc:
-        exit_code = _exit_code(exc.code)
         if isinstance(exc.code, int):
             return exc.code
         if exc.code is not None:
             click.echo(exc.code, err=True)
             return 1
         return 0
-    except Exception:
-        exit_code = 1
-        raise
     finally:
-        context = current_command_context()
-        duration_ms = max(0, int((time.perf_counter() - started_at) * 1000))
-        capture_command_completed(
-            command=context.command,
-            exit_code=exit_code,
-            duration_ms=duration_ms,
-            properties=context.properties,
-        )
+        shutdown_analytics(flush=True)
     return 0
 
 

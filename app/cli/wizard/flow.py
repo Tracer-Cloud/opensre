@@ -16,6 +16,7 @@ from app.cli.wizard.probes import ProbeResult, probe_local_target, probe_remote_
 from app.cli.wizard.prompts import select as select_prompt
 from app.cli.wizard.store import get_store_path, load_local_config, save_local_config
 from app.integrations.store import get_integration, remove_integration, upsert_integration
+from app.llm_credentials import has_llm_api_key, save_llm_api_key
 
 _console = Console()
 DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
@@ -150,18 +151,21 @@ def _joined_values(value: object, *, separator: str, fallback: str) -> str:
     return fallback
 
 
-def _local_defaults() -> dict[str, str | None]:
+def _local_defaults() -> dict[str, str | bool | None]:
     stored = load_local_config(get_store_path())
     wizard = _as_mapping(stored.get("wizard"))
     targets = _as_mapping(stored.get("targets"))
     local = _as_mapping(targets.get("local"))
     raw_provider = local.get("provider")
+    provider = PROVIDER_BY_VALUE.get(_string_value(raw_provider)) if raw_provider else None
+    api_key_env = _string_value(local.get("api_key_env"), provider.api_key_env if provider else "")
     return {
         "wizard_mode": _string_value(wizard.get("mode"), "quickstart"),
         "provider": _string_value(raw_provider) if raw_provider else None,
         "model": _string_value(local.get("model")),
-        "api_key": _string_value(local.get("api_key")),
-        "api_key_env": _string_value(local.get("api_key_env")),
+        "api_key_env": api_key_env,
+        "has_api_key": bool(api_key_env and has_llm_api_key(api_key_env)),
+        "legacy_api_key": _string_value(local.get("api_key")),
     }
 
 
@@ -252,6 +256,15 @@ def _prompt_value(
         _console.print("[red]Required.[/]")
 
 
+def _persist_llm_api_key(env_var: str, value: str) -> bool:
+    try:
+        save_llm_api_key(env_var, value)
+    except RuntimeError as exc:
+        _console.print(f"[red]{exc}[/]")
+        return False
+    return True
+
+
 def _parse_csv_values(raw_value: str) -> list[str]:
     return [part.strip() for part in raw_value.split(",") if part.strip()]
 
@@ -322,6 +335,7 @@ def _render_saved_summary(
     _console.print(f"[dim]services      {integrations}[/]")
     _console.print(f"[dim]config        {saved_path}[/]")
     _console.print(f"[dim]env           {env_path}[/]")
+    _console.print("[dim]llm secret    system keychain[/]")
     _console.print(f"[dim]integrations  {STORE_PATH}[/]")
 
 
@@ -356,7 +370,6 @@ def _configure_grafana() -> tuple[str, str]:
             env_path = sync_env_values(
                 {
                     "GRAFANA_INSTANCE_URL": endpoint,
-                    "GRAFANA_READ_TOKEN": api_key,
                 }
             )
             return "Grafana", str(env_path)
@@ -409,7 +422,7 @@ def _configure_grafana_local() -> tuple[str, str]:
     api_key = ""
     remove_integration("grafana")  # clean up any stale grafana record pointing to localhost
     upsert_integration("grafana_local", {"credentials": {"endpoint": endpoint, "api_key": api_key}})
-    env_path = sync_env_values({"GRAFANA_INSTANCE_URL": endpoint, "GRAFANA_READ_TOKEN": api_key})
+    env_path = sync_env_values({"GRAFANA_INSTANCE_URL": endpoint})
     _console.print("[green]Grafana Local · ready[/]")
     _console.print(f"[dim]UI: {endpoint}[/]")
     _console.print("[dim]Loki seeded with events_fact pipeline failure logs.[/]")
@@ -443,12 +456,7 @@ def _configure_datadog() -> tuple[str, str]:
                 "datadog",
                 {"credentials": {"api_key": api_key, "app_key": app_key, "site": site}},
             )
-            env_path = sync_env_values(
-                {
-                    "DD_API_KEY": api_key,
-                    "DD_APP_KEY": app_key,
-                }
-            )
+            env_path = sync_env_values({})
             return "Datadog", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
@@ -483,7 +491,6 @@ def _configure_honeycomb() -> tuple[str, str]:
             )
             env_path = sync_env_values(
                 {
-                    "HONEYCOMB_API_KEY": api_key,
                     "HONEYCOMB_DATASET": dataset,
                     "HONEYCOMB_API_URL": base_url,
                 }
@@ -536,7 +543,6 @@ def _configure_coralogix() -> tuple[str, str]:
             )
             env_path = sync_env_values(
                 {
-                    "CORALOGIX_API_KEY": api_key,
                     "CORALOGIX_API_URL": base_url,
                     "CORALOGIX_APPLICATION_NAME": application_name,
                     "CORALOGIX_SUBSYSTEM_NAME": subsystem_name,
@@ -558,7 +564,7 @@ def _configure_slack() -> tuple[str, str]:
             result = validate_slack_webhook(webhook_url=webhook_url)
         _render_integration_result("Slack", result)
         if result.ok:
-            env_path = sync_env_values({"SLACK_WEBHOOK_URL": webhook_url})
+            env_path = sync_env_values({})
             return "Slack", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
@@ -648,9 +654,6 @@ def _configure_aws() -> tuple[str, str]:
                 env_path = sync_env_values(
                     {
                         "AWS_REGION": region,
-                        "AWS_ACCESS_KEY_ID": access_key_id,
-                        "AWS_SECRET_ACCESS_KEY": secret_access_key,
-                        "AWS_SESSION_TOKEN": session_token,
                     }
                 )
                 return "AWS", str(env_path)
@@ -738,7 +741,6 @@ def _configure_github_mcp() -> tuple[str, str]:
                     "GITHUB_MCP_MODE": mode,
                     "GITHUB_MCP_COMMAND": command,
                     "GITHUB_MCP_ARGS": " ".join(args),
-                    "GITHUB_MCP_AUTH_TOKEN": auth_token,
                     "GITHUB_MCP_TOOLSETS": ",".join(toolsets),
                 }
             )
@@ -832,7 +834,6 @@ def _configure_sentry() -> tuple[str, str]:
                     "SENTRY_URL": base_url,
                     "SENTRY_ORG_SLUG": organization_slug,
                     "SENTRY_PROJECT_SLUG": project_slug,
-                    "SENTRY_AUTH_TOKEN": auth_token,
                 }
             )
             return "Sentry", str(env_path)
@@ -997,7 +998,9 @@ def run_wizard(_argv: list[str] | None = None) -> int:
     """Run the interactive wizard."""
     _render_header()
     defaults = _local_defaults()
-    saved_provider_value = defaults["provider"]
+    saved_provider_value = defaults["provider"] if isinstance(defaults["provider"], str) else None
+    saved_model_value = defaults["model"] if isinstance(defaults["model"], str) else ""
+    default_wizard_mode = defaults["wizard_mode"] if isinstance(defaults["wizard_mode"], str) else "quickstart"
     default_provider_value = (
         saved_provider_value
         if saved_provider_value in PROVIDER_BY_VALUE
@@ -1017,7 +1020,7 @@ def run_wizard(_argv: list[str] | None = None) -> int:
                 hint="Show probes and choose the target explicitly",
             ),
         ],
-        default=defaults["wizard_mode"],
+        default=default_wizard_mode,
     )
 
     store_path = get_store_path()
@@ -1043,7 +1046,7 @@ def run_wizard(_argv: list[str] | None = None) -> int:
     _step("LLM Provider")
     saved_provider = PROVIDER_BY_VALUE.get(saved_provider_value) if saved_provider_value else None
     if saved_provider is not None:
-        current_model = defaults["model"] or saved_provider.default_model
+        current_model = saved_model_value or saved_provider.default_model
         _console.print(f"[dim]current provider  {saved_provider.label}  ·  {current_model}[/]")
         change_provider = _confirm("Change provider?", default=False)
     else:
@@ -1065,25 +1068,39 @@ def run_wizard(_argv: list[str] | None = None) -> int:
             )
         ]
         model = provider.default_model
-        if provider.value == "lmstudio":
-            api_key = "lm-studio"
-            _console.print("[dim]LM Studio does not require an API key — using placeholder 'lm-studio'.[/]")
-        else:
+        _step("API Key")
+        try:
+            api_key = _prompt_value(
+                f"{provider.label} API key ({provider.api_key_env})",
+                secret=True,
+            )
+        except KeyboardInterrupt:
+            _console.print("\n[yellow]Setup cancelled.[/]")
+            return 1
+        if not _persist_llm_api_key(provider.api_key_env, api_key):
+            return 1
+    else:
+        assert saved_provider is not None
+        provider = saved_provider
+        model = saved_model_value or provider.default_model
+        has_api_key = bool(defaults["has_api_key"])
+        legacy_api_key = str(defaults["legacy_api_key"] or "").strip()
+        if not has_api_key and legacy_api_key:
+            if not _persist_llm_api_key(provider.api_key_env, legacy_api_key):
+                return 1
+            has_api_key = True
+        if not has_api_key:
             _step("API Key")
             try:
                 api_key = _prompt_value(
                     f"{provider.label} API key ({provider.api_key_env})",
-                    default=defaults["api_key"] or "",
                     secret=True,
                 )
             except KeyboardInterrupt:
                 _console.print("\n[yellow]Setup cancelled.[/]")
                 return 1
-    else:
-        assert saved_provider is not None
-        provider = saved_provider
-        model = defaults["model"] or provider.default_model
-        api_key = defaults["api_key"] or ""
+            if not _persist_llm_api_key(provider.api_key_env, api_key):
+                return 1
 
     probes = {
         "local": local_probe.as_dict(),
@@ -1095,10 +1112,9 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         model=model,
         api_key_env=provider.api_key_env,
         model_env=provider.model_env,
-        api_key=api_key,
         probes=probes,
     )
-    env_path = sync_provider_env(provider=provider, api_key=api_key, model=model)
+    env_path = sync_provider_env(provider=provider, model=model)
 
     _step("Integrations")
     try:

@@ -277,7 +277,7 @@
       // Get the current page URL - replace localhost with production URL
       let currentPageUrl = window.location.href;
       if (currentPageUrl.includes('localhost:3000')) {
-        currentPageUrl = currentPageUrl.replace('http://localhost:3000', 'https://opensre.com');
+        currentPageUrl = currentPageUrl.replace('http://localhost:3000', 'https://tracer.mintlify.app');
       }
 
       // Create the prompt with the page URL

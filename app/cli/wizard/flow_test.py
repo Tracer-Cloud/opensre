@@ -30,6 +30,7 @@ def test_run_wizard_advanced_remote_falls_back_to_local(monkeypatch, tmp_path, c
         return m
 
     saved: dict[str, object] = {}
+    saved_llm_keys: list[tuple[str, str]] = []
 
     monkeypatch.setattr(flow, "select_prompt", _mock_select)
     monkeypatch.setattr(flow.questionary, "confirm", _mock_confirm)
@@ -49,13 +50,19 @@ def test_run_wizard_advanced_remote_falls_back_to_local(monkeypatch, tmp_path, c
 
     monkeypatch.setattr(flow, "save_local_config", _save_local_config)
     monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+    monkeypatch.setattr(
+        flow,
+        "save_llm_api_key",
+        lambda env_var, value: saved_llm_keys.append((env_var, value)),
+    )
 
     exit_code = flow.run_wizard()
 
     assert exit_code == 0
     assert saved["wizard_mode"] == "advanced"
     assert saved["provider"] == "anthropic"
-    assert saved["api_key"] == "secret-key"
+    assert "api_key" not in saved
+    assert saved_llm_keys == [("ANTHROPIC_API_KEY", "secret-key")]
 
     output = capsys.readouterr().out
     assert "summary" in output
@@ -82,6 +89,7 @@ def test_run_wizard_no_saved_provider_shows_selection(monkeypatch, tmp_path) -> 
     monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
     monkeypatch.setattr(flow, "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
     monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+    monkeypatch.setattr(flow, "save_llm_api_key", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         flow,
         "build_demo_action_response",
@@ -135,6 +143,7 @@ def test_run_wizard_configures_optional_integrations(monkeypatch, tmp_path, caps
     )
     monkeypatch.setattr(flow, "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
     monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+    monkeypatch.setattr(flow, "save_llm_api_key", lambda *_args, **_kwargs: None)
 
     def _sync_env_values(values: dict[str, str], **_kwargs):
         synced_env_values.append(values)
@@ -169,7 +178,6 @@ def test_run_wizard_configures_optional_integrations(monkeypatch, tmp_path, caps
     assert synced_env_values == [
         {
             "GRAFANA_INSTANCE_URL": "https://grafana.example.com",
-            "GRAFANA_READ_TOKEN": "grafana-token",
         },
     ]
     output = capsys.readouterr().out
@@ -210,6 +218,7 @@ def test_run_wizard_configures_honeycomb(monkeypatch, tmp_path) -> None:
     )
     monkeypatch.setattr(flow, "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
     monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+    monkeypatch.setattr(flow, "save_llm_api_key", lambda *_args, **_kwargs: None)
 
     def _sync_env_values(values: dict[str, str], **_kwargs):
         synced_env_values.append(values)
@@ -244,7 +253,6 @@ def test_run_wizard_configures_honeycomb(monkeypatch, tmp_path) -> None:
     ]
     assert synced_env_values == [
         {
-            "HONEYCOMB_API_KEY": "hny_test",
             "HONEYCOMB_DATASET": "prod-api",
             "HONEYCOMB_API_URL": "https://api.honeycomb.io",
         }
@@ -289,6 +297,7 @@ def test_run_wizard_configures_coralogix(monkeypatch, tmp_path) -> None:
     )
     monkeypatch.setattr(flow, "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
     monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+    monkeypatch.setattr(flow, "save_llm_api_key", lambda *_args, **_kwargs: None)
 
     def _sync_env_values(values: dict[str, str], **_kwargs):
         synced_env_values.append(values)
@@ -324,7 +333,6 @@ def test_run_wizard_configures_coralogix(monkeypatch, tmp_path) -> None:
     ]
     assert synced_env_values == [
         {
-            "CORALOGIX_API_KEY": "cx_test",
             "CORALOGIX_API_URL": "https://api.coralogix.com",
             "CORALOGIX_APPLICATION_NAME": "payments",
             "CORALOGIX_SUBSYSTEM_NAME": "worker",
@@ -379,6 +387,7 @@ def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, caps
         flow,
         "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
     monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+    monkeypatch.setattr(flow, "save_llm_api_key", lambda *_args, **_kwargs: None)
 
     def _sync_env_values(values: dict[str, str], **_kwargs):
         synced_env_values.append(values)
@@ -424,7 +433,6 @@ def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, caps
             "GITHUB_MCP_MODE": flow.DEFAULT_GITHUB_MCP_MODE,
             "GITHUB_MCP_COMMAND": "",
             "GITHUB_MCP_ARGS": "",
-            "GITHUB_MCP_AUTH_TOKEN": "ghp_test",
             "GITHUB_MCP_TOOLSETS": "repos,issues,pull_requests,actions",
         },
     ]
@@ -436,6 +444,7 @@ def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, caps
 def test_run_wizard_reuses_saved_defaults_when_user_keeps_provider(monkeypatch, tmp_path) -> None:
     """When provider is already set and user declines to change, saved values are reused."""
     saved: dict[str, object] = {}
+    saved_llm_keys: list[tuple[str, str]] = []
 
     def _mock_select(*_args, choices=None, default=None, **_kwargs):
         m = MagicMock()
@@ -474,6 +483,7 @@ def test_run_wizard_reuses_saved_defaults_when_user_keeps_provider(monkeypatch, 
         },
     )
     monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
+    monkeypatch.setattr(flow, "has_llm_api_key", lambda _env: False)
     monkeypatch.setattr(
         flow,
         "build_demo_action_response",
@@ -486,6 +496,11 @@ def test_run_wizard_reuses_saved_defaults_when_user_keeps_provider(monkeypatch, 
 
     monkeypatch.setattr(flow, "save_local_config", _save_local_config)
     monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+    monkeypatch.setattr(
+        flow,
+        "save_llm_api_key",
+        lambda env_var, value: saved_llm_keys.append((env_var, value)),
+    )
 
     exit_code = flow.run_wizard()
 
@@ -493,11 +508,13 @@ def test_run_wizard_reuses_saved_defaults_when_user_keeps_provider(monkeypatch, 
     assert saved["wizard_mode"] == "quickstart"
     assert saved["provider"] == "openai"
     assert saved["model"] == "gpt-5.4"
-    assert saved["api_key"] == "saved-secret"
+    assert "api_key" not in saved
+    assert saved_llm_keys == [("OPENAI_API_KEY", "saved-secret")]
 
 
 def test_run_wizard_persists_matching_local_config_and_env(monkeypatch, tmp_path) -> None:
     select_responses = iter(["quickstart", "openai", "skip"])
+    saved_llm_keys: list[tuple[str, str]] = []
 
     def _mock_select(*_args, **_kwargs):
         m = MagicMock()
@@ -531,6 +548,11 @@ def test_run_wizard_persists_matching_local_config_and_env(monkeypatch, tmp_path
         "sync_provider_env",
         lambda **kwargs: sync_provider_env(env_path=env_path, **kwargs),
     )
+    monkeypatch.setattr(
+        flow,
+        "save_llm_api_key",
+        lambda env_var, value: saved_llm_keys.append((env_var, value)),
+    )
 
     exit_code = flow.run_wizard()
 
@@ -543,16 +565,18 @@ def test_run_wizard_persists_matching_local_config_and_env(monkeypatch, tmp_path
     assert payload["targets"]["local"]["provider"] == "openai"
     assert payload["targets"]["local"]["api_key_env"] == "OPENAI_API_KEY"
     assert payload["targets"]["local"]["model_env"] == "OPENAI_REASONING_MODEL"
-    assert payload["targets"]["local"]["api_key"] == "openai-secret"
+    assert "api_key" not in payload["targets"]["local"]
 
     assert "LLM_PROVIDER=openai\n" in env_values
-    assert "OPENAI_API_KEY=openai-secret\n" in env_values
+    assert "OPENAI_API_KEY=" not in env_values
+    assert saved_llm_keys == [("OPENAI_API_KEY", "openai-secret")]
 
 
 def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatch, tmp_path) -> None:
     # Saved: anthropic. User says yes to "Change provider?" and picks openai.
     select_responses = iter(["quickstart", "openai", "skip"])
     confirm_responses = iter([True])  # "Change provider?" -> Yes
+    saved_llm_keys: list[tuple[str, str]] = []
 
     def _mock_select(*_args, **_kwargs):
         m = MagicMock()
@@ -577,7 +601,6 @@ def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatc
         model="claude-opus-4-5",
         api_key_env="ANTHROPIC_API_KEY",
         model_env="ANTHROPIC_MODEL",
-        api_key="saved-anthropic-key",
         probes={
             "local": {"target": "local", "reachable": True, "detail": "ok"},
             "remote": {"target": "remote", "reachable": False, "detail": "down"},
@@ -611,6 +634,11 @@ def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatc
         "sync_provider_env",
         lambda **kwargs: sync_provider_env(env_path=env_path, **kwargs),
     )
+    monkeypatch.setattr(
+        flow,
+        "save_llm_api_key",
+        lambda env_var, value: saved_llm_keys.append((env_var, value)),
+    )
 
     exit_code = flow.run_wizard()
 
@@ -622,8 +650,10 @@ def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatc
     assert payload["targets"]["local"]["provider"] == "openai"
     assert payload["targets"]["local"]["api_key_env"] == "OPENAI_API_KEY"
     assert payload["targets"]["local"]["model_env"] == "OPENAI_REASONING_MODEL"
-    assert payload["targets"]["local"]["api_key"] == "fresh-openai-key"
+    assert "api_key" not in payload["targets"]["local"]
 
     assert "LLM_PROVIDER=openai\n" in env_values
-    assert "OPENAI_API_KEY=fresh-openai-key\n" in env_values
+    assert "OPENAI_API_KEY=" not in env_values
+    assert "ANTHROPIC_API_KEY=" not in env_values
     assert "OPENAI_REASONING_MODEL=" in env_values
+    assert saved_llm_keys == [("OPENAI_API_KEY", "fresh-openai-key")]

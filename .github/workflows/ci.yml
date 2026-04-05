@@ -9,9 +9,6 @@ on:
 permissions:
   contents: read
 
-env:
-  OPENSRE_NO_TELEMETRY: "1"
-
 jobs:
   lint:
     runs-on: ubuntu-latest

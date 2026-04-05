@@ -17,13 +17,18 @@
 
 <p align="center">
   <strong>
-    <a href="https://tracer-cloud.slack.com/archives/C0AL8S64936">Slack</a> ·
     <a href="https://app.tracer.cloud/">Getting Started</a> ·
     <a href="https://tracer.cloud/">Tracer Agent</a> ·
-    <a href="https://opensre.com/">Docs</a> ·
+    <a href="https://tracer.mintlify.app/">Docs</a> ·
     <a href="docs/FAQ.md">FAQ</a> ·
     <a href="https://trust.tracer.cloud/">Security</a>
   </strong>
+</p>
+
+<p>
+  <a href="https://join.slack.com/t/tracer-cloud/shared_invite/zt-2xj0w3i3p-~EH0GFbZodFCXWkR7j3~w">
+    <img src="https://img.shields.io/badge/➜_Click_To_Join_Our_Slack-white?style=for-the-badge&logo=slack&logoColor=4A154B" alt="Join Slack">
+  </a>
 </p>
 
 </div>
@@ -147,6 +152,12 @@ Tracer integrates with the systems that power modern cloud platforms.
 
 Tracer is community-built. Every integration, improvement, and bug fix makes it better for thousands of engineers. We actively review PRs and welcome contributors of all experience levels.
 
+<p>
+  <a href="https://join.slack.com/t/tracer-cloud/shared_invite/zt-3ifakcs2e-igoUEH8ygMlfxgJGLxsqeA">
+    <img src="https://img.shields.io/badge/Join%20our%20Community%20Slack-4A154B?style=for-the-badge&logo=slack&logoColor=white" alt="Join our Community Slack" />
+  </a>
+</p>
+
 Good first issues are labeled [`good first issue`](https://github.com/Tracer-Cloud/opensre/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). Ways to contribute:
 
 - 🐛 Report bugs or missing edge cases
@@ -163,89 +174,45 @@ Thanks goes to these amazing people:
 	<tbody>
 		<tr>
             <td align="center">
-        <a href="https://github.com/venturevd">
-            <img src="https://avatars.githubusercontent.com/u/269883753?v=4" width="100;" alt="venturevd"/>
+        <a href="https://github.com/davincios">
+            <img src="https://avatars.githubusercontent.com/u/33206282?v=4" width="100;" alt="davincios"/>
             <br />
-            <sub><b>venturevd</b></sub>
+            <sub><b>davincios</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/shoaib050326">
-            <img src="https://avatars.githubusercontent.com/u/266381026?v=4" width="100;" alt="shoaib050326"/>
+        <a href="https://github.com/VaibhavUpreti">
+            <img src="https://avatars.githubusercontent.com/u/85568177?v=4" width="100;" alt="VaibhavUpreti"/>
             <br />
-            <sub><b>shoaib050326</b></sub>
+            <sub><b>VaibhavUpreti</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/ebrahim-sameh">
-            <img src="https://avatars.githubusercontent.com/u/23136098?v=4" width="100;" alt="ebrahim-sameh"/>
+        <a href="https://github.com/aliya-tracer">
+            <img src="https://avatars.githubusercontent.com/u/233726347?v=4" width="100;" alt="aliya-tracer"/>
             <br />
-            <sub><b>ebrahim-sameh</b></sub>
+            <sub><b>aliya-tracer</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/lukegimza">
-            <img src="https://avatars.githubusercontent.com/u/68860070?v=4" width="100;" alt="lukegimza"/>
+        <a href="https://github.com/arnetracer">
+            <img src="https://avatars.githubusercontent.com/u/203629234?v=4" width="100;" alt="arnetracer"/>
             <br />
-            <sub><b>lukegimza</b></sub>
+            <sub><b>arnetracer</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/edgarmb14">
-            <img src="https://avatars.githubusercontent.com/u/268297669?v=4" width="100;" alt="edgarmb14"/>
+        <a href="https://github.com/kylie-tracer">
+            <img src="https://avatars.githubusercontent.com/u/256781109?v=4" width="100;" alt="kylie-tracer"/>
             <br />
-            <sub><b>edgarmb14</b></sub>
+            <sub><b>kylie-tracer</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/cerencamkiran">
-            <img src="https://avatars.githubusercontent.com/u/150190567?v=4" width="100;" alt="cerencamkiran"/>
+        <a href="https://github.com/paultracer">
+            <img src="https://avatars.githubusercontent.com/u/214484440?v=4" width="100;" alt="paultracer"/>
             <br />
-            <sub><b>cerencamkiran</b></sub>
-        </a>
-    </td>
-		</tr>
-		<tr>
-            <td align="center">
-        <a href="https://github.com/vrk7">
-            <img src="https://avatars.githubusercontent.com/u/108936058?v=4" width="100;" alt="vrk7"/>
-            <br />
-            <sub><b>vrk7</b></sub>
-        </a>
-    </td>
-            <td align="center">
-        <a href="https://github.com/rrajan94">
-            <img src="https://avatars.githubusercontent.com/u/25589618?v=4" width="100;" alt="rrajan94"/>
-            <br />
-            <sub><b>rrajan94</b></sub>
-        </a>
-    </td>
-            <td align="center">
-        <a href="https://github.com/anandgupta1202">
-            <img src="https://avatars.githubusercontent.com/u/39819996?v=4" width="100;" alt="anandgupta1202"/>
-            <br />
-            <sub><b>anandgupta1202</b></sub>
-        </a>
-    </td>
-            <td align="center">
-        <a href="https://github.com/yeoreums">
-            <img src="https://avatars.githubusercontent.com/u/62932875?v=4" width="100;" alt="yeoreums"/>
-            <br />
-            <sub><b>yeoreums</b></sub>
-        </a>
-    </td>
-            <td align="center">
-        <a href="https://github.com/w3joe">
-            <img src="https://avatars.githubusercontent.com/u/84664178?v=4" width="100;" alt="w3joe"/>
-            <br />
-            <sub><b>w3joe</b></sub>
-        </a>
-    </td>
-            <td align="center">
-        <a href="https://github.com/iamkalio">
-            <img src="https://avatars.githubusercontent.com/u/89003403?v=4" width="100;" alt="iamkalio"/>
-            <br />
-            <sub><b>iamkalio</b></sub>
+            <sub><b>paultracer</b></sub>
         </a>
     </td>
 		</tr>
@@ -258,47 +225,98 @@ Thanks goes to these amazing people:
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/paultracer">
-            <img src="https://avatars.githubusercontent.com/u/214484440?v=4" width="100;" alt="paultracer"/>
+        <a href="https://github.com/iamkalio">
+            <img src="https://avatars.githubusercontent.com/u/89003403?v=4" width="100;" alt="iamkalio"/>
             <br />
-            <sub><b>paultracer</b></sub>
+            <sub><b>iamkalio</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/kylie-tracer">
-            <img src="https://avatars.githubusercontent.com/u/256781109?v=4" width="100;" alt="kylie-tracer"/>
+        <a href="https://github.com/w3joe">
+            <img src="https://avatars.githubusercontent.com/u/84664178?v=4" width="100;" alt="w3joe"/>
             <br />
-            <sub><b>kylie-tracer</b></sub>
+            <sub><b>w3joe</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/arnetracer">
-            <img src="https://avatars.githubusercontent.com/u/203629234?v=4" width="100;" alt="arnetracer"/>
+        <a href="https://github.com/yeoreums">
+            <img src="https://avatars.githubusercontent.com/u/62932875?v=4" width="100;" alt="yeoreums"/>
             <br />
-            <sub><b>arnetracer</b></sub>
+            <sub><b>yeoreums</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/aliya-tracer">
-            <img src="https://avatars.githubusercontent.com/u/233726347?v=4" width="100;" alt="aliya-tracer"/>
+        <a href="https://github.com/anandgupta1202">
+            <img src="https://avatars.githubusercontent.com/u/39819996?v=4" width="100;" alt="anandgupta1202"/>
             <br />
-            <sub><b>aliya-tracer</b></sub>
+            <sub><b>anandgupta1202</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/VaibhavUpreti">
-            <img src="https://avatars.githubusercontent.com/u/85568177?v=4" width="100;" alt="VaibhavUpreti"/>
+        <a href="https://github.com/rrajan94">
+            <img src="https://avatars.githubusercontent.com/u/25589618?v=4" width="100;" alt="rrajan94"/>
             <br />
-            <sub><b>VaibhavUpreti</b></sub>
+            <sub><b>rrajan94</b></sub>
         </a>
     </td>
 		</tr>
 		<tr>
             <td align="center">
-        <a href="https://github.com/davincios">
-            <img src="https://avatars.githubusercontent.com/u/33206282?v=4" width="100;" alt="davincios"/>
+        <a href="https://github.com/vrk7">
+            <img src="https://avatars.githubusercontent.com/u/108936058?v=4" width="100;" alt="vrk7"/>
             <br />
-            <sub><b>davincios</b></sub>
+            <sub><b>vrk7</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/cerencamkiran">
+            <img src="https://avatars.githubusercontent.com/u/150190567?v=4" width="100;" alt="cerencamkiran"/>
+            <br />
+            <sub><b>cerencamkiran</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/edgarmb14">
+            <img src="https://avatars.githubusercontent.com/u/268297669?v=4" width="100;" alt="edgarmb14"/>
+            <br />
+            <sub><b>edgarmb14</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/lukegimza">
+            <img src="https://avatars.githubusercontent.com/u/68860070?v=4" width="100;" alt="lukegimza"/>
+            <br />
+            <sub><b>lukegimza</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/ebrahim-sameh">
+            <img src="https://avatars.githubusercontent.com/u/23136098?v=4" width="100;" alt="ebrahim-sameh"/>
+            <br />
+            <sub><b>ebrahim-sameh</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/shoaib050326">
+            <img src="https://avatars.githubusercontent.com/u/266381026?v=4" width="100;" alt="shoaib050326"/>
+            <br />
+            <sub><b>shoaib050326</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/venturevd">
+            <img src="https://avatars.githubusercontent.com/u/269883753?v=4" width="100;" alt="venturevd"/>
+            <br />
+            <sub><b>venturevd</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/shriyashsoni">
+            <img src="https://avatars.githubusercontent.com/u/138931443?v=4" width="100;" alt="shriyashsoni"/>
+            <br />
+            <sub><b>shriyashsoni</b></sub>
         </a>
     </td>
 		</tr>

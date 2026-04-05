@@ -166,11 +166,8 @@ def main() -> int:
         print("Missing GITHUB_REPOSITORY.", file=sys.stderr)
         return 1
     if not webhook_url:
-        print(
-            "Missing SLACK_GITHUB_ISSUES_WEBHOOK_URL or SLACK_WEBHOOK_URL.",
-            file=sys.stderr,
-        )
-        return 1
+        print("Skipped: Slack webhook is not configured.")
+        return 0
 
     event = json.loads(Path(event_path).read_text(encoding="utf-8"))
     notification = notification_from_issue_comment_event(event, repository=repository)

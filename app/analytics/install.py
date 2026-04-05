@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from app.analytics.events import Event
-from app.analytics.provider import Properties, capture, mark_install_detected
+from app.analytics.provider import (
+    Properties,
+    get_analytics,
+    mark_install_detected,
+    shutdown_analytics,
+)
 
 _INSTALL_PROPERTIES: Properties = {
     "install_source": "make_install",
@@ -13,7 +18,8 @@ _INSTALL_PROPERTIES: Properties = {
 
 def main() -> int:
     mark_install_detected()
-    capture(Event.INSTALL_DETECTED, _INSTALL_PROPERTIES)
+    get_analytics().capture(Event.INSTALL_DETECTED, _INSTALL_PROPERTIES)
+    shutdown_analytics(flush=True)
     return 0
 
 

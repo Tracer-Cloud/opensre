@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field
 
 from app.analytics.events import Event
-from app.analytics.provider import Properties, capture
+from app.analytics.provider import Properties, get_analytics
 
 
 def _string_value(value: object) -> str | None:
@@ -18,33 +17,7 @@ def _mapping_value(mapping: Mapping[str, object], key: str) -> str | None:
     return _string_value(mapping.get(key))
 
 
-@dataclass(slots=True)
-class CommandContext:
-    command: str = "opensre"
-    properties: Properties = field(default_factory=dict)
-
-
-_command_context = CommandContext()
-
-
-def reset_command_context(command: str = "opensre", properties: Properties | None = None) -> None:
-    global _command_context  # noqa: PLW0603
-    _command_context = CommandContext(command=command, properties=dict(properties or {}))
-
-
-def set_command_context(command: str, properties: Properties | None = None) -> None:
-    reset_command_context(command, properties)
-
-
-def update_command_context(properties: Properties) -> None:
-    _command_context.properties.update(properties)
-
-
-def current_command_context() -> CommandContext:
-    return CommandContext(command=_command_context.command, properties=dict(_command_context.properties))
-
-
-def onboard_properties(config: Mapping[str, object]) -> Properties:
+def _onboard_completed_properties(config: Mapping[str, object]) -> Properties:
     properties: Properties = {}
 
     wizard_obj = config.get("wizard")
@@ -70,20 +43,16 @@ def onboard_properties(config: Mapping[str, object]) -> Properties:
     return properties
 
 
-def investigation_properties(
+def _investigation_started_properties(
     *,
     input_path: str | None,
     input_json: str | None,
     interactive: bool,
-    print_template: str | None,
-    output: str | None,
 ) -> Properties:
     properties: Properties = {
         "has_input_file": input_path is not None,
         "has_inline_json": input_json is not None,
         "interactive": interactive,
-        "print_template": print_template is not None,
-        "has_output_file": output is not None,
     }
     llm_provider = _string_value(os.getenv("LLM_PROVIDER"))
     llm_model = _string_value(os.getenv("ANTHROPIC_MODEL")) or _string_value(os.getenv("OPENAI_MODEL"))
@@ -94,20 +63,84 @@ def investigation_properties(
     return properties
 
 
-def capture_command_completed(
+def capture_cli_invoked() -> None:
+    get_analytics().capture(Event.CLI_INVOKED)
+
+
+def capture_onboard_started() -> None:
+    get_analytics().capture(Event.ONBOARD_STARTED)
+
+
+def capture_onboard_completed(config: Mapping[str, object]) -> None:
+    get_analytics().capture(Event.ONBOARD_COMPLETED, _onboard_completed_properties(config))
+
+
+def capture_onboard_failed() -> None:
+    get_analytics().capture(Event.ONBOARD_FAILED)
+
+
+def capture_investigation_started(
     *,
-    command: str,
-    exit_code: int,
-    duration_ms: int,
-    properties: Properties | None = None,
+    input_path: str | None,
+    input_json: str | None,
+    interactive: bool,
 ) -> None:
-    capture(
-        Event.COMMAND_COMPLETED,
-        {
-            "command": command,
-            "exit_code": exit_code,
-            "success": exit_code == 0,
-            "duration_ms": duration_ms,
-            **(properties or {}),
-        },
+    get_analytics().capture(
+        Event.INVESTIGATION_STARTED,
+        _investigation_started_properties(
+            input_path=input_path,
+            input_json=input_json,
+            interactive=interactive,
+        ),
     )
+
+
+def capture_investigation_completed() -> None:
+    get_analytics().capture(Event.INVESTIGATION_COMPLETED)
+
+
+def capture_investigation_failed() -> None:
+    get_analytics().capture(Event.INVESTIGATION_FAILED)
+
+
+def capture_integration_setup_started(service: str) -> None:
+    get_analytics().capture(Event.INTEGRATION_SETUP_STARTED, {"service": service})
+
+
+def capture_integration_setup_completed(service: str) -> None:
+    get_analytics().capture(Event.INTEGRATION_SETUP_COMPLETED, {"service": service})
+
+
+def capture_integrations_listed() -> None:
+    get_analytics().capture(Event.INTEGRATIONS_LISTED)
+
+
+def capture_integration_removed(service: str) -> None:
+    get_analytics().capture(Event.INTEGRATION_REMOVED, {"service": service})
+
+
+def capture_integration_verified(service: str) -> None:
+    get_analytics().capture(Event.INTEGRATION_VERIFIED, {"service": service})
+
+
+def capture_integration_added(service: str) -> None:
+    get_analytics().capture(Event.INTEGRATION_ADDED, {"service": service})
+
+
+def capture_tests_picker_opened() -> None:
+    get_analytics().capture(Event.TESTS_PICKER_OPENED)
+
+
+def capture_test_synthetic_started(scenario: str, *, mock_grafana: bool) -> None:
+    get_analytics().capture(
+        Event.TEST_SYNTHETIC_STARTED,
+        {"scenario": scenario, "mock_grafana": mock_grafana},
+    )
+
+
+def capture_tests_listed(category: str, *, search: bool) -> None:
+    get_analytics().capture(Event.TESTS_LISTED, {"category": category, "search": search})
+
+
+def capture_test_run_started(test_id: str, *, dry_run: bool) -> None:
+    get_analytics().capture(Event.TEST_RUN_STARTED, {"test_id": test_id, "dry_run": dry_run})

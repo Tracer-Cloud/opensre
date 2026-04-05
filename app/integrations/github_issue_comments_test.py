@@ -92,3 +92,18 @@ def test_main_posts_notification(tmp_path, monkeypatch) -> None:
     payload = captured["payload"]
     assert isinstance(payload, dict)
     assert "New comment on Tracer-Cloud/opensre#42" in payload["text"]
+
+
+def test_main_skips_when_webhook_is_not_configured(tmp_path, monkeypatch, capsys) -> None:
+    event_path = tmp_path / "event.json"
+    event_path.write_text(json.dumps(_issue_comment_event()), encoding="utf-8")
+
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+    monkeypatch.setenv("GITHUB_REPOSITORY", "Tracer-Cloud/opensre")
+    monkeypatch.delenv("SLACK_GITHUB_ISSUES_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+
+    exit_code = main()
+
+    assert exit_code == 0
+    assert "Skipped: Slack webhook is not configured." in capsys.readouterr().out

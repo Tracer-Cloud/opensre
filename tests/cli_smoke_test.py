@@ -132,6 +132,7 @@ def _opensre_executable() -> Path:
         if candidate.exists():
             return candidate
     pytest.skip("installed opensre executable is unavailable in this environment")
+    raise AssertionError("pytest.skip should have interrupted control flow")
 
 
 def _cli_env(home: Path, project_env_path: Path) -> dict[str, str]:
@@ -153,6 +154,8 @@ def _cli_env(home: Path, project_env_path: Path) -> dict[str, str]:
     env["OPENSRE_PROJECT_ENV_PATH"] = str(project_env_path)
     env["PYTHONUTF8"] = "1"
     env["TERM"] = "xterm-256color"
+    env.pop("OPENSRE_DISABLE_KEYRING", None)
+    env["PYTHON_KEYRING_BACKEND"] = "tests.shared.keyring_backend.MemoryKeyring"
     return env
 
 
@@ -482,8 +485,10 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
 
     store = cli_sandbox.read_wizard_store()
     assert store["targets"]["local"]["provider"] == "anthropic"
+    assert "api_key" not in store["targets"]["local"]
     assert "LLM_PROVIDER=anthropic" in cli_sandbox.read_project_env()
-    assert "ANTHROPIC_API_KEY=smoke-test-key" in cli_sandbox.read_project_env()
+    assert "ANTHROPIC_API_KEY=" not in cli_sandbox.read_project_env()
+    assert "ANTHROPIC_REASONING_MODEL=" in cli_sandbox.read_project_env()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")

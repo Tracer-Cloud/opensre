@@ -1,10 +1,13 @@
 """Base HTTP client for Tracer API."""
 
+from collections.abc import Mapping
 from typing import Any, cast
 
 import httpx
 
 from app.auth.jwt_auth import extract_org_slug_from_jwt
+
+JSONDict = dict[str, Any]
 
 
 class TracerClientBase:
@@ -19,9 +22,9 @@ class TracerClientBase:
             headers={"Authorization": f"Bearer {jwt_token}"},
         )
 
-    def _get(self, endpoint: str, params: dict | None = None) -> dict[Any, Any]:
+    def _get(self, endpoint: str, params: Mapping[str, Any] | None = None) -> JSONDict:
         """Make a GET request to the API."""
         url = f"{self.base_url}{endpoint}"
         response = self._client.get(url, params=params or {})
         response.raise_for_status()
-        return cast(dict[Any, Any], response.json())
+        return cast(JSONDict, response.json())

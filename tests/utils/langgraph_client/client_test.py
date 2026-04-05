@@ -41,7 +41,9 @@ class TestLangGraphClient(TestCase):
         self.assertEqual(kwargs["json"]["input"]["pipeline_name"], pipeline_name)
         self.assertEqual(kwargs["json"]["input"]["severity"], severity)
         self.assertEqual(kwargs["json"]["input"]["raw_alert"], raw_alert)
-        self.assertTrue(kwargs["stream"])
+        self.assertIs(kwargs["stream"], True)
+        # Verify that HTTP errors are checked
+        mock_response.raise_for_status.assert_called_once()
 
         self.assertEqual(response, mock_response)
 
