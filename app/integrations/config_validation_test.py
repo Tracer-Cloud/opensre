@@ -3,8 +3,6 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.integrations.clients.datadog.client import DatadogConfig
-from app.integrations.clients.grafana.config import GrafanaAccountConfig
 from app.integrations.github_mcp import build_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
@@ -14,6 +12,8 @@ from app.integrations.models import (
     TracerIntegrationConfig,
 )
 from app.integrations.sentry import build_sentry_config
+from app.services.datadog.client import DatadogConfig
+from app.services.grafana.config import GrafanaAccountConfig
 
 
 def test_sentry_config_rejects_unknown_fields_with_suggestion() -> None:

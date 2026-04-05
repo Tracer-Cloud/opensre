@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.integrations.clients.elasticsearch import ElasticsearchClient, ElasticsearchConfig
+from app.services.elasticsearch import ElasticsearchClient, ElasticsearchConfig
 
 
 def make_client(

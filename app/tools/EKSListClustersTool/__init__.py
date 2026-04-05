@@ -7,7 +7,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
-from app.integrations.clients.eks.eks_client import EKSClient
+from app.services.eks.eks_client import EKSClient
 from app.tools.tool_decorator import tool
 
 logger = logging.getLogger(__name__)

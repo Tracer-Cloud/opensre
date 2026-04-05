@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, TypeVar, cast, overload
 
-from app.state import EvidenceSource
 from app.tools.base import BaseTool
 from app.tools.registered_tool import REGISTERED_TOOL_ATTR, RegisteredTool
+from app.types.evidence import EvidenceSource
 
 F = TypeVar("F", bound=Callable[..., Any])
 

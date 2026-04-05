@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.integrations.clients.tracer_client import get_tracer_web_client
+from app.services.tracer_client import get_tracer_web_client
 from app.tools.tool_decorator import tool
 from app.tools.TracerFailedJobsTool import _tracer_available, _tracer_trace_id
 

@@ -1,65 +1,53 @@
-"""Client modules for different services."""
+"""Backward-compatibility shim — canonical location is app.services."""
 
-from app.integrations.clients.cloudwatch_client import get_metric_statistics
-from app.integrations.clients.coralogix import (
+from app.services import (
+    AWSBatchJobResult,
     CoralogixClient,
-    build_coralogix_logs_query,
-)
-from app.integrations.clients.grafana import (
     GrafanaAccountConfig,
     GrafanaClient,
-    get_grafana_client_from_credentials,
-)
-from app.integrations.clients.honeycomb import HoneycombClient
-from app.integrations.clients.llm_client import (
-    RootCauseResult,
-    get_llm_for_reasoning,
-    get_llm_for_tools,
-    parse_root_cause,
-    reset_llm_singletons,
-)
-from app.integrations.clients.s3_client import S3CheckResult, get_s3_client
-from app.integrations.clients.tracer_client import (
-    AWSBatchJobResult,
+    HoneycombClient,
     LogResult,
     PipelineRunSummary,
     PipelineSummary,
+    RootCauseResult,
+    S3CheckResult,
     TracerClient,
     TracerRunResult,
     TracerTaskResult,
+    build_coralogix_logs_query,
+    get_grafana_client_from_credentials,
+    get_llm_for_reasoning,
+    get_llm_for_tools,
+    get_metric_statistics,
+    get_s3_client,
     get_tracer_client,
     get_tracer_web_client,
+    parse_root_cause,
+    reset_llm_singletons,
 )
 
 __all__ = [
-    # CloudWatch client
-    "get_metric_statistics",
-    # Coralogix client
+    "AWSBatchJobResult",
     "CoralogixClient",
-    "build_coralogix_logs_query",
-    # Grafana client
     "GrafanaAccountConfig",
     "GrafanaClient",
-    "get_grafana_client_from_credentials",
-    # Honeycomb client
     "HoneycombClient",
-    # LLM client
-    "RootCauseResult",
-    "get_llm_for_reasoning",
-    "get_llm_for_tools",
-    "parse_root_cause",
-    "reset_llm_singletons",
-    # S3 client
-    "S3CheckResult",
-    "get_s3_client",
-    # Tracer client
-    "AWSBatchJobResult",
     "LogResult",
     "PipelineRunSummary",
     "PipelineSummary",
+    "RootCauseResult",
+    "S3CheckResult",
     "TracerClient",
     "TracerRunResult",
     "TracerTaskResult",
+    "build_coralogix_logs_query",
+    "get_grafana_client_from_credentials",
+    "get_llm_for_reasoning",
+    "get_llm_for_tools",
+    "get_metric_statistics",
+    "get_s3_client",
     "get_tracer_client",
     "get_tracer_web_client",
+    "parse_root_cause",
+    "reset_llm_singletons",
 ]

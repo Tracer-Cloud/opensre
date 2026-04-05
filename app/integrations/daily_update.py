@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field
 
-from app.integrations.clients.llm_client import get_llm_for_reasoning
+from app.services.llm_client import get_llm_for_reasoning
 from app.version import get_version
 
 GITHUB_API_BASE_URL = "https://api.github.com"

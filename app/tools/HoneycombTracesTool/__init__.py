@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.integrations.clients.honeycomb import HoneycombClient
 from app.integrations.models import HoneycombIntegrationConfig
+from app.services.honeycomb import HoneycombClient
 from app.tools.base import BaseTool
 
 

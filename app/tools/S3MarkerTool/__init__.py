@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.integrations.clients.s3_client import (
+from app.services.s3_client import (
     compare_versions,
     get_s3_client,
     head_object,

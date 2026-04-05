@@ -6,12 +6,11 @@ import inspect
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from types import NoneType
-from typing import Any, Literal, cast, get_args, get_origin, get_type_hints
+from typing import Any, cast, get_args, get_origin, get_type_hints
 
-from app.state import EvidenceSource
 from app.tools.base import BaseTool, ToolMetadata
-
-ToolSurface = Literal["investigation", "chat"]
+from app.types.evidence import EvidenceSource
+from app.types.tools import ToolSurface
 
 REGISTERED_TOOL_ATTR = "__opensre_registered_tool__"
 

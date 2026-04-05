@@ -69,7 +69,7 @@ Changelog = "https://github.com/Tracer-Cloud/opensre/releases"
 
 [project.scripts]
 opensre = "app.cli.__main__:main"
-opensre-mcp = "app.integrations.opensre_mcp:main"
+opensre-mcp = "app.entrypoints.mcp:main"
 
 [project.optional-dependencies]
 dev = [

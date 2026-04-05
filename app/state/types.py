@@ -7,27 +7,7 @@ from typing import Any, Literal, TypedDict
 from pydantic import Field
 
 from app.strict_config import StrictConfigModel
-
-EvidenceSource = Literal[
-    "storage",
-    "batch",
-    "tracer_web",
-    "cloudwatch",
-    "aws_sdk",
-    "knowledge",
-    "grafana",
-    "datadog",
-    "honeycomb",
-    "coralogix",
-    "eks",
-    "github",
-    "sentry",
-    "mongodb",
-    "google_docs",
-    "vercel",
-    "opsgenie",
-    "elasticsearch",
-]
+from app.types.evidence import EvidenceSource as EvidenceSource  # re-export
 
 AgentMode = Literal["chat", "investigation"]
 

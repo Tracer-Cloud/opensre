@@ -20,7 +20,7 @@ import requests
 from langsmith import traceable
 
 from app.cli.investigate import run_investigation_cli
-from app.integrations.clients.grafana import get_grafana_client
+from app.services.grafana import get_grafana_client
 from tests.shared.stack_config import get_prefect_config
 from tests.shared.tracer_ingest import StepTimer, emit_tool_event
 from tests.utils.alert_factory import create_alert

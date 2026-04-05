@@ -13,7 +13,6 @@ from typing import Any
 
 from langsmith import traceable
 
-from app.integrations.clients.vercel import VercelConfig
 from app.integrations.github_mcp import build_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
@@ -26,6 +25,7 @@ from app.integrations.models import (
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.sentry import build_sentry_config
 from app.output import get_tracker
+from app.services.vercel import VercelConfig
 from app.state import InvestigationState
 
 logger = logging.getLogger(__name__)
@@ -504,7 +504,7 @@ def node_resolve_integrations(state: InvestigationState) -> dict:
             )
             return {"resolved_integrations": {}}
         try:
-            from app.integrations.clients.tracer_client import get_tracer_client_for_org
+            from app.services.tracer_client import get_tracer_client_for_org
             all_integrations = get_tracer_client_for_org(org_id, webhook_token).get_all_integrations()
         except Exception as exc:
             logger.warning("Remote integrations fetch failed: %s", exc)
@@ -524,7 +524,7 @@ def node_resolve_integrations(state: InvestigationState) -> dict:
             if not org_id:
                 return _resolve_from_local_sources(tracker)
             try:
-                from app.integrations.clients.tracer_client import get_tracer_client_for_org
+                from app.services.tracer_client import get_tracer_client_for_org
                 all_integrations = get_tracer_client_for_org(org_id, env_token).get_all_integrations()
             except Exception:
                 logger.debug("Remote integrations fetch failed for org %s, falling back to local", org_id, exc_info=True)
