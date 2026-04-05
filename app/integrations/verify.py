@@ -570,7 +570,8 @@ def _verify_vercel(source: str, config: dict[str, Any]) -> dict[str, str]:
         return _result("vercel", source, "missing", "Missing API token for Vercel access.")
 
     client = VercelClient(vercel_config)
-    result = client.list_projects()
+    with client:
+        result = client.list_projects()
     if not result.get("success"):
         return _result(
             "vercel",

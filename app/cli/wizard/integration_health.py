@@ -363,8 +363,8 @@ def validate_vercel_integration(*, api_token: str, team_id: str = "") -> Integra
     if not api_token:
         return IntegrationHealthResult(ok=False, detail="Vercel API token is required.")
     try:
-        client = VercelClient(VercelConfig(api_token=api_token, team_id=team_id))
-        result = client.list_projects()
+        with VercelClient(VercelConfig(api_token=api_token, team_id=team_id)) as client:
+            result = client.list_projects()
         if result.get("success"):
             return IntegrationHealthResult(
                 ok=True,

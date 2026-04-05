@@ -258,6 +258,12 @@ class _FakeVercelClient:
     def __init__(self, result: dict) -> None:
         self._result = result
 
+    def __enter__(self) -> _FakeVercelClient:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        pass
+
     def list_projects(self) -> dict:
         return self._result
 
@@ -280,6 +286,12 @@ def test_validate_vercel_integration_succeeds_with_team_id(monkeypatch) -> None:
     class _CapturingClient:
         def __init__(self, config) -> None:
             captured["team_id"] = config.team_id
+
+        def __enter__(self) -> _CapturingClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
 
         def list_projects(self) -> dict:
             return {"success": True, "projects": [], "total": 0}

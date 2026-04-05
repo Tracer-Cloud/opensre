@@ -361,6 +361,12 @@ def test_verify_vercel_passes_with_valid_token(monkeypatch: pytest.MonkeyPatch) 
         def __init__(self, config: Any) -> None:
             pass
 
+        def __enter__(self) -> _FakeVercelClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
         def list_projects(self) -> dict[str, Any]:
             return {"success": True, "projects": [{"id": "p1"}, {"id": "p2"}], "total": 2}
 
@@ -375,6 +381,12 @@ def test_verify_vercel_passes_with_valid_token(monkeypatch: pytest.MonkeyPatch) 
 def test_verify_vercel_fails_on_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
     class _FakeVercelClient:
         def __init__(self, config: Any) -> None:
+            pass
+
+        def __enter__(self) -> _FakeVercelClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
             pass
 
         def list_projects(self) -> dict[str, Any]:
@@ -396,6 +408,12 @@ def test_verify_vercel_missing_token() -> None:
 def test_verify_integrations_dispatches_to_vercel(monkeypatch: pytest.MonkeyPatch) -> None:
     class _FakeVercelClient:
         def __init__(self, config: Any) -> None:
+            pass
+
+        def __enter__(self) -> _FakeVercelClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
             pass
 
         def list_projects(self) -> dict[str, Any]:
