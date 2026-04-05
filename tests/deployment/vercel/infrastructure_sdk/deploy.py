@@ -14,6 +14,7 @@ from __future__ import annotations
 import time
 
 from tests.deployment.vercel.infrastructure_sdk.client import (
+    VercelPermissionError,
     check_health,
     check_prerequisites,
     create_deployment,

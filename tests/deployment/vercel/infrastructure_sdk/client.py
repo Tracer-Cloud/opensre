@@ -6,6 +6,7 @@ Vercel deployment pipeline. Uses the Vercel API v13 for deployments.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -33,6 +34,10 @@ class handler(BaseHTTPRequestHandler):
 """
 
 
+class VercelPermissionError(PermissionError):
+    """Raised when the token lacks required permissions."""
+
+
 def check_prerequisites() -> dict[str, bool]:
     """Check that required credentials are available."""
     return {
@@ -48,9 +53,33 @@ def get_api_token() -> str:
     return token
 
 
-def _get_team_param() -> dict[str, str]:
-    """Get optional teamId query parameter."""
+def _get_team_id() -> str | None:
+    """Get team ID from env or auto-detect from user's default team."""
     team_id = os.getenv("VERCEL_TEAM_ID")
+    if team_id:
+        return team_id
+
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(
+                f"{VERCEL_API_BASE}/v2/user",
+                headers={"Authorization": f"Bearer {get_api_token()}"},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                default = data.get("user", {}).get("defaultTeamId")
+                if default:
+                    logger.debug("Auto-detected defaultTeamId: %s", default)
+                    return default
+    except httpx.HTTPError:
+        pass
+
+    return None
+
+
+def _get_team_param() -> dict[str, str]:
+    """Get teamId query parameter if available."""
+    team_id = _get_team_id()
     if team_id:
         return {"teamId": team_id}
     return {}
@@ -63,6 +92,46 @@ def _headers() -> dict[str, str]:
     }
 
 
+def _ensure_project(
+    project_name: str,
+    params: dict[str, str],
+) -> str | None:
+    """Create the Vercel project if it doesn't exist. Returns project ID or None."""
+    with httpx.Client(timeout=30) as client:
+        resp = client.get(
+            f"{VERCEL_API_BASE}/v9/projects/{project_name}",
+            headers=_headers(),
+            params=params,
+        )
+        if resp.status_code == 200:
+            project_id: str = resp.json()["id"]
+            logger.info("Project '%s' already exists (id=%s)", project_name, project_id)
+            return project_id
+
+        resp_create = client.post(
+            f"{VERCEL_API_BASE}/v10/projects",
+            headers=_headers(),
+            json={"name": project_name, "framework": None},
+            params=params,
+        )
+        if resp_create.status_code in (200, 201):
+            project_id = resp_create.json()["id"]
+            logger.info("Created project '%s' (id=%s)", project_name, project_id)
+            return project_id
+
+        if resp_create.status_code == 403:
+            body = resp_create.json()
+            msg = body.get("error", {}).get("message", resp_create.text)
+            raise VercelPermissionError(
+                f"Token lacks project creation permission: {msg}. "
+                "Generate a new token at https://vercel.com/account/tokens "
+                "with 'Read/Write' access to Projects and Deployments."
+            )
+
+        resp_create.raise_for_status()
+    return None
+
+
 def create_deployment(
     project_name: str = "opensre-deploy-test",
 ) -> dict[str, str]:
@@ -70,27 +139,27 @@ def create_deployment(
 
     Returns:
         Dict with DeploymentId, DeploymentUrl, ProjectName.
+
+    Raises:
+        VercelPermissionError: If the token lacks deploy/project permissions.
     """
     logger.info("Creating Vercel deployment for project '%s'...", project_name)
+    params = _get_team_param()
+
+    _ensure_project(project_name, params)
+
+    vercel_json = json.dumps(
+        {"version": 2, "builds": [{"src": "api/health.py", "use": "@vercel/python"}]}
+    )
 
     payload: dict[str, Any] = {
         "name": project_name,
         "files": [
-            {
-                "file": "api/health.py",
-                "data": HEALTH_HANDLER_SOURCE,
-            },
-            {
-                "file": "vercel.json",
-                "data": '{"version": 2, "builds": [{"src": "api/health.py", "use": "@vercel/python"}]}',
-            },
+            {"file": "api/health.py", "data": HEALTH_HANDLER_SOURCE},
+            {"file": "vercel.json", "data": vercel_json},
         ],
-        "projectSettings": {
-            "framework": None,
-        },
+        "projectSettings": {"framework": None},
     }
-
-    params = _get_team_param()
 
     with httpx.Client(timeout=60) as client:
         resp = client.post(
@@ -99,6 +168,16 @@ def create_deployment(
             json=payload,
             params=params,
         )
+
+        if resp.status_code == 403:
+            body = resp.json()
+            msg = body.get("error", {}).get("message", resp.text)
+            raise VercelPermissionError(
+                f"Token lacks deployment permission: {msg}. "
+                "Generate a new token at https://vercel.com/account/tokens "
+                "with 'Read/Write' access to Projects and Deployments."
+            )
+
         resp.raise_for_status()
         data = resp.json()
 

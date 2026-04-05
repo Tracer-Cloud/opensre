@@ -35,10 +35,19 @@ def vercel_deployment() -> Generator[dict[str, Any], None, None]:
             "(get one from https://vercel.com/account/tokens)"
         )
 
+    from tests.deployment.vercel.infrastructure_sdk.client import VercelPermissionError
     from tests.deployment.vercel.infrastructure_sdk.deploy import deploy
     from tests.deployment.vercel.infrastructure_sdk.destroy import destroy
 
-    outputs = deploy()
+    try:
+        outputs = deploy()
+    except VercelPermissionError as exc:
+        pytest.skip(
+            f"Vercel token lacks required permissions: {exc}. "
+            "Create a token with Read/Write access to Projects and Deployments."
+        )
+        return  # unreachable but satisfies type checker
+
     try:
         yield outputs
     finally:
