@@ -193,7 +193,6 @@ def _classify_integrations(
                 gitlab_config = build_gitlab_config({
                     "base_url": credentials.get("base_url", ""),
                     "auth_token": credentials.get("auth_token", ""),
-                    "integration_id": integration.get("id", ""),
                 })
             except Exception:
                 continue
