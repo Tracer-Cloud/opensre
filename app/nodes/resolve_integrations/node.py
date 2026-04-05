@@ -20,6 +20,7 @@ from app.integrations.models import (
     DatadogIntegrationConfig,
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
+    OpsGenieIntegrationConfig,
 )
 from app.integrations.sentry import build_sentry_config
 from app.output import get_tracker
@@ -45,6 +46,7 @@ _SERVICE_KEY_MAP = {
     "github": "github",
     "github_mcp": "github",
     "sentry": "sentry",
+    "opsgenie": "opsgenie",
 }
 
 
@@ -185,6 +187,18 @@ def _classify_integrations(
                 continue
             if sentry_config.organization_slug and sentry_config.auth_token:
                 resolved["sentry"] = sentry_config.model_dump()
+
+        elif key == "opsgenie":
+            try:
+                opsgenie_config = OpsGenieIntegrationConfig.model_validate({
+                    "api_key": credentials.get("api_key", ""),
+                    "region": credentials.get("region", "us"),
+                    "integration_id": integration.get("id", ""),
+                })
+            except Exception:
+                continue
+            if opsgenie_config.api_key:
+                resolved["opsgenie"] = opsgenie_config.model_dump()
 
         else:
             resolved[key] = {
@@ -361,6 +375,19 @@ def _load_env_integrations() -> list[dict[str, Any]]:
             "service": "sentry",
             "status": "active",
             "credentials": sentry_config.model_dump(exclude={"integration_id"}),
+        })
+
+    opsgenie_api_key = os.getenv("OPSGENIE_API_KEY", "").strip()
+    if opsgenie_api_key:
+        opsgenie_config = OpsGenieIntegrationConfig.model_validate({
+            "api_key": opsgenie_api_key,
+            "region": os.getenv("OPSGENIE_REGION", "us").strip() or "us",
+        })
+        integrations.append({
+            "id": "env-opsgenie",
+            "service": "opsgenie",
+            "status": "active",
+            "credentials": opsgenie_config.model_dump(exclude={"integration_id"}),
         })
 
     return integrations

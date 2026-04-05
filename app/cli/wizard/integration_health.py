@@ -10,6 +10,7 @@ from app.integrations.clients.coralogix import CoralogixClient
 from app.integrations.clients.datadog import DatadogClient, DatadogConfig
 from app.integrations.clients.grafana import get_grafana_client_from_credentials
 from app.integrations.clients.honeycomb import HoneycombClient
+from app.integrations.clients.opsgenie import OpsGenieClient, OpsGenieConfig
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
@@ -355,3 +356,30 @@ def validate_google_docs_integration(
         ok=True,
         detail=f"Connected to Drive folder {config.folder_id} ({result.get('file_count', 0)} items).",
     )
+
+
+def validate_opsgenie_integration(
+    *,
+    api_key: str,
+    region: str = "us",
+) -> IntegrationHealthResult:
+    """Validate OpsGenie connectivity by listing alerts."""
+    if not api_key:
+        return IntegrationHealthResult(ok=False, detail="OpsGenie API key is required.")
+    try:
+        client = OpsGenieClient(OpsGenieConfig(api_key=api_key, region=region))
+        result = client.list_alerts(limit=1)
+        if result.get("success"):
+            return IntegrationHealthResult(
+                ok=True,
+                detail=f"OpsGenie validated ({region.upper()} region); API key accepted.",
+            )
+        return IntegrationHealthResult(
+            ok=False,
+            detail=f"OpsGenie validation failed: {result.get('error', 'unknown error')}",
+        )
+    except Exception as err:
+        return IntegrationHealthResult(
+            ok=False,
+            detail=f"OpsGenie validation failed: {err}",
+        )

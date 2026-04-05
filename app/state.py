@@ -25,6 +25,7 @@ EvidenceSource = Literal[
     "github",
     "sentry",
     "google_docs",
+    "opsgenie",
 ]
 AgentMode = Literal["chat", "investigation"]
 

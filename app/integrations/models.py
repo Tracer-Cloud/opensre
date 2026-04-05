@@ -176,6 +176,20 @@ class GoogleDocsIntegrationConfig(StrictConfigModel):
         return max(5, min(timeout, 300))
 
 
+class OpsGenieIntegrationConfig(StrictConfigModel):
+    """Normalized OpsGenie credentials used by resolution and verification flows."""
+
+    api_key: str
+    region: str = "us"
+    integration_id: str = ""
+
+    @field_validator("region", mode="before")
+    @classmethod
+    def _normalize_region(cls, value: object) -> str:
+        raw = str(value or "us").strip().lower()
+        return raw if raw in ("us", "eu") else "us"
+
+
 class EffectiveIntegrationEntry(StrictConfigModel):
     """Resolved integration entry with source metadata."""
 
@@ -196,3 +210,4 @@ class EffectiveIntegrations(StrictConfigModel):
     github: EffectiveIntegrationEntry | None = None
     sentry: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
+    opsgenie: EffectiveIntegrationEntry | None = None
