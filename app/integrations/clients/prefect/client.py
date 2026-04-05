@@ -21,9 +21,6 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TIMEOUT = 30
 _PREFECT_CLOUD_BASE = "https://api.prefect.cloud/api"
 
-# Flow run states considered unhealthy
-_FAILED_STATES = {"FAILED", "CRASHED", "CANCELLED", "CANCELLING"}
-
 
 class PrefectConfig(StrictConfigModel):
     """Normalized Prefect credentials.
