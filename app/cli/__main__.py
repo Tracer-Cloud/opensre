@@ -75,6 +75,8 @@ def _render_help() -> None:
     for name, desc in [
         ("onboard",       "Run the interactive onboarding wizard."),
         ("investigate",   "Run an RCA investigation against an alert payload."),
+        ("deploy",        "Deploy OpenSRE to a cloud environment (EC2)."),
+        ("remote",        "Connect to a remote deployed agent."),
         ("tests",         "Browse and run inventoried tests from the terminal."),
         ("integrations",  "Manage local integration credentials."),
         ("health",        "Check integration and agent setup status."),
@@ -109,6 +111,8 @@ def _render_landing() -> None:
     for cmd, desc in [
         ("opensre onboard",                   "Configure LLM provider and integrations"),
         ("opensre investigate -i alert.json", "Run RCA against an alert payload"),
+        ("opensre deploy ec2",               "Deploy investigation server on AWS EC2"),
+        ("opensre remote --url <ip> health", "Check a remote deployed agent"),
         ("opensre tests",                     "Browse and run inventoried tests"),
         ("opensre integrations list",         "Show configured integrations"),
         ("opensre health",                    "Check integration and agent setup status"),
@@ -434,6 +438,55 @@ def run(test_id: str, dry_run: bool) -> None:
 
     capture_test_run_started(test_id, dry_run=dry_run)
     raise SystemExit(run_catalog_item(item, dry_run=dry_run))
+
+
+@cli.group(invoke_without_command=True)
+@click.pass_context
+def deploy(ctx: click.Context) -> None:
+    """Deploy OpenSRE to a cloud environment."""
+    if ctx.invoked_subcommand is None:
+        click.echo("Available deployment targets:\n")
+        click.echo("  opensre deploy ec2          Deploy investigation server on AWS EC2 (Bedrock)")
+        click.echo("  opensre deploy ec2 --down   Tear down the EC2 deployment")
+        click.echo("\nRun 'opensre deploy <target> --help' for details.")
+
+
+@deploy.command()
+@click.option("--down", is_flag=True, default=False, help="Tear down the deployment instead of creating it.")
+@click.option(
+    "--branch", default="feature/connect-remote",
+    help="Git branch to clone on the instance.",
+)
+def ec2(down: bool, branch: str) -> None:
+    """Deploy the investigation server on an AWS EC2 instance.
+
+    \b
+    Uses Amazon Bedrock for LLM inference (no API key needed).
+    The instance gets an IAM role with Bedrock access.
+
+    \b
+    Examples:
+      opensre deploy ec2                 # spin up the server
+      opensre deploy ec2 --down          # tear it down
+      opensre deploy ec2 --branch main   # deploy from a specific branch
+    """
+    if down:
+        from tests.deployment.ec2.infrastructure_sdk.destroy_remote import destroy
+
+        destroy()
+    else:
+        from tests.deployment.ec2.infrastructure_sdk.deploy_remote import deploy as run_deploy
+
+        outputs = run_deploy(branch=branch)
+
+        ip = outputs.get("PublicIpAddress", "")
+        port = outputs.get("ServerPort", "8080")
+        if ip:
+            from app.cli.wizard.store import save_remote_url
+
+            url = f"http://{ip}:{port}"
+            save_remote_url(url)
+            click.echo("\n  Remote URL saved. You can now run:\n    opensre remote health")
 
 
 @cli.group()
