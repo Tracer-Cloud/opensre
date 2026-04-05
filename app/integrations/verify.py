@@ -27,8 +27,8 @@ from app.integrations.models import (
     SlackWebhookConfig,
     TracerIntegrationConfig,
 )
-from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.mongodb import build_mongodb_config, validate_mongodb_config
+from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
 from app.nodes.resolve_integrations.node import (
     _classify_integrations,

@@ -264,9 +264,9 @@ def setup(service: str | None) -> None:
     """Set up credentials for a service."""
     from app.integrations.cli import cmd_setup
 
-    set_command_context("integrations setup", {"service": service or "prompt"})
+    capture_integration_setup_started(service or "prompt")
     cmd_setup(service)
-    capture_integration_setup_completed(service)
+    capture_integration_setup_completed(service or "prompt")
 
 
 @integrations.command(name="list")
