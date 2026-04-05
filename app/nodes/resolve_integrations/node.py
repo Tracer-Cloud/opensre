@@ -11,6 +11,7 @@ import logging
 import os
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from app.integrations.github_mcp import build_github_mcp_config
@@ -22,8 +23,6 @@ from app.integrations.models import (
     HoneycombIntegrationConfig,
     OpsGenieIntegrationConfig,
 )
-from langchain_core.runnables import RunnableConfig
-
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.sentry import build_sentry_config
 from app.output import get_tracker
