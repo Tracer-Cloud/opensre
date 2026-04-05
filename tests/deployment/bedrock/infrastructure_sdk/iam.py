@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from typing import Any
 
 from botocore.exceptions import ClientError
+
+logger = logging.getLogger(__name__)
 
 from tests.shared.infrastructure_sdk.deployer import (
     DEFAULT_REGION,
@@ -86,15 +89,17 @@ def delete_bedrock_agent_role(name: str, region: str = DEFAULT_REGION) -> None:
         attached = iam_client.list_attached_role_policies(RoleName=name)
         for policy in attached.get("AttachedPolicies", []):
             iam_client.detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
-    except ClientError:
-        pass
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "NoSuchEntity":
+            logger.warning("Failed to detach policies from role %s: %s", name, e)
 
     try:
         inline = iam_client.list_role_policies(RoleName=name)
         for policy_name in inline.get("PolicyNames", []):
             iam_client.delete_role_policy(RoleName=name, PolicyName=policy_name)
-    except ClientError:
-        pass
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "NoSuchEntity":
+            logger.warning("Failed to delete inline policies from role %s: %s", name, e)
 
     try:
         iam_client.delete_role(RoleName=name)
