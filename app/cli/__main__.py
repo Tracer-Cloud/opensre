@@ -454,7 +454,7 @@ def deploy(ctx: click.Context) -> None:
 @deploy.command()
 @click.option("--down", is_flag=True, default=False, help="Tear down the deployment instead of creating it.")
 @click.option(
-    "--branch", default="feature/connect-remote",
+    "--branch", default="main",
     help="Git branch to clone on the instance.",
 )
 def ec2(down: bool, branch: str) -> None:

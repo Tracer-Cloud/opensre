@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from tests.deployment.ec2.infrastructure_sdk import deploy as deploy_module

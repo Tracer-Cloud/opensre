@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
-from app.remote.stream import StreamEvent, _build_event, _extract_node_name, parse_sse_stream
+from app.remote.stream import _build_event, _extract_node_name, parse_sse_stream
 
 
 class TestBuildEvent:

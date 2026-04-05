@@ -35,11 +35,11 @@ def test_create_instance_profile_returns_profile_details(
     assert result["RoleName"] == "test-role"
 
 
-def test_generate_user_data_includes_docker_build() -> None:
+def test_generate_user_data_includes_docker_pull() -> None:
     user_data = instance_module.generate_user_data(
         env_vars={"OPENAI_API_KEY": "sk-123"},
     )
 
-    assert "docker build" in user_data
+    assert "docker pull" in user_data
     assert "docker run" in user_data
     assert "OPENAI_API_KEY" in user_data

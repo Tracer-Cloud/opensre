@@ -38,7 +38,7 @@ REGION = DEFAULT_REGION
 _DOTENV_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".env")
 
 
-def deploy(branch: str = "feature/connect-remote") -> dict[str, str]:
+def deploy(branch: str = "main") -> dict[str, str]:
     """Bootstrap the OpenSRE investigation server on a fresh EC2 instance.
 
     Returns:

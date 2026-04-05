@@ -37,7 +37,7 @@ def get_latest_al2023_ami(region: str = DEFAULT_REGION) -> str:
 
 def generate_remote_user_data(
     env_vars: dict[str, str],
-    branch: str = "feature/connect-remote",
+    branch: str = "main",
 ) -> str:
     """Cloud-init bash script that bootstraps the full OpenSRE server.
 

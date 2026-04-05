@@ -166,6 +166,8 @@ class RemoteAgentClient:
                 result.node_names_seen.append(event.node_name)
             if event.event_type != "updates":
                 continue
+            if not event.node_name:
+                continue
             update = event.data.get(event.node_name, event.data)
             if isinstance(update, dict):
                 result.final_state.update(update)

@@ -12,6 +12,8 @@ Start with::
 from __future__ import annotations
 
 import re
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,10 +26,16 @@ from app.version import get_version
 
 load_dotenv(override=False)
 
-app = FastAPI(title="OpenSRE Remote", version=get_version())
-
 INVESTIGATIONS_DIR = Path("/opt/opensre/investigations")
-INVESTIGATIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    INVESTIGATIONS_DIR.mkdir(parents=True, exist_ok=True)
+    yield
+
+
+app = FastAPI(title="OpenSRE Remote", version=get_version(), lifespan=_lifespan)
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +140,8 @@ def list_investigations() -> list[InvestigationMeta]:
 @app.get("/investigations/{inv_id}")
 def get_investigation(inv_id: str) -> Response:
     """Return the raw ``.md`` content of a single investigation."""
+    if not re.fullmatch(r"[\w\-]+", inv_id):
+        raise HTTPException(status_code=400, detail="Invalid investigation ID")
     path = INVESTIGATIONS_DIR / f"{inv_id}.md"
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Investigation {inv_id} not found")

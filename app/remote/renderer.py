@@ -21,17 +21,7 @@ _RESET = "\033[0m"
 _DIM = "\033[2m"
 _BOLD = "\033[1m"
 _WHITE = "\033[37m"
-_GREEN = "\033[1;32m"
 _CYAN = "\033[1;36m"
-
-_INVESTIGATION_NODES = (
-    "extract_alert",
-    "resolve_integrations",
-    "plan_actions",
-    "investigate",
-    "diagnose",
-    "publish",
-)
 
 
 class StreamRenderer:
@@ -77,7 +67,7 @@ class StreamRenderer:
 
         self._finish_active_node()
         self._print_report()
-        return self._final_state
+        return dict(self._final_state)
 
     def _handle_event(self, event: StreamEvent) -> None:
         self._events_received += 1
