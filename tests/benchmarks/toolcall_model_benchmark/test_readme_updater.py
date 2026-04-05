@@ -129,8 +129,15 @@ class TestExtractSummaryFromReport:
         assert "| Scenario |" in snippet
         assert "001-replication-lag" in snippet
         assert "002-connection-exhaustion" in snippet
-        assert "Cases: 2" in snippet
+        assert "1/2 passed" in snippet
         assert "docs/benchmarks/results.md" in snippet
+
+    def test_uses_compact_format(self) -> None:
+        """Both update paths must produce the same compact 5-column table."""
+        snippet = extract_summary_from_report(SAMPLE_REPORT)
+        assert "| Scenario | Status | Duration (s) | Tokens | Est. Cost (USD) |" in snippet
+        # Must NOT contain the verbose 8-column header from results.md
+        assert "Input Tokens" not in snippet
 
     def test_includes_link_to_full_report(self) -> None:
         snippet = extract_summary_from_report(SAMPLE_REPORT)

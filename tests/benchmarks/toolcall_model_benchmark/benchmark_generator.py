@@ -303,7 +303,10 @@ def main(argv: list[str] | None = None) -> int:
         else:
             readme_path = _find_repo_root() / "README.md"
         snippet = render_readme_summary(cases, summary)
-        update_readme_benchmarks(readme_path, snippet)
+        try:
+            update_readme_benchmarks(readme_path, snippet)
+        except ValueError as exc:
+            logger.warning("Skipped README update: %s", exc)
 
     return 0 if summary.error_count == 0 else 1
 
