@@ -15,8 +15,10 @@ Optional env vars:
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -28,7 +30,8 @@ from app.integrations.gitlab import (
     get_gitlab_pipelines,
     validate_gitlab_config,
 )
-from tests.utils.alert_factory import create_alert
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -180,32 +183,20 @@ def test_gitlab_investigation_e2e():
 
     from app.cli.investigate import run_investigation_cli
 
-    pipeline_name = "api_service"
-    run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
+    # Load the shared fixture and patch in the real project URL so the
+    # detect_sources.py repo_url parser picks up the configured project.
+    fixture_path = FIXTURES_DIR / "gitlab_high_error_rate_alert.json"
+    raw_alert = json.loads(fixture_path.read_text())
     repo_url = _gitlab_project_url(base_url, project_id)
-
-    # Grafana-style alert: primary signal is service degradation.
-    # repo_url is the hook that makes detect_sources.py wire in GitLab tools.
-    raw_alert = create_alert(
-        pipeline_name=pipeline_name,
-        run_name=run_id,
-        status="failed",
-        timestamp=datetime.now(UTC).isoformat(),
-        severity="critical",
-        alert_name="HighErrorRate",
-        annotations={
-            "summary": "Error rate exceeded 5% threshold on api_service",
-            "repo_url": repo_url,
-            "branch": "main",
-            "correlation_id": run_id,
-        },
-    )
+    for alert in raw_alert.get("alerts", []):
+        alert.setdefault("annotations", {})["repo_url"] = repo_url
+    raw_alert.setdefault("commonAnnotations", {})["repo_url"] = repo_url
 
     print(f"\nRunning investigation — primary: Grafana alert, supplementary: GitLab ({project_id})")
 
     investigation_result = run_investigation_cli(
         alert_name="High error rate: api_service",
-        pipeline_name=pipeline_name,
+        pipeline_name="api_service",
         severity="critical",
         raw_alert=raw_alert,
     )
