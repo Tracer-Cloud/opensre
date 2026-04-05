@@ -839,12 +839,7 @@ def _configure_jira() -> tuple[str, str]:
                 "api_token": api_token,
                 "project_key": project_key,
             }})
-            env_path = sync_env_values({
-                "JIRA_BASE_URL": base_url,
-                "JIRA_EMAIL": email,
-                "JIRA_API_TOKEN": api_token,
-                "JIRA_PROJECT_KEY": project_key,
-            })
+            env_path = sync_env_values({})
             return "Jira", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
