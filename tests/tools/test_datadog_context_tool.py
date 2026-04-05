@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from app.tools.DataDogContextTool import fetch_datadog_context
 from tests.tools.conftest import BaseToolContract, mock_agent_state

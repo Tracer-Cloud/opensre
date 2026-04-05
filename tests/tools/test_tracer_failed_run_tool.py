@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from app.services.tracer_client import PipelineRunSummary
 from app.tools.TracerFailedRunTool import fetch_failed_run
-from tests.tools.conftest import BaseToolContract, mock_agent_state
+from tests.tools.conftest import BaseToolContract
 
 
 class TestTracerFailedRunToolContract(BaseToolContract):

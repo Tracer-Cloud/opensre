@@ -4,8 +4,6 @@ If this test fails, a field was added/removed in one definition but not the othe
 Fix the drift by updating both classes in app/state/agent_state.py.
 """
 
-import pytest
-
 from app.state.agent_state import AgentState, AgentStateModel
 
 
