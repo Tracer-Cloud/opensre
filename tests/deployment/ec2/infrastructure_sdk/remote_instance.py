@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 INSTANCE_TYPE = "t3.medium"
 SERVER_PORT = 8080
-REPO_URL = "https://github.com/Tracer-Cloud/tracer-agent-2026.git"
+REPO_URL = "https://github.com/Tracer-Cloud/opensre.git"
 
 HEALTH_POLL_INTERVAL = 10
 HEALTH_MAX_ATTEMPTS = 60  # 10 min ceiling (pip install can be slow)
