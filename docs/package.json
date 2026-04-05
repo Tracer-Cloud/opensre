@@ -10,7 +10,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Tracer-Cloud/opensre.git",
-    "directory": "docs-mintlify"
+    "directory": "docs"
   },
   "keywords": [
     "opensre",
@@ -22,5 +22,5 @@
   "bugs": {
     "url": "https://github.com/Tracer-Cloud/opensre/issues"
   },
-  "homepage": "https://github.com/Tracer-Cloud/opensre/tree/main/docs-mintlify#readme"
+  "homepage": "https://github.com/Tracer-Cloud/opensre/tree/main/docs#readme"
 }

@@ -22,7 +22,7 @@ This document describes how to set up your environment, propose changes, report 
 
 ### Environment Setup
 
-See **[SETUP.md](docs/SETUP.md)** for detailed setup instructions including Windows-specific guidance.
+See **[SETUP.md](SETUP.md)** for detailed setup instructions including Windows-specific guidance.
 
 **Quick start:**
 

@@ -84,18 +84,19 @@ jobs:
         shell: bash
         run: |
           archive_path="${{ steps.generate.outputs.archive_path }}"
+          overview_path="${{ steps.generate.outputs.overview_path }}"
           if [ -z "$archive_path" ]; then
             echo "Daily update generator did not emit archive_path."
             exit 1
           fi
 
-          if [ -z "$(git status --short -- "$archive_path")" ]; then
+          if [ -z "$(git status --short -- "$archive_path" "$overview_path")" ]; then
             echo "No archive changes to commit."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$archive_path"
+          git add "$archive_path" "$overview_path"
           git commit -m "docs(daily-update): archive ${{ steps.generate.outputs.london_date }}"
           git push

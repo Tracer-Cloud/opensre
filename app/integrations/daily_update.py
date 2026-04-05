@@ -381,7 +381,7 @@ def _thanks_line(pull_requests: tuple[PullRequestSummary, ...]) -> str:
             contributors[key] = contributor.display_name
     return (
         "Thanks to everyone who contributed today: "
-        f"{format_name_list(sorted(contributors.values(), key=str.lower))} :pray::rocket:"
+        f"{format_name_list(sorted(contributors.values(), key=str.lower))} \U0001f64f\U0001f680"
     )
 
 
@@ -487,11 +487,13 @@ def build_daily_update(repository: str, window: DailyWindow, pull_requests: tupl
 
 
 def render_markdown(update: DailyUpdate) -> str:
-    """Render a committed archive document for docs/daily-updates."""
+    """Render a committed MDX archive document for docs/daily-updates."""
+    london_date = update.window.london_date.isoformat()
     lines = [
-        f"# {update.title}",
-        "",
-        f"Date: {update.window.london_date.isoformat()} (Europe/London)",
+        "---",
+        f'title: "Daily Update \u2014 {london_date}"',
+        f'description: "OpenSRE engineering daily update for {london_date} (Europe/London)"',
+        "---",
         "",
         update.thanks_line,
         "",
@@ -543,12 +545,45 @@ def _output_dir() -> Path:
     return _repo_root() / configured
 
 
+def regenerate_overview(output_dir: Path) -> Path:
+    """Rebuild the overview page listing all daily updates in reverse chronological order."""
+    overview_path = output_dir / "overview.mdx"
+    archive_files = sorted(
+        (p for p in output_dir.glob("*.mdx") if p.name != "overview.mdx"),
+        key=lambda p: p.stem,
+        reverse=True,
+    )
+
+    lines = [
+        "---",
+        'title: "Daily Updates"',
+        'description: "Automatically generated daily engineering updates from merged pull requests"',
+        "---",
+        "",
+        "Daily updates are generated each evening (Europe/London) from the pull requests merged that day.",
+        "",
+        "| Date | Link |",
+        "| ---- | ---- |",
+    ]
+    for archive_file in archive_files:
+        slug = f"daily-updates/{archive_file.stem}"
+        lines.append(f"| {archive_file.stem} | [{archive_file.stem}](/{slug}) |")
+
+    if not archive_files:
+        lines.append("| — | No daily updates yet. |")
+
+    lines.append("")
+    overview_path.write_text("\n".join(lines), encoding="utf-8")
+    return overview_path
+
+
 def write_daily_archive(update: DailyUpdate, *, output_dir: Path | None = None) -> Path:
-    """Persist the generated markdown archive under docs/daily-updates."""
+    """Persist the generated MDX archive under docs/daily-updates."""
     target_dir = output_dir or _output_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
-    archive_path = target_dir / f"{update.window.london_date.isoformat()}.md"
+    archive_path = target_dir / f"{update.window.london_date.isoformat()}.mdx"
     archive_path.write_text(render_markdown(update), encoding="utf-8")
+    regenerate_overview(target_dir)
     return archive_path
 
 
@@ -577,11 +612,15 @@ def main() -> int:
     archive_path = write_daily_archive(update)
 
     relative_archive_path = archive_path.relative_to(_repo_root()).as_posix()
+    overview_path = archive_path.parent / "overview.mdx"
+    relative_overview_path = overview_path.relative_to(_repo_root()).as_posix()
     _append_github_output("archive_path", relative_archive_path)
+    _append_github_output("overview_path", relative_overview_path)
     _append_github_output("used_fallback", "true" if update.fallback_used else "false")
     _append_github_output("london_date", update.window.london_date.isoformat())
 
     print(f"Wrote daily update archive to {relative_archive_path}")
+    print(f"Regenerated overview at {relative_overview_path}")
     return 0
 
 

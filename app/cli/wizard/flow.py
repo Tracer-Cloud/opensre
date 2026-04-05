@@ -88,6 +88,10 @@ def validate_notion_integration(**kwargs):
 
     return _validate(**kwargs)
 
+def validate_jira_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_jira_integration as _validate
+
+    return _validate(**kwargs)
 
 def validate_google_docs_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_google_docs_integration as _validate
@@ -836,6 +840,36 @@ def _configure_notion() -> tuple[str, str]:
             return "Notion", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
+def _configure_jira() -> tuple[str, str]:
+    _, credentials = _integration_defaults("jira")
+    _console.print("\n[bold]Jira Integration[/bold]")
+    _console.print("Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens\n")
+
+    while True:
+        base_url = _prompt_value("Jira base URL (e.g. https://myteam.atlassian.net)")
+        email = _prompt_value("Jira account email")
+        api_token = _prompt_value("Jira API token", secret=True)
+        project_key = _prompt_value("Jira project key (e.g. OPS)")
+
+        with _console.status("Validating Jira connection...", spinner="dots"):
+            result = validate_jira_integration(
+                base_url=base_url,
+                email=email,
+                api_token=api_token,
+                project_key=project_key,
+            )
+        _render_integration_result("Jira", result)
+
+        if result.ok:
+            upsert_integration("jira", {"credentials": {
+                "base_url": base_url,
+                "email": email,
+                "api_token": api_token,
+                "project_key": project_key,
+            }})
+            env_path = sync_env_values({})
+            return "Jira", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 def _configure_google_docs() -> tuple[str, str]:
     _, credentials = _integration_defaults("google_docs")
@@ -965,6 +999,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             hint="Monitor deployments and fetch runtime logs",
         ),
         Choice(
+            value="jira",
+            label="Jira",
+            hint="File and update incident tickets automatically",
+        ),
+        Choice(
             value="opsgenie",
             label="OpsGenie",
             hint="Investigate alerts and triage state from OpsGenie",
@@ -1000,6 +1039,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "sentry": _configure_sentry,
         "google_docs": _configure_google_docs,
         "vercel": _configure_vercel,
+        "jira": _configure_jira,
         "opsgenie": _configure_opsgenie,
         "notion": _configure_notion,
     }
@@ -1015,6 +1055,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "sentry": "sentry",
         "google_docs": "google docs",
         "vercel": "vercel",
+        "jira": "jira",
         "opsgenie": "opsgenie",
         "notion": "notion",
     }

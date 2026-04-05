@@ -6,7 +6,7 @@
 
 <h1>OpenSRE: Build Your Own AI SRE Agents</h1>
 
-<p>The open-source framework for AI SRE agents, and the training and evaluation environment they need to improve. Connect the tools you already run, define your own workflows, and investigate incidents on your own infrastructure.</p>
+<p>The open-source framework for AI SRE agents, and the training and evaluation environment they need to improve. Connect the 40+ tools you already run, define your own workflows, and investigate incidents on your own infrastructure.</p>
 
 <p>
   <a href="https://github.com/Tracer-Cloud/opensre/stargazers"><img src="https://img.shields.io/github/stars/Tracer-Cloud/opensre?style=flat-square&color=FF6B00" alt="Stars"></a>
@@ -20,7 +20,7 @@
     <a href="https://app.tracer.cloud/">Getting Started</a> ·
     <a href="https://tracer.cloud/">Tracer Agent</a> ·
     <a href="https://tracer.mintlify.app/">Docs</a> ·
-    <a href="docs/FAQ.md">FAQ</a> ·
+    <a href="https://tracer.mintlify.app/faq">FAQ</a> ·
     <a href="https://trust.tracer.cloud/">Security</a>
   </strong>
 </p>
@@ -324,6 +324,13 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/142524747?v=4" width="100;" alt="Devesh36"/>
             <br />
             <sub><b>Devesh36</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/KindaJayant">
+            <img src="https://avatars.githubusercontent.com/u/136953152?v=4" width="100;" alt="KindaJayant"/>
+            <br />
+            <sub><b>KindaJayant</b></sub>
         </a>
     </td>
 		</tr>

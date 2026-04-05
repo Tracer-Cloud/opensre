@@ -35,7 +35,8 @@
       {
         "group": "Getting started",
         "pages": [
-          "quickstart"
+          "quickstart",
+          "faq"
         ]
       },
       {
@@ -51,6 +52,12 @@
         "group": "Investigations",
         "pages": [
           "investigation-overview"
+        ]
+      },
+      {
+        "group": "Daily Updates",
+        "pages": [
+          "daily-updates/overview"
         ]
       },
       {

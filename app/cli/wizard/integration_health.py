@@ -400,6 +400,42 @@ def validate_vercel_integration(*, api_token: str, team_id: str = "") -> Integra
         return IntegrationHealthResult(ok=False, detail=f"Vercel validation failed: {err}")
 
 
+def validate_jira_integration(*, base_url: str, email: str, api_token: str, project_key: str) -> IntegrationHealthResult:
+    """Validate Jira connectivity and project key accessibility."""
+    import httpx
+
+    try:
+        resp = httpx.get(
+            f"{base_url.rstrip('/')}/rest/api/3/myself",
+            auth=(email, api_token),
+            headers={"Accept": "application/json"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            display = data.get("displayName") or data.get("emailAddress") or email
+
+            project_resp = httpx.get(
+                f"{base_url.rstrip('/')}/rest/api/3/project/{project_key}",
+                auth=(email, api_token),
+                headers={"Accept": "application/json"},
+                timeout=10,
+            )
+            if project_resp.status_code == 404:
+                return IntegrationHealthResult(ok=False, detail=f"Project '{project_key}' not found. Check the project key.")
+            if project_resp.status_code != 200:
+                return IntegrationHealthResult(ok=False, detail=f"Could not verify project '{project_key}': HTTP {project_resp.status_code}.")
+
+            return IntegrationHealthResult(ok=True, detail=f"Jira connected as {display}, project '{project_key}' verified.")
+        if resp.status_code == 401:
+            return IntegrationHealthResult(ok=False, detail="Jira credentials invalid. Check email and API token.")
+        if resp.status_code == 404:
+            return IntegrationHealthResult(ok=False, detail="Jira base URL not found. Check the URL.")
+        return IntegrationHealthResult(ok=False, detail=f"Jira returned unexpected status {resp.status_code}.")
+    except Exception as e:
+        return IntegrationHealthResult(ok=False, detail=f"Jira validation failed: {e}")
+
+
 def validate_opsgenie_integration(
     *,
     api_key: str,

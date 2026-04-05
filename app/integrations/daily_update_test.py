@@ -119,8 +119,8 @@ def test_render_outputs_include_expected_sections() -> None:
 
     markdown = render_markdown(update)
 
-    assert "# Daily opensre update" in markdown
-    assert "Thanks to everyone who contributed today: Alice and Bob :pray::rocket:" in markdown
+    assert 'title: "Daily Update' in markdown
+    assert "Thanks to everyone who contributed today: Alice and Bob \U0001f64f\U0001f680" in markdown
     assert "## Main updates shipped" in markdown
     assert "## Source pull requests" in markdown
     assert "[#101](https://github.com/Tracer-Cloud/opensre/pull/101)" in markdown
