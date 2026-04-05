@@ -129,7 +129,7 @@ class AgentStateModel(StrictConfigModel):
     slack_context: dict[str, Any] = Field(default_factory=dict)
     thread_id: str = ""
     run_id: str = ""
-    auth_token: str = Field(default="", alias="_auth_token")
+    auth_token: str = Field(default="", alias="_auth_token", exclude=True)
     slack_message: str = ""
     problem_md: str = ""
     summary: str = ""

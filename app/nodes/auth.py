@@ -26,7 +26,6 @@ def _extract_auth(state: AgentState, config: RunnableConfig) -> dict[str, str]:
         "organization_slug": auth.get("organization_slug", ""),
         "thread_id": thread_id,
         "run_id": run_id,
-        "_auth_token": auth_token,
     }
 
 

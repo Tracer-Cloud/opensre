@@ -26,6 +26,8 @@ from app.integrations.mongodb import build_mongodb_config
 from app.integrations.sentry import build_sentry_config
 from app.output import get_tracker
 from app.services.vercel import VercelConfig
+from langchain_core.runnables import RunnableConfig
+
 from app.state import InvestigationState
 
 logger = logging.getLogger(__name__)
@@ -479,7 +481,7 @@ def _merge_integrations_by_service(
 
 
 @traceable(name="node_resolve_integrations")
-def node_resolve_integrations(state: InvestigationState) -> dict:
+def node_resolve_integrations(state: InvestigationState, config: RunnableConfig = None) -> dict:
     """Fetch all org integrations and classify them by service.
 
     Priority:
@@ -491,7 +493,11 @@ def node_resolve_integrations(state: InvestigationState) -> dict:
     tracker.start("resolve_integrations", "Fetching org integrations")
     org_id = state.get("org_id", "")
 
-    webhook_token = _strip_bearer(state.get("_auth_token", "").strip())
+    configurable = (config or {}).get("configurable", {})
+    auth_user = configurable.get("langgraph_auth_user", {})
+    webhook_token = _strip_bearer(
+        (auth_user.get("token", "") or state.get("_auth_token", "")).strip()
+    )
     if webhook_token:
         if not org_id:
             org_id = _decode_org_id_from_token(webhook_token)
