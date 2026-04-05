@@ -72,7 +72,7 @@ def _get_team_id() -> str | None:
                     logger.debug("Auto-detected defaultTeamId: %s", default)
                     return default
     except httpx.HTTPError:
-        pass
+        logger.debug("Could not auto-detect team ID from user endpoint")
 
     return None
 

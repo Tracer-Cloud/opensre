@@ -59,7 +59,6 @@ def deploy() -> dict[str, str]:
         description="Allow LangGraph API port for OpenSRE deployment tests",
         ingress_rules=[
             {"port": 2024, "cidr": "0.0.0.0/0", "description": "LangGraph API"},
-            {"port": 22, "cidr": "0.0.0.0/0", "description": "SSH"},
         ],
         stack_name=STACK_NAME,
         region=REGION,

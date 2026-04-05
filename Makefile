@@ -319,7 +319,7 @@ help:
 	@echo "  make destroy-bedrock   - Destroy Bedrock Agent stack"
 	@echo "  make test-bedrock      - Run Bedrock Agent deployment tests"
 	@echo "  make deploy-langsmith  - Deploy to LangSmith/LangGraph Cloud"
-	@echo "  make destroy-langsmith - Clean up LangSmith deployment outputs"
+	@echo "  make destroy-langsmith - Clean up local outputs (remote deployment persists)"
 	@echo "  make test-langsmith    - Run LangSmith deployment tests"
 	@echo "  make deploy-vercel     - Deploy health-check function to Vercel"
 	@echo "  make destroy-vercel    - Destroy Vercel deployment"

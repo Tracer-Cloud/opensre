@@ -6,9 +6,9 @@ exposes the LangGraph API on port 2024.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
-from typing import Any
 
 import requests
 from botocore.exceptions import ClientError
@@ -50,7 +50,7 @@ def generate_user_data(env_vars: dict[str, str] | None = None) -> str:
     """
     env_flags = ""
     if env_vars:
-        env_flags = " ".join(f'-e {k}="{v}"' for k, v in env_vars.items())
+        env_flags = " ".join(f"-e {k}='{v}'" for k, v in env_vars.items())
 
     return f"""\
 #!/bin/bash
@@ -88,8 +88,6 @@ def create_instance_profile(
     Returns:
         Dict with ProfileName and ProfileArn.
     """
-    import json
-
     iam = get_boto3_client("iam", region)
     tags = get_standard_tags(stack_name)
 

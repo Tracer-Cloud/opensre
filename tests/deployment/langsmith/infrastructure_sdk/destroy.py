@@ -32,8 +32,12 @@ def destroy() -> dict[str, list[str]]:
     try:
         outputs = load_outputs(STACK_NAME)
         name = outputs.get("DeploymentName", "unknown")
-        print(f"  - Deployment '{name}' was deployed to LangSmith.")
-        print("  - To fully remove, delete the deployment from the LangSmith dashboard.")
+        print("  *** WARNING ***")
+        print(f"  The LangSmith deployment '{name}' is still running remotely.")
+        print("  This script only removes the local outputs file.")
+        print("  To delete the deployment, visit the LangSmith dashboard:")
+        print("    https://smith.langchain.com/")
+        print("  *** WARNING ***")
         results["deleted"].append(f"langsmith-deployment:{name}")
     except FileNotFoundError:
         print("No outputs file found — nothing to clean up.")

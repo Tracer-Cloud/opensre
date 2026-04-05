@@ -6,7 +6,6 @@ Run manually with: pytest tests/deployment/langsmith/ -v -s
 
 from __future__ import annotations
 
-import os
 from collections.abc import Generator
 from typing import Any
 
@@ -19,11 +18,10 @@ def _langsmith_available() -> bool:
     """Return True when LangSmith credentials and tools are available."""
     if not infrastructure_available():
         return False
-    return bool(
-        os.getenv("LANGSMITH_API_KEY")
-        or os.getenv("LANGGRAPH_HOST_API_KEY")
-        or os.getenv("LANGCHAIN_API_KEY")
-    )
+    from tests.deployment.langsmith.infrastructure_sdk.client import check_prerequisites
+
+    prereqs = check_prerequisites()
+    return all(prereqs.values())
 
 
 @pytest.fixture(scope="session")
