@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.DataDogNodePodsTool import get_pods_on_node
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestDataDogNodePodsToolContract(BaseToolContract):

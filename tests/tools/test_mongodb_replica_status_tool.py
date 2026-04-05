@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from tests.tools.conftest import BaseToolContract
-
 from app.tools.MongoDBReplicaStatusTool import get_mongodb_replica_status
+from tests.tools.conftest import BaseToolContract
 
 
 class TestMongoDBReplicaStatusToolContract(BaseToolContract):

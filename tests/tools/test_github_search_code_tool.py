@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.GitHubSearchCodeTool import search_github_code
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestGitHubSearchCodeToolContract(BaseToolContract):
@@ -49,13 +48,13 @@ def test_run_happy_path() -> None:
     }
     from unittest.mock import MagicMock
     mock_config = MagicMock()
-    with patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None):
-        with patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config):
-            with patch("app.tools.GitHubSearchCodeTool.call_github_mcp_tool", return_value=fake_result):
-                result = search_github_code(
-                    owner="org", repo="repo", query="error",
-                    github_url="http://mcp", github_mode="streamable-http", github_token="tok",
-                )
+    with patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None), \
+         patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config), \
+         patch("app.tools.GitHubSearchCodeTool.call_github_mcp_tool", return_value=fake_result):
+        result = search_github_code(
+            owner="org", repo="repo", query="error",
+            github_url="http://mcp", github_mode="streamable-http", github_token="tok",
+        )
     assert result["available"] is True
     assert result["matches"] == fake_result["structured_content"]
 
@@ -69,12 +68,12 @@ def test_run_tool_error() -> None:
     }
     from unittest.mock import MagicMock
     mock_config = MagicMock()
-    with patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None):
-        with patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config):
-            with patch("app.tools.GitHubSearchCodeTool.call_github_mcp_tool", return_value=fake_result):
-                result = search_github_code(
-                    owner="org", repo="repo", query="error",
-                    github_url="http://mcp", github_mode="streamable-http", github_token="tok",
-                )
+    with patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None), \
+         patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config), \
+         patch("app.tools.GitHubSearchCodeTool.call_github_mcp_tool", return_value=fake_result):
+        result = search_github_code(
+            owner="org", repo="repo", query="error",
+            github_url="http://mcp", github_mode="streamable-http", github_token="tok",
+        )
     assert result["available"] is False
     assert "rate limited" in result["error"]

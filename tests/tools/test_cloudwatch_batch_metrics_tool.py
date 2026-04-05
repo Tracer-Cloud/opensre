@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from tests.tools.conftest import BaseToolContract
-
 from app.tools.CloudWatchBatchMetricsTool import get_cloudwatch_batch_metrics
+from tests.tools.conftest import BaseToolContract
 
 
 class TestCloudWatchBatchMetricsToolContract(BaseToolContract):

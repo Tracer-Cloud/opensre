@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.CloudWatchLogsTool import get_cloudwatch_logs
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestCloudWatchLogsToolContract(BaseToolContract):

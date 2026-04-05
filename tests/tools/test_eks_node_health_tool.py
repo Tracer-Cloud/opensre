@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.EKSNodeHealthTool import get_eks_node_health
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestEKSNodeHealthToolContract(BaseToolContract):

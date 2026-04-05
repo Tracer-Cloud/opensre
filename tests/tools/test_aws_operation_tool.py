@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from tests.tools.conftest import BaseToolContract
-
 from app.tools.AWSOperationTool import execute_aws_operation
+from tests.tools.conftest import BaseToolContract
 
 
 class TestAWSOperationToolContract(BaseToolContract):

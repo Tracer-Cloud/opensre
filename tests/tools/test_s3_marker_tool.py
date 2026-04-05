@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.S3MarkerTool import check_s3_marker
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestS3MarkerToolContract(BaseToolContract):

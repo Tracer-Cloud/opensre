@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from tests.tools.conftest import BaseToolContract
-
 from app.tools.MongoDBCollectionStatsTool import get_mongodb_collection_stats
+from tests.tools.conftest import BaseToolContract
 
 
 class TestMongoDBCollectionStatsToolContract(BaseToolContract):

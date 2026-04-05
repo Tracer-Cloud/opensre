@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.DataDogMetricsTool import query_datadog_metrics
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestDataDogMetricsToolContract(BaseToolContract):

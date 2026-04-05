@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.S3InspectTool import inspect_s3_object
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestS3InspectToolContract(BaseToolContract):
@@ -50,9 +49,9 @@ def test_run_happy_path() -> None:
         "metadata": {},
     }
     fake_sample = {"is_text": True, "sample": "hello world", "sample_bytes": 11}
-    with patch("app.tools.S3InspectTool.get_object_metadata", return_value={"success": True, "exists": True, "data": fake_meta}):
-        with patch("app.tools.S3InspectTool.get_object_sample", return_value={"success": True, "data": fake_sample}):
-            result = inspect_s3_object(bucket="b", key="k")
+    with patch("app.tools.S3InspectTool.get_object_metadata", return_value={"success": True, "exists": True, "data": fake_meta}), \
+         patch("app.tools.S3InspectTool.get_object_sample", return_value={"success": True, "data": fake_sample}):
+        result = inspect_s3_object(bucket="b", key="k")
     assert result["found"] is True
     assert result["size"] == 2048
     assert result["is_text"] is True

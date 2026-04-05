@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.GitHubFileContentsTool import get_github_file_contents
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestGitHubFileContentsToolContract(BaseToolContract):
@@ -48,12 +47,12 @@ def test_run_happy_path() -> None:
         "content": [],
     }
     mock_config = MagicMock()
-    with patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None):
-        with patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config):
-            with patch("app.tools.GitHubFileContentsTool.call_github_mcp_tool", return_value=fake_result):
-                result = get_github_file_contents(
-                    owner="org", repo="repo", path="main.py",
-                    github_url="http://mcp", github_mode="streamable-http", github_token="tok",
-                )
+    with patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None), \
+         patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config), \
+         patch("app.tools.GitHubFileContentsTool.call_github_mcp_tool", return_value=fake_result):
+        result = get_github_file_contents(
+            owner="org", repo="repo", path="main.py",
+            github_url="http://mcp", github_mode="streamable-http", github_token="tok",
+        )
     assert result["available"] is True
     assert result["file"]["name"] == "main.py"

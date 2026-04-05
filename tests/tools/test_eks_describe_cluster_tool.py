@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+
 from botocore.exceptions import ClientError
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.EKSDescribeClusterTool import describe_eks_cluster
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestEKSDescribeClusterToolContract(BaseToolContract):

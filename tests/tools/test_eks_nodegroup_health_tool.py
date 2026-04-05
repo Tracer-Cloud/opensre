@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+
 from botocore.exceptions import ClientError
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.EKSNodegroupHealthTool import get_eks_nodegroup_health
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestEKSNodegroupHealthToolContract(BaseToolContract):

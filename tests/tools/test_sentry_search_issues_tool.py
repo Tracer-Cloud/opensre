@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.SentrySearchIssuesTool import search_sentry_issues
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestSentrySearchIssuesToolContract(BaseToolContract):
@@ -39,23 +38,23 @@ def test_run_returns_unavailable_when_no_config() -> None:
 
 def test_run_happy_path() -> None:
     fake_issues = [{"id": "1", "title": "TypeError", "status": "unresolved"}]
-    with patch("app.tools.SentrySearchIssuesTool.list_sentry_issues", return_value=fake_issues):
-        with patch("app.tools.SentrySearchIssuesTool.sentry_config_from_env", return_value=None):
-            result = search_sentry_issues(
-                organization_slug="my-org",
-                sentry_token="tok_test",
-                query="TypeError",
-            )
+    with patch("app.tools.SentrySearchIssuesTool.list_sentry_issues", return_value=fake_issues), \
+         patch("app.tools.SentrySearchIssuesTool.sentry_config_from_env", return_value=None):
+        result = search_sentry_issues(
+            organization_slug="my-org",
+            sentry_token="tok_test",
+            query="TypeError",
+        )
     assert result["available"] is True
     assert len(result["issues"]) == 1
     assert result["query"] == "TypeError"
 
 
 def test_run_empty_issues() -> None:
-    with patch("app.tools.SentrySearchIssuesTool.list_sentry_issues", return_value=[]):
-        with patch("app.tools.SentrySearchIssuesTool.sentry_config_from_env", return_value=None):
-            result = search_sentry_issues(
-                organization_slug="my-org", sentry_token="tok_test"
-            )
+    with patch("app.tools.SentrySearchIssuesTool.list_sentry_issues", return_value=[]), \
+         patch("app.tools.SentrySearchIssuesTool.sentry_config_from_env", return_value=None):
+        result = search_sentry_issues(
+            organization_slug="my-org", sentry_token="tok_test"
+        )
     assert result["available"] is True
     assert result["issues"] == []

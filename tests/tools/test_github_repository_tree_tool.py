@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.GitHubRepositoryTreeTool import get_github_repository_tree
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestGitHubRepositoryTreeToolContract(BaseToolContract):
@@ -47,12 +46,12 @@ def test_run_happy_path() -> None:
         "content": [],
     }
     mock_config = MagicMock()
-    with patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None):
-        with patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config):
-            with patch("app.tools.GitHubRepositoryTreeTool.call_github_mcp_tool", return_value=fake_result):
-                result = get_github_repository_tree(
-                    owner="org", repo="repo",
-                    github_url="http://mcp", github_mode="streamable-http", github_token="tok",
-                )
+    with patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None), \
+         patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config), \
+         patch("app.tools.GitHubRepositoryTreeTool.call_github_mcp_tool", return_value=fake_result):
+        result = get_github_repository_tree(
+            owner="org", repo="repo",
+            github_url="http://mcp", github_mode="streamable-http", github_token="tok",
+        )
     assert result["available"] is True
     assert result["tree"] is not None

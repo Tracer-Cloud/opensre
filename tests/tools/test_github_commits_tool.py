@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.GitHubCommitsTool import list_github_commits
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestGitHubCommitsToolContract(BaseToolContract):
@@ -47,12 +46,12 @@ def test_run_happy_path() -> None:
         "content": [],
     }
     mock_config = MagicMock()
-    with patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None):
-        with patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config):
-            with patch("app.tools.GitHubCommitsTool.call_github_mcp_tool", return_value=fake_result):
-                result = list_github_commits(
-                    owner="org", repo="repo",
-                    github_url="http://mcp", github_mode="streamable-http", github_token="tok",
-                )
+    with patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None), \
+         patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config), \
+         patch("app.tools.GitHubCommitsTool.call_github_mcp_tool", return_value=fake_result):
+        result = list_github_commits(
+            owner="org", repo="repo",
+            github_url="http://mcp", github_mode="streamable-http", github_token="tok",
+        )
     assert result["available"] is True
     assert len(result["commits"]) == 2

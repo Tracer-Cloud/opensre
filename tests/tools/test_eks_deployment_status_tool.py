@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.EKSDeploymentStatusTool import get_eks_deployment_status
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestEKSDeploymentStatusToolContract(BaseToolContract):

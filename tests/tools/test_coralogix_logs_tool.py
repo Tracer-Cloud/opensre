@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.CoralogixLogsTool import CoralogixLogsTool
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestCoralogixLogsToolContract(BaseToolContract):
@@ -51,12 +50,12 @@ def test_run_happy_path() -> None:
         "total": 2,
         "warnings": [],
     }
-    with patch("app.tools.CoralogixLogsTool.CoralogixClient", return_value=mock_client):
-        with patch("app.tools.CoralogixLogsTool.build_coralogix_logs_query", return_value="source logs"):
-            result = tool.run(
-                query="source logs | limit 50",
-                coralogix_api_key="cx_key",
-            )
+    with patch("app.tools.CoralogixLogsTool.CoralogixClient", return_value=mock_client), \
+         patch("app.tools.CoralogixLogsTool.build_coralogix_logs_query", return_value="source logs"):
+        result = tool.run(
+            query="source logs | limit 50",
+            coralogix_api_key="cx_key",
+        )
     assert result["available"] is True
     assert len(result["logs"]) == 2
     assert len(result["error_logs"]) == 1
@@ -67,7 +66,7 @@ def test_run_api_error() -> None:
     mock_client = MagicMock()
     mock_client.is_configured = True
     mock_client.query_logs.return_value = {"success": False, "error": "Rate limited"}
-    with patch("app.tools.CoralogixLogsTool.CoralogixClient", return_value=mock_client):
-        with patch("app.tools.CoralogixLogsTool.build_coralogix_logs_query", return_value="source logs"):
-            result = tool.run(query="source logs", coralogix_api_key="cx_key")
+    with patch("app.tools.CoralogixLogsTool.CoralogixClient", return_value=mock_client), \
+         patch("app.tools.CoralogixLogsTool.build_coralogix_logs_query", return_value="source logs"):
+        result = tool.run(query="source logs", coralogix_api_key="cx_key")
     assert result["available"] is False

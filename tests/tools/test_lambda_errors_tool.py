@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.LambdaErrorsTool import get_lambda_errors
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestLambdaErrorsToolContract(BaseToolContract):

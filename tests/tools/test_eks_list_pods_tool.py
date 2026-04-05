@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.EKSListPodsTool import list_eks_pods
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestEKSListPodsToolContract(BaseToolContract):

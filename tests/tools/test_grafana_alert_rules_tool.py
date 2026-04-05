@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.GrafanaAlertRulesTool import query_grafana_alert_rules
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestGrafanaAlertRulesToolContract(BaseToolContract):

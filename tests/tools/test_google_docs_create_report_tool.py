@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tests.tools.conftest import BaseToolContract, mock_agent_state
-
 from app.tools.GoogleDocsCreateReportTool import create_google_docs_incident_report
+from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
 class TestGoogleDocsCreateReportToolContract(BaseToolContract):
