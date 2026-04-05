@@ -130,8 +130,9 @@ Generate the benchmark report:
 make benchmark
 ```
 
-Output:
-- docs/benchmarks/results.md
+<!-- BENCHMARK-START -->
+_No benchmark results yet. Run `make benchmark` to generate._
+<!-- BENCHMARK-END -->
 
 ---
 

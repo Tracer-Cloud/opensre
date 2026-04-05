@@ -233,23 +233,23 @@ def launch_instance(
     tags.append({"Key": "Name", "Value": f"{stack_name}-instance"})
 
     import os as _os
-    launch_kwargs: dict = dict(
-        ImageId=ami_id,
-        InstanceType=instance_type,
-        MinCount=1,
-        MaxCount=1,
-        SubnetId=subnet_id,
-        SecurityGroupIds=[security_group_id],
-        IamInstanceProfile={"Arn": instance_profile_arn},
-        UserData=user_data,
-        TagSpecifications=[{"ResourceType": "instance", "Tags": tags}],
-        BlockDeviceMappings=[
+    launch_kwargs: dict = {
+        "ImageId": ami_id,
+        "InstanceType": instance_type,
+        "MinCount": 1,
+        "MaxCount": 1,
+        "SubnetId": subnet_id,
+        "SecurityGroupIds": [security_group_id],
+        "IamInstanceProfile": {"Arn": instance_profile_arn},
+        "UserData": user_data,
+        "TagSpecifications": [{"ResourceType": "instance", "Tags": tags}],
+        "BlockDeviceMappings": [
             {
                 "DeviceName": "/dev/xvda",
                 "Ebs": {"VolumeSize": 30, "VolumeType": "gp3"},
             }
         ],
-    )
+    }
     key_name = _os.getenv("EC2_KEY_NAME")
     if key_name:
         launch_kwargs["KeyName"] = key_name

@@ -85,6 +85,8 @@ ANTHROPIC_REASONING_MODEL = "claude-sonnet-4-6"
 ANTHROPIC_TOOLCALL_MODEL = "claude-haiku-4-5-20251001"
 
 # OpenAI model constants
+# UNVERIFIED PLACEHOLDER — gpt-5.4 / gpt-5.4-mini do not exist as of 2026-04.
+# Update to a real model ID once OpenAI releases it, or override via OPENAI_REASONING_MODEL env var.
 OPENAI_REASONING_MODEL = "gpt-5.4"
 OPENAI_TOOLCALL_MODEL = "gpt-5.4-mini"
 
@@ -93,10 +95,14 @@ OPENROUTER_REASONING_MODEL = "openrouter/auto"
 OPENROUTER_TOOLCALL_MODEL = "openrouter/auto"
 
 # Gemini model constants (Google AI preview IDs; OpenAI-compatible endpoint)
+# UNVERIFIED PLACEHOLDER — gemini-3.1-pro-preview / gemini-3.1-flash-lite-preview are
+# forward-looking IDs that may not yet exist. Override via GEMINI_REASONING_MODEL env var.
 GEMINI_REASONING_MODEL = "gemini-3.1-pro-preview"
 GEMINI_TOOLCALL_MODEL = "gemini-3.1-flash-lite-preview"
 
 # NVIDIA NIM model constants
+# UNVERIFIED PLACEHOLDER — nemotron-3-super-120b-a12b / nemotron-3-nano-30b-a3b are
+# speculative IDs that may not yet be available on NVIDIA NIM. Override via NVIDIA_REASONING_MODEL env var.
 NVIDIA_REASONING_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 NVIDIA_TOOLCALL_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 

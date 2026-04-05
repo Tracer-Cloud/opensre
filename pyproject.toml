@@ -40,7 +40,6 @@ dependencies = [
     "boto3>=1.34.0",
     # Utilities
     "python-dotenv>=1.0.0",
-    "dotenv",
     "click>=8.1.0",
     "rich>=13.0.0",
     "questionary>=2.1.0",

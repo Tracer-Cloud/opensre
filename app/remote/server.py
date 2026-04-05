@@ -11,6 +11,7 @@ Start with::
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
 from pydantic import BaseModel
 
 from app.version import get_version
@@ -27,6 +28,13 @@ from app.version import get_version
 load_dotenv(override=False)
 
 INVESTIGATIONS_DIR = Path("/opt/opensre/investigations")
+_AUTH_KEY = os.getenv("OPENSRE_API_KEY", "")
+
+
+def _check_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Reject requests when OPENSRE_API_KEY is set and the header doesn't match."""
+    if _AUTH_KEY and x_api_key != _AUTH_KEY:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
 
 @asynccontextmanager
@@ -35,7 +43,12 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="OpenSRE Remote", version=get_version(), lifespan=_lifespan)
+app = FastAPI(
+    title="OpenSRE Remote",
+    version=get_version(),
+    lifespan=_lifespan,
+    dependencies=[Depends(_check_api_key)],
+)
 
 
 # ---------------------------------------------------------------------------

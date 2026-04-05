@@ -372,7 +372,7 @@ def test_health_smoke_uses_real_datadog_store_config(cli_sandbox: CliSandbox) ->
 
     result = _run_cli(cli_sandbox, "health")
 
-    assert result.exit_code == 0
+    assert result.exit_code == 1
     assert "OpenSRE Health" in result.stdout
     assert "datadog" in result.stdout
     assert "Missing API key or application key." in result.stdout

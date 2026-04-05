@@ -72,25 +72,27 @@ def save_local_config(
     return store_path
 
 
+_EC2_OUTPUTS_PATH = Path(__file__).resolve().parents[3] / "tests" / "shared" / "infrastructure_sdk" / "outputs" / "tracer-ec2-remote.json"
+
+
 def load_remote_url(path: Path | None = None) -> str | None:
     """Return the persisted remote agent URL, or None if not configured.
 
-    Falls back to reading the last EC2 deployment outputs if no URL is saved.
+    Falls back to reading the last EC2 deployment outputs if the file exists.
     """
     data = _load_raw(path)
-    url = data.get("remote", {}).get("url") or None
+    url: str | None = data.get("remote", {}).get("url") or None
     if url:
         return url
 
     try:
-        from tests.shared.infrastructure_sdk.config import load_outputs
-
-        outputs = load_outputs("tracer-ec2-remote")
-        ip = outputs.get("PublicIpAddress", "")
-        port = outputs.get("ServerPort", "8080")
-        if ip:
-            return f"http://{ip}:{port}"
-    except (FileNotFoundError, Exception):  # noqa: BLE001
+        if _EC2_OUTPUTS_PATH.exists():
+            outputs = json.loads(_EC2_OUTPUTS_PATH.read_text(encoding="utf-8"))
+            ip = outputs.get("PublicIpAddress", "")
+            port = outputs.get("ServerPort", "8080")
+            if ip:
+                return f"http://{ip}:{port}"
+    except (json.JSONDecodeError, OSError):
         pass
     return None
 
