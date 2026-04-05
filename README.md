@@ -122,6 +122,19 @@ When an alert fires, Tracer automatically:
 
 ---
 
+## Benchmark
+
+Generate the benchmark report:
+
+```shell
+make benchmark
+```
+
+Output:
+- docs/benchmarks/results.md
+
+---
+
 ## Capabilities
 
 |                                          |                                                           |
@@ -145,6 +158,7 @@ Tracer integrates with the systems that power modern cloud platforms.
 | **Infrastructure** | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS · <img src="docs/assets/icons/gcp.jpg" width="16"> GCP · <img src="docs/assets/icons/azure.png" width="16"> Azure                                            |
 | **Dev Tools**      | <img src="docs/assets/icons/github.webp" width="16"> GitHub                                                                                                                                                                                                                            |
 | **Communication**  | <img src="docs/assets/icons/slack.png" width="16"> Slack · <img src="docs/assets/icons/pagerduty.png" width="16"> PagerDuty · Google Docs                                                                                                                                              |
+| **Deployment**     | <img src="docs/assets/icons/aws.png" width="16"> AWS Bedrock · <img src="docs/assets/icons/aws.png" width="16"> AWS EC2 · LangSmith · Vercel                                                                                                                                          |
 
 ---
 
@@ -345,6 +359,15 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/151067328?v=4" width="100;" alt="Davda-James"/>
             <br />
             <sub><b>Davda-James</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/Abhinnavverma">
+            <img src="https://avatars.githubusercontent.com/u/138097198?v=4" width="100;" alt="Abhinnavverma"/>
+            <br />
+            <sub><b>Abhinnavverma</b></sub>
         </a>
     </td>
 		</tr>

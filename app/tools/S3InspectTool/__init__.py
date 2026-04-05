@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.integrations.clients.s3_client import get_object_metadata, get_object_sample
+from app.services.s3_client import get_object_metadata, get_object_sample
 from app.tools.tool_decorator import tool
 
 

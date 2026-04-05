@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.integrations.clients.tracer_client import (
+from app.services.tracer_client import (
     AWSBatchJobResult,
     get_tracer_client,
     get_tracer_web_client,

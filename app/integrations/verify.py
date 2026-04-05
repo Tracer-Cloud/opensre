@@ -11,12 +11,6 @@ import requests
 
 from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.config import get_tracer_base_url
-from app.integrations.clients.coralogix import CoralogixClient
-from app.integrations.clients.datadog.client import DatadogClient, DatadogConfig
-from app.integrations.clients.honeycomb import HoneycombClient
-from app.integrations.clients.opsgenie import OpsGenieClient, OpsGenieConfig
-from app.integrations.clients.tracer_client.client import TracerClient
-from app.integrations.clients.vercel.client import VercelClient, VercelConfig
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
@@ -37,6 +31,12 @@ from app.nodes.resolve_integrations.node import (
     _load_env_integrations,
     _merge_local_integrations,
 )
+from app.services.coralogix import CoralogixClient
+from app.services.datadog.client import DatadogClient, DatadogConfig
+from app.services.honeycomb import HoneycombClient
+from app.services.opsgenie import OpsGenieClient, OpsGenieConfig
+from app.services.tracer_client.client import TracerClient
+from app.services.vercel.client import VercelClient, VercelConfig
 
 SUPPORTED_VERIFY_SERVICES = (
     "grafana",
@@ -574,7 +574,7 @@ def _verify_mongodb(source: str, config: dict[str, Any]) -> dict[str, str]:
 
 def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
     """Validate Google Docs credentials and folder access."""
-    from app.integrations.clients.google_docs import GoogleDocsClient
+    from app.services.google_docs import GoogleDocsClient
 
     try:
         google_docs_config = GoogleDocsIntegrationConfig.model_validate(config)

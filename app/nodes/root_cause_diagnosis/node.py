@@ -4,8 +4,8 @@ import os
 
 from langsmith import traceable
 
-from app.integrations.clients import get_llm_for_reasoning, parse_root_cause
 from app.output import debug_print, get_tracker
+from app.services import get_llm_for_reasoning, parse_root_cause
 from app.state import InvestigationState
 
 from .claim_validator import calculate_validity_score, validate_and_categorize_claims

@@ -20,7 +20,7 @@ def _call_run_investigation(
     raw_alert: dict[str, Any],
 ) -> AgentState:
     """Import the heavy investigation runner only when execution starts."""
-    from app.runners import run_investigation
+    from app.pipeline.runners import run_investigation
 
     return run_investigation(
         alert_name,

@@ -74,6 +74,7 @@ def _render_help() -> None:
         ("investigate",   "Run an RCA investigation against an alert payload."),
         ("tests",         "Browse and run inventoried tests from the terminal."),
         ("integrations",  "Manage local integration credentials."),
+        ("health",        "Check integration and agent setup status."),
         ("update",        "Check for a newer version and update if one is available."),
     ]:
         console.print(Text.assemble(("    ", ""), (f"{name:<16}", "bold cyan"), desc))
@@ -106,6 +107,7 @@ def _render_landing() -> None:
         ("opensre investigate -i alert.json", "Run RCA against an alert payload"),
         ("opensre tests",                     "Browse and run inventoried tests"),
         ("opensre integrations list",         "Show configured integrations"),
+        ("opensre health",                    "Check integration and agent setup status"),
         ("opensre update",                    "Update to the latest version"),
     ]:
         console.print(Text.assemble(("    ", ""), (f"{cmd:<42}", "bold cyan"), desc))

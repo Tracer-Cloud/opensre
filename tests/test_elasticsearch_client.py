@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
-from app.state import EvidenceSource
+from app.types.evidence import EvidenceSource
 
 
 def test_evidence_source_includes_elasticsearch() -> None:
@@ -15,7 +15,7 @@ def test_evidence_source_includes_elasticsearch() -> None:
 
 # ── Config tests ─────────────────────────────────────────────────────────────
 
-from app.integrations.clients.elasticsearch.client import ElasticsearchClient, ElasticsearchConfig
+from app.services.elasticsearch.client import ElasticsearchClient, ElasticsearchConfig
 
 
 class TestElasticsearchConfig:
@@ -63,7 +63,7 @@ class TestCheckSecurity:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("app.integrations.clients.elasticsearch.client.httpx.get", return_value=mock_resp):
+        with patch("app.services.elasticsearch.client.httpx.get", return_value=mock_resp):
             client = ElasticsearchClient(ElasticsearchConfig(url="http://localhost:9200"))
             result = client.check_security()
 
@@ -74,7 +74,7 @@ class TestCheckSecurity:
         mock_resp = MagicMock()
         mock_resp.status_code = 401
 
-        with patch("app.integrations.clients.elasticsearch.client.httpx.get", return_value=mock_resp):
+        with patch("app.services.elasticsearch.client.httpx.get", return_value=mock_resp):
             client = ElasticsearchClient(ElasticsearchConfig(url="http://localhost:9200"))
             result = client.check_security()
 
@@ -82,7 +82,7 @@ class TestCheckSecurity:
         assert result["security_enabled"] is True
 
     def test_check_security_handles_connection_error(self) -> None:
-        with patch("app.integrations.clients.elasticsearch.client.httpx.get", side_effect=Exception("connection refused")):
+        with patch("app.services.elasticsearch.client.httpx.get", side_effect=Exception("connection refused")):
             client = ElasticsearchClient(ElasticsearchConfig(url="http://localhost:9200"))
             result = client.check_security()
 
@@ -93,7 +93,7 @@ class TestCheckSecurity:
         mock_resp = MagicMock()
         mock_resp.status_code = 503
 
-        with patch("app.integrations.clients.elasticsearch.client.httpx.get", return_value=mock_resp):
+        with patch("app.services.elasticsearch.client.httpx.get", return_value=mock_resp):
             client = ElasticsearchClient(ElasticsearchConfig(url="http://localhost:9200"))
             result = client.check_security()
 
@@ -293,8 +293,8 @@ class TestGetClusterHealth:
 # ── package exports ───────────────────────────────────────────────────────────
 
 def test_package_exports() -> None:
-    from app.integrations.clients.elasticsearch import ElasticsearchClient as C  # noqa: F401
-    from app.integrations.clients.elasticsearch import ElasticsearchConfig as Cfg
+    from app.services.elasticsearch import ElasticsearchClient as C  # noqa: F401
+    from app.services.elasticsearch import ElasticsearchConfig as Cfg
     assert C is not None
     assert Cfg is not None
 
@@ -308,7 +308,7 @@ def test_make_client_returns_none_without_url() -> None:
 
 
 def test_make_client_returns_client_with_url() -> None:
-    from app.integrations.clients.elasticsearch import ElasticsearchClient
+    from app.services.elasticsearch import ElasticsearchClient
     from app.tools.ElasticsearchLogsTool._client import make_client
     client = make_client("http://localhost:9200")
     assert isinstance(client, ElasticsearchClient)
