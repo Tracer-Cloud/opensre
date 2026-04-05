@@ -37,7 +37,7 @@ def get_latest_al2023_ami(region: str = DEFAULT_REGION) -> str:
     resp = ssm.get_parameter(
         Name="/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
     )
-    return resp["Parameter"]["Value"]
+    return str(resp["Parameter"]["Value"])
 
 
 ECR_IMAGE_URI = "395261708130.dkr.ecr.us-east-1.amazonaws.com/opensre:latest"
