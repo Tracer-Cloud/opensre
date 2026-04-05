@@ -96,7 +96,11 @@ def _ensure_project(
     project_name: str,
     params: dict[str, str],
 ) -> str | None:
-    """Create the Vercel project if it doesn't exist. Returns project ID or None."""
+    """Create the Vercel project if it doesn't exist. Returns project ID or None.
+
+    Also disables SSO/Deployment Protection so the health endpoint is publicly
+    accessible without authentication.
+    """
     with httpx.Client(timeout=30) as client:
         resp = client.get(
             f"{VERCEL_API_BASE}/v9/projects/{project_name}",
@@ -106,6 +110,7 @@ def _ensure_project(
         if resp.status_code == 200:
             project_id: str = resp.json()["id"]
             logger.info("Project '%s' already exists (id=%s)", project_name, project_id)
+            _disable_deployment_protection(client, project_id, params)
             return project_id
 
         resp_create = client.post(
@@ -117,6 +122,7 @@ def _ensure_project(
         if resp_create.status_code in (200, 201):
             project_id = resp_create.json()["id"]
             logger.info("Created project '%s' (id=%s)", project_name, project_id)
+            _disable_deployment_protection(client, project_id, params)
             return project_id
 
         if resp_create.status_code == 403:
@@ -130,6 +136,28 @@ def _ensure_project(
 
         resp_create.raise_for_status()
     return None
+
+
+def _disable_deployment_protection(
+    client: httpx.Client,
+    project_id: str,
+    params: dict[str, str],
+) -> None:
+    """Disable Vercel's SSO/Deployment Protection so endpoints are publicly accessible."""
+    resp = client.patch(
+        f"{VERCEL_API_BASE}/v9/projects/{project_id}",
+        headers=_headers(),
+        content=json.dumps({"ssoProtection": None}),
+        params=params,
+    )
+    if resp.status_code == 200:
+        logger.info("Deployment protection disabled for project %s", project_id)
+    else:
+        logger.warning(
+            "Could not disable deployment protection (status %d): %s",
+            resp.status_code,
+            resp.text[:200],
+        )
 
 
 def create_deployment(
@@ -148,17 +176,14 @@ def create_deployment(
 
     _ensure_project(project_name, params)
 
-    vercel_json = json.dumps(
-        {"version": 2, "builds": [{"src": "api/health.py", "use": "@vercel/python"}]}
-    )
-
     payload: dict[str, Any] = {
         "name": project_name,
         "files": [
             {"file": "api/health.py", "data": HEALTH_HANDLER_SOURCE},
-            {"file": "vercel.json", "data": vercel_json},
         ],
-        "projectSettings": {"framework": None},
+        "builds": [{"src": "api/health.py", "use": "@vercel/python"}],
+        "routes": [{"src": "/api/health", "dest": "/api/health.py"}],
+        "target": "production",
     }
 
     with httpx.Client(timeout=60) as client:
@@ -265,3 +290,22 @@ def delete_deployment(deployment_id: str) -> None:
         resp.raise_for_status()
 
     logger.info("Deployment %s deleted", deployment_id)
+
+
+def delete_project(project_name: str) -> None:
+    """Delete a Vercel project."""
+    logger.info("Deleting Vercel project '%s'...", project_name)
+    params = _get_team_param()
+
+    with httpx.Client(timeout=30) as client:
+        resp = client.delete(
+            f"{VERCEL_API_BASE}/v9/projects/{project_name}",
+            headers=_headers(),
+            params=params,
+        )
+        if resp.status_code == 404:
+            logger.warning("Project '%s' already deleted", project_name)
+            return
+        resp.raise_for_status()
+
+    logger.info("Project '%s' deleted", project_name)

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import time
 
-from tests.deployment.vercel.infrastructure_sdk.client import delete_deployment
+from tests.deployment.vercel.infrastructure_sdk.client import delete_deployment, delete_project
 from tests.shared.infrastructure_sdk.config import delete_outputs, load_outputs
 
 STACK_NAME = "tracer-vercel"
@@ -41,6 +41,18 @@ def destroy() -> dict[str, list[str]]:
             print("  - Deployment deleted")
         except Exception as e:
             msg = f"vercel-deployment:{deployment_id} - {e}"
+            results["failed"].append(msg)
+            print(f"  - Failed: {e}")
+
+    project_name = outputs.get("ProjectName", "")
+    if project_name:
+        print(f"Deleting Vercel project '{project_name}'...")
+        try:
+            delete_project(project_name)
+            results["deleted"].append(f"vercel-project:{project_name}")
+            print("  - Project deleted")
+        except Exception as e:
+            msg = f"vercel-project:{project_name} - {e}"
             results["failed"].append(msg)
             print(f"  - Failed: {e}")
 
