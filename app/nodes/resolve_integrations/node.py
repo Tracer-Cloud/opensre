@@ -206,11 +206,11 @@ def _classify_integrations(
                     "tls": credentials.get("tls", True),
                 })
             except Exception:
-              continue
-              
+                continue
+
             if mongodb_config.connection_string:
                 resolved["mongodb"] = mongodb_config.model_dump()
-                  
+
         elif key == "vercel":
             try:
                 vercel_config = VercelConfig.model_validate({
@@ -220,7 +220,7 @@ def _classify_integrations(
                 })
             except Exception:
                 continue
-           
+
             if vercel_config.api_token:
                 resolved["vercel"] = vercel_config.model_dump()
 

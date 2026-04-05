@@ -691,8 +691,8 @@ def detect_sources(
                 "tls": mongodb_int.get("tls", True),
                 "connection_verified": True,
             }
-            
-            
+
+
     opsgenie_int = (resolved_integrations or {}).get("opsgenie")
     if opsgenie_int and str(opsgenie_int.get("api_key", "")).strip():
         alert_id = str(

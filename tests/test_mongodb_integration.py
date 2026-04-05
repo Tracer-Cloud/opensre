@@ -3,7 +3,6 @@
 import os
 from unittest.mock import MagicMock, patch
 
-
 from app.integrations.mongodb import (
     MongoDBConfig,
     build_mongodb_config,
