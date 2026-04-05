@@ -69,14 +69,24 @@ def health_check() -> dict[str, Any]:
 @app.post("/investigate", response_model=InvestigateResponse)
 def investigate(req: InvestigateRequest) -> InvestigateResponse:
     """Run an investigation and persist the result as a ``.md`` file."""
+    import logging
+    import traceback
+
     from app.cli.investigate import run_investigation_cli
 
-    result = run_investigation_cli(
-        raw_alert=req.raw_alert,
-        alert_name=req.alert_name,
-        pipeline_name=req.pipeline_name,
-        severity=req.severity,
-    )
+    logger = logging.getLogger(__name__)
+
+    try:
+        result = run_investigation_cli(
+            raw_alert=req.raw_alert,
+            alert_name=req.alert_name,
+            pipeline_name=req.pipeline_name,
+            severity=req.severity,
+        )
+    except Exception as exc:
+        tb = traceback.format_exc()
+        logger.error("Investigation failed: %s\n%s", exc, tb)
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
 
     alert_name = req.alert_name or req.raw_alert.get("alert_name") or "incident"
     pipeline_name = req.pipeline_name or req.raw_alert.get("pipeline_name") or "unknown"
