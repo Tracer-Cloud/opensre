@@ -9,6 +9,8 @@ Enable shell tab-completion (add to your shell profile for persistence):
 
 from __future__ import annotations
 
+import platform
+
 import click
 from dotenv import load_dotenv
 
@@ -76,6 +78,7 @@ def _render_help() -> None:
         ("integrations",  "Manage local integration credentials."),
         ("health",        "Check integration and agent setup status."),
         ("update",        "Check for a newer version and update if one is available."),
+        ("version",       "Print detailed version, Python and OS info."),
     ]:
         console.print(Text.assemble(("    ", ""), (f"{name:<16}", "bold cyan"), desc))
     console.print()
@@ -109,6 +112,7 @@ def _render_landing() -> None:
         ("opensre integrations list",         "Show configured integrations"),
         ("opensre health",                    "Check integration and agent setup status"),
         ("opensre update",                    "Update to the latest version"),
+        ("opensre version",                   "Print detailed version, Python and OS info"),
     ]:
         console.print(Text.assemble(("    ", ""), (f"{cmd:<42}", "bold cyan"), desc))
     console.print()
@@ -161,6 +165,18 @@ def update(check_only: bool, yes: bool) -> None:
     capture_cli_invoked()
     rc = run_update(check_only=check_only, yes=yes)
     raise SystemExit(rc)
+
+
+@cli.command("version")
+def version_cmd() -> None:
+    """Print detailed version, Python and OS info."""
+    ver = get_version()
+    py = platform.python_version()
+    os_name = platform.system().lower()
+    arch = platform.machine()
+    click.echo(f"opensre {ver}")
+    click.echo(f"Python  {py}")
+    click.echo(f"OS      {os_name} ({arch})")
 
 
 @cli.group(invoke_without_command=True)
