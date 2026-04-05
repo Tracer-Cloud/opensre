@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 import logging
 from dataclasses import dataclass
 from typing import Literal
@@ -14,6 +15,11 @@ from tests.benchmarks.toolcall_model_benchmark.pipeline_benchmark import (
     estimate_run_cost_usd,
     get_fixture_by_id,
     run_langgraph_investigation_bench,
+)
+
+from tests.benchmarks.toolcall_model_benchmark.pricing import (
+    DEFAULT_REASONING_USD_PER_MTOK,
+    DEFAULT_TOOL_USD_PER_MTOK,
 )
 
 FIXED_SCENARIO_IDS: tuple[str, ...] = (
@@ -30,7 +36,7 @@ class CaseMetrics:
     """Per-case benchmark measurements for one scenario run."""
 
     scenario_id: str
-    run_status: Literal["ok","error"]
+    run_status: Literal["ok", "error"]
     duration_seconds: float
     input_tokens: int
     output_tokens: int
@@ -159,8 +165,9 @@ def render_markdown(cases: list[CaseMetrics], summary: SummaryMetrics) -> str:
 def run_benchmark(
     scenario_ids: list[str] | None = None,
     *,
-    reasoning_usd_per_mtok: float = 3.0,
-    tool_usd_per_mtok: float = 1.0,
+    configure_llm: Callable[[], None] = configure_split_models,
+    reasoning_usd_per_mtok: float = DEFAULT_REASONING_USD_PER_MTOK,
+    tool_usd_per_mtok: float = DEFAULT_TOOL_USD_PER_MTOK,
 ) -> tuple[list[CaseMetrics], SummaryMetrics]:
     """Execute benchmark cases and collect duration, token, and cost metrics."""
     selected = scenario_ids if scenario_ids is not None else list(FIXED_SCENARIO_IDS)
@@ -173,7 +180,7 @@ def run_benchmark(
             run = run_langgraph_investigation_bench(
                 fixture,
                 label=sid,
-                configure_llm=configure_split_models,
+                configure_llm=configure_llm,
             )
             est_cost_usd, _ = estimate_run_cost_usd(
                 run.tokens_by_model,
@@ -225,8 +232,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="docs/benchmarks/results.md",
         help="Path for markdown output.",
     )
-    parser.add_argument("--reasoning-usd-per-mtok", type=float, default=3.0)
-    parser.add_argument("--tool-usd-per-mtok", type=float, default=1.0)
+    parser.add_argument(
+        "--reasoning-usd-per-mtok", type=float, default=DEFAULT_REASONING_USD_PER_MTOK
+    )
+    parser.add_argument("--tool-usd-per-mtok", type=float, default=DEFAULT_TOOL_USD_PER_MTOK)
     return parser.parse_args(argv)
 
 
@@ -249,7 +258,7 @@ def main(argv: list[str] | None = None) -> int:
     md_out.write_text(render_markdown(cases, summary), encoding="utf-8")
 
     logger.info("Wrote markdown report: %s", md_out)
-    
+
     return 0 if summary.error_count == 0 else 1
 
 
