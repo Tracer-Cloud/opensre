@@ -3,9 +3,9 @@
 import json
 from typing import Any, cast
 
-from app.integrations.clients import get_llm_for_reasoning
 from app.nodes.extract_alert.models import AlertDetails, AlertExtractionInput
 from app.output import debug_print
+from app.services import get_llm_for_reasoning
 from app.state import InvestigationState
 
 

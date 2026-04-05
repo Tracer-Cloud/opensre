@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.integrations.clients.eks.eks_k8s_client import build_k8s_clients
+from app.services.eks.eks_k8s_client import build_k8s_clients
 from app.tools.EKSListClustersTool import _eks_available, _eks_creds
 from app.tools.tool_decorator import tool
 

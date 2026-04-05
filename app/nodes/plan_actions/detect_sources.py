@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
-from app.integrations.clients.coralogix import build_coralogix_logs_query
+from app.services.coralogix import build_coralogix_logs_query
 from app.tools.GrafanaLogsTool import _map_pipeline_to_service_name
 
 
