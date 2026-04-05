@@ -506,7 +506,8 @@ def _run_remote_interactive(ctx: click.Context) -> None:
 
     actions = [
         questionary.Choice("Check health", value="health"),
-        questionary.Choice("Run investigation", value="investigate"),
+        questionary.Choice("Run investigation (custom alert)", value="investigate"),
+        questionary.Choice("Run investigation (sample alert)", value="investigate-sample"),
         questionary.Choice("List investigations", value="list"),
         questionary.Choice("Pull investigation reports", value="pull"),
         questionary.Choice("Configure remote URL", value="configure"),
@@ -552,6 +553,17 @@ def _run_remote_interactive(ctx: click.Context) -> None:
             ctx.invoke(remote_investigate, alert_json=alert_input)
         else:
             click.echo("  No payload provided.")
+    elif action == "investigate-sample":
+        from app.remote.client import SYNTHETIC_ALERT
+
+        sample = json.dumps({
+            "alert_name": "etl-daily-orders-failure",
+            "pipeline_name": "etl_daily_orders",
+            "severity": "critical",
+            "message": SYNTHETIC_ALERT,
+        })
+        click.echo("  Using sample alert: etl-daily-orders-failure (critical)")
+        ctx.invoke(remote_investigate, alert_json=sample)
     elif action == "list":
         ctx.invoke(remote_pull, latest=False, pull_all=False, output_dir="./investigations")
     elif action == "pull":
@@ -656,8 +668,9 @@ def remote_trigger(ctx: click.Context, alert_json: str | None) -> None:
 
 @remote.command(name="investigate")
 @click.option("--alert-json", default=None, help="Inline alert JSON payload string.")
+@click.option("--sample", is_flag=True, default=False, help="Use the built-in sample alert payload.")
 @click.pass_context
-def remote_investigate(ctx: click.Context, alert_json: str | None) -> None:
+def remote_investigate(ctx: click.Context, alert_json: str | None, sample: bool) -> None:
     """Run an investigation on the lightweight remote server."""
     import httpx
 
@@ -677,8 +690,18 @@ def remote_investigate(ctx: click.Context, alert_json: str | None) -> None:
             raw_alert = json.loads(alert_json)
         except json.JSONDecodeError as exc:
             raise click.ClickException(f"Invalid alert JSON: {exc}") from exc
+    elif sample:
+        from app.remote.client import SYNTHETIC_ALERT
+
+        raw_alert = {
+            "alert_name": "etl-daily-orders-failure",
+            "pipeline_name": "etl_daily_orders",
+            "severity": "critical",
+            "message": SYNTHETIC_ALERT,
+        }
+        click.echo("  Using sample alert: etl-daily-orders-failure (critical)")
     else:
-        raise click.ClickException("Provide an alert payload with --alert-json.")
+        raise click.ClickException("Provide --alert-json or --sample.")
 
     client = RemoteAgentClient(resolved_url, api_key=api_key)
     save_remote_url(client.base_url)
