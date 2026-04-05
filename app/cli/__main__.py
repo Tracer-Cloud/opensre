@@ -9,6 +9,7 @@ Enable shell tab-completion (add to your shell profile for persistence):
 
 from __future__ import annotations
 
+import json
 import platform
 
 import click
@@ -433,6 +434,83 @@ def run(test_id: str, dry_run: bool) -> None:
 
     capture_test_run_started(test_id, dry_run=dry_run)
     raise SystemExit(run_catalog_item(item, dry_run=dry_run))
+
+
+@cli.group()
+@click.option("--url", default=None, help="Remote agent base URL (e.g. 1.2.3.4 or http://host:2024).")
+@click.option("--api-key", default=None, envvar="OPENSRE_API_KEY", help="API key for the remote agent.")
+@click.pass_context
+def remote(ctx: click.Context, url: str | None, api_key: str | None) -> None:
+    """Connect to and trigger a remote deployed agent."""
+    ctx.ensure_object(dict)
+    ctx.obj["url"] = url
+    ctx.obj["api_key"] = api_key
+
+
+@remote.command(name="health")
+@click.pass_context
+def remote_health(ctx: click.Context) -> None:
+    """Check the health of a remote deployed agent."""
+    import httpx
+
+    from app.cli.wizard.store import load_remote_url, save_remote_url
+    from app.remote.client import RemoteAgentClient
+
+    url = ctx.obj.get("url")
+    api_key = ctx.obj.get("api_key")
+
+    resolved_url = url or load_remote_url()
+    if not resolved_url:
+        raise click.ClickException("No remote URL configured. Pass a URL or run 'opensre remote health <url>'.")
+
+    client = RemoteAgentClient(resolved_url, api_key=api_key)
+    save_remote_url(client.base_url)
+
+    try:
+        result = client.health()
+        click.echo(json.dumps(result, indent=2))
+    except httpx.TimeoutException as exc:
+        raise click.ClickException(f"Connection timed out reaching {client.base_url}.") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise click.ClickException(f"Health check failed: {exc}") from exc
+
+
+@remote.command(name="trigger")
+@click.option("--alert-json", default=None, help="Inline alert JSON payload string.")
+@click.pass_context
+def remote_trigger(ctx: click.Context, alert_json: str | None) -> None:
+    """Trigger an investigation on a remote deployed agent and stream results."""
+    import httpx
+
+    from app.cli.wizard.store import load_remote_url, save_remote_url
+    from app.remote.client import RemoteAgentClient
+    from app.remote.renderer import StreamRenderer
+
+    url = ctx.obj.get("url")
+    api_key = ctx.obj.get("api_key")
+
+    resolved_url = url or load_remote_url()
+    if not resolved_url:
+        raise click.ClickException("No remote URL configured. Pass a URL or run 'opensre remote trigger <url>'.")
+
+    alert_payload: dict | None = None
+    if alert_json:
+        try:
+            alert_payload = json.loads(alert_json)
+        except json.JSONDecodeError as exc:
+            raise click.ClickException(f"Invalid alert JSON: {exc}") from exc
+
+    client = RemoteAgentClient(resolved_url, api_key=api_key)
+    save_remote_url(client.base_url)
+
+    try:
+        events = client.trigger_investigation(alert_payload)
+        renderer = StreamRenderer()
+        renderer.render_stream(events)
+    except httpx.TimeoutException as exc:
+        raise click.ClickException(f"Connection timed out reaching {client.base_url}.") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise click.ClickException(f"Remote investigation failed: {exc}") from exc
 
 
 def main(argv: list[str] | None = None) -> int:
