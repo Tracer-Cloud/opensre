@@ -513,6 +513,108 @@ def remote_trigger(ctx: click.Context, alert_json: str | None) -> None:
         raise click.ClickException(f"Remote investigation failed: {exc}") from exc
 
 
+@remote.command(name="investigate")
+@click.option("--alert-json", default=None, help="Inline alert JSON payload string.")
+@click.pass_context
+def remote_investigate(ctx: click.Context, alert_json: str | None) -> None:
+    """Run an investigation on the lightweight remote server."""
+    import httpx
+
+    from app.cli.wizard.store import load_remote_url, save_remote_url
+    from app.remote.client import RemoteAgentClient
+
+    url = ctx.obj.get("url")
+    api_key = ctx.obj.get("api_key")
+
+    resolved_url = url or load_remote_url()
+    if not resolved_url:
+        raise click.ClickException("No remote URL configured. Pass --url or run 'opensre remote health <url>'.")
+
+    raw_alert: dict
+    if alert_json:
+        try:
+            raw_alert = json.loads(alert_json)
+        except json.JSONDecodeError as exc:
+            raise click.ClickException(f"Invalid alert JSON: {exc}") from exc
+    else:
+        raise click.ClickException("Provide an alert payload with --alert-json.")
+
+    client = RemoteAgentClient(resolved_url, api_key=api_key)
+    save_remote_url(client.base_url)
+
+    click.echo("Sending investigation request (this may take a few minutes)...")
+    try:
+        result = client.investigate(raw_alert)
+        click.echo(f"\n  Investigation ID: {result.get('id', 'N/A')}")
+        root_cause = result.get("root_cause", "")
+        if root_cause:
+            click.echo(f"\n  Root Cause:\n  {root_cause}")
+        report = result.get("report", "")
+        if report:
+            click.echo(f"\n  Report:\n  {report}")
+    except httpx.TimeoutException as exc:
+        raise click.ClickException(f"Connection timed out: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise click.ClickException(f"Remote investigation failed: {exc}") from exc
+
+
+@remote.command(name="pull")
+@click.option("--latest", is_flag=True, default=False, help="Download only the most recent investigation.")
+@click.option("--all", "pull_all", is_flag=True, default=False, help="Download all investigations.")
+@click.option("--output-dir", default="./investigations", help="Directory to save .md files to.")
+@click.pass_context
+def remote_pull(ctx: click.Context, latest: bool, pull_all: bool, output_dir: str) -> None:
+    """Download investigation .md files from the remote server."""
+    import httpx
+
+    from app.cli.wizard.store import load_remote_url, save_remote_url
+    from app.remote.client import RemoteAgentClient
+
+    url = ctx.obj.get("url")
+    api_key = ctx.obj.get("api_key")
+
+    resolved_url = url or load_remote_url()
+    if not resolved_url:
+        raise click.ClickException("No remote URL configured. Pass --url or run 'opensre remote health <url>'.")
+
+    client = RemoteAgentClient(resolved_url, api_key=api_key)
+    save_remote_url(client.base_url)
+
+    try:
+        investigations = client.list_investigations()
+    except httpx.TimeoutException as exc:
+        raise click.ClickException(f"Connection timed out: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise click.ClickException(f"Failed to list investigations: {exc}") from exc
+
+    if not investigations:
+        click.echo("No investigations found on the remote server.")
+        return
+
+    if not latest and not pull_all:
+        click.echo(f"Found {len(investigations)} investigation(s):\n")
+        for inv in investigations:
+            click.echo(f"  {inv['id']}  ({inv.get('created_at', '?')})")
+        click.echo("\nUse --latest or --all to download, or run:\n  opensre remote pull --latest")
+        return
+
+    from pathlib import Path
+
+    to_download = [investigations[0]] if latest else investigations
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    for inv in to_download:
+        inv_id = inv["id"]
+        try:
+            content = client.get_investigation(inv_id)
+            dest = out / f"{inv_id}.md"
+            dest.write_text(content, encoding="utf-8")
+            click.echo(f"  Downloaded: {dest}")
+        except Exception as exc:  # noqa: BLE001
+            click.echo(f"  Failed to download {inv_id}: {exc}", err=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``opensre`` console script."""
     load_dotenv(override=False)

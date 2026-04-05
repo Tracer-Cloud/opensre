@@ -226,7 +226,8 @@ def launch_instance(
     tags = get_standard_tags(stack_name)
     tags.append({"Key": "Name", "Value": f"{stack_name}-instance"})
 
-    resp = ec2.run_instances(
+    import os as _os
+    launch_kwargs: dict = dict(
         ImageId=ami_id,
         InstanceType=instance_type,
         MinCount=1,
@@ -243,6 +244,10 @@ def launch_instance(
             }
         ],
     )
+    key_name = _os.getenv("EC2_KEY_NAME")
+    if key_name:
+        launch_kwargs["KeyName"] = key_name
+    resp = ec2.run_instances(**launch_kwargs)
 
     instance_id = resp["Instances"][0]["InstanceId"]
     logger.info("Launched EC2 instance: %s", instance_id)

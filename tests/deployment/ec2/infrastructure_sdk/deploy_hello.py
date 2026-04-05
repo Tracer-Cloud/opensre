@@ -1,47 +1,68 @@
 #!/usr/bin/env python3
-"""Deploy OpenSRE on an EC2 instance with Docker.
+"""Deploy a hello-world container on EC2 in <60 seconds.
 
 Creates:
-- 1 IAM role + instance profile for EC2
-- 1 Security group allowing port 2024 (LangGraph API)
-- 1 EC2 instance running the OpenSRE Docker container
+- 1 IAM role + instance profile (reused if already exists)
+- 1 Security group allowing port 8080
+- 1 EC2 Nitro instance (ECS-optimized AMI, Docker pre-installed)
 """
 
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
+from tests.deployment.ec2.infrastructure_sdk.fast_instance import (
+    HELLO_IMAGE_TAG,
+    HELLO_PORT,
+    INSTANCE_TYPE,
+    generate_hello_user_data,
+    get_ecs_optimized_ami,
+    wait_for_hello,
+)
 from tests.deployment.ec2.infrastructure_sdk.instance import (
     create_instance_profile,
-    generate_user_data,
-    get_latest_al2023_ami,
     launch_instance,
-    wait_for_health,
     wait_for_running,
 )
 from tests.shared.infrastructure_sdk.config import save_outputs
 from tests.shared.infrastructure_sdk.deployer import DEFAULT_REGION
+from tests.shared.infrastructure_sdk.resources import ecr
 from tests.shared.infrastructure_sdk.resources.vpc import (
     create_security_group,
     get_default_vpc,
     get_public_subnets,
 )
 
-STACK_NAME = "tracer-ec2"
+STACK_NAME = "tracer-ec2-hello"
 REGION = DEFAULT_REGION
+HELLO_WORLD_DIR = Path(__file__).resolve().parent.parent / "hello_world"
+ECR_REPO_NAME = "opensre"
 
 
 def deploy() -> dict[str, str]:
-    """Deploy OpenSRE on EC2 with Docker.
+    """Build the hello-world image, push to ECR, launch EC2, and wait for /ping.
 
     Returns:
-        Dict of output values (InstanceId, PublicIpAddress, SecurityGroupId, etc.).
+        Dict of output values (InstanceId, PublicIpAddress, etc.).
     """
     start_time = time.time()
     print("=" * 60)
-    print(f"Deploying {STACK_NAME} infrastructure")
+    print(f"Deploying {STACK_NAME} (target: <60 s)")
     print("=" * 60)
     print()
+
+    # 0. Build and push hello-world image to ECR
+    print("Building and pushing hello-world image to ECR...")
+    repo = ecr.create_repository(ECR_REPO_NAME, STACK_NAME, REGION)
+    image_uri = ecr.build_and_push(
+        dockerfile_path=HELLO_WORLD_DIR,
+        repository_uri=repo["uri"],
+        tag=HELLO_IMAGE_TAG,
+        platform="linux/amd64",
+        region=REGION,
+    )
+    print(f"  - Image: {image_uri}")
 
     # 1. Networking
     print("Getting VPC and subnet...")
@@ -51,22 +72,21 @@ def deploy() -> dict[str, str]:
     print(f"  - VPC: {vpc['vpc_id']}")
     print(f"  - Subnet: {subnet_id}")
 
-    # 2. Security group
+    # 2. Security group (idempotent — reuses if exists)
     print("Creating security group...")
     sg = create_security_group(
         name=f"{STACK_NAME}-sg",
         vpc_id=vpc["vpc_id"],
-        description="Allow LangGraph API port for OpenSRE deployment tests",
+        description="Allow hello-world HTTP port",
         ingress_rules=[
-            {"port": 2024, "cidr": "0.0.0.0/0", "description": "LangGraph API"},
-            {"port": 22, "cidr": "0.0.0.0/0", "description": "SSH debug access"},
+            {"port": HELLO_PORT, "cidr": "0.0.0.0/0", "description": "Hello HTTP"},
         ],
         stack_name=STACK_NAME,
         region=REGION,
     )
     print(f"  - Security group: {sg['group_id']}")
 
-    # 3. IAM instance profile
+    # 3. IAM instance profile (idempotent — reuses if exists)
     print("Creating IAM instance profile...")
     profile = create_instance_profile(
         role_name=f"{STACK_NAME}-role",
@@ -76,31 +96,13 @@ def deploy() -> dict[str, str]:
     )
     print(f"  - Profile: {profile['ProfileName']}")
 
-    # 4. AMI
-    print("Looking up latest Amazon Linux 2023 AMI...")
-    ami_id = get_latest_al2023_ami(REGION)
+    # 4. ECS-optimized AMI (Docker pre-installed)
+    print("Looking up ECS-optimized AMI...")
+    ami_id = get_ecs_optimized_ami(REGION)
     print(f"  - AMI: {ami_id}")
 
-    # 5. User data — pass required LLM env vars from local environment
-    import os
-    env_vars: dict[str, str] = {}
-    for key in (
-        "OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "LANGSMITH_API_KEY",
-        "LANGCHAIN_API_KEY",
-        "LLM_PROVIDER",
-        "ANTHROPIC_MODEL",
-    ):
-        val = os.getenv(key)
-        if val:
-            env_vars[key] = val
-    # Force provider to openai if only OpenAI key present
-    if "OPENAI_API_KEY" in env_vars and "LLM_PROVIDER" not in env_vars:
-        env_vars["LLM_PROVIDER"] = "openai"
-    if env_vars.get("LLM_PROVIDER") == "ollama":
-        env_vars["LLM_PROVIDER"] = "openai"
-    user_data = generate_user_data(env_vars=env_vars)
+    # 5. User data
+    user_data = generate_hello_user_data()
 
     # 6. Launch instance
     print("Launching EC2 instance...")
@@ -111,20 +113,23 @@ def deploy() -> dict[str, str]:
         instance_profile_arn=profile["ProfileArn"],
         user_data=user_data,
         stack_name=STACK_NAME,
+        instance_type=INSTANCE_TYPE,
         region=REGION,
     )
     print(f"  - Instance ID: {instance['InstanceId']}")
 
     # 7. Wait for running
+    launch_time = time.time()
     print("Waiting for instance to start...")
     running = wait_for_running(instance["InstanceId"], REGION)
     public_ip = running["PublicIpAddress"]
     print(f"  - Public IP: {public_ip}")
 
-    # 8. Wait for health (Docker build + container start takes time)
-    print("Waiting for OpenSRE container health (may take 5-10 minutes)...")
-    wait_for_health(public_ip)
-    print("  - Health: OK")
+    # 8. Wait for /ping
+    print("Waiting for hello-world /ping ...")
+    wait_for_hello(public_ip)
+    ping_elapsed = time.time() - launch_time
+    print(f"  - /ping OK  ({ping_elapsed:.1f}s since launch API call)")
 
     outputs = {
         "InstanceId": instance["InstanceId"],
@@ -143,6 +148,7 @@ def deploy() -> dict[str, str]:
     print()
     print("=" * 60)
     print(f"Deployment completed in {elapsed:.1f}s")
+    print(f"  (launch-to-ping: {ping_elapsed:.1f}s)")
     print("=" * 60)
     print()
     for key, value in outputs.items():

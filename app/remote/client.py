@@ -172,6 +172,56 @@ class RemoteAgentClient:
 
         return result
 
+    # ------------------------------------------------------------------
+    # Lightweight server endpoints (app.remote.server)
+    # ------------------------------------------------------------------
+
+    def investigate(
+        self,
+        raw_alert: dict[str, Any],
+        *,
+        alert_name: str | None = None,
+        pipeline_name: str | None = None,
+        severity: str | None = None,
+        timeout: float = STREAM_TIMEOUT,
+    ) -> dict[str, Any]:
+        """POST an alert to the lightweight investigation server.
+
+        Returns the JSON response with ``id``, ``report``, ``root_cause``,
+        and ``problem_md``.
+        """
+        url = f"{self.base_url}/investigate"
+        body: dict[str, Any] = {"raw_alert": raw_alert}
+        if alert_name:
+            body["alert_name"] = alert_name
+        if pipeline_name:
+            body["pipeline_name"] = pipeline_name
+        if severity:
+            body["severity"] = severity
+
+        with httpx.Client(timeout=httpx.Timeout(timeout, connect=REQUEST_TIMEOUT)) as client:
+            resp = client.post(url, json=body, headers=self._headers)
+            resp.raise_for_status()
+            result: dict[str, Any] = resp.json()
+            return result
+
+    def list_investigations(self, *, timeout: float = REQUEST_TIMEOUT) -> list[dict[str, Any]]:
+        """GET the list of persisted investigation ``.md`` files."""
+        url = f"{self.base_url}/investigations"
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.get(url, headers=self._headers)
+            resp.raise_for_status()
+            items: list[dict[str, Any]] = resp.json()
+            return items
+
+    def get_investigation(self, inv_id: str, *, timeout: float = REQUEST_TIMEOUT) -> str:
+        """GET the markdown content of a single investigation."""
+        url = f"{self.base_url}/investigations/{inv_id}"
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.get(url, headers=self._headers)
+            resp.raise_for_status()
+            return resp.text
+
 
 def _build_synthetic_payload() -> dict[str, Any]:
     """Build the default synthetic alert payload for trigger tests."""

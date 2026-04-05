@@ -1,23 +1,28 @@
 #!/usr/bin/env python3
-"""Deploy OpenSRE on an EC2 instance with Docker.
+"""Deploy the full OpenSRE investigation server on EC2.
 
 Creates:
-- 1 IAM role + instance profile for EC2
-- 1 Security group allowing port 2024 (LangGraph API)
-- 1 EC2 instance running the OpenSRE Docker container
+- 1 IAM role + instance profile
+- 1 Security group allowing ports 22 (SSH) and 8080 (HTTP)
+- 1 EC2 t3.medium running the OpenSRE FastAPI server (no Docker)
 """
 
 from __future__ import annotations
 
+import os
 import time
 
 from tests.deployment.ec2.infrastructure_sdk.instance import (
     create_instance_profile,
-    generate_user_data,
-    get_latest_al2023_ami,
     launch_instance,
-    wait_for_health,
     wait_for_running,
+)
+from tests.deployment.ec2.infrastructure_sdk.remote_instance import (
+    INSTANCE_TYPE,
+    SERVER_PORT,
+    generate_remote_user_data,
+    get_latest_al2023_ami,
+    wait_for_remote_health,
 )
 from tests.shared.infrastructure_sdk.config import save_outputs
 from tests.shared.infrastructure_sdk.deployer import DEFAULT_REGION
@@ -27,19 +32,37 @@ from tests.shared.infrastructure_sdk.resources.vpc import (
     get_public_subnets,
 )
 
-STACK_NAME = "tracer-ec2"
+STACK_NAME = "tracer-ec2-remote"
 REGION = DEFAULT_REGION
 
+_ENV_KEYS = (
+    "LLM_PROVIDER",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_REASONING_MODEL",
+    "ANTHROPIC_TOOLCALL_MODEL",
+    "OPENAI_API_KEY",
+    "LANGSMITH_API_KEY",
+    "LANGCHAIN_API_KEY",
+    "GRAFANA_URL",
+    "GRAFANA_API_KEY",
+    "DATADOG_API_KEY",
+    "DATADOG_APP_KEY",
+    "AWS_REGION",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+)
 
-def deploy() -> dict[str, str]:
-    """Deploy OpenSRE on EC2 with Docker.
+
+def deploy(branch: str = "feature/connect-remote") -> dict[str, str]:
+    """Bootstrap the OpenSRE investigation server on a fresh EC2 instance.
 
     Returns:
-        Dict of output values (InstanceId, PublicIpAddress, SecurityGroupId, etc.).
+        Dict of output values (InstanceId, PublicIpAddress, etc.).
     """
     start_time = time.time()
     print("=" * 60)
-    print(f"Deploying {STACK_NAME} infrastructure")
+    print(f"Deploying {STACK_NAME}")
     print("=" * 60)
     print()
 
@@ -51,15 +74,15 @@ def deploy() -> dict[str, str]:
     print(f"  - VPC: {vpc['vpc_id']}")
     print(f"  - Subnet: {subnet_id}")
 
-    # 2. Security group
+    # 2. Security group (SSH + HTTP)
     print("Creating security group...")
     sg = create_security_group(
         name=f"{STACK_NAME}-sg",
         vpc_id=vpc["vpc_id"],
-        description="Allow LangGraph API port for OpenSRE deployment tests",
+        description="OpenSRE remote server — SSH + investigation API",
         ingress_rules=[
-            {"port": 2024, "cidr": "0.0.0.0/0", "description": "LangGraph API"},
-            {"port": 22, "cidr": "0.0.0.0/0", "description": "SSH debug access"},
+            {"port": 22, "cidr": "0.0.0.0/0", "description": "SSH"},
+            {"port": SERVER_PORT, "cidr": "0.0.0.0/0", "description": "Investigation API"},
         ],
         stack_name=STACK_NAME,
         region=REGION,
@@ -81,26 +104,20 @@ def deploy() -> dict[str, str]:
     ami_id = get_latest_al2023_ami(REGION)
     print(f"  - AMI: {ami_id}")
 
-    # 5. User data — pass required LLM env vars from local environment
-    import os
+    # 5. Collect env vars from local environment
     env_vars: dict[str, str] = {}
-    for key in (
-        "OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "LANGSMITH_API_KEY",
-        "LANGCHAIN_API_KEY",
-        "LLM_PROVIDER",
-        "ANTHROPIC_MODEL",
-    ):
+    for key in _ENV_KEYS:
         val = os.getenv(key)
         if val:
             env_vars[key] = val
-    # Force provider to openai if only OpenAI key present
-    if "OPENAI_API_KEY" in env_vars and "LLM_PROVIDER" not in env_vars:
-        env_vars["LLM_PROVIDER"] = "openai"
-    if env_vars.get("LLM_PROVIDER") == "ollama":
-        env_vars["LLM_PROVIDER"] = "openai"
-    user_data = generate_user_data(env_vars=env_vars)
+    if "LLM_PROVIDER" not in env_vars:
+        if "ANTHROPIC_API_KEY" in env_vars:
+            env_vars["LLM_PROVIDER"] = "anthropic"
+        elif "OPENAI_API_KEY" in env_vars:
+            env_vars["LLM_PROVIDER"] = "openai"
+    print(f"  - Env vars forwarded: {list(env_vars.keys())}")
+
+    user_data = generate_remote_user_data(env_vars=env_vars, branch=branch)
 
     # 6. Launch instance
     print("Launching EC2 instance...")
@@ -111,6 +128,7 @@ def deploy() -> dict[str, str]:
         instance_profile_arn=profile["ProfileArn"],
         user_data=user_data,
         stack_name=STACK_NAME,
+        instance_type=INSTANCE_TYPE,
         region=REGION,
     )
     print(f"  - Instance ID: {instance['InstanceId']}")
@@ -121,10 +139,11 @@ def deploy() -> dict[str, str]:
     public_ip = running["PublicIpAddress"]
     print(f"  - Public IP: {public_ip}")
 
-    # 8. Wait for health (Docker build + container start takes time)
-    print("Waiting for OpenSRE container health (may take 5-10 minutes)...")
-    wait_for_health(public_ip)
-    print("  - Health: OK")
+    # 8. Wait for server health (git clone + pip install takes time)
+    print("Waiting for investigation server (git clone + pip install)...")
+    print("  (this can take 3-5 minutes on first deploy)")
+    wait_for_remote_health(public_ip)
+    print("  - /ok: healthy")
 
     outputs = {
         "InstanceId": instance["InstanceId"],
@@ -135,6 +154,7 @@ def deploy() -> dict[str, str]:
         "AmiId": ami_id,
         "SubnetId": subnet_id,
         "VpcId": vpc["vpc_id"],
+        "ServerPort": str(SERVER_PORT),
     }
 
     save_outputs(STACK_NAME, outputs)
@@ -147,6 +167,14 @@ def deploy() -> dict[str, str]:
     print()
     for key, value in outputs.items():
         print(f"  {key}: {value}")
+    print()
+    key_name = os.getenv("EC2_KEY_NAME")
+    if key_name:
+        print(f"  SSH:    ssh -i ~/.ssh/{key_name}.pem ec2-user@{public_ip}")
+    else:
+        print("  SSH:    set EC2_KEY_NAME env var to enable SSH access")
+    print(f"  Health: curl http://{public_ip}:{SERVER_PORT}/ok")
+    print(f"  Logs:   ssh ec2-user@{public_ip} 'cat /var/log/opensre-remote.log'")
 
     return outputs
 

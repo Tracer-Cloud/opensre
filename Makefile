@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install onboard benchmark test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke deploy-langsmith destroy-langsmith test-langsmith deploy-vercel destroy-vercel test-vercel deploy-ec2 destroy-ec2 test-ec2 deploy-bedrock destroy-bedrock test-bedrock
+.PHONY: install onboard benchmark test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke deploy-langsmith destroy-langsmith test-langsmith deploy-vercel destroy-vercel test-vercel deploy-ec2 destroy-ec2 test-ec2 deploy-ec2-hello destroy-ec2-hello deploy-remote destroy-remote deploy-bedrock destroy-bedrock test-bedrock
 
 ifneq ($(wildcard .venv/bin/python),)
 PYTHON = .venv/bin/python
@@ -316,6 +316,20 @@ destroy-ec2:
 test-ec2:
 	$(PYTHON) -m pytest tests/deployment/ec2/ -v -s
 
+# ─── EC2 Hello World (fast, <60s) ────────────────────────────────────────────
+deploy-ec2-hello:
+	$(PYTHON) -m tests.deployment.ec2.infrastructure_sdk.deploy_hello
+
+destroy-ec2-hello:
+	$(PYTHON) -m tests.deployment.ec2.infrastructure_sdk.destroy_hello
+
+# ─── EC2 Remote (full investigation server) ──────────────────────────────────
+deploy-remote:
+	$(PYTHON) -m tests.deployment.ec2.infrastructure_sdk.deploy_remote
+
+destroy-remote:
+	$(PYTHON) -m tests.deployment.ec2.infrastructure_sdk.destroy_remote
+
 # Show help
 help:
 	@echo "Available commands:"
@@ -333,6 +347,10 @@ help:
 	@echo "  make deploy-ec2        - Deploy OpenSRE on EC2 with Docker"
 	@echo "  make destroy-ec2       - Terminate EC2 instance and clean up"
 	@echo "  make test-ec2          - Run EC2 deployment tests"
+	@echo "  make deploy-ec2-hello  - Deploy hello-world on EC2 (<60s)"
+	@echo "  make destroy-ec2-hello - Terminate hello-world EC2 instance"
+	@echo "  make deploy-remote     - Deploy full investigation server on EC2"
+	@echo "  make destroy-remote    - Terminate remote investigation EC2 instance"
 	@echo ""
 	@echo "  DEPLOYMENT (AWS SDK - fast!)"
 	@echo "  make deploy          - Deploy all test case infrastructure"
