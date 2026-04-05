@@ -51,7 +51,18 @@ _SETUP_SERVICES = [
     "tracer",
 ]
 
-_VERIFY_SERVICES = ["aws", "coralogix", "datadog", "grafana", "honeycomb",  "mongodb", "opsgenie", "slack", "tracer", "vercel"]
+_VERIFY_SERVICES = [
+    "aws",
+    "coralogix",
+    "datadog",
+    "grafana",
+    "honeycomb",
+    "mongodb",
+    "opsgenie",
+    "slack",
+    "tracer",
+    "vercel",
+]
 
 
 _ASCII_HEADER = """\
@@ -68,23 +79,33 @@ def _render_help() -> None:
 
     console = Console(highlight=False)
     console.print()
-    console.print(Text.assemble(("  Usage: "), ("opensre", "bold white"), (" [OPTIONS] COMMAND [ARGS]...")))
+    console.print(
+        Text.assemble(("  Usage: "), ("opensre", "bold white"), (" [OPTIONS] COMMAND [ARGS]..."))
+    )
     console.print()
     console.print(Text.assemble(("  Commands:", "bold white")))
     for name, desc in [
-        ("onboard",       "Run the interactive onboarding wizard."),
-        ("investigate",   "Run an RCA investigation against an alert payload."),
-        ("tests",         "Browse and run inventoried tests from the terminal."),
-        ("integrations",  "Manage local integration credentials."),
-        ("health",        "Check integration and agent setup status."),
-        ("update",        "Check for a newer version and update if one is available."),
-        ("version",       "Print detailed version, Python and OS info."),
+        ("onboard", "Run the interactive onboarding wizard."),
+        ("investigate", "Run an RCA investigation against an alert payload."),
+        ("tests", "Browse and run inventoried tests from the terminal."),
+        ("integrations", "Manage local integration credentials."),
+        ("health", "Check integration and agent setup status."),
+        ("update", "Check for a newer version and update if one is available."),
+        ("version", "Print detailed version, Python and OS info."),
     ]:
         console.print(Text.assemble(("    ", ""), (f"{name:<16}", "bold cyan"), desc))
     console.print()
     console.print(Text.assemble(("  Options:", "bold white")))
-    console.print(Text.assemble(("    ", ""), (f"{'--version':<16}", "bold cyan"), "Show the version and exit."))
-    console.print(Text.assemble(("    ", ""), (f"{'-h, --help':<16}", "bold cyan"), "Show this message and exit."))
+    console.print(
+        Text.assemble(
+            ("    ", ""), (f"{'--version':<16}", "bold cyan"), "Show the version and exit."
+        )
+    )
+    console.print(
+        Text.assemble(
+            ("    ", ""), (f"{'-h, --help':<16}", "bold cyan"), "Show this message and exit."
+        )
+    )
     console.print()
 
 
@@ -97,28 +118,40 @@ def _render_landing() -> None:
     for line in _ASCII_HEADER.splitlines():
         console.print(Text.assemble(("  ", ""), (line, "bold cyan")))
     console.print()
-    console.print(Text.assemble(
-        ("  ", ""),
-        "open-source SRE agent for automated incident investigation and root cause analysis",
-    ))
+    console.print(
+        Text.assemble(
+            ("  ", ""),
+            "open-source SRE agent for automated incident investigation and root cause analysis",
+        )
+    )
     console.print()
-    console.print(Text.assemble(("  Usage: "), ("opensre", "bold white"), (" [OPTIONS] COMMAND [ARGS]...")))
+    console.print(
+        Text.assemble(("  Usage: "), ("opensre", "bold white"), (" [OPTIONS] COMMAND [ARGS]..."))
+    )
     console.print()
     console.print(Text.assemble(("  Quick start:", "bold white")))
     for cmd, desc in [
-        ("opensre onboard",                   "Configure LLM provider and integrations"),
+        ("opensre onboard", "Configure LLM provider and integrations"),
         ("opensre investigate -i alert.json", "Run RCA against an alert payload"),
-        ("opensre tests",                     "Browse and run inventoried tests"),
-        ("opensre integrations list",         "Show configured integrations"),
-        ("opensre health",                    "Check integration and agent setup status"),
-        ("opensre update",                    "Update to the latest version"),
-        ("opensre version",                   "Print detailed version, Python and OS info"),
+        ("opensre tests", "Browse and run inventoried tests"),
+        ("opensre integrations list", "Show configured integrations"),
+        ("opensre health", "Check integration and agent setup status"),
+        ("opensre update", "Update to the latest version"),
+        ("opensre version", "Print detailed version, Python and OS info"),
     ]:
         console.print(Text.assemble(("    ", ""), (f"{cmd:<42}", "bold cyan"), desc))
     console.print()
     console.print(Text.assemble(("  Options:", "bold white")))
-    console.print(Text.assemble(("    ", ""), (f"{'--version':<42}", "bold cyan"), "Show the version and exit."))
-    console.print(Text.assemble(("    ", ""), (f"{'-h, --help':<42}", "bold cyan"), "Show this message and exit."))
+    console.print(
+        Text.assemble(
+            ("    ", ""), (f"{'--version':<42}", "bold cyan"), "Show the version and exit."
+        )
+    )
+    console.print(
+        Text.assemble(
+            ("    ", ""), (f"{'-h, --help':<42}", "bold cyan"), "Show this message and exit."
+        )
+    )
     console.print()
 
 
@@ -156,7 +189,12 @@ def cli(ctx: click.Context) -> None:
 
 
 @cli.command()
-@click.option("--check", "check_only", is_flag=True, help="Report whether an update is available without installing.")
+@click.option(
+    "--check",
+    "check_only",
+    is_flag=True,
+    help="Report whether an update is available without installing.",
+)
 @click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
 def update(check_only: bool, yes: bool) -> None:
     """Check for a newer version and update if one is available."""
@@ -227,11 +265,12 @@ def onboard_local_llm() -> None:
 @cli.command()
 def health() -> None:
     """Show a quick health summary of the local agent setup."""
-    from app.config import get_environment
+    from rich.console import Console
+
     from app.cli.health_view import render_health_report
+    from app.config import get_environment
     from app.integrations.store import STORE_PATH
     from app.integrations.verify import verify_integrations
-    from rich.console import Console
 
     capture_cli_invoked()
     results = verify_integrations()
@@ -241,12 +280,17 @@ def health() -> None:
         integration_store_path=STORE_PATH,
         results=results,
     )
+    if any(result.get("status") in {"missing", "failed"} for result in results):
+        raise SystemExit(1)
 
 
 @cli.command()
 @click.option(
-    "--input", "-i", "input_path",
-    default=None, type=click.Path(),
+    "--input",
+    "-i",
+    "input_path",
+    default=None,
+    type=click.Path(),
     help="Path to an alert file (.json, .md, .txt, …). Use '-' to read from stdin.",
 )
 @click.option("--input-json", default=None, help="Inline alert JSON string.")
@@ -257,7 +301,9 @@ def health() -> None:
     default=None,
     help="Print a starter alert JSON template and exit.",
 )
-@click.option("--output", "-o", default=None, type=click.Path(), help="Output JSON file (default: stdout).")
+@click.option(
+    "--output", "-o", default=None, type=click.Path(), help="Output JSON file (default: stdout)."
+)
 def investigate(
     input_path: str | None,
     input_json: str | None,
@@ -343,7 +389,9 @@ def remove(service: str) -> None:
 
 @integrations.command()
 @click.argument("service", required=False, default=None, type=click.Choice(_VERIFY_SERVICES))
-@click.option("--send-slack-test", is_flag=True, help="Send a test message to the configured Slack webhook.")
+@click.option(
+    "--send-slack-test", is_flag=True, help="Send a test message to the configured Slack webhook."
+)
 def verify(service: str | None, send_slack_test: bool) -> None:
     """Verify integration connectivity (all services, or a specific one)."""
     from app.integrations.cli import cmd_verify
@@ -367,10 +415,15 @@ def tests(ctx: click.Context) -> None:
 
 
 @tests.command(name="synthetic")
-@click.option("--scenario", default="", help="Pin to a single scenario directory, e.g. 001-replication-lag.")
+@click.option(
+    "--scenario", default="", help="Pin to a single scenario directory, e.g. 001-replication-lag."
+)
 @click.option("--json", "output_json", is_flag=True, help="Print machine-readable JSON results.")
 @click.option(
-    "--mock-grafana", is_flag=True, default=True, show_default=True,
+    "--mock-grafana",
+    is_flag=True,
+    default=True,
+    show_default=True,
     help="Serve fixture data via FixtureGrafanaBackend instead of real Grafana calls.",
 )
 def test_rds_synthetic(scenario: str, output_json: bool, mock_grafana: bool) -> None:
@@ -394,7 +447,8 @@ def test_rds_synthetic(scenario: str, output_json: bool, mock_grafana: bool) -> 
 @click.option(
     "--category",
     type=click.Choice(["all", "rca", "demo", "infra-heavy", "ci-safe"]),
-    default="all", show_default=True,
+    default="all",
+    show_default=True,
     help="Filter the inventory by category tag.",
 )
 @click.option("--search", default="", help="Case-insensitive text filter.")
@@ -429,7 +483,8 @@ def run(test_id: str, dry_run: bool) -> None:
     item = find_test_item(test_id)
     if item is None:
         raise click.ClickException(
-    f"Unknown test id: {test_id}. Run 'opensre tests list' to see available test ids.")
+            f"Unknown test id: {test_id}. Run 'opensre tests list' to see available test ids."
+        )
 
     capture_test_run_started(test_id, dry_run=dry_run)
     raise SystemExit(run_catalog_item(item, dry_run=dry_run))
