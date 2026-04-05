@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass
 from typing import Any
 
-from anthropic import Anthropic, AuthenticationError
+from anthropic import Anthropic, AnthropicBedrock, AuthenticationError
 from openai import AuthenticationError as OpenAIAuthError
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
@@ -126,6 +127,58 @@ class LLMClient:
         return LLMResponse(content=content)
 
 
+class BedrockLLMClient:
+    """LLM client using Anthropic models via Amazon Bedrock (IAM auth, no API key)."""
+
+    def __init__(self, *, model: str, max_tokens: int = 1024, temperature: float | None = None) -> None:
+        self._client = AnthropicBedrock(aws_region=os.getenv("AWS_REGION", "us-east-1"))
+        self._model = model
+        self._max_tokens = max_tokens
+        self._temperature = temperature
+
+    def with_config(self, **_kwargs: Any) -> BedrockLLMClient:
+        return self
+
+    def with_structured_output(self, model: type[BaseModel]) -> StructuredOutputClient:
+        return StructuredOutputClient(self, model)
+
+    def bind_tools(self, _tools: list[Any]) -> BedrockLLMClient:
+        return self
+
+    def invoke(self, prompt_or_messages: Any) -> LLMResponse:
+        system, messages = _normalize_messages(prompt_or_messages)
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": self._max_tokens,
+            "messages": messages,
+        }
+        if system:
+            kwargs["system"] = system
+        if self._temperature is not None:
+            kwargs["temperature"] = self._temperature
+
+        backoff_seconds = 1.0
+        max_attempts = 3
+        last_err: Exception | None = None
+        for attempt in range(max_attempts):
+            try:
+                response = self._client.messages.create(**kwargs)
+                break
+            except Exception as err:
+                last_err = err
+                if attempt == max_attempts - 1:
+                    raise RuntimeError(
+                        f"Bedrock API request failed after {max_attempts} attempts: {type(err).__name__}: {err}"
+                    ) from err
+                time.sleep(backoff_seconds)
+                backoff_seconds *= 2
+        else:
+            raise RuntimeError("Bedrock invocation failed without a concrete error") from last_err
+
+        content = _extract_text(response)
+        return LLMResponse(content=content)
+
+
 def _format_anthropic_retry_error(err: Exception) -> str:
     """Format a user-facing Anthropic retry failure message."""
     error_name = type(err).__name__
@@ -230,7 +283,7 @@ class OpenAILLMClient:
 
 
 class StructuredOutputClient:
-    def __init__(self, base: LLMClient | OpenAILLMClient, model: type[BaseModel]) -> None:
+    def __init__(self, base: LLMClient | OpenAILLMClient | BedrockLLMClient, model: type[BaseModel]) -> None:
         self._base = base
         self._model = model
 
@@ -340,8 +393,9 @@ def _extract_json_payload(text: str) -> Any:
 # LLM Client
 # ─────────────────────────────────────────────────────────────────────────────
 
-_llm: LLMClient | OpenAILLMClient | None = None
-_llm_for_tools: LLMClient | OpenAILLMClient | None = None
+_LLMClientType = LLMClient | OpenAILLMClient | BedrockLLMClient
+_llm: _LLMClientType | None = None
+_llm_for_tools: _LLMClientType | None = None
 
 
 def reset_llm_singletons() -> None:
@@ -351,7 +405,7 @@ def reset_llm_singletons() -> None:
     _llm_for_tools = None
 
 
-def _create_llm_client(model_type: str) -> LLMClient | OpenAILLMClient:
+def _create_llm_client(model_type: str) -> _LLMClientType:
     settings = LLMSettings.from_env()
     provider = settings.provider
     if provider == "openai":
@@ -403,13 +457,19 @@ def _create_llm_client(model_type: str) -> LLMClient | OpenAILLMClient:
             api_key_env="OLLAMA_API_KEY",
             api_key_default="ollama",
         )
+    elif provider == "bedrock":
+        from app.config import BEDROCK_LLM_CONFIG
+
+        config = BEDROCK_LLM_CONFIG
+        model = settings.bedrock_reasoning_model if model_type == "reasoning" else settings.bedrock_toolcall_model
+        return BedrockLLMClient(model=model, max_tokens=config.max_tokens)
     else:
         config = ANTHROPIC_LLM_CONFIG
         model = settings.anthropic_reasoning_model if model_type == "reasoning" else settings.anthropic_toolcall_model
         return LLMClient(model=model, max_tokens=config.max_tokens)
 
 
-def get_llm_for_reasoning() -> LLMClient | OpenAILLMClient:
+def get_llm_for_reasoning() -> _LLMClientType:
     """
     Get or create the LLM client singleton for complex reasoning tasks.
 
@@ -426,7 +486,7 @@ def get_llm_for_reasoning() -> LLMClient | OpenAILLMClient:
     return _llm
 
 
-def get_llm_for_tools() -> LLMClient | OpenAILLMClient:
+def get_llm_for_tools() -> _LLMClientType:
     """
     Get or create a lightweight LLM client for tool selection and action planning.
 

@@ -35,23 +35,7 @@ from tests.shared.infrastructure_sdk.resources.vpc import (
 STACK_NAME = "tracer-ec2-remote"
 REGION = DEFAULT_REGION
 
-_ENV_KEYS = (
-    "LLM_PROVIDER",
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_REASONING_MODEL",
-    "ANTHROPIC_TOOLCALL_MODEL",
-    "OPENAI_API_KEY",
-    "LANGSMITH_API_KEY",
-    "LANGCHAIN_API_KEY",
-    "GRAFANA_URL",
-    "GRAFANA_API_KEY",
-    "DATADOG_API_KEY",
-    "DATADOG_APP_KEY",
-    "AWS_REGION",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_SESSION_TOKEN",
-)
+_DOTENV_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".env")
 
 
 def deploy(branch: str = "feature/connect-remote") -> dict[str, str]:
@@ -104,18 +88,26 @@ def deploy(branch: str = "feature/connect-remote") -> dict[str, str]:
     ami_id = get_latest_al2023_ami(REGION)
     print(f"  - AMI: {ami_id}")
 
-    # 5. Collect env vars from local environment
+    # 5. Collect env vars from .env file and force Bedrock provider
     env_vars: dict[str, str] = {}
-    for key in _ENV_KEYS:
-        val = os.getenv(key)
-        if val:
-            env_vars[key] = val
-    if "LLM_PROVIDER" not in env_vars:
-        if "ANTHROPIC_API_KEY" in env_vars:
-            env_vars["LLM_PROVIDER"] = "anthropic"
-        elif "OPENAI_API_KEY" in env_vars:
-            env_vars["LLM_PROVIDER"] = "openai"
-    print(f"  - Env vars forwarded: {list(env_vars.keys())}")
+    dotenv_path = os.path.normpath(_DOTENV_PATH)
+    if os.path.isfile(dotenv_path):
+        with open(dotenv_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip("'\"")
+                if key:
+                    env_vars[key] = value
+    env_vars["LLM_PROVIDER"] = "bedrock"
+    env_vars["AWS_REGION"] = REGION
+    env_vars.pop("OLLAMA_MODEL", None)
+    env_vars.pop("OLLAMA_HOST", None)
+    print("  - LLM_PROVIDER: bedrock (Anthropic via Bedrock, IAM auth)")
+    print(f"  - Env vars forwarded: {len(env_vars)} keys")
 
     user_data = generate_remote_user_data(env_vars=env_vars, branch=branch)
 

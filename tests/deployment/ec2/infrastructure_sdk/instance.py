@@ -6,6 +6,7 @@ exposes the LangGraph API on port 2024.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import time
@@ -145,13 +146,18 @@ def create_instance_profile(
             raise
 
     # Attach ECR read policy so the instance can pull images
-    try:
+    with contextlib.suppress(ClientError):
         iam.attach_role_policy(
             RoleName=role_name,
             PolicyArn="arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
         )
-    except ClientError:
-        pass  # already attached
+
+    # Attach Bedrock full-access policy for LLM inference via IAM
+    with contextlib.suppress(ClientError):
+        iam.attach_role_policy(
+            RoleName=role_name,
+            PolicyArn="arn:aws:iam::aws:policy/AmazonBedrockFullAccess",
+        )
 
     # IAM eventual consistency
     time.sleep(10)

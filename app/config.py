@@ -105,11 +105,15 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
+# Amazon Bedrock model constants (cross-region inference IDs)
+BEDROCK_REASONING_MODEL = "us.anthropic.claude-sonnet-4-6-20250514-v1:0"
+BEDROCK_TOOLCALL_MODEL = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+
 # Ollama local model constants
 DEFAULT_OLLAMA_MODEL = "llama3.2"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
-LLMProvider = Literal["anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama"]
+LLMProvider = Literal["anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock"]
 
 
 class LLMSettings(StrictConfigModel):
@@ -133,13 +137,15 @@ class LLMSettings(StrictConfigModel):
     gemini_toolcall_model: str = GEMINI_TOOLCALL_MODEL
     nvidia_reasoning_model: str = NVIDIA_REASONING_MODEL
     nvidia_toolcall_model: str = NVIDIA_TOOLCALL_MODEL
+    bedrock_reasoning_model: str = BEDROCK_REASONING_MODEL
+    bedrock_toolcall_model: str = BEDROCK_TOOLCALL_MODEL
     max_tokens: int = Field(default=DEFAULT_MAX_TOKENS, gt=0)
 
     @field_validator("provider", mode="before")
     @classmethod
     def _normalize_provider(cls, value: object) -> str:
         provider = str(value or "anthropic").strip().lower() or "anthropic"
-        valid_providers = ("anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama")
+        valid_providers = ("anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock")
         if provider in valid_providers:
             return provider
         suggestion = get_close_matches(provider, valid_providers, n=1)
@@ -151,8 +157,8 @@ class LLMSettings(StrictConfigModel):
 
     @model_validator(mode="after")
     def _require_api_key_for_selected_provider(self) -> "LLMSettings":
-        if self.provider == "ollama":
-            return self  # local Ollama server — no API key required
+        if self.provider in ("ollama", "bedrock"):
+            return self  # ollama: local server; bedrock: IAM-based auth
         provider_to_key = {
             "anthropic": self.anthropic_api_key,
             "openai": self.openai_api_key,
@@ -220,6 +226,14 @@ class LLMSettings(StrictConfigModel):
                 os.getenv("NVIDIA_MODEL", NVIDIA_TOOLCALL_MODEL),
             ).strip()
             or NVIDIA_TOOLCALL_MODEL,
+            "bedrock_reasoning_model": os.getenv(
+                "BEDROCK_REASONING_MODEL", BEDROCK_REASONING_MODEL
+            ).strip()
+            or BEDROCK_REASONING_MODEL,
+            "bedrock_toolcall_model": os.getenv(
+                "BEDROCK_TOOLCALL_MODEL", BEDROCK_TOOLCALL_MODEL
+            ).strip()
+            or BEDROCK_TOOLCALL_MODEL,
             "ollama_model": os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL).strip() or DEFAULT_OLLAMA_MODEL,
             "ollama_host": os.getenv("OLLAMA_HOST", DEFAULT_OLLAMA_HOST).strip() or DEFAULT_OLLAMA_HOST,
             "max_tokens": DEFAULT_MAX_TOKENS,
@@ -252,6 +266,12 @@ GEMINI_LLM_CONFIG = LLMModelConfig(
 NVIDIA_LLM_CONFIG = LLMModelConfig(
     reasoning_model=NVIDIA_REASONING_MODEL,
     toolcall_model=NVIDIA_TOOLCALL_MODEL,
+    max_tokens=DEFAULT_MAX_TOKENS,
+)
+
+BEDROCK_LLM_CONFIG = LLMModelConfig(
+    reasoning_model=BEDROCK_REASONING_MODEL,
+    toolcall_model=BEDROCK_TOOLCALL_MODEL,
     max_tokens=DEFAULT_MAX_TOKENS,
 )
 
