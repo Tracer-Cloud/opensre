@@ -45,6 +45,8 @@ def install(console: Console) -> bool:
         result = subprocess.run(cmd, shell=True, check=False)  # noqa: S602
         return result.returncode == 0
 
+    elif sys.platform == "win32":
+        console.print("[yellow]Windows is not yet supported by this automated setup.[/yellow]")
     console.print("Install Ollama from: [link]https://ollama.com/download[/link]")
     return False
 

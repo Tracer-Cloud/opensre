@@ -82,6 +82,13 @@ def test_recommend_model_apple_silicon_8gb_returns_3b() -> None:
     assert model == "llama3.2"
 
 
+def test_recommend_model_apple_silicon_16gb_low_free_ram_returns_3b() -> None:
+    # 16GB Apple Silicon but only 3GB free (heavy workload) → falls through to safe_ram check
+    hw = _hw(total_ram_gb=16.0, available_ram_gb=3.0, is_apple_silicon=True)
+    model, _ = recommend_model(hw)
+    assert model == "llama3.2"
+
+
 # ---------------------------------------------------------------------------
 # is_model_present — exact tag matching
 # ---------------------------------------------------------------------------

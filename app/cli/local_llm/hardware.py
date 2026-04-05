@@ -69,10 +69,10 @@ def _get_available_ram_gb(total_ram_gb: float) -> float:
 def recommend_model(hw: HardwareProfile) -> tuple[str, str]:
     """Return (model_name, human_reason). Conservative — caps usable RAM at 50% of total."""
     safe_ram = min(hw.available_ram_gb, hw.total_ram_gb * 0.5)
-    if hw.is_apple_silicon and hw.total_ram_gb >= 16:
+    if hw.is_apple_silicon and hw.total_ram_gb >= 16 and safe_ram >= 6:
         return (
             "llama3.1:8b",
-            f"{hw.total_ram_gb:.0f}GB Apple Silicon — unified memory handles 8B well",
+            f"{hw.total_ram_gb:.0f}GB Apple Silicon ({safe_ram:.0f}GB free) — unified memory handles 8B well",
         )
     if hw.has_nvidia_gpu or safe_ram >= 12:
         return "llama3.1:8b", f"{safe_ram:.0f}GB safely available — 8B model fits comfortably"

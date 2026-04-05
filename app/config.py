@@ -108,7 +108,6 @@ NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 # Ollama local model constants
 DEFAULT_OLLAMA_MODEL = "llama3.2"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_BASE_URL = DEFAULT_OLLAMA_HOST + "/v1"
 
 LLMProvider = Literal["anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama"]
 
