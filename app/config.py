@@ -105,9 +105,9 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
-# Amazon Bedrock model constants (on-demand inference IDs)
-BEDROCK_REASONING_MODEL = "anthropic.claude-sonnet-4-6"
-BEDROCK_TOOLCALL_MODEL = "anthropic.claude-haiku-4-5-20251001-v1:0"
+# Amazon Bedrock model constants (US cross-region inference profile IDs)
+BEDROCK_REASONING_MODEL = "us.anthropic.claude-sonnet-4-6"
+BEDROCK_TOOLCALL_MODEL = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 # Ollama local model constants
 DEFAULT_OLLAMA_MODEL = "llama3.2"
