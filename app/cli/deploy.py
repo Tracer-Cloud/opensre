@@ -1,5 +1,3 @@
-from _future_ import annotations
-
 import json
 import os
 import re
