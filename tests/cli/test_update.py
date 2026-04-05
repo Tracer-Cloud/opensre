@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.cli.update import _is_update_available, run_update
+from app.cli.update import _is_update_available, _upgrade_via_install_script, run_update
 
 
 def test_already_up_to_date(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -21,7 +21,7 @@ def test_check_only_returns_1_when_update_available(
 ) -> None:
     monkeypatch.setattr("app.cli.update.get_version", lambda: "1.0.0")
     monkeypatch.setattr("app.cli.update._fetch_latest_version", lambda: "1.2.3")
-    monkeypatch.setattr("app.cli.update._upgrade_via_pip", pytest.fail)
+    monkeypatch.setattr("app.cli.update._upgrade_via_install_script", lambda _v: pytest.fail())
 
     rc = run_update(check_only=True)
 
@@ -44,11 +44,12 @@ def test_check_only_returns_0_when_up_to_date(
     assert "already up to date" in capsys.readouterr().out
 
 
-def test_update_pip_success(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_update_install_script_success(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     monkeypatch.setattr("app.cli.update.get_version", lambda: "1.0.0")
     monkeypatch.setattr("app.cli.update._fetch_latest_version", lambda: "1.2.3")
-    monkeypatch.setattr("app.cli.update._is_binary_install", lambda: False)
-    monkeypatch.setattr("app.cli.update._upgrade_via_pip", lambda: 0)
+    monkeypatch.setattr("app.cli.update._upgrade_via_install_script", lambda _v: 0)
 
     rc = run_update(yes=True)
 
@@ -56,21 +57,20 @@ def test_update_pip_success(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Capt
     assert "1.0.0 -> 1.2.3" in capsys.readouterr().out
 
 
-def test_update_pip_failure_mentions_incomplete_state(
+def test_update_install_script_failure_shows_retry_hint(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr("app.cli.update.get_version", lambda: "1.0.0")
     monkeypatch.setattr("app.cli.update._fetch_latest_version", lambda: "1.2.3")
-    monkeypatch.setattr("app.cli.update._is_binary_install", lambda: False)
-    monkeypatch.setattr("app.cli.update._upgrade_via_pip", lambda: 1)
+    monkeypatch.setattr("app.cli.update._upgrade_via_install_script", lambda _v: 1)
 
     rc = run_update(yes=True)
 
     assert rc == 1
     err = capsys.readouterr().err
-    assert "pip upgrade failed" in err
-    assert "incomplete" in err
+    assert "install script failed" in err
+    assert "retry manually" in err
 
 
 def test_fetch_error_returns_1(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -115,19 +115,19 @@ def test_proxy_hint_in_connect_error(monkeypatch: pytest.MonkeyPatch, capsys: py
     assert "HTTPS_PROXY" in capsys.readouterr().err
 
 
-def test_binary_install_prints_instructions(
+def test_binary_install_upgrades_via_install_script(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr("app.cli.update.get_version", lambda: "1.0.0")
     monkeypatch.setattr("app.cli.update._fetch_latest_version", lambda: "1.2.3")
     monkeypatch.setattr("app.cli.update._is_binary_install", lambda: True)
-    monkeypatch.setattr("app.cli.update._upgrade_via_pip", pytest.fail)
+    monkeypatch.setattr("app.cli.update._upgrade_via_install_script", lambda _v: 0)
 
     rc = run_update(yes=True)
 
-    assert rc == 1
-    assert "install script" in capsys.readouterr().out
+    assert rc == 0
+    assert "1.0.0 -> 1.2.3" in capsys.readouterr().out
 
 
 def test_editable_install_prints_warning(
@@ -138,7 +138,7 @@ def test_editable_install_prints_warning(
     monkeypatch.setattr("app.cli.update._fetch_latest_version", lambda: "1.2.3")
     monkeypatch.setattr("app.cli.update._is_binary_install", lambda: False)
     monkeypatch.setattr("app.cli.update._is_editable_install", lambda: True)
-    monkeypatch.setattr("app.cli.update._upgrade_via_pip", lambda: 0)
+    monkeypatch.setattr("app.cli.update._upgrade_via_install_script", lambda _v: 0)
 
     rc = run_update(yes=True)
 
@@ -148,34 +148,34 @@ def test_editable_install_prints_warning(
     assert "1.0.0 -> 1.2.3" in out
 
 
-def test_binary_install_windows_shows_powershell(
+def test_install_script_failure_windows_shows_powershell_hint(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr("app.cli.update.get_version", lambda: "1.0.0")
     monkeypatch.setattr("app.cli.update._fetch_latest_version", lambda: "1.2.3")
-    monkeypatch.setattr("app.cli.update._is_binary_install", lambda: True)
     monkeypatch.setattr("app.cli.update._is_windows", lambda: True)
+    monkeypatch.setattr("app.cli.update._upgrade_via_install_script", lambda _v: 1)
 
     rc = run_update(yes=True)
 
     assert rc == 1
-    assert "iex" in capsys.readouterr().out
+    assert "iex" in capsys.readouterr().err
 
 
-def test_binary_install_non_windows_shows_curl(
+def test_install_script_failure_unix_shows_curl_hint(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr("app.cli.update.get_version", lambda: "1.0.0")
     monkeypatch.setattr("app.cli.update._fetch_latest_version", lambda: "1.2.3")
-    monkeypatch.setattr("app.cli.update._is_binary_install", lambda: True)
     monkeypatch.setattr("app.cli.update._is_windows", lambda: False)
+    monkeypatch.setattr("app.cli.update._upgrade_via_install_script", lambda _v: 1)
 
     rc = run_update(yes=True)
 
     assert rc == 1
-    assert "curl" in capsys.readouterr().out
+    assert "curl" in capsys.readouterr().err
 
 
 def test_update_prints_release_notes_url_after_success(
@@ -185,7 +185,7 @@ def test_update_prints_release_notes_url_after_success(
     monkeypatch.setattr("app.cli.update.get_version", lambda: "1.0.0")
     monkeypatch.setattr("app.cli.update._fetch_latest_version", lambda: "1.2.3")
     monkeypatch.setattr("app.cli.update._is_binary_install", lambda: False)
-    monkeypatch.setattr("app.cli.update._upgrade_via_pip", lambda: 0)
+    monkeypatch.setattr("app.cli.update._upgrade_via_install_script", lambda _v: 0)
 
     rc = run_update(yes=True)
 
@@ -193,6 +193,25 @@ def test_update_prints_release_notes_url_after_success(
     out = capsys.readouterr().out
     assert "release notes" in out
     assert "1.2.3" in out
+
+
+def test_upgrade_via_install_script_passes_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure _upgrade_via_install_script forwards the target version to the subprocess."""
+    captured_env: dict[str, str] = {}
+
+    def fake_run(cmd: list[str], *, check: bool = False, env: dict[str, str] | None = None) -> type:
+        if env:
+            captured_env.update(env)
+        result = type("Result", (), {"returncode": 0})
+        return result
+
+    monkeypatch.setattr("app.cli.update.subprocess.run", fake_run)
+    monkeypatch.setattr("app.cli.update._is_windows", lambda: False)
+
+    rc = _upgrade_via_install_script("2026.4.5")
+
+    assert rc == 0
+    assert captured_env.get("OPENSRE_VERSION") == "2026.4.5"
 
 
 def test_is_update_available_no_downgrade_local_version() -> None:

@@ -71,11 +71,24 @@ def _is_editable_install() -> bool:
     return False
 
 
-def _upgrade_via_pip() -> int:
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--upgrade", PACKAGE_NAME],
-        check=False,
-    )
+def _upgrade_via_install_script(version: str) -> int:
+    """Download and run the official install script to upgrade to the target version."""
+    if _is_windows():
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                f"$env:OPENSRE_VERSION='{version}'; irm {_INSTALL_SCRIPT_PS1} | iex",
+            ],
+            check=False,
+        )
+    else:
+        result = subprocess.run(
+            ["bash", "-c", f"curl -fsSL {_INSTALL_SCRIPT} | bash"],
+            env={**os.environ, "OPENSRE_VERSION": version},
+            check=False,
+        )
     return result.returncode
 
 
@@ -104,15 +117,6 @@ def run_update(*, check_only: bool = False, yes: bool = False) -> int:
     if check_only:
         return 1
 
-    if _is_binary_install():
-        print("  automatic update is not supported for binary installs.")
-        print("  to update, re-run the install script:")
-        if _is_windows():
-            print(f"    irm {_INSTALL_SCRIPT_PS1} | iex")
-        else:
-            print(f"    curl -fsSL {_INSTALL_SCRIPT} | bash")
-        return 1
-
     if _is_editable_install():
         print("  warning: this is an editable install — upgrading will replace it with a release build.")
 
@@ -128,14 +132,15 @@ def run_update(*, check_only: bool = False, yes: bool = False) -> int:
             print("  Cancelled.")
             return 0
 
-    rc = _upgrade_via_pip()
+    rc = _upgrade_via_install_script(latest)
     if rc == 0:
         print(f"  updated: {current} -> {latest}")
         print(f"  release notes: {_RELEASE_URL.format(latest)}")
     else:
-        print(f"  pip upgrade failed (exit {rc}).", file=sys.stderr)
-        print(
-            f"  your install may be incomplete. Run: pip install --upgrade {PACKAGE_NAME}",
-            file=sys.stderr,
-        )
+        print(f"  install script failed (exit {rc}).", file=sys.stderr)
+        if _is_windows():
+            hint = f'$env:OPENSRE_VERSION="{latest}"; irm {_INSTALL_SCRIPT_PS1} | iex'
+        else:
+            hint = f"curl -fsSL {_INSTALL_SCRIPT} | OPENSRE_VERSION={latest} bash"
+        print(f"  to retry manually, run:\n    {hint}", file=sys.stderr)
     return rc
