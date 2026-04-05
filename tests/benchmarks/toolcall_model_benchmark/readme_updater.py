@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_START_MARKER = "<!-- BENCHMARK-START -->"
+DEFAULT_END_MARKER = "<!-- BENCHMARK-END -->"
 
 
 @dataclass(frozen=True)
@@ -36,7 +39,35 @@ class _SummaryMetrics:
     success_count: int
     total_duration_seconds: float
     total_estimated_cost_usd: float
-DEFAULT_END_MARKER = "<!-- BENCHMARK-END -->"
+
+
+def render_readme_summary(cases: Sequence[Any], summary: Any) -> str:
+    """Render a compact markdown snippet suitable for injection into README.md.
+
+    Accepts any objects with the expected attributes (``scenario_id``,
+    ``run_status``, ``duration_seconds``, ``total_tokens``,
+    ``estimated_cost_usd`` on cases; ``success_count``, ``case_count``,
+    ``total_estimated_cost_usd``, ``total_duration_seconds`` on summary).
+    """
+    lines: list[str] = []
+    lines.append(
+        "| Scenario | Status | Duration (s) | Tokens | Est. Cost (USD) |"
+    )
+    lines.append("|---|---|---:|---:|---:|")
+    for c in cases:
+        lines.append(
+            f"| {c.scenario_id} | {c.run_status} | {c.duration_seconds:.2f} "
+            f"| {c.total_tokens} | {c.estimated_cost_usd:.6f} |"
+        )
+    lines.append("")
+    lines.append(
+        f"**{summary.success_count}/{summary.case_count} passed** "
+        f"| Total cost: ${summary.total_estimated_cost_usd:.4f} "
+        f"| Total duration: {summary.total_duration_seconds:.1f}s"
+    )
+    lines.append("")
+    lines.append("Full report: [docs/benchmarks/results.md](docs/benchmarks/results.md)")
+    return "\n".join(lines)
 
 
 def update_readme_benchmarks(
@@ -72,27 +103,6 @@ def _find_repo_root() -> Path:
         if (parent / "README.md").exists():
             return parent
     raise FileNotFoundError("Could not locate repository root with README.md")
-
-
-def main() -> int:
-    """Update README benchmark section from the cached results report.
-
-    Parses ``docs/benchmarks/results.md`` to extract the per-case table and
-    summary, then injects a compact snippet into README.md.
-    """
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-
-    repo_root = _find_repo_root()
-    results_path = repo_root / "docs" / "benchmarks" / "results.md"
-    readme_path = repo_root / "README.md"
-
-    if not results_path.exists():
-        logger.error("No benchmark results found at %s. Run 'make benchmark' first.", results_path)
-        return 1
-
-    snippet = extract_summary_from_report(results_path.read_text(encoding="utf-8"))
-    update_readme_benchmarks(readme_path, snippet)
-    return 0
 
 
 def _parse_report_to_metrics(
@@ -146,9 +156,18 @@ def _parse_report_to_metrics(
         return None
 
     case_count = int(summary_kv.get("Cases", str(len(cases))))
-    success_count = int(summary_kv.get("Successful runs", str(sum(1 for c in cases if c.run_status == "ok"))))
-    total_duration = float(summary_kv.get("Total duration (s)", str(sum(c.duration_seconds for c in cases))))
-    total_cost = float(summary_kv.get("Total estimated cost (USD)", str(sum(c.estimated_cost_usd for c in cases))))
+    success_count = int(summary_kv.get(
+        "Successful runs",
+        str(sum(1 for c in cases if c.run_status == "ok")),
+    ))
+    total_duration = float(summary_kv.get(
+        "Total duration (s)",
+        str(sum(c.duration_seconds for c in cases)),
+    ))
+    total_cost = float(summary_kv.get(
+        "Total estimated cost (USD)",
+        str(sum(c.estimated_cost_usd for c in cases)),
+    ))
 
     summary = _SummaryMetrics(
         case_count=case_count,
@@ -162,53 +181,37 @@ def _parse_report_to_metrics(
 def extract_summary_from_report(report: str) -> str:
     """Extract a compact summary snippet from a full benchmark report.
 
-    Parses the report back into structured metrics and renders using the same
-    ``render_readme_summary`` function used by ``make benchmark``, ensuring
-    both update paths produce identical README content.
+    Parses the report back into structured metrics and renders using
+    ``render_readme_summary``, ensuring both update paths produce
+    identical README content.
     """
-    from tests.benchmarks.toolcall_model_benchmark.benchmark_generator import (
-        CaseMetrics,
-        SummaryMetrics,
-        render_readme_summary,
-    )
-
     parsed = _parse_report_to_metrics(report)
     if parsed is None:
         return "\nFull report: [docs/benchmarks/results.md](docs/benchmarks/results.md)"
 
-    raw_cases, raw_summary = parsed
-
-    cases = [
-        CaseMetrics(
-            scenario_id=c.scenario_id,
-            run_status=c.run_status,
-            duration_seconds=c.duration_seconds,
-            input_tokens=0,
-            output_tokens=0,
-            total_tokens=c.total_tokens,
-            estimated_cost_usd=c.estimated_cost_usd,
-        )
-        for c in raw_cases
-    ]
-    summary = SummaryMetrics(
-        case_count=raw_summary.case_count,
-        success_count=raw_summary.success_count,
-        error_count=raw_summary.case_count - raw_summary.success_count,
-        total_duration_seconds=raw_summary.total_duration_seconds,
-        avg_duration_seconds=(
-            raw_summary.total_duration_seconds / raw_summary.case_count
-            if raw_summary.case_count else 0.0
-        ),
-        total_input_tokens=0,
-        total_output_tokens=0,
-        total_tokens=sum(c.total_tokens for c in raw_cases),
-        total_estimated_cost_usd=raw_summary.total_estimated_cost_usd,
-        avg_estimated_cost_usd=(
-            raw_summary.total_estimated_cost_usd / raw_summary.case_count
-            if raw_summary.case_count else 0.0
-        ),
-    )
+    cases, summary = parsed
     return render_readme_summary(cases, summary)
+
+
+def main() -> int:
+    """Update README benchmark section from the cached results report.
+
+    Parses ``docs/benchmarks/results.md`` to extract the per-case table and
+    summary, then injects a compact snippet into README.md.
+    """
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    repo_root = _find_repo_root()
+    results_path = repo_root / "docs" / "benchmarks" / "results.md"
+    readme_path = repo_root / "README.md"
+
+    if not results_path.exists():
+        logger.error("No benchmark results found at %s. Run 'make benchmark' first.", results_path)
+        return 1
+
+    snippet = extract_summary_from_report(results_path.read_text(encoding="utf-8"))
+    update_readme_benchmarks(readme_path, snippet)
+    return 0
 
 
 if __name__ == "__main__":

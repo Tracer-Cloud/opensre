@@ -4,6 +4,8 @@ from tests.benchmarks.toolcall_model_benchmark.benchmark_generator import (
     CaseMetrics,
     SummaryMetrics,
     parse_args,
+)
+from tests.benchmarks.toolcall_model_benchmark.readme_updater import (
     render_readme_summary,
 )
 

@@ -117,29 +117,6 @@ def _scope_line(cases: list[CaseMetrics]) -> str:
     return f"Scope: {', '.join(ids)}."
 
 
-def render_readme_summary(cases: list[CaseMetrics], summary: SummaryMetrics) -> str:
-    """Render a compact markdown snippet suitable for injection into README.md."""
-    lines: list[str] = []
-    lines.append(
-        "| Scenario | Status | Duration (s) | Tokens | Est. Cost (USD) |"
-    )
-    lines.append("|---|---|---:|---:|---:|")
-    for c in cases:
-        lines.append(
-            f"| {c.scenario_id} | {c.run_status} | {c.duration_seconds:.2f} "
-            f"| {c.total_tokens} | {c.estimated_cost_usd:.6f} |"
-        )
-    lines.append("")
-    lines.append(
-        f"**{summary.success_count}/{summary.case_count} passed** "
-        f"| Total cost: ${summary.total_estimated_cost_usd:.4f} "
-        f"| Total duration: {summary.total_duration_seconds:.1f}s"
-    )
-    lines.append("")
-    lines.append("Full report: [docs/benchmarks/results.md](docs/benchmarks/results.md)")
-    return "\n".join(lines)
-
-
 def render_markdown(cases: list[CaseMetrics], summary: SummaryMetrics) -> str:
     """Render a markdown benchmark report with per-case metrics and summary."""
     lines: list[str] = []
@@ -295,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_update_readme:
         from tests.benchmarks.toolcall_model_benchmark.readme_updater import (
             _find_repo_root,
+            render_readme_summary,
             update_readme_benchmarks,
         )
 
