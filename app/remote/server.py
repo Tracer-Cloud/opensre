@@ -155,7 +155,9 @@ def get_investigation(inv_id: str) -> Response:
     """Return the raw ``.md`` content of a single investigation."""
     if not re.fullmatch(r"[\w\-]+", inv_id):
         raise HTTPException(status_code=400, detail="Invalid investigation ID")
-    path = INVESTIGATIONS_DIR / f"{inv_id}.md"
+    path = (INVESTIGATIONS_DIR / f"{inv_id}.md").resolve()
+    if not path.parent == INVESTIGATIONS_DIR.resolve():
+        raise HTTPException(status_code=400, detail="Invalid investigation ID")
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Investigation {inv_id} not found")
     return Response(content=path.read_text(encoding="utf-8"), media_type="text/markdown")
@@ -202,6 +204,8 @@ def _save_investigation(
         f"## Report\n{result.get('report', 'N/A')}\n\n"
         f"## Problem Description\n{result.get('problem_md', 'N/A')}\n"
     )
-    path = INVESTIGATIONS_DIR / f"{inv_id}.md"
+    path = (INVESTIGATIONS_DIR / f"{inv_id}.md").resolve()
+    if not path.parent == INVESTIGATIONS_DIR.resolve():
+        raise ValueError(f"Invalid investigation ID: {inv_id}")
     path.write_text(md, encoding="utf-8")
     return path

@@ -6,6 +6,7 @@ starts the lightweight FastAPI investigation server as a systemd service.
 
 from __future__ import annotations
 
+import base64
 import logging
 import time
 
@@ -48,6 +49,7 @@ def generate_remote_user_data(
     5. Creates a systemd unit and starts the server
     """
     env_lines = "\n".join(f"{k}={v}" for k, v in env_vars.items())
+    env_b64 = base64.b64encode(env_lines.encode()).decode()
 
     return f"""\
 #!/bin/bash
@@ -75,9 +77,7 @@ $PYTHON -m venv .venv
 .venv/bin/pip install -e .
 
 echo "=== Writing .env ==="
-cat > /opt/opensre/.env << 'ENVEOF'
-{env_lines}
-ENVEOF
+echo '{env_b64}' | base64 -d > /opt/opensre/.env
 
 echo "=== Creating investigations directory ==="
 mkdir -p /opt/opensre/investigations
@@ -113,7 +113,7 @@ def wait_for_remote_health(
     public_ip: str,
     port: int = SERVER_PORT,
     max_attempts: int = HEALTH_MAX_ATTEMPTS,
-) -> bool:
+) -> None:
     """Poll ``GET /ok`` until the investigation server responds.
 
     Raises:
@@ -126,7 +126,7 @@ def wait_for_remote_health(
             resp = requests.get(url, timeout=5)
             if resp.status_code == 200:
                 logger.info("Remote server healthy after %d attempts", attempt + 1)
-                return True
+                return
             logger.debug("Health returned %d", resp.status_code)
         except requests.exceptions.RequestException as exc:
             logger.debug("Health attempt %d: %s", attempt + 1, exc)
