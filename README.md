@@ -319,6 +319,13 @@ Thanks goes to these amazing people:
             <sub><b>shriyashsoni</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/Devesh36">
+            <img src="https://avatars.githubusercontent.com/u/142524747?v=4" width="100;" alt="Devesh36"/>
+            <br />
+            <sub><b>Devesh36</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
