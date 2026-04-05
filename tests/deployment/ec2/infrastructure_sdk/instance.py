@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 INSTANCE_TYPE = "t3.medium"
 HEALTH_POLL_INTERVAL = 15
-HEALTH_MAX_ATTEMPTS = 40
+HEALTH_MAX_ATTEMPTS = 60  # 15 min total — ECR pull + container startup
 
 
 def get_latest_al2023_ami(region: str = DEFAULT_REGION) -> str:
@@ -39,13 +39,18 @@ def get_latest_al2023_ami(region: str = DEFAULT_REGION) -> str:
     return resp["Parameter"]["Value"]
 
 
+ECR_IMAGE_URI = "395261708130.dkr.ecr.us-east-1.amazonaws.com/opensre:latest"
+ECR_REGION = "us-east-1"
+ECR_ACCOUNT_ID = "395261708130"
+
+
 def generate_user_data(env_vars: dict[str, str] | None = None) -> str:
-    """Generate a cloud-init user data script that installs Docker and runs OpenSRE.
+    """Generate a cloud-init user data script that pulls from ECR and runs OpenSRE.
 
     The script:
-    1. Installs Docker and Git
-    2. Clones the OpenSRE repo
-    3. Builds the Docker image
+    1. Installs Docker and AWS CLI
+    2. Authenticates with ECR
+    3. Pulls the pre-built image
     4. Runs the container on port 2024
     """
     env_flags = ""
@@ -54,24 +59,32 @@ def generate_user_data(env_vars: dict[str, str] | None = None) -> str:
 
     return f"""\
 #!/bin/bash
-set -euo pipefail
 exec > /var/log/opensre-deploy.log 2>&1
+set -euo pipefail
 
 echo "=== Installing Docker ==="
-dnf install -y docker git
+dnf install -y docker aws-cli
 systemctl enable docker
 systemctl start docker
 
-echo "=== Cloning OpenSRE ==="
-cd /opt
-git clone --depth 1 https://github.com/Tracer-Cloud/opensre.git
-cd opensre
+echo "=== Waiting for IAM role to propagate ==="
+sleep 15
 
-echo "=== Building Docker image ==="
-docker build -t opensre:latest .
+echo "=== Authenticating with ECR ==="
+for i in 1 2 3 4 5; do
+  if aws ecr get-login-password --region {ECR_REGION} | \
+     docker login --username AWS --password-stdin {ECR_ACCOUNT_ID}.dkr.ecr.{ECR_REGION}.amazonaws.com; then
+    break
+  fi
+  echo "ECR auth attempt $i failed, retrying in 10s..."
+  sleep 10
+done
+
+echo "=== Pulling OpenSRE image from ECR ==="
+docker pull {ECR_IMAGE_URI}
 
 echo "=== Starting container ==="
-docker run -d --name opensre -p 2024:2024 {env_flags} opensre:latest
+docker run -d --name opensre -p 2024:2024 --restart=unless-stopped {env_flags} {ECR_IMAGE_URI}
 
 echo "=== Deployment complete ==="
 """
@@ -130,6 +143,15 @@ def create_instance_profile(
     except ClientError as e:
         if e.response["Error"]["Code"] != "LimitExceeded":
             raise
+
+    # Attach ECR read policy so the instance can pull images
+    try:
+        iam.attach_role_policy(
+            RoleName=role_name,
+            PolicyArn="arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
+        )
+    except ClientError:
+        pass  # already attached
 
     # IAM eventual consistency
     time.sleep(10)

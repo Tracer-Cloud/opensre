@@ -27,7 +27,6 @@ from app.pipeline.routing import (
     route_investigation_loop,
     should_call_tools,
 )
-from app.pipeline.runners import SimpleAgent
 from app.state import AgentState
 
 
@@ -79,5 +78,4 @@ def build_graph(config: None = None) -> CompiledStateGraph:
     return graph.compile()
 
 
-agent = SimpleAgent()
 graph = build_graph()
