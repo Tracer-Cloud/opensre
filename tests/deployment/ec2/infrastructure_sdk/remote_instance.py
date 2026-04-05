@@ -55,14 +55,22 @@ exec > /var/log/opensre-remote.log 2>&1
 set -euo pipefail
 
 echo "=== Installing system dependencies ==="
-dnf install -y python3.11 python3.11-pip git make
+dnf install -y python3.12 python3.12-pip git make 2>/dev/null || dnf install -y python3.11 python3.11-pip git make
+
+# Pick whichever Python is available (3.12 preferred for PEP 695 type syntax)
+if command -v python3.12 &>/dev/null; then
+  PYTHON=python3.12
+else
+  PYTHON=python3.11
+fi
+echo "Using $PYTHON"
 
 echo "=== Cloning repository ==="
 git clone --branch {branch} --single-branch {REPO_URL} /opt/opensre
 
 echo "=== Setting up Python venv ==="
 cd /opt/opensre
-python3.11 -m venv .venv
+$PYTHON -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -e .
 
