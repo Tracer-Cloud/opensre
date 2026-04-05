@@ -48,7 +48,8 @@ _SETUP_SERVICES = [
     "slack",
     "tracer",
 ]
-_VERIFY_SERVICES = ["aws", "coralogix", "datadog", "grafana", "honeycomb", "mongodb", "slack", "tracer"]
+
+_VERIFY_SERVICES = ["aws", "coralogix", "datadog", "grafana", "honeycomb",  "mongodb", "opsgenie", "slack", "tracer", "vercel"]
 
 
 _ASCII_HEADER = """\

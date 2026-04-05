@@ -90,6 +90,18 @@ def validate_google_docs_integration(**kwargs):
     return _validate(**kwargs)
 
 
+def validate_vercel_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_vercel_integration as _validate
+
+    return _validate(**kwargs)
+
+
+def validate_opsgenie_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_opsgenie_integration as _validate
+
+    return _validate(**kwargs)
+
+
 def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
 
@@ -834,6 +846,57 @@ def _configure_google_docs() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_vercel() -> tuple[str, str]:
+    _, credentials = _integration_defaults("vercel")
+    while True:
+        api_token = _prompt_value(
+            "Vercel API token (Account Settings > Tokens)",
+            default=_string_value(credentials.get("api_token")),
+            secret=True,
+        )
+        team_id = _prompt_value(
+            "Vercel team ID (optional, for team-scoped access)",
+            default=_string_value(credentials.get("team_id")),
+            allow_empty=True,
+        )
+        with _console.status("Validating Vercel integration...", spinner="dots"):
+            result = validate_vercel_integration(api_token=api_token, team_id=team_id)
+        _render_integration_result("Vercel", result)
+        if result.ok:
+            upsert_integration(
+                "vercel",
+                {"credentials": {"api_token": api_token, "team_id": team_id}},
+            )
+            env_path = sync_env_values({})
+            return "Vercel", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
+def _configure_opsgenie() -> tuple[str, str]:
+    _, credentials = _integration_defaults("opsgenie")
+    while True:
+        api_key = _prompt_value(
+            "OpsGenie API key (Settings > API key management)",
+            default=_string_value(credentials.get("api_key")),
+            secret=True,
+        )
+        region = _prompt_value(
+            "OpsGenie region (us or eu)",
+            default=_string_value(credentials.get("region"), "us"),
+        )
+        with _console.status("Validating OpsGenie integration...", spinner="dots"):
+            result = validate_opsgenie_integration(api_key=api_key, region=region)
+        _render_integration_result("OpsGenie", result)
+        if result.ok:
+            upsert_integration(
+                "opsgenie",
+                {"credentials": {"api_key": api_key, "region": region}},
+            )
+            env_path = sync_env_values({})
+            return "OpsGenie", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_selected_integrations() -> tuple[list[str], str | None]:
     configured: list[str] = []
     last_env_path: str | None = None
@@ -869,6 +932,16 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             hint="Create shareable incident postmortem reports",
         ),
         Choice(
+            value="vercel",
+            label="Vercel",
+            hint="Monitor deployments and fetch runtime logs",
+        ),
+        Choice(
+            value="opsgenie",
+            label="OpsGenie",
+            hint="Investigate alerts and triage state from OpsGenie",
+        ),
+        Choice(
             value="skip",
             label="Skip for now",
             hint="Finish onboarding without configuring an integration",
@@ -893,6 +966,8 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "github": _configure_github_mcp,
         "sentry": _configure_sentry,
         "google_docs": _configure_google_docs,
+        "vercel": _configure_vercel,
+        "opsgenie": _configure_opsgenie,
     }
     _SERVICE_LABELS = {
         "grafana_local": "grafana local",
@@ -905,6 +980,8 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "github": "github mcp",
         "sentry": "sentry",
         "google_docs": "google docs",
+        "vercel": "vercel",
+        "opsgenie": "opsgenie",
     }
 
     _step(f"Service · {_SERVICE_LABELS.get(selected_service, selected_service)}")

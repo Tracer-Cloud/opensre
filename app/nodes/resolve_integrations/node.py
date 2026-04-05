@@ -13,6 +13,7 @@ from typing import Any
 
 from langsmith import traceable
 
+from app.integrations.clients.vercel import VercelConfig
 from app.integrations.github_mcp import build_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
@@ -20,6 +21,7 @@ from app.integrations.models import (
     DatadogIntegrationConfig,
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
+    OpsGenieIntegrationConfig,
 )
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.sentry import build_sentry_config
@@ -48,6 +50,8 @@ _SERVICE_KEY_MAP = {
     "sentry": "sentry",
     "mongodb": "mongodb",
     "mongo": "mongodb",
+    "vercel": "vercel",
+    "opsgenie": "opsgenie",
 }
 
 
@@ -200,12 +204,37 @@ def _classify_integrations(
                     "database": credentials.get("database", ""),
                     "auth_source": credentials.get("auth_source", "admin"),
                     "tls": credentials.get("tls", True),
+                })
+            except Exception:
+              continue
+              
+            if mongodb_config.connection_string:
+                resolved["mongodb"] = mongodb_config.model_dump()
+                  
+        elif key == "vercel":
+            try:
+                vercel_config = VercelConfig.model_validate({
+                    "api_token": credentials.get("api_token", ""),
+                    "team_id": credentials.get("team_id", ""),
                     "integration_id": integration.get("id", ""),
                 })
             except Exception:
                 continue
-            if mongodb_config.connection_string:
-                resolved["mongodb"] = mongodb_config.model_dump()
+           
+            if vercel_config.api_token:
+                resolved["vercel"] = vercel_config.model_dump()
+
+        elif key == "opsgenie":
+            try:
+                opsgenie_config = OpsGenieIntegrationConfig.model_validate({
+                    "api_key": credentials.get("api_key", ""),
+                    "region": credentials.get("region", "us"),
+                    "integration_id": integration.get("id", ""),
+                })
+            except Exception:
+                continue
+            if opsgenie_config.api_key:
+                resolved["opsgenie"] = opsgenie_config.model_dump()
 
         else:
             resolved[key] = {
@@ -397,6 +426,32 @@ def _load_env_integrations() -> list[dict[str, Any]]:
             "service": "mongodb",
             "status": "active",
             "credentials": mongodb_config.model_dump(exclude={"integration_id"}),
+        })
+
+    vercel_api_token = os.getenv("VERCEL_API_TOKEN", "").strip()
+    if vercel_api_token:
+        vercel_config = VercelConfig.model_validate({
+            "api_token": vercel_api_token,
+            "team_id": os.getenv("VERCEL_TEAM_ID", "").strip(),
+        })
+        integrations.append({
+            "id": "env-vercel",
+            "service": "vercel",
+            "status": "active",
+            "credentials": vercel_config.model_dump(exclude={"integration_id"}),
+        })
+
+    opsgenie_api_key = os.getenv("OPSGENIE_API_KEY", "").strip()
+    if opsgenie_api_key:
+        opsgenie_config = OpsGenieIntegrationConfig.model_validate({
+            "api_key": opsgenie_api_key,
+            "region": os.getenv("OPSGENIE_REGION", "us").strip() or "us",
+        })
+        integrations.append({
+            "id": "env-opsgenie",
+            "service": "opsgenie",
+            "status": "active",
+            "credentials": opsgenie_config.model_dump(exclude={"integration_id"}),
         })
 
     return integrations
