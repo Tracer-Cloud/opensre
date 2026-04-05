@@ -12,6 +12,7 @@ from app.cli.wizard.integration_health import (
     validate_honeycomb_integration,
     validate_sentry_integration,
     validate_slack_webhook,
+    validate_vercel_integration,
 )
 
 
@@ -251,3 +252,84 @@ def test_validate_sentry_integration_uses_shared_validator(monkeypatch) -> None:
 
     assert result.ok is True
     assert result.detail == "Sentry ok"
+
+
+class _FakeVercelClient:
+    def __init__(self, result: dict) -> None:
+        self._result = result
+
+    def __enter__(self) -> _FakeVercelClient:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        pass
+
+    def list_projects(self) -> dict:
+        return self._result
+
+
+def test_validate_vercel_integration_succeeds(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.cli.wizard.integration_health.VercelClient",
+        lambda _config: _FakeVercelClient({"success": True, "projects": [{"id": "p1"}], "total": 1}),
+    )
+
+    result = validate_vercel_integration(api_token="tok_test")
+
+    assert result.ok is True
+    assert "1 project" in result.detail
+
+
+def test_validate_vercel_integration_succeeds_with_team_id(monkeypatch) -> None:
+    captured: dict = {}
+
+    class _CapturingClient:
+        def __init__(self, config) -> None:
+            captured["team_id"] = config.team_id
+
+        def __enter__(self) -> _CapturingClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+        def list_projects(self) -> dict:
+            return {"success": True, "projects": [], "total": 0}
+
+    monkeypatch.setattr("app.cli.wizard.integration_health.VercelClient", _CapturingClient)
+
+    result = validate_vercel_integration(api_token="tok_test", team_id="team_xyz")
+
+    assert result.ok is True
+    assert captured["team_id"] == "team_xyz"
+
+
+def test_validate_vercel_integration_fails_on_api_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.cli.wizard.integration_health.VercelClient",
+        lambda _config: _FakeVercelClient({"success": False, "error": "HTTP 401: unauthorized"}),
+    )
+
+    result = validate_vercel_integration(api_token="bad_token")
+
+    assert result.ok is False
+    assert "401" in result.detail
+
+
+def test_validate_vercel_integration_fails_with_empty_token() -> None:
+    result = validate_vercel_integration(api_token="")
+
+    assert result.ok is False
+    assert "required" in result.detail.lower()
+
+
+def test_validate_vercel_integration_surfaces_exception(monkeypatch) -> None:
+    def _raise(_config):
+        raise RuntimeError("network unreachable")
+
+    monkeypatch.setattr("app.cli.wizard.integration_health.VercelClient", _raise)
+
+    result = validate_vercel_integration(api_token="tok_test")
+
+    assert result.ok is False
+    assert "network unreachable" in result.detail

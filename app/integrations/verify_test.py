@@ -13,8 +13,10 @@ from app.integrations.verify import (
     _verify_honeycomb,
     _verify_sentry,
     _verify_tracer,
+    _verify_vercel,
     resolve_effective_integrations,
     verification_exit_code,
+    verify_integrations,
 )
 
 
@@ -73,6 +75,32 @@ def test_resolve_effective_integrations_includes_honeycomb_and_coralogix_env(
     assert effective["coralogix"]["config"]["application_name"] == "payments"
 
 
+def test_resolve_effective_integrations_keeps_incomplete_datadog_store_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.integrations.verify.load_integrations",
+        lambda: [
+            {
+                "id": "datadog-local",
+                "service": "datadog",
+                "status": "active",
+                "credentials": {
+                    "api_key": "",
+                    "app_key": "",
+                    "site": "datadoghq.com",
+                },
+            }
+        ],
+    )
+
+    effective = resolve_effective_integrations()
+
+    assert effective["datadog"]["source"] == "local store"
+    assert effective["datadog"]["config"]["integration_id"] == "datadog-local"
+    assert effective["datadog"]["config"]["api_key"] == ""
+
+
 def test_verify_grafana_passes_with_supported_datasource(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fake_requests_get(*_args: Any, **_kwargs: Any) -> _FakeResponse:
         return _FakeResponse(
@@ -113,6 +141,21 @@ def test_verify_datadog_reports_api_failure(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert result["status"] == "failed"
     assert "403" in result["detail"]
+
+
+def test_verify_datadog_accepts_integration_id() -> None:
+    result = _verify_datadog(
+        "local store",
+        {
+            "api_key": "",
+            "app_key": "",
+            "site": "datadoghq.com",
+            "integration_id": "datadog-local",
+        },
+    )
+
+    assert result["status"] == "missing"
+    assert "Missing API key" in result["detail"]
 
 
 def test_verify_honeycomb_uses_auth_and_query(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -311,3 +354,121 @@ def test_verification_exit_code_requires_core_success() -> None:
         ],
         requested_service="slack",
     ) == 0
+
+
+def test_verify_vercel_passes_with_valid_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeVercelClient:
+        def __init__(self, config: Any) -> None:
+            pass
+
+        def __enter__(self) -> _FakeVercelClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+        def list_projects(self) -> dict[str, Any]:
+            return {"success": True, "projects": [{"id": "p1"}, {"id": "p2"}], "total": 2}
+
+    monkeypatch.setattr("app.integrations.verify.VercelClient", _FakeVercelClient)
+
+    result = _verify_vercel("local env", {"api_token": "tok_test", "team_id": ""})
+
+    assert result["status"] == "passed"
+    assert "2 project" in result["detail"]
+
+
+def test_verify_vercel_fails_on_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeVercelClient:
+        def __init__(self, config: Any) -> None:
+            pass
+
+        def __enter__(self) -> _FakeVercelClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+        def list_projects(self) -> dict[str, Any]:
+            return {"success": False, "error": "HTTP 401: unauthorized"}
+
+    monkeypatch.setattr("app.integrations.verify.VercelClient", _FakeVercelClient)
+
+    result = _verify_vercel("local env", {"api_token": "bad_token", "team_id": ""})
+
+    assert result["status"] == "failed"
+    assert "401" in result["detail"]
+
+
+def test_verify_vercel_missing_token() -> None:
+    result = _verify_vercel("local env", {"api_token": "", "team_id": ""})
+    assert result["status"] == "missing"
+
+
+def test_verify_integrations_dispatches_to_vercel(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeVercelClient:
+        def __init__(self, config: Any) -> None:
+            pass
+
+        def __enter__(self) -> _FakeVercelClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+        def list_projects(self) -> dict[str, Any]:
+            return {"success": True, "projects": [], "total": 0}
+
+    monkeypatch.setattr("app.integrations.verify.VercelClient", _FakeVercelClient)
+    monkeypatch.setattr(
+        "app.integrations.verify.load_integrations",
+        lambda: [
+            {
+                "id": "vercel-1",
+                "service": "vercel",
+                "status": "active",
+                "credentials": {"api_token": "tok_test", "team_id": ""},
+            }
+        ],
+    )
+
+    results = verify_integrations("vercel")
+
+    assert len(results) == 1
+    assert results[0]["service"] == "vercel"
+    assert results[0]["status"] == "passed"
+
+
+def test_resolve_effective_integrations_includes_vercel_from_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.integrations.verify.load_integrations",
+        lambda: [
+            {
+                "id": "vercel-store-1",
+                "service": "vercel",
+                "status": "active",
+                "credentials": {"api_token": "tok_store", "team_id": "team_xyz"},
+            }
+        ],
+    )
+
+    effective = resolve_effective_integrations()
+
+    vercel = effective.get("vercel")
+    assert vercel is not None
+    assert vercel["config"]["api_token"] == "tok_store"
+    assert vercel["config"]["team_id"] == "team_xyz"
+    assert vercel["source"] == "local store"
+
+
+def test_resolve_effective_integrations_includes_vercel_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.integrations.verify.load_integrations", lambda: [])
+    monkeypatch.setenv("VERCEL_API_TOKEN", "tok_env")
+    monkeypatch.setenv("VERCEL_TEAM_ID", "team_env")
+
+    effective = resolve_effective_integrations()
+
+    vercel = effective.get("vercel")
+    assert vercel is not None
+    assert vercel["config"]["api_token"] == "tok_env"
+    assert vercel["source"] == "local env"

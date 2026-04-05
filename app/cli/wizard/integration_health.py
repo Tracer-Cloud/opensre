@@ -10,10 +10,13 @@ from app.integrations.clients.coralogix import CoralogixClient
 from app.integrations.clients.datadog import DatadogClient, DatadogConfig
 from app.integrations.clients.grafana import get_grafana_client_from_credentials
 from app.integrations.clients.honeycomb import HoneycombClient
+from app.integrations.clients.opsgenie import OpsGenieClient, OpsGenieConfig
+from app.integrations.clients.vercel import VercelClient, VercelConfig
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
+    GoogleDocsIntegrationConfig,
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
     SlackWebhookConfig,
@@ -32,7 +35,9 @@ class IntegrationHealthResult:
 def validate_grafana_integration(*, endpoint: str, api_key: str) -> IntegrationHealthResult:
     """Validate Grafana credentials by discovering datasource UIDs."""
     try:
-        grafana_config = GrafanaIntegrationConfig.model_validate({"endpoint": endpoint, "api_key": api_key})
+        grafana_config = GrafanaIntegrationConfig.model_validate(
+            {"endpoint": endpoint, "api_key": api_key}
+        )
         client = get_grafana_client_from_credentials(
             endpoint=grafana_config.endpoint,
             api_key=grafana_config.api_key,
@@ -54,7 +59,9 @@ def validate_grafana_integration(*, endpoint: str, api_key: str) -> IntegrationH
         return IntegrationHealthResult(ok=False, detail=f"Grafana validation failed: {err}")
 
 
-def validate_datadog_integration(*, api_key: str, app_key: str, site: str) -> IntegrationHealthResult:
+def validate_datadog_integration(
+    *, api_key: str, app_key: str, site: str
+) -> IntegrationHealthResult:
     """Validate Datadog credentials with a monitor list request."""
     client = DatadogClient(DatadogConfig(api_key=api_key, app_key=app_key, site=site))
     result = client.list_monitors()
@@ -77,11 +84,13 @@ def validate_honeycomb_integration(
 ) -> IntegrationHealthResult:
     """Validate Honeycomb credentials with auth and a lightweight query."""
     try:
-        honeycomb_config = HoneycombIntegrationConfig.model_validate({
-            "api_key": api_key,
-            "dataset": dataset,
-            "base_url": base_url,
-        })
+        honeycomb_config = HoneycombIntegrationConfig.model_validate(
+            {
+                "api_key": api_key,
+                "dataset": dataset,
+                "base_url": base_url,
+            }
+        )
     except Exception as err:
         return IntegrationHealthResult(ok=False, detail=str(err))
 
@@ -121,12 +130,14 @@ def validate_coralogix_integration(
 ) -> IntegrationHealthResult:
     """Validate Coralogix access with a lightweight DataPrime query."""
     try:
-        coralogix_config = CoralogixIntegrationConfig.model_validate({
-            "api_key": api_key,
-            "base_url": base_url,
-            "application_name": application_name,
-            "subsystem_name": subsystem_name,
-        })
+        coralogix_config = CoralogixIntegrationConfig.model_validate(
+            {
+                "api_key": api_key,
+                "base_url": base_url,
+                "application_name": application_name,
+                "subsystem_name": subsystem_name,
+            }
+        )
     except Exception as err:
         return IntegrationHealthResult(ok=False, detail=str(err))
 
@@ -166,7 +177,9 @@ def validate_slack_webhook(*, webhook_url: str) -> IntegrationHealthResult:
         return IntegrationHealthResult(ok=False, detail=f"Slack webhook validation failed: {err}")
 
     if response.status_code == 404:
-        return IntegrationHealthResult(ok=False, detail="Slack webhook returned 404; the URL looks invalid.")
+        return IntegrationHealthResult(
+            ok=False, detail="Slack webhook returned 404; the URL looks invalid."
+        )
     if response.status_code in {200, 400, 403, 405}:
         return IntegrationHealthResult(
             ok=True,
@@ -191,23 +204,27 @@ def validate_aws_integration(
     try:
         import boto3
     except ImportError:
-        return IntegrationHealthResult(ok=False, detail="AWS validation failed: boto3 is not installed.")
+        return IntegrationHealthResult(
+            ok=False, detail="AWS validation failed: boto3 is not installed."
+        )
 
     try:
-        aws_config = AWSIntegrationConfig.model_validate({
-            "region": region,
-            "role_arn": role_arn,
-            "external_id": external_id,
-            "credentials": (
-                {
-                    "access_key_id": access_key_id,
-                    "secret_access_key": secret_access_key,
-                    "session_token": session_token,
-                }
-                if access_key_id or secret_access_key or session_token
-                else None
-            ),
-        })
+        aws_config = AWSIntegrationConfig.model_validate(
+            {
+                "region": region,
+                "role_arn": role_arn,
+                "external_id": external_id,
+                "credentials": (
+                    {
+                        "access_key_id": access_key_id,
+                        "secret_access_key": secret_access_key,
+                        "session_token": session_token,
+                    }
+                    if access_key_id or secret_access_key or session_token
+                    else None
+                ),
+            }
+        )
         if role_arn:
             sts = boto3.client("sts", region_name=aws_config.region)
             assume_kwargs: dict[str, str] = {
@@ -233,9 +250,16 @@ def validate_aws_integration(
         sts = boto3.client(
             "sts",
             region_name=aws_config.region,
-            aws_access_key_id=aws_config.credentials.access_key_id if aws_config.credentials else "",
-            aws_secret_access_key=aws_config.credentials.secret_access_key if aws_config.credentials else "",
-            aws_session_token=(aws_config.credentials.session_token if aws_config.credentials else "") or None,
+            aws_access_key_id=aws_config.credentials.access_key_id
+            if aws_config.credentials
+            else "",
+            aws_secret_access_key=aws_config.credentials.secret_access_key
+            if aws_config.credentials
+            else "",
+            aws_session_token=(
+                aws_config.credentials.session_token if aws_config.credentials else ""
+            )
+            or None,
         )
         identity = sts.get_caller_identity()
         return IntegrationHealthResult(
@@ -256,14 +280,16 @@ def validate_github_mcp_integration(
     toolsets: list[str] | None = None,
 ) -> IntegrationHealthResult:
     """Validate GitHub MCP connectivity and required repository tools."""
-    config = build_github_mcp_config({
-        "url": url,
-        "mode": mode,
-        "auth_token": auth_token,
-        "command": command,
-        "args": args or [],
-        "toolsets": toolsets or [],
-    })
+    config = build_github_mcp_config(
+        {
+            "url": url,
+            "mode": mode,
+            "auth_token": auth_token,
+            "command": command,
+            "args": args or [],
+            "toolsets": toolsets or [],
+        }
+    )
     result = validate_github_mcp_config(config)
     return IntegrationHealthResult(ok=result.ok, detail=result.detail)
 
@@ -276,18 +302,87 @@ def validate_sentry_integration(
     project_slug: str = "",
 ) -> IntegrationHealthResult:
     """Validate Sentry connectivity with an organization issues query."""
-    config = build_sentry_config({
-        "base_url": base_url,
-        "organization_slug": organization_slug,
-        "auth_token": auth_token,
-        "project_slug": project_slug,
-    })
+    config = build_sentry_config(
+        {
+            "base_url": base_url,
+            "organization_slug": organization_slug,
+            "auth_token": auth_token,
+            "project_slug": project_slug,
+        }
+    )
     result = validate_sentry_config(config)
     return IntegrationHealthResult(ok=result.ok, detail=result.detail)
 
+
+def validate_google_docs_integration(
+    *,
+    credentials_file: str,
+    folder_id: str,
+) -> IntegrationHealthResult:
+    """Validate Google Docs credentials and folder access."""
+    from pathlib import Path
+
+    from app.integrations.clients.google_docs import GoogleDocsClient
+
+    try:
+        config = GoogleDocsIntegrationConfig.model_validate(
+            {
+                "credentials_file": credentials_file,
+                "folder_id": folder_id,
+            }
+        )
+    except Exception as err:
+        return IntegrationHealthResult(ok=False, detail=str(err))
+
+    if not config.credentials_file or not config.folder_id:
+        return IntegrationHealthResult(ok=False, detail="Missing credentials_file or folder_id.")
+
+    if not Path(config.credentials_file).exists():
+        return IntegrationHealthResult(
+            ok=False, detail=f"Credentials file not found: {config.credentials_file}"
+        )
+
+    try:
+        client = GoogleDocsClient(config)
+        result = client.validate_access()
+    except Exception as exc:
+        return IntegrationHealthResult(ok=False, detail=f"Google API validation failed: {exc}")
+
+    if not result.get("success"):
+        return IntegrationHealthResult(
+            ok=False, detail=f"Folder access check failed: {result.get('error', 'unknown error')}"
+        )
+
+    return IntegrationHealthResult(
+        ok=True,
+        detail=f"Connected to Drive folder {config.folder_id} ({result.get('file_count', 0)} items).",
+    )
+
+
+def validate_vercel_integration(*, api_token: str, team_id: str = "") -> IntegrationHealthResult:
+    """Validate Vercel credentials by listing accessible projects."""
+    if not api_token:
+        return IntegrationHealthResult(ok=False, detail="Vercel API token is required.")
+    try:
+        with VercelClient(VercelConfig(api_token=api_token, team_id=team_id)) as client:
+            result = client.list_projects()
+        if result.get("success"):
+            return IntegrationHealthResult(
+                ok=True,
+                detail=f"Vercel validated; listed {result.get('total', 0)} project(s).",
+            )
+        return IntegrationHealthResult(
+            ok=False,
+            detail=f"Vercel validation failed: {result.get('error', 'unknown error')}",
+        )
+    except Exception as err:
+        return IntegrationHealthResult(ok=False, detail=f"Vercel validation failed: {err}")
+
+
 def validate_jira_integration(*, base_url: str, email: str, api_token: str, project_key: str) -> IntegrationHealthResult:
-    """Validate Jira connectivity by calling the myself endpoint."""
+    """Validate Jira connectivity and project key accessibility."""
     import httpx
+
     try:
         resp = httpx.get(
             f"{base_url.rstrip('/')}/rest/api/3/myself",
@@ -318,3 +413,31 @@ def validate_jira_integration(*, base_url: str, email: str, api_token: str, proj
         return IntegrationHealthResult(ok=False, detail=f"Jira returned unexpected status {resp.status_code}.")
     except Exception as e:
         return IntegrationHealthResult(ok=False, detail=f"Jira validation failed: {e}")
+
+
+def validate_opsgenie_integration(
+    *,
+    api_key: str,
+    region: str = "us",
+) -> IntegrationHealthResult:
+    """Validate OpsGenie connectivity by listing alerts."""
+    if not api_key:
+        return IntegrationHealthResult(ok=False, detail="OpsGenie API key is required.")
+    try:
+        config = OpsGenieConfig(api_key=api_key, region=region)
+        with OpsGenieClient(config) as client:
+            result = client.list_alerts(limit=1)
+        if result.get("success"):
+            return IntegrationHealthResult(
+                ok=True,
+                detail=f"OpsGenie validated ({config.region.upper()} region); API key accepted.",
+            )
+        return IntegrationHealthResult(
+            ok=False,
+            detail=f"OpsGenie validation failed: {result.get('error', 'unknown error')}",
+        )
+    except Exception as err:
+        return IntegrationHealthResult(
+            ok=False,
+            detail=f"OpsGenie validation failed: {err}",
+        )

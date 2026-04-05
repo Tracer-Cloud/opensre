@@ -17,7 +17,6 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, Field
 
 from app.integrations.clients.llm_client import get_llm_for_reasoning
-from app.integrations.github_issue_comments import send_slack_webhook
 from app.version import get_version
 
 GITHUB_API_BASE_URL = "https://api.github.com"
@@ -533,39 +532,6 @@ def render_markdown(update: DailyUpdate) -> str:
     return "\n".join(lines)
 
 
-def render_slack_text(update: DailyUpdate) -> str:
-    """Render the plain-text Slack message body."""
-    bullets = "\n".join(f"- {highlight}" for highlight in update.highlights)
-    return (
-        f"{update.title}\n"
-        f"{update.thanks_line}\n\n"
-        "Main updates shipped:\n\n"
-        f"{bullets}"
-    )
-
-
-def build_slack_payload(update: DailyUpdate) -> dict[str, Any]:
-    """Build a Slack incoming webhook payload for the daily update."""
-    bullet_block = "\n".join(f"• {highlight}" for highlight in update.highlights)
-    return {
-        "text": render_slack_text(update),
-        "blocks": [
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*{update.title}*"},
-            },
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": update.thanks_line},
-            },
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*Main updates shipped:*\n{bullet_block}"},
-            },
-        ],
-    }
-
-
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -594,16 +560,6 @@ def _append_github_output(name: str, value: str) -> None:
         handle.write(f"{name}={value}\n")
 
 
-def _post_to_slack_if_requested(update: DailyUpdate) -> None:
-    if not _bool_env("DAILY_UPDATE_POST_TO_SLACK", default=False):
-        return
-
-    webhook_url = _string(os.getenv("SLACK_WEBHOOK_URL"))
-    if not webhook_url:
-        raise RuntimeError("Missing SLACK_WEBHOOK_URL for daily update Slack delivery.")
-    send_slack_webhook(build_slack_payload(update), webhook_url)
-
-
 def main() -> int:
     """Entrypoint used by the scheduled GitHub Actions workflow."""
     repository = _string(os.getenv("GITHUB_REPOSITORY"))
@@ -619,7 +575,6 @@ def main() -> int:
     pull_requests = fetch_merged_pull_requests(repository, window, token)
     update = build_daily_update(repository, window, pull_requests)
     archive_path = write_daily_archive(update)
-    _post_to_slack_if_requested(update)
 
     relative_archive_path = archive_path.relative_to(_repo_root()).as_posix()
     _append_github_output("archive_path", relative_archive_path)
@@ -627,8 +582,6 @@ def main() -> int:
     _append_github_output("london_date", update.window.london_date.isoformat())
 
     print(f"Wrote daily update archive to {relative_archive_path}")
-    if _bool_env("DAILY_UPDATE_POST_TO_SLACK", default=False):
-        print("Posted daily update to Slack.")
     return 0
 
 

@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install install-hooks onboard test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic
+.PHONY: install onboard test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke
 
 ifneq ($(wildcard .venv/bin/python),)
 PYTHON = .venv/bin/python
@@ -22,9 +22,6 @@ install:
 
 build:
 	$(PYTHON) -m build
-
-install-hooks:
-	$(PYTHON) -m pre_commit install
 
 # Run the local onboarding flow
 onboard:
@@ -240,6 +237,10 @@ test-full:
 test-cov:
 	$(PYTHON) -m pytest -v --cov=app --cov-report=term-missing --ignore=tests/e2e/kubernetes_local_alert_simulation --ignore=tests/synthetic -m "not synthetic"
 
+# Run the CLI smoke suite against the installed opensre entrypoint.
+test-cli-smoke:
+	$(PYTHON) -m pytest -v tests/cli_smoke_test.py
+
 # Run Grafana integration tests
 test-grafana:
 	@echo "Running Grafana integration tests..."
@@ -322,6 +323,7 @@ help:
 	@echo "  make test            - Run fast unit tests + Prefect cloud E2E"
 	@echo "  make test-full       - Run full test suite (CI/CD)"
 	@echo "  make test-cov        - Run tests with coverage"
+	@echo "  make test-cli-smoke  - Run end-to-end CLI smoke tests"
 	@echo "  make test-grafana    - Run Grafana integration tests"
 	@echo "  make test-rca        - Run all RCA markdown alert tests in tests/e2e/rca/"
 	@echo "  make test-rca FILE=pipeline_error_in_logs - Run a single RCA alert test"

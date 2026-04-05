@@ -171,6 +171,51 @@ class JiraIntegrationConfig(StrictConfigModel):
         return f"{self.base_url}/rest/api/3"
 
 
+class GoogleDocsIntegrationConfig(StrictConfigModel):
+    """Normalized Google Docs (Drive API) credentials for incident report generation."""
+
+    credentials_file: str
+    folder_id: str
+    integration_id: str = ""
+    timeout_seconds: int = 30
+
+    @field_validator("credentials_file", mode="before")
+    @classmethod
+    def _normalize_credentials_file(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("timeout_seconds", mode="before")
+    @classmethod
+    def _validate_timeout(cls, value: object) -> int:
+        """Validate timeout is a positive integer with reasonable bounds."""
+        # Handle string or numeric input
+        if isinstance(value, str):
+            try:
+                timeout = int(value)
+            except ValueError:
+                return 30
+        elif isinstance(value, (int, float)):
+            timeout = int(value)
+        else:
+            return 30
+        # Enforce reasonable bounds: 5 seconds minimum, 300 seconds maximum
+        return max(5, min(timeout, 300))
+
+
+class OpsGenieIntegrationConfig(StrictConfigModel):
+    """Normalized OpsGenie credentials used by resolution and verification flows."""
+
+    api_key: str
+    region: str = "us"
+    integration_id: str = ""
+
+    @field_validator("region", mode="before")
+    @classmethod
+    def _normalize_region(cls, value: object) -> str:
+        raw = str(value or "us").strip().lower()
+        return raw if raw in ("us", "eu") else "us"
+
+
 class EffectiveIntegrationEntry(StrictConfigModel):
     """Resolved integration entry with source metadata."""
 
@@ -190,4 +235,7 @@ class EffectiveIntegrations(StrictConfigModel):
     tracer: EffectiveIntegrationEntry | None = None
     github: EffectiveIntegrationEntry | None = None
     sentry: EffectiveIntegrationEntry | None = None
+    google_docs: EffectiveIntegrationEntry | None = None
+    vercel: EffectiveIntegrationEntry | None = None
     jira: EffectiveIntegrationEntry | None = None
+    opsgenie: EffectiveIntegrationEntry | None = None

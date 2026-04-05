@@ -1,0 +1,78 @@
+---
+title: "Snakemake"
+description: "Monitor Snakemake workflows with OpenSRE"
+---
+OpenSRE integrates with Snakemake to provide pipeline-level observability. It captures per-rule execution times, resource usage, and cross-node performance metrics.
+
+Install the OpenSRE agent on the machines where Snakemake executes and it will automatically collect detailed metrics from every rule and job. You don’t need to modify your Snakefile or add wrappers because OpenSRE passively observes workflow execution at the system level using eBPF.
+
+Whether running locally, on HPC, or in the cloud, OpenSRE provides real-time visibility into resource usage, execution timelines, and performance bottlenecks across the workflow.
+
+## Why use OpenSRE in combination with Snakemake
+
+Snakemake reports high-level progress, but OpenSRE explains why rules take time or fail:
+
+- View CPU, memory, and I/O usage per rule
+- Identify bottlenecks or inefficient resource requests
+- Attribute cost per sample or rule
+- Trace nested shell commands and containers automatically
+- Correlate logs and metrics across distributed environments
+
+## Getting Started
+
+### Prerequisites
+
+- Working Snakemake installation
+- OpenSRE installed on [your operating system](/environments/overview)
+
+### Just run your pipeline, OpenSRE will automatically attach
+
+If OpenSRE is already installed on your operating system, you only need to enable the OpenSRE agent for pipelines that have not been run with OpenSRE before.<br/>
+In that case, run the following command:
+
+```bash
+sudo tracer init --token <your-token>
+```
+<Info> Go to our [onboarding](https://app.tracer.cloud/dashboard) to get your own personal token</Info>
+
+When running this command, you will be asked to name your pipeline for clear labeling in the dashboard.
+
+## Examples
+
+Run a Snakemake pipeline under OpenSRE:
+
+```bash
+snakemake -j 16
+```
+
+or launch the OpenSRE demo workflow:
+
+```bash
+sudo tracer demo
+```
+
+Once the pipeline starts, open the OpenSRE dashboard, and you’ll see each Snakemake rule as a timeline step updating in real time.
+
+<Card href="https://app.tracer.cloud/">
+  <img
+    className="block dark:hidden"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="OpenSRE Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+  <img
+    className="hidden dark:block"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="OpenSRE Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+
+  <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1 rem', color: 'inherit' }}>
+    Watch your pipeline run in the OpenSRE dashboard
+  </div>
+
+  <div style={{ color: 'inherit' }}>
+    View real-time metrics, resource usage, and performance insights for your pipeline runs.
+  </div>
+</Card>
+Each rule in your Snakefile will appear as a timeline step, with detailed performance and cost breakdowns.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 
@@ -11,11 +12,15 @@ _INSTALL_SCRIPT_PS1 = "https://raw.githubusercontent.com/Tracer-Cloud/opensre/ma
 _RELEASE_URL = "https://github.com/Tracer-Cloud/opensre/releases/tag/v{}"
 
 
+def _releases_api_url() -> str:
+    return os.getenv("OPENSRE_RELEASES_API_URL", _RELEASES_API)
+
+
 def _fetch_latest_version() -> str:
     import httpx
 
     try:
-        resp = httpx.get(_RELEASES_API, timeout=10, follow_redirects=True)
+        resp = httpx.get(_releases_api_url(), timeout=10, follow_redirects=True)
         resp.raise_for_status()
     except httpx.TimeoutException as exc:
         raise RuntimeError("request timed out") from exc

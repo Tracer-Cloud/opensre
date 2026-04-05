@@ -23,6 +23,8 @@ _SKIP_MODULE_NAMES = {
     "tool_decorator",
     "investigation_registry",
     "utils",
+    "simple_tools",
+    "simple_tools_test",
 }
 
 # Preserve the current chat surface while the repo migrates toward explicit
@@ -162,4 +164,3 @@ def get_registered_tools(surface: ToolSurface | None = None) -> list[RegisteredT
 
 def get_registered_tool_map(surface: ToolSurface | None = None) -> dict[str, RegisteredTool]:
     return {tool.name: tool for tool in get_registered_tools(surface)}
-

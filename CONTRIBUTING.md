@@ -6,7 +6,7 @@ This document describes how to set up your environment, propose changes, report 
 
 ## Quick Links
 
-- **Docs:** https://www.tracer.cloud/docs
+- **Docs:** https://tracer.mintlify.app
 - **Support / Contact:** hello@tracer.cloud
 - **Security Issues:** See `SECURITY.md` (do not open public issues)
 
@@ -62,6 +62,32 @@ Use `issue/` or `fix/` prefix. Branch names should be lowercase with hyphens.
 - Keep commits focused and logical
 - Write clear commit messages: `"Fix: CLI returns error on incomplete commands"`
 - One concern per commit when possible
+
+### 2.1 Add a Tool (Fast Path: Single File)
+
+For simple tools, you do not need a class or `ClassVar` metadata. Add one file under `app/tools/` and register a function with `@tool`.
+
+Example (`app/tools/example_status_tool.py`):
+
+```python
+from app.tools.tool_decorator import tool
+
+
+@tool(source="knowledge")
+def get_example_status(run_id: str, include_history: bool = False) -> dict[str, object]:
+    """Return a lightweight status summary for a run."""
+    return {
+        "run_id": run_id,
+        "include_history": include_history,
+    }
+```
+
+Notes:
+
+- `source` is required for function tools.
+- `name`, `description`, and `input_schema` are inferred by default.
+- `surfaces` defaults to `("investigation",)`. Pass `surfaces=("investigation", "chat")` to expose the tool in both investigation and chat contexts.
+- Use the existing package/class style when a tool has complex helper logic, multiple exports, or substantial integration-specific code.
 
 ### 3. Add or Update Tests
 

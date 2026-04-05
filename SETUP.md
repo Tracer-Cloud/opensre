@@ -221,6 +221,49 @@ After setup, verify it with:
 make verify-integrations SERVICE=sentry
 ```
 
+### Google Docs setup notes
+
+If you want the agent to create shareable incident postmortem reports in Google Docs, configure `Google Docs` in `opensre onboard` or `python -m app.integrations setup google_docs`.
+
+**Prerequisites:**
+
+1. Create a Google Cloud service account:
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Navigate to `IAM & Admin > Service Accounts`
+   - Create a new service account (e.g., `opensre-reports`)
+   - Grant it the `Editor` role for Google Drive
+
+2. Download the service account credentials:
+   - Create and download a JSON key for the service account
+   - Save it securely (e.g., `~/.config/opensre/google-credentials.json`)
+
+3. Share your target Google Drive folder:
+   - Create or choose a Drive folder for incident reports
+   - Get the folder ID from the URL (the string after `folders/`)
+   - Share the folder with the service account email (found in the credentials JSON)
+
+**Configuration:**
+
+Set these environment variables in `.env` or via `opensre onboard`:
+
+```bash
+GOOGLE_CREDENTIALS_FILE=/path/to/service-account-credentials.json
+GOOGLE_DRIVE_FOLDER_ID=your-drive-folder-id
+```
+
+After setup, verify it with:
+
+```bash
+make verify-integrations SERVICE=google_docs
+```
+
+You can also configure a custom timeout for Google API calls (default is 30 seconds, min 5, max 300):
+
+```bash
+# Optional: override default timeout
+GOOGLE_TIMEOUT_SECONDS=60
+```
+
 ### Run the LangGraph dev UI
 
 Start the LangGraph dev server:

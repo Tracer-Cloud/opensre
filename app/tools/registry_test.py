@@ -45,6 +45,33 @@ def test_tool_decorator_registers_function_tool_with_inferred_schema() -> None:
     assert registered.surfaces == ("investigation", "chat")
 
 
+def test_tool_decorator_supports_minimal_single_file_function_tool() -> None:
+    module: Any = ModuleType("app.tools.single_file_status_tool")
+
+    @tool(source="knowledge")
+    def check_status(run_id: str, include_history: bool = False) -> dict[str, object]:
+        """Check status for a run."""
+        return {"run_id": run_id, "include_history": include_history}
+
+    check_status.__module__ = module.__name__
+    module.check_status = check_status
+
+    tools = registry_module._collect_registered_tools_from_module(module)
+
+    assert [tool_def.name for tool_def in tools] == ["check_status"]
+    registered = tools[0]
+    assert registered.description == "Check status for a run."
+    assert registered.source == "knowledge"
+    assert registered.input_schema["properties"]["run_id"]["type"] == "string"
+    assert registered.input_schema["properties"]["include_history"]["type"] == "boolean"
+    assert registered.input_schema["required"] == ["run_id"]
+    assert registered.surfaces == ("investigation",)
+    assert registered.run(run_id="r-1", include_history=True) == {
+        "run_id": "r-1",
+        "include_history": True,
+    }
+
+
 def test_function_and_class_tools_share_the_same_runtime_contract() -> None:
     def _available(sources: dict[str, dict[str, str]]) -> bool:
         return bool(sources.get("knowledge"))

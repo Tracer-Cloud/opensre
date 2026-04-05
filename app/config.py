@@ -11,6 +11,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from app.llm_credentials import resolve_llm_api_key
 from app.strict_config import StrictConfigModel
 
 
@@ -168,11 +169,11 @@ class LLMSettings(StrictConfigModel):
         """Build validated LLM settings from environment variables."""
         return cls.model_validate({
             "provider": os.getenv("LLM_PROVIDER", "anthropic").strip().lower() or "anthropic",
-            "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY", ""),
-            "openai_api_key": os.getenv("OPENAI_API_KEY", ""),
-            "openrouter_api_key": os.getenv("OPENROUTER_API_KEY", ""),
-            "gemini_api_key": os.getenv("GEMINI_API_KEY", ""),
-            "nvidia_api_key": os.getenv("NVIDIA_API_KEY", ""),
+            "anthropic_api_key": resolve_llm_api_key("ANTHROPIC_API_KEY"),
+            "openai_api_key": resolve_llm_api_key("OPENAI_API_KEY"),
+            "openrouter_api_key": resolve_llm_api_key("OPENROUTER_API_KEY"),
+            "gemini_api_key": resolve_llm_api_key("GEMINI_API_KEY"),
+            "nvidia_api_key": resolve_llm_api_key("NVIDIA_API_KEY"),
             "anthropic_reasoning_model": os.getenv("ANTHROPIC_REASONING_MODEL", ANTHROPIC_REASONING_MODEL).strip()
             or ANTHROPIC_REASONING_MODEL,
             "anthropic_toolcall_model": os.getenv("ANTHROPIC_TOOLCALL_MODEL", ANTHROPIC_TOOLCALL_MODEL).strip()

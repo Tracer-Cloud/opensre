@@ -29,9 +29,6 @@ from app.analytics.cli import (
     capture_test_synthetic_started,
     capture_tests_listed,
     capture_tests_picker_opened,
-    capture_update_completed,
-    capture_update_failed,
-    capture_update_started,
 )
 from app.analytics.provider import capture_first_run_if_needed, shutdown_analytics
 from app.version import get_version
@@ -50,7 +47,7 @@ _SETUP_SERVICES = [
     "slack",
     "tracer",
 ]
-_VERIFY_SERVICES = ["aws", "coralogix", "datadog", "grafana", "honeycomb", "slack", "tracer"]
+_VERIFY_SERVICES = ["aws", "coralogix", "datadog", "grafana", "honeycomb", "opsgenie", "slack", "tracer", "vercel"]
 
 
 _ASCII_HEADER = """\
@@ -138,6 +135,7 @@ def cli(ctx: click.Context) -> None:
       opensre investigate -i alert.json      Run RCA against an alert payload
       opensre tests                          Browse and run inventoried tests
       opensre integrations list              Show configured integrations
+      opensre health                         Check integration and agent setup status
 
     \b
     Enable tab-completion (add to your shell profile):
@@ -156,12 +154,8 @@ def update(check_only: bool, yes: bool) -> None:
     """Check for a newer version and update if one is available."""
     from app.cli.update import run_update
 
-    capture_update_started(check_only=check_only)
+    capture_cli_invoked()
     rc = run_update(check_only=check_only, yes=yes)
-    if rc == 0:
-        capture_update_completed()
-    else:
-        capture_update_failed()
     raise SystemExit(rc)
 
 
@@ -183,6 +177,25 @@ def onboard() -> None:
     else:
         capture_onboard_failed()
     raise SystemExit(exit_code)
+
+
+@cli.command()
+def health() -> None:
+    """Show a quick health summary of the local agent setup."""
+    from app.config import get_environment
+    from app.integrations.store import STORE_PATH
+    from app.integrations.verify import format_verification_results, verify_integrations
+
+    capture_cli_invoked()
+    results = verify_integrations()
+
+    click.echo("")
+    click.echo("OpenSRE Health")
+    click.echo("")
+    click.echo("CLI")
+    click.echo(f"  environment: {get_environment().value}")
+    click.echo(f"  integration store: {STORE_PATH}")
+    click.echo(format_verification_results(results))
 
 
 @cli.command()

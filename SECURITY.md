@@ -34,6 +34,6 @@ Please avoid public disclosure until we’ve had a reasonable opportunity to inv
 
 If you need product help or documentation, use:
 
-- Docs: https://www.tracer.cloud/docs
+- Docs: https://tracer.mintlify.app
 - Book a demo: https://www.tracer.cloud/demo
 - Email: hello@tracer.cloud

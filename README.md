@@ -8,7 +8,6 @@
 
 <p>The open-source framework for AI SRE agents, and the training and evaluation environment they need to improve. Connect the tools you already run, define your own workflows, and investigate incidents on your own infrastructure.</p>
 
-
 <p>
   <a href="https://github.com/Tracer-Cloud/opensre/stargazers"><img src="https://img.shields.io/github/stars/Tracer-Cloud/opensre?style=flat-square&color=FF6B00" alt="Stars"></a>
   <a href="https://github.com/Tracer-Cloud/opensre/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License"></a>
@@ -18,13 +17,18 @@
 
 <p align="center">
   <strong>
-    <a href="https://tracer-cloud.slack.com/archives/C0AL8S64936">Slack</a> ·
     <a href="https://app.tracer.cloud/">Getting Started</a> ·
     <a href="https://tracer.cloud/">Tracer Agent</a> ·
-    <a href="https://tracer.cloud/docs/">Docs</a> ·
+    <a href="https://tracer.mintlify.app/">Docs</a> ·
     <a href="docs/FAQ.md">FAQ</a> ·
     <a href="https://trust.tracer.cloud/">Security</a>
   </strong>
+</p>
+
+<p>
+  <a href="https://join.slack.com/t/tracer-cloud/shared_invite/zt-2xj0w3i3p-~EH0GFbZodFCXWkR7j3~w">
+    <img src="https://img.shields.io/badge/➜_Click_To_Join_Our_Slack-white?style=for-the-badge&logo=slack&logoColor=4A154B" alt="Join Slack">
+  </a>
 </p>
 
 </div>
@@ -43,8 +47,8 @@ OpenSRE is building _that_ missing layer:
 
 > an open reinforcement learning environment for agentic infrastructure incident response, with end-to-end tests and synthetic incident simulations for realistic production failures
 
-
 We do that by:
+
 - building easy-to-deploy, customizable AI SRE agents for production incident investigation and response
 - running scored synthetic RCA suites that check root-cause accuracy, required evidence, and adversarial red herrings [(tests/synthetic)](tests/synthetic/rds_postgres)
 - running real-world end-to-end tests across cloud-backed scenarios including Kubernetes, EC2, CloudWatch, Lambda, ECS Fargate, and Flink [(tests/e2e)](tests/e2e)
@@ -134,19 +138,25 @@ When an alert fires, Tracer automatically:
 
 Tracer integrates with the systems that power modern cloud platforms.
 
-| Category           | Integrations                                                                                                                                                                                                                                                   |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Data Platform**  | Apache Airflow · Apache Kafka · Apache Spark                                                                                                                                                                                                                   |
+| Category           | Integrations                                                                                                                                                                                                                                                                           |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Data Platform**  | Apache Airflow · Apache Kafka · Apache Spark                                                                                                                                                                                                                                           |
 | **Observability**  | <img src="docs/assets/icons/grafana.webp" width="16"> Grafana · <img src="docs/assets/icons/datadog.svg" width="16"> Datadog · Honeycomb · Coralogix · <img src="docs/assets/icons/cloudwatch.png" width="16"> CloudWatch · <img src="docs/assets/icons/sentry.png" width="16"> Sentry |
-| **Infrastructure** | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS · <img src="docs/assets/icons/gcp.jpg" width="16"> GCP · <img src="docs/assets/icons/azure.png" width="16"> Azure                    |
-| **Dev Tools**      | <img src="docs/assets/icons/github.webp" width="16"> GitHub                                                                                                                                                                                                    |
-| **Communication**  | <img src="docs/assets/icons/slack.png" width="16"> Slack · <img src="docs/assets/icons/pagerduty.png" width="16"> PagerDuty                                                                                                                                    |
+| **Infrastructure** | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS · <img src="docs/assets/icons/gcp.jpg" width="16"> GCP · <img src="docs/assets/icons/azure.png" width="16"> Azure                                            |
+| **Dev Tools**      | <img src="docs/assets/icons/github.webp" width="16"> GitHub                                                                                                                                                                                                                            |
+| **Communication**  | <img src="docs/assets/icons/slack.png" width="16"> Slack · <img src="docs/assets/icons/pagerduty.png" width="16"> PagerDuty · Google Docs                                                                                                                                              |
 
 ---
 
 ## Contributing
 
 Tracer is community-built. Every integration, improvement, and bug fix makes it better for thousands of engineers. We actively review PRs and welcome contributors of all experience levels.
+
+<p>
+  <a href="https://join.slack.com/t/tracer-cloud/shared_invite/zt-3ifakcs2e-igoUEH8ygMlfxgJGLxsqeA">
+    <img src="https://img.shields.io/badge/Join%20our%20Community%20Slack-4A154B?style=for-the-badge&logo=slack&logoColor=white" alt="Join our Community Slack" />
+  </a>
+</p>
 
 Good first issues are labeled [`good first issue`](https://github.com/Tracer-Cloud/opensre/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). Ways to contribute:
 
@@ -164,82 +174,38 @@ Thanks goes to these amazing people:
 	<tbody>
 		<tr>
             <td align="center">
-        <a href="https://github.com/ebrahim-sameh">
-            <img src="https://avatars.githubusercontent.com/u/23136098?v=4" width="100;" alt="ebrahim-sameh"/>
+        <a href="https://github.com/davincios">
+            <img src="https://avatars.githubusercontent.com/u/33206282?v=4" width="100;" alt="davincios"/>
             <br />
-            <sub><b>ebrahim-sameh</b></sub>
+            <sub><b>davincios</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/lukegimza">
-            <img src="https://avatars.githubusercontent.com/u/68860070?v=4" width="100;" alt="lukegimza"/>
+        <a href="https://github.com/VaibhavUpreti">
+            <img src="https://avatars.githubusercontent.com/u/85568177?v=4" width="100;" alt="VaibhavUpreti"/>
             <br />
-            <sub><b>lukegimza</b></sub>
+            <sub><b>VaibhavUpreti</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/edgarmb14">
-            <img src="https://avatars.githubusercontent.com/u/268297669?v=4" width="100;" alt="edgarmb14"/>
+        <a href="https://github.com/aliya-tracer">
+            <img src="https://avatars.githubusercontent.com/u/233726347?v=4" width="100;" alt="aliya-tracer"/>
             <br />
-            <sub><b>edgarmb14</b></sub>
+            <sub><b>aliya-tracer</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/cerencamkiran">
-            <img src="https://avatars.githubusercontent.com/u/150190567?v=4" width="100;" alt="cerencamkiran"/>
+        <a href="https://github.com/arnetracer">
+            <img src="https://avatars.githubusercontent.com/u/203629234?v=4" width="100;" alt="arnetracer"/>
             <br />
-            <sub><b>cerencamkiran</b></sub>
+            <sub><b>arnetracer</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/vrk7">
-            <img src="https://avatars.githubusercontent.com/u/108936058?v=4" width="100;" alt="vrk7"/>
+        <a href="https://github.com/kylie-tracer">
+            <img src="https://avatars.githubusercontent.com/u/256781109?v=4" width="100;" alt="kylie-tracer"/>
             <br />
-            <sub><b>vrk7</b></sub>
-        </a>
-    </td>
-            <td align="center">
-        <a href="https://github.com/rrajan94">
-            <img src="https://avatars.githubusercontent.com/u/25589618?v=4" width="100;" alt="rrajan94"/>
-            <br />
-            <sub><b>rrajan94</b></sub>
-        </a>
-    </td>
-		</tr>
-		<tr>
-            <td align="center">
-        <a href="https://github.com/anandgupta1202">
-            <img src="https://avatars.githubusercontent.com/u/39819996?v=4" width="100;" alt="anandgupta1202"/>
-            <br />
-            <sub><b>anandgupta1202</b></sub>
-        </a>
-    </td>
-            <td align="center">
-        <a href="https://github.com/yeoreums">
-            <img src="https://avatars.githubusercontent.com/u/62932875?v=4" width="100;" alt="yeoreums"/>
-            <br />
-            <sub><b>yeoreums</b></sub>
-        </a>
-    </td>
-            <td align="center">
-        <a href="https://github.com/w3joe">
-            <img src="https://avatars.githubusercontent.com/u/84664178?v=4" width="100;" alt="w3joe"/>
-            <br />
-            <sub><b>w3joe</b></sub>
-        </a>
-    </td>
-            <td align="center">
-        <a href="https://github.com/iamkalio">
-            <img src="https://avatars.githubusercontent.com/u/89003403?v=4" width="100;" alt="iamkalio"/>
-            <br />
-            <sub><b>iamkalio</b></sub>
-        </a>
-    </td>
-            <td align="center">
-        <a href="https://github.com/zeel2104">
-            <img src="https://avatars.githubusercontent.com/u/72783325?v=4" width="100;" alt="zeel2104"/>
-            <br />
-            <sub><b>zeel2104</b></sub>
+            <sub><b>kylie-tracer</b></sub>
         </a>
     </td>
             <td align="center">
@@ -252,38 +218,112 @@ Thanks goes to these amazing people:
 		</tr>
 		<tr>
             <td align="center">
-        <a href="https://github.com/kylie-tracer">
-            <img src="https://avatars.githubusercontent.com/u/256781109?v=4" width="100;" alt="kylie-tracer"/>
+        <a href="https://github.com/zeel2104">
+            <img src="https://avatars.githubusercontent.com/u/72783325?v=4" width="100;" alt="zeel2104"/>
             <br />
-            <sub><b>kylie-tracer</b></sub>
+            <sub><b>zeel2104</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/arnetracer">
-            <img src="https://avatars.githubusercontent.com/u/203629234?v=4" width="100;" alt="arnetracer"/>
+        <a href="https://github.com/iamkalio">
+            <img src="https://avatars.githubusercontent.com/u/89003403?v=4" width="100;" alt="iamkalio"/>
             <br />
-            <sub><b>arnetracer</b></sub>
+            <sub><b>iamkalio</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/aliya-tracer">
-            <img src="https://avatars.githubusercontent.com/u/233726347?v=4" width="100;" alt="aliya-tracer"/>
+        <a href="https://github.com/w3joe">
+            <img src="https://avatars.githubusercontent.com/u/84664178?v=4" width="100;" alt="w3joe"/>
             <br />
-            <sub><b>aliya-tracer</b></sub>
+            <sub><b>w3joe</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/VaibhavUpreti">
-            <img src="https://avatars.githubusercontent.com/u/85568177?v=4" width="100;" alt="VaibhavUpreti"/>
+        <a href="https://github.com/yeoreums">
+            <img src="https://avatars.githubusercontent.com/u/62932875?v=4" width="100;" alt="yeoreums"/>
             <br />
-            <sub><b>VaibhavUpreti</b></sub>
+            <sub><b>yeoreums</b></sub>
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/davincios">
-            <img src="https://avatars.githubusercontent.com/u/33206282?v=4" width="100;" alt="davincios"/>
+        <a href="https://github.com/anandgupta1202">
+            <img src="https://avatars.githubusercontent.com/u/39819996?v=4" width="100;" alt="anandgupta1202"/>
             <br />
-            <sub><b>davincios</b></sub>
+            <sub><b>anandgupta1202</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/rrajan94">
+            <img src="https://avatars.githubusercontent.com/u/25589618?v=4" width="100;" alt="rrajan94"/>
+            <br />
+            <sub><b>rrajan94</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/vrk7">
+            <img src="https://avatars.githubusercontent.com/u/108936058?v=4" width="100;" alt="vrk7"/>
+            <br />
+            <sub><b>vrk7</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/cerencamkiran">
+            <img src="https://avatars.githubusercontent.com/u/150190567?v=4" width="100;" alt="cerencamkiran"/>
+            <br />
+            <sub><b>cerencamkiran</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/edgarmb14">
+            <img src="https://avatars.githubusercontent.com/u/268297669?v=4" width="100;" alt="edgarmb14"/>
+            <br />
+            <sub><b>edgarmb14</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/lukegimza">
+            <img src="https://avatars.githubusercontent.com/u/68860070?v=4" width="100;" alt="lukegimza"/>
+            <br />
+            <sub><b>lukegimza</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/ebrahim-sameh">
+            <img src="https://avatars.githubusercontent.com/u/23136098?v=4" width="100;" alt="ebrahim-sameh"/>
+            <br />
+            <sub><b>ebrahim-sameh</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/shoaib050326">
+            <img src="https://avatars.githubusercontent.com/u/266381026?v=4" width="100;" alt="shoaib050326"/>
+            <br />
+            <sub><b>shoaib050326</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/venturevd">
+            <img src="https://avatars.githubusercontent.com/u/269883753?v=4" width="100;" alt="venturevd"/>
+            <br />
+            <sub><b>venturevd</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/shriyashsoni">
+            <img src="https://avatars.githubusercontent.com/u/138931443?v=4" width="100;" alt="shriyashsoni"/>
+            <br />
+            <sub><b>shriyashsoni</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Devesh36">
+            <img src="https://avatars.githubusercontent.com/u/142524747?v=4" width="100;" alt="Devesh36"/>
+            <br />
+            <sub><b>Devesh36</b></sub>
         </a>
     </td>
 		</tr>
@@ -309,15 +349,30 @@ See [SECURITY.md](SECURITY.md) for responsible disclosure.
 
 `opensre` collects anonymous usage statistics with Posthog to help us understand adoption
 and demonstrate traction to sponsors and investors who fund the project.
-What we collect: command name, CLI version, Python version, and OS family.
-A randomly generated anonymous ID is created on first run and stored in
-`~/.config/opensre/`. We never collect alert contents, hostnames,
-credentials, or any personally identifiable information.
+What we collect: command name, success/failure, rough runtime, CLI version,
+Python version, OS family, machine architecture, and a small amount of
+command-specific metadata such as which subcommand ran. For `opensre onboard`
+and `opensre investigate`, we may also collect the selected model/provider and
+whether the command used flags such as `--interactive` or `--input`.
 
-To opt out, set the environment variable before running:
+A randomly generated anonymous ID is created on first run and stored in
+`~/.config/opensre/`. We never collect alert contents, file contents,
+hostnames, credentials, or any personally identifiable information.
+
+Telemetry is automatically disabled in GitHub Actions and pytest runs.
+
+To opt out locally, set the environment variable before running:
 
 ```bash
 export OPENSRE_NO_TELEMETRY=1
+```
+
+The legacy alias `OPENSRE_ANALYTICS_DISABLED=1` also still works.
+
+To inspect the payload locally without sending anything, use:
+
+```bash
+export OPENSRE_TELEMETRY_DEBUG=1
 ```
 
 ## License
@@ -325,5 +380,5 @@ export OPENSRE_NO_TELEMETRY=1
 Apache 2.0 - see [LICENSE](LICENSE) for details.
 
 ## Citations
-<sup>1</sup> https://arxiv.org/abs/2310.06770
 
+<sup>1</sup> https://arxiv.org/abs/2310.06770

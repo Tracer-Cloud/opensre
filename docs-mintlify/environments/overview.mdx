@@ -1,0 +1,135 @@
+---
+title: "Environments"
+sidebarTitle: "Overview"
+description: "Choose the right environment to run OpenSRE for your workflow"
+---
+
+OpenSRE supports a wide array of environments to fit your infrastructure and workflow needs.<br/> Choose the environment that best matches your setup.
+
+## Cloud & Development Environments
+
+<CardGroup cols={2}>
+  <Card
+    title="Demo Environment"
+    icon="/images/other_logos/GitHub-Black.png"
+    href="/environments/codespaces"
+  >
+    Try OpenSRE instantly in a cloud development environment with no local setup required.
+  </Card>
+
+  <Card
+    title="Linux"
+    icon="/images/other_logos/AWS-Black.png"
+    href="/environments/linux-cloud"
+  >
+    Deploy OpenSRE on cloud-based Linux instances (AWS, GCP, Azure).
+  </Card>
+</CardGroup>
+
+## Local Environments
+
+<CardGroup cols={3}>
+  <Card
+    title="Linux"
+    icon="/images/other_logos/Linux-Black.png"
+    href="/environments/linux-local"
+  >
+    Install OpenSRE on your local Linux machine for development and testing.
+  </Card>
+
+  <Card
+    title="macOS"
+    icon="/images/other_logos/Apple-Black.png"
+    href="/environments/macos"
+  >
+    Run OpenSRE on macOS for local pipeline development and monitoring.
+  </Card>
+
+  <Card
+    title="Windows"
+    icon="/images/other_logos/Windows-Black.png"
+    href="/environments/windows-local"
+  >
+    Use OpenSRE on Windows via WSL or GitHub Codespaces.
+  </Card>
+</CardGroup>
+
+## Container & Batch Environments
+
+<CardGroup cols={3}>
+  <Card
+    title="Docker"
+    icon="/images/other_logos/Docker-Black.png"
+    href="/environments/docker"
+  >
+    Run OpenSRE in containerized environments with Docker.
+  </Card>
+
+  <Card
+    title="AWS Batch"
+    icon="/images/other_logos/AWS-Black.png"
+    href="/environments/aws-batch"
+  >
+    Deploy OpenSRE for AWS Batch workloads and large-scale compute jobs.
+  </Card>
+  <Card
+    title="Google Batch"
+    icon="/images/other_logos/Google-Cloud-Dark.png"
+    href="/environments/google-batch"
+
+  >
+    Enable OpenSRE for Google Batch workloads.
+  </Card>
+</CardGroup>
+
+<Tip>
+  OpenSRE is also compatible with other cloud providers and on-premises infrastructure. Contact us for more information.
+</Tip>
+
+## Common Installation Steps
+
+Regardless of your environment, the OpenSRE installation process follows these general steps:
+
+<Steps>
+  <Step title="Install OpenSRE">
+    Run the installation script or use environment-specific setup
+  </Step>
+  
+  <Step title="Start the OpenSRE Agent">
+    Start the OpenSRE agent with your organization token
+  </Step>
+  
+  <Step title="Launch your own pipeline or a demo">
+    Execute your workflow - OpenSRE automatically monitors it
+  </Step>
+ </Steps> 
+## View Results
+    Check the OpenSRE dashboard for real-time insights
+
+<Card href="https://app.tracer.cloud/">
+  <img
+    className="block dark:hidden"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="OpenSRE Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+  <img
+    className="hidden dark:block"
+    src="/images/logo/tracer/Tracer Full Body - White.png"
+    alt="OpenSRE Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+
+  <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1 rem', color: 'inherit' }}>
+    Watch your pipeline run in the OpenSRE dashboard
+  </div>
+
+  <div style={{ color: 'inherit' }}>
+    View real-time metrics, resource usage, and performance insights for your pipeline runs.
+  </div>
+</Card>
+
+<Tip>
+Each environment page includes detailed installation instructions and troubleshooting tips specific to that platform.
+</Tip>
+

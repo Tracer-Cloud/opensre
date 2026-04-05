@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import importlib.metadata
 import os
 import platform
 import queue
@@ -17,7 +18,6 @@ import httpx
 
 from app.analytics.events import Event
 from app.cli.wizard.store import get_store_path
-from app.version import get_version
 
 _CONFIG_DIR = get_store_path().parent
 _ANONYMOUS_ID_PATH = _CONFIG_DIR / "anonymous_id"
@@ -25,15 +25,6 @@ _FIRST_RUN_PATH = _CONFIG_DIR / "installed"
 
 _POSTHOG_API_KEY = "phc_zutpVhmQw7oUmMkbawKNdYCKQWjpfASATtf5ywB75W2"
 _POSTHOG_HOST = "https://us.i.posthog.com"
-_CI_ENV_VARS: Final[tuple[str, ...]] = (
-    "GITHUB_ACTIONS",
-    "GITLAB_CI",
-    "BUILDKITE",
-    "CIRCLECI",
-    "TRAVIS",
-    "JENKINS_URL",
-    "TEAMCITY_VERSION",
-)
 
 _QUEUE_SIZE = 128
 _SEND_TIMEOUT = 2.0
@@ -49,15 +40,10 @@ class _Envelope:
     properties: Properties
 
 
-def _is_ci_environment() -> bool:
-    return any(os.getenv(name, "") not in ("", "0", "false", "False") for name in _CI_ENV_VARS)
-
-
 def _is_opted_out() -> bool:
     return (
         os.getenv("OPENSRE_ANALYTICS_DISABLED", "0") == "1"
         or os.getenv("DO_NOT_TRACK", "0") == "1"
-        or _is_ci_environment()
     )
 
 
@@ -87,7 +73,10 @@ def _touch_once(path: Path) -> bool:
 
 
 def _cli_version() -> str:
-    return get_version()
+    try:
+        return importlib.metadata.version("opensre")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
 
 
 _BASE_PROPERTIES: Final[Properties] = {
@@ -95,7 +84,6 @@ _BASE_PROPERTIES: Final[Properties] = {
     "python_version": platform.python_version(),
     "os_family": platform.system().lower(),
     "os_version": platform.release(),
-    "machine_arch": platform.machine().lower(),
     "$process_person_profile": False,
 }
 
@@ -103,7 +91,7 @@ _BASE_PROPERTIES: Final[Properties] = {
 class Analytics:
     def __init__(self) -> None:
         self._disabled = _is_opted_out()
-        self._anonymous_id = "disabled" if self._disabled else _get_or_create_anonymous_id()
+        self._anonymous_id = _get_or_create_anonymous_id()
         self._queue: queue.Queue[_Envelope | None] = queue.Queue(maxsize=_QUEUE_SIZE)
         self._pending_lock = threading.Lock()
         self._pending = 0
@@ -161,7 +149,6 @@ class Analytics:
                 finally:
                     self._queue.task_done()
                     self._mark_done()
-            # Drain anything queued before shutdown sentinel arrived.
             while True:
                 try:
                     item = self._queue.get_nowait()
@@ -210,15 +197,11 @@ def shutdown_analytics(*, flush: bool = True) -> None:
 
 
 def mark_install_detected() -> None:
-    if _is_opted_out():
-        return
     with contextlib.suppress(OSError):
         _FIRST_RUN_PATH.parent.mkdir(parents=True, exist_ok=True)
         _FIRST_RUN_PATH.touch(exist_ok=True)
 
 
 def capture_first_run_if_needed() -> None:
-    if _is_opted_out():
-        return
     if _touch_once(_FIRST_RUN_PATH):
         get_analytics().capture(Event.INSTALL_DETECTED)

@@ -1,0 +1,52 @@
+---
+title: "Quickstart"
+slug: "quickstart"
+---
+
+## Create an account
+
+1. **Sign up** at [app.tracer.cloud](http://app.tracer.cloud)
+
+   <Frame>
+     ![Create account](/images/createaccount.png)
+   </Frame>
+2. **Create a workspace**.
+
+   <Frame>
+     ![Create workspace](/images/createworkspace.png)
+   </Frame>
+
+## Connect OpenSRE to Slack
+
+3. To start seeing incident investigations, you’ll need to connect OpenSRE to Slack. **Sign in with Slack** to start setting up the connection. 
+
+   <Frame>
+     ![Sign In With Slack(1)](/images/sign_in_with_slack\(1\).png)
+   </Frame>
+4. In Slack, pick your workspace and click **Allow.**
+
+   <Frame>
+     ![Give Slack Access](/images/give_slack_access.png)
+   </Frame>
+5. In Slack, open your alerts channel. 
+6. Type /add and click **Add apps to this channel**
+7. Search **Tracer** and click **Add**. The Slack app still appears as Tracer during the transition.
+8. In OpenSRE, open **Integrations** → **Slack**. Under **Channel Mappings** click **\+Add.** Select the channels you’ve added OpenSRE to, and select which types of alerts you’d like OpenSRE to respond to.
+
+9. If you don't see your channel here, you'll need to invite @Tracey to the channel in Slack. Go to your chosen channel and use the command `/invite @Tracey` to add it.
+
+   <Frame>
+     ![Channel Mapping Slack](/images/channel_mapping_slack.png)
+   </Frame>
+
+## Connect integrations
+
+Each integration follows a simple, guided flow. Let’s look at Datadog as an example. 
+
+1. Name - Helps distinguish between different instances
+2. API Key - in Datadog, create a new API key and copy and paste into OpenSRE. 
+3. Application Key - In Datadog, create a new Application Key and copy and paste into OpenSRE. 
+
+<Frame>
+  ![Connect Datadog](/images/connect_datadog.png)
+</Frame>
