@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install onboard test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke
+.PHONY: install onboard test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke deploy-langsmith destroy-langsmith test-langsmith deploy-vercel destroy-vercel test-vercel deploy-ec2 destroy-ec2 test-ec2 deploy-bedrock destroy-bedrock test-bedrock
 
 ifneq ($(wildcard .venv/bin/python),)
 PYTHON = .venv/bin/python
@@ -280,14 +280,53 @@ typecheck:
 # Run all checks
 check: lint typecheck test-full
 
+# ─── Deployment Tests (LangSmith) ────────────────────────────────────────────
+deploy-langsmith:
+	$(PYTHON) -m tests.deployment.langsmith.infrastructure_sdk.deploy
+
+destroy-langsmith:
+	$(PYTHON) -m tests.deployment.langsmith.infrastructure_sdk.destroy
+
+test-langsmith:
+	$(PYTHON) -m pytest tests/deployment/langsmith/ -v -s
+
+# ─── Deployment Tests (Vercel) ───────────────────────────────────────────────
+deploy-vercel:
+	$(PYTHON) -m tests.deployment.vercel.infrastructure_sdk.deploy
+
+destroy-vercel:
+	$(PYTHON) -m tests.deployment.vercel.infrastructure_sdk.destroy
+
+test-vercel:
+	$(PYTHON) -m pytest tests/deployment/vercel/ -v -s
+
+# ─── Deployment Tests (EC2) ──────────────────────────────────────────────────
+deploy-ec2:
+	$(PYTHON) -m tests.deployment.ec2.infrastructure_sdk.deploy
+
+destroy-ec2:
+	$(PYTHON) -m tests.deployment.ec2.infrastructure_sdk.destroy
+
+test-ec2:
+	$(PYTHON) -m pytest tests/deployment/ec2/ -v -s
+
 # Show help
 help:
 	@echo "Available commands:"
 	@echo ""
-	@echo "  DEPLOYMENT TESTS (Bedrock)"
-	@echo "  make deploy-bedrock  - Deploy Bedrock Agent stack"
-	@echo "  make destroy-bedrock - Destroy Bedrock Agent stack"
-	@echo "  make test-bedrock    - Run Bedrock Agent deployment tests"
+	@echo "  DEPLOYMENT TESTS"
+	@echo "  make deploy-bedrock    - Deploy Bedrock Agent stack"
+	@echo "  make destroy-bedrock   - Destroy Bedrock Agent stack"
+	@echo "  make test-bedrock      - Run Bedrock Agent deployment tests"
+	@echo "  make deploy-langsmith  - Deploy to LangSmith/LangGraph Cloud"
+	@echo "  make destroy-langsmith - Clean up LangSmith deployment outputs"
+	@echo "  make test-langsmith    - Run LangSmith deployment tests"
+	@echo "  make deploy-vercel     - Deploy health-check function to Vercel"
+	@echo "  make destroy-vercel    - Destroy Vercel deployment"
+	@echo "  make test-vercel       - Run Vercel deployment tests"
+	@echo "  make deploy-ec2        - Deploy OpenSRE on EC2 with Docker"
+	@echo "  make destroy-ec2       - Terminate EC2 instance and clean up"
+	@echo "  make test-ec2          - Run EC2 deployment tests"
 	@echo ""
 	@echo "  DEPLOYMENT (AWS SDK - fast!)"
 	@echo "  make deploy          - Deploy all test case infrastructure"
