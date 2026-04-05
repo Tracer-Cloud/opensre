@@ -370,6 +370,13 @@ Thanks goes to these amazing people:
             <sub><b>Abhinnavverma</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/devankitjuneja">
+            <img src="https://avatars.githubusercontent.com/u/55021449?v=4" width="100;" alt="devankitjuneja"/>
+            <br />
+            <sub><b>devankitjuneja</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
