@@ -144,6 +144,53 @@ class TracerIntegrationConfig(StrictConfigModel):
             token = token.split(None, 1)[1].strip()
         return token
 
+class JiraIntegrationConfig(StrictConfigModel):
+    """Normalized Jira credentials used by resolution and verification flows."""
+    base_url: str
+    email: str
+    api_token: str
+    project_key: str
+    integration_id: str = ""
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: object) -> str:
+        return str(value or "").strip().rstrip("/")
+
+    @field_validator("email", "api_token", "project_key", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @property
+    def auth(self) -> tuple[str, str]:
+        return (self.email, self.api_token)
+
+    @property
+    def api_base(self) -> str:
+        return f"{self.base_url}/rest/api/3"
+
+
+class MongoDBIntegrationConfig(StrictConfigModel):
+    """Normalized MongoDB credentials used by resolution and verification flows."""
+
+    connection_string: str
+    database: str = ""
+    auth_source: str = "admin"
+    tls: bool = True
+    integration_id: str = ""
+
+    @field_validator("connection_string", mode="before")
+    @classmethod
+    def _normalize_connection_string(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("auth_source", mode="before")
+    @classmethod
+    def _normalize_auth_source(cls, value: object) -> str:
+        normalized = str(value or "admin").strip()
+        return normalized or "admin"
+
 
 class GoogleDocsIntegrationConfig(StrictConfigModel):
     """Normalized Google Docs (Drive API) credentials for incident report generation."""
@@ -176,6 +223,37 @@ class GoogleDocsIntegrationConfig(StrictConfigModel):
         return max(5, min(timeout, 300))
 
 
+class OpsGenieIntegrationConfig(StrictConfigModel):
+    """Normalized OpsGenie credentials used by resolution and verification flows."""
+
+    api_key: str
+    region: str = "us"
+    integration_id: str = ""
+
+    @field_validator("region", mode="before")
+    @classmethod
+    def _normalize_region(cls, value: object) -> str:
+        raw = str(value or "us").strip().lower()
+        return raw if raw in ("us", "eu") else "us"
+
+class PrefectIntegrationConfig(StrictConfigModel):
+    api_url: str = "https://api.prefect.cloud/api"
+    api_key: str = ""
+    account_id: str = ""
+    workspace_id: str = ""
+    integration_id: str = ""
+
+    @field_validator("api_url", mode="before")
+    @classmethod
+    def _normalize_api_url(cls, value: object) -> str:
+        return str(value or "https://api.prefect.cloud/api").strip().rstrip("/")
+
+    @field_validator("api_key", "account_id", "workspace_id", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+
 class EffectiveIntegrationEntry(StrictConfigModel):
     """Resolved integration entry with source metadata."""
 
@@ -195,4 +273,9 @@ class EffectiveIntegrations(StrictConfigModel):
     tracer: EffectiveIntegrationEntry | None = None
     github: EffectiveIntegrationEntry | None = None
     sentry: EffectiveIntegrationEntry | None = None
+    mongodb: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
+    vercel: EffectiveIntegrationEntry | None = None
+    jira: EffectiveIntegrationEntry | None = None
+    opsgenie: EffectiveIntegrationEntry | None = None
+    prefect: EffectiveIntegrationEntry | None = None

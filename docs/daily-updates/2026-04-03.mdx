@@ -1,0 +1,37 @@
+---
+title: "Daily Update — 2026-04-03"
+description: "OpenSRE engineering daily update for 2026-04-03 (Europe/London)"
+---
+
+Thanks to everyone who contributed today: Andrew Van Dyke, Ceren Camkiran, Ebrahim Sameh, Shoaib Ansari, shoaib050326, Vaibhav Upreti, venturevd, vincenthus, and Yeoreum Song 🙏🚀
+
+## Main updates shipped
+
+- New `opensre update` CLI command -- hits the GitHub releases API, compares versions, and runs a pip upgrade or prints a re-install command for frozen binaries; supports `--check` and `--yes` flags.
+- New `opensre health` CLI command -- reuses the existing integration verification flow to print a compact local health summary including environment and integration store path.
+- MCP server added -- a minimal `opensre_mcp.py` exposes a single `run_rca` tool wrapping the existing investigation workflow, enabling use from MCP clients such as Copilot and Claude Desktop, with tests covering happy path and malformed input.
+- Google Docs integration shipped -- adds a `GoogleDocsIntegrationConfig`, a full client (create, insert, share, retrieve, validate), and a `GoogleDocsCreateReportTool` that generates structured postmortem reports with Executive Summary, Root Cause, Timeline, and Remediation sections.
+- Tool-decorating refactor merged -- large rework (~+4927/-2606) touching integrations clients (Coralogix, Honeycomb), wizard flow, integration health, alert templates, and node processing.
+- Mintlify docs moved into repo -- `docs-mintlify/` directory added (~12 k lines) including comparisons, quickstart pages, and CI spellcheck configuration; Vale vocabulary wired up via `.vale.ini` to eliminate 320 false-positive spellcheck findings.
+- CodeQL quality alerts resolved -- consolidated duplicate `import`/`import from` statements in `jwt_auth.py`, `flow.py`, and a test file, and removed unused JS variables in `radar-chart.js` and `toc-actions.js`.
+
+## Source pull requests
+
+- [#285](https://github.com/Tracer-Cloud/opensre/pull/285) Add opensre update command (author: Ebrahim Sameh; contributors: Ebrahim Sameh; labels: _none_; files: `.editorconfig`, `.gitignore`, `README.md`, `app/analytics/cli.py`, `app/analytics/events.py`, `app/cli/__main__.py`, `app/cli/update.py`, `app/cli/update_test.py`, `mypy.ini`)
+- [#292](https://github.com/Tracer-Cloud/opensre/pull/292) Feature/tool decorating (author: vincenthus; contributors: vincenthus; labels: _none_; files: `.env.example`, `README.md`, `app/cli/__main__.py`, `app/cli/alert_templates.py`, `app/cli/args.py`, `app/cli/wizard/flow.py`, `app/cli/wizard/flow_test.py`, `app/cli/wizard/integration_health.py`, `app/cli/wizard/integration_health_test.py`, `app/integrations/cli.py`, and 79 more)
+- [#296](https://github.com/Tracer-Cloud/opensre/pull/296) Add opensre health command (author: Yeoreum Song; contributors: Yeoreum Song; labels: _none_; files: `app/cli/__main__.py`, `app/cli/health_test.py`)
+- [#294](https://github.com/Tracer-Cloud/opensre/pull/294) Create opensre_mcp.py (author: Ceren Camkiran; contributors: Ceren Camkiran; labels: _none_; files: `app/integrations/opensre_mcp.py`)
+- [#295](https://github.com/Tracer-Cloud/opensre/pull/295) Create opensre_mcp_test.py (author: Ceren Camkiran; contributors: Ceren Camkiran; labels: _none_; files: `app/integrations/opensre_mcp_test.py`)
+- [#293](https://github.com/Tracer-Cloud/opensre/pull/293) feat: Add Google Docs integration for shareable incident postmortems (author: shoaib050326; contributors: Shoaib Ansari, shoaib050326, and vincenthus; labels: _none_; files: `README.md`, `SETUP.md`, `app/cli/wizard/flow.py`, `app/cli/wizard/integration_health.py`, `app/integrations/clients/google_docs/__init__.py`, `app/integrations/clients/google_docs/client.py`, `app/integrations/models.py`, `app/integrations/verify.py`, `app/state.py`, `app/tools/GoogleDocsCreateReportTool/__init__.py`, and 2 more)
+- [#307](https://github.com/Tracer-Cloud/opensre/pull/307) feat: move mintlify docs (author: Vaibhav Upreti; contributors: Vaibhav Upreti; labels: _none_; files: `docs-mintlify/.cspell.json`, `docs-mintlify/.gitignore`, `docs-mintlify/.tool-versions`, `docs-mintlify/DataLake.mp4`, `docs-mintlify/LICENSE`, `docs-mintlify/README.md`, `docs-mintlify/Sitemap Tracer.xml`, `docs-mintlify/comparisons/Tracer_vs_AWS_CloudWatch.mdx`, `docs-mintlify/comparisons/Tracer_vs_Airflow.mdx`, `docs-mintlify/comparisons/Tracer_vs_Dagster.mdx`, and 324 more)
+- [#308](https://github.com/Tracer-Cloud/opensre/pull/308) fix: resolve #291 (author: venturevd; contributors: Andrew Van Dyke and venturevd; labels: _none_; files: `.gitignore`)
+- [#326](https://github.com/Tracer-Cloud/opensre/pull/326) fix: resolve CodeQL quality alerts (author: vincenthus; contributors: vincenthus; labels: _none_; files: `app/auth/jwt_auth.py`, `app/cli/wizard/flow.py`, `docs-mintlify/.vale.ini`, `docs-mintlify/.vale/styles/Vocab/Tracer/accept.txt`, `docs-mintlify/.vale/styles/Vocab/Tracer/reject.txt`, `docs-mintlify/public/radar-chart.js`, `docs-mintlify/toc-actions.js`, `tests/utils/langgraph_client/client_test.py`)
+- [#335](https://github.com/Tracer-Cloud/opensre/pull/335) Fix/vale spellcheck vocabulary (author: vincenthus; contributors: vincenthus; labels: _none_; files: `docs-mintlify/.vale.ini`, `docs-mintlify/styles/config/vocabularies/Mintlify/accept.txt`, `docs-mintlify/styles/config/vocabularies/Mintlify/reject.txt`)
+- [#337](https://github.com/Tracer-Cloud/opensre/pull/337) fix: add .vale.ini to activate vocabulary for Mintlify spellcheck (author: vincenthus; contributors: vincenthus; labels: _none_; files: `docs-mintlify/.vale.ini`)
+- [#338](https://github.com/Tracer-Cloud/opensre/pull/338) fix: add .vale.ini to activate vocabulary for Mintlify spellcheck (author: vincenthus; contributors: vincenthus; labels: _none_; files: `docs-mintlify/.vale.ini`, `docs-mintlify/quickstart-1.mdx`, `docs-mintlify/quickstart.mdx`, `docs-mintlify/styles/config/vocabularies/Mintlify/accept.txt`)
+
+## Generation metadata
+
+- Generator version: `opensre 0.1.0`
+- Fallback summary used: `no`
+- UTC window: `2026-04-02T23:00:00+00:00` to `2026-04-03T23:00:00+00:00`

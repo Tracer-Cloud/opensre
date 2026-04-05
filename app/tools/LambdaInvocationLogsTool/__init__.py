@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.integrations.clients.lambda_client import (
+from app.services.lambda_client import (
     get_invocation_logs_by_request_id,
     get_recent_invocations,
 )

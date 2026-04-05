@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
-from app.integrations.clients.coralogix import build_coralogix_logs_query
+from app.services.coralogix import build_coralogix_logs_query
 from app.tools.GrafanaLogsTool import _map_pipeline_to_service_name
 
 
@@ -618,6 +618,22 @@ def detect_sources(
                 "connection_verified": True,
             }
 
+    vercel_int = (resolved_integrations or {}).get("vercel")
+    if vercel_int and str(vercel_int.get("api_token", "")).strip():
+        sources["vercel"] = {
+            "api_token": str(vercel_int.get("api_token", "")).strip(),
+            "team_id": str(vercel_int.get("team_id", "")).strip(),
+            "project_id": str(
+                annotations.get("vercel_project_id")
+                or raw_alert.get("vercel_project_id", "")
+            ).strip(),
+            "deployment_id": str(
+                annotations.get("vercel_deployment_id")
+                or raw_alert.get("vercel_deployment_id", "")
+            ).strip(),
+            "connection_verified": True,
+        }
+
     sentry_int = (resolved_integrations or {}).get("sentry")
     if sentry_int:
         issue_id = str(
@@ -652,5 +668,47 @@ def detect_sources(
                 "sentry_token": str(sentry_int.get("auth_token", "")).strip(),
                 "connection_verified": True,
             }
+
+    mongodb_int = (resolved_integrations or {}).get("mongodb")
+    if mongodb_int:
+        mongodb_connection_string = str(mongodb_int.get("connection_string", "")).strip()
+        if mongodb_connection_string:
+            mongodb_database = str(
+                annotations.get("mongodb_database")
+                or annotations.get("database")
+                or mongodb_int.get("database", "")
+            ).strip()
+            mongodb_collection = str(
+                annotations.get("mongodb_collection")
+                or annotations.get("collection")
+                or ""
+            ).strip()
+            sources["mongodb"] = {
+                "connection_string": mongodb_connection_string,
+                "database": mongodb_database,
+                "collection": mongodb_collection,
+                "auth_source": str(mongodb_int.get("auth_source", "admin")).strip(),
+                "tls": mongodb_int.get("tls", True),
+                "connection_verified": True,
+            }
+
+
+    opsgenie_int = (resolved_integrations or {}).get("opsgenie")
+    if opsgenie_int and str(opsgenie_int.get("api_key", "")).strip():
+        alert_id = str(
+            annotations.get("opsgenie_alert_id")
+            or raw_alert.get("opsgenie_alert_id", "")
+        ).strip()
+        opsgenie_query = str(
+            annotations.get("opsgenie_query")
+            or raw_alert.get("alert_name", "")
+        ).strip()
+        sources["opsgenie"] = {
+            "api_key": str(opsgenie_int.get("api_key", "")).strip(),
+            "region": str(opsgenie_int.get("region", "us")).strip(),
+            "alert_id": alert_id,
+            "query": opsgenie_query,
+            "connection_verified": True,
+        }
 
     return sources

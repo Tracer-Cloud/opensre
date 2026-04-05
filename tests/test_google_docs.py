@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from app.integrations.clients.google_docs import GoogleDocsClient, build_google_docs_client_from_env
-from app.integrations.clients.google_docs.client import GoogleDocsIntegrationConfig
+from app.services.google_docs import GoogleDocsClient, build_google_docs_client_from_env
+from app.services.google_docs.client import GoogleDocsIntegrationConfig
 from app.tools.GoogleDocsCreateReportTool import create_google_docs_incident_report
 
 
@@ -619,7 +619,7 @@ class TestGoogleDocsClientErrorHandling:
 
     def test_handle_google_api_error_with_403(self) -> None:
         """Test handling of 403 permission error."""
-        from app.integrations.clients.google_docs.client import _handle_google_api_error
+        from app.services.google_docs.client import _handle_google_api_error
 
         class MockHttpError(Exception):
             def __init__(self) -> None:
@@ -633,7 +633,7 @@ class TestGoogleDocsClientErrorHandling:
 
     def test_handle_google_api_error_with_404(self) -> None:
         """Test handling of 404 not found error."""
-        from app.integrations.clients.google_docs.client import _handle_google_api_error
+        from app.services.google_docs.client import _handle_google_api_error
 
         class MockHttpError(Exception):
             def __init__(self) -> None:
@@ -647,7 +647,7 @@ class TestGoogleDocsClientErrorHandling:
 
     def test_handle_google_api_error_with_429(self) -> None:
         """Test handling of 429 rate limit error."""
-        from app.integrations.clients.google_docs.client import _handle_google_api_error
+        from app.services.google_docs.client import _handle_google_api_error
 
         class MockHttpError(Exception):
             def __init__(self) -> None:
@@ -661,7 +661,7 @@ class TestGoogleDocsClientErrorHandling:
 
     def test_handle_google_api_error_generic(self) -> None:
         """Test handling of generic error."""
-        from app.integrations.clients.google_docs.client import _handle_google_api_error
+        from app.services.google_docs.client import _handle_google_api_error
 
         exc = Exception("Something went wrong")
         result = _handle_google_api_error(exc, "sharing document")

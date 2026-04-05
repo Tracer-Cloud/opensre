@@ -20,7 +20,7 @@ def _call_run_investigation(
     raw_alert: dict[str, Any],
 ) -> AgentState:
     """Import the heavy investigation runner only when execution starts."""
-    from app.runners import run_investigation
+    from app.pipeline.runners import run_investigation
 
     return run_investigation(
         alert_name,
@@ -69,7 +69,6 @@ def run_investigation_cli(
     )
     slack_message = state["slack_message"]
     return {
-        "slack_message": slack_message,
         "report": slack_message,
         "problem_md": state["problem_md"],
         "root_cause": state["root_cause"],

@@ -6,10 +6,6 @@ from dataclasses import dataclass
 
 import requests
 
-from app.integrations.clients.coralogix import CoralogixClient
-from app.integrations.clients.datadog import DatadogClient, DatadogConfig
-from app.integrations.clients.grafana import get_grafana_client_from_credentials
-from app.integrations.clients.honeycomb import HoneycombClient
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
@@ -20,6 +16,12 @@ from app.integrations.models import (
     SlackWebhookConfig,
 )
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
+from app.services.coralogix import CoralogixClient
+from app.services.datadog import DatadogClient, DatadogConfig
+from app.services.grafana import get_grafana_client_from_credentials
+from app.services.honeycomb import HoneycombClient
+from app.services.opsgenie import OpsGenieClient, OpsGenieConfig
+from app.services.vercel import VercelClient, VercelConfig
 
 
 @dataclass(frozen=True)
@@ -320,7 +322,7 @@ def validate_google_docs_integration(
     """Validate Google Docs credentials and folder access."""
     from pathlib import Path
 
-    from app.integrations.clients.google_docs import GoogleDocsClient
+    from app.services.google_docs import GoogleDocsClient
 
     try:
         config = GoogleDocsIntegrationConfig.model_validate(
@@ -355,3 +357,87 @@ def validate_google_docs_integration(
         ok=True,
         detail=f"Connected to Drive folder {config.folder_id} ({result.get('file_count', 0)} items).",
     )
+
+
+def validate_vercel_integration(*, api_token: str, team_id: str = "") -> IntegrationHealthResult:
+    """Validate Vercel credentials by listing accessible projects."""
+    if not api_token:
+        return IntegrationHealthResult(ok=False, detail="Vercel API token is required.")
+    try:
+        with VercelClient(VercelConfig(api_token=api_token, team_id=team_id)) as client:
+            result = client.list_projects()
+        if result.get("success"):
+            return IntegrationHealthResult(
+                ok=True,
+                detail=f"Vercel validated; listed {result.get('total', 0)} project(s).",
+            )
+        return IntegrationHealthResult(
+            ok=False,
+            detail=f"Vercel validation failed: {result.get('error', 'unknown error')}",
+        )
+    except Exception as err:
+        return IntegrationHealthResult(ok=False, detail=f"Vercel validation failed: {err}")
+
+
+def validate_jira_integration(*, base_url: str, email: str, api_token: str, project_key: str) -> IntegrationHealthResult:
+    """Validate Jira connectivity and project key accessibility."""
+    import httpx
+
+    try:
+        resp = httpx.get(
+            f"{base_url.rstrip('/')}/rest/api/3/myself",
+            auth=(email, api_token),
+            headers={"Accept": "application/json"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            display = data.get("displayName") or data.get("emailAddress") or email
+
+            project_resp = httpx.get(
+                f"{base_url.rstrip('/')}/rest/api/3/project/{project_key}",
+                auth=(email, api_token),
+                headers={"Accept": "application/json"},
+                timeout=10,
+            )
+            if project_resp.status_code == 404:
+                return IntegrationHealthResult(ok=False, detail=f"Project '{project_key}' not found. Check the project key.")
+            if project_resp.status_code != 200:
+                return IntegrationHealthResult(ok=False, detail=f"Could not verify project '{project_key}': HTTP {project_resp.status_code}.")
+
+            return IntegrationHealthResult(ok=True, detail=f"Jira connected as {display}, project '{project_key}' verified.")
+        if resp.status_code == 401:
+            return IntegrationHealthResult(ok=False, detail="Jira credentials invalid. Check email and API token.")
+        if resp.status_code == 404:
+            return IntegrationHealthResult(ok=False, detail="Jira base URL not found. Check the URL.")
+        return IntegrationHealthResult(ok=False, detail=f"Jira returned unexpected status {resp.status_code}.")
+    except Exception as e:
+        return IntegrationHealthResult(ok=False, detail=f"Jira validation failed: {e}")
+
+
+def validate_opsgenie_integration(
+    *,
+    api_key: str,
+    region: str = "us",
+) -> IntegrationHealthResult:
+    """Validate OpsGenie connectivity by listing alerts."""
+    if not api_key:
+        return IntegrationHealthResult(ok=False, detail="OpsGenie API key is required.")
+    try:
+        config = OpsGenieConfig(api_key=api_key, region=region)
+        with OpsGenieClient(config) as client:
+            result = client.list_alerts(limit=1)
+        if result.get("success"):
+            return IntegrationHealthResult(
+                ok=True,
+                detail=f"OpsGenie validated ({config.region.upper()} region); API key accepted.",
+            )
+        return IntegrationHealthResult(
+            ok=False,
+            detail=f"OpsGenie validation failed: {result.get('error', 'unknown error')}",
+        )
+    except Exception as err:
+        return IntegrationHealthResult(
+            ok=False,
+            detail=f"OpsGenie validation failed: {err}",
+        )

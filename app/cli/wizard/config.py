@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app.config import (
     ANTHROPIC_REASONING_MODEL,
+    DEFAULT_OLLAMA_MODEL,
     GEMINI_REASONING_MODEL,
     NVIDIA_REASONING_MODEL,
     OPENAI_REASONING_MODEL,
@@ -89,6 +90,13 @@ NVIDIA_MODELS = (
     ModelOption(value="nvidia/nemotron-3-nano-30b-a3b", label="Nemotron 3 Nano 30B"),
 )
 
+OLLAMA_MODELS = (
+    ModelOption(value="llama3.2", label="Llama 3.2 (3B) — recommended"),
+    ModelOption(value="llama3.1:8b", label="Llama 3.1 (8B)"),
+    ModelOption(value="mistral", label="Mistral 7B"),
+    ModelOption(value="qwen2.5:7b", label="Qwen 2.5 (7B)"),
+)
+
 SUPPORTED_PROVIDERS = (
     ProviderOption(
         value="anthropic",
@@ -139,6 +147,15 @@ SUPPORTED_PROVIDERS = (
         default_model=NVIDIA_REASONING_MODEL,
         models=NVIDIA_MODELS,
         legacy_model_env="NVIDIA_MODEL",
+    ),
+    ProviderOption(
+        value="ollama",
+        label="Ollama (local)",
+        group="Local providers",
+        api_key_env="OLLAMA_HOST",
+        model_env="OLLAMA_MODEL",
+        default_model=DEFAULT_OLLAMA_MODEL,
+        models=OLLAMA_MODELS,
     ),
 )
 

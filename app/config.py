@@ -105,7 +105,11 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
-LLMProvider = Literal["anthropic", "openai", "openrouter", "gemini", "nvidia"]
+# Ollama local model constants
+DEFAULT_OLLAMA_MODEL = "llama3.2"
+DEFAULT_OLLAMA_HOST = "http://localhost:11434"
+
+LLMProvider = Literal["anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama"]
 
 
 class LLMSettings(StrictConfigModel):
@@ -117,6 +121,8 @@ class LLMSettings(StrictConfigModel):
     openrouter_api_key: str = ""
     gemini_api_key: str = ""
     nvidia_api_key: str = ""
+    ollama_model: str = DEFAULT_OLLAMA_MODEL
+    ollama_host: str = DEFAULT_OLLAMA_HOST
     anthropic_reasoning_model: str = ANTHROPIC_REASONING_MODEL
     anthropic_toolcall_model: str = ANTHROPIC_TOOLCALL_MODEL
     openai_reasoning_model: str = OPENAI_REASONING_MODEL
@@ -133,7 +139,7 @@ class LLMSettings(StrictConfigModel):
     @classmethod
     def _normalize_provider(cls, value: object) -> str:
         provider = str(value or "anthropic").strip().lower() or "anthropic"
-        valid_providers = ("anthropic", "openai", "openrouter", "gemini", "nvidia")
+        valid_providers = ("anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama")
         if provider in valid_providers:
             return provider
         suggestion = get_close_matches(provider, valid_providers, n=1)
@@ -145,6 +151,8 @@ class LLMSettings(StrictConfigModel):
 
     @model_validator(mode="after")
     def _require_api_key_for_selected_provider(self) -> "LLMSettings":
+        if self.provider == "ollama":
+            return self  # local Ollama server — no API key required
         provider_to_key = {
             "anthropic": self.anthropic_api_key,
             "openai": self.openai_api_key,
@@ -212,6 +220,8 @@ class LLMSettings(StrictConfigModel):
                 os.getenv("NVIDIA_MODEL", NVIDIA_TOOLCALL_MODEL),
             ).strip()
             or NVIDIA_TOOLCALL_MODEL,
+            "ollama_model": os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL).strip() or DEFAULT_OLLAMA_MODEL,
+            "ollama_host": os.getenv("OLLAMA_HOST", DEFAULT_OLLAMA_HOST).strip() or DEFAULT_OLLAMA_HOST,
             "max_tokens": DEFAULT_MAX_TOKENS,
         })
 # LLM Provider Configs
@@ -242,6 +252,12 @@ GEMINI_LLM_CONFIG = LLMModelConfig(
 NVIDIA_LLM_CONFIG = LLMModelConfig(
     reasoning_model=NVIDIA_REASONING_MODEL,
     toolcall_model=NVIDIA_TOOLCALL_MODEL,
+    max_tokens=DEFAULT_MAX_TOKENS,
+)
+
+OLLAMA_LLM_CONFIG = LLMModelConfig(
+    reasoning_model=DEFAULT_OLLAMA_MODEL,
+    toolcall_model=DEFAULT_OLLAMA_MODEL,
     max_tokens=DEFAULT_MAX_TOKENS,
 )
 

@@ -20,9 +20,12 @@ from app.integrations.models import (
     DatadogIntegrationConfig,
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
+    OpsGenieIntegrationConfig,
 )
+from app.integrations.mongodb import build_mongodb_config
 from app.integrations.sentry import build_sentry_config
 from app.output import get_tracker
+from app.services.vercel import VercelConfig
 from app.state import InvestigationState
 
 logger = logging.getLogger(__name__)
@@ -45,6 +48,10 @@ _SERVICE_KEY_MAP = {
     "github": "github",
     "github_mcp": "github",
     "sentry": "sentry",
+    "mongodb": "mongodb",
+    "mongo": "mongodb",
+    "vercel": "vercel",
+    "opsgenie": "opsgenie",
 }
 
 
@@ -66,12 +73,16 @@ def _classify_integrations(
     active = [i for i in integrations if i.get("status") == "active"]
 
     for integration in active:
-        service = integration.get("service", "")
-
-        if service.lower() in _SKIP_SERVICES:
+        service = str(integration.get("service") or "").strip()
+        if not service:
             continue
 
-        key = _SERVICE_KEY_MAP.get(service.lower(), service.lower())
+        service_lower = service.lower()
+
+        if service_lower in _SKIP_SERVICES:
+            continue
+
+        key = _SERVICE_KEY_MAP.get(service_lower, service_lower)
         credentials = integration.get("credentials", {})
 
         if key in ("grafana", "grafana_local"):
@@ -185,6 +196,45 @@ def _classify_integrations(
                 continue
             if sentry_config.organization_slug and sentry_config.auth_token:
                 resolved["sentry"] = sentry_config.model_dump()
+
+        elif key == "mongodb":
+            try:
+                mongodb_config = build_mongodb_config({
+                    "connection_string": credentials.get("connection_string", ""),
+                    "database": credentials.get("database", ""),
+                    "auth_source": credentials.get("auth_source", "admin"),
+                    "tls": credentials.get("tls", True),
+                })
+            except Exception:
+                continue
+
+            if mongodb_config.connection_string:
+                resolved["mongodb"] = mongodb_config.model_dump()
+
+        elif key == "vercel":
+            try:
+                vercel_config = VercelConfig.model_validate({
+                    "api_token": credentials.get("api_token", ""),
+                    "team_id": credentials.get("team_id", ""),
+                    "integration_id": integration.get("id", ""),
+                })
+            except Exception:
+                continue
+
+            if vercel_config.api_token:
+                resolved["vercel"] = vercel_config.model_dump()
+
+        elif key == "opsgenie":
+            try:
+                opsgenie_config = OpsGenieIntegrationConfig.model_validate({
+                    "api_key": credentials.get("api_key", ""),
+                    "region": credentials.get("region", "us"),
+                    "integration_id": integration.get("id", ""),
+                })
+            except Exception:
+                continue
+            if opsgenie_config.api_key:
+                resolved["opsgenie"] = opsgenie_config.model_dump()
 
         else:
             resolved[key] = {
@@ -363,6 +413,47 @@ def _load_env_integrations() -> list[dict[str, Any]]:
             "credentials": sentry_config.model_dump(exclude={"integration_id"}),
         })
 
+    mongodb_connection_string = os.getenv("MONGODB_CONNECTION_STRING", "").strip()
+    if mongodb_connection_string:
+        mongodb_config = build_mongodb_config({
+            "connection_string": mongodb_connection_string,
+            "database": os.getenv("MONGODB_DATABASE", "").strip(),
+            "auth_source": os.getenv("MONGODB_AUTH_SOURCE", "admin").strip() or "admin",
+            "tls": os.getenv("MONGODB_TLS", "true").strip().lower() in ("true", "1", "yes"),
+        })
+        integrations.append({
+            "id": "env-mongodb",
+            "service": "mongodb",
+            "status": "active",
+            "credentials": mongodb_config.model_dump(exclude={"integration_id"}),
+        })
+
+    vercel_api_token = os.getenv("VERCEL_API_TOKEN", "").strip()
+    if vercel_api_token:
+        vercel_config = VercelConfig.model_validate({
+            "api_token": vercel_api_token,
+            "team_id": os.getenv("VERCEL_TEAM_ID", "").strip(),
+        })
+        integrations.append({
+            "id": "env-vercel",
+            "service": "vercel",
+            "status": "active",
+            "credentials": vercel_config.model_dump(exclude={"integration_id"}),
+        })
+
+    opsgenie_api_key = os.getenv("OPSGENIE_API_KEY", "").strip()
+    if opsgenie_api_key:
+        opsgenie_config = OpsGenieIntegrationConfig.model_validate({
+            "api_key": opsgenie_api_key,
+            "region": os.getenv("OPSGENIE_REGION", "us").strip() or "us",
+        })
+        integrations.append({
+            "id": "env-opsgenie",
+            "service": "opsgenie",
+            "status": "active",
+            "credentials": opsgenie_config.model_dump(exclude={"integration_id"}),
+        })
+
     return integrations
 
 
@@ -413,7 +504,7 @@ def node_resolve_integrations(state: InvestigationState) -> dict:
             )
             return {"resolved_integrations": {}}
         try:
-            from app.integrations.clients.tracer_client import get_tracer_client_for_org
+            from app.services.tracer_client import get_tracer_client_for_org
             all_integrations = get_tracer_client_for_org(org_id, webhook_token).get_all_integrations()
         except Exception as exc:
             logger.warning("Remote integrations fetch failed: %s", exc)
@@ -433,7 +524,7 @@ def node_resolve_integrations(state: InvestigationState) -> dict:
             if not org_id:
                 return _resolve_from_local_sources(tracker)
             try:
-                from app.integrations.clients.tracer_client import get_tracer_client_for_org
+                from app.services.tracer_client import get_tracer_client_for_org
                 all_integrations = get_tracer_client_for_org(org_id, env_token).get_all_integrations()
             except Exception:
                 logger.debug("Remote integrations fetch failed for org %s, falling back to local", org_id, exc_info=True)

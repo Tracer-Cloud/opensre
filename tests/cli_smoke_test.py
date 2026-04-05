@@ -306,7 +306,7 @@ def _run_cli_pty(
 
 class _ReleaseHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
-        payload = json.dumps({"tag_name": "v999.0.0"}).encode("utf-8")
+        payload = json.dumps({"tag_name": "v9999.0.0"}).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
@@ -389,7 +389,7 @@ def test_update_check_smoke_uses_local_stub(cli_sandbox: CliSandbox, release_api
     assert result.exit_code == 1
     assert "current:" in result.stdout
     assert "latest:" in result.stdout
-    assert "999.0.0" in result.stdout
+    assert "9999.0.0" in result.stdout
 
 
 def test_investigate_print_template_smoke(cli_sandbox: CliSandbox) -> None:
@@ -474,7 +474,7 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
             PtyAction(expect="How do you want to get started?", send=b"\r"),
             PtyAction(expect="Choose your LLM provider", send=b"\r"),
             PtyAction(expect="Anthropic API key", send=b"smoke-test-key\r"),
-            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjj\r"),
+            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjj\r"),
         ],
         timeout=30.0,
     )

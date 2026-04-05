@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import app.runners as runners
+import app.pipeline.runners as runners
 from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.state import make_initial_state
 

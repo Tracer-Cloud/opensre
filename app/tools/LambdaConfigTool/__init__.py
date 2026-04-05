@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.integrations.clients.lambda_client import get_function_configuration
+from app.services.lambda_client import get_function_configuration
 from app.tools.LambdaInvocationLogsTool import _lambda_available, _lambda_name
 from app.tools.tool_decorator import tool
 
