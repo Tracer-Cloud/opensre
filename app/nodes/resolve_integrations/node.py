@@ -22,12 +22,12 @@ from app.integrations.models import (
     HoneycombIntegrationConfig,
     OpsGenieIntegrationConfig,
 )
+from langchain_core.runnables import RunnableConfig
+
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.sentry import build_sentry_config
 from app.output import get_tracker
 from app.services.vercel import VercelConfig
-from langchain_core.runnables import RunnableConfig
-
 from app.state import InvestigationState
 
 logger = logging.getLogger(__name__)
@@ -481,7 +481,7 @@ def _merge_integrations_by_service(
 
 
 @traceable(name="node_resolve_integrations")
-def node_resolve_integrations(state: InvestigationState, config: RunnableConfig = None) -> dict:
+def node_resolve_integrations(state: InvestigationState, config: RunnableConfig | None = None) -> dict:
     """Fetch all org integrations and classify them by service.
 
     Priority:

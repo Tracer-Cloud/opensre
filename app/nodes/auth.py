@@ -16,7 +16,6 @@ def _extract_auth(state: AgentState, config: RunnableConfig) -> dict[str, str]:
 
     thread_id = configurable.get("thread_id", "") or state.get("thread_id", "")
     run_id = configurable.get("run_id", "") or state.get("run_id", "")
-    auth_token = auth.get("token", "") or state.get("_auth_token", "")
 
     return {
         "org_id": auth.get("org_id") or state.get("org_id", ""),
