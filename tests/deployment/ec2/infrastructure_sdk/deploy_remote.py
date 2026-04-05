@@ -79,7 +79,7 @@ def deploy(branch: str = "feature/connect-remote") -> dict[str, str]:
     sg = create_security_group(
         name=f"{STACK_NAME}-sg",
         vpc_id=vpc["vpc_id"],
-        description="OpenSRE remote server — SSH + investigation API",
+        description="OpenSRE remote server - SSH and investigation API",
         ingress_rules=[
             {"port": 22, "cidr": "0.0.0.0/0", "description": "SSH"},
             {"port": SERVER_PORT, "cidr": "0.0.0.0/0", "description": "Investigation API"},

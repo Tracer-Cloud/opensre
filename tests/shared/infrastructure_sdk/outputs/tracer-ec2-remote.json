@@ -1,0 +1,11 @@
+{
+  "InstanceId": "i-01a2df1ebb4ead6de",
+  "PublicIpAddress": "3.83.121.219",
+  "SecurityGroupId": "sg-0132733bb07d2b25c",
+  "ProfileName": "tracer-ec2-remote-profile",
+  "RoleName": "tracer-ec2-remote-role",
+  "AmiId": "ami-01b14b7ad41e17ba4",
+  "SubnetId": "subnet-0eccd7f096a709d8c",
+  "VpcId": "vpc-0f2ef3c2fffcda11c",
+  "ServerPort": "8080"
+}
