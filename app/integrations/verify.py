@@ -574,7 +574,8 @@ def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
     if not client.is_configured:
         return _result("opsgenie", source, "missing", "Missing API key.")
 
-    result = client.list_alerts(limit=1)
+    with client:
+        result = client.list_alerts(limit=1)
     if not result.get("success"):
         return _result(
             "opsgenie", source, "failed",

@@ -97,7 +97,7 @@ class OpsGenieAlertDetailTool(BaseTool):
             alert = alert_result.get("alert", {}) if alert_result.get("success") else {}
 
             activity_log: list[dict[str, Any]] = []
-            if include_activity_log:
+            if alert_result.get("success") and include_activity_log:
                 logs_result = client.get_alert_logs(alert_id, limit=log_limit)
                 if logs_result.get("success"):
                     activity_log = logs_result.get("logs", [])

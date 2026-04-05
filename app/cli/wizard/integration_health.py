@@ -367,12 +367,13 @@ def validate_opsgenie_integration(
     if not api_key:
         return IntegrationHealthResult(ok=False, detail="OpsGenie API key is required.")
     try:
-        client = OpsGenieClient(OpsGenieConfig(api_key=api_key, region=region))
-        result = client.list_alerts(limit=1)
+        config = OpsGenieConfig(api_key=api_key, region=region)
+        with OpsGenieClient(config) as client:
+            result = client.list_alerts(limit=1)
         if result.get("success"):
             return IntegrationHealthResult(
                 ok=True,
-                detail=f"OpsGenie validated ({region.upper()} region); API key accepted.",
+                detail=f"OpsGenie validated ({config.region.upper()} region); API key accepted.",
             )
         return IntegrationHealthResult(
             ok=False,
