@@ -83,6 +83,11 @@ def validate_sentry_integration(**kwargs):
 
     return _validate(**kwargs)
 
+def validate_notion_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_notion_integration as _validate
+
+    return _validate(**kwargs)
+
 
 def validate_google_docs_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_google_docs_integration as _validate
@@ -808,6 +813,29 @@ def _configure_sentry() -> tuple[str, str]:
             return "Sentry", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
+def _configure_notion() -> tuple[str, str]:
+    _, credentials = _integration_defaults("notion")
+    _console.print("\n[bold]Notion Integration[/bold]")
+    _console.print("Create an internal integration at https://www.notion.so/my-integrations")
+    _console.print("then share your target database with the integration.\n")
+
+    while True:
+        api_key = _prompt_value("Notion API key (secret_...)", secret=True)
+        database_id = _prompt_value("Notion database ID")
+
+        with _console.status("Validating Notion connection...", spinner="dots"):
+            result = validate_notion_integration(api_key=api_key, database_id=database_id)
+        _render_integration_result("Notion", result)
+
+        if result.ok:
+            upsert_integration("notion", {"credentials": {"api_key": api_key, "database_id": database_id}})
+            env_path = sync_env_values({
+                "NOTION_API_KEY": api_key,
+                "NOTION_DATABASE_ID": database_id,
+            })
+            return "Notion", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
 
 def _configure_google_docs() -> tuple[str, str]:
     _, credentials = _integration_defaults("google_docs")
@@ -942,6 +970,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             hint="Investigate alerts and triage state from OpsGenie",
         ),
         Choice(
+            value="notion",
+            label="Notion",
+            hint="Post investigation reports to a Notion database",
+        ),
+        Choice(
             value="skip",
             label="Skip for now",
             hint="Finish onboarding without configuring an integration",
@@ -968,6 +1001,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "google_docs": _configure_google_docs,
         "vercel": _configure_vercel,
         "opsgenie": _configure_opsgenie,
+        "notion": _configure_notion,
     }
     _SERVICE_LABELS = {
         "grafana_local": "grafana local",
@@ -982,6 +1016,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "google_docs": "google docs",
         "vercel": "vercel",
         "opsgenie": "opsgenie",
+        "notion": "notion",
     }
 
     _step(f"Service · {_SERVICE_LABELS.get(selected_service, selected_service)}")
