@@ -170,6 +170,7 @@ def update(check_only: bool, yes: bool) -> None:
 @cli.command("version")
 def version_cmd() -> None:
     """Print detailed version, Python and OS info."""
+    capture_cli_invoked()
     ver = get_version()
     py = platform.python_version()
     os_name = platform.system().lower()
