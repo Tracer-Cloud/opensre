@@ -14,21 +14,21 @@ from dotenv import load_dotenv
 
 from app.analytics.cli import (
     capture_cli_invoked,
-    capture_onboard_started,
-    capture_onboard_completed,
-    capture_onboard_failed,
-    capture_investigation_started,
-    capture_investigation_completed,
-    capture_investigation_failed,
-    capture_integration_setup_started,
-    capture_integration_setup_completed,
     capture_integration_removed,
+    capture_integration_setup_completed,
+    capture_integration_setup_started,
     capture_integration_verified,
     capture_integrations_listed,
-    capture_tests_picker_opened,
+    capture_investigation_completed,
+    capture_investigation_failed,
+    capture_investigation_started,
+    capture_onboard_completed,
+    capture_onboard_failed,
+    capture_onboard_started,
+    capture_test_run_started,
     capture_test_synthetic_started,
     capture_tests_listed,
-    capture_test_run_started,
+    capture_tests_picker_opened,
 )
 from app.analytics.provider import capture_first_run_if_needed, shutdown_analytics
 from app.cli.commands import register_commands
