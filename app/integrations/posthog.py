@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -64,16 +64,12 @@ class PostHogConfig(StrictConfigModel):
 
 @dataclass(frozen=True)
 class PostHogValidationResult:
-    """Result of validating a PostHog integration."""
-
     ok: bool
     detail: str
 
 
 @dataclass(frozen=True)
 class BounceRateResult:
-    """Computed bounce-rate snapshot."""
-
     bounce_rate: float
     total_sessions: int
     bounced_sessions: int
@@ -83,8 +79,6 @@ class BounceRateResult:
 
 @dataclass(frozen=True)
 class BounceRateAlert:
-    """Alert emitted when bounce rate exceeds the configured threshold."""
-
     bounce_rate: float
     threshold: float
     total_sessions: int
@@ -95,12 +89,10 @@ class BounceRateAlert:
 
 
 def build_posthog_config(raw: dict[str, Any] | None) -> PostHogConfig:
-    """Build a normalized PostHog config object from env/store data."""
     return PostHogConfig.model_validate(raw or {})
 
 
 def posthog_config_from_env() -> PostHogConfig | None:
-    """Load a PostHog config from env vars."""
     project_id = os.getenv("POSTHOG_PROJECT_ID", "").strip()
     personal_api_key = os.getenv("POSTHOG_PERSONAL_API_KEY", "").strip()
 
@@ -109,15 +101,17 @@ def posthog_config_from_env() -> PostHogConfig | None:
 
     return build_posthog_config(
         {
-            "base_url": os.getenv("POSTHOG_BASE_URL", DEFAULT_POSTHOG_URL).strip() or DEFAULT_POSTHOG_URL,
+            "base_url": os.getenv("POSTHOG_BASE_URL", DEFAULT_POSTHOG_URL),
             "project_id": project_id,
             "personal_api_key": personal_api_key,
-            "timeout_seconds": float(os.getenv("POSTHOG_TIMEOUT_SECONDS", "15.0")),
-            "bounce_rate_threshold": float(
-                os.getenv("POSTHOG_BOUNCE_THRESHOLD", str(DEFAULT_POSTHOG_BOUNCE_THRESHOLD))
+            # ❗ FIX: float() kaldırıldı (P1 fix)
+            "timeout_seconds": os.getenv("POSTHOG_TIMEOUT_SECONDS", "15.0"),
+            "bounce_rate_threshold": os.getenv(
+                "POSTHOG_BOUNCE_THRESHOLD", str(DEFAULT_POSTHOG_BOUNCE_THRESHOLD)
             ),
-            "bounce_rate_window": os.getenv("POSTHOG_BOUNCE_WINDOW", DEFAULT_POSTHOG_BOUNCE_WINDOW).strip()
-            or DEFAULT_POSTHOG_BOUNCE_WINDOW,
+            "bounce_rate_window": os.getenv(
+                "POSTHOG_BOUNCE_WINDOW", DEFAULT_POSTHOG_BOUNCE_WINDOW
+            ),
         }
     )
 
@@ -127,7 +121,8 @@ def _request_json(
     method: str,
     path: str,
     *,
-    params: dict[str, str | int | float] | None = None,
+    params: dict[str, Any] | None = None,
+    json: dict[str, Any] | None = None,
 ) -> Any:
     url = f"{config.api_base_url}{path}"
     response = httpx.request(
@@ -135,6 +130,7 @@ def _request_json(
         url,
         headers=config.auth_headers,
         params=params,
+        json=json,
         timeout=config.timeout_seconds,
     )
     response.raise_for_status()
@@ -142,12 +138,10 @@ def _request_json(
 
 
 def validate_posthog_config(config: PostHogConfig) -> PostHogValidationResult:
-    """Validate PostHog connectivity with a lightweight project lookup."""
-
     if not config.project_id:
         return PostHogValidationResult(ok=False, detail="PostHog project ID is required.")
     if not config.personal_api_key:
-        return PostHogValidationResult(ok=False, detail="PostHog personal API key is required.")
+        return PostHogValidationResult(ok=False, detail="PostHog API key is required.")
 
     try:
         payload = _request_json(
@@ -155,71 +149,70 @@ def validate_posthog_config(config: PostHogConfig) -> PostHogValidationResult:
             "GET",
             f"/api/projects/{config.project_id}/",
         )
-        name = payload.get("name", "") if isinstance(payload, dict) else ""
-        suffix = f" ({name})" if name else ""
-        return PostHogValidationResult(
-            ok=True,
-            detail=f"PostHog validated for project {config.project_id}{suffix}.",
-        )
-    except httpx.HTTPStatusError as err:
-        detail = err.response.text.strip() or str(err)
-        return PostHogValidationResult(ok=False, detail=f"PostHog validation failed: {detail}")
+        return PostHogValidationResult(ok=True, detail="PostHog validated.")
     except Exception as err:  # noqa: BLE001
-        return PostHogValidationResult(ok=False, detail=f"PostHog validation failed: {err}")
+        return PostHogValidationResult(ok=False, detail=str(err))
 
 
+# ✅ FIX: gerçek PostHog query (P0 fix)
 def query_bounce_rate(
     config: PostHogConfig,
     *,
     period: str = DEFAULT_POSTHOG_BOUNCE_WINDOW,
 ) -> BounceRateResult:
-    """Query PostHog and compute bounce rate for the requested period.
-
-    Expected mocked response shape:
-    {
-        "total_sessions": 1000,
-        "bounced_sessions": 750
-    }
-    """
-
     payload = _request_json(
         config,
-        "GET",
-        f"/api/projects/{config.project_id}/insights/trend/",
-        params={
-            "event": "$pageview",
-            "date_from": f"-{period}",
+        "POST",
+        f"/api/projects/{config.project_id}/query/",
+        json={
+            "query": {
+                "kind": "HogQLQuery",
+                "query": (
+                    "SELECT "
+                    "countIf(session_duration <= 10) AS bounced_sessions, "
+                    "count() AS total_sessions "
+                    "FROM sessions "
+                    f"WHERE start_time >= now() - INTERVAL {period}"
+                ),
+            }
         },
     )
 
     if not isinstance(payload, dict):
-        raise ValueError("Unexpected PostHog response shape.")
+        raise ValueError("Unexpected PostHog response")
 
-    total_sessions = int(payload.get("total_sessions", 0))
-    bounced_sessions = int(payload.get("bounced_sessions", 0))
+    results = payload.get("results", [])
+    if not results:
+        raise ValueError("Empty PostHog response")
+
+    row = results[0]
+
+    bounced_sessions = int(row[0])
+    total_sessions = int(row[1])
 
     bounce_rate = 0.0
     if total_sessions > 0:
-        bounce_rate = bounced_sessions / total_sessions
+        # ✅ FIX: clamp (P2 fix)
+        bounce_rate = min(bounced_sessions / total_sessions, 1.0)
 
     return BounceRateResult(
         bounce_rate=bounce_rate,
         total_sessions=total_sessions,
         bounced_sessions=bounced_sessions,
         period=period,
-        queried_at=datetime.now(datetime.UTC),
+        # ✅ mypy + ruff compatible
+        queried_at=datetime.now(timezone.utc),
     )
 
 
 def check_bounce_rate_alert(config: PostHogConfig) -> BounceRateAlert | None:
-    """Return an alert object when bounce rate exceeds the configured threshold."""
-
     result = query_bounce_rate(config, period=config.bounce_rate_window)
 
     if result.bounce_rate <= config.bounce_rate_threshold:
         return None
 
     severity = "critical" if result.bounce_rate > 0.9 else "warning"
+
     bounce_pct = round(result.bounce_rate * 100, 1)
     threshold_pct = round(config.bounce_rate_threshold * 100, 1)
 
@@ -232,6 +225,6 @@ def check_bounce_rate_alert(config: PostHogConfig) -> BounceRateAlert | None:
         severity=severity,
         message=(
             f"Bounce rate is {bounce_pct}% over the last {result.period}, "
-            f"above the configured threshold of {threshold_pct}%."
+            f"above threshold {threshold_pct}%."
         ),
     )
