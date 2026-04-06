@@ -1276,48 +1276,6 @@ def run_wizard(_argv: list[str] | None = None) -> int:
     configured_integrations: list[str]
     integration_env_path: str | None
 
-    if wizard_mode == "quickstart":
-        configured_integrations = []
-        integration_env_path = None
-    else:
-        _step("Integrations")
-        try:
-            configured_integrations, integration_env_path = _configure_selected_integrations()
-        except KeyboardInterrupt:
-            _console.print("\n[yellow]Integration setup cancelled. AI config was kept.[/]")
-            configured_integrations = []
-            integration_env_path = None
-
-    summary_env_path = integration_env_path or str(env_path)
-
-    _render_saved_summary(
-        provider_label=provider.label,
-        model=model,
-        saved_path=str(saved_path),
-        env_path=summary_env_path,
-        configured_integrations=configured_integrations,
-    )
-
-    demo_response = build_demo_action_response()
-    _render_demo_response(demo_response)
-    _render_next_steps()
-
-    return 0
-
-    probes = {
-        "local": local_probe.as_dict(),
-        "remote": remote_probe.as_dict(),
-    }
-    saved_path = save_local_config(
-        wizard_mode=wizard_mode,
-        provider=provider.value,
-        model=model,
-        api_key_env=provider.api_key_env,
-        model_env=provider.model_env,
-        probes=probes,
-    )
-    env_path = sync_provider_env(provider=provider, model=model)
-
     _step("Integrations")
     try:
         configured_integrations, integration_env_path = _configure_selected_integrations()
@@ -1335,7 +1293,9 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         env_path=summary_env_path,
         configured_integrations=configured_integrations,
     )
+
     demo_response = build_demo_action_response()
     _render_demo_response(demo_response)
     _render_next_steps()
+
     return 0
