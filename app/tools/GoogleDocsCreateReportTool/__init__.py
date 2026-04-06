@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.integrations.clients.google_docs import GoogleDocsClient
 from app.integrations.models import GoogleDocsIntegrationConfig
+from app.services.google_docs import GoogleDocsClient
 from app.tools.tool_decorator import tool
 
 

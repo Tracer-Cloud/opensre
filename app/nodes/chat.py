@@ -12,8 +12,8 @@ from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.tools import StructuredTool
 
 from app.config import ANTHROPIC_LLM_CONFIG, DEFAULT_MAX_TOKENS, OPENAI_LLM_CONFIG
-from app.integrations.clients import get_llm_for_tools
-from app.prompts import GENERAL_SYSTEM_PROMPT, ROUTER_PROMPT, SYSTEM_PROMPT
+from app.constants.prompts import GENERAL_SYSTEM_PROMPT, ROUTER_PROMPT, SYSTEM_PROMPT
+from app.services import get_llm_for_tools
 from app.state import AgentState, ChatMessage
 from app.tools.registered_tool import RegisteredTool
 from app.tools.registry import get_registered_tools

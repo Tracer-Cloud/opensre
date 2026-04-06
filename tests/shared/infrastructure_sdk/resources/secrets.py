@@ -35,7 +35,8 @@ def get_secret_value(secret_name: str, region: str = DEFAULT_REGION) -> dict[str
         raise ValueError(f"Secret '{secret_name}' has no string value (might be binary)")
 
     try:
-        return json.loads(secret_string)
+        result: dict[str, Any] = json.loads(secret_string)
+        return result
     except json.JSONDecodeError as e:
         raise ValueError(f"Secret '{secret_name}' is not valid JSON: {e}") from e
 
@@ -66,7 +67,7 @@ def get_secret_string(secret_name: str, region: str = DEFAULT_REGION) -> str:
     if not secret_string:
         raise ValueError(f"Secret '{secret_name}' has no string value")
 
-    return secret_string
+    return str(secret_string)
 
 
 def get_secret_arn(secret_name: str, region: str = DEFAULT_REGION) -> str:
@@ -91,7 +92,7 @@ def get_secret_arn(secret_name: str, region: str = DEFAULT_REGION) -> str:
             raise ValueError(f"Secret '{secret_name}' not found") from e
         raise
 
-    return response["ARN"]
+    return str(response["ARN"])
 
 
 def secret_exists(secret_name: str, region: str = DEFAULT_REGION) -> bool:

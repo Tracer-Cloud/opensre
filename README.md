@@ -6,7 +6,7 @@
 
 <h1>OpenSRE: Build Your Own AI SRE Agents</h1>
 
-<p>The open-source framework for AI SRE agents, and the training and evaluation environment they need to improve. Connect the tools you already run, define your own workflows, and investigate incidents on your own infrastructure.</p>
+<p>The open-source framework for AI SRE agents, and the training and evaluation environment they need to improve. Connect the 40+ tools you already run, define your own workflows, and investigate incidents on your own infrastructure.</p>
 
 <p>
   <a href="https://github.com/Tracer-Cloud/opensre/stargazers"><img src="https://img.shields.io/github/stars/Tracer-Cloud/opensre?style=flat-square&color=FF6B00" alt="Stars"></a>
@@ -20,13 +20,13 @@
     <a href="https://app.tracer.cloud/">Getting Started</a> ·
     <a href="https://tracer.cloud/">Tracer Agent</a> ·
     <a href="https://tracer.mintlify.app/">Docs</a> ·
-    <a href="docs/FAQ.md">FAQ</a> ·
+    <a href="https://tracer.mintlify.app/faq">FAQ</a> ·
     <a href="https://trust.tracer.cloud/">Security</a>
   </strong>
 </p>
 
 <p>
-  <a href="https://join.slack.com/t/tracer-cloud/shared_invite/zt-2xj0w3i3p-~EH0GFbZodFCXWkR7j3~w">
+  <a href="https://join.slack.com/share/enQtMTA4NTIyNjEwOTczNDgtODMzN2QyMGZhMjljZDJhMzAwNDg1YTc4ZTA0MjBkY2U5YTFhNTJjZmIyM2ViNGY1Y2I5MGMyMDRmOGFhMjM2Nw">
     <img src="https://img.shields.io/badge/➜_Click_To_Join_Our_Slack-white?style=for-the-badge&logo=slack&logoColor=4A154B" alt="Join Slack">
   </a>
 </p>
@@ -122,29 +122,48 @@ When an alert fires, Tracer automatically:
 
 ---
 
+## Benchmark
+
+Generate the benchmark report:
+
+```shell
+make benchmark
+```
+
+<!-- BENCHMARK-START -->
+_No benchmark results yet. Run `make benchmark` to generate._
+<!-- BENCHMARK-END -->
+
+---
+
 ## Capabilities
 
-|                                          |                                                           |
-| ---------------------------------------- | --------------------------------------------------------- |
-| 🔍 **Structured incident investigation** | Correlated root-cause analysis across all your signals    |
-| 📋 **Runbook-aware reasoning**           | Tracer reads your runbooks and applies them automatically |
-| 🔮 **Predictive failure detection**      | Catch emerging issues before they page you                |
-| 🔗 **Evidence-backed root cause**        | Every conclusion is linked to the data behind it          |
-| 🤖 **Full LLM flexibility**              | Bring your own model - OpenAI, Anthropic, and more        |
+|                                          |                                                                                  |
+| ---------------------------------------- | -------------------------------------------------------------------------------- |
+| 🔍 **Structured incident investigation** | Correlated root-cause analysis across all your signals                           |
+| 📋 **Runbook-aware reasoning**           | Tracer reads your runbooks and applies them automatically                        |
+| 🔮 **Predictive failure detection**      | Catch emerging issues before they page you                                       |
+| 🔗 **Evidence-backed root cause**        | Every conclusion is linked to the data behind it                                 |
+| 🤖 **Full LLM flexibility**              | Bring your own model — Anthropic, OpenAI, Ollama, Gemini, OpenRouter, NVIDIA NIM |
 
 ---
 
 ## Integrations
 
-Tracer integrates with the systems that power modern cloud platforms.
+OpenSRE connects to 40+ tools and services across the modern cloud stack, from LLM providers and observability platforms to infrastructure, databases, and incident management.
 
-| Category           | Integrations                                                                                                                                                                                                                                                                           |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Data Platform**  | Apache Airflow · Apache Kafka · Apache Spark                                                                                                                                                                                                                                           |
-| **Observability**  | <img src="docs/assets/icons/grafana.webp" width="16"> Grafana · <img src="docs/assets/icons/datadog.svg" width="16"> Datadog · Honeycomb · Coralogix · <img src="docs/assets/icons/cloudwatch.png" width="16"> CloudWatch · <img src="docs/assets/icons/sentry.png" width="16"> Sentry |
-| **Infrastructure** | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS · <img src="docs/assets/icons/gcp.jpg" width="16"> GCP · <img src="docs/assets/icons/azure.png" width="16"> Azure                                            |
-| **Dev Tools**      | <img src="docs/assets/icons/github.webp" width="16"> GitHub                                                                                                                                                                                                                            |
-| **Communication**  | <img src="docs/assets/icons/slack.png" width="16"> Slack · <img src="docs/assets/icons/pagerduty.png" width="16"> PagerDuty · Google Docs                                                                                                                                              |
+| Category | Integrations | Roadmap |
+| --- | --- | --- |
+| **AI / LLM Providers** | Anthropic · OpenAI · Ollama · Google Gemini · OpenRouter · NVIDIA NIM | [Bedrock](https://github.com/Tracer-Cloud/opensre/issues/128) |
+| **Observability** | <img src="docs/assets/icons/grafana.webp" width="16"> Grafana (Loki · Mimir · Tempo) · <img src="docs/assets/icons/datadog.svg" width="16"> Datadog · Honeycomb · Coralogix · <img src="docs/assets/icons/cloudwatch.png" width="16"> CloudWatch · <img src="docs/assets/icons/sentry.png" width="16"> Sentry · Elasticsearch | [Splunk](https://github.com/Tracer-Cloud/opensre/issues/319) · [New Relic](https://github.com/Tracer-Cloud/opensre/issues/139) · [Victoria Logs](https://github.com/Tracer-Cloud/opensre/issues/126) |
+| **Infrastructure** | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS (S3 · Lambda · EKS · EC2 · Bedrock) · <img src="docs/assets/icons/gcp.jpg" width="16"> GCP · <img src="docs/assets/icons/azure.png" width="16"> Azure | [Helm](https://github.com/Tracer-Cloud/opensre/issues/321) · [ArgoCD](https://github.com/Tracer-Cloud/opensre/issues/320) |
+| **Database** | MongoDB | [PostgreSQL · MySQL](https://github.com/Tracer-Cloud/opensre/issues/322) · [MariaDB](https://github.com/Tracer-Cloud/opensre/issues/331) · [MongoDB Atlas](https://github.com/Tracer-Cloud/opensre/issues/332) · [Azure SQL](https://github.com/Tracer-Cloud/opensre/issues/333) · [RDS](https://github.com/Tracer-Cloud/opensre/issues/125) · [ClickHouse](https://github.com/Tracer-Cloud/opensre/issues/365) · [Snowflake](https://github.com/Tracer-Cloud/opensre/issues/364) |
+| **Data Platform** | Apache Airflow · Apache Kafka · Apache Spark | [Prefect](https://github.com/Tracer-Cloud/opensre/issues/329) · [RabbitMQ](https://github.com/Tracer-Cloud/opensre/issues/324) |
+| **Dev Tools** | <img src="docs/assets/icons/github.webp" width="16"> GitHub · GitHub MCP | [GitLab](https://github.com/Tracer-Cloud/opensre/issues/318) |
+| **Incident Management** | <img src="docs/assets/icons/pagerduty.png" width="16"> PagerDuty · Opsgenie · Jira | [ServiceNow](https://github.com/Tracer-Cloud/opensre/issues/314) · [incident.io](https://github.com/Tracer-Cloud/opensre/issues/317) · [Alertmanager](https://github.com/Tracer-Cloud/opensre/issues/316) · [Linear](https://github.com/Tracer-Cloud/opensre/issues/124) · [Trello](https://github.com/Tracer-Cloud/opensre/issues/361) |
+| **Communication** | <img src="docs/assets/icons/slack.png" width="16"> Slack · Google Docs | [Discord](https://github.com/Tracer-Cloud/opensre/issues/359) · [Teams](https://github.com/Tracer-Cloud/opensre/issues/138) · [WhatsApp](https://github.com/Tracer-Cloud/opensre/issues/360) · [Confluence](https://github.com/Tracer-Cloud/opensre/issues/313) · [Notion](https://github.com/Tracer-Cloud/opensre/issues/286) |
+| **Agent Deployment** | <img src="docs/assets/icons/vercel.png" width="16"> Vercel · <img src="docs/assets/icons/langsmith.png" width="16"> LangSmith · <img src="docs/assets/icons/aws.png" width="16"> EC2 · <img src="docs/assets/icons/aws.png" width="16"> ECS | [Railway](https://github.com/Tracer-Cloud/opensre/issues/271) |
+| **Protocols** | <img src="docs/assets/icons/mcp.svg" width="16"> MCP · <img src="docs/assets/icons/acp.png" width="16"> ACP · <img src="docs/assets/icons/openclaw.jpg" width="16"> OpenClaw | |
 
 ---
 
@@ -153,7 +172,7 @@ Tracer integrates with the systems that power modern cloud platforms.
 Tracer is community-built. Every integration, improvement, and bug fix makes it better for thousands of engineers. We actively review PRs and welcome contributors of all experience levels.
 
 <p>
-  <a href="https://join.slack.com/t/tracer-cloud/shared_invite/zt-3ifakcs2e-igoUEH8ygMlfxgJGLxsqeA">
+  <a href="https://join.slack.com/share/enQtMTA4NTIyNjEwOTczNDgtODMzN2QyMGZhMjljZDJhMzAwNDg1YTc4ZTA0MjBkY2U5YTFhNTJjZmIyM2ViNGY1Y2I5MGMyMDRmOGFhMjM2Nw">
     <img src="https://img.shields.io/badge/Join%20our%20Community%20Slack-4A154B?style=for-the-badge&logo=slack&logoColor=white" alt="Join our Community Slack" />
   </a>
 </p>
@@ -319,6 +338,64 @@ Thanks goes to these amazing people:
             <sub><b>shriyashsoni</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/Devesh36">
+            <img src="https://avatars.githubusercontent.com/u/142524747?v=4" width="100;" alt="Devesh36"/>
+            <br />
+            <sub><b>Devesh36</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/KindaJayant">
+            <img src="https://avatars.githubusercontent.com/u/136953152?v=4" width="100;" alt="KindaJayant"/>
+            <br />
+            <sub><b>KindaJayant</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/overcastbulb">
+            <img src="https://avatars.githubusercontent.com/u/99129410?v=4" width="100;" alt="overcastbulb"/>
+            <br />
+            <sub><b>overcastbulb</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Yashkapure06">
+            <img src="https://avatars.githubusercontent.com/u/61585443?v=4" width="100;" alt="Yashkapure06"/>
+            <br />
+            <sub><b>Yashkapure06</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/Davda-James">
+            <img src="https://avatars.githubusercontent.com/u/151067328?v=4" width="100;" alt="Davda-James"/>
+            <br />
+            <sub><b>Davda-James</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Abhinnavverma">
+            <img src="https://avatars.githubusercontent.com/u/138097198?v=4" width="100;" alt="Abhinnavverma"/>
+            <br />
+            <sub><b>Abhinnavverma</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/devankitjuneja">
+            <img src="https://avatars.githubusercontent.com/u/55021449?v=4" width="100;" alt="devankitjuneja"/>
+            <br />
+            <sub><b>devankitjuneja</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/qorexdev">
+            <img src="https://avatars.githubusercontent.com/u/248982649?v=4" width="100;" alt="qorexdev"/>
+            <br />
+            <sub><b>qorexdev</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
@@ -328,7 +405,7 @@ Thanks goes to these amazing people:
 
 ## Security
 
-Tracer is designed with production environments in mind:
+OpenSRE is designed with production environments in mind:
 
 - No storing of raw log data beyond the investigation session
 - All LLM calls use structured, auditable prompts

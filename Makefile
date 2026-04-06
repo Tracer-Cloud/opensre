@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install onboard test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke
+.PHONY: install onboard benchmark benchmark-update-readme test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke deploy-langsmith destroy-langsmith test-langsmith deploy-vercel destroy-vercel test-vercel deploy-ec2 destroy-ec2 test-ec2 deploy-ec2-hello destroy-ec2-hello deploy-remote destroy-remote deploy-bedrock destroy-bedrock test-bedrock
 
 ifneq ($(wildcard .venv/bin/python),)
 PYTHON = .venv/bin/python
@@ -13,10 +13,12 @@ endif
 # PIP_INSTALL_FLAGS = --user --break-system-packages
 USER_BASE := $(shell $(PYTHON) -m site --user-base)
 USER_BIN := $(USER_BASE)/bin
-export PATH := $(USER_BIN):$(PATH)
+export PATH := $(if $(wildcard .venv/bin),$(CURDIR)/.venv/bin:,)$(USER_BIN):$(PATH)
 
 # Create venv and install dependencies
 install:
+	python3 -m venv .venv
+	$(PIP) install --upgrade pip
 	$(PIP) install $(PIP_INSTALL_FLAGS) -e ".[dev]"
 	$(PYTHON) -m app.analytics.install
 
@@ -30,6 +32,14 @@ onboard:
 # Run Prefect ECS demo (default demo) - shows Investigation Trace in RCA
 demo:
 	$(PYTHON) -m tests.e2e.upstream_prefect_ecs_fargate.test_agent_e2e
+
+# Run Benchmarking Script based on Synthetic Scenarios
+benchmark:
+	$(PYTHON) -m tests.benchmarks.toolcall_model_benchmark.benchmark_generator
+
+# Update README benchmark section from cached results (no LLM calls)
+benchmark-update-readme:
+	$(PYTHON) -m tests.benchmarks.toolcall_model_benchmark.readme_updater
 
 alert-template:
 	opensre investigate --print-template $(or $(TEMPLATE),generic)
@@ -222,6 +232,18 @@ destroy-flink:
 	@echo "Destroying Flink ECS stack..."
 	$(PYTHON) -m tests.e2e.upstream_apache_flink_ecs.infrastructure_sdk.destroy
 
+# Deploy Bedrock Agent test case
+deploy-bedrock:
+	$(PYTHON) -m tests.deployment.bedrock.infrastructure_sdk.deploy
+
+# Destroy Bedrock Agent test case
+destroy-bedrock:
+	$(PYTHON) -m tests.deployment.bedrock.infrastructure_sdk.destroy
+
+# Run Bedrock Agent deployment tests
+test-bedrock:
+	$(PYTHON) -m pytest tests/deployment/bedrock/ -v -s
+
 # Run fast tests + Prefect cloud E2E
 test:
 	$(PYTHON) -m pytest -v app tests/utils
@@ -268,9 +290,71 @@ typecheck:
 # Run all checks
 check: lint typecheck test-full
 
+# ─── Deployment Tests (LangSmith) ────────────────────────────────────────────
+deploy-langsmith:
+	$(PYTHON) -m tests.deployment.langsmith.infrastructure_sdk.deploy
+
+destroy-langsmith:
+	$(PYTHON) -m tests.deployment.langsmith.infrastructure_sdk.destroy
+
+test-langsmith:
+	$(PYTHON) -m pytest tests/deployment/langsmith/ -v -s
+
+# ─── Deployment Tests (Vercel) ───────────────────────────────────────────────
+deploy-vercel:
+	$(PYTHON) -m tests.deployment.vercel.infrastructure_sdk.deploy
+
+destroy-vercel:
+	$(PYTHON) -m tests.deployment.vercel.infrastructure_sdk.destroy
+
+test-vercel:
+	$(PYTHON) -m pytest tests/deployment/vercel/ -v -s
+
+# ─── Deployment Tests (EC2) ──────────────────────────────────────────────────
+deploy-ec2:
+	$(PYTHON) -m tests.deployment.ec2.infrastructure_sdk.deploy
+
+destroy-ec2:
+	$(PYTHON) -m tests.deployment.ec2.infrastructure_sdk.destroy
+
+test-ec2:
+	$(PYTHON) -m pytest tests/deployment/ec2/ -v -s
+
+# ─── EC2 Hello World (fast, <60s) ────────────────────────────────────────────
+deploy-ec2-hello:
+	$(PYTHON) -m tests.deployment.ec2.infrastructure_sdk.deploy_hello
+
+destroy-ec2-hello:
+	$(PYTHON) -m tests.deployment.ec2.infrastructure_sdk.destroy_hello
+
+# ─── EC2 Remote (full investigation server) ──────────────────────────────────
+deploy-remote:
+	$(PYTHON) -m tests.deployment.ec2.infrastructure_sdk.deploy_remote
+
+destroy-remote:
+	$(PYTHON) -m tests.deployment.ec2.infrastructure_sdk.destroy_remote
+
 # Show help
 help:
 	@echo "Available commands:"
+	@echo ""
+	@echo "  DEPLOYMENT TESTS"
+	@echo "  make deploy-bedrock    - Deploy Bedrock Agent stack"
+	@echo "  make destroy-bedrock   - Destroy Bedrock Agent stack"
+	@echo "  make test-bedrock      - Run Bedrock Agent deployment tests"
+	@echo "  make deploy-langsmith  - Deploy to LangSmith/LangGraph Cloud"
+	@echo "  make destroy-langsmith - Clean up local outputs (remote deployment persists)"
+	@echo "  make test-langsmith    - Run LangSmith deployment tests"
+	@echo "  make deploy-vercel     - Deploy health-check function to Vercel"
+	@echo "  make destroy-vercel    - Destroy Vercel deployment"
+	@echo "  make test-vercel       - Run Vercel deployment tests"
+	@echo "  make deploy-ec2        - Deploy OpenSRE on EC2 with Docker"
+	@echo "  make destroy-ec2       - Terminate EC2 instance and clean up"
+	@echo "  make test-ec2          - Run EC2 deployment tests"
+	@echo "  make deploy-ec2-hello  - Deploy hello-world on EC2 (<60s)"
+	@echo "  make destroy-ec2-hello - Terminate hello-world EC2 instance"
+	@echo "  make deploy-remote     - Deploy full investigation server on EC2"
+	@echo "  make destroy-remote    - Terminate remote investigation EC2 instance"
 	@echo ""
 	@echo "  DEPLOYMENT (AWS SDK - fast!)"
 	@echo "  make deploy          - Deploy all test case infrastructure"
@@ -333,3 +417,5 @@ help:
 	@echo "  make format          - Format code with ruff"
 	@echo "  make typecheck       - Type check with mypy"
 	@echo "  make check           - Run all checks"
+	@echo "  make benchmark		  - Run benchmark report generation"
+	@echo "  make benchmark-update-readme - Update README from cached benchmark results"

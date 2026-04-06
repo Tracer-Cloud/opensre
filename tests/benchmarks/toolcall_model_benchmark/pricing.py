@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+DEFAULT_REASONING_USD_PER_MTOK = 3.0
+DEFAULT_TOOL_USD_PER_MTOK = 1.0
+
 
 def _classify_pricing_tier(model_id: str, reasoning_model: str, tool_model: str) -> str:
     mid = model_id.lower()
@@ -34,8 +37,8 @@ def estimate_run_cost_usd(
     *,
     reasoning_model: str,
     tool_model: str,
-    reasoning_usd_per_mtok: float = 3.0,
-    tool_usd_per_mtok: float = 1.0,
+    reasoning_usd_per_mtok: float = DEFAULT_REASONING_USD_PER_MTOK,
+    tool_usd_per_mtok: float = DEFAULT_TOOL_USD_PER_MTOK,
 ) -> tuple[float, dict[str, float]]:
     """Estimate USD: per model id, (input+output) tokens × $/MTok for that tier."""
     total_usd = 0.0

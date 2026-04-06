@@ -378,7 +378,8 @@ def invoke_function(
 
     response_payload = response["Payload"].read()
     if response_payload:
-        return json.loads(response_payload)
+        result: dict[str, Any] = json.loads(response_payload)
+        return result
     return {}
 
 
@@ -396,7 +397,8 @@ def get_function(name: str, region: str = DEFAULT_REGION) -> dict[str, Any] | No
 
     try:
         response = lambda_client.get_function(FunctionName=name)
-        return response["Configuration"]
+        config: dict[str, Any] = response["Configuration"]
+        return config
     except ClientError as e:
         if e.response["Error"]["Code"] == "ResourceNotFoundException":
             return None

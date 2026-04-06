@@ -7,8 +7,8 @@ from typing import Any, ClassVar
 
 from pydantic import Field, field_validator
 
-from app.state import EvidenceSource
 from app.strict_config import StrictConfigModel
+from app.types.evidence import EvidenceSource
 
 
 class ToolMetadata(StrictConfigModel):

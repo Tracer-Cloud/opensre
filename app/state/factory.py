@@ -1,0 +1,90 @@
+"""State constructors and defaults."""
+
+from __future__ import annotations
+
+import time
+from typing import Any, cast
+
+from app.state.agent_state import AgentState, AgentStateModel
+from app.state.types import ChatMessage
+
+STATE_DEFAULTS: dict[str, Any] = {
+    "mode": "chat",
+    "route": "",
+    "is_noise": False,
+    "org_id": "",
+    "user_id": "",
+    "user_email": "",
+    "user_name": "",
+    "organization_slug": "",
+    "messages": [],
+    "planned_actions": [],
+    "plan_rationale": "",
+    "resolved_integrations": {},
+    "available_sources": {},
+    "available_action_names": [],
+    "context": {},
+    "evidence": {},
+    "root_cause": "",
+    "root_cause_category": "",
+    "validated_claims": [],
+    "non_validated_claims": [],
+    "validity_score": 0.0,
+    "investigation_recommendations": [],
+    "remediation_steps": [],
+    "investigation_loop_count": 0,
+    "hypotheses": [],
+    "executed_hypotheses": [],
+    "slack_context": {},
+    "thread_id": "",
+    "run_id": "",
+    "_auth_token": "",
+    "slack_message": "",
+    "problem_md": "",
+    "report": "",
+}
+
+
+def make_initial_state(
+    alert_name: str,
+    pipeline_name: str,
+    severity: str,
+    raw_alert: str | dict[str, Any] | None = None,
+) -> AgentState:
+    """Create initial state for investigation mode."""
+    state = AgentStateModel.model_validate(
+        {
+            "mode": "investigation",
+            "alert_name": alert_name,
+            "pipeline_name": pipeline_name,
+            "severity": severity,
+            "raw_alert": raw_alert if raw_alert is not None else {},
+            "investigation_started_at": time.monotonic(),
+            **{k: v for k, v in STATE_DEFAULTS.items() if k not in ("mode", "messages")},
+        }
+    )
+    return cast(AgentState, state.model_dump(mode="python", by_alias=True, exclude_none=True))
+
+
+def make_chat_state(
+    org_id: str = "",
+    user_id: str = "",
+    user_email: str = "",
+    user_name: str = "",
+    organization_slug: str = "",
+    messages: list[ChatMessage] | None = None,
+) -> AgentState:
+    """Create initial state for chat mode."""
+    state = AgentStateModel.model_validate(
+        {
+            "mode": "chat",
+            "org_id": org_id,
+            "user_id": user_id,
+            "user_email": user_email,
+            "user_name": user_name,
+            "organization_slug": organization_slug,
+            "messages": messages or [],
+            "context": {},
+        }
+    )
+    return cast(AgentState, state.model_dump(mode="python", by_alias=True, exclude_none=True))

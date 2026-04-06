@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opensre"
-version = "0.1.0"
+version = "2026.4.5"
 description = "Open-source SRE agent for automated incident investigation and root cause analysis. Automatically analyzes alerts from Slack, Grafana, Datadog, and other tooling."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -31,6 +31,7 @@ dependencies = [
     # HTTP and async
     "httpx>=0.27.0",
     "aiohttp>=3.9.0",
+    "fastapi>=0.135.3",
     # Authentication
     "PyJWT>=2.8.0",
     "cryptography>=42.0.0",
@@ -39,7 +40,6 @@ dependencies = [
     "boto3>=1.34.0",
     # Utilities
     "python-dotenv>=1.0.0",
-    "dotenv",
     "click>=8.1.0",
     "rich>=13.0.0",
     "questionary>=2.1.0",
@@ -56,6 +56,8 @@ dependencies = [
     # Google APIs
     "google-api-python-client>=2.0.0,<3.0.0",
     "google-auth>=2.0.0,<3.0.0",
+    # MongoDB
+    "pymongo>=4.6.0,<6.0.0",
 ]
 
 [project.urls]
@@ -66,7 +68,7 @@ Changelog = "https://github.com/Tracer-Cloud/opensre/releases"
 
 [project.scripts]
 opensre = "app.cli.__main__:main"
-opensre-mcp = "app.integrations.opensre_mcp:main"
+opensre-mcp = "app.entrypoints.mcp:main"
 
 [project.optional-dependencies]
 dev = [
@@ -95,6 +97,7 @@ select = ["E", "F", "I", "S"]
 # assert is idiomatic in pytest
 "*_test.py" = ["S101"]
 "tests/**/*_test.py" = ["S101"]
+"tests/**/test_*.py" = ["S101"]
 # vendored third-party pipeline code — not ours to fix
 "tests/test_case_upstream_lambda/pipeline_code/**" = ["S"]
 "tests/test_case_upstream_apache_flink_ecs/pipeline_code/**" = ["S"]

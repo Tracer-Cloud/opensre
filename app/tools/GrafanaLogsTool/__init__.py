@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.integrations.clients.grafana import get_grafana_client_from_credentials
+from app.services.grafana import get_grafana_client_from_credentials
 from app.tools.tool_decorator import tool
 
 
