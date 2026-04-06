@@ -144,8 +144,10 @@ class TracerIntegrationConfig(StrictConfigModel):
             token = token.split(None, 1)[1].strip()
         return token
 
+
 class JiraIntegrationConfig(StrictConfigModel):
     """Normalized Jira credentials used by resolution and verification flows."""
+
     base_url: str
     email: str
     api_token: str
@@ -236,6 +238,7 @@ class OpsGenieIntegrationConfig(StrictConfigModel):
         raw = str(value or "us").strip().lower()
         return raw if raw in ("us", "eu") else "us"
 
+
 class PrefectIntegrationConfig(StrictConfigModel):
     api_url: str = "https://api.prefect.cloud/api"
     api_key: str = ""
@@ -279,3 +282,4 @@ class EffectiveIntegrations(StrictConfigModel):
     jira: EffectiveIntegrationEntry | None = None
     opsgenie: EffectiveIntegrationEntry | None = None
     prefect: EffectiveIntegrationEntry | None = None
+    kafka: EffectiveIntegrationEntry | None = None

@@ -263,6 +263,34 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
             },
         }
 
+    kafka_integration = classified_integrations.get("kafka")
+    if isinstance(kafka_integration, dict):
+        effective["kafka"] = {
+            "source": source_by_service.get("kafka", "local env"),
+            "config": {
+                "bootstrap_servers": str(kafka_integration.get("bootstrap_servers", "")).strip(),
+                "security_protocol": str(
+                    kafka_integration.get("security_protocol", "PLAINTEXT")
+                ).strip(),
+                "sasl_mechanism": str(kafka_integration.get("sasl_mechanism", "")).strip(),
+                "sasl_username": str(kafka_integration.get("sasl_username", "")).strip(),
+                "sasl_password": str(kafka_integration.get("sasl_password", "")).strip(),
+            },
+        }
+    else:
+        kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "").strip()
+        if kafka_servers:
+            effective["kafka"] = {
+                "source": "local env",
+                "config": {
+                    "bootstrap_servers": kafka_servers,
+                    "security_protocol": os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT").strip(),
+                    "sasl_mechanism": os.getenv("KAFKA_SASL_MECHANISM", "").strip(),
+                    "sasl_username": os.getenv("KAFKA_SASL_USERNAME", "").strip(),
+                    "sasl_password": os.getenv("KAFKA_SASL_PASSWORD", "").strip(),
+                },
+            }
+
     return EffectiveIntegrations.model_validate(effective).model_dump(exclude_none=True)
 
 
@@ -641,10 +669,12 @@ def _verify_vercel(source: str, config: dict[str, Any]) -> dict[str, str]:
 
 def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
     try:
-        opsgenie_config = OpsGenieConfig.model_validate({
-            "api_key": config.get("api_key", ""),
-            "region": config.get("region", "us"),
-        })
+        opsgenie_config = OpsGenieConfig.model_validate(
+            {
+                "api_key": config.get("api_key", ""),
+                "region": config.get("region", "us"),
+            }
+        )
     except Exception as err:
         return _result("opsgenie", source, "missing", str(err))
 
@@ -656,12 +686,16 @@ def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
         result = client.list_alerts(limit=1)
     if not result.get("success"):
         return _result(
-            "opsgenie", source, "failed",
+            "opsgenie",
+            source,
+            "failed",
             f"Alert list check failed: {result.get('error', 'unknown error')}",
         )
 
     return _result(
-        "opsgenie", source, "passed",
+        "opsgenie",
+        source,
+        "passed",
         f"Connected to OpsGenie ({opsgenie_config.region.upper()} region); API key accepted.",
     )
 

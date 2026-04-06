@@ -163,9 +163,11 @@ def get_topic_health(
             metadata = admin.list_topics(timeout=config.timeout_seconds)
 
         topics = []
-        for tname, tmeta in list(metadata.topics.items())[:effective_limit]:
+        for tname, tmeta in metadata.topics.items():
             if tname.startswith("__"):
                 continue
+            if len(topics) >= effective_limit:
+                break
             partitions = []
             for pid, pmeta in tmeta.partitions.items():
                 partitions.append(
@@ -208,20 +210,24 @@ def get_consumer_group_lag(
 
     try:
         from confluent_kafka import TopicPartition
+        from confluent_kafka.admin import ConsumerGroupTopicPartitions
 
         admin = _get_admin_client(config)
         consumer = _get_consumer(config)
 
         try:
             # Get committed offsets for the group
-            group_offsets = admin.list_consumer_group_offsets([{"group": group_id}])
+            group_offsets = admin.list_consumer_group_offsets(
+                [ConsumerGroupTopicPartitions(group_id)]
+            )
             # Wait for the future to resolve
+            group_result = None
             for group_future in group_offsets.values():
                 group_result = group_future.result()
 
             # Build partition lag info
             lag_info = []
-            for tp in group_result:
+            for tp in group_result.topic_partitions if group_result else []:
                 if tp.error:
                     continue
                 # Get high watermark for this partition
