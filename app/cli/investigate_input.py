@@ -8,17 +8,10 @@ import questionary
 from rich.console import Console
 
 from app.cli.alert_templates import build_alert_template
+from app.cli.constants import SAMPLE_ALERT_OPTIONS
 from app.cli.payload import load_file, load_interactive
 
 _console = Console()
-
-_SAMPLE_ALERTS: list[tuple[str, str]] = [
-    ("generic", "Generic — High error rate in payments ETL"),
-    ("datadog", "Datadog — payments-etl error rate high"),
-    ("grafana", "Grafana — Pipeline failure rate high"),
-    ("honeycomb", "Honeycomb — checkout-api latency regression"),
-    ("coralogix", "Coralogix — payments worker errors"),
-]
 
 _STYLE = questionary.Style(
     [
@@ -65,7 +58,7 @@ def _pick_sample_alert() -> dict[str, Any]:
     choice = questionary.select(
         "Pick a sample alert:",
         choices=[
-            questionary.Choice(title=label, value=key) for key, label in _SAMPLE_ALERTS
+            questionary.Choice(title=label, value=key) for key, label in SAMPLE_ALERT_OPTIONS
         ],
         style=_STYLE,
     ).ask()
