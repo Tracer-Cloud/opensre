@@ -1122,17 +1122,15 @@ def run_wizard(_argv: list[str] | None = None) -> int:
     """Run the interactive wizard."""
     _render_header()
     defaults = _local_defaults()
+
     saved_provider_value = defaults["provider"] if isinstance(defaults["provider"], str) else None
     saved_model_value = defaults["model"] if isinstance(defaults["model"], str) else ""
     default_wizard_mode = defaults["wizard_mode"] if isinstance(defaults["wizard_mode"], str) else "quickstart"
-    default_local_provider = next(
-        (p.value for p in SUPPORTED_PROVIDERS if p.value == "ollama"),
-        SUPPORTED_PROVIDERS[0].value,
-    )
+
     default_provider_value = (
         saved_provider_value
         if saved_provider_value in PROVIDER_BY_VALUE
-        else default_local_provider
+        else SUPPORTED_PROVIDERS[0].value
     )
     _step("Setup Mode")
     wizard_mode = _choose(
@@ -1180,18 +1178,24 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         change_provider = True
 
     if change_provider:
+        provider_choices = [
+            Choice(
+                value=p.value,
+                label=p.label,
+                hint=p.group,
+            )
+            for p in SUPPORTED_PROVIDERS
+        ]
+        provider_default = (
+            saved_provider_value
+            if saved_provider_value in PROVIDER_BY_VALUE
+            else "anthropic"
+        )
         provider = PROVIDER_BY_VALUE[
             _choose(
                 "Choose your LLM provider",
-                [
-                    Choice(
-                        value=p.value,
-                        label=p.label,
-                        hint=p.group,
-                    )
-                    for p in SUPPORTED_PROVIDERS
-                ],
-                default=default_provider_value,
+                provider_choices,
+                default=provider_default,
             )
         ]
         model = provider.default_model
