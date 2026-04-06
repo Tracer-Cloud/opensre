@@ -1203,26 +1203,30 @@ def run_wizard(_argv: list[str] | None = None) -> int:
                     default="http://localhost:11434",
                     secret=False,
                 )
-    else:
-        api_key = _prompt_value(
-            f"{provider.label} API key ({provider.api_key_env})",
-            secret=True,
-        )
+            else:
+                api_key = _prompt_value(
+                    f"{provider.label} API key ({provider.api_key_env})",
+                    secret=True,
+                )
         except KeyboardInterrupt:
             _console.print("\n[yellow]Setup cancelled.[/]")
             return 1
+
         if not _persist_llm_api_key(provider.api_key_env, api_key):
             return 1
+
     else:
         assert saved_provider is not None
         provider = saved_provider
         model = saved_model_value or provider.default_model
         has_api_key = bool(defaults["has_api_key"])
         legacy_api_key = str(defaults["legacy_api_key"] or "").strip()
+
         if not has_api_key and legacy_api_key:
             if not _persist_llm_api_key(provider.api_key_env, legacy_api_key):
                 return 1
             has_api_key = True
+
         if not has_api_key:
             _step("API Key")
             try:
@@ -1232,14 +1236,15 @@ def run_wizard(_argv: list[str] | None = None) -> int:
                         default="http://localhost:11434",
                         secret=False,
                     )
-        else:
-            api_key = _prompt_value(
-                f"{provider.label} API key ({provider.api_key_env})",
-                secret=True,
-            )
+                else:
+                    api_key = _prompt_value(
+                        f"{provider.label} API key ({provider.api_key_env})",
+                        secret=True,
+                    )
             except KeyboardInterrupt:
                 _console.print("\n[yellow]Setup cancelled.[/]")
                 return 1
+
             if not _persist_llm_api_key(provider.api_key_env, api_key):
                 return 1
 
