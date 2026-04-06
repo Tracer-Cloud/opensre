@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -207,7 +207,7 @@ def query_bounce_rate(
         total_sessions=total_sessions,
         bounced_sessions=bounced_sessions,
         period=period,
-        queried_at=datetime.now(timezone.utc),
+        queried_at=datetime.now(datetime.UTC),
     )
 
 
