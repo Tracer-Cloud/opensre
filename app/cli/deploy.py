@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, TypedDict
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+READINESS_PATH = "/ok"
+
 
 class DeployResult(TypedDict, total=False):
     """Result type for deploy_to_railway function."""
@@ -37,9 +39,7 @@ def _run_command(
     timeout: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a shell command with consistent error handling."""
-    from typing import Any
-
-    kwargs: dict[str, Any] = {"check": check, "text": True}
+    kwargs: dict[str, object] = {"check": check, "text": True}
     if capture:
         kwargs["capture_output"] = True
     if timeout is not None:
@@ -115,6 +115,7 @@ def deploy_to_railway(
     health_timeout: float = 300.0,
     health_interval: float = 5.0,
     dry_run: bool = False,
+    auth_detail: str | None = None,
 ) -> DeployResult:
     """Deploy the application to Railway.
 
@@ -122,10 +123,11 @@ def deploy_to_railway(
         project_name: Optional Railway project name to link to
         service_name: Optional Railway service name
         env_vars: Optional dict of environment variables to set
-        wait_for_health: Whether to poll /health endpoint after deploy
+        wait_for_health: Whether to poll the readiness endpoint after deploy
         health_timeout: Maximum time to wait for health check (seconds)
         health_interval: Interval between health checks (seconds)
         dry_run: If True, only print what would be done without executing
+        auth_detail: Optional pre-validated Railway auth detail
 
     Returns:
         Dict with deployment results including 'success', 'url', and 'logs' keys
@@ -142,28 +144,33 @@ def deploy_to_railway(
 
     logs: list[str] = []
 
-    # Step 1: Verify CLI is installed
-    if not is_railway_cli_installed():
-        return {
-            "success": False,
-            "url": None,
-            "logs": logs + ["Error: Railway CLI is not installed"],
-            "error": "Railway CLI not found. Install with: npm install -g @railway/cli",
-        }
+    if auth_detail is None:
+        # Step 1: Verify CLI is installed
+        if not is_railway_cli_installed():
+            return {
+                "success": False,
+                "url": None,
+                "logs": logs + ["Error: Railway CLI is not installed"],
+                "error": "Railway CLI not found. Install with: npm install -g @railway/cli",
+            }
 
-    logs.append("Railway CLI detected")
+        logs.append("Railway CLI detected")
 
-    # Step 2: Verify authentication
-    auth_status = get_railway_auth_status()
-    if not auth_status["authenticated"]:
-        return {
-            "success": False,
-            "url": None,
-            "logs": logs + [f"Error: {auth_status['detail']}"],
-            "error": "Not authenticated with Railway. Run 'railway login' first.",
-        }
+        # Step 2: Verify authentication
+        auth_status = get_railway_auth_status()
+        if not auth_status["authenticated"]:
+            return {
+                "success": False,
+                "url": None,
+                "logs": logs + [f"Error: {auth_status['detail']}"],
+                "error": "Not authenticated with Railway. Run 'railway login' first.",
+            }
 
-    logs.append(f"Authenticated as: {auth_status['detail']}")
+        auth_detail = str(auth_status["detail"])
+    else:
+        logs.append("Railway CLI detected")
+
+    logs.append(f"Authenticated as: {auth_detail}")
 
     # Step 3: Link to project if specified
     if project_name:
@@ -228,11 +235,15 @@ def deploy_to_railway(
     # Step 7: Wait for health check if requested and URL is available
     health_ok = False
     if wait_for_health and url:
-        logs.append(f"Waiting for health check at {url}/health...")
+        logs.append(f"Waiting for health check at {url}{READINESS_PATH}...")
         health_start = time.time()
         while time.time() - health_start < health_timeout:
             try:
-                response = httpx.get(f"{url}/health", timeout=10.0, follow_redirects=True)
+                response = httpx.get(
+                    f"{url}{READINESS_PATH}",
+                    timeout=10.0,
+                    follow_redirects=True,
+                )
                 if response.status_code == 200:
                     logs.append("Health check passed!")
                     health_ok = True
@@ -323,6 +334,7 @@ def run_deploy(
         service_name=service_name,
         wait_for_health=True,
         dry_run=dry_run,
+        auth_detail=str(auth["detail"]),
     )
 
     # Print logs

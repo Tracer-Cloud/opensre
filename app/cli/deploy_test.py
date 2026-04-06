@@ -154,6 +154,67 @@ class TestDeployToRailway:
         assert result["success"] is True
         assert result["url"] == "https://myapp.up.railway.app"
 
+    def test_health_check_uses_ok_endpoint(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("app.cli.deploy.is_railway_cli_installed", lambda: True)
+        monkeypatch.setattr(
+            "app.cli.deploy.get_railway_auth_status",
+            lambda: {"authenticated": True, "detail": "user@example.com"},
+        )
+
+        def mock_run_command(cmd: list[str], **kwargs: object) -> object:  # noqa: ARG001
+            class Result:
+                returncode = 0
+                stdout = "https://myapp.up.railway.app"
+                stderr = ""
+
+            return Result()
+
+        requested_urls: list[str] = []
+
+        class MockResponse:
+            status_code = 200
+
+        def mock_httpx_get(url: str, **_kwargs: object) -> MockResponse:
+            requested_urls.append(url)
+            return MockResponse()
+
+        monkeypatch.setattr("app.cli.deploy._run_command", mock_run_command)
+        monkeypatch.setattr("httpx.get", mock_httpx_get)
+        monkeypatch.setattr("time.sleep", lambda _x: None)
+
+        times = iter([0.0, 0.0, 0.1])
+        monkeypatch.setattr("time.time", lambda: next(times))
+
+        result = deploy_to_railway(wait_for_health=True)
+        assert result["success"] is True
+        assert requested_urls == ["https://myapp.up.railway.app/ok"]
+
+    def test_skips_duplicate_prereq_checks_with_prevalidated_auth(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "app.cli.deploy.is_railway_cli_installed",
+            lambda: pytest.fail("CLI check should be skipped"),
+        )
+        monkeypatch.setattr(
+            "app.cli.deploy.get_railway_auth_status",
+            lambda: pytest.fail("Auth check should be skipped"),
+        )
+
+        def mock_run_command(cmd: list[str], **kwargs: object) -> object:  # noqa: ARG001
+            class Result:
+                returncode = 0
+                stdout = "https://myapp.up.railway.app"
+                stderr = ""
+
+            return Result()
+
+        monkeypatch.setattr("app.cli.deploy._run_command", mock_run_command)
+
+        result = deploy_to_railway(wait_for_health=False, auth_detail="user@example.com")
+        assert result["success"] is True
+
 
 class TestRunDeploy:
     """Tests for run_deploy function."""
@@ -188,17 +249,24 @@ class TestRunDeploy:
             "app.cli.deploy.get_railway_auth_status",
             lambda: {"authenticated": True, "detail": "user@example.com"},
         )
-        monkeypatch.setattr(
-            "app.cli.deploy.deploy_to_railway",
-            lambda **_kw: {
+        received_kwargs: dict[str, object] = {}
+
+        def mock_deploy_to_railway(**kwargs: object) -> dict[str, object]:
+            received_kwargs.update(kwargs)
+            return {
                 "success": True,
                 "url": "https://myapp.up.railway.app",
                 "logs": ["Deployment started", "Deployment complete"],
                 "health_ok": True,
-            },
+            }
+
+        monkeypatch.setattr(
+            "app.cli.deploy.deploy_to_railway",
+            mock_deploy_to_railway,
         )
         rc = run_deploy(target="railway", yes=True)
         assert rc == 0
+        assert received_kwargs["auth_detail"] == "user@example.com"
 
     def test_dry_run_mode(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("app.cli.deploy.is_railway_cli_installed", lambda: True)
