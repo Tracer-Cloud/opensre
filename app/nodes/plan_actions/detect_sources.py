@@ -684,9 +684,7 @@ def detect_sources(
                     or raw_alert.get("file_path", "")
                 ).strip(),
                 "since": _alert_since_iso(raw_alert),
-                "updated_after": str(
-                    annotations.get("startsAt") or raw_alert.get("startsAt", "")
-                ).strip(),
+                "updated_after": _alert_since_iso(raw_alert),
                 "gitlab_url": str(gitlab_int.get("base_url", "")).strip(),
                 "gitlab_token": str(gitlab_int.get("auth_token", "")).strip(),
                 "merge_request_iid" : str(
