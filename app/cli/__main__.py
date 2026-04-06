@@ -143,7 +143,6 @@ def cli(ctx: click.Context) -> None:
       opensre integrations list              Show configured integrations
       opensre health                         Check integration and agent setup status
       opensre deploy                         Build and deploy the agent to LangSmith
-    
     \b
     Enable tab-completion (add to your shell profile):
       eval "$(_OPENSRE_COMPLETE=zsh_source opensre)"
