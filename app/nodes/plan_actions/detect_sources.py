@@ -72,7 +72,7 @@ def _alert_since_iso(raw_alert: dict[str, Any]) -> str:
             if alert_time.year >= 2000:
                 return (alert_time - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
         except (ValueError, TypeError):
-            pass
+            pass  # Invalid or malformed timestamp string — fall through to the default below
 
     return (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
