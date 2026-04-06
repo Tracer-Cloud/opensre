@@ -59,7 +59,7 @@ def gitlab_config_from_env() -> GitlabConfig | None:
     if not auth_token:
         return None
     return build_gitlab_config({
-        "base_url": os.getenv("GITLAB_URL", DEFAULT_GITLAB_BASE_URL).strip() or DEFAULT_GITLAB_BASE_URL,
+        "base_url": os.getenv("GITLAB_BASE_URL", DEFAULT_GITLAB_BASE_URL).strip() or DEFAULT_GITLAB_BASE_URL,
         "auth_token": auth_token,
     })
 

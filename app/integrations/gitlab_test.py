@@ -127,7 +127,7 @@ def test_gitlab_config_from_env_builds_config_from_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("GITLAB_ACCESS_TOKEN", "gl-token")
-    monkeypatch.setenv("GITLAB_URL", "https://gitlab.example.com/api/v4")
+    monkeypatch.setenv("GITLAB_BASE_URL", "https://gitlab.example.com/api/v4")
 
     config = gitlab_config_from_env()
 
@@ -140,7 +140,7 @@ def test_gitlab_config_from_env_uses_default_url_when_not_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("GITLAB_ACCESS_TOKEN", "gl-token")
-    monkeypatch.delenv("GITLAB_URL", raising=False)
+    monkeypatch.delenv("GITLAB_BASE_URL", raising=False)
 
     config = gitlab_config_from_env()
 

@@ -15,7 +15,7 @@ _BASE_ALERT = {"gitlab_project": "my-org/my-repo"}
 
 
 def test_detect_sources_gitlab_extracts_mr_iid_from_annotations() -> None:
-    raw_alert = {**_BASE_ALERT, "annotations": {"gitlab_mr_iid": "42"}}
+    raw_alert = {**_BASE_ALERT, "annotations": {"mr_iid": "42"}}
 
     sources = detect_sources(raw_alert, {}, resolved_integrations=_GITLAB_INTEGRATION)
 
@@ -31,7 +31,7 @@ def test_detect_sources_gitlab_mr_iid_empty_when_not_in_alert() -> None:
 
 
 def test_detect_sources_gitlab_mr_iid_strips_whitespace() -> None:
-    raw_alert = {**_BASE_ALERT, "annotations": {"gitlab_mr_iid": "  7  "}}
+    raw_alert = {**_BASE_ALERT, "annotations": {"mr_iid": "  7  "}}
 
     sources = detect_sources(raw_alert, {}, resolved_integrations=_GITLAB_INTEGRATION)
 
@@ -39,7 +39,7 @@ def test_detect_sources_gitlab_mr_iid_strips_whitespace() -> None:
 
 
 def test_detect_sources_gitlab_not_added_when_no_project_id() -> None:
-    raw_alert = {"annotations": {"gitlab_mr_iid": "42"}}  # no project_id
+    raw_alert = {"annotations": {"mr_iid": "42"}}  # no project_id
 
     sources = detect_sources(raw_alert, {}, resolved_integrations=_GITLAB_INTEGRATION)
 

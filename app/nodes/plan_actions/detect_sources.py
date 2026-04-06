@@ -690,7 +690,7 @@ def detect_sources(
                 "gitlab_url": str(gitlab_int.get("base_url", "")).strip(),
                 "gitlab_token": str(gitlab_int.get("auth_token", "")).strip(),
                 "merge_request_iid" : str(
-                    annotations.get("gitlab_mr_iid", "")).strip(),
+                    annotations.get("mr_iid", "")).strip(),
                 "connection_verified": True,
             }
     vercel_int = (resolved_integrations or {}).get("vercel")
