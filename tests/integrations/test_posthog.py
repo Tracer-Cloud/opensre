@@ -243,4 +243,3 @@ def test_check_bounce_rate_alert_critical(monkeypatch: pytest.MonkeyPatch) -> No
     assert alert.bounce_rate == 0.95
     assert alert.total_sessions == 1000
     assert alert.bounced_sessions == 950
-    
