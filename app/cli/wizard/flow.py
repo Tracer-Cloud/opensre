@@ -1297,5 +1297,4 @@ def run_wizard(_argv: list[str] | None = None) -> int:
     demo_response = build_demo_action_response()
     _render_demo_response(demo_response)
     _render_next_steps()
-
     return 0
