@@ -81,6 +81,9 @@ dev = [
     "types-PyYAML",
     "boto3-stubs[essential]",
 ]
+kafka = [
+    "confluent-kafka>=2.3.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*", "tests*"]

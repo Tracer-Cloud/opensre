@@ -52,6 +52,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "google_docs",
     "vercel",
     "opsgenie",
+    "kafka",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -665,6 +666,19 @@ def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_kafka(source: str, config: dict[str, Any]) -> dict[str, str]:
+    from app.integrations.kafka import build_kafka_config, validate_kafka_config
+
+    kafka_config = build_kafka_config(config)
+    result = validate_kafka_config(kafka_config)
+    return _result(
+        "kafka",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -725,6 +739,8 @@ def verify_integrations(
             results.append(_verify_vercel(source, config))
         elif current_service == "opsgenie":
             results.append(_verify_opsgenie(source, config))
+        elif current_service == "kafka":
+            results.append(_verify_kafka(source, config))
 
     return results
 
