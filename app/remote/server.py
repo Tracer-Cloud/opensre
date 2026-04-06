@@ -168,11 +168,11 @@ def get_investigation(inv_id: str) -> Response:
 
 def _safe_investigation_path(inv_id: str) -> Path:
     """Resolve an investigation file path with path-traversal protection."""
-    safe_base = str(INVESTIGATIONS_DIR.resolve()) + os.sep
-    candidate = str((INVESTIGATIONS_DIR / f"{inv_id}.md").resolve())
-    if not candidate.startswith(safe_base):
+    sanitized = os.path.basename(inv_id)
+    resolved = (INVESTIGATIONS_DIR / f"{sanitized}.md").resolve()
+    if not str(resolved).startswith(str(INVESTIGATIONS_DIR.resolve()) + os.sep):
         raise ValueError(f"Invalid investigation ID: {inv_id}")
-    return Path(candidate)
+    return resolved
 
 
 def _slugify(text: str) -> str:
