@@ -13,6 +13,10 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import time
+import urllib.error
+import urllib.request
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -29,6 +33,13 @@ load_dotenv(override=False)
 
 INVESTIGATIONS_DIR = Path("/opt/opensre/investigations")
 _AUTH_KEY = os.getenv("OPENSRE_API_KEY", "")
+_STARTED_AT = datetime.now(tz=UTC)
+_START_TIME_MONOTONIC = time.monotonic()
+_INSTANCE_METADATA: dict[str, str | None] = {
+    "instance_id": None,
+    "region": os.getenv("AWS_REGION") or None,
+    "public_ip": None,
+}
 
 
 def _check_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -40,6 +51,7 @@ def _check_api_key(x_api_key: str | None = Header(default=None)) -> None:
 @asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     INVESTIGATIONS_DIR.mkdir(parents=True, exist_ok=True)
+    _refresh_instance_metadata()
     yield
 
 
@@ -77,6 +89,12 @@ class InvestigationMeta(BaseModel):
     alert_name: str
 
 
+class DeepHealthCheck(BaseModel):
+    name: str
+    status: str
+    detail: str
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -84,7 +102,36 @@ class InvestigationMeta(BaseModel):
 
 @app.get("/ok")
 def health_check() -> dict[str, Any]:
-    return {"ok": True, "version": get_version()}
+    uptime_seconds = max(0, int(time.monotonic() - _START_TIME_MONOTONIC))
+    return {
+        "ok": True,
+        "version": get_version(),
+        "started_at": _STARTED_AT.isoformat(),
+        "uptime_seconds": uptime_seconds,
+        "instance_id": _INSTANCE_METADATA.get("instance_id"),
+        "region": _INSTANCE_METADATA.get("region"),
+        "public_ip": _INSTANCE_METADATA.get("public_ip"),
+    }
+
+
+@app.get("/version")
+def version_check() -> dict[str, str]:
+    return {"version": get_version()}
+
+
+@app.get("/health/deep")
+def deep_health_check() -> dict[str, Any]:
+    checks = [_check_llm_connectivity(), _check_disk_health(), _check_memory_health()]
+    status = "passed"
+    if any(check.status == "failed" for check in checks):
+        status = "failed"
+    elif any(check.status in {"warn", "missing"} for check in checks):
+        status = "warn"
+
+    return {
+        "status": status,
+        "checks": [check.model_dump() for check in checks],
+    }
 
 
 @app.post("/investigate", response_model=InvestigateResponse)
@@ -189,6 +236,109 @@ def _safe_investigation_path(inv_id: str) -> str:
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60]
+
+
+def _refresh_instance_metadata() -> None:
+    token = _imds_token()
+    _INSTANCE_METADATA["instance_id"] = _imds_get("latest/meta-data/instance-id", token=token)
+    if not _INSTANCE_METADATA.get("region"):
+        _INSTANCE_METADATA["region"] = _imds_get("latest/meta-data/placement/region", token=token)
+    _INSTANCE_METADATA["public_ip"] = _imds_get("latest/meta-data/public-ipv4", token=token)
+
+
+def _imds_token() -> str | None:
+    req = urllib.request.Request(
+        "http://169.254.169.254/latest/api/token",
+        method="PUT",
+        headers={"X-aws-ec2-metadata-token-ttl-seconds": "21600"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=0.3) as response:
+            return response.read().decode("utf-8").strip() or None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return None
+
+
+def _imds_get(path: str, *, token: str | None) -> str | None:
+    headers = {"X-aws-ec2-metadata-token": token} if token else {}
+    req = urllib.request.Request(f"http://169.254.169.254/{path}", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=0.3) as response:
+            return response.read().decode("utf-8").strip() or None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return None
+
+
+def _check_llm_connectivity() -> DeepHealthCheck:
+    provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
+    if provider != "bedrock":
+        return DeepHealthCheck(
+            name="LLM provider",
+            status="missing",
+            detail="Bedrock check skipped (LLM_PROVIDER is not bedrock).",
+        )
+
+    region = _INSTANCE_METADATA.get("region") or os.getenv("AWS_REGION") or "us-east-1"
+    try:
+        import boto3
+
+        bedrock = boto3.client("bedrock", region_name=region)
+        bedrock.list_foundation_models(byProvider="Anthropic")
+        return DeepHealthCheck(
+            name="Bedrock connectivity",
+            status="passed",
+            detail=f"Connected to Bedrock in {region}.",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return DeepHealthCheck(
+            name="Bedrock connectivity",
+            status="failed",
+            detail=f"Failed to reach Bedrock in {region}: {type(exc).__name__}: {exc}",
+        )
+
+
+def _check_disk_health() -> DeepHealthCheck:
+    usage = shutil.disk_usage("/")
+    used_pct = int((usage.used / usage.total) * 100)
+    status = "passed" if used_pct < 85 else "warn"
+    detail = f"{used_pct}% used ({usage.used // (1024**3)}GiB / {usage.total // (1024**3)}GiB)"
+    return DeepHealthCheck(name="Disk", status=status, detail=detail)
+
+
+def _check_memory_health() -> DeepHealthCheck:
+    meminfo_path = Path("/proc/meminfo")
+    if not meminfo_path.exists():
+        return DeepHealthCheck(
+            name="Memory",
+            status="missing",
+            detail="/proc/meminfo unavailable on this platform.",
+        )
+
+    values: dict[str, int] = {}
+    try:
+        for line in meminfo_path.read_text(encoding="utf-8").splitlines():
+            if ":" not in line:
+                continue
+            key, raw = line.split(":", 1)
+            number = raw.strip().split(" ", 1)[0]
+            if number.isdigit():
+                values[key] = int(number)
+    except OSError as exc:
+        return DeepHealthCheck(
+            name="Memory", status="missing", detail=f"Unable to read meminfo: {exc}"
+        )
+
+    total_kb = values.get("MemTotal")
+    avail_kb = values.get("MemAvailable")
+    if not total_kb or avail_kb is None:
+        return DeepHealthCheck(
+            name="Memory", status="missing", detail="Incomplete /proc/meminfo data."
+        )
+
+    used_pct = int(((total_kb - avail_kb) / total_kb) * 100)
+    status = "passed" if used_pct < 90 else "warn"
+    detail = f"{used_pct}% used ({(total_kb - avail_kb) // 1024}MiB / {total_kb // 1024}MiB)"
+    return DeepHealthCheck(name="Memory", status=status, detail=detail)
 
 
 def _make_id(alert_name: str) -> str:

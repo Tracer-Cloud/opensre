@@ -24,7 +24,16 @@ def test_remote_health_uses_saved_url_and_persists_normalized_url() -> None:
     runner = CliRunner()
     client = MagicMock()
     client.base_url = "http://10.0.0.1:2024"
-    client.health.return_value = {"ok": True}
+    client.probe_health.return_value = {
+        "status": "passed",
+        "base_url": "http://10.0.0.1:2024",
+        "latency_ms": 17,
+        "local_version": "2026.4.5",
+        "remote_version": "2026.4.5",
+        "checks": [],
+        "hints": [],
+        "ok": True,
+    }
 
     with (
         patch.dict(os.environ, {}, clear=True),
@@ -63,20 +72,70 @@ def test_remote_health_reports_timeout_cleanly() -> None:
     runner = CliRunner()
     client = MagicMock()
     client.base_url = "http://10.0.0.1:2024"
-    client.health.side_effect = httpx.TimeoutException("timed out")
+    client.probe_health.side_effect = httpx.TimeoutException("timed out")
 
     with patch("app.remote.client.RemoteAgentClient", return_value=client):
         result = runner.invoke(cli, ["remote", "--url", "10.0.0.1", "health"])
 
     assert result.exit_code == 1
     assert "Connection timed out reaching http://10.0.0.1:2024." in result.output
+    assert "Instance may still be starting" in result.output
+
+
+def test_remote_health_json_output() -> None:
+    runner = CliRunner()
+    client = MagicMock()
+    client.base_url = "http://10.0.0.1:2024"
+    client.probe_health.return_value = {
+        "status": "passed",
+        "base_url": "http://10.0.0.1:2024",
+        "latency_ms": 42,
+        "local_version": "2026.4.5",
+        "remote_version": "2026.4.5",
+        "checks": [],
+        "hints": [],
+        "ok": True,
+    }
+
+    with (
+        patch("app.remote.client.RemoteAgentClient", return_value=client),
+        patch("app.cli.wizard.store.save_remote_url"),
+    ):
+        result = runner.invoke(cli, ["remote", "--url", "10.0.0.1", "health", "--json"])
+
+    assert result.exit_code == 0
+    assert '"status": "passed"' in result.output
+    assert '"latency_ms": 42' in result.output
+
+
+def test_remote_health_connect_error_is_actionable() -> None:
+    runner = CliRunner()
+    client = MagicMock()
+    client.base_url = "http://10.0.0.1:2024"
+    client.probe_health.side_effect = httpx.ConnectError("refused")
+
+    with patch("app.remote.client.RemoteAgentClient", return_value=client):
+        result = runner.invoke(cli, ["remote", "--url", "10.0.0.1", "health"])
+
+    assert result.exit_code == 1
+    assert "Could not connect to http://10.0.0.1:2024." in result.output
+    assert "systemctl status opensre" in result.output
 
 
 def test_remote_group_passes_api_key_to_client() -> None:
     runner = CliRunner()
     client = MagicMock()
     client.base_url = "http://10.0.0.1:2024"
-    client.health.return_value = {"ok": True}
+    client.probe_health.return_value = {
+        "status": "passed",
+        "base_url": "http://10.0.0.1:2024",
+        "latency_ms": 11,
+        "local_version": "2026.4.5",
+        "remote_version": "2026.4.5",
+        "checks": [],
+        "hints": [],
+        "ok": True,
+    }
 
     with (
         patch("app.remote.client.RemoteAgentClient", return_value=client) as mock_client_cls,

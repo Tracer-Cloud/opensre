@@ -26,6 +26,14 @@ def _persist_remote_url(outputs: Mapping[str, object]) -> None:
     click.echo("\n  Remote URL saved. You can now run:\n    opensre remote health")
 
 
+def _build_remote_url(outputs: Mapping[str, object]) -> str | None:
+    ip = str(outputs.get("PublicIpAddress", "")).strip()
+    if not ip:
+        return None
+    port = str(outputs.get("ServerPort", "8080")).strip() or "8080"
+    return f"http://{ip}:{port}"
+
+
 @click.group(name="deploy", invoke_without_command=True)
 @click.pass_context
 def deploy(ctx: click.Context) -> None:
@@ -62,5 +70,12 @@ def deploy_ec2(down: bool, branch: str) -> None:
         return
 
     from tests.deployment.ec2.infrastructure_sdk.deploy_remote import deploy as run_deploy
+    from app.cli.commands.remote import run_remote_health_check
 
-    _persist_remote_url(run_deploy(branch=branch))
+    outputs = run_deploy(branch=branch)
+    _persist_remote_url(outputs)
+
+    remote_url = _build_remote_url(outputs)
+    if remote_url:
+        click.echo("\n  Running remote deployment health check...")
+        run_remote_health_check(base_url=remote_url, output_json=False, save_url=False)

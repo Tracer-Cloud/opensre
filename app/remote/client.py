@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -85,6 +86,143 @@ class RemoteAgentClient:
             if isinstance(raw_data, dict):
                 return raw_data
             return {"ok": True, "raw": raw_data}
+
+    def probe_health(
+        self,
+        *,
+        local_version: str,
+        timeout: float = REQUEST_TIMEOUT,
+    ) -> dict[str, Any]:
+        """Run a deeper health probe and return a normalized report."""
+        ok_url = f"{self.base_url}/ok"
+        version_url = f"{self.base_url}/version"
+        deep_health_url = f"{self.base_url}/health/deep"
+
+        started = time.monotonic()
+        with httpx.Client(timeout=timeout) as client:
+            ok_resp = client.get(ok_url, headers=self._headers)
+            ok_resp.raise_for_status()
+            latency_ms = int((time.monotonic() - started) * 1000)
+
+            try:
+                ok_data: Any = ok_resp.json()
+            except ValueError:
+                ok_data = {"raw": ok_resp.text.strip()}
+
+            if not isinstance(ok_data, dict):
+                ok_data = {"raw": ok_data}
+
+            remote_version = str(ok_data.get("version", "")).strip()
+            version_source = "/ok"
+
+            try:
+                version_resp = client.get(version_url, headers=self._headers)
+                if version_resp.status_code == 200:
+                    version_data = version_resp.json()
+                    if isinstance(version_data, dict):
+                        parsed = str(version_data.get("version", "")).strip()
+                        if parsed:
+                            remote_version = parsed
+                            version_source = "/version"
+            except Exception:  # noqa: BLE001
+                pass
+
+            deep_checks: list[dict[str, str]] = []
+            try:
+                deep_resp = client.get(deep_health_url, headers=self._headers)
+                if deep_resp.status_code == 200:
+                    deep_data = deep_resp.json()
+                    raw_checks = deep_data.get("checks") if isinstance(deep_data, dict) else None
+                    if isinstance(raw_checks, list):
+                        for check in raw_checks:
+                            if not isinstance(check, dict):
+                                continue
+                            name = str(check.get("name", "")).strip() or "Deep check"
+                            status = str(check.get("status", "unknown")).strip() or "unknown"
+                            detail = str(check.get("detail", "")).strip() or "-"
+                            deep_checks.append(
+                                {
+                                    "name": name,
+                                    "endpoint": "/health/deep",
+                                    "status": status,
+                                    "detail": detail,
+                                }
+                            )
+            except Exception:  # noqa: BLE001
+                deep_checks = []
+
+        version_status = "passed"
+        version_detail = "Remote version matches local CLI"
+        if remote_version and remote_version != local_version:
+            version_status = "warn"
+            version_detail = (
+                f"Remote is {remote_version}; local CLI is {local_version}. Consider redeploying."
+            )
+
+        uptime = ok_data.get("uptime_seconds")
+        uptime_detail = "No uptime data from server"
+        uptime_status = "missing"
+        if isinstance(uptime, int):
+            uptime_status = "passed"
+            uptime_detail = f"{uptime}s"
+
+        checks = [
+            {
+                "name": "Liveness",
+                "endpoint": "/ok",
+                "status": "passed" if bool(ok_data.get("ok", True)) else "failed",
+                "detail": "Remote server responded successfully",
+            },
+            {
+                "name": "Version",
+                "endpoint": version_source,
+                "status": version_status,
+                "detail": version_detail,
+            },
+            {
+                "name": "Uptime",
+                "endpoint": "/ok",
+                "status": uptime_status,
+                "detail": uptime_detail,
+            },
+        ]
+        checks.extend(deep_checks)
+
+        status = "passed"
+        if any(str(check.get("status", "")).lower() in {"failed", "error"} for check in checks):
+            status = "failed"
+        elif any(
+            str(check.get("status", "")).lower() in {"warn", "warning", "missing"}
+            for check in checks
+        ):
+            status = "warn"
+
+        hints: list[str] = []
+        if version_status == "warn":
+            hints.append(version_detail)
+        if uptime_status == "missing":
+            hints.append("Remote /ok endpoint does not expose uptime yet.")
+
+        instance_id = ok_data.get("instance_id")
+        region = ok_data.get("region")
+        public_ip = ok_data.get("public_ip")
+
+        return {
+            "status": status,
+            "base_url": self.base_url,
+            "latency_ms": latency_ms,
+            "local_version": local_version,
+            "remote_version": remote_version or "unknown",
+            "ok": bool(ok_data.get("ok", False)),
+            "started_at": ok_data.get("started_at"),
+            "uptime_seconds": uptime if isinstance(uptime, int) else None,
+            "instance_id": str(instance_id) if instance_id else None,
+            "region": str(region) if region else None,
+            "public_ip": str(public_ip) if public_ip else None,
+            "checks": checks,
+            "hints": hints,
+            "raw": ok_data,
+        }
 
     def create_thread(self, *, timeout: float = REQUEST_TIMEOUT) -> str:
         """Create a new conversation thread.
