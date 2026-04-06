@@ -53,6 +53,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "vercel",
     "opsgenie",
     "clickhouse",
+    "bitbucket",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -714,6 +715,19 @@ def _verify_clickhouse(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_bitbucket(source: str, config: dict[str, Any]) -> dict[str, str]:
+    from app.integrations.bitbucket import build_bitbucket_config, validate_bitbucket_config
+
+    bitbucket_config = build_bitbucket_config(config)
+    result = validate_bitbucket_config(bitbucket_config)
+    return _result(
+        "bitbucket",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -776,6 +790,8 @@ def verify_integrations(
             results.append(_verify_opsgenie(source, config))
         elif current_service == "clickhouse":
             results.append(_verify_clickhouse(source, config))
+        elif current_service == "bitbucket":
+            results.append(_verify_bitbucket(source, config))
 
     return results
 
