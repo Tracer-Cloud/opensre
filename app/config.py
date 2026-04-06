@@ -106,7 +106,6 @@ GEMINI_TOOLCALL_MODEL = "gemini-3.1-flash-lite-preview"
 NVIDIA_REASONING_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 NVIDIA_TOOLCALL_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 
-
 # Base URLs for OpenAI-compatible providers
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"

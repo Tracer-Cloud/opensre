@@ -493,3 +493,67 @@ def test_get_gitlab_file_returns_empty_dict_for_non_dict_response(
     )
 
     assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# post_gitlab_mr_note
+# ---------------------------------------------------------------------------
+
+
+from app.integrations.gitlab import post_gitlab_mr_note
+
+
+def test_post_gitlab_mr_note_uses_post_method(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+        captured["method"] = method
+        return _FakeResponse({"id": 1, "body": "RCA Finding"})
+
+    monkeypatch.setattr("app.integrations.gitlab.httpx.request", _fake_request)
+
+    post_gitlab_mr_note(config=_make_config(), project_id="my-org/my-repo", mr_iid="42", body="RCA Finding")
+
+    assert captured["method"] == "POST"
+
+
+def test_post_gitlab_mr_note_url_encodes_project_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+        captured["url"] = url
+        return _FakeResponse({"id": 1})
+
+    monkeypatch.setattr("app.integrations.gitlab.httpx.request", _fake_request)
+
+    post_gitlab_mr_note(config=_make_config(), project_id="my-org/my-repo", mr_iid="7", body="note")
+
+    assert "my-org%2Fmy-repo" in captured["url"]
+    assert "/merge_requests/7/notes" in captured["url"]
+
+
+def test_post_gitlab_mr_note_sends_body_in_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+        captured["json"] = kw.get("json")
+        return _FakeResponse({"id": 1})
+
+    monkeypatch.setattr("app.integrations.gitlab.httpx.request", _fake_request)
+
+    post_gitlab_mr_note(config=_make_config(), project_id="proj", mr_iid="3", body="root cause is X")
+
+    assert captured["json"] == {"body": "root cause is X"}
+
+
+def test_post_gitlab_mr_note_returns_empty_dict_for_non_dict_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.integrations.gitlab.httpx.request",
+        lambda *a, **kw: _FakeResponse([{"unexpected": "list"}]),
+    )
+
+    result = post_gitlab_mr_note(config=_make_config(), project_id="proj", mr_iid="1", body="note")
+
+    assert result == {}

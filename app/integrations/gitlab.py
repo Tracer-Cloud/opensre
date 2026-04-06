@@ -70,11 +70,13 @@ def _request_json(
     path: str,
     *,
     params: list[tuple[str, str | int | float | bool | None]] | None = None,
+    json: dict | None = None,
 ) -> Any:
     url = f"{config.api_base_url}{path}"
     response = httpx.request(
         method,
         url,
+        json=json,
         headers=config.auth_headers,
         params=params,
         timeout=config.timeout_seconds,
@@ -213,5 +215,23 @@ def get_gitlab_file(
         params=[
             ("ref", ref),
         ],
+    )
+    return payload if isinstance(payload, dict) else {}
+
+
+def post_gitlab_mr_note(*,
+    config: GitlabConfig,
+    project_id: str,
+    mr_iid: str,
+    body: str) -> dict[str, Any]:
+    """Post findings back on mr as comment"""
+
+    encoded_project_id = quote(project_id, safe="")
+    json_body = {"body": body}
+    payload = _request_json(
+        config,
+        "POST",
+        f"/projects/{encoded_project_id}/merge_requests/{mr_iid}/notes",
+        json=json_body
     )
     return payload if isinstance(payload, dict) else {}
