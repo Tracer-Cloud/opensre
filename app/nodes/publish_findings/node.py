@@ -1,7 +1,7 @@
 """Main orchestration node for report generation and publishing."""
 
-import os
 import logging
+import os
 from typing import cast
 
 from langsmith import traceable
@@ -23,7 +23,7 @@ def _build_mr_note(slack_message: str) -> str:
     body = slack_message.strip()
     if len(body) > 4000:
         body = body[:3997] + "..."
-    
+
     return f"### RCA Finding\n\n<details>\n<summary>Investigation summary</summary>\n\n{body}\n\n</details>"
 
 

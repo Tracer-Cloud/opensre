@@ -1,5 +1,4 @@
 """Tests for shared gitlab integration helpers."""
-
 from __future__ import annotations
 
 from typing import Any
@@ -11,17 +10,16 @@ from pydantic import ValidationError
 from app.integrations.gitlab import (
     DEFAULT_GITLAB_BASE_URL,
     GitlabConfig,
-    GitlabValidationResult,
     build_gitlab_config,
     get_gitlab_commits,
     get_gitlab_file,
     get_gitlab_mrs,
     get_gitlab_pipelines,
     gitlab_config_from_env,
+    post_gitlab_mr_note,
     validate_gitlab_config,
     validate_gitlab_connection,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -169,7 +167,7 @@ def test_validate_gitlab_config_returns_ok_on_success(
 ) -> None:
     monkeypatch.setattr(
         "app.integrations.gitlab.validate_gitlab_connection",
-        lambda *, config: {"username": "gl-user"},
+        lambda *, _config: {"username": "gl-user"},
     )
 
     result = validate_gitlab_config(_make_config())
@@ -181,7 +179,7 @@ def test_validate_gitlab_config_returns_ok_on_success(
 def test_validate_gitlab_config_handles_http_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _raise(*, config: GitlabConfig) -> None:
+    def _raise(*, _config: GitlabConfig) -> None:
         response = httpx.Response(401)
         response._content = b"Unauthorized"
         raise httpx.HTTPStatusError(
@@ -203,7 +201,7 @@ def test_validate_gitlab_config_handles_generic_exception(
 ) -> None:
     monkeypatch.setattr(
         "app.integrations.gitlab.validate_gitlab_connection",
-        lambda *, config: (_ for _ in ()).throw(RuntimeError("connection refused")),
+        lambda *, _config: (_ for _ in ()).throw(RuntimeError("connection refused")),
     )
 
     result = validate_gitlab_config(_make_config())
@@ -222,7 +220,7 @@ def test_validate_gitlab_connection_returns_user_dict(
 ) -> None:
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse({"id": 1, "username": "gl-user"}),
+        lambda *_, **__: _FakeResponse({"id": 1, "username": "gl-user"}),
     )
 
     result = validate_gitlab_connection(config=_make_config())
@@ -235,7 +233,7 @@ def test_validate_gitlab_connection_returns_empty_dict_for_non_dict_response(
 ) -> None:
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse(["unexpected", "list"]),
+        lambda *_, **__: _FakeResponse(["unexpected", "list"]),
     )
 
     result = validate_gitlab_connection(config=_make_config())
@@ -252,7 +250,7 @@ def test_get_gitlab_commits_returns_list(monkeypatch: pytest.MonkeyPatch) -> Non
     commits = [{"id": "abc123", "title": "Fix bug"}]
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse(commits),
+        lambda *_, **__: _FakeResponse(commits),
     )
 
     result = get_gitlab_commits(
@@ -269,7 +267,7 @@ def test_get_gitlab_commits_url_encodes_project_id(
 ) -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+    def _fake_request(_method: str, url: str, **_kw: Any) -> _FakeResponse:
         captured["url"] = url
         return _FakeResponse([])
 
@@ -289,7 +287,7 @@ def test_get_gitlab_commits_returns_empty_list_for_non_list_response(
 ) -> None:
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse({"error": "not found"}),
+        lambda *_, **__: _FakeResponse({"error": "not found"}),
     )
 
     result = get_gitlab_commits(
@@ -306,7 +304,7 @@ def test_get_gitlab_commits_includes_since_param_when_provided(
 ) -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+    def _fake_request(_method: str, _url: str, **kw: Any) -> _FakeResponse:
         captured["params"] = kw.get("params", [])
         return _FakeResponse([])
 
@@ -331,7 +329,7 @@ def test_get_gitlab_mrs_returns_list(monkeypatch: pytest.MonkeyPatch) -> None:
     mrs = [{"iid": 1, "title": "Add feature"}]
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse(mrs),
+        lambda *_, **__: _FakeResponse(mrs),
     )
 
     result = get_gitlab_mrs(
@@ -346,7 +344,7 @@ def test_get_gitlab_mrs_returns_list(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_get_gitlab_mrs_url_encodes_project_id(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+    def _fake_request(_method: str, url: str, **_kw: Any) -> _FakeResponse:
         captured["url"] = url
         return _FakeResponse([])
 
@@ -366,7 +364,7 @@ def test_get_gitlab_mrs_returns_empty_list_for_non_list_response(
 ) -> None:
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse({}),
+        lambda *_, **__: _FakeResponse({}),
     )
 
     result = get_gitlab_mrs(
@@ -387,7 +385,7 @@ def test_get_gitlab_pipelines_returns_list(monkeypatch: pytest.MonkeyPatch) -> N
     pipelines = [{"id": 99, "status": "failed"}]
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse(pipelines),
+        lambda *_, **__: _FakeResponse(pipelines),
     )
 
     result = get_gitlab_pipelines(
@@ -404,7 +402,7 @@ def test_get_gitlab_pipelines_url_encodes_project_id(
 ) -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+    def _fake_request(_method: str, url: str, **_kw: Any) -> _FakeResponse:
         captured["url"] = url
         return _FakeResponse([])
 
@@ -424,7 +422,7 @@ def test_get_gitlab_pipelines_returns_empty_list_for_non_list_response(
 ) -> None:
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse({"unexpected": "dict"}),
+        lambda *_, **__: _FakeResponse({"unexpected": "dict"}),
     )
 
     result = get_gitlab_pipelines(
@@ -445,7 +443,7 @@ def test_get_gitlab_file_returns_dict(monkeypatch: pytest.MonkeyPatch) -> None:
     file_data = {"file_name": "README.md", "content": "SGVsbG8="}
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse(file_data),
+        lambda *_, **__: _FakeResponse(file_data),
     )
 
     result = get_gitlab_file(
@@ -462,7 +460,7 @@ def test_get_gitlab_file_url_encodes_project_id_and_path(
 ) -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+    def _fake_request(_method: str, url: str, **_kw: Any) -> _FakeResponse:
         captured["url"] = url
         return _FakeResponse({})
 
@@ -483,7 +481,7 @@ def test_get_gitlab_file_returns_empty_dict_for_non_dict_response(
 ) -> None:
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse(["not", "a", "dict"]),
+        lambda *_, **__: _FakeResponse(["not", "a", "dict"]),
     )
 
     result = get_gitlab_file(
@@ -500,13 +498,11 @@ def test_get_gitlab_file_returns_empty_dict_for_non_dict_response(
 # ---------------------------------------------------------------------------
 
 
-from app.integrations.gitlab import post_gitlab_mr_note
-
 
 def test_post_gitlab_mr_note_uses_post_method(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+    def _fake_request(method: str, _url: str, **_kw: Any) -> _FakeResponse:
         captured["method"] = method
         return _FakeResponse({"id": 1, "body": "RCA Finding"})
 
@@ -520,7 +516,7 @@ def test_post_gitlab_mr_note_uses_post_method(monkeypatch: pytest.MonkeyPatch) -
 def test_post_gitlab_mr_note_url_encodes_project_id(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+    def _fake_request(_method: str, url: str, **_kw: Any) -> _FakeResponse:
         captured["url"] = url
         return _FakeResponse({"id": 1})
 
@@ -535,7 +531,7 @@ def test_post_gitlab_mr_note_url_encodes_project_id(monkeypatch: pytest.MonkeyPa
 def test_post_gitlab_mr_note_sends_body_in_json(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+    def _fake_request(_method: str, _url: str, **kw: Any) -> _FakeResponse:
         captured["json"] = kw.get("json")
         return _FakeResponse({"id": 1})
 
@@ -551,7 +547,7 @@ def test_post_gitlab_mr_note_returns_empty_dict_for_non_dict_response(
 ) -> None:
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse([{"unexpected": "list"}]),
+        lambda *_, **__: _FakeResponse([{"unexpected": "list"}]),
     )
 
     result = post_gitlab_mr_note(config=_make_config(), project_id="proj", mr_iid="1", body="note")
@@ -563,7 +559,7 @@ def test_post_gitlab_mr_note_returns_created_note_dict(monkeypatch: pytest.Monke
     note = {"id": 42, "body": "RCA: deployment caused the spike", "author": {"username": "bot"}}
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse(note),
+        lambda *_, **__: _FakeResponse(note),
     )
 
     result = post_gitlab_mr_note(config=_make_config(), project_id="proj", mr_iid="5", body="RCA: deployment caused the spike")
@@ -575,7 +571,7 @@ def test_post_gitlab_mr_note_returns_created_note_dict(monkeypatch: pytest.Monke
 def test_post_gitlab_mr_note_raises_on_403(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse({}, status_code=403),
+        lambda *_, **__: _FakeResponse({}, status_code=403),
     )
 
     with pytest.raises(httpx.HTTPStatusError):
@@ -585,7 +581,7 @@ def test_post_gitlab_mr_note_raises_on_403(monkeypatch: pytest.MonkeyPatch) -> N
 def test_post_gitlab_mr_note_raises_on_404(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.integrations.gitlab.httpx.request",
-        lambda *a, **kw: _FakeResponse({}, status_code=404),
+        lambda *_, **__: _FakeResponse({}, status_code=404),
     )
 
     with pytest.raises(httpx.HTTPStatusError):
@@ -595,7 +591,7 @@ def test_post_gitlab_mr_note_raises_on_404(monkeypatch: pytest.MonkeyPatch) -> N
 def test_post_gitlab_mr_note_mr_iid_in_url_path(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+    def _fake_request(_method: str, url: str, **_kw: Any) -> _FakeResponse:
         captured["url"] = url
         return _FakeResponse({"id": 1})
 
@@ -610,7 +606,7 @@ def test_post_gitlab_mr_note_sends_multiline_body(monkeypatch: pytest.MonkeyPatc
     captured: dict[str, Any] = {}
     multiline = "## Root Cause\n\nDeployment at 14:32 UTC introduced a memory leak.\n\n**Fix**: rollback to v1.2.3"
 
-    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+    def _fake_request(_method: str, _url: str, **kw: Any) -> _FakeResponse:
         captured["json"] = kw.get("json")
         return _FakeResponse({"id": 1})
 

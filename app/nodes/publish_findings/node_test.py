@@ -9,7 +9,6 @@ import pytest
 
 from app.nodes.publish_findings.node import _build_mr_note
 
-
 # ---------------------------------------------------------------------------
 # _build_mr_note
 # ---------------------------------------------------------------------------
@@ -72,31 +71,31 @@ def _patch_generate_report_deps(monkeypatch: pytest.MonkeyPatch) -> None:
     """Patch all heavy dependencies of generate_report so we can run it in tests."""
     monkeypatch.setattr(
         "app.nodes.publish_findings.node.build_report_context",
-        lambda state: {},
+        lambda _state: {},
     )
     monkeypatch.setattr(
         "app.nodes.publish_findings.node.format_slack_message",
-        lambda ctx: "slack report text",
+        lambda _ctx: "slack report text",
     )
     monkeypatch.setattr(
         "app.nodes.publish_findings.node.build_slack_blocks",
-        lambda ctx: [],
+        lambda _ctx: [],
     )
     monkeypatch.setattr(
         "app.nodes.publish_findings.node.get_investigation_url",
-        lambda slug, inv_id: "https://app.example.com/inv/1",
+        lambda _slug, _inv_id: "https://app.example.com/inv/1",
     )
     monkeypatch.setattr(
         "app.nodes.publish_findings.node.render_report",
-        lambda msg, **kw: None,
+        lambda _msg, **_kw: None,
     )
     monkeypatch.setattr(
         "app.nodes.publish_findings.node.open_in_editor",
-        lambda msg: None,
+        lambda _msg: None,
     )
     monkeypatch.setattr(
         "app.nodes.publish_findings.node.send_ingest",
-        lambda state: "inv-id-123",
+        lambda _state: "inv-id-123",
     )
 
 
