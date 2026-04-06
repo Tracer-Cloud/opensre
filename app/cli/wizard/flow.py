@@ -944,20 +944,13 @@ def _configure_langsmith() -> tuple[str, str]:
             default=_string_value(credentials.get("deployment_name"), "open-sre-agent"),
         )
 
-        try:
-            from app.cli.deploy import _validate_langsmith_api_key
-        except ImportError:
-            _console.print("[red]Could not import LangSmith validation helper.[/]")
-            return "LangSmith (skipped)", ""
-
-        with _console.status("Validating LangSmith API key...", spinner="dots"):
-            try:
-                _validate_langsmith_api_key(api_key)
+        with _console.status("Checking LangSmith API key...", spinner="dots"):
+            if api_key.strip():
                 ok = True
-                detail = "LangSmith API key is valid."
-            except Exception as exc:  # noqa: BLE001
+                detail = "LangSmith API key is set."
+            else:
                 ok = False
-                detail = str(exc)
+                detail = "LangSmith API key is required."
 
         _render_integration_result(
             "LangSmith",
