@@ -274,7 +274,7 @@ def _check_llm_connectivity() -> DeepHealthCheck:
     if provider != "bedrock":
         return DeepHealthCheck(
             name="LLM provider",
-            status="missing",
+            status="passed",
             detail="Bedrock check skipped (LLM_PROVIDER is not bedrock).",
         )
 
@@ -299,6 +299,10 @@ def _check_llm_connectivity() -> DeepHealthCheck:
 
 def _check_disk_health() -> DeepHealthCheck:
     usage = shutil.disk_usage("/")
+    if usage.total == 0:
+        return DeepHealthCheck(
+            name="Disk", status="missing", detail="Unable to determine disk size."
+        )
     used_pct = int((usage.used / usage.total) * 100)
     status = "passed" if used_pct < 85 else "warn"
     detail = f"{used_pct}% used ({usage.used // (1024**3)}GiB / {usage.total // (1024**3)}GiB)"

@@ -69,8 +69,8 @@ def deploy_ec2(down: bool, branch: str) -> None:
         destroy()
         return
 
-    from tests.deployment.ec2.infrastructure_sdk.deploy_remote import deploy as run_deploy
     from app.cli.commands.remote import run_remote_health_check
+    from tests.deployment.ec2.infrastructure_sdk.deploy_remote import deploy as run_deploy
 
     outputs = run_deploy(branch=branch)
     _persist_remote_url(outputs)

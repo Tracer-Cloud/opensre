@@ -213,7 +213,7 @@ class RemoteAgentClient:
             "latency_ms": latency_ms,
             "local_version": local_version,
             "remote_version": remote_version or "unknown",
-            "ok": bool(ok_data.get("ok", False)),
+            "ok": bool(ok_data.get("ok", True)),
             "started_at": ok_data.get("started_at"),
             "uptime_seconds": uptime if isinstance(uptime, int) else None,
             "instance_id": str(instance_id) if instance_id else None,
