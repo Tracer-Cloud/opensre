@@ -1273,6 +1273,9 @@ def run_wizard(_argv: list[str] | None = None) -> int:
 
     env_path = sync_provider_env(provider=provider, model=model)
 
+    configured_integrations: list[str]
+    integration_env_path: str | None
+
     if wizard_mode == "quickstart":
         configured_integrations = []
         integration_env_path = None
