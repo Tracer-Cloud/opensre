@@ -118,7 +118,7 @@ jobs:
               for c in row:
                   lines.append(f"""            <td align="center">
                   <a href="{c['html_url']}">
-                      <img src="{c['avatar_url']}" width="100;" alt="{c['login']}"/>
+                      <img src="{c['avatar_url']}" width="100" alt="{c['login']}"/>
                       <br />
                       <sub><b>{c['login']}</b></sub>
                   </a>

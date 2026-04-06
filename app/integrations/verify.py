@@ -52,6 +52,9 @@ SUPPORTED_VERIFY_SERVICES = (
     "google_docs",
     "vercel",
     "opsgenie",
+    "kafka",
+    "clickhouse",
+    "bitbucket",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -261,6 +264,85 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 "region": str(opsgenie_integration.get("region", "us")).strip(),
             },
         }
+
+    kafka_integration = classified_integrations.get("kafka")
+    if isinstance(kafka_integration, dict):
+        effective["kafka"] = {
+            "source": source_by_service.get("kafka", "local env"),
+            "config": {
+                "bootstrap_servers": str(kafka_integration.get("bootstrap_servers", "")).strip(),
+                "security_protocol": str(
+                    kafka_integration.get("security_protocol", "PLAINTEXT")
+                ).strip(),
+                "sasl_mechanism": str(kafka_integration.get("sasl_mechanism", "")).strip(),
+                "sasl_username": str(kafka_integration.get("sasl_username", "")).strip(),
+                "sasl_password": str(kafka_integration.get("sasl_password", "")).strip(),
+            },
+        }
+    else:
+        kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "").strip()
+        if kafka_servers:
+            effective["kafka"] = {
+                "source": "local env",
+                "config": {
+                    "bootstrap_servers": kafka_servers,
+                    "security_protocol": os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT").strip(),
+                    "sasl_mechanism": os.getenv("KAFKA_SASL_MECHANISM", "").strip(),
+                    "sasl_username": os.getenv("KAFKA_SASL_USERNAME", "").strip(),
+                    "sasl_password": os.getenv("KAFKA_SASL_PASSWORD", "").strip(),
+                },
+            }
+
+    clickhouse_integration = classified_integrations.get("clickhouse")
+    if isinstance(clickhouse_integration, dict):
+        effective["clickhouse"] = {
+            "source": source_by_service.get("clickhouse", "local env"),
+            "config": {
+                "host": str(clickhouse_integration.get("host", "")).strip(),
+                "port": clickhouse_integration.get("port", 8123),
+                "database": str(clickhouse_integration.get("database", "default")).strip(),
+                "username": str(clickhouse_integration.get("username", "default")).strip(),
+                "password": str(clickhouse_integration.get("password", "")).strip(),
+                "secure": clickhouse_integration.get("secure", False),
+            },
+        }
+    else:
+        clickhouse_host = os.getenv("CLICKHOUSE_HOST", "").strip()
+        if clickhouse_host:
+            effective["clickhouse"] = {
+                "source": "local env",
+                "config": {
+                    "host": clickhouse_host,
+                    "port": int(os.getenv("CLICKHOUSE_PORT", "8123") or "8123"),
+                    "database": os.getenv("CLICKHOUSE_DATABASE", "default").strip(),
+                    "username": os.getenv("CLICKHOUSE_USER", "default").strip(),
+                    "password": os.getenv("CLICKHOUSE_PASSWORD", "").strip(),
+                    "secure": os.getenv("CLICKHOUSE_SECURE", "false").strip().lower()
+                    in ("true", "1", "yes"),
+                },
+            }
+
+    bitbucket_integration = classified_integrations.get("bitbucket")
+    if isinstance(bitbucket_integration, dict):
+        effective["bitbucket"] = {
+            "source": source_by_service.get("bitbucket", "local env"),
+            "config": {
+                "workspace": str(bitbucket_integration.get("workspace", "")).strip(),
+                "username": str(bitbucket_integration.get("username", "")).strip(),
+                "app_password": str(bitbucket_integration.get("app_password", "")).strip(),
+            },
+        }
+    else:
+        bitbucket_workspace = os.getenv("BITBUCKET_WORKSPACE", "").strip()
+        if bitbucket_workspace:
+            effective["bitbucket"] = {
+                "source": "local env",
+                "config": {
+                    "workspace": bitbucket_workspace,
+                    "username": os.getenv("BITBUCKET_USERNAME", "").strip(),
+                    "app_password": os.getenv("BITBUCKET_APP_PASSWORD", "").strip(),
+                },
+            }
 
     return EffectiveIntegrations.model_validate(effective).model_dump(exclude_none=True)
 
@@ -640,10 +722,12 @@ def _verify_vercel(source: str, config: dict[str, Any]) -> dict[str, str]:
 
 def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
     try:
-        opsgenie_config = OpsGenieConfig.model_validate({
-            "api_key": config.get("api_key", ""),
-            "region": config.get("region", "us"),
-        })
+        opsgenie_config = OpsGenieConfig.model_validate(
+            {
+                "api_key": config.get("api_key", ""),
+                "region": config.get("region", "us"),
+            }
+        )
     except Exception as err:
         return _result("opsgenie", source, "missing", str(err))
 
@@ -655,13 +739,56 @@ def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
         result = client.list_alerts(limit=1)
     if not result.get("success"):
         return _result(
-            "opsgenie", source, "failed",
+            "opsgenie",
+            source,
+            "failed",
             f"Alert list check failed: {result.get('error', 'unknown error')}",
         )
 
     return _result(
-        "opsgenie", source, "passed",
+        "opsgenie",
+        source,
+        "passed",
         f"Connected to OpsGenie ({opsgenie_config.region.upper()} region); API key accepted.",
+    )
+
+
+def _verify_kafka(source: str, config: dict[str, Any]) -> dict[str, str]:
+    from app.integrations.kafka import build_kafka_config, validate_kafka_config
+
+    kafka_config = build_kafka_config(config)
+    result = validate_kafka_config(kafka_config)
+    return _result(
+        "kafka",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_clickhouse(source: str, config: dict[str, Any]) -> dict[str, str]:
+    from app.integrations.clickhouse import build_clickhouse_config, validate_clickhouse_config
+
+    clickhouse_config = build_clickhouse_config(config)
+    result = validate_clickhouse_config(clickhouse_config)
+    return _result(
+        "clickhouse",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_bitbucket(source: str, config: dict[str, Any]) -> dict[str, str]:
+    from app.integrations.bitbucket import build_bitbucket_config, validate_bitbucket_config
+
+    bitbucket_config = build_bitbucket_config(config)
+    result = validate_bitbucket_config(bitbucket_config)
+    return _result(
+        "bitbucket",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
     )
 
 
@@ -725,6 +852,12 @@ def verify_integrations(
             results.append(_verify_vercel(source, config))
         elif current_service == "opsgenie":
             results.append(_verify_opsgenie(source, config))
+        elif current_service == "kafka":
+            results.append(_verify_kafka(source, config))
+        elif current_service == "clickhouse":
+            results.append(_verify_clickhouse(source, config))
+        elif current_service == "bitbucket":
+            results.append(_verify_bitbucket(source, config))
 
     return results
 

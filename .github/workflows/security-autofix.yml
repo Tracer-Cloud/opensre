@@ -1,0 +1,75 @@
+name: Security Auto-Fix
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  security-events: read
+
+jobs:
+  security-autofix:
+    name: Scan & auto-fix security issues
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install tools
+        run: pip install ruff bandit pip-audit
+
+      - name: Auto-fix ruff security rules
+        run: |
+          ruff check app/ tests/ --select S --fix --unsafe-fixes || true
+          ruff format app/ tests/ || true
+
+      - name: Run bandit scan (informational)
+        run: bandit -r app/ -f json -o bandit-report.json --severity-level medium || true
+
+      - name: Run pip-audit
+        run: pip-audit --fix -r <(pip freeze) 2>/dev/null || true
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create Pull Request
+        if: steps.changes.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "fix(security): auto-fix security warnings"
+          branch: security/auto-fix
+          delete-branch: true
+          title: "fix(security): automated security fixes"
+          body: |
+            ## Automated Security Fixes
+
+            This PR was created automatically by the **Security Auto-Fix** workflow.
+
+            ### What was done
+            - Ran `ruff` with security rules (`S`) and applied auto-fixes
+            - Ran `bandit` scan for additional findings
+            - Ran `pip-audit` for dependency vulnerabilities
+
+            ### Review checklist
+            - [ ] Review all changes — auto-fixes may alter behavior
+            - [ ] Verify tests pass
+            - [ ] Check that no false-positive fixes were applied
+          labels: security,automated

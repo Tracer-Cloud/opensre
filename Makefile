@@ -253,11 +253,11 @@ test:
 test-full:
 	$(PYTHON) -m pytest -v
 
-# Run tests with coverage.
+# Run tests with coverage (parallel via pytest-xdist).
 # Keep tests/synthetic excluded here to match GitHub CI; marker filtering alone is
 # not enough because some synthetic tests are collected without the synthetic mark.
 test-cov:
-	$(PYTHON) -m pytest -v --cov=app --cov-report=term-missing --ignore=tests/e2e/kubernetes_local_alert_simulation --ignore=tests/synthetic -m "not synthetic"
+	$(PYTHON) -m pytest -n auto -v --cov=app --cov-report=term-missing --ignore=tests/e2e/kubernetes_local_alert_simulation --ignore=tests/synthetic -m "not synthetic"
 
 # Run the CLI smoke suite against the installed opensre entrypoint.
 test-cli-smoke:

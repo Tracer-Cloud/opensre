@@ -153,19 +153,38 @@ def list_investigations() -> list[InvestigationMeta]:
 @app.get("/investigations/{inv_id}")
 def get_investigation(inv_id: str) -> Response:
     """Return the raw ``.md`` content of a single investigation."""
-    if not re.fullmatch(r"[\w\-]+", inv_id):
-        raise HTTPException(status_code=400, detail="Invalid investigation ID")
-    path = (INVESTIGATIONS_DIR / f"{inv_id}.md").resolve()
-    if not path.parent == INVESTIGATIONS_DIR.resolve():
-        raise HTTPException(status_code=400, detail="Invalid investigation ID")
-    if not path.exists():
+    safe_path = _safe_investigation_path(inv_id)
+    if not os.path.exists(safe_path):
         raise HTTPException(status_code=404, detail=f"Investigation {inv_id} not found")
-    return Response(content=path.read_text(encoding="utf-8"), media_type="text/markdown")
+    with open(safe_path, encoding="utf-8") as fh:
+        content = fh.read()
+    return Response(content=content, media_type="text/markdown")
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+_SAFE_INV_ID = re.compile(r"[\w\-]+")
+
+
+def _safe_investigation_path(inv_id: str) -> str:
+    """Resolve an investigation file path with path-traversal protection.
+
+    Rejects any ID that contains characters outside ``[\\w-]`` and verifies
+    the normalised path stays inside INVESTIGATIONS_DIR.
+
+    Returns the realpath string so CodeQL can verify the normpath+startswith
+    sanitisation pattern without re-wrapping in Path().
+    """
+    if not _SAFE_INV_ID.fullmatch(inv_id):
+        raise HTTPException(status_code=400, detail="Invalid investigation ID")
+    base = os.path.realpath(INVESTIGATIONS_DIR)
+    fullpath = os.path.realpath(os.path.join(base, f"{inv_id}.md"))
+    if not fullpath.startswith(base + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid investigation ID")
+    return fullpath
 
 
 def _slugify(text: str) -> str:
@@ -194,7 +213,7 @@ def _save_investigation(
     pipeline_name: str,
     severity: str,
     result: dict[str, Any],
-) -> Path:
+) -> str:
     ts = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
     md = (
         f"# Investigation: {alert_name}\n"
@@ -204,8 +223,7 @@ def _save_investigation(
         f"## Report\n{result.get('report', 'N/A')}\n\n"
         f"## Problem Description\n{result.get('problem_md', 'N/A')}\n"
     )
-    path = (INVESTIGATIONS_DIR / f"{inv_id}.md").resolve()
-    if not path.parent == INVESTIGATIONS_DIR.resolve():
-        raise ValueError(f"Invalid investigation ID: {inv_id}")
-    path.write_text(md, encoding="utf-8")
-    return path
+    safe_path = _safe_investigation_path(inv_id)
+    with open(safe_path, "w", encoding="utf-8") as fh:
+        fh.write(md)
+    return safe_path

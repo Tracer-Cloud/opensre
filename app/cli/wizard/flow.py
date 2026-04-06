@@ -23,12 +23,22 @@ _console = Console()
 DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 DEFAULT_GITHUB_MCP_MODE = "streamable-http"
 DEFAULT_SENTRY_URL = "https://sentry.io"
+<<<<<<< patch-15
 
 
 def validate_provider_credentials(**kwargs):
     from app.cli.wizard.validation import validate_provider_credentials as _validate
 
     return _validate(**kwargs)
+=======
+DEFAULT_GITLAB_BASE_URL = "https://gitlab.com/api/v4"
+_ASCII_HEADER = """\
+  ___  ____  _____ _   _ ____  ____  _____
+ / _ \\|  _ \\| ____| \\ | / ___||  _ \\| ____|
+| | | | |_) |  _| |  \\| \\___ \\| |_) |  _|
+| |_| |  __/| |___| |\\  |___) |  _ <| |___
+ \\___/|_|   |_____|_| \\_|____/|_| \\_\\_____|"""
+>>>>>>> main
 
 
 def build_demo_action_response():
@@ -63,6 +73,12 @@ def validate_aws_integration(**kwargs):
 
 def validate_github_mcp_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_github_mcp_integration as _validate
+
+    return _validate(**kwargs)
+
+
+def validate_gitlab_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_gitlab_integration as _validate
 
     return _validate(**kwargs)
 
@@ -651,6 +667,42 @@ def _configure_github_mcp() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_gitlab() -> tuple[str, str]:
+    _, credentials = _integration_defaults("gitlab")
+
+    while True:
+        base_url = _prompt_value(
+            "Gitlab base URL",
+            default=_string_value(credentials.get("base_url"), DEFAULT_GITLAB_BASE_URL),
+        )
+        auth_token = _prompt_value(
+            "Gitlab access token",
+            default=_string_value(credentials.get("auth_token")),
+            secret=True,
+        )
+
+        with _console.status("Validating Gitlab integration...", spinner="dots"):
+            result = validate_gitlab_integration(
+                base_url=base_url,
+                auth_token=auth_token
+            )
+        _render_integration_result("Gitlab", result)
+        if result.ok:
+            credentials = {
+                "base_url": base_url,
+                "auth_token": auth_token
+            }
+            upsert_integration("gitlab", {"credentials": credentials})
+            env_path = sync_env_values(
+                {
+                    "GITLAB_BASE_URL": base_url,
+                    "GITLAB_ACCESS_TOKEN": auth_token,
+                }
+            )
+            return "Gitlab", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_sentry() -> tuple[str, str]:
     _, credentials = _integration_defaults("sentry")
     guidance = get_sentry_auth_recommendations()
@@ -710,6 +762,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
     configured: list[str] = []
     last_env_path: str | None = None
 
+<<<<<<< patch-15
     _console.print("[dim]Use Space to select, Enter to confirm.[/]")
     selected = _choose_many(
         "Integrations (optional):",
@@ -723,6 +776,66 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             Choice(value="sentry", label="Sentry"),
         ],
         default=["grafana_local"],
+=======
+    _console.print(
+        "[dim]Pick one integration to wire up now, or skip this step and come back later.[/]"
+    )
+    integration_choices = [
+        Choice(
+            value="grafana_local",
+            label="Grafana Local (Docker)",
+            hint="Starts Grafana + Loki and seeds demo alerts",
+        ),
+        Choice(
+            value="grafana",
+            label="Grafana Cloud / self-hosted",
+            hint="Connect an existing Grafana instance",
+        ),
+        Choice(value="datadog", label="Datadog", hint="Logs, monitors, and Kubernetes context"),
+        Choice(value="honeycomb", label="Honeycomb", hint="Query traces and spans from Honeycomb"),
+        Choice(value="coralogix", label="Coralogix", hint="Query logs from Coralogix DataPrime"),
+        Choice(value="slack", label="Slack", hint="Send findings to a webhook or channel"),
+        Choice(value="aws", label="AWS", hint="Inspect CloudWatch, EKS, and account resources"),
+        Choice(
+            value="github", label="GitHub MCP", hint="Let the agent inspect repos, PRs, and issues"
+        ),
+        Choice(
+            value="sentry", label="Sentry", hint="Investigate errors, events, and issue history"
+        ),
+        Choice(
+            value="gitlab", label="Gitlab", hint="Let the agent inspect repos, PRs, and issues"
+        ),
+        Choice(
+            value="google_docs",
+            label="Google Docs",
+            hint="Create shareable incident postmortem reports",
+        ),
+        Choice(
+            value="vercel",
+            label="Vercel",
+            hint="Monitor deployments and fetch runtime logs",
+        ),
+        Choice(
+            value="jira",
+            label="Jira",
+            hint="File and update incident tickets automatically",
+        ),
+        Choice(
+            value="opsgenie",
+            label="OpsGenie",
+            hint="Investigate alerts and triage state from OpsGenie",
+        ),
+        Choice(
+            value="skip",
+            label="Skip for now",
+            hint="Finish onboarding without configuring an integration",
+        ),
+    ]
+    selected_service = _choose(
+        "Choose an integration to configure",
+        integration_choices,
+        default="grafana_local",
+>>>>>>> main
     )
 
     handlers = {
@@ -733,6 +846,14 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "aws": _configure_aws,
         "github": _configure_github_mcp,
         "sentry": _configure_sentry,
+<<<<<<< patch-15
+=======
+        "gitlab": _configure_gitlab,
+        "google_docs": _configure_google_docs,
+        "vercel": _configure_vercel,
+        "jira": _configure_jira,
+        "opsgenie": _configure_opsgenie,
+>>>>>>> main
     }
     _SERVICE_LABELS = {
         "grafana_local": "grafana local",
@@ -742,6 +863,14 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "aws": "aws",
         "github": "github mcp",
         "sentry": "sentry",
+<<<<<<< patch-15
+=======
+        "gitlab": "gitlab",
+        "google_docs": "google docs",
+        "vercel": "vercel",
+        "jira": "jira",
+        "opsgenie": "opsgenie",
+>>>>>>> main
     }
     for index, service in enumerate(selected, start=1):
         _step(f"service {index}/{len(selected)} · {_SERVICE_LABELS.get(service, service)}")
