@@ -1129,14 +1129,12 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         (p.value for p in SUPPORTED_PROVIDERS if p.value == "ollama"),
         SUPPORTED_PROVIDERS[0].value,
     )
-    
     default_provider_value = (
         saved_provider_value
         if saved_provider_value in PROVIDER_BY_VALUE
         else default_local_provider
     )
     
-
     _step("Setup Mode")
     wizard_mode = _choose(
         "How do you want to get started?",
