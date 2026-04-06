@@ -105,7 +105,7 @@ def _get_consumer(config: KafkaConfig) -> Any:
     conf: dict[str, Any] = {
         "bootstrap.servers": config.bootstrap_servers,
         "security.protocol": config.security_protocol,
-        "group.id": "opensre-readonly",
+        "group.id": f"opensre-internal-{config.integration_id or 'readonly'}",
         "enable.auto.commit": False,
         "auto.offset.reset": "latest",
         "socket.timeout.ms": int(config.timeout_seconds * 1000),
@@ -162,7 +162,7 @@ def get_topic_health(
         else:
             metadata = admin.list_topics(timeout=config.timeout_seconds)
 
-        topics = []
+        topics: list[dict[str, Any]] = []
         for tname, tmeta in metadata.topics.items():
             if tname.startswith("__"):
                 continue
@@ -190,7 +190,8 @@ def get_topic_health(
             "source": "kafka",
             "available": True,
             "broker_count": len(metadata.brokers),
-            "total_topics": len(topics),
+            "topics_returned": len(topics),
+            "cluster_topic_count": len(metadata.topics),
             "topics": topics,
         }
     except Exception as err:  # noqa: BLE001

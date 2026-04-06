@@ -84,6 +84,9 @@ dev = [
 kafka = [
     "confluent-kafka>=2.3.0",
 ]
+clickhouse = [
+    "clickhouse-connect>=0.8.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*", "tests*"]

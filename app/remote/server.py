@@ -153,11 +153,7 @@ def list_investigations() -> list[InvestigationMeta]:
 @app.get("/investigations/{inv_id}")
 def get_investigation(inv_id: str) -> Response:
     """Return the raw ``.md`` content of a single investigation."""
-    if not re.fullmatch(r"[\w\-]+", inv_id):
-        raise HTTPException(status_code=400, detail="Invalid investigation ID")
-    path = (INVESTIGATIONS_DIR / f"{inv_id}.md").resolve()
-    if not path.parent == INVESTIGATIONS_DIR.resolve():
-        raise HTTPException(status_code=400, detail="Invalid investigation ID")
+    path = _safe_investigation_path(inv_id)
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Investigation {inv_id} not found")
     return Response(content=path.read_text(encoding="utf-8"), media_type="text/markdown")
@@ -166,6 +162,21 @@ def get_investigation(inv_id: str) -> Response:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+_SAFE_INV_ID = re.compile(r"[\w\-]+")
+
+
+def _safe_investigation_path(inv_id: str) -> Path:
+    """Resolve an investigation file path with path-traversal protection.
+
+    Rejects any ID that contains characters outside ``[\\w-]`` so the
+    constructed filename is guaranteed to stay inside INVESTIGATIONS_DIR.
+    """
+    if not _SAFE_INV_ID.fullmatch(inv_id):
+        raise HTTPException(status_code=400, detail="Invalid investigation ID")
+    filename = f"{inv_id}.md"
+    return INVESTIGATIONS_DIR / filename
 
 
 def _slugify(text: str) -> str:
@@ -204,8 +215,6 @@ def _save_investigation(
         f"## Report\n{result.get('report', 'N/A')}\n\n"
         f"## Problem Description\n{result.get('problem_md', 'N/A')}\n"
     )
-    path = (INVESTIGATIONS_DIR / f"{inv_id}.md").resolve()
-    if not path.parent == INVESTIGATIONS_DIR.resolve():
-        raise ValueError(f"Invalid investigation ID: {inv_id}")
+    path = _safe_investigation_path(inv_id)
     path.write_text(md, encoding="utf-8")
     return path
