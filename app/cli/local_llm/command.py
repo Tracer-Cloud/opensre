@@ -7,6 +7,7 @@ from rich.console import Console
 
 from app.cli.local_llm.hardware import detect_hardware, recommend_model
 from app.cli.local_llm.ollama import (
+    _normalize_model_tag,
     install,
     is_installed,
     is_server_running,
@@ -68,7 +69,7 @@ def run_local_llm_setup() -> int:
     ).ask()
     if not chosen:
         return 1
-    chosen = chosen.strip()
+    chosen = _normalize_model_tag(chosen.strip())  # Ensure explicit tag
 
     _console.print()
     if not pull_model(chosen, _console, host=host):
