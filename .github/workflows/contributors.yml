@@ -73,7 +73,7 @@ jobs:
           contributors = []
           page = 1
           while True:
-              url = f"https://api.github.com/repos/{{ github.repository }}/contributors?per_page=100&page={page}"
+              url = f"https://api.github.com/repos/${{ github.repository }}/contributors?per_page=100&page={page}"
               data, _ = github_get_json(url)
               if not data:
                   break
@@ -89,7 +89,7 @@ jobs:
           # For each contributor, find their first commit date by paginating to the last page
           def get_first_commit_date(login):
               # GitHub API returns commits newest-first, so we need the last page
-              url = f"https://api.github.com/repos/{{ github.repository }}/commits?author={login}&per_page=100"
+              url = f"https://api.github.com/repos/${{ github.repository }}/commits?author={login}&per_page=100"
               data, link_header = github_get_json(url)
               # If there's a last page, fetch it.
               last_url = None
