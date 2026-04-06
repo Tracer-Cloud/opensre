@@ -1125,19 +1125,18 @@ def run_wizard(_argv: list[str] | None = None) -> int:
 
     saved_provider_value = defaults["provider"] if isinstance(defaults["provider"], str) else None
     saved_model_value = defaults["model"] if isinstance(defaults["model"], str) else ""
-    default_wizard_mode = defaults["wizard_mode"] if isinstance(defaults["wizard_mode"], str) else "quickstart"
-
-    default_provider_value = (
-        saved_provider_value
-        if saved_provider_value in PROVIDER_BY_VALUE
-        else SUPPORTED_PROVIDERS[0].value
+    default_wizard_mode = (
+        defaults["wizard_mode"] if isinstance(defaults["wizard_mode"], str) else "quickstart"
     )
+
     _step("Setup Mode")
     wizard_mode = _choose(
         "How do you want to get started?",
         [
             Choice(
-                value="quickstart", label="Quickstart", hint="Local setup with the usual defaults"
+                value="quickstart",
+                label="Quickstart",
+                hint="Local setup with the usual defaults",
             ),
             Choice(
                 value="advanced",
@@ -1170,6 +1169,7 @@ def run_wizard(_argv: list[str] | None = None) -> int:
 
     _step("LLM Provider")
     saved_provider = PROVIDER_BY_VALUE.get(saved_provider_value) if saved_provider_value else None
+
     if saved_provider is not None:
         current_model = saved_model_value or saved_provider.default_model
         _console.print(f"[dim]current provider  {saved_provider.label}  ·  {current_model}[/]")
@@ -1186,11 +1186,13 @@ def run_wizard(_argv: list[str] | None = None) -> int:
             )
             for p in SUPPORTED_PROVIDERS
         ]
+
         provider_default = (
             saved_provider_value
             if saved_provider_value in PROVIDER_BY_VALUE
             else "anthropic"
         )
+
         provider = PROVIDER_BY_VALUE[
             _choose(
                 "Choose your LLM provider",
@@ -1198,8 +1200,10 @@ def run_wizard(_argv: list[str] | None = None) -> int:
                 default=provider_default,
             )
         ]
+
         model = provider.default_model
         _step("API Key")
+
         try:
             if provider.value == "ollama":
                 api_key = _prompt_value(
@@ -1233,6 +1237,7 @@ def run_wizard(_argv: list[str] | None = None) -> int:
 
         if not has_api_key:
             _step("API Key")
+
             try:
                 if provider.value == "ollama":
                     api_key = _prompt_value(
@@ -1251,6 +1256,50 @@ def run_wizard(_argv: list[str] | None = None) -> int:
 
             if not _persist_llm_api_key(provider.api_key_env, api_key):
                 return 1
+
+    probes = {
+        "local": local_probe.as_dict(),
+        "remote": remote_probe.as_dict(),
+    }
+
+    saved_path = save_local_config(
+        wizard_mode=wizard_mode,
+        provider=provider.value,
+        model=model,
+        api_key_env=provider.api_key_env,
+        model_env=provider.model_env,
+        probes=probes,
+    )
+
+    env_path = sync_provider_env(provider=provider, model=model)
+
+    if wizard_mode == "quickstart":
+        configured_integrations = []
+        integration_env_path = None
+    else:
+        _step("Integrations")
+        try:
+            configured_integrations, integration_env_path = _configure_selected_integrations()
+        except KeyboardInterrupt:
+            _console.print("\n[yellow]Integration setup cancelled. AI config was kept.[/]")
+            configured_integrations = []
+            integration_env_path = None
+
+    summary_env_path = integration_env_path or str(env_path)
+
+    _render_saved_summary(
+        provider_label=provider.label,
+        model=model,
+        saved_path=str(saved_path),
+        env_path=summary_env_path,
+        configured_integrations=configured_integrations,
+    )
+
+    demo_response = build_demo_action_response()
+    _render_demo_response(demo_response)
+    _render_next_steps()
+
+    return 0
 
     probes = {
         "local": local_probe.as_dict(),
