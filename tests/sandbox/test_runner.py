@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 import tempfile
 
-import pytest
-
 from app.sandbox.runner import (
     MAX_TIMEOUT,
     SandboxResult,

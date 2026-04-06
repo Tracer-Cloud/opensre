@@ -244,9 +244,8 @@ def _map_coralogix_logs(data: dict) -> dict:
     }
 
 
-def _map_diagnostic_code_result(data: dict) -> dict:
-    executions = data.get("_diagnostic_executions", [])
-    executions = list(executions)
+def _map_diagnostic_code_result(data: dict, current_evidence: dict) -> dict:
+    executions = list(current_evidence.get("diagnostic_executions", []))
     executions.append({
         "code": data.get("code", ""),
         "inputs": data.get("inputs", {}),
@@ -307,7 +306,10 @@ def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) ->
 
         mapper = EVIDENCE_MAPPERS.get(action_name)
         if mapper:
-            evidence.update(mapper(result.data))
+            if action_name == "run_diagnostic_code":
+                evidence.update(mapper(result.data, evidence))
+            else:
+                evidence.update(mapper(result.data))
 
     return evidence
 

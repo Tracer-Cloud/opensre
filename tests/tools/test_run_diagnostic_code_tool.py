@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from app.sandbox.runner import SandboxResult
 from app.tools.registered_tool import REGISTERED_TOOL_ATTR, RegisteredTool
 from app.tools.run_diagnostic_code import run_diagnostic_code

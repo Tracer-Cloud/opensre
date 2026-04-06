@@ -57,6 +57,21 @@ _SANDBOX_PREAMBLE = textwrap.dedent("""\
 
     _builtins_module.open = _restricted_open
 
+    import subprocess as _subprocess_module
+    import os as _os_shell_module
+
+    def _blocked_subprocess(*args, **kwargs):
+        raise PermissionError("Subprocess execution is not permitted in sandbox mode")
+
+    _subprocess_module.Popen = _blocked_subprocess
+    _subprocess_module.call = _blocked_subprocess
+    _subprocess_module.check_call = _blocked_subprocess
+    _subprocess_module.check_output = _blocked_subprocess
+    _subprocess_module.run = _blocked_subprocess
+
+    _os_shell_module.system = _blocked_subprocess
+    _os_shell_module.popen = _blocked_subprocess
+
 """)
 
 
