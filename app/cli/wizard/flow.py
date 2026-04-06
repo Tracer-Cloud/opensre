@@ -7,27 +7,28 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 import questionary
+from questionary import Choice as QuestionaryChoice
+from questionary import Style
 from rich.console import Console
-from rich.text import Text
 
-from app.cli.wizard.config import PROVIDER_BY_VALUE, SUPPORTED_PROVIDERS
+from app.cli.wizard.config import PROVIDER_BY_VALUE, SUPPORTED_PROVIDERS, ProviderOption
 from app.cli.wizard.env_sync import sync_env_values, sync_provider_env
 from app.cli.wizard.probes import ProbeResult, probe_local_target, probe_remote_target
+from app.cli.wizard.prompts import checkbox as checkbox_prompt
 from app.cli.wizard.prompts import select as select_prompt
 from app.cli.wizard.store import get_store_path, load_local_config, save_local_config
 from app.integrations.store import get_integration, remove_integration, upsert_integration
-from app.llm_credentials import has_llm_api_key, save_llm_api_key
 
 _console = Console()
 DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 DEFAULT_GITHUB_MCP_MODE = "streamable-http"
 DEFAULT_SENTRY_URL = "https://sentry.io"
-_ASCII_HEADER = """\
-  ___  ____  _____ _   _ ____  ____  _____
- / _ \\|  _ \\| ____| \\ | / ___||  _ \\| ____|
-| | | | |_) |  _| |  \\| \\___ \\| |_) |  _|
-| |_| |  __/| |___| |\\  |___) |  _ <| |___
- \\___/|_|   |_____|_| \\_|____/|_| \\_\\_____|"""
+
+
+def validate_provider_credentials(**kwargs):
+    from app.cli.wizard.validation import validate_provider_credentials as _validate
+
+    return _validate(**kwargs)
 
 
 def build_demo_action_response():
@@ -44,18 +45,6 @@ def validate_grafana_integration(**kwargs):
 
 def validate_datadog_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_datadog_integration as _validate
-
-    return _validate(**kwargs)
-
-
-def validate_honeycomb_integration(**kwargs):
-    from app.cli.wizard.integration_health import validate_honeycomb_integration as _validate
-
-    return _validate(**kwargs)
-
-
-def validate_coralogix_integration(**kwargs):
-    from app.cli.wizard.integration_health import validate_coralogix_integration as _validate
 
     return _validate(**kwargs)
 
@@ -83,28 +72,6 @@ def validate_sentry_integration(**kwargs):
 
     return _validate(**kwargs)
 
-def validate_jira_integration(**kwargs):
-    from app.cli.wizard.integration_health import validate_jira_integration as _validate
-
-    return _validate(**kwargs)
-
-def validate_google_docs_integration(**kwargs):
-    from app.cli.wizard.integration_health import validate_google_docs_integration as _validate
-
-    return _validate(**kwargs)
-
-
-def validate_vercel_integration(**kwargs):
-    from app.cli.wizard.integration_health import validate_vercel_integration as _validate
-
-    return _validate(**kwargs)
-
-
-def validate_opsgenie_integration(**kwargs):
-    from app.cli.wizard.integration_health import validate_opsgenie_integration as _validate
-
-    return _validate(**kwargs)
-
 
 def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
@@ -117,18 +84,15 @@ class IntegrationHealthResult:
     ok: bool
     detail: str
 
-
-_STYLE = questionary.Style(
+_STYLE = Style(
     [
-        ("qmark", "fg:#5c7cfa bold"),
-        ("question", "fg:#f8f9fa bold"),
-        ("answer", "fg:#ffd166 bold"),
-        ("pointer", "fg:#ffd166 bold"),
-        ("highlighted", "fg:#0b1020 bg:#ffd166 bold"),
-        ("selected", "fg:#f8f9fa bg:default bold"),
-        ("separator", "fg:#74c0fc"),
-        ("text", "fg:#d9dee7 bg:default"),
-        ("disabled", "fg:#6c757d bg:default italic"),
+        ("qmark", "fg:cyan bold"),
+        ("question", "bold"),
+        ("answer", "fg:cyan bold"),
+        ("pointer", "fg:cyan bold"),
+        ("highlighted", "fg:cyan bold"),
+        ("selected", "fg:green"),
+        ("separator", "fg:cyan"),
         ("instruction", "fg:#858585 italic"),
     ]
 )
@@ -141,7 +105,6 @@ class Choice:
     value: str
     label: str
     group: str | None = None
-    hint: str | None = None
 
 
 def _as_mapping(value: object) -> Mapping[str, object]:
@@ -160,21 +123,17 @@ def _joined_values(value: object, *, separator: str, fallback: str) -> str:
     return fallback
 
 
-def _local_defaults() -> dict[str, str | bool | None]:
+def _local_defaults() -> dict[str, str]:
     stored = load_local_config(get_store_path())
     wizard = _as_mapping(stored.get("wizard"))
     targets = _as_mapping(stored.get("targets"))
     local = _as_mapping(targets.get("local"))
-    raw_provider = local.get("provider")
-    provider = PROVIDER_BY_VALUE.get(_string_value(raw_provider)) if raw_provider else None
-    api_key_env = _string_value(local.get("api_key_env"), provider.api_key_env if provider else "")
     return {
         "wizard_mode": _string_value(wizard.get("mode"), "quickstart"),
-        "provider": _string_value(raw_provider) if raw_provider else None,
+        "provider": _string_value(local.get("provider"), SUPPORTED_PROVIDERS[0].value),
         "model": _string_value(local.get("model")),
-        "api_key_env": api_key_env,
-        "has_api_key": bool(api_key_env and has_llm_api_key(api_key_env)),
-        "legacy_api_key": _string_value(local.get("api_key")),
+        "api_key": _string_value(local.get("api_key")),
+        "api_key_env": _string_value(local.get("api_key_env")),
     }
 
 
@@ -184,41 +143,43 @@ def _integration_defaults(service: str) -> tuple[Mapping[str, object], Mapping[s
 
 
 def _step(title: str) -> None:
-    _console.print(f"\n[bold]{title}[/]")
-
-
-def _choice_title(choice: Choice) -> str:
-    return choice.label
-
-
-def _choice_description(choice: Choice) -> str | None:
-    if choice.hint:
-        return choice.hint
-    return choice.group
-
-
-def _questionary_choice(choice: Choice) -> questionary.Choice:
-    return questionary.Choice(
-        title=_choice_title(choice),
-        value=choice.value,
-        description=_choice_description(choice),
-    )
+    _console.print(f"\n[bold]{title.lower()}[/]")
 
 
 def _choose(prompt: str, choices: list[Choice], *, default: str | None = None) -> str:
-    q_choices = [_questionary_choice(choice) for choice in choices]
+    q_choices = []
+    for choice in choices:
+        suffix = f" ({choice.group})" if choice.group else ""
+        label = f"{choice.label}{suffix}"
+        q_choices.append(QuestionaryChoice(title=label, value=choice.value))
 
     result = select_prompt(
         prompt,
         choices=q_choices,
         default=default,
         style=_STYLE,
-        instruction="(Use arrows to move, Enter to choose)",
+        instruction="(Tab, arrows, Enter)",
     ).ask()
 
     if result is None:
         raise KeyboardInterrupt
     return str(result)
+
+
+def _choose_many(prompt: str, choices: list[Choice], *, default: list[str] | None = None) -> list[str]:
+    q_choices = [QuestionaryChoice(title=choice.label, value=choice.value) for choice in choices]
+
+    result = checkbox_prompt(
+        prompt,
+        choices=q_choices,
+        style=_STYLE,
+        instruction="(Space to select, Enter to confirm)",
+        default=default or [],
+    ).ask()
+
+    if result is None:
+        raise KeyboardInterrupt
+    return list(result)
 
 
 def _confirm(prompt: str, *, default: bool = True) -> bool:
@@ -265,17 +226,53 @@ def _prompt_value(
         _console.print("[red]Required.[/]")
 
 
-def _persist_llm_api_key(env_var: str, value: str) -> bool:
-    try:
-        save_llm_api_key(env_var, value)
-    except RuntimeError as exc:
-        _console.print(f"[red]{exc}[/]")
-        return False
-    return True
-
-
 def _parse_csv_values(raw_value: str) -> list[str]:
     return [part.strip() for part in raw_value.split(",") if part.strip()]
+
+
+def _collect_validated_api_key(
+    provider: ProviderOption,
+    model: str,
+    *,
+    default_api_key: str = "",
+    auto_use_saved_key: bool = False,
+) -> str:
+    if auto_use_saved_key and default_api_key:
+        with _console.status(f"Validating {provider.label} API key...", spinner="dots"):
+            result = validate_provider_credentials(
+                provider=provider,
+                api_key=default_api_key,
+                model=model,
+            )
+        if result.ok:
+            _console.print(f"[green]Using saved {provider.label} key.[/]")
+            _console.print(f"[dim]{result.detail}[/]")
+            if result.sample_response:
+                _console.print(f"[dim]Sample: {result.sample_response}[/]")
+            return default_api_key
+        _console.print(f"[yellow]Saved {provider.label} key failed validation.[/]")
+        _console.print(f"[dim]{result.detail}[/]")
+        default_api_key = ""
+
+    while True:
+        api_key = _prompt_value(
+            f"{provider.label} API key ({provider.api_key_env})",
+            default=default_api_key,
+            secret=True,
+        )
+        with _console.status(f"Validating {provider.label} API key...", spinner="dots"):
+            result = validate_provider_credentials(provider=provider, api_key=api_key, model=model)
+        if result.ok:
+            _console.print("[green]Connected.[/]")
+            if result.sample_response:
+                _console.print(f"[dim]{result.detail}[/]")
+                _console.print(f"[dim]Sample: {result.sample_response}[/]")
+            else:
+                _console.print(f"[dim]{result.detail}[/]")
+            return api_key
+        _console.print(f"[red]Validation failed: {result.detail}[/]")
+        _console.print("[dim]Enter retries the current key. Paste a new one to replace it.[/]")
+        default_api_key = api_key
 
 
 def _display_probe(result: ProbeResult) -> None:
@@ -307,24 +304,8 @@ def _select_target_for_advanced(local_probe: ProbeResult, remote_probe: ProbeRes
 
 
 def _render_header() -> None:
-    _console.print()
-    for line in _ASCII_HEADER.splitlines():
-        _console.print(Text.assemble(("  ", ""), (line, "bold cyan")))
-    _console.print()
-    _console.print(
-        Text.assemble(
-            ("  ", ""),
-            "open-source SRE agent for automated incident investigation and root cause analysis",
-        )
-    )
-    _console.print()
-    _console.print(Text.assemble(("  Setup", "bold white")))
-    _console.print(
-        Text.assemble(
-            ("    ", ""), ("Configure your local AI stack and optional integrations.", "dim")
-        )
-    )
-    _console.print()
+    _console.print("[bold]OpenSRE[/]")
+    _console.print("[dim]Set up local AI and integrations.[/]")
 
 
 def _render_saved_summary(
@@ -344,7 +325,6 @@ def _render_saved_summary(
     _console.print(f"[dim]services      {integrations}[/]")
     _console.print(f"[dim]config        {saved_path}[/]")
     _console.print(f"[dim]env           {env_path}[/]")
-    _console.print("[dim]llm secret    system keychain[/]")
     _console.print(f"[dim]integrations  {STORE_PATH}[/]")
 
 
@@ -373,12 +353,11 @@ def _configure_grafana() -> tuple[str, str]:
             result = validate_grafana_integration(endpoint=endpoint, api_key=api_key)
         _render_integration_result("Grafana", result)
         if result.ok:
-            upsert_integration(
-                "grafana", {"credentials": {"endpoint": endpoint, "api_key": api_key}}
-            )
+            upsert_integration("grafana", {"credentials": {"endpoint": endpoint, "api_key": api_key}})
             env_path = sync_env_values(
                 {
                     "GRAFANA_INSTANCE_URL": endpoint,
+                    "GRAFANA_READ_TOKEN": api_key,
                 }
             )
             return "Grafana", str(env_path)
@@ -421,7 +400,6 @@ def _configure_grafana_local() -> tuple[str, str]:
     with _console.status("Waiting for Loki to be ready and seeding logs...", spinner="dots"):
         try:
             from app.cli.wizard.grafana_seed import seed_logs
-
             seed_logs()
         except (SystemExit, Exception) as exc:
             _console.print(f"[red]Loki seed failed: {exc}[/]")
@@ -431,12 +409,12 @@ def _configure_grafana_local() -> tuple[str, str]:
     api_key = ""
     remove_integration("grafana")  # clean up any stale grafana record pointing to localhost
     upsert_integration("grafana_local", {"credentials": {"endpoint": endpoint, "api_key": api_key}})
-    env_path = sync_env_values({"GRAFANA_INSTANCE_URL": endpoint})
+    env_path = sync_env_values({"GRAFANA_INSTANCE_URL": endpoint, "GRAFANA_READ_TOKEN": api_key})
     _console.print("[green]Grafana Local · ready[/]")
     _console.print(f"[dim]UI: {endpoint}[/]")
     _console.print("[dim]Loki seeded with events_fact pipeline failure logs.[/]")
     _console.print("[dim]Run RCA:[/]")
-    _console.print("[bold]  opensre investigate -i tests/fixtures/grafana_local_alert.json[/]")
+    _console.print("[bold]  opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json[/]")
     return "Grafana Local", str(env_path)
 
 
@@ -465,99 +443,13 @@ def _configure_datadog() -> tuple[str, str]:
                 "datadog",
                 {"credentials": {"api_key": api_key, "app_key": app_key, "site": site}},
             )
-            env_path = sync_env_values({})
+            env_path = sync_env_values(
+                {
+                    "DD_API_KEY": api_key,
+                    "DD_APP_KEY": app_key,
+                }
+            )
             return "Datadog", str(env_path)
-        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
-
-
-def _configure_honeycomb() -> tuple[str, str]:
-    _, credentials = _integration_defaults("honeycomb")
-    while True:
-        api_key = _prompt_value(
-            "Honeycomb configuration API key",
-            default=_string_value(credentials.get("api_key")),
-            secret=True,
-        )
-        dataset = _prompt_value(
-            "Honeycomb dataset slug or __all__",
-            default=_string_value(credentials.get("dataset"), "__all__"),
-        )
-        base_url = _prompt_value(
-            "Honeycomb API URL",
-            default=_string_value(credentials.get("base_url"), "https://api.honeycomb.io"),
-        )
-        with _console.status("Validating Honeycomb integration...", spinner="dots"):
-            result = validate_honeycomb_integration(
-                api_key=api_key,
-                dataset=dataset,
-                base_url=base_url,
-            )
-        _render_integration_result("Honeycomb", result)
-        if result.ok:
-            upsert_integration(
-                "honeycomb",
-                {"credentials": {"api_key": api_key, "dataset": dataset, "base_url": base_url}},
-            )
-            env_path = sync_env_values(
-                {
-                    "HONEYCOMB_DATASET": dataset,
-                    "HONEYCOMB_API_URL": base_url,
-                }
-            )
-            return "Honeycomb", str(env_path)
-        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
-
-
-def _configure_coralogix() -> tuple[str, str]:
-    _, credentials = _integration_defaults("coralogix")
-    while True:
-        api_key = _prompt_value(
-            "Coralogix DataPrime API key",
-            default=_string_value(credentials.get("api_key")),
-            secret=True,
-        )
-        base_url = _prompt_value(
-            "Coralogix API URL",
-            default=_string_value(credentials.get("base_url"), "https://api.coralogix.com"),
-        )
-        application_name = _prompt_value(
-            "Coralogix application name (optional)",
-            default=_string_value(credentials.get("application_name")),
-            allow_empty=True,
-        )
-        subsystem_name = _prompt_value(
-            "Coralogix subsystem name (optional)",
-            default=_string_value(credentials.get("subsystem_name")),
-            allow_empty=True,
-        )
-        with _console.status("Validating Coralogix integration...", spinner="dots"):
-            result = validate_coralogix_integration(
-                api_key=api_key,
-                base_url=base_url,
-                application_name=application_name,
-                subsystem_name=subsystem_name,
-            )
-        _render_integration_result("Coralogix", result)
-        if result.ok:
-            upsert_integration(
-                "coralogix",
-                {
-                    "credentials": {
-                        "api_key": api_key,
-                        "base_url": base_url,
-                        "application_name": application_name,
-                        "subsystem_name": subsystem_name,
-                    }
-                },
-            )
-            env_path = sync_env_values(
-                {
-                    "CORALOGIX_API_URL": base_url,
-                    "CORALOGIX_APPLICATION_NAME": application_name,
-                    "CORALOGIX_SUBSYSTEM_NAME": subsystem_name,
-                }
-            )
-            return "Coralogix", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
@@ -573,7 +465,7 @@ def _configure_slack() -> tuple[str, str]:
             result = validate_slack_webhook(webhook_url=webhook_url)
         _render_integration_result("Slack", result)
         if result.ok:
-            env_path = sync_env_values({})
+            env_path = sync_env_values({"SLACK_WEBHOOK_URL": webhook_url})
             return "Slack", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
@@ -663,6 +555,9 @@ def _configure_aws() -> tuple[str, str]:
                 env_path = sync_env_values(
                     {
                         "AWS_REGION": region,
+                        "AWS_ACCESS_KEY_ID": access_key_id,
+                        "AWS_SECRET_ACCESS_KEY": secret_access_key,
+                        "AWS_SESSION_TOKEN": session_token,
                     }
                 )
                 return "AWS", str(env_path)
@@ -744,15 +639,14 @@ def _configure_github_mcp() -> tuple[str, str]:
                 "toolsets": toolsets,
             }
             upsert_integration("github", {"credentials": credentials})
-            env_path = sync_env_values(
-                {
-                    "GITHUB_MCP_URL": url,
-                    "GITHUB_MCP_MODE": mode,
-                    "GITHUB_MCP_COMMAND": command,
-                    "GITHUB_MCP_ARGS": " ".join(args),
-                    "GITHUB_MCP_TOOLSETS": ",".join(toolsets),
-                }
-            )
+            env_path = sync_env_values({
+                "GITHUB_MCP_URL": url,
+                "GITHUB_MCP_MODE": mode,
+                "GITHUB_MCP_COMMAND": command,
+                "GITHUB_MCP_ARGS": " ".join(args),
+                "GITHUB_MCP_AUTH_TOKEN": auth_token,
+                "GITHUB_MCP_TOOLSETS": ",".join(toolsets),
+            })
             return "GitHub MCP", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
@@ -802,179 +696,13 @@ def _configure_sentry() -> tuple[str, str]:
                 "project_slug": project_slug,
             }
             upsert_integration("sentry", {"credentials": credentials})
-            env_path = sync_env_values(
-                {
-                    "SENTRY_URL": base_url,
-                    "SENTRY_ORG_SLUG": organization_slug,
-                    "SENTRY_PROJECT_SLUG": project_slug,
-                }
-            )
+            env_path = sync_env_values({
+                "SENTRY_URL": base_url,
+                "SENTRY_ORG_SLUG": organization_slug,
+                "SENTRY_PROJECT_SLUG": project_slug,
+                "SENTRY_AUTH_TOKEN": auth_token,
+            })
             return "Sentry", str(env_path)
-        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
-
-def _configure_jira() -> tuple[str, str]:
-    _, credentials = _integration_defaults("jira")
-    _console.print("\n[bold]Jira Integration[/bold]")
-    _console.print("Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens\n")
-
-    while True:
-        base_url = _prompt_value("Jira base URL (e.g. https://myteam.atlassian.net)")
-        email = _prompt_value("Jira account email")
-        api_token = _prompt_value("Jira API token", secret=True)
-        project_key = _prompt_value("Jira project key (e.g. OPS)")
-
-        with _console.status("Validating Jira connection...", spinner="dots"):
-            result = validate_jira_integration(
-                base_url=base_url,
-                email=email,
-                api_token=api_token,
-                project_key=project_key,
-            )
-        _render_integration_result("Jira", result)
-
-        if result.ok:
-            upsert_integration("jira", {"credentials": {
-                "base_url": base_url,
-                "email": email,
-                "api_token": api_token,
-                "project_key": project_key,
-            }})
-            env_path = sync_env_values({})
-            return "Jira", str(env_path)
-        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
-
-def _configure_google_docs() -> tuple[str, str]:
-    _, credentials = _integration_defaults("google_docs")
-    while True:
-        credentials_file = _prompt_value(
-            "Path to Google service account credentials JSON file",
-            default=_string_value(credentials.get("credentials_file")),
-        )
-        folder_id = _prompt_value(
-            "Google Drive folder ID for incident reports",
-            default=_string_value(credentials.get("folder_id")),
-        )
-        with _console.status("Validating Google Docs integration...", spinner="dots"):
-            result = validate_google_docs_integration(
-                credentials_file=credentials_file,
-                folder_id=folder_id,
-            )
-        _render_integration_result("Google Docs", result)
-        if result.ok:
-            upsert_integration(
-                "google_docs",
-                {
-                    "credentials": {
-                        "credentials_file": credentials_file,
-                        "folder_id": folder_id,
-                    }
-                },
-            )
-            env_path = sync_env_values(
-                {
-                    "GOOGLE_CREDENTIALS_FILE": credentials_file,
-                    "GOOGLE_DRIVE_FOLDER_ID": folder_id,
-                }
-            )
-            return "Google Docs", str(env_path)
-        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
-
-
-def _configure_vercel() -> tuple[str, str]:
-    _, credentials = _integration_defaults("vercel")
-    while True:
-        api_token = _prompt_value(
-            "Vercel API token (Account Settings > Tokens)",
-            default=_string_value(credentials.get("api_token")),
-            secret=True,
-        )
-        team_id = _prompt_value(
-            "Vercel team ID (optional, for team-scoped access)",
-            default=_string_value(credentials.get("team_id")),
-            allow_empty=True,
-        )
-        with _console.status("Validating Vercel integration...", spinner="dots"):
-            result = validate_vercel_integration(api_token=api_token, team_id=team_id)
-        _render_integration_result("Vercel", result)
-        if result.ok:
-            upsert_integration(
-                "vercel",
-                {"credentials": {"api_token": api_token, "team_id": team_id}},
-            )
-            env_path = sync_env_values({})
-            return "Vercel", str(env_path)
-        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
-
-
-def _configure_opsgenie() -> tuple[str, str]:
-    _, credentials = _integration_defaults("opsgenie")
-    while True:
-        api_key = _prompt_value(
-            "OpsGenie API key (Settings > API key management)",
-            default=_string_value(credentials.get("api_key")),
-            secret=True,
-        )
-        region = _prompt_value(
-            "OpsGenie region (us or eu)",
-            default=_string_value(credentials.get("region"), "us"),
-        )
-        with _console.status("Validating OpsGenie integration...", spinner="dots"):
-            result = validate_opsgenie_integration(api_key=api_key, region=region)
-        _render_integration_result("OpsGenie", result)
-        if result.ok:
-            upsert_integration(
-                "opsgenie",
-                {"credentials": {"api_key": api_key, "region": region}},
-            )
-            env_path = sync_env_values({})
-            return "OpsGenie", str(env_path)
-        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
-
-
-def _configure_langsmith() -> tuple[str, str]:
-    _, credentials = _integration_defaults("langsmith")
-    while True:
-        api_key = _prompt_value(
-            "LangSmith API key",
-            default=_string_value(credentials.get("api_key")),
-            secret=True,
-        )
-        deployment_name = _prompt_value(
-            "LangSmith deployment name",
-            default=_string_value(credentials.get("deployment_name"), "open-sre-agent"),
-        )
-
-        with _console.status("Checking LangSmith API key...", spinner="dots"):
-            if api_key.strip():
-                ok = True
-                detail = "LangSmith API key is set."
-            else:
-                ok = False
-                detail = "LangSmith API key is required."
-
-        _render_integration_result(
-            "LangSmith",
-            IntegrationHealthResult(ok=ok, detail=detail),
-        )
-
-        if ok:
-            upsert_integration(
-                "langsmith",
-                {
-                    "credentials": {
-                        "api_key": api_key,
-                        "deployment_name": deployment_name,
-                    }
-                },
-            )
-            env_path = sync_env_values(
-                {
-                    "LANGSMITH_API_KEY": api_key,
-                    "LANGSMITH_DEPLOYMENT_NAME": deployment_name,
-                }
-            )
-            return "LangSmith", str(env_path)
-
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
@@ -982,123 +710,65 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
     configured: list[str] = []
     last_env_path: str | None = None
 
-    _console.print(
-        "[dim]Pick one integration to wire up now, or skip this step and come back later.[/]"
+    _console.print("[dim]Use Space to select, Enter to confirm.[/]")
+    selected = _choose_many(
+        "Integrations (optional):",
+        [
+            Choice(value="grafana_local", label="Grafana Local (Docker) — starts Grafana + Loki, seeds test data"),
+            Choice(value="grafana", label="Grafana Cloud / self-hosted"),
+            Choice(value="datadog", label="Datadog"),
+            Choice(value="slack", label="Slack"),
+            Choice(value="aws", label="AWS"),
+            Choice(value="github", label="GitHub MCP"),
+            Choice(value="sentry", label="Sentry"),
+        ],
+        default=["grafana_local"],
     )
-    integration_choices = [
-        Choice(
-            value="grafana_local",
-            label="Grafana Local (Docker)",
-            hint="Starts Grafana + Loki and seeds demo alerts",
-        ),
-        Choice(
-            value="grafana",
-            label="Grafana Cloud / self-hosted",
-            hint="Connect an existing Grafana instance",
-        ),
-        Choice(value="datadog", label="Datadog", hint="Logs, monitors, and Kubernetes context"),
-        Choice(value="honeycomb", label="Honeycomb", hint="Query traces and spans from Honeycomb"),
-        Choice(value="coralogix", label="Coralogix", hint="Query logs from Coralogix DataPrime"),
-        Choice(value="slack", label="Slack", hint="Send findings to a webhook or channel"),
-        Choice(value="aws", label="AWS", hint="Inspect CloudWatch, EKS, and account resources"),
-        Choice(
-            value="github", label="GitHub MCP", hint="Let the agent inspect repos, PRs, and issues"
-        ),
-        Choice(
-            value="langsmith",
-            label="LangSmith",
-            hint="Configure LangSmith credentials for deploy and hosted runs",
-        ),
-        Choice(
-            value="sentry", label="Sentry", hint="Investigate errors, events, and issue history"
-        ),
-        Choice(
-            value="google_docs",
-            label="Google Docs",
-            hint="Create shareable incident postmortem reports",
-        ),
-        Choice(
-            value="vercel",
-            label="Vercel",
-            hint="Monitor deployments and fetch runtime logs",
-        ),
-        Choice(
-            value="jira",
-            label="Jira",
-            hint="File and update incident tickets automatically",
-        ),
-        Choice(
-            value="opsgenie",
-            label="OpsGenie",
-            hint="Investigate alerts and triage state from OpsGenie",
-        ),
-        Choice(
-            value="skip",
-            label="Skip for now",
-            hint="Finish onboarding without configuring an integration",
-        ),
-    ]
-    selected_service = _choose(
-        "Choose an integration to configure",
-        integration_choices,
-        default="skip",
-    )
-    if selected_service == "skip":
-        return configured, last_env_path
 
     handlers = {
         "grafana_local": _configure_grafana_local,
         "grafana": _configure_grafana,
         "datadog": _configure_datadog,
-        "honeycomb": _configure_honeycomb,
-        "coralogix": _configure_coralogix,
         "slack": _configure_slack,
         "aws": _configure_aws,
         "github": _configure_github_mcp,
-        "langsmith": _configure_langsmith,
         "sentry": _configure_sentry,
-        "google_docs": _configure_google_docs,
-        "vercel": _configure_vercel,
-        "jira": _configure_jira,
-        "opsgenie": _configure_opsgenie,
     }
     _SERVICE_LABELS = {
         "grafana_local": "grafana local",
         "grafana": "grafana",
         "datadog": "datadog",
-        "honeycomb": "honeycomb",
-        "coralogix": "coralogix",
         "slack": "slack",
         "aws": "aws",
         "github": "github mcp",
-        "langsmith": "langsmith",
         "sentry": "sentry",
-        "google_docs": "google docs",
-        "vercel": "vercel",
-        "jira": "jira",
-        "opsgenie": "opsgenie",
     }
-
-    _step(f"Service · {_SERVICE_LABELS.get(selected_service, selected_service)}")
-    try:
-        label, env_path = handlers[selected_service]()
-        configured.append(label)
-        last_env_path = env_path
-    except KeyboardInterrupt:
-        _console.print(
-            f"[yellow]{_SERVICE_LABELS.get(selected_service, selected_service)} setup skipped.[/]"
-        )
+    for index, service in enumerate(selected, start=1):
+        _step(f"service {index}/{len(selected)} · {_SERVICE_LABELS.get(service, service)}")
+        try:
+            label, env_path = handlers[service]()
+            configured.append(label)
+            last_env_path = env_path
+            _track_integration_added(service)
+        except KeyboardInterrupt:
+            _console.print(f"[yellow]{_SERVICE_LABELS.get(service, service)} setup skipped.[/]")
 
     return configured, last_env_path
+
+
+def _track_integration_added(service: str) -> None:
+    try:
+        from app.analytics.cli import capture_integration_added
+
+        capture_integration_added(service)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _render_demo_response(demo_response: dict) -> None:
     topics = ", ".join(demo_response.get("topics", [])) or "none"
     guidance = demo_response.get("guidance") or []
-    summary = [
-        f"demo      {'ready' if demo_response.get('success') else 'failed'}",
-        f"topics    {topics}",
-    ]
+    summary = [f"demo      {'ready' if demo_response.get('success') else 'failed'}", f"topics    {topics}"]
     if guidance:
         first = guidance[0]
         summary.append(f"sample    {first.get('topic', 'unknown')}")
@@ -1113,38 +783,25 @@ def _render_demo_response(demo_response: dict) -> None:
 def _render_next_steps() -> None:
     _console.print("\n[bold]next[/]")
     _console.print("[dim]opensre onboard[/]")
-    _console.print(
-        "[dim]opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json[/]"
-    )
+    _console.print("[dim]opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json[/]")
 
 
 def run_wizard(_argv: list[str] | None = None) -> int:
     """Run the interactive wizard."""
     _render_header()
     defaults = _local_defaults()
+    default_provider_value = defaults["provider"]
+    if default_provider_value not in PROVIDER_BY_VALUE:
+        default_provider_value = SUPPORTED_PROVIDERS[0].value
 
-    saved_provider_value = defaults["provider"] if isinstance(defaults["provider"], str) else None
-    saved_model_value = defaults["model"] if isinstance(defaults["model"], str) else ""
-    default_wizard_mode = (
-        defaults["wizard_mode"] if isinstance(defaults["wizard_mode"], str) else "quickstart"
-    )
-
-    _step("Setup Mode")
+    _step("mode")
     wizard_mode = _choose(
-        "How do you want to get started?",
+        "Setup mode",
         [
-            Choice(
-                value="quickstart",
-                label="Quickstart",
-                hint="Local setup with the usual defaults",
-            ),
-            Choice(
-                value="advanced",
-                label="Advanced",
-                hint="Show probes and choose the target explicitly",
-            ),
+            Choice(value="quickstart", label="Quickstart"),
+            Choice(value="advanced", label="Advanced"),
         ],
-        default=default_wizard_mode,
+        default=defaults["wizard_mode"],
     )
 
     store_path = get_store_path()
@@ -1167,116 +824,57 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         print("Only local configuration is supported today.", file=sys.stderr)
         return 1
 
-    _step("LLM Provider")
-    saved_provider = PROVIDER_BY_VALUE.get(saved_provider_value) if saved_provider_value else None
-
-    if saved_provider is not None:
-        current_model = saved_model_value or saved_provider.default_model
-        _console.print(f"[dim]current provider  {saved_provider.label}  ·  {current_model}[/]")
-        change_provider = _confirm("Change provider?", default=False)
-    else:
-        change_provider = True
-
-    if change_provider:
-        provider_choices = [
-            Choice(
-                value=p.value,
-                label=p.label,
-                hint=p.group,
-            )
-            for p in SUPPORTED_PROVIDERS
-        ]
-
-        provider_default = (
-            saved_provider_value
-            if saved_provider_value in PROVIDER_BY_VALUE
-            else "anthropic"
+    _step("provider")
+    provider = PROVIDER_BY_VALUE[
+        _choose(
+            "Provider",
+            [
+                Choice(value=provider.value, label=provider.label, group=provider.group)
+                for provider in SUPPORTED_PROVIDERS
+            ],
+            default=default_provider_value,
         )
-
-        provider = PROVIDER_BY_VALUE[
-            _choose(
-                "Choose your LLM provider",
-                provider_choices,
-                default=provider_default,
-            )
-        ]
-
-        model = provider.default_model
-        _step("API Key")
-
-        try:
-            if provider.value == "ollama":
-                api_key = _prompt_value(
-                    f"{provider.label} host ({provider.api_key_env})",
-                    default="http://localhost:11434",
-                    secret=False,
-                )
-            else:
-                api_key = _prompt_value(
-                    f"{provider.label} API key ({provider.api_key_env})",
-                    secret=True,
-                )
-        except KeyboardInterrupt:
-            _console.print("\n[yellow]Setup cancelled.[/]")
-            return 1
-
-        if not _persist_llm_api_key(provider.api_key_env, api_key):
-            return 1
-
-    else:
-        assert saved_provider is not None
-        provider = saved_provider
-        model = saved_model_value or provider.default_model
-        has_api_key = bool(defaults["has_api_key"])
-        legacy_api_key = str(defaults["legacy_api_key"] or "").strip()
-
-        if not has_api_key and legacy_api_key:
-            if not _persist_llm_api_key(provider.api_key_env, legacy_api_key):
-                return 1
-            has_api_key = True
-
-        if not has_api_key:
-            _step("API Key")
-
-            try:
-                if provider.value == "ollama":
-                    api_key = _prompt_value(
-                        f"{provider.label} host ({provider.api_key_env})",
-                        default="http://localhost:11434",
-                        secret=False,
-                    )
-                else:
-                    api_key = _prompt_value(
-                        f"{provider.label} API key ({provider.api_key_env})",
-                        secret=True,
-                    )
-            except KeyboardInterrupt:
-                _console.print("\n[yellow]Setup cancelled.[/]")
-                return 1
-
-            if not _persist_llm_api_key(provider.api_key_env, api_key):
-                return 1
+    ]
+    _step("model")
+    default_model = defaults["model"]
+    if default_model not in {option.value for option in provider.models}:
+        default_model = provider.default_model
+    model = _choose(
+        "Model",
+        [Choice(value=option.value, label=option.label) for option in provider.models],
+        default=default_model,
+    )
+    _step("api key")
+    default_api_key = (
+        defaults["api_key"] if defaults["api_key_env"] == provider.api_key_env else ""
+    )
+    try:
+        api_key = _collect_validated_api_key(
+            provider,
+            model,
+            default_api_key=default_api_key,
+            auto_use_saved_key=bool(default_api_key),
+        )
+    except KeyboardInterrupt:
+        _console.print("\n[yellow]Setup cancelled.[/]")
+        return 1
 
     probes = {
         "local": local_probe.as_dict(),
         "remote": remote_probe.as_dict(),
     }
-
     saved_path = save_local_config(
         wizard_mode=wizard_mode,
         provider=provider.value,
         model=model,
         api_key_env=provider.api_key_env,
         model_env=provider.model_env,
+        api_key=api_key,
         probes=probes,
     )
+    env_path = sync_provider_env(provider=provider, api_key=api_key, model=model)
 
-    env_path = sync_provider_env(provider=provider, model=model)
-
-    configured_integrations: list[str]
-    integration_env_path: str | None
-
-    _step("Integrations")
+    _step("integrations")
     try:
         configured_integrations, integration_env_path = _configure_selected_integrations()
     except KeyboardInterrupt:
@@ -1293,9 +891,7 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         env_path=summary_env_path,
         configured_integrations=configured_integrations,
     )
-
     demo_response = build_demo_action_response()
     _render_demo_response(demo_response)
     _render_next_steps()
     return 0
-
