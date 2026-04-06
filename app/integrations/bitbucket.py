@@ -71,9 +71,7 @@ def bitbucket_config_from_env() -> BitbucketConfig | None:
             "workspace": workspace,
             "username": os.getenv("BITBUCKET_USERNAME", "").strip(),
             "app_password": os.getenv("BITBUCKET_APP_PASSWORD", "").strip(),
-            "base_url": os.getenv(
-                "BITBUCKET_BASE_URL", DEFAULT_BITBUCKET_BASE_URL
-            ).strip(),
+            "base_url": os.getenv("BITBUCKET_BASE_URL", DEFAULT_BITBUCKET_BASE_URL).strip(),
         }
     )
 
@@ -112,9 +110,7 @@ def validate_bitbucket_config(
         finally:
             client.close()
     except Exception as err:  # noqa: BLE001
-        return BitbucketValidationResult(
-            ok=False, detail=f"Bitbucket connection failed: {err}"
-        )
+        return BitbucketValidationResult(ok=False, detail=f"Bitbucket connection failed: {err}")
 
 
 def list_commits(
@@ -217,13 +213,13 @@ def search_code(
     try:
         client = _get_client(config)
         try:
-            search_query = query
             if repo_slug:
-                search_query = f"repo:{config.workspace}/{repo_slug} {query}"
-            url = f"/workspaces/{config.workspace}/search/code"
+                url = f"/repositories/{config.workspace}/{repo_slug}/search/code"
+            else:
+                url = f"/workspaces/{config.workspace}/search/code"
             resp = client.get(
                 url,
-                params={"search_query": search_query, "pagelen": effective_limit},
+                params={"search_query": query, "pagelen": effective_limit},
             )
             resp.raise_for_status()
             data = resp.json()
@@ -233,11 +229,8 @@ def search_code(
                 results.append(
                     {
                         "path": file_info.get("path", ""),
-                        "repo": entry.get("repository", {})
-                        .get("full_name", ""),
-                        "content_matches": len(
-                            entry.get("content_matches", [])
-                        ),
+                        "repo": entry.get("repository", {}).get("full_name", ""),
+                        "content_matches": len(entry.get("content_matches", [])),
                     }
                 )
             return {

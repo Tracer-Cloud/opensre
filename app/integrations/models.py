@@ -283,3 +283,4 @@ class EffectiveIntegrations(StrictConfigModel):
     opsgenie: EffectiveIntegrationEntry | None = None
     prefect: EffectiveIntegrationEntry | None = None
     clickhouse: EffectiveIntegrationEntry | None = None
+    bitbucket: EffectiveIntegrationEntry | None = None

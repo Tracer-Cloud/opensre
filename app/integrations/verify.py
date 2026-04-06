@@ -293,6 +293,28 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 },
             }
 
+    bitbucket_integration = classified_integrations.get("bitbucket")
+    if isinstance(bitbucket_integration, dict):
+        effective["bitbucket"] = {
+            "source": source_by_service.get("bitbucket", "local env"),
+            "config": {
+                "workspace": str(bitbucket_integration.get("workspace", "")).strip(),
+                "username": str(bitbucket_integration.get("username", "")).strip(),
+                "app_password": str(bitbucket_integration.get("app_password", "")).strip(),
+            },
+        }
+    else:
+        bitbucket_workspace = os.getenv("BITBUCKET_WORKSPACE", "").strip()
+        if bitbucket_workspace:
+            effective["bitbucket"] = {
+                "source": "local env",
+                "config": {
+                    "workspace": bitbucket_workspace,
+                    "username": os.getenv("BITBUCKET_USERNAME", "").strip(),
+                    "app_password": os.getenv("BITBUCKET_APP_PASSWORD", "").strip(),
+                },
+            }
+
     return EffectiveIntegrations.model_validate(effective).model_dump(exclude_none=True)
 
 
