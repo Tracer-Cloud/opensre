@@ -7,7 +7,6 @@ from typing import Any, Literal, TypedDict
 from pydantic import Field
 
 from app.strict_config import StrictConfigModel
-from app.types.evidence import EvidenceSource as EvidenceSource  # re-export
 
 AgentMode = Literal["chat", "investigation"]
 

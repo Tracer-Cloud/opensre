@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 from app.output import debug_print
 from app.state import AgentState, InvestigationState
+
+logger = logging.getLogger(__name__)
 
 MAX_INVESTIGATION_LOOPS = 4
 
@@ -66,5 +70,6 @@ def should_continue_investigation(state: InvestigationState) -> str:
 
         return "publish"
     except Exception as e:
+        logger.exception("should_continue_investigation failed, defaulting to publish: %s", e)
         debug_print(f"Routing function failed: {e} -> publish")
         return "publish"

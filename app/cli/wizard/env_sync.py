@@ -5,14 +5,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from app.cli.wizard.config import (
-    PROJECT_ENV_PATH,
-    SUPPORTED_PROVIDERS,
-    ProviderOption,
-)
+from app.cli.wizard.config import PROJECT_ENV_PATH, ProviderOption
 
 _ENV_ASSIGNMENT = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=")
-_LLM_API_KEY_ENVS = tuple(dict.fromkeys(provider.api_key_env for provider in SUPPORTED_PROVIDERS))
 
 
 def _set_env_value(lines: list[str], key: str, value: str) -> list[str]:
@@ -31,15 +26,6 @@ def _set_env_value(lines: list[str], key: str, value: str) -> list[str]:
         updated.append(f"{key}={value}\n")
     return updated
 
-
-def _remove_env_value(lines: list[str], key: str) -> list[str]:
-    updated: list[str] = []
-    for line in lines:
-        match = _ENV_ASSIGNMENT.match(line)
-        if match and match.group(1) == key:
-            continue
-        updated.append(line)
-    return updated
 
 
 def sync_env_values(
@@ -74,8 +60,6 @@ def sync_provider_env(
         values[provider.legacy_model_env] = model
 
     lines = existing
-    for key in _LLM_API_KEY_ENVS:
-        lines = _remove_env_value(lines, key)
     for key, value in values.items():
         lines = _set_env_value(lines, key, value)
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib
+import sys
 
 from fastapi import FastAPI, Response, status
 from pydantic import BaseModel
@@ -21,11 +21,7 @@ app = FastAPI()
 
 
 def _graph_loaded() -> bool:
-    try:
-        importlib.import_module("app.graph_pipeline")
-    except Exception:
-        return False
-    return True
+    return "app.graph_pipeline" in sys.modules
 
 
 def _llm_configured() -> bool:
@@ -37,17 +33,17 @@ def _llm_configured() -> bool:
 
 
 def get_health_response() -> HealthResponse:
-    is_graph_loaded = _graph_loaded()
-    is_llm_configured = _llm_configured()
-    env = get_environment().value
+    graph_loaded = _graph_loaded()
+    llm_configured = _llm_configured()
 
     return HealthResponse(
-        ok=is_graph_loaded and is_llm_configured,
+        ok=graph_loaded and llm_configured,
         version=get_version(),
-        graph_loaded=is_graph_loaded,
-        llm_configured=is_llm_configured,
-        env=env,
+        graph_loaded=graph_loaded,
+        llm_configured=llm_configured,
+        env=get_environment().value,
     )
+
 
 @app.get("/health", response_model=HealthResponse)
 def health(response: Response) -> HealthResponse:

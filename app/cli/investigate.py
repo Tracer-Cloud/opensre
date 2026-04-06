@@ -69,7 +69,6 @@ def run_investigation_cli(
     )
     slack_message = state["slack_message"]
     return {
-        "slack_message": slack_message,
         "report": slack_message,
         "problem_md": state["problem_md"],
         "root_cause": state["root_cause"],

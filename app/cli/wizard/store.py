@@ -70,3 +70,19 @@ def save_local_config(
     store_path.parent.mkdir(parents=True, exist_ok=True)
     store_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return store_path
+
+
+def load_remote_url(path: Path | None = None) -> str | None:
+    """Return the persisted remote agent URL, or ``None`` if not configured."""
+    data = _load_raw(path)
+    url: str | None = data.get("remote", {}).get("url") or None
+    return url
+
+
+def save_remote_url(url: str, path: Path | None = None) -> None:
+    """Persist the remote agent URL to the store."""
+    store_path = path or get_store_path()
+    data = _load_raw(store_path)
+    data.setdefault("remote", {})["url"] = url
+    store_path.parent.mkdir(parents=True, exist_ok=True)
+    store_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

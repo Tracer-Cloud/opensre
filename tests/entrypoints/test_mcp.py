@@ -24,7 +24,6 @@ def test_run_rca_happy_path(monkeypatch: MonkeyPatch) -> None:
         severity: str | None = None,
     ) -> dict[str, Any]:
         return {
-            "slack_message": "RCA complete",
             "report": "RCA complete",
             "problem_md": "# Alert\n\nCPU high",
             "root_cause": "High CPU usage",

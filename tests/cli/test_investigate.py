@@ -60,7 +60,6 @@ def test_run_investigation_cli_shapes_agent_state(monkeypatch) -> None:
         "raw_alert": {"alert_name": "PayloadAlert"},
     }
     assert result == {
-        "slack_message": "report body",
         "report": "report body",
         "problem_md": "# problem",
         "root_cause": "bad deploy",

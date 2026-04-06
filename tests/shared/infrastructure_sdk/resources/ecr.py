@@ -86,7 +86,7 @@ def get_registry_url(region: str = DEFAULT_REGION) -> str:
     proxy_endpoint = response["authorizationData"][0]["proxyEndpoint"]
 
     # Remove https:// prefix
-    return proxy_endpoint.replace("https://", "")
+    return str(proxy_endpoint).replace("https://", "")
 
 
 def docker_login(region: str = DEFAULT_REGION) -> None:

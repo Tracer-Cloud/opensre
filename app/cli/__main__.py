@@ -1,4 +1,4 @@
-"""OpenSRE CLI — open-source SRE agent for automated incident investigation.
+"""OpenSRE CLI - open-source SRE agent for automated incident investigation.
 
 Enable shell tab-completion (add to your shell profile for persistence):
 
@@ -12,25 +12,10 @@ from __future__ import annotations
 import click
 from dotenv import load_dotenv
 
-from app.analytics.cli import (
-    capture_cli_invoked,
-    capture_integration_removed,
-    capture_integration_setup_completed,
-    capture_integration_setup_started,
-    capture_integration_verified,
-    capture_integrations_listed,
-    capture_investigation_completed,
-    capture_investigation_failed,
-    capture_investigation_started,
-    capture_onboard_completed,
-    capture_onboard_failed,
-    capture_onboard_started,
-    capture_test_run_started,
-    capture_test_synthetic_started,
-    capture_tests_listed,
-    capture_tests_picker_opened,
-)
+from app.analytics.cli import capture_cli_invoked
 from app.analytics.provider import capture_first_run_if_needed, shutdown_analytics
+from app.cli.commands import register_commands
+from app.cli.layout import RichGroup, render_landing
 from app.version import get_version
 
 # Heavy application imports are kept inside command functions so the CLI starts
@@ -124,7 +109,7 @@ class _RichGroup(click.Group):
 
 
 @click.group(
-    cls=_RichGroup,
+    cls=RichGroup,
     context_settings={"help_option_names": ["-h", "--help"]},
     invoke_without_command=True,
 )
@@ -146,9 +131,10 @@ def cli(ctx: click.Context) -> None:
     Enable tab-completion (add to your shell profile):
       eval "$(_OPENSRE_COMPLETE=zsh_source opensre)"
     """
+    """OpenSRE - open-source SRE agent for automated incident investigation and root cause analysis."""
     if ctx.invoked_subcommand is None:
         capture_cli_invoked()
-        _render_landing()
+        render_landing()
         raise SystemExit(0)
 
 
@@ -410,6 +396,7 @@ def run(test_id: str, dry_run: bool) -> None:
 
     capture_test_run_started(test_id, dry_run=dry_run)
     raise SystemExit(run_catalog_item(item, dry_run=dry_run))
+register_commands(cli)
 
 
 def main(argv: list[str] | None = None) -> int:

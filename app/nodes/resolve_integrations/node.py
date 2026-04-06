@@ -11,6 +11,7 @@ import logging
 import os
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from app.integrations.github_mcp import build_github_mcp_config
@@ -479,7 +480,7 @@ def _merge_integrations_by_service(
 
 
 @traceable(name="node_resolve_integrations")
-def node_resolve_integrations(state: InvestigationState) -> dict:
+def node_resolve_integrations(state: InvestigationState, config: RunnableConfig | None = None) -> dict:
     """Fetch all org integrations and classify them by service.
 
     Priority:
@@ -487,11 +488,18 @@ def node_resolve_integrations(state: InvestigationState) -> dict:
       2. JWT_TOKEN env var — remote API, with local store/env filling missing services
       3. Local sources: ~/.tracer/integrations.json, plus env-based integrations for standalone use
     """
+    if state.get("resolved_integrations"):
+        return {}
+
     tracker = get_tracker()
     tracker.start("resolve_integrations", "Fetching org integrations")
     org_id = state.get("org_id", "")
 
-    webhook_token = _strip_bearer(state.get("_auth_token", "").strip())
+    configurable = (config or {}).get("configurable", {})
+    auth_user = configurable.get("langgraph_auth_user", {})
+    webhook_token = _strip_bearer(
+        (auth_user.get("token", "") or state.get("_auth_token", "")).strip()
+    )
     if webhook_token:
         if not org_id:
             org_id = _decode_org_id_from_token(webhook_token)

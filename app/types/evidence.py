@@ -23,4 +23,5 @@ EvidenceSource = Literal[
     "vercel",
     "opsgenie",
     "elasticsearch",
+    "prefect",
 ]

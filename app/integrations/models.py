@@ -236,6 +236,23 @@ class OpsGenieIntegrationConfig(StrictConfigModel):
         raw = str(value or "us").strip().lower()
         return raw if raw in ("us", "eu") else "us"
 
+class PrefectIntegrationConfig(StrictConfigModel):
+    api_url: str = "https://api.prefect.cloud/api"
+    api_key: str = ""
+    account_id: str = ""
+    workspace_id: str = ""
+    integration_id: str = ""
+
+    @field_validator("api_url", mode="before")
+    @classmethod
+    def _normalize_api_url(cls, value: object) -> str:
+        return str(value or "https://api.prefect.cloud/api").strip().rstrip("/")
+
+    @field_validator("api_key", "account_id", "workspace_id", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
 
 class EffectiveIntegrationEntry(StrictConfigModel):
     """Resolved integration entry with source metadata."""
@@ -261,3 +278,4 @@ class EffectiveIntegrations(StrictConfigModel):
     vercel: EffectiveIntegrationEntry | None = None
     jira: EffectiveIntegrationEntry | None = None
     opsgenie: EffectiveIntegrationEntry | None = None
+    prefect: EffectiveIntegrationEntry | None = None
