@@ -25,4 +25,5 @@ EvidenceSource = Literal[
     "opsgenie",
     "elasticsearch",
     "prefect",
+    "bitbucket",
 ]

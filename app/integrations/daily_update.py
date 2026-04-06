@@ -25,7 +25,7 @@ LONDON_TZ = ZoneInfo("Europe/London")
 DEFAULT_OUTPUT_DIR = "docs/daily-updates"
 MAX_PROMPT_FILES = 25
 MAX_PROMPT_BODY_CHARS = 1200
-MAX_HIGHLIGHTS = 8
+MAX_HIGHLIGHTS = 20
 BOT_LOGINS = frozenset({
     "dependabot",
     "dependabot[bot]",
@@ -380,7 +380,7 @@ def _thanks_line(pull_requests: tuple[PullRequestSummary, ...]) -> str:
             key = contributor.login.lower() if contributor.login else contributor.display_name.lower()
             contributors[key] = contributor.display_name
     return (
-        "Thanks to everyone who contributed today: "
+        "Thanks to everyone who contributed yesterday:\n\n"
         f"{format_name_list(sorted(contributors.values(), key=str.lower))} \U0001f64f\U0001f680"
     )
 
@@ -409,14 +409,16 @@ def _build_summary_prompt(repository: str, window: DailyWindow, pull_requests: t
         f"Date: {window.london_date.isoformat()} Europe/London",
         "",
         "Rules:",
-        "- Use only facts present in the source pull requests below.",
-        "- Group related pull requests together into concise shipped-update bullets.",
-        "- Return 1 to 8 bullets.",
-        "- Each bullet must be a single sentence.",
-        "- Prefer a short headline, then ' -- ', then a compact explanation.",
-        "- Do not mention analytics, users, or anything not present in the source data.",
-        "- Do not mention PR numbers unless necessary for clarity.",
-        "- Keep the tone similar to a polished Slack engineering update.",
+        "- Select the top 20 most impactful merged pull requests from the list below.",
+        "- Prioritize contributor diversity: include at least one PR per unique contributor"
+        " before adding a second from the same contributor.",
+        "- Format each highlight as a single line: <PR title> (#<number>) \u2014 <author>",
+        "- If the PR title already contains (#<number>), do NOT add it again;"
+        " just append \u2014 <author>.",
+        "- Keep the original PR title as-is. Do not rewrite, editorialize, or group titles.",
+        "- Use the author display name (not login) when available.",
+        "- Exclude bot-authored PRs (dependabot, github-actions, contrib-readme-action).",
+        "- Return up to 20 highlights, ordered by significance/impact.",
         "",
         "Source pull requests:",
     ]
@@ -439,14 +441,37 @@ def _build_summary_prompt(repository: str, window: DailyWindow, pull_requests: t
     return "\n".join(sections).strip()
 
 
+def _format_pr_highlight(pr: PullRequestSummary) -> str:
+    """Format a single PR as a highlight line: title (#number) — author."""
+    author = pr.author_display_name or pr.author_login or "unknown"
+    title = pr.title.strip()
+    if f"#{pr.number}" in title:
+        return f"{title} \u2014 {author}"
+    return f"{title} (#{pr.number}) \u2014 {author}"
+
+
 def build_fallback_highlights(pull_requests: tuple[PullRequestSummary, ...]) -> tuple[str, ...]:
     """Fallback to deterministic PR-title bullets when LLM summarization is unavailable."""
     if not pull_requests:
         return ("No pull requests were merged into `main` today.",)
 
-    highlights = [f"{pull_request.title}." for pull_request in pull_requests[:MAX_HIGHLIGHTS]]
-    if len(pull_requests) > MAX_HIGHLIGHTS:
-        highlights.append(f"{len(pull_requests) - MAX_HIGHLIGHTS} additional merged pull requests shipped today.")
+    seen_authors: set[str] = set()
+    primary: list[PullRequestSummary] = []
+    secondary: list[PullRequestSummary] = []
+
+    for pr in pull_requests:
+        key = pr.author_login.lower() if pr.author_login else pr.author_display_name.lower()
+        if key not in seen_authors:
+            seen_authors.add(key)
+            primary.append(pr)
+        else:
+            secondary.append(pr)
+
+    ordered = (primary + secondary)[:MAX_HIGHLIGHTS]
+    highlights = [_format_pr_highlight(pr) for pr in ordered]
+    remaining = len(pull_requests) - len(ordered)
+    if remaining > 0:
+        highlights.append(f"{remaining} additional merged pull requests shipped.")
     return tuple(highlights)
 
 
@@ -489,6 +514,8 @@ def build_daily_update(repository: str, window: DailyWindow, pull_requests: tupl
 def render_markdown(update: DailyUpdate) -> str:
     """Render a committed MDX archive document for docs/daily-updates."""
     london_date = update.window.london_date.isoformat()
+    ld = update.window.london_date
+    human_date = f"{ld:%B} {ld.day}, {ld:%Y}"
     lines = [
         "---",
         f'title: "Daily Update \u2014 {london_date}"',
@@ -497,7 +524,7 @@ def render_markdown(update: DailyUpdate) -> str:
         "",
         update.thanks_line,
         "",
-        "## Main updates shipped",
+        f"## Main updates shipped ({human_date})",
         "",
     ]
     lines.extend(f"- {highlight}" for highlight in update.highlights)

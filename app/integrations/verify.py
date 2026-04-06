@@ -53,6 +53,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "vercel",
     "opsgenie",
     "clickhouse",
+    "bitbucket",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -289,6 +290,28 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                     "password": os.getenv("CLICKHOUSE_PASSWORD", "").strip(),
                     "secure": os.getenv("CLICKHOUSE_SECURE", "false").strip().lower()
                     in ("true", "1", "yes"),
+                },
+            }
+
+    bitbucket_integration = classified_integrations.get("bitbucket")
+    if isinstance(bitbucket_integration, dict):
+        effective["bitbucket"] = {
+            "source": source_by_service.get("bitbucket", "local env"),
+            "config": {
+                "workspace": str(bitbucket_integration.get("workspace", "")).strip(),
+                "username": str(bitbucket_integration.get("username", "")).strip(),
+                "app_password": str(bitbucket_integration.get("app_password", "")).strip(),
+            },
+        }
+    else:
+        bitbucket_workspace = os.getenv("BITBUCKET_WORKSPACE", "").strip()
+        if bitbucket_workspace:
+            effective["bitbucket"] = {
+                "source": "local env",
+                "config": {
+                    "workspace": bitbucket_workspace,
+                    "username": os.getenv("BITBUCKET_USERNAME", "").strip(),
+                    "app_password": os.getenv("BITBUCKET_APP_PASSWORD", "").strip(),
                 },
             }
 
@@ -714,6 +737,19 @@ def _verify_clickhouse(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_bitbucket(source: str, config: dict[str, Any]) -> dict[str, str]:
+    from app.integrations.bitbucket import build_bitbucket_config, validate_bitbucket_config
+
+    bitbucket_config = build_bitbucket_config(config)
+    result = validate_bitbucket_config(bitbucket_config)
+    return _result(
+        "bitbucket",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -776,6 +812,8 @@ def verify_integrations(
             results.append(_verify_opsgenie(source, config))
         elif current_service == "clickhouse":
             results.append(_verify_clickhouse(source, config))
+        elif current_service == "bitbucket":
+            results.append(_verify_bitbucket(source, config))
 
     return results
 
