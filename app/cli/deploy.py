@@ -45,7 +45,7 @@ def run_deploy(
 
         _persist_langsmith_settings(
             api_key=resolved_api_key,
-            deployment_name=deployment_name,
+            deployment_name=resolved_deployment_name,
         )
 
         env = os.environ.copy()
