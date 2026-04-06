@@ -557,3 +557,65 @@ def test_post_gitlab_mr_note_returns_empty_dict_for_non_dict_response(
     result = post_gitlab_mr_note(config=_make_config(), project_id="proj", mr_iid="1", body="note")
 
     assert result == {}
+
+
+def test_post_gitlab_mr_note_returns_created_note_dict(monkeypatch: pytest.MonkeyPatch) -> None:
+    note = {"id": 42, "body": "RCA: deployment caused the spike", "author": {"username": "bot"}}
+    monkeypatch.setattr(
+        "app.integrations.gitlab.httpx.request",
+        lambda *a, **kw: _FakeResponse(note),
+    )
+
+    result = post_gitlab_mr_note(config=_make_config(), project_id="proj", mr_iid="5", body="RCA: deployment caused the spike")
+
+    assert result == note
+    assert result["id"] == 42
+
+
+def test_post_gitlab_mr_note_raises_on_403(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.integrations.gitlab.httpx.request",
+        lambda *a, **kw: _FakeResponse({}, status_code=403),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        post_gitlab_mr_note(config=_make_config(), project_id="proj", mr_iid="1", body="note")
+
+
+def test_post_gitlab_mr_note_raises_on_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.integrations.gitlab.httpx.request",
+        lambda *a, **kw: _FakeResponse({}, status_code=404),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        post_gitlab_mr_note(config=_make_config(), project_id="proj", mr_iid="999", body="note")
+
+
+def test_post_gitlab_mr_note_mr_iid_in_url_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+        captured["url"] = url
+        return _FakeResponse({"id": 1})
+
+    monkeypatch.setattr("app.integrations.gitlab.httpx.request", _fake_request)
+
+    post_gitlab_mr_note(config=_make_config(), project_id="proj", mr_iid="123", body="note")
+
+    assert "/merge_requests/123/notes" in captured["url"]
+
+
+def test_post_gitlab_mr_note_sends_multiline_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    multiline = "## Root Cause\n\nDeployment at 14:32 UTC introduced a memory leak.\n\n**Fix**: rollback to v1.2.3"
+
+    def _fake_request(method: str, url: str, **kw: Any) -> _FakeResponse:
+        captured["json"] = kw.get("json")
+        return _FakeResponse({"id": 1})
+
+    monkeypatch.setattr("app.integrations.gitlab.httpx.request", _fake_request)
+
+    post_gitlab_mr_note(config=_make_config(), project_id="proj", mr_iid="1", body=multiline)
+
+    assert captured["json"] == {"body": multiline}

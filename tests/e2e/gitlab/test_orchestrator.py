@@ -7,10 +7,11 @@ and the agent queries GitLab to correlate recent commits, MRs, and pipelines.
 
 Required env vars:
     GITLAB_ACCESS_TOKEN  - Personal access token with read_api + read_repository scope
-    GITLAB_PROJECT_ID    - Project path to use for investigation (e.g. "myorg/myrepo")
+    GITLAB_PROJECT_ID    - Project path (e.g. "myorg/myrepo")
 
 Optional env vars:
     GITLAB_BASE_URL      - GitLab instance URL (defaults to https://gitlab.com/api/v4)
+    GITLAB_MR_IID        - MR IID to post a note on (required only for test_gitlab_post_mr_note)
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from app.integrations.gitlab import (
     get_gitlab_commits,
     get_gitlab_mrs,
     get_gitlab_pipelines,
+    post_gitlab_mr_note,
     validate_gitlab_config,
 )
 
@@ -212,3 +214,55 @@ def test_gitlab_investigation_e2e():
         "Check that GITLAB_ACCESS_TOKEN has read_api scope, GITLAB_PROJECT_ID is valid, "
         "and an LLM key (ANTHROPIC_API_KEY or OPENAI_API_KEY) is set."
     )
+
+
+# ---------------------------------------------------------------------------
+# 6. Tool-level: post MR note
+# ---------------------------------------------------------------------------
+
+
+def test_gitlab_post_mr_note():
+    """Post a comment on a real MR and verify the note is created.
+
+    Reads project and MR context from the fixture annotations, the same way
+    the agent receives them from a real CI/CD alert.
+
+    Required env vars:
+        GITLAB_MR_IID  - IID (not global ID) of an open MR in the configured project
+    """
+    access_token, base_url, project_id = _require_env()
+
+    mr_iid = os.getenv("GITLAB_MR_IID", "").strip()
+    if not mr_iid:
+        pytest.skip("GITLAB_MR_IID env var not set")
+
+    # Load fixture and inject env values into annotations — same pattern as
+    # test_gitlab_investigation_e2e, mirroring how a real alert carries this context.
+    fixture_path = FIXTURES_DIR / "gitlab_high_error_rate_alert.json"
+    raw_alert = json.loads(fixture_path.read_text())
+    repo_url = _gitlab_project_url(base_url, project_id)
+    for alert in raw_alert.get("alerts", []):
+        alert.setdefault("annotations", {})["repo_url"] = repo_url
+        alert["annotations"]["mr_iid"] = mr_iid
+    raw_alert.setdefault("commonAnnotations", {})["repo_url"] = repo_url
+    raw_alert["commonAnnotations"]["mr_iid"] = mr_iid
+
+    # Read back from annotations — the same way the agent would in production.
+    annotations = raw_alert["alerts"][0]["annotations"]
+    project_id_from_annotation = project_id  # derived from repo_url by detect_sources
+    mr_iid_from_annotation = annotations["mr_iid"]
+
+    config = _gitlab_config(access_token, base_url)
+    body = "[opensre e2e test] Automated RCA comment — safe to ignore."
+    result = post_gitlab_mr_note(
+        config=config,
+        project_id=project_id_from_annotation,
+        mr_iid=mr_iid_from_annotation,
+        body=body,
+    )
+
+    assert isinstance(result, dict), f"Expected a dict response, got: {type(result)}"
+    assert "id" in result, f"Note response missing 'id': {result.keys()}"
+    assert result.get("body") == body, f"Posted body mismatch: {result.get('body')!r}"
+
+    print(f"\nPosted note id={result['id']} on MR !{mr_iid_from_annotation} in {project_id_from_annotation}")
