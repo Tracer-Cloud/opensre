@@ -1197,10 +1197,17 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         model = provider.default_model
         _step("API Key")
         try:
-            api_key = _prompt_value(
-                f"{provider.label} API key ({provider.api_key_env})",
-                secret=True,
-            )
+            if provider.value == "ollama":
+                api_key = _prompt_value(
+                    f"{provider.label} host ({provider.api_key_env})",
+                    default="http://localhost:11434",
+                    secret=False,
+                )
+    else:
+        api_key = _prompt_value(
+            f"{provider.label} API key ({provider.api_key_env})",
+            secret=True,
+        )
         except KeyboardInterrupt:
             _console.print("\n[yellow]Setup cancelled.[/]")
             return 1
@@ -1219,10 +1226,17 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         if not has_api_key:
             _step("API Key")
             try:
-                api_key = _prompt_value(
-                    f"{provider.label} API key ({provider.api_key_env})",
-                    secret=True,
-                )
+                if provider.value == "ollama":
+                    api_key = _prompt_value(
+                        f"{provider.label} host ({provider.api_key_env})",
+                        default="http://localhost:11434",
+                        secret=False,
+                    )
+        else:
+            api_key = _prompt_value(
+                f"{provider.label} API key ({provider.api_key_env})",
+                secret=True,
+            )
             except KeyboardInterrupt:
                 _console.print("\n[yellow]Setup cancelled.[/]")
                 return 1
