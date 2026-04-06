@@ -1,10 +1,12 @@
-"""Rich rendering helpers for the ``opensre health`` command."""
+"""Rendering helpers for the ``opensre health`` command."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
+import click
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
@@ -105,3 +107,28 @@ def render_health_report(
         )
     else:
         console.print("[bold green]All configured integrations look healthy.[/bold green]")
+
+
+def render_health_json(
+    *,
+    environment: str,
+    integration_store_path: str | Path,
+    results: list[dict[str, Any]],
+) -> None:
+    """Render the health report as machine-readable JSON."""
+    normalized = [
+        {
+            "service": str(item.get("service", "")),
+            "source": str(item.get("source", "")),
+            "status": str(item.get("status", "")),
+            "detail": str(item.get("detail", "")),
+        }
+        for item in results
+    ]
+    counts = _summary_counts(normalized)
+    click.echo(json.dumps({
+        "environment": environment,
+        "integration_store": str(integration_store_path),
+        "summary": counts,
+        "results": normalized,
+    }, indent=2))

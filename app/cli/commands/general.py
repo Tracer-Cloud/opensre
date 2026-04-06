@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import platform
+import time
 
 import click
 
@@ -13,6 +15,8 @@ from app.analytics.cli import (
     capture_investigation_started,
 )
 from app.cli.constants import ALERT_TEMPLATE_CHOICES
+from app.cli.context import is_json_output, is_yes
+from app.cli.exit_codes import ERROR, SUCCESS
 from app.version import get_version
 
 
@@ -45,44 +49,78 @@ def _build_investigate_argv(
     is_flag=True,
     help="Report whether an update is available without installing.",
 )
-@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
-def update_command(check_only: bool, yes: bool) -> None:
+@click.option("--yes", "-y", "local_yes", is_flag=True, help="Skip the confirmation prompt.")
+def update_command(check_only: bool, local_yes: bool) -> None:
     """Check for a newer version and update if one is available."""
     from app.cli.update import run_update
 
     capture_cli_invoked()
-    raise SystemExit(run_update(check_only=check_only, yes=yes))
+    raise SystemExit(run_update(check_only=check_only, yes=local_yes or is_yes()))
 
 
 @click.command(name="version")
 def version_command() -> None:
     """Print detailed version, Python and OS info."""
     capture_cli_invoked()
+    if is_json_output():
+        click.echo(json.dumps({
+            "opensre": get_version(),
+            "python": platform.python_version(),
+            "os": platform.system().lower(),
+            "arch": platform.machine(),
+        }))
+        return
     click.echo(f"opensre {get_version()}")
     click.echo(f"Python  {platform.python_version()}")
     click.echo(f"OS      {platform.system().lower()} ({platform.machine()})")
 
 
 @click.command(name="health")
-def health_command() -> None:
+@click.option("--watch", is_flag=True, help="Continuously refresh the health report.")
+@click.option("--rate", default=5, show_default=True, help="Refresh interval in seconds (with --watch).")
+def health_command(watch: bool, rate: int) -> None:
     """Show a quick health summary of the local agent setup."""
-    from rich.console import Console
-
-    from app.cli.health_view import render_health_report
+    from app.cli.health_view import render_health_json, render_health_report
     from app.config import get_environment
     from app.integrations.store import STORE_PATH
     from app.integrations.verify import verify_integrations
 
     capture_cli_invoked()
-    results = verify_integrations()
-    render_health_report(
-        console=Console(highlight=False),
-        environment=get_environment().value,
-        integration_store_path=STORE_PATH,
-        results=results,
-    )
-    if any(result.get("status") in {"missing", "failed"} for result in results):
-        raise SystemExit(1)
+
+    def _run_once() -> int:
+        results = verify_integrations()
+        environment = get_environment().value
+
+        if is_json_output():
+            render_health_json(
+                environment=environment,
+                integration_store_path=STORE_PATH,
+                results=results,
+            )
+        else:
+            from rich.console import Console
+
+            render_health_report(
+                console=Console(highlight=False),
+                environment=environment,
+                integration_store_path=STORE_PATH,
+                results=results,
+            )
+
+        if any(result.get("status") in {"missing", "failed"} for result in results):
+            return ERROR
+        return SUCCESS
+
+    if not watch:
+        raise SystemExit(_run_once())
+
+    try:
+        while True:
+            click.clear()
+            _run_once()
+            time.sleep(rate)
+    except KeyboardInterrupt:
+        raise SystemExit(SUCCESS) from None
 
 
 @click.command(name="investigate")
@@ -134,7 +172,7 @@ def investigate_command(
         capture_investigation_failed()
         raise
 
-    if exit_code == 0:
+    if exit_code == SUCCESS:
         capture_investigation_completed()
     else:
         capture_investigation_failed()

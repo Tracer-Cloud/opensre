@@ -130,6 +130,55 @@ def investigate(req: InvestigateRequest) -> InvestigateResponse:
     )
 
 
+@app.post("/investigate/stream")
+async def investigate_stream(req: InvestigateRequest) -> Response:
+    """Stream investigation events as SSE using ``astream_events``.
+
+    Returns ``text/event-stream`` with the same SSE format the LangGraph
+    API uses, so ``RemoteAgentClient`` / ``StreamRenderer`` can consume
+    this endpoint identically to a LangGraph deployment.
+    """
+    import json as _json
+    import logging
+
+    from starlette.responses import StreamingResponse
+
+    from app.cli.investigate import resolve_investigation_context
+    from app.config import LLMSettings
+    from app.pipeline.runners import astream_investigation
+
+    logger = logging.getLogger(__name__)
+
+    LLMSettings.from_env()
+    alert_name, pipeline_name, severity = resolve_investigation_context(
+        raw_alert=req.raw_alert,
+        alert_name=req.alert_name,
+        pipeline_name=req.pipeline_name,
+        severity=req.severity,
+    )
+
+    async def _event_generator() -> AsyncIterator[str]:
+        try:
+            async for event in astream_investigation(
+                alert_name,
+                pipeline_name,
+                severity,
+                raw_alert=req.raw_alert,
+            ):
+                payload = _json.dumps(event.data, default=str)
+                yield f"event: {event.event_type}\ndata: {payload}\n\n"
+            yield "event: end\ndata: {}\n\n"
+        except Exception:
+            logger.exception("Streaming investigation failed")
+            yield 'event: error\ndata: {"detail": "internal error"}\n\n'
+
+    return StreamingResponse(  # type: ignore[return-value]
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/investigations", response_model=list[InvestigationMeta])
 def list_investigations() -> list[InvestigationMeta]:
     """List all persisted investigation ``.md`` files."""

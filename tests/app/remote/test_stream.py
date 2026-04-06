@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
-from app.remote.stream import _build_event, _extract_node_name, parse_sse_stream
+from app.remote.stream import (
+    _build_event,
+    _extract_event_details,
+    _extract_node_name,
+    parse_sse_stream,
+)
 
 
 class TestBuildEvent:
@@ -28,6 +34,27 @@ class TestBuildEvent:
         event = _build_event("updates", '{"plan_actions": {}}')
         assert event.timestamp > 0
 
+    def test_events_mode_extracts_kind(self) -> None:
+        data = {
+            "event": "on_tool_start",
+            "name": "query_datadog_logs",
+            "run_id": "run-abc",
+            "tags": ["graph:step:3"],
+            "metadata": {"langgraph_node": "investigate"},
+        }
+        event = _build_event("events", json.dumps(data))
+        assert event.event_type == "events"
+        assert event.kind == "on_tool_start"
+        assert event.run_id == "run-abc"
+        assert event.tags == ["graph:step:3"]
+        assert event.node_name == "investigate"
+
+    def test_events_mode_no_kind_for_updates(self) -> None:
+        event = _build_event("updates", '{"extract_alert": {}}')
+        assert event.kind == ""
+        assert event.run_id == ""
+        assert event.tags == []
+
 
 class TestExtractNodeName:
     def test_single_top_level_key(self) -> None:
@@ -39,15 +66,40 @@ class TestExtractNodeName:
     def test_ignores_dunder_keys(self) -> None:
         assert _extract_node_name("updates", {"__metadata": {}, "diagnose": {}}) == "diagnose"
 
-    def test_name_field(self) -> None:
-        assert _extract_node_name("events", {"name": "plan_actions"}) == "plan_actions"
-
-    def test_metadata_langgraph_node(self) -> None:
-        data = {"metadata": {"langgraph_node": "publish"}, "other": "stuff"}
+    def test_metadata_langgraph_node_preferred(self) -> None:
+        data = {"metadata": {"langgraph_node": "publish"}, "name": "other_name"}
         assert _extract_node_name("events", data) == "publish"
+
+    def test_name_field_fallback(self) -> None:
+        assert _extract_node_name("events", {"name": "plan_actions"}) == "plan_actions"
 
     def test_non_dict_data(self) -> None:
         assert _extract_node_name("updates", "not a dict") == ""  # type: ignore[arg-type]
+
+
+class TestExtractEventDetails:
+    def test_events_mode_full_payload(self) -> None:
+        data = {
+            "event": "on_tool_start",
+            "run_id": "run-123",
+            "tags": ["graph:step:1", "seq:step:2"],
+        }
+        kind, run_id, tags = _extract_event_details("events", data)
+        assert kind == "on_tool_start"
+        assert run_id == "run-123"
+        assert tags == ["graph:step:1", "seq:step:2"]
+
+    def test_non_events_mode_returns_empty(self) -> None:
+        kind, run_id, tags = _extract_event_details("updates", {"x": 1})
+        assert kind == ""
+        assert run_id == ""
+        assert tags == []
+
+    def test_missing_optional_fields(self) -> None:
+        kind, run_id, tags = _extract_event_details("events", {"event": "on_chain_start"})
+        assert kind == "on_chain_start"
+        assert run_id == ""
+        assert tags == []
 
 
 class TestParseSSEStream:
@@ -119,3 +171,26 @@ class TestParseSSEStream:
         ])
         events = list(parse_sse_stream(resp))
         assert len(events) == 1
+
+    def test_events_mode_sse_frame(self) -> None:
+        payload = {
+            "event": "on_tool_start",
+            "name": "query_datadog_logs",
+            "run_id": "r-42",
+            "tags": ["graph:step:3"],
+            "metadata": {"langgraph_node": "investigate"},
+            "data": {"input": {"query": "error"}},
+        }
+        resp = self._make_response([
+            "event: events",
+            f"data: {json.dumps(payload)}",
+            "",
+        ])
+        events = list(parse_sse_stream(resp))
+        assert len(events) == 1
+        evt = events[0]
+        assert evt.event_type == "events"
+        assert evt.kind == "on_tool_start"
+        assert evt.node_name == "investigate"
+        assert evt.run_id == "r-42"
+        assert "graph:step:3" in evt.tags

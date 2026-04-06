@@ -111,14 +111,14 @@ class RemoteAgentClient:
     ) -> Iterator[StreamEvent]:
         """Start an investigation run and stream events via SSE.
 
-        Calls POST /threads/{thread_id}/runs/stream with stream_mode "updates".
-        Yields StreamEvent objects as they arrive.
+        Uses ``stream_mode: ["events"]`` to receive fine-grained events
+        (tool calls, LLM reasoning, node transitions) from the LangGraph API.
         """
         url = f"{self.base_url}/threads/{thread_id}/runs/stream"
         body: dict[str, Any] = {
             "input": alert_payload,
             "config": {"metadata": {}},
-            "stream_mode": ["updates"],
+            "stream_mode": ["events"],
         }
 
         with (
@@ -164,13 +164,17 @@ class RemoteAgentClient:
                 result.saw_end = True
             if event.node_name and event.node_name not in result.node_names_seen:
                 result.node_names_seen.append(event.node_name)
-            if event.event_type != "updates":
-                continue
-            if not event.node_name:
-                continue
-            update = event.data.get(event.node_name, event.data)
-            if isinstance(update, dict):
-                result.final_state.update(update)
+
+            if event.event_type == "updates":
+                if not event.node_name:
+                    continue
+                update = event.data.get(event.node_name, event.data)
+                if isinstance(update, dict):
+                    result.final_state.update(update)
+            elif event.event_type == "events" and event.kind == "on_chain_end":
+                output = event.data.get("data", {}).get("output", {})
+                if isinstance(output, dict):
+                    result.final_state.update(output)
 
         return result
 
@@ -206,6 +210,37 @@ class RemoteAgentClient:
             resp.raise_for_status()
             result: dict[str, Any] = resp.json()
             return result
+
+    def stream_investigate(
+        self,
+        raw_alert: dict[str, Any],
+        *,
+        alert_name: str | None = None,
+        pipeline_name: str | None = None,
+        severity: str | None = None,
+        timeout: float = STREAM_TIMEOUT,
+    ) -> Iterator[StreamEvent]:
+        """Stream an investigation from the lightweight server's SSE endpoint.
+
+        Uses ``POST /investigate/stream`` which returns the same SSE
+        format as the LangGraph API, so the ``StreamRenderer`` can
+        consume either server type identically.
+        """
+        url = f"{self.base_url}/investigate/stream"
+        body: dict[str, Any] = {"raw_alert": raw_alert}
+        if alert_name:
+            body["alert_name"] = alert_name
+        if pipeline_name:
+            body["pipeline_name"] = pipeline_name
+        if severity:
+            body["severity"] = severity
+
+        with (
+            httpx.Client(timeout=httpx.Timeout(timeout, connect=REQUEST_TIMEOUT)) as client,
+            client.stream("POST", url, json=body, headers=self._headers) as resp,
+        ):
+            resp.raise_for_status()
+            yield from parse_sse_stream(resp)
 
     def list_investigations(self, *, timeout: float = REQUEST_TIMEOUT) -> list[dict[str, Any]]:
         """GET the list of persisted investigation ``.md`` files."""
