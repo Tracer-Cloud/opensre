@@ -1134,7 +1134,6 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         if saved_provider_value in PROVIDER_BY_VALUE
         else default_local_provider
     )
-    
     _step("Setup Mode")
     wizard_mode = _choose(
         "How do you want to get started?",
