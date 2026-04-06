@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any
 
 import httpx
@@ -144,7 +144,7 @@ def validate_posthog_config(config: PostHogConfig) -> PostHogValidationResult:
         return PostHogValidationResult(ok=False, detail="PostHog API key is required.")
 
     try:
-        payload = _request_json(
+        _request_json(
             config,
             "GET",
             f"/api/projects/{config.project_id}/",
@@ -201,7 +201,7 @@ def query_bounce_rate(
         bounced_sessions=bounced_sessions,
         period=period,
         # ✅ mypy + ruff compatible
-        queried_at=datetime.now(timezone.utc),
+        queried_at=datetime.now(UTC),
     )
 
 
