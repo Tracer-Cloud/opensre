@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from app.cli.local_llm.hardware import HardwareProfile, recommend_model
-from app.cli.local_llm.ollama import _normalize_model_tag, is_model_present, pull_model
+from app.cli.local_llm.ollama import is_model_present, normalize_model_tag, pull_model
 from app.cli.wizard.config import PROVIDER_BY_VALUE
 from app.cli.wizard.validation import validate_provider_credentials
 
@@ -96,15 +96,15 @@ def test_recommend_model_apple_silicon_16gb_low_free_ram_returns_3b() -> None:
 
 def test_normalize_model_tag_adds_latest_to_untagged() -> None:
     """Test that models without tags get :latest appended"""
-    assert _normalize_model_tag("llama3.2") == "llama3.2:latest"
-    assert _normalize_model_tag("mistral") == "mistral:latest"
+    assert normalize_model_tag("llama3.2") == "llama3.2:latest"
+    assert normalize_model_tag("mistral") == "mistral:latest"
 
 
 def test_normalize_model_tag_preserves_explicit_tags() -> None:
     """Test that models with explicit tags are unchanged"""
-    assert _normalize_model_tag("llama3.1:8b") == "llama3.1:8b"
-    assert _normalize_model_tag("llama3.2:7b") == "llama3.2:7b"
-    assert _normalize_model_tag("qwen2.5:14b") == "qwen2.5:14b"
+    assert normalize_model_tag("llama3.1:8b") == "llama3.1:8b"
+    assert normalize_model_tag("llama3.2:7b") == "llama3.2:7b"
+    assert normalize_model_tag("qwen2.5:14b") == "qwen2.5:14b"
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +245,7 @@ def test_validate_ollama_returns_success_on_valid_inference(monkeypatch) -> None
         ("llama3.1:8b", ["llama3.1:8b"], True),  # exact match
         ("llama3.1:8b", ["llama3.1:latest"], False),  # different tag — must fail
         ("llama3.2", ["llama3.2:latest"], True),  # no tag — normalizes to :latest
+        ("llama3.2", ["llama3.2:8b"], True),  # fallback fuzzy matching — user has different variant
     ],
 )
 def test_validate_ollama_exact_tag_matching(monkeypatch, model, available, should_pass) -> None:

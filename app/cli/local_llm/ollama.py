@@ -71,7 +71,7 @@ def wait_for_server(host: str, timeout_s: int = 30) -> bool:
     return False
 
 
-def _normalize_model_tag(model: str) -> str:
+def normalize_model_tag(model: str) -> str:
     """Ensure model has explicit tag. If no tag specified, append :latest to match Ollama behavior."""
     return model if ":" in model else f"{model}:latest"
 
@@ -82,7 +82,7 @@ def is_model_present(model: str, host: str = DEFAULT_OLLAMA_HOST) -> bool:
         r = httpx.get(f"{host.rstrip('/')}/api/tags", timeout=5.0)
         r.raise_for_status()
         available = [m["name"] for m in r.json().get("models", [])]
-        normalized_model = _normalize_model_tag(model)
+        normalized_model = normalize_model_tag(model)
         return normalized_model in available
     except Exception:
         return False

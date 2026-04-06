@@ -79,9 +79,11 @@ def _check_ollama(host: str, model: str) -> ValidationResult:
             detail=f"Cannot reach Ollama at {host}. Is it running? Try: ollama serve\n({err})",
         )
     available = [m["name"] for m in r.json().get("models", [])]
-    from app.cli.local_llm.ollama import _normalize_model_tag
-    normalized_model = _normalize_model_tag(model)
-    if normalized_model not in available:
+    from app.cli.local_llm.ollama import normalize_model_tag
+    normalized_model = normalize_model_tag(model)
+    base_name = model.split(":")[0]
+    matched = normalized_model in available or any(m.split(":")[0] == base_name for m in available)
+    if not matched:
         listed = ", ".join(available) or "none pulled yet"
         return ValidationResult(
             ok=False,
