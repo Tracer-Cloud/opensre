@@ -538,11 +538,43 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _docs_json_path() -> Path:
+    return _repo_root() / "docs" / "docs.json"
+
+
 def _output_dir() -> Path:
     configured = Path(_string(os.getenv("DAILY_UPDATE_OUTPUT_DIR")) or DEFAULT_OUTPUT_DIR)
     if configured.is_absolute():
         return configured
     return _repo_root() / configured
+
+
+def update_docs_navigation(output_dir: Path) -> Path:
+    """Add all daily-update pages to the Mintlify docs.json navigation."""
+    docs_json = _docs_json_path()
+    if not docs_json.exists():
+        return docs_json
+
+    config = json.loads(docs_json.read_text(encoding="utf-8"))
+
+    archive_slugs = sorted(
+        (
+            f"daily-updates/{p.stem}"
+            for p in output_dir.glob("*.mdx")
+            if p.name != "overview.mdx"
+        ),
+        reverse=True,
+    )
+
+    pages: list[str] = ["daily-updates/overview", *archive_slugs]
+
+    for group in config.get("navigation", {}).get("groups", []):
+        if group.get("group") == "Daily Updates":
+            group["pages"] = pages
+            break
+
+    docs_json.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    return docs_json
 
 
 def regenerate_overview(output_dir: Path) -> Path:
@@ -584,6 +616,7 @@ def write_daily_archive(update: DailyUpdate, *, output_dir: Path | None = None) 
     archive_path = target_dir / f"{update.window.london_date.isoformat()}.mdx"
     archive_path.write_text(render_markdown(update), encoding="utf-8")
     regenerate_overview(target_dir)
+    update_docs_navigation(target_dir)
     return archive_path
 
 
@@ -614,13 +647,17 @@ def main() -> int:
     relative_archive_path = archive_path.relative_to(_repo_root()).as_posix()
     overview_path = archive_path.parent / "overview.mdx"
     relative_overview_path = overview_path.relative_to(_repo_root()).as_posix()
+    docs_json = _docs_json_path()
+    relative_docs_json = docs_json.relative_to(_repo_root()).as_posix()
     _append_github_output("archive_path", relative_archive_path)
     _append_github_output("overview_path", relative_overview_path)
+    _append_github_output("docs_json_path", relative_docs_json)
     _append_github_output("used_fallback", "true" if update.fallback_used else "false")
     _append_github_output("london_date", update.window.london_date.isoformat())
 
     print(f"Wrote daily update archive to {relative_archive_path}")
     print(f"Regenerated overview at {relative_overview_path}")
+    print(f"Updated docs navigation at {relative_docs_json}")
     return 0
 
 
