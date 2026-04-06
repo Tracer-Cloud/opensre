@@ -931,6 +931,53 @@ def _configure_opsgenie() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_langsmith() -> tuple[str, str]:
+    _, credentials = _integration_defaults("langsmith")
+    while True:
+        api_key = _prompt_value(
+            "LangSmith API key",
+            default=_string_value(credentials.get("api_key")),
+            secret=True,
+        )
+        deployment_name = _prompt_value(
+            "LangSmith deployment name",
+            default=_string_value(credentials.get("deployment_name"), "open-sre-agent"),
+        )
+
+        with _console.status("Checking LangSmith API key...", spinner="dots"):
+            if api_key.strip():
+                ok = True
+                detail = "LangSmith API key is set."
+            else:
+                ok = False
+                detail = "LangSmith API key is required."
+
+        _render_integration_result(
+            "LangSmith",
+            IntegrationHealthResult(ok=ok, detail=detail),
+        )
+
+        if ok:
+            upsert_integration(
+                "langsmith",
+                {
+                    "credentials": {
+                        "api_key": api_key,
+                        "deployment_name": deployment_name,
+                    }
+                },
+            )
+            env_path = sync_env_values(
+                {
+                    "LANGSMITH_API_KEY": api_key,
+                    "LANGSMITH_DEPLOYMENT_NAME": deployment_name,
+                }
+            )
+            return "LangSmith", str(env_path)
+
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_selected_integrations() -> tuple[list[str], str | None]:
     configured: list[str] = []
     last_env_path: str | None = None
@@ -956,6 +1003,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         Choice(value="aws", label="AWS", hint="Inspect CloudWatch, EKS, and account resources"),
         Choice(
             value="github", label="GitHub MCP", hint="Let the agent inspect repos, PRs, and issues"
+        ),
+        Choice(
+            value="langsmith",
+            label="LangSmith",
+            hint="Configure LangSmith credentials for deploy and hosted runs",
         ),
         Choice(
             value="sentry", label="Sentry", hint="Investigate errors, events, and issue history"
@@ -1003,6 +1055,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "slack": _configure_slack,
         "aws": _configure_aws,
         "github": _configure_github_mcp,
+        "langsmith": _configure_langsmith,
         "sentry": _configure_sentry,
         "google_docs": _configure_google_docs,
         "vercel": _configure_vercel,
@@ -1018,6 +1071,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "slack": "slack",
         "aws": "aws",
         "github": "github mcp",
+        "langsmith": "langsmith",
         "sentry": "sentry",
         "google_docs": "google docs",
         "vercel": "vercel",

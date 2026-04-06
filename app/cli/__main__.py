@@ -75,6 +75,7 @@ def _render_help() -> None:
         ("tests",         "Browse and run inventoried tests from the terminal."),
         ("integrations",  "Manage local integration credentials."),
         ("update",        "Check for a newer version and update if one is available."),
+        ("deploy",        "Build and deploy the agent to LangSmith."),
     ]:
         console.print(Text.assemble(("    ", ""), (f"{name:<16}", "bold cyan"), desc))
     console.print()
@@ -107,6 +108,7 @@ def _render_landing() -> None:
         ("opensre tests",                     "Browse and run inventoried tests"),
         ("opensre integrations list",         "Show configured integrations"),
         ("opensre update",                    "Update to the latest version"),
+        ("opensre deploy",                    "Build and deploy the agent to LangSmith"),
     ]:
         console.print(Text.assemble(("    ", ""), (f"{cmd:<42}", "bold cyan"), desc))
     console.print()
@@ -138,7 +140,8 @@ def cli(ctx: click.Context) -> None:
       opensre tests                          Browse and run inventoried tests
       opensre integrations list              Show configured integrations
       opensre health                         Check integration and agent setup status
-
+      opensre deploy                         Build and deploy the agent to LangSmith
+    
     \b
     Enable tab-completion (add to your shell profile):
       eval "$(_OPENSRE_COMPLETE=zsh_source opensre)"
@@ -158,6 +161,23 @@ def update(check_only: bool, yes: bool) -> None:
 
     capture_cli_invoked()
     rc = run_update(check_only=check_only, yes=yes)
+    raise SystemExit(rc)
+
+
+@cli.command()
+@click.option("--api-key", default=None, help="Pass the LangSmith API key non-interactively.")
+@click.option("--build-only", is_flag=True, help="Build the image without deploying.")
+@click.option("--deployment-name", default=None, help="Override the LangSmith deployment name.")
+def deploy(api_key: str | None, build_only: bool, deployment_name: str | None) -> None:
+    """Build and deploy the agent to LangSmith."""
+    from app.cli.deploy import run_deploy
+
+    capture_cli_invoked()
+    rc = run_deploy(
+        api_key=api_key,
+        build_only=build_only,
+        deployment_name=deployment_name,
+    )
     raise SystemExit(rc)
 
 
