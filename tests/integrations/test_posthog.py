@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import httpx
 import pytest
@@ -115,7 +115,7 @@ def test_query_bounce_rate_parses_response(monkeypatch: pytest.MonkeyPatch) -> N
     assert result.bounce_rate == 0.75
     assert result.period == "24h"
     assert isinstance(result.queried_at, datetime)
-    assert result.queried_at.tzinfo == timezone.utc
+    assert result.queried_at.tzinfo == UTC
 
 
 def test_check_bounce_rate_alert_returns_none_below_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -129,12 +129,12 @@ def test_check_bounce_rate_alert_returns_none_below_threshold(monkeypatch: pytes
 
     monkeypatch.setattr(
         "app.integrations.posthog.query_bounce_rate",
-        lambda config, period: BounceRateResult(
+        lambda _config, period: BounceRateResult(
             bounce_rate=0.3,
             total_sessions=600,
             bounced_sessions=180,
             period=period,
-            queried_at=datetime.now(timezone.utc),
+            queried_at=datetime.now(UTC),
         ),
     )
 
@@ -154,12 +154,12 @@ def test_check_bounce_rate_alert_returns_warning(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(
         "app.integrations.posthog.query_bounce_rate",
-        lambda config, period: BounceRateResult(
+        lambda _config, period: BounceRateResult(
             bounce_rate=0.75,
             total_sessions=1000,
             bounced_sessions=750,
             period=period,
-            queried_at=datetime.now(timezone.utc),
+            queried_at=datetime.now(UTC),
         ),
     )
 
@@ -182,12 +182,12 @@ def test_check_bounce_rate_alert_returns_critical(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(
         "app.integrations.posthog.query_bounce_rate",
-        lambda config, period: BounceRateResult(
+        lambda _config, period: BounceRateResult(
             bounce_rate=0.95,
             total_sessions=1000,
             bounced_sessions=950,
             period=period,
-            queried_at=datetime.now(timezone.utc),
+            queried_at=datetime.now(UTC),
         ),
     )
 
