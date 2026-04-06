@@ -81,6 +81,9 @@ dev = [
     "types-PyYAML",
     "boto3-stubs[essential]",
 ]
+clickhouse = [
+    "clickhouse-connect>=0.8.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*", "tests*"]

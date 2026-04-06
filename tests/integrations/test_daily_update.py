@@ -80,8 +80,8 @@ def test_build_fallback_highlights_uses_titles() -> None:
     ))
 
     assert highlights == (
-        "Flatten app package.",
-        "Add more synthetic tests.",
+        "Flatten app package (#1) \u2014 Alice",
+        "Add more synthetic tests (#2) \u2014 Alice",
     )
 
 
@@ -100,7 +100,7 @@ def test_summarize_highlights_falls_back_when_llm_fails(monkeypatch) -> None:
     )
 
     assert fallback_used is True
-    assert highlights == ("Add more synthetic tests.",)
+    assert highlights == ("Add more synthetic tests (#101) \u2014 Alice",)
 
 
 def test_render_outputs_include_expected_sections() -> None:
@@ -120,8 +120,9 @@ def test_render_outputs_include_expected_sections() -> None:
     markdown = render_markdown(update)
 
     assert 'title: "Daily Update' in markdown
-    assert "Thanks to everyone who contributed today: Alice and Bob \U0001f64f\U0001f680" in markdown
-    assert "## Main updates shipped" in markdown
+    assert "Thanks to everyone who contributed yesterday:" in markdown
+    assert "Alice and Bob \U0001f64f\U0001f680" in markdown
+    assert "## Main updates shipped (April 2, 2026)" in markdown
     assert "## Source pull requests" in markdown
     assert "[#101](https://github.com/Tracer-Cloud/opensre/pull/101)" in markdown
 

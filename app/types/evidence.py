@@ -19,10 +19,12 @@ EvidenceSource = Literal[
     "github",
     "sentry",
     "mongodb",
+    "clickhouse",
     "google_docs",
     "vercel",
     "opsgenie",
     "elasticsearch",
     "prefect",
     "gitlab",
+    "bitbucket",
 ]
