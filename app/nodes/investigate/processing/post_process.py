@@ -244,6 +244,21 @@ def _map_coralogix_logs(data: dict) -> dict:
     }
 
 
+def _map_diagnostic_code_result(data: dict) -> dict:
+    executions = data.get("_diagnostic_executions", [])
+    executions = list(executions)
+    executions.append({
+        "code": data.get("code", ""),
+        "inputs": data.get("inputs", {}),
+        "stdout": data.get("stdout", ""),
+        "stderr": data.get("stderr", ""),
+        "exit_code": data.get("exit_code"),
+        "timed_out": data.get("timed_out", False),
+        "success": data.get("success", False),
+    })
+    return {"diagnostic_executions": executions}
+
+
 EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "get_failed_jobs": _map_failed_jobs,
     "get_failed_tools": _map_failed_tools,
@@ -269,6 +284,7 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "query_datadog_all": _map_datadog_investigate,
     "query_honeycomb_traces": _map_honeycomb_traces,
     "query_coralogix_logs": _map_coralogix_logs,
+    "run_diagnostic_code": _map_diagnostic_code_result,
 }
 
 
@@ -395,6 +411,14 @@ def build_evidence_summary(execution_results: dict) -> str:
             elif action_name == "query_coralogix_logs" and data.get("logs"):
                 error_count = len(data.get("error_logs", []))
                 summary_parts.append(f"coralogix:{len(data['logs'])} logs ({error_count} errors)")
+            elif action_name == "run_diagnostic_code":
+                if data.get("success"):
+                    stdout_lines = len(data.get("stdout", "").splitlines())
+                    summary_parts.append(f"diagnostic:executed ({stdout_lines} output lines)")
+                elif data.get("timed_out"):
+                    summary_parts.append("diagnostic:timed out")
+                else:
+                    summary_parts.append("diagnostic:failed")
         else:
             # Log action failures for debugging
             error_msg = f"{action_name}:FAILED({result.error[:50] if result.error else 'unknown'})"
