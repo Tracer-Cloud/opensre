@@ -168,11 +168,13 @@ class TestChatNodeGuardrails:
             _FakeMessage("hello"),
             _FakeMessage("key is AKIAIOSFODNN7EXAMPLE"),
         ]
-        _apply_guardrails_to_messages(msgs)
+        result = _apply_guardrails_to_messages(msgs)
 
-        assert msgs[0].content == "hello"
-        assert "AKIA" not in str(msgs[1].content)
-        assert "[REDACTED:aws_key]" in str(msgs[1].content)
+        assert result[0].content == "hello"
+        assert "AKIA" not in str(result[1].content)
+        assert "[REDACTED:aws_key]" in str(result[1].content)
+        # Original should be untouched
+        assert msgs[1].content == "key is AKIAIOSFODNN7EXAMPLE"
 
     def test_blocks_on_chat_content(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -216,5 +218,5 @@ class TestChatNodeGuardrails:
         from app.nodes.chat import _apply_guardrails_to_messages
 
         msgs: list[Any] = [_FakeMessage("AKIAIOSFODNN7EXAMPLE")]
-        _apply_guardrails_to_messages(msgs)
-        assert msgs[0].content == "AKIAIOSFODNN7EXAMPLE"
+        result = _apply_guardrails_to_messages(msgs)
+        assert result[0].content == "AKIAIOSFODNN7EXAMPLE"

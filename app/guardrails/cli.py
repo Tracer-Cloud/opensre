@@ -92,7 +92,14 @@ def cmd_test(text: str) -> None:
     if result.blocked:
         click.echo(f"\n  BLOCKED by: {', '.join(result.blocking_rules)}")
     else:
-        redacted = engine.apply(text)
+        redact_matches = sorted(
+            (m for m in result.matches if m.action.value == "redact"),
+            key=lambda m: m.start,
+            reverse=True,
+        )
+        redacted = text
+        for match in redact_matches:
+            redacted = redacted[:match.start] + f"[REDACTED:{match.rule_name}]" + redacted[match.end:]
         click.echo(f"\n  Redacted output: {redacted}")
 
 

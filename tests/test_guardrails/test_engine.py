@@ -117,7 +117,7 @@ class TestApply:
 
     def test_raises_on_block(self) -> None:
         engine = GuardrailEngine([_rule(action="block", keywords=["forbidden"])])
-        with pytest.raises(GuardrailBlockedError, match="forbidden"):
+        with pytest.raises(GuardrailBlockedError, match="test"):
             engine.apply("this is forbidden")
 
     def test_audit_action_passes_through(self) -> None:

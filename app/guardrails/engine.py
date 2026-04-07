@@ -39,11 +39,10 @@ class ScanResult:
 class GuardrailBlockedError(Exception):
     """Raised when text matches a blocking guardrail rule."""
 
-    def __init__(self, rule_names: tuple[str, ...], text_preview: str) -> None:
+    def __init__(self, rule_names: tuple[str, ...]) -> None:
         self.rule_names = rule_names
-        preview = text_preview[:80] + "..." if len(text_preview) > 80 else text_preview
         super().__init__(
-            f"Guardrail blocked by rules: {', '.join(rule_names)}. Preview: {preview}"
+            f"Guardrail blocked by rules: {', '.join(rule_names)}."
         )
 
 
@@ -123,17 +122,21 @@ class GuardrailEngine:
                 )
 
         if result.blocked:
-            raise GuardrailBlockedError(result.blocking_rules, text)
+            raise GuardrailBlockedError(result.blocking_rules)
 
         redact_matches = sorted(
             [m for m in result.matches if m.action == GuardrailAction.REDACT],
             key=lambda m: m.start,
             reverse=True,
         )
+        seen_end = len(text)
         redacted = text
         for match in redact_matches:
+            if match.end > seen_end:
+                continue
             replacement = self._get_replacement(match.rule_name)
             redacted = redacted[:match.start] + replacement + redacted[match.end:]
+            seen_end = match.start
 
         return redacted
 
