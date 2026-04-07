@@ -15,6 +15,14 @@ from app.analytics.cli import (
 )
 from app.cli.context import is_json_output, is_yes
 from app.cli.errors import OpenSREError
+from app.cli.langsmith_deploy import (
+    is_docker_running,
+    is_langgraph_cli_installed,
+    resolve_deployment_name,
+    resolve_langsmith_api_key,
+    run_langsmith_deploy,
+    validate_langsmith_api_key,
+)
 from app.deployment.ec2_config import load_remote_outputs
 
 
@@ -278,3 +286,46 @@ def deploy_railway(
     else:
         capture_deploy_failed(target="railway", dry_run=dry_run)
     raise SystemExit(rc)
+
+
+@deploy.command(name="langsmith")
+@click.option("--api-key", default=None, help="LangSmith API key")
+@click.option("--build-only", is_flag=True, help="Only build, do not deploy")
+@click.option("--deployment-name", default=None, help="Deployment name")
+def deploy_langsmith(api_key: str | None, build_only: bool, deployment_name: str | None) -> None:
+    """Deploy OpenSRE to LangSmith."""
+
+    # 1. Docker check
+    ok, msg = is_docker_running()
+    if not ok:
+        raise click.ClickException(msg)
+
+    # 2. langgraph check
+    ok, msg = is_langgraph_cli_installed()
+    if not ok:
+        raise click.ClickException(msg)
+
+    # 3. resolve key
+    key = resolve_langsmith_api_key(api_key)
+    if not key:
+        raise click.ClickException("LangSmith API key not found")
+
+    # 4. validate
+    valid, detail = validate_langsmith_api_key(key)
+    if not valid:
+        raise click.ClickException(detail)
+
+    # 5. resolve name
+    name = resolve_deployment_name(deployment_name)
+
+    # 6. run deploy
+    rc, output = run_langsmith_deploy(
+        api_key=key,
+        deployment_name=name,
+        build_only=build_only,
+    )
+
+    click.echo(output)
+
+    if rc != 0:
+        raise SystemExit(1)
