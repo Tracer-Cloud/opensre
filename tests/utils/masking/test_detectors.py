@@ -116,6 +116,25 @@ class TestFindIdentifiers:
         assert len(results) == 1
         assert results[0].value == "abc123"
 
+    def test_overlapping_same_start_prefers_longer_match(self) -> None:
+        """Test overlap handling keeps longer match when start positions are equal."""
+        import re
+
+        text = "eks-prod-cluster.us-east-1.example.com"
+        cluster_pattern = re.compile(r"\b(?:cluster|eks)[-_][a-zA-Z0-9-_]+\b", re.IGNORECASE)
+        hostname_pattern = re.compile(
+            r"\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+"
+            r"[a-zA-Z](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\b"
+        )
+
+        results = find_identifiers(
+            text, hostname_pattern, None, cluster_pattern, None, None, None, None
+        )
+
+        assert len(results) == 1
+        assert results[0].identifier_type == IdentifierType.HOSTNAME
+        assert results[0].value == text
+
     def test_multiple_same_type(self) -> None:
         """Test finding multiple identifiers of the same type."""
         import re

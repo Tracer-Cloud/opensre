@@ -6,6 +6,7 @@ before sending to external LLM models, and to unmask responses.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -103,6 +104,7 @@ class MaskingContext:
 
 # Global context for convenience (per-investigation contexts are preferred)
 _global_context: MaskingContext | None = None
+_global_context_lock = threading.Lock()
 
 
 def get_global_context() -> MaskingContext:
@@ -113,7 +115,9 @@ def get_global_context() -> MaskingContext:
     """
     global _global_context
     if _global_context is None:
-        _global_context = MaskingContext.create()
+        with _global_context_lock:
+            if _global_context is None:
+                _global_context = MaskingContext.create()
     return _global_context
 
 

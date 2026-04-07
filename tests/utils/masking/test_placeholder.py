@@ -140,8 +140,7 @@ class TestPlaceholderMap:
         masked_text = "<HOSTNAME_0> and <HOSTNAME_1>"
         unmasked = pmap.unmask_text(masked_text)
 
-        assert "example.com" in unmasked
-        assert "sub.example.com" in unmasked
+        assert unmasked == "example.com and sub.example.com"
 
     def test_clear(self) -> None:
         """Test clearing the placeholder map."""

@@ -376,8 +376,10 @@ class TestRoundTrip:
         # Unmask the response
         unmasked_response = unmask_dict(llm_response, ctx)
 
-        assert "cluster-prod-01" in unmasked_response["analysis"]
-        assert "api.example.com" in unmasked_response["recommendation"]
+        assert unmasked_response["analysis"] == (
+            "The error in cluster-prod-01 indicates connectivity issues"
+        )
+        assert unmasked_response["recommendation"] == "Check network path to api.example.com"
         assert "<CLUSTER_0>" not in unmasked_response["analysis"]
         assert "<HOSTNAME_0>" not in unmasked_response["recommendation"]
 
