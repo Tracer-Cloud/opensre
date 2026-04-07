@@ -78,12 +78,13 @@ def mongodb_atlas_config_from_env() -> MongoDBAtlasConfig | None:
     """Load a MongoDB Atlas config from env vars."""
     public_key = os.getenv("MONGODB_ATLAS_PUBLIC_KEY", "").strip()
     private_key = os.getenv("MONGODB_ATLAS_PRIVATE_KEY", "").strip()
-    if not public_key or not private_key:
+    project_id = os.getenv("MONGODB_ATLAS_PROJECT_ID", "").strip()
+    if not public_key or not private_key or not project_id:
         return None
     return build_mongodb_atlas_config({
         "api_public_key": public_key,
         "api_private_key": private_key,
-        "project_id": os.getenv("MONGODB_ATLAS_PROJECT_ID", "").strip(),
+        "project_id": project_id,
         "base_url": os.getenv("MONGODB_ATLAS_BASE_URL", DEFAULT_ATLAS_BASE_URL).strip(),
     })
 
