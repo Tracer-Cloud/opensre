@@ -410,11 +410,9 @@ def _build_summary_prompt(repository: str, window: DailyWindow, pull_requests: t
         "",
         "Rules:",
         "- Select the top 20 most impactful merged pull requests from the list below.",
-        "- Prioritize contributor diversity: include at least one PR per unique contributor"
-        " before adding a second from the same contributor.",
+        "- Prioritize contributor diversity: include at least one PR per unique contributor before adding a second from the same contributor.",
         "- Format each highlight as a single line: <PR title> (#<number>) \u2014 <author>",
-        "- If the PR title already contains (#<number>), do NOT add it again;"
-        " just append \u2014 <author>.",
+        "- If the PR title already contains (#<number>), do NOT add it again; just append \u2014 <author>.",
         "- Keep the original PR title as-is. Do not rewrite, editorialize, or group titles.",
         "- Use the author display name (not login) when available.",
         "- Exclude bot-authored PRs (dependabot, github-actions, contrib-readme-action).",

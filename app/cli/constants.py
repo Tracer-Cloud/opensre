@@ -43,3 +43,7 @@ VERIFY_SERVICES: tuple[str, ...] = (
     "tracer",
     "vercel",
 )
+
+MANAGED_INTEGRATION_SERVICES: tuple[str, ...] = tuple(
+    sorted(set(SETUP_SERVICES) | set(VERIFY_SERVICES))
+)

@@ -11,7 +11,7 @@ from app.analytics.cli import (
     capture_integration_verified,
     capture_integrations_listed,
 )
-from app.cli.constants import SETUP_SERVICES, VERIFY_SERVICES
+from app.cli.constants import MANAGED_INTEGRATION_SERVICES, SETUP_SERVICES, VERIFY_SERVICES
 
 
 @click.group(name="integrations")
@@ -41,7 +41,7 @@ def list_integrations() -> None:
 
 
 @integrations.command(name="show")
-@click.argument("service", type=click.Choice(SETUP_SERVICES))
+@click.argument("service", type=click.Choice(MANAGED_INTEGRATION_SERVICES))
 def show_integration(service: str) -> None:
     """Show details for a configured integration."""
     from app.integrations.cli import cmd_show
@@ -50,7 +50,7 @@ def show_integration(service: str) -> None:
 
 
 @integrations.command(name="remove")
-@click.argument("service", type=click.Choice(SETUP_SERVICES))
+@click.argument("service", type=click.Choice(MANAGED_INTEGRATION_SERVICES))
 def remove_integration(service: str) -> None:
     """Remove a configured integration."""
     from app.integrations.cli import cmd_remove

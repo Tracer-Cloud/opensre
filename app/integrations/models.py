@@ -289,5 +289,6 @@ class EffectiveIntegrations(StrictConfigModel):
     jira: EffectiveIntegrationEntry | None = None
     opsgenie: EffectiveIntegrationEntry | None = None
     prefect: EffectiveIntegrationEntry | None = None
+    kafka: EffectiveIntegrationEntry | None = None
     clickhouse: EffectiveIntegrationEntry | None = None
     bitbucket: EffectiveIntegrationEntry | None = None

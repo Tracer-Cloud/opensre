@@ -3,7 +3,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.cli.investigate import resolve_investigation_context, run_investigation_cli
+from app.cli.investigate import (
+    resolve_investigation_context,
+    run_investigation_cli,
+    stream_investigation_cli,
+)
+from app.remote.stream import StreamEvent
 
 
 def test_resolve_investigation_context_prefers_cli_overrides() -> None:
@@ -63,6 +68,7 @@ def test_run_investigation_cli_shapes_agent_state(monkeypatch) -> None:
         "report": "report body",
         "problem_md": "# problem",
         "root_cause": "bad deploy",
+        "is_noise": False,
     }
 
 
@@ -76,3 +82,24 @@ def test_run_investigation_cli_fails_fast_for_invalid_llm_config(monkeypatch) ->
 
     with pytest.raises(ValidationError, match="OPENAI_API_KEY"):
         run_investigation_cli(raw_alert={"alert_name": "PayloadAlert"})
+
+
+def test_stream_investigation_cli_raises_queued_exception_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_astream_investigation(*args: object, **kwargs: object):
+        yield StreamEvent("metadata", data={"run_id": "run-123"})
+        raise RuntimeError("stream failed")
+
+    monkeypatch.setattr("app.cli.investigate.LLMSettings.from_env", object)
+    monkeypatch.setattr(
+        "app.pipeline.runners.astream_investigation",
+        fake_astream_investigation,
+    )
+
+    events = stream_investigation_cli(raw_alert={"alert_name": "PayloadAlert"})
+
+    first = next(events)
+    assert first.event_type == "metadata"
+    with pytest.raises(RuntimeError, match="stream failed"):
+        next(events)

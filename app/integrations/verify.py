@@ -52,6 +52,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "google_docs",
     "vercel",
     "opsgenie",
+    "kafka",
     "clickhouse",
     "bitbucket",
 )
@@ -263,6 +264,34 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 "region": str(opsgenie_integration.get("region", "us")).strip(),
             },
         }
+
+    kafka_integration = classified_integrations.get("kafka")
+    if isinstance(kafka_integration, dict):
+        effective["kafka"] = {
+            "source": source_by_service.get("kafka", "local env"),
+            "config": {
+                "bootstrap_servers": str(kafka_integration.get("bootstrap_servers", "")).strip(),
+                "security_protocol": str(
+                    kafka_integration.get("security_protocol", "PLAINTEXT")
+                ).strip(),
+                "sasl_mechanism": str(kafka_integration.get("sasl_mechanism", "")).strip(),
+                "sasl_username": str(kafka_integration.get("sasl_username", "")).strip(),
+                "sasl_password": str(kafka_integration.get("sasl_password", "")).strip(),
+            },
+        }
+    else:
+        kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "").strip()
+        if kafka_servers:
+            effective["kafka"] = {
+                "source": "local env",
+                "config": {
+                    "bootstrap_servers": kafka_servers,
+                    "security_protocol": os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT").strip(),
+                    "sasl_mechanism": os.getenv("KAFKA_SASL_MECHANISM", "").strip(),
+                    "sasl_username": os.getenv("KAFKA_SASL_USERNAME", "").strip(),
+                    "sasl_password": os.getenv("KAFKA_SASL_PASSWORD", "").strip(),
+                },
+            }
 
     clickhouse_integration = classified_integrations.get("clickhouse")
     if isinstance(clickhouse_integration, dict):
@@ -724,6 +753,19 @@ def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_kafka(source: str, config: dict[str, Any]) -> dict[str, str]:
+    from app.integrations.kafka import build_kafka_config, validate_kafka_config
+
+    kafka_config = build_kafka_config(config)
+    result = validate_kafka_config(kafka_config)
+    return _result(
+        "kafka",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def _verify_clickhouse(source: str, config: dict[str, Any]) -> dict[str, str]:
     from app.integrations.clickhouse import build_clickhouse_config, validate_clickhouse_config
 
@@ -810,6 +852,8 @@ def verify_integrations(
             results.append(_verify_vercel(source, config))
         elif current_service == "opsgenie":
             results.append(_verify_opsgenie(source, config))
+        elif current_service == "kafka":
+            results.append(_verify_kafka(source, config))
         elif current_service == "clickhouse":
             results.append(_verify_clickhouse(source, config))
         elif current_service == "bitbucket":

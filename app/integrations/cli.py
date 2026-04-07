@@ -34,7 +34,14 @@ from app.integrations.verify import (
 
 _B = "\033[1m"
 _R = "\033[0m"
+
+
+def _json_echo(data: Any) -> None:
+    print(json.dumps(data, indent=2, default=str))
+
+
 _SECRET_KEYS = frozenset({
+    "api_token",
     "api_key",
     "app_key",
     "password",
@@ -317,7 +324,14 @@ def cmd_setup(service: str | None) -> None:
 
 
 def cmd_list() -> None:
+    from app.cli.context import is_json_output
+
     items = list_integrations()
+
+    if is_json_output():
+        _json_echo(items)
+        return
+
     if not items:
         print("  No integrations. Run: python -m app.integrations setup <service>")
         return
@@ -335,20 +349,23 @@ def cmd_show(service: str | None) -> None:
     if not record:
         _die(f"No active integration for '{service}'.")
         return
-    print(json.dumps(_mask(record), indent=2))
+    _json_echo(_mask(record))
 
 
 def cmd_remove(service: str | None) -> None:
+    from app.cli.context import is_yes
+
     if not service:
         _die("Usage: remove <service>")
         return
-    try:
-        confirmed = questionary.confirm(f"  Remove '{service}'?", default=False).ask()
-    except (EOFError, KeyboardInterrupt):
-        return
-    if not confirmed:
-        print("  Cancelled.")
-        return
+    if not is_yes():
+        try:
+            confirmed = questionary.confirm(f"  Remove '{service}'?", default=False).ask()
+        except (EOFError, KeyboardInterrupt):
+            return
+        if not confirmed:
+            print("  Cancelled.")
+            return
     if remove_integration(service):
         print(f"  ✓ Removed '{service}'.")
     else:
@@ -356,10 +373,16 @@ def cmd_remove(service: str | None) -> None:
 
 
 def cmd_verify(service: str | None, *, send_slack_test: bool = False) -> None:
+    from app.cli.context import is_json_output
+
     if service and service not in SUPPORTED_VERIFY_SERVICES:
         _die(f"Usage: verify [service]. Supported: {SUPPORTED_VERIFY}")
         return
 
     results = verify_integrations(service=service, send_slack_test=send_slack_test)
-    print(format_verification_results(results))
+
+    if is_json_output():
+        _json_echo(results)
+    else:
+        print(format_verification_results(results))
     sys.exit(verification_exit_code(results, requested_service=service))

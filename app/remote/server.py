@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
 from pydantic import BaseModel
 
+from app.remote.system_metrics import collect_system_metrics
 from app.version import get_version
 
 load_dotenv(override=False)
@@ -68,6 +69,7 @@ class InvestigateResponse(BaseModel):
     report: str
     root_cause: str
     problem_md: str
+    is_noise: bool = False
 
 
 class InvestigationMeta(BaseModel):
@@ -84,7 +86,13 @@ class InvestigationMeta(BaseModel):
 
 @app.get("/ok")
 def health_check() -> dict[str, Any]:
-    return {"ok": True, "version": get_version()}
+    return {
+        "ok": True,
+        "version": get_version(),
+        "server_type": "lightweight",
+        "endpoints": ["/investigate", "/investigate/stream", "/investigations"],
+        "system": collect_system_metrics(),
+    }
 
 
 @app.post("/investigate", response_model=InvestigateResponse)
@@ -127,7 +135,102 @@ def investigate(req: InvestigateRequest) -> InvestigateResponse:
         report=result.get("report", ""),
         root_cause=result.get("root_cause", ""),
         problem_md=result.get("problem_md", ""),
+        is_noise=bool(result.get("is_noise")),
     )
+
+
+@app.post("/investigate/stream")
+async def investigate_stream(req: InvestigateRequest) -> Response:
+    """Stream investigation events as SSE using ``astream_events``.
+
+    Returns ``text/event-stream`` with the same SSE format the LangGraph
+    API uses, so ``RemoteAgentClient`` / ``StreamRenderer`` can consume
+    this endpoint identically to a LangGraph deployment.
+
+    The final pipeline state is accumulated during streaming and persisted
+    as a ``.md`` file once the stream completes, matching the behaviour of
+    the blocking ``/investigate`` endpoint.
+    """
+    import json as _json
+    import logging
+
+    from starlette.responses import StreamingResponse
+
+    from app.cli.investigate import resolve_investigation_context
+    from app.config import LLMSettings
+    from app.pipeline.runners import astream_investigation
+
+    logger = logging.getLogger(__name__)
+
+    LLMSettings.from_env()
+    alert_name, pipeline_name, severity = resolve_investigation_context(
+        raw_alert=req.raw_alert,
+        alert_name=req.alert_name,
+        pipeline_name=req.pipeline_name,
+        severity=req.severity,
+    )
+
+    accumulated_state: dict[str, Any] = {}
+
+    async def _event_generator() -> AsyncIterator[str]:
+        try:
+            async for event in astream_investigation(
+                alert_name,
+                pipeline_name,
+                severity,
+                raw_alert=req.raw_alert,
+            ):
+                if event.kind == "on_chain_end":
+                    output = event.data.get("data", {}).get("output", {})
+                    if isinstance(output, dict):
+                        accumulated_state.update(output)
+
+                payload = _json.dumps(event.data, default=str)
+                yield f"event: {event.event_type}\ndata: {payload}\n\n"
+            yield "event: end\ndata: {}\n\n"
+        except Exception:
+            logger.exception("Streaming investigation failed")
+            yield 'event: error\ndata: {"detail": "internal error"}\n\n'
+        finally:
+            _persist_streamed_result(
+                alert_name=alert_name,
+                pipeline_name=pipeline_name,
+                severity=severity,
+                state=accumulated_state,
+                logger=logger,
+            )
+
+    return StreamingResponse(  # type: ignore[return-value]
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _persist_streamed_result(
+    *,
+    alert_name: str,
+    pipeline_name: str,
+    severity: str,
+    state: dict[str, Any],
+    logger: Any,
+) -> None:
+    """Save a ``.md`` investigation file from the accumulated stream state."""
+    if not state.get("root_cause") and not state.get("report"):
+        logger.info("Streamed investigation produced no report; skipping persist.")
+        return
+    try:
+        inv_id = _make_id(alert_name)
+        _save_investigation(
+            inv_id=inv_id,
+            alert_name=alert_name,
+            pipeline_name=pipeline_name,
+            severity=severity,
+            result=state,
+        )
+        logger.info("Persisted streamed investigation: %s", inv_id)
+    except Exception:
+        logger.exception("Failed to persist streamed investigation")
 
 
 @app.get("/investigations", response_model=list[InvestigationMeta])
@@ -153,12 +256,12 @@ def list_investigations() -> list[InvestigationMeta]:
 @app.get("/investigations/{inv_id}")
 def get_investigation(inv_id: str) -> Response:
     """Return the raw ``.md`` content of a single investigation."""
-    if not re.fullmatch(r"[\w\-]+", inv_id):
-        raise HTTPException(status_code=400, detail="Invalid investigation ID")
-    path = _safe_investigation_path(inv_id)
-    if not path.exists():
+    safe_path = _safe_investigation_path(inv_id)
+    if not os.path.exists(safe_path):
         raise HTTPException(status_code=404, detail=f"Investigation {inv_id} not found")
-    return Response(content=path.read_text(encoding="utf-8"), media_type="text/markdown")
+    with open(safe_path, encoding="utf-8") as fh:
+        content = fh.read()
+    return Response(content=content, media_type="text/markdown")
 
 
 # ---------------------------------------------------------------------------
@@ -166,13 +269,25 @@ def get_investigation(inv_id: str) -> Response:
 # ---------------------------------------------------------------------------
 
 
-def _safe_investigation_path(inv_id: str) -> Path:
-    """Resolve an investigation file path with path-traversal protection."""
-    safe_base = str(INVESTIGATIONS_DIR.resolve()) + os.sep
-    candidate = str((INVESTIGATIONS_DIR / f"{inv_id}.md").resolve())
-    if not candidate.startswith(safe_base):
-        raise ValueError(f"Invalid investigation ID: {inv_id}")
-    return Path(candidate)
+_SAFE_INV_ID = re.compile(r"[\w\-]+")
+
+
+def _safe_investigation_path(inv_id: str) -> str:
+    """Resolve an investigation file path with path-traversal protection.
+
+    Rejects any ID that contains characters outside ``[\\w-]`` and verifies
+    the normalised path stays inside INVESTIGATIONS_DIR.
+
+    Returns the realpath string so CodeQL can verify the normpath+startswith
+    sanitisation pattern without re-wrapping in Path().
+    """
+    if not _SAFE_INV_ID.fullmatch(inv_id):
+        raise HTTPException(status_code=400, detail="Invalid investigation ID")
+    base = os.path.realpath(INVESTIGATIONS_DIR)
+    fullpath = os.path.realpath(os.path.join(base, f"{inv_id}.md"))
+    if not fullpath.startswith(base + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid investigation ID")
+    return fullpath
 
 
 def _slugify(text: str) -> str:
@@ -201,16 +316,27 @@ def _save_investigation(
     pipeline_name: str,
     severity: str,
     result: dict[str, Any],
-) -> Path:
+) -> str:
     ts = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    if result.get("is_noise"):
+        root_cause = "Alert classified as noise — no investigation performed."
+        report = "The alert was automatically classified as noise (non-actionable) during extraction."
+        problem_md = result.get("problem_md") or "N/A"
+    else:
+        root_cause = result.get("root_cause") or "N/A"
+        report = result.get("report") or "N/A"
+        problem_md = result.get("problem_md") or "N/A"
+
     md = (
         f"# Investigation: {alert_name}\n"
         f"Pipeline: {pipeline_name} | Severity: {severity}\n"
         f"Date: {ts}\n\n"
-        f"## Root Cause\n{result.get('root_cause', 'N/A')}\n\n"
-        f"## Report\n{result.get('report', 'N/A')}\n\n"
-        f"## Problem Description\n{result.get('problem_md', 'N/A')}\n"
+        f"## Root Cause\n{root_cause}\n\n"
+        f"## Report\n{report}\n\n"
+        f"## Problem Description\n{problem_md}\n"
     )
-    path = _safe_investigation_path(inv_id)
-    path.write_text(md, encoding="utf-8")
-    return path
+    safe_path = _safe_investigation_path(inv_id)
+    with open(safe_path, "w", encoding="utf-8") as fh:
+        fh.write(md)
+    return safe_path

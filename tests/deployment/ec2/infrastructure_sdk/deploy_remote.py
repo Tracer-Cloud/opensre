@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import time
 
+from app.deployment.ec2_config import save_remote_outputs
 from tests.deployment.ec2.infrastructure_sdk.instance import (
     create_instance_profile,
     launch_instance,
@@ -24,7 +25,6 @@ from tests.deployment.ec2.infrastructure_sdk.remote_instance import (
     get_latest_al2023_ami,
     wait_for_remote_health,
 )
-from tests.shared.infrastructure_sdk.config import save_outputs
 from tests.shared.infrastructure_sdk.deployer import DEFAULT_REGION
 from tests.shared.infrastructure_sdk.resources.vpc import (
     create_security_group,
@@ -149,7 +149,7 @@ def deploy(branch: str = "main") -> dict[str, str]:
         "ServerPort": str(SERVER_PORT),
     }
 
-    save_outputs(STACK_NAME, outputs)
+    save_remote_outputs(outputs)
 
     elapsed = time.time() - start_time
     print()

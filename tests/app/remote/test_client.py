@@ -9,6 +9,7 @@ import pytest
 
 from app.remote.client import (
     DEFAULT_PORT,
+    PreflightResult,
     RemoteAgentClient,
     _build_synthetic_payload,
     normalize_url,
@@ -178,3 +179,140 @@ class TestRunStreamedInvestigation:
         assert result.saw_end is True
         assert result.node_names_seen == ["extract_alert", "diagnose"]
         assert result.final_state["root_cause"] == "Schema mismatch"
+
+
+class TestPreflightResult:
+    def test_supports_stream_present(self) -> None:
+        r = PreflightResult(ok=True, endpoints=["/investigate", "/investigate/stream"])
+        assert r.supports_stream is True
+
+    def test_supports_stream_absent(self) -> None:
+        r = PreflightResult(ok=True, endpoints=["/investigate"])
+        assert r.supports_stream is False
+
+    def test_supports_investigate(self) -> None:
+        r = PreflightResult(ok=True, endpoints=["/investigate"])
+        assert r.supports_investigate is True
+
+    def test_supports_langgraph(self) -> None:
+        r = PreflightResult(ok=True, server_type="langgraph")
+        assert r.supports_langgraph is True
+
+    def test_supports_live_stream_for_lightweight_endpoint(self) -> None:
+        r = PreflightResult(ok=True, endpoints=["/investigate", "/investigate/stream"])
+        assert r.supports_live_stream is True
+
+    def test_supports_live_stream_for_langgraph_endpoint(self) -> None:
+        r = PreflightResult(
+            ok=True,
+            server_type="langgraph",
+            endpoints=["/threads", "/threads/*/runs/stream"],
+        )
+        assert r.supports_live_stream is True
+
+    def test_supports_live_stream_absent(self) -> None:
+        r = PreflightResult(ok=True, endpoints=["/investigate"])
+        assert r.supports_live_stream is False
+
+    def test_not_langgraph(self) -> None:
+        r = PreflightResult(ok=True, server_type="lightweight")
+        assert r.supports_langgraph is False
+
+    def test_status_label_unreachable(self) -> None:
+        r = PreflightResult(ok=False, error="connection refused")
+        assert r.status_label == "unreachable"
+
+    def test_status_label_healthy(self) -> None:
+        r = PreflightResult(ok=True, server_type="lightweight")
+        assert r.status_label == "healthy"
+
+    def test_status_label_degraded(self) -> None:
+        r = PreflightResult(ok=True, server_type="unknown")
+        assert r.status_label == "degraded"
+
+
+class TestPreflight:
+    def test_preflight_healthy_with_capabilities(self) -> None:
+        client = RemoteAgentClient("http://host:2024")
+        health_data = {
+            "ok": True,
+            "version": "0.5.2",
+            "server_type": "lightweight",
+            "endpoints": ["/investigate", "/investigate/stream", "/investigations"],
+        }
+        with patch.object(client, "health", return_value=health_data):
+            result = client.preflight()
+
+        assert result.ok is True
+        assert result.version == "0.5.2"
+        assert result.server_type == "lightweight"
+        assert result.supports_stream is True
+        assert result.supports_investigate is True
+        assert result.latency_ms >= 0
+
+    def test_preflight_old_server_no_capabilities_detects_lightweight(self) -> None:
+        client = RemoteAgentClient("http://host:2024")
+        health_data = {"ok": True, "version": "0.4.0"}
+        with (
+            patch.object(client, "health", return_value=health_data),
+            patch.object(
+                client,
+                "_detect_server_type",
+                return_value=("lightweight", ["/investigate"]),
+            ),
+        ):
+            result = client.preflight()
+
+        assert result.ok is True
+        assert result.server_type == "lightweight"
+        assert result.supports_stream is False
+        assert result.supports_investigate is True
+
+    def test_preflight_old_server_detects_langgraph(self) -> None:
+        client = RemoteAgentClient("http://host:2024")
+        health_data = {"ok": True}
+        with (
+            patch.object(client, "health", return_value=health_data),
+            patch.object(
+                client,
+                "_detect_server_type",
+                return_value=("langgraph", ["/threads", "/threads/*/runs/stream"]),
+            ),
+        ):
+            result = client.preflight()
+
+        assert result.ok is True
+        assert result.server_type == "langgraph"
+        assert result.supports_langgraph is True
+
+    def test_preflight_timeout(self) -> None:
+        client = RemoteAgentClient("http://host:2024")
+        with patch.object(client, "health", side_effect=httpx.TimeoutException("timed out")):
+            result = client.preflight()
+
+        assert result.ok is False
+        assert result.error == "connection timed out"
+
+    def test_preflight_connection_refused(self) -> None:
+        client = RemoteAgentClient("http://host:2024")
+        with patch.object(
+            client, "health", side_effect=httpx.ConnectError("refused")
+        ):
+            result = client.preflight()
+
+        assert result.ok is False
+        assert "connection refused" in (result.error or "")
+
+    def test_preflight_http_error(self) -> None:
+        resp = MagicMock()
+        resp.status_code = 403
+        client = RemoteAgentClient("http://host:2024")
+        with patch.object(
+            client,
+            "health",
+            side_effect=httpx.HTTPStatusError("Forbidden", request=MagicMock(), response=resp),
+        ):
+            result = client.preflight()
+
+        assert result.ok is False
+        assert "403" in (result.error or "")
