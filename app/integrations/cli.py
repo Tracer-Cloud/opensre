@@ -7,7 +7,7 @@ Usage:
     python -m app.integrations remove <service>
     python -m app.integrations verify [service] [--send-slack-test]
 
-Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, slack, opensearch, rds, tracer, github, sentry
+Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, postgresql, slack, opensearch, rds, tracer, github, sentry
 """
 
 from __future__ import annotations
@@ -284,6 +284,41 @@ def _setup_mongodb() -> None:
     )
 
 
+def _setup_postgresql() -> None:
+    host = _p("Host (e.g. localhost or postgres.example.com)")
+    port = _p("Port", default="5432")
+    database = _p("Database name")
+    username = _p("Username", default="postgres")
+    password = _p("Password", secret=True)
+    ssl_mode_choice = questionary.select(
+        "SSL mode",
+        choices=[
+            questionary.Choice("prefer (recommended)", value="prefer"),
+            questionary.Choice("require", value="require"),
+            questionary.Choice("disable", value="disable"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if ssl_mode_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    if not host or not database:
+        _die("host and database are required.")
+    upsert_integration(
+        "postgresql",
+        {
+            "credentials": {
+                "host": host,
+                "port": int(port) if port.isdigit() else 5432,
+                "database": database,
+                "username": username or "postgres",
+                "password": password,
+                "ssl_mode": ssl_mode_choice,
+            }
+        },
+    )
+
+
 _HANDLERS: dict[str, Any] = {
     "aws": _setup_aws,
     "coralogix": _setup_coralogix,
@@ -297,6 +332,7 @@ _HANDLERS: dict[str, Any] = {
     "github": _setup_github,
     "sentry": _setup_sentry,
     "mongodb": _setup_mongodb,
+    "postgresql": _setup_postgresql,
 }
 
 SUPPORTED = ", ".join(_HANDLERS)

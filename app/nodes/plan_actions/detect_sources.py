@@ -767,6 +767,38 @@ def detect_sources(
                 "connection_verified": True,
             }
 
+    postgresql_int = (resolved_integrations or {}).get("postgresql")
+    if postgresql_int:
+        postgresql_host = str(postgresql_int.get("host", "")).strip()
+        postgresql_database = str(postgresql_int.get("database", "")).strip()
+        if postgresql_host and postgresql_database:
+            # Check for PostgreSQL-specific annotations first, then fall back to configured values
+            postgresql_database = str(
+                annotations.get("postgresql_database")
+                or annotations.get("database")
+                or postgresql_database
+            ).strip()
+            postgresql_table = str(
+                annotations.get("postgresql_table")
+                or annotations.get("table")
+                or ""
+            ).strip()
+            postgresql_schema = str(
+                annotations.get("postgresql_schema")
+                or annotations.get("schema")
+                or "public"
+            ).strip()
+            sources["postgresql"] = {
+                "host": postgresql_host,
+                "port": postgresql_int.get("port", 5432),
+                "database": postgresql_database,
+                "table": postgresql_table,
+                "schema": postgresql_schema,
+                "username": str(postgresql_int.get("username", "postgres")).strip(),
+                "password": str(postgresql_int.get("password", "")).strip(),
+                "ssl_mode": str(postgresql_int.get("ssl_mode", "prefer")).strip(),
+                "connection_verified": True,
+            }
 
     opsgenie_int = (resolved_integrations or {}).get("opsgenie")
     if opsgenie_int and str(opsgenie_int.get("api_key", "")).strip():

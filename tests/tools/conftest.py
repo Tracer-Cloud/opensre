@@ -114,6 +114,14 @@ def mock_agent_state(overrides: dict | None = None) -> dict[str, Any]:
         "mongodb": {
             "connection_string": "mongodb://localhost:27017",
         },
+        "postgresql": {
+            "host": "localhost",
+            "port": 5432,
+            "database": "opensre_test",
+            "username": "opensre",
+            "password": "test123",
+            "ssl_mode": "prefer",
+        },
     }
     if overrides:
         for key, value in overrides.items():

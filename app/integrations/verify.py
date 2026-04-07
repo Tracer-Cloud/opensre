@@ -24,6 +24,7 @@ from app.integrations.models import (
     TracerIntegrationConfig,
 )
 from app.integrations.mongodb import build_mongodb_config, validate_mongodb_config
+from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
 from app.nodes.resolve_integrations.node import (
@@ -49,6 +50,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "github",
     "sentry",
     "mongodb",
+    "postgresql",
     "google_docs",
     "vercel",
     "opsgenie",
@@ -654,6 +656,17 @@ def _verify_mongodb(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_postgresql(source: str, config: dict[str, Any]) -> dict[str, str]:
+    postgresql_config = build_postgresql_config(config)
+    result = validate_postgresql_config(postgresql_config)
+    return _result(
+        "postgresql",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
     """Validate Google Docs credentials and folder access."""
     from app.services.google_docs import GoogleDocsClient
@@ -846,6 +859,8 @@ def verify_integrations(
             results.append(_verify_sentry(source, config))
         elif current_service == "mongodb":
             results.append(_verify_mongodb(source, config))
+        elif current_service == "postgresql":
+            results.append(_verify_postgresql(source, config))
         elif current_service == "google_docs":
             results.append(_verify_google_docs(source, config))
         elif current_service == "vercel":
