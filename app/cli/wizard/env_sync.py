@@ -12,6 +12,9 @@ _SENSITIVE_KEYS = {"API_KEY", "SECRET", "TOKEN", "PASSWORD"}
 
 
 def _set_env_value(lines: list[str], key: str, value: str) -> list[str]:
+    if any(s in key.upper() for s in _SENSITIVE_KEYS):
+        return lines
+
     updated: list[str] = []
     replaced = False
     for line in lines:
