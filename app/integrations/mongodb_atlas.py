@@ -247,12 +247,7 @@ def _resolve_primary_process(
     cluster_name: str,
 ) -> dict[str, Any] | None:
     """Find the primary process for a cluster. Returns None if not found."""
-    resp = client.get(
-        f"/groups/{config.project_id}/processes",
-        params={"itemsPerPage": 100},
-    )
-    resp.raise_for_status()
-    processes = resp.json().get("results", [])
+        params={"itemsPerPage": 500},
 
     target: dict[str, Any] | None = None
         hostname = p.get("hostname", "")
