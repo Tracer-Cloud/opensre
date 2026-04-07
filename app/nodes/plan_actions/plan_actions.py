@@ -43,11 +43,8 @@ def plan_actions(
     available_sources_raw = detect_sources(
         input_data.raw_alert, input_data.context, resolved_integrations=resolved_integrations
     )
-    # Mask sensitive identifiers in available_sources before sending to LLM
-    available_sources_masked = mask_dict(
-        cast(dict[str, object], available_sources_raw), masking_context
-    )
-    available_sources = cast(dict[str, dict], available_sources_masked)
+    # Unmasked sources are returned to callers for tool execution.
+    available_sources = cast(dict[str, dict], available_sources_raw)
 
     # Enhance sources with dynamically discovered information from evidence (e.g., audit_key from S3 metadata)
     s3_object = input_data.evidence.get("s3_object", {})
@@ -57,6 +54,12 @@ def plan_actions(
         if bucket and "s3_audit" not in available_sources:
             available_sources["s3_audit"] = {"bucket": bucket, "key": audit_key}
             debug_print(f"Added s3_audit source: s3://{bucket}/{audit_key}")
+
+    # Build a masked copy for LLM prompt construction only.
+    available_sources_for_llm = cast(
+        dict[str, dict],
+        mask_dict(cast(dict[str, object], available_sources), masking_context),
+    )
 
     debug_print(f"Relevant sources: {list(available_sources.keys())}")
 
@@ -81,7 +84,7 @@ def plan_actions(
         problem_md=input_data.problem_md,
         executed_hypotheses=input_data.executed_hypotheses,
         available_actions=available_actions,
-        available_sources=available_sources,
+        available_sources=available_sources_for_llm,
         memory_context="",
         masking_context=masking_context,
     )

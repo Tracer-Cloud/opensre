@@ -362,6 +362,7 @@ class TestRoundTrip:
             "description": "Connection to api.example.com refused",
             "source": "monitoring",
         }
+        expected_hostname = alert_data["description"].split(" to ")[1].split(" ")[0]
 
         # Mask before sending to LLM (establishes placeholder mappings)
         _ = mask_dict(alert_data, ctx)
@@ -377,7 +378,7 @@ class TestRoundTrip:
         unmasked_response = unmask_dict(llm_response, ctx)
 
         assert "cluster-prod-01" in unmasked_response["analysis"]
-        assert "api.example.com" in unmasked_response["recommendation"]
+        assert expected_hostname in unmasked_response["recommendation"]
         assert "<CLUSTER_0>" not in unmasked_response["analysis"]
         assert "<HOSTNAME_0>" not in unmasked_response["recommendation"]
 

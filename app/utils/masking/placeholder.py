@@ -183,4 +183,5 @@ class PlaceholderMap:
             value_to_placeholder=dict(self.value_to_placeholder),
             placeholder_to_value=dict(self.placeholder_to_value),
             type_counters=dict(self.type_counters),
+            max_placeholders=self.max_placeholders,
         )

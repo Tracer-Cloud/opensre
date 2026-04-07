@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from app.utils.masking import MaskingContext, mask_text
+from app.utils.masking import MaskingContext, mask_text, unmask_text
 
 
 def _get_executed_sources(executed_hypotheses: list[dict[str, Any]]) -> set[str]:
@@ -330,7 +330,10 @@ def plan_actions_with_llm(
     # If memory context is provided, we're already using fast model from caller
     structured_llm = llm.with_structured_output(plan_model)
     try:
-        return structured_llm.with_config(run_name="LLM – Plan evidence gathering").invoke(prompt)
+        result = structured_llm.with_config(run_name="LLM – Plan evidence gathering").invoke(prompt)
+        if masking_context and hasattr(result, "rationale") and result.rationale:
+            result = result.model_copy(update={"rationale": unmask_text(result.rationale, masking_context)})
+        return result
     except (ValidationError, ValueError):
         fallback_actions = [action.name for action in available_actions][:3]
         rationale = "Fallback plan: LLM returned invalid structured output."

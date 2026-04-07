@@ -9,7 +9,6 @@ import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from re import Pattern
 
 from app.strict_config import StrictConfigModel
 
@@ -96,13 +95,13 @@ class CompiledPolicy:
     """Compiled version of masking policy with regex patterns."""
 
     policy: MaskingPolicy
-    hostname_pattern: Pattern[str] | None = None
-    account_id_pattern: Pattern[str] | None = None
-    cluster_name_pattern: Pattern[str] | None = None
-    service_name_pattern: Pattern[str] | None = None
-    ip_address_pattern: Pattern[str] | None = None
-    email_pattern: Pattern[str] | None = None
-    custom_patterns: list[Pattern[str]] = field(default_factory=list)
+    hostname_pattern: re.Pattern[str] | None = None
+    account_id_pattern: re.Pattern[str] | None = None
+    cluster_name_pattern: re.Pattern[str] | None = None
+    service_name_pattern: re.Pattern[str] | None = None
+    ip_address_pattern: re.Pattern[str] | None = None
+    email_pattern: re.Pattern[str] | None = None
+    custom_patterns: list[re.Pattern[str]] = field(default_factory=list)
 
     @classmethod
     def from_policy(cls, policy: MaskingPolicy) -> CompiledPolicy:
@@ -162,7 +161,7 @@ class CompiledPolicy:
             else None
         )
 
-        custom_res: list[Pattern[str]] = []
+        custom_res: list[re.Pattern[str]] = []
         for pattern in policy.custom_patterns:
             try:
                 custom_res.append(re.compile(pattern))
@@ -220,7 +219,10 @@ def get_compiled_policy(policy: MaskingPolicy) -> CompiledPolicy:
 
     # Check cache
     if key in _compiled_policy_cache:
-        return _compiled_policy_cache[key]
+        # Maintain true LRU semantics by moving the accessed key to the end.
+        compiled = _compiled_policy_cache.pop(key)
+        _compiled_policy_cache[key] = compiled
+        return compiled
 
     # Evict if at capacity (simple FIFO-style)
     if len(_compiled_policy_cache) >= _MAX_CACHE_SIZE:
@@ -287,13 +289,13 @@ class DetectedIdentifier:
 
 def find_identifiers(
     text: str,
-    hostname_pattern: Pattern[str] | None,
-    account_id_pattern: Pattern[str] | None,
-    cluster_name_pattern: Pattern[str] | None,
-    service_name_pattern: Pattern[str] | None,
-    ip_address_pattern: Pattern[str] | None,
-    email_pattern: Pattern[str] | None,
-    custom_patterns: list[Pattern[str]] | None = None,
+    hostname_pattern: re.Pattern[str] | None,
+    account_id_pattern: re.Pattern[str] | None,
+    cluster_name_pattern: re.Pattern[str] | None,
+    service_name_pattern: re.Pattern[str] | None,
+    ip_address_pattern: re.Pattern[str] | None,
+    email_pattern: re.Pattern[str] | None,
+    custom_patterns: list[re.Pattern[str]] | None = None,
 ) -> list[DetectedIdentifier]:
     """Find all sensitive identifiers in text.
 
@@ -313,7 +315,7 @@ def find_identifiers(
     results: list[DetectedIdentifier] = []
 
     # Use list of tuples to avoid dict key collisions when patterns are None
-    pattern_pairs: list[tuple[Pattern[str] | None, IdentifierType]] = [
+    pattern_pairs: list[tuple[re.Pattern[str] | None, IdentifierType]] = [
         (hostname_pattern, IdentifierType.HOSTNAME),
         (account_id_pattern, IdentifierType.ACCOUNT_ID),
         (cluster_name_pattern, IdentifierType.CLUSTER_NAME),

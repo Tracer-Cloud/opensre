@@ -140,8 +140,8 @@ class TestPlaceholderMap:
         masked_text = "<HOSTNAME_0> and <HOSTNAME_1>"
         unmasked = pmap.unmask_text(masked_text)
 
-        assert "example.com" in unmasked
-        assert "sub.example.com" in unmasked
+        assert id1.value in unmasked
+        assert id2.value in unmasked
 
     def test_clear(self) -> None:
         """Test clearing the placeholder map."""
@@ -159,7 +159,7 @@ class TestPlaceholderMap:
 
     def test_copy(self) -> None:
         """Test copying the placeholder map."""
-        pmap = PlaceholderMap()
+        pmap = PlaceholderMap(max_placeholders=3)
         identifier = DetectedIdentifier(IdentifierType.HOSTNAME, "example.com", 0, 11)
         pmap.get_or_create_placeholder(identifier)
 
@@ -167,6 +167,7 @@ class TestPlaceholderMap:
 
         # Copy has same data
         assert copy.get_original_value("<HOSTNAME_0>") == "example.com"
+        assert copy.max_placeholders == pmap.max_placeholders
 
         # But is independent
         new_id = DetectedIdentifier(IdentifierType.HOSTNAME, "other.com", 0, 9)

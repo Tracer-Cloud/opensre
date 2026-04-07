@@ -1,7 +1,5 @@
 """Tests for placeholder validation."""
 
-import pytest
-
 from app.utils.masking import PlaceholderIssue, ValidationSeverity, validate_placeholders
 from app.utils.masking.placeholder import PlaceholderMap
 from app.utils.masking.policies import DetectedIdentifier, IdentifierType

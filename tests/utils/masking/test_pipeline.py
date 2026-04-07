@@ -9,9 +9,6 @@ to final output, verifying:
 """
 
 import os
-from typing import Any
-
-import pytest
 
 from app.utils.masking import (
     MaskingContext,
@@ -102,7 +99,7 @@ class TestFullMaskingPipeline:
 
         # Verify original values are restored
         assert "prod-eks-cluster-us-east-1" in final_output
-        assert "payment-api.example.com" in final_output
+        assert available_sources["datadog"]["service_name"] in final_output
         assert "123456789012" in final_output
         assert "<CLUSTER_0>" not in final_output
         assert "<HOSTNAME_0>" not in final_output
@@ -246,11 +243,7 @@ class TestFullMaskingPipeline:
         # When validation is disabled, we should skip it
         # (simulating what the node does)
         if policy.validate_output:
-            issues = validate_placeholders(response, ctx.placeholder_map)
-            assert len(issues) > 0
-        else:
-            # Skip validation
-            issues = []
+            assert len(validate_placeholders(response, ctx.placeholder_map)) > 0
 
         # Without validation, we proceed to unmask
         result = unmask_text(response, ctx)
