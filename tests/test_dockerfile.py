@@ -40,10 +40,12 @@ def test_dockerfile_installs_dependencies(dockerfile_path: Path) -> None:
 
 
 def test_dockerfile_configures_langgraph_runtime(dockerfile_path: Path) -> None:
-    """The Dockerfile must configure the graph and auth handlers for the API server."""
+    """The Dockerfile must configure graph loading for the API server."""
     content = dockerfile_path.read_text()
     assert "LANGSERVE_GRAPHS" in content, "Should configure graph loading"
-    assert "LANGGRAPH_AUTH" in content, "Should configure auth loading"
+    assert "LANGGRAPH_AUTH" not in content, (
+        "Should avoid enterprise-only custom auth in the self-hosted Railway image"
+    )
 
 
 def test_dockerfile_exposes_port_2024(dockerfile_path: Path) -> None:
@@ -78,11 +80,14 @@ def test_dockerfile_copies_langgraph_config(dockerfile_path: Path) -> None:
     )
 
 
-def test_dockerfile_uses_non_root_user(dockerfile_path: Path) -> None:
-    """The Dockerfile should preserve the bundled runtime packages."""
+def test_dockerfile_keeps_base_runtime_intact(dockerfile_path: Path) -> None:
+    """The Dockerfile should not re-install or shadow the bundled API runtime."""
     content = dockerfile_path.read_text()
-    assert "pip install --no-cache-dir --no-deps /api" in content, (
-        "Should re-install the bundled API package without extra deps"
+    assert "pip install --no-cache-dir --no-deps /api" not in content, (
+        "Should rely on the base LangGraph runtime instead of re-installing /api"
+    )
+    assert "touch /api/langgraph_api/__init__.py" not in content, (
+        "Should not mutate the bundled runtime package layout"
     )
 
 

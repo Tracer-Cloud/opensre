@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import subprocess
 import time
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -39,7 +39,7 @@ def _run_command(
     timeout: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a shell command with consistent error handling."""
-    kwargs: dict[str, object] = {"check": check, "text": True}
+    kwargs: dict[str, Any] = {"check": check, "text": True}
     if capture:
         kwargs["capture_output"] = True
     if timeout is not None:
