@@ -244,6 +244,70 @@ def _map_coralogix_logs(data: dict) -> dict:
     }
 
 
+def _map_eks_namespaces(data: dict) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    return {
+        "eks_cluster_name": data.get("cluster_name", ""),
+        "eks_namespaces": data.get("namespaces", []),
+    }
+
+
+def _map_eks_pods(data: dict) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    return {
+        "eks_cluster_name": data.get("cluster_name", ""),
+        "eks_namespace": data.get("namespace", ""),
+        "eks_pods": data.get("pods", []),
+        "eks_failing_pods": data.get("failing_pods", []),
+        "eks_high_restart_pods": data.get("high_restart_pods", []),
+    }
+
+
+def _map_eks_deployments(data: dict) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    return {
+        "eks_cluster_name": data.get("cluster_name", ""),
+        "eks_namespace": data.get("namespace", ""),
+        "eks_deployments": data.get("deployments", []),
+        "eks_degraded_deployments": data.get("degraded_deployments", []),
+    }
+
+
+def _map_eks_events(data: dict) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    return {
+        "eks_cluster_name": data.get("cluster_name", ""),
+        "eks_namespace": data.get("namespace", ""),
+        "eks_warning_events": data.get("warning_events", []),
+        "eks_total_warning_count": data.get("total_warning_count", 0),
+    }
+
+
+def _map_eks_pod_logs(data: dict) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    return {
+        "eks_cluster_name": data.get("cluster_name", ""),
+        "eks_namespace": data.get("namespace", ""),
+        "eks_pod_name": data.get("pod_name", ""),
+        "eks_pod_logs": data.get("logs", ""),
+    }
+
+
+def _map_eks_node_health(data: dict) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    return {
+        "eks_cluster_name": data.get("cluster_name", ""),
+        "eks_nodes": data.get("nodes", []),
+        "eks_not_ready_nodes": data.get("not_ready_nodes", []),
+    }
+
+
 EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "get_failed_jobs": _map_failed_jobs,
     "get_failed_tools": _map_failed_tools,
@@ -269,6 +333,13 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "query_datadog_all": _map_datadog_investigate,
     "query_honeycomb_traces": _map_honeycomb_traces,
     "query_coralogix_logs": _map_coralogix_logs,
+    # EKS Kubernetes tools
+    "list_eks_namespaces": _map_eks_namespaces,
+    "list_eks_pods": _map_eks_pods,
+    "list_eks_deployments": _map_eks_deployments,
+    "get_eks_events": _map_eks_events,
+    "get_eks_pod_logs": _map_eks_pod_logs,
+    "get_eks_node_health": _map_eks_node_health,
 }
 
 
@@ -395,6 +466,40 @@ def build_evidence_summary(execution_results: dict) -> str:
             elif action_name == "query_coralogix_logs" and data.get("logs"):
                 error_count = len(data.get("error_logs", []))
                 summary_parts.append(f"coralogix:{len(data['logs'])} logs ({error_count} errors)")
+            # EKS Kubernetes summaries
+            elif action_name == "list_eks_namespaces" and data.get("namespaces"):
+                cluster = data.get("cluster_name", "unknown")
+                summary_parts.append(f"eks:{cluster}:{len(data['namespaces'])} namespaces")
+            elif action_name == "list_eks_pods" and data.get("pods"):
+                cluster = data.get("cluster_name", "unknown")
+                ns = data.get("namespace", "unknown")
+                failing = len(data.get("failing_pods", []))
+                summary_parts.append(
+                    f"eks:{cluster}:{ns}:{len(data['pods'])} pods ({failing} failing)"
+                )
+            elif action_name == "list_eks_deployments" and data.get("deployments"):
+                cluster = data.get("cluster_name", "unknown")
+                ns = data.get("namespace", "unknown")
+                degraded = len(data.get("degraded_deployments", []))
+                summary_parts.append(
+                    f"eks:{cluster}:{ns}:{len(data['deployments'])} deployments ({degraded} degraded)"
+                )
+            elif action_name == "get_eks_events" and data.get("warning_events"):
+                cluster = data.get("cluster_name", "unknown")
+                ns = data.get("namespace", "unknown")
+                count = data.get("total_warning_count", 0)
+                summary_parts.append(f"eks:{cluster}:{ns}:{count} warning events")
+            elif action_name == "get_eks_pod_logs" and data.get("logs"):
+                cluster = data.get("cluster_name", "unknown")
+                ns = data.get("namespace", "unknown")
+                pod = data.get("pod_name", "unknown")
+                summary_parts.append(f"eks:{cluster}:{ns}:pod/{pod} logs")
+            elif action_name == "get_eks_node_health" and data.get("nodes"):
+                cluster = data.get("cluster_name", "unknown")
+                not_ready = len(data.get("not_ready_nodes", []))
+                summary_parts.append(
+                    f"eks:{cluster}:{len(data['nodes'])} nodes ({not_ready} not ready)"
+                )
         else:
             # Log action failures for debugging
             error_msg = f"{action_name}:FAILED({result.error[:50] if result.error else 'unknown'})"

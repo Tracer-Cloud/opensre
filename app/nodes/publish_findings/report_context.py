@@ -26,6 +26,7 @@ from app.state import InvestigationState
 # ReportContext — the schema that all formatters read from
 # ---------------------------------------------------------------------------
 
+
 class ReportContext(TypedDict, total=False):
     """Data extracted from state for report formatting.
 
@@ -90,6 +91,12 @@ class ReportContext(TypedDict, total=False):
     # Multiple failed pods (for cluster-scale failures)
     kube_failed_pods: list[dict]  # [{pod_name, container, namespace, exit_code, error}]
 
+    # EKS Kubernetes provenance fields
+    eks_cluster_name: str | None
+    eks_namespace: str | None
+    eks_pod_name: str | None
+    eks_deployment_name: str | None
+
 
 # ---------------------------------------------------------------------------
 # Source name aliases used when matching claim.evidence_sources → catalog IDs
@@ -104,12 +111,19 @@ _SOURCE_ALIASES: dict[str, str] = {
     "datadog": "datadog_logs",
     "honeycomb": "honeycomb_traces",
     "coralogix": "coralogix_logs",
+    "eks": "eks_pods",
+    "eks_pods": "eks_pods",
+    "eks_deployments": "eks_deployments",
+    "eks_events": "eks_events",
+    "eks_pod_logs": "eks_pod_logs",
+    "eks_node_health": "eks_node_health",
 }
 
 
 # ---------------------------------------------------------------------------
 # Small utilities
 # ---------------------------------------------------------------------------
+
 
 def _safe_get(data: dict[str, Any] | None, *keys: str, default: Any = None) -> Any:
     """Safely navigate nested dictionaries without raising."""
@@ -147,6 +161,7 @@ def _filter_valid_claims(claims: list[dict]) -> list[dict]:
 # Phase 1: state normalization
 # ---------------------------------------------------------------------------
 
+
 class _NormalizedState:
     """All raw data extracted from InvestigationState in one place."""
 
@@ -156,20 +171,31 @@ class _NormalizedState:
         raw_alert_value = state.get("raw_alert", {})
 
         self.evidence: dict[str, Any] = evidence
-        self.raw_alert: dict[str, Any] = raw_alert_value if isinstance(raw_alert_value, dict) else {}
+        self.raw_alert: dict[str, Any] = (
+            raw_alert_value if isinstance(raw_alert_value, dict) else {}
+        )
         self.web_run: dict[str, Any] = context.get("tracer_web_run", {}) or {}
         self.batch: dict[str, Any] = evidence.get("batch_jobs", {}) or {}
         self.s3: dict[str, Any] = evidence.get("s3", {}) or {}
 
         available_sources = state.get("available_sources", {}) or {}
-        self.grafana_endpoint: str | None = (available_sources.get("grafana") or {}).get("grafana_endpoint")
-        self.datadog_site: str = (available_sources.get("datadog") or {}).get("site") or "datadoghq.com"
+        self.grafana_endpoint: str | None = (available_sources.get("grafana") or {}).get(
+            "grafana_endpoint"
+        )
+        self.datadog_site: str = (available_sources.get("datadog") or {}).get(
+            "site"
+        ) or "datadoghq.com"
 
         self.validated_claims: list[dict] = _filter_valid_claims(state.get("validated_claims", []))
         self.non_validated_claims: list[dict] = state.get("non_validated_claims", [])
 
-        self.cloudwatch_url, self.cloudwatch_group, self.cloudwatch_stream, \
-            self.cloudwatch_region, self.alert_id = _extract_cloudwatch_info(self.raw_alert)
+        (
+            self.cloudwatch_url,
+            self.cloudwatch_group,
+            self.cloudwatch_stream,
+            self.cloudwatch_region,
+            self.alert_id,
+        ) = _extract_cloudwatch_info(self.raw_alert)
 
         started_at = state.get("investigation_started_at")
         self.duration_seconds: int | None = (
@@ -201,7 +227,9 @@ def _extract_cloudwatch_info(
         or _safe_get(annotations, "cloudwatch_url")
     )
     group = raw_alert.get("cloudwatch_log_group") or _safe_get(annotations, "cloudwatch_log_group")
-    stream = raw_alert.get("cloudwatch_log_stream") or _safe_get(annotations, "cloudwatch_log_stream")
+    stream = raw_alert.get("cloudwatch_log_stream") or _safe_get(
+        annotations, "cloudwatch_log_stream"
+    )
     region = raw_alert.get("cloudwatch_region") or _safe_get(annotations, "cloudwatch_region")
     alert_id = raw_alert.get("alert_id")
     return url, group, stream, region, alert_id
@@ -212,6 +240,7 @@ def _extract_cloudwatch_info(
 #
 # Each _add_* helper appends to the shared (catalog, source_to_id) accumulators.
 # ---------------------------------------------------------------------------
+
 
 def _add_s3_metadata(
     evidence: dict[str, Any],
@@ -300,15 +329,21 @@ def _add_grafana_logs(
         return
     grafana_query = evidence.get("grafana_logs_query") or ""
     grafana_service = evidence.get("grafana_logs_service") or ""
-    summary_parts = [p for p in [
-        grafana_service or None,
-        f"{len(grafana_logs)} logs" if grafana_logs else None,
-        f"{len(grafana_error_logs)} errors" if grafana_error_logs else None,
-    ] if p]
+    summary_parts = [
+        p
+        for p in [
+            grafana_service or None,
+            f"{len(grafana_logs)} logs" if grafana_logs else None,
+            f"{len(grafana_error_logs)} errors" if grafana_error_logs else None,
+        ]
+        if p
+    ]
     eid = "evidence/grafana/loki"
     catalog[eid] = {
         "label": "Grafana Loki Logs",
-        "url": build_grafana_explore_url(grafana_endpoint or "", grafana_query) if grafana_query else None,
+        "url": build_grafana_explore_url(grafana_endpoint or "", grafana_query)
+        if grafana_query
+        else None,
         "summary": ", ".join(summary_parts) or None,
         "snippet": _as_snippet(grafana_query) if grafana_query else None,
     }
@@ -326,12 +361,20 @@ def _add_datadog_logs(
     if not (datadog_logs or datadog_error_logs):
         return
     datadog_query = evidence.get("datadog_logs_query") or ""
-    summary_parts = [p for p in [
-        f"{len(datadog_logs)} logs" if datadog_logs else None,
-        f"{len(datadog_error_logs)} errors" if datadog_error_logs else None,
-    ] if p]
+    summary_parts = [
+        p
+        for p in [
+            f"{len(datadog_logs)} logs" if datadog_logs else None,
+            f"{len(datadog_error_logs)} errors" if datadog_error_logs else None,
+        ]
+        if p
+    ]
     top_msg = next(
-        (e.get("message", "").strip() for e in (datadog_error_logs or datadog_logs) if e.get("message")),
+        (
+            e.get("message", "").strip()
+            for e in (datadog_error_logs or datadog_logs)
+            if e.get("message")
+        ),
         None,
     )
     eid = "evidence/datadog/logs"
@@ -339,7 +382,9 @@ def _add_datadog_logs(
         "label": "Datadog Logs",
         "url": build_datadog_logs_url(datadog_query, datadog_site) if datadog_query else None,
         "summary": ", ".join(summary_parts) or None,
-        "snippet": _as_snippet(top_msg) if top_msg else (_as_snippet(datadog_query) if datadog_query else None),
+        "snippet": _as_snippet(top_msg)
+        if top_msg
+        else (_as_snippet(datadog_query) if datadog_query else None),
     }
     source_to_id["datadog_logs"] = eid
 
@@ -353,7 +398,9 @@ def _add_datadog_monitors(
     datadog_monitors = evidence.get("datadog_monitors") or []
     if not datadog_monitors:
         return
-    triggered = [m for m in datadog_monitors if m.get("overall_state") in ("Alert", "Warn", "No Data")]
+    triggered = [
+        m for m in datadog_monitors if m.get("overall_state") in ("Alert", "Warn", "No Data")
+    ]
     label = (
         f"Datadog Monitors ({len(triggered)} triggered)"
         if triggered
@@ -398,7 +445,13 @@ def _add_datadog_failed_pods(
     dd_container = evidence.get("datadog_container_name")
     raw_pods: list[dict] = evidence.get("datadog_failed_pods", [])
     if not raw_pods and evidence.get("datadog_pod_name"):
-        raw_pods = [{"pod_name": evidence["datadog_pod_name"], "namespace": dd_ns, "container": dd_container}]
+        raw_pods = [
+            {
+                "pod_name": evidence["datadog_pod_name"],
+                "namespace": dd_ns,
+                "container": dd_container,
+            }
+        ]
 
     for idx, pod in enumerate(raw_pods):
         pname = pod.get("pod_name") or pod.get("name")
@@ -411,7 +464,9 @@ def _add_datadog_failed_pods(
         if pod.get("exit_code") is not None:
             summary_parts.append(f"exit={pod['exit_code']}")
         if pod.get("memory_requested") and pod.get("memory_limit"):
-            summary_parts.append(f"mem requested={pod['memory_requested']} limit={pod['memory_limit']}")
+            summary_parts.append(
+                f"mem requested={pod['memory_requested']} limit={pod['memory_limit']}"
+            )
         eid = f"evidence/datadog/failed_pod/{pname}"
         catalog[eid] = {
             "label": f"Failed Pod: {pname}{f' ({pcontainer})' if pcontainer else ''}",
@@ -434,12 +489,16 @@ def _add_honeycomb_traces(
     dataset = evidence.get("honeycomb_dataset") or "__all__"
     service_name = evidence.get("honeycomb_service_name") or ""
     trace_id = evidence.get("honeycomb_trace_id") or ""
-    summary_parts = [part for part in [
-        f"dataset={dataset}" if dataset else None,
-        service_name or None,
-        trace_id or None,
-        f"{len(honeycomb_traces)} traces",
-    ] if part]
+    summary_parts = [
+        part
+        for part in [
+            f"dataset={dataset}" if dataset else None,
+            service_name or None,
+            trace_id or None,
+            f"{len(honeycomb_traces)} traces",
+        ]
+        if part
+    ]
     eid = "evidence/honeycomb/traces"
     catalog[eid] = {
         "label": "Honeycomb Traces",
@@ -461,12 +520,16 @@ def _add_coralogix_logs(
         return
     application_name = evidence.get("coralogix_application_name") or ""
     subsystem_name = evidence.get("coralogix_subsystem_name") or ""
-    summary_parts = [part for part in [
-        application_name or None,
-        subsystem_name or None,
-        f"{len(coralogix_logs)} logs" if coralogix_logs else None,
-        f"{len(coralogix_error_logs)} errors" if coralogix_error_logs else None,
-    ] if part]
+    summary_parts = [
+        part
+        for part in [
+            application_name or None,
+            subsystem_name or None,
+            f"{len(coralogix_logs)} logs" if coralogix_logs else None,
+            f"{len(coralogix_error_logs)} errors" if coralogix_error_logs else None,
+        ]
+        if part
+    ]
     top_msg = next(
         (
             entry.get("message", "").strip()
@@ -479,9 +542,217 @@ def _add_coralogix_logs(
     catalog[eid] = {
         "label": "Coralogix Logs",
         "summary": ", ".join(summary_parts) or None,
-        "snippet": _as_snippet(top_msg) if top_msg else _as_snippet(evidence.get("coralogix_logs_query")),
+        "snippet": _as_snippet(top_msg)
+        if top_msg
+        else _as_snippet(evidence.get("coralogix_logs_query")),
     }
     source_to_id["coralogix_logs"] = eid
+
+
+def _add_eks_pods(
+    evidence: dict[str, Any],
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
+    """Add EKS pod evidence to catalog with cluster, namespace, and workload provenance."""
+    pods = evidence.get("eks_pods") or []
+    failing_pods = evidence.get("eks_failing_pods") or []
+    high_restart_pods = evidence.get("eks_high_restart_pods") or []
+    cluster = evidence.get("eks_cluster_name", "unknown")
+    namespace = evidence.get("eks_namespace", "unknown")
+
+    if not pods:
+        return
+
+    summary_parts = [f"cluster={cluster}", f"namespace={namespace}"]
+    if failing_pods:
+        summary_parts.append(f"{len(failing_pods)} failing")
+    if high_restart_pods:
+        summary_parts.append(f"{len(high_restart_pods)} high-restart")
+
+    # Create entries for failing pods with full provenance
+    for idx, pod in enumerate(failing_pods[:5]):  # Limit to first 5 failing pods
+        pod_name = pod.get("name", f"pod-{idx}")
+        eid = f"evidence/eks/{cluster}/{namespace}/pod/{pod_name}"
+
+        # Build snippet from container states
+        containers = pod.get("containers", [])
+        container_info = []
+        for c in containers:
+            state = c.get("state", {})
+            if state.get("waiting"):
+                container_info.append(f"{c['name']}: waiting ({state.get('reason', 'unknown')})")
+            elif state.get("terminated"):
+                container_info.append(f"{c['name']}: exit={state.get('exit_code', 'unknown')}")
+
+        catalog[eid] = {
+            "label": f"EKS Pod: {pod_name}",
+            "summary": f"cluster={cluster}, namespace={namespace}, phase={pod.get('phase', 'unknown')}",
+            "snippet": _as_snippet("; ".join(container_info)) if container_info else None,
+        }
+        if idx == 0:
+            source_to_id["eks_pods"] = eid
+
+    # Add summary entry if no individual pods were cataloged
+    if not failing_pods and pods:
+        eid = f"evidence/eks/{cluster}/{namespace}/pods"
+        catalog[eid] = {
+            "label": f"EKS Pods ({cluster}/{namespace})",
+            "summary": ", ".join(summary_parts),
+            "snippet": _as_snippet(f"{len(pods)} total pods"),
+        }
+        source_to_id["eks_pods"] = eid
+
+
+def _add_eks_deployments(
+    evidence: dict[str, Any],
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
+    """Add EKS deployment evidence to catalog with cluster and namespace provenance."""
+    deployments = evidence.get("eks_deployments") or []
+    degraded = evidence.get("eks_degraded_deployments") or []
+    cluster = evidence.get("eks_cluster_name", "unknown")
+    namespace = evidence.get("eks_namespace", "unknown")
+
+    if not deployments:
+        return
+
+    summary_parts = [f"cluster={cluster}", f"namespace={namespace}"]
+    if degraded:
+        summary_parts.append(f"{len(degraded)} degraded")
+
+    # Create entries for degraded deployments
+    for idx, dep in enumerate(degraded[:5]):  # Limit to first 5
+        dep_name = dep.get("name", f"dep-{idx}")
+        eid = f"evidence/eks/{cluster}/{namespace}/deployment/{dep_name}"
+
+        status_parts = []
+        if dep.get("ready", 0) < dep.get("desired", 0):
+            status_parts.append(f"ready={dep['ready']}/{dep['desired']}")
+        if dep.get("unavailable", 0) > 0:
+            status_parts.append(f"unavailable={dep['unavailable']}")
+
+        catalog[eid] = {
+            "label": f"EKS Deployment: {dep_name}",
+            "summary": f"cluster={cluster}, namespace={namespace}, {', '.join(status_parts)}",
+            "snippet": None,
+        }
+        if idx == 0:
+            source_to_id["eks_deployments"] = eid
+
+    # Add summary entry if no degraded deployments
+    if not degraded and deployments:
+        eid = f"evidence/eks/{cluster}/{namespace}/deployments"
+        catalog[eid] = {
+            "label": f"EKS Deployments ({cluster}/{namespace})",
+            "summary": ", ".join(summary_parts),
+            "snippet": _as_snippet(f"{len(deployments)} total deployments"),
+        }
+        source_to_id["eks_deployments"] = eid
+
+
+def _add_eks_events(
+    evidence: dict[str, Any],
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
+    """Add EKS warning events to catalog with cluster and namespace provenance."""
+    events = evidence.get("eks_warning_events") or []
+    cluster = evidence.get("eks_cluster_name", "unknown")
+    namespace = evidence.get("eks_namespace", "all")
+    total_count = evidence.get("eks_total_warning_count", 0)
+
+    if not events:
+        return
+
+    # Group events by reason for summary
+    reasons: dict[str, int] = {}
+    for evt in events:
+        reason = evt.get("reason", "Unknown")
+        reasons[reason] = reasons.get(reason, 0) + 1
+
+    reason_summary = ", ".join(f"{k}({v})" for k, v in list(reasons.items())[:3])
+
+    eid = f"evidence/eks/{cluster}/{namespace}/events"
+    top_event = events[0] if events else {}
+    snippet = (
+        f"{top_event.get('reason', '')}: {top_event.get('message', '')}" if top_event else None
+    )
+
+    catalog[eid] = {
+        "label": f"EKS Warning Events ({cluster})",
+        "summary": f"cluster={cluster}, namespace={namespace}, total={total_count}, {reason_summary}",
+        "snippet": _as_snippet(snippet),
+    }
+    source_to_id["eks_events"] = eid
+
+
+def _add_eks_pod_logs(
+    evidence: dict[str, Any],
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
+    """Add EKS pod logs to catalog with full cluster, namespace, pod provenance."""
+    logs = evidence.get("eks_pod_logs", "")
+    cluster = evidence.get("eks_cluster_name", "unknown")
+    namespace = evidence.get("eks_namespace", "unknown")
+    pod_name = evidence.get("eks_pod_name", "unknown")
+
+    if not logs:
+        return
+
+    eid = f"evidence/eks/{cluster}/{namespace}/pod/{pod_name}/logs"
+
+    # Extract last few error lines for snippet
+    lines = logs.split("\n") if isinstance(logs, str) else []
+    error_lines = [
+        line
+        for line in lines[-10:]
+        if any(e in line.lower() for e in ["error", "exception", "fatal", "failed"])
+    ]
+    snippet = error_lines[-1] if error_lines else lines[-1] if lines else None
+
+    catalog[eid] = {
+        "label": f"EKS Pod Logs: {pod_name}",
+        "summary": f"cluster={cluster}, namespace={namespace}, pod={pod_name}",
+        "snippet": _as_snippet(str(snippet)) if snippet else None,
+    }
+    source_to_id["eks_pod_logs"] = eid
+
+
+def _add_eks_node_health(
+    evidence: dict[str, Any],
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
+    """Add EKS node health to catalog with cluster provenance."""
+    nodes = evidence.get("eks_nodes") or []
+    not_ready = evidence.get("eks_not_ready_nodes") or []
+    cluster = evidence.get("eks_cluster_name", "unknown")
+
+    if not nodes:
+        return
+
+    summary_parts = [f"cluster={cluster}", f"nodes={len(nodes)}"]
+    if not_ready:
+        summary_parts.append(f"not_ready={len(not_ready)}")
+
+    # Add details for not-ready nodes
+    node_info = []
+    for node in not_ready[:3]:  # Limit to first 3
+        name = node.get("name", "unknown")
+        conditions = node.get("conditions", [])
+        bad_conds = [c["type"] for c in conditions if c.get("status") != "True"]
+        node_info.append(f"{name}: {','.join(bad_conds)}")
+
+    eid = f"evidence/eks/{cluster}/nodes"
+    catalog[eid] = {
+        "label": f"EKS Node Health ({cluster})",
+        "summary": ", ".join(summary_parts),
+        "snippet": _as_snippet("; ".join(node_info)) if node_info else None,
+    }
+    source_to_id["eks_node_health"] = eid
 
 
 def _build_evidence_catalog(
@@ -506,6 +777,12 @@ def _build_evidence_catalog(
     _add_datadog_failed_pods(ns.evidence, ns.datadog_site, catalog, source_to_id)
     _add_honeycomb_traces(ns.evidence, catalog, source_to_id)
     _add_coralogix_logs(ns.evidence, catalog, source_to_id)
+    # EKS Kubernetes evidence with cluster, namespace, and workload provenance
+    _add_eks_pods(ns.evidence, catalog, source_to_id)
+    _add_eks_deployments(ns.evidence, catalog, source_to_id)
+    _add_eks_events(ns.evidence, catalog, source_to_id)
+    _add_eks_pod_logs(ns.evidence, catalog, source_to_id)
+    _add_eks_node_health(ns.evidence, catalog, source_to_id)
 
     for i, entry in enumerate(catalog.values()):
         entry["display_id"] = f"E{i + 1}"
@@ -516,6 +793,7 @@ def _build_evidence_catalog(
 # ---------------------------------------------------------------------------
 # Phase 3: link claims to catalog entries
 # ---------------------------------------------------------------------------
+
 
 def _attach_evidence_to_claims(
     claims: list[dict],
@@ -548,6 +826,7 @@ def _attach_evidence_to_claims(
 # Phase 4: final context assembly
 # ---------------------------------------------------------------------------
 
+
 def build_report_context(state: InvestigationState) -> ReportContext:
     """Build the full ReportContext from an InvestigationState.
 
@@ -561,7 +840,9 @@ def build_report_context(state: InvestigationState) -> ReportContext:
     catalog, source_to_id = _build_evidence_catalog(ns)
     display_map = {eid: entry.get("display_id", eid) for eid, entry in catalog.items()}
     validated_claims = _attach_evidence_to_claims(ns.validated_claims, source_to_id, display_map)
-    non_validated_claims = _attach_evidence_to_claims(ns.non_validated_claims, source_to_id, display_map)
+    non_validated_claims = _attach_evidence_to_claims(
+        ns.non_validated_claims, source_to_id, display_map
+    )
 
     return {
         # Core RCA results
@@ -624,4 +905,16 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         ),
         # Multiple failed pods — populated from Datadog evidence when available
         "kube_failed_pods": ns.evidence.get("datadog_failed_pods", []),
+        # EKS Kubernetes provenance from EKS tool evidence
+        "eks_cluster_name": ns.evidence.get("eks_cluster_name")
+        or _safe_get(ns.raw_alert, "annotations", "eks_cluster")
+        or _safe_get(ns.raw_alert, "annotations", "cluster_name"),
+        "eks_namespace": ns.evidence.get("eks_namespace")
+        or _safe_get(ns.raw_alert, "annotations", "kube_namespace")
+        or _safe_get(ns.raw_alert, "annotations", "namespace"),
+        "eks_pod_name": ns.evidence.get("eks_pod_name")
+        or _safe_get(ns.raw_alert, "annotations", "pod_name"),
+        "eks_deployment_name": ns.evidence.get("eks_deployment_name")
+        or _safe_get(ns.raw_alert, "annotations", "kube_deployment")
+        or _safe_get(ns.raw_alert, "annotations", "deployment"),
     }
