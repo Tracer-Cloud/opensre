@@ -119,11 +119,29 @@ def _parse_gitlab_repo_url(value: str) -> str:
 
 def _parse_bitbucket_repo_url(value: str) -> tuple[str, str]:
     parsed = urlparse(value.strip())
-    if "bitbucket.org" not in parsed.netloc.lower():
+    if not parsed.netloc:
         return "", ""
     parts = [part for part in parsed.path.strip("/").split("/") if part]
     if len(parts) < 2:
         return "", ""
+
+    # Bitbucket Cloud style: /{workspace}/{repo_slug}/...
+    if "bitbucket.org" in parsed.netloc.lower():
+        workspace = parts[0].strip()
+        repo_slug = parts[1].strip().removesuffix(".git")
+        return workspace, repo_slug
+
+    # Bitbucket Server / Data Center style: /projects/{project}/repos/{repo}/...
+    lowered_parts = [part.lower() for part in parts]
+    if "projects" in lowered_parts and "repos" in lowered_parts:
+        project_idx = lowered_parts.index("projects")
+        repo_idx = lowered_parts.index("repos")
+        if project_idx + 1 < len(parts) and repo_idx + 1 < len(parts):
+            workspace = parts[project_idx + 1].strip()
+            repo_slug = parts[repo_idx + 1].strip().removesuffix(".git")
+            return workspace, repo_slug
+
+    # Generic fallback for self-hosted paths: use first two path segments.
     workspace = parts[0].strip()
     repo_slug = parts[1].strip().removesuffix(".git")
     return workspace, repo_slug

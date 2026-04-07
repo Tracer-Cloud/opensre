@@ -97,6 +97,7 @@ def test_openobserve_tool_caps_size_and_output(monkeypatch: Any) -> None:
     def _fake_post(url: str, headers: dict[str, str], json: dict[str, Any], timeout: float) -> _MockResponse:
         captured["url"] = url
         captured["size"] = json["size"]
+        captured["sql"] = json["query"]["sql"]
         return _MockResponse({"hits": [{"message": f"m{idx}"} for idx in range(12)]})
 
     monkeypatch.setattr("app.tools.OpenObserveLogsTool.httpx.post", _fake_post)
@@ -110,6 +111,7 @@ def test_openobserve_tool_caps_size_and_output(monkeypatch: Any) -> None:
     )
 
     assert captured["size"] == 4
+    assert captured["sql"] == "SELECT * FROM \"default\" WHERE level = 'error' ORDER BY _timestamp DESC"
     assert result["available"] is True
     assert len(result["records"]) == 4
 

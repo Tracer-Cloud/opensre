@@ -128,7 +128,9 @@ def query_openobserve_logs(
     effective_limit = _bounded_limit(limit, max_results)
     now = datetime.now(UTC)
     start = now - timedelta(minutes=max(1, time_range_minutes))
-    normalized_query = query.strip() or "level:error OR message:error"
+    normalized_query = query.strip() or (
+        "SELECT * FROM \"default\" WHERE level = 'error' ORDER BY _timestamp DESC"
+    )
 
     endpoint = f"{base}/api/{(org or 'default').strip()}/_search"
     payload: dict[str, Any] = {

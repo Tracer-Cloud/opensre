@@ -33,6 +33,31 @@ def test_detect_sources_routes_bitbucket_from_repo_url() -> None:
     assert bitbucket["connection_verified"] is True
 
 
+def test_detect_sources_routes_bitbucket_from_self_hosted_server_url() -> None:
+    alert = {
+        "alert_name": "Deployment failed",
+        "annotations": {
+            "repo_url": "https://bitbucket.acme.internal/projects/OPS/repos/backend-service/browse/src/main.py",
+        },
+    }
+    integrations = {
+        "bitbucket": {
+            "workspace": "ops-default",
+            "username": "bb-user",
+            "app_password": "bb-pass",
+            "integration_id": "bb-1",
+        }
+    }
+
+    sources = detect_sources(alert, {}, integrations)
+    bitbucket = sources.get("bitbucket")
+
+    assert bitbucket is not None
+    assert bitbucket["workspace"] == "ops-default"
+    assert bitbucket["repo_slug"] == "backend-service"
+    assert bitbucket["connection_verified"] is True
+
+
 def test_detect_sources_does_not_route_bitbucket_without_repo_context() -> None:
     alert = {"alert_name": "Deployment failed", "annotations": {}}
     integrations = {
