@@ -112,6 +112,28 @@ class TestEKSAddPods:
         assert entry["snippet"] is not None
         assert "unknown: waiting" in entry["snippet"]
 
+    def test_add_eks_pods_ignores_malformed_container_entries(self) -> None:
+        evidence = {
+            "eks_cluster_name": "prod-cluster-1",
+            "eks_namespace": "tracer",
+            "eks_pods": [{"name": "failing-pod", "phase": "Failed"}],
+            "eks_failing_pods": [
+                {
+                    "name": "failing-pod",
+                    "phase": "Failed",
+                    "containers": ["bad-container", {"name": "app", "state": "bad-state"}],
+                }
+            ],
+            "eks_high_restart_pods": [],
+        }
+        catalog: dict = {}
+        source_to_id: dict = {}
+
+        _add_eks_pods(evidence, catalog, source_to_id)
+
+        entry = catalog["evidence/eks/prod-cluster-1/tracer/pod/failing-pod"]
+        assert entry["snippet"] is None
+
 
 class TestEKSAddDeployments:
     """Test _add_eks_deployments catalog builder."""
@@ -148,6 +170,25 @@ class TestEKSAddDeployments:
         assert "evidence/eks/prod-cluster-1/tracer/deployment/degraded-dep" in catalog
         entry = catalog["evidence/eks/prod-cluster-1/tracer/deployment/degraded-dep"]
         assert entry["label"] == "EKS Deployment: degraded-dep"
+
+    def test_add_eks_deployments_handles_missing_ready(self) -> None:
+        evidence = {
+            "eks_cluster_name": "prod-cluster-1",
+            "eks_namespace": "tracer",
+            "eks_deployments": [
+                {"name": "degraded-dep", "desired": 3, "unavailable": 1, "degraded": True},
+            ],
+            "eks_degraded_deployments": [
+                {"name": "degraded-dep", "desired": 3, "unavailable": 1, "degraded": True},
+            ],
+        }
+        catalog: dict = {}
+        source_to_id: dict = {}
+
+        _add_eks_deployments(evidence, catalog, source_to_id)
+
+        entry = catalog["evidence/eks/prod-cluster-1/tracer/deployment/degraded-dep"]
+        assert "ready=0/3" in entry["summary"]
 
     def test_add_eks_deployments_no_degraded(self) -> None:
         evidence = {

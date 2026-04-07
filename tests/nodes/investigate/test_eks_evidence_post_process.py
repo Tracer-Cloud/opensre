@@ -132,6 +132,18 @@ class TestEKSEvidenceMappers:
         assert len(result["eks_degraded_deployments"]) == 1
         assert result["eks_deployment_name"] == "worker-deployment"
 
+    def test_list_eks_deployments_mapper_handles_malformed_first_entry(self) -> None:
+        data = {
+            "cluster_name": "prod-cluster-1",
+            "namespace": "tracer",
+            "deployments": ["bad-entry"],
+            "degraded_deployments": [],
+        }
+        mapper = EVIDENCE_MAPPERS["list_eks_deployments"]
+        result = mapper(data)
+
+        assert result["eks_deployment_name"] == ""
+
     def test_get_eks_events_mapper(self) -> None:
         data = {
             "cluster_name": "prod-cluster-1",

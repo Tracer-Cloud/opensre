@@ -270,7 +270,8 @@ def _map_eks_deployments(data: dict) -> dict:
         return {}
     deployments = data.get("deployments", [])
     degraded = data.get("degraded_deployments", [])
-    first_name = (degraded or deployments or [{}])[0].get("name", "")
+    first_entry = (degraded or deployments or [{}])[0]
+    first_name = first_entry.get("name", "") if isinstance(first_entry, dict) else ""
     return {
         "eks_cluster_name": data.get("cluster_name", ""),
         "eks_namespace": data.get("namespace", ""),

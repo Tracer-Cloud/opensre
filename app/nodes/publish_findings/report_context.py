@@ -579,7 +579,11 @@ def _add_eks_pods(
         containers = pod.get("containers", [])
         container_info = []
         for c in containers:
+            if not isinstance(c, dict):
+                continue
             state = c.get("state", {})
+            if not isinstance(state, dict):
+                state = {}
             cname = c.get("name", "unknown")
             if state.get("waiting"):
                 container_info.append(f"{cname}: waiting ({state.get('reason', 'unknown')})")
@@ -630,7 +634,7 @@ def _add_eks_deployments(
 
         status_parts = []
         if dep.get("ready", 0) < dep.get("desired", 0):
-            status_parts.append(f"ready={dep['ready']}/{dep['desired']}")
+            status_parts.append(f"ready={dep.get('ready', 0)}/{dep.get('desired', 0)}")
         if dep.get("unavailable", 0) > 0:
             status_parts.append(f"unavailable={dep['unavailable']}")
 
