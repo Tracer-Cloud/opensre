@@ -208,11 +208,12 @@ class TestProbeHealth:
             client = RemoteAgentClient("http://host:2024")
             report = client.probe_health(local_version="2026.4.5")
 
-        assert report["status"] == "warn"
+        assert report["status"] == "passed"
         assert report["remote_version"] == "2026.4.5"
         assert any(
-            check["name"] == "Uptime" and check["status"] == "missing" for check in report["checks"]
+            check["name"] == "Uptime" and check["status"] == "passed" for check in report["checks"]
         )
+        assert "Remote /ok endpoint does not expose uptime yet." in report["hints"]
 
 
 class TestBuildSyntheticPayload:

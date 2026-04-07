@@ -78,4 +78,8 @@ def deploy_ec2(down: bool, branch: str) -> None:
     remote_url = _build_remote_url(outputs)
     if remote_url:
         click.echo("\n  Running remote deployment health check...")
-        run_remote_health_check(base_url=remote_url, output_json=False, save_url=False)
+        try:
+            run_remote_health_check(base_url=remote_url, output_json=False, save_url=False)
+        except click.ClickException as exc:
+            click.echo(f"\n  [warn] Health check: {exc.format_message()}", err=True)
+            click.echo("  Deployment provisioned. Retry with: opensre remote health")

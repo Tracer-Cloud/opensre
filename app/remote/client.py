@@ -87,6 +87,78 @@ class RemoteAgentClient:
                 return raw_data
             return {"ok": True, "raw": raw_data}
 
+    def _coerce_json_dict(self, response: httpx.Response) -> dict[str, Any]:
+        try:
+            payload: Any = response.json()
+        except ValueError:
+            payload = {"raw": response.text.strip()}
+        if isinstance(payload, dict):
+            return payload
+        return {"raw": payload}
+
+    def _fetch_ok_payload(self, client: httpx.Client) -> tuple[dict[str, Any], int]:
+        ok_url = f"{self.base_url}/ok"
+        started = time.monotonic()
+        ok_resp = client.get(ok_url, headers=self._headers)
+        ok_resp.raise_for_status()
+        latency_ms = int((time.monotonic() - started) * 1000)
+        return self._coerce_json_dict(ok_resp), latency_ms
+
+    def _fetch_remote_version(self, client: httpx.Client, fallback: str) -> tuple[str, str]:
+        version_url = f"{self.base_url}/version"
+        remote_version = fallback
+        version_source = "/ok"
+        try:
+            version_resp = client.get(version_url, headers=self._headers)
+            if version_resp.status_code == 200:
+                version_data = self._coerce_json_dict(version_resp)
+                parsed = str(version_data.get("version", "")).strip()
+                if parsed:
+                    remote_version = parsed
+                    version_source = "/version"
+        except Exception:  # noqa: BLE001
+            pass
+        return remote_version, version_source
+
+    def _fetch_deep_checks(self, client: httpx.Client) -> list[dict[str, str]]:
+        deep_health_url = f"{self.base_url}/health/deep"
+        checks: list[dict[str, str]] = []
+        try:
+            deep_resp = client.get(deep_health_url, headers=self._headers)
+            if deep_resp.status_code != 200:
+                return checks
+            deep_data = self._coerce_json_dict(deep_resp)
+            raw_checks = deep_data.get("checks")
+            if not isinstance(raw_checks, list):
+                return checks
+            for check in raw_checks:
+                if not isinstance(check, dict):
+                    continue
+                name = str(check.get("name", "")).strip() or "Deep check"
+                status = str(check.get("status", "unknown")).strip() or "unknown"
+                detail = str(check.get("detail", "")).strip() or "-"
+                checks.append(
+                    {
+                        "name": name,
+                        "endpoint": "/health/deep",
+                        "status": status,
+                        "detail": detail,
+                    }
+                )
+        except Exception:  # noqa: BLE001
+            return []
+        return checks
+
+    def _aggregate_status(self, checks: list[dict[str, str]]) -> str:
+        if any(str(check.get("status", "")).lower() in {"failed", "error"} for check in checks):
+            return "failed"
+        if any(
+            str(check.get("status", "")).lower() in {"warn", "warning", "missing"}
+            for check in checks
+        ):
+            return "warn"
+        return "passed"
+
     def probe_health(
         self,
         *,
@@ -94,62 +166,11 @@ class RemoteAgentClient:
         timeout: float = REQUEST_TIMEOUT,
     ) -> dict[str, Any]:
         """Run a deeper health probe and return a normalized report."""
-        ok_url = f"{self.base_url}/ok"
-        version_url = f"{self.base_url}/version"
-        deep_health_url = f"{self.base_url}/health/deep"
-
-        started = time.monotonic()
         with httpx.Client(timeout=timeout) as client:
-            ok_resp = client.get(ok_url, headers=self._headers)
-            ok_resp.raise_for_status()
-            latency_ms = int((time.monotonic() - started) * 1000)
-
-            try:
-                ok_data: Any = ok_resp.json()
-            except ValueError:
-                ok_data = {"raw": ok_resp.text.strip()}
-
-            if not isinstance(ok_data, dict):
-                ok_data = {"raw": ok_data}
-
+            ok_data, latency_ms = self._fetch_ok_payload(client)
             remote_version = str(ok_data.get("version", "")).strip()
-            version_source = "/ok"
-
-            try:
-                version_resp = client.get(version_url, headers=self._headers)
-                if version_resp.status_code == 200:
-                    version_data = version_resp.json()
-                    if isinstance(version_data, dict):
-                        parsed = str(version_data.get("version", "")).strip()
-                        if parsed:
-                            remote_version = parsed
-                            version_source = "/version"
-            except Exception:  # noqa: BLE001
-                pass
-
-            deep_checks: list[dict[str, str]] = []
-            try:
-                deep_resp = client.get(deep_health_url, headers=self._headers)
-                if deep_resp.status_code == 200:
-                    deep_data = deep_resp.json()
-                    raw_checks = deep_data.get("checks") if isinstance(deep_data, dict) else None
-                    if isinstance(raw_checks, list):
-                        for check in raw_checks:
-                            if not isinstance(check, dict):
-                                continue
-                            name = str(check.get("name", "")).strip() or "Deep check"
-                            status = str(check.get("status", "unknown")).strip() or "unknown"
-                            detail = str(check.get("detail", "")).strip() or "-"
-                            deep_checks.append(
-                                {
-                                    "name": name,
-                                    "endpoint": "/health/deep",
-                                    "status": status,
-                                    "detail": detail,
-                                }
-                            )
-            except Exception:  # noqa: BLE001
-                deep_checks = []
+            remote_version, version_source = self._fetch_remote_version(client, remote_version)
+            deep_checks = self._fetch_deep_checks(client)
 
         version_status = "passed"
         version_detail = "Remote version matches local CLI"
@@ -161,10 +182,12 @@ class RemoteAgentClient:
 
         uptime = ok_data.get("uptime_seconds")
         uptime_detail = "No uptime data from server"
-        uptime_status = "missing"
+        uptime_status = "passed"
+        missing_uptime = True
         if isinstance(uptime, int):
             uptime_status = "passed"
             uptime_detail = f"{uptime}s"
+            missing_uptime = False
 
         checks = [
             {
@@ -188,19 +211,12 @@ class RemoteAgentClient:
         ]
         checks.extend(deep_checks)
 
-        status = "passed"
-        if any(str(check.get("status", "")).lower() in {"failed", "error"} for check in checks):
-            status = "failed"
-        elif any(
-            str(check.get("status", "")).lower() in {"warn", "warning", "missing"}
-            for check in checks
-        ):
-            status = "warn"
+        status = self._aggregate_status(checks)
 
         hints: list[str] = []
         if version_status == "warn":
             hints.append(version_detail)
-        if uptime_status == "missing":
+        if missing_uptime:
             hints.append("Remote /ok endpoint does not expose uptime yet.")
 
         instance_id = ok_data.get("instance_id")

@@ -10,6 +10,19 @@ from app.cli.__main__ import cli
 from app.remote.stream import StreamEvent
 
 
+def _probe_health_report(*, latency_ms: int = 17) -> dict[str, object]:
+    return {
+        "status": "passed",
+        "base_url": "http://10.0.0.1:2024",
+        "latency_ms": latency_ms,
+        "local_version": "2026.4.5",
+        "remote_version": "2026.4.5",
+        "checks": [],
+        "hints": [],
+        "ok": True,
+    }
+
+
 def test_remote_health_requires_saved_or_explicit_url() -> None:
     runner = CliRunner()
 
@@ -24,16 +37,7 @@ def test_remote_health_uses_saved_url_and_persists_normalized_url() -> None:
     runner = CliRunner()
     client = MagicMock()
     client.base_url = "http://10.0.0.1:2024"
-    client.probe_health.return_value = {
-        "status": "passed",
-        "base_url": "http://10.0.0.1:2024",
-        "latency_ms": 17,
-        "local_version": "2026.4.5",
-        "remote_version": "2026.4.5",
-        "checks": [],
-        "hints": [],
-        "ok": True,
-    }
+    client.probe_health.return_value = _probe_health_report()
 
     with (
         patch.dict(os.environ, {}, clear=True),
@@ -86,16 +90,7 @@ def test_remote_health_json_output() -> None:
     runner = CliRunner()
     client = MagicMock()
     client.base_url = "http://10.0.0.1:2024"
-    client.probe_health.return_value = {
-        "status": "passed",
-        "base_url": "http://10.0.0.1:2024",
-        "latency_ms": 42,
-        "local_version": "2026.4.5",
-        "remote_version": "2026.4.5",
-        "checks": [],
-        "hints": [],
-        "ok": True,
-    }
+    client.probe_health.return_value = _probe_health_report(latency_ms=42)
 
     with (
         patch("app.remote.client.RemoteAgentClient", return_value=client),
@@ -126,16 +121,7 @@ def test_remote_group_passes_api_key_to_client() -> None:
     runner = CliRunner()
     client = MagicMock()
     client.base_url = "http://10.0.0.1:2024"
-    client.probe_health.return_value = {
-        "status": "passed",
-        "base_url": "http://10.0.0.1:2024",
-        "latency_ms": 11,
-        "local_version": "2026.4.5",
-        "remote_version": "2026.4.5",
-        "checks": [],
-        "hints": [],
-        "ok": True,
-    }
+    client.probe_health.return_value = _probe_health_report(latency_ms=11)
 
     with (
         patch("app.remote.client.RemoteAgentClient", return_value=client) as mock_client_cls,
