@@ -1008,7 +1008,6 @@ def _configure_langsmith() -> tuple[str, str]:
             )
             env_path = sync_env_values(
                 {
-                    "LANGSMITH_API_KEY": api_key,
                     "LANGSMITH_DEPLOYMENT_NAME": deployment_name,
                 }
             )
