@@ -234,16 +234,17 @@ def find_identifiers(
     """
     results: list[DetectedIdentifier] = []
 
-    pattern_map: dict[Pattern[str] | None, IdentifierType] = {
-        hostname_pattern: IdentifierType.HOSTNAME,
-        account_id_pattern: IdentifierType.ACCOUNT_ID,
-        cluster_name_pattern: IdentifierType.CLUSTER_NAME,
-        service_name_pattern: IdentifierType.SERVICE_NAME,
-        ip_address_pattern: IdentifierType.IP_ADDRESS,
-        email_pattern: IdentifierType.EMAIL,
-    }
+    # Use list of tuples to avoid dict key collisions when patterns are None
+    pattern_pairs: list[tuple[Pattern[str] | None, IdentifierType]] = [
+        (hostname_pattern, IdentifierType.HOSTNAME),
+        (account_id_pattern, IdentifierType.ACCOUNT_ID),
+        (cluster_name_pattern, IdentifierType.CLUSTER_NAME),
+        (service_name_pattern, IdentifierType.SERVICE_NAME),
+        (ip_address_pattern, IdentifierType.IP_ADDRESS),
+        (email_pattern, IdentifierType.EMAIL),
+    ]
 
-    for pattern, id_type in pattern_map.items():
+    for pattern, id_type in pattern_pairs:
         if pattern is None:
             continue
         for match in pattern.finditer(text):

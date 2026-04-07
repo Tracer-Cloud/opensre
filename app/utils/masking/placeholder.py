@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.utils.masking.detectors import DetectedIdentifier, IdentifierType
+    from app.utils.masking.policies import DetectedIdentifier, IdentifierType
 
 
 # Placeholder templates by identifier type name

@@ -94,15 +94,11 @@ class MaskingContext:
         """Get statistics about masked identifiers.
 
         Returns:
-            Dict mapping identifier type names to count
+            Dict mapping identifier type names to count (matches IdentifierType enum names)
         """
-        stats: dict[str, int] = {}
-        for _value, placeholder in self.placeholder_map.value_to_placeholder.items():
-            # Extract type from placeholder (e.g., "<HOSTNAME_0>" -> "HOSTNAME")
-            if placeholder.startswith("<") and "_" in placeholder:
-                type_name = placeholder[1:].rsplit("_", 1)[0]
-                stats[type_name] = stats.get(type_name, 0) + 1
-        return stats
+        # Use type_counters from PlaceholderMap which tracks by full IdentifierType.name
+        # (e.g., "ACCOUNT_ID", "CLUSTER_NAME" instead of abbreviated placeholder labels)
+        return dict(self.placeholder_map.type_counters)
 
 
 # Global context for convenience (per-investigation contexts are preferred)

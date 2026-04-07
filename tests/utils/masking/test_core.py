@@ -156,7 +156,8 @@ class TestMaskingContext:
         ctx.mask_text("Also check cluster-prod-02")
 
         stats = ctx.get_stats()
-        assert stats.get("CLUSTER", 0) == 2
+        # Stats now use full IdentifierType enum names (e.g., "CLUSTER_NAME", "HOSTNAME")
+        assert stats.get("CLUSTER_NAME", 0) == 2
         assert stats.get("HOSTNAME", 0) == 1
 
 
