@@ -27,6 +27,7 @@ from app.cli.langsmith_deploy import (
 from app.deployment.ec2_config import load_remote_outputs
 from app.integrations.store import upsert_integration
 
+
 def _deploy_style(questionary: Any) -> Any:
     return questionary.Style(
         [
