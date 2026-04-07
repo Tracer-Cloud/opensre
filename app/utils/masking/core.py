@@ -9,11 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from app.utils.masking.detectors import (
-    find_identifiers,
-)
 from app.utils.masking.placeholder import PlaceholderMap
-from app.utils.masking.policies import CompiledPolicy, MaskingPolicy
+from app.utils.masking.policies import CompiledPolicy, MaskingPolicy, find_identifiers
 
 if TYPE_CHECKING:
     pass

@@ -1,6 +1,6 @@
 """Tests for identifier detectors."""
 
-from app.utils.masking.detectors import (
+from app.utils.masking.policies import (
     DetectedIdentifier,
     IdentifierType,
     find_identifiers,

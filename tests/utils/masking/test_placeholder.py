@@ -1,7 +1,7 @@
 """Tests for placeholder mapping."""
 
-from app.utils.masking.detectors import DetectedIdentifier, IdentifierType
 from app.utils.masking.placeholder import PlaceholderMap, _get_placeholder_template
+from app.utils.masking.policies import DetectedIdentifier, IdentifierType
 
 
 class TestGetPlaceholderTemplate:

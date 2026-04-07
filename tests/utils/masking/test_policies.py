@@ -248,9 +248,12 @@ class TestCompiledPolicy:
         assert compiled.custom_patterns[1].pattern == r"[A-Z]{3}"
 
     def test_custom_patterns_invalid_regex(self) -> None:
-        """Test that invalid regex patterns are skipped."""
+        """Test that invalid regex patterns raise ValueError."""
         policy = MaskingPolicy(custom_patterns=[r"\d{4}", r"[invalid(", r"[A-Z]+"])
-        compiled = CompiledPolicy.from_policy(policy)
 
-        # Only valid patterns should be compiled
-        assert len(compiled.custom_patterns) == 2
+        # Should raise ValueError with clear message about invalid pattern
+        with pytest.raises(ValueError) as exc_info:
+            CompiledPolicy.from_policy(policy)
+
+        assert "Invalid custom regex pattern" in str(exc_info.value)
+        assert "[invalid(" in str(exc_info.value)

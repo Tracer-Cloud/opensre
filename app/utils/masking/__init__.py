@@ -38,15 +38,13 @@ from app.utils.masking.core import (
     unmask_list,
     unmask_text,
 )
-from app.utils.masking.detectors import (
-    DetectedIdentifier,
-    IdentifierType,
-    find_identifiers,
-)
 from app.utils.masking.placeholder import PlaceholderMap
 from app.utils.masking.policies import (
     CompiledPolicy,
+    DetectedIdentifier,
+    IdentifierType,
     MaskingPolicy,
+    find_identifiers,
 )
 
 __all__ = [
