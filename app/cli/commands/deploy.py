@@ -18,11 +18,11 @@ from app.cli.errors import OpenSREError
 from app.cli.langsmith_deploy import (
     is_docker_running,
     is_langgraph_cli_installed,
+    persist_langsmith_env,
     resolve_deployment_name,
     resolve_langsmith_api_key,
     run_langsmith_deploy,
     validate_langsmith_api_key,
-    persist_langsmith_env,
 )
 from app.deployment.ec2_config import load_remote_outputs
 
