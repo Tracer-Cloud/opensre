@@ -119,14 +119,15 @@ def _parse_gitlab_repo_url(value: str) -> str:
 
 def _parse_bitbucket_repo_url(value: str) -> tuple[str, str]:
     parsed = urlparse(value.strip())
-    if not parsed.netloc:
+    host = (parsed.hostname or "").lower().strip()
+    if not host:
         return "", ""
     parts = [part for part in parsed.path.strip("/").split("/") if part]
     if len(parts) < 2:
         return "", ""
 
     # Bitbucket Cloud style: /{workspace}/{repo_slug}/...
-    if "bitbucket.org" in parsed.netloc.lower():
+    if host == "bitbucket.org" or host.endswith(".bitbucket.org"):
         workspace = parts[0].strip()
         repo_slug = parts[1].strip().removesuffix(".git")
         return workspace, repo_slug
