@@ -372,7 +372,7 @@ def test_health_smoke_uses_real_datadog_store_config(cli_sandbox: CliSandbox) ->
 
     result = _run_cli(cli_sandbox, "health")
 
-    assert result.exit_code == 0
+    assert result.exit_code == 1
     assert "OpenSRE Health" in result.stdout
     assert "datadog" in result.stdout
     assert "Missing API key or application key." in result.stdout
@@ -474,7 +474,7 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
             PtyAction(expect="How do you want to get started?", send=b"\r"),
             PtyAction(expect="Choose your LLM provider", send=b"\r"),
             PtyAction(expect="Anthropic API key", send=b"smoke-test-key\r"),
-            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjj\r"),
+            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjj\r"),
         ],
         timeout=30.0,
     )

@@ -1,0 +1,37 @@
+name: Update Benchmark README Section
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/benchmarks/results.md'
+  workflow_dispatch:
+
+jobs:
+  update-benchmark-readme:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Update README benchmark section
+        run: python -m tests.benchmarks.toolcall_model_benchmark.readme_updater
+
+      - name: Commit changes
+        run: |
+          git config user.name "benchmark-readme-action"
+          git config user.email "benchmark-readme-action@noreply.github.com"
+          git add README.md
+          git diff --staged --quiet || git commit -m "docs(benchmark): update README with latest benchmark results"
+          git pull --rebase origin main
+          git push

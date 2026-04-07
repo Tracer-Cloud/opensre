@@ -59,6 +59,7 @@ def deploy() -> dict[str, str]:
         description="Allow LangGraph API port for OpenSRE deployment tests",
         ingress_rules=[
             {"port": 2024, "cidr": "0.0.0.0/0", "description": "LangGraph API"},
+            {"port": 22, "cidr": "0.0.0.0/0", "description": "SSH debug access"},
         ],
         stack_name=STACK_NAME,
         region=REGION,
@@ -80,8 +81,26 @@ def deploy() -> dict[str, str]:
     ami_id = get_latest_al2023_ami(REGION)
     print(f"  - AMI: {ami_id}")
 
-    # 5. User data
-    user_data = generate_user_data()
+    # 5. User data — pass required LLM env vars from local environment
+    import os
+    env_vars: dict[str, str] = {}
+    for key in (
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "LANGSMITH_API_KEY",
+        "LANGCHAIN_API_KEY",
+        "LLM_PROVIDER",
+        "ANTHROPIC_MODEL",
+    ):
+        val = os.getenv(key)
+        if val:
+            env_vars[key] = val
+    # Force provider to openai if only OpenAI key present
+    if "OPENAI_API_KEY" in env_vars and "LLM_PROVIDER" not in env_vars:
+        env_vars["LLM_PROVIDER"] = "openai"
+    if env_vars.get("LLM_PROVIDER") == "ollama":
+        env_vars["LLM_PROVIDER"] = "openai"
+    user_data = generate_user_data(env_vars=env_vars)
 
     # 6. Launch instance
     print("Launching EC2 instance...")

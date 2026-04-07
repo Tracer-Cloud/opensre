@@ -74,11 +74,6 @@ def _require_interactive_dependencies() -> None:
         )
 
 
-def _questionary_api() -> Any:
-    _require_interactive_dependencies()
-    return _questionary
-
-
 def _choose_category() -> str:
     _require_interactive_dependencies()
     choices = [_QuestionaryChoice(title=label, value=value) for value, label in _CATEGORY_OPTIONS]
@@ -120,13 +115,6 @@ def _select_item(items: list[TestCatalogItem], *, prompt: str, allow_back: bool 
         if item.id == selected_id:
             return item
     raise ValueError(f"Unknown selected item: {selected_id}")
-
-
-def _select_child(item: TestCatalogItem) -> TestCatalogItem:
-    if not item.children:
-        return item
-    child_items = list(item.children)
-    return _select_item(child_items, prompt=f"Select a scenario from {item.display_name}:")
 
 
 def _matching_children(item: TestCatalogItem, *, category: str, search: str) -> list[TestCatalogItem]:

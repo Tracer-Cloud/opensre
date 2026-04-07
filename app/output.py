@@ -21,9 +21,14 @@ from rich.text import Text
 
 
 def get_output_format() -> str:
-    """Return 'rich' for interactive TTY, 'text' otherwise."""
+    """Return 'rich' for interactive TTY, 'text' otherwise.
+
+    Respects the ``NO_COLOR`` environment variable (https://no-color.org/).
+    """
     if fmt := os.getenv("TRACER_OUTPUT_FORMAT"):
         return fmt
+    if os.getenv("NO_COLOR") is not None:
+        return "text"
     if os.getenv("SLACK_WEBHOOK_URL"):
         return "text"
     return "rich" if sys.stdout.isatty() else "text"
@@ -131,7 +136,11 @@ _VERB_SECS  = 2.5
 
 
 class _LiveSpinner:
-    """Animated in-place spinner. Resolves to a static dot line on stop()."""
+    """Animated in-place spinner. Resolves to a static dot line on stop().
+
+    Supports dynamic subtext via :meth:`update_subtext` so callers can
+    replace the cycling verb with real-time status (e.g. tool calls).
+    """
 
     def __init__(self, node_name: str) -> None:
         self._label  = _node_label(node_name)
@@ -139,6 +148,9 @@ class _LiveSpinner:
         self._t0     = time.monotonic()
         self._done   = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._lock   = threading.Lock()
+        self._override_text: str | None = None
+        self._override_until: float = 0.0
 
     def start(self) -> None:
         self._thread.start()
@@ -148,12 +160,26 @@ class _LiveSpinner:
         self._thread.join()
         _write("\033[2K\r" + self._resolved_line(event) + "\n")
 
+    def update_subtext(self, text: str, duration: float = 4.0) -> None:
+        """Replace the cycling verb with *text* for *duration* seconds."""
+        with self._lock:
+            self._override_text = text
+            self._override_until = time.monotonic() + duration
+
     def _elapsed(self) -> float:
         return time.monotonic() - self._t0
 
+    def _current_verb(self) -> str:
+        with self._lock:
+            if self._override_text and time.monotonic() < self._override_until:
+                return self._override_text
+            if self._override_text and time.monotonic() >= self._override_until:
+                self._override_text = None
+        return self._verbs[int(self._elapsed() / _VERB_SECS) % len(self._verbs)]
+
     def _spinner_line(self) -> str:
         frame = _ansi(_FRAMES[int(self._elapsed() / _FRAME_SECS) % len(_FRAMES)], _DIM)
-        verb  = _ansi(self._verbs[int(self._elapsed() / _VERB_SECS) % len(self._verbs)], _DIM)
+        verb  = _ansi(self._current_verb(), _DIM)
         return f"  {frame}  {_ansi(self._label, _BOLD, _WHITE)}  {verb}"
 
     def _resolved_line(self, event: ProgressEvent) -> str:
@@ -208,6 +234,11 @@ class ProgressTracker:
 
     def error(self, node_name: str, message: str) -> None:
         self._finish(node_name, "error", [], message)
+
+    def update_subtext(self, node_name: str, text: str, duration: float = 4.0) -> None:
+        """Push a live status string into the active spinner for *node_name*."""
+        if spinner := self._spinners.get(node_name):
+            spinner.update_subtext(text, duration)
 
     def _finish(self, node_name: str, status: str, fields_updated: list[str], message: str | None) -> None:
         elapsed_ms = int((time.monotonic() - self._start_times.pop(node_name, time.monotonic())) * 1000)
@@ -275,8 +306,19 @@ def render_investigation_header(
 # Debug output
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _is_verbose() -> bool:
+    if os.getenv("TRACER_VERBOSE", "").lower() in ("1", "true", "yes"):
+        return True
+    try:
+        from app.cli.context import is_debug, is_verbose
+
+        return is_verbose() or is_debug()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def debug_print(message: str) -> None:
-    if os.getenv("TRACER_VERBOSE", "").lower() not in ("1", "true", "yes"):
+    if not _is_verbose():
         return
     if get_output_format() == "rich":
         Console().print(f"[dim]{message}[/]")

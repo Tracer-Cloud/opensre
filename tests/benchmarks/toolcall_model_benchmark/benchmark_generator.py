@@ -235,6 +235,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--reasoning-usd-per-mtok", type=float, default=DEFAULT_REASONING_USD_PER_MTOK
     )
     parser.add_argument("--tool-usd-per-mtok", type=float, default=DEFAULT_TOOL_USD_PER_MTOK)
+    parser.add_argument(
+        "--no-update-readme",
+        action="store_true",
+        default=False,
+        help="Skip updating the README.md benchmark section.",
+    )
+    parser.add_argument(
+        "--readme-path",
+        default=None,
+        help="Path to README.md. Default: auto-detect repo root.",
+    )
     return parser.parse_args(argv)
 
 
@@ -257,6 +268,23 @@ def main(argv: list[str] | None = None) -> int:
     md_out.write_text(render_markdown(cases, summary), encoding="utf-8")
 
     logger.info("Wrote markdown report: %s", md_out)
+
+    if not args.no_update_readme:
+        from tests.benchmarks.toolcall_model_benchmark.readme_updater import (
+            _find_repo_root,
+            render_readme_summary,
+            update_readme_benchmarks,
+        )
+
+        if args.readme_path:
+            readme_path = Path(args.readme_path)
+        else:
+            readme_path = _find_repo_root() / "README.md"
+        snippet = render_readme_summary(cases, summary)
+        try:
+            update_readme_benchmarks(readme_path, snippet)
+        except ValueError as exc:
+            logger.warning("Skipped README update: %s", exc)
 
     return 0 if summary.error_count == 0 else 1
 

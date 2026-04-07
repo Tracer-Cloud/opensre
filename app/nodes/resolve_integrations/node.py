@@ -11,9 +11,11 @@ import logging
 import os
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from app.integrations.github_mcp import build_github_mcp_config
+from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL, build_gitlab_config
 from app.integrations.models import (
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
@@ -48,6 +50,7 @@ _SERVICE_KEY_MAP = {
     "github": "github",
     "github_mcp": "github",
     "sentry": "sentry",
+    "gitlab": "gitlab",
     "mongodb": "mongodb",
     "mongo": "mongodb",
     "vercel": "vercel",
@@ -197,6 +200,15 @@ def _classify_integrations(
             if sentry_config.organization_slug and sentry_config.auth_token:
                 resolved["sentry"] = sentry_config.model_dump()
 
+        elif key == "gitlab":
+            try:
+                gitlab_config = build_gitlab_config({
+                    "base_url": credentials.get("base_url", ""),
+                    "auth_token": credentials.get("auth_token", ""),
+                })
+            except Exception:
+                continue
+            resolved["gitlab"] = gitlab_config.model_dump()
         elif key == "mongodb":
             try:
                 mongodb_config = build_mongodb_config({
@@ -413,6 +425,18 @@ def _load_env_integrations() -> list[dict[str, Any]]:
             "credentials": sentry_config.model_dump(exclude={"integration_id"}),
         })
 
+    gitlab_access_token = os.getenv("GITLAB_ACCESS_TOKEN", "").strip()
+    if gitlab_access_token:
+        gitlab_config = build_gitlab_config({
+            "base_url": os.getenv("GITLAB_BASE_URL", DEFAULT_GITLAB_BASE_URL).strip() or DEFAULT_GITLAB_BASE_URL,
+            "auth_token": gitlab_access_token,
+        })
+        integrations.append({
+            "id": "env-gitlab",
+            "service": "gitlab",
+            "status": "active",
+            "credentials": gitlab_config.model_dump(),
+        })
     mongodb_connection_string = os.getenv("MONGODB_CONNECTION_STRING", "").strip()
     if mongodb_connection_string:
         mongodb_config = build_mongodb_config({
@@ -479,7 +503,7 @@ def _merge_integrations_by_service(
 
 
 @traceable(name="node_resolve_integrations")
-def node_resolve_integrations(state: InvestigationState) -> dict:
+def node_resolve_integrations(state: InvestigationState, config: RunnableConfig | None = None) -> dict:
     """Fetch all org integrations and classify them by service.
 
     Priority:
@@ -487,11 +511,18 @@ def node_resolve_integrations(state: InvestigationState) -> dict:
       2. JWT_TOKEN env var — remote API, with local store/env filling missing services
       3. Local sources: ~/.tracer/integrations.json, plus env-based integrations for standalone use
     """
+    if state.get("resolved_integrations"):
+        return {}
+
     tracker = get_tracker()
     tracker.start("resolve_integrations", "Fetching org integrations")
     org_id = state.get("org_id", "")
 
-    webhook_token = _strip_bearer(state.get("_auth_token", "").strip())
+    configurable = (config or {}).get("configurable", {})
+    auth_user = configurable.get("langgraph_auth_user", {})
+    webhook_token = _strip_bearer(
+        (auth_user.get("token", "") or state.get("_auth_token", "")).strip()
+    )
     if webhook_token:
         if not org_id:
             org_id = _decode_org_id_from_token(webhook_token)

@@ -1,20 +1,53 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  schedule:
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional tag to release (e.g. v2026.4.5). Defaults to today's vYYYY.M.D (UTC)."
+        required: false
+        type: string
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.tag.outputs.tag_name }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag name
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
+            echo "tag_name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          year="$(date -u +%Y)"
+          month="$(date -u +%-m)"
+          day="$(date -u +%-d)"
+          echo "tag_name=v${year}.${month}.${day}" >> "$GITHUB_OUTPUT"
+
   verify:
     runs-on: ubuntu-latest
+    needs: prepare
 
     steps:
       - uses: actions/checkout@v5
@@ -158,6 +191,7 @@ jobs:
   publish-release:
     runs-on: ubuntu-latest
     needs:
+      - prepare
       - build-python-dist
       - build-binaries
 
@@ -165,6 +199,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
 
       - name: Download release artifacts
         uses: actions/download-artifact@v4
@@ -178,11 +213,42 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          TAG_NAME="${GITHUB_REF_NAME}"
-          GENERATED_NOTES="$(gh api "repos/${{ github.repository }}/releases/generate-notes" \
-            -f tag_name="$TAG_NAME" \
-            -f target_commitish="${GITHUB_SHA}" \
-            --jq .body)"
+          set -euo pipefail
+
+          TAG_NAME="${{ needs.prepare.outputs.tag_name }}"
+          default_branch="${{ github.event.repository.default_branch }}"
+
+          git fetch origin "$default_branch" --tags --force
+          target_sha="$(git rev-parse "origin/$default_branch")"
+
+          # Generate changelog including commit authors (contributors).
+          previous_tag="$(
+            git tag --list 'v[0-9][0-9][0-9][0-9].[0-9]*.[0-9]*' --sort=-v:refname \
+              | grep -v -x "$TAG_NAME" \
+              | head -n 1 \
+              || true
+          )"
+
+          range_spec="$target_sha"
+          if [ -n "$previous_tag" ]; then
+            range_spec="${previous_tag}..${target_sha}"
+          fi
+
+          {
+            echo "## Changelog"
+            echo
+            if [ -n "$previous_tag" ]; then
+              echo "_Changes since $previous_tag_"
+            else
+              echo "_Changes up to $TAG_NAME_"
+            fi
+            echo
+            git log "$range_spec" --no-merges --pretty='- %s (%h) — %an'
+            echo
+          } > GENERATED_CHANGELOG.md
+
+          GENERATED_NOTES="$(cat GENERATED_CHANGELOG.md)"
+
           {
             echo "## Install"
             echo
@@ -218,11 +284,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
+          set -euo pipefail
+
+          TAG_NAME="${{ needs.prepare.outputs.tag_name }}"
+          default_branch="${{ github.event.repository.default_branch }}"
+          git fetch origin "$default_branch" --tags --force
+          target_sha="$(git rev-parse "origin/$default_branch")"
+
+          if gh release view "$TAG_NAME" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists; nothing to do."
+            exit 0
+          fi
+
+          gh release create "$TAG_NAME" \
             release-assets/* \
             --repo "${{ github.repository }}" \
-            --verify-tag \
-            --title "${GITHUB_REF_NAME}" \
+            --target "$target_sha" \
+            --title "Latest" \
             --notes-file RELEASE_NOTES.md
 
       # - name: Update Homebrew formula

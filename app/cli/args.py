@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.cli.constants import ALERT_TEMPLATE_CHOICES
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments."""
@@ -30,7 +32,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     input_group.add_argument(
         "--print-template",
-        choices=["generic", "datadog", "grafana", "honeycomb", "coralogix"],
+        choices=ALERT_TEMPLATE_CHOICES,
         default=None,
         help="Print a starter alert JSON template and exit.",
     )

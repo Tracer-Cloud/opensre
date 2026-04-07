@@ -572,6 +572,165 @@ def test_run_wizard_persists_matching_local_config_and_env(monkeypatch, tmp_path
     assert saved_llm_keys == [("OPENAI_API_KEY", "openai-secret")]
 
 
+def test_run_wizard_configures_gitlab(monkeypatch, tmp_path) -> None:
+    select_responses = iter(["quickstart", "anthropic", "gitlab"])
+    password_responses = iter(["llm-secret", "glpat_test"])
+    text_responses = iter(["https://gitlab.example.com/api/v4"])
+    saved_integrations: list[tuple[str, dict]] = []
+    synced_env_values: list[dict[str, str]] = []
+
+    def _mock_select(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(select_responses)
+        return m
+
+    def _mock_password(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(password_responses)
+        return m
+
+    def _mock_text(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(text_responses)
+        return m
+
+    monkeypatch.setattr(flow, "select_prompt", _mock_select)
+    monkeypatch.setattr(flow.questionary, "password", _mock_password)
+    monkeypatch.setattr(flow.questionary, "text", _mock_text)
+    monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
+    monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
+    monkeypatch.setattr(
+        flow,
+        "validate_gitlab_integration",
+        lambda **_kwargs: flow.IntegrationHealthResult(ok=True, detail="GitLab ok"),
+    )
+    monkeypatch.setattr(flow, "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
+    monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+    monkeypatch.setattr(flow, "save_llm_api_key", lambda *_args, **_kwargs: None)
+
+    def _sync_env_values(values: dict[str, str], **_kwargs):
+        synced_env_values.append(values)
+        return tmp_path / ".env"
+
+    monkeypatch.setattr(flow, "sync_env_values", _sync_env_values)
+    monkeypatch.setattr(
+        flow,
+        "upsert_integration",
+        lambda service, payload: saved_integrations.append((service, payload)),
+    )
+    monkeypatch.setattr(
+        flow,
+        "build_demo_action_response",
+        lambda: {"success": True, "topics": [], "guidance": []},
+    )
+
+    exit_code = flow.run_wizard()
+
+    assert exit_code == 0
+    assert saved_integrations == [
+        (
+            "gitlab",
+            {
+                "credentials": {
+                    "base_url": "https://gitlab.example.com/api/v4",
+                    "auth_token": "glpat_test",
+                }
+            },
+        )
+    ]
+    assert synced_env_values == [
+        {
+            "GITLAB_BASE_URL": "https://gitlab.example.com/api/v4",
+            "GITLAB_ACCESS_TOKEN": "glpat_test",
+        }
+    ]
+
+
+def test_run_wizard_gitlab_retries_on_validation_failure(monkeypatch, tmp_path) -> None:
+    """When GitLab validation fails the first time, the wizard retries and succeeds."""
+    select_responses = iter(["quickstart", "anthropic", "gitlab"])
+    # First attempt: wrong token; second attempt: correct token
+    password_responses = iter(["llm-secret", "bad_token", "glpat_good"])
+    # base_url is prompted on each retry
+    text_responses = iter([
+        "https://gitlab.com/api/v4",
+        "https://gitlab.com/api/v4",
+    ])
+    saved_integrations: list[tuple[str, dict]] = []
+    synced_env_values: list[dict[str, str]] = []
+    validation_call_count = 0
+
+    def _mock_select(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(select_responses)
+        return m
+
+    def _mock_password(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(password_responses)
+        return m
+
+    def _mock_text(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(text_responses)
+        return m
+
+    def _validate_gitlab(**_kwargs):
+        nonlocal validation_call_count
+        validation_call_count += 1
+        if validation_call_count == 1:
+            return flow.IntegrationHealthResult(ok=False, detail="Unauthorized")
+        return flow.IntegrationHealthResult(ok=True, detail="GitLab ok")
+
+    monkeypatch.setattr(flow, "select_prompt", _mock_select)
+    monkeypatch.setattr(flow.questionary, "password", _mock_password)
+    monkeypatch.setattr(flow.questionary, "text", _mock_text)
+    monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
+    monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
+    monkeypatch.setattr(flow, "validate_gitlab_integration", _validate_gitlab)
+    monkeypatch.setattr(flow, "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
+    monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+    monkeypatch.setattr(flow, "save_llm_api_key", lambda *_args, **_kwargs: None)
+
+    def _sync_env_values(values: dict[str, str], **_kwargs):
+        synced_env_values.append(values)
+        return tmp_path / ".env"
+
+    monkeypatch.setattr(flow, "sync_env_values", _sync_env_values)
+    monkeypatch.setattr(
+        flow,
+        "upsert_integration",
+        lambda service, payload: saved_integrations.append((service, payload)),
+    )
+    monkeypatch.setattr(
+        flow,
+        "build_demo_action_response",
+        lambda: {"success": True, "topics": [], "guidance": []},
+    )
+
+    exit_code = flow.run_wizard()
+
+    assert exit_code == 0
+    assert validation_call_count == 2
+    assert saved_integrations == [
+        (
+            "gitlab",
+            {
+                "credentials": {
+                    "base_url": "https://gitlab.com/api/v4",
+                    "auth_token": "glpat_good",
+                }
+            },
+        )
+    ]
+    assert synced_env_values == [
+        {
+            "GITLAB_BASE_URL": "https://gitlab.com/api/v4",
+            "GITLAB_ACCESS_TOKEN": "glpat_good",
+        }
+    ]
+
+
 def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatch, tmp_path) -> None:
     # Saved: anthropic. User says yes to "Change provider?" and picks openai.
     select_responses = iter(["quickstart", "openai", "skip"])

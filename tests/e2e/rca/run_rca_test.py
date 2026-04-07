@@ -9,15 +9,12 @@ Usage:
 from __future__ import annotations
 
 import json
-import os
 import re
 import sys
 from pathlib import Path
 from typing import Any
 
-import app.pipeline.runners as runners
-from app.auth.jwt_auth import extract_org_id_from_jwt
-from app.state import make_initial_state
+from app.pipeline.runners import run_investigation
 
 RCA_DIR = Path(__file__).parent
 
@@ -39,31 +36,17 @@ def _parse_alert_md(path: Path) -> dict[str, Any]:
     return {"title": title, "severity": severity, "pipeline_name": pipeline_name, "raw_alert": meta}
 
 
-def _get_local_auth() -> tuple[str, str]:
-    """Extract org_id and JWT token from the local JWT_TOKEN env var."""
-    jwt_token = os.getenv("JWT_TOKEN", "").strip()
-    if not jwt_token:
-        return "", ""
-    org_id = extract_org_id_from_jwt(jwt_token) or ""
-    return org_id, jwt_token
-
-
 def run_file(path: Path) -> bool:
     print(f"\n  RCA TEST  {path.stem}")
 
     alert = _parse_alert_md(path)
-    org_id, jwt_token = _get_local_auth()
 
-    state = make_initial_state(
+    state = run_investigation(
         alert_name=alert["title"],
         pipeline_name=alert["pipeline_name"],
         severity=alert["severity"],
         raw_alert=alert["raw_alert"],
     )
-    # Inject auth so node_resolve_integrations fetches real integrations
-    runners._merge_state(state, {"org_id": org_id, "auth_token": jwt_token})
-
-    runners._run_investigation_pipeline(state)
 
     passed = bool(state.get("root_cause"))
     category = state.get("root_cause_category") or "—"

@@ -42,7 +42,7 @@ class TestExtractAuth:
         assert result["organization_slug"] == "acme"
         assert result["thread_id"] == "thread-1"
         assert result["run_id"] == "run-1"
-        assert result["_auth_token"] == "tok-123"
+        assert "_auth_token" not in result
 
     def test_empty_config_returns_empty_strings(self) -> None:
         """No config, no state — everything defaults to empty string."""
@@ -55,7 +55,7 @@ class TestExtractAuth:
         assert result["organization_slug"] == ""
         assert result["thread_id"] == ""
         assert result["run_id"] == ""
-        assert result["_auth_token"] == ""
+        assert "_auth_token" not in result
 
     def test_state_fallback_when_config_missing(self) -> None:
         """Config auth is empty — values should fall back to state."""
@@ -72,7 +72,7 @@ class TestExtractAuth:
         assert result["user_id"] == "state-user"
         assert result["thread_id"] == "state-thread"
         assert result["run_id"] == "state-run"
-        assert result["_auth_token"] == "state-tok"
+        assert "_auth_token" not in result
 
     def test_config_takes_precedence_over_state(self) -> None:
         """When both config and state have values, config wins."""
@@ -101,7 +101,7 @@ class TestExtractAuth:
         assert result["user_id"] == "config-user"
         assert result["thread_id"] == "config-thread"
         assert result["run_id"] == "config-run"
-        assert result["_auth_token"] == "config-tok"
+        assert "_auth_token" not in result
 
     def test_empty_string_in_config_falls_back_to_state(self) -> None:
         """Empty string in config should trigger fallback via `or`."""
@@ -122,7 +122,7 @@ class TestExtractAuth:
 
         assert result["thread_id"] == "state-thread"
         assert result["run_id"] == "state-run"
-        assert result["_auth_token"] == "state-tok"
+        assert "_auth_token" not in result
 
     def test_missing_configurable_key(self) -> None:
         """Config dict without 'configurable' key at all."""
@@ -147,7 +147,7 @@ class TestExtractAuth:
         assert result["user_id"] == ""
         assert result["user_email"] == ""
         assert result["user_name"] == ""
-        assert result["_auth_token"] == ""
+        assert "_auth_token" not in result
 
 
 class TestInjectAuthNode:

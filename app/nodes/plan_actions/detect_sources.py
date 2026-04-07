@@ -5,7 +5,7 @@ Scans alert annotations and state context to detect available data sources
 and extract their parameters.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
@@ -53,6 +53,30 @@ def _alert_time_range_minutes(raw_alert: dict[str, Any]) -> int:
         return 60
 
 
+def _alert_since_iso(raw_alert: dict[str, Any]) -> str:
+    """Return an ISO 8601 timestamp for the start of the alert window."""
+    starts_at: str | None = None
+
+    alerts = raw_alert.get("alerts", [])
+    if alerts and isinstance(alerts, list):
+        starts_at = alerts[0].get("startsAt")
+    if not starts_at:
+        starts_at = raw_alert.get("startsAt") or raw_alert.get("timestamp")
+    if not starts_at:
+        annotations = raw_alert.get("annotations") or raw_alert.get("commonAnnotations") or {}
+        starts_at = annotations.get("timestamp")
+
+    if starts_at:
+        try:
+            alert_time = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+            if alert_time.year >= 2000:
+                return (alert_time - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except (ValueError, TypeError):
+            pass  # Invalid or malformed timestamp string — fall through to the default below
+
+    return (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _split_repo_full_name(value: str) -> tuple[str, str]:
     cleaned = value.strip().strip("/")
     if cleaned.count("/") < 1:
@@ -72,6 +96,18 @@ def _parse_repo_url(value: str) -> tuple[str, str]:
     if len(parts) < 2:
         return "", ""
     return parts[0].strip(), parts[1].strip().removesuffix(".git")
+
+
+def _parse_gitlab_repo_url(value: str) -> str:
+    """Extract project_id (namespace/repo) from a GitLab URL."""
+    parsed = urlparse(value.strip())
+    if "gitlab" not in parsed.netloc.lower():
+        return ""
+    parts = [p for p in parsed.path.strip("/").split("/") if p]
+    if len(parts) < 2:
+        return ""
+    # Handle subgroups: return everything after the host as namespace/repo
+    return "/".join(parts).removesuffix(".git")
 
 
 def _extract_issue_id_from_url(value: str) -> str:
@@ -618,6 +654,45 @@ def detect_sources(
                 "connection_verified": True,
             }
 
+    gitlab_int = (resolved_integrations or {}).get("gitlab")
+    if gitlab_int:
+        repo_url = str(
+            annotations.get("repo_url") or annotations.get("repository_url") or raw_alert.get("repo_url", "")
+        )
+        project_id = str(
+            annotations.get("gitlab_project")
+            or annotations.get("gitlab_repo")
+            or annotations.get("repository")
+            or annotations.get("repo")
+            or raw_alert.get("gitlab_project", "")
+        ).strip()
+        if not project_id and repo_url:
+            project_id = _parse_gitlab_repo_url(repo_url)
+
+        if project_id:
+            sources["gitlab"] = {
+                "project_id": project_id,
+                "ref_name": str(
+                    annotations.get("branch")
+                    or annotations.get("gitlab_ref")
+                    or annotations.get("ref_name")
+                    or raw_alert.get("branch", "")
+                ).strip() or "main",
+                "file_path": str(
+                    annotations.get("file_path")
+                    or annotations.get("gitlab_path")
+                    or raw_alert.get("file_path", "")
+                ).strip(),
+                "since": _alert_since_iso(raw_alert),
+                "updated_after": str(
+                    annotations.get("startsAt") or raw_alert.get("startsAt", "")
+                ).strip(),
+                "gitlab_url": str(gitlab_int.get("base_url", "")).strip(),
+                "gitlab_token": str(gitlab_int.get("auth_token", "")).strip(),
+                "merge_request_iid" : str(
+                    annotations.get("mr_iid", "")).strip(),
+                "connection_verified": True,
+            }
     vercel_int = (resolved_integrations or {}).get("vercel")
     if vercel_int and str(vercel_int.get("api_token", "")).strip():
         sources["vercel"] = {
