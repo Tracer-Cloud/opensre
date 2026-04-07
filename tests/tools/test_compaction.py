@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.tools.utils.compaction import (
     DEFAULT_LOG_LIMIT,
     DEFAULT_MESSAGE_CHARS,
