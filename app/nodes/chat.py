@@ -174,6 +174,19 @@ def router_node(state: AgentState) -> dict[str, Any]:
     return {"route": route if route in ("tracer_data", "general") else "general"}
 
 
+def _apply_guardrails_to_messages(msgs: list[Any]) -> None:
+    """Scan and redact LangChain message content in-place via the guardrail engine."""
+    from app.guardrails.engine import get_guardrail_engine
+
+    engine = get_guardrail_engine()
+    if not engine.is_active:
+        return
+    for msg in msgs:
+        content = getattr(msg, "content", None)
+        if isinstance(content, str) and content:
+            msg.content = engine.apply(content)
+
+
 def chat_agent_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any]:
     """Chat agent with tools for Tracer data queries.
 
@@ -190,6 +203,7 @@ def chat_agent_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any
     if not has_system:
         msgs = [SystemMessage(content=SYSTEM_PROMPT), *msgs]
 
+    _apply_guardrails_to_messages(msgs)
     llm = _get_chat_llm(with_tools=True)
     response = llm.invoke(msgs)
     return {"messages": [response]}
@@ -207,6 +221,7 @@ def general_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any]:
     if not has_system:
         msgs = [SystemMessage(content=GENERAL_SYSTEM_PROMPT), *msgs]
 
+    _apply_guardrails_to_messages(msgs)
     llm = _get_chat_llm(with_tools=False)
     response = llm.invoke(msgs)
     return {"messages": [response]}
