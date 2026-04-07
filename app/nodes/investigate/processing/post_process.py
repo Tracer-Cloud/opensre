@@ -268,11 +268,15 @@ def _map_eks_pods(data: dict) -> dict:
 def _map_eks_deployments(data: dict) -> dict:
     if not isinstance(data, dict):
         return {}
+    deployments = data.get("deployments", [])
+    degraded = data.get("degraded_deployments", [])
+    first_name = (degraded or deployments or [{}])[0].get("name", "")
     return {
         "eks_cluster_name": data.get("cluster_name", ""),
         "eks_namespace": data.get("namespace", ""),
-        "eks_deployments": data.get("deployments", []),
-        "eks_degraded_deployments": data.get("degraded_deployments", []),
+        "eks_deployments": deployments,
+        "eks_degraded_deployments": degraded,
+        "eks_deployment_name": first_name,
     }
 
 

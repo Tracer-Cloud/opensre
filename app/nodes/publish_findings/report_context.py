@@ -580,10 +580,11 @@ def _add_eks_pods(
         container_info = []
         for c in containers:
             state = c.get("state", {})
+            cname = c.get("name", "unknown")
             if state.get("waiting"):
-                container_info.append(f"{c['name']}: waiting ({state.get('reason', 'unknown')})")
+                container_info.append(f"{cname}: waiting ({state.get('reason', 'unknown')})")
             elif state.get("terminated"):
-                container_info.append(f"{c['name']}: exit={state.get('exit_code', 'unknown')}")
+                container_info.append(f"{cname}: exit={state.get('exit_code', 'unknown')}")
 
         catalog[eid] = {
             "label": f"EKS Pod: {pod_name}",

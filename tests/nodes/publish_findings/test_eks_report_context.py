@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.nodes.publish_findings.report_context import (
     ReportContext,
     _add_eks_deployments,
@@ -11,9 +9,7 @@ from app.nodes.publish_findings.report_context import (
     _add_eks_node_health,
     _add_eks_pod_logs,
     _add_eks_pods,
-    _build_evidence_catalog,
 )
-from app.state.agent_state import InvestigationState
 
 
 class TestEKSAddPods:
@@ -90,6 +86,31 @@ class TestEKSAddPods:
 
         assert not catalog
         assert "eks_pods" not in source_to_id
+
+    def test_add_eks_pods_handles_missing_container_name(self) -> None:
+        evidence = {
+            "eks_cluster_name": "prod-cluster-1",
+            "eks_namespace": "tracer",
+            "eks_pods": [{"name": "failing-pod", "phase": "Failed"}],
+            "eks_failing_pods": [
+                {
+                    "name": "failing-pod",
+                    "phase": "Failed",
+                    "containers": [
+                        {"state": {"waiting": True, "reason": "CrashLoopBackOff"}},
+                    ],
+                }
+            ],
+            "eks_high_restart_pods": [],
+        }
+        catalog: dict = {}
+        source_to_id: dict = {}
+
+        _add_eks_pods(evidence, catalog, source_to_id)
+
+        entry = catalog["evidence/eks/prod-cluster-1/tracer/pod/failing-pod"]
+        assert entry["snippet"] is not None
+        assert "unknown: waiting" in entry["snippet"]
 
 
 class TestEKSAddDeployments:

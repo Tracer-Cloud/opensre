@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.nodes.investigate.processing.post_process import (
     EVIDENCE_MAPPERS,
     build_evidence_summary,
@@ -132,6 +130,7 @@ class TestEKSEvidenceMappers:
         assert result["eks_namespace"] == "tracer"
         assert len(result["eks_deployments"]) == 2
         assert len(result["eks_degraded_deployments"]) == 1
+        assert result["eks_deployment_name"] == "worker-deployment"
 
     def test_get_eks_events_mapper(self) -> None:
         data = {
