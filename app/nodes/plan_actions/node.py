@@ -7,15 +7,31 @@ from app.nodes.investigate.models import InvestigateInput
 from app.nodes.plan_actions.plan_actions import plan_actions as build_plan_actions
 from app.output import debug_print, get_tracker
 from app.state import InvestigationState
+from app.types.retrieval import RetrievalControlsMap, RetrievalIntent
 
 
 class InvestigationPlan(BaseModel):
-    """Structured plan for investigation."""
+    """Structured plan for investigation.
+
+    Backward compatibility: The retrieval_controls field is optional.
+    Existing code that doesn't use structured retrieval continues to work
+    with just the actions and rationale fields.
+    """
 
     actions: list[str] = Field(
         description="List of action names to execute (e.g., 'get_failed_jobs', 'get_error_logs')"
     )
     rationale: str = Field(description="Rationale for the chosen actions")
+    retrieval_controls: RetrievalControlsMap | None = Field(
+        default=None,
+        description="Optional structured retrieval intent per action. Maps action name to retrieval controls for that action execution.",
+    )
+
+    def get_retrieval_intent(self, action_name: str) -> RetrievalIntent | None:
+        """Get retrieval intent for a specific action if set."""
+        if self.retrieval_controls is None:
+            return None
+        return self.retrieval_controls.get(action_name)
 
 
 @traceable(name="node_plan_actions")
