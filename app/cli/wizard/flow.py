@@ -113,6 +113,13 @@ def validate_opsgenie_integration(**kwargs):
     return _validate(**kwargs)
 
 
+def validate_langsmith_integration(**kwargs):
+    from app.cli.langsmith_deploy import validate_langsmith_api_key as _validate
+
+    ok, detail = _validate(kwargs["api_key"])
+    return IntegrationHealthResult(ok=ok, detail=detail)
+
+
 def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
 
@@ -974,6 +981,41 @@ def _configure_opsgenie() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_langsmith() -> tuple[str, str]:
+    _, credentials = _integration_defaults("langsmith")
+    while True:
+        api_key = _prompt_value(
+            "LangSmith API key",
+            default=_string_value(credentials.get("api_key")),
+            secret=True,
+        )
+        deployment_name = _prompt_value(
+            "LangSmith deployment name",
+            default=_string_value(credentials.get("deployment_name"), "open-sre-agent"),
+        )
+        with _console.status("Validating LangSmith integration...", spinner="dots"):
+            result = validate_langsmith_integration(api_key=api_key)
+        _render_integration_result("LangSmith", result)
+        if result.ok:
+            upsert_integration(
+                "langsmith",
+                {
+                    "credentials": {
+                        "api_key": api_key,
+                        "deployment_name": deployment_name,
+                    }
+                },
+            )
+            env_path = sync_env_values(
+                {
+                    "LANGSMITH_API_KEY": api_key,
+                    "LANGSMITH_DEPLOYMENT_NAME": deployment_name,
+                }
+            )
+            return "LangSmith", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_selected_integrations() -> tuple[list[str], str | None]:
     configured: list[str] = []
     last_env_path: str | None = None
@@ -1017,6 +1059,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             hint="Monitor deployments and fetch runtime logs",
         ),
         Choice(
+            value="langsmith",
+            label="LangSmith",
+            hint="Configure LangSmith deployment credentials",
+        ),
+        Choice(
             value="jira",
             label="Jira",
             hint="File and update incident tickets automatically",
@@ -1053,6 +1100,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "gitlab": _configure_gitlab,
         "google_docs": _configure_google_docs,
         "vercel": _configure_vercel,
+        "langsmith": _configure_langsmith,
         "jira": _configure_jira,
         "opsgenie": _configure_opsgenie,
     }
@@ -1069,6 +1117,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "gitlab": "gitlab",
         "google_docs": "google docs",
         "vercel": "vercel",
+        "langsmith": "langsmith",
         "jira": "jira",
         "opsgenie": "opsgenie",
     }
