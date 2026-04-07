@@ -461,3 +461,80 @@ class TestRoundTrip:
 
         # Verify restoration
         assert unmasked_data == original_data
+
+
+class TestDetectRemainingPlaceholders:
+    """Tests for detect_remaining_placeholders function."""
+
+    def test_detects_valid_placeholders(self) -> None:
+        """Should detect valid-format placeholders in text."""
+        from app.utils.masking.core import detect_remaining_placeholders
+
+        text = "Check <CLUSTER_0> and <HOSTNAME_5> for issues"
+        remaining = detect_remaining_placeholders(text)
+
+        assert "<CLUSTER_0>" in remaining
+        assert "<HOSTNAME_5>" in remaining
+        assert len(remaining) == 2
+
+    def test_returns_empty_when_none(self) -> None:
+        """Should return empty list when no placeholders present."""
+        from app.utils.masking.core import detect_remaining_placeholders
+
+        text = "Normal text without placeholders"
+        remaining = detect_remaining_placeholders(text)
+
+        assert remaining == []
+
+    def test_detects_multiple_of_same_type(self) -> None:
+        """Should detect multiple placeholders of the same type."""
+        from app.utils.masking.core import detect_remaining_placeholders
+
+        text = "Issues with <CLUSTER_0>, <CLUSTER_1>, and <CLUSTER_2>"
+        remaining = detect_remaining_placeholders(text)
+
+        assert len(remaining) == 3
+        assert remaining.count("<CLUSTER_0>") == 1
+        assert remaining.count("<CLUSTER_1>") == 1
+        assert remaining.count("<CLUSTER_2>") == 1
+
+    def test_detects_all_types(self) -> None:
+        """Should detect all valid placeholder types."""
+        from app.utils.masking.core import detect_remaining_placeholders
+
+        text = (
+            "<HOSTNAME_0> <ACCOUNT_1> <CLUSTER_2> "
+            "<SERVICE_3> <IP_4> <EMAIL_5> <CUSTOM_6> <MASKED_7>"
+        )
+        remaining = detect_remaining_placeholders(text)
+
+        assert len(remaining) == 8
+        assert "<HOSTNAME_0>" in remaining
+        assert "<ACCOUNT_1>" in remaining
+        assert "<CLUSTER_2>" in remaining
+        assert "<SERVICE_3>" in remaining
+        assert "<IP_4>" in remaining
+        assert "<EMAIL_5>" in remaining
+        assert "<CUSTOM_6>" in remaining
+        assert "<MASKED_7>" in remaining
+
+    def test_ignores_invalid_formats(self) -> None:
+        """Should ignore placeholders with invalid formats."""
+        from app.utils.masking.core import detect_remaining_placeholders
+
+        # Invalid formats that should NOT be detected
+        text = "Invalid: <_0>, <UNKNOWN_0>, <HOSTNAME>, <HOSTNAME_abc>, <<HOSTNAME_0>>"
+        remaining = detect_remaining_placeholders(text)
+
+        # <_0> - missing type prefix (not a valid pattern)
+        # <UNKNOWN_0> - not in valid type list
+        # <HOSTNAME> - missing number
+        # <HOSTNAME_abc> - non-numeric index
+        # <<HOSTNAME_0>> - double brackets (outer >> makes it invalid)
+
+        # Only valid format <TYPE_N> should be detected
+        # None of the above are valid formats per the regex
+        assert "<_0>" not in remaining
+        assert "<UNKNOWN_0>" not in remaining
+        assert "<HOSTNAME>" not in remaining
+        # <<HOSTNAME_0>> has double angle brackets so the regex won't match it

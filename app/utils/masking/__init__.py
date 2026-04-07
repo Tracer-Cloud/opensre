@@ -42,6 +42,7 @@ Safety Features:
 
 from app.utils.masking.core import (
     MaskingContext,
+    detect_remaining_placeholders,
     mask_dict,
     mask_list,
     mask_text,
@@ -56,7 +57,9 @@ from app.utils.masking.policies import (
     DetectedIdentifier,
     IdentifierType,
     MaskingPolicy,
+    clear_compiled_policy_cache,
     find_identifiers,
+    get_compiled_policy,
 )
 from app.utils.masking.validation import (
     PlaceholderIssue,
@@ -79,9 +82,12 @@ __all__ = [
     "unmask_dict",
     "unmask_list",
     "reset_global_context",
+    "detect_remaining_placeholders",
     # Policy configuration
     "MaskingPolicy",
     "CompiledPolicy",
+    "get_compiled_policy",
+    "clear_compiled_policy_cache",
     # Detection
     "DetectedIdentifier",
     "IdentifierType",

@@ -332,3 +332,89 @@ class TestPipelineEdgeCases:
         assert "<IP_" in result or "<CLUSTER_" in result
         # Verify no exceptions raised
         assert isinstance(result, str)
+
+    def test_concurrent_investigation_isolation(self) -> None:
+        """Test that separate investigations don't share placeholder mappings."""
+        # Create two independent contexts (simulating concurrent investigations)
+        ctx1 = MaskingContext.create()
+        ctx2 = MaskingContext.create()
+
+        # Both mask the same identifier
+        text1 = ctx1.mask_text("Error in shared-cluster-01")
+        text2 = ctx2.mask_text("Error in shared-cluster-01")
+
+        # Both should use <CLUSTER_0> (independent counters)
+        assert "<CLUSTER_0>" in text1
+        assert "<CLUSTER_0>" in text2
+
+        # Mask different identifiers in each context
+        ctx1.mask_text("Error in unique-cluster-A")
+        ctx2.mask_text("Error in unique-cluster-B")
+
+        # Each should have 2 unique mappings
+        assert ctx1.placeholder_map.get_size() == 2
+        assert ctx2.placeholder_map.get_size() == 2
+
+        # Unmasking in ctx1 should not affect ctx2
+        unmasked1 = ctx1.unmask_text("Check <CLUSTER_0> and <CLUSTER_1>")
+        assert "shared-cluster-01" in unmasked1
+        assert "unique-cluster-A" in unmasked1
+
+        # ctx2 should still have its own mappings
+        unmasked2 = ctx2.unmask_text("Check <CLUSTER_0> and <CLUSTER_1>")
+        assert "shared-cluster-01" in unmasked2
+        assert "unique-cluster-B" in unmasked2
+
+    def test_detect_remaining_placeholders_after_unmasking(self) -> None:
+        """Test detection of placeholders that couldn't be restored."""
+        from app.utils.masking import detect_remaining_placeholders
+
+        ctx = MaskingContext.create()
+
+        # Mask some data
+        _ = ctx.mask_text("Error in cluster-prod-01")
+
+        # LLM hallucinates a placeholder not in mapping
+        response = "Check <CLUSTER_0> and <CLUSTER_999> for issues"
+
+        # Unmask (only CLUSTER_0 will be restored)
+        unmasked = ctx.unmask_text(response)
+
+        # Detect remaining placeholders
+        remaining = detect_remaining_placeholders(unmasked)
+
+        assert "<CLUSTER_999>" in remaining
+        assert "<CLUSTER_0>" not in remaining  # Was successfully unmasked
+        assert len(remaining) == 1
+
+    def test_compiled_policy_caching(self) -> None:
+        """Test that compiled policies are cached for performance."""
+        from app.utils.masking.policies import (
+            clear_compiled_policy_cache,
+            get_compiled_policy,
+        )
+
+        # Clear cache for clean test
+        clear_compiled_policy_cache()
+
+        policy1 = MaskingPolicy(mask_hostnames=True, mask_cluster_names=False)
+        policy2 = MaskingPolicy(mask_hostnames=True, mask_cluster_names=False)
+        policy3 = MaskingPolicy(mask_hostnames=False, mask_cluster_names=True)
+
+        # First compilation
+        compiled1 = get_compiled_policy(policy1)
+
+        # Same config should return cached
+        compiled2 = get_compiled_policy(policy2)
+
+        # Different config should compile new
+        compiled3 = get_compiled_policy(policy3)
+
+        # Same instances for identical policies
+        assert compiled1 is compiled2
+
+        # Different instance for different policy
+        assert compiled1 is not compiled3
+
+        # Cleanup
+        clear_compiled_policy_cache()

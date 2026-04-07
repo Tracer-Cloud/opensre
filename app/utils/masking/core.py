@@ -6,11 +6,17 @@ before sending to external LLM models, and to unmask responses.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from app.utils.masking.placeholder import PlaceholderMap
-from app.utils.masking.policies import CompiledPolicy, MaskingPolicy, find_identifiers
+from app.utils.masking.policies import (
+    CompiledPolicy,
+    MaskingPolicy,
+    find_identifiers,
+    get_compiled_policy,
+)
 
 if TYPE_CHECKING:
     pass
@@ -39,7 +45,7 @@ class MaskingContext:
         """
         if policy is None:
             policy = MaskingPolicy.from_env()
-        compiled = CompiledPolicy.from_policy(policy)
+        compiled = get_compiled_policy(policy)
         placeholder_map = PlaceholderMap(max_placeholders=policy.max_placeholders)
         return cls(policy=compiled, placeholder_map=placeholder_map)
 
@@ -256,3 +262,24 @@ def unmask_list(data: list[object], context: MaskingContext | None = None) -> li
         else:
             result.append(item)
     return result
+
+
+# Pattern to detect remaining placeholders after unmasking
+_PLACEHOLDER_PATTERN = re.compile(
+    r"<(?:HOSTNAME|ACCOUNT|CLUSTER|SERVICE|IP|EMAIL|CUSTOM|MASKED)_\d+>"
+)
+
+
+def detect_remaining_placeholders(text: str) -> list[str]:
+    """Detect any remaining placeholders in text after unmasking.
+
+    This helps identify placeholders that couldn't be restored because
+    they weren't in the mapping (e.g., hallucinated by LLM).
+
+    Args:
+        text: Text to check for remaining placeholders
+
+    Returns:
+        List of remaining placeholder strings (empty if none found)
+    """
+    return _PLACEHOLDER_PATTERN.findall(text)

@@ -1,6 +1,7 @@
 """Root cause diagnosis node - orchestration and entry point."""
 
 import os
+from typing import cast
 
 from langsmith import traceable
 
@@ -10,6 +11,7 @@ from app.state import InvestigationState
 from app.utils.masking import (
     MaskingContext,
     count_error_issues,
+    detect_remaining_placeholders,
     mask_dict,
     mask_text,
     should_panic,
@@ -88,6 +90,9 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     response_content = response.content if hasattr(response, "content") else str(response)
     response_text = response_content if isinstance(response_content, str) else str(response_content)
 
+    # Store raw response for debugging if panic mode activates
+    raw_response_for_debug = response_text
+
     # Validate placeholders in LLM response (if enabled)
     if masking_context.policy.policy.validate_output:
         issues = validate_placeholders(response_text, masking_context.placeholder_map)
@@ -104,13 +109,25 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
                     f"PANIC MODE: {error_count} validation errors exceeds threshold "
                     f"({masking_context.policy.policy.panic_threshold}) - redacting output"
                 )
+                # Store raw response in state for debugging (not displayed to user)
+                # Use dict() to bypass TypedDict strictness for debug field
+                state_dict = dict(state)
+                state_dict["_masked_raw_response"] = raw_response_for_debug
+                state = cast(InvestigationState, state_dict)
                 response_text = (
                     "[REDACTED: Output contained invalid placeholders that could not be "
-                    "safely unmasked. Raw response stored for debugging.]"
+                    "safely unmasked. Raw response stored in state._masked_raw_response for debugging.]"
                 )
 
     # Unmask the response to restore original identifiers for user-facing output
     response_text = unmask_text(response_text, masking_context)
+
+    # Warn about any placeholders that couldn't be restored (e.g., hallucinated by LLM)
+    remaining = detect_remaining_placeholders(response_text)
+    if remaining:
+        debug_print(
+            f"Warning: {len(remaining)} placeholders could not be unmasked: {remaining[:3]}"
+        )
 
     result = parse_root_cause(response_text)
 

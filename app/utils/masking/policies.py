@@ -181,6 +181,68 @@ class CompiledPolicy:
         )
 
 
+# Cache for compiled policies to avoid recompilation overhead
+# Simple dict with LRU-style eviction when size exceeds limit
+_PolicyCacheKey = tuple[bool, bool, bool, bool, bool, bool, tuple[str, ...]]
+_compiled_policy_cache: dict[_PolicyCacheKey, CompiledPolicy] = {}
+_MAX_CACHE_SIZE = 32
+
+
+def _make_policy_key(policy: MaskingPolicy) -> _PolicyCacheKey:
+    """Create a hashable cache key from policy settings."""
+    return (
+        policy.mask_hostnames,
+        policy.mask_account_ids,
+        policy.mask_cluster_names,
+        policy.mask_service_names,
+        policy.mask_ip_addresses,
+        policy.mask_emails,
+        tuple(policy.custom_patterns),
+    )
+
+
+def get_compiled_policy(policy: MaskingPolicy) -> CompiledPolicy:
+    """Get compiled policy with caching for performance.
+
+    Compiled regex patterns are cached based on policy configuration
+    to avoid recompilation overhead for repeated investigations with
+    the same settings.
+
+    Args:
+        policy: Masking policy to compile
+
+    Returns:
+        CompiledPolicy with compiled regex patterns
+    """
+    global _compiled_policy_cache
+
+    key = _make_policy_key(policy)
+
+    # Check cache
+    if key in _compiled_policy_cache:
+        return _compiled_policy_cache[key]
+
+    # Evict if at capacity (simple FIFO-style)
+    if len(_compiled_policy_cache) >= _MAX_CACHE_SIZE:
+        # Remove oldest entry (first in dict)
+        oldest_key = next(iter(_compiled_policy_cache))
+        del _compiled_policy_cache[oldest_key]
+
+    # Compile and cache
+    compiled = CompiledPolicy.from_policy(policy)
+    _compiled_policy_cache[key] = compiled
+    return compiled
+
+
+def clear_compiled_policy_cache() -> None:
+    """Clear the compiled policy cache.
+
+    Useful for testing or when policy configurations change dynamically.
+    """
+    global _compiled_policy_cache
+    _compiled_policy_cache.clear()
+
+
 class IdentifierType(Enum):
     """Types of sensitive identifiers that can be detected."""
 
