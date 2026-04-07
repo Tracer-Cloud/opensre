@@ -13,6 +13,13 @@ from app.services.coralogix import build_coralogix_logs_query
 from app.tools.GrafanaLogsTool import _map_pipeline_to_service_name
 
 
+def _safe_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _alert_time_range_minutes(raw_alert: dict[str, Any]) -> int:
     """Compute time_range_minutes to cover the alert window.
 
@@ -108,6 +115,18 @@ def _parse_gitlab_repo_url(value: str) -> str:
         return ""
     # Handle subgroups: return everything after the host as namespace/repo
     return "/".join(parts).removesuffix(".git")
+
+
+def _parse_bitbucket_repo_url(value: str) -> tuple[str, str]:
+    parsed = urlparse(value.strip())
+    if "bitbucket.org" not in parsed.netloc.lower():
+        return "", ""
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if len(parts) < 2:
+        return "", ""
+    workspace = parts[0].strip()
+    repo_slug = parts[1].strip().removesuffix(".git")
+    return workspace, repo_slug
 
 
 def _extract_issue_id_from_url(value: str) -> str:
@@ -592,6 +611,159 @@ def detect_sources(
                 "role_arn": _eks_int["role_arn"],
                 "external_id": _eks_int.get("external_id", ""),
                 "cluster_names": _eks_int.get("cluster_names", []),
+                "connection_verified": True,
+            }
+
+    bitbucket_int = (resolved_integrations or {}).get("bitbucket")
+    if bitbucket_int and alert_source in ("bitbucket", ""):
+        repo_url = str(
+            annotations.get("repo_url")
+            or annotations.get("repository_url")
+            or raw_alert.get("repo_url", "")
+        )
+        workspace = str(
+            annotations.get("bitbucket_workspace")
+            or bitbucket_int.get("workspace", "")
+        ).strip()
+        repo_slug = str(
+            annotations.get("bitbucket_repo_slug")
+            or annotations.get("bitbucket_repo")
+            or annotations.get("repo_slug")
+            or raw_alert.get("bitbucket_repo", "")
+        ).strip()
+        parsed_workspace, parsed_repo = _parse_bitbucket_repo_url(repo_url)
+        if not workspace:
+            workspace = parsed_workspace
+        if not repo_slug:
+            repo_slug = parsed_repo
+
+        if workspace and repo_slug:
+            bitbucket_query = str(
+                annotations.get("bitbucket_query")
+                or annotations.get("code_query")
+                or raw_alert.get("error_message", "")
+                or raw_alert.get("alert_name", "")
+            ).strip()
+            sources["bitbucket"] = {
+                "workspace": workspace,
+                "repo_slug": repo_slug,
+                "path": str(
+                    annotations.get("bitbucket_path")
+                    or annotations.get("file_path")
+                    or raw_alert.get("file_path", "")
+                ).strip(),
+                "ref": str(
+                    annotations.get("branch")
+                    or annotations.get("bitbucket_ref")
+                    or raw_alert.get("branch", "")
+                ).strip(),
+                "query": bitbucket_query or "exception OR error",
+                "username": str(bitbucket_int.get("username", "")).strip(),
+                "app_password": str(bitbucket_int.get("app_password", "")).strip(),
+                "base_url": str(
+                    bitbucket_int.get("base_url", "https://api.bitbucket.org/2.0")
+                ).strip() or "https://api.bitbucket.org/2.0",
+                "max_results": _safe_int(bitbucket_int.get("max_results", 25), 25),
+                "integration_id": str(bitbucket_int.get("integration_id", "")).strip(),
+                "connection_verified": True,
+            }
+
+    snowflake_int = (resolved_integrations or {}).get("snowflake")
+    if snowflake_int and alert_source in ("snowflake", ""):
+        account_identifier = str(snowflake_int.get("account_identifier", "")).strip()
+        if account_identifier:
+            sources["snowflake"] = {
+                "account_identifier": account_identifier,
+                "user": str(snowflake_int.get("user", "")).strip(),
+                "password": str(snowflake_int.get("password", "")).strip(),
+                "token": str(snowflake_int.get("token", "")).strip(),
+                "warehouse": str(snowflake_int.get("warehouse", "")).strip(),
+                "role": str(snowflake_int.get("role", "")).strip(),
+                "database": str(snowflake_int.get("database", "")).strip(),
+                "schema": str(snowflake_int.get("schema", "")).strip(),
+                "query": str(
+                    annotations.get("snowflake_query")
+                    or raw_alert.get("error_message", "")
+                    or raw_alert.get("alert_name", "")
+                ).strip(),
+                "max_results": _safe_int(snowflake_int.get("max_results", 50), 50),
+                "integration_id": str(snowflake_int.get("integration_id", "")).strip(),
+                "connection_verified": True,
+            }
+
+    azure_int = (resolved_integrations or {}).get("azure")
+    if azure_int and alert_source in ("azure", "azure_monitor", ""):
+        workspace_id = str(azure_int.get("workspace_id", "")).strip()
+        access_token = str(azure_int.get("access_token", "")).strip()
+        if workspace_id and access_token:
+            sources["azure"] = {
+                "workspace_id": workspace_id,
+                "access_token": access_token,
+                "endpoint": str(
+                    azure_int.get("endpoint", "https://api.loganalytics.io")
+                ).strip() or "https://api.loganalytics.io",
+                "query": str(
+                    annotations.get("azure_query")
+                    or annotations.get("kql_query")
+                    or raw_alert.get("error_message", "")
+                    or raw_alert.get("alert_name", "")
+                ).strip(),
+                "time_range_minutes": alert_time_range_minutes,
+                "max_results": _safe_int(azure_int.get("max_results", 100), 100),
+                "integration_id": str(azure_int.get("integration_id", "")).strip(),
+                "connection_verified": True,
+            }
+
+    openobserve_int = (resolved_integrations or {}).get("openobserve")
+    if openobserve_int and alert_source in ("openobserve", ""):
+        base_url = str(openobserve_int.get("base_url", "")).strip()
+        api_token = str(openobserve_int.get("api_token", "")).strip()
+        username = str(openobserve_int.get("username", "")).strip()
+        password = str(openobserve_int.get("password", "")).strip()
+        if base_url and (api_token or (username and password)):
+            sources["openobserve"] = {
+                "base_url": base_url.rstrip("/"),
+                "org": str(openobserve_int.get("org", "default")).strip() or "default",
+                "stream": str(
+                    annotations.get("openobserve_stream")
+                    or openobserve_int.get("stream", "")
+                ).strip(),
+                "query": str(
+                    annotations.get("openobserve_query")
+                    or raw_alert.get("error_message", "")
+                    or raw_alert.get("alert_name", "")
+                ).strip(),
+                "api_token": api_token,
+                "username": username,
+                "password": password,
+                "time_range_minutes": alert_time_range_minutes,
+                "max_results": _safe_int(openobserve_int.get("max_results", 100), 100),
+                "integration_id": str(openobserve_int.get("integration_id", "")).strip(),
+                "connection_verified": True,
+            }
+
+    opensearch_int = (resolved_integrations or {}).get("opensearch")
+    if opensearch_int and alert_source in ("opensearch", "elasticsearch", ""):
+        opensearch_url = str(opensearch_int.get("url", "")).strip()
+        if opensearch_url:
+            default_query = str(
+                annotations.get("opensearch_query")
+                or annotations.get("elasticsearch_query")
+                or annotations.get("query")
+                or raw_alert.get("error_message", "")
+                or raw_alert.get("alert_name", "")
+            ).strip()
+            sources["opensearch"] = {
+                "url": opensearch_url.rstrip("/"),
+                "api_key": str(opensearch_int.get("api_key", "")).strip(),
+                "index_pattern": str(
+                    annotations.get("opensearch_index_pattern")
+                    or opensearch_int.get("index_pattern", "*")
+                ).strip() or "*",
+                "default_query": default_query or "*",
+                "time_range_minutes": alert_time_range_minutes,
+                "max_results": _safe_int(opensearch_int.get("max_results", 100), 100),
+                "integration_id": str(opensearch_int.get("integration_id", "")).strip(),
                 "connection_verified": True,
             }
 

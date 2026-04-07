@@ -55,6 +55,10 @@ SUPPORTED_VERIFY_SERVICES = (
     "kafka",
     "clickhouse",
     "bitbucket",
+    "snowflake",
+    "azure",
+    "openobserve",
+    "opensearch",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -330,6 +334,11 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 "workspace": str(bitbucket_integration.get("workspace", "")).strip(),
                 "username": str(bitbucket_integration.get("username", "")).strip(),
                 "app_password": str(bitbucket_integration.get("app_password", "")).strip(),
+                "base_url": str(
+                    bitbucket_integration.get("base_url", "https://api.bitbucket.org/2.0")
+                ).strip() or "https://api.bitbucket.org/2.0",
+                "max_results": bitbucket_integration.get("max_results", 25),
+                "integration_id": str(bitbucket_integration.get("integration_id", "")).strip(),
             },
         }
     else:
@@ -341,6 +350,143 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                     "workspace": bitbucket_workspace,
                     "username": os.getenv("BITBUCKET_USERNAME", "").strip(),
                     "app_password": os.getenv("BITBUCKET_APP_PASSWORD", "").strip(),
+                    "base_url": os.getenv("BITBUCKET_BASE_URL", "https://api.bitbucket.org/2.0").strip()
+                    or "https://api.bitbucket.org/2.0",
+                    "max_results": int(os.getenv("BITBUCKET_MAX_RESULTS", "25") or "25"),
+                },
+            }
+
+    snowflake_integration = classified_integrations.get("snowflake")
+    if isinstance(snowflake_integration, dict):
+        effective["snowflake"] = {
+            "source": source_by_service.get("snowflake", "local env"),
+            "config": {
+                "account_identifier": str(
+                    snowflake_integration.get("account_identifier", "")
+                ).strip(),
+                "user": str(snowflake_integration.get("user", "")).strip(),
+                "password": str(snowflake_integration.get("password", "")).strip(),
+                "token": str(snowflake_integration.get("token", "")).strip(),
+                "warehouse": str(snowflake_integration.get("warehouse", "")).strip(),
+                "role": str(snowflake_integration.get("role", "")).strip(),
+                "database": str(snowflake_integration.get("database", "")).strip(),
+                "schema": str(snowflake_integration.get("schema", "")).strip(),
+                "max_results": snowflake_integration.get("max_results", 50),
+                "integration_id": str(snowflake_integration.get("integration_id", "")).strip(),
+            },
+        }
+    else:
+        snowflake_account = (
+            os.getenv("SNOWFLAKE_ACCOUNT_IDENTIFIER", "").strip()
+            or os.getenv("SNOWFLAKE_ACCOUNT", "").strip()
+        )
+        if snowflake_account:
+            effective["snowflake"] = {
+                "source": "local env",
+                "config": {
+                    "account_identifier": snowflake_account,
+                    "user": os.getenv("SNOWFLAKE_USER", "").strip(),
+                    "password": os.getenv("SNOWFLAKE_PASSWORD", "").strip(),
+                    "token": os.getenv("SNOWFLAKE_TOKEN", "").strip(),
+                    "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE", "").strip(),
+                    "role": os.getenv("SNOWFLAKE_ROLE", "").strip(),
+                    "database": os.getenv("SNOWFLAKE_DATABASE", "").strip(),
+                    "schema": os.getenv("SNOWFLAKE_SCHEMA", "").strip(),
+                    "max_results": int(os.getenv("SNOWFLAKE_MAX_RESULTS", "50") or "50"),
+                },
+            }
+
+    azure_integration = classified_integrations.get("azure")
+    if isinstance(azure_integration, dict):
+        effective["azure"] = {
+            "source": source_by_service.get("azure", "local env"),
+            "config": {
+                "workspace_id": str(azure_integration.get("workspace_id", "")).strip(),
+                "access_token": str(azure_integration.get("access_token", "")).strip(),
+                "endpoint": str(
+                    azure_integration.get("endpoint", "https://api.loganalytics.io")
+                ).strip() or "https://api.loganalytics.io",
+                "tenant_id": str(azure_integration.get("tenant_id", "")).strip(),
+                "subscription_id": str(azure_integration.get("subscription_id", "")).strip(),
+                "max_results": azure_integration.get("max_results", 100),
+                "integration_id": str(azure_integration.get("integration_id", "")).strip(),
+            },
+        }
+    else:
+        azure_workspace_id = os.getenv("AZURE_LOG_ANALYTICS_WORKSPACE_ID", "").strip()
+        azure_access_token = os.getenv("AZURE_LOG_ANALYTICS_TOKEN", "").strip()
+        if azure_workspace_id and azure_access_token:
+            effective["azure"] = {
+                "source": "local env",
+                "config": {
+                    "workspace_id": azure_workspace_id,
+                    "access_token": azure_access_token,
+                    "endpoint": (
+                        os.getenv("AZURE_LOG_ANALYTICS_ENDPOINT", "https://api.loganalytics.io").strip()
+                        or "https://api.loganalytics.io"
+                    ),
+                    "tenant_id": os.getenv("AZURE_TENANT_ID", "").strip(),
+                    "subscription_id": os.getenv("AZURE_SUBSCRIPTION_ID", "").strip(),
+                    "max_results": int(os.getenv("AZURE_MAX_RESULTS", "100") or "100"),
+                },
+            }
+
+    openobserve_integration = classified_integrations.get("openobserve")
+    if isinstance(openobserve_integration, dict):
+        effective["openobserve"] = {
+            "source": source_by_service.get("openobserve", "local env"),
+            "config": {
+                "base_url": str(openobserve_integration.get("base_url", "")).strip(),
+                "org": str(openobserve_integration.get("org", "default")).strip() or "default",
+                "api_token": str(openobserve_integration.get("api_token", "")).strip(),
+                "username": str(openobserve_integration.get("username", "")).strip(),
+                "password": str(openobserve_integration.get("password", "")).strip(),
+                "stream": str(openobserve_integration.get("stream", "")).strip(),
+                "max_results": openobserve_integration.get("max_results", 100),
+                "integration_id": str(openobserve_integration.get("integration_id", "")).strip(),
+            },
+        }
+    else:
+        openobserve_url = os.getenv("OPENOBSERVE_URL", "").strip()
+        openobserve_token = os.getenv("OPENOBSERVE_TOKEN", "").strip()
+        openobserve_username = os.getenv("OPENOBSERVE_USERNAME", "").strip()
+        openobserve_password = os.getenv("OPENOBSERVE_PASSWORD", "").strip()
+        if openobserve_url and (openobserve_token or (openobserve_username and openobserve_password)):
+            effective["openobserve"] = {
+                "source": "local env",
+                "config": {
+                    "base_url": openobserve_url.rstrip("/"),
+                    "org": os.getenv("OPENOBSERVE_ORG", "default").strip() or "default",
+                    "api_token": openobserve_token,
+                    "username": openobserve_username,
+                    "password": openobserve_password,
+                    "stream": os.getenv("OPENOBSERVE_STREAM", "").strip(),
+                    "max_results": int(os.getenv("OPENOBSERVE_MAX_RESULTS", "100") or "100"),
+                },
+            }
+
+    opensearch_integration = classified_integrations.get("opensearch")
+    if isinstance(opensearch_integration, dict):
+        effective["opensearch"] = {
+            "source": source_by_service.get("opensearch", "local env"),
+            "config": {
+                "url": str(opensearch_integration.get("url", "")).strip(),
+                "api_key": str(opensearch_integration.get("api_key", "")).strip(),
+                "index_pattern": str(opensearch_integration.get("index_pattern", "*")).strip() or "*",
+                "max_results": opensearch_integration.get("max_results", 100),
+                "integration_id": str(opensearch_integration.get("integration_id", "")).strip(),
+            },
+        }
+    else:
+        opensearch_url = os.getenv("OPENSEARCH_URL", "").strip()
+        if opensearch_url:
+            effective["opensearch"] = {
+                "source": "local env",
+                "config": {
+                    "url": opensearch_url.rstrip("/"),
+                    "api_key": os.getenv("OPENSEARCH_API_KEY", "").strip(),
+                    "index_pattern": os.getenv("OPENSEARCH_INDEX_PATTERN", "*").strip() or "*",
+                    "max_results": int(os.getenv("OPENSEARCH_MAX_RESULTS", "100") or "100"),
                 },
             }
 
@@ -792,6 +938,63 @@ def _verify_bitbucket(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_snowflake(source: str, config: dict[str, Any]) -> dict[str, str]:
+    account_identifier = str(config.get("account_identifier", "")).strip()
+    token = str(config.get("token", "")).strip()
+    user = str(config.get("user", "")).strip()
+    password = str(config.get("password", "")).strip()
+    if not account_identifier:
+        return _result("snowflake", source, "missing", "Missing account_identifier.")
+    if not token and not (user and password):
+        return _result("snowflake", source, "missing", "Missing token or user/password credentials.")
+    return _result(
+        "snowflake",
+        source,
+        "passed",
+        f"Snowflake credentials are configured for account {account_identifier}.",
+    )
+
+
+def _verify_azure(source: str, config: dict[str, Any]) -> dict[str, str]:
+    workspace_id = str(config.get("workspace_id", "")).strip()
+    access_token = str(config.get("access_token", "")).strip()
+    endpoint = str(config.get("endpoint", "https://api.loganalytics.io")).strip()
+    if not workspace_id:
+        return _result("azure", source, "missing", "Missing workspace_id.")
+    if not access_token:
+        return _result("azure", source, "missing", "Missing access_token.")
+    return _result(
+        "azure",
+        source,
+        "passed",
+        f"Azure Log Analytics credentials are configured for workspace {workspace_id} at {endpoint}.",
+    )
+
+
+def _verify_openobserve(source: str, config: dict[str, Any]) -> dict[str, str]:
+    base_url = str(config.get("base_url", "")).strip()
+    api_token = str(config.get("api_token", "")).strip()
+    username = str(config.get("username", "")).strip()
+    password = str(config.get("password", "")).strip()
+    if not base_url:
+        return _result("openobserve", source, "missing", "Missing base_url.")
+    if not api_token and not (username and password):
+        return _result("openobserve", source, "missing", "Missing api_token or username/password.")
+    return _result(
+        "openobserve",
+        source,
+        "passed",
+        f"OpenObserve credentials are configured for {base_url}.",
+    )
+
+
+def _verify_opensearch(source: str, config: dict[str, Any]) -> dict[str, str]:
+    url = str(config.get("url", "")).strip()
+    if not url:
+        return _result("opensearch", source, "missing", "Missing url.")
+    return _result("opensearch", source, "passed", f"OpenSearch endpoint configured: {url}.")
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -858,6 +1061,14 @@ def verify_integrations(
             results.append(_verify_clickhouse(source, config))
         elif current_service == "bitbucket":
             results.append(_verify_bitbucket(source, config))
+        elif current_service == "snowflake":
+            results.append(_verify_snowflake(source, config))
+        elif current_service == "azure":
+            results.append(_verify_azure(source, config))
+        elif current_service == "openobserve":
+            results.append(_verify_openobserve(source, config))
+        elif current_service == "opensearch":
+            results.append(_verify_opensearch(source, config))
 
     return results
 

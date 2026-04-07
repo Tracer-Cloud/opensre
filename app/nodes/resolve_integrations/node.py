@@ -55,7 +55,23 @@ _SERVICE_KEY_MAP = {
     "mongo": "mongodb",
     "vercel": "vercel",
     "opsgenie": "opsgenie",
+    "bitbucket": "bitbucket",
+    "snowflake": "snowflake",
+    "azure": "azure",
+    "azure monitor": "azure",
+    "azure_monitor": "azure",
+    "openobserve": "openobserve",
+    "open observe": "openobserve",
+    "opensearch": "opensearch",
+    "open search": "opensearch",
 }
+
+
+def _coerce_int(value: Any, *, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _classify_integrations(
@@ -247,6 +263,117 @@ def _classify_integrations(
                 continue
             if opsgenie_config.api_key:
                 resolved["opsgenie"] = opsgenie_config.model_dump()
+
+        elif key == "bitbucket":
+            workspace = str(credentials.get("workspace", "")).strip()
+            username = str(credentials.get("username", "")).strip()
+            app_password = str(credentials.get("app_password", "")).strip()
+            if workspace and username and app_password:
+                resolved["bitbucket"] = {
+                    "workspace": workspace,
+                    "username": username,
+                    "app_password": app_password,
+                    "base_url": str(
+                        credentials.get("base_url", "https://api.bitbucket.org/2.0")
+                    ).strip() or "https://api.bitbucket.org/2.0",
+                    "max_results": max(
+                        1,
+                        min(
+                            _coerce_int(credentials.get("max_results", 25), default=25),
+                            100,
+                        ),
+                    ),
+                    "integration_id": str(integration.get("id", "")).strip(),
+                }
+
+        elif key == "snowflake":
+            account_identifier = str(
+                credentials.get("account_identifier", credentials.get("account", ""))
+            ).strip()
+            user = str(credentials.get("user", "")).strip()
+            password = str(credentials.get("password", "")).strip()
+            token = str(credentials.get("token", "")).strip()
+            if account_identifier and (token or (user and password)):
+                resolved["snowflake"] = {
+                    "account_identifier": account_identifier,
+                    "user": user,
+                    "password": password,
+                    "token": token,
+                    "warehouse": str(credentials.get("warehouse", "")).strip(),
+                    "role": str(credentials.get("role", "")).strip(),
+                    "database": str(credentials.get("database", "")).strip(),
+                    "schema": str(credentials.get("schema", "")).strip(),
+                    "max_results": max(
+                        1,
+                        min(_coerce_int(credentials.get("max_results", 50), default=50), 200),
+                    ),
+                    "integration_id": str(integration.get("id", "")).strip(),
+                }
+
+        elif key == "azure":
+            workspace_id = str(
+                credentials.get("workspace_id", credentials.get("log_analytics_workspace_id", ""))
+            ).strip()
+            access_token = str(
+                credentials.get("access_token", credentials.get("token", ""))
+            ).strip()
+            if workspace_id and access_token:
+                resolved["azure"] = {
+                    "workspace_id": workspace_id,
+                    "access_token": access_token,
+                    "endpoint": str(
+                        credentials.get("endpoint", "https://api.loganalytics.io")
+                    ).strip() or "https://api.loganalytics.io",
+                    "tenant_id": str(credentials.get("tenant_id", "")).strip(),
+                    "subscription_id": str(credentials.get("subscription_id", "")).strip(),
+                    "max_results": max(
+                        1,
+                        min(_coerce_int(credentials.get("max_results", 100), default=100), 200),
+                    ),
+                    "integration_id": str(integration.get("id", "")).strip(),
+                }
+
+        elif key == "openobserve":
+            base_url = str(
+                credentials.get("base_url", credentials.get("url", ""))
+            ).strip()
+            api_token = str(credentials.get("api_token", credentials.get("token", ""))).strip()
+            username = str(credentials.get("username", "")).strip()
+            password = str(credentials.get("password", "")).strip()
+            if base_url and (api_token or (username and password)):
+                resolved["openobserve"] = {
+                    "base_url": base_url.rstrip("/"),
+                    "org": str(
+                        credentials.get("org", credentials.get("organization", "default"))
+                    ).strip()
+                    or "default",
+                    "api_token": api_token,
+                    "username": username,
+                    "password": password,
+                    "stream": str(credentials.get("stream", "")).strip(),
+                    "max_results": max(
+                        1,
+                        min(_coerce_int(credentials.get("max_results", 100), default=100), 200),
+                    ),
+                    "integration_id": str(integration.get("id", "")).strip(),
+                }
+
+        elif key == "opensearch":
+            url = str(credentials.get("url", credentials.get("base_url", ""))).strip()
+            if url:
+                resolved["opensearch"] = {
+                    "url": url.rstrip("/"),
+                    "api_key": str(credentials.get("api_key", "")).strip(),
+                    "index_pattern": str(
+                        credentials.get("index_pattern", credentials.get("index", "*"))
+                    ).strip()
+                    or "*",
+                    "max_results": max(
+                        1,
+                        min(_coerce_int(credentials.get("max_results", 100), default=100), 200),
+                    ),
+                    "integration_id": str(integration.get("id", "")).strip(),
+                }
 
         else:
             resolved[key] = {
@@ -476,6 +603,102 @@ def _load_env_integrations() -> list[dict[str, Any]]:
             "service": "opsgenie",
             "status": "active",
             "credentials": opsgenie_config.model_dump(exclude={"integration_id"}),
+        })
+
+    bitbucket_workspace = os.getenv("BITBUCKET_WORKSPACE", "").strip()
+    bitbucket_username = os.getenv("BITBUCKET_USERNAME", "").strip()
+    bitbucket_app_password = os.getenv("BITBUCKET_APP_PASSWORD", "").strip()
+    if bitbucket_workspace and bitbucket_username and bitbucket_app_password:
+        integrations.append({
+            "id": "env-bitbucket",
+            "service": "bitbucket",
+            "status": "active",
+            "credentials": {
+                "workspace": bitbucket_workspace,
+                "username": bitbucket_username,
+                "app_password": bitbucket_app_password,
+                "base_url": os.getenv(
+                    "BITBUCKET_BASE_URL", "https://api.bitbucket.org/2.0"
+                ).strip()
+                or "https://api.bitbucket.org/2.0",
+                "max_results": _coerce_int(os.getenv("BITBUCKET_MAX_RESULTS", "25"), default=25),
+            },
+        })
+
+    snowflake_account = str(
+        os.getenv("SNOWFLAKE_ACCOUNT_IDENTIFIER", "") or os.getenv("SNOWFLAKE_ACCOUNT", "")
+    ).strip()
+    snowflake_token = os.getenv("SNOWFLAKE_TOKEN", "").strip()
+    snowflake_user = os.getenv("SNOWFLAKE_USER", "").strip()
+    snowflake_password = os.getenv("SNOWFLAKE_PASSWORD", "").strip()
+    if snowflake_account and (snowflake_token or (snowflake_user and snowflake_password)):
+        integrations.append({
+            "id": "env-snowflake",
+            "service": "snowflake",
+            "status": "active",
+            "credentials": {
+                "account_identifier": snowflake_account,
+                "token": snowflake_token,
+                "user": snowflake_user,
+                "password": snowflake_password,
+                "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE", "").strip(),
+                "role": os.getenv("SNOWFLAKE_ROLE", "").strip(),
+                "database": os.getenv("SNOWFLAKE_DATABASE", "").strip(),
+                "schema": os.getenv("SNOWFLAKE_SCHEMA", "").strip(),
+                "max_results": _coerce_int(os.getenv("SNOWFLAKE_MAX_RESULTS", "50"), default=50),
+            },
+        })
+
+    azure_workspace_id = os.getenv("AZURE_LOG_ANALYTICS_WORKSPACE_ID", "").strip()
+    azure_access_token = os.getenv("AZURE_LOG_ANALYTICS_TOKEN", "").strip()
+    if azure_workspace_id and azure_access_token:
+        integrations.append({
+            "id": "env-azure",
+            "service": "azure",
+            "status": "active",
+            "credentials": {
+                "workspace_id": azure_workspace_id,
+                "access_token": azure_access_token,
+                "endpoint": os.getenv("AZURE_LOG_ANALYTICS_ENDPOINT", "https://api.loganalytics.io").strip()
+                or "https://api.loganalytics.io",
+                "tenant_id": os.getenv("AZURE_TENANT_ID", "").strip(),
+                "subscription_id": os.getenv("AZURE_SUBSCRIPTION_ID", "").strip(),
+                "max_results": _coerce_int(os.getenv("AZURE_MAX_RESULTS", "100"), default=100),
+            },
+        })
+
+    openobserve_url = os.getenv("OPENOBSERVE_URL", "").strip()
+    openobserve_token = os.getenv("OPENOBSERVE_TOKEN", "").strip()
+    openobserve_username = os.getenv("OPENOBSERVE_USERNAME", "").strip()
+    openobserve_password = os.getenv("OPENOBSERVE_PASSWORD", "").strip()
+    if openobserve_url and (openobserve_token or (openobserve_username and openobserve_password)):
+        integrations.append({
+            "id": "env-openobserve",
+            "service": "openobserve",
+            "status": "active",
+            "credentials": {
+                "base_url": openobserve_url.rstrip("/"),
+                "org": os.getenv("OPENOBSERVE_ORG", "default").strip() or "default",
+                "api_token": openobserve_token,
+                "username": openobserve_username,
+                "password": openobserve_password,
+                "stream": os.getenv("OPENOBSERVE_STREAM", "").strip(),
+                "max_results": _coerce_int(os.getenv("OPENOBSERVE_MAX_RESULTS", "100"), default=100),
+            },
+        })
+
+    opensearch_url = os.getenv("OPENSEARCH_URL", "").strip()
+    if opensearch_url:
+        integrations.append({
+            "id": "env-opensearch",
+            "service": "opensearch",
+            "status": "active",
+            "credentials": {
+                "url": opensearch_url.rstrip("/"),
+                "api_key": os.getenv("OPENSEARCH_API_KEY", "").strip(),
+                "index_pattern": os.getenv("OPENSEARCH_INDEX_PATTERN", "*").strip() or "*",
+                "max_results": _coerce_int(os.getenv("OPENSEARCH_MAX_RESULTS", "100"), default=100),
+            },
         })
 
     return integrations

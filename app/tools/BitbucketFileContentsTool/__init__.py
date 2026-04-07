@@ -51,6 +51,9 @@ def _get_bitbucket_file_contents_available(sources: dict[str, dict]) -> bool:
             "workspace": {"type": "string"},
             "username": {"type": "string"},
             "app_password": {"type": "string"},
+            "base_url": {"type": "string"},
+            "max_results": {"type": "integer"},
+            "integration_id": {"type": "string"},
         },
         "required": ["repo_slug", "path"],
     },
@@ -63,11 +66,21 @@ def get_bitbucket_file_contents(
     workspace: str | None = None,
     username: str | None = None,
     app_password: str | None = None,
+    base_url: str | None = None,
+    max_results: int | None = None,
+    integration_id: str | None = None,
     ref: str = "",
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Fetch file contents from a Bitbucket repository."""
-    config = _resolve_config(workspace, username, app_password)
+    config = _resolve_config(
+        workspace,
+        username,
+        app_password,
+        base_url,
+        max_results,
+        integration_id,
+    )
     if config is None:
         return {"source": "bitbucket", "available": False, "error": "Bitbucket integration is not configured.", "file": {}}
     return get_file_contents(config, repo_slug=repo_slug, path=path, ref=ref)

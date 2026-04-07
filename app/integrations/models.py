@@ -292,3 +292,7 @@ class EffectiveIntegrations(StrictConfigModel):
     kafka: EffectiveIntegrationEntry | None = None
     clickhouse: EffectiveIntegrationEntry | None = None
     bitbucket: EffectiveIntegrationEntry | None = None
+    snowflake: EffectiveIntegrationEntry | None = None
+    azure: EffectiveIntegrationEntry | None = None
+    openobserve: EffectiveIntegrationEntry | None = None
+    opensearch: EffectiveIntegrationEntry | None = None
