@@ -301,7 +301,7 @@ def get_cluster_metrics(
                     "source": "mongodb_atlas",
                     "available": True,
                     "note": f"No processes found for cluster '{cluster_name}'.",
-                    "metrics": {},
+                    "measurements": {},
                 }
 
             process_id = f"{target_process['hostname']}:{target_process['port']}"
