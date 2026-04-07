@@ -148,16 +148,11 @@ def run_langsmith_deploy(
         This function assumes prerequisite checks and API-key validation
         have already happened in the caller.
     """
-    _ = api_key
-    _ = deployment_name
-
+    env = {**os.environ, "LANGSMITH_API_KEY": api_key, "LANGSMITH_DEPLOYMENT_NAME": deployment_name}
     cmd = ["langgraph", "build"] if build_only else ["langgraph", "deploy"]
-    result = _run_command(cmd)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)  # noqa: S603
     output = "\n".join(part for part in [result.stdout, result.stderr] if part.strip())
     return result.returncode, output
 
-
-def extract_deployment_url(output: str) -> str | None:
-    """Extract a deployment URL from langgraph CLI output."""
-    match = re.search(r"https://[^\s\)\],;:!?'\"]+", output)
+    match = re.search(r"https://[^\s\)\].,;:!?'\"]+", output)
     return match.group(0) if match else None
