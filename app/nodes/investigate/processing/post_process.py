@@ -283,7 +283,6 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "query_datadog_all": _map_datadog_investigate,
     "query_honeycomb_traces": _map_honeycomb_traces,
     "query_coralogix_logs": _map_coralogix_logs,
-    "run_diagnostic_code": _map_diagnostic_code_result,
 }
 
 
@@ -304,12 +303,13 @@ def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) ->
         if not result.success:
             continue
 
+        if action_name == "run_diagnostic_code":
+            evidence.update(_map_diagnostic_code_result(result.data, evidence))
+            continue
+
         mapper = EVIDENCE_MAPPERS.get(action_name)
         if mapper:
-            if action_name == "run_diagnostic_code":
-                evidence.update(mapper(result.data, evidence))
-            else:
-                evidence.update(mapper(result.data))
+            evidence.update(mapper(result.data))
 
     return evidence
 
