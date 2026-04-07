@@ -22,6 +22,7 @@ from app.cli.langsmith_deploy import (
     resolve_langsmith_api_key,
     run_langsmith_deploy,
     validate_langsmith_api_key,
+    persist_langsmith_env,
 )
 from app.deployment.ec2_config import load_remote_outputs
 
@@ -318,7 +319,10 @@ def deploy_langsmith(api_key: str | None, build_only: bool, deployment_name: str
     # 5. resolve name
     name = resolve_deployment_name(deployment_name)
 
-    # 6. run deploy
+    # 6. persist only after validation
+    persist_langsmith_env(key, name)
+
+    # 7. run deploy
     rc, output = run_langsmith_deploy(
         api_key=key,
         deployment_name=name,
