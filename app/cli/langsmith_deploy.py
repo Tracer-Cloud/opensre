@@ -154,5 +154,8 @@ def run_langsmith_deploy(
     output = "\n".join(part for part in [result.stdout, result.stderr] if part.strip())
     return result.returncode, output
 
-    match = re.search(r"https://[^\s\)\].,;:!?'\"]+", output)
+
+def extract_deployment_url(output: str) -> str | None:
+    """Extract a deployment URL from langgraph CLI output."""
+    match = re.search(r"https://[^\s\)\]\.,;:!?'\"]+", output)
     return match.group(0) if match else None
