@@ -2,6 +2,9 @@
 
 Reuses spinner and label patterns from app.output so that remote investigation
 output looks identical to a local ``opensre investigate`` run.
+
+Handles both ``stream_mode: ["updates"]`` (legacy node-level) and
+``stream_mode: ["events"]`` (fine-grained tool/LLM callbacks).
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from app.output import (
     get_output_format,
     render_investigation_header,
 )
+from app.remote.reasoning import reasoning_text
 from app.remote.stream import StreamEvent
 
 _RESET = "\033[0m"
@@ -23,12 +27,22 @@ _BOLD = "\033[1m"
 _WHITE = "\033[37m"
 _CYAN = "\033[1;36m"
 
+_NODE_START_KINDS = frozenset({
+    "on_chain_start",
+})
+
+_NODE_END_KINDS = frozenset({
+    "on_chain_end",
+})
+
 
 class StreamRenderer:
     """Renders a stream of LangGraph SSE events as live terminal progress.
 
     Wraps ProgressTracker to show the same spinners and resolved-dot lines
     that local investigations produce, driven by remote streaming events.
+    When receiving ``events``-mode events, the spinner subtext is updated
+    in real time with tool calls, LLM reasoning, and other decisions.
     """
 
     def __init__(self) -> None:
@@ -84,6 +98,10 @@ class StreamRenderer:
             self._handle_update(event)
             return
 
+        if event.event_type == "events":
+            self._handle_events_mode(event)
+            return
+
     def _handle_update(self, event: StreamEvent) -> None:
         node = event.node_name
         if not node:
@@ -99,6 +117,59 @@ class StreamRenderer:
             self._tracker.start(canonical)
 
         self._merge_state(event.data.get(node, event.data))
+
+    def _handle_events_mode(self, event: StreamEvent) -> None:
+        """Process a fine-grained ``events``-mode SSE event.
+
+        Node lifecycle is inferred from ``on_chain_start`` /
+        ``on_chain_end`` events whose ``langgraph_node`` matches a
+        graph-level node.  Sub-node callbacks (tool calls, LLM
+        reasoning) update the active spinner's subtext in real time.
+        """
+        node = event.node_name
+        kind = event.kind
+
+        if not node:
+            return
+
+        canonical = _canonical_node_name(node)
+
+        if kind in _NODE_START_KINDS and self._is_graph_node_event(event):
+            if canonical != self._active_node:
+                self._finish_active_node()
+                self._active_node = canonical
+                if canonical not in self._node_names_seen:
+                    self._node_names_seen.append(canonical)
+                self._tracker.start(canonical)
+            return
+
+        if kind in _NODE_END_KINDS and self._is_graph_node_event(event):
+            output = event.data.get("data", {}).get("output", {})
+            if isinstance(output, dict):
+                self._merge_state(output)
+            if canonical == self._active_node:
+                self._finish_active_node()
+            return
+
+        if canonical == self._active_node:
+            text = reasoning_text(kind, event.data, canonical)
+            if text:
+                self._tracker.update_subtext(canonical, text)
+
+    @staticmethod
+    def _is_graph_node_event(event: StreamEvent) -> bool:
+        """True when the event is a top-level graph node transition.
+
+        LangGraph tags graph-level node chains with ``graph:step:<N>``.
+        Sub-chains inside a node (tool executors, LLM calls) lack this tag.
+        """
+        name = str(event.data.get("name", ""))
+        tags = event.tags
+        if any(t.startswith("graph:step:") for t in tags):
+            return True
+        if any(t.startswith("langsmith:") for t in tags):
+            return False
+        return bool(name == event.node_name)
 
     def _finish_active_node(self) -> None:
         if self._active_node is None:

@@ -144,8 +144,10 @@ class TracerIntegrationConfig(StrictConfigModel):
             token = token.split(None, 1)[1].strip()
         return token
 
+
 class JiraIntegrationConfig(StrictConfigModel):
     """Normalized Jira credentials used by resolution and verification flows."""
+
     base_url: str
     email: str
     api_token: str
@@ -243,6 +245,12 @@ class GoogleDocsIntegrationConfig(StrictConfigModel):
         # Enforce reasonable bounds: 5 seconds minimum, 300 seconds maximum
         return max(5, min(timeout, 300))
 
+class GitLabIntegrationConfig(StrictConfigModel):
+    """Normalized Gitlab credentials used by resolution and verification flows."""
+
+    url: str
+    access_token: str
+    integration_id: str = ""
 
 class OpsGenieIntegrationConfig(StrictConfigModel):
     """Normalized OpsGenie credentials used by resolution and verification flows."""
@@ -256,6 +264,7 @@ class OpsGenieIntegrationConfig(StrictConfigModel):
     def _normalize_region(cls, value: object) -> str:
         raw = str(value or "us").strip().lower()
         return raw if raw in ("us", "eu") else "us"
+
 
 class PrefectIntegrationConfig(StrictConfigModel):
     api_url: str = "https://api.prefect.cloud/api"
@@ -297,7 +306,11 @@ class EffectiveIntegrations(StrictConfigModel):
     mongodb: EffectiveIntegrationEntry | None = None
     mongodb_atlas: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
+    gitlab: EffectiveIntegrationEntry | None = None
     vercel: EffectiveIntegrationEntry | None = None
     jira: EffectiveIntegrationEntry | None = None
     opsgenie: EffectiveIntegrationEntry | None = None
     prefect: EffectiveIntegrationEntry | None = None
+    kafka: EffectiveIntegrationEntry | None = None
+    clickhouse: EffectiveIntegrationEntry | None = None
+    bitbucket: EffectiveIntegrationEntry | None = None

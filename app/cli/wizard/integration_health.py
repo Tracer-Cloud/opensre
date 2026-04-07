@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import requests
 
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
+from app.integrations.gitlab import build_gitlab_config, validate_gitlab_config
 from app.integrations.models import (
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
@@ -313,6 +314,21 @@ def validate_sentry_integration(
     result = validate_sentry_config(config)
     return IntegrationHealthResult(ok=result.ok, detail=result.detail)
 
+
+def validate_gitlab_integration(
+    *,
+    base_url: str,
+    auth_token: str,
+) -> IntegrationHealthResult:
+    """Validate Gitlab connectivity with an users api."""
+    config = build_gitlab_config(
+        {
+            "base_url": base_url,
+            "auth_token": auth_token
+        }
+    )
+    result = validate_gitlab_config(config)
+    return IntegrationHealthResult(ok=result.ok, detail=result.detail)
 
 def validate_google_docs_integration(
     *,

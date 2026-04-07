@@ -9,6 +9,8 @@ Enable shell tab-completion (add to your shell profile for persistence):
 
 from __future__ import annotations
 
+import os
+
 import click
 from dotenv import load_dotenv
 
@@ -25,9 +27,28 @@ from app.version import get_version
     invoke_without_command=True,
 )
 @click.version_option(version=get_version(), prog_name="opensre")
+@click.option("--json", "-j", "json_output", is_flag=True, help="Emit machine-readable JSON output.")
+@click.option("--verbose", is_flag=True, help="Print extra diagnostic information.")
+@click.option("--debug", is_flag=True, help="Print debug-level logs and traces.")
+@click.option("--yes", "-y", is_flag=True, help="Auto-confirm all interactive prompts.")
 @click.pass_context
-def cli(ctx: click.Context) -> None:
+def cli(
+    ctx: click.Context,
+    json_output: bool,
+    verbose: bool,
+    debug: bool,
+    yes: bool,
+) -> None:
     """OpenSRE - open-source SRE agent for automated incident investigation and root cause analysis."""
+    ctx.ensure_object(dict)
+    ctx.obj["json"] = json_output
+    ctx.obj["verbose"] = verbose
+    ctx.obj["debug"] = debug
+    ctx.obj["yes"] = yes
+
+    if verbose or debug:
+        os.environ["TRACER_VERBOSE"] = "1"
+
     if ctx.invoked_subcommand is None:
         capture_cli_invoked()
         render_landing()

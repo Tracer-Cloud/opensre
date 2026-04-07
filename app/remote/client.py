@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_PORT = 2024
 STREAM_TIMEOUT = 600.0
 REQUEST_TIMEOUT = 30.0
+PREFLIGHT_TIMEOUT = 5.0
 
 SYNTHETIC_ALERT = (
     "ALERT: Pipeline 'etl_daily_orders' failed at 2025-06-15T08:32:00Z. "
@@ -35,6 +37,43 @@ class RemoteRunResult:
     node_names_seen: list[str] = field(default_factory=list)
     saw_end: bool = False
     final_state: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PreflightResult:
+    """Result of a quick health + capability check against a remote server."""
+
+    ok: bool
+    version: str = ""
+    server_type: str = "unknown"
+    endpoints: list[str] = field(default_factory=list)
+    latency_ms: int = 0
+    error: str | None = None
+    system: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def supports_stream(self) -> bool:
+        return "/investigate/stream" in self.endpoints
+
+    @property
+    def supports_live_stream(self) -> bool:
+        return self.supports_stream or "/threads/*/runs/stream" in self.endpoints
+
+    @property
+    def supports_investigate(self) -> bool:
+        return "/investigate" in self.endpoints
+
+    @property
+    def supports_langgraph(self) -> bool:
+        return self.server_type == "langgraph"
+
+    @property
+    def status_label(self) -> str:
+        if not self.ok:
+            return "unreachable"
+        if self.server_type == "unknown":
+            return "degraded"
+        return "healthy"
 
 
 def normalize_url(url: str) -> str:
@@ -86,6 +125,83 @@ class RemoteAgentClient:
                 return raw_data
             return {"ok": True, "raw": raw_data}
 
+    def preflight(self, *, timeout: float = PREFLIGHT_TIMEOUT) -> PreflightResult:
+        """Quick health + capability detection.
+
+        Calls ``GET /ok``, measures latency, and infers ``server_type``
+        from the response.  If the server doesn't advertise endpoints
+        (old version), probes ``/threads`` to detect a LangGraph deployment.
+        """
+        start = time.monotonic()
+        try:
+            data = self.health(timeout=timeout)
+        except httpx.TimeoutException:
+            return PreflightResult(ok=False, error="connection timed out")
+        except httpx.ConnectError as exc:
+            return PreflightResult(ok=False, error=f"connection refused ({exc})")
+        except httpx.HTTPStatusError as exc:
+            return PreflightResult(
+                ok=False, error=f"HTTP {exc.response.status_code}"
+            )
+        except Exception as exc:  # noqa: BLE001
+            return PreflightResult(ok=False, error=str(exc))
+
+        latency = int((time.monotonic() - start) * 1000)
+        version = str(data.get("version", ""))
+        server_type = str(data.get("server_type", ""))
+        endpoints: list[str] = data.get("endpoints") or []
+
+        if not server_type and not endpoints:
+            server_type, endpoints = self._detect_server_type(timeout=timeout)
+
+        system: dict[str, Any] = data.get("system") or {}
+
+        return PreflightResult(
+            ok=True,
+            version=version,
+            server_type=server_type or "unknown",
+            endpoints=endpoints,
+            latency_ms=latency,
+            system=system,
+        )
+
+    def _detect_server_type(
+        self, *, timeout: float = PREFLIGHT_TIMEOUT
+    ) -> tuple[str, list[str]]:
+        """Probe endpoints to infer the server type when ``/ok`` omits capability info.
+
+        Uses **read-only GET requests only** so that detection never triggers
+        a real investigation.  FastAPI returns 405 (Method Not Allowed) for
+        routes that exist but don't accept GET, and 404 for undefined routes.
+        """
+        route_exists = self._route_exists
+
+        if route_exists("/investigations", timeout=timeout):
+            endpoints = ["/investigate"]
+            if route_exists("/investigate/stream", timeout=timeout):
+                endpoints.append("/investigate/stream")
+            return "lightweight", endpoints
+
+        if route_exists("/threads", timeout=timeout):
+            return "langgraph", ["/threads", "/threads/*/runs/stream"]
+
+        return "unknown", []
+
+    def _route_exists(self, path: str, *, timeout: float = PREFLIGHT_TIMEOUT) -> bool:
+        """Check whether a server route exists using a read-only GET probe.
+
+        Returns ``True`` when the server responds with anything other than 404,
+        indicating the path is defined (even if GET isn't the right method).
+        """
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                resp = client.get(
+                    f"{self.base_url}{path}", headers=self._headers
+                )
+                return resp.status_code != 404
+        except Exception:  # noqa: BLE001
+            return False
+
     def create_thread(self, *, timeout: float = REQUEST_TIMEOUT) -> str:
         """Create a new conversation thread.
 
@@ -111,14 +227,14 @@ class RemoteAgentClient:
     ) -> Iterator[StreamEvent]:
         """Start an investigation run and stream events via SSE.
 
-        Calls POST /threads/{thread_id}/runs/stream with stream_mode "updates".
-        Yields StreamEvent objects as they arrive.
+        Uses ``stream_mode: ["events"]`` to receive fine-grained events
+        (tool calls, LLM reasoning, node transitions) from the LangGraph API.
         """
         url = f"{self.base_url}/threads/{thread_id}/runs/stream"
         body: dict[str, Any] = {
             "input": alert_payload,
             "config": {"metadata": {}},
-            "stream_mode": ["updates"],
+            "stream_mode": ["events"],
         }
 
         with (
@@ -164,13 +280,17 @@ class RemoteAgentClient:
                 result.saw_end = True
             if event.node_name and event.node_name not in result.node_names_seen:
                 result.node_names_seen.append(event.node_name)
-            if event.event_type != "updates":
-                continue
-            if not event.node_name:
-                continue
-            update = event.data.get(event.node_name, event.data)
-            if isinstance(update, dict):
-                result.final_state.update(update)
+
+            if event.event_type == "updates":
+                if not event.node_name:
+                    continue
+                update = event.data.get(event.node_name, event.data)
+                if isinstance(update, dict):
+                    result.final_state.update(update)
+            elif event.event_type == "events" and event.kind == "on_chain_end":
+                output = event.data.get("data", {}).get("output", {})
+                if isinstance(output, dict):
+                    result.final_state.update(output)
 
         return result
 
@@ -206,6 +326,37 @@ class RemoteAgentClient:
             resp.raise_for_status()
             result: dict[str, Any] = resp.json()
             return result
+
+    def stream_investigate(
+        self,
+        raw_alert: dict[str, Any],
+        *,
+        alert_name: str | None = None,
+        pipeline_name: str | None = None,
+        severity: str | None = None,
+        timeout: float = STREAM_TIMEOUT,
+    ) -> Iterator[StreamEvent]:
+        """Stream an investigation from the lightweight server's SSE endpoint.
+
+        Uses ``POST /investigate/stream`` which returns the same SSE
+        format as the LangGraph API, so the ``StreamRenderer`` can
+        consume either server type identically.
+        """
+        url = f"{self.base_url}/investigate/stream"
+        body: dict[str, Any] = {"raw_alert": raw_alert}
+        if alert_name:
+            body["alert_name"] = alert_name
+        if pipeline_name:
+            body["pipeline_name"] = pipeline_name
+        if severity:
+            body["severity"] = severity
+
+        with (
+            httpx.Client(timeout=httpx.Timeout(timeout, connect=REQUEST_TIMEOUT)) as client,
+            client.stream("POST", url, json=body, headers=self._headers) as resp,
+        ):
+            resp.raise_for_status()
+            yield from parse_sse_stream(resp)
 
     def list_investigations(self, *, timeout: float = REQUEST_TIMEOUT) -> list[dict[str, Any]]:
         """GET the list of persisted investigation ``.md`` files."""

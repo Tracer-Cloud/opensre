@@ -1,6 +1,7 @@
 """Main orchestration node for report generation and publishing."""
 
 import logging
+import os
 from typing import cast
 
 from langsmith import traceable
@@ -17,6 +18,13 @@ from app.state import InvestigationState
 from app.utils.ingest_delivery import send_ingest
 
 logger = logging.getLogger(__name__)
+
+def _build_mr_note(slack_message: str) -> str:
+    body = slack_message.strip()
+    if len(body) > 4000:
+        body = body[:3997] + "..."
+
+    return f"### RCA Finding\n\n<details>\n<summary>Investigation summary</summary>\n\n{body}\n\n</details>"
 
 
 def generate_report(state: InvestigationState) -> dict:
@@ -70,6 +78,28 @@ def generate_report(state: InvestigationState) -> dict:
         raise RuntimeError(
             f"[publish] Slack delivery failed: channel={_channel}, thread_ts={thread_ts}, reason={delivery_error}"
         )
+
+    # GitLab MR write-back (opt-in via GITLAB_MR_WRITEBACK env var)
+    if os.getenv("GITLAB_MR_WRITEBACK", "").lower() in ("true", "1", "yes"):
+        _gl = (state.get("available_sources") or {}).get("gitlab", {})
+        _mr_iid = _gl.get("merge_request_iid", "")
+        _project_id = _gl.get("project_id", "")
+        if _mr_iid and _project_id:
+            try:
+                from app.integrations.gitlab import build_gitlab_config, post_gitlab_mr_note
+                _gl_config = build_gitlab_config({
+                    "base_url": _gl.get("gitlab_url", ""),
+                    "auth_token": _gl.get("gitlab_token", ""),
+                })
+                post_gitlab_mr_note(
+                    config=_gl_config,
+                    project_id=_project_id,
+                    mr_iid=_mr_iid,
+                    body=_build_mr_note(slack_message)
+                )
+                logger.info("[publish] GitLab MR note posted: project=%s mr_iid=%s", _project_id, _mr_iid)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[publish] GitLab MR write-back failed: %s", exc)
 
     return {"slack_message": slack_message, "report": slack_message}
 

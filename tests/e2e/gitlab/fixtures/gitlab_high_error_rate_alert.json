@@ -1,0 +1,49 @@
+{
+  "_meta": {
+    "description": "Grafana-style alert with a GitLab repo reference. The agent uses GitLab as a supplementary evidence source — querying recent commits and MRs to correlate code changes with the incident.",
+    "usage": "opensre investigate -i tests/e2e/gitlab/fixtures/gitlab_high_error_rate_alert.json",
+    "required_env": ["GITLAB_ACCESS_TOKEN", "GITLAB_PROJECT_ID", "GITLAB_MR_IID (optional, for post-note test only)"],
+    "schema_version": 1
+  },
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "HighErrorRate",
+        "severity": "critical",
+        "pipeline_name": "api_service",
+        "environment": "production"
+      },
+      "annotations": {
+        "summary": "Error rate exceeded 5% threshold on api_service",
+        "description": "HTTP 5xx error rate on api_service has been above 5% for 5 minutes. Likely caused by a recent deployment.",
+        "repo_url": "__GITLAB_REPO_URL__",
+        "mr_iid": "__GITLAB_MR_IID__",
+        "branch": "main"
+      },
+      "startsAt": "2026-04-05T10:00:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "",
+      "fingerprint": "gitlab-rca-fixture-001"
+    }
+  ],
+  "version": "4",
+  "groupLabels": {
+    "alertname": "HighErrorRate"
+  },
+  "commonLabels": {
+    "alertname": "HighErrorRate",
+    "severity": "critical",
+    "pipeline_name": "api_service"
+  },
+  "commonAnnotations": {
+    "summary": "Error rate exceeded 5% threshold on api_service",
+    "repo_url": "__GITLAB_REPO_URL__",
+    "mr_iid": "__GITLAB_MR_IID__",
+    "branch": "main"
+  },
+  "title": "[FIRING:1] HighErrorRate critical - api_service",
+  "state": "alerting",
+  "message": "**Firing**\n\nHTTP 5xx error rate on api_service exceeded 5% threshold.\nA recent deployment to main may have introduced a regression.\nCheck GitLab commits and MRs merged in the last hour.",
+  "alert_id": "gitlab-rca-fixture-001"
+}

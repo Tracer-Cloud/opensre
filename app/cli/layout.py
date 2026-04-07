@@ -23,6 +23,7 @@ _HELP_COMMANDS: tuple[tuple[str, str], ...] = (
     ("tests", "Browse and run inventoried tests from the terminal."),
     ("integrations", "Manage local integration credentials."),
     ("health", "Check integration and agent setup status."),
+    ("doctor", "Run a full environment diagnostic."),
     ("update", "Check for a newer version and update if one is available."),
     ("version", "Print detailed version, Python and OS info."),
 )
@@ -35,11 +36,16 @@ _LANDING_COMMANDS: tuple[tuple[str, str], ...] = (
     ("opensre tests", "Browse and run inventoried tests"),
     ("opensre integrations list", "Show configured integrations"),
     ("opensre health", "Check integration and agent setup status"),
+    ("opensre doctor", "Run a full environment diagnostic"),
     ("opensre update", "Update to the latest version"),
     ("opensre version", "Print detailed version, Python and OS info"),
 )
 
 _SHORT_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("--json, -j", "Emit machine-readable JSON output."),
+    ("--verbose", "Print extra diagnostic information."),
+    ("--debug", "Print debug-level logs and traces."),
+    ("--yes, -y", "Auto-confirm all interactive prompts."),
     ("--version", "Show the version and exit."),
     ("-h, --help", "Show this message and exit."),
 )
