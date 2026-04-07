@@ -6,6 +6,7 @@ from typing import Any
 
 from app.services.grafana import get_grafana_client_from_credentials
 from app.tools.tool_decorator import tool
+from app.tools.utils.compaction import compact_logs, summarize_counts
 
 
 def _map_pipeline_to_service_name(pipeline_name: str) -> str:
@@ -109,15 +110,22 @@ def query_grafana_logs(
             log for log in logs
             if any(kw in log.get("message", "").lower() for kw in error_keywords)
         ]
-        return {
+        # Compact logs to stay within prompt limits
+        compacted_logs = compact_logs(logs, limit=50)
+        compacted_error_logs = compact_logs(error_logs, limit=20)
+        result_data = {
             "source": "grafana_loki",
             "available": True,
-            "logs": logs[:50],
-            "error_logs": error_logs[:20],
+            "logs": compacted_logs,
+            "error_logs": compacted_error_logs,
             "total_logs": len(logs),
             "service_name": service_name,
             "query": "",
         }
+        summary = summarize_counts(len(logs), len(compacted_logs), "logs")
+        if summary:
+            result_data["truncation_note"] = summary
+        return result_data
 
     client = _resolve_grafana_client(grafana_endpoint, grafana_api_key)
     if not client or not client.is_configured:
@@ -146,14 +154,23 @@ def query_grafana_logs(
     logs_data = result.get("logs", [])
     error_keywords = ("error", "fail", "exception", "traceback")
     error_logs = [log for log in logs_data if any(kw in log.get("message", "").lower() for kw in error_keywords)]
-    return {
+
+    # Compact logs to stay within prompt limits
+    compacted_logs = compact_logs(logs_data, limit=50)
+    compacted_error_logs = compact_logs(error_logs, limit=20)
+
+    result_data = {
         "source": "grafana_loki",
         "available": True,
-        "logs": logs_data[:50],
-        "error_logs": error_logs[:20],
+        "logs": compacted_logs,
+        "error_logs": compacted_error_logs,
         "total_logs": result.get("total_logs", 0),
         "service_name": service_name,
         "execution_run_id": execution_run_id,
         "query": query,
         "account_id": client.account_id,
     }
+    summary = summarize_counts(len(logs_data), len(compacted_logs), "logs")
+    if summary:
+        result_data["truncation_note"] = summary
+    return result_data
