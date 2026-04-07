@@ -115,7 +115,9 @@ def validate_opsgenie_integration(**kwargs):
 
 def validate_langsmith_integration(**kwargs):
     from app.cli.langsmith_deploy import validate_langsmith_api_key as _validate
-
+    from app.cli.wizard.integration_health import IntegrationHealthResult
+    ok, detail = _validate(**kwargs)
+    return IntegrationHealthResult(ok=ok, detail=detail)
     ok, detail = _validate(kwargs["api_key"])
     return IntegrationHealthResult(ok=ok, detail=detail)
 
