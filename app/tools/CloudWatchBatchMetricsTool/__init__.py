@@ -6,7 +6,7 @@ from typing import Any
 
 from app.services.cloudwatch_client import get_metric_statistics
 from app.tools.tool_decorator import tool
-from app.tools.utils.compaction import compact_metrics
+from app.tools.utils.compaction import truncate_list
 
 
 @tool(
@@ -24,12 +24,18 @@ from app.tools.utils.compaction import compact_metrics
         "properties": {
             "job_queue": {"type": "string", "description": "The AWS Batch job queue name"},
             "metric_type": {"type": "string", "enum": ["cpu", "memory"], "default": "cpu"},
-            "limit": {"type": "integer", "default": 50, "description": "Maximum number of metric data points to return"},
+            "limit": {
+                "type": "integer",
+                "default": 50,
+                "description": "Maximum number of metric data points to return",
+            },
         },
         "required": ["job_queue"],
     },
 )
-def get_cloudwatch_batch_metrics(job_queue: str, metric_type: str = "cpu", limit: int = 50) -> dict[str, Any]:
+def get_cloudwatch_batch_metrics(
+    job_queue: str, metric_type: str = "cpu", limit: int = 50
+) -> dict[str, Any]:
     """Get CloudWatch metrics for AWS Batch jobs."""
     if not job_queue:
         return {"error": "job_queue is required"}
@@ -48,8 +54,8 @@ def get_cloudwatch_batch_metrics(job_queue: str, metric_type: str = "cpu", limit
         # Handle the response structure - extract datapoints if present
         if isinstance(metrics_response, dict) and metrics_response.get("success"):
             datapoints = metrics_response.get("data", {}).get("Datapoints", [])
-            # Compact datapoints to stay within prompt limits
-            compacted_datapoints = compact_metrics(datapoints, limit=limit)
+            # Truncate datapoints to stay within prompt limits
+            compacted_datapoints = truncate_list(datapoints, limit=limit, default_limit=limit)
             return {
                 "metrics": {"Datapoints": compacted_datapoints},
                 "metric_type": metric_type,
@@ -59,7 +65,7 @@ def get_cloudwatch_batch_metrics(job_queue: str, metric_type: str = "cpu", limit
             }
         elif isinstance(metrics_response, list):
             # Handle mocked/test responses that return a list directly
-            compacted_metrics = compact_metrics(metrics_response, limit=limit)
+            compacted_metrics = truncate_list(metrics_response, limit=limit, default_limit=limit)
             return {
                 "metrics": compacted_metrics,
                 "metric_type": metric_type,

@@ -9,8 +9,15 @@ from app.tools.ElasticsearchLogsTool._client import make_client, unavailable
 from app.tools.utils.compaction import compact_logs, summarize_counts
 
 _ERROR_KEYWORDS = (
-    "error", "fail", "exception", "traceback",
-    "critical", "killed", "crash", "panic", "timeout",
+    "error",
+    "fail",
+    "exception",
+    "traceback",
+    "critical",
+    "killed",
+    "crash",
+    "panic",
+    "timeout",
 )
 
 
@@ -37,8 +44,14 @@ class ElasticsearchLogsTool(BaseTool):
                 "type": "string",
                 "description": "Index pattern to search (e.g. 'logs-*'). Defaults to ELASTICSEARCH_INDEX_PATTERN env var or '*'.",
             },
-            "url": {"type": "string", "description": "Elasticsearch URL (overrides ELASTICSEARCH_URL env var)"},
-            "api_key": {"type": "string", "description": "API key for authenticated clusters (optional)"},
+            "url": {
+                "type": "string",
+                "description": "Elasticsearch URL (overrides ELASTICSEARCH_URL env var)",
+            },
+            "api_key": {
+                "type": "string",
+                "description": "API key for authenticated clusters (optional)",
+            },
         },
         "required": ["query"],
     }
@@ -69,7 +82,9 @@ class ElasticsearchLogsTool(BaseTool):
     ) -> dict:
         client = make_client(url, api_key=api_key, index_pattern=index_pattern)
         if not client:
-            return unavailable("elasticsearch_logs", "logs", "Elasticsearch integration not configured")
+            return unavailable(
+                "elasticsearch_logs", "logs", "Elasticsearch integration not configured"
+            )
 
         result = client.search_logs(
             query=query,
@@ -81,7 +96,8 @@ class ElasticsearchLogsTool(BaseTool):
 
         logs = result.get("logs", [])
         error_logs = [
-            log for log in logs
+            log
+            for log in logs
             if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)
         ]
 
@@ -97,7 +113,7 @@ class ElasticsearchLogsTool(BaseTool):
             "total": result.get("total", 0),
             "query": query,
         }
-        summary = summarize_counts(len(logs), len(compacted_logs), "logs")
+        summary = summarize_counts(result.get("total", 0), len(compacted_logs), "logs")
         if summary:
             result_data["truncation_note"] = summary
         return result_data

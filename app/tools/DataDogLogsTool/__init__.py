@@ -9,8 +9,17 @@ from app.tools.tool_decorator import tool
 from app.tools.utils.compaction import compact_logs, summarize_counts
 
 _ERROR_KEYWORDS = (
-    "error", "fail", "exception", "traceback", "pipeline_error",
-    "critical", "killed", "oomkilled", "crash", "panic", "timeout",
+    "error",
+    "fail",
+    "exception",
+    "traceback",
+    "pipeline_error",
+    "critical",
+    "killed",
+    "oomkilled",
+    "crash",
+    "panic",
+    "timeout",
 )
 
 
@@ -82,8 +91,7 @@ def query_datadog_logs(
 
     logs = result.get("logs", [])
     error_logs = [
-        log for log in logs
-        if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)
+        log for log in logs if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)
     ]
 
     # Compact logs to stay within prompt limits
@@ -98,7 +106,7 @@ def query_datadog_logs(
         "total": result.get("total", 0),
         "query": query,
     }
-    summary = summarize_counts(len(logs), len(compacted_logs), "logs")
+    summary = summarize_counts(result.get("total", 0), len(compacted_logs), "logs")
     if summary:
         result_data["truncation_note"] = summary
     return result_data

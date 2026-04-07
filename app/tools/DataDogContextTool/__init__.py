@@ -243,8 +243,7 @@ def fetch_datadog_context(
     events = events_raw.get("events", []) if events_raw.get("success") else []
 
     error_logs = [
-        log for log in logs
-        if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)
+        log for log in logs if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)
     ]
 
     pod_name, container_name, detected_namespace = _extract_pod_from_logs(error_logs or logs)
@@ -278,7 +277,7 @@ def fetch_datadog_context(
         "failed_pods": failed_pods,
         "errors": errors,
     }
-    summary = summarize_counts(len(logs), len(compacted_logs), "logs")
+    summary = summarize_counts(logs_raw.get("total", len(logs)), len(compacted_logs), "logs")
     if summary:
         result_data["truncation_note"] = summary
     return result_data
