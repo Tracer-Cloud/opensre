@@ -25,7 +25,7 @@ from app.cli.langsmith_deploy import (
     validate_langsmith_api_key,
 )
 from app.deployment.ec2_config import load_remote_outputs
-
+from app.integrations.store import get_integration, upsert_integration
 
 def _deploy_style(questionary: Any) -> Any:
     return questionary.Style(
@@ -321,6 +321,11 @@ def deploy_langsmith(api_key: str | None, build_only: bool, deployment_name: str
 
     # 6. persist only after validation
     persist_langsmith_env(key, name)
+
+    upsert_integration(
+        "langsmith",
+        {"credentials": {"api_key": key, "deployment_name": name}},
+    )
 
     # 7. run deploy
     rc, output = run_langsmith_deploy(
