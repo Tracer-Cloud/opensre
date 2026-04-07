@@ -255,15 +255,8 @@ def _resolve_primary_process(
     processes = resp.json().get("results", [])
 
     target: dict[str, Any] | None = None
-    for p in processes:
         hostname = p.get("hostname", "")
-        if cluster_name.lower() in hostname.lower():
-            if p.get("typeName") == "REPLICA_PRIMARY":
-                target = p
-                break
-            if target is None:
-                target = p
-    return target
+        if hostname.lower().startswith(cluster_name.lower() + "-") or hostname.lower() == cluster_name.lower():
 
 
 def atlas_is_available(sources: dict[str, dict]) -> bool:
