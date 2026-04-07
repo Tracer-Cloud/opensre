@@ -187,3 +187,113 @@ class TestPlaceholderIssueDataclass:
             message="Some warning",
         )
         assert issue.position == -1
+
+
+class TestCountErrorIssues:
+    """Tests for count_error_issues function."""
+
+    def test_empty_list_returns_zero(self) -> None:
+        """Empty list should return 0."""
+        from app.utils.masking.validation import count_error_issues
+
+        assert count_error_issues([]) == 0
+
+    def test_counts_only_errors(self) -> None:
+        """Only ERROR severity should be counted."""
+        from app.utils.masking.validation import count_error_issues
+
+        issues = [
+            PlaceholderIssue("<_0>", ValidationSeverity.ERROR, "error1"),
+            PlaceholderIssue("<_1>", ValidationSeverity.WARNING, "warning1"),
+            PlaceholderIssue("<_2>", ValidationSeverity.ERROR, "error2"),
+        ]
+
+        assert count_error_issues(issues) == 2
+
+    def test_no_errors_returns_zero(self) -> None:
+        """List with only warnings returns 0."""
+        from app.utils.masking.validation import count_error_issues
+
+        issues = [
+            PlaceholderIssue("<_0>", ValidationSeverity.WARNING, "warning1"),
+            PlaceholderIssue("<_1>", ValidationSeverity.WARNING, "warning2"),
+        ]
+
+        assert count_error_issues(issues) == 0
+
+
+class TestShouldPanic:
+    """Tests for should_panic function."""
+
+    def test_below_threshold_no_panic(self) -> None:
+        """Should not panic when errors below threshold."""
+        from app.utils.masking.validation import should_panic
+
+        issues = [
+            PlaceholderIssue("<_0>", ValidationSeverity.ERROR, "error1"),
+            PlaceholderIssue("<_1>", ValidationSeverity.ERROR, "error2"),
+        ]
+
+        assert should_panic(issues, threshold=5) is False
+
+    def test_at_threshold_no_panic(self) -> None:
+        """Should not panic when errors equal threshold (strict >)."""
+        from app.utils.masking.validation import should_panic
+
+        issues = [
+            PlaceholderIssue("<_0>", ValidationSeverity.ERROR, "error1"),
+            PlaceholderIssue("<_1>", ValidationSeverity.ERROR, "error2"),
+        ]
+
+        assert should_panic(issues, threshold=2) is False
+
+    def test_above_threshold_triggers_panic(self) -> None:
+        """Should panic when errors exceed threshold."""
+        from app.utils.masking.validation import should_panic
+
+        issues = [
+            PlaceholderIssue("<_0>", ValidationSeverity.ERROR, "error1"),
+            PlaceholderIssue("<_1>", ValidationSeverity.ERROR, "error2"),
+            PlaceholderIssue("<_2>", ValidationSeverity.ERROR, "error3"),
+        ]
+
+        assert should_panic(issues, threshold=2) is True
+
+    def test_warnings_dont_count(self) -> None:
+        """Warnings should not trigger panic."""
+        from app.utils.masking.validation import should_panic
+
+        issues = [
+            PlaceholderIssue("<_0>", ValidationSeverity.WARNING, "warning1"),
+            PlaceholderIssue("<_1>", ValidationSeverity.WARNING, "warning2"),
+            PlaceholderIssue("<_2>", ValidationSeverity.WARNING, "warning3"),
+        ]
+
+        assert should_panic(issues, threshold=2) is False
+
+
+class TestSummarizeIssues:
+    """Tests for summarize_issues function."""
+
+    def test_empty_list(self) -> None:
+        """Empty list should return zero counts."""
+        from app.utils.masking.validation import summarize_issues
+
+        result = summarize_issues([])
+        assert result == {"ERROR": 0, "WARNING": 0, "INFO": 0}
+
+    def test_mixed_severities(self) -> None:
+        """Should count all severity levels."""
+        from app.utils.masking.validation import summarize_issues
+
+        issues = [
+            PlaceholderIssue("<_0>", ValidationSeverity.ERROR, "error1"),
+            PlaceholderIssue("<_1>", ValidationSeverity.ERROR, "error2"),
+            PlaceholderIssue("<_2>", ValidationSeverity.WARNING, "warning1"),
+            PlaceholderIssue("<_3>", ValidationSeverity.INFO, "info1"),
+        ]
+
+        result = summarize_issues(issues)
+        assert result["ERROR"] == 2
+        assert result["WARNING"] == 1
+        assert result["INFO"] == 1

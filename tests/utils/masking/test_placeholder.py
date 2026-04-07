@@ -193,3 +193,91 @@ class TestPlaceholderMap:
 
         # Should unmask correctly
         assert pmap.unmask_text(ph1) == "prod-cluster-01"
+
+
+class TestPlaceholderMapSizeLimits:
+    """Tests for placeholder map memory limits."""
+
+    def test_max_placeholders_enforced(self) -> None:
+        """Test that max_placeholders limit is enforced."""
+        pmap = PlaceholderMap(max_placeholders=3)
+
+        # Add identifiers up to limit
+        for i in range(5):
+            identifier = DetectedIdentifier(IdentifierType.CLUSTER_NAME, f"cluster-{i}", 0, 10)
+            pmap.get_or_create_placeholder(identifier)
+
+        # Should stop at limit
+        assert pmap.get_size() == 3
+
+    def test_capacity_warning_flag(self) -> None:
+        """Test warning flag is reset on clear."""
+        pmap = PlaceholderMap(max_placeholders=10)
+
+        # Add up to 80% threshold
+        for i in range(8):
+            identifier = DetectedIdentifier(IdentifierType.CLUSTER_NAME, f"cluster-{i}", 0, 10)
+            pmap.get_or_create_placeholder(identifier)
+
+        # Clear should reset warning flag
+        pmap.clear()
+
+        # After clear, we can add again without duplicate warnings
+        for i in range(5):
+            identifier = DetectedIdentifier(IdentifierType.HOSTNAME, f"host-{i}.com", 0, 10)
+            pmap.get_or_create_placeholder(identifier)
+
+    def test_pass_through_at_capacity(self) -> None:
+        """Test original values pass through when at capacity."""
+        pmap = PlaceholderMap(max_placeholders=2)
+
+        # Fill to capacity
+        id1 = DetectedIdentifier(IdentifierType.CLUSTER_NAME, "cluster-1", 0, 9)
+        id2 = DetectedIdentifier(IdentifierType.CLUSTER_NAME, "cluster-2", 0, 9)
+        pmap.get_or_create_placeholder(id1)
+        pmap.get_or_create_placeholder(id2)
+
+        # Additional identifier should pass through
+        id3 = DetectedIdentifier(IdentifierType.CLUSTER_NAME, "cluster-3", 0, 9)
+        ph3 = pmap.get_or_create_placeholder(id3)
+
+        assert ph3 == "cluster-3"  # Original value, not a placeholder
+
+    def test_get_size_method(self) -> None:
+        """Test get_size returns correct count."""
+        pmap = PlaceholderMap()
+
+        assert pmap.get_size() == 0
+
+        identifier = DetectedIdentifier(IdentifierType.IP_ADDRESS, "192.168.1.1", 0, 11)
+        pmap.get_or_create_placeholder(identifier)
+
+        assert pmap.get_size() == 1
+
+    def test_get_stats_method(self) -> None:
+        """Test get_stats returns comprehensive information."""
+        pmap = PlaceholderMap(max_placeholders=100)
+
+        # Add different types
+        pmap.get_or_create_placeholder(
+            DetectedIdentifier(IdentifierType.CLUSTER_NAME, "cluster-1", 0, 9)
+        )
+        pmap.get_or_create_placeholder(
+            DetectedIdentifier(IdentifierType.CLUSTER_NAME, "cluster-2", 0, 9)
+        )
+        pmap.get_or_create_placeholder(
+            DetectedIdentifier(IdentifierType.IP_ADDRESS, "192.168.1.1", 0, 11)
+        )
+
+        stats = pmap.get_stats()
+
+        assert stats["size"] == 3
+        assert stats["max_size"] == 100
+        assert stats["remaining"] == 97
+        assert stats["CLUSTER_NAME"] == 2
+        assert stats["IP_ADDRESS"] == 1
+
+    def test_default_max_placeholders(self) -> None:
+        """Test default max placeholders is 1000."""
+        pmap = PlaceholderMap()
+        assert pmap.max_placeholders == 1000

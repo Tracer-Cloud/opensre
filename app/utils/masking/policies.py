@@ -25,6 +25,9 @@ class MaskingPolicy(StrictConfigModel):
     - OPENSRE_MASK_IP_ADDRESSES: mask IP addresses (default: true)
     - OPENSRE_MASK_EMAILS: mask email addresses (default: true)
     - OPENSRE_MASK_CUSTOM_PATTERNS: comma-separated list of regex patterns to mask
+    - OPENSRE_MASK_MAX_PLACEHOLDERS: maximum placeholders before pass-through (default: 1000)
+    - OPENSRE_MASK_VALIDATE_OUTPUT: validate placeholders in output (default: true)
+    - OPENSRE_MASK_PANIC_THRESHOLD: max validation errors before panic (default: 10)
     """
 
     mask_hostnames: bool = True
@@ -34,6 +37,10 @@ class MaskingPolicy(StrictConfigModel):
     mask_ip_addresses: bool = True
     mask_emails: bool = True
     custom_patterns: list[str] = field(default_factory=list)
+    # Performance and safety settings
+    max_placeholders: int = 1000
+    validate_output: bool = True
+    panic_threshold: int = 10
 
     @classmethod
     def from_env(cls) -> MaskingPolicy:
@@ -46,6 +53,12 @@ class MaskingPolicy(StrictConfigModel):
             if value in ("0", "false", "no", "off"):
                 return False
             return default
+
+        def _env_int(name: str, default: int) -> int:
+            try:
+                return int(os.getenv(name, str(default)).strip())
+            except (ValueError, TypeError):
+                return default
 
         custom_patterns = []
         custom_env = os.getenv("OPENSRE_MASK_CUSTOM_PATTERNS", "").strip()
@@ -60,6 +73,9 @@ class MaskingPolicy(StrictConfigModel):
             mask_ip_addresses=_env_bool("OPENSRE_MASK_IP_ADDRESSES", True),
             mask_emails=_env_bool("OPENSRE_MASK_EMAILS", True),
             custom_patterns=custom_patterns,
+            max_placeholders=_env_int("OPENSRE_MASK_MAX_PLACEHOLDERS", 1000),
+            validate_output=_env_bool("OPENSRE_MASK_VALIDATE_OUTPUT", True),
+            panic_threshold=_env_int("OPENSRE_MASK_PANIC_THRESHOLD", 10),
         )
 
     def is_any_enabled(self) -> bool:

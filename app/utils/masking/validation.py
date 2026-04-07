@@ -171,3 +171,46 @@ def get_unknown_placeholders(text: str, placeholder_map: PlaceholderMap) -> list
     """
     issues = validate_placeholders(text, placeholder_map)
     return [issue.placeholder for issue in issues if "not in mapping" in issue.message]
+
+
+def count_error_issues(issues: list[PlaceholderIssue]) -> int:
+    """Count the number of ERROR severity issues.
+
+    Args:
+        issues: List of validation issues
+
+    Returns:
+        Number of error-level issues
+    """
+    return sum(1 for issue in issues if issue.severity == ValidationSeverity.ERROR)
+
+
+def should_panic(issues: list[PlaceholderIssue], threshold: int) -> bool:
+    """Determine if panic mode should be activated.
+
+    Panic mode activates when the number of validation errors exceeds
+    the threshold, indicating potential model drift or corruption.
+
+    Args:
+        issues: List of validation issues
+        threshold: Maximum allowed errors before panic
+
+    Returns:
+        True if error count exceeds threshold, False otherwise
+    """
+    return count_error_issues(issues) > threshold
+
+
+def summarize_issues(issues: list[PlaceholderIssue]) -> dict[str, int]:
+    """Summarize issues by severity level.
+
+    Args:
+        issues: List of validation issues
+
+    Returns:
+        Dict mapping severity names to counts
+    """
+    summary: dict[str, int] = {"ERROR": 0, "WARNING": 0, "INFO": 0}
+    for issue in issues:
+        summary[issue.severity.name] = summary.get(issue.severity.name, 0) + 1
+    return summary

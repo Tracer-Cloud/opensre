@@ -4,14 +4,20 @@ This module provides tools to mask sensitive infrastructure identifiers
 (cluster names, hostnames, account IDs, service names, etc.) before
 sending data to external LLM models.
 
-All policies are configurable via environment variables without code changes:
-    OPENSRE_MASK_HOSTNAMES=true|false      # Mask hostnames (default: true)
-    OPENSRE_MASK_ACCOUNT_IDS=true|false    # Mask account IDs (default: true)
-    OPENSRE_MASK_CLUSTER_NAMES=true|false  # Mask cluster names (default: true)
-    OPENSRE_MASK_SERVICE_NAMES=true|false  # Mask service names (default: true)
-    OPENSRE_MASK_IP_ADDRESSES=true|false   # Mask IP addresses (default: true)
-    OPENSRE_MASK_EMAILS=true|false         # Mask emails (default: true)
-    OPENSRE_MASK_CUSTOM_PATTERNS="regex1,regex2"  # Custom regex patterns
+Environment Variables (all optional):
+    Identifier Masking (default: all enabled):
+        OPENSRE_MASK_HOSTNAMES=true|false      # Mask hostnames
+        OPENSRE_MASK_ACCOUNT_IDS=true|false      # Mask AWS/GCP/Azure account IDs
+        OPENSRE_MASK_CLUSTER_NAMES=true|false    # Mask cluster names
+        OPENSRE_MASK_SERVICE_NAMES=true|false    # Mask service names
+        OPENSRE_MASK_IP_ADDRESSES=true|false     # Mask IP addresses
+        OPENSRE_MASK_EMAILS=true|false           # Mask email addresses
+        OPENSRE_MASK_CUSTOM_PATTERNS="regex1,regex2"  # Custom regex patterns
+
+    Performance & Safety:
+        OPENSRE_MASK_MAX_PLACEHOLDERS=1000       # Max identifiers to mask (default: 1000)
+        OPENSRE_MASK_VALIDATE_OUTPUT=true|false  # Validate LLM output placeholders (default: true)
+        OPENSRE_MASK_PANIC_THRESHOLD=10        # Max validation errors before redaction (default: 10)
 
 Example:
     from app.utils.masking import MaskingContext, mask_text, unmask_text
@@ -26,6 +32,12 @@ Example:
     # Unmask LLM response
     unmasked = ctx.unmask_text("Check logs for <CLUSTER_0>")
     # Result: "Check logs for prod-cluster-01"
+
+Safety Features:
+    - Placeholder map size limit prevents unbounded memory growth
+    - Validation detects broken/malformed placeholders in LLM output
+    - Panic mode redacts output when excessive validation errors detected
+    - All sensitive identifiers restored before user-facing display
 """
 
 from app.utils.masking.core import (
@@ -49,8 +61,11 @@ from app.utils.masking.policies import (
 from app.utils.masking.validation import (
     PlaceholderIssue,
     ValidationSeverity,
+    count_error_issues,
     get_unknown_placeholders,
     has_valid_placeholders,
+    should_panic,
+    summarize_issues,
     validate_placeholders,
 )
 
@@ -79,4 +94,7 @@ __all__ = [
     "validate_placeholders",
     "has_valid_placeholders",
     "get_unknown_placeholders",
+    "count_error_issues",
+    "should_panic",
+    "summarize_issues",
 ]

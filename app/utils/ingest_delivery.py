@@ -10,7 +10,7 @@ import httpx
 
 from app.config import get_tracer_base_url
 from app.state import InvestigationState
-from app.utils.masking import validate_placeholders
+from app.utils.masking import MaskingPolicy, validate_placeholders
 
 logger = logging.getLogger(__name__)
 
@@ -62,15 +62,17 @@ def build_ingest_payload(state: InvestigationState) -> dict[str, Any]:
     problem_md = state.get("problem_md") or ""
     summary = state.get("summary") or problem_md or root_cause or state.get("alert_name")
 
-    # Validate for any remaining placeholders (log warnings for monitoring)
-    text_to_validate = f"{root_cause} {problem_md} {summary}"
-    issues = validate_placeholders(text_to_validate)
-    if issues:
-        logger.warning(
-            "[ingest] Found %d placeholder issues in output (may need unmasking): %s",
-            len(issues),
-            [i.placeholder for i in issues[:5]],
-        )
+    # Validate for any remaining placeholders (if enabled)
+    policy = MaskingPolicy.from_env()
+    if policy.validate_output:
+        text_to_validate = f"{root_cause} {problem_md} {summary}"
+        issues = validate_placeholders(text_to_validate)
+        if issues:
+            logger.warning(
+                "[ingest] Found %d placeholder issues in output (may need unmasking): %s",
+                len(issues),
+                [i.placeholder for i in issues[:5]],
+            )
 
     investigation_output = {
         "org_id": state.get("org_id"),

@@ -9,8 +9,11 @@ from app.services import get_llm_for_reasoning, parse_root_cause
 from app.state import InvestigationState
 from app.utils.masking import (
     MaskingContext,
+    count_error_issues,
     mask_dict,
     mask_text,
+    should_panic,
+    summarize_issues,
     unmask_text,
     validate_placeholders,
 )
@@ -85,12 +88,26 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     response_content = response.content if hasattr(response, "content") else str(response)
     response_text = response_content if isinstance(response_content, str) else str(response_content)
 
-    # Validate placeholders in LLM response
-    issues = validate_placeholders(response_text, masking_context.placeholder_map)
-    if issues:
-        debug_print(f"Placeholder validation issues: {len(issues)} found")
-        for issue in issues[:5]:  # Log first 5 issues
-            debug_print(f"  - {issue.severity.name}: {issue.message}")
+    # Validate placeholders in LLM response (if enabled)
+    if masking_context.policy.policy.validate_output:
+        issues = validate_placeholders(response_text, masking_context.placeholder_map)
+        if issues:
+            summary = summarize_issues(issues)
+            debug_print(f"Placeholder validation: {summary}")
+            for issue in issues[:3]:  # Log first 3 issues
+                debug_print(f"  - {issue.severity.name}: {issue.message}")
+
+            # Panic mode: if too many errors, redact the entire output
+            if should_panic(issues, masking_context.policy.policy.panic_threshold):
+                error_count = count_error_issues(issues)
+                debug_print(
+                    f"PANIC MODE: {error_count} validation errors exceeds threshold "
+                    f"({masking_context.policy.policy.panic_threshold}) - redacting output"
+                )
+                response_text = (
+                    "[REDACTED: Output contained invalid placeholders that could not be "
+                    "safely unmasked. Raw response stored for debugging.]"
+                )
 
     # Unmask the response to restore original identifiers for user-facing output
     response_text = unmask_text(response_text, masking_context)

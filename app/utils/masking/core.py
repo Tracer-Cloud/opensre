@@ -40,7 +40,8 @@ class MaskingContext:
         if policy is None:
             policy = MaskingPolicy.from_env()
         compiled = CompiledPolicy.from_policy(policy)
-        return cls(policy=compiled, placeholder_map=PlaceholderMap())
+        placeholder_map = PlaceholderMap(max_placeholders=policy.max_placeholders)
+        return cls(policy=compiled, placeholder_map=placeholder_map)
 
     def mask_text(self, text: str) -> str:
         """Mask sensitive identifiers in text.
