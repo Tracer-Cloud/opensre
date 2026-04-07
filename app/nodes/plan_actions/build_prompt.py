@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from app.utils.masking import MaskingContext, mask_text
+
 
 def _get_executed_sources(executed_hypotheses: list[dict[str, Any]]) -> set[str]:
     """Extract executed sources from hypotheses history."""
@@ -97,7 +99,9 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
         grafana = available_sources["grafana"]
         loki_only = grafana.get("loki_only", False)
         grafana_label = "Grafana Local (Loki only)" if loki_only else "Grafana Cloud"
-        traces_hint = "" if loki_only else "\n- Use query_grafana_traces to find distributed traces in Tempo"
+        traces_hint = (
+            "" if loki_only else "\n- Use query_grafana_traces to find distributed traces in Tempo"
+        )
         hints.append(
             f"""{grafana_label} Available:
 - Service Name: {grafana.get("service_name")}
@@ -269,11 +273,7 @@ def select_actions(
     Returns:
         Tuple of (available_actions, available_action_names)
     """
-    available_actions = [
-        action
-        for action in actions
-        if action.is_available(available_sources)
-    ]
+    available_actions = [action for action in actions if action.is_available(available_sources)]
 
     executed_actions_flat = set()
     for hyp in executed_hypotheses:
@@ -297,6 +297,7 @@ def plan_actions_with_llm(
     available_actions: list,
     available_sources: dict[str, dict],
     memory_context: str = "",
+    masking_context: MaskingContext | None = None,
 ):
     """
     Build the investigation prompt and invoke the LLM for a plan.
@@ -309,6 +310,7 @@ def plan_actions_with_llm(
         available_actions: Filtered list of actions
         available_sources: Available data sources
         memory_context: Optional memory context from prior investigations
+        masking_context: Optional masking context for sensitive identifier masking
 
     Returns:
         Structured plan from the LLM
@@ -320,6 +322,10 @@ def plan_actions_with_llm(
         available_sources=available_sources,
         memory_context=memory_context,
     )
+
+    # Mask sensitive identifiers before sending to LLM
+    if masking_context:
+        prompt = mask_text(prompt, masking_context)
 
     # If memory context is provided, we're already using fast model from caller
     structured_llm = llm.with_structured_output(plan_model)

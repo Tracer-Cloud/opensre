@@ -1,6 +1,6 @@
 """Plan investigation actions from available inputs."""
 
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel
 
@@ -16,6 +16,7 @@ from app.tools.investigation_registry import (
     get_available_actions,
     get_prioritized_actions,
 )
+from app.utils.masking import MaskingContext, mask_dict
 
 
 def plan_actions(
@@ -36,9 +37,17 @@ def plan_actions(
     Returns:
         Tuple of (plan_or_none, available_sources, available_action_names, available_actions)
     """
-    available_sources = detect_sources(
+    # Create masking context for this investigation
+    masking_context = MaskingContext.create()
+
+    available_sources_raw = detect_sources(
         input_data.raw_alert, input_data.context, resolved_integrations=resolved_integrations
     )
+    # Mask sensitive identifiers in available_sources before sending to LLM
+    available_sources_masked = mask_dict(
+        cast(dict[str, object], available_sources_raw), masking_context
+    )
+    available_sources = cast(dict[str, dict], available_sources_masked)
 
     # Enhance sources with dynamically discovered information from evidence (e.g., audit_key from S3 metadata)
     s3_object = input_data.evidence.get("s3_object", {})
@@ -74,6 +83,7 @@ def plan_actions(
         available_actions=available_actions,
         available_sources=available_sources,
         memory_context="",
+        masking_context=masking_context,
     )
 
     # Ensure audit trail is fetched when s3_audit source is available

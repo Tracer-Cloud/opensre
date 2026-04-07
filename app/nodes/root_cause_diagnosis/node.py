@@ -7,6 +7,13 @@ from langsmith import traceable
 from app.output import debug_print, get_tracker
 from app.services import get_llm_for_reasoning, parse_root_cause
 from app.state import InvestigationState
+from app.utils.masking import (
+    MaskingContext,
+    mask_dict,
+    mask_text,
+    unmask_text,
+    validate_placeholders,
+)
 
 from .claim_validator import calculate_validity_score, validate_and_categorize_claims
 from .evidence_checker import (
@@ -28,11 +35,12 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
 
     Flow:
     1) Check if evidence is available
-    2) Build prompt from evidence
+    2) Build prompt from evidence (with masking)
     3) Call LLM to get root cause
     4) Validate claims against evidence
-    5) Calculate validity score
-    6) Generate recommendations if needed
+    5) Unmask response for user-facing output
+    6) Calculate validity score
+    7) Generate recommendations if needed
 
     Args:
         state: Investigation state
@@ -43,11 +51,16 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     tracker = get_tracker()
     tracker.start("diagnose_root_cause", "Analyzing evidence")
 
+    # Create masking context for this investigation
+    masking_context = MaskingContext.create()
+
     context = state.get("context", {})
     evidence = state.get("evidence", {})
     raw_alert = state.get("raw_alert", {})
 
-    has_tracer, has_cloudwatch, has_alert = check_evidence_availability(context, evidence, raw_alert)
+    has_tracer, has_cloudwatch, has_alert = check_evidence_availability(
+        context, evidence, raw_alert
+    )
 
     if _short_circuit_enabled() and is_clearly_healthy(raw_alert, evidence):
         debug_print("Short-circuit: alert is clearly healthy, skipping LLM")
@@ -56,15 +69,31 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     if not has_tracer and not has_cloudwatch and not has_alert:
         return _handle_insufficient_evidence(state, tracker)
 
-    prompt = build_diagnosis_prompt(state, evidence, "")
+    # Mask sensitive identifiers in evidence before building prompt
+    masked_evidence = mask_dict(evidence, masking_context)
+
+    prompt = build_diagnosis_prompt(state, masked_evidence, "")
+
+    # Mask the prompt before sending to LLM
+    masked_prompt = mask_text(prompt, masking_context)
 
     debug_print("Invoking LLM for root cause analysis...")
     llm = get_llm_for_reasoning()
     response = llm.with_config(run_name="LLM – Analyze evidence and propose root cause").invoke(
-        prompt
+        masked_prompt
     )
     response_content = response.content if hasattr(response, "content") else str(response)
     response_text = response_content if isinstance(response_content, str) else str(response_content)
+
+    # Validate placeholders in LLM response
+    issues = validate_placeholders(response_text, masking_context.placeholder_map)
+    if issues:
+        debug_print(f"Placeholder validation issues: {len(issues)} found")
+        for issue in issues[:5]:  # Log first 5 issues
+            debug_print(f"  - {issue.severity.name}: {issue.message}")
+
+    # Unmask the response to restore original identifiers for user-facing output
+    response_text = unmask_text(response_text, masking_context)
 
     result = parse_root_cause(response_text)
 
@@ -102,9 +131,7 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     }
 
 
-def _handle_healthy_finding(
-    state: InvestigationState, tracker, evidence: dict
-) -> dict:
+def _handle_healthy_finding(state: InvestigationState, tracker, evidence: dict) -> dict:
     """Return a deterministic healthy finding, bypassing the LLM.
 
     Called when is_clearly_healthy() confirms the alert is informational and all
@@ -115,7 +142,10 @@ def _handle_healthy_finding(
     loop_count = state.get("investigation_loop_count", 0)
 
     validated_claims = [
-        {"claim": f"{k} data confirmed within normal operating bounds", "validation_status": "validated"}
+        {
+            "claim": f"{k} data confirmed within normal operating bounds",
+            "validation_status": "validated",
+        }
         for k in evidence
         if evidence[k]
     ]
@@ -157,7 +187,11 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
     # If Grafana service names were just discovered but logs haven't been fetched yet,
     # loop back so node_plan_actions can query logs with the correct service name.
     recommendations: list[str] = []
-    if evidence.get("grafana_service_names") and not evidence.get("grafana_logs") and loop_count < 3:
+    if (
+        evidence.get("grafana_service_names")
+        and not evidence.get("grafana_logs")
+        and loop_count < 3
+    ):
         recommendations.append("Query Grafana logs using discovered service names")
 
     next_loop_count = loop_count + 1
@@ -165,7 +199,8 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
     tracker.complete(
         "diagnose_root_cause",
         fields_updated=["root_cause"],
-        message="Insufficient evidence" + (f" — retrying ({next_loop_count})" if recommendations else ""),
+        message="Insufficient evidence"
+        + (f" — retrying ({next_loop_count})" if recommendations else ""),
     )
 
     return {

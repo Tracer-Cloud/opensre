@@ -10,6 +10,7 @@ import httpx
 
 from app.config import get_tracer_base_url
 from app.state import InvestigationState
+from app.utils.masking import validate_placeholders
 
 logger = logging.getLogger(__name__)
 
@@ -56,18 +57,33 @@ def build_ingest_payload(state: InvestigationState) -> dict[str, Any]:
             raw_alert["fingerprint"] = fingerprint
     planned_actions = state.get("planned_actions") or []
 
+    # Get raw values from state (may contain placeholders from LLM interactions)
+    root_cause = state.get("root_cause") or ""
+    problem_md = state.get("problem_md") or ""
+    summary = state.get("summary") or problem_md or root_cause or state.get("alert_name")
+
+    # Validate for any remaining placeholders (log warnings for monitoring)
+    text_to_validate = f"{root_cause} {problem_md} {summary}"
+    issues = validate_placeholders(text_to_validate)
+    if issues:
+        logger.warning(
+            "[ingest] Found %d placeholder issues in output (may need unmasking): %s",
+            len(issues),
+            [i.placeholder for i in issues[:5]],
+        )
+
     investigation_output = {
         "org_id": state.get("org_id"),
         "alert_name": state.get("alert_name"),
         "pipeline_name": state.get("pipeline_name") or "",
         "severity": _normalize_severity(state.get("severity")),
-        "summary": state.get("summary") or state.get("problem_md") or state.get("root_cause") or state.get("alert_name"),
+        "summary": summary,
         "raw_alert": raw_alert,
-        "root_cause": state.get("root_cause") or "",
+        "root_cause": root_cause,
         "confidence": state.get("validity_score") or 0,
         "validity_score": state.get("validity_score") or 0,
         "planned_actions": planned_actions,
-        "problem_md": state.get("problem_md") or "",
+        "problem_md": problem_md,
         "investigation_recommendations": state.get("investigation_recommendations") or [],
     }
 
