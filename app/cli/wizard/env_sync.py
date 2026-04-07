@@ -8,6 +8,7 @@ from pathlib import Path
 from app.cli.wizard.config import PROJECT_ENV_PATH, ProviderOption
 
 _ENV_ASSIGNMENT = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=")
+_SENSITIVE_KEYS = {"API_KEY", "SECRET", "TOKEN", "PASSWORD"}
 
 
 def _set_env_value(lines: list[str], key: str, value: str) -> list[str]:
@@ -39,6 +40,8 @@ def sync_env_values(
 
     lines = existing
     for key, value in values.items():
+        if any(s in key.upper() for s in _SENSITIVE_KEYS):
+            continue
         lines = _set_env_value(lines, key, value)
 
     target_path.write_text("".join(lines), encoding="utf-8")
@@ -96,6 +99,8 @@ def sync_provider_env(
         values[provider.legacy_model_env] = model
 
     for key, value in values.items():
+        if any(s in key.upper() for s in _SENSITIVE_KEYS):
+            continue
         lines = _set_env_value(lines, key, value)
 
     target_path.write_text("".join(lines), encoding="utf-8")
