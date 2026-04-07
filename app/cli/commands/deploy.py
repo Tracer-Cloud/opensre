@@ -105,9 +105,12 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
             questionary.Choice("Tear down EC2 deployment", value="down"),
             questionary.Choice("Redeploy (tear down + deploy)", value="redeploy"),
         ])
+    else:
+        choices.append(
+            questionary.Choice("Deploy to AWS EC2 (Bedrock)", value="ec2"),
+        )
 
     choices.extend([
-        questionary.Choice("Deploy to AWS EC2 (Bedrock)", value="ec2"),
         questionary.Choice("Deploy to Railway", value="railway"),
         questionary.Separator(),
         questionary.Choice("Exit", value="exit"),

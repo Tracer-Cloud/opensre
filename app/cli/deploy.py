@@ -48,13 +48,6 @@ def _run_command(
     try:
         result: subprocess.CompletedProcess[str] = subprocess.run(cmd, **kwargs)  # noqa: S603
         return result
-    except subprocess.CalledProcessError as exc:
-        return subprocess.CompletedProcess(
-            args=cmd,
-            returncode=exc.returncode,
-            stdout=getattr(exc, "stdout", ""),
-            stderr=getattr(exc, "stderr", ""),
-        )
     except FileNotFoundError:
         # Command not found - CLI not installed
         return subprocess.CompletedProcess(
@@ -168,7 +161,7 @@ def deploy_to_railway(
 
         auth_detail = str(auth_status["detail"])
     else:
-        logs.append("Railway CLI detected")
+        logs.append("Using pre-validated Railway auth")
 
     logs.append(f"Authenticated as: {auth_detail}")
 
@@ -225,7 +218,9 @@ def deploy_to_railway(
             check=False,
         )
         if domain_result.returncode == 0:
-            url = domain_result.stdout.strip()
+            raw_domain = domain_result.stdout.strip()
+            if raw_domain:
+                url = raw_domain if "://" in raw_domain else f"https://{raw_domain}"
 
     if url:
         logs.append(f"Deployment URL: {url}")

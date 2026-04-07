@@ -189,6 +189,58 @@ class TestDeployToRailway:
         assert result["success"] is True
         assert requested_urls == ["https://myapp.up.railway.app/ok"]
 
+    def test_domain_fallback_adds_https_scheme(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("app.cli.deploy.is_railway_cli_installed", lambda: True)
+        monkeypatch.setattr(
+            "app.cli.deploy.get_railway_auth_status",
+            lambda: {"authenticated": True, "detail": "user@example.com"},
+        )
+
+        command_calls = {"count": 0}
+
+        def mock_run_command(cmd: list[str], **kwargs: object) -> object:  # noqa: ARG001
+            command_calls["count"] += 1
+
+            class Result:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
+            result = Result()
+            if cmd[:2] == ["railway", "domain"]:
+                result.stdout = "myapp.up.railway.app"
+            return result
+
+        monkeypatch.setattr("app.cli.deploy._run_command", mock_run_command)
+
+        result = deploy_to_railway(wait_for_health=False)
+        assert result["success"] is True
+        assert result["url"] == "https://myapp.up.railway.app"
+
+    def test_prevalidated_auth_logs_expected_message(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            "app.cli.deploy.is_railway_cli_installed",
+            lambda: pytest.fail("CLI check should be skipped"),
+        )
+        monkeypatch.setattr(
+            "app.cli.deploy.get_railway_auth_status",
+            lambda: pytest.fail("Auth check should be skipped"),
+        )
+
+        def mock_run_command(cmd: list[str], **kwargs: object) -> object:  # noqa: ARG001
+            class Result:
+                returncode = 0
+                stdout = "https://myapp.up.railway.app"
+                stderr = ""
+
+            return Result()
+
+        monkeypatch.setattr("app.cli.deploy._run_command", mock_run_command)
+
+        result = deploy_to_railway(wait_for_health=False, auth_detail="user@example.com")
+        assert result["success"] is True
+        assert result["logs"][0] == "Using pre-validated Railway auth"
+
     def test_skips_duplicate_prereq_checks_with_prevalidated_auth(
         self,
         monkeypatch: pytest.MonkeyPatch,
