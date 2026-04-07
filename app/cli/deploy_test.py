@@ -290,7 +290,7 @@ class TestRunDeploy:
 class TestDeployCommand:
     """Tests for the deploy CLI command."""
 
-    def test_deploy_command_with_default_target(self) -> None:
+    def test_deploy_command_railway_success(self) -> None:
         runner = CliRunner()
 
         with (
@@ -309,13 +309,24 @@ class TestDeployCommand:
                 },
             ),
         ):
-            result = runner.invoke(cli, ["deploy", "--yes"])
+            result = runner.invoke(cli, ["deploy", "railway", "--yes"])
 
         assert result.exit_code == 0
         assert "railway" in result.output.lower() or "Deployed" in result.output
 
-    def test_deploy_command_with_explicit_target(self) -> None:
+    def test_deploy_command_with_project_and_service(self) -> None:
         runner = CliRunner()
+
+        captured: dict[str, object] = {}
+
+        def _deploy(**kwargs: object) -> dict[str, object]:
+            captured.update(kwargs)
+            return {
+                "success": True,
+                "url": "https://myapp.up.railway.app",
+                "logs": ["Deployed"],
+                "health_ok": True,
+            }
 
         with (
             patch("app.cli.deploy.is_railway_cli_installed", return_value=True),
@@ -323,34 +334,32 @@ class TestDeployCommand:
                 "app.cli.deploy.get_railway_auth_status",
                 return_value={"authenticated": True, "detail": "user@example.com"},
             ),
-            patch(
-                "app.cli.deploy.deploy_to_railway",
-                return_value={
-                    "success": True,
-                    "url": "https://myapp.up.railway.app",
-                    "logs": ["Deployed"],
-                    "health_ok": True,
-                },
-            ),
+            patch("app.cli.deploy.deploy_to_railway", side_effect=_deploy),
         ):
-            result = runner.invoke(cli, ["deploy", "--target", "railway", "--yes"])
+            result = runner.invoke(
+                cli,
+                [
+                    "deploy",
+                    "railway",
+                    "--project",
+                    "myproject",
+                    "--service",
+                    "myservice",
+                    "--yes",
+                ],
+            )
 
         assert result.exit_code == 0
+        assert captured["project_name"] == "myproject"
+        assert captured["service_name"] == "myservice"
 
-    def test_deploy_command_unsupported_target(self) -> None:
+    def test_deploy_command_requires_subcommand_when_yes(self) -> None:
         runner = CliRunner()
 
-        with (
-            patch("app.cli.deploy.is_railway_cli_installed", return_value=True),
-            patch(
-                "app.cli.deploy.get_railway_auth_status",
-                return_value={"authenticated": True, "detail": "user@example.com"},
-            ),
-        ):
-            result = runner.invoke(cli, ["deploy", "--target", "unsupported", "--yes"])
+        result = runner.invoke(cli, ["--yes", "deploy"])
 
         assert result.exit_code == 1
-        assert "unsupported" in result.output.lower()
+        assert "no subcommand provided" in result.output.lower()
 
     def test_deploy_command_dry_run(self) -> None:
         runner = CliRunner()
@@ -371,7 +380,7 @@ class TestDeployCommand:
                 },
             ),
         ):
-            result = runner.invoke(cli, ["deploy", "--dry-run"])
+            result = runner.invoke(cli, ["deploy", "railway", "--dry-run"])
 
         assert result.exit_code == 0
         assert "dry" in result.output.lower()
@@ -380,7 +389,7 @@ class TestDeployCommand:
         runner = CliRunner()
 
         with patch("app.cli.deploy.is_railway_cli_installed", return_value=False):
-            result = runner.invoke(cli, ["deploy", "--yes"])
+            result = runner.invoke(cli, ["deploy", "railway", "--yes"])
 
         assert result.exit_code == 1
         assert "not installed" in result.output.lower()
@@ -395,7 +404,7 @@ class TestDeployCommand:
                 return_value={"authenticated": False, "detail": "Not logged in"},
             ),
         ):
-            result = runner.invoke(cli, ["deploy", "--yes"])
+            result = runner.invoke(cli, ["deploy", "railway", "--yes"])
 
         assert result.exit_code == 1
         assert "not authenticated" in result.output.lower()
