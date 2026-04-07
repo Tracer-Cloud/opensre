@@ -19,12 +19,10 @@ def _set_env_value(lines: list[str], key: str, value: str) -> list[str]:
             updated.append(line)
             continue
         if not replaced:
-            # codeql[py/clear-text-storage-sensitive-data]
             updated.append(f"{key}={value}\n")
             replaced = True
 
     if not replaced:
-        # codeql[py/clear-text-storage-sensitive-data]
         updated.append(f"{key}={value}\n")
     return updated
 
@@ -43,7 +41,6 @@ def sync_env_values(
     for key, value in values.items():
         lines = _set_env_value(lines, key, value)
 
-    # codeql[py/clear-text-storage-sensitive-data]
     target_path.write_text("".join(lines), encoding="utf-8")
     return target_path
 
@@ -101,6 +98,5 @@ def sync_provider_env(
     for key, value in values.items():
         lines = _set_env_value(lines, key, value)
 
-    # codeql[py/clear-text-storage-sensitive-data]
     target_path.write_text("".join(lines), encoding="utf-8")
     return target_path
