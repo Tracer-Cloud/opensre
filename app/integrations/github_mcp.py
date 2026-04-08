@@ -33,6 +33,13 @@ REQUIRED_SOURCE_INVESTIGATION_TOOLS = (
     "list_commits",
     "search_code",
 )
+# Tools that can list accessible repositories; first match with a callable schema wins.
+_REPO_ENUMERATION_TOOL_CANDIDATES: tuple[str, ...] = (
+    "list_repositories",
+    "list_user_repositories",
+    "search_repositories",
+)
+_REPO_SAMPLE_LIMIT = 5
 
 
 class GitHubMCPConfig(StrictConfigModel):
@@ -291,6 +298,90 @@ def call_github_mcp_tool(
     return cast(dict[str, Any], _run_async(_call_tool_async(config, tool_name, arguments)))
 
 
+def _json_schema_allows_empty_object_call(schema: Any) -> bool:
+    """True if the tool can be invoked with {} (no required properties)."""
+
+    if schema is None:
+        return True
+    if not isinstance(schema, dict):
+        return False
+    if schema.get("allOf") or schema.get("anyOf") or schema.get("oneOf"):
+        return False
+    required = schema.get("required")
+    if isinstance(required, list) and len(required) > 0:
+        return False
+    return True
+
+
+def _find_repo_enumeration_tool(tools: list[dict[str, Any]]) -> str | None:
+    by_name = {str(t["name"]): t for t in tools if t.get("name")}
+    for candidate in _REPO_ENUMERATION_TOOL_CANDIDATES:
+        entry = by_name.get(candidate)
+        if not entry:
+            continue
+        schema = entry.get("input_schema")
+        if _json_schema_allows_empty_object_call(schema):
+            return candidate
+    return None
+
+
+def _extract_repo_samples_from_payload(data: Any, *, limit: int) -> list[str]:
+    """Pull up to `limit` unique repo identifiers (owner/name) from MCP/tool JSON."""
+
+    samples: list[str] = []
+
+    def add(name: str) -> None:
+        cleaned = name.strip()
+        if cleaned and cleaned not in samples:
+            samples.append(cleaned)
+
+    def walk(node: Any) -> None:
+        if len(samples) >= limit:
+            return
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+        if isinstance(node, dict):
+            fn = node.get("full_name") or node.get("fullName")
+            if isinstance(fn, str) and fn.strip():
+                add(fn)
+                return
+            owner = node.get("owner")
+            name = node.get("name")
+            if isinstance(owner, dict) and isinstance(name, str):
+                login = owner.get("login")
+                if isinstance(login, str) and login.strip():
+                    add(f"{login.strip()}/{name.strip()}")
+            for key in ("repositories", "repos", "items", "data", "nodes"):
+                if key in node and isinstance(node[key], (list, dict)):
+                    walk(node[key])
+            for _key, val in node.items():
+                if len(samples) >= limit:
+                    return
+                if isinstance(val, (list, dict)):
+                    walk(val)
+
+    walk(data)
+    return samples[:limit]
+
+
+def _repo_samples_from_tool_result(result: dict[str, Any], *, limit: int) -> list[str]:
+    structured = result.get("structured_content")
+    if structured is not None:
+        samples = _extract_repo_samples_from_payload(structured, limit=limit)
+        if samples:
+            return samples
+    text = str(result.get("text") or "").strip()
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    return _extract_repo_samples_from_payload(parsed, limit=limit)
+
+
 def validate_github_mcp_config(config: GitHubMCPConfig) -> GitHubMCPValidationResult:
     """Validate connectivity, authentication, and source-code tools."""
 
@@ -327,12 +418,55 @@ def validate_github_mcp_config(config: GitHubMCPConfig) -> GitHubMCPValidationRe
                 user_name = ""
 
         who = user_name or "authenticated GitHub user"
+        tools_payload = tools
+        repo_tool = _find_repo_enumeration_tool(tools_payload)
+        if not repo_tool:
+            return GitHubMCPValidationResult(
+                ok=False,
+                detail=(
+                    f"Authenticated as {who}, but no repository listing tool callable without "
+                    "arguments was found (expected one of: "
+                    f"{', '.join(_REPO_ENUMERATION_TOOL_CANDIDATES)}). "
+                    "Include the repos toolset and ensure the GitHub MCP server exposes "
+                    "list_repositories."
+                ),
+                tool_names=tool_names,
+                authenticated_user=user_name,
+            )
+
+        list_result = call_github_mcp_tool(config, repo_tool, {})
+        if list_result.get("is_error"):
+            list_detail = list_result.get("text") or "Unknown error listing repositories."
+            return GitHubMCPValidationResult(
+                ok=False,
+                detail=(
+                    f"Authenticated as {who}, but repository access check failed ({repo_tool}): "
+                    f"{list_detail} "
+                    "(connectivity OK; auth or token scope may be insufficient for repo APIs)."
+                ),
+                tool_names=tool_names,
+                authenticated_user=user_name,
+            )
+
+        samples = _repo_samples_from_tool_result(list_result, limit=_REPO_SAMPLE_LIMIT)
+        if samples:
+            sample_str = ", ".join(samples)
+            success_detail = (
+                f"GitHub MCP validated for {who}; discovered {len(tool_names)} tools including "
+                "repository source investigation helpers. "
+                f"Sample accessible repos: {sample_str}."
+            )
+        else:
+            success_detail = (
+                f"GitHub MCP validated for {who}; discovered {len(tool_names)} tools including "
+                "repository source investigation helpers. "
+                f"Repository listing ({repo_tool}) returned no parseable repos "
+                "(empty result or unexpected response shape)."
+            )
+
         return GitHubMCPValidationResult(
             ok=True,
-            detail=(
-                f"GitHub MCP validated for {who}; discovered {len(tool_names)} tools including "
-                "repository source investigation helpers."
-            ),
+            detail=success_detail,
             tool_names=tool_names,
             authenticated_user=user_name,
         )
