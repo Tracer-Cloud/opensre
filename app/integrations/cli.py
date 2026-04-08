@@ -25,6 +25,7 @@ from app.integrations.store import (
     remove_integration,
     upsert_integration,
 )
+from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.verify import (
     SUPPORTED_VERIFY_SERVICES,
     format_verification_results,
@@ -230,6 +231,17 @@ def _setup_github() -> None:
     )
     toolsets = _p("Toolsets", default="repos,issues,pull_requests,actions")
     credentials["toolsets"] = [part.strip() for part in toolsets.split(",") if part.strip()]
+
+    print("\n  Validating GitHub MCP integration...")
+    mcp_config = build_github_mcp_config(credentials)
+    result = validate_github_mcp_config(mcp_config)
+    if not result.ok:
+        print("  GitHub MCP · Failed")
+        print(f"  {result.detail}")
+        sys.exit(1)
+
+    print("  GitHub MCP · Connected")
+    print(f"  {result.detail}")
     upsert_integration("github", {"credentials": credentials})
 
 
