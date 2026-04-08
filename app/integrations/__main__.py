@@ -1,14 +1,17 @@
-"""python -m app.integrations <command> [service] [--send-slack-test]
+"""python -m app.integrations <command> [service] [options]
 
 Commands: setup, list, show, remove, verify
 Services: aws, coralogix, datadog, github, grafana, honeycomb, mongodb, opensearch,
 rds, sentry, slack, tracer, vercel
+
+Verify options: --send-slack-test
 """
 
 import sys
 
 from dotenv import load_dotenv
 
+from app.cli.prompt_support import install_questionary_escape_cancel
 from app.integrations.cli import (
     SUPPORTED,
     cmd_list,
@@ -22,6 +25,7 @@ from app.integrations.verify import SUPPORTED_VERIFY_SERVICES
 
 def main() -> None:
     load_dotenv(override=False)
+    install_questionary_escape_cancel()
     args = sys.argv[1:]
     if not args or args[0] in ("-h", "--help"):
         print(__doc__)
