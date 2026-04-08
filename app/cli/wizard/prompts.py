@@ -157,11 +157,9 @@ def select(
 
     bindings = _base_bindings(ic)
 
-    if escape_result is not None:
-
-        @bindings.add(Keys.Escape, eager=True)
-        def _escape(event: Any) -> None:
-            event.app.exit(result=escape_result)
+    @bindings.add(Keys.Escape, eager=True)
+    def _escape(event: Any) -> None:
+        event.app.exit(result=escape_result)
 
     @bindings.add(Keys.ControlM, eager=True)
     def _submit(event: Any) -> None:
@@ -215,6 +213,10 @@ def checkbox(
         return tokens
 
     bindings = _base_bindings(ic, allow_toggle=True)
+
+    @bindings.add(Keys.Escape, eager=True)
+    def _escape_checkbox(event: Any) -> None:
+        event.app.exit(result=None)
 
     @bindings.add(Keys.ControlM, eager=True)
     def _submit(event: Any) -> None:

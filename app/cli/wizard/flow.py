@@ -22,6 +22,7 @@ _console = Console()
 DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 DEFAULT_GITHUB_MCP_MODE = "streamable-http"
 DEFAULT_SENTRY_URL = "https://sentry.io"
+DEFAULT_GITLAB_BASE_URL = "https://gitlab.com/api/v4"
 _ASCII_HEADER = """\
   ___  ____  _____ _   _ ____  ____  _____
  / _ \\|  _ \\| ____| \\ | / ___||  _ \\| ____|
@@ -78,6 +79,12 @@ def validate_github_mcp_integration(**kwargs):
     return _validate(**kwargs)
 
 
+def validate_gitlab_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_gitlab_integration as _validate
+
+    return _validate(**kwargs)
+
+
 def validate_sentry_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_sentry_integration as _validate
 
@@ -92,6 +99,7 @@ def validate_jira_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_jira_integration as _validate
 
     return _validate(**kwargs)
+
 
 def validate_google_docs_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_google_docs_integration as _validate
@@ -762,6 +770,36 @@ def _configure_github_mcp() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_gitlab() -> tuple[str, str]:
+    _, credentials = _integration_defaults("gitlab")
+
+    while True:
+        base_url = _prompt_value(
+            "Gitlab base URL",
+            default=_string_value(credentials.get("base_url"), DEFAULT_GITLAB_BASE_URL),
+        )
+        auth_token = _prompt_value(
+            "Gitlab access token",
+            default=_string_value(credentials.get("auth_token")),
+            secret=True,
+        )
+
+        with _console.status("Validating Gitlab integration...", spinner="dots"):
+            result = validate_gitlab_integration(base_url=base_url, auth_token=auth_token)
+        _render_integration_result("Gitlab", result)
+        if result.ok:
+            credentials = {"base_url": base_url, "auth_token": auth_token}
+            upsert_integration("gitlab", {"credentials": credentials})
+            env_path = sync_env_values(
+                {
+                    "GITLAB_BASE_URL": base_url,
+                    "GITLAB_ACCESS_TOKEN": auth_token,
+                }
+            )
+            return "Gitlab", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_sentry() -> tuple[str, str]:
     _, credentials = _integration_defaults("sentry")
     guidance = get_sentry_auth_recommendations()
@@ -843,7 +881,9 @@ def _configure_notion() -> tuple[str, str]:
 def _configure_jira() -> tuple[str, str]:
     _, credentials = _integration_defaults("jira")
     _console.print("\n[bold]Jira Integration[/bold]")
-    _console.print("Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens\n")
+    _console.print(
+        "Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens\n"
+    )
 
     while True:
         base_url = _prompt_value("Jira base URL (e.g. https://myteam.atlassian.net)")
@@ -861,15 +901,21 @@ def _configure_jira() -> tuple[str, str]:
         _render_integration_result("Jira", result)
 
         if result.ok:
-            upsert_integration("jira", {"credentials": {
-                "base_url": base_url,
-                "email": email,
-                "api_token": api_token,
-                "project_key": project_key,
-            }})
+            upsert_integration(
+                "jira",
+                {
+                    "credentials": {
+                        "base_url": base_url,
+                        "email": email,
+                        "api_token": api_token,
+                        "project_key": project_key,
+                    }
+                },
+            )
             env_path = sync_env_values({})
             return "Jira", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
 
 def _configure_google_docs() -> tuple[str, str]:
     _, credentials = _integration_defaults("google_docs")
@@ -988,6 +1034,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         Choice(
             value="sentry", label="Sentry", hint="Investigate errors, events, and issue history"
         ),
+        Choice(value="gitlab", label="Gitlab", hint="Let the agent inspect repos, PRs, and issues"),
         Choice(
             value="google_docs",
             label="Google Docs",
@@ -996,7 +1043,9 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         Choice(
             value="vercel",
             label="Vercel",
-            hint="Monitor deployments and fetch runtime logs",
+            hint=(
+                "Deployments, build output, and logs tools; runtime-log API can lag the dashboard"
+            ),
         ),
         Choice(
             value="jira",
@@ -1037,6 +1086,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "aws": _configure_aws,
         "github": _configure_github_mcp,
         "sentry": _configure_sentry,
+        "gitlab": _configure_gitlab,
         "google_docs": _configure_google_docs,
         "vercel": _configure_vercel,
         "jira": _configure_jira,
@@ -1053,6 +1103,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "aws": "aws",
         "github": "github mcp",
         "sentry": "sentry",
+        "gitlab": "gitlab",
         "google_docs": "google docs",
         "vercel": "vercel",
         "jira": "jira",
@@ -1061,6 +1112,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
     }
 
     _step(f"Service · {_SERVICE_LABELS.get(selected_service, selected_service)}")
+    if selected_service == "vercel":
+        _console.print(
+            "[dim]Note: Vercel's runtime-log API may omit or delay lines compared to the "
+            "dashboard. Deployment and build checks still apply; there is no CLI incident browser.[/]"
+        )
     try:
         label, env_path = handlers[selected_service]()
         configured.append(label)
@@ -1105,7 +1161,9 @@ def run_wizard(_argv: list[str] | None = None) -> int:
     defaults = _local_defaults()
     saved_provider_value = defaults["provider"] if isinstance(defaults["provider"], str) else None
     saved_model_value = defaults["model"] if isinstance(defaults["model"], str) else ""
-    default_wizard_mode = defaults["wizard_mode"] if isinstance(defaults["wizard_mode"], str) else "quickstart"
+    default_wizard_mode = (
+        defaults["wizard_mode"] if isinstance(defaults["wizard_mode"], str) else "quickstart"
+    )
     default_provider_value = (
         saved_provider_value
         if saved_provider_value in PROVIDER_BY_VALUE

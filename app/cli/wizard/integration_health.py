@@ -6,13 +6,8 @@ from dataclasses import dataclass
 
 import requests
 
-from app.integrations.clients.coralogix import CoralogixClient
-from app.integrations.clients.datadog import DatadogClient, DatadogConfig
-from app.integrations.clients.grafana import get_grafana_client_from_credentials
-from app.integrations.clients.honeycomb import HoneycombClient
-from app.integrations.clients.opsgenie import OpsGenieClient, OpsGenieConfig
-from app.integrations.clients.vercel import VercelClient, VercelConfig
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
+from app.integrations.gitlab import build_gitlab_config, validate_gitlab_config
 from app.integrations.models import (
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
@@ -22,6 +17,12 @@ from app.integrations.models import (
     SlackWebhookConfig,
 )
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
+from app.services.coralogix import CoralogixClient
+from app.services.datadog import DatadogClient, DatadogConfig
+from app.services.grafana import get_grafana_client_from_credentials
+from app.services.honeycomb import HoneycombClient
+from app.services.opsgenie import OpsGenieClient, OpsGenieConfig
+from app.services.vercel import VercelClient, VercelConfig
 
 
 @dataclass(frozen=True)
@@ -335,6 +336,21 @@ def validate_notion_integration(*, api_key: str, database_id: str) -> Integratio
     except Exception as e:
         return IntegrationHealthResult(ok=False, detail=f"Notion validation failed: {e}")
 
+def validate_gitlab_integration(
+    *,
+    base_url: str,
+    auth_token: str,
+) -> IntegrationHealthResult:
+    """Validate Gitlab connectivity with an users api."""
+    config = build_gitlab_config(
+        {
+            "base_url": base_url,
+            "auth_token": auth_token
+        }
+    )
+    result = validate_gitlab_config(config)
+    return IntegrationHealthResult(ok=result.ok, detail=result.detail)
+
 def validate_google_docs_integration(
     *,
     credentials_file: str,
@@ -343,7 +359,7 @@ def validate_google_docs_integration(
     """Validate Google Docs credentials and folder access."""
     from pathlib import Path
 
-    from app.integrations.clients.google_docs import GoogleDocsClient
+    from app.services.google_docs import GoogleDocsClient
 
     try:
         config = GoogleDocsIntegrationConfig.model_validate(

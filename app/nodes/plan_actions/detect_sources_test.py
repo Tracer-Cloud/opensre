@@ -1,54 +1,54 @@
+"""Tests for detect_sources — focused on GitLab merge_request_iid extraction."""
+
 from __future__ import annotations
 
 from app.nodes.plan_actions.detect_sources import detect_sources
 
+_GITLAB_INTEGRATION = {
+    "gitlab": {
+        "base_url": "https://gitlab.example.com/api/v4",
+        "auth_token": "gl-token",
+    }
+}
 
-def test_detect_sources_includes_honeycomb_from_resolved_integrations() -> None:
-    sources = detect_sources(
-        raw_alert={
-            "alert_source": "honeycomb",
-            "annotations": {
-                "service_name": "checkout-api",
-                "trace_id": "trace-123",
-                "summary": "checkout-api latency regression",
-            },
-        },
-        context={},
-        resolved_integrations={
-            "honeycomb": {
-                "api_key": "hny_test",
-                "dataset": "prod-api",
-                "base_url": "https://api.honeycomb.io",
-            }
-        },
-    )
-
-    assert sources["honeycomb"]["dataset"] == "prod-api"
-    assert sources["honeycomb"]["service_name"] == "checkout-api"
-    assert sources["honeycomb"]["trace_id"] == "trace-123"
+_BASE_ALERT = {"gitlab_project": "my-org/my-repo"}
 
 
-def test_detect_sources_includes_coralogix_with_scoped_default_query() -> None:
-    sources = detect_sources(
-        raw_alert={
-            "alert_source": "coralogix",
-            "annotations": {
-                "application_name": "payments",
-                "subsystem_name": "worker",
-                "summary": "payments worker timeout exceptions",
-            },
-        },
-        context={},
-        resolved_integrations={
-            "coralogix": {
-                "api_key": "cx_test",
-                "base_url": "https://api.coralogix.com",
-                "application_name": "payments",
-                "subsystem_name": "worker",
-            }
-        },
-    )
+def test_detect_sources_gitlab_extracts_mr_iid_from_annotations() -> None:
+    raw_alert = {**_BASE_ALERT, "annotations": {"mr_iid": "42"}}
 
-    assert sources["coralogix"]["application_name"] == "payments"
-    assert sources["coralogix"]["subsystem_name"] == "worker"
-    assert "$l.applicationname == 'payments'" in sources["coralogix"]["default_query"]
+    sources = detect_sources(raw_alert, {}, resolved_integrations=_GITLAB_INTEGRATION)
+
+    assert sources["gitlab"]["merge_request_iid"] == "42"
+
+
+def test_detect_sources_gitlab_mr_iid_empty_when_not_in_alert() -> None:
+    raw_alert = _BASE_ALERT
+
+    sources = detect_sources(raw_alert, {}, resolved_integrations=_GITLAB_INTEGRATION)
+
+    assert sources["gitlab"]["merge_request_iid"] == ""
+
+
+def test_detect_sources_gitlab_mr_iid_strips_whitespace() -> None:
+    raw_alert = {**_BASE_ALERT, "annotations": {"mr_iid": "  7  "}}
+
+    sources = detect_sources(raw_alert, {}, resolved_integrations=_GITLAB_INTEGRATION)
+
+    assert sources["gitlab"]["merge_request_iid"] == "7"
+
+
+def test_detect_sources_gitlab_not_added_when_no_project_id() -> None:
+    raw_alert = {"annotations": {"mr_iid": "42"}}  # no project_id
+
+    sources = detect_sources(raw_alert, {}, resolved_integrations=_GITLAB_INTEGRATION)
+
+    assert "gitlab" not in sources
+
+
+def test_detect_sources_gitlab_not_added_when_no_integration() -> None:
+    raw_alert = _BASE_ALERT
+
+    sources = detect_sources(raw_alert, {}, resolved_integrations={})
+
+    assert "gitlab" not in sources

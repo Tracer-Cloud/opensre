@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.integrations.clients.opsgenie import make_opsgenie_client
+from app.services.opsgenie import make_opsgenie_client
 from app.tools.base import BaseTool
 
 

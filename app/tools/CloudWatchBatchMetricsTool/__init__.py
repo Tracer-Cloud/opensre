@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.integrations.clients.cloudwatch_client import get_metric_statistics
+from app.services.cloudwatch_client import get_metric_statistics
 from app.tools.tool_decorator import tool
 
 

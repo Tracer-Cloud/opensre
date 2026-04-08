@@ -303,4 +303,4 @@ def get_account_id(region: str = DEFAULT_REGION) -> str:
         Account ID string.
     """
     sts_client = get_boto3_client("sts", region)
-    return sts_client.get_caller_identity()["Account"]
+    return str(sts_client.get_caller_identity()["Account"])

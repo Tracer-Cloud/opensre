@@ -23,14 +23,12 @@ ADD . /deps/agent
 RUN PYTHONDONTWRITEBYTECODE=1 \
     pip install --no-cache-dir -c /api/constraints.txt /deps/agent
 
-# Configure the LangGraph API server to load the app graph and auth handler.
-ENV LANGGRAPH_AUTH='{"path":"/deps/agent/app/auth/auth.py:auth"}' \
-    LANGSERVE_GRAPHS='{"agent":"/deps/agent/app/graph_pipeline.py:build_graph"}'
-
-# Ensure app dependencies do not shadow the bundled LangGraph runtime packages.
-RUN mkdir -p /api/langgraph_api /api/langgraph_runtime /api/langgraph_license \
-    && touch /api/langgraph_api/__init__.py /api/langgraph_runtime/__init__.py /api/langgraph_license/__init__.py \
-    && PYTHONDONTWRITEBYTECODE=1 pip install --no-cache-dir --no-deps /api
+# Configure the LangGraph API server to load the app graph.
+#
+# Intentionally omit custom auth here: self-hosted LangGraph deployments on
+# Railway do not support the enterprise-only custom auth mode used by the
+# Tracer-hosted path.
+ENV LANGSERVE_GRAPHS='{"agent":"/deps/agent/app/graph_pipeline.py:build_graph"}'
 
 WORKDIR /deps/agent
 

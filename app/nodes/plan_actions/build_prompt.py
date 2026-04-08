@@ -123,6 +123,39 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Use query_datadog_events to find deployments and infrastructure changes"""
         )
 
+    if "vercel" in available_sources:
+        vercel = available_sources["vercel"]
+        hints.append(
+            f"""Vercel Deployment Context Available:
+- Project: {vercel.get("project_name") or vercel.get("project_slug") or vercel.get("project_id")}
+- Deployment ID: {vercel.get("deployment_id") or "unknown"}
+- Selected Log ID: {vercel.get("selected_log_id") or "not provided"}
+- Log URL: {vercel.get("log_url") or "not provided"}
+- Use vercel_deployment_status to inspect recent failed deployments and their git metadata
+- Use vercel_deployment_logs to inspect build output and runtime logs for the deployment"""
+        )
+
+    if "github" in available_sources:
+        github = available_sources["github"]
+        hints.append(
+            f"""GitHub Repository Context Available:
+- Repository: {github.get("owner")}/{github.get("repo")}
+- Commit SHA: {github.get("sha") or "unknown"}
+- Ref: {github.get("ref") or "unknown"}
+- Code Query: {github.get("query") or "exception OR error"}
+- Use list_github_commits to correlate the deployment window with recent code changes
+- Use search_github_code and get_github_file_contents to trace the failure into code"""
+        )
+
+    if "vercel" in available_sources and "github" in available_sources:
+        hints.append(
+            """Vercel And GitHub Correlation Available:
+- Prioritise a deployment-to-code workflow
+- First inspect Vercel deployment status and logs
+- Then correlate the deployment commit SHA or ref with GitHub commits and code search results
+- Prefer git evidence that matches the failing Vercel deployment over unrelated repository history"""
+        )
+
     if "honeycomb" in available_sources:
         honeycomb = available_sources["honeycomb"]
         hints.append(

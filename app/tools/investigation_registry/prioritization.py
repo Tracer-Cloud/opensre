@@ -1,8 +1,8 @@
 """Action prioritization logic based on sources and keywords."""
 
-from app.state import EvidenceSource
 from app.tools.investigation_registry.actions import get_available_actions
 from app.tools.investigation_registry.models import InvestigationAction
+from app.types.evidence import EvidenceSource
 
 
 def get_prioritized_actions(

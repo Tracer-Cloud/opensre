@@ -7,14 +7,15 @@ Usage:
     python -m app.integrations remove <service>
     python -m app.integrations verify [service] [--send-slack-test]
 
-Supported services: aws, coralogix, datadog, grafana, honeycomb, slack, opensearch, rds, tracer, github, sentry
+Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, mongodb_atlas, slack, opensearch, rds, tracer, github, sentry
+Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, slack, opensearch, rds, tracer, github, sentry, vercel
 """
 
 from __future__ import annotations
 
 import json
 import sys
-from typing import Any
+from typing import Any, NoReturn
 
 import questionary
 
@@ -34,8 +35,16 @@ from app.integrations.verify import (
 
 _B = "\033[1m"
 _R = "\033[0m"
+
+
+def _json_echo(data: Any) -> None:
+    print(json.dumps(data, indent=2, default=str))
+
+
 _SECRET_KEYS = frozenset({
+    "api_token",
     "api_key",
+    "api_private_key",
     "app_key",
     "password",
     "secret_access_key",
@@ -43,6 +52,7 @@ _SECRET_KEYS = frozenset({
     "jwt_token",
     "webhook_url",
     "auth_token",
+    "connection_string",
 })
 
 
@@ -61,7 +71,7 @@ def _p(label: str, default: str = "", secret: bool = False) -> str:
     return result.strip() or default
 
 
-def _die(msg: str) -> None:
+def _die(msg: str) -> NoReturn:
     print(f"  error: {msg}", file=sys.stderr)
     sys.exit(1)
 
@@ -199,6 +209,14 @@ def _setup_tracer() -> None:
     upsert_integration("tracer", {"credentials": {"base_url": base_url, "jwt_token": jwt_token}})
 
 
+def _setup_vercel() -> None:
+    api_token = _p("Vercel API token", secret=True)
+    team_id = _p("Team ID (optional for personal accounts)")
+    if not api_token:
+        _die("api_token is required.")
+    upsert_integration("vercel", {"credentials": {"api_token": api_token, "team_id": team_id}})
+
+
 def _setup_github() -> None:
     print("  1) SSE  2) Streamable HTTP  3) stdio")
     choice = _p("Choice", default="2")
@@ -245,18 +263,72 @@ def _setup_sentry() -> None:
     )
 
 
+def _setup_mongodb() -> None:
+    connection_string = _p("Connection string (e.g. mongodb+srv://user:pass@cluster.example.net)", secret=True)
+    database = _p("Database name")
+    auth_source = _p("Auth source", default="admin")
+    tls_choice = questionary.select(
+        "TLS enabled?",
+        choices=[
+            questionary.Choice("Yes", value="1"),
+            questionary.Choice("No", value="0"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if tls_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    tls = tls_choice == "1"
+    if not connection_string:
+        _die("connection_string is required.")
+    upsert_integration(
+        "mongodb",
+        {
+            "credentials": {
+                "connection_string": connection_string,
+                "database": database,
+                "auth_source": auth_source,
+                "tls": tls,
+            }
+        },
+    )
+
+
+def _setup_mongodb_atlas() -> None:
+    api_public_key = _p("Atlas API public key")
+    api_private_key = _p("Atlas API private key", secret=True)
+    project_id = _p("Atlas project ID (group ID)")
+    base_url = _p("Atlas API base URL", default="https://cloud.mongodb.com/api/atlas/v2")
+    if not api_public_key or not api_private_key or not project_id:
+        _die("api_public_key, api_private_key, and project_id are required.")
+    upsert_integration(
+        "mongodb_atlas",
+        {
+            "credentials": {
+                "api_public_key": api_public_key,
+                "api_private_key": api_private_key,
+                "project_id": project_id,
+                "base_url": base_url,
+            }
+        },
+    )
+
+
 _HANDLERS: dict[str, Any] = {
     "aws": _setup_aws,
     "coralogix": _setup_coralogix,
     "datadog": _setup_datadog,
     "grafana": _setup_grafana,
     "honeycomb": _setup_honeycomb,
+    "mongodb_atlas": _setup_mongodb_atlas,
     "slack": _setup_slack,
     "opensearch": _setup_opensearch,
     "rds": _setup_rds,
     "tracer": _setup_tracer,
+    "vercel": _setup_vercel,
     "github": _setup_github,
     "sentry": _setup_sentry,
+    "mongodb": _setup_mongodb,
 }
 
 SUPPORTED = ", ".join(_HANDLERS)
@@ -264,17 +336,35 @@ SUPPORTED_VERIFY = ", ".join(SUPPORTED_VERIFY_SERVICES)
 
 
 
-def cmd_setup(service: str | None) -> None:
+def cmd_setup(service: str | None) -> str:
+    if not service:
+        try:
+            service = questionary.select(
+                "Which service would you like to set up?",
+                choices=sorted(_HANDLERS),
+                instruction="(use arrow keys)",
+            ).ask()
+        except (EOFError, KeyboardInterrupt):
+            print("\nAborted.")
+            sys.exit(1)
     if not service or service not in _HANDLERS:
         _die(f"Usage: setup <service>. Supported: {SUPPORTED}")
         return
     print(f"\n  Setting up {_B}{service}{_R}\n")
     _HANDLERS[service]()
     print(f"\n  ✓ Saved → {STORE_PATH}\n")
+    return service
 
 
 def cmd_list() -> None:
+    from app.cli.context import is_json_output
+
     items = list_integrations()
+
+    if is_json_output():
+        _json_echo(items)
+        return
+
     if not items:
         print("  No integrations. Run: python -m app.integrations setup <service>")
         return
@@ -292,31 +382,47 @@ def cmd_show(service: str | None) -> None:
     if not record:
         _die(f"No active integration for '{service}'.")
         return
-    print(json.dumps(_mask(record), indent=2))
+    _json_echo(_mask(record))
 
 
 def cmd_remove(service: str | None) -> None:
+    from app.cli.context import is_yes
+
     if not service:
         _die("Usage: remove <service>")
         return
-    try:
-        confirmed = questionary.confirm(f"  Remove '{service}'?", default=False).ask()
-    except (EOFError, KeyboardInterrupt):
-        return
-    if not confirmed:
-        print("  Cancelled.")
-        return
+    if not is_yes():
+        try:
+            confirmed = questionary.confirm(f"  Remove '{service}'?", default=False).ask()
+        except (EOFError, KeyboardInterrupt):
+            return
+        if not confirmed:
+            print("  Cancelled.")
+            return
     if remove_integration(service):
         print(f"  ✓ Removed '{service}'.")
     else:
         print(f"  No integration found for '{service}'.")
 
 
-def cmd_verify(service: str | None, *, send_slack_test: bool = False) -> None:
+def cmd_verify(
+    service: str | None,
+    *,
+    send_slack_test: bool = False,
+) -> int:
+    from app.cli.context import is_json_output
+
     if service and service not in SUPPORTED_VERIFY_SERVICES:
         _die(f"Usage: verify [service]. Supported: {SUPPORTED_VERIFY}")
         return
 
-    results = verify_integrations(service=service, send_slack_test=send_slack_test)
-    print(format_verification_results(results))
-    sys.exit(verification_exit_code(results, requested_service=service))
+    results = verify_integrations(
+        service=service,
+        send_slack_test=send_slack_test,
+    )
+
+    if is_json_output():
+        _json_echo(results)
+    else:
+        print(format_verification_results(results))
+    return int(verification_exit_code(results, requested_service=service))

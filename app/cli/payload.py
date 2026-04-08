@@ -22,11 +22,6 @@ def parse_payload_text(raw_text: str, source_label: str) -> dict[str, Any]:
     return data
 
 
-def _parse_json(raw_text: str, source_label: str) -> dict[str, Any]:
-    """Backward-compatible alias for payload parsing."""
-    return parse_payload_text(raw_text, source_label)
-
-
 def load_file(path_str: str) -> dict[str, Any]:
     """Load an alert payload from any text file.
 
@@ -73,21 +68,6 @@ def load_interactive() -> dict[str, Any]:
     return parse_payload_text(raw_text, "interactive input")
 
 
-def load_file_payload(path_str: str) -> dict[str, Any]:
-    """Backward-compatible alias for file payload loading."""
-    return load_file(path_str)
-
-
-def load_stdin_payload() -> dict[str, Any]:
-    """Backward-compatible alias for stdin payload loading."""
-    return load_stdin()
-
-
-def load_interactive_payload() -> dict[str, Any]:
-    """Backward-compatible alias for interactive payload loading."""
-    return load_interactive()
-
-
 def load_payload(
     input_path: str | None,
     input_json: str | None,
@@ -103,7 +83,7 @@ def load_payload(
     if input_path:
         return load_file(input_path)
     if sys.stdin.isatty():
-        raise SystemExit(
-            "No alert input provided. Use --interactive, --input <file>, --input-json, or pipe JSON to stdin."
-        )
+        from app.cli.investigate_input import prompt_for_input
+
+        return prompt_for_input()
     return load_stdin()

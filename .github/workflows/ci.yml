@@ -3,32 +3,49 @@ name: CI
 on:
   push:
     branches: [main]
+    paths:
+      - 'app/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'pytest.ini'
+      - 'Makefile'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'app/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'pytest.ini'
+      - 'Makefile'
+      - '.github/workflows/ci.yml'
 
 permissions:
   contents: read
 
 jobs:
-  lint:
+  quality:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v5
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-          cache: "pip"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv pip install --system -e ".[dev]"
 
       - name: Lint with ruff
         run: ruff check app/ tests/
+
+      - name: Type check with mypy
+        run: make typecheck
 
   test:
     runs-on: ubuntu-latest
@@ -54,46 +71,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-          cache: "pip"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv pip install --system -e ".[dev]"
 
       - name: Run pytest with coverage
         env:
-          # Keep the synthetic suite out of the main CI pipeline.
-          # Synthetic coverage runs in .github/workflows/synthetic-tests.yml instead,
-          # and some synthetic tests are not excluded by marker filtering alone.
-          # Do not add tests/synthetic back into this workflow.
           PYTEST_ADDOPTS: --ignore=tests/synthetic
         run: make test-cov
-        continue-on-error: false
-
-  typecheck:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-          cache: "pip"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Type check with mypy
-        run: make typecheck
         continue-on-error: false
 
   test-kubernetes:
@@ -107,23 +99,23 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-          cache: "pip"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv pip install --system -e ".[dev]"
 
       - name: Run Kubernetes tests (kind cluster + real S3)
         run: python -m tests.e2e.kubernetes.test_local
 
   test-thorough:
     runs-on: ubuntu-latest
-    needs: [lint, test, typecheck]
+    needs: [quality, test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
@@ -170,16 +162,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-          cache: "pip"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv pip install --system -e ".[dev]"
 
       - name: Install tracer CLI
         run: |

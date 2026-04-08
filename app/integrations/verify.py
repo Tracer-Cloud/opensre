@@ -11,12 +11,6 @@ import requests
 
 from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.config import get_tracer_base_url
-from app.integrations.clients.coralogix import CoralogixClient
-from app.integrations.clients.datadog.client import DatadogClient, DatadogConfig
-from app.integrations.clients.honeycomb import HoneycombClient
-from app.integrations.clients.opsgenie import OpsGenieClient, OpsGenieConfig
-from app.integrations.clients.tracer_client.client import TracerClient
-from app.integrations.clients.vercel.client import VercelClient, VercelConfig
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
@@ -29,6 +23,8 @@ from app.integrations.models import (
     SlackWebhookConfig,
     TracerIntegrationConfig,
 )
+from app.integrations.mongodb import build_mongodb_config, validate_mongodb_config
+from app.integrations.mongodb_atlas import build_mongodb_atlas_config, validate_mongodb_atlas_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
 from app.nodes.resolve_integrations.node import (
@@ -36,6 +32,12 @@ from app.nodes.resolve_integrations.node import (
     _load_env_integrations,
     _merge_local_integrations,
 )
+from app.services.coralogix import CoralogixClient
+from app.services.datadog.client import DatadogClient, DatadogConfig
+from app.services.honeycomb import HoneycombClient
+from app.services.opsgenie import OpsGenieClient, OpsGenieConfig
+from app.services.tracer_client.client import TracerClient
+from app.services.vercel.client import VercelClient, VercelConfig
 
 SUPPORTED_VERIFY_SERVICES = (
     "grafana",
@@ -47,9 +49,14 @@ SUPPORTED_VERIFY_SERVICES = (
     "tracer",
     "github",
     "sentry",
+    "mongodb",
+    "mongodb_atlas",
     "google_docs",
     "vercel",
     "opsgenie",
+    "kafka",
+    "clickhouse",
+    "bitbucket",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -191,6 +198,56 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
             },
         }
 
+    mongodb_integration = classified_integrations.get("mongodb")
+    if isinstance(mongodb_integration, dict):
+        effective["mongodb"] = {
+            "source": source_by_service.get("mongodb", "local env"),
+            "config": {
+                "connection_string": str(mongodb_integration.get("connection_string", "")).strip(),
+                "database": str(mongodb_integration.get("database", "")).strip(),
+                "auth_source": str(mongodb_integration.get("auth_source", "admin")).strip(),
+                "tls": mongodb_integration.get("tls", True),
+            },
+        }
+    else:
+        # Check env vars
+        mongodb_conn = os.getenv("MONGODB_CONNECTION_STRING", "").strip()
+        if mongodb_conn:
+            effective["mongodb"] = {
+                "source": "local env",
+                "config": {
+                    "connection_string": mongodb_conn,
+                    "database": os.getenv("MONGODB_DATABASE", "").strip(),
+                    "auth_source": os.getenv("MONGODB_AUTH_SOURCE", "admin").strip() or "admin",
+                    "tls": os.getenv("MONGODB_TLS", "true").strip().lower() in ("true", "1", "yes"),
+                },
+            }
+
+    mongodb_atlas_integration = classified_integrations.get("mongodb_atlas")
+    if isinstance(mongodb_atlas_integration, dict):
+        effective["mongodb_atlas"] = {
+            "source": source_by_service.get("mongodb_atlas", "local env"),
+            "config": {
+                "api_public_key": str(mongodb_atlas_integration.get("api_public_key", "")).strip(),
+                "api_private_key": str(mongodb_atlas_integration.get("api_private_key", "")).strip(),
+                "project_id": str(mongodb_atlas_integration.get("project_id", "")).strip(),
+                "base_url": str(mongodb_atlas_integration.get("base_url", "https://cloud.mongodb.com/api/atlas/v2")).strip(),
+            },
+        }
+    else:
+        atlas_pub = os.getenv("MONGODB_ATLAS_PUBLIC_KEY", "").strip()
+        atlas_priv = os.getenv("MONGODB_ATLAS_PRIVATE_KEY", "").strip()
+        if atlas_pub and atlas_priv:
+            effective["mongodb_atlas"] = {
+                "source": "local env",
+                "config": {
+                    "api_public_key": atlas_pub,
+                    "api_private_key": atlas_priv,
+                    "project_id": os.getenv("MONGODB_ATLAS_PROJECT_ID", "").strip(),
+                    "base_url": os.getenv("MONGODB_ATLAS_BASE_URL", "https://cloud.mongodb.com/api/atlas/v2").strip(),
+                },
+            }
+
     google_docs_integration = classified_integrations.get("google_docs")
     if isinstance(google_docs_integration, dict):
         effective["google_docs"] = {
@@ -234,6 +291,85 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 "region": str(opsgenie_integration.get("region", "us")).strip(),
             },
         }
+
+    kafka_integration = classified_integrations.get("kafka")
+    if isinstance(kafka_integration, dict):
+        effective["kafka"] = {
+            "source": source_by_service.get("kafka", "local env"),
+            "config": {
+                "bootstrap_servers": str(kafka_integration.get("bootstrap_servers", "")).strip(),
+                "security_protocol": str(
+                    kafka_integration.get("security_protocol", "PLAINTEXT")
+                ).strip(),
+                "sasl_mechanism": str(kafka_integration.get("sasl_mechanism", "")).strip(),
+                "sasl_username": str(kafka_integration.get("sasl_username", "")).strip(),
+                "sasl_password": str(kafka_integration.get("sasl_password", "")).strip(),
+            },
+        }
+    else:
+        kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "").strip()
+        if kafka_servers:
+            effective["kafka"] = {
+                "source": "local env",
+                "config": {
+                    "bootstrap_servers": kafka_servers,
+                    "security_protocol": os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT").strip(),
+                    "sasl_mechanism": os.getenv("KAFKA_SASL_MECHANISM", "").strip(),
+                    "sasl_username": os.getenv("KAFKA_SASL_USERNAME", "").strip(),
+                    "sasl_password": os.getenv("KAFKA_SASL_PASSWORD", "").strip(),
+                },
+            }
+
+    clickhouse_integration = classified_integrations.get("clickhouse")
+    if isinstance(clickhouse_integration, dict):
+        effective["clickhouse"] = {
+            "source": source_by_service.get("clickhouse", "local env"),
+            "config": {
+                "host": str(clickhouse_integration.get("host", "")).strip(),
+                "port": clickhouse_integration.get("port", 8123),
+                "database": str(clickhouse_integration.get("database", "default")).strip(),
+                "username": str(clickhouse_integration.get("username", "default")).strip(),
+                "password": str(clickhouse_integration.get("password", "")).strip(),
+                "secure": clickhouse_integration.get("secure", False),
+            },
+        }
+    else:
+        clickhouse_host = os.getenv("CLICKHOUSE_HOST", "").strip()
+        if clickhouse_host:
+            effective["clickhouse"] = {
+                "source": "local env",
+                "config": {
+                    "host": clickhouse_host,
+                    "port": int(os.getenv("CLICKHOUSE_PORT", "8123") or "8123"),
+                    "database": os.getenv("CLICKHOUSE_DATABASE", "default").strip(),
+                    "username": os.getenv("CLICKHOUSE_USER", "default").strip(),
+                    "password": os.getenv("CLICKHOUSE_PASSWORD", "").strip(),
+                    "secure": os.getenv("CLICKHOUSE_SECURE", "false").strip().lower()
+                    in ("true", "1", "yes"),
+                },
+            }
+
+    bitbucket_integration = classified_integrations.get("bitbucket")
+    if isinstance(bitbucket_integration, dict):
+        effective["bitbucket"] = {
+            "source": source_by_service.get("bitbucket", "local env"),
+            "config": {
+                "workspace": str(bitbucket_integration.get("workspace", "")).strip(),
+                "username": str(bitbucket_integration.get("username", "")).strip(),
+                "app_password": str(bitbucket_integration.get("app_password", "")).strip(),
+            },
+        }
+    else:
+        bitbucket_workspace = os.getenv("BITBUCKET_WORKSPACE", "").strip()
+        if bitbucket_workspace:
+            effective["bitbucket"] = {
+                "source": "local env",
+                "config": {
+                    "workspace": bitbucket_workspace,
+                    "username": os.getenv("BITBUCKET_USERNAME", "").strip(),
+                    "app_password": os.getenv("BITBUCKET_APP_PASSWORD", "").strip(),
+                },
+            }
 
     return EffectiveIntegrations.model_validate(effective).model_dump(exclude_none=True)
 
@@ -534,9 +670,31 @@ def _verify_sentry(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_mongodb(source: str, config: dict[str, Any]) -> dict[str, str]:
+    mongodb_config = build_mongodb_config(config)
+    result = validate_mongodb_config(mongodb_config)
+    return _result(
+        "mongodb",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_mongodb_atlas(source: str, config: dict[str, Any]) -> dict[str, str]:
+    atlas_config = build_mongodb_atlas_config(config)
+    result = validate_mongodb_atlas_config(atlas_config)
+    return _result(
+        "mongodb_atlas",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
     """Validate Google Docs credentials and folder access."""
-    from app.integrations.clients.google_docs import GoogleDocsClient
+    from app.services.google_docs import GoogleDocsClient
 
     try:
         google_docs_config = GoogleDocsIntegrationConfig.model_validate(config)
@@ -573,7 +731,10 @@ def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
-def _verify_vercel(source: str, config: dict[str, Any]) -> dict[str, str]:
+def _verify_vercel(
+    source: str,
+    config: dict[str, Any],
+) -> dict[str, str]:
     try:
         vercel_config = VercelConfig.model_validate(config)
     except Exception:
@@ -584,28 +745,26 @@ def _verify_vercel(source: str, config: dict[str, Any]) -> dict[str, str]:
     client = VercelClient(vercel_config)
     with client:
         result = client.list_projects()
-    if not result.get("success"):
-        return _result(
-            "vercel",
-            source,
-            "failed",
-            f"Vercel project list failed: {result.get('error', 'unknown error')}",
-        )
+        if not result.get("success"):
+            return _result(
+                "vercel",
+                source,
+                "failed",
+                f"Vercel project list failed: {result.get('error', 'unknown error')}",
+            )
 
-    return _result(
-        "vercel",
-        source,
-        "passed",
-        f"Connected to Vercel API and listed {result.get('total', 0)} project(s).",
-    )
+        base_detail = f"Connected to Vercel API and listed {result.get('total', 0)} project(s)."
+        return _result("vercel", source, "passed", base_detail)
 
 
 def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
     try:
-        opsgenie_config = OpsGenieConfig.model_validate({
-            "api_key": config.get("api_key", ""),
-            "region": config.get("region", "us"),
-        })
+        opsgenie_config = OpsGenieConfig.model_validate(
+            {
+                "api_key": config.get("api_key", ""),
+                "region": config.get("region", "us"),
+            }
+        )
     except Exception as err:
         return _result("opsgenie", source, "missing", str(err))
 
@@ -617,13 +776,56 @@ def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
         result = client.list_alerts(limit=1)
     if not result.get("success"):
         return _result(
-            "opsgenie", source, "failed",
+            "opsgenie",
+            source,
+            "failed",
             f"Alert list check failed: {result.get('error', 'unknown error')}",
         )
 
     return _result(
-        "opsgenie", source, "passed",
+        "opsgenie",
+        source,
+        "passed",
         f"Connected to OpsGenie ({opsgenie_config.region.upper()} region); API key accepted.",
+    )
+
+
+def _verify_kafka(source: str, config: dict[str, Any]) -> dict[str, str]:
+    from app.integrations.kafka import build_kafka_config, validate_kafka_config
+
+    kafka_config = build_kafka_config(config)
+    result = validate_kafka_config(kafka_config)
+    return _result(
+        "kafka",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_clickhouse(source: str, config: dict[str, Any]) -> dict[str, str]:
+    from app.integrations.clickhouse import build_clickhouse_config, validate_clickhouse_config
+
+    clickhouse_config = build_clickhouse_config(config)
+    result = validate_clickhouse_config(clickhouse_config)
+    return _result(
+        "clickhouse",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_bitbucket(source: str, config: dict[str, Any]) -> dict[str, str]:
+    from app.integrations.bitbucket import build_bitbucket_config, validate_bitbucket_config
+
+    bitbucket_config = build_bitbucket_config(config)
+    result = validate_bitbucket_config(bitbucket_config)
+    return _result(
+        "bitbucket",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
     )
 
 
@@ -679,12 +881,22 @@ def verify_integrations(
             results.append(_verify_github(source, config))
         elif current_service == "sentry":
             results.append(_verify_sentry(source, config))
+        elif current_service == "mongodb":
+            results.append(_verify_mongodb(source, config))
+        elif current_service == "mongodb_atlas":
+            results.append(_verify_mongodb_atlas(source, config))
         elif current_service == "google_docs":
             results.append(_verify_google_docs(source, config))
         elif current_service == "vercel":
             results.append(_verify_vercel(source, config))
         elif current_service == "opsgenie":
             results.append(_verify_opsgenie(source, config))
+        elif current_service == "kafka":
+            results.append(_verify_kafka(source, config))
+        elif current_service == "clickhouse":
+            results.append(_verify_clickhouse(source, config))
+        elif current_service == "bitbucket":
+            results.append(_verify_bitbucket(source, config))
 
     return results
 

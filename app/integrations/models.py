@@ -144,8 +144,10 @@ class TracerIntegrationConfig(StrictConfigModel):
             token = token.split(None, 1)[1].strip()
         return token
 
+
 class JiraIntegrationConfig(StrictConfigModel):
     """Normalized Jira credentials used by resolution and verification flows."""
+
     base_url: str
     email: str
     api_token: str
@@ -169,6 +171,48 @@ class JiraIntegrationConfig(StrictConfigModel):
     @property
     def api_base(self) -> str:
         return f"{self.base_url}/rest/api/3"
+
+
+class MongoDBIntegrationConfig(StrictConfigModel):
+    """Normalized MongoDB credentials used by resolution and verification flows."""
+
+    connection_string: str
+    database: str = ""
+    auth_source: str = "admin"
+    tls: bool = True
+    integration_id: str = ""
+
+    @field_validator("connection_string", mode="before")
+    @classmethod
+    def _normalize_connection_string(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("auth_source", mode="before")
+    @classmethod
+    def _normalize_auth_source(cls, value: object) -> str:
+        normalized = str(value or "admin").strip()
+        return normalized or "admin"
+
+
+class MongoDBAtlasIntegrationConfig(StrictConfigModel):
+    """Normalized MongoDB Atlas API credentials used by resolution and verification flows."""
+
+    api_public_key: str
+    api_private_key: str
+    project_id: str
+    base_url: str = "https://cloud.mongodb.com/api/atlas/v2"
+    integration_id: str = ""
+
+    @field_validator("api_public_key", "api_private_key", "project_id", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: object) -> str:
+        normalized = str(value or "https://cloud.mongodb.com/api/atlas/v2").strip().rstrip("/")
+        return normalized or "https://cloud.mongodb.com/api/atlas/v2"
 
 
 class GoogleDocsIntegrationConfig(StrictConfigModel):
@@ -198,6 +242,12 @@ class GoogleDocsIntegrationConfig(StrictConfigModel):
             return 30
         return max(5, min(timeout, 300))
 
+class GitLabIntegrationConfig(StrictConfigModel):
+    """Normalized Gitlab credentials used by resolution and verification flows."""
+
+    url: str
+    access_token: str
+    integration_id: str = ""
 
 class OpsGenieIntegrationConfig(StrictConfigModel):
     """Normalized OpsGenie credentials used by resolution and verification flows."""
@@ -221,6 +271,19 @@ class NotionIntegrationConfig(StrictConfigModel):
     integration_id: str = ""
 
     @field_validator("api_key", "database_id", mode="before")
+class PrefectIntegrationConfig(StrictConfigModel):
+    api_url: str = "https://api.prefect.cloud/api"
+    api_key: str = ""
+    account_id: str = ""
+    workspace_id: str = ""
+    integration_id: str = ""
+
+    @field_validator("api_url", mode="before")
+    @classmethod
+    def _normalize_api_url(cls, value: object) -> str:
+        return str(value or "https://api.prefect.cloud/api").strip().rstrip("/")
+
+    @field_validator("api_key", "account_id", "workspace_id", mode="before")
     @classmethod
     def _normalize_str(cls, value: object) -> str:
         return str(value or "").strip()
@@ -245,8 +308,15 @@ class EffectiveIntegrations(StrictConfigModel):
     tracer: EffectiveIntegrationEntry | None = None
     github: EffectiveIntegrationEntry | None = None
     sentry: EffectiveIntegrationEntry | None = None
+    mongodb: EffectiveIntegrationEntry | None = None
+    mongodb_atlas: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
+    gitlab: EffectiveIntegrationEntry | None = None
     vercel: EffectiveIntegrationEntry | None = None
     jira: EffectiveIntegrationEntry | None = None
     opsgenie: EffectiveIntegrationEntry | None = None
     notion: EffectiveIntegrationEntry | None = None
+    prefect: EffectiveIntegrationEntry | None = None
+    kafka: EffectiveIntegrationEntry | None = None
+    clickhouse: EffectiveIntegrationEntry | None = None
+    bitbucket: EffectiveIntegrationEntry | None = None

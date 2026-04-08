@@ -5,11 +5,11 @@ Scans alert annotations and state context to detect available data sources
 and extract their parameters.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
-from app.integrations.clients.coralogix import build_coralogix_logs_query
+from app.services.coralogix import build_coralogix_logs_query
 from app.tools.GrafanaLogsTool import _map_pipeline_to_service_name
 
 
@@ -53,6 +53,30 @@ def _alert_time_range_minutes(raw_alert: dict[str, Any]) -> int:
         return 60
 
 
+def _alert_since_iso(raw_alert: dict[str, Any]) -> str:
+    """Return an ISO 8601 timestamp for the start of the alert window."""
+    starts_at: str | None = None
+
+    alerts = raw_alert.get("alerts", [])
+    if alerts and isinstance(alerts, list):
+        starts_at = alerts[0].get("startsAt")
+    if not starts_at:
+        starts_at = raw_alert.get("startsAt") or raw_alert.get("timestamp")
+    if not starts_at:
+        annotations = raw_alert.get("annotations") or raw_alert.get("commonAnnotations") or {}
+        starts_at = annotations.get("timestamp")
+
+    if starts_at:
+        try:
+            alert_time = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+            if alert_time.year >= 2000:
+                return (alert_time - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except (ValueError, TypeError):
+            pass  # Invalid or malformed timestamp string — fall through to the default below
+
+    return (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _split_repo_full_name(value: str) -> tuple[str, str]:
     cleaned = value.strip().strip("/")
     if cleaned.count("/") < 1:
@@ -72,6 +96,18 @@ def _parse_repo_url(value: str) -> tuple[str, str]:
     if len(parts) < 2:
         return "", ""
     return parts[0].strip(), parts[1].strip().removesuffix(".git")
+
+
+def _parse_gitlab_repo_url(value: str) -> str:
+    """Extract project_id (namespace/repo) from a GitLab URL."""
+    parsed = urlparse(value.strip())
+    if "gitlab" not in parsed.netloc.lower():
+        return ""
+    parts = [p for p in parsed.path.strip("/").split("/") if p]
+    if len(parts) < 2:
+        return ""
+    # Handle subgroups: return everything after the host as namespace/repo
+    return "/".join(parts).removesuffix(".git")
 
 
 def _extract_issue_id_from_url(value: str) -> str:
@@ -562,22 +598,34 @@ def detect_sources(
     github_int = (resolved_integrations or {}).get("github")
     if github_int:
         repo_url = (
-            str(annotations.get("repo_url") or annotations.get("repository_url") or raw_alert.get("repo_url", ""))
+            str(
+                annotations.get("repo_url")
+                or annotations.get("repository_url")
+                or annotations.get("vercel_repo_url")
+                or raw_alert.get("repo_url", "")
+                or raw_alert.get("vercel_repo_url", "")
+            )
         )
         owner = str(
             annotations.get("github_owner")
             or annotations.get("repo_owner")
+            or annotations.get("vercel_github_owner")
             or raw_alert.get("github_owner", "")
+            or raw_alert.get("vercel_github_owner", "")
         ).strip()
         repo = str(
             annotations.get("github_repo")
             or annotations.get("repo_name")
+            or annotations.get("vercel_github_repo_name")
             or raw_alert.get("github_repo", "")
+            or raw_alert.get("vercel_github_repo_name", "")
         ).strip()
         full_name = str(
             annotations.get("repository")
             or annotations.get("repo")
+            or annotations.get("vercel_github_repo")
             or raw_alert.get("repository", "")
+            or raw_alert.get("vercel_github_repo", "")
         ).strip()
         if not owner or not repo:
             owner, repo = _split_repo_full_name(full_name)
@@ -597,12 +645,16 @@ def detect_sources(
                 "sha": str(
                     annotations.get("commit_sha")
                     or annotations.get("github_sha")
+                    or annotations.get("vercel_github_commit_sha")
                     or raw_alert.get("sha", "")
+                    or raw_alert.get("vercel_github_commit_sha", "")
                 ).strip(),
                 "ref": str(
                     annotations.get("branch")
                     or annotations.get("github_ref")
+                    or annotations.get("vercel_github_commit_ref")
                     or raw_alert.get("branch", "")
+                    or raw_alert.get("vercel_github_commit_ref", "")
                 ).strip(),
                 "path": str(
                     annotations.get("file_path")
@@ -618,6 +670,45 @@ def detect_sources(
                 "connection_verified": True,
             }
 
+    gitlab_int = (resolved_integrations or {}).get("gitlab")
+    if gitlab_int:
+        repo_url = str(
+            annotations.get("repo_url") or annotations.get("repository_url") or raw_alert.get("repo_url", "")
+        )
+        project_id = str(
+            annotations.get("gitlab_project")
+            or annotations.get("gitlab_repo")
+            or annotations.get("repository")
+            or annotations.get("repo")
+            or raw_alert.get("gitlab_project", "")
+        ).strip()
+        if not project_id and repo_url:
+            project_id = _parse_gitlab_repo_url(repo_url)
+
+        if project_id:
+            sources["gitlab"] = {
+                "project_id": project_id,
+                "ref_name": str(
+                    annotations.get("branch")
+                    or annotations.get("gitlab_ref")
+                    or annotations.get("ref_name")
+                    or raw_alert.get("branch", "")
+                ).strip() or "main",
+                "file_path": str(
+                    annotations.get("file_path")
+                    or annotations.get("gitlab_path")
+                    or raw_alert.get("file_path", "")
+                ).strip(),
+                "since": _alert_since_iso(raw_alert),
+                "updated_after": str(
+                    annotations.get("startsAt") or raw_alert.get("startsAt", "")
+                ).strip(),
+                "gitlab_url": str(gitlab_int.get("base_url", "")).strip(),
+                "gitlab_token": str(gitlab_int.get("auth_token", "")).strip(),
+                "merge_request_iid" : str(
+                    annotations.get("mr_iid", "")).strip(),
+                "connection_verified": True,
+            }
     vercel_int = (resolved_integrations or {}).get("vercel")
     if vercel_int and str(vercel_int.get("api_token", "")).strip():
         sources["vercel"] = {
@@ -627,9 +718,50 @@ def detect_sources(
                 annotations.get("vercel_project_id")
                 or raw_alert.get("vercel_project_id", "")
             ).strip(),
+            "project_name": str(
+                annotations.get("vercel_project_name")
+                or raw_alert.get("vercel_project_name", "")
+            ).strip(),
+            "project_slug": str(
+                annotations.get("vercel_project_slug")
+                or raw_alert.get("vercel_project_slug", "")
+            ).strip(),
             "deployment_id": str(
                 annotations.get("vercel_deployment_id")
                 or raw_alert.get("vercel_deployment_id", "")
+            ).strip(),
+            "selected_log_id": str(
+                annotations.get("vercel_selected_log_id")
+                or raw_alert.get("vercel_selected_log_id", "")
+            ).strip(),
+            "log_url": str(
+                annotations.get("vercel_log_url")
+                or raw_alert.get("vercel_log_url", "")
+                or raw_alert.get("vercel_url", "")
+            ).strip(),
+            "github_repo": str(
+                annotations.get("repository")
+                or annotations.get("vercel_github_repo")
+                or raw_alert.get("repository", "")
+                or raw_alert.get("vercel_github_repo", "")
+            ).strip(),
+            "github_commit_sha": str(
+                annotations.get("github_sha")
+                or annotations.get("commit_sha")
+                or annotations.get("vercel_github_commit_sha")
+                or raw_alert.get("sha", "")
+                or raw_alert.get("vercel_github_commit_sha", "")
+            ).strip(),
+            "github_commit_ref": str(
+                annotations.get("github_ref")
+                or annotations.get("branch")
+                or annotations.get("vercel_github_commit_ref")
+                or raw_alert.get("branch", "")
+                or raw_alert.get("vercel_github_commit_ref", "")
+            ).strip(),
+            "error_message": str(
+                annotations.get("error")
+                or raw_alert.get("error_message", "")
             ).strip(),
             "connection_verified": True,
         }
@@ -668,6 +800,45 @@ def detect_sources(
                 "sentry_token": str(sentry_int.get("auth_token", "")).strip(),
                 "connection_verified": True,
             }
+
+    mongodb_int = (resolved_integrations or {}).get("mongodb")
+    if mongodb_int:
+        mongodb_connection_string = str(mongodb_int.get("connection_string", "")).strip()
+        if mongodb_connection_string:
+            mongodb_database = str(
+                annotations.get("mongodb_database")
+                or annotations.get("database")
+                or mongodb_int.get("database", "")
+            ).strip()
+            mongodb_collection = str(
+                annotations.get("mongodb_collection")
+                or annotations.get("collection")
+                or ""
+            ).strip()
+            sources["mongodb"] = {
+                "connection_string": mongodb_connection_string,
+                "database": mongodb_database,
+                "collection": mongodb_collection,
+                "auth_source": str(mongodb_int.get("auth_source", "admin")).strip(),
+                "tls": mongodb_int.get("tls", True),
+                "connection_verified": True,
+            }
+
+    atlas_int = (resolved_integrations or {}).get("mongodb_atlas")
+    if atlas_int and str(atlas_int.get("api_public_key", "")).strip():
+        atlas_cluster = str(
+            annotations.get("atlas_cluster_name")
+            or annotations.get("cluster_name")
+            or ""
+        ).strip()
+        sources["mongodb_atlas"] = {
+            "api_public_key": str(atlas_int.get("api_public_key", "")).strip(),
+            "api_private_key": str(atlas_int.get("api_private_key", "")).strip(),
+            "project_id": str(atlas_int.get("project_id", "")).strip(),
+            "base_url": str(atlas_int.get("base_url", "https://cloud.mongodb.com/api/atlas/v2")).strip(),
+            "cluster_name": atlas_cluster,
+            "connection_verified": True,
+        }
 
     opsgenie_int = (resolved_integrations or {}).get("opsgenie")
     if opsgenie_int and str(opsgenie_int.get("api_key", "")).strip():
