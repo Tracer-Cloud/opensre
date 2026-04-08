@@ -1017,7 +1017,9 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         Choice(
             value="vercel",
             label="Vercel",
-            hint="Monitor deployments and fetch runtime logs",
+            hint=(
+                "Deployments, build output, and logs tools; runtime-log API can lag the dashboard"
+            ),
         ),
         Choice(
             value="jira",
@@ -1077,6 +1079,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
     }
 
     _step(f"Service · {_SERVICE_LABELS.get(selected_service, selected_service)}")
+    if selected_service == "vercel":
+        _console.print(
+            "[dim]Note: Vercel's runtime-log API may omit or delay lines compared to the "
+            "dashboard. Deployment and build checks still apply; there is no CLI incident browser.[/]"
+        )
     try:
         label, env_path = handlers[selected_service]()
         configured.append(label)

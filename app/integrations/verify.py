@@ -693,7 +693,10 @@ def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
-def _verify_vercel(source: str, config: dict[str, Any]) -> dict[str, str]:
+def _verify_vercel(
+    source: str,
+    config: dict[str, Any],
+) -> dict[str, str]:
     try:
         vercel_config = VercelConfig.model_validate(config)
     except Exception:
@@ -704,20 +707,16 @@ def _verify_vercel(source: str, config: dict[str, Any]) -> dict[str, str]:
     client = VercelClient(vercel_config)
     with client:
         result = client.list_projects()
-    if not result.get("success"):
-        return _result(
-            "vercel",
-            source,
-            "failed",
-            f"Vercel project list failed: {result.get('error', 'unknown error')}",
-        )
+        if not result.get("success"):
+            return _result(
+                "vercel",
+                source,
+                "failed",
+                f"Vercel project list failed: {result.get('error', 'unknown error')}",
+            )
 
-    return _result(
-        "vercel",
-        source,
-        "passed",
-        f"Connected to Vercel API and listed {result.get('total', 0)} project(s).",
-    )
+        base_detail = f"Connected to Vercel API and listed {result.get('total', 0)} project(s)."
+        return _result("vercel", source, "passed", base_detail)
 
 
 def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
