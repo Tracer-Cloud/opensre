@@ -20,6 +20,7 @@ from app.nodes.chat import (
     tool_executor_node,
 )
 from app.nodes.investigate.node import node_investigate
+from app.nodes.route_tools import node_route_tools
 from app.pipeline.routing import (
     route_after_extract,
     route_by_mode,
@@ -44,6 +45,7 @@ def build_graph(config: None = None) -> CompiledStateGraph:
 
     graph.add_node("extract_alert", node_extract_alert)
     graph.add_node("resolve_integrations", node_resolve_integrations)
+    graph.add_node("route_tools", node_route_tools)
     graph.add_node("plan_actions", node_plan_actions)
     graph.add_node("investigate", node_investigate)
     graph.add_node("diagnose", node_diagnose_root_cause)
@@ -67,11 +69,12 @@ def build_graph(config: None = None) -> CompiledStateGraph:
     graph.add_conditional_edges(
         "extract_alert", route_after_extract, {"end": END, "investigate": "resolve_integrations"}
     )
-    graph.add_edge("resolve_integrations", "plan_actions")
+    graph.add_edge("resolve_integrations", "route_tools")
+    graph.add_edge("route_tools", "plan_actions")
     graph.add_edge("plan_actions", "investigate")
     graph.add_edge("investigate", "diagnose")
     graph.add_conditional_edges(
-        "diagnose", route_investigation_loop, {"investigate": "plan_actions", "publish": "publish"}
+        "diagnose", route_investigation_loop, {"investigate": "route_tools", "publish": "publish"}
     )
     graph.add_edge("publish", END)
 

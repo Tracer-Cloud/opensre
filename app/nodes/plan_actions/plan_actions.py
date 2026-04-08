@@ -23,6 +23,7 @@ def plan_actions(
     plan_model: type[BaseModel],
     _pipeline_name: str = "",
     resolved_integrations: dict[str, Any] | None = None,
+    routed_actions: list[str] | None = None,
 ) -> tuple[Any | None, dict[str, dict], list[str], list]:
     """
     Interpret inputs, select actions, and request a plan from the LLM.
@@ -32,6 +33,7 @@ def plan_actions(
         plan_model: Pydantic model for structured LLM output
         _pipeline_name: Unused (was for memory lookup, kept for caller compatibility)
         resolved_integrations: Pre-fetched integration credentials from resolve_integrations node
+        routed_actions: Pre-filtered list of action names from route_tools node (optional)
 
     Returns:
         Tuple of (plan_or_none, available_sources, available_action_names, available_actions)
@@ -52,8 +54,22 @@ def plan_actions(
     debug_print(f"Relevant sources: {list(available_sources.keys())}")
 
     all_actions = get_available_actions()
-    keywords = extract_keywords(input_data.problem_md, input_data.alert_name)
-    candidate_actions = get_prioritized_actions(keywords=keywords) if keywords else all_actions
+
+    # Use routed_actions subset if provided (from route_tools node)
+    # Otherwise fall back to keyword-based prioritization
+    if routed_actions:
+        # Filter to only the routed actions that are still available
+        actions_by_name = {action.name: action for action in all_actions}
+        candidate_actions = [
+            actions_by_name[name]
+            for name in routed_actions
+            if name in actions_by_name and actions_by_name[name].is_available(available_sources)
+        ]
+        debug_print(f"Using routed subset: {len(candidate_actions)} actions from {len(routed_actions)} routed")
+    else:
+        # Fall back to keyword-based prioritization (legacy behavior)
+        keywords = extract_keywords(input_data.problem_md, input_data.alert_name)
+        candidate_actions = get_prioritized_actions(keywords=keywords) if keywords else all_actions
 
     available_actions, available_action_names = select_actions(
         actions=candidate_actions,

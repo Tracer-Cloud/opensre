@@ -54,6 +54,7 @@ class AgentState(TypedDict, total=False):
     plan_rationale: str
     available_sources: dict[str, dict]
     available_action_names: list[str]
+    routed_actions: list[str]  # Subset of tools selected by route_tools node
 
     # Resolved integrations (from resolve_integrations node)
     resolved_integrations: dict[str, Any]
@@ -118,6 +119,7 @@ class AgentStateModel(StrictConfigModel):
     plan_rationale: str = ""
     available_sources: dict[str, dict[str, Any]] = Field(default_factory=dict)
     available_action_names: list[str] = Field(default_factory=list)
+    routed_actions: list[str] = Field(default_factory=list)
     resolved_integrations: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
     evidence: dict[str, Any] = Field(default_factory=dict)
