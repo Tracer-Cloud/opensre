@@ -42,6 +42,7 @@ This helps reviewers understand your thought process and ensures you understand 
 - [ ] I have considered potential edge cases and how my code handles them
 - [ ] If it is a core feature, I have added thorough tests
 - [ ] My code follows the project's style guidelines and conventions
+- [ ] If this PR changes docs or docs workflow, I attached validation evidence (docs CI/local checks) and a short screen recording of docs preview or published result
 
 ---
 

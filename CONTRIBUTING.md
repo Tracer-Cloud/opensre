@@ -49,6 +49,19 @@ See **[SETUP.md](SETUP.md)** for detailed setup instructions including Windows-s
 
 ## Development Workflow
 
+### Documentation changes (Mintlify)
+
+If your PR updates docs content, docs navigation, or docs workflow files, run docs checks locally before opening a PR.
+
+```bash
+cd docs
+npm install
+npm run check
+npm run dev
+```
+
+For docs PRs, include validation evidence and a short screen recording that shows the docs preview or published result.
+
 ### 1. Create a Branch
 
 ```bash
@@ -127,6 +140,7 @@ Use the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** (automatically provi
 - [ ] All local checks pass: `make lint && make typecheck && make test-cov`
 - [ ] Added tests for bug fixes or new features
 - [ ] Updated documentation if behavior changed
+- [ ] If docs changed, I ran docs checks (`cd docs && npm run check`) and attached docs workflow evidence (including screen recording)
 - [ ] Code follows project style (see **Code Quality** section below)
 - [ ] Self-reviewed your own code first
 - [ ] Considered edge cases

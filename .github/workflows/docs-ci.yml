@@ -1,0 +1,76 @@
+name: Docs CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs-ci.yml'
+      - '.github/workflows/docs-publish.yml'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+      - 'CONTRIBUTING.md'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs-ci.yml'
+      - '.github/workflows/docs-publish.yml'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+      - 'CONTRIBUTING.md'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install docs dependencies
+        run: npm install
+        working-directory: docs
+
+      - name: Validate docs config and navigation
+        run: npm run check
+        working-directory: docs
+
+      - name: Build docs via Mintlify
+        run: npx --yes mint@latest update
+        working-directory: docs
+
+  links:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check links in docs and root markdown
+        uses: lycheeverse/lychee-action@v2
+        with:
+          fail: true
+          args: >-
+            --verbose
+            --glob
+            --no-progress
+            --exclude-mail
+            --accept 200,206,301,302,303,307,308
+            --max-retries 3
+            --retry-wait-time 3
+            --timeout 20
+            docs/**/*.mdx
+            docs/**/*.md
+            README.md
+            CONTRIBUTING.md
+            SECURITY.md

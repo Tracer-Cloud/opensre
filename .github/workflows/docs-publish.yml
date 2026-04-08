@@ -1,0 +1,38 @@
+name: Docs Publish Readiness
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs-ci.yml'
+      - '.github/workflows/docs-publish.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  publish-readiness:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install docs dependencies
+        run: npm install
+        working-directory: docs
+
+      - name: Validate docs before publish
+        run: npm run check
+        working-directory: docs
+
+      - name: Mintlify publish handoff
+        run: |
+          echo "Docs checks passed on main."
+          echo "Publishing is performed by the Mintlify GitHub App."
+          echo "Confirm deployment status in Mintlify dashboard if needed."

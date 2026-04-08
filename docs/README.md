@@ -1,43 +1,63 @@
-# Mintlify Starter Kit
+# OpenSRE Docs (Mintlify)
 
-Use the starter kit to get your docs deployed and ready to customize.
+This directory contains the Mintlify documentation site for OpenSRE.
 
-Click the green **Use this template** button at the top of this repo to copy the Mintlify starter kit. The starter kit contains examples with
+## What lives here
 
-- Guide pages
-- Navigation
-- Customizations
-- API reference pages
-- Use of popular components
+- Product and platform docs rendered by Mintlify
+- Setup and onboarding guidance for docs contributors
+- Integrations, environments, investigations, and testing-oriented guides
+- Docs configuration and navigation in `docs.json`
 
-**[Follow the full quickstart guide](https://starter.mintlify.com/quickstart)**
+## Local development
 
-## Development
+Prerequisites:
 
-Install the [Mintlify CLI](https://www.npmjs.com/package/mint) to preview your documentation changes locally. To install, use the following command:
+- Node.js 20+
+- npm
 
-```
-npm i -g mint
-```
+Install dependencies from the docs directory:
 
-Run the following command at the root of your documentation, where your `docs.json` is located:
-
-```
-mint dev
+```bash
+npm install
 ```
 
-View your local preview at `http://localhost:3000`.
+Start local docs preview:
 
-## Publishing changes
+```bash
+npm run dev
+```
 
-Install our GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app) to propagate changes from your repo to your deployment. Changes are deployed to production automatically after pushing to the default branch.
+The script runs Mintlify via `npx`, so no global `mint` install is required. Mintlify serves the docs locally (usually on `http://localhost:3000`).
 
-## Need help?
+## Safe docs update workflow
 
-### Troubleshooting
+1. Create or update `.mdx` content in `docs/`.
+2. If you add a new page, register it in `docs/docs.json` navigation.
+3. Run local validation:
 
-- If your dev environment isn't running: Run `mint update` to ensure you have the most recent version of the CLI.
-- If a page loads as a 404: Make sure you are running in a folder with a valid `docs.json`.
+```bash
+npm run check
+```
 
-### Resources
-- [Mintlify documentation](https://mintlify.com/docs)
+4. Start preview and click through changed pages:
+
+```bash
+npm run dev
+```
+
+5. Open a PR with:
+   - validation evidence (`npm run check` output)
+   - a short screen recording of local docs flow or published result
+
+## Source-of-truth and sync guidance
+
+- `docs/` is the source of truth for the Mintlify docs site.
+- Root repo docs such as `README.md`, `CONTRIBUTING.md`, and `SETUP.md` remain the source of truth for repository-level contribution and setup policy.
+- If a change impacts both product behavior and contributor experience, update both the relevant root doc and the Mintlify page in the same PR.
+
+## CI and publishing model
+
+- GitHub Actions enforces validation for docs changes (`docs-ci` workflow).
+- Mintlify GitHub App handles publishing after changes land on the default branch.
+- PRs without passing docs validation and proof artifacts should not be merged.
