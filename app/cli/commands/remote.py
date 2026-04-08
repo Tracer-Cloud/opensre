@@ -565,7 +565,6 @@ def _run_remote_interactive(ctx: click.Context) -> None:
                 continue
 
             _redeploy_ec2(ctx, branch=branch, console=console)
-            explicit_url = None
             remotes = load_named_remotes()
             active_name = load_active_remote_name()
             url = load_remote_url()

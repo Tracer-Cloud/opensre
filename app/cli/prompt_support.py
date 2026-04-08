@@ -9,7 +9,7 @@ from prompt_toolkit.key_binding import KeyBindings, KeyBindingsBase, merge_key_b
 from prompt_toolkit.keys import Keys
 from questionary.question import Question
 
-_installed = False
+_escape_patch_installed: list[bool] = [False]
 
 
 def _with_escape_cancel(question: Question) -> Question:
@@ -38,8 +38,7 @@ def _wrap_question_prompt(orig: Callable[..., Question]) -> Callable[..., Questi
 
 def install_questionary_escape_cancel() -> None:
     """Make Escape cancel questionary prompts (returns None), consistent across the CLI."""
-    global _installed
-    if _installed:
+    if _escape_patch_installed[0]:
         return
 
     import questionary
@@ -61,4 +60,4 @@ def install_questionary_escape_cancel() -> None:
     questionary.text = text_mod.text
     questionary.path = path_mod.path
 
-    _installed = True
+    _escape_patch_installed[0] = True

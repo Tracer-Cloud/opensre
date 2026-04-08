@@ -639,10 +639,7 @@ def test_run_wizard_configures_gitlab(monkeypatch, tmp_path) -> None:
         )
     ]
     assert synced_env_values == [
-        {
-            "GITLAB_BASE_URL": "https://gitlab.example.com/api/v4",
-            "GITLAB_ACCESS_TOKEN": "glpat_test",
-        }
+        {"GITLAB_BASE_URL": "https://gitlab.example.com/api/v4"},
     ]
 
 
@@ -724,10 +721,7 @@ def test_run_wizard_gitlab_retries_on_validation_failure(monkeypatch, tmp_path) 
         )
     ]
     assert synced_env_values == [
-        {
-            "GITLAB_BASE_URL": "https://gitlab.com/api/v4",
-            "GITLAB_ACCESS_TOKEN": "glpat_good",
-        }
+        {"GITLAB_BASE_URL": "https://gitlab.com/api/v4"},
     ]
 
 

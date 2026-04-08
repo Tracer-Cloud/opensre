@@ -349,7 +349,6 @@ def cmd_setup(service: str | None) -> str:
             sys.exit(1)
     if not service or service not in _HANDLERS:
         _die(f"Usage: setup <service>. Supported: {SUPPORTED}")
-        return
     print(f"\n  Setting up {_B}{service}{_R}\n")
     _HANDLERS[service]()
     print(f"\n  ✓ Saved → {STORE_PATH}\n")
@@ -414,7 +413,6 @@ def cmd_verify(
 
     if service and service not in SUPPORTED_VERIFY_SERVICES:
         _die(f"Usage: verify [service]. Supported: {SUPPORTED_VERIFY}")
-        return
 
     results = verify_integrations(
         service=service,
