@@ -14,6 +14,7 @@ from app.cli.wizard.integration_health import (
     validate_slack_webhook,
     validate_vercel_integration,
 )
+from app.integrations.github_mcp import GitHubMCPValidationResult
 
 
 class _FakeGrafanaClient:
@@ -179,7 +180,10 @@ def test_validate_aws_integration_succeeds_with_role_assumption(monkeypatch) -> 
 
     class _FakeAssumedSts:
         def get_caller_identity(self) -> dict[str, str]:
-            return {"Account": "123456789012", "Arn": "arn:aws:sts::123456789012:assumed-role/demo/session"}
+            return {
+                "Account": "123456789012",
+                "Arn": "arn:aws:sts::123456789012:assumed-role/demo/session",
+            }
 
     def _client(service_name: str, **kwargs):
         if service_name != "sts":
@@ -223,7 +227,14 @@ def test_validate_aws_integration_fails_when_boto3_client_raises(monkeypatch) ->
 def test_validate_github_mcp_integration_uses_shared_validator(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.cli.wizard.integration_health.validate_github_mcp_config",
-        lambda _config: types.SimpleNamespace(ok=True, detail="GitHub MCP ok"),
+        lambda _config, **_kwargs: GitHubMCPValidationResult(
+            ok=True,
+            detail="OK @ghuser; repos=1; owners=o; examples=o/r; mcp_tools=1",
+            authenticated_user="ghuser",
+            repo_access_count=1,
+            repo_access_scope_owners=("o",),
+            repo_access_samples=("o/r",),
+        ),
     )
 
     result = validate_github_mcp_integration(
@@ -234,7 +245,11 @@ def test_validate_github_mcp_integration_uses_shared_validator(monkeypatch) -> N
     )
 
     assert result.ok is True
-    assert result.detail == "GitHub MCP ok"
+    assert "Configuration validation: succeeded" in result.detail
+    assert "GitHub identity: @ghuser" in result.detail
+    assert "Repositories returned (probe): 1" in result.detail
+    assert result.github_mcp is not None
+    assert result.github_mcp.authenticated_user == "ghuser"
 
 
 def test_validate_sentry_integration_uses_shared_validator(monkeypatch) -> None:
@@ -271,7 +286,9 @@ class _FakeVercelClient:
 def test_validate_vercel_integration_succeeds(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.cli.wizard.integration_health.VercelClient",
-        lambda _config: _FakeVercelClient({"success": True, "projects": [{"id": "p1"}], "total": 1}),
+        lambda _config: _FakeVercelClient(
+            {"success": True, "projects": [{"id": "p1"}], "total": 1}
+        ),
     )
 
     result = validate_vercel_integration(api_token="tok_test")
