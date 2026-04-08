@@ -7,6 +7,12 @@ from typing import Any
 
 import click
 
+from app.analytics.cli import (
+    capture_cli_invoked,
+    capture_deploy_completed,
+    capture_deploy_failed,
+    capture_deploy_started,
+)
 from app.cli.context import is_json_output, is_yes
 from app.cli.errors import OpenSREError
 from app.deployment.ec2_config import load_remote_outputs
@@ -105,6 +111,7 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
         )
 
     choices.extend([
+        questionary.Choice("Deploy to Railway", value="railway"),
         questionary.Separator(),
         questionary.Choice("Exit", value="exit"),
     ])
@@ -136,6 +143,10 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
             return
 
         ctx.invoke(deploy_ec2, down=False, branch=branch)
+        return
+
+    if action == "railway":
+        ctx.invoke(deploy_railway)
         return
 
     if action == "down":
@@ -227,3 +238,43 @@ def deploy_ec2(down: bool, branch: str) -> None:
     from tests.deployment.ec2.infrastructure_sdk.deploy_remote import deploy as run_deploy
 
     _persist_remote_url(run_deploy(branch=branch))
+
+
+@deploy.command(name="railway")
+@click.option(
+    "--project",
+    "project_name",
+    default=None,
+    help="Railway project name to deploy to.",
+)
+@click.option(
+    "--service",
+    "service_name",
+    default=None,
+    help="Railway service name to deploy.",
+)
+@click.option("--dry-run", is_flag=True, help="Simulate the deployment without executing.")
+@click.option("--yes", "-y", "local_yes", is_flag=True, help="Skip the confirmation prompt.")
+def deploy_railway(
+    project_name: str | None,
+    service_name: str | None,
+    dry_run: bool,
+    local_yes: bool,
+) -> None:
+    """Deploy OpenSRE to Railway."""
+    from app.cli.deploy import run_deploy
+
+    capture_cli_invoked()
+    capture_deploy_started(target="railway", dry_run=dry_run)
+    rc = run_deploy(
+        target="railway",
+        project_name=project_name,
+        service_name=service_name,
+        dry_run=dry_run,
+        yes=local_yes or is_yes(),
+    )
+    if rc == 0:
+        capture_deploy_completed(target="railway", dry_run=dry_run)
+    else:
+        capture_deploy_failed(target="railway", dry_run=dry_run)
+    raise SystemExit(rc)

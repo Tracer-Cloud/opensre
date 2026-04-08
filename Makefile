@@ -273,7 +273,8 @@ clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
-	rm -rf .coverage htmlcov/ 2>/dev/null || true
+	find . -maxdepth 1 \( -name '.coverage' -o -name '.coverage.*' \) -delete 2>/dev/null || true
+	rm -rf htmlcov/ 2>/dev/null || true
 
 # Lint code
 lint:
