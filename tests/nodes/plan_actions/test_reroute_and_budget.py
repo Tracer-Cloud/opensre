@@ -103,6 +103,31 @@ def test_detect_reroute_trigger_no_reroute_when_logs_already_fetched():
     assert rerouted is False
 
 
+def test_detect_reroute_no_reroute_when_grafana_query_ran_but_empty():
+    """Grafana query ran, returned no logs - should not re-trigger reroute."""
+    evidence = {
+        "grafana_service_names": ["service-1"],
+        "grafana_logs": [],
+    }
+    available_sources = {}
+    executed_hypotheses = [{"actions": ["query_grafana_logs"], "loop_count": 0}]
+
+    rerouted, reason = detect_reroute_trigger(evidence, available_sources, executed_hypotheses)
+    assert rerouted is False
+    assert reason == ""
+
+
+def test_detect_reroute_trigger_vendor_audit_discovery():
+    """Vendor audit evidence should trigger reroute even if s3 audit was previously used."""
+    evidence = {"vendor_audit_from_logs": {"api": "stripe", "status": 500}}
+    available_sources = {}
+    executed_hypotheses = [{"actions": ["get_s3_object"], "loop_count": 0}]
+
+    rerouted, reason = detect_reroute_trigger(evidence, available_sources, executed_hypotheses)
+    assert rerouted is True
+    assert "vendor" in reason.lower()
+
+
 def test_track_hypothesis_with_audit():
     """Test that track_hypothesis records audit data."""
     executed_hypotheses = []

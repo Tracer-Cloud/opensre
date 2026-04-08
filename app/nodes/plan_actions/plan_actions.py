@@ -45,12 +45,12 @@ def detect_reroute_trigger(
     s3_audit_in_sources = "s3_audit" in available_sources
 
     # Check if we've already done audit tracing in a previous loop
-    audit_already_executed = any(
+    s3_audit_already_executed = any(
         "get_s3_object" in (hyp.get("actions", [])) for hyp in executed_hypotheses
     )
 
     # Trigger reroute if s3_audit source available but audit not yet executed
-    if s3_audit_in_sources and not audit_already_executed:
+    if s3_audit_in_sources and not s3_audit_already_executed:
         return (
             True,
             "s3_audit source discovered from S3 metadata - rerouting to external API tracing",
@@ -68,7 +68,12 @@ def detect_reroute_trigger(
 
     # Check for vendor audit discovered in Lambda logs
     vendor_audit = evidence.get("vendor_audit_from_logs", {})
-    if vendor_audit and not audit_already_executed:
+    vendor_audit_already_rerouted = any(
+        hyp.get("audit", {}).get("reroute_reason")
+        == "external vendor audit discovered in Lambda logs"
+        for hyp in executed_hypotheses
+    )
+    if vendor_audit and not vendor_audit_already_rerouted:
         return True, "external vendor audit discovered in Lambda logs"
 
     return False, ""
