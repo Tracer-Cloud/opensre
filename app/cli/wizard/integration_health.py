@@ -6,7 +6,12 @@ from dataclasses import dataclass
 
 import requests
 
-from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
+from app.integrations.github_mcp import (
+    GitHubMCPValidationResult,
+    build_github_mcp_config,
+    format_github_mcp_validation_cli_report,
+    validate_github_mcp_config,
+)
 from app.integrations.gitlab import build_gitlab_config, validate_gitlab_config
 from app.integrations.models import (
     AWSIntegrationConfig,
@@ -31,6 +36,7 @@ class IntegrationHealthResult:
 
     ok: bool
     detail: str
+    github_mcp: GitHubMCPValidationResult | None = None
 
 
 def validate_grafana_integration(*, endpoint: str, api_key: str) -> IntegrationHealthResult:
@@ -279,6 +285,8 @@ def validate_github_mcp_integration(
     command: str = "",
     args: list[str] | None = None,
     toolsets: list[str] | None = None,
+    repo_view: str = "auto",
+    repo_visibility: str = "any",
 ) -> IntegrationHealthResult:
     """Validate GitHub MCP connectivity and required repository tools."""
     config = build_github_mcp_config(
@@ -291,8 +299,16 @@ def validate_github_mcp_integration(
             "toolsets": toolsets or [],
         }
     )
-    result = validate_github_mcp_config(config)
-    return IntegrationHealthResult(ok=result.ok, detail=result.detail)
+    result = validate_github_mcp_config(
+        config,
+        repo_view=repo_view,  # type: ignore[arg-type]
+        repo_visibility=repo_visibility,  # type: ignore[arg-type]
+    )
+    return IntegrationHealthResult(
+        ok=result.ok,
+        detail=format_github_mcp_validation_cli_report(result),
+        github_mcp=result,
+    )
 
 
 def validate_sentry_integration(
@@ -321,14 +337,10 @@ def validate_gitlab_integration(
     auth_token: str,
 ) -> IntegrationHealthResult:
     """Validate Gitlab connectivity with an users api."""
-    config = build_gitlab_config(
-        {
-            "base_url": base_url,
-            "auth_token": auth_token
-        }
-    )
+    config = build_gitlab_config({"base_url": base_url, "auth_token": auth_token})
     result = validate_gitlab_config(config)
     return IntegrationHealthResult(ok=result.ok, detail=result.detail)
+
 
 def validate_google_docs_integration(
     *,
@@ -395,7 +407,9 @@ def validate_vercel_integration(*, api_token: str, team_id: str = "") -> Integra
         return IntegrationHealthResult(ok=False, detail=f"Vercel validation failed: {err}")
 
 
-def validate_jira_integration(*, base_url: str, email: str, api_token: str, project_key: str) -> IntegrationHealthResult:
+def validate_jira_integration(
+    *, base_url: str, email: str, api_token: str, project_key: str
+) -> IntegrationHealthResult:
     """Validate Jira connectivity and project key accessibility."""
     import httpx
 
@@ -417,16 +431,29 @@ def validate_jira_integration(*, base_url: str, email: str, api_token: str, proj
                 timeout=10,
             )
             if project_resp.status_code == 404:
-                return IntegrationHealthResult(ok=False, detail=f"Project '{project_key}' not found. Check the project key.")
+                return IntegrationHealthResult(
+                    ok=False, detail=f"Project '{project_key}' not found. Check the project key."
+                )
             if project_resp.status_code != 200:
-                return IntegrationHealthResult(ok=False, detail=f"Could not verify project '{project_key}': HTTP {project_resp.status_code}.")
+                return IntegrationHealthResult(
+                    ok=False,
+                    detail=f"Could not verify project '{project_key}': HTTP {project_resp.status_code}.",
+                )
 
-            return IntegrationHealthResult(ok=True, detail=f"Jira connected as {display}, project '{project_key}' verified.")
+            return IntegrationHealthResult(
+                ok=True, detail=f"Jira connected as {display}, project '{project_key}' verified."
+            )
         if resp.status_code == 401:
-            return IntegrationHealthResult(ok=False, detail="Jira credentials invalid. Check email and API token.")
+            return IntegrationHealthResult(
+                ok=False, detail="Jira credentials invalid. Check email and API token."
+            )
         if resp.status_code == 404:
-            return IntegrationHealthResult(ok=False, detail="Jira base URL not found. Check the URL.")
-        return IntegrationHealthResult(ok=False, detail=f"Jira returned unexpected status {resp.status_code}.")
+            return IntegrationHealthResult(
+                ok=False, detail="Jira base URL not found. Check the URL."
+            )
+        return IntegrationHealthResult(
+            ok=False, detail=f"Jira returned unexpected status {resp.status_code}."
+        )
     except Exception as e:
         return IntegrationHealthResult(ok=False, detail=f"Jira validation failed: {e}")
 

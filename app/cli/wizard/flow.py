@@ -91,10 +91,12 @@ def validate_sentry_integration(**kwargs):
 
     return _validate(**kwargs)
 
+
 def validate_jira_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_jira_integration as _validate
 
     return _validate(**kwargs)
+
 
 def validate_google_docs_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_google_docs_integration as _validate
@@ -118,12 +120,6 @@ def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
 
     return _get()
-
-
-@dataclass(frozen=True)
-class IntegrationHealthResult:
-    ok: bool
-    detail: str
 
 
 _STYLE = questionary.Style(
@@ -356,13 +352,30 @@ def _render_saved_summary(
     _console.print(f"[dim]integrations  {STORE_PATH}[/]")
 
 
-def _render_integration_result(service_label: str, result: IntegrationHealthResult) -> None:
+def _render_integration_result(
+    service_label: str,
+    result: IntegrationHealthResult,
+    *,
+    github_display_level: str | None = None,
+) -> None:
+    if result.github_mcp is not None:
+        from app.integrations.github_mcp import print_github_mcp_validation_report
+
+        print_github_mcp_validation_report(
+            result.github_mcp,
+            console=_console,
+            detail_level=github_display_level or "standard",
+        )
+        return
     ok = bool(result.ok)
     detail = str(result.detail)
     color = "green" if ok else "red"
     prefix = "Connected" if ok else "Failed"
     _console.print(f"[{color}]{service_label} · {prefix}[/]")
-    _console.print(f"[dim]{detail}[/]")
+    for raw_line in detail.splitlines():
+        line = raw_line.strip()
+        if line:
+            _console.print(f"[dim]{line}[/]")
 
 
 def _configure_grafana() -> tuple[str, str]:
@@ -705,7 +718,7 @@ def _configure_github_mcp() -> tuple[str, str]:
                 default=_joined_values(
                     credentials.get("args"),
                     separator=" ",
-                    fallback="stdio --toolsets repos,issues,pull_requests,actions",
+                    fallback="stdio --toolsets repos,issues,pull_requests,actions,search",
                 ),
             )
             args = [part for part in args_raw.split() if part]
@@ -721,7 +734,7 @@ def _configure_github_mcp() -> tuple[str, str]:
                 default=_joined_values(
                     credentials.get("toolsets"),
                     separator=",",
-                    fallback="repos,issues,pull_requests,actions",
+                    fallback="repos,issues,pull_requests,actions,search",
                 ),
             )
         )
@@ -732,6 +745,26 @@ def _configure_github_mcp() -> tuple[str, str]:
             allow_empty=True,
         )
 
+        repo_view = _choose(
+            "Which repository view should we use to verify access?",
+            [
+                Choice(value="auto", label="Auto (recommended)"),
+                Choice(value="user", label="Your repositories"),
+                Choice(value="starred", label="Starred repositories"),
+                Choice(value="search_user", label="Search: user:<your_login>"),
+            ],
+            default="auto",
+        )
+        repo_visibility = _choose(
+            "Filter repositories by visibility (best-effort)",
+            [
+                Choice(value="any", label="Any (recommended)"),
+                Choice(value="public", label="Public only"),
+                Choice(value="private", label="Private only"),
+            ],
+            default="any",
+        )
+
         with _console.status("Validating GitHub MCP integration...", spinner="dots"):
             result = validate_github_mcp_integration(
                 url=url,
@@ -740,8 +773,31 @@ def _configure_github_mcp() -> tuple[str, str]:
                 command=command,
                 args=args,
                 toolsets=toolsets,
+                repo_view=repo_view,
+                repo_visibility=repo_visibility,
             )
-        _render_integration_result("GitHub MCP", result)
+        display_level = "standard"
+        if result.ok:
+            display_level = _choose(
+                "How should we show repository access?",
+                [
+                    Choice(value="summary", label="Brief (recommended) — no repo names"),
+                    Choice(
+                        value="standard",
+                        label="Standard — scope summary only",
+                    ),
+                    Choice(
+                        value="full",
+                        label="Expanded — include repo names",
+                    ),
+                ],
+                default="summary",
+            )
+        _render_integration_result(
+            "GitHub MCP",
+            result,
+            github_display_level=display_level,
+        )
         if result.ok:
             credentials = {
                 "url": url,
@@ -780,16 +836,10 @@ def _configure_gitlab() -> tuple[str, str]:
         )
 
         with _console.status("Validating Gitlab integration...", spinner="dots"):
-            result = validate_gitlab_integration(
-                base_url=base_url,
-                auth_token=auth_token
-            )
+            result = validate_gitlab_integration(base_url=base_url, auth_token=auth_token)
         _render_integration_result("Gitlab", result)
         if result.ok:
-            credentials = {
-                "base_url": base_url,
-                "auth_token": auth_token
-            }
+            credentials = {"base_url": base_url, "auth_token": auth_token}
             upsert_integration("gitlab", {"credentials": credentials})
             env_path = sync_env_values(
                 {
@@ -856,10 +906,13 @@ def _configure_sentry() -> tuple[str, str]:
             return "Sentry", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
+
 def _configure_jira() -> tuple[str, str]:
     _, credentials = _integration_defaults("jira")
     _console.print("\n[bold]Jira Integration[/bold]")
-    _console.print("Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens\n")
+    _console.print(
+        "Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens\n"
+    )
 
     while True:
         base_url = _prompt_value("Jira base URL (e.g. https://myteam.atlassian.net)")
@@ -877,15 +930,21 @@ def _configure_jira() -> tuple[str, str]:
         _render_integration_result("Jira", result)
 
         if result.ok:
-            upsert_integration("jira", {"credentials": {
-                "base_url": base_url,
-                "email": email,
-                "api_token": api_token,
-                "project_key": project_key,
-            }})
+            upsert_integration(
+                "jira",
+                {
+                    "credentials": {
+                        "base_url": base_url,
+                        "email": email,
+                        "api_token": api_token,
+                        "project_key": project_key,
+                    }
+                },
+            )
             env_path = sync_env_values({})
             return "Jira", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
 
 def _configure_google_docs() -> tuple[str, str]:
     _, credentials = _integration_defaults("google_docs")
@@ -1004,9 +1063,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         Choice(
             value="sentry", label="Sentry", hint="Investigate errors, events, and issue history"
         ),
-        Choice(
-            value="gitlab", label="Gitlab", hint="Let the agent inspect repos, PRs, and issues"
-        ),
+        Choice(value="gitlab", label="Gitlab", hint="Let the agent inspect repos, PRs, and issues"),
         Choice(
             value="google_docs",
             label="Google Docs",
@@ -1119,7 +1176,9 @@ def run_wizard(_argv: list[str] | None = None) -> int:
     defaults = _local_defaults()
     saved_provider_value = defaults["provider"] if isinstance(defaults["provider"], str) else None
     saved_model_value = defaults["model"] if isinstance(defaults["model"], str) else ""
-    default_wizard_mode = defaults["wizard_mode"] if isinstance(defaults["wizard_mode"], str) else "quickstart"
+    default_wizard_mode = (
+        defaults["wizard_mode"] if isinstance(defaults["wizard_mode"], str) else "quickstart"
+    )
     default_provider_value = (
         saved_provider_value
         if saved_provider_value in PROVIDER_BY_VALUE
