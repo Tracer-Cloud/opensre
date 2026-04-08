@@ -1,6 +1,6 @@
 {
-  "InstanceId": "i-05f7bdcf6a2c36d54",
-  "PublicIpAddress": "44.210.116.190",
+  "InstanceId": "i-069cac994d4a32791",
+  "PublicIpAddress": "18.233.154.38",
   "SecurityGroupId": "sg-05af5394c5eb244a8",
   "ProfileName": "tracer-ec2-remote-profile",
   "RoleName": "tracer-ec2-remote-role",

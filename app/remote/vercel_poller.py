@@ -7,6 +7,7 @@ import json
 import logging
 import os
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -322,6 +323,16 @@ def _make_client_from_config(config: VercelConfig) -> VercelClient:
     return client
 
 
+def _deployment_created_sort_key(stub: dict[str, Any]) -> str:
+    raw = str(stub.get("created_at", "")).strip()
+    return raw or "1970-01-01T00:00:00.000Z"
+
+
+def _sort_deployment_stubs_newest_first(stubs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    filtered = [s for s in stubs if isinstance(s, dict) and str(s.get("id", "")).strip()]
+    return sorted(filtered, key=_deployment_created_sort_key, reverse=True)
+
+
 def _resolve_project(
     client: VercelClient,
     *,
@@ -352,12 +363,43 @@ def _resolve_project(
     raise VercelResolutionError(f"Vercel project {project_slug!r} was not found.")
 
 
+def _parallel_deployment_events_and_runtime_logs(
+    config: VercelConfig,
+    *,
+    project_id: str,
+    deployment_id: str,
+    log_limit: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Fetch build events and runtime logs concurrently (separate clients — httpx is not thread-safe)."""
+
+    def _events() -> list[dict[str, Any]]:
+        with _make_client_from_config(config) as worker:
+            result = worker.get_deployment_events(deployment_id, limit=log_limit)
+            return result.get("events", []) if result.get("success") else []
+
+    def _runtime() -> list[dict[str, Any]]:
+        with _make_client_from_config(config) as worker:
+            result = worker.get_runtime_logs(
+                deployment_id,
+                limit=log_limit,
+                project_id=project_id,
+            )
+            return result.get("logs", []) if result.get("success") else []
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        events_future = pool.submit(_events)
+        logs_future = pool.submit(_runtime)
+        return events_future.result(), logs_future.result()
+
+
 def _fetch_deployment_bundle(
     client: VercelClient,
     *,
     project_id: str,
     deployment_id: str,
     log_limit: int,
+    include_runtime_logs: bool = True,
+    parallel_fetch: bool = True,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     deployment_result = client.get_deployment(deployment_id)
     if not deployment_result.get("success"):
@@ -366,17 +408,31 @@ def _fetch_deployment_bundle(
             f"{deployment_result.get('error', 'unknown error')}"
         )
 
+    deployment = deployment_result.get("deployment", {})
+    config = getattr(client, "config", None)
+    if include_runtime_logs and parallel_fetch and isinstance(config, VercelConfig):
+        events, runtime_logs = _parallel_deployment_events_and_runtime_logs(
+            config,
+            project_id=project_id,
+            deployment_id=deployment_id,
+            log_limit=log_limit,
+        )
+        return deployment, events, runtime_logs
+
     events_result = client.get_deployment_events(deployment_id, limit=log_limit)
+    events = events_result.get("events", []) if events_result.get("success") else []
+    if not include_runtime_logs:
+        return deployment, events, []
+
     runtime_logs_result = client.get_runtime_logs(
         deployment_id,
         limit=log_limit,
         project_id=project_id,
     )
-    events = events_result.get("events", []) if events_result.get("success") else []
     runtime_logs = (
         runtime_logs_result.get("logs", []) if runtime_logs_result.get("success") else []
     )
-    return deployment_result.get("deployment", {}), events, runtime_logs
+    return deployment, events, runtime_logs
 
 
 def _find_deployment_by_selected_log_id(
@@ -496,7 +552,9 @@ def _canonical_vercel_alert(
     deployment_id = str(deployment.get("id", "")).strip()
     deployment_state = str(deployment.get("state", "")).strip()
     deployment_error = str(deployment.get("error", "")).strip()
-    deployment_created_at = str(deployment.get("createdAt", "")).strip()
+    deployment_created_at = str(
+        deployment.get("createdAt") or deployment.get("created_at") or ""
+    ).strip()
     meta = deployment.get("meta", {}) if isinstance(deployment.get("meta"), dict) else {}
 
     repo_full_name = _extract_meta_field(meta, "github_repo", "githubRepo")
@@ -609,7 +667,10 @@ def _merge_alerts(
     for key, value in canonical.items():
         if key in {"annotations", "commonAnnotations"}:
             continue
-        if not merged.get(key):
+        if key not in original:
+            continue
+        current = merged.get(key)
+        if current is None or current == "":
             merged[key] = value
 
     return merged
@@ -798,8 +859,14 @@ def collect_vercel_candidates(
     deployment_limit: int = _DEFAULT_DEPLOYMENT_LIMIT,
     log_limit: int = _DEFAULT_LOG_LIMIT,
     fail_on_error: bool = False,
+    include_runtime_logs: bool = True,
 ) -> list[VercelInvestigationCandidate]:
-    """Collect actionable Vercel deployment failures for local CLI or background polling."""
+    """Collect actionable Vercel deployment failures for background polling (and similar).
+
+    When ``include_runtime_logs`` is False, skip per-deployment runtime log HTTP calls.
+    Uses ``list_deployments`` plus per-deployment events/runtime logs (parallel fetch when
+    using a real :class:`~app.services.vercel.client.VercelClient`).
+    """
     config = resolve_vercel_config()
     if config is None:
         if fail_on_error:
@@ -837,9 +904,14 @@ def collect_vercel_candidates(
 
         candidates: list[VercelInvestigationCandidate] = []
         for project in projects:
+            list_limit = (
+                min(100, max(25, deployment_limit * 25))
+                if deployment_limit <= 5
+                else min(100, deployment_limit)
+            )
             deployments_result = client.list_deployments(
                 project_id=str(project.get("id", "")).strip(),
-                limit=deployment_limit,
+                limit=list_limit,
             )
             if not deployments_result.get("success"):
                 if fail_on_error:
@@ -855,9 +927,10 @@ def collect_vercel_candidates(
                 )
                 continue
 
-            for deployment_stub in deployments_result.get("deployments", []):
-                if not isinstance(deployment_stub, dict):
-                    continue
+            ordered_stubs = _sort_deployment_stubs_newest_first(
+                [d for d in deployments_result.get("deployments", []) if isinstance(d, dict)]
+            )
+            for deployment_stub in ordered_stubs[:deployment_limit]:
                 deployment_id = str(deployment_stub.get("id", "")).strip()
                 if not deployment_id:
                     continue
@@ -866,6 +939,7 @@ def collect_vercel_candidates(
                     project_id=str(project.get("id", "")).strip(),
                     deployment_id=deployment_id,
                     log_limit=log_limit,
+                    include_runtime_logs=include_runtime_logs,
                 )
                 if not _deployment_is_actionable(deployment, events, runtime_logs):
                     continue

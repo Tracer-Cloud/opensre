@@ -31,6 +31,11 @@ class VercelLogsTool(BaseTool):
         "properties": {
             "api_token": {"type": "string", "description": "Vercel API Bearer token"},
             "team_id": {"type": "string", "default": "", "description": "Optional Vercel team ID"},
+            "project_id": {
+                "type": "string",
+                "default": "",
+                "description": "Vercel project ID (scopes runtime logs to the project API)",
+            },
             "deployment_id": {
                 "type": "string",
                 "description": "Vercel deployment ID (uid) to fetch logs for",
@@ -63,6 +68,7 @@ class VercelLogsTool(BaseTool):
         return {
             "api_token": vercel.get("api_token", ""),
             "team_id": vercel.get("team_id", ""),
+            "project_id": vercel.get("project_id", ""),
             "deployment_id": vercel.get("deployment_id", ""),
             "include_runtime_logs": True,
             "limit": 100,
@@ -73,6 +79,7 @@ class VercelLogsTool(BaseTool):
         api_token: str,
         deployment_id: str,
         team_id: str = "",
+        project_id: str = "",
         include_runtime_logs: bool = True,
         limit: int = 100,
         **_kwargs: Any,
@@ -102,7 +109,7 @@ class VercelLogsTool(BaseTool):
         with client:
             deployment_result = client.get_deployment(deployment_id)
             deployment = deployment_result.get("deployment", {}) if deployment_result.get("success") else {}
-            project_id = str(_kwargs.get("project_id", "")).strip()
+            project_id = str(project_id or _kwargs.get("project_id", "")).strip()
 
             events_result = client.get_deployment_events(deployment_id, limit=limit)
             events: list[dict[str, Any]] = []

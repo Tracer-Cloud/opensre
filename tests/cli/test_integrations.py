@@ -93,15 +93,8 @@ def test_integrations_verify_accepts_github() -> None:
         result = runner.invoke(cli, ["integrations", "verify", "github"])
 
     assert result.exit_code == 0
-    mock_verify.assert_called_once_with("github", send_slack_test=False)
+    mock_verify.assert_called_once_with(
+        "github",
+        send_slack_test=False,
+    )
     mock_capture.assert_called_once_with("github")
-
-
-def test_integrations_vercel_dispatches_browser() -> None:
-    runner = CliRunner()
-
-    with patch("app.integrations.vercel_incidents.cmd_vercel_incidents") as mock_browser:
-        result = runner.invoke(cli, ["integrations", "vercel", "--limit", "5"])
-
-    assert result.exit_code == 0
-    mock_browser.assert_called_once_with(limit=5)

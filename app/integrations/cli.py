@@ -382,14 +382,21 @@ def cmd_remove(service: str | None) -> None:
         print(f"  No integration found for '{service}'.")
 
 
-def cmd_verify(service: str | None, *, send_slack_test: bool = False) -> int:
+def cmd_verify(
+    service: str | None,
+    *,
+    send_slack_test: bool = False,
+) -> int:
     from app.cli.context import is_json_output
 
     if service and service not in SUPPORTED_VERIFY_SERVICES:
         _die(f"Usage: verify [service]. Supported: {SUPPORTED_VERIFY}")
         return
 
-    results = verify_integrations(service=service, send_slack_test=send_slack_test)
+    results = verify_integrations(
+        service=service,
+        send_slack_test=send_slack_test,
+    )
 
     if is_json_output():
         _json_echo(results)

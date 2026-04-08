@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import types
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,8 @@ from app.remote.vercel_poller import (
     VercelPoller,
     VercelPollerSettings,
     VercelResolutionError,
+    _merge_alerts,
+    _sort_deployment_stubs_newest_first,
     collect_vercel_candidates,
     enrich_remote_alert_from_vercel,
     parse_vercel_url,
@@ -123,6 +126,31 @@ def _fake_client(selected_log_id: str = "log_selected") -> _FakeVercelClient:
     )
 
 
+def test_sort_deployment_stubs_newest_first_orders_by_created_at() -> None:
+    stubs = [
+        {"id": "a", "created_at": "2026-04-01T00:00:00Z"},
+        {"id": "b", "created_at": "2026-04-07T00:00:00Z"},
+        {"id": "c", "created_at": "2026-04-03T00:00:00Z"},
+        {"id": "", "created_at": "2099-01-01T00:00:00Z"},
+    ]
+    ordered = _sort_deployment_stubs_newest_first(stubs)
+    assert [s["id"] for s in ordered] == ["b", "c", "a"]
+
+
+def test_merge_alerts_preserves_explicit_false_from_original() -> None:
+    canonical = {"is_noise": True, "alert_name": "from-vercel"}
+    original = {"is_noise": False}
+    merged = _merge_alerts(canonical=canonical, original=original)
+    assert merged["is_noise"] is False
+
+
+def test_merge_alerts_backfills_empty_string_from_canonical() -> None:
+    canonical = {"text": "filled from canonical"}
+    original = {"text": ""}
+    merged = _merge_alerts(canonical=canonical, original=original)
+    assert merged["text"] == "filled from canonical"
+
+
 def test_parse_vercel_url_extracts_project_and_selected_log_id() -> None:
     parsed = parse_vercel_url(
         "https://vercel.com/vincenthus-projects/tracer-marketing-website-v3/logs"
@@ -205,6 +233,38 @@ def test_collect_vercel_candidates_returns_actionable_deployments(monkeypatch) -
     assert len(candidates) == 1
     assert candidates[0].raw_alert["vercel_deployment_state"] == "ERROR"
     assert candidates[0].raw_alert["error_message"] == "Build failed"
+
+
+def test_collect_vercel_candidates_can_skip_runtime_logs(monkeypatch) -> None:
+    runtime_calls = {"n": 0}
+    fake = _fake_client()
+    original_get_runtime_logs = fake.get_runtime_logs
+
+    def _counting_get_runtime_logs(
+        self: _FakeVercelClient,
+        deployment_id: str,
+        limit: int = 100,
+        *,
+        project_id: str = "",
+    ) -> dict[str, Any]:
+        runtime_calls["n"] += 1
+        return original_get_runtime_logs(deployment_id, limit, project_id=project_id)
+
+    fake.get_runtime_logs = types.MethodType(_counting_get_runtime_logs, fake)  # type: ignore[method-assign]
+
+    monkeypatch.setattr(
+        "app.remote.vercel_poller.resolve_vercel_config",
+        lambda: VercelConfig(api_token="tok_test", team_id=""),
+    )
+    monkeypatch.setattr(
+        "app.remote.vercel_poller._make_client_from_config",
+        lambda _config: fake,
+    )
+
+    candidates = collect_vercel_candidates(include_runtime_logs=False)
+
+    assert len(candidates) == 1
+    assert runtime_calls["n"] == 0
 
 
 def test_collect_vercel_candidates_treats_runtime_error_level_as_actionable(monkeypatch) -> None:
