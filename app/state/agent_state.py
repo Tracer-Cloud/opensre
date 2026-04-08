@@ -55,6 +55,12 @@ class AgentState(TypedDict, total=False):
     available_sources: dict[str, dict]
     available_action_names: list[str]
 
+    # Tool budget enforcement - caps the number of tools per investigation step
+    tool_budget: int  # Maximum tools to select per step (default: 10)
+
+    # Audit trail for each planning step - records rerouting and budget decisions
+    plan_audit: dict[str, Any]  # Audit data with loop, budget, reroute_reason, etc
+
     # Resolved integrations (from resolve_integrations node)
     resolved_integrations: dict[str, Any]
 
@@ -118,6 +124,12 @@ class AgentStateModel(StrictConfigModel):
     plan_rationale: str = ""
     available_sources: dict[str, dict[str, Any]] = Field(default_factory=dict)
     available_action_names: list[str] = Field(default_factory=list)
+    tool_budget: int = Field(
+        default=10, ge=1, le=50, description="Maximum tools to select per step"
+    )
+    plan_audit: dict[str, Any] = Field(
+        default_factory=dict, description="Audit trail for planning step"
+    )
     resolved_integrations: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
     evidence: dict[str, Any] = Field(default_factory=dict)

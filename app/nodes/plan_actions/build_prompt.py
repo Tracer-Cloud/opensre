@@ -97,7 +97,9 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
         grafana = available_sources["grafana"]
         loki_only = grafana.get("loki_only", False)
         grafana_label = "Grafana Local (Loki only)" if loki_only else "Grafana Cloud"
-        traces_hint = "" if loki_only else "\n- Use query_grafana_traces to find distributed traces in Tempo"
+        traces_hint = (
+            "" if loki_only else "\n- Use query_grafana_traces to find distributed traces in Tempo"
+        )
         hints.append(
             f"""{grafana_label} Available:
 - Service Name: {grafana.get("service_name")}
@@ -286,10 +288,27 @@ Consider what information would help diagnose the root cause.
     return prompt
 
 
+def apply_tool_budget(actions: list, budget: int) -> list:
+    """
+    Apply a tool budget to cap the number of actions selected.
+
+    Args:
+        actions: List of available actions
+        budget: Maximum number of actions to allow
+
+    Returns:
+        Budget-capped list of actions
+    """
+    if len(actions) <= budget:
+        return actions
+    return actions[:budget]
+
+
 def select_actions(
     actions: list,
     available_sources: dict[str, dict],
     executed_hypotheses: list[dict[str, Any]],
+    tool_budget: int = 10,
 ) -> tuple[list, list[str]]:
     """
     Select available actions based on sources and execution history.
@@ -298,25 +317,25 @@ def select_actions(
         actions: Candidate actions to filter
         available_sources: Dictionary mapping source type to parameters
         executed_hypotheses: History of executed hypotheses
+        tool_budget: Maximum number of tools to select (default: 10)
 
     Returns:
         Tuple of (available_actions, available_action_names)
     """
-    available_actions = [
-        action
-        for action in actions
-        if action.is_available(available_sources)
-    ]
+    available_actions = [action for action in actions if action.is_available(available_sources)]
 
     executed_actions_flat = set()
     for hyp in executed_hypotheses:
-        actions = hyp.get("actions", [])
-        if isinstance(actions, list):
-            executed_actions_flat.update(actions)
+        actions_list = hyp.get("actions", [])
+        if isinstance(actions_list, list):
+            executed_actions_flat.update(actions_list)
 
     available_actions = [
         action for action in available_actions if action.name not in executed_actions_flat
     ]
+
+    # Apply tool budget to cap the selected tool set
+    available_actions = apply_tool_budget(available_actions, tool_budget)
     available_action_names = [action.name for action in available_actions]
 
     return available_actions, available_action_names
