@@ -1,0 +1,93 @@
+---
+title: "Vercel"
+description: "Connect Vercel so OpenSRE can check deployment status and runtime logs during investigations"
+---
+
+OpenSRE queries Vercel to retrieve deployment status and runtime logs — helping identify whether a recent deployment caused an incident or surface errors from serverless function executions.
+
+## Prerequisites
+
+- Vercel account with project access
+- Vercel API token
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **Vercel** when prompted and provide your API token.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+VERCEL_API_TOKEN=your-vercel-api-token
+VERCEL_TEAM_ID=team_xxxxxxxxx   # optional, for team accounts
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VERCEL_API_TOKEN` | — | **Required.** Vercel API token |
+| `VERCEL_TEAM_ID` | — | Team ID for team/organization accounts |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "vercel-prod",
+      "service": "vercel",
+      "status": "active",
+      "credentials": {
+        "api_token": "your-vercel-api-token",
+        "team_id": "team_xxxxxxxxx"
+      }
+    }
+  ]
+}
+```
+
+## Creating a Vercel API token
+
+1. In Vercel, go to **Account Settings** → **Tokens**
+2. Click **Create Token**
+3. Give it a name (e.g., `opensre`) and set the scope to **Full Account** or a specific team
+4. Copy the token
+
+<Info>
+For team accounts, find your Team ID in **Team Settings** → **General** → **Team ID**.
+</Info>
+
+## Verify
+
+```bash
+opensre integrations verify --service vercel
+```
+
+Expected output:
+
+```
+Service: vercel
+Status: passed
+Detail: Connected to Vercel API and listed 5 project(s)
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Check that the API token is valid and not expired |
+| **403 Forbidden** | The token may not have access to the team — check token scope |
+| **Projects not found** | Ensure `VERCEL_TEAM_ID` is set if using a team account |
+
+## Security best practices
+
+- Create a **dedicated read-only token** for OpenSRE — do not reuse deployment tokens.
+- Store the token in `.env`, not in source code.
+- Rotate tokens periodically.
