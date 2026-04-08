@@ -236,7 +236,7 @@ class GoogleDocsIntegrationConfig(StrictConfigModel):
                 timeout = int(value)
             except ValueError:
                 return 30
-        elif isinstance(value, (int, float)):
+        elif isinstance(value, int | float):
             timeout = int(value)
         else:
             return 30
