@@ -1,5 +1,5 @@
 """
-CrashLoopBackOff Demo — genomics alignment pipeline.
+CrashLoopBackOff Demo (local Datadog evidence) — genomics alignment pipeline.
 
 Simulates a single Kubernetes pod that is OOMKilled (exit 137) on every
 restart attempt, causing BackoffLimitExceeded / CrashLoopBackOff.
@@ -55,6 +55,7 @@ CONTAINER_NAME = "align"
 # ---------------------------------------------------------------------------
 # Datadog helpers
 # ---------------------------------------------------------------------------
+
 
 def _dd(method: str, path: str, body: object = None, *, intake: bool = False) -> dict:
     api_key = os.environ["DD_API_KEY"]
@@ -148,6 +149,7 @@ def _ship_oomkill_logs(pod_name: str, run_id: str, attempt: int) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     get_test_config()
 
@@ -174,36 +176,42 @@ def main() -> int:
     pod_name = f"{JOB_NAME}-{run_id[:8]}"
     for attempt in range(1, 4):
         _ship_oomkill_logs(pod_name, run_id, attempt)
-        print(f"  Attempt {attempt}/3: OOMKilled — pod={pod_name} node={NODE_NAME} ({NODE_IP}) exit=137")
+        print(
+            f"  Attempt {attempt}/3: OOMKilled — pod={pod_name} node={NODE_NAME} ({NODE_IP}) exit=137"
+        )
 
     # 3. Post a summary event
     print("\n[3/3] Posting summary event to Datadog...")
-    _dd("POST", "/api/v1/events", {
-        "title": f"[tracer-cl] OOMKilled: {JOB_NAME} CrashLoopBackOff ({run_id})",
-        "text": (
-            f"Run ID: {run_id}\n"
-            f"Cluster: {CLUSTER}  Namespace: {NAMESPACE}\n"
-            f"Node: {NODE_NAME}  IP: {NODE_IP}\n"
-            f"Pod: {pod_name}  Container: {CONTAINER_NAME}\n"
-            f"Exit: 137 (OOMKilled) — 3 attempts → BackoffLimitExceeded\n"
-            f"Reason: alignment worker exceeded memory limit (8Gi limit, 24Gi requested)\n\n"
-            f"Log query: OOMKilled kube_namespace:{NAMESPACE}"
-        ),
-        "alert_type": "error",
-        "priority": "normal",
-        "tags": [
-            f"cluster:{CLUSTER}",
-            f"kube_namespace:{NAMESPACE}",
-            f"node_name:{NODE_NAME}",
-            f"pod_name:{pod_name}",
-            f"pipeline:{PIPELINE_NAME}",
-            f"run_id:{run_id}",
-            "exit_code:137",
-            "reason:OOMKilled",
-            "source:tracer-agent",
-            "env:local",
-        ],
-    })
+    _dd(
+        "POST",
+        "/api/v1/events",
+        {
+            "title": f"[tracer-cl] OOMKilled: {JOB_NAME} CrashLoopBackOff ({run_id})",
+            "text": (
+                f"Run ID: {run_id}\n"
+                f"Cluster: {CLUSTER}  Namespace: {NAMESPACE}\n"
+                f"Node: {NODE_NAME}  IP: {NODE_IP}\n"
+                f"Pod: {pod_name}  Container: {CONTAINER_NAME}\n"
+                f"Exit: 137 (OOMKilled) — 3 attempts → BackoffLimitExceeded\n"
+                f"Reason: alignment worker exceeded memory limit (8Gi limit, 24Gi requested)\n\n"
+                f"Log query: OOMKilled kube_namespace:{NAMESPACE}"
+            ),
+            "alert_type": "error",
+            "priority": "normal",
+            "tags": [
+                f"cluster:{CLUSTER}",
+                f"kube_namespace:{NAMESPACE}",
+                f"node_name:{NODE_NAME}",
+                f"pod_name:{pod_name}",
+                f"pipeline:{PIPELINE_NAME}",
+                f"run_id:{run_id}",
+                "exit_code:137",
+                "reason:OOMKilled",
+                "source:tracer-agent",
+                "env:local",
+            ],
+        },
+    )
 
     print("\n" + "=" * 60)
     print("DONE — OOMKilled logs shipped, monitor will fire in ~2 min")
@@ -228,4 +236,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

@@ -2,32 +2,26 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from app.cli.commands.deploy import _get_deployment_status
+import click
+from click.testing import CliRunner
+
+from app.cli.__main__ import cli
 
 
-def test_get_deployment_status_reads_remote_outputs() -> None:
-    with patch(
-        "app.cli.commands.deploy.load_remote_outputs",
-        return_value={
-            "InstanceId": "i-123",
-            "PublicIpAddress": "18.233.154.38",
-            "ServerPort": "8080",
-        },
+def test_deploy_ec2_health_check_failure_is_non_fatal() -> None:
+    runner = CliRunner()
+    outputs = {"PublicIpAddress": "10.0.0.1", "ServerPort": "2024"}
+
+    with (
+        patch("tests.deployment.ec2.infrastructure_sdk.deploy_remote.deploy", return_value=outputs),
+        patch("app.cli.commands.deploy._persist_remote_url"),
+        patch(
+            "app.cli.commands.remote_health.run_remote_health_check",
+            side_effect=click.ClickException("Connection timed out"),
+        ),
     ):
-        result = _get_deployment_status()
+        result = runner.invoke(cli, ["deploy", "ec2"])
 
-    assert result == {
-        "ip": "18.233.154.38",
-        "instance_id": "i-123",
-        "port": "8080",
-    }
-
-
-def test_get_deployment_status_returns_empty_when_outputs_missing() -> None:
-    with patch(
-        "app.cli.commands.deploy.load_remote_outputs",
-        side_effect=FileNotFoundError,
-    ):
-        result = _get_deployment_status()
-
-    assert result == {}
+    assert result.exit_code == 0
+    assert "[warn] Health check: Connection timed out" in result.output
+    assert "Deployment provisioned. Retry with: opensre remote health" in result.output

@@ -93,6 +93,16 @@ class LLMClient:
     def invoke(self, prompt_or_messages: Any) -> LLMResponse:
         self._ensure_client()
         system, messages = _normalize_messages(prompt_or_messages)
+
+        from app.guardrails.engine import GuardrailBlockedError, get_guardrail_engine
+
+        engine = get_guardrail_engine()
+        if engine.is_active:
+            for msg in messages:
+                msg["content"] = engine.apply(msg["content"])
+            if system:
+                system = engine.apply(system)
+
         kwargs: dict[str, Any] = {
             "model": self._model,
             "max_tokens": self._max_tokens,
@@ -114,6 +124,8 @@ class LLMClient:
                 raise RuntimeError(
                     "Anthropic authentication failed. Check ANTHROPIC_API_KEY in your environment or .env."
                 ) from err
+            except GuardrailBlockedError:
+                raise
             except Exception as err:
                 last_err = err
                 if attempt == max_attempts - 1:
@@ -147,6 +159,16 @@ class BedrockLLMClient:
 
     def invoke(self, prompt_or_messages: Any) -> LLMResponse:
         system, messages = _normalize_messages(prompt_or_messages)
+
+        from app.guardrails.engine import GuardrailBlockedError, get_guardrail_engine
+
+        engine = get_guardrail_engine()
+        if engine.is_active:
+            for msg in messages:
+                msg["content"] = engine.apply(msg["content"])
+            if system:
+                system = engine.apply(system)
+
         kwargs: dict[str, Any] = {
             "model": self._model,
             "max_tokens": self._max_tokens,
@@ -164,6 +186,8 @@ class BedrockLLMClient:
             try:
                 response = self._client.messages.create(**kwargs)
                 break
+            except GuardrailBlockedError:
+                raise
             except Exception as err:
                 last_err = err
                 if attempt == max_attempts - 1:
@@ -245,6 +269,14 @@ class OpenAILLMClient:
     def invoke(self, prompt_or_messages: Any) -> LLMResponse:
         self._ensure_client()
         messages = _normalize_messages_openai(prompt_or_messages)
+
+        from app.guardrails.engine import GuardrailBlockedError, get_guardrail_engine
+
+        engine = get_guardrail_engine()
+        if engine.is_active:
+            for msg in messages:
+                msg["content"] = engine.apply(msg["content"])
+
         token_param = "max_completion_tokens" if _uses_max_completion_tokens(self._model) else "max_tokens"
         kwargs: dict[str, Any] = {
             "model": self._model,
@@ -265,6 +297,8 @@ class OpenAILLMClient:
                 raise RuntimeError(
                     f"{self._provider_label} authentication failed. Check {self._api_key_env} in your environment, .env, or secure local keychain."
                 ) from err
+            except GuardrailBlockedError:
+                raise
             except Exception as err:
                 last_err = err
                 if attempt == max_attempts - 1:

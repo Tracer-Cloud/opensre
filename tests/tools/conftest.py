@@ -114,6 +114,12 @@ def mock_agent_state(overrides: dict | None = None) -> dict[str, Any]:
         "mongodb": {
             "connection_string": "mongodb://localhost:27017",
         },
+        "mongodb_atlas": {
+            "api_public_key": "test-pub-key",
+            "api_private_key": "test-priv-key",
+            "project_id": "test-project-id",
+            "base_url": "https://cloud.mongodb.com/api/atlas/v2",
+        },
     }
     if overrides:
         for key, value in overrides.items():

@@ -125,82 +125,235 @@ class RemoteAgentClient:
                 return raw_data
             return {"ok": True, "raw": raw_data}
 
-    def preflight(self, *, timeout: float = PREFLIGHT_TIMEOUT) -> PreflightResult:
-        """Quick health + capability detection.
-
-        Calls ``GET /ok``, measures latency, and infers ``server_type``
-        from the response.  If the server doesn't advertise endpoints
-        (old version), probes ``/threads`` to detect a LangGraph deployment.
-        """
-        start = time.monotonic()
+    def _coerce_json_dict(self, response: httpx.Response) -> dict[str, Any]:
         try:
-            data = self.health(timeout=timeout)
-        except httpx.TimeoutException:
-            return PreflightResult(ok=False, error="connection timed out")
-        except httpx.ConnectError as exc:
-            return PreflightResult(ok=False, error=f"connection refused ({exc})")
-        except httpx.HTTPStatusError as exc:
-            return PreflightResult(
-                ok=False, error=f"HTTP {exc.response.status_code}"
-            )
-        except Exception as exc:  # noqa: BLE001
-            return PreflightResult(ok=False, error=str(exc))
+            payload: Any = response.json()
+        except ValueError:
+            payload = {"raw": response.text.strip()}
+        if isinstance(payload, dict):
+            return payload
+        return {"raw": payload}
 
-        latency = int((time.monotonic() - start) * 1000)
-        version = str(data.get("version", ""))
-        server_type = str(data.get("server_type", ""))
-        endpoints: list[str] = data.get("endpoints") or []
+    def _fetch_ok_payload(self, client: httpx.Client) -> tuple[dict[str, Any], int]:
+        ok_url = f"{self.base_url}/ok"
+        started = time.monotonic()
+        ok_resp = client.get(ok_url, headers=self._headers)
+        ok_resp.raise_for_status()
+        latency_ms = int((time.monotonic() - started) * 1000)
+        return self._coerce_json_dict(ok_resp), latency_ms
 
-        if not server_type and not endpoints:
-            server_type, endpoints = self._detect_server_type(timeout=timeout)
-
-        system: dict[str, Any] = data.get("system") or {}
-
-        return PreflightResult(
-            ok=True,
-            version=version,
-            server_type=server_type or "unknown",
-            endpoints=endpoints,
-            latency_ms=latency,
-            system=system,
-        )
-
-    def _detect_server_type(
-        self, *, timeout: float = PREFLIGHT_TIMEOUT
-    ) -> tuple[str, list[str]]:
-        """Probe endpoints to infer the server type when ``/ok`` omits capability info.
-
-        Uses **read-only GET requests only** so that detection never triggers
-        a real investigation.  FastAPI returns 405 (Method Not Allowed) for
-        routes that exist but don't accept GET, and 404 for undefined routes.
-        """
-        route_exists = self._route_exists
-
-        if route_exists("/investigations", timeout=timeout):
-            endpoints = ["/investigate"]
-            if route_exists("/investigate/stream", timeout=timeout):
-                endpoints.append("/investigate/stream")
-            return "lightweight", endpoints
-
-        if route_exists("/threads", timeout=timeout):
-            return "langgraph", ["/threads", "/threads/*/runs/stream"]
-
-        return "unknown", []
-
-    def _route_exists(self, path: str, *, timeout: float = PREFLIGHT_TIMEOUT) -> bool:
-        """Check whether a server route exists using a read-only GET probe.
-
-        Returns ``True`` when the server responds with anything other than 404,
-        indicating the path is defined (even if GET isn't the right method).
-        """
+    def _fetch_remote_version(self, client: httpx.Client, fallback: str) -> tuple[str, str]:
+        version_url = f"{self.base_url}/version"
+        remote_version = fallback
+        version_source = "/ok"
         try:
-            with httpx.Client(timeout=timeout) as client:
-                resp = client.get(
-                    f"{self.base_url}{path}", headers=self._headers
+            version_resp = client.get(version_url, headers=self._headers)
+            if version_resp.status_code == 200:
+                version_data = self._coerce_json_dict(version_resp)
+                parsed = str(version_data.get("version", "")).strip()
+                if parsed:
+                    remote_version = parsed
+                    version_source = "/version"
+        except Exception:  # noqa: BLE001
+            pass
+        return remote_version, version_source
+
+    def _fetch_deep_checks(self, client: httpx.Client) -> list[dict[str, str]]:
+        deep_health_url = f"{self.base_url}/health/deep"
+        checks: list[dict[str, str]] = []
+        try:
+            deep_resp = client.get(deep_health_url, headers=self._headers)
+            if deep_resp.status_code != 200:
+                return checks
+            deep_data = self._coerce_json_dict(deep_resp)
+            raw_checks = deep_data.get("checks")
+            if not isinstance(raw_checks, list):
+                return checks
+            for check in raw_checks:
+                if not isinstance(check, dict):
+                    continue
+                name = str(check.get("name", "")).strip() or "Deep check"
+                status = str(check.get("status", "unknown")).strip() or "unknown"
+                detail = str(check.get("detail", "")).strip() or "-"
+                checks.append(
+                    {
+                        "name": name,
+                        "endpoint": "/health/deep",
+                        "status": status,
+                        "detail": detail,
+                    }
                 )
-                return resp.status_code != 404
+        except Exception:  # noqa: BLE001
+            return []
+        return checks
+
+    def _aggregate_status(self, checks: list[dict[str, str]]) -> str:
+        if any(str(check.get("status", "")).lower() in {"failed", "error"} for check in checks):
+            return "failed"
+        if any(
+            str(check.get("status", "")).lower() in {"warn", "warning", "missing"}
+            for check in checks
+        ):
+            return "warn"
+        return "passed"
+
+    def _endpoint_exists(self, client: httpx.Client, path: str) -> bool:
+        url = f"{self.base_url}{path}"
+        try:
+            response = client.get(url, headers=self._headers)
         except Exception:  # noqa: BLE001
             return False
+        return response.status_code != 404
+
+    def _detect_server_type(self) -> tuple[str, list[str]]:
+        endpoints: list[str] = []
+        with httpx.Client(timeout=PREFLIGHT_TIMEOUT) as client:
+            if self._endpoint_exists(client, "/investigate"):
+                endpoints.append("/investigate")
+            if self._endpoint_exists(client, "/investigate/stream"):
+                endpoints.append("/investigate/stream")
+            if self._endpoint_exists(client, "/investigations"):
+                endpoints.append("/investigations")
+            if self._endpoint_exists(client, "/threads"):
+                endpoints.append("/threads")
+            if self._endpoint_exists(client, "/threads/*/runs/stream"):
+                endpoints.append("/threads/*/runs/stream")
+
+        if any(endpoint.startswith("/investigate") for endpoint in endpoints):
+            return "lightweight", endpoints
+        if any(endpoint.startswith("/threads") for endpoint in endpoints):
+            return "langgraph", endpoints
+        return "unknown", endpoints
+
+    def preflight(self, *, timeout: float = PREFLIGHT_TIMEOUT) -> PreflightResult:
+        started = time.monotonic()
+        try:
+            payload = self.health(timeout=timeout)
+            latency_ms = int((time.monotonic() - started) * 1000)
+
+            ok = bool(payload.get("ok", True))
+            version = str(payload.get("version", "")).strip()
+            server_type = str(payload.get("server_type", "unknown") or "unknown")
+            raw_system = payload.get("system")
+            system: dict[str, Any] = {}
+            if isinstance(raw_system, dict):
+                system = {str(key): value for key, value in raw_system.items()}
+
+            raw_endpoints = payload.get("endpoints")
+            endpoints = (
+                [str(ep) for ep in raw_endpoints if isinstance(ep, str)]
+                if isinstance(raw_endpoints, list)
+                else []
+            )
+
+            if not endpoints or server_type == "unknown":
+                detected_type, detected_endpoints = self._detect_server_type()
+                if not endpoints:
+                    endpoints = detected_endpoints
+                if server_type == "unknown":
+                    server_type = detected_type
+
+            return PreflightResult(
+                ok=ok,
+                version=version,
+                server_type=server_type,
+                endpoints=endpoints,
+                latency_ms=latency_ms,
+                system=system,
+            )
+        except httpx.TimeoutException:
+            return PreflightResult(ok=False, error="connection timed out")
+        except httpx.ConnectError:
+            return PreflightResult(ok=False, error="connection refused")
+        except httpx.HTTPStatusError as exc:
+            code = exc.response.status_code
+            return PreflightResult(ok=False, error=f"HTTP {code}")
+        except Exception as exc:  # noqa: BLE001
+            return PreflightResult(ok=False, error=str(exc) or "unknown error")
+
+    def probe_health(
+        self,
+        *,
+        local_version: str,
+        timeout: float = REQUEST_TIMEOUT,
+    ) -> dict[str, Any]:
+        """Run a deeper health probe and return a normalized report."""
+        with httpx.Client(timeout=timeout) as client:
+            ok_data, latency_ms = self._fetch_ok_payload(client)
+            remote_version = str(ok_data.get("version", "")).strip()
+            remote_version, version_source = self._fetch_remote_version(client, remote_version)
+            deep_checks = self._fetch_deep_checks(client)
+
+        version_status = "passed"
+        version_detail = "Remote version matches local CLI"
+        if not remote_version:
+            version_status = "warn"
+            version_detail = "Remote did not report a version."
+        elif remote_version != local_version:
+            version_status = "warn"
+            version_detail = (
+                f"Remote is {remote_version}; local CLI is {local_version}. Consider redeploying."
+            )
+
+        uptime = ok_data.get("uptime_seconds")
+        uptime_detail = "No uptime data from server"
+        uptime_status = "passed"
+        missing_uptime = True
+        if isinstance(uptime, int):
+            uptime_status = "passed"
+            uptime_detail = f"{uptime}s"
+            missing_uptime = False
+
+        checks = [
+            {
+                "name": "Liveness",
+                "endpoint": "/ok",
+                "status": "passed" if bool(ok_data.get("ok", True)) else "failed",
+                "detail": "Remote server responded successfully",
+            },
+            {
+                "name": "Version",
+                "endpoint": version_source,
+                "status": version_status,
+                "detail": version_detail,
+            },
+            {
+                "name": "Uptime",
+                "endpoint": "/ok",
+                "status": uptime_status,
+                "detail": uptime_detail,
+            },
+        ]
+        checks.extend(deep_checks)
+
+        status = self._aggregate_status(checks)
+
+        hints: list[str] = []
+        if version_status == "warn":
+            hints.append(version_detail)
+        if missing_uptime:
+            hints.append("Remote /ok endpoint does not expose uptime yet.")
+
+        instance_id = ok_data.get("instance_id")
+        region = ok_data.get("region")
+        public_ip = ok_data.get("public_ip")
+
+        return {
+            "status": status,
+            "base_url": self.base_url,
+            "latency_ms": latency_ms,
+            "local_version": local_version,
+            "remote_version": remote_version or "unknown",
+            "ok": bool(ok_data.get("ok", True)),
+            "started_at": ok_data.get("started_at"),
+            "uptime_seconds": uptime if isinstance(uptime, int) else None,
+            "instance_id": str(instance_id) if instance_id else None,
+            "region": str(region) if region else None,
+            "public_ip": str(public_ip) if public_ip else None,
+            "checks": checks,
+            "hints": hints,
+            "raw": ok_data,
+        }
 
     def create_thread(self, *, timeout: float = REQUEST_TIMEOUT) -> str:
         """Create a new conversation thread.

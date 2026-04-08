@@ -6,6 +6,8 @@ from typing import Any
 
 from app.services.grafana import get_grafana_client_from_credentials
 from app.tools.tool_decorator import tool
+from app.tools.utils.compaction import summarize_counts
+from app.tools.utils.log_compaction import build_error_taxonomy, deduplicate_logs
 
 
 def _map_pipeline_to_service_name(pipeline_name: str) -> str:
@@ -107,17 +109,30 @@ def query_grafana_logs(
         error_keywords = ("error", "fail", "exception", "traceback")
         error_logs = [
             log for log in logs
-            if any(kw in log.get("message", "").lower() for kw in error_keywords)
+            if "error" in str(log.get("log_level", "")).lower()
+            or any(kw in log.get("message", "").lower() for kw in error_keywords)
         ]
-        return {
+        # Phase 1: deduplicate + count-group so bursts don't steal all slots
+        compacted_logs = deduplicate_logs(logs, max_output=50)
+        compacted_error_logs = deduplicate_logs(error_logs, max_output=20)
+        # Phase 2: structured error taxonomy across the *full* error set
+        error_taxonomy = build_error_taxonomy(error_logs)
+        result_data = {
             "source": "grafana_loki",
             "available": True,
-            "logs": logs[:50],
-            "error_logs": error_logs[:20],
+            "logs": compacted_logs,
+            "error_logs": compacted_error_logs,
             "total_logs": len(logs),
+            "compacted_log_count": len(compacted_logs),
+            "compacted_error_log_count": len(compacted_error_logs),
+            "error_taxonomy": error_taxonomy,
             "service_name": service_name,
             "query": "",
         }
+        summary = summarize_counts(len(logs), len(compacted_logs), "logs")
+        if summary:
+            result_data["truncation_note"] = summary
+        return result_data
 
     client = _resolve_grafana_client(grafana_endpoint, grafana_api_key)
     if not client or not client.is_configured:
@@ -145,15 +160,34 @@ def query_grafana_logs(
 
     logs_data = result.get("logs", [])
     error_keywords = ("error", "fail", "exception", "traceback")
-    error_logs = [log for log in logs_data if any(kw in log.get("message", "").lower() for kw in error_keywords)]
-    return {
+    error_logs = [
+        log for log in logs_data
+        if "error" in str(log.get("log_level", "")).lower()
+        or any(kw in log.get("message", "").lower() for kw in error_keywords)
+    ]
+
+    # Phase 1: deduplicate + count-group so bursts don't steal all slots
+    compacted_logs = deduplicate_logs(logs_data, max_output=50)
+    compacted_error_logs = deduplicate_logs(error_logs, max_output=20)
+
+    # Phase 2: structured error taxonomy across the *full* error set
+    error_taxonomy = build_error_taxonomy(error_logs)
+
+    result_data = {
         "source": "grafana_loki",
         "available": True,
-        "logs": logs_data[:50],
-        "error_logs": error_logs[:20],
+        "logs": compacted_logs,
+        "error_logs": compacted_error_logs,
         "total_logs": result.get("total_logs", 0),
+        "compacted_log_count": len(compacted_logs),
+        "compacted_error_log_count": len(compacted_error_logs),
+        "error_taxonomy": error_taxonomy,
         "service_name": service_name,
         "execution_run_id": execution_run_id,
         "query": query,
         "account_id": client.account_id,
     }
+    summary = summarize_counts(len(logs_data), len(compacted_logs), "logs")
+    if summary:
+        result_data["truncation_note"] = summary
+    return result_data

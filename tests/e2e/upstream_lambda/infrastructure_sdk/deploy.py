@@ -60,9 +60,7 @@ def bundle_pipeline_code(pipeline_dir: Path) -> bytes:
 
         # Copy vendored dependencies from api_ingester to root level
         api_ingester_dir = pipeline_dir / "api_ingester"
-        vendored_packages = [
-            "requests", "urllib3", "certifi", "charset_normalizer", "idna"
-        ]
+        vendored_packages = ["requests", "urllib3", "certifi", "charset_normalizer", "idna"]
         for pkg in vendored_packages:
             pkg_src = api_ingester_dir / pkg
             if pkg_src.exists():
@@ -227,7 +225,7 @@ def create_lambda_functions(
             "GCLOUD_OTLP_AUTH_HEADER": grafana_secrets.get("GCLOUD_OTLP_AUTH_HEADER", ""),
             "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
             "OTEL_SERVICE_NAME": "lambda-api-ingester",
-            "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_lambda_ingester,pipeline.framework=lambda,test_case=test_case_upstream_lambda",
+            "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_lambda_ingester,pipeline.framework=lambda,test_case=e2e_upstream_lambda",
         },
         stack_name=STACK_NAME,
         region=REGION,
@@ -249,7 +247,7 @@ def create_lambda_functions(
             "GCLOUD_OTLP_AUTH_HEADER": grafana_secrets.get("GCLOUD_OTLP_AUTH_HEADER", ""),
             "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
             "OTEL_SERVICE_NAME": "lambda-mock-dag",
-            "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_lambda,pipeline.framework=lambda,test_case=test_case_upstream_lambda",
+            "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_lambda,pipeline.framework=lambda,test_case=e2e_upstream_lambda",
         },
         stack_name=STACK_NAME,
         region=REGION,
@@ -295,7 +293,9 @@ def create_api_gateways(lambdas: dict) -> dict:
     }
 
 
-def add_s3_trigger(landing_bucket: str, mock_dag_lambda_arn: str, mock_dag_lambda_name: str) -> None:
+def add_s3_trigger(
+    landing_bucket: str, mock_dag_lambda_arn: str, mock_dag_lambda_name: str
+) -> None:
     """Add S3 event notification to trigger MockDag Lambda."""
     print("Adding S3 event notification...")
 
@@ -452,7 +452,7 @@ def deploy() -> dict:
             "GCLOUD_OTLP_AUTH_HEADER": grafana_secrets.get("GCLOUD_OTLP_AUTH_HEADER", ""),
             "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
             "OTEL_SERVICE_NAME": "lambda-api-ingester",
-            "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_lambda_ingester,pipeline.framework=lambda,test_case=test_case_upstream_lambda",
+            "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_lambda_ingester,pipeline.framework=lambda,test_case=e2e_upstream_lambda",
         },
         stack_name=STACK_NAME,
         region=REGION,
@@ -474,7 +474,7 @@ def deploy() -> dict:
             "GCLOUD_OTLP_AUTH_HEADER": grafana_secrets.get("GCLOUD_OTLP_AUTH_HEADER", ""),
             "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
             "OTEL_SERVICE_NAME": "lambda-mock-dag",
-            "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_lambda,pipeline.framework=lambda,test_case=test_case_upstream_lambda",
+            "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_lambda,pipeline.framework=lambda,test_case=e2e_upstream_lambda",
         },
         stack_name=STACK_NAME,
         region=REGION,

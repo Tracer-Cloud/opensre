@@ -50,4 +50,4 @@ jobs:
       - name: Run Tracer Demo
         continue-on-error: true
         run: |
-          python -m tests.e2e.s3_failed_python.test_orchestrator
+          python -m tests.e2e.s3_failed_python_on_linux.test_aws
