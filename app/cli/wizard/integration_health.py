@@ -330,9 +330,11 @@ def validate_sentry_integration(
     result = validate_sentry_config(config)
     return IntegrationHealthResult(ok=result.ok, detail=result.detail)
 
+
 def validate_notion_integration(*, api_key: str, database_id: str) -> IntegrationHealthResult:
     """Validate Notion connectivity by querying the target database."""
     import httpx
+
     try:
         resp = httpx.get(
             f"https://api.notion.com/v1/databases/{database_id}",
@@ -343,14 +345,22 @@ def validate_notion_integration(*, api_key: str, database_id: str) -> Integratio
             timeout=10,
         )
         if resp.status_code == 200:
-            return IntegrationHealthResult(ok=True, detail="Notion database reachable and token valid.")
+            return IntegrationHealthResult(
+                ok=True, detail="Notion database reachable and token valid."
+            )
         if resp.status_code == 401:
             return IntegrationHealthResult(ok=False, detail="Notion API key is invalid or expired.")
         if resp.status_code == 404:
-            return IntegrationHealthResult(ok=False, detail="Notion database not found. Check the database ID and sharing settings.")
-        return IntegrationHealthResult(ok=False, detail=f"Notion returned unexpected status {resp.status_code}.")
+            return IntegrationHealthResult(
+                ok=False,
+                detail="Notion database not found. Check the database ID and sharing settings.",
+            )
+        return IntegrationHealthResult(
+            ok=False, detail=f"Notion returned unexpected status {resp.status_code}."
+        )
     except Exception as e:
         return IntegrationHealthResult(ok=False, detail=f"Notion validation failed: {e}")
+
 
 def validate_gitlab_integration(
     *,

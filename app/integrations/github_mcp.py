@@ -807,9 +807,6 @@ def _collect_repo_probe_rows_from_payload(data: Any) -> list[GitHubMCPRepoProbeR
             if row and row.full_name not in seen:
                 seen.add(row.full_name)
                 found.append(row)
-            for key in ("repositories", "repos", "items", "data", "nodes"):
-                if key in node and isinstance(node[key], (list, dict)):
-                    walk(node[key])
             for _key, val in node.items():
                 if isinstance(val, (list, dict)):
                     walk(val)
