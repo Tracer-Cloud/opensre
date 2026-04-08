@@ -16,7 +16,7 @@ def test_deploy_ec2_health_check_failure_is_non_fatal() -> None:
         patch("tests.deployment.ec2.infrastructure_sdk.deploy_remote.deploy", return_value=outputs),
         patch("app.cli.commands.deploy._persist_remote_url"),
         patch(
-            "app.cli.commands.remote.run_remote_health_check",
+            "app.cli.commands.remote_health.run_remote_health_check",
             side_effect=click.ClickException("Connection timed out"),
         ),
     ):
