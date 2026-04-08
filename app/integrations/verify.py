@@ -380,14 +380,15 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
             os.getenv("SNOWFLAKE_ACCOUNT_IDENTIFIER", "").strip()
             or os.getenv("SNOWFLAKE_ACCOUNT", "").strip()
         )
-        if snowflake_account:
+        snowflake_token = os.getenv("SNOWFLAKE_TOKEN", "").strip()
+        if snowflake_account and snowflake_token:
             effective["snowflake"] = {
                 "source": "local env",
                 "config": {
                     "account_identifier": snowflake_account,
                     "user": os.getenv("SNOWFLAKE_USER", "").strip(),
                     "password": os.getenv("SNOWFLAKE_PASSWORD", "").strip(),
-                    "token": os.getenv("SNOWFLAKE_TOKEN", "").strip(),
+                    "token": snowflake_token,
                     "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE", "").strip(),
                     "role": os.getenv("SNOWFLAKE_ROLE", "").strip(),
                     "database": os.getenv("SNOWFLAKE_DATABASE", "").strip(),
@@ -941,12 +942,10 @@ def _verify_bitbucket(source: str, config: dict[str, Any]) -> dict[str, str]:
 def _verify_snowflake(source: str, config: dict[str, Any]) -> dict[str, str]:
     account_identifier = str(config.get("account_identifier", "")).strip()
     token = str(config.get("token", "")).strip()
-    user = str(config.get("user", "")).strip()
-    password = str(config.get("password", "")).strip()
     if not account_identifier:
         return _result("snowflake", source, "missing", "Missing account_identifier.")
-    if not token and not (user and password):
-        return _result("snowflake", source, "missing", "Missing token or user/password credentials.")
+    if not token:
+        return _result("snowflake", source, "missing", "Missing token credentials.")
     return _result(
         "snowflake",
         source,

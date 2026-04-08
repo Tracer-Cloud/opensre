@@ -88,6 +88,25 @@ def test_classify_integrations_normalizes_bitbucket_and_new_services() -> None:
     assert resolved["opensearch"]["integration_id"] == "os-1"
 
 
+def test_classify_integrations_skips_snowflake_without_token() -> None:
+    integrations = [
+        {
+            "id": "sf-no-token",
+            "service": "snowflake",
+            "status": "active",
+            "credentials": {
+                "account_identifier": "xy12345.us-east-1",
+                "user": "service-user",
+                "password": "secret",
+            },
+        }
+    ]
+
+    resolved = _classify_integrations(integrations)
+
+    assert "snowflake" not in resolved
+
+
 def test_load_env_integrations_reads_new_integration_wave(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BITBUCKET_WORKSPACE", "env-workspace")
     monkeypatch.setenv("BITBUCKET_USERNAME", "env-user")
@@ -113,3 +132,15 @@ def test_load_env_integrations_reads_new_integration_wave(monkeypatch: pytest.Mo
     assert by_service["azure"]["credentials"]["workspace_id"] == "env-az-workspace"
     assert by_service["openobserve"]["credentials"]["base_url"] == "https://env-openobserve.example.invalid"
     assert by_service["opensearch"]["credentials"]["url"] == "https://env-opensearch.example.invalid"
+
+
+def test_load_env_integrations_skips_snowflake_without_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SNOWFLAKE_ACCOUNT_IDENTIFIER", "env-account")
+    monkeypatch.delenv("SNOWFLAKE_TOKEN", raising=False)
+    monkeypatch.setenv("SNOWFLAKE_USER", "service-user")
+    monkeypatch.setenv("SNOWFLAKE_PASSWORD", "secret")
+
+    integrations = _load_env_integrations()
+    services = {entry["service"] for entry in integrations}
+
+    assert "snowflake" not in services

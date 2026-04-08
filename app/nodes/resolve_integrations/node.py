@@ -293,7 +293,7 @@ def _classify_integrations(
             user = str(credentials.get("user", "")).strip()
             password = str(credentials.get("password", "")).strip()
             token = str(credentials.get("token", "")).strip()
-            if account_identifier and (token or (user and password)):
+            if account_identifier and token:
                 resolved["snowflake"] = {
                     "account_identifier": account_identifier,
                     "user": user,
@@ -631,7 +631,7 @@ def _load_env_integrations() -> list[dict[str, Any]]:
     snowflake_token = os.getenv("SNOWFLAKE_TOKEN", "").strip()
     snowflake_user = os.getenv("SNOWFLAKE_USER", "").strip()
     snowflake_password = os.getenv("SNOWFLAKE_PASSWORD", "").strip()
-    if snowflake_account and (snowflake_token or (snowflake_user and snowflake_password)):
+    if snowflake_account and snowflake_token:
         integrations.append({
             "id": "env-snowflake",
             "service": "snowflake",

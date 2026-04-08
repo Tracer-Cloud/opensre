@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 from typing import Any
 
 import httpx
@@ -21,8 +20,7 @@ def _bounded_limit(limit: int, max_results: int) -> int:
 def _snowflake_available(sources: dict[str, dict[str, Any]]) -> bool:
     sf = sources.get("snowflake", {})
     has_token = bool(str(sf.get("token", "")).strip())
-    has_user_password = bool(str(sf.get("user", "")).strip() and str(sf.get("password", "")).strip())
-    return bool(sf.get("connection_verified") and sf.get("account_identifier") and (has_token or has_user_password))
+    return bool(sf.get("connection_verified") and sf.get("account_identifier") and has_token)
 
 
 def _snowflake_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -62,11 +60,8 @@ def _ensure_sql_limit(query: str, limit: int) -> str:
     return f"{normalized} LIMIT {limit}"
 
 
-def _auth_header(user: str, password: str, token: str) -> dict[str, str]:
-    if token:
-        return {"Authorization": f"Bearer {token}"}
-    basic = base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
-    return {"Authorization": f"Basic {basic}"}
+def _auth_header(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
 
 def _normalize_rows(response_payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -140,20 +135,19 @@ def query_snowflake_history(
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Fetch bounded query-history evidence from Snowflake SQL API."""
+    _ = (user, password)
     effective_limit = _bounded_limit(limit, max_results)
     account = account_identifier.strip()
     bearer = token.strip()
-    username = user.strip()
-    secret = password.strip()
     if not account:
         return {"source": "snowflake", "available": False, "error": "Missing account identifier.", "rows": []}
-    if not bearer and not (username and secret):
-        return {"source": "snowflake", "available": False, "error": "Missing Snowflake credentials.", "rows": []}
+    if not bearer:
+        return {"source": "snowflake", "available": False, "error": "Missing Snowflake token.", "rows": []}
 
     statement = _ensure_sql_limit(query, effective_limit)
     endpoint = f"https://{account}.snowflakecomputing.com/api/v2/statements"
     headers: dict[str, str] = {"Content-Type": "application/json", "Accept": "application/json"}
-    headers.update(_auth_header(username, secret, bearer))
+    headers.update(_auth_header(bearer))
 
     payload: dict[str, Any] = {
         "statement": statement,

@@ -63,6 +63,17 @@ def test_snowflake_tool_enforces_bounded_limit(monkeypatch: Any) -> None:
     assert len(result["rows"]) == 6
 
 
+def test_snowflake_tool_requires_token() -> None:
+    result = query_snowflake_history(
+        account_identifier="xy12345.us-east-1",
+        user="service-user",
+        password="secret",
+    )
+
+    assert result["available"] is False
+    assert result["error"] == "Missing Snowflake token."
+
+
 def test_azure_tool_enforces_bounded_take_clause(monkeypatch: Any) -> None:
     captured: dict[str, Any] = {}
 

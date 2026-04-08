@@ -134,3 +134,19 @@ def test_detect_sources_routes_new_integration_wave_sources() -> None:
     assert sources["azure"]["connection_verified"] is True
     assert sources["openobserve"]["connection_verified"] is True
     assert sources["opensearch"]["connection_verified"] is True
+
+
+def test_detect_sources_skips_snowflake_without_token() -> None:
+    alert = {"alert_name": "Latency spike", "annotations": {}}
+    integrations = {
+        "snowflake": {
+            "account_identifier": "xy12345.us-east-1",
+            "user": "service-user",
+            "password": "secret",
+            "integration_id": "sf-1",
+        }
+    }
+
+    sources = detect_sources(alert, {}, integrations)
+
+    assert "snowflake" not in sources

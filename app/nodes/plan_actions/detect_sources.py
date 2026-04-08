@@ -690,12 +690,13 @@ def detect_sources(
     snowflake_int = (resolved_integrations or {}).get("snowflake")
     if snowflake_int and alert_source in ("snowflake", ""):
         account_identifier = str(snowflake_int.get("account_identifier", "")).strip()
-        if account_identifier:
+        token = str(snowflake_int.get("token", "")).strip()
+        if account_identifier and token:
             sources["snowflake"] = {
                 "account_identifier": account_identifier,
                 "user": str(snowflake_int.get("user", "")).strip(),
                 "password": str(snowflake_int.get("password", "")).strip(),
-                "token": str(snowflake_int.get("token", "")).strip(),
+                "token": token,
                 "warehouse": str(snowflake_int.get("warehouse", "")).strip(),
                 "role": str(snowflake_int.get("role", "")).strip(),
                 "database": str(snowflake_int.get("database", "")).strip(),
