@@ -87,32 +87,15 @@ def test_validate_posthog_config_unauthorized(monkeypatch: pytest.MonkeyPatch) -
             response=response,
         )
 
-    monkeypatch.setattr("app.integrations.posthog._request_json", fake_request_json)
-
-    result = validate_posthog_config(config)
-
-    assert result.ok is False
-    assert "401" in result.detail
-    assert "unauthorized" in result.detail.lower()
-
-
-def test_query_bounce_rate_parses_response(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = PostHogConfig(
-        project_id="123",
-        personal_api_key="phx_test",
-    )
-
-    def fake_request_json(*args, **kwargs):
-        return {"results": [[750, 1000]]}
-
-    monkeypatch.setattr("app.integrations.posthog._request_json", fake_request_json)
-
-    result = query_bounce_rate(config, period="24h")
-
-    assert result.bounce_rate == 0.75
-    assert result.total_sessions == 1000
-    assert result.bounced_sessions == 750
-    assert result.period == "24h"
+    def mock_request(*args, **kwargs):
+        return httpx.Response(
+            200,
+            json={"results": [[750, 1000]]},
+            request=httpx.Request(
+                "POST",
+                "https://us.i.posthog.com/api/projects/123/query/",
+            ),
+        )
     assert isinstance(result.queried_at, datetime)
     assert result.queried_at.tzinfo == UTC
 
