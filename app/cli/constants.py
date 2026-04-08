@@ -23,11 +23,13 @@ SETUP_SERVICES: tuple[str, ...] = (
     "coralogix",
     "datadog",
     "grafana",
+    "github",
     "honeycomb",
     "mongodb",
     "opensearch",
     "rds",
     "slack",
+    "sentry",
     "tracer",
 )
 
