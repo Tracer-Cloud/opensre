@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   postgres-test:
@@ -50,7 +50,17 @@ services:
       --server-id=1
       --log-bin=mysql-bin
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "opensre", "-ptest123"]
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "opensre",
+          "-ptest123",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
