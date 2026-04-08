@@ -381,17 +381,17 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 },
             }
     confluence_integration = classified_integrations.get("confluence")
-    if isinstance(confluence_integration , dict):
+    if isinstance(confluence_integration, dict):
         effective["confluence"] = {
-            "source" : "local env",
+            "source": "local env",
             "config": {
-            "base_url": str(confluence_integration.get("base_url", "")).strip(),
-            "email": str(confluence_integration.get("email", "")).strip(),
-            "api_token": str(confluence_integration.get("api_token", "")).strip(),
-            "space_key": str(confluence_integration.get("space_key", "")).strip(),
-        },  
-     }
-        
+                "base_url": str(confluence_integration.get("base_url", "")).strip(),
+                "email": str(confluence_integration.get("email", "")).strip(),
+                "api_token": str(confluence_integration.get("api_token", "")).strip(),
+                "space_key": str(confluence_integration.get("space_key", "")).strip(),
+            },
+        }
+
     return EffectiveIntegrations.model_validate(effective).model_dump(exclude_none=True)
 
 

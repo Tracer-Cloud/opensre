@@ -5,8 +5,8 @@ import types
 
 from app.cli.wizard.integration_health import (
     validate_aws_integration,
-    validate_coralogix_integration,
     validate_confluence_integration,
+    validate_coralogix_integration,
     validate_datadog_integration,
     validate_github_mcp_integration,
     validate_grafana_integration,

@@ -12,8 +12,8 @@ evidence, and surfaced in the final RCA report with citations.
 
 from __future__ import annotations
 
-import json
 import importlib
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 

@@ -18,12 +18,12 @@ from app.integrations.github_mcp import build_github_mcp_config
 from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL, build_gitlab_config
 from app.integrations.models import (
     AWSIntegrationConfig,
+    ConfluenceIntegrationConfig,
     CoralogixIntegrationConfig,
     DatadogIntegrationConfig,
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
     OpsGenieIntegrationConfig,
-    ConfluenceIntegrationConfig
 )
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import os
 import logging
+import os
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -75,6 +75,10 @@ _STOPWORDS = {
     "with",
     "your",
 }
+
+
+def _as_dict(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 @dataclass(frozen=True)
@@ -284,15 +288,17 @@ class ConfluenceClient:
         return terms
 
     def _normalize_result(self, item: dict[str, Any]) -> dict[str, Any]:
-        content = item.get("content") if isinstance(item.get("content"), dict) else {}
-        space = item.get("space") if isinstance(item.get("space"), dict) else {}
-        content_space = content.get("space") if isinstance(content.get("space"), dict) else {}
-        version = content.get("version") if isinstance(content.get("version"), dict) else {}
-        links = item.get("_links") if isinstance(item.get("_links"), dict) else {}
-        content_links = content.get("_links") if isinstance(content.get("_links"), dict) else {}
-        metadata = content.get("metadata") if isinstance(content.get("metadata"), dict) else {}
-        labels = metadata.get("labels", {}) if isinstance(metadata.get("labels"), dict) else {}
-        label_results = labels.get("results", []) if isinstance(labels.get("results"), list) else []
+        content = _as_dict(item.get("content"))
+        space = _as_dict(item.get("space"))
+        content_space = _as_dict(content.get("space"))
+        version = _as_dict(content.get("version"))
+        links = _as_dict(item.get("_links"))
+        content_links = _as_dict(content.get("_links"))
+        metadata = _as_dict(content.get("metadata"))
+        labels = _as_dict(metadata.get("labels"))
+        label_results = labels.get("results", [])
+        if not isinstance(label_results, list):
+            label_results = []
 
         raw_url = item.get("url") or content_links.get("webui") or links.get("webui") or ""
         url = ""

@@ -6,18 +6,17 @@ from dataclasses import dataclass
 
 import requests
 
+from app.integrations.clients.confluence import build_confluence_config, validate_confluence_config
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.gitlab import build_gitlab_config, validate_gitlab_config
 from app.integrations.models import (
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
-    ConfluenceIntegrationConfig,
     GoogleDocsIntegrationConfig,
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
     SlackWebhookConfig,
 )
-from app.integrations.clients.confluence import build_confluence_config, validate_confluence_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.services.coralogix import CoralogixClient
 from app.services.datadog import DatadogClient, DatadogConfig

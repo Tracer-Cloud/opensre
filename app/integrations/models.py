@@ -315,11 +315,12 @@ class ConfluenceIntegrationConfig(StrictConfigModel):
         return str(value or "").strip()
 
     @model_validator(mode="after")
-    def _validate_base_url(self) -> "ConfluenceIntegrationConfig":
+    def _validate_base_url(self) -> ConfluenceIntegrationConfig:
         parsed = urlparse(self.base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("Confluence base_url must be a valid HTTP or HTTPS URL.")
         return self
+
 
 class EffectiveIntegrationEntry(StrictConfigModel):
     """Resolved integration entry with source metadata."""
