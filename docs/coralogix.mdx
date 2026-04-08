@@ -1,0 +1,104 @@
+---
+title: "Coralogix"
+description: "Connect Coralogix so OpenSRE can query logs during investigations"
+---
+
+OpenSRE queries Coralogix using DataPrime to surface relevant logs during alert investigations — correlating log patterns with incidents and identifying root causes.
+
+## Prerequisites
+
+- Coralogix account with DataPrime query access
+- Logs API key
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **Coralogix** when prompted and provide your API key and endpoint.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+CORALOGIX_API_KEY=your-logs-api-key
+CORALOGIX_API_URL=https://api.coralogix.com   # optional
+CORALOGIX_APPLICATION_NAME=my-app             # optional filter
+CORALOGIX_SUBSYSTEM_NAME=my-service           # optional filter
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CORALOGIX_API_KEY` | — | **Required.** Coralogix Logs Query API key |
+| `CORALOGIX_API_URL` | `https://api.coralogix.com` | Endpoint for your Coralogix cluster |
+| `CORALOGIX_APPLICATION_NAME` | — | Filter queries to this application |
+| `CORALOGIX_SUBSYSTEM_NAME` | — | Filter queries to this subsystem |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "coralogix-prod",
+      "service": "coralogix",
+      "status": "active",
+      "credentials": {
+        "api_key": "your-logs-api-key",
+        "base_url": "https://api.coralogix.com",
+        "application_name": "my-app",
+        "subsystem_name": "my-service"
+      }
+    }
+  ]
+}
+```
+
+## Cluster endpoints
+
+| Region | API URL |
+| --- | --- |
+| US1 | `https://api.coralogix.com` |
+| EU1 | `https://api.eu1.coralogix.com` |
+| EU2 | `https://api.eu2.coralogix.com` |
+| AP1 | `https://api.ap1.coralogix.com` |
+| AP2 | `https://api.ap2.coralogix.com` |
+
+## Creating an API key
+
+1. In Coralogix, go to **Data Flow** → **API Keys**
+2. Click **+ New API Key**
+3. Select **Logs Query** as the key type
+4. Copy the key
+
+## Verify
+
+```bash
+opensre integrations verify --service coralogix
+```
+
+Expected output:
+
+```
+Service: coralogix
+Status: passed
+Detail: Connected to https://api.coralogix.com (application my-app); DataPrime returned 0 row(s)
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Check the API key and ensure it's a Logs Query key |
+| **Connection timeout** | Verify `CORALOGIX_API_URL` matches your cluster region |
+| **No results** | Confirm `CORALOGIX_APPLICATION_NAME` and `CORALOGIX_SUBSYSTEM_NAME` match your data |
+
+## Security best practices
+
+- Use a **read-only** Logs Query key — avoid admin or send-data keys.
+- Store the API key in `.env`, not in source code.
