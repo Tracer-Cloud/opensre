@@ -45,6 +45,7 @@
           "intergrations-overview",
           {
             "group": "Enterprise",
+            "defaultOpen": true,
             "pages": [
               "datadog",
               "grafana",
@@ -54,6 +55,7 @@
           },
           {
             "group": "Local",
+            "defaultOpen": true,
             "pages": [
               "mongodb",
               "honeycomb",
