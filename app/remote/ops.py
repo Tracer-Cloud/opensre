@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 
@@ -48,17 +49,20 @@ class RestartResult:
     message: str
 
 
-class RemoteOpsProvider:
+class RemoteOpsProvider(ABC):
     """Abstract provider interface for remote post-deploy operations."""
 
     name: str
 
+    @abstractmethod
     def status(self, scope: RemoteServiceScope) -> ServiceStatus:
         raise NotImplementedError
 
+    @abstractmethod
     def logs(self, scope: RemoteServiceScope, *, lines: int, follow: bool) -> None:
         raise NotImplementedError
 
+    @abstractmethod
     def restart(self, scope: RemoteServiceScope) -> RestartResult:
         raise NotImplementedError
 

@@ -7,7 +7,7 @@ import httpx
 from click.testing import CliRunner
 
 from app.cli.__main__ import cli
-from app.remote.ops import RestartResult, ServiceStatus
+from app.remote.ops import RemoteOpsError, RestartResult, ServiceStatus
 from app.remote.stream import StreamEvent
 
 
@@ -188,6 +188,26 @@ def test_remote_ops_logs_forwards_follow_and_lines() -> None:
     assert kwargs["follow"] is True
     assert kwargs["lines"] == 50
     mock_save_scope.assert_called_once_with(provider="railway", project="proj-3", service="svc-3")
+
+
+def test_remote_ops_logs_does_not_persist_scope_on_failure() -> None:
+    runner = CliRunner()
+    provider = MagicMock()
+    provider.logs.side_effect = RemoteOpsError("link failed")
+
+    with (
+        patch(
+            "app.cli.wizard.store.load_remote_ops_config",
+            return_value={"provider": "railway", "project": "bad-proj", "service": "svc-3"},
+        ),
+        patch("app.remote.ops.resolve_remote_ops_provider", return_value=provider),
+        patch("app.cli.wizard.store.save_remote_ops_config") as mock_save_scope,
+    ):
+        result = runner.invoke(cli, ["remote", "ops", "logs", "--lines", "50"])
+
+    assert result.exit_code == 1
+    assert "link failed" in result.output
+    mock_save_scope.assert_not_called()
 
 
 def test_remote_ops_restart_cancelled_without_yes() -> None:

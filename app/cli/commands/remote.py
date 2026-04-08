@@ -257,8 +257,8 @@ def remote_ops_logs(ctx: click.Context, follow: bool, lines: int) -> None:
 
     try:
         provider, scope = _resolve_remote_ops_scope(ctx)
-        _persist_remote_ops_scope(scope)
         provider.logs(scope, lines=lines, follow=follow)
+        _persist_remote_ops_scope(scope)
     except RemoteOpsError as exc:
         raise click.ClickException(str(exc)) from exc
 

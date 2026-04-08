@@ -7,6 +7,7 @@ import pytest
 from app.remote.ops import (
     RailwayRemoteOpsProvider,
     RemoteOpsError,
+    RemoteOpsProvider,
     RemoteServiceScope,
     resolve_remote_ops_provider,
 )
@@ -20,6 +21,11 @@ def test_resolve_remote_ops_provider_supports_railway() -> None:
 def test_resolve_remote_ops_provider_rejects_unknown() -> None:
     with pytest.raises(RemoteOpsError):
         resolve_remote_ops_provider("unknown")
+
+
+def test_remote_ops_provider_is_abstract() -> None:
+    with pytest.raises(TypeError):
+        RemoteOpsProvider()
 
 
 def test_railway_provider_requires_cli_installed() -> None:
