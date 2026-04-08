@@ -12,7 +12,10 @@ from app.types.evidence import EvidenceSource
 
 
 class ToolMetadata(StrictConfigModel):
-    """Strict schema for tool metadata declared on BaseTool subclasses."""
+    """Strict schema for tool metadata declared on BaseTool subclasses.
+
+    Includes routing-friendly fields for strong tool selection and explainability.
+    """
 
     name: str
     description: str
@@ -21,6 +24,17 @@ class ToolMetadata(StrictConfigModel):
     use_cases: list[str] = Field(default_factory=list)
     requires: list[str] = Field(default_factory=list)
     outputs: dict[str, str] = Field(default_factory=dict)
+    # Routing metadata for explainable and safe tool selection
+    toolset: str = Field(
+        default="default", description="Logical grouping for routing (e.g., 'aws', 'k8s', 'logs')"
+    )
+    tags: list[str] = Field(
+        default_factory=list, description="Tags for filtering and categorization"
+    )
+    cost_hint: str = Field(
+        default="low",
+        description="Cost/impact hint: 'low', 'medium', 'high' for resource estimation",
+    )
 
     @field_validator("name", "description")
     @classmethod
@@ -28,6 +42,15 @@ class ToolMetadata(StrictConfigModel):
         normalized = value.strip()
         if not normalized:
             raise ValueError("must be a non-empty string")
+        return normalized
+
+    @field_validator("cost_hint")
+    @classmethod
+    def _validate_cost_hint(cls, value: str) -> str:
+        valid_hints = {"low", "medium", "high"}
+        normalized = value.strip().lower()
+        if normalized not in valid_hints:
+            return "low"  # Default to low for safety
         return normalized
 
 
@@ -54,6 +77,10 @@ class BaseTool(ABC):
     use_cases: ClassVar[list[str]] = []
     requires: ClassVar[list[str]] = []
     outputs: ClassVar[dict[str, str]] = {}  # Output field -> description (optional, for prompting)
+    # Routing metadata for explainable and safe tool selection
+    toolset: ClassVar[str] = "default"  # Logical grouping for routing (e.g., 'aws', 'k8s', 'logs')
+    tags: ClassVar[list[str]] = []  # Tags for filtering and categorization
+    cost_hint: ClassVar[str] = "low"  # Cost/impact hint: 'low', 'medium', 'high'
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -65,19 +92,27 @@ class BaseTool(ABC):
         cls.use_cases = metadata.use_cases
         cls.requires = metadata.requires
         cls.outputs = metadata.outputs
+        cls.toolset = metadata.toolset
+        cls.tags = metadata.tags
+        cls.cost_hint = metadata.cost_hint
 
     @classmethod
     def metadata(cls) -> ToolMetadata:
         """Return validated tool metadata for this subclass."""
-        return ToolMetadata.model_validate({
-            "name": getattr(cls, "name", ""),
-            "description": getattr(cls, "description", ""),
-            "input_schema": getattr(cls, "input_schema", {}),
-            "source": getattr(cls, "source", ""),
-            "use_cases": list(getattr(cls, "use_cases", [])),
-            "requires": list(getattr(cls, "requires", [])),
-            "outputs": dict(getattr(cls, "outputs", {})),
-        })
+        return ToolMetadata.model_validate(
+            {
+                "name": getattr(cls, "name", ""),
+                "description": getattr(cls, "description", ""),
+                "input_schema": getattr(cls, "input_schema", {}),
+                "source": getattr(cls, "source", ""),
+                "use_cases": list(getattr(cls, "use_cases", [])),
+                "requires": list(getattr(cls, "requires", [])),
+                "outputs": dict(getattr(cls, "outputs", {})),
+                "toolset": getattr(cls, "toolset", "default"),
+                "tags": list(getattr(cls, "tags", [])),
+                "cost_hint": getattr(cls, "cost_hint", "low"),
+            }
+        )
 
     @property
     def inputs(self) -> dict[str, str]:

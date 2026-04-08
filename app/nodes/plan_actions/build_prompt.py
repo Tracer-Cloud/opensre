@@ -97,7 +97,9 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
         grafana = available_sources["grafana"]
         loki_only = grafana.get("loki_only", False)
         grafana_label = "Grafana Local (Loki only)" if loki_only else "Grafana Cloud"
-        traces_hint = "" if loki_only else "\n- Use query_grafana_traces to find distributed traces in Tempo"
+        traces_hint = (
+            "" if loki_only else "\n- Use query_grafana_traces to find distributed traces in Tempo"
+        )
         hints.append(
             f"""{grafana_label} Available:
 - Service Name: {grafana.get("service_name")}
@@ -302,11 +304,7 @@ def select_actions(
     Returns:
         Tuple of (available_actions, available_action_names)
     """
-    available_actions = [
-        action
-        for action in actions
-        if action.is_available(available_sources)
-    ]
+    available_actions = [action for action in actions if action.is_available(available_sources)]
 
     executed_actions_flat = set()
     for hyp in executed_hypotheses:
@@ -370,9 +368,18 @@ def _format_action_metadata(action) -> str:
     outputs_desc = "\n    ".join(f"- {field}: {desc}" for field, desc in action.outputs.items())
     use_cases_desc = "\n    ".join(f"- {uc}" for uc in action.use_cases)
 
+    # Include routing metadata if available (for explainable tool selection)
+    routing_info = ""
+    if getattr(action, "toolset", None) and action.toolset != "default":
+        routing_info += f"\n  Toolset: {action.toolset}"
+    if getattr(action, "tags", None):
+        routing_info += f"\n  Tags: {', '.join(action.tags)}"
+    if getattr(action, "cost_hint", None) and action.cost_hint != "low":
+        routing_info += f"\n  Cost Hint: {action.cost_hint}"
+
     return f"""Action: {action.name}
   Description: {action.description}
-  Source: {action.source}
+  Source: {action.source}{routing_info}
   Required Inputs:
     {inputs_desc}
   Returns:

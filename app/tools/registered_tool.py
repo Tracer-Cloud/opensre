@@ -128,6 +128,10 @@ class RegisteredTool:
     use_cases: list[str] = field(default_factory=list)
     requires: list[str] = field(default_factory=list)
     outputs: dict[str, str] = field(default_factory=dict)
+    # Routing metadata for explainable and safe tool selection
+    toolset: str = field(default="default")
+    tags: list[str] = field(default_factory=list)
+    cost_hint: str = field(default="low")
     is_available: Callable[[dict[str, dict]], bool] = field(
         default=_always_available,
         repr=False,
@@ -140,15 +144,20 @@ class RegisteredTool:
     origin_name: str = ""
 
     def __post_init__(self) -> None:
-        metadata = ToolMetadata.model_validate({
-            "name": self.name,
-            "description": self.description,
-            "input_schema": self.input_schema,
-            "source": self.source,
-            "use_cases": self.use_cases,
-            "requires": self.requires,
-            "outputs": self.outputs,
-        })
+        metadata = ToolMetadata.model_validate(
+            {
+                "name": self.name,
+                "description": self.description,
+                "input_schema": self.input_schema,
+                "source": self.source,
+                "use_cases": self.use_cases,
+                "requires": self.requires,
+                "outputs": self.outputs,
+                "toolset": self.toolset,
+                "tags": self.tags,
+                "cost_hint": self.cost_hint,
+            }
+        )
         self.name = metadata.name
         self.description = metadata.description
         self.input_schema = metadata.input_schema
@@ -156,6 +165,9 @@ class RegisteredTool:
         self.use_cases = metadata.use_cases
         self.requires = metadata.requires
         self.outputs = metadata.outputs
+        self.toolset = metadata.toolset
+        self.tags = metadata.tags
+        self.cost_hint = metadata.cost_hint
         self.surfaces = _normalize_surfaces(self.surfaces)
 
         if not callable(self.run):
@@ -184,8 +196,26 @@ class RegisteredTool:
         surfaces: Iterable[str] | None = None,
     ) -> RegisteredTool:
         metadata = tool.metadata()
-        resolved_surfaces = surfaces or getattr(tool, "surfaces", None) or getattr(
-            tool.__class__, "surfaces", None
+        resolved_surfaces = (
+            surfaces or getattr(tool, "surfaces", None) or getattr(tool.__class__, "surfaces", None)
+        )
+        return cls(
+            name=metadata.name,
+            description=metadata.description,
+            input_schema=metadata.input_schema,
+            source=metadata.source,
+            use_cases=metadata.use_cases,
+            requires=metadata.requires,
+            outputs=metadata.outputs,
+            toolset=metadata.toolset,
+            tags=metadata.tags,
+            cost_hint=metadata.cost_hint,
+            surfaces=_normalize_surfaces(resolved_surfaces),
+            run=tool.run,  # type: ignore[attr-defined]
+            is_available=tool.is_available,
+            extract_params=tool.extract_params,
+            origin_module=tool.__class__.__module__,
+            origin_name=tool.__class__.__name__,
         )
         return cls(
             name=metadata.name,
@@ -216,6 +246,9 @@ class RegisteredTool:
         use_cases: list[str] | None = None,
         requires: list[str] | None = None,
         outputs: dict[str, str] | None = None,
+        toolset: str | None = None,
+        tags: list[str] | None = None,
+        cost_hint: str | None = None,
         is_available: Callable[[dict[str, dict]], bool] | None = None,
         extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
     ) -> RegisteredTool:
@@ -232,10 +265,12 @@ class RegisteredTool:
             use_cases=list(use_cases or []),
             requires=list(requires or []),
             outputs=dict(outputs or {}),
+            toolset=toolset or "default",
+            tags=list(tags or []),
+            cost_hint=cost_hint or "low",
             run=func,
             is_available=is_available or _always_available,
             extract_params=extract_params or _extract_no_params,
             origin_module=func.__module__,
             origin_name=func.__name__,
         )
-

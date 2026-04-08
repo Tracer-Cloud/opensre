@@ -24,6 +24,9 @@ def tool(
     use_cases: list[str] | None = None,
     requires: list[str] | None = None,
     outputs: dict[str, str] | None = None,
+    toolset: str | None = None,
+    tags: list[str] | None = None,
+    cost_hint: str | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
 ) -> BaseTool:
@@ -42,6 +45,9 @@ def tool(  # noqa: UP047
     use_cases: list[str] | None = None,
     requires: list[str] | None = None,
     outputs: dict[str, str] | None = None,
+    toolset: str | None = None,
+    tags: list[str] | None = None,
+    cost_hint: str | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
 ) -> F:
@@ -60,6 +66,9 @@ def tool(  # noqa: UP047
     use_cases: list[str] | None = None,
     requires: list[str] | None = None,
     outputs: dict[str, str] | None = None,
+    toolset: str | None = None,
+    tags: list[str] | None = None,
+    cost_hint: str | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
 ) -> Callable[[F], F]:
@@ -77,6 +86,9 @@ def tool(  # noqa: UP047
     use_cases: list[str] | None = None,
     requires: list[str] | None = None,
     outputs: dict[str, str] | None = None,
+    toolset: str | None = None,
+    tags: list[str] | None = None,
+    cost_hint: str | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
 ) -> Any:
@@ -88,18 +100,23 @@ def tool(  # noqa: UP047
     """
 
     def should_register_function() -> bool:
-        return any([
-            name is not None,
-            description is not None,
-            input_schema is not None,
-            source is not None,
-            surfaces is not None,
-            bool(use_cases),
-            bool(requires),
-            bool(outputs),
-            is_available is not None,
-            extract_params is not None,
-        ])
+        return any(
+            [
+                name is not None,
+                description is not None,
+                input_schema is not None,
+                source is not None,
+                surfaces is not None,
+                bool(use_cases),
+                bool(requires),
+                bool(outputs),
+                bool(tags),
+                toolset is not None,
+                cost_hint is not None,
+                is_available is not None,
+                extract_params is not None,
+            ]
+        )
 
     def attach(target: F | BaseTool) -> F | BaseTool:
         if isinstance(target, BaseTool):
@@ -125,6 +142,9 @@ def tool(  # noqa: UP047
                     use_cases=use_cases,
                     requires=requires,
                     outputs=outputs,
+                    toolset=toolset,
+                    tags=tags,
+                    cost_hint=cost_hint,
                     is_available=is_available,
                     extract_params=extract_params,
                 ),
@@ -132,6 +152,7 @@ def tool(  # noqa: UP047
         return target
 
     if func is None:
+
         def wrapper(inner: F) -> F:
             return cast(F, attach(inner))
 
