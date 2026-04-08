@@ -47,7 +47,7 @@ jobs:
         working-directory: docs
 
       - name: Build docs via Mintlify
-        run: npx --yes mint@latest update
+        run: npx --yes mint@4.2.500 update
         working-directory: docs
 
   links:
