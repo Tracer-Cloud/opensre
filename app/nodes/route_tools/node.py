@@ -62,7 +62,7 @@ def node_route_tools(state: InvestigationState) -> dict:
     # Route to relevant tools
     routed_tools = route_tools(
         available_sources=available_sources,
-        resolved_integrations=resolved_integrations,
+        _resolved_integrations=resolved_integrations,
         problem_md=problem_md,
         alert_name=alert_name,
         executed_hypotheses=executed_hypotheses,

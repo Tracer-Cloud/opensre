@@ -217,9 +217,9 @@ def route_tools(
             executed_actions=executed_actions,
         )
 
-        # Only include tools with positive scores
-        if score > 0:
-            scored_tools.append((tool, score))
+        # Include all available tools (even with negative scores from execution penalty)
+        # This ensures deprioritization works and prevents silent fallback to legacy
+        scored_tools.append((tool, score))
 
     # Sort by score (descending), then by name (ascending for determinism)
     scored_tools.sort(key=lambda x: (-x[1], x[0].name))
@@ -278,8 +278,8 @@ def route_tools_with_scores(
             executed_actions=executed_actions,
         )
 
-        if score > 0:
-            scored_tools.append((tool, score))
+        # Include all available tools (even with negative scores)
+        scored_tools.append((tool, score))
 
     scored_tools.sort(key=lambda x: (-x[1], x[0].name))
 

@@ -331,8 +331,8 @@ class TestRouteToolsWithScores:
             assert isinstance(item[0], RegisteredTool)
             assert isinstance(item[1], int)
 
-    def test_scores_are_positive(self) -> None:
-        """Should only return tools with positive scores."""
+    def test_returns_all_available_tools(self) -> None:
+        """Should return all available tools including those with negative scores."""
         result = route_tools_with_scores(
             available_sources={"cloudwatch": {"log_group": "/aws/lambda/test"}},
             _resolved_integrations={},
@@ -341,8 +341,9 @@ class TestRouteToolsWithScores:
             executed_hypotheses=[],
         )
 
+        # All returned tools should have a score (can be positive or negative)
         for _, score in result:
-            assert score > 0
+            assert isinstance(score, int)
 
 
 class TestIntegrationWithResolvedIntegrations:
