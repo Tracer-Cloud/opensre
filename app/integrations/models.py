@@ -271,6 +271,11 @@ class NotionIntegrationConfig(StrictConfigModel):
     integration_id: str = ""
 
     @field_validator("api_key", "database_id", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+
 class PrefectIntegrationConfig(StrictConfigModel):
     api_url: str = "https://api.prefect.cloud/api"
     api_key: str = ""

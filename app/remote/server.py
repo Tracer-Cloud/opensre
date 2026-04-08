@@ -21,7 +21,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -31,10 +31,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
-from app.remote.system_metrics import collect_system_metrics
 from app.remote.vercel_poller import (
     VercelInvestigationCandidate,
-    VercelPoller,
     VercelResolutionError,
     enrich_remote_alert_from_vercel,
 )
