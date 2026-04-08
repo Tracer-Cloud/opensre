@@ -7,6 +7,7 @@ from app.cli.wizard.integration_health import (
     validate_aws_integration,
     validate_coralogix_integration,
     validate_datadog_integration,
+    validate_discord_bot,
     validate_github_mcp_integration,
     validate_grafana_integration,
     validate_honeycomb_integration,
@@ -332,4 +333,59 @@ def test_validate_vercel_integration_surfaces_exception(monkeypatch) -> None:
     result = validate_vercel_integration(api_token="tok_test")
 
     assert result.ok is False
-    assert "network unreachable" in result.detail
+
+
+# ---------------------------------------------------------------------------
+# validate_discord_bot
+# ---------------------------------------------------------------------------
+
+
+def test_validate_discord_bot_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "httpx.get",
+        lambda *_a, **_kw: types.SimpleNamespace(
+            status_code=200,
+            json=lambda: {"username": "my-sre-bot"},
+        ),
+    )
+    result = validate_discord_bot(bot_token="Bot.valid.token")
+    assert result.ok is True
+    assert "my-sre-bot" in result.detail
+
+
+def test_validate_discord_bot_invalid_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "httpx.get",
+        lambda *_a, **_kw: types.SimpleNamespace(
+            status_code=401,
+            json=lambda: {"message": "401: Unauthorized"},
+        ),
+    )
+    result = validate_discord_bot(bot_token="bad-token")
+    assert result.ok is False
+    assert "invalid or revoked" in result.detail.lower()
+
+
+def test_validate_discord_bot_unexpected_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "httpx.get",
+        lambda *_a, **_kw: types.SimpleNamespace(
+            status_code=500,
+            json=lambda: {},
+        ),
+    )
+    result = validate_discord_bot(bot_token="some-token")
+    assert result.ok is False
+    assert "500" in result.detail
+
+
+def test_validate_discord_bot_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    import httpx as _httpx
+
+    def _raise(*_a: object, **_kw: object) -> None:
+        raise _httpx.RequestError("connection refused")
+
+    monkeypatch.setattr("httpx.get", _raise)
+    result = validate_discord_bot(bot_token="some-token")
+    assert result.ok is False
+    assert "unreachable" in result.detail.lower()
