@@ -84,10 +84,10 @@ def sync_provider_env(
     for p in SUPPORTED_PROVIDERS:
         stale_keys |= _provider_specific_keys(p)
 
-    active_model_keys = {provider.model_env}
+    active_keys = {provider.model_env, provider.api_key_env}
     if provider.legacy_model_env:
-        active_model_keys.add(provider.legacy_model_env)
-    stale_keys -= active_model_keys
+        active_keys.add(provider.legacy_model_env)
+    stale_keys -= active_keys
 
     lines = _remove_keys(existing, stale_keys)
 
