@@ -8,14 +8,6 @@ import pytest
 from rich.console import Console
 
 import app.integrations.github_mcp as github_mcp_module
-from app.integrations.github_mcp import (
-    GitHubMCPRepoProbeRow,
-    GitHubMCPValidationResult,
-    build_github_mcp_config,
-    format_github_mcp_validation_cli_report,
-    print_github_mcp_validation_report,
-    validate_github_mcp_config,
-)
 
 
 def _minimal_toolset_for_validation() -> list[dict[str, Any]]:
@@ -63,7 +55,7 @@ def test_validate_github_mcp_config_success_includes_repo_samples(
     monkeypatch.setattr("app.integrations.github_mcp.list_github_mcp_tools", fake_list_tools)
     monkeypatch.setattr("app.integrations.github_mcp.call_github_mcp_tool", fake_call)
 
-    cfg = build_github_mcp_config(
+    cfg = github_mcp_module.build_github_mcp_config(
         {
             "url": "https://api.githubcopilot.com/mcp/",
             "mode": "streamable-http",
@@ -71,7 +63,7 @@ def test_validate_github_mcp_config_success_includes_repo_samples(
             "toolsets": ["repos"],
         }
     )
-    result = validate_github_mcp_config(cfg)
+    result = github_mcp_module.validate_github_mcp_config(cfg)
 
     assert result.ok is True
     assert result.authenticated_user == "alice"
@@ -86,7 +78,7 @@ def test_validate_github_mcp_config_success_includes_repo_samples(
     assert result.repo_access_probe_rows[1].private is True
     assert result.repo_access_probe_rows[1].fork is True
     assert "OK @alice" in result.detail
-    report = format_github_mcp_validation_cli_report(result)
+    report = github_mcp_module.format_github_mcp_validation_cli_report(result)
     assert "Configuration validation: succeeded" in report
     assert "GitHub identity: @alice" in report
     assert "Repositories returned (probe): 2" in report
@@ -113,21 +105,21 @@ def test_validate_github_mcp_config_fails_when_repo_list_returns_error(
     monkeypatch.setattr("app.integrations.github_mcp.list_github_mcp_tools", fake_list_tools)
     monkeypatch.setattr("app.integrations.github_mcp.call_github_mcp_tool", fake_call)
 
-    cfg = build_github_mcp_config(
+    cfg = github_mcp_module.build_github_mcp_config(
         {
             "url": "https://api.githubcopilot.com/mcp/",
             "mode": "streamable-http",
             "auth_token": "ghp_test",
         }
     )
-    result = validate_github_mcp_config(cfg)
+    result = github_mcp_module.validate_github_mcp_config(cfg)
 
     assert result.ok is False
     assert result.failure_category == "repository_access"
     assert "bob" in result.detail
     assert "403 Forbidden" in result.detail
     assert "repository access check failed" in result.detail
-    fail_report = format_github_mcp_validation_cli_report(result)
+    fail_report = github_mcp_module.format_github_mcp_validation_cli_report(result)
     assert "Configuration validation: failed" in fail_report
     assert "Failure type:" in fail_report
 
@@ -160,13 +152,13 @@ def test_validate_github_mcp_config_fails_when_no_repo_list_tool(
     monkeypatch.setattr("app.integrations.github_mcp.list_github_mcp_tools", fake_list_tools)
     monkeypatch.setattr("app.integrations.github_mcp.call_github_mcp_tool", fake_call)
 
-    cfg = build_github_mcp_config(
+    cfg = github_mcp_module.build_github_mcp_config(
         {
             "url": "https://api.githubcopilot.com/mcp/",
             "mode": "streamable-http",
         }
     )
-    result = validate_github_mcp_config(cfg)
+    result = github_mcp_module.validate_github_mcp_config(cfg)
 
     assert result.ok is False
     assert result.failure_category == "repository_access"
@@ -226,13 +218,13 @@ def test_validate_github_mcp_config_uses_search_repositories_when_no_list_tool(
     monkeypatch.setattr("app.integrations.github_mcp.list_github_mcp_tools", fake_list_tools)
     monkeypatch.setattr("app.integrations.github_mcp.call_github_mcp_tool", fake_call)
 
-    cfg = build_github_mcp_config(
+    cfg = github_mcp_module.build_github_mcp_config(
         {
             "url": "https://api.githubcopilot.com/mcp/",
             "mode": "streamable-http",
         }
     )
-    result = validate_github_mcp_config(cfg)
+    result = github_mcp_module.validate_github_mcp_config(cfg)
 
     assert result.ok is True
     assert result.repo_access_samples == ("dana/a",)
@@ -274,13 +266,13 @@ def test_validate_github_mcp_config_succeeds_from_get_me_profile_without_list_to
     monkeypatch.setattr("app.integrations.github_mcp.list_github_mcp_tools", fake_list_tools)
     monkeypatch.setattr("app.integrations.github_mcp.call_github_mcp_tool", fake_call)
 
-    cfg = build_github_mcp_config(
+    cfg = github_mcp_module.build_github_mcp_config(
         {
             "url": "https://api.githubcopilot.com/mcp/",
             "mode": "streamable-http",
         }
     )
-    result = validate_github_mcp_config(cfg)
+    result = github_mcp_module.validate_github_mcp_config(cfg)
 
     assert result.ok is True
     assert result.repo_access_count == 5
@@ -310,12 +302,12 @@ def test_connectivity_failure_detail_unwraps_taskgroup_exception_group() -> None
 
 
 def test_format_github_mcp_validation_cli_report_auth_failure() -> None:
-    r = GitHubMCPValidationResult(
+    r = github_mcp_module.GitHubMCPValidationResult(
         ok=False,
         detail="token rejected",
         failure_category="authentication",
     )
-    text = format_github_mcp_validation_cli_report(r)
+    text = github_mcp_module.format_github_mcp_validation_cli_report(r)
     assert "Configuration validation: failed" in text
     assert "authentication" in text.lower()
     assert "token rejected" in text
@@ -323,7 +315,7 @@ def test_format_github_mcp_validation_cli_report_auth_failure() -> None:
 
 def test_print_github_mcp_validation_report_success_and_failure() -> None:
     ok_console = Console(record=True, width=88, highlight=False)
-    ok_result = GitHubMCPValidationResult(
+    ok_result = github_mcp_module.GitHubMCPValidationResult(
         ok=True,
         detail="OK @alice; repos=2; owners=org; examples=org/a,org/b; mcp_tools=9",
         authenticated_user="alice",
@@ -332,12 +324,14 @@ def test_print_github_mcp_validation_report_success_and_failure() -> None:
         repo_access_samples=("org/a", "org/b"),
         repo_access_probe_tool="list_starred_repositories",
         repo_access_probe_rows=(
-            GitHubMCPRepoProbeRow("org/a", False, False),
-            GitHubMCPRepoProbeRow("org/b", True, False),
+            github_mcp_module.GitHubMCPRepoProbeRow("org/a", False, False),
+            github_mcp_module.GitHubMCPRepoProbeRow("org/b", True, False),
         ),
         repo_access_probe_limit_applied=50,
     )
-    print_github_mcp_validation_report(ok_result, console=ok_console, detail_level="full")
+    github_mcp_module.print_github_mcp_validation_report(
+        ok_result, console=ok_console, detail_level="full"
+    )
     ok_text = ok_console.export_text()
     assert "Configuration validation: succeeded" in ok_text
     assert "alice" in ok_text
@@ -346,12 +340,14 @@ def test_print_github_mcp_validation_report_success_and_failure() -> None:
     assert "private" in ok_text
 
     fail_console = Console(record=True, width=88, highlight=False)
-    fail_result = GitHubMCPValidationResult(
+    fail_result = github_mcp_module.GitHubMCPValidationResult(
         ok=False,
         detail="connection reset",
         failure_category="connectivity",
     )
-    print_github_mcp_validation_report(fail_result, console=fail_console, detail_level="standard")
+    github_mcp_module.print_github_mcp_validation_report(
+        fail_result, console=fail_console, detail_level="standard"
+    )
     fail_text = fail_console.export_text()
     assert "validation failed" in fail_text.lower()
     assert "connection reset" in fail_text
