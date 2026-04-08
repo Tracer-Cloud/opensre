@@ -244,6 +244,49 @@ def _map_coralogix_logs(data: dict) -> dict:
     }
 
 
+def _map_vercel_deployment_status(data: dict) -> dict:
+    return {
+        "vercel_deployments": data.get("deployments", []),
+        "vercel_failed_deployments": data.get("failed_deployments", []),
+        "vercel_project_id": data.get("project_id", ""),
+        "vercel_deployments_total": data.get("total", 0),
+    }
+
+
+def _map_vercel_deployment_logs(data: dict) -> dict:
+    return {
+        "vercel_deployment": data.get("deployment", {}),
+        "vercel_deployment_id": data.get("deployment_id", ""),
+        "vercel_events": data.get("events", []),
+        "vercel_error_events": data.get("error_events", []),
+        "vercel_runtime_logs": data.get("runtime_logs", []),
+        "vercel_total_events": data.get("total_events", 0),
+        "vercel_total_runtime_logs": data.get("total_runtime_logs", 0),
+    }
+
+
+def _map_github_code_search(data: dict) -> dict:
+    return {
+        "github_code_matches": data.get("matches", []) or [],
+        "github_code_query": data.get("query", ""),
+        "github_code_text": data.get("text", ""),
+    }
+
+
+def _map_github_file_contents(data: dict) -> dict:
+    return {
+        "github_file": data.get("file", {}),
+        "github_file_text": data.get("text", ""),
+    }
+
+
+def _map_github_commits(data: dict) -> dict:
+    return {
+        "github_commits": data.get("commits", []) or [],
+        "github_commits_text": data.get("text", ""),
+    }
+
+
 EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "get_failed_jobs": _map_failed_jobs,
     "get_failed_tools": _map_failed_tools,
@@ -269,6 +312,11 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "query_datadog_all": _map_datadog_investigate,
     "query_honeycomb_traces": _map_honeycomb_traces,
     "query_coralogix_logs": _map_coralogix_logs,
+    "vercel_deployment_status": _map_vercel_deployment_status,
+    "vercel_deployment_logs": _map_vercel_deployment_logs,
+    "search_github_code": _map_github_code_search,
+    "get_github_file_contents": _map_github_file_contents,
+    "list_github_commits": _map_github_commits,
 }
 
 
@@ -395,6 +443,23 @@ def build_evidence_summary(execution_results: dict) -> str:
             elif action_name == "query_coralogix_logs" and data.get("logs"):
                 error_count = len(data.get("error_logs", []))
                 summary_parts.append(f"coralogix:{len(data['logs'])} logs ({error_count} errors)")
+            elif action_name == "vercel_deployment_status":
+                failed_count = len(data.get("failed_deployments", []))
+                total = int(data.get("total", 0) or 0)
+                summary_parts.append(f"vercel:{total} deployments ({failed_count} failed)")
+            elif action_name == "vercel_deployment_logs":
+                events = len(data.get("events", []))
+                error_events = len(data.get("error_events", []))
+                runtime_logs = len(data.get("runtime_logs", []))
+                summary_parts.append(
+                    f"vercel:{events} events ({error_events} errors), {runtime_logs} runtime logs"
+                )
+            elif action_name == "search_github_code" and data.get("matches"):
+                summary_parts.append(f"github:{len(data['matches'])} code matches")
+            elif action_name == "get_github_file_contents" and data.get("file"):
+                summary_parts.append("github:file contents retrieved")
+            elif action_name == "list_github_commits" and data.get("commits"):
+                summary_parts.append(f"github:{len(data['commits'])} commits")
         else:
             # Log action failures for debugging
             error_msg = f"{action_name}:FAILED({result.error[:50] if result.error else 'unknown'})"

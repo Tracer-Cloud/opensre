@@ -37,12 +37,13 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from pathlib import Path
 from typing import Any
+
+from app.constants import INTEGRATIONS_STORE_PATH
 
 logger = logging.getLogger(__name__)
 
-STORE_PATH = Path.home() / ".tracer" / "integrations.json"
+STORE_PATH = INTEGRATIONS_STORE_PATH
 _VERSION = 1
 
 
