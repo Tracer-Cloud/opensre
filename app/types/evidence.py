@@ -20,6 +20,7 @@ EvidenceSource = Literal[
     "sentry",
     "mongodb",
     "postgresql",
+    "mongodb_atlas",
     "kafka",
     "clickhouse",
     "google_docs",

@@ -1,5 +1,5 @@
 """
-Datadog Demo Orchestrator — bioinformatics variant pipeline.
+Datadog Demo Orchestrator (local Kubernetes) — bioinformatics variant pipeline.
 
 Runs 5 real Kubernetes Jobs on docker-desktop (no EKS needed):
   - Job 0: sample-batch-a  → ingest  succeeds (2 valid records)
@@ -62,48 +62,145 @@ KUBE_CONTEXT = "docker-desktop"
 # stage="validate" → fails if required field missing   → backoff_limit=2 (3 attempts)
 _BATCHES = [
     # Job 0 — succeeds: 2 fully valid records
-    ("sample-batch-a", "ingest", [
-        {"sample_id": "S001", "gene": "BRCA1", "chromosome": "17", "position": 43044295,
-         "ref_allele": "A", "alt_allele": "G", "quality_score": 99.2},
-        {"sample_id": "S002", "gene": "TP53", "chromosome": "17", "position": 7674220,
-         "ref_allele": "C", "alt_allele": "T", "quality_score": 87.5},
-    ], 0),
+    (
+        "sample-batch-a",
+        "ingest",
+        [
+            {
+                "sample_id": "S001",
+                "gene": "BRCA1",
+                "chromosome": "17",
+                "position": 43044295,
+                "ref_allele": "A",
+                "alt_allele": "G",
+                "quality_score": 99.2,
+            },
+            {
+                "sample_id": "S002",
+                "gene": "TP53",
+                "chromosome": "17",
+                "position": 7674220,
+                "ref_allele": "C",
+                "alt_allele": "T",
+                "quality_score": 87.5,
+            },
+        ],
+        0,
+    ),
     # Job 1 — succeeds: 3 valid records
-    ("sample-batch-b", "ingest", [
-        {"sample_id": "S005", "gene": "PTEN", "chromosome": "10", "position": 89692905,
-         "ref_allele": "G", "alt_allele": "A", "quality_score": 92.1},
-        {"sample_id": "S006", "gene": "RB1", "chromosome": "13", "position": 48941756,
-         "ref_allele": "C", "alt_allele": "T", "quality_score": 78.3},
-        {"sample_id": "S010", "gene": "APC", "chromosome": "5", "position": 112707498,
-         "ref_allele": "T", "alt_allele": "C", "quality_score": 95.0},
-    ], 0),
+    (
+        "sample-batch-b",
+        "ingest",
+        [
+            {
+                "sample_id": "S005",
+                "gene": "PTEN",
+                "chromosome": "10",
+                "position": 89692905,
+                "ref_allele": "G",
+                "alt_allele": "A",
+                "quality_score": 92.1,
+            },
+            {
+                "sample_id": "S006",
+                "gene": "RB1",
+                "chromosome": "13",
+                "position": 48941756,
+                "ref_allele": "C",
+                "alt_allele": "T",
+                "quality_score": 78.3,
+            },
+            {
+                "sample_id": "S010",
+                "gene": "APC",
+                "chromosome": "5",
+                "position": 112707498,
+                "ref_allele": "T",
+                "alt_allele": "C",
+                "quality_score": 95.0,
+            },
+        ],
+        0,
+    ),
     # Job 2 — FAILS: S003 missing chromosome + quality_score → 3 attempts (backoff=2)
-    ("sample-batch-c", "validate", [
-        {"sample_id": "S001", "gene": "BRCA1", "chromosome": "17", "position": 43044295,
-         "ref_allele": "A", "alt_allele": "G", "quality_score": 99.2},
-        {"sample_id": "S003", "gene": "EGFR", "position": 55174772,
-         "ref_allele": "G", "alt_allele": "A"},  # missing: chromosome, quality_score
-    ], 2),
+    (
+        "sample-batch-c",
+        "validate",
+        [
+            {
+                "sample_id": "S001",
+                "gene": "BRCA1",
+                "chromosome": "17",
+                "position": 43044295,
+                "ref_allele": "A",
+                "alt_allele": "G",
+                "quality_score": 99.2,
+            },
+            {
+                "sample_id": "S003",
+                "gene": "EGFR",
+                "position": 55174772,
+                "ref_allele": "G",
+                "alt_allele": "A",
+            },  # missing: chromosome, quality_score
+        ],
+        2,
+    ),
     # Job 3 — FAILS: S007 missing ref_allele + alt_allele → 3 attempts (backoff=2)
-    ("sample-batch-d", "validate", [
-        {"sample_id": "S005", "gene": "PTEN", "chromosome": "10", "position": 89692905,
-         "ref_allele": "G", "alt_allele": "A", "quality_score": 92.1},
-        {"sample_id": "S007", "gene": "VHL", "chromosome": "3", "position": 10183671,
-         "quality_score": 61.4},  # missing: ref_allele, alt_allele
-    ], 2),
+    (
+        "sample-batch-d",
+        "validate",
+        [
+            {
+                "sample_id": "S005",
+                "gene": "PTEN",
+                "chromosome": "10",
+                "position": 89692905,
+                "ref_allele": "G",
+                "alt_allele": "A",
+                "quality_score": 92.1,
+            },
+            {
+                "sample_id": "S007",
+                "gene": "VHL",
+                "chromosome": "3",
+                "position": 10183671,
+                "quality_score": 61.4,
+            },  # missing: ref_allele, alt_allele
+        ],
+        2,
+    ),
     # Job 4 — FAILS: S009 missing gene + chromosome → 3 attempts (backoff=2)
-    ("sample-batch-e", "validate", [
-        {"sample_id": "S006", "gene": "RB1", "chromosome": "13", "position": 48941756,
-         "ref_allele": "C", "alt_allele": "T", "quality_score": 78.3},
-        {"sample_id": "S009", "position": 7577120,
-         "ref_allele": "T", "alt_allele": "C", "quality_score": 55.0},  # missing: gene, chromosome
-    ], 2),
+    (
+        "sample-batch-e",
+        "validate",
+        [
+            {
+                "sample_id": "S006",
+                "gene": "RB1",
+                "chromosome": "13",
+                "position": 48941756,
+                "ref_allele": "C",
+                "alt_allele": "T",
+                "quality_score": 78.3,
+            },
+            {
+                "sample_id": "S009",
+                "position": 7577120,
+                "ref_allele": "T",
+                "alt_allele": "C",
+                "quality_score": 55.0,
+            },  # missing: gene, chromosome
+        ],
+        2,
+    ),
 ]
 
 
 # ---------------------------------------------------------------------------
 # Datadog API helper
 # ---------------------------------------------------------------------------
+
 
 def _dd(method: str, path: str, body: object = None, *, intake: bool = False) -> dict:
     api_key = os.environ["DD_API_KEY"]
@@ -130,6 +227,7 @@ def _dd(method: str, path: str, body: object = None, *, intake: bool = False) ->
 # kubectl helpers
 # ---------------------------------------------------------------------------
 
+
 def _kubectl(*args: str, check: bool = True, capture: bool = True) -> subprocess.CompletedProcess:
     cmd = ["kubectl", "--context", KUBE_CONTEXT, *args]
     return subprocess.run(cmd, check=check, capture_output=capture, text=True)
@@ -150,8 +248,9 @@ def _delete_old_jobs(run_id: str) -> None:
         _kubectl("delete", "job", batch_id, "-n", NAMESPACE, "--ignore-not-found", check=False)
 
 
-
-def _create_job(batch_id: str, stage: str, records: list[dict], backoff_limit: int, run_id: str) -> None:
+def _create_job(
+    batch_id: str, stage: str, records: list[dict], backoff_limit: int, run_id: str
+) -> None:
     """Create a k8s Job for one pipeline batch. Records are passed via env var JSON."""
     restart_policy = "Never"  # Always Never so failed pods stay alive for log collection
 
@@ -218,9 +317,14 @@ def _wait_for_jobs(timeout_seconds: int = 180) -> dict[str, dict]:
     print(f"  Waiting up to {timeout_seconds}s for {len(batch_ids)} jobs...")
     while time.time() < deadline:
         result = _kubectl(
-            "get", "jobs", "-n", NAMESPACE,
-            "-o", "json",
-            "--selector", f"pipeline={PIPELINE_NAME}",
+            "get",
+            "jobs",
+            "-n",
+            NAMESPACE,
+            "-o",
+            "json",
+            "--selector",
+            f"pipeline={PIPELINE_NAME}",
             check=False,
         )
         if result.returncode != 0:
@@ -263,9 +367,14 @@ def _wait_for_jobs(timeout_seconds: int = 180) -> dict[str, dict]:
 def _get_pod_logs(batch_id: str, stage: str) -> tuple[str, str, list[str]]:
     """Get stdout+stderr from all pods of a job. Returns (stdout, stderr, pod_names)."""
     pods_result = _kubectl(
-        "get", "pods", "-n", NAMESPACE,
-        "-l", f"batch_id={batch_id}",
-        "-o", "jsonpath={.items[*].metadata.name}",
+        "get",
+        "pods",
+        "-n",
+        NAMESPACE,
+        "-l",
+        f"batch_id={batch_id}",
+        "-o",
+        "jsonpath={.items[*].metadata.name}",
         check=False,
     )
     pod_names = pods_result.stdout.strip().split() if pods_result.stdout.strip() else []
@@ -275,7 +384,10 @@ def _get_pod_logs(batch_id: str, stage: str) -> tuple[str, str, list[str]]:
 
     for pod_name in pod_names:
         logs_result = _kubectl(
-            "logs", pod_name, "-n", NAMESPACE,
+            "logs",
+            pod_name,
+            "-n",
+            NAMESPACE,
             "--all-containers",
             "--previous=false",
             check=False,
@@ -286,7 +398,10 @@ def _get_pod_logs(batch_id: str, stage: str) -> tuple[str, str, list[str]]:
             all_stderr.extend(logs_result.stderr.splitlines())
 
         prev_result = _kubectl(
-            "logs", pod_name, "-n", NAMESPACE,
+            "logs",
+            pod_name,
+            "-n",
+            NAMESPACE,
             "--previous",
             check=False,
         )
@@ -299,6 +414,7 @@ def _get_pod_logs(batch_id: str, stage: str) -> tuple[str, str, list[str]]:
 # ---------------------------------------------------------------------------
 # Ship real container logs to Datadog
 # ---------------------------------------------------------------------------
+
 
 def _ship_job_logs(
     batch_id: str,
@@ -350,14 +466,16 @@ def _ship_job_logs(
 
     for pod_name in pod_names or [primary_pod]:
         status_str = "succeeded" if succeeded else f"failed (attempts={fail_count})"
-        entries.append({
-            **_base(pod_name),
-            "message": (
-                f"[pod-lifecycle] pod={pod_name} job={batch_id} stage={stage} "
-                f"status={status_str} run_id={run_id}"
-            ),
-            "status": "info" if succeeded else "error",
-        })
+        entries.append(
+            {
+                **_base(pod_name),
+                "message": (
+                    f"[pod-lifecycle] pod={pod_name} job={batch_id} stage={stage} "
+                    f"status={status_str} run_id={run_id}"
+                ),
+                "status": "info" if succeeded else "error",
+            }
+        )
 
     if entries:
         _dd("POST", "/api/v2/logs", entries, intake=True)
@@ -367,17 +485,23 @@ def _ship_job_logs(
 # Build Docker image + load into k8s
 # ---------------------------------------------------------------------------
 
+
 def _build_image() -> None:
     subprocess.run(
         ["docker", "build", "-t", IMAGE_TAG, str(PIPELINE_DIR)],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
 
 
 def _load_image_into_k8s() -> None:
     """Import the Docker image into Docker Desktop k8s containerd via docker save | ctr import."""
     nodes_result = _kubectl(
-        "get", "nodes", "-o", "jsonpath={.items[*].metadata.name}", check=False,
+        "get",
+        "nodes",
+        "-o",
+        "jsonpath={.items[*].metadata.name}",
+        check=False,
     )
     nodes = nodes_result.stdout.strip().split() if nodes_result.stdout.strip() else []
     if not nodes:
@@ -395,9 +519,15 @@ def _load_image_into_k8s() -> None:
         # Use kubectl debug (ephemeral container) to stream the tar into ctr import
         result = subprocess.run(
             [
-                "docker", "exec",
+                "docker",
+                "exec",
                 node,  # works when cluster is kind; for Docker Desktop use host containerd
-                "ctr", "--namespace", "k8s.io", "images", "import", "-",
+                "ctr",
+                "--namespace",
+                "k8s.io",
+                "images",
+                "import",
+                "-",
             ],
             input=image_tar,
             capture_output=True,
@@ -415,13 +545,16 @@ def _load_image_into_k8s() -> None:
             if kind_result.returncode == 0:
                 print("  Loaded image via kind load")
             else:
-                print(f"  Warning: could not load image into node {node} — imagePullPolicy=IfNotPresent will use cached copy")
+                print(
+                    f"  Warning: could not load image into node {node} — imagePullPolicy=IfNotPresent will use cached copy"
+                )
             break
 
 
 # ---------------------------------------------------------------------------
 # Patch pipeline code to accept RECORDS_JSON env var
 # ---------------------------------------------------------------------------
+
 
 def _patch_pipeline_for_k8s() -> None:
     """Ensure stages read RECORDS_JSON env var so the orchestrator controls records."""
@@ -556,6 +689,7 @@ def main() -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     get_test_config()
 
@@ -592,7 +726,11 @@ def main() -> int:
 
     for batch_id, stage, records, backoff_limit in _BATCHES:
         _create_job(batch_id, stage, records, backoff_limit, run_id)
-        retry_note = f"backoff={backoff_limit} (up to {backoff_limit + 1} attempts)" if backoff_limit > 0 else "no retry"
+        retry_note = (
+            f"backoff={backoff_limit} (up to {backoff_limit + 1} attempts)"
+            if backoff_limit > 0
+            else "no retry"
+        )
         print(f"  Created job/{batch_id}  stage={stage}  {retry_note}")
 
     # 4. Wait for all jobs to complete or fail
@@ -632,36 +770,42 @@ def main() -> int:
         for b, s, _, backoff in _BATCHES
         if backoff > 0
     )
-    _dd("POST", "/api/v1/events", {
-        "title": f"[tracer-dd] {len(failed_jobs)}/5 jobs failed: {PIPELINE_NAME} ({run_id})",
-        "text": (
-            f"Run ID: {run_id}\n"
-            f"Cluster: {CLUSTER}  Namespace: {NAMESPACE}\n"
-            f"Context: {KUBE_CONTEXT}\n"
-            f"Succeeded: {', '.join(succeeded_jobs) or 'none'}\n"
-            f"Failed ({len(failed_jobs)}) — BackoffLimitExceeded:\n{failed_details}\n\n"
-            f"Log query: PIPELINE_ERROR kube_namespace:{NAMESPACE}"
-        ),
-        "alert_type": "error",
-        "priority": "normal",
-        "tags": [
-            f"cluster:{CLUSTER}",
-            f"kube_namespace:{NAMESPACE}",
-            f"pipeline:{PIPELINE_NAME}",
-            f"run_id:{run_id}",
-            f"failed_jobs:{len(failed_jobs)}",
-            "source:tracer-agent",
-            "env:local",
-            "team:devops",
-        ],
-    })
+    _dd(
+        "POST",
+        "/api/v1/events",
+        {
+            "title": f"[tracer-dd] {len(failed_jobs)}/5 jobs failed: {PIPELINE_NAME} ({run_id})",
+            "text": (
+                f"Run ID: {run_id}\n"
+                f"Cluster: {CLUSTER}  Namespace: {NAMESPACE}\n"
+                f"Context: {KUBE_CONTEXT}\n"
+                f"Succeeded: {', '.join(succeeded_jobs) or 'none'}\n"
+                f"Failed ({len(failed_jobs)}) — BackoffLimitExceeded:\n{failed_details}\n\n"
+                f"Log query: PIPELINE_ERROR kube_namespace:{NAMESPACE}"
+            ),
+            "alert_type": "error",
+            "priority": "normal",
+            "tags": [
+                f"cluster:{CLUSTER}",
+                f"kube_namespace:{NAMESPACE}",
+                f"pipeline:{PIPELINE_NAME}",
+                f"run_id:{run_id}",
+                f"failed_jobs:{len(failed_jobs)}",
+                "source:tracer-agent",
+                "env:local",
+                "team:devops",
+            ],
+        },
+    )
 
     print("\n" + "=" * 60)
     print(f"DONE — {len(failed_jobs)}/5 jobs failed, logs in Datadog")
     print("=" * 60)
 
     q_all = f"kube_namespace:{NAMESPACE} run_id:{run_id}"
-    print(f"\nAll pods: https://app.{dd_site}/logs?query={q_all.replace(' ', '+').replace(':', '%3A')}")
+    print(
+        f"\nAll pods: https://app.{dd_site}/logs?query={q_all.replace(' ', '+').replace(':', '%3A')}"
+    )
 
     print("\nFailed jobs:")
     for name in failed_jobs:

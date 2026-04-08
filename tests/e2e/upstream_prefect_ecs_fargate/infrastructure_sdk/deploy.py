@@ -58,10 +58,18 @@ TRIGGER_LAMBDA_NAME = "tracer-prefect-ecs-trigger"
 
 # Paths
 TESTS_DIR = project_root / "tests"
-PREFECT_DOCKERFILE = TESTS_DIR / "upstream_prefect_ecs_fargate" / "infrastructure_code" / "prefect_image" / "Dockerfile"
+PREFECT_DOCKERFILE = (
+    TESTS_DIR
+    / "upstream_prefect_ecs_fargate"
+    / "infrastructure_code"
+    / "prefect_image"
+    / "Dockerfile"
+)
 ALLOY_CONFIG_DIR = TESTS_DIR / "shared" / "infrastructure_code" / "alloy_config"
 MOCK_API_CODE = TESTS_DIR / "shared" / "external_vendor_api"
-TRIGGER_LAMBDA_CODE = TESTS_DIR / "upstream_prefect_ecs_fargate" / "pipeline_code" / "trigger_lambda"
+TRIGGER_LAMBDA_CODE = (
+    TESTS_DIR / "upstream_prefect_ecs_fargate" / "pipeline_code" / "trigger_lambda"
+)
 
 GRAFANA_ENV_KEYS = [
     "GCLOUD_HOSTED_METRICS_URL",
@@ -86,7 +94,7 @@ def _load_grafana_env(env_path: Path) -> dict[str, str]:
 
 def print_step(step: str) -> None:
     """Print deployment step."""
-    print(f"\n{'='*60}\n{step}\n{'='*60}")
+    print(f"\n{'=' * 60}\n{step}\n{'=' * 60}")
 
 
 def deploy_phase1_foundation() -> dict:
@@ -117,8 +125,12 @@ def deploy_phase1_foundation() -> dict:
                 STACK_NAME,
                 REGION,
             ): "processed_bucket",
-            executor.submit(iam.create_ecs_task_role, TASK_ROLE_NAME, STACK_NAME, REGION): "task_role",
-            executor.submit(iam.create_ecs_execution_role, EXECUTION_ROLE_NAME, STACK_NAME, REGION): "execution_role",
+            executor.submit(
+                iam.create_ecs_task_role, TASK_ROLE_NAME, STACK_NAME, REGION
+            ): "task_role",
+            executor.submit(
+                iam.create_ecs_execution_role, EXECUTION_ROLE_NAME, STACK_NAME, REGION
+            ): "execution_role",
             executor.submit(
                 logs.create_log_group, LOG_GROUP_NAME, 7, STACK_NAME, REGION
             ): "log_group",
@@ -174,8 +186,12 @@ def deploy_phase2_images(foundation: dict) -> dict:
     # Create ECR repos and cluster in parallel
     with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
-            executor.submit(ecr.create_repository, PREFECT_REPO_NAME, STACK_NAME, REGION): "prefect_repo",
-            executor.submit(ecr.create_repository, ALLOY_REPO_NAME, STACK_NAME, REGION): "alloy_repo",
+            executor.submit(
+                ecr.create_repository, PREFECT_REPO_NAME, STACK_NAME, REGION
+            ): "prefect_repo",
+            executor.submit(
+                ecr.create_repository, ALLOY_REPO_NAME, STACK_NAME, REGION
+            ): "alloy_repo",
             executor.submit(ecs.create_cluster, CLUSTER_NAME, STACK_NAME, REGION): "cluster",
         }
 
@@ -214,10 +230,15 @@ def _build_and_push_prefect_image(repo_uri: str) -> str:
 
     # Build with buildx for ARM64
     cmd = [
-        "docker", "buildx", "build",
-        "--platform", "linux/arm64",
-        "-t", full_uri,
-        "-f", str(PREFECT_DOCKERFILE),
+        "docker",
+        "buildx",
+        "build",
+        "--platform",
+        "linux/arm64",
+        "-t",
+        full_uri,
+        "-f",
+        str(PREFECT_DOCKERFILE),
         "--push",
         str(project_root),
     ]
@@ -236,10 +257,15 @@ def _build_and_push_alloy_image(repo_uri: str) -> str:
 
     # Build with buildx for ARM64
     cmd = [
-        "docker", "buildx", "build",
-        "--platform", "linux/arm64",
-        "-t", full_uri,
-        "-f", str(ALLOY_CONFIG_DIR / "Dockerfile"),
+        "docker",
+        "buildx",
+        "build",
+        "--platform",
+        "linux/arm64",
+        "-t",
+        full_uri,
+        "-f",
+        str(ALLOY_CONFIG_DIR / "Dockerfile"),
         "--push",
         str(ALLOY_CONFIG_DIR),
     ]
@@ -278,7 +304,7 @@ def deploy_phase3_ecs(foundation: dict, images: dict) -> dict:
             "PREFECT_API_URL": "http://127.0.0.1:4200/api",
             "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
             "OTEL_SERVICE_NAME": "prefect-etl-pipeline",
-            "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_prefect,pipeline.framework=prefect,test_case=test_case_upstream_prefect_ecs_fargate",
+            "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_prefect,pipeline.framework=prefect,test_case=e2e_upstream_prefect_ecs_fargate",
             **grafana_env,
         },
         log_group=LOG_GROUP_NAME,
@@ -304,9 +330,7 @@ def deploy_phase3_ecs(foundation: dict, images: dict) -> dict:
     )
 
     # Add container dependency (Prefect depends on Alloy starting first)
-    prefect_container["dependsOn"] = [
-        {"containerName": "AlloySidecar", "condition": "START"}
-    ]
+    prefect_container["dependsOn"] = [{"containerName": "AlloySidecar", "condition": "START"}]
 
     # Create Prefect task definition
     prefect_task_def = ecs.create_task_definition(

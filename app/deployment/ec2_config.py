@@ -7,7 +7,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-_REMOTE_OUTPUTS_DIR = Path.home() / ".opensre" / "deployments"
+from app.constants import OPENSRE_HOME_DIR
+
+_REMOTE_OUTPUTS_DIR = OPENSRE_HOME_DIR / "deployments"
 _REMOTE_OUTPUTS_FILE = "tracer-ec2-remote.json"
 
 
