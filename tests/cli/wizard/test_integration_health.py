@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 import types
 
+import pytest
+
 from app.cli.wizard.integration_health import (
     validate_aws_integration,
     validate_coralogix_integration,

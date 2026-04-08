@@ -10,7 +10,6 @@ import pytest
 from fastapi.testclient import TestClient
 from nacl.signing import SigningKey
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

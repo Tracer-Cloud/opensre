@@ -8,7 +8,6 @@ import pytest
 
 from app.nodes.resolve_integrations.node import _classify_integrations, _load_env_integrations
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
