@@ -1,0 +1,117 @@
+---
+title: "AWS"
+description: "Connect AWS so OpenSRE can map your infrastructure and investigate cloud-related alerts"
+---
+
+OpenSRE uses AWS to map your environment: Lambda functions, EKS clusters, S3 buckets, and more. It reads infrastructure state to build investigation context when cloud-related alerts fire.
+
+## Prerequisites
+
+- AWS account with IAM permissions
+- Either a role ARN (recommended) or static access keys
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **AWS** when prompted and provide your credentials.
+
+### Option 2: Environment variables (IAM role)
+
+```bash
+AWS_ROLE_ARN=arn:aws:iam::123456789012:role/OpenSREReadOnly
+AWS_EXTERNAL_ID=your-external-id     # optional
+AWS_REGION=us-east-1
+```
+
+### Option 3: Environment variables (static keys)
+
+```bash
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+AWS_SESSION_TOKEN=...                # optional, for temporary credentials
+AWS_REGION=us-east-1
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `AWS_ROLE_ARN` | — | IAM role to assume (recommended) |
+| `AWS_EXTERNAL_ID` | — | External ID for role assumption |
+| `AWS_REGION` | `us-east-1` | AWS region |
+| `AWS_ACCESS_KEY_ID` | — | Static access key (if not using role) |
+| `AWS_SECRET_ACCESS_KEY` | — | Static secret key |
+| `AWS_SESSION_TOKEN` | — | Session token for temporary credentials |
+
+<Info>
+Either `AWS_ROLE_ARN` or `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` is required.
+</Info>
+
+## IAM permissions
+
+OpenSRE requires read-only access. Attach the following managed policies to the IAM role or user:
+
+- `ReadOnlyAccess` (AWS managed) — or a custom policy scoped to the services you want OpenSRE to inspect
+
+For least-privilege, the minimum services used are:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity",
+        "ec2:Describe*",
+        "ecs:Describe*",
+        "ecs:List*",
+        "eks:Describe*",
+        "eks:List*",
+        "lambda:List*",
+        "lambda:Get*",
+        "s3:ListBucket",
+        "s3:GetObject",
+        "logs:FilterLogEvents",
+        "logs:GetLogEvents",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:ListMetrics"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+## Verify
+
+```bash
+opensre integrations verify --service aws
+```
+
+Expected output:
+
+```
+Service: aws
+Status: passed
+Detail: Authenticated via assume-role in us-east-1 as arn:aws:iam::123456789012:role/OpenSREReadOnly (account 123456789012)
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **AccessDenied on STS** | Ensure the caller has `sts:AssumeRole` permission on the target role |
+| **InvalidClientTokenId** | Check that `AWS_ACCESS_KEY_ID` is correct and the key is active |
+| **Could not connect to endpoint** | Check `AWS_REGION` and network connectivity |
+| **ExpiredTokenException** | Refresh your session token or rotate the access key |
+
+## Security best practices
+
+- Use **IAM roles** instead of static keys wherever possible.
+- Scope IAM permissions to only the AWS services OpenSRE needs to inspect.
+- Rotate static access keys regularly.
+- Enable CloudTrail so all OpenSRE API calls are auditable.

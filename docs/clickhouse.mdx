@@ -1,0 +1,114 @@
+---
+title: "ClickHouse"
+description: "Connect ClickHouse so OpenSRE can inspect query activity and system health during investigations"
+---
+
+OpenSRE queries ClickHouse system tables to surface slow queries, active connections, replica status, and table statistics — helping diagnose database performance issues during alert investigations.
+
+## Prerequisites
+
+- ClickHouse 21.x or later
+- Network access from the OpenSRE environment to your ClickHouse instance
+- A user with read access to system tables
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **ClickHouse** when prompted and provide your host and credentials.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+CLICKHOUSE_HOST=your-clickhouse-host
+CLICKHOUSE_PORT=8123
+CLICKHOUSE_DATABASE=default
+CLICKHOUSE_USER=default
+CLICKHOUSE_PASSWORD=your-password
+CLICKHOUSE_SECURE=false   # set to true for HTTPS
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CLICKHOUSE_HOST` | — | **Required.** ClickHouse hostname or IP |
+| `CLICKHOUSE_PORT` | `8123` | HTTP(S) port (8123 for HTTP, 8443 for HTTPS) |
+| `CLICKHOUSE_DATABASE` | `default` | Default database |
+| `CLICKHOUSE_USER` | `default` | Username |
+| `CLICKHOUSE_PASSWORD` | — | Password |
+| `CLICKHOUSE_SECURE` | `false` | Use HTTPS (`true`/`false`) |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "clickhouse-prod",
+      "service": "clickhouse",
+      "status": "active",
+      "credentials": {
+        "host": "your-clickhouse-host",
+        "port": 8443,
+        "database": "default",
+        "username": "opensre_readonly",
+        "password": "your-password",
+        "secure": true
+      }
+    }
+  ]
+}
+```
+
+## Creating a read-only user
+
+```sql
+CREATE USER opensre_readonly IDENTIFIED BY 'secure-password';
+GRANT SELECT ON system.* TO opensre_readonly;
+GRANT SELECT ON default.* TO opensre_readonly;
+```
+
+## Investigation tools
+
+When OpenSRE investigates a ClickHouse-related alert, three diagnostic tools are available:
+
+- **Query activity** — reads `system.query_log` to surface recent slow and failed queries
+- **System health** — reads `system.metrics` for active connections, query count, replica status, and uptime
+- **Table stats** — reads `system.parts` for table-level row counts and storage sizes
+
+All operations are read-only.
+
+## Verify
+
+```bash
+opensre integrations verify --service clickhouse
+```
+
+Expected output:
+
+```
+Service: clickhouse
+Status: passed
+Detail: Connected to ClickHouse 23.8.1; database: default
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection refused** | Check host, port, and firewall. Use port `8443` with `CLICKHOUSE_SECURE=true` |
+| **Authentication failed** | Verify username and password |
+| **SSL error** | Set `CLICKHOUSE_SECURE=true` and use port `8443` |
+| **Access denied on system tables** | Grant `SELECT ON system.*` to the OpenSRE user |
+
+## Security best practices
+
+- Create a **dedicated read-only user** with access only to `system.*` and the databases OpenSRE needs.
+- Use **HTTPS** (`CLICKHOUSE_SECURE=true`) in production.
+- Store credentials in `.env`, not in source code.

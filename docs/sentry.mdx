@@ -1,0 +1,106 @@
+---
+title: "Sentry"
+description: "Connect Sentry so OpenSRE can surface error trends and issue details during investigations"
+---
+
+OpenSRE queries Sentry to retrieve recent issues, error events, and stack traces — correlating application errors with infrastructure alerts to identify root causes faster.
+
+## Prerequisites
+
+- Sentry account with at least one organization
+- Auth token with `event:read` scope
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **Sentry** when prompted and provide your organization slug and auth token.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+SENTRY_ORG_SLUG=your-organization-slug
+SENTRY_AUTH_TOKEN=sntrys_your_token
+SENTRY_URL=https://sentry.io           # optional, for self-hosted Sentry
+SENTRY_PROJECT_SLUG=my-project         # optional, to scope to one project
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SENTRY_ORG_SLUG` | — | **Required.** Your Sentry organization slug |
+| `SENTRY_AUTH_TOKEN` | — | **Required.** Sentry auth token with `event:read` |
+| `SENTRY_URL` | `https://sentry.io` | Override for self-hosted Sentry |
+| `SENTRY_PROJECT_SLUG` | — | Scope queries to a specific project |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "sentry-prod",
+      "service": "sentry",
+      "status": "active",
+      "credentials": {
+        "base_url": "https://sentry.io",
+        "organization_slug": "your-org",
+        "auth_token": "sntrys_your_token",
+        "project_slug": "my-project"
+      }
+    }
+  ]
+}
+```
+
+## Creating an auth token
+
+**Recommended: Organization Token**
+
+1. In Sentry, go to **Settings** → **Developer Settings** → **Organization Tokens**
+2. Click **Create New Token**
+3. Enable the `event:read` scope
+4. Copy the token
+
+**Alternative: Internal Integration**
+
+For broader access, create an Internal Integration under **Settings** → **Developer Settings** → **Internal Integrations**.
+
+<Info>
+The organization slug appears in your Sentry URL: `https://sentry.io/organizations/<slug>/`
+</Info>
+
+## Verify
+
+```bash
+opensre integrations verify --service sentry
+```
+
+Expected output:
+
+```
+Service: sentry
+Status: passed
+Detail: Sentry validated for org your-org; issues API responded successfully with 5 issue(s)
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **403 Forbidden** | Ensure the token has `event:read` scope |
+| **Organization not found** | Verify `SENTRY_ORG_SLUG` matches the slug in your Sentry URL |
+| **Connection refused** | Check `SENTRY_URL` for self-hosted instances |
+| **No issues returned** | Normal if no issues exist in the time window — check `SENTRY_PROJECT_SLUG` |
+
+## Security best practices
+
+- Use an **Organization Token** with only `event:read` — do not use admin tokens.
+- Store the token in `.env`, not in source code.
+- Rotate tokens periodically.

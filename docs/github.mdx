@@ -1,0 +1,107 @@
+---
+title: "GitHub"
+description: "Connect GitHub so OpenSRE can correlate recent commits and code changes with incidents"
+---
+
+OpenSRE connects to GitHub via the GitHub MCP server to search code, browse recent commits, inspect files, and trace changes correlated with alerts — helping identify which deployment or code change triggered an incident.
+
+## Prerequisites
+
+- GitHub account with repository access
+- Personal access token or GitHub Copilot MCP access
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **GitHub** when prompted.
+
+### Option 2: Environment variables
+
+```bash
+GITHUB_MCP_AUTH_TOKEN=ghp_your_personal_access_token
+GITHUB_MCP_URL=https://api.githubcopilot.com/mcp/   # default
+GITHUB_MCP_MODE=streamable-http                      # default
+GITHUB_MCP_TOOLSETS=repos,issues,pull_requests,actions  # default
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GITHUB_MCP_AUTH_TOKEN` | — | **Required.** GitHub personal access token |
+| `GITHUB_MCP_URL` | `https://api.githubcopilot.com/mcp/` | GitHub MCP server URL |
+| `GITHUB_MCP_MODE` | `streamable-http` | Transport mode: `streamable-http`, `sse`, or `stdio` |
+| `GITHUB_MCP_TOOLSETS` | `repos,issues,pull_requests,actions` | Comma-separated toolsets to enable |
+| `GITHUB_MCP_COMMAND` | — | Command to run (required for `stdio` mode only) |
+| `GITHUB_MCP_ARGS` | — | Space-separated args for `stdio` mode |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "github-prod",
+      "service": "github",
+      "status": "active",
+      "credentials": {
+        "url": "https://api.githubcopilot.com/mcp/",
+        "mode": "streamable-http",
+        "auth_token": "ghp_your_token",
+        "toolsets": ["repos", "issues", "pull_requests", "actions"]
+      }
+    }
+  ]
+}
+```
+
+## Creating a personal access token
+
+1. In GitHub, go to **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)**
+2. Click **Generate new token**
+3. Select the following scopes: `repo`, `read:org`
+4. Copy the token
+
+<Info>
+For GitHub Enterprise Server, set `GITHUB_MCP_URL` to your enterprise MCP endpoint.
+</Info>
+
+## Transport modes
+
+| Mode | When to use |
+| --- | --- |
+| `streamable-http` | Default. Works with GitHub Copilot MCP and most hosted instances |
+| `sse` | For older MCP servers using Server-Sent Events |
+| `stdio` | For running a local MCP server process (`npx @modelcontextprotocol/server-github`) |
+
+## Verify
+
+```bash
+opensre integrations verify --service github
+```
+
+Expected output:
+
+```
+Service: github
+Status: passed
+Detail: GitHub MCP validated for your-username; discovered 18 tools including repository source investigation helpers
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Authentication failed** | Check that the token has `repo` scope and is not expired |
+| **Required tools missing** | Ensure toolsets include `repos` — it provides `get_file_contents`, `list_commits`, etc. |
+| **Connection refused** | Verify `GITHUB_MCP_URL` is reachable and the MCP server is running |
+
+## Security best practices
+
+- Use a **fine-grained personal access token** with read-only repository access.
+- Limit token scope to the repositories OpenSRE needs to inspect.
+- Store the token in `.env`, not in source code.

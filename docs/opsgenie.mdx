@@ -1,0 +1,92 @@
+---
+title: "OpsGenie"
+description: "Connect OpsGenie so OpenSRE can read active alerts and incident context during investigations"
+---
+
+OpenSRE queries OpsGenie to retrieve active alerts and their details — correlating on-call incidents with infrastructure events and investigation findings.
+
+## Prerequisites
+
+- OpsGenie account (Atlassian or standalone)
+- API key with read access
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **OpsGenie** when prompted and provide your API key.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+OPSGENIE_API_KEY=your-api-key
+OPSGENIE_REGION=us   # or "eu" for EU accounts
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPSGENIE_API_KEY` | — | **Required.** OpsGenie API key |
+| `OPSGENIE_REGION` | `us` | Region: `us` or `eu` |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "opsgenie-prod",
+      "service": "opsgenie",
+      "status": "active",
+      "credentials": {
+        "api_key": "your-api-key",
+        "region": "us"
+      }
+    }
+  ]
+}
+```
+
+## Creating an API key
+
+1. In OpsGenie, go to **Settings** → **API key management**
+2. Click **Add new API key**
+3. Name it `opensre` and enable **Read** access
+4. Copy the key
+
+<Info>
+EU accounts use a different endpoint. Set `OPSGENIE_REGION=eu` if your OpsGenie URL is `app.eu.opsgenie.com`.
+</Info>
+
+## Verify
+
+```bash
+opensre integrations verify --service opsgenie
+```
+
+Expected output:
+
+```
+Service: opsgenie
+Status: passed
+Detail: Connected to OpsGenie (US region); API key accepted
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Check the API key — ensure it has Read access |
+| **404 Not Found** | Try setting `OPSGENIE_REGION=eu` if you're on the EU instance |
+| **Rate limited** | OpsGenie enforces per-minute rate limits; reduce query frequency |
+
+## Security best practices
+
+- Use a **read-only API key** — OpsGenie supports granular permission scopes.
+- Store the API key in `.env`, not in source code.

@@ -12,7 +12,6 @@ from app.utils.masking import (
     MaskingContext,
     count_error_issues,
     detect_remaining_placeholders,
-    mask_dict,
     mask_text,
     should_panic,
     summarize_issues,
@@ -74,10 +73,8 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     if not has_tracer and not has_cloudwatch and not has_alert:
         return _handle_insufficient_evidence(state, tracker)
 
-    # Mask sensitive identifiers in evidence before building prompt
-    masked_evidence = mask_dict(evidence, masking_context)
-
-    prompt = build_diagnosis_prompt(state, masked_evidence, "")
+    # Build prompt from raw evidence, then mask once to avoid double-masking placeholders
+    prompt = build_diagnosis_prompt(state, evidence, "")
 
     # Mask the prompt before sending to LLM
     masked_prompt = mask_text(prompt, masking_context)

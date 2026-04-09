@@ -11,9 +11,9 @@ import json
 import logging
 import time
 
-import requests
 from botocore.exceptions import ClientError
 
+from app.deployment.health import poll_deployment_health
 from tests.shared.infrastructure_sdk.deployer import (
     DEFAULT_REGION,
     get_boto3_client,
@@ -233,6 +233,7 @@ def launch_instance(
     tags.append({"Key": "Name", "Value": f"{stack_name}-instance"})
 
     import os as _os
+
     launch_kwargs: dict = {
         "ImageId": ami_id,
         "InstanceType": instance_type,
@@ -288,25 +289,15 @@ def wait_for_health(
     Raises:
         TimeoutError: If health check doesn't pass.
     """
-    url = f"http://{public_ip}:{port}/ok"
-
-    for attempt in range(max_attempts):
-        try:
-            resp = requests.get(url, timeout=5)
-            if resp.status_code == 200:
-                logger.info("Health check passed after %d attempts", attempt + 1)
-                return True
-            logger.debug("Health returned %d", resp.status_code)
-        except requests.exceptions.RequestException as exc:
-            logger.debug("Health attempt %d: %s", attempt + 1, exc)
-
-        if attempt < max_attempts - 1:
-            time.sleep(HEALTH_POLL_INTERVAL)
-
-    raise TimeoutError(
-        f"EC2 instance at {public_ip}:{port} not healthy "
-        f"after {max_attempts * HEALTH_POLL_INTERVAL}s"
+    base_url = f"http://{public_ip}:{port}"
+    status = poll_deployment_health(
+        base_url,
+        interval_seconds=HEALTH_POLL_INTERVAL,
+        max_attempts=max_attempts,
+        request_timeout_seconds=5.0,
     )
+    logger.info("Health check passed after %d attempts via %s", status.attempts, status.url)
+    return True
 
 
 def terminate_instance(instance_id: str, region: str = DEFAULT_REGION) -> None:
