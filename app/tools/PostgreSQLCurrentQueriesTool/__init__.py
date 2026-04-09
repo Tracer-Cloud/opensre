@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from app.integrations.postgresql import PostgreSQLConfig, get_current_queries
+from app.integrations.postgresql import get_current_queries, resolve_postgresql_config
 from app.tools.tool_decorator import tool
 
 
@@ -22,17 +22,7 @@ def get_postgresql_current_queries(
     database: str,
     threshold_seconds: int = 1,
     port: int = 5432,
-    username: str = "postgres",
-    password: str = "",
-    ssl_mode: str = "prefer",
 ) -> dict[str, Any]:
     """Fetch currently running queries above the threshold (default 1 second)."""
-    config = PostgreSQLConfig(
-        host=host,
-        port=port,
-        database=database,
-        username=username,
-        password=password,
-        ssl_mode=ssl_mode,
-    )
+    config = resolve_postgresql_config(host=host, database=database, port=port)
     return get_current_queries(config, threshold_seconds=threshold_seconds)

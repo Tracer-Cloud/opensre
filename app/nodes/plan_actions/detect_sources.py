@@ -839,9 +839,6 @@ def detect_sources(
                 "database": postgresql_database,
                 "table": postgresql_table,
                 "schema": postgresql_schema,
-                "username": str(postgresql_int.get("username", "postgres")).strip(),
-                "password": str(postgresql_int.get("password", "")).strip(),
-                "ssl_mode": str(postgresql_int.get("ssl_mode", "prefer")).strip(),
                 "connection_verified": True,
             }
 

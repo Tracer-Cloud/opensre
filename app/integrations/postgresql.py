@@ -96,6 +96,41 @@ def postgresql_config_from_env() -> PostgreSQLConfig | None:
     })
 
 
+def resolve_postgresql_config(host: str, database: str, port: int = DEFAULT_POSTGRESQL_PORT) -> PostgreSQLConfig:
+    """Build a config for the given host/database, resolving credentials from store or env.
+
+    The LLM supplies only identifying params (host, database, port).
+    Credentials (username, password, ssl_mode) are resolved from the stored
+    integration or environment variables so they never appear in tool signatures.
+    """
+    from app.integrations.store import get_integration
+
+    stored = get_integration("postgresql")
+    if stored:
+        creds = stored.get("credentials", {})
+        return build_postgresql_config({
+            "host": host,
+            "port": port,
+            "database": database,
+            "username": creds.get("username", DEFAULT_POSTGRESQL_USER),
+            "password": creds.get("password", ""),
+            "ssl_mode": creds.get("ssl_mode", DEFAULT_POSTGRESQL_SSL_MODE),
+        })
+
+    env_cfg = postgresql_config_from_env()
+    if env_cfg:
+        return build_postgresql_config({
+            "host": host,
+            "port": port,
+            "database": database,
+            "username": env_cfg.username,
+            "password": env_cfg.password,
+            "ssl_mode": env_cfg.ssl_mode,
+        })
+
+    return build_postgresql_config({"host": host, "port": port, "database": database})
+
+
 def _get_connection(config: PostgreSQLConfig) -> Any:
     """Create a psycopg2 connection from config. Caller must close."""
     import psycopg2
@@ -449,11 +484,11 @@ def get_slow_queries(
                     queryid,
                     left(query, 500) as query_truncated,
                     calls,
-                    total_exec_time::bigint as total_time_ms,
-                    mean_exec_time::bigint as mean_time_ms,
-                    min_exec_time::bigint as min_time_ms,
-                    max_exec_time::bigint as max_time_ms,
-                    stddev_exec_time::bigint as stddev_time_ms,
+                    round(total_exec_time::numeric, 3) as total_time_ms,
+                    round(mean_exec_time::numeric, 3) as mean_time_ms,
+                    round(min_exec_time::numeric, 3) as min_time_ms,
+                    round(max_exec_time::numeric, 3) as max_time_ms,
+                    round(stddev_exec_time::numeric, 3) as stddev_time_ms,
                     rows as total_rows,
                     100.0 * shared_blks_hit / nullif(shared_blks_hit + shared_blks_read, 0) as hit_percent
                 FROM pg_stat_statements

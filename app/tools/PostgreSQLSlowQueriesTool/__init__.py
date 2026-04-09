@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from app.integrations.postgresql import PostgreSQLConfig, get_slow_queries
+from app.integrations.postgresql import get_slow_queries, resolve_postgresql_config
 from app.tools.tool_decorator import tool
 
 
@@ -22,17 +22,7 @@ def get_postgresql_slow_queries(
     database: str,
     threshold_ms: int = 1000,
     port: int = 5432,
-    username: str = "postgres",
-    password: str = "",
-    ssl_mode: str = "prefer",
 ) -> dict[str, Any]:
     """Fetch slow query statistics above the threshold (default 1000ms mean time)."""
-    config = PostgreSQLConfig(
-        host=host,
-        port=port,
-        database=database,
-        username=username,
-        password=password,
-        ssl_mode=ssl_mode,
-    )
+    config = resolve_postgresql_config(host=host, database=database, port=port)
     return get_slow_queries(config, threshold_ms=threshold_ms)

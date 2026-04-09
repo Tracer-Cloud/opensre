@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from app.integrations.postgresql import PostgreSQLConfig, get_server_status
+from app.integrations.postgresql import get_server_status, resolve_postgresql_config
 from app.tools.tool_decorator import tool
 
 
@@ -21,17 +21,7 @@ def get_postgresql_server_status(
     host: str,
     database: str,
     port: int = 5432,
-    username: str = "postgres",
-    password: str = "",
-    ssl_mode: str = "prefer",
 ) -> dict[str, Any]:
     """Fetch server status metrics from a PostgreSQL instance."""
-    config = PostgreSQLConfig(
-        host=host,
-        port=port,
-        database=database,
-        username=username,
-        password=password,
-        ssl_mode=ssl_mode,
-    )
+    config = resolve_postgresql_config(host=host, database=database, port=port)
     return get_server_status(config)

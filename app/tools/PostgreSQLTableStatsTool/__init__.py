@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from app.integrations.postgresql import PostgreSQLConfig, get_table_stats
+from app.integrations.postgresql import get_table_stats, resolve_postgresql_config
 from app.tools.tool_decorator import tool
 
 
@@ -22,17 +22,7 @@ def get_postgresql_table_stats(
     database: str,
     schema_name: str = "public",
     port: int = 5432,
-    username: str = "postgres",
-    password: str = "",
-    ssl_mode: str = "prefer",
 ) -> dict[str, Any]:
     """Fetch table statistics for a specific schema (default 'public')."""
-    config = PostgreSQLConfig(
-        host=host,
-        port=port,
-        database=database,
-        username=username,
-        password=password,
-        ssl_mode=ssl_mode,
-    )
+    config = resolve_postgresql_config(host=host, database=database, port=port)
     return get_table_stats(config, schema_name=schema_name)
