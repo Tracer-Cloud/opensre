@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class TimeBounds(BaseModel):
@@ -96,6 +96,14 @@ class AggregationSpec(BaseModel):
         default=None,
         description="Time bucketing for time-series aggregation (e.g., '1m', '5m', '1h')",
     )
+
+    @model_validator(mode="after")
+    def field_required_for_non_count(self) -> AggregationSpec:
+        """Require target field for aggregation functions that operate on a value."""
+        field_required_functions = {"sum", "avg", "min", "max", "p50", "p95", "p99"}
+        if self.function in field_required_functions and self.field is None:
+            raise ValueError(f"'field' is required when function is '{self.function}'")
+        return self
 
 
 class RetrievalIntent(BaseModel):

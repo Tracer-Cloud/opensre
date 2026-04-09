@@ -190,6 +190,7 @@ class RegisteredTool:
         tool: BaseTool,
         *,
         surfaces: Iterable[str] | None = None,
+        retrieval_controls: RetrievalControls | None = None,
     ) -> RegisteredTool:
         metadata = tool.metadata()
         resolved_surfaces = (
@@ -203,7 +204,7 @@ class RegisteredTool:
             use_cases=metadata.use_cases,
             requires=metadata.requires,
             outputs=metadata.outputs,
-            retrieval_controls=metadata.retrieval_controls,
+            retrieval_controls=retrieval_controls or metadata.retrieval_controls,
             surfaces=_normalize_surfaces(resolved_surfaces),
             run=tool.run,  # type: ignore[attr-defined]
             is_available=tool.is_available,

@@ -11,6 +11,7 @@ from app.tools.base import BaseTool
 from app.tools.investigation_registry.actions import get_available_actions
 from app.tools.registered_tool import REGISTERED_TOOL_ATTR, RegisteredTool
 from app.tools.tool_decorator import tool
+from app.types.retrieval import RetrievalControls
 
 
 @pytest.fixture(autouse=True)
@@ -140,6 +141,38 @@ def test_function_and_class_tools_share_the_same_runtime_contract() -> None:
         **class_tool.extract_params(sources)
     )
     assert function_tool.surfaces == class_tool.surfaces
+
+
+def test_tool_decorator_allows_retrieval_controls_override_for_base_tool() -> None:
+    class LookupIncidentClassTool(BaseTool):
+        name = "lookup_incident_class"
+        description = "Lookup incident metadata."
+        source = "knowledge"
+        surfaces = ("investigation", "chat")
+        retrieval_controls = RetrievalControls(limit=True)
+        input_schema = {
+            "type": "object",
+            "properties": {
+                "incident_id": {
+                    "type": "string",
+                    "description": "Incident identifier",
+                },
+            },
+            "required": ["incident_id"],
+        }
+
+        def run(self, incident_id: str) -> dict[str, str]:
+            return {"incident_id": incident_id}
+
+    class_tool = tool(
+        LookupIncidentClassTool(),
+        retrieval_controls=RetrievalControls(time_bounds=True, filters=True),
+    )
+    registered = getattr(class_tool, REGISTERED_TOOL_ATTR)
+    assert isinstance(registered, RegisteredTool)
+    assert registered.retrieval_controls.time_bounds
+    assert registered.retrieval_controls.filters
+    assert not registered.retrieval_controls.limit
 
 
 def test_auto_discovery_populates_investigation_and_chat_surfaces(

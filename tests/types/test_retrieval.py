@@ -179,13 +179,24 @@ class TestAggregationSpec:
         """AggregationSpec supports all valid functions."""
         functions = ["count", "sum", "avg", "min", "max", "p50", "p95", "p99"]
         for fn in functions:
-            agg = AggregationSpec(function=fn)
+            agg = AggregationSpec(function=fn, field=None if fn == "count" else "duration_ms")
             assert agg.function == fn
 
     def test_aggregation_invalid_function(self) -> None:
         """AggregationSpec rejects invalid functions."""
         with pytest.raises(ValidationError):
             AggregationSpec(function="invalid")
+
+    def test_non_count_aggregation_requires_field(self) -> None:
+        """Non-count aggregation functions require a target field."""
+        for function in ("sum", "avg", "min", "max", "p50", "p95", "p99"):
+            with pytest.raises(ValidationError, match="'field' is required"):
+                AggregationSpec(function=function)
+
+    def test_count_aggregation_does_not_require_field(self) -> None:
+        """Count aggregation can omit field."""
+        agg = AggregationSpec(function="count")
+        assert agg.field is None
 
 
 class TestRetrievalControls:

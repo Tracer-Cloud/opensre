@@ -51,6 +51,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
 
     planned_actions = plan.actions if plan else []
     plan_rationale = plan.rationale if plan else ""
+    retrieval_controls = plan.retrieval_controls if plan else None
 
     # Safety check: if we're in a loop but can't plan new actions, stop the investigation
     if not available_action_names or plan is None:
@@ -65,6 +66,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
                 fields_updated=[
                     "planned_actions",
                     "plan_rationale",
+                    "retrieval_controls",
                     "available_sources",
                     "available_action_names",
                     "investigation_recommendations",
@@ -74,6 +76,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
             return {
                 "planned_actions": [],
                 "plan_rationale": "",
+                "retrieval_controls": retrieval_controls,
                 "available_sources": available_sources,
                 "available_action_names": available_action_names,
                 "investigation_recommendations": [],  # Clear to stop loop
@@ -85,6 +88,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
             fields_updated=[
                 "planned_actions",
                 "plan_rationale",
+                "retrieval_controls",
                 "available_sources",
                 "available_action_names",
             ],
@@ -93,6 +97,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
         return {
             "planned_actions": [],
             "plan_rationale": "",
+            "retrieval_controls": retrieval_controls,
             "available_sources": available_sources,
             "available_action_names": available_action_names,
         }
@@ -102,6 +107,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
         fields_updated=[
             "planned_actions",
             "plan_rationale",
+            "retrieval_controls",
             "available_sources",
             "available_action_names",
         ],
@@ -111,6 +117,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
     return {
         "planned_actions": planned_actions,
         "plan_rationale": plan_rationale,
+        "retrieval_controls": retrieval_controls,
         "available_sources": available_sources,
         "available_action_names": available_action_names,
     }

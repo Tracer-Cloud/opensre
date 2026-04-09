@@ -111,11 +111,15 @@ def tool(  # noqa: UP047
 
     def attach(target: F | BaseTool) -> F | BaseTool:
         if isinstance(target, BaseTool):
-            if surfaces is not None:
+            if surfaces is not None or retrieval_controls is not None:
                 setattr(
                     target,
                     REGISTERED_TOOL_ATTR,
-                    RegisteredTool.from_base_tool(target, surfaces=surfaces),
+                    RegisteredTool.from_base_tool(
+                        target,
+                        surfaces=surfaces,
+                        retrieval_controls=retrieval_controls,
+                    ),
                 )
             return target
 
