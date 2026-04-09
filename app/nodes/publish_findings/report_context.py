@@ -680,7 +680,17 @@ _PROVENANCE_SOURCE_ALIASES: dict[str, str] = {
     "coralogix_logs": "coralogix",
     "s3_metadata": "s3",
     "s3_audit": "s3",
-    "vendor_audit": "s3",
+    "cloudwatch_logs": "cloudwatch",
+    "grafana_logs": "grafana",
+    "grafana_traces": "grafana",
+    "datadog_logs": "datadog",
+    "datadog_monitors": "datadog",
+    "datadog_events": "datadog",
+    "honeycomb_traces": "honeycomb",
+    "coralogix_logs": "coralogix",
+    "s3_metadata": "s3",
+    "s3_audit": "s3",
+    # vendor_audit intentionally omitted: it is not always S3-backed
 }
 
 
