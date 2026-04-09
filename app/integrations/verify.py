@@ -865,10 +865,18 @@ def _verify_discord(source: str, config: dict[str, Any]) -> dict[str, str]:
             headers={"Authorization": f"Bot {bot_token}"},
             timeout=10.0,
         )
-        response.raise_for_status()
-        data = response.json()
     except Exception as exc:  # noqa: BLE001
         return _result("discord", source, "failed", f"Bot token validation failed: {exc}")
+
+    if not response.is_success:
+        return _result(
+            "discord",
+            source,
+            "failed",
+            f"Discord API returned {response.status_code}: {response.text[:200]}",
+        )
+
+    data = response.json()
 
     username = str(data.get("username", "")).strip()
     bot_id = str(data.get("id", "")).strip()
