@@ -47,6 +47,7 @@ We do that by:
 - building easy-to-deploy, customizable AI SRE agents for production incident investigation and response
 - running scored synthetic RCA suites that check root-cause accuracy, required evidence, and adversarial red herrings [(tests/synthetic)](tests/synthetic/rds_postgres)
 - running real-world end-to-end tests across cloud-backed scenarios including Kubernetes, EC2, CloudWatch, Lambda, ECS Fargate, and Flink [(tests/e2e)](tests/e2e)
+- keeping semantic test-catalog naming so e2e vs synthetic and local vs cloud boundaries stay obvious [(tests/README.md)](tests/README.md)
 
 Our mission is to build AI SRE agents on top of this, scale it to thousands of realistic infrastructure failure scenarios, and establish OpenSRE as the benchmark and training ground for AI SRE.
 
@@ -87,7 +88,7 @@ opensre update
 
 ## Development
 
-> **New to Tracer?** See [SETUP.md](SETUP.md) for detailed platform-specific setup instructions, including Windows setup, environment configuration, and more.
+> **New to OpenSRE?** See [SETUP.md](SETUP.md) for detailed platform-specific setup instructions, including Windows setup, environment configuration, and more.
 
 ```bash
 git clone https://github.com/Tracer-Cloud/opensre
@@ -107,7 +108,7 @@ opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 
 ### Investigation Workflow
 
-When an alert fires, Tracer automatically:
+When an alert fires, OpenSRE automatically:
 
 1. **Fetches** the alert context and correlated logs, metrics, and traces
 2. **Reasons** across your connected systems to identify anomalies
@@ -136,7 +137,7 @@ _No benchmark results yet. Run `make benchmark` to generate._
 |                                          |                                                                                  |
 | ---------------------------------------- | -------------------------------------------------------------------------------- |
 | 🔍 **Structured incident investigation** | Correlated root-cause analysis across all your signals                           |
-| 📋 **Runbook-aware reasoning**           | Tracer reads your runbooks and applies them automatically                        |
+| 📋 **Runbook-aware reasoning**           | OpenSRE reads your runbooks and applies them automatically                       |
 | 🔮 **Predictive failure detection**      | Catch emerging issues before they page you                                       |
 | 🔗 **Evidence-backed root cause**        | Every conclusion is linked to the data behind it                                 |
 | 🤖 **Full LLM flexibility**              | Bring your own model — Anthropic, OpenAI, Ollama, Gemini, OpenRouter, NVIDIA NIM |
@@ -164,7 +165,7 @@ OpenSRE connects to 40+ tools and services across the modern cloud stack, from L
 
 ## Contributing
 
-Tracer is community-built. Every integration, improvement, and bug fix makes it better for thousands of engineers. We actively review PRs and welcome contributors of all experience levels.
+OpenSRE is community-built. Every integration, improvement, and bug fix makes it better for thousands of engineers. We actively review PRs and welcome contributors of all experience levels.
 
 <p>
   <a href="https://discord.gg/7NTpevXf7w">
@@ -177,7 +178,7 @@ Good first issues are labeled [`good first issue`](https://github.com/Tracer-Clo
 - 🐛 Report bugs or missing edge cases
 - 🔌 Add a new tool integration
 - 📖 Improve documentation or runbook examples
-- ⭐ Star the repo - it helps other engineers find Tracer
+- ⭐ Star the repo - it helps other engineers find OpenSRE
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 
@@ -412,6 +413,27 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/175933950?v=4" width="100" alt="abhishek-marathe04"/>
             <br />
             <sub><b>abhishek-marathe04</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/yashksaini-coder">
+            <img src="https://avatars.githubusercontent.com/u/115717039?v=4" width="100" alt="yashksaini-coder"/>
+            <br />
+            <sub><b>yashksaini-coder</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/haliaeetusvocifer">
+            <img src="https://avatars.githubusercontent.com/u/20953018?v=4" width="100" alt="haliaeetusvocifer"/>
+            <br />
+            <sub><b>haliaeetusvocifer</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Bahtya">
+            <img src="https://avatars.githubusercontent.com/u/34988899?v=4" width="100" alt="Bahtya"/>
+            <br />
+            <sub><b>Bahtya</b></sub>
         </a>
     </td>
 		</tr>

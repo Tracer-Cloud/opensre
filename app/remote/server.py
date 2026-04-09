@@ -16,6 +16,10 @@ import json as _json
 import logging
 import os
 import re
+import shutil
+import time
+import urllib.error
+import urllib.request
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
@@ -27,7 +31,6 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
-from app.remote.system_metrics import collect_system_metrics
 from app.remote.vercel_poller import (
     VercelInvestigationCandidate,
     VercelPoller,
@@ -40,6 +43,13 @@ load_dotenv(override=False)
 
 INVESTIGATIONS_DIR = Path("/opt/opensre/investigations")
 _AUTH_KEY = os.getenv("OPENSRE_API_KEY", "")
+_STARTED_AT = datetime.now(tz=UTC)
+_START_TIME_MONOTONIC = time.monotonic()
+_INSTANCE_METADATA: dict[str, str | None] = {
+    "instance_id": None,
+    "region": os.getenv("AWS_REGION") or None,
+    "public_ip": None,
+}
 logger = logging.getLogger(__name__)
 
 
@@ -52,17 +62,20 @@ def _check_api_key(x_api_key: str | None = Header(default=None)) -> None:
 @asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     INVESTIGATIONS_DIR.mkdir(parents=True, exist_ok=True)
+    _refresh_instance_metadata()
+
     poller = VercelPoller(investigations_dir=INVESTIGATIONS_DIR)
-    poller_task: asyncio.Task[None] | None = None
+    poll_task: asyncio.Task[None] | None = None
     if poller.is_enabled:
-        poller_task = asyncio.create_task(poller.run_forever(_handle_polled_candidate))
+        poll_task = asyncio.create_task(poller.run_forever(_handle_polled_candidate))
+
     try:
         yield
     finally:
-        if poller_task is not None:
-            poller_task.cancel()
+        if poll_task is not None:
+            poll_task.cancel()
             with suppress(asyncio.CancelledError):
-                await poller_task
+                await poll_task
 
 
 app = FastAPI(
@@ -101,6 +114,12 @@ class InvestigationMeta(BaseModel):
     alert_name: str
 
 
+class DeepHealthCheck(BaseModel):
+    name: str
+    status: str
+    detail: str
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -108,12 +127,35 @@ class InvestigationMeta(BaseModel):
 
 @app.get("/ok")
 def health_check() -> dict[str, Any]:
+    uptime_seconds = max(0, int(time.monotonic() - _START_TIME_MONOTONIC))
     return {
         "ok": True,
         "version": get_version(),
-        "server_type": "lightweight",
-        "endpoints": ["/investigate", "/investigate/stream", "/investigations"],
-        "system": collect_system_metrics(),
+        "started_at": _STARTED_AT.isoformat(),
+        "uptime_seconds": uptime_seconds,
+        "instance_id": _INSTANCE_METADATA.get("instance_id"),
+        "region": _INSTANCE_METADATA.get("region"),
+        "public_ip": _INSTANCE_METADATA.get("public_ip"),
+    }
+
+
+@app.get("/version")
+def version_check() -> dict[str, str]:
+    return {"version": get_version()}
+
+
+@app.get("/health/deep")
+def deep_health_check() -> dict[str, Any]:
+    checks = [_check_llm_connectivity(), _check_disk_health(), _check_memory_health()]
+    status = "passed"
+    if any(check.status == "failed" for check in checks):
+        status = "failed"
+    elif any(check.status in {"warn", "missing"} for check in checks):
+        status = "warn"
+
+    return {
+        "status": status,
+        "checks": [check.model_dump() for check in checks],
     }
 
 
@@ -334,6 +376,113 @@ def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60]
 
 
+def _refresh_instance_metadata() -> None:
+    token = _imds_token()
+    _INSTANCE_METADATA["instance_id"] = _imds_get("latest/meta-data/instance-id", token=token)
+    if not _INSTANCE_METADATA.get("region"):
+        _INSTANCE_METADATA["region"] = _imds_get("latest/meta-data/placement/region", token=token)
+    _INSTANCE_METADATA["public_ip"] = _imds_get("latest/meta-data/public-ipv4", token=token)
+
+
+def _imds_token() -> str | None:
+    req = urllib.request.Request(
+        "http://169.254.169.254/latest/api/token",
+        method="PUT",
+        headers={"X-aws-ec2-metadata-token-ttl-seconds": "21600"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=0.3) as response:
+            return response.read().decode("utf-8").strip() or None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return None
+
+
+def _imds_get(path: str, *, token: str | None) -> str | None:
+    headers = {"X-aws-ec2-metadata-token": token} if token else {}
+    req = urllib.request.Request(f"http://169.254.169.254/{path}", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=0.3) as response:
+            return response.read().decode("utf-8").strip() or None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return None
+
+
+def _check_llm_connectivity() -> DeepHealthCheck:
+    provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
+    if provider != "bedrock":
+        return DeepHealthCheck(
+            name="LLM provider",
+            status="passed",
+            detail="Bedrock check skipped (LLM_PROVIDER is not bedrock).",
+        )
+
+    region = _INSTANCE_METADATA.get("region") or os.getenv("AWS_REGION") or "us-east-1"
+    try:
+        import boto3
+
+        bedrock = boto3.client("bedrock", region_name=region)
+        bedrock.list_foundation_models(byProvider="Anthropic")
+        return DeepHealthCheck(
+            name="Bedrock connectivity",
+            status="passed",
+            detail=f"Connected to Bedrock in {region}.",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return DeepHealthCheck(
+            name="Bedrock connectivity",
+            status="failed",
+            detail=f"Failed to reach Bedrock in {region}: {type(exc).__name__}: {exc}",
+        )
+
+
+def _check_disk_health() -> DeepHealthCheck:
+    usage = shutil.disk_usage("/")
+    if usage.total == 0:
+        return DeepHealthCheck(
+            name="Disk", status="missing", detail="Unable to determine disk size."
+        )
+    used_pct = int((usage.used / usage.total) * 100)
+    status = "passed" if used_pct < 85 else "warn"
+    detail = f"{used_pct}% used ({usage.used // (1024**3)}GiB / {usage.total // (1024**3)}GiB)"
+    return DeepHealthCheck(name="Disk", status=status, detail=detail)
+
+
+def _check_memory_health() -> DeepHealthCheck:
+    meminfo_path = Path("/proc/meminfo")
+    if not meminfo_path.exists():
+        return DeepHealthCheck(
+            name="Memory",
+            status="missing",
+            detail="/proc/meminfo unavailable on this platform.",
+        )
+
+    values: dict[str, int] = {}
+    try:
+        for line in meminfo_path.read_text(encoding="utf-8").splitlines():
+            if ":" not in line:
+                continue
+            key, raw = line.split(":", 1)
+            number = raw.strip().split(" ", 1)[0]
+            if number.isdigit():
+                values[key] = int(number)
+    except OSError as exc:
+        return DeepHealthCheck(
+            name="Memory", status="missing", detail=f"Unable to read meminfo: {exc}"
+        )
+
+    total_kb = values.get("MemTotal")
+    avail_kb = values.get("MemAvailable")
+    if not total_kb or avail_kb is None:
+        return DeepHealthCheck(
+            name="Memory", status="missing", detail="Incomplete /proc/meminfo data."
+        )
+
+    used_pct = int(((total_kb - avail_kb) / total_kb) * 100)
+    status = "passed" if used_pct < 90 else "warn"
+    detail = f"{used_pct}% used ({(total_kb - avail_kb) // 1024}MiB / {total_kb // 1024}MiB)"
+    return DeepHealthCheck(name="Memory", status=status, detail=detail)
+
+
 def _make_id(alert_name: str) -> str:
     ts = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
     return f"{ts}_{_slugify(alert_name)}"
@@ -360,8 +509,10 @@ def _save_investigation(
     ts = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     if result.get("is_noise"):
-        root_cause = "Alert classified as noise - no investigation performed."
-        report = "The alert was automatically classified as noise (non-actionable) during extraction."
+        root_cause = "Alert classified as noise — no investigation performed."
+        report = (
+            "The alert was automatically classified as noise (non-actionable) during extraction."
+        )
         problem_md = result.get("problem_md") or "N/A"
     else:
         root_cause = result.get("root_cause") or "N/A"

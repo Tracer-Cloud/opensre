@@ -111,9 +111,9 @@ select = ["E", "F", "I", "S"]
 "tests/**/*_test.py" = ["S101"]
 "tests/**/test_*.py" = ["S101"]
 # vendored third-party pipeline code — not ours to fix
-"tests/test_case_upstream_lambda/pipeline_code/**" = ["S"]
-"tests/test_case_upstream_apache_flink_ecs/pipeline_code/**" = ["S"]
-"tests/test_case_upstream_prefect_ecs_fargate/pipeline_code/**" = ["S"]
+"tests/e2e/upstream_lambda/pipeline_code/**" = ["S"]
+"tests/e2e/upstream_apache_flink_ecs/pipeline_code/**" = ["S"]
+"tests/e2e/upstream_prefect_ecs_fargate/pipeline_code/**" = ["S"]
 # subprocess / url-open / temp-file usage in infra helpers is intentional
 "tests/shared/**" = ["S108", "S310", "S603", "S607"]
 "tests/**/infrastructure_sdk/**" = ["S108", "S603", "S607"]

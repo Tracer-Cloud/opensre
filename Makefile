@@ -78,15 +78,15 @@ langgraph-deploy: check-langgraph check-docker check-langsmith-api-key
 
 # Run CloudWatch demo
 cloudwatch-demo:
-	$(PYTHON) -m tests.e2e.cloudwatch_demo.test_orchestrator
+	$(PYTHON) -m tests.e2e.cloudwatch_demo.test_aws
 
 # Run Datadog demo (local kind cluster + real DD monitor + investigation agent)
 datadog-demo:
-	$(PYTHON) -m tests.e2e.datadog.test_orchestrator
+	$(PYTHON) -m tests.e2e.datadog.test_local
 
 # Run CrashLoopBackOff  demo
 crashloop-demo:
-	$(PYTHON) -m tests.e2e.crashloop.test_orchestrator
+	$(PYTHON) -m tests.e2e.crashloop.test_local
 
 # Run Prefect ECS Fargate E2E test (alias for demo)
 prefect-demo:

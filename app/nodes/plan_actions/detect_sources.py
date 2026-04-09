@@ -824,6 +824,21 @@ def detect_sources(
                 "connection_verified": True,
             }
 
+    atlas_int = (resolved_integrations or {}).get("mongodb_atlas")
+    if atlas_int and str(atlas_int.get("api_public_key", "")).strip():
+        atlas_cluster = str(
+            annotations.get("atlas_cluster_name")
+            or annotations.get("cluster_name")
+            or ""
+        ).strip()
+        sources["mongodb_atlas"] = {
+            "api_public_key": str(atlas_int.get("api_public_key", "")).strip(),
+            "api_private_key": str(atlas_int.get("api_private_key", "")).strip(),
+            "project_id": str(atlas_int.get("project_id", "")).strip(),
+            "base_url": str(atlas_int.get("base_url", "https://cloud.mongodb.com/api/atlas/v2")).strip(),
+            "cluster_name": atlas_cluster,
+            "connection_verified": True,
+        }
 
     opsgenie_int = (resolved_integrations or {}).get("opsgenie")
     if opsgenie_int and str(opsgenie_int.get("api_key", "")).strip():

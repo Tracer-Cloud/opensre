@@ -1,5 +1,7 @@
 """Plan actions node - planning only."""
 
+from typing import Any
+
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
@@ -20,22 +22,44 @@ class InvestigationPlan(BaseModel):
 
 @traceable(name="node_plan_actions")
 def node_plan_actions(state: InvestigationState) -> dict:
-    """Plan investigation actions and write plan outputs to state."""
+    """Plan investigation actions and write plan outputs to state.
+
+    Supports rerouting when new evidence changes the likely source family,
+    and enforces per-step tool budgets.
+    """
     input_data = InvestigateInput.from_state(state)
     loop_count = state.get("investigation_loop_count", 0)
 
     tracker = get_tracker()
     tracker.start("plan_actions", "Planning evidence gathering")
 
-    plan, available_sources, available_action_names, _available_actions = build_plan_actions(
+    (
+        plan,
+        available_sources,
+        available_action_names,
+        _available_actions,
+        rerouted,
+        reroute_reason,
+    ) = build_plan_actions(
         input_data=input_data,
         plan_model=InvestigationPlan,
         resolved_integrations=state.get("resolved_integrations"),
         routed_actions=state.get("routed_actions"),
+        available_sources=state.get("available_sources"),
     )
 
     planned_actions = plan.actions if plan else []
     plan_rationale = plan.rationale if plan else ""
+
+    # Build audit entry for this planning step
+    audit_entry: dict[str, Any] = {
+        "loop": loop_count,
+        "tool_budget": input_data.tool_budget,
+        "planned_count": len(planned_actions),
+        "rerouted": rerouted,
+    }
+    if rerouted:
+        audit_entry["reroute_reason"] = reroute_reason
 
     # Safety check: if we're in a loop but can't plan new actions, stop the investigation
     if not available_action_names or plan is None:
@@ -62,6 +86,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
                 "available_sources": available_sources,
                 "available_action_names": available_action_names,
                 "investigation_recommendations": [],  # Clear to stop loop
+                "plan_audit": audit_entry,
             }
 
         debug_print("No new actions selected in planning.")
@@ -80,6 +105,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
             "plan_rationale": "",
             "available_sources": available_sources,
             "available_action_names": available_action_names,
+            "plan_audit": audit_entry,
         }
 
     tracker.complete(
@@ -98,4 +124,5 @@ def node_plan_actions(state: InvestigationState) -> dict:
         "plan_rationale": plan_rationale,
         "available_sources": available_sources,
         "available_action_names": available_action_names,
+        "plan_audit": audit_entry,
     }

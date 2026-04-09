@@ -349,24 +349,29 @@ def track_hypothesis(
     action_names: list[str],
     rationale: str,
     investigation_loop_count: int,
+    plan_audit: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Track executed hypothesis for deduplication.
+    Track executed hypothesis for deduplication and audit trail.
 
     Args:
         executed_hypotheses: Current list of executed hypotheses
         action_names: List of actions that were executed
         rationale: Rationale for executing these actions
         investigation_loop_count: Current loop count
+        plan_audit: Optional audit data from planning step (rerouting, budget, etc)
 
     Returns:
-        Updated executed_hypotheses list
+        Updated executed_hypotheses list with audit trail
     """
-    new_hypothesis = {
+    new_hypothesis: dict[str, Any] = {
         "actions": action_names,
         "rationale": rationale,
         "loop_count": investigation_loop_count,
     }
+    # Include audit data if rerouting occurred or budget was enforced
+    if plan_audit:
+        new_hypothesis["audit"] = plan_audit
     executed_hypotheses.append(new_hypothesis)
     return executed_hypotheses
 
@@ -479,6 +484,7 @@ def summarize_execution_results(
     executed_hypotheses: list[dict[str, Any]],
     investigation_loop_count: int,
     rationale: str,
+    plan_audit: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """
     Summarize execution results into evidence and hypotheses.
@@ -489,6 +495,7 @@ def summarize_execution_results(
         executed_hypotheses: History of executed hypotheses
         investigation_loop_count: Current loop count
         rationale: Rationale for executing these actions
+        plan_audit: Optional audit data from planning step (rerouting, budget, etc)
 
     Returns:
         Tuple of (evidence, executed_hypotheses, evidence_summary)
@@ -502,7 +509,7 @@ def summarize_execution_results(
 
     if successful_actions:
         executed_hypotheses = track_hypothesis(
-            executed_hypotheses, successful_actions, rationale, investigation_loop_count
+            executed_hypotheses, successful_actions, rationale, investigation_loop_count, plan_audit
         )
 
     evidence_summary = build_evidence_summary(execution_results)

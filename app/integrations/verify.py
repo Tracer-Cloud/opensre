@@ -24,6 +24,7 @@ from app.integrations.models import (
     TracerIntegrationConfig,
 )
 from app.integrations.mongodb import build_mongodb_config, validate_mongodb_config
+from app.integrations.mongodb_atlas import build_mongodb_atlas_config, validate_mongodb_atlas_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
 from app.nodes.resolve_integrations.node import (
@@ -49,6 +50,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "github",
     "sentry",
     "mongodb",
+    "mongodb_atlas",
     "google_docs",
     "vercel",
     "opsgenie",
@@ -218,6 +220,31 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                     "database": os.getenv("MONGODB_DATABASE", "").strip(),
                     "auth_source": os.getenv("MONGODB_AUTH_SOURCE", "admin").strip() or "admin",
                     "tls": os.getenv("MONGODB_TLS", "true").strip().lower() in ("true", "1", "yes"),
+                },
+            }
+
+    mongodb_atlas_integration = classified_integrations.get("mongodb_atlas")
+    if isinstance(mongodb_atlas_integration, dict):
+        effective["mongodb_atlas"] = {
+            "source": source_by_service.get("mongodb_atlas", "local env"),
+            "config": {
+                "api_public_key": str(mongodb_atlas_integration.get("api_public_key", "")).strip(),
+                "api_private_key": str(mongodb_atlas_integration.get("api_private_key", "")).strip(),
+                "project_id": str(mongodb_atlas_integration.get("project_id", "")).strip(),
+                "base_url": str(mongodb_atlas_integration.get("base_url", "https://cloud.mongodb.com/api/atlas/v2")).strip(),
+            },
+        }
+    else:
+        atlas_pub = os.getenv("MONGODB_ATLAS_PUBLIC_KEY", "").strip()
+        atlas_priv = os.getenv("MONGODB_ATLAS_PRIVATE_KEY", "").strip()
+        if atlas_pub and atlas_priv:
+            effective["mongodb_atlas"] = {
+                "source": "local env",
+                "config": {
+                    "api_public_key": atlas_pub,
+                    "api_private_key": atlas_priv,
+                    "project_id": os.getenv("MONGODB_ATLAS_PROJECT_ID", "").strip(),
+                    "base_url": os.getenv("MONGODB_ATLAS_BASE_URL", "https://cloud.mongodb.com/api/atlas/v2").strip(),
                 },
             }
 
@@ -654,6 +681,17 @@ def _verify_mongodb(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_mongodb_atlas(source: str, config: dict[str, Any]) -> dict[str, str]:
+    atlas_config = build_mongodb_atlas_config(config)
+    result = validate_mongodb_atlas_config(atlas_config)
+    return _result(
+        "mongodb_atlas",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
     """Validate Google Docs credentials and folder access."""
     from app.services.google_docs import GoogleDocsClient
@@ -845,6 +883,8 @@ def verify_integrations(
             results.append(_verify_sentry(source, config))
         elif current_service == "mongodb":
             results.append(_verify_mongodb(source, config))
+        elif current_service == "mongodb_atlas":
+            results.append(_verify_mongodb_atlas(source, config))
         elif current_service == "google_docs":
             results.append(_verify_google_docs(source, config))
         elif current_service == "vercel":

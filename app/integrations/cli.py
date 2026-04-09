@@ -7,6 +7,7 @@ Usage:
     python -m app.integrations remove <service>
     python -m app.integrations verify [service] [--send-slack-test]
 
+Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, mongodb_atlas, slack, opensearch, rds, tracer, github, sentry
 Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, slack, opensearch, rds, tracer, github, sentry, vercel
 """
 
@@ -43,6 +44,7 @@ def _json_echo(data: Any) -> None:
 _SECRET_KEYS = frozenset({
     "api_token",
     "api_key",
+    "api_private_key",
     "app_key",
     "password",
     "secret_access_key",
@@ -292,12 +294,33 @@ def _setup_mongodb() -> None:
     )
 
 
+def _setup_mongodb_atlas() -> None:
+    api_public_key = _p("Atlas API public key")
+    api_private_key = _p("Atlas API private key", secret=True)
+    project_id = _p("Atlas project ID (group ID)")
+    base_url = _p("Atlas API base URL", default="https://cloud.mongodb.com/api/atlas/v2")
+    if not api_public_key or not api_private_key or not project_id:
+        _die("api_public_key, api_private_key, and project_id are required.")
+    upsert_integration(
+        "mongodb_atlas",
+        {
+            "credentials": {
+                "api_public_key": api_public_key,
+                "api_private_key": api_private_key,
+                "project_id": project_id,
+                "base_url": base_url,
+            }
+        },
+    )
+
+
 _HANDLERS: dict[str, Any] = {
     "aws": _setup_aws,
     "coralogix": _setup_coralogix,
     "datadog": _setup_datadog,
     "grafana": _setup_grafana,
     "honeycomb": _setup_honeycomb,
+    "mongodb_atlas": _setup_mongodb_atlas,
     "slack": _setup_slack,
     "opensearch": _setup_opensearch,
     "rds": _setup_rds,
@@ -326,7 +349,6 @@ def cmd_setup(service: str | None) -> str:
             sys.exit(1)
     if not service or service not in _HANDLERS:
         _die(f"Usage: setup <service>. Supported: {SUPPORTED}")
-        return
     print(f"\n  Setting up {_B}{service}{_R}\n")
     _HANDLERS[service]()
     print(f"\n  ✓ Saved → {STORE_PATH}\n")
@@ -391,7 +413,6 @@ def cmd_verify(
 
     if service and service not in SUPPORTED_VERIFY_SERVICES:
         _die(f"Usage: verify [service]. Supported: {SUPPORTED_VERIFY}")
-        return
 
     results = verify_integrations(
         service=service,

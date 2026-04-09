@@ -6,8 +6,6 @@ the most relevant tools for an investigation context.
 
 from __future__ import annotations
 
-import pytest
-
 from app.nodes.route_tools.route_tools import (
     _extract_keywords,
     route_tools,

@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+__all__ = (
+    "ALERT_TEMPLATE_CHOICES",
+    "MANAGED_INTEGRATION_SERVICES",
+    "SAMPLE_ALERT_OPTIONS",
+    "SETUP_SERVICES",
+    "VERIFY_SERVICES",
+)
+
 ALERT_TEMPLATE_CHOICES: tuple[str, ...] = (
     "generic",
     "datadog",
@@ -26,6 +34,7 @@ SETUP_SERVICES: tuple[str, ...] = (
     "github",
     "honeycomb",
     "mongodb",
+    "mongodb_atlas",
     "opensearch",
     "rds",
     "sentry",
@@ -38,6 +47,9 @@ VERIFY_SERVICES: tuple[str, ...] = (
     "grafana",
     "datadog",
     "honeycomb",
+    "mongodb",
+    "mongodb_atlas",
+    "opsgenie",
     "coralogix",
     "aws",
     "slack",
