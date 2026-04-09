@@ -335,8 +335,10 @@ def _setup_mongodb() -> None:
 
 def _setup_postgresql() -> None:
     host = _p("Host (e.g. localhost or postgres.example.com)")
-    port = _p("Port", default="5432")
     database = _p("Database name")
+    if not host or not database:
+        _die("host and database are required.")
+    port = _p("Port", default="5432")
     username = _p("Username", default="postgres")
     password = _p("Password", secret=True)
     ssl_mode_choice = questionary.select(
@@ -351,8 +353,6 @@ def _setup_postgresql() -> None:
     if ssl_mode_choice is None:
         print("\nAborted.")
         sys.exit(1)
-    if not host or not database:
-        _die("host and database are required.")
     upsert_integration(
         "postgresql",
         {

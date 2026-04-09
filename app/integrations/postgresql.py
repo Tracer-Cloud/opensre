@@ -88,7 +88,7 @@ def postgresql_config_from_env() -> PostgreSQLConfig | None:
         return None
     return build_postgresql_config({
         "host": host,
-        "port": int(os.getenv("POSTGRESQL_PORT", DEFAULT_POSTGRESQL_PORT)),
+        "port": int(os.getenv("POSTGRESQL_PORT", str(DEFAULT_POSTGRESQL_PORT))),
         "database": database,
         "username": os.getenv("POSTGRESQL_USERNAME", DEFAULT_POSTGRESQL_USER).strip(),
         "password": os.getenv("POSTGRESQL_PASSWORD", "").strip(),
@@ -311,7 +311,20 @@ def get_replication_status(config: PostgreSQLConfig) -> dict[str, Any]:
         try:
             cursor = conn.cursor()
 
-            # Check if this is a primary server with replicas
+            # Reliably detect replica status (works on PostgreSQL 10+)
+            cursor.execute("SELECT pg_is_in_recovery()")
+            is_replica = cursor.fetchone()[0]
+            if is_replica:
+                cursor.close()
+                return {
+                    "source": "postgresql",
+                    "available": True,
+                    "is_primary": False,
+                    "replicas": [],
+                    "note": "Server is a replica, not a primary.",
+                }
+
+            # Primary: check downstream replicas
             cursor.execute("""
                 SELECT
                     pid,
