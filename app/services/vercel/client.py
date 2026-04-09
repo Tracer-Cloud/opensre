@@ -116,30 +116,6 @@ def _parse_runtime_logs_payload(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
-def _parse_runtime_logs_text(raw_text: str) -> list[dict[str, Any]]:
-    stripped = raw_text.strip()
-    if not stripped:
-        return []
-
-    try:
-        return _parse_runtime_logs_payload(json.loads(stripped))
-    except json.JSONDecodeError:
-        pass
-
-    logs: list[dict[str, Any]] = []
-    for line in stripped.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(payload, dict):
-            logs.append(payload)
-    return logs
-
-
 def _append_parsed_runtime_stream_value(
     parsed: Any,
     bucket: list[dict[str, Any]],

@@ -70,13 +70,6 @@ def _sample_alert_payload() -> dict[str, str]:
     }
 
 
-def _resolve_active_url(ctx: click.Context) -> str | None:
-    """Return the active remote URL, preferring --url flag over the store."""
-    from app.cli.wizard.store import load_remote_url
-
-    return _context_value(ctx, "url") or load_remote_url()
-
-
 def _browse_investigations(ctx: click.Context, style: Any, questionary: Any, console: Any) -> None:
     """Fetch remote investigations and let the user pick one to view."""
     import httpx
@@ -173,24 +166,6 @@ def _run_preflight(url: str, api_key: str | None, console: Any) -> PreflightResu
         return client.preflight()
 
 
-def _preflight_payload(preflight: PreflightResult) -> dict[str, Any]:
-    """Serialize preflight results for JSON output."""
-    return {
-        "ok": preflight.ok,
-        "version": preflight.version,
-        "server_type": preflight.server_type,
-        "endpoints": preflight.endpoints,
-        "latency_ms": preflight.latency_ms,
-        "error": preflight.error,
-        "system": preflight.system,
-        "supports_investigate": preflight.supports_investigate,
-        "supports_stream": preflight.supports_stream,
-        "supports_live_stream": preflight.supports_live_stream,
-        "supports_langgraph": preflight.supports_langgraph,
-        "status": preflight.status_label,
-    }
-
-
 def _render_preflight_status(
     url: str,
     label: str,
@@ -285,94 +260,6 @@ def _render_health_with_preflight(preflight: PreflightResult, base_url: str, con
     console.print(
         Panel(header, title="[bold cyan]Remote Agent Health[/bold cyan]", border_style="cyan")
     )
-
-
-def _render_health_rich(data: dict[str, Any], base_url: str) -> None:
-    """Render health-check JSON as a Rich panel with system metrics table."""
-    from rich import box
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.table import Table
-
-    console = Console(highlight=False)
-    console.print()
-
-    version = data.get("version", "unknown")
-    server_type = data.get("server_type", "unknown")
-    endpoints = data.get("endpoints") or []
-
-    header = Table.grid(padding=(0, 2))
-    header.add_row("[bold]URL[/bold]", base_url)
-    header.add_row("[bold]Version[/bold]", version)
-    header.add_row("[bold]Server type[/bold]", server_type)
-    header.add_row("[bold]Endpoints[/bold]", ", ".join(endpoints) or "none")
-    console.print(
-        Panel(header, title="[bold cyan]Remote Agent Health[/bold cyan]", border_style="cyan")
-    )
-
-    system = data.get("system")
-    if not system:
-        console.print()
-        return
-
-    table = Table(box=box.SIMPLE_HEAVY, show_header=True, title="System Metrics")
-    table.add_column("Metric", style="bold cyan")
-    table.add_column("Value")
-
-    cpu = system.get("cpu")
-    if cpu:
-        cores = cpu.get("core_count", "?")
-        table.add_row(
-            "CPU Load (1/5/15m)",
-            f"{cpu.get('load_avg_1m', '?')} / {cpu.get('load_avg_5m', '?')}"
-            f" / {cpu.get('load_avg_15m', '?')}  ({cores} cores)",
-        )
-
-    mem = system.get("memory")
-    if mem:
-        pct = mem.get("percent", 0)
-        color = "green" if pct < 70 else ("yellow" if pct < 90 else "red")
-        table.add_row(
-            "Memory",
-            f"[{color}]{pct}%[/{color}]  "
-            f"{mem.get('used_gb', '?')}GB / {mem.get('total_gb', '?')}GB"
-            f"  ({mem.get('available_gb', '?')}GB free)",
-        )
-
-    disk = system.get("disk")
-    if disk:
-        pct = disk.get("percent", 0)
-        color = "green" if pct < 70 else ("yellow" if pct < 90 else "red")
-        table.add_row(
-            "Disk",
-            f"[{color}]{pct}%[/{color}]  "
-            f"{disk.get('used_gb', '?')}GB / {disk.get('total_gb', '?')}GB"
-            f"  ({disk.get('free_gb', '?')}GB free)",
-        )
-
-    uptime = system.get("uptime")
-    if uptime:
-        table.add_row("Uptime", uptime.get("human", "?"))
-
-    plat = system.get("platform")
-    if plat:
-        table.add_row("OS", plat.get("os", "?"))
-        table.add_row("Arch", plat.get("arch", "?"))
-        table.add_row("Python", plat.get("python", "?"))
-        table.add_row("Hostname", plat.get("hostname", "?"))
-
-    proc = system.get("process")
-    if proc:
-        parts: list[str] = []
-        if "rss_mb" in proc:
-            parts.append(f"RSS {proc['rss_mb']}MB")
-        if "open_fds" in proc:
-            parts.append(f"{proc['open_fds']} open fds")
-        if parts:
-            table.add_row("Server Process", " │ ".join(parts))
-
-    console.print(table)
-    console.print()
 
 
 def _build_investigation_choices(
