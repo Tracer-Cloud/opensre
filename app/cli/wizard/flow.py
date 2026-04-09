@@ -1058,6 +1058,7 @@ def _configure_discord() -> tuple[str, str]:
                 "DISCORD_BOT_TOKEN": bot_token,
                 "DISCORD_APPLICATION_ID": application_id,
                 "DISCORD_PUBLIC_KEY": public_key,
+                "DISCORD_DEFAULT_CHANNEL_ID": default_channel_id,
             })
             return "Discord", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")

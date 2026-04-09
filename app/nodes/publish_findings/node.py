@@ -89,10 +89,9 @@ def generate_report(state: InvestigationState) -> dict:
     # Discord delivery — uses integration credentials if configured
     if discord_creds:
         from app.utils.discord_delivery import send_discord_report
-        discord_credentials = discord_creds.get("credentials", {})
         discord_ctx = state.get("discord_context") or {}
-        bot_token = discord_ctx.get("bot_token") or discord_credentials.get("bot_token", "")
-        channel_id = discord_ctx.get("channel_id") or discord_credentials.get("default_channel_id", "")
+        bot_token = discord_ctx.get("bot_token") or discord_creds.get("bot_token", "")
+        channel_id = discord_ctx.get("channel_id") or discord_creds.get("default_channel_id", "")
         thread_id = discord_ctx.get("thread_id", "")
         logger.debug("[publish] discord delivery: channel_id=%s thread_id=%s bot_token_present=%s", channel_id, thread_id, bool(bot_token))
         if bot_token and channel_id:

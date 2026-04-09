@@ -145,7 +145,7 @@ def _verify_discord_signature(body: bytes, signature: str, timestamp: str) -> No
         VerifyKey(bytes.fromhex(_DISCORD_PUBLIC_KEY)).verify(
             timestamp.encode() + body, bytes.fromhex(signature)
         )
-    except BadSignatureError as exc:
+    except (BadSignatureError, ValueError) as exc:
         raise HTTPException(status_code=401, detail="Invalid request signature") from exc
 
 
