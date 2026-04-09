@@ -25,6 +25,7 @@ from app.integrations.models import (
     OpsGenieIntegrationConfig,
 )
 from app.integrations.mongodb import build_mongodb_config
+from app.integrations.mongodb_atlas import build_mongodb_atlas_config
 from app.integrations.sentry import build_sentry_config
 from app.output import get_tracker
 from app.services.vercel import VercelConfig
@@ -53,6 +54,8 @@ _SERVICE_KEY_MAP = {
     "gitlab": "gitlab",
     "mongodb": "mongodb",
     "mongo": "mongodb",
+    "mongodb_atlas": "mongodb_atlas",
+    "atlas": "mongodb_atlas",
     "vercel": "vercel",
     "opsgenie": "opsgenie",
     "bitbucket": "bitbucket",
@@ -238,6 +241,26 @@ def _classify_integrations(
 
             if mongodb_config.connection_string:
                 resolved["mongodb"] = mongodb_config.model_dump()
+
+        elif key == "mongodb_atlas":
+            try:
+                atlas_config = build_mongodb_atlas_config({
+                    "api_public_key": credentials.get("api_public_key", ""),
+                    "api_private_key": credentials.get("api_private_key", ""),
+                    "project_id": credentials.get("project_id", ""),
+                    "base_url": credentials.get("base_url", "https://cloud.mongodb.com/api/atlas/v2"),
+                })
+            except Exception:
+                continue
+
+            if atlas_config.api_public_key and atlas_config.api_private_key and atlas_config.project_id:
+                resolved["mongodb_atlas"] = {
+                    "api_public_key": atlas_config.api_public_key,
+                    "api_private_key": atlas_config.api_private_key,
+                    "project_id": atlas_config.project_id,
+                    "base_url": atlas_config.base_url,
+                    "integration_id": integration.get("id", ""),
+                }
 
         elif key == "vercel":
             try:
@@ -699,6 +722,23 @@ def _load_env_integrations() -> list[dict[str, Any]]:
                 "index_pattern": os.getenv("OPENSEARCH_INDEX_PATTERN", "*").strip() or "*",
                 "max_results": _coerce_int(os.getenv("OPENSEARCH_MAX_RESULTS", "100"), default=100),
             },
+        })
+
+    atlas_pub = os.getenv("MONGODB_ATLAS_PUBLIC_KEY", "").strip()
+    atlas_priv = os.getenv("MONGODB_ATLAS_PRIVATE_KEY", "").strip()
+    atlas_project = os.getenv("MONGODB_ATLAS_PROJECT_ID", "").strip()
+    if atlas_pub and atlas_priv and atlas_project:
+        atlas_config = build_mongodb_atlas_config({
+            "api_public_key": atlas_pub,
+            "api_private_key": atlas_priv,
+            "project_id": atlas_project,
+            "base_url": os.getenv("MONGODB_ATLAS_BASE_URL", "https://cloud.mongodb.com/api/atlas/v2").strip(),
+        })
+        integrations.append({
+            "id": "env-mongodb-atlas",
+            "service": "mongodb_atlas",
+            "status": "active",
+            "credentials": atlas_config.model_dump(exclude={"integration_id"}),
         })
 
     return integrations

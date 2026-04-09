@@ -790,22 +790,34 @@ def detect_sources(
     github_int = (resolved_integrations or {}).get("github")
     if github_int:
         repo_url = (
-            str(annotations.get("repo_url") or annotations.get("repository_url") or raw_alert.get("repo_url", ""))
+            str(
+                annotations.get("repo_url")
+                or annotations.get("repository_url")
+                or annotations.get("vercel_repo_url")
+                or raw_alert.get("repo_url", "")
+                or raw_alert.get("vercel_repo_url", "")
+            )
         )
         owner = str(
             annotations.get("github_owner")
             or annotations.get("repo_owner")
+            or annotations.get("vercel_github_owner")
             or raw_alert.get("github_owner", "")
+            or raw_alert.get("vercel_github_owner", "")
         ).strip()
         repo = str(
             annotations.get("github_repo")
             or annotations.get("repo_name")
+            or annotations.get("vercel_github_repo_name")
             or raw_alert.get("github_repo", "")
+            or raw_alert.get("vercel_github_repo_name", "")
         ).strip()
         full_name = str(
             annotations.get("repository")
             or annotations.get("repo")
+            or annotations.get("vercel_github_repo")
             or raw_alert.get("repository", "")
+            or raw_alert.get("vercel_github_repo", "")
         ).strip()
         if not owner or not repo:
             owner, repo = _split_repo_full_name(full_name)
@@ -825,12 +837,16 @@ def detect_sources(
                 "sha": str(
                     annotations.get("commit_sha")
                     or annotations.get("github_sha")
+                    or annotations.get("vercel_github_commit_sha")
                     or raw_alert.get("sha", "")
+                    or raw_alert.get("vercel_github_commit_sha", "")
                 ).strip(),
                 "ref": str(
                     annotations.get("branch")
                     or annotations.get("github_ref")
+                    or annotations.get("vercel_github_commit_ref")
                     or raw_alert.get("branch", "")
+                    or raw_alert.get("vercel_github_commit_ref", "")
                 ).strip(),
                 "path": str(
                     annotations.get("file_path")
@@ -894,9 +910,50 @@ def detect_sources(
                 annotations.get("vercel_project_id")
                 or raw_alert.get("vercel_project_id", "")
             ).strip(),
+            "project_name": str(
+                annotations.get("vercel_project_name")
+                or raw_alert.get("vercel_project_name", "")
+            ).strip(),
+            "project_slug": str(
+                annotations.get("vercel_project_slug")
+                or raw_alert.get("vercel_project_slug", "")
+            ).strip(),
             "deployment_id": str(
                 annotations.get("vercel_deployment_id")
                 or raw_alert.get("vercel_deployment_id", "")
+            ).strip(),
+            "selected_log_id": str(
+                annotations.get("vercel_selected_log_id")
+                or raw_alert.get("vercel_selected_log_id", "")
+            ).strip(),
+            "log_url": str(
+                annotations.get("vercel_log_url")
+                or raw_alert.get("vercel_log_url", "")
+                or raw_alert.get("vercel_url", "")
+            ).strip(),
+            "github_repo": str(
+                annotations.get("repository")
+                or annotations.get("vercel_github_repo")
+                or raw_alert.get("repository", "")
+                or raw_alert.get("vercel_github_repo", "")
+            ).strip(),
+            "github_commit_sha": str(
+                annotations.get("github_sha")
+                or annotations.get("commit_sha")
+                or annotations.get("vercel_github_commit_sha")
+                or raw_alert.get("sha", "")
+                or raw_alert.get("vercel_github_commit_sha", "")
+            ).strip(),
+            "github_commit_ref": str(
+                annotations.get("github_ref")
+                or annotations.get("branch")
+                or annotations.get("vercel_github_commit_ref")
+                or raw_alert.get("branch", "")
+                or raw_alert.get("vercel_github_commit_ref", "")
+            ).strip(),
+            "error_message": str(
+                annotations.get("error")
+                or raw_alert.get("error_message", "")
             ).strip(),
             "connection_verified": True,
         }
@@ -959,6 +1016,21 @@ def detect_sources(
                 "connection_verified": True,
             }
 
+    atlas_int = (resolved_integrations or {}).get("mongodb_atlas")
+    if atlas_int and str(atlas_int.get("api_public_key", "")).strip():
+        atlas_cluster = str(
+            annotations.get("atlas_cluster_name")
+            or annotations.get("cluster_name")
+            or ""
+        ).strip()
+        sources["mongodb_atlas"] = {
+            "api_public_key": str(atlas_int.get("api_public_key", "")).strip(),
+            "api_private_key": str(atlas_int.get("api_private_key", "")).strip(),
+            "project_id": str(atlas_int.get("project_id", "")).strip(),
+            "base_url": str(atlas_int.get("base_url", "https://cloud.mongodb.com/api/atlas/v2")).strip(),
+            "cluster_name": atlas_cluster,
+            "connection_verified": True,
+        }
 
     opsgenie_int = (resolved_integrations or {}).get("opsgenie")
     if opsgenie_int and str(opsgenie_int.get("api_key", "")).strip():

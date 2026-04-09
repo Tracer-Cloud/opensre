@@ -1,5 +1,5 @@
 """
-CloudWatch Demo Orchestrator.
+CloudWatch Demo Orchestrator (AWS cloud).
 
 Run with: make cloudwatch-demo
 """

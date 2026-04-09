@@ -1,5 +1,5 @@
 """
-GitLab Integration E2E Tests.
+GitLab Integration E2E Tests (cloud-hosted GitLab source).
 
 GitLab is a supplementary investigation source, not a primary alert source.
 These tests mirror how GitHub is used: a production alert fires (Grafana/generic),
@@ -44,7 +44,9 @@ def _require_env() -> tuple[str, str, str]:
     """Return (access_token, base_url, project_id) or skip the test."""
     access_token = os.getenv("GITLAB_ACCESS_TOKEN", "").strip()
     project_id = os.getenv("GITLAB_PROJECT_ID", "").strip()
-    base_url = os.getenv("GITLAB_BASE_URL", DEFAULT_GITLAB_BASE_URL).strip() or DEFAULT_GITLAB_BASE_URL
+    base_url = (
+        os.getenv("GITLAB_BASE_URL", DEFAULT_GITLAB_BASE_URL).strip() or DEFAULT_GITLAB_BASE_URL
+    )
 
     missing = []
     if not access_token:
@@ -265,4 +267,6 @@ def test_gitlab_post_mr_note():
     assert "id" in result, f"Note response missing 'id': {result.keys()}"
     assert result.get("body") == body, f"Posted body mismatch: {result.get('body')!r}"
 
-    print(f"\nPosted note id={result['id']} on MR !{mr_iid_from_annotation} in {project_id_from_annotation}")
+    print(
+        f"\nPosted note id={result['id']} on MR !{mr_iid_from_annotation} in {project_id_from_annotation}"
+    )
