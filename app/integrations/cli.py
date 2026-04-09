@@ -19,6 +19,11 @@ from typing import Any, NoReturn
 
 import questionary
 
+from app.integrations.github_mcp import (
+    GitHubMCPValidationResult,
+    build_github_mcp_config,
+    validate_github_mcp_config,
+)
 from app.integrations.store import (
     STORE_PATH,
     get_integration,
@@ -217,6 +222,19 @@ def _setup_vercel() -> None:
     upsert_integration("vercel", {"credentials": {"api_token": api_token, "team_id": team_id}})
 
 
+def _validate_github(credentials: dict[str, Any]) -> GitHubMCPValidationResult:
+    """Build a GitHubMCPConfig from collected credentials and validate it."""
+    config = build_github_mcp_config({
+        "url": credentials.get("url", ""),
+        "mode": credentials.get("mode", "streamable-http"),
+        "auth_token": credentials.get("auth_token", ""),
+        "command": credentials.get("command", ""),
+        "args": credentials.get("args", []),
+        "toolsets": credentials.get("toolsets", []),
+    })
+    return validate_github_mcp_config(config)
+
+
 def _setup_github() -> None:
     print("  1) SSE  2) Streamable HTTP  3) stdio")
     choice = _p("Choice", default="2")
@@ -240,6 +258,13 @@ def _setup_github() -> None:
     )
     toolsets = _p("Toolsets", default="repos,issues,pull_requests,actions")
     credentials["toolsets"] = [part.strip() for part in toolsets.split(",") if part.strip()]
+
+    print("  Validating GitHub MCP integration...")
+    result = _validate_github(credentials)
+    if not result.ok:
+        _die(f"GitHub validation failed: {result.detail}")
+
+    print(f"  ✓ {result.detail}")
     upsert_integration("github", {"credentials": credentials})
 
 

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import contextlib
+import types
 from unittest.mock import patch
 
 from click.testing import CliRunner
 
 from app.cli.__main__ import cli
+from app.integrations.cli import _setup_github, _validate_github
 
 
 def test_integrations_show_redacts_api_token() -> None:
@@ -81,6 +84,52 @@ def test_integrations_setup_skips_auto_verify_for_unverifiable_service() -> None
     assert result.exit_code == 0
     mock_setup.assert_called_once_with("opensearch")
     mock_verify.assert_not_called()
+
+
+def test_setup_github_validates_before_saving() -> None:
+    """_setup_github must validate credentials before persisting them (issue #419)."""
+    ok_result = types.SimpleNamespace(ok=True, detail="Validated for testuser; 12 tools")
+    with (
+        patch("app.integrations.cli._p", side_effect=["2", "https://api.githubcopilot.com/mcp/", "tok", "repos"]),
+        patch("app.integrations.cli._validate_github", return_value=ok_result) as mock_val,
+        patch("app.integrations.cli.upsert_integration") as mock_save,
+    ):
+        _setup_github()
+
+    mock_val.assert_called_once()
+    mock_save.assert_called_once()
+
+
+def test_setup_github_aborts_on_validation_failure() -> None:
+    """_setup_github must NOT save credentials when validation fails (issue #419)."""
+    bad_result = types.SimpleNamespace(ok=False, detail="auth failed")
+    with (
+        patch("app.integrations.cli._p", side_effect=["2", "https://api.githubcopilot.com/mcp/", "bad-tok", "repos"]),
+        patch("app.integrations.cli._validate_github", return_value=bad_result),
+        patch("app.integrations.cli.upsert_integration") as mock_save,
+        contextlib.suppress(SystemExit),
+    ):
+        _setup_github()
+
+    mock_save.assert_not_called()
+
+
+def test_validate_github_calls_mcp_validation() -> None:
+    """_validate_github builds config and delegates to validate_github_mcp_config."""
+    ok_result = types.SimpleNamespace(ok=True, detail="ok", tool_names=(), authenticated_user="me")
+    with patch(
+        "app.integrations.cli.validate_github_mcp_config",
+        return_value=ok_result,
+    ) as mock_val:
+        result = _validate_github({
+            "url": "https://example.com/mcp/",
+            "mode": "streamable-http",
+            "auth_token": "ghp_test",
+            "toolsets": ["repos"],
+        })
+
+    assert result.ok is True
+    mock_val.assert_called_once()
 
 
 def test_integrations_verify_accepts_github() -> None:
