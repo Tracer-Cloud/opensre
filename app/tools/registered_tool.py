@@ -217,21 +217,6 @@ class RegisteredTool:
             origin_module=tool.__class__.__module__,
             origin_name=tool.__class__.__name__,
         )
-        return cls(
-            name=metadata.name,
-            description=metadata.description,
-            input_schema=metadata.input_schema,
-            source=metadata.source,
-            use_cases=metadata.use_cases,
-            requires=metadata.requires,
-            outputs=metadata.outputs,
-            surfaces=_normalize_surfaces(resolved_surfaces),
-            run=tool.run,  # type: ignore[attr-defined]
-            is_available=tool.is_available,
-            extract_params=tool.extract_params,
-            origin_module=tool.__class__.__module__,
-            origin_name=tool.__class__.__name__,
-        )
 
     @classmethod
     def from_function(
