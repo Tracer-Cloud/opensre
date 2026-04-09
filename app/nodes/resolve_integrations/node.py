@@ -572,7 +572,9 @@ def _load_env_integrations() -> list[dict[str, Any]]:
         postgresql_config = build_postgresql_config(
             {
                 "host": postgresql_host,
-                "port": int(_p) if (_p := os.getenv("POSTGRESQL_PORT", "").strip()).isdigit() else 5432,
+                "port": int(_pg_port)
+                if (_pg_port := os.getenv("POSTGRESQL_PORT", "").strip()) and _pg_port.isdigit()
+                else 5432,
                 "database": postgresql_database,
                 "username": os.getenv("POSTGRESQL_USERNAME", "postgres").strip() or "postgres",
                 "password": os.getenv("POSTGRESQL_PASSWORD", "").strip(),
