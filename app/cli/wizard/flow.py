@@ -790,12 +790,7 @@ def _configure_gitlab() -> tuple[str, str]:
         if result.ok:
             credentials = {"base_url": base_url, "auth_token": auth_token}
             upsert_integration("gitlab", {"credentials": credentials})
-            env_path = sync_env_values(
-                {
-                    "GITLAB_BASE_URL": base_url,
-                    "GITLAB_ACCESS_TOKEN": auth_token,
-                }
-            )
+            env_path = sync_env_values({"GITLAB_BASE_URL": base_url})
             return "Gitlab", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
@@ -871,10 +866,7 @@ def _configure_notion() -> tuple[str, str]:
 
         if result.ok:
             upsert_integration("notion", {"credentials": {"api_key": api_key, "database_id": database_id}})
-            env_path = sync_env_values({
-                "NOTION_API_KEY": api_key,
-                "NOTION_DATABASE_ID": database_id,
-            })
+            env_path = sync_env_values({"NOTION_DATABASE_ID": database_id})
             return "Notion", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from typing import Any
 from urllib.parse import quote
@@ -21,10 +22,30 @@ from app.strict_config import StrictConfigModel
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.vercel.com"
+_MAX_VERCEL_PATH_SEGMENT_LEN = 256
+# Vercel project and deployment IDs are opaque tokens (no slashes or traversal).
+_VERCEL_PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _DEFAULT_TIMEOUT = 30
 # Runtime logs can take a long time (large limit, slow server-side aggregation, stream+json).
 _RUNTIME_LOGS_READ_ATTEMPTS = 3
 _RUNTIME_LOGS_READ_TIMEOUT_DEFAULT = 600.0
+
+
+def _scrub_log_fragment(value: object) -> str:
+    """Make user-controlled strings safe for single-line log records (avoid log injection)."""
+    text = str(value)
+    return text.replace("\r", "\\r").replace("\n", "\\n")
+
+
+def _safe_vercel_path_segment(raw: str) -> str | None:
+    cleaned = (raw or "").strip()
+    if not cleaned or len(cleaned) > _MAX_VERCEL_PATH_SEGMENT_LEN:
+        return None
+    if ".." in cleaned or "//" in cleaned:
+        return None
+    if not _VERCEL_PATH_SEGMENT_RE.fullmatch(cleaned):
+        return None
+    return cleaned
 
 
 def _runtime_logs_read_timeout_seconds() -> float:
@@ -334,10 +355,10 @@ class VercelClient:
             return {"success": True, "deployments": deployments, "total": len(deployments)}
         except httpx.HTTPStatusError as e:
             logger.warning(
-                "[vercel] list_deployments HTTP failure status=%s project=%r state=%r",
+                "[vercel] list_deployments HTTP failure status=%s project=%s state=%s",
                 e.response.status_code,
-                project_id,
-                state,
+                _scrub_log_fragment(project_id),
+                _scrub_log_fragment(state),
             )
             return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
         except Exception as e:
@@ -346,10 +367,13 @@ class VercelClient:
 
     def get_deployment(self, deployment_id: str) -> dict[str, Any]:
         """Fetch full details for a single deployment including build errors and git metadata."""
+        safe_id = _safe_vercel_path_segment(deployment_id)
+        if not safe_id:
+            return {"success": False, "error": "invalid deployment id"}
         params: dict[str, Any] = {}
         params.update(self.config.team_params)
         try:
-            resp = self._get_client().get(f"/v13/deployments/{deployment_id}", params=params)
+            resp = self._get_client().get(f"/v13/deployments/{safe_id}", params=params)
             resp.raise_for_status()
             data = resp.json()
             raw_meta = data.get("meta", {}) if isinstance(data.get("meta", {}), dict) else {}
@@ -369,9 +393,9 @@ class VercelClient:
             }
         except httpx.HTTPStatusError as e:
             logger.warning(
-                "[vercel] get_deployment HTTP failure status=%s id=%r",
+                "[vercel] get_deployment HTTP failure status=%s id=%s",
                 e.response.status_code,
-                deployment_id,
+                _scrub_log_fragment(deployment_id),
             )
             return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
         except Exception as e:
@@ -380,10 +404,13 @@ class VercelClient:
 
     def get_deployment_events(self, deployment_id: str, limit: int = 100) -> dict[str, Any]:
         """Fetch the build and runtime event stream for a deployment."""
+        safe_id = _safe_vercel_path_segment(deployment_id)
+        if not safe_id:
+            return {"success": False, "error": "invalid deployment id"}
         params: dict[str, Any] = {"limit": min(limit, 2000)}
         params.update(self.config.team_params)
         try:
-            resp = self._get_client().get(f"/v3/deployments/{deployment_id}/events", params=params)
+            resp = self._get_client().get(f"/v3/deployments/{safe_id}/events", params=params)
             resp.raise_for_status()
             data = resp.json()
             raw_events = data if isinstance(data, list) else data.get("events", [])
@@ -400,9 +427,9 @@ class VercelClient:
             return {"success": True, "events": events, "total": len(events)}
         except httpx.HTTPStatusError as e:
             logger.warning(
-                "[vercel] get_deployment_events HTTP failure status=%s id=%r",
+                "[vercel] get_deployment_events HTTP failure status=%s id=%s",
                 e.response.status_code,
-                deployment_id,
+                _scrub_log_fragment(deployment_id),
             )
             return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
         except Exception as e:
@@ -426,9 +453,17 @@ class VercelClient:
         """
         params: dict[str, Any] = {"limit": min(limit, 2000)}
         params.update(self.config.team_params)
-        path = f"/v1/projects/{project_id}/deployments/{deployment_id}/runtime-logs"
-        if not project_id:
-            path = f"/v1/deployments/{deployment_id}/logs"
+        safe_deployment = _safe_vercel_path_segment(deployment_id)
+        if not safe_deployment:
+            return {"success": False, "error": "invalid deployment id"}
+        cleaned_project = (project_id or "").strip()
+        if cleaned_project:
+            safe_project = _safe_vercel_path_segment(cleaned_project)
+            if not safe_project:
+                return {"success": False, "error": "invalid project id"}
+            path = f"/v1/projects/{safe_project}/deployments/{safe_deployment}/runtime-logs"
+        else:
+            path = f"/v1/deployments/{safe_deployment}/logs"
 
         cap = min(limit, 2000)
         stream_headers = {
@@ -474,11 +509,11 @@ class VercelClient:
                 last_retryable_detail = str(exc)
                 last_retryable_kind = type(exc).__name__
                 logger.warning(
-                    "[vercel] get_runtime_logs %s attempt %s/%s deployment=%r",
+                    "[vercel] get_runtime_logs %s attempt %s/%s deployment=%s",
                     last_retryable_kind,
                     attempt,
                     _RUNTIME_LOGS_READ_ATTEMPTS,
-                    deployment_id,
+                    _scrub_log_fragment(deployment_id),
                 )
                 if attempt >= _RUNTIME_LOGS_READ_ATTEMPTS:
                     break
@@ -487,9 +522,9 @@ class VercelClient:
                 if e.response.status_code == 404:
                     return {"success": True, "logs": [], "total": 0}
                 logger.warning(
-                    "[vercel] get_runtime_logs HTTP failure status=%s id=%r",
+                    "[vercel] get_runtime_logs HTTP failure status=%s id=%s",
                     e.response.status_code,
-                    deployment_id,
+                    _scrub_log_fragment(deployment_id),
                 )
                 return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
             except Exception as e:

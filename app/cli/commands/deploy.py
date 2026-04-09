@@ -16,6 +16,7 @@ from app.analytics.cli import (
 from app.cli.context import is_json_output, is_yes
 from app.cli.errors import OpenSREError
 from app.deployment.ec2_config import load_remote_outputs
+from app.deployment.health import poll_deployment_health
 
 
 def _deploy_style(questionary: Any) -> Any:
@@ -114,7 +115,6 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
 
     choices.extend(
         [
-            questionary.Choice("Deploy to Railway", value="railway"),
             questionary.Separator(),
             questionary.Choice("Exit", value="exit"),
         ]
@@ -181,19 +181,23 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
 
 
 def _check_deploy_health(status: dict[str, str], console: Any) -> None:
-    import httpx
-
     ip = status.get("ip", "")
     port = status.get("port", "8080")
-    url = f"http://{ip}:{port}/ok"
+    base_url = f"http://{ip}:{port}"
 
-    console.print(f"\n  Checking [bold]{url}[/bold] ...")
+    console.print(f"\n  Checking [bold]{base_url}[/bold] ...")
     try:
-        resp = httpx.get(url, timeout=10.0)
-        resp.raise_for_status()
-        data = resp.json()
-        console.print(f"  [green]Healthy[/green]  {data}")
-    except httpx.TimeoutException:
+        health = poll_deployment_health(
+            base_url,
+            interval_seconds=2.0,
+            max_attempts=3,
+            request_timeout_seconds=5.0,
+        )
+        console.print(
+            f"  [green]Healthy[/green]  endpoint={health.url} "
+            f"attempts={health.attempts} elapsed={health.elapsed_seconds:.1f}s"
+        )
+    except TimeoutError:
         console.print(f"  [red]Timeout[/red]  could not reach {ip}:{port}")
     except Exception as exc:  # noqa: BLE001
         console.print(f"  [red]Unhealthy[/red]  {exc}")

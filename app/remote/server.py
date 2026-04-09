@@ -21,7 +21,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -33,6 +33,7 @@ from starlette.responses import StreamingResponse
 
 from app.remote.vercel_poller import (
     VercelInvestigationCandidate,
+    VercelPoller,
     VercelResolutionError,
     enrich_remote_alert_from_vercel,
 )
@@ -62,7 +63,19 @@ def _check_api_key(x_api_key: str | None = Header(default=None)) -> None:
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     INVESTIGATIONS_DIR.mkdir(parents=True, exist_ok=True)
     _refresh_instance_metadata()
-    yield
+
+    poller = VercelPoller(investigations_dir=INVESTIGATIONS_DIR)
+    poll_task: asyncio.Task[None] | None = None
+    if poller.is_enabled:
+        poll_task = asyncio.create_task(poller.run_forever(_handle_polled_candidate))
+
+    try:
+        yield
+    finally:
+        if poll_task is not None:
+            poll_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await poll_task
 
 
 app = FastAPI(

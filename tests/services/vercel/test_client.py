@@ -434,6 +434,24 @@ def test_get_deployment_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "timed out" in result["error"]
 
 
+def test_get_deployment_rejects_unsafe_deployment_id() -> None:
+    result = _client().get_deployment("dpl_../other")
+    assert result["success"] is False
+    assert "invalid" in str(result.get("error", "")).lower()
+
+
+def test_get_deployment_events_rejects_unsafe_deployment_id() -> None:
+    result = _client().get_deployment_events("x/y")
+    assert result["success"] is False
+    assert "invalid" in str(result.get("error", "")).lower()
+
+
+def test_get_runtime_logs_rejects_unsafe_project_id() -> None:
+    result = _client().get_runtime_logs("dpl_xyz", project_id="prj/../x")
+    assert result["success"] is False
+    assert "invalid" in str(result.get("error", "")).lower()
+
+
 def test_list_deployments_no_filters(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 

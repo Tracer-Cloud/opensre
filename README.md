@@ -429,6 +429,13 @@ Thanks goes to these amazing people:
             <sub><b>haliaeetusvocifer</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/Bahtya">
+            <img src="https://avatars.githubusercontent.com/u/34988899?v=4" width="100" alt="Bahtya"/>
+            <br />
+            <sub><b>Bahtya</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
