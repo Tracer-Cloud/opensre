@@ -4,8 +4,8 @@ import os
 
 from langsmith import traceable
 
+from app.investigation_constants import MAX_INVESTIGATION_LOOPS
 from app.output import debug_print, get_tracker
-from app.pipeline.constants import MAX_INVESTIGATION_LOOPS
 from app.services import get_llm_for_reasoning, parse_root_cause
 from app.state import InvestigationState
 
