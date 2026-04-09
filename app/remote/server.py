@@ -190,8 +190,6 @@ def _discord_post_followup(
 
 async def _run_discord_investigation(interaction: DiscordInteraction) -> None:
     """Background task: run investigation from a Discord slash command and post results."""
-    from app.utils.discord_delivery import create_discord_thread, post_discord_message
-
     # Extract the alert value from slash command options
     options = (interaction.data or {}).get("options", [])
     alert_raw = next(
