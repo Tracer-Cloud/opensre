@@ -16,7 +16,7 @@ optimal_trajectory:
   - query_grafana_logs
   - query_grafana_metrics
   - query_grafana_alert_rules
-max_investigation_loops: 3
+max_investigation_loops: 4
 model_response: |
   ROOT_CAUSE: No active failure. FreeStorageSpace dropped to ~3.5 GB at 15:11Z due to an order write burst, triggering storage autoscaling. The volume was expanded from 100 GB to 200 GB, completing at 15:13Z. By investigation time, FreeStorageSpace has recovered to ~200 GB and all metrics are within normal operating bounds. The alert fired during the brief storage pressure window and is now stale.
   ROOT_CAUSE_CATEGORY: healthy

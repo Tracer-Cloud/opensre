@@ -19,7 +19,7 @@ optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs
   - query_grafana_alert_rules
-max_investigation_loops: 3
+max_investigation_loops: 4
 model_response: |
   ROOT_CAUSE: A runaway VACUUM FREEZE on the billing_events table triggered checkpoint storms that saturated I/O and — as a downstream effect — drove CPUUtilization to 92%. This is NOT a cpu_saturation event caused by application queries. The CPU spike is a symptom, not the root cause.
   ROOT_CAUSE_CATEGORY: resource_exhaustion

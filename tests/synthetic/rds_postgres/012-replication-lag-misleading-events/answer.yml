@@ -21,7 +21,7 @@ optimal_trajectory:
   - query_grafana_logs
   - query_grafana_metrics
   - query_grafana_alert_rules
-max_investigation_loops: 3
+max_investigation_loops: 4
 model_response: |
   ROOT_CAUSE: Replication lag on reporting-prod-replica-1 caused by an ETL bulk INSERT job generating WAL at ~195 MB/s — faster than the replica can replay. The RDS event stream contains three historical infrastructure events that are distractors: (1) a scheduled maintenance/minor-version upgrade at 05:08Z (completed 05:14Z), (2) a Multi-AZ failover at 08:10Z (completed 08:12Z), and (3) a replica promotion of reporting-prod-replica-2 at 11:04Z (completed 11:05Z). All three events resolved hours before the current lag began at 13:00Z and are not the active root cause.
   ROOT_CAUSE_CATEGORY: resource_exhaustion
