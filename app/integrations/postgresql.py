@@ -88,7 +88,7 @@ def postgresql_config_from_env() -> PostgreSQLConfig | None:
         return None
     return build_postgresql_config({
         "host": host,
-        "port": int(_p) if (_p := os.getenv("POSTGRESQL_PORT", "").strip()).isdigit() else DEFAULT_POSTGRESQL_PORT,
+        "port": int(_pg_port) if (_pg_port := os.getenv("POSTGRESQL_PORT", "").strip()).isdigit() else DEFAULT_POSTGRESQL_PORT,
         "database": database,
         "username": os.getenv("POSTGRESQL_USERNAME", DEFAULT_POSTGRESQL_USER).strip(),
         "password": os.getenv("POSTGRESQL_PASSWORD", "").strip(),

@@ -153,8 +153,11 @@ class TestPostgreSQLVerification:
     """Test PostgreSQL integration verification flow."""
 
     @patch("app.integrations.postgresql._get_connection")
-    def test_verify_postgresql_success(self, mock_get_connection):
+    def test_verify_postgresql_success(self, mock_get_connection, monkeypatch):
         """PostgreSQL verification succeeds with valid config."""
+        monkeypatch.setenv("POSTGRESQL_HOST", "localhost")
+        monkeypatch.setenv("POSTGRESQL_DATABASE", "testdb")
+
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value = mock_cursor
@@ -166,8 +169,8 @@ class TestPostgreSQLVerification:
         assert len(results) >= 1
         postgres_result = next((r for r in results if r["service"] == "postgresql"), None)
         assert postgres_result is not None
-        # Status can be passed or missing depending on env config
-        assert postgres_result["status"] in ("passed", "missing")
+        assert postgres_result["status"] == "passed"
+        mock_get_connection.assert_called_once()
 
     def test_verify_integrations_structure(self):
         """Verify integrations returns expected result structure."""

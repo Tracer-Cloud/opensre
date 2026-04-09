@@ -225,6 +225,29 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 },
             }
 
+    postgresql_integration = classified_integrations.get("postgresql")
+    if isinstance(postgresql_integration, dict):
+        effective["postgresql"] = {
+            "source": source_by_service.get("postgresql", "local env"),
+            "config": postgresql_integration,
+        }
+    else:
+        pg_host = os.getenv("POSTGRESQL_HOST", "").strip()
+        pg_database = os.getenv("POSTGRESQL_DATABASE", "").strip()
+        if pg_host and pg_database:
+            _pg_port = os.getenv("POSTGRESQL_PORT", "").strip()
+            effective["postgresql"] = {
+                "source": "local env",
+                "config": {
+                    "host": pg_host,
+                    "port": int(_pg_port) if _pg_port.isdigit() else 5432,
+                    "database": pg_database,
+                    "username": os.getenv("POSTGRESQL_USERNAME", "postgres").strip() or "postgres",
+                    "password": os.getenv("POSTGRESQL_PASSWORD", "").strip(),
+                    "ssl_mode": os.getenv("POSTGRESQL_SSL_MODE", "prefer").strip() or "prefer",
+                },
+            }
+
     mongodb_atlas_integration = classified_integrations.get("mongodb_atlas")
     if isinstance(mongodb_atlas_integration, dict):
         effective["mongodb_atlas"] = {
