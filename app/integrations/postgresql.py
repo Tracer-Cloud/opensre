@@ -110,7 +110,7 @@ def resolve_postgresql_config(host: str, database: str, port: int = DEFAULT_POST
         creds = stored.get("credentials", {})
         return build_postgresql_config({
             "host": host,
-            "port": port,
+            "port": creds.get("port", port),
             "database": database,
             "username": creds.get("username", DEFAULT_POSTGRESQL_USER),
             "password": creds.get("password", ""),
