@@ -5,6 +5,7 @@ import os
 from langsmith import traceable
 
 from app.output import debug_print, get_tracker
+from app.pipeline.constants import MAX_INVESTIGATION_LOOPS
 from app.services import get_llm_for_reasoning, parse_root_cause
 from app.state import InvestigationState
 
@@ -79,7 +80,7 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     loop_count = state.get("investigation_loop_count", 0)
 
     recommendations: list[str] = []
-    if check_vendor_evidence_missing(evidence) and loop_count < 3:
+    if check_vendor_evidence_missing(evidence) and loop_count < MAX_INVESTIGATION_LOOPS:
         recommendations.append("Fetch audit payload from S3 to trace external vendor interactions")
     next_loop_count = loop_count + 1 if recommendations else loop_count
 
@@ -157,7 +158,7 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
     # If Grafana service names were just discovered but logs haven't been fetched yet,
     # loop back so node_plan_actions can query logs with the correct service name.
     recommendations: list[str] = []
-    if evidence.get("grafana_service_names") and not evidence.get("grafana_logs") and loop_count < 3:
+    if evidence.get("grafana_service_names") and not evidence.get("grafana_logs") and loop_count < MAX_INVESTIGATION_LOOPS:
         recommendations.append("Query Grafana logs using discovered service names")
 
     next_loop_count = loop_count + 1
