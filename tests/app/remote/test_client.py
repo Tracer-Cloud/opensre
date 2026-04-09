@@ -142,6 +142,107 @@ class TestCreateThread:
                 client.create_thread()
 
 
+class TestProbeHealth:
+    def test_probe_health_collects_metadata_and_deep_checks(self) -> None:
+        ok_resp = MagicMock()
+        ok_resp.status_code = 200
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {
+            "ok": True,
+            "version": "2026.4.3",
+            "uptime_seconds": 120,
+            "started_at": "2026-04-06T10:00:00+00:00",
+            "instance_id": "i-123",
+            "region": "us-east-1",
+            "public_ip": "44.1.2.3",
+        }
+
+        version_resp = MagicMock()
+        version_resp.status_code = 200
+        version_resp.json.return_value = {"version": "2026.4.3"}
+
+        deep_resp = MagicMock()
+        deep_resp.status_code = 200
+        deep_resp.json.return_value = {
+            "status": "warn",
+            "checks": [
+                {"name": "Disk", "status": "passed", "detail": "33% used"},
+                {"name": "Memory", "status": "warn", "detail": "91% used"},
+            ],
+        }
+
+        with patch("app.remote.client.httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.side_effect = [ok_resp, version_resp, deep_resp]
+            mock_client_cls.return_value = mock_client
+
+            client = RemoteAgentClient("http://host:2024")
+            report = client.probe_health(local_version="2026.4.5")
+
+        assert report["status"] == "warn"
+        assert report["remote_version"] == "2026.4.3"
+        assert report["instance_id"] == "i-123"
+        assert report["region"] == "us-east-1"
+        assert report["public_ip"] == "44.1.2.3"
+        assert any(check["name"] == "Disk" for check in report["checks"])
+        assert any(check["name"] == "Memory" for check in report["checks"])
+
+    def test_probe_health_without_deep_endpoint_still_succeeds(self) -> None:
+        ok_resp = MagicMock()
+        ok_resp.status_code = 200
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {"ok": True, "version": "2026.4.5"}
+
+        version_resp = MagicMock()
+        version_resp.status_code = 404
+        version_resp.json.return_value = {}
+
+        with patch("app.remote.client.httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.side_effect = [ok_resp, version_resp, httpx.ConnectError("missing")]
+            mock_client_cls.return_value = mock_client
+
+            client = RemoteAgentClient("http://host:2024")
+            report = client.probe_health(local_version="2026.4.5")
+
+        assert report["status"] == "passed"
+        assert report["remote_version"] == "2026.4.5"
+        assert any(
+            check["name"] == "Uptime" and check["status"] == "passed" for check in report["checks"]
+        )
+        assert "Remote /ok endpoint does not expose uptime yet." in report["hints"]
+
+    def test_probe_health_missing_remote_version_warns(self) -> None:
+        ok_resp = MagicMock()
+        ok_resp.status_code = 200
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {"ok": True}
+
+        version_resp = MagicMock()
+        version_resp.status_code = 404
+        version_resp.json.return_value = {}
+
+        with patch("app.remote.client.httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.side_effect = [ok_resp, version_resp, httpx.ConnectError("missing")]
+            mock_client_cls.return_value = mock_client
+
+            client = RemoteAgentClient("http://host:2024")
+            report = client.probe_health(local_version="2026.4.5")
+
+        assert report["status"] == "warn"
+        assert report["remote_version"] == "unknown"
+        version_check = next(check for check in report["checks"] if check["name"] == "Version")
+        assert version_check["status"] == "warn"
+        assert version_check["detail"] == "Remote did not report a version."
+
+
 class TestBuildSyntheticPayload:
     def test_has_required_fields(self) -> None:
         payload = _build_synthetic_payload()
@@ -158,7 +259,11 @@ class TestRunStreamedInvestigation:
         events = iter(
             [
                 StreamEvent("metadata", data={"run_id": "r-1"}),
-                StreamEvent("updates", node_name="extract_alert", data={"extract_alert": {"alert_name": "a"}}),
+                StreamEvent(
+                    "updates",
+                    node_name="extract_alert",
+                    data={"extract_alert": {"alert_name": "a"}},
+                ),
                 StreamEvent(
                     "updates",
                     node_name="diagnose",
@@ -295,9 +400,7 @@ class TestPreflight:
 
     def test_preflight_connection_refused(self) -> None:
         client = RemoteAgentClient("http://host:2024")
-        with patch.object(
-            client, "health", side_effect=httpx.ConnectError("refused")
-        ):
+        with patch.object(client, "health", side_effect=httpx.ConnectError("refused")):
             result = client.preflight()
 
         assert result.ok is False

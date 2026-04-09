@@ -134,6 +134,23 @@ class TestEKSAddPods:
         entry = catalog["evidence/eks/prod-cluster-1/tracer/pod/failing-pod"]
         assert entry["snippet"] is None
 
+    def test_add_eks_pods_prefers_per_tool_namespace_and_cluster(self) -> None:
+        evidence = {
+            "eks_cluster_name": "stale-cluster",
+            "eks_namespace": "stale-namespace",
+            "eks_pods_cluster_name": "prod-cluster-1",
+            "eks_pods_namespace": "tracer",
+            "eks_pods": [{"name": "failing-pod", "phase": "Failed"}],
+            "eks_failing_pods": [{"name": "failing-pod", "phase": "Failed", "containers": []}],
+            "eks_high_restart_pods": [],
+        }
+        catalog: dict = {}
+        source_to_id: dict = {}
+
+        _add_eks_pods(evidence, catalog, source_to_id)
+
+        assert "evidence/eks/prod-cluster-1/tracer/pod/failing-pod" in catalog
+
 
 class TestEKSAddDeployments:
     """Test _add_eks_deployments catalog builder."""
@@ -334,6 +351,23 @@ class TestEKSAddNodeHealth:
         _add_eks_node_health(evidence, catalog, source_to_id)
 
         assert not catalog
+
+    def test_add_eks_node_health_handles_missing_condition_type(self) -> None:
+        evidence = {
+            "eks_cluster_name": "prod-cluster-1",
+            "eks_nodes": [{"name": "node-1", "status": "NotReady"}],
+            "eks_not_ready_nodes": [
+                {"name": "node-1", "status": "NotReady", "conditions": [{"status": "False"}]}
+            ],
+        }
+        catalog: dict = {}
+        source_to_id: dict = {}
+
+        _add_eks_node_health(evidence, catalog, source_to_id)
+
+        entry = catalog["evidence/eks/prod-cluster-1/nodes"]
+        assert entry["snippet"] is not None
+        assert "Unknown" in entry["snippet"]
 
 
 class TestEKSSourceAliases:

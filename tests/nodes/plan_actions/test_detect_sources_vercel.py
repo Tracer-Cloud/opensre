@@ -10,6 +10,14 @@ _VERCEL_INT = {
     "integration_id": "vercel-1",
 }
 
+_GITHUB_INT = {
+    "url": "http://github.example.com/mcp",
+    "mode": "streamable-http",
+    "auth_token": "ghp_test",
+    "command": "",
+    "args": [],
+}
+
 
 def test_vercel_source_always_created_when_integration_configured() -> None:
     # Vercel source is created whenever the integration is present, regardless of annotations
@@ -89,3 +97,27 @@ def test_vercel_source_detects_top_level_alert_fields() -> None:
     vercel = sources.get("vercel")
     assert vercel is not None
     assert vercel["deployment_id"] == "dpl_from_top_level"
+
+
+def test_vercel_github_metadata_enables_github_source_when_integration_configured() -> None:
+    alert = {
+        "vercel_project_id": "proj_frontend",
+        "vercel_deployment_id": "dpl_from_top_level",
+        "vercel_github_repo": "org/tracer-marketing-website-v3",
+        "vercel_github_commit_sha": "abc123",
+        "vercel_github_commit_ref": "main",
+        "error_message": "Build failed: cannot resolve import",
+        "annotations": {},
+    }
+    sources = detect_sources(alert, {}, {"vercel": _VERCEL_INT, "github": _GITHUB_INT})
+
+    github = sources.get("github")
+    vercel = sources.get("vercel")
+    assert github is not None
+    assert github["owner"] == "org"
+    assert github["repo"] == "tracer-marketing-website-v3"
+    assert github["sha"] == "abc123"
+    assert github["ref"] == "main"
+    assert github["query"] == "Build failed: cannot resolve import"
+    assert vercel is not None
+    assert vercel["github_repo"] == "org/tracer-marketing-website-v3"

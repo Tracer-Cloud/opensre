@@ -101,7 +101,7 @@ jobs:
           if-no-files-found: error
 
   build-binaries:
-    needs: verify
+    needs: [verify, prepare]
     strategy:
       fail-fast: false
       matrix:
@@ -127,6 +127,8 @@ jobs:
             binary_name: opensre.exe
             archive_ext: zip
     runs-on: ${{ matrix.runner }}
+    env:
+      TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
 
     steps:
       - uses: actions/checkout@v5
@@ -164,7 +166,7 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${TAG_NAME#v}"
           ASSET_BASENAME="opensre_${VERSION}_${{ matrix.target }}"
           tar -C dist -czf "${ASSET_BASENAME}.tar.gz" "${{ matrix.binary_name }}"
           shasum -a 256 "${ASSET_BASENAME}.tar.gz" > "${ASSET_BASENAME}.tar.gz.sha256"
@@ -173,7 +175,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $version = $env:TAG_NAME.TrimStart("v")
           $assetBaseName = "opensre_${version}_${{ matrix.target }}"
           Compress-Archive -Path "dist\${{ matrix.binary_name }}" -DestinationPath "${assetBaseName}.zip"
           $hash = (Get-FileHash -Algorithm SHA256 "${assetBaseName}.zip").Hash.ToLowerInvariant()
@@ -238,9 +240,9 @@ jobs:
             echo "## Changelog"
             echo
             if [ -n "$previous_tag" ]; then
-              echo "_Changes since $previous_tag_"
+              echo "_Changes since ${previous_tag}_"
             else
-              echo "_Changes up to $TAG_NAME_"
+              echo "_Changes up to ${TAG_NAME}_"
             fi
             echo
             git log "$range_spec" --no-merges --pretty='- %s (%h) — %an'

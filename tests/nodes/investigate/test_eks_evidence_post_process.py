@@ -86,6 +86,8 @@ class TestEKSEvidenceMappers:
 
         assert result["eks_cluster_name"] == "prod-cluster-1"
         assert result["eks_namespace"] == "tracer"
+        assert result["eks_pods_cluster_name"] == "prod-cluster-1"
+        assert result["eks_pods_namespace"] == "tracer"
         assert len(result["eks_pods"]) == 2
         assert len(result["eks_failing_pods"]) == 1
         assert len(result["eks_high_restart_pods"]) == 1
@@ -128,6 +130,8 @@ class TestEKSEvidenceMappers:
 
         assert result["eks_cluster_name"] == "prod-cluster-1"
         assert result["eks_namespace"] == "tracer"
+        assert result["eks_deployments_cluster_name"] == "prod-cluster-1"
+        assert result["eks_deployments_namespace"] == "tracer"
         assert len(result["eks_deployments"]) == 2
         assert len(result["eks_degraded_deployments"]) == 1
         assert result["eks_deployment_name"] == "worker-deployment"
@@ -165,6 +169,8 @@ class TestEKSEvidenceMappers:
 
         assert result["eks_cluster_name"] == "prod-cluster-1"
         assert result["eks_namespace"] == "tracer"
+        assert result["eks_events_cluster_name"] == "prod-cluster-1"
+        assert result["eks_events_namespace"] == "tracer"
         assert len(result["eks_warning_events"]) == 1
         assert result["eks_total_warning_count"] == 5
 
@@ -180,6 +186,8 @@ class TestEKSEvidenceMappers:
 
         assert result["eks_cluster_name"] == "prod-cluster-1"
         assert result["eks_namespace"] == "tracer"
+        assert result["eks_pod_logs_cluster_name"] == "prod-cluster-1"
+        assert result["eks_pod_logs_namespace"] == "tracer"
         assert result["eks_pod_name"] == "api-pod-1"
         assert result["eks_pod_logs"] == "ERROR: Connection timeout\nTraceback: ..."
 
@@ -206,6 +214,7 @@ class TestEKSEvidenceMappers:
         result = mapper(data)
 
         assert result["eks_cluster_name"] == "prod-cluster-1"
+        assert result["eks_node_health_cluster_name"] == "prod-cluster-1"
         assert len(result["eks_nodes"]) == 2
         assert len(result["eks_not_ready_nodes"]) == 1
 

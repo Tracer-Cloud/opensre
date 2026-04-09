@@ -558,8 +558,8 @@ def _add_eks_pods(
     pods = evidence.get("eks_pods") or []
     failing_pods = evidence.get("eks_failing_pods") or []
     high_restart_pods = evidence.get("eks_high_restart_pods") or []
-    cluster = evidence.get("eks_cluster_name", "unknown")
-    namespace = evidence.get("eks_namespace", "unknown")
+    cluster = evidence.get("eks_pods_cluster_name") or evidence.get("eks_cluster_name") or "unknown"
+    namespace = evidence.get("eks_pods_namespace") or evidence.get("eks_namespace") or "unknown"
 
     if not pods:
         return
@@ -617,8 +617,14 @@ def _add_eks_deployments(
     """Add EKS deployment evidence to catalog with cluster and namespace provenance."""
     deployments = evidence.get("eks_deployments") or []
     degraded = evidence.get("eks_degraded_deployments") or []
-    cluster = evidence.get("eks_cluster_name", "unknown")
-    namespace = evidence.get("eks_namespace", "unknown")
+    cluster = (
+        evidence.get("eks_deployments_cluster_name")
+        or evidence.get("eks_cluster_name")
+        or "unknown"
+    )
+    namespace = (
+        evidence.get("eks_deployments_namespace") or evidence.get("eks_namespace") or "unknown"
+    )
 
     if not deployments:
         return
@@ -664,8 +670,8 @@ def _add_eks_events(
 ) -> None:
     """Add EKS warning events to catalog with cluster and namespace provenance."""
     events = evidence.get("eks_warning_events") or []
-    cluster = evidence.get("eks_cluster_name", "unknown")
-    namespace = evidence.get("eks_namespace", "all")
+    cluster = evidence.get("eks_events_cluster_name") or evidence.get("eks_cluster_name") or "unknown"
+    namespace = evidence.get("eks_events_namespace") or evidence.get("eks_namespace") or "all"
     total_count = evidence.get("eks_total_warning_count", 0)
 
     if not events:
@@ -700,8 +706,10 @@ def _add_eks_pod_logs(
 ) -> None:
     """Add EKS pod logs to catalog with full cluster, namespace, pod provenance."""
     logs = evidence.get("eks_pod_logs", "")
-    cluster = evidence.get("eks_cluster_name", "unknown")
-    namespace = evidence.get("eks_namespace", "unknown")
+    cluster = (
+        evidence.get("eks_pod_logs_cluster_name") or evidence.get("eks_cluster_name") or "unknown"
+    )
+    namespace = evidence.get("eks_pod_logs_namespace") or evidence.get("eks_namespace") or "unknown"
     pod_name = evidence.get("eks_pod_name", "unknown")
 
     if not logs:
@@ -734,7 +742,11 @@ def _add_eks_node_health(
     """Add EKS node health to catalog with cluster provenance."""
     nodes = evidence.get("eks_nodes") or []
     not_ready = evidence.get("eks_not_ready_nodes") or []
-    cluster = evidence.get("eks_cluster_name", "unknown")
+    cluster = (
+        evidence.get("eks_node_health_cluster_name")
+        or evidence.get("eks_cluster_name")
+        or "unknown"
+    )
 
     if not nodes:
         return
@@ -748,7 +760,11 @@ def _add_eks_node_health(
     for node in not_ready[:3]:  # Limit to first 3
         name = node.get("name", "unknown")
         conditions = node.get("conditions", [])
-        bad_conds = [c["type"] for c in conditions if c.get("status") != "True"]
+        bad_conds = [
+            c.get("type", "Unknown")
+            for c in conditions
+            if isinstance(c, dict) and c.get("status") != "True"
+        ]
         node_info.append(f"{name}: {','.join(bad_conds)}")
 
     eid = f"evidence/eks/{cluster}/nodes"
@@ -911,10 +927,23 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         # Multiple failed pods — populated from Datadog evidence when available
         "kube_failed_pods": ns.evidence.get("datadog_failed_pods", []),
         # EKS Kubernetes provenance from EKS tool evidence
-        "eks_cluster_name": ns.evidence.get("eks_cluster_name")
+        "eks_cluster_name": (
+            ns.evidence.get("eks_cluster_name")
+            or ns.evidence.get("eks_pods_cluster_name")
+            or ns.evidence.get("eks_deployments_cluster_name")
+            or ns.evidence.get("eks_events_cluster_name")
+            or ns.evidence.get("eks_pod_logs_cluster_name")
+            or ns.evidence.get("eks_node_health_cluster_name")
+        )
         or _safe_get(ns.raw_alert, "annotations", "eks_cluster")
         or _safe_get(ns.raw_alert, "annotations", "cluster_name"),
-        "eks_namespace": ns.evidence.get("eks_namespace")
+        "eks_namespace": (
+            ns.evidence.get("eks_namespace")
+            or ns.evidence.get("eks_pods_namespace")
+            or ns.evidence.get("eks_deployments_namespace")
+            or ns.evidence.get("eks_events_namespace")
+            or ns.evidence.get("eks_pod_logs_namespace")
+        )
         or _safe_get(ns.raw_alert, "annotations", "kube_namespace")
         or _safe_get(ns.raw_alert, "annotations", "namespace"),
         "eks_pod_name": ns.evidence.get("eks_pod_name")

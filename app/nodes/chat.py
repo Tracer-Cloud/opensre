@@ -174,6 +174,30 @@ def router_node(state: AgentState) -> dict[str, Any]:
     return {"route": route if route in ("tracer_data", "general") else "general"}
 
 
+def _apply_guardrails_to_messages(msgs: list[Any]) -> list[Any]:
+    """Return a copy of *msgs* with redacted content, leaving originals untouched.
+
+    Operates on copies to avoid mutating shared LangGraph state objects.
+    """
+    import copy
+
+    from app.guardrails.engine import get_guardrail_engine
+
+    engine = get_guardrail_engine()
+    if not engine.is_active:
+        return msgs
+    result = []
+    for msg in msgs:
+        content = getattr(msg, "content", None)
+        if isinstance(content, str) and content:
+            redacted = engine.apply(content)
+            if redacted != content:
+                msg = copy.copy(msg)
+                msg.content = redacted
+        result.append(msg)
+    return result
+
+
 def chat_agent_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any]:
     """Chat agent with tools for Tracer data queries.
 
@@ -190,6 +214,7 @@ def chat_agent_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any
     if not has_system:
         msgs = [SystemMessage(content=SYSTEM_PROMPT), *msgs]
 
+    msgs = _apply_guardrails_to_messages(msgs)
     llm = _get_chat_llm(with_tools=True)
     response = llm.invoke(msgs)
     return {"messages": [response]}
@@ -207,6 +232,7 @@ def general_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any]:
     if not has_system:
         msgs = [SystemMessage(content=GENERAL_SYSTEM_PROMPT), *msgs]
 
+    msgs = _apply_guardrails_to_messages(msgs)
     llm = _get_chat_llm(with_tools=False)
     response = llm.invoke(msgs)
     return {"messages": [response]}

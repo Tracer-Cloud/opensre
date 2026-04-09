@@ -10,6 +10,7 @@ from typing import Any
 from app.tools.DataDogLogsTool import _ERROR_KEYWORDS
 from app.tools.DataDogLogsTool._client import make_async_client
 from app.tools.tool_decorator import tool
+from app.tools.utils.compaction import compact_logs, summarize_counts
 
 
 def _run_in_thread(coro: Any) -> Any:
@@ -242,12 +243,15 @@ def fetch_datadog_context(
     events = events_raw.get("events", []) if events_raw.get("success") else []
 
     error_logs = [
-        log for log in logs
-        if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)
+        log for log in logs if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)
     ]
 
     pod_name, container_name, detected_namespace = _extract_pod_from_logs(error_logs or logs)
     failed_pods = _collect_failed_pods(logs)
+
+    # Compact logs to stay within prompt limits
+    compacted_logs = compact_logs(logs, limit=75)
+    compacted_error_logs = compact_logs(error_logs, limit=30)
 
     errors: dict[str, str] = {}
     if not logs_raw.get("success") and logs_raw.get("error"):
@@ -257,11 +261,11 @@ def fetch_datadog_context(
     if not events_raw.get("success") and events_raw.get("error"):
         errors["events"] = events_raw["error"]
 
-    return {
+    result_data = {
         "source": "datadog_investigate",
         "available": True,
-        "logs": logs[:75],
-        "error_logs": error_logs[:30],
+        "logs": compacted_logs,
+        "error_logs": compacted_error_logs,
         "total": logs_raw.get("total", len(logs)),
         "query": query,
         "monitors": monitors,
@@ -273,3 +277,7 @@ def fetch_datadog_context(
         "failed_pods": failed_pods,
         "errors": errors,
     }
+    summary = summarize_counts(logs_raw.get("total", len(logs)), len(compacted_logs), "logs")
+    if summary:
+        result_data["truncation_note"] = summary
+    return result_data

@@ -249,6 +249,7 @@ def _map_eks_namespaces(data: dict) -> dict:
         return {}
     return {
         "eks_cluster_name": data.get("cluster_name", ""),
+        "eks_namespaces_cluster_name": data.get("cluster_name", ""),
         "eks_namespaces": data.get("namespaces", []),
     }
 
@@ -259,6 +260,8 @@ def _map_eks_pods(data: dict) -> dict:
     return {
         "eks_cluster_name": data.get("cluster_name", ""),
         "eks_namespace": data.get("namespace", ""),
+        "eks_pods_cluster_name": data.get("cluster_name", ""),
+        "eks_pods_namespace": data.get("namespace", ""),
         "eks_pods": data.get("pods", []),
         "eks_failing_pods": data.get("failing_pods", []),
         "eks_high_restart_pods": data.get("high_restart_pods", []),
@@ -275,6 +278,8 @@ def _map_eks_deployments(data: dict) -> dict:
     return {
         "eks_cluster_name": data.get("cluster_name", ""),
         "eks_namespace": data.get("namespace", ""),
+        "eks_deployments_cluster_name": data.get("cluster_name", ""),
+        "eks_deployments_namespace": data.get("namespace", ""),
         "eks_deployments": deployments,
         "eks_degraded_deployments": degraded,
         "eks_deployment_name": first_name,
@@ -287,6 +292,8 @@ def _map_eks_events(data: dict) -> dict:
     return {
         "eks_cluster_name": data.get("cluster_name", ""),
         "eks_namespace": data.get("namespace", ""),
+        "eks_events_cluster_name": data.get("cluster_name", ""),
+        "eks_events_namespace": data.get("namespace", ""),
         "eks_warning_events": data.get("warning_events", []),
         "eks_total_warning_count": data.get("total_warning_count", 0),
     }
@@ -298,6 +305,8 @@ def _map_eks_pod_logs(data: dict) -> dict:
     return {
         "eks_cluster_name": data.get("cluster_name", ""),
         "eks_namespace": data.get("namespace", ""),
+        "eks_pod_logs_cluster_name": data.get("cluster_name", ""),
+        "eks_pod_logs_namespace": data.get("namespace", ""),
         "eks_pod_name": data.get("pod_name", ""),
         "eks_pod_logs": data.get("logs", ""),
     }
@@ -308,8 +317,52 @@ def _map_eks_node_health(data: dict) -> dict:
         return {}
     return {
         "eks_cluster_name": data.get("cluster_name", ""),
+        "eks_node_health_cluster_name": data.get("cluster_name", ""),
         "eks_nodes": data.get("nodes", []),
         "eks_not_ready_nodes": data.get("not_ready_nodes", []),
+    }
+
+
+def _map_vercel_deployment_status(data: dict) -> dict:
+    return {
+        "vercel_deployments": data.get("deployments", []),
+        "vercel_failed_deployments": data.get("failed_deployments", []),
+        "vercel_project_id": data.get("project_id", ""),
+        "vercel_deployments_total": data.get("total", 0),
+    }
+
+
+def _map_vercel_deployment_logs(data: dict) -> dict:
+    return {
+        "vercel_deployment": data.get("deployment", {}),
+        "vercel_deployment_id": data.get("deployment_id", ""),
+        "vercel_events": data.get("events", []),
+        "vercel_error_events": data.get("error_events", []),
+        "vercel_runtime_logs": data.get("runtime_logs", []),
+        "vercel_total_events": data.get("total_events", 0),
+        "vercel_total_runtime_logs": data.get("total_runtime_logs", 0),
+    }
+
+
+def _map_github_code_search(data: dict) -> dict:
+    return {
+        "github_code_matches": data.get("matches", []) or [],
+        "github_code_query": data.get("query", ""),
+        "github_code_text": data.get("text", ""),
+    }
+
+
+def _map_github_file_contents(data: dict) -> dict:
+    return {
+        "github_file": data.get("file", {}),
+        "github_file_text": data.get("text", ""),
+    }
+
+
+def _map_github_commits(data: dict) -> dict:
+    return {
+        "github_commits": data.get("commits", []) or [],
+        "github_commits_text": data.get("text", ""),
     }
 
 
@@ -345,6 +398,11 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "get_eks_events": _map_eks_events,
     "get_eks_pod_logs": _map_eks_pod_logs,
     "get_eks_node_health": _map_eks_node_health,
+    "vercel_deployment_status": _map_vercel_deployment_status,
+    "vercel_deployment_logs": _map_vercel_deployment_logs,
+    "search_github_code": _map_github_code_search,
+    "get_github_file_contents": _map_github_file_contents,
+    "list_github_commits": _map_github_commits,
 }
 
 
@@ -377,24 +435,29 @@ def track_hypothesis(
     action_names: list[str],
     rationale: str,
     investigation_loop_count: int,
+    plan_audit: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Track executed hypothesis for deduplication.
+    Track executed hypothesis for deduplication and audit trail.
 
     Args:
         executed_hypotheses: Current list of executed hypotheses
         action_names: List of actions that were executed
         rationale: Rationale for executing these actions
         investigation_loop_count: Current loop count
+        plan_audit: Optional audit data from planning step (rerouting, budget, etc)
 
     Returns:
-        Updated executed_hypotheses list
+        Updated executed_hypotheses list with audit trail
     """
-    new_hypothesis = {
+    new_hypothesis: dict[str, Any] = {
         "actions": action_names,
         "rationale": rationale,
         "loop_count": investigation_loop_count,
     }
+    # Include audit data if rerouting occurred or budget was enforced
+    if plan_audit:
+        new_hypothesis["audit"] = plan_audit
     executed_hypotheses.append(new_hypothesis)
     return executed_hypotheses
 
@@ -505,6 +568,23 @@ def build_evidence_summary(execution_results: dict) -> str:
                 summary_parts.append(
                     f"eks:{cluster}:{len(data['nodes'])} nodes ({not_ready} not ready)"
                 )
+            elif action_name == "vercel_deployment_status":
+                failed_count = len(data.get("failed_deployments", []))
+                total = int(data.get("total", 0) or 0)
+                summary_parts.append(f"vercel:{total} deployments ({failed_count} failed)")
+            elif action_name == "vercel_deployment_logs":
+                events = len(data.get("events", []))
+                error_events = len(data.get("error_events", []))
+                runtime_logs = len(data.get("runtime_logs", []))
+                summary_parts.append(
+                    f"vercel:{events} events ({error_events} errors), {runtime_logs} runtime logs"
+                )
+            elif action_name == "search_github_code" and data.get("matches"):
+                summary_parts.append(f"github:{len(data['matches'])} code matches")
+            elif action_name == "get_github_file_contents" and data.get("file"):
+                summary_parts.append("github:file contents retrieved")
+            elif action_name == "list_github_commits" and data.get("commits"):
+                summary_parts.append(f"github:{len(data['commits'])} commits")
         else:
             # Log action failures for debugging
             error_msg = f"{action_name}:FAILED({result.error[:50] if result.error else 'unknown'})"
@@ -524,6 +604,7 @@ def summarize_execution_results(
     executed_hypotheses: list[dict[str, Any]],
     investigation_loop_count: int,
     rationale: str,
+    plan_audit: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """
     Summarize execution results into evidence and hypotheses.
@@ -534,6 +615,7 @@ def summarize_execution_results(
         executed_hypotheses: History of executed hypotheses
         investigation_loop_count: Current loop count
         rationale: Rationale for executing these actions
+        plan_audit: Optional audit data from planning step (rerouting, budget, etc)
 
     Returns:
         Tuple of (evidence, executed_hypotheses, evidence_summary)
@@ -547,7 +629,7 @@ def summarize_execution_results(
 
     if successful_actions:
         executed_hypotheses = track_hypothesis(
-            executed_hypotheses, successful_actions, rationale, investigation_loop_count
+            executed_hypotheses, successful_actions, rationale, investigation_loop_count, plan_audit
         )
 
     evidence_summary = build_evidence_summary(execution_results)
