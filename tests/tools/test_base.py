@@ -115,3 +115,19 @@ def test_base_tool_cost_hint_validation() -> None:
     tool = HighCostTool()
     metadata = tool.metadata()
     assert metadata.cost_hint == "high"  # Normalized to lowercase
+
+
+def test_base_tool_rejects_invalid_cost_hint() -> None:
+    with pytest.raises(ValidationError, match="cost_hint"):
+        type(
+            "InvalidCostTool",
+            (BaseTool,),
+            {
+                "name": "invalid_cost",
+                "description": "Invalid cost hint tool",
+                "input_schema": {"type": "object", "properties": {}},
+                "source": "batch",
+                "cost_hint": "critical",
+                "run": lambda _self, **_kwargs: {},
+            },
+        )

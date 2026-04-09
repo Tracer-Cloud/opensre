@@ -50,7 +50,9 @@ class ToolMetadata(StrictConfigModel):
         valid_hints = {"low", "medium", "high"}
         normalized = value.strip().lower()
         if normalized not in valid_hints:
-            return "low"  # Default to low for safety
+            raise ValueError(
+                f"cost_hint must be one of {sorted(valid_hints)}, got {value!r}"
+            )
         return normalized
 
 

@@ -167,11 +167,21 @@ def route_tools_by_tags(
     cost_priority = {"low": 0, "medium": 1, "high": 2}
     matching_tools.sort(key=lambda x: (-x[2], cost_priority.get(x[0].cost_hint, 0), x[0].name))
 
+    best_confidence = matching_tools[0][2]
+    # If overall confidence is too low, use fallback instead
+    if best_confidence < min_confidence:
+        fallback_results = select_fallback_tools(available_tools)
+        return RoutingResult(
+            selected_tools=fallback_results,
+            fallback_used=True,
+            routing_reason=f"Low confidence ({best_confidence:.0%}) below threshold - using fallback",
+            confidence=best_confidence,
+        )
+
     # Select tools with confidence above threshold
     selected: list[ToolSelectionResult] = []
-    overall_confidence = 0.0
     for tool, matching_tags, confidence in matching_tools:
-        if confidence >= min_confidence or not selected:
+        if confidence >= min_confidence:
             reason = f"Tag match: {', '.join(sorted(matching_tags))} (confidence: {confidence:.0%})"
             selected.append(
                 ToolSelectionResult(
@@ -181,23 +191,12 @@ def route_tools_by_tags(
                     is_fallback=False,
                 )
             )
-            overall_confidence = max(overall_confidence, confidence)
-
-    # If overall confidence is too low, use fallback instead
-    if overall_confidence < min_confidence:
-        fallback_results = select_fallback_tools(available_tools)
-        return RoutingResult(
-            selected_tools=fallback_results,
-            fallback_used=True,
-            routing_reason=f"Low confidence ({overall_confidence:.0%}) below threshold - using fallback",
-            confidence=overall_confidence,
-        )
 
     return RoutingResult(
         selected_tools=selected,
         fallback_used=False,
         routing_reason=f"Tag-based routing matched {len(selected)} tools for tags: {required_tags}",
-        confidence=overall_confidence,
+        confidence=best_confidence,
     )
 
 

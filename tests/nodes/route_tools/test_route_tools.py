@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from app.nodes.route_tools.route_tools import (
     DEFAULT_FALLBACK_TOOLSETS,
     MAX_FALLBACK_TOOLS,
@@ -87,17 +90,17 @@ class TestToolMetadata:
         )
         assert metadata.cost_hint == "high"
 
-    def test_cost_hint_validation_defaults_invalid(self) -> None:
-        metadata = ToolMetadata.model_validate(
-            {
-                "name": "test",
-                "description": "Test",
-                "input_schema": {},
-                "source": "storage",
-                "cost_hint": "invalid",
-            }
-        )
-        assert metadata.cost_hint == "low"
+    def test_cost_hint_validation_rejects_invalid(self) -> None:
+        with pytest.raises(ValidationError, match="cost_hint"):
+            ToolMetadata.model_validate(
+                {
+                    "name": "test",
+                    "description": "Test",
+                    "input_schema": {},
+                    "source": "storage",
+                    "cost_hint": "invalid",
+                }
+            )
 
 
 class TestBaseToolRoutingMetadata:
@@ -262,6 +265,18 @@ class TestRoutingByTags:
         assert "Tag match" in reason
         assert "logs" in reason
         assert "error" in reason
+
+    def test_route_by_tags_uses_fallback_when_best_match_below_threshold(self) -> None:
+        tools = [
+            MockTool("logs", toolset="logs", tags=["logs"]),
+            MockTool("metrics", toolset="core", tags=["metrics"]),
+        ]
+
+        result = route_tools_by_tags(tools, ["logs", "query"], min_confidence=0.75)
+
+        assert result.fallback_used is True
+        assert all(selection.is_fallback for selection in result.selected_tools)
+        assert result.confidence == 0.5
 
 
 class TestRoutingByToolset:
