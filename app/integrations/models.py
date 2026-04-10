@@ -325,3 +325,4 @@ class EffectiveIntegrations(StrictConfigModel):
     kafka: EffectiveIntegrationEntry | None = None
     clickhouse: EffectiveIntegrationEntry | None = None
     bitbucket: EffectiveIntegrationEntry | None = None
+    trello: EffectiveIntegrationEntry | None = None
