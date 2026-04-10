@@ -204,7 +204,7 @@ def test_create_trello_card_uses_override_list_id(monkeypatch: pytest.MonkeyPatc
     assert ("idList", "override_list") in params
 
 
-def test_create_trello_card_returns_empty_dict_without_list_id() -> None:
+def test_create_trello_card_raises_without_list_id() -> None:
     config = TrelloConfig(
         api_key="trello_key",
         token="trello_token",
@@ -212,10 +212,9 @@ def test_create_trello_card_returns_empty_dict_without_list_id() -> None:
         list_id="",
     )
 
-    result = create_trello_card(
-        config=config,
-        name="Incident",
-        desc="Details",
-    )
-
-    assert result == {}
+    with pytest.raises(ValueError, match="list_id"):
+        create_trello_card(
+            config=config,
+            name="Incident",
+            desc="Details",
+        )

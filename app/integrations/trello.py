@@ -4,14 +4,13 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
-from app.strict_config import StrictConfigModel
 
 DEFAULT_TRELLO_BASE_URL = "https://api.trello.com/1"
 
 
-class TrelloConfig(StrictConfigModel):
+class TrelloConfig(BaseModel):
     """Normalized Trello connection settings."""
 
     base_url: str = DEFAULT_TRELLO_BASE_URL
@@ -129,7 +128,7 @@ def create_trello_card(
     """Create a Trello card."""
     target_list_id = (list_id or config.list_id).strip()
     if not target_list_id:
-        return {}
+        raise ValueError("A list_id must be provided either via argument or config.")
 
     payload = _request_json(
         config,
