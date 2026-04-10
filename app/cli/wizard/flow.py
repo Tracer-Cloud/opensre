@@ -904,7 +904,14 @@ def _configure_confluence() -> tuple[str, str]:
                     }
                 },
             )
-            env_path = sync_env_values({})
+            env_path = sync_env_values(
+                {
+                    "CONFLUENCE_BASE_URL": base_url,
+                    "CONFLUENCE_EMAIL": email,
+                    "CONFLUENCE_API_TOKEN": api_token,
+                    "CONFLUENCE_SPACE_KEY": space_key,
+                }
+            )
             return "Confluence", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 

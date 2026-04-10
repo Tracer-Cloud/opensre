@@ -316,6 +316,8 @@ class ConfluenceIntegrationConfig(StrictConfigModel):
 
     @model_validator(mode="after")
     def _validate_base_url(self) -> ConfluenceIntegrationConfig:
+        if not self.base_url:
+            return self
         parsed = urlparse(self.base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("Confluence base_url must be a valid HTTP or HTTPS URL.")

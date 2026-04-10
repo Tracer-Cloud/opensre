@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from app.integrations.github_mcp import build_github_mcp_config
 from app.integrations.models import (
     AWSIntegrationConfig,
+    ConfluenceIntegrationConfig,
     CoralogixIntegrationConfig,
     HoneycombIntegrationConfig,
     SlackWebhookConfig,
@@ -73,6 +74,30 @@ def test_coralogix_config_rejects_unknown_fields_with_suggestion() -> None:
                 "base_ul": "https://api.coralogix.com",
             }
         )
+
+
+def test_confluence_config_normalizes_base_url() -> None:
+    config = ConfluenceIntegrationConfig.model_validate({
+        "base_url": "  https://example.atlassian.net/  ",
+        "email": "sre@example.com",
+        "api_token": "token_123",
+        "space_key": "  SRE  ",
+    })
+
+    assert config.base_url == "https://example.atlassian.net"
+    assert config.email == "sre@example.com"
+    assert config.api_token == "token_123"
+    assert config.space_key == "SRE"
+
+
+def test_confluence_config_allows_blank_base_url_when_explicitly_unconfigured() -> None:
+    config = ConfluenceIntegrationConfig.model_validate({
+        "base_url": "",
+        "email": "sre@example.com",
+        "api_token": "token_123",
+    })
+
+    assert config.base_url == ""
 
 
 def test_grafana_config_rejects_unknown_fields_with_suggestion() -> None:
