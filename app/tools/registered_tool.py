@@ -136,6 +136,8 @@ class RegisteredTool:
         default=_extract_no_params,
         repr=False,
     )
+    tags: tuple[str, ...] = ()
+    cost_tier: str | None = None
     origin_module: str = ""
     origin_name: str = ""
 
@@ -218,6 +220,8 @@ class RegisteredTool:
         outputs: dict[str, str] | None = None,
         is_available: Callable[[dict[str, dict]], bool] | None = None,
         extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
+        tags: tuple[str, ...] | None = None,
+        cost_tier: str | None = None,
     ) -> RegisteredTool:
         if source is None:
             raise ValueError("Function tools must declare a source.")
@@ -235,6 +239,8 @@ class RegisteredTool:
             run=func,
             is_available=is_available or _always_available,
             extract_params=extract_params or _extract_no_params,
+            tags=tags or (),
+            cost_tier=cost_tier,
             origin_module=func.__module__,
             origin_name=func.__name__,
         )

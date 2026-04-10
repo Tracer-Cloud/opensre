@@ -12,9 +12,9 @@ from app.nodes.plan_actions.detect_sources import detect_sources
 from app.nodes.plan_actions.extract_keywords import extract_keywords
 from app.output import debug_print
 from app.services import get_llm_for_tools
-from app.tools.investigation_registry import (
-    get_available_actions,
-    get_prioritized_actions,
+from app.tools.investigation_registry import get_available_actions
+from app.tools.investigation_registry.prioritization import (
+    get_prioritized_actions_with_reasons,
 )
 
 # Default tool budget if not specified in state
@@ -84,7 +84,7 @@ def plan_actions(
     plan_model: type[BaseModel],
     _pipeline_name: str = "",
     resolved_integrations: dict[str, Any] | None = None,
-) -> tuple[Any | None, dict[str, dict], list[str], list, bool, str]:
+) -> tuple[Any | None, dict[str, dict], list[str], list, bool, str, list[dict[str, Any]]]:
     """
     Interpret inputs, select actions, and request a plan from the LLM.
 
@@ -98,7 +98,7 @@ def plan_actions(
         resolved_integrations: Pre-fetched integration credentials from resolve_integrations node
 
     Returns:
-        Tuple of (plan_or_none, available_sources, available_action_names, available_actions, rerouted, reroute_reason)
+        Tuple of (plan_or_none, available_sources, available_action_names, available_actions, rerouted, reroute_reason, inclusion_reasons)
     """
     # Get tool budget from input (with default)
     tool_budget = getattr(input_data, "tool_budget", DEFAULT_TOOL_BUDGET)
@@ -129,7 +129,11 @@ def plan_actions(
 
     all_actions = get_available_actions()
     keywords = extract_keywords(input_data.problem_md, input_data.alert_name)
-    candidate_actions = get_prioritized_actions(keywords=keywords) if keywords else all_actions
+    if keywords:
+        candidate_actions, inclusion_reasons = get_prioritized_actions_with_reasons(keywords=keywords)
+    else:
+        candidate_actions = all_actions
+        inclusion_reasons = []
 
     # Apply tool budget to cap the selected tool set before prompt construction
     available_actions, available_action_names = select_actions(
@@ -147,6 +151,7 @@ def plan_actions(
             available_actions,
             rerouted,
             reroute_reason,
+            inclusion_reasons,
         )
 
     llm = get_llm_for_tools()
@@ -182,4 +187,5 @@ def plan_actions(
         available_actions,
         rerouted,
         reroute_reason,
+        inclusion_reasons,
     )

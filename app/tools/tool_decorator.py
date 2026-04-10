@@ -26,6 +26,8 @@ def tool(
     outputs: dict[str, str] | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
+    tags: tuple[str, ...] | None = None,
+    cost_tier: str | None = None,
 ) -> BaseTool:
     pass
 
@@ -44,6 +46,8 @@ def tool(  # noqa: UP047
     outputs: dict[str, str] | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
+    tags: tuple[str, ...] | None = None,
+    cost_tier: str | None = None,
 ) -> F:
     pass
 
@@ -62,6 +66,8 @@ def tool(  # noqa: UP047
     outputs: dict[str, str] | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
+    tags: tuple[str, ...] | None = None,
+    cost_tier: str | None = None,
 ) -> Callable[[F], F]:
     pass
 
@@ -79,6 +85,8 @@ def tool(  # noqa: UP047
     outputs: dict[str, str] | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
+    tags: tuple[str, ...] | None = None,
+    cost_tier: str | None = None,
 ) -> Any:
     """Register a lightweight function tool or annotate an existing BaseTool.
 
@@ -99,6 +107,8 @@ def tool(  # noqa: UP047
             bool(outputs),
             is_available is not None,
             extract_params is not None,
+            bool(tags),
+            cost_tier is not None,
         ])
 
     def attach(target: F | BaseTool) -> F | BaseTool:
@@ -127,6 +137,8 @@ def tool(  # noqa: UP047
                     outputs=outputs,
                     is_available=is_available,
                     extract_params=extract_params,
+                    tags=tags,
+                    cost_tier=cost_tier,
                 ),
             )
         return target
