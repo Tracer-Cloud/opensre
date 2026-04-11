@@ -104,7 +104,7 @@ def _get_connection(config: MariaDBConfig) -> Any:
 
     ssl_arg: dict[str, Any] | None = None
     if config.ssl:
-        ssl_arg = {}
+        ssl_arg = {"ssl_verify_cert": True}
 
     connect_timeout = max(1, int(config.timeout_seconds))
 
