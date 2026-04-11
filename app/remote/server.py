@@ -12,6 +12,7 @@ Start with::
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json as _json
 import logging
 import os
@@ -21,7 +22,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -63,19 +64,17 @@ def _check_api_key(x_api_key: str | None = Header(default=None)) -> None:
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     INVESTIGATIONS_DIR.mkdir(parents=True, exist_ok=True)
     _refresh_instance_metadata()
-
     poller = VercelPoller(investigations_dir=INVESTIGATIONS_DIR)
-    poll_task: asyncio.Task[None] | None = None
+    poller_task: asyncio.Task[None] | None = None
     if poller.is_enabled:
-        poll_task = asyncio.create_task(poller.run_forever(_handle_polled_candidate))
-
+        poller_task = asyncio.create_task(_run_vercel_poller(poller))
     try:
         yield
     finally:
-        if poll_task is not None:
-            poll_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await poll_task
+        if poller_task is not None:
+            poller_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await poller_task
 
 
 app = FastAPI(
@@ -318,6 +317,11 @@ async def _handle_polled_candidate(candidate: VercelInvestigationCandidate) -> b
         candidate.dedupe_key,
     )
     return True
+
+
+async def _run_vercel_poller(poller: VercelPoller) -> None:
+    """Run the Vercel poller in background lifecycle task."""
+    await poller.run_forever(_handle_polled_candidate)
 
 
 @app.get("/investigations", response_model=list[InvestigationMeta])

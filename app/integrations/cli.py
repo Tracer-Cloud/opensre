@@ -7,7 +7,7 @@ Usage:
     python -m app.integrations remove <service>
     python -m app.integrations verify [service] [--send-slack-test]
 
-Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, slack, opensearch, rds, tracer, github, sentry
+Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, postgresql, mongodb_atlas, slack, opensearch, rds, tracer, github, sentry, vercel
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ _SECRET_KEYS = frozenset(
     {
         "api_token",
         "api_key",
+        "api_private_key",
         "app_key",
         "password",
         "secret_access_key",
@@ -393,6 +394,61 @@ def _setup_mongodb() -> None:
     )
 
 
+def _setup_postgresql() -> None:
+    host = _p("Host (e.g. localhost or postgres.example.com)")
+    database = _p("Database name")
+    if not host or not database:
+        _die("host and database are required.")
+    port = _p("Port", default="5432")
+    username = _p("Username", default="postgres")
+    password = _p("Password", secret=True)
+    ssl_mode_choice = questionary.select(
+        "SSL mode",
+        choices=[
+            questionary.Choice("prefer (recommended)", value="prefer"),
+            questionary.Choice("require", value="require"),
+            questionary.Choice("disable", value="disable"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if ssl_mode_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    upsert_integration(
+        "postgresql",
+        {
+            "credentials": {
+                "host": host,
+                "port": int(port) if port.isdigit() else 5432,
+                "database": database,
+                "username": username or "postgres",
+                "password": password,
+                "ssl_mode": ssl_mode_choice,
+            }
+        },
+    )
+
+
+def _setup_mongodb_atlas() -> None:
+    api_public_key = _p("Atlas API public key")
+    api_private_key = _p("Atlas API private key", secret=True)
+    project_id = _p("Atlas project ID (group ID)")
+    base_url = _p("Atlas API base URL", default="https://cloud.mongodb.com/api/atlas/v2")
+    if not api_public_key or not api_private_key or not project_id:
+        _die("api_public_key, api_private_key, and project_id are required.")
+    upsert_integration(
+        "mongodb_atlas",
+        {
+            "credentials": {
+                "api_public_key": api_public_key,
+                "api_private_key": api_private_key,
+                "project_id": project_id,
+                "base_url": base_url,
+            }
+        },
+    )
+
+
 _HANDLERS: dict[str, Any] = {
     "aws": _setup_aws,
     "coralogix": _setup_coralogix,
@@ -406,13 +462,14 @@ _HANDLERS: dict[str, Any] = {
     "github": _setup_github,
     "sentry": _setup_sentry,
     "mongodb": _setup_mongodb,
+    "postgresql": _setup_postgresql,
 }
 
 SUPPORTED = ", ".join(_HANDLERS)
 SUPPORTED_VERIFY = ", ".join(SUPPORTED_VERIFY_SERVICES)
 
 
-def cmd_setup(service: str | None) -> None:
+def cmd_setup(service: str | None) -> str:
     if not service:
         try:
             service = questionary.select(

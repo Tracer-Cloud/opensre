@@ -3,50 +3,66 @@ title: "Quickstart"
 slug: "quickstart"
 ---
 
-## Create an account
+### Install
 
-1. **Sign up** at [app.tracer.cloud](http://app.tracer.cloud)
+Choose your platform:
 
-   <Frame>
-     ![Create account](/images/createaccount.png)
-   </Frame>
-2. **Create a workspace**.
+**macOS (Homebrew)**
 
-   <Frame>
-     ![Create workspace](/images/createworkspace.png)
-   </Frame>
+bash
 
-## Connect OpenSRE to Slack
+```text
+brew install Tracer-Cloud/opensre/opensre
+```
 
-3. To start seeing incident investigations, you’ll need to connect OpenSRE to Slack. **Sign in with Slack** to start setting up the connection. 
+**Linux / macOS (curl)**
 
-   <Frame>
-     ![Sign In With Slack(1)](/images/sign_in_with_slack\(1\).png)
-   </Frame>
-4. In Slack, pick your workspace and click **Allow.**
+bash
 
-   <Frame>
-     ![Give Slack Access](/images/give_slack_access.png)
-   </Frame>
-5. In Slack, open your alerts channel. 
-6. Type /add and click **Add apps to this channel**
-7. Search **Tracer** and click **Add**. The Slack app still appears as Tracer during the transition.
-8. In OpenSRE, open **Integrations** → **Slack**. Under **Channel Mappings** click **\+Add.** Select the channels you’ve added OpenSRE to, and select which types of alerts you’d like OpenSRE to respond to.
+```text
+curl -fsSL https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.sh | bash
+```
 
-9. If you don't see your channel here, you'll need to invite @Tracey to the channel in Slack. Go to your chosen channel and use the command `/invite @Tracey` to add it.
+**Windows (PowerShell)**
 
-   <Frame>
-     ![Channel Mapping Slack](/images/channel_mapping_slack.png)
-   </Frame>
+powershell
 
-## Connect integrations
+```text
+irm https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.ps1 | iex
+```
 
-Each integration follows a simple, guided flow. Let’s look at Datadog as an example. 
+---
 
-1. Name - Helps distinguish between different instances
-2. API Key - in Datadog, create a new API key and copy and paste into OpenSRE. 
-3. Application Key - In Datadog, create a new Application Key and copy and paste into OpenSRE. 
+### Onboard
 
-<Frame>
-  ![Connect Datadog](/images/connect_datadog.png)
-</Frame>
+Run the onboarding wizard to configure your LLM provider and connect your integrations (Grafana, Datadog, Honeycomb, Coralogix, Slack, AWS, GitHub MCP, Sentry):
+
+bash
+
+```text
+opensre onboard
+```
+
+---
+
+### Run Your First Investigation
+
+Trigger an investigation by passing in an alert file:
+
+bash
+
+```text
+opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
+```
+
+OpenSRE will automatically fetch alert context, reason across your connected systems, and generate a structured root-cause report — optionally posting a summary to Slack or PagerDuty.
+
+---
+
+### Keep Up to Date
+
+bash
+
+```text
+opensre update
+```

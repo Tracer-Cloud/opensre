@@ -194,6 +194,40 @@ class MongoDBIntegrationConfig(StrictConfigModel):
         return normalized or "admin"
 
 
+class PostgreSQLIntegrationConfig(StrictConfigModel):
+    """Normalized PostgreSQL credentials used by resolution and verification flows."""
+
+    host: str
+    port: int = 5432
+    database: str
+    username: str = "postgres"
+    password: str = ""
+    ssl_mode: str = "prefer"
+    integration_id: str = ""
+
+    @field_validator("host", mode="before")
+    @classmethod
+    def _normalize_host(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("database", mode="before")
+    @classmethod
+    def _normalize_database(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _normalize_username(cls, value: object) -> str:
+        normalized = str(value or "postgres").strip()
+        return normalized or "postgres"
+
+    @field_validator("ssl_mode", mode="before")
+    @classmethod
+    def _normalize_ssl_mode(cls, value: object) -> str:
+        normalized = str(value or "prefer").strip()
+        return normalized or "prefer"
+
+
 class MongoDBAtlasIntegrationConfig(StrictConfigModel):
     """Normalized MongoDB Atlas API credentials used by resolution and verification flows."""
 
@@ -242,12 +276,14 @@ class GoogleDocsIntegrationConfig(StrictConfigModel):
             return 30
         return max(5, min(timeout, 300))
 
+
 class GitLabIntegrationConfig(StrictConfigModel):
     """Normalized Gitlab credentials used by resolution and verification flows."""
 
     url: str
     access_token: str
     integration_id: str = ""
+
 
 class OpsGenieIntegrationConfig(StrictConfigModel):
     """Normalized OpsGenie credentials used by resolution and verification flows."""
@@ -324,4 +360,5 @@ class EffectiveIntegrations(StrictConfigModel):
     prefect: EffectiveIntegrationEntry | None = None
     kafka: EffectiveIntegrationEntry | None = None
     clickhouse: EffectiveIntegrationEntry | None = None
+    postgresql: EffectiveIntegrationEntry | None = None
     bitbucket: EffectiveIntegrationEntry | None = None

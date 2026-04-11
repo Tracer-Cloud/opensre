@@ -467,11 +467,8 @@ def test_tests_inventory_commands_smoke(cli_sandbox: CliSandbox) -> None:
 
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
 def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
-    # One `j` per PtyAction (burst writes are not separate keys). The select list wraps;
+    # One `j` per keypress (burst writes are not separate keys). The select list wraps;
     # from the first option, len(choices)-1 steps reach "Skip for now" without wrapping past it.
-    integration_down = [
-        PtyAction(expect="Choose an integration to configure", send=b"j", timeout=5.0) for _ in range(15)
-    ]
     result = _run_cli_pty(
         cli_sandbox,
         "onboard",
@@ -479,8 +476,7 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
             PtyAction(expect="How do you want to get started?", send=b"\r"),
             PtyAction(expect="Choose your LLM provider", send=b"\r"),
             PtyAction(expect="Anthropic API key", send=b"smoke-test-key\r"),
-            *integration_down,
-            PtyAction(expect="Choose an integration to configure", send=b"\r", timeout=5.0),
+            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjjj\r"),
         ],
         timeout=30.0,
     )

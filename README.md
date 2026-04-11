@@ -1,10 +1,10 @@
 <div align="center">
 
 <p align="center">
-  <img width="2136" height="476" alt="opensre-github-banner" src="https://github.com/user-attachments/assets/68ac81ff-dca0-45fb-9b92-9cc342f173f6" />
+  <img src="docs/logo/opensre-logomark-full.svg" alt="OpenSRE" width="360" />
 </p>
 
-<h1>OpenSRE: Build Your Own AI SRE Agents</h1>
+<h3>OpenSRE: Build Your Own AI SRE Agents</h3>
 
 <p>The open-source framework for AI SRE agents, and the training and evaluation environment they need to improve. Connect the 40+ tools you already run, define your own workflows, and investigate incidents on your own infrastructure.</p>
 
@@ -18,9 +18,8 @@
 
 <p align="center">
   <strong>
-    <a href="https://app.tracer.cloud/">Getting Started</a> ·
-    <a href="https://tracer.cloud/">Tracer Agent</a> ·
-    <a href="https://tracer.mintlify.app/">Docs</a> ·
+    <a href="https://www.opensre.com/docs/quickstart">Quickstart</a> ·
+    <a href="https://www.opensre.com/docs">Docs</a> ·
     <a href="https://tracer.mintlify.app/faq">FAQ</a> ·
     <a href="https://trust.tracer.cloud/">Security</a>
   </strong>
@@ -86,9 +85,36 @@ opensre update
 
 ---
 
+## Remote Hosted Ops (Railway)
+
+After deploying a hosted service, you can run post-deploy operations from the CLI:
+
+```bash
+# inspect service status, URL, deployment metadata
+opensre remote ops --provider railway --project <project> --service <service> status
+
+# tail recent logs
+opensre remote ops --provider railway --project <project> --service <service> logs --lines 200
+
+# stream logs live
+opensre remote ops --provider railway --project <project> --service <service> logs --follow
+
+# trigger restart/redeploy
+opensre remote ops --provider railway --project <project> --service <service> restart --yes
+```
+
+OpenSRE saves your last used `provider`/`project`/`service`, so you can run:
+
+```bash
+opensre remote ops status
+opensre remote ops logs --follow
+```
+
+---
+
 ## Development
 
-> **New to Tracer?** See [SETUP.md](SETUP.md) for detailed platform-specific setup instructions, including Windows setup, environment configuration, and more.
+> **New to OpenSRE?** See [SETUP.md](SETUP.md) for detailed platform-specific setup instructions, including Windows setup, environment configuration, and more.
 
 ```bash
 git clone https://github.com/Tracer-Cloud/opensre
@@ -108,7 +134,7 @@ opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 
 ### Investigation Workflow
 
-When an alert fires, Tracer automatically:
+When an alert fires, OpenSRE automatically:
 
 1. **Fetches** the alert context and correlated logs, metrics, and traces
 2. **Reasons** across your connected systems to identify anomalies
@@ -137,7 +163,7 @@ _No benchmark results yet. Run `make benchmark` to generate._
 |                                          |                                                                                  |
 | ---------------------------------------- | -------------------------------------------------------------------------------- |
 | 🔍 **Structured incident investigation** | Correlated root-cause analysis across all your signals                           |
-| 📋 **Runbook-aware reasoning**           | Tracer reads your runbooks and applies them automatically                        |
+| 📋 **Runbook-aware reasoning**           | OpenSRE reads your runbooks and applies them automatically                       |
 | 🔮 **Predictive failure detection**      | Catch emerging issues before they page you                                       |
 | 🔗 **Evidence-backed root cause**        | Every conclusion is linked to the data behind it                                 |
 | 🤖 **Full LLM flexibility**              | Bring your own model — Anthropic, OpenAI, Ollama, Gemini, OpenRouter, NVIDIA NIM |
@@ -165,7 +191,7 @@ OpenSRE connects to 40+ tools and services across the modern cloud stack, from L
 
 ## Contributing
 
-Tracer is community-built. Every integration, improvement, and bug fix makes it better for thousands of engineers. We actively review PRs and welcome contributors of all experience levels.
+OpenSRE is community-built. Every integration, improvement, and bug fix makes it better for thousands of engineers. We actively review PRs and welcome contributors of all experience levels.
 
 <p>
   <a href="https://discord.gg/7NTpevXf7w">
@@ -178,7 +204,7 @@ Good first issues are labeled [`good first issue`](https://github.com/Tracer-Clo
 - 🐛 Report bugs or missing edge cases
 - 🔌 Add a new tool integration
 - 📖 Improve documentation or runbook examples
-- ⭐ Star the repo - it helps other engineers find Tracer
+- ⭐ Star the repo - it helps other engineers find OpenSRE
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 
@@ -386,13 +412,6 @@ Thanks goes to these amazing people:
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/qorexdev">
-            <img src="https://avatars.githubusercontent.com/u/248982649?v=4" width="100" alt="qorexdev"/>
-            <br />
-            <sub><b>qorexdev</b></sub>
-        </a>
-    </td>
-            <td align="center">
         <a href="https://github.com/ramandagar">
             <img src="https://avatars.githubusercontent.com/u/89700171?v=4" width="100" alt="ramandagar"/>
             <br />
@@ -406,8 +425,6 @@ Thanks goes to these amazing people:
             <sub><b>mvanhorn</b></sub>
         </a>
     </td>
-		</tr>
-		<tr>
             <td align="center">
         <a href="https://github.com/abhishek-marathe04">
             <img src="https://avatars.githubusercontent.com/u/175933950?v=4" width="100" alt="abhishek-marathe04"/>
@@ -415,6 +432,8 @@ Thanks goes to these amazing people:
             <sub><b>abhishek-marathe04</b></sub>
         </a>
     </td>
+		</tr>
+		<tr>
             <td align="center">
         <a href="https://github.com/yashksaini-coder">
             <img src="https://avatars.githubusercontent.com/u/115717039?v=4" width="100" alt="yashksaini-coder"/>
@@ -427,6 +446,20 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/20953018?v=4" width="100" alt="haliaeetusvocifer"/>
             <br />
             <sub><b>haliaeetusvocifer</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Bahtya">
+            <img src="https://avatars.githubusercontent.com/u/34988899?v=4" width="100" alt="Bahtya"/>
+            <br />
+            <sub><b>Bahtya</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/mayankbharati-ops">
+            <img src="https://avatars.githubusercontent.com/u/245952278?v=4" width="100" alt="mayankbharati-ops"/>
+            <br />
+            <sub><b>mayankbharati-ops</b></sub>
         </a>
     </td>
 		</tr>
