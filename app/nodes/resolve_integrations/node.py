@@ -150,6 +150,7 @@ def _classify_integrations(
                         "instance_name": instance_name,
                         "tags": instance.get("tags", []),
                     }
+                break
 
         elif key == "aws":
             if "aws" in resolved:
@@ -199,6 +200,7 @@ def _classify_integrations(
                         "instance_name": instance.get("name", "default"),
                         "tags": instance.get("tags", []),
                     }
+                    break
 
         elif key == "honeycomb":
             for instance in instances:
@@ -219,6 +221,7 @@ def _classify_integrations(
                     "instance_name": instance.get("name", "default"),
                     "tags": instance.get("tags", []),
                 }
+                break
 
         elif key == "coralogix":
             for instance in instances:
@@ -241,6 +244,7 @@ def _classify_integrations(
                         "instance_name": instance.get("name", "default"),
                         "tags": instance.get("tags", []),
                     }
+                    break
 
         elif key == "github":
             for instance in instances:
@@ -264,6 +268,7 @@ def _classify_integrations(
                     "instance_name": instance.get("name", "default"),
                     "tags": instance.get("tags", []),
                 }
+                break
 
         elif key == "sentry":
             for instance in instances:
@@ -286,6 +291,7 @@ def _classify_integrations(
                         "instance_name": instance.get("name", "default"),
                         "tags": instance.get("tags", []),
                     }
+                    break
 
         elif key == "gitlab":
             for instance in instances:
@@ -304,6 +310,7 @@ def _classify_integrations(
                     "instance_name": instance.get("name", "default"),
                     "tags": instance.get("tags", []),
                 }
+                break
         elif key == "mongodb":
             for instance in instances:
                 credentials = instance.get("credentials", {})
@@ -325,6 +332,7 @@ def _classify_integrations(
                         "instance_name": instance.get("name", "default"),
                         "tags": instance.get("tags", []),
                     }
+                    break
 
         elif key == "postgresql":
             for instance in instances:
@@ -349,6 +357,7 @@ def _classify_integrations(
                         "instance_name": instance.get("name", "default"),
                         "tags": instance.get("tags", []),
                     }
+                    break
 
         elif key == "mongodb_atlas":
             for instance in instances:
@@ -381,6 +390,7 @@ def _classify_integrations(
                         "instance_name": instance.get("name", "default"),
                         "tags": instance.get("tags", []),
                     }
+                    break
 
         elif key == "vercel":
             for instance in instances:
@@ -402,6 +412,7 @@ def _classify_integrations(
                         "instance_name": instance.get("name", "default"),
                         "tags": instance.get("tags", []),
                     }
+                    break
 
         elif key == "opsgenie":
             for instance in instances:
@@ -422,6 +433,7 @@ def _classify_integrations(
                         "instance_name": instance.get("name", "default"),
                         "tags": instance.get("tags", []),
                     }
+                    break
 
         else:
             for instance in instances:
@@ -488,6 +500,7 @@ def _load_env_integrations() -> list[dict[str, Any]]:
     def _add_grafana():
         instances_json = _parse_instances_json("GRAFANA_INSTANCES")
         if instances_json:
+            instances_list = []
             for inst in instances_json:
                 if not inst.get("url") and not inst.get("endpoint"):
                     continue
@@ -499,18 +512,20 @@ def _load_env_integrations() -> list[dict[str, Any]]:
                     GrafanaIntegrationConfig.model_validate(config)
                 except Exception:
                     continue
+                instances_list.append(
+                    {
+                        "name": inst.get("name", "default"),
+                        "tags": inst.get("tags", []),
+                        "credentials": config,
+                    }
+                )
+            if instances_list:
                 integrations.append(
                     {
-                        "id": f"env-grafana-{inst.get('name', 'default')}",
+                        "id": "env-grafana-multi",
                         "service": "grafana",
                         "status": "active",
-                        "instances": [
-                            {
-                                "name": inst.get("name", "default"),
-                                "tags": inst.get("tags", []),
-                                "credentials": config,
-                            }
-                        ],
+                        "instances": instances_list,
                     }
                 )
             return
@@ -545,6 +560,7 @@ def _load_env_integrations() -> list[dict[str, Any]]:
     def _add_datadog():
         instances_json = _parse_instances_json("DATADOG_INSTANCES")
         if instances_json:
+            instances_list = []
             for inst in instances_json:
                 if not inst.get("api_key") or not inst.get("app_key"):
                     continue
@@ -557,18 +573,20 @@ def _load_env_integrations() -> list[dict[str, Any]]:
                     DatadogIntegrationConfig.model_validate(config)
                 except Exception:
                     continue
+                instances_list.append(
+                    {
+                        "name": inst.get("name", "default"),
+                        "tags": inst.get("tags", []),
+                        "credentials": config,
+                    }
+                )
+            if instances_list:
                 integrations.append(
                     {
-                        "id": f"env-datadog-{inst.get('name', 'default')}",
+                        "id": "env-datadog-multi",
                         "service": "datadog",
                         "status": "active",
-                        "instances": [
-                            {
-                                "name": inst.get("name", "default"),
-                                "tags": inst.get("tags", []),
-                                "credentials": config,
-                            }
-                        ],
+                        "instances": instances_list,
                     }
                 )
             return
@@ -602,6 +620,7 @@ def _load_env_integrations() -> list[dict[str, Any]]:
     def _add_honeycomb():
         instances_json = _parse_instances_json("HONEYCOMB_INSTANCES")
         if instances_json:
+            instances_list = []
             for inst in instances_json:
                 if not inst.get("api_key"):
                     continue
@@ -614,18 +633,20 @@ def _load_env_integrations() -> list[dict[str, Any]]:
                     HoneycombIntegrationConfig.model_validate(config)
                 except Exception:
                     continue
+                instances_list.append(
+                    {
+                        "name": inst.get("name", "default"),
+                        "tags": inst.get("tags", []),
+                        "credentials": config,
+                    }
+                )
+            if instances_list:
                 integrations.append(
                     {
-                        "id": f"env-honeycomb-{inst.get('name', 'default')}",
+                        "id": "env-honeycomb-multi",
                         "service": "honeycomb",
                         "status": "active",
-                        "instances": [
-                            {
-                                "name": inst.get("name", "default"),
-                                "tags": inst.get("tags", []),
-                                "credentials": config,
-                            }
-                        ],
+                        "instances": instances_list,
                     }
                 )
             return
@@ -657,6 +678,7 @@ def _load_env_integrations() -> list[dict[str, Any]]:
     def _add_coralogix():
         instances_json = _parse_instances_json("CORALOGIX_INSTANCES")
         if instances_json:
+            instances_list = []
             for inst in instances_json:
                 if not inst.get("api_key"):
                     continue
@@ -670,21 +692,37 @@ def _load_env_integrations() -> list[dict[str, Any]]:
                     CoralogixIntegrationConfig.model_validate(config)
                 except Exception:
                     continue
-                integrations.append(
-                    {
-                        "id": f"env-coralogix-{inst.get('name', 'default')}",
-                        "service": "coralogix",
-                        "status": "active",
-                        "instances": [
-                            {
-                                "name": inst.get("name", "default"),
-                                "tags": inst.get("tags", []),
-                                "credentials": config,
-                            }
-                        ],
+                instances_list = []
+                for inst in instances_json:
+                    if not inst.get("api_key"):
+                        continue
+                    config = {
+                        "api_key": inst.get("api_key", ""),
+                        "base_url": inst.get("base_url", ""),
+                        "application_name": inst.get("application_name", ""),
+                        "subsystem_name": inst.get("subsystem_name", ""),
                     }
-                )
-            return
+                    try:
+                        CoralogixIntegrationConfig.model_validate(config)
+                    except Exception:
+                        continue
+                    instances_list.append(
+                        {
+                            "name": inst.get("name", "default"),
+                            "tags": inst.get("tags", []),
+                            "credentials": config,
+                        }
+                    )
+                if instances_list:
+                    integrations.append(
+                        {
+                            "id": "env-coralogix-multi",
+                            "service": "coralogix",
+                            "status": "active",
+                            "instances": instances_list,
+                        }
+                    )
+                return
 
         api_key = os.getenv("CORALOGIX_API_KEY", "").strip()
         if api_key:
@@ -714,6 +752,7 @@ def _load_env_integrations() -> list[dict[str, Any]]:
     def _add_aws():
         instances_json = _parse_instances_json("AWS_INSTANCES")
         if instances_json:
+            instances_list = []
             for inst in instances_json:
                 if not inst.get("role_arn") and not (
                     inst.get("access_key_id") and inst.get("secret_access_key")
@@ -734,18 +773,20 @@ def _load_env_integrations() -> list[dict[str, Any]]:
                     AWSIntegrationConfig.model_validate(config)
                 except Exception:
                     continue
+                instances_list.append(
+                    {
+                        "name": inst.get("name", "default"),
+                        "tags": inst.get("tags", []),
+                        "credentials": config,
+                    }
+                )
+            if instances_list:
                 integrations.append(
                     {
-                        "id": f"env-aws-{inst.get('name', 'default')}",
+                        "id": "env-aws-multi",
                         "service": "aws",
                         "status": "active",
-                        "instances": [
-                            {
-                                "name": inst.get("name", "default"),
-                                "tags": inst.get("tags", []),
-                                "credentials": config,
-                            }
-                        ],
+                        "instances": instances_list,
                     }
                 )
             return
@@ -819,6 +860,7 @@ def _load_env_integrations() -> list[dict[str, Any]]:
     def _add_github():
         instances_json = _parse_instances_json("GITHUB_INSTANCES")
         if instances_json:
+            instances_list = []
             for inst in instances_json:
                 if not inst.get("url") and not inst.get("command"):
                     continue
@@ -834,18 +876,20 @@ def _load_env_integrations() -> list[dict[str, Any]]:
                     build_github_mcp_config(config)
                 except Exception:
                     continue
+                instances_list.append(
+                    {
+                        "name": inst.get("name", "default"),
+                        "tags": inst.get("tags", []),
+                        "credentials": config,
+                    }
+                )
+            if instances_list:
                 integrations.append(
                     {
-                        "id": f"env-github-{inst.get('name', 'default')}",
+                        "id": "env-github-multi",
                         "service": "github",
                         "status": "active",
-                        "instances": [
-                            {
-                                "name": inst.get("name", "default"),
-                                "tags": inst.get("tags", []),
-                                "credentials": config,
-                            }
-                        ],
+                        "instances": instances_list,
                     }
                 )
             return
@@ -888,6 +932,7 @@ def _load_env_integrations() -> list[dict[str, Any]]:
     def _add_sentry():
         instances_json = _parse_instances_json("SENTRY_INSTANCES")
         if instances_json:
+            instances_list = []
             for inst in instances_json:
                 if not inst.get("auth_token"):
                     continue
@@ -901,18 +946,20 @@ def _load_env_integrations() -> list[dict[str, Any]]:
                     build_sentry_config(config)
                 except Exception:
                     continue
+                instances_list.append(
+                    {
+                        "name": inst.get("name", "default"),
+                        "tags": inst.get("tags", []),
+                        "credentials": config,
+                    }
+                )
+            if instances_list:
                 integrations.append(
                     {
-                        "id": f"env-sentry-{inst.get('name', 'default')}",
+                        "id": "env-sentry-multi",
                         "service": "sentry",
                         "status": "active",
-                        "instances": [
-                            {
-                                "name": inst.get("name", "default"),
-                                "tags": inst.get("tags", []),
-                                "credentials": config,
-                            }
-                        ],
+                        "instances": instances_list,
                     }
                 )
             return

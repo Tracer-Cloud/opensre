@@ -237,11 +237,16 @@ def remove_integration(service: str, instance_name: str | None = None) -> bool:
         data["integrations"] = [
             i for i in data.get("integrations", []) if i.get("service") != service
         ]
+        removed = len(data["integrations"]) < before
     else:
+        removed = False
         for integration in data.get("integrations", []):
             if integration.get("service") == service:
                 instances = integration.get("instances", [])
-                integration["instances"] = [i for i in instances if i.get("name") != instance_name]
+                filtered = [i for i in instances if i.get("name") != instance_name]
+                if len(filtered) < len(instances):
+                    removed = True
+                integration["instances"] = filtered
 
         data["integrations"] = [
             i
@@ -249,7 +254,6 @@ def remove_integration(service: str, instance_name: str | None = None) -> bool:
             if i.get("service") != service or i.get("instances")
         ]
 
-    removed = len(data["integrations"]) < before
     if removed:
         _save(data)
     return removed
