@@ -11,7 +11,6 @@ import requests
 
 from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.config import get_tracer_base_url
-from app.integrations.cli import _parse_port
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.mariadb import build_mariadb_config, validate_mariadb_config
 from app.integrations.models import (
@@ -305,7 +304,7 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 "source": "local env",
                 "config": {
                     "host": mariadb_host,
-                    "port": _parse_port(os.getenv("MARIADB_PORT", "3306").strip()),
+                    "port": int(os.getenv("MARIADB_PORT", "3306").strip() or "3306") if os.getenv("MARIADB_PORT", "3306").strip().isdigit() else 3306,
                     "database": mariadb_database,
                     "username": os.getenv("MARIADB_USERNAME", "").strip(),
                     "password": os.getenv("MARIADB_PASSWORD", "").strip(),
