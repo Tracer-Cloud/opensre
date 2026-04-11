@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any
+from typing import Any, NoReturn
 
 import questionary
 
@@ -77,7 +77,7 @@ def _p(label: str, default: str = "", secret: bool = False) -> str:
     return result.strip() or default
 
 
-def _die(msg: str) -> None:
+def _die(msg: str) -> NoReturn:
     print(f"  error: {msg}", file=sys.stderr)
     sys.exit(1)
 
