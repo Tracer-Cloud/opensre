@@ -753,7 +753,11 @@ def _build_source_provenance(
             ),
         }
 
-    return provenance
+    return {
+        source: details
+        for source, details in provenance.items()
+        if (details.get("summary") or "").strip()
+    }
 
 
 _PROVENANCE_SOURCE_ALIASES: dict[str, str] = {

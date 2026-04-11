@@ -62,3 +62,70 @@ def test_format_slack_message_shows_provenance() -> None:
         "provenance: instance=myorg.grafana.net, service=checkout-api, pipeline=checkout-service"
         in message
     )
+
+
+def test_build_report_context_adds_additional_source_provenance() -> None:
+    state = _make_state()
+    state["available_sources"].update(
+        {
+            "datadog": {
+                "site": "datadoghq.eu",
+                "default_query": "service:checkout",
+                "kubernetes_context": {"namespace": "payments"},
+            },
+            "github": {
+                "owner": "myorg",
+                "repo": "checkout",
+                "ref": "main",
+            },
+            "vercel": {
+                "project_name": "checkout-web",
+                "deployment_id": "dpl_123",
+            },
+            "s3": {
+                "bucket": "tracer-artifacts",
+                "prefix": "runs/checkout",
+            },
+        }
+    )
+    state["evidence"]["datadog_logs"] = [{"message": "5xx spike"}]
+
+    ctx = build_report_context(state)
+
+    assert ctx["source_provenance"]["datadog"]["summary"] == (
+        "site=datadoghq.eu, query=service:checkout, namespace=payments"
+    )
+    assert ctx["source_provenance"]["github"]["summary"] == "repo=myorg/checkout, ref=main"
+    assert (
+        ctx["source_provenance"]["vercel"]["summary"]
+        == "project=checkout-web, deployment_id=dpl_123"
+    )
+    assert (
+        ctx["source_provenance"]["s3"]["summary"] == "bucket=tracer-artifacts, prefix=runs/checkout"
+    )
+    assert (
+        ctx["evidence_catalog"]["evidence/datadog/logs"]["provenance"]
+        == "site=datadoghq.eu, query=service:checkout, namespace=payments"
+    )
+
+
+def test_build_report_context_drops_empty_provenance_summaries() -> None:
+    state = _make_state()
+    state["available_sources"]["github"] = {}
+    state["available_sources"]["coralogix"] = {"application_name": ""}
+
+    ctx = build_report_context(state)
+
+    assert "github" not in ctx["source_provenance"]
+    assert "coralogix" not in ctx["source_provenance"]
+
+
+def test_format_slack_message_sanitizes_provenance_content() -> None:
+    state = _make_state()
+    state["available_sources"]["grafana"]["service_name"] = "**checkout-api**"
+
+    ctx = build_report_context(state)
+    message = format_slack_message(ctx)
+
+    assert "service=*checkout-api*" in message
+    assert "service=**checkout-api**" not in message
