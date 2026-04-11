@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.integrations.cli import _parse_port
 
 
