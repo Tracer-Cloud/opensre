@@ -103,7 +103,6 @@ def _get_connection(config: MariaDBConfig) -> Any:
     import pymysql
 
     ssl_arg: dict[str, Any] | None = None
-    if config.ssl:
     ssl_arg: dict[str, Any] | None = None
     if config.ssl:
         ssl_arg = {}
