@@ -841,12 +841,15 @@ def _plan_repo_access_probe(
 
     by_name = {str(t["name"]): t for t in tools if t.get("name")}
     view_norm = view
+    ordered: tuple[str, ...]
     if view_norm == "starred":
         ordered = ("list_starred_repositories",)
     elif view_norm == "user":
         ordered = ("list_user_repositories",)
     elif view_norm == "accessible":
         ordered = ("list_repositories",)
+    elif view_norm == "search_user":
+        ordered = ()
     else:
         ordered = _REPO_PROBE_NO_ARG_TOOLS
 
