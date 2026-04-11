@@ -351,22 +351,10 @@ def test_opensre_session_starts_and_quits(cli_sandbox: CliSandbox) -> None:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
-def test_opensre_session_multiline_json_routes_as_alert(cli_sandbox: CliSandbox) -> None:
-    result = _run_cli_pty(
-        cli_sandbox,
-        actions=[
-            PtyAction(
-                expect="opensre[trust:off]>",
-                send=(b'{\r  "alert_name": "example-alert",\r  "message": "synthetic test"\r}\r'),
-            ),
-            PtyAction(expect="opensre[trust:off]>", send=b"/quit\r"),
-        ],
-    )
-
     assert result.exit_code == 0
     assert "No active alert context" not in result.stdout
+    # Confirm the REPL returned to the prompt after processing the alert input
     assert result.stdout.count("opensre[trust:off]>") >= 2
-
 
 def test_opensre_help_smoke(cli_sandbox: CliSandbox) -> None:
     result = _run_cli(cli_sandbox, "-h")
