@@ -10,12 +10,14 @@ from app.nodes.resolve_integrations.node import _classify_integrations, _load_en
 
 
 def _active_opsgenie(api_key: str = "og-key", region: str = "us") -> list[dict[str, Any]]:
-    return [{
-        "id": "store-opsgenie",
-        "service": "opsgenie",
-        "status": "active",
-        "credentials": {"api_key": api_key, "region": region},
-    }]
+    return [
+        {
+            "id": "store-opsgenie",
+            "service": "opsgenie",
+            "status": "active",
+            "credentials": {"api_key": api_key, "region": region},
+        }
+    ]
 
 
 def test_classify_opsgenie_from_store() -> None:
@@ -36,12 +38,14 @@ def test_classify_opsgenie_skipped_without_api_key() -> None:
 
 
 def test_classify_opsgenie_skipped_when_inactive() -> None:
-    integrations = [{
-        "id": "x",
-        "service": "opsgenie",
-        "status": "inactive",
-        "credentials": {"api_key": "og-key"},
-    }]
+    integrations = [
+        {
+            "id": "x",
+            "service": "opsgenie",
+            "status": "inactive",
+            "credentials": {"api_key": "og-key"},
+        }
+    ]
     resolved = _classify_integrations(integrations)
     assert "opsgenie" not in resolved
 
@@ -52,8 +56,8 @@ def test_load_env_opsgenie(monkeypatch: pytest.MonkeyPatch) -> None:
     integrations = _load_env_integrations()
     og = [i for i in integrations if i["service"] == "opsgenie"]
     assert len(og) == 1
-    assert og[0]["credentials"]["api_key"] == "env-key"
-    assert og[0]["credentials"]["region"] == "eu"
+    assert og[0]["instances"][0]["credentials"]["api_key"] == "env-key"
+    assert og[0]["instances"][0]["credentials"]["region"] == "eu"
 
 
 def test_load_env_opsgenie_absent_when_no_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -68,4 +72,4 @@ def test_load_env_opsgenie_defaults_region_to_us(monkeypatch: pytest.MonkeyPatch
     monkeypatch.delenv("OPSGENIE_REGION", raising=False)
     integrations = _load_env_integrations()
     og = [i for i in integrations if i["service"] == "opsgenie"]
-    assert og[0]["credentials"]["region"] == "us"
+    assert og[0]["instances"][0]["credentials"]["region"] == "us"

@@ -49,7 +49,7 @@ def test_load_env_integrations_reads_vercel_api_token(monkeypatch: pytest.Monkey
     vercel_entries = [i for i in integrations if i["service"] == "vercel"]
 
     assert len(vercel_entries) == 1
-    creds = vercel_entries[0]["credentials"]
+    creds = vercel_entries[0]["instances"][0]["credentials"]
     assert creds["api_token"] == "tok_from_env"
     assert creds["team_id"] == ""
     assert vercel_entries[0]["status"] == "active"
@@ -62,7 +62,7 @@ def test_load_env_integrations_reads_vercel_team_id(monkeypatch: pytest.MonkeyPa
     integrations = _load_env_integrations()
     vercel_entries = [i for i in integrations if i["service"] == "vercel"]
 
-    assert vercel_entries[0]["credentials"]["team_id"] == "team_from_env"
+    assert vercel_entries[0]["instances"][0]["credentials"]["team_id"] == "team_from_env"
 
 
 def test_load_env_integrations_skips_vercel_without_token(monkeypatch: pytest.MonkeyPatch) -> None:

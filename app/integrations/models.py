@@ -330,11 +330,50 @@ class PrefectIntegrationConfig(StrictConfigModel):
         return str(value or "").strip()
 
 
+class IntegrationInstance(StrictConfigModel):
+    """Represents a single instance of an integration with name and tags."""
+
+    name: str = "default"
+    tags: list[str] = Field(default_factory=list)
+    region: str = ""
+    account_id: str = ""
+    credentials: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _normalize_name(cls, value: object) -> str:
+        return str(value or "default").strip()
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _normalize_tags(cls, value: object) -> list[str]:
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if v]
+        return []
+
+
 class EffectiveIntegrationEntry(StrictConfigModel):
-    """Resolved integration entry with source metadata."""
+    """Resolved integration entry with source metadata and optional instances."""
 
     source: str
     config: dict[str, Any]
+    instances: list[IntegrationInstance] = Field(default_factory=list)
+
+    @field_validator("instances", mode="before")
+    @classmethod
+    def _normalize_instances(cls, value: object) -> list[IntegrationInstance]:
+        if isinstance(value, list):
+            return [
+                IntegrationInstance.model_validate(v) if isinstance(v, dict) else v for v in value
+            ]
+        return []
+
+
+class EffectiveMultiInstanceIntegration(StrictConfigModel):
+    """Container for multiple instances of a single integration service."""
+
+    source: str
+    instances: list[IntegrationInstance] = Field(default_factory=list)
 
 
 class EffectiveIntegrations(StrictConfigModel):
