@@ -15,6 +15,8 @@ _console = Console(highlight=False)
 
 
 def run_alert_investigation(state: SessionState, payload: dict[str, Any]) -> None:
+    if state.interruption_requested:
+        state.interruption_requested = False
     state.active_run = True
     started = time.perf_counter()
     try:
@@ -47,6 +49,8 @@ def run_followup(state: SessionState, text: str) -> None:
     merged_alert["session_history"] = history_items
     merged_alert["session_followup"] = prompt
 
+    if state.interruption_requested:
+        state.interruption_requested = False
     state.active_run = True
     started = time.perf_counter()
     try:

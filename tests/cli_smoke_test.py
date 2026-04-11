@@ -365,6 +365,7 @@ def test_opensre_session_multiline_json_routes_as_alert(cli_sandbox: CliSandbox)
 
     assert result.exit_code == 0
     assert "No active alert context" not in result.stdout
+    assert result.stdout.count("opensre[trust:off]>") >= 2
 
 
 def test_opensre_help_smoke(cli_sandbox: CliSandbox) -> None:

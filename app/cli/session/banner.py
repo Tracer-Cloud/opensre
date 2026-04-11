@@ -11,9 +11,10 @@ from rich.text import Text
 from app.cli.session.state import SessionState
 from app.version import get_version
 
+_console = Console(highlight=False)
+
 
 def render_banner(state: SessionState) -> None:
-    console = Console(highlight=False)
     trust = "on" if state.trust_mode else "off"
     status = "idle" if not state.active_run else "running"
     subtitle = f"v{get_version()}   model: {state.model_label}"
@@ -31,8 +32,8 @@ def render_banner(state: SessionState) -> None:
         (status, "bold white"),
     )
 
-    console.print()
-    console.print(
+    _console.print()
+    _console.print(
         Panel(
             body,
             title=title,
@@ -43,11 +44,10 @@ def render_banner(state: SessionState) -> None:
             padding=(1, 2),
         )
     )
-    console.print()
+    _console.print()
 
 
 def render_status(state: SessionState) -> None:
-    console = Console(highlight=False)
     trust = "on" if state.trust_mode else "off"
     status = "running" if state.active_run else "idle"
     last_alert = "none"
@@ -65,14 +65,13 @@ def render_status(state: SessionState) -> None:
     table.add_row("turns", str(turns))
     if state.last_duration_s is not None:
         table.add_row("last run", f"{state.last_duration_s:.1f}s")
-    console.print(table)
+    _console.print(table)
 
 
 def render_run_summary(state: SessionState) -> None:
     if not state.last_result:
         return
 
-    console = Console(highlight=False)
     last_alert = "none"
     if state.last_alert:
         last_alert = str(state.last_alert.get("alert_name", "alert"))
@@ -93,7 +92,7 @@ def render_run_summary(state: SessionState) -> None:
     summary_table.add_row("root cause", root_cause or "n/a")
     summary_table.add_row("report", report or "n/a")
 
-    console.print(
+    _console.print(
         Panel(
             summary_table,
             title=Text.assemble(("Last Investigation", "bold green")),

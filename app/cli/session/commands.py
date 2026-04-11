@@ -26,6 +26,7 @@ def handle_slash_command(text: str, state: SessionState) -> bool:
     if command in {"/clear", "/reset"}:
         state.last_alert = None
         state.last_result = None
+        state.interruption_requested = False
         state.conversation.clear()
         _console.print("[green]Session context cleared.[/green]")
         return False

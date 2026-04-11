@@ -6,7 +6,6 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal
 
-
 RouteKind = Literal["slash", "alert", "followup", "empty"]
 
 
