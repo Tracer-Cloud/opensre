@@ -154,6 +154,9 @@ def run_investigation_cli_streaming(
 
     Uses ``astream_events`` + ``StreamRenderer`` so the local CLI shows
     the same live tool-call and reasoning updates as a remote investigation.
+
+    Important: callers should not wrap this function in ``Console.status()``.
+    ``StreamRenderer`` already owns live terminal output and spinner updates.
     """
     from app.remote.renderer import StreamRenderer
 

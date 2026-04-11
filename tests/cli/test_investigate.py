@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from app.cli.investigate import (
     resolve_investigation_context,
     run_investigation_cli,
+    run_investigation_cli_streaming,
     stream_investigation_cli,
 )
 from app.remote.stream import StreamEvent
@@ -103,3 +104,32 @@ def test_stream_investigation_cli_raises_queued_exception_immediately(
     assert first.event_type == "metadata"
     with pytest.raises(RuntimeError, match="stream failed"):
         next(events)
+
+
+def test_run_investigation_cli_streaming_does_not_use_rich_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_status(*_args: object, **_kwargs: object) -> object:
+        pytest.fail("Console.status() must not be used for streaming investigations")
+
+    class FakeRenderer:
+        def render_stream(self, _events: object) -> dict[str, object]:
+            return {
+                "slack_message": "report body",
+                "problem_md": "# problem",
+                "root_cause": "bad deploy",
+                "is_noise": False,
+            }
+
+    monkeypatch.setattr("rich.console.Console.status", fail_status)
+    monkeypatch.setattr("app.cli.investigate.stream_investigation_cli", lambda **_kwargs: iter(()))
+    monkeypatch.setattr("app.remote.renderer.StreamRenderer", FakeRenderer)
+
+    result = run_investigation_cli_streaming(raw_alert={"alert_name": "PayloadAlert"})
+
+    assert result == {
+        "report": "report body",
+        "problem_md": "# problem",
+        "root_cause": "bad deploy",
+        "is_noise": False,
+    }
