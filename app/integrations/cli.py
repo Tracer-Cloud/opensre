@@ -77,6 +77,17 @@ def _die(msg: str) -> NoReturn:
     sys.exit(1)
 
 
+def _parse_port(raw: str, default: int = 3306) -> int:
+    """Parse a port string, returning *default* for invalid or out-of-range values."""
+    try:
+        port = int(raw)
+    except (ValueError, TypeError):
+        return default
+    if port < 1 or port > 65535:
+        return default
+    return port
+
+
 def _mask(obj: Any) -> Any:
     if isinstance(obj, dict):
         return {
@@ -413,7 +424,7 @@ def _setup_mariadb() -> None:
         {
             "credentials": {
                 "host": host,
-                "port": int(port) if port.isdigit() else 3306,
+                "port": _parse_port(port),
                 "database": database,
                 "username": username,
                 "password": password,
