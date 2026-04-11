@@ -14,11 +14,14 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 import questionary
 
 from app.integrations.github_mcp import (
+    GitHubMcpDisplayDetailLevel,
+    GitHubMcpRepoView,
+    GitHubMcpRepoVisibilityFilter,
     build_github_mcp_config,
     format_github_mcp_validation_cli_report,
     print_github_mcp_validation_report,
@@ -83,7 +86,7 @@ def _die(msg: str) -> NoReturn:
     sys.exit(1)
 
 
-def _prompt_github_repo_report_level() -> str:
+def _prompt_github_repo_report_level() -> GitHubMcpDisplayDetailLevel:
     """Ask how much repository access detail to print after a successful validation."""
 
     try:
@@ -99,7 +102,11 @@ def _prompt_github_repo_report_level() -> str:
     except (EOFError, KeyboardInterrupt):
         print("\nAborted.")
         sys.exit(1)
-    return "summary" if sel is None else str(sel)
+    if sel is None:
+        return "summary"
+    if sel in ("summary", "standard", "full"):
+        return cast(GitHubMcpDisplayDetailLevel, sel)
+    return "summary"
 
 
 def _mask(obj: Any) -> Any:
@@ -326,8 +333,8 @@ def _setup_github() -> None:
     mcp_config = build_github_mcp_config(credentials)
     result = validate_github_mcp_config(
         mcp_config,
-        repo_view=str(repo_view),
-        repo_visibility=str(repo_visibility),
+        repo_view=cast(GitHubMcpRepoView, repo_view),
+        repo_visibility=cast(GitHubMcpRepoVisibilityFilter, repo_visibility),
     )
     if result.ok:
         level = _prompt_github_repo_report_level()
@@ -482,10 +489,10 @@ def cmd_setup(service: str | None) -> str:
             sys.exit(1)
     if not service or service not in _HANDLERS:
         _die(f"Usage: setup <service>. Supported: {SUPPORTED}")
-        return
     print(f"\n  Setting up {_B}{service}{_R}\n")
     _HANDLERS[service]()
     print(f"\n  ✓ Saved → {STORE_PATH}\n")
+    return service
 
 
 def cmd_list() -> None:
@@ -537,12 +544,11 @@ def cmd_remove(service: str | None) -> None:
         print(f"  No integration found for '{service}'.")
 
 
-def cmd_verify(service: str | None, *, send_slack_test: bool = False) -> None:
+def cmd_verify(service: str | None, *, send_slack_test: bool = False) -> int:
     from app.cli.context import is_json_output
 
     if service and service not in SUPPORTED_VERIFY_SERVICES:
         _die(f"Usage: verify [service]. Supported: {SUPPORTED_VERIFY}")
-        return
 
     results = verify_integrations(service=service, send_slack_test=send_slack_test)
 
@@ -550,4 +556,4 @@ def cmd_verify(service: str | None, *, send_slack_test: bool = False) -> None:
         _json_echo(results)
     else:
         print(format_verification_results(results))
-    sys.exit(verification_exit_code(results, requested_service=service))
+    return verification_exit_code(results, requested_service=service)

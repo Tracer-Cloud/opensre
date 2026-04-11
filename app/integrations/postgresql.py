@@ -133,7 +133,7 @@ def resolve_postgresql_config(host: str, database: str, port: int = DEFAULT_POST
 
 def _get_connection(config: PostgreSQLConfig) -> Any:
     """Create a psycopg2 connection from config. Caller must close."""
-    import psycopg2
+    import psycopg2  # type: ignore[import-untyped]
 
     return psycopg2.connect(
         host=config.host,

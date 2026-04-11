@@ -58,8 +58,11 @@ def collect_system_metrics() -> dict[str, Any]:
 
 
 def _collect_cpu() -> dict[str, Any] | None:
+    getloadavg = getattr(os, "getloadavg", None)
+    if getloadavg is None:
+        return None
     try:
-        load1, load5, load15 = os.getloadavg()
+        load1, load5, load15 = getloadavg()
         return {
             "load_avg_1m": round(load1, 2),
             "load_avg_5m": round(load5, 2),
@@ -227,7 +230,11 @@ def _collect_platform() -> dict[str, Any]:
 
 def _collect_process() -> dict[str, Any] | None:
     try:
-        usage = resource.getrusage(resource.RUSAGE_SELF)
+        getrusage = getattr(resource, "getrusage", None)
+        rusage_self = getattr(resource, "RUSAGE_SELF", None)
+        if getrusage is None or rusage_self is None:
+            return None
+        usage = getrusage(rusage_self)
         # maxrss is in kB on Linux, bytes on macOS
         rss_kb = usage.ru_maxrss if sys.platform == "linux" else usage.ru_maxrss // 1024
         result: dict[str, Any] = {"rss_mb": round(rss_kb / 1024, 1)}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import cast
 
 import questionary
 from rich.console import Console
@@ -363,12 +364,18 @@ def _render_integration_result(
     github_display_level: str | None = None,
 ) -> None:
     if result.github_mcp is not None:
-        from app.integrations.github_mcp import print_github_mcp_validation_report
+        from app.integrations.github_mcp import (
+            GitHubMcpDisplayDetailLevel,
+            print_github_mcp_validation_report,
+        )
 
         print_github_mcp_validation_report(
             result.github_mcp,
             console=_console,
-            detail_level=github_display_level or "standard",
+            detail_level=cast(
+                GitHubMcpDisplayDetailLevel,
+                github_display_level or "standard",
+            ),
         )
         return
     ok = bool(result.ok)

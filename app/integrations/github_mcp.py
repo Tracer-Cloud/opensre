@@ -309,10 +309,10 @@ def print_github_mcp_validation_report(
     elif detail_level == "full" and not samples and not profile_counts_only:
         blocks.append("[dim]No repository names were returned by the listing probe.[/]")
 
-    body: Any = Group(*blocks) if len(blocks) > 1 else blocks[0]
+    panel_body: Any = Group(*blocks) if len(blocks) > 1 else blocks[0]
     out.print(
         Panel.fit(
-            body,
+            panel_body,
             title="[bold green]GitHub MCP · connected[/]",
             border_style="green",
         )
