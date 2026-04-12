@@ -462,6 +462,13 @@ Thanks goes to these amazing people:
             <sub><b>mayankbharati-ops</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/farazghani">
+            <img src="https://avatars.githubusercontent.com/u/49764726?v=4" width="100" alt="farazghani"/>
+            <br />
+            <sub><b>farazghani</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
