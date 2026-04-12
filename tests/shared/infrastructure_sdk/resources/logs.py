@@ -51,7 +51,11 @@ def create_log_group(
 
     # Get ARN
     response = logs_client.describe_log_groups(logGroupNamePrefix=name, limit=1)
-    arn = response["logGroups"][0]["arn"] if response["logGroups"] else f"arn:aws:logs:{region}:*:log-group:{name}"
+    arn = (
+        response["logGroups"][0]["arn"]
+        if response["logGroups"]
+        else f"arn:aws:logs:{region}:*:log-group:{name}"
+    )
 
     return {
         "name": name,

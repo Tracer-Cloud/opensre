@@ -44,8 +44,8 @@ Message:
         details = cast(
             AlertDetails,
             llm.with_structured_output(AlertDetails)
-               .with_config(run_name="LLM – Classify + extract alert")
-               .invoke(prompt),
+            .with_config(run_name="LLM – Classify + extract alert")
+            .invoke(prompt),
         )
         debug_print(
             f"Alert classified: {'NOISE' if details.is_noise else 'ALERT'} | "

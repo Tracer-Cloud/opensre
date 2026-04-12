@@ -77,9 +77,7 @@ def _run_axis2_scenario_test(fixture) -> None:
 
     final_state, score = run_scenario(fixture, use_mock_grafana=True, grafana_backend=backend)
 
-    assert final_state["root_cause"], (
-        f"{fixture.scenario_id}: agent produced no root_cause"
-    )
+    assert final_state["root_cause"], f"{fixture.scenario_id}: agent produced no root_cause"
     assert score.passed is True, (
         f"{fixture.scenario_id} FAILED: {score.failure_reason}\n"
         f"  actual_category={score.actual_category!r}  "

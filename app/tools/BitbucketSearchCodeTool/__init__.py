@@ -20,11 +20,13 @@ def _resolve_config(
 ) -> BitbucketConfig | None:
     env_config = bitbucket_config_from_env()
     if any([workspace, username, app_password]):
-        return build_bitbucket_config({
-            "workspace": workspace or (env_config.workspace if env_config else ""),
-            "username": username or (env_config.username if env_config else ""),
-            "app_password": app_password or (env_config.app_password if env_config else ""),
-        })
+        return build_bitbucket_config(
+            {
+                "workspace": workspace or (env_config.workspace if env_config else ""),
+                "username": username or (env_config.username if env_config else ""),
+                "app_password": app_password or (env_config.app_password if env_config else ""),
+            }
+        )
     return env_config
 
 
@@ -91,5 +93,10 @@ def search_bitbucket_code(
     """Search code in a Bitbucket workspace."""
     config = _resolve_config(workspace, username, app_password)
     if config is None:
-        return {"source": "bitbucket", "available": False, "error": "Bitbucket integration is not configured.", "results": []}
+        return {
+            "source": "bitbucket",
+            "available": False,
+            "error": "Bitbucket integration is not configured.",
+            "results": [],
+        }
     return search_code(config, query=query, repo_slug=repo_slug, limit=limit)

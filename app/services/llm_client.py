@@ -36,16 +36,18 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-_VALID_ROOT_CAUSE_CATEGORIES = frozenset({
-    "configuration_error",
-    "code_defect",
-    "data_quality",
-    "resource_exhaustion",
-    "dependency_failure",
-    "infrastructure",
-    "healthy",
-    "unknown",
-})
+_VALID_ROOT_CAUSE_CATEGORIES = frozenset(
+    {
+        "configuration_error",
+        "code_defect",
+        "data_quality",
+        "resource_exhaustion",
+        "dependency_failure",
+        "infrastructure",
+        "healthy",
+        "unknown",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -63,7 +65,9 @@ class LLMResponse:
 
 
 class LLMClient:
-    def __init__(self, *, model: str, max_tokens: int = 1024, temperature: float | None = None) -> None:
+    def __init__(
+        self, *, model: str, max_tokens: int = 1024, temperature: float | None = None
+    ) -> None:
         api_key = resolve_llm_api_key("ANTHROPIC_API_KEY")
         self._api_key = api_key
         self._client = Anthropic(api_key=api_key, timeout=60.0)
@@ -142,7 +146,9 @@ class LLMClient:
 class BedrockLLMClient:
     """LLM client using Anthropic models via Amazon Bedrock (IAM auth, no API key)."""
 
-    def __init__(self, *, model: str, max_tokens: int = 1024, temperature: float | None = None) -> None:
+    def __init__(
+        self, *, model: str, max_tokens: int = 1024, temperature: float | None = None
+    ) -> None:
         self._client = AnthropicBedrock(aws_region=os.getenv("AWS_REGION", "us-east-1"))
         self._model = model
         self._max_tokens = max_tokens
@@ -277,7 +283,9 @@ class OpenAILLMClient:
             for msg in messages:
                 msg["content"] = engine.apply(msg["content"])
 
-        token_param = "max_completion_tokens" if _uses_max_completion_tokens(self._model) else "max_tokens"
+        token_param = (
+            "max_completion_tokens" if _uses_max_completion_tokens(self._model) else "max_tokens"
+        )
         kwargs: dict[str, Any] = {
             "model": self._model,
             token_param: self._max_tokens,
@@ -317,7 +325,9 @@ class OpenAILLMClient:
 
 
 class StructuredOutputClient:
-    def __init__(self, base: LLMClient | OpenAILLMClient | BedrockLLMClient, model: type[BaseModel]) -> None:
+    def __init__(
+        self, base: LLMClient | OpenAILLMClient | BedrockLLMClient, model: type[BaseModel]
+    ) -> None:
         self._base = base
         self._model = model
 
@@ -328,9 +338,7 @@ class StructuredOutputClient:
         schema = self._model.model_json_schema()
         schema_json = json.dumps(schema, indent=2)
         wrapped_prompt = (
-            f"{prompt}\n\n"
-            "Return ONLY valid JSON that matches this schema:\n"
-            f"{schema_json}\n"
+            f"{prompt}\n\nReturn ONLY valid JSON that matches this schema:\n{schema_json}\n"
         )
         response = self._base.invoke(wrapped_prompt)
         payload = _extract_json_payload(response.content)
@@ -444,13 +452,21 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
     provider = settings.provider
     if provider == "openai":
         config = OPENAI_LLM_CONFIG
-        model = settings.openai_reasoning_model if model_type == "reasoning" else settings.openai_toolcall_model
+        model = (
+            settings.openai_reasoning_model
+            if model_type == "reasoning"
+            else settings.openai_toolcall_model
+        )
         return OpenAILLMClient(model=model, max_tokens=config.max_tokens)
     elif provider == "openrouter":
         from app.config import OPENROUTER_LLM_CONFIG
 
         config = OPENROUTER_LLM_CONFIG
-        model = settings.openrouter_reasoning_model if model_type == "reasoning" else settings.openrouter_toolcall_model
+        model = (
+            settings.openrouter_reasoning_model
+            if model_type == "reasoning"
+            else settings.openrouter_toolcall_model
+        )
         return OpenAILLMClient(
             model=model,
             max_tokens=config.max_tokens,
@@ -461,7 +477,11 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
         from app.config import GEMINI_LLM_CONFIG
 
         config = GEMINI_LLM_CONFIG
-        model = settings.gemini_reasoning_model if model_type == "reasoning" else settings.gemini_toolcall_model
+        model = (
+            settings.gemini_reasoning_model
+            if model_type == "reasoning"
+            else settings.gemini_toolcall_model
+        )
         return OpenAILLMClient(
             model=model,
             max_tokens=config.max_tokens,
@@ -472,7 +492,11 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
         from app.config import NVIDIA_LLM_CONFIG
 
         config = NVIDIA_LLM_CONFIG
-        model = settings.nvidia_reasoning_model if model_type == "reasoning" else settings.nvidia_toolcall_model
+        model = (
+            settings.nvidia_reasoning_model
+            if model_type == "reasoning"
+            else settings.nvidia_toolcall_model
+        )
         return OpenAILLMClient(
             model=model,
             max_tokens=config.max_tokens,
@@ -495,11 +519,19 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
         from app.config import BEDROCK_LLM_CONFIG
 
         config = BEDROCK_LLM_CONFIG
-        model = settings.bedrock_reasoning_model if model_type == "reasoning" else settings.bedrock_toolcall_model
+        model = (
+            settings.bedrock_reasoning_model
+            if model_type == "reasoning"
+            else settings.bedrock_toolcall_model
+        )
         return BedrockLLMClient(model=model, max_tokens=config.max_tokens)
     else:
         config = ANTHROPIC_LLM_CONFIG
-        model = settings.anthropic_reasoning_model if model_type == "reasoning" else settings.anthropic_toolcall_model
+        model = (
+            settings.anthropic_reasoning_model
+            if model_type == "reasoning"
+            else settings.anthropic_toolcall_model
+        )
         return LLMClient(model=model, max_tokens=config.max_tokens)
 
 
@@ -558,7 +590,12 @@ def parse_root_cause(response: str) -> RootCauseResult:
         parts = response.split("ROOT_CAUSE:")[1]
 
         # Extract the root cause sentence (text before first section header)
-        for delimiter in ("ROOT_CAUSE_CATEGORY:", "VALIDATED_CLAIMS:", "NON_VALIDATED_CLAIMS:", "CAUSAL_CHAIN:"):
+        for delimiter in (
+            "ROOT_CAUSE_CATEGORY:",
+            "VALIDATED_CLAIMS:",
+            "NON_VALIDATED_CLAIMS:",
+            "CAUSAL_CHAIN:",
+        ):
             if delimiter in parts:
                 root_cause = parts.split(delimiter)[0].strip()
                 break
@@ -596,10 +633,7 @@ def parse_root_cause(response: str) -> RootCauseResult:
 
             for line in non_validated_text.strip().split("\n"):
                 line = line.strip().lstrip("*-• ").strip()
-                if (
-                    line
-                    and not line.startswith("CAUSAL_CHAIN")
-                ):
+                if line and not line.startswith("CAUSAL_CHAIN"):
                     non_validated_claims.append(line)
 
         # Extract causal chain

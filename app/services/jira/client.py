@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 30
 
+
 class JiraClient:
     """Client for filing and updating Jira issues from investigation findings."""
 
@@ -81,7 +82,10 @@ class JiraClient:
                 }
         except httpx.HTTPStatusError as e:
             logger.warning("[jira] Failed to create issue status=%s", e.response.status_code)
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
             logger.warning("[jira] Create issue error type=%s detail=%s", type(e).__name__, e)
             return {"success": False, "error": str(e)}
@@ -101,8 +105,13 @@ class JiraClient:
                 resp.raise_for_status()
                 return {"success": True, "issue_key": issue_key}
         except httpx.HTTPStatusError as e:
-            logger.warning("[jira] Failed to update issue=%s status=%s", issue_key, e.response.status_code)
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            logger.warning(
+                "[jira] Failed to update issue=%s status=%s", issue_key, e.response.status_code
+            )
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
             logger.warning("[jira] Update issue error: %s", e)
             return {"success": False, "error": str(e)}
@@ -135,8 +144,13 @@ class JiraClient:
                 data = resp.json()
                 return {"success": True, "comment_id": data.get("id")}
         except httpx.HTTPStatusError as e:
-            logger.warning("[jira] Failed to add comment issue=%s status=%s", issue_key, e.response.status_code)
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            logger.warning(
+                "[jira] Failed to add comment issue=%s status=%s", issue_key, e.response.status_code
+            )
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
             logger.warning("[jira] Add comment error: %s", e)
             return {"success": False, "error": str(e)}
@@ -159,8 +173,13 @@ class JiraClient:
                     "labels": fields.get("labels", []),
                 }
         except httpx.HTTPStatusError as e:
-            logger.warning("[jira] Failed to get issue=%s status=%s", issue_key, e.response.status_code)
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            logger.warning(
+                "[jira] Failed to get issue=%s status=%s", issue_key, e.response.status_code
+            )
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
             logger.warning("[jira] Get issue error: %s", e)
             return {"success": False, "error": str(e)}

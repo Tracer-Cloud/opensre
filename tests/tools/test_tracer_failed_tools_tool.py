@@ -36,7 +36,12 @@ def test_run_happy_path() -> None:
     mock_client = MagicMock()
     mock_client.get_tools.return_value = {
         "data": [
-            {"tool_name": "tool-A", "exit_code": "1", "reason": "OOM", "explanation": "Out of memory"},
+            {
+                "tool_name": "tool-A",
+                "exit_code": "1",
+                "reason": "OOM",
+                "explanation": "Out of memory",
+            },
             {"tool_name": "tool-B", "exit_code": "0", "reason": None, "explanation": None},
         ]
     }

@@ -49,12 +49,15 @@ class TestMongoDBBuild:
         assert config.auth_source == "user_db"
         assert config.tls is False
 
-    @patch.dict(os.environ, {
-        "MONGODB_CONNECTION_STRING": "mongodb://env-host",
-        "MONGODB_DATABASE": "env-db",
-        "MONGODB_AUTH_SOURCE": "env-auth",
-        "MONGODB_TLS": "false",
-    })
+    @patch.dict(
+        os.environ,
+        {
+            "MONGODB_CONNECTION_STRING": "mongodb://env-host",
+            "MONGODB_DATABASE": "env-db",
+            "MONGODB_AUTH_SOURCE": "env-auth",
+            "MONGODB_TLS": "false",
+        },
+    )
     def test_mongodb_config_from_env(self):
         config = mongodb_config_from_env()
         assert config is not None
@@ -114,11 +117,11 @@ class TestResolveIntegrations:
                 "credentials": {
                     "connection_string": "mongodb://host",
                     "database": "prod",
-                }
+                },
             }
         ]
         resolved = _classify_integrations(integrations)
         assert "mongodb" in resolved
         assert resolved["mongodb"]["connection_string"] == "mongodb://host"
         assert resolved["mongodb"]["database"] == "prod"
-        assert resolved["mongodb"]["auth_source"] == "admin" # default
+        assert resolved["mongodb"]["auth_source"] == "admin"  # default

@@ -81,12 +81,14 @@ def mongodb_atlas_config_from_env() -> MongoDBAtlasConfig | None:
     project_id = os.getenv("MONGODB_ATLAS_PROJECT_ID", "").strip()
     if not public_key or not private_key or not project_id:
         return None
-    return build_mongodb_atlas_config({
-        "api_public_key": public_key,
-        "api_private_key": private_key,
-        "project_id": project_id,
-        "base_url": os.getenv("MONGODB_ATLAS_BASE_URL", DEFAULT_ATLAS_BASE_URL).strip(),
-    })
+    return build_mongodb_atlas_config(
+        {
+            "api_public_key": public_key,
+            "api_private_key": private_key,
+            "project_id": project_id,
+            "base_url": os.getenv("MONGODB_ATLAS_BASE_URL", DEFAULT_ATLAS_BASE_URL).strip(),
+        }
+    )
 
 
 def _get_client(config: MongoDBAtlasConfig) -> httpx.Client:
@@ -131,9 +133,7 @@ def validate_mongodb_atlas_config(
             detail=f"Atlas API returned {err.response.status_code}: {err.response.text[:200]}",
         )
     except Exception as err:  # noqa: BLE001
-        return MongoDBAtlasValidationResult(
-            ok=False, detail=f"Atlas connection failed: {err}"
-        )
+        return MongoDBAtlasValidationResult(ok=False, detail=f"Atlas connection failed: {err}")
 
 
 def get_clusters(config: MongoDBAtlasConfig) -> dict[str, Any]:
@@ -155,35 +155,41 @@ def get_clusters(config: MongoDBAtlasConfig) -> dict[str, Any]:
             data = resp.json()
             clusters = []
             for c in data.get("results", []):
-                clusters.append({
-                    "name": c.get("name", ""),
-                    "state": c.get("stateName", ""),
-                    "cluster_type": c.get("clusterType", ""),
-                    "mongo_db_version": c.get("mongoDBVersion", ""),
-                    "connection_strings": {
-                        "standard": c.get("connectionStrings", {}).get("standard", ""),
-                        "standard_srv": c.get("connectionStrings", {}).get("standardSrv", ""),
-                    },
-                    "paused": c.get("paused", False),
-                    "disk_size_gb": c.get("diskSizeGB"),
-                    "replication_specs": [
-                        {
-                            "zone_name": rs.get("zoneName", ""),
-                            "num_shards": rs.get("numShards", 1),
-                            "region_configs": [
-                                {
-                                    "provider": rc.get("providerName", ""),
-                                    "region": rc.get("regionName", ""),
-                                    "priority": rc.get("priority"),
-                                    "electable_nodes": rc.get("electableSpecs", {}).get("nodeCount", 0),
-                                    "instance_size": rc.get("electableSpecs", {}).get("instanceSize", ""),
-                                }
-                                for rc in rs.get("regionConfigs", [])
-                            ],
-                        }
-                        for rs in c.get("replicationSpecs", [])
-                    ],
-                })
+                clusters.append(
+                    {
+                        "name": c.get("name", ""),
+                        "state": c.get("stateName", ""),
+                        "cluster_type": c.get("clusterType", ""),
+                        "mongo_db_version": c.get("mongoDBVersion", ""),
+                        "connection_strings": {
+                            "standard": c.get("connectionStrings", {}).get("standard", ""),
+                            "standard_srv": c.get("connectionStrings", {}).get("standardSrv", ""),
+                        },
+                        "paused": c.get("paused", False),
+                        "disk_size_gb": c.get("diskSizeGB"),
+                        "replication_specs": [
+                            {
+                                "zone_name": rs.get("zoneName", ""),
+                                "num_shards": rs.get("numShards", 1),
+                                "region_configs": [
+                                    {
+                                        "provider": rc.get("providerName", ""),
+                                        "region": rc.get("regionName", ""),
+                                        "priority": rc.get("priority"),
+                                        "electable_nodes": rc.get("electableSpecs", {}).get(
+                                            "nodeCount", 0
+                                        ),
+                                        "instance_size": rc.get("electableSpecs", {}).get(
+                                            "instanceSize", ""
+                                        ),
+                                    }
+                                    for rc in rs.get("regionConfigs", [])
+                                ],
+                            }
+                            for rs in c.get("replicationSpecs", [])
+                        ],
+                    }
+                )
             return {
                 "source": "mongodb_atlas",
                 "available": True,
@@ -219,17 +225,19 @@ def get_alerts(
             data = resp.json()
             alerts = []
             for a in data.get("results", []):
-                alerts.append({
-                    "id": a.get("id", ""),
-                    "event_type": a.get("eventTypeName", ""),
-                    "status": a.get("status", ""),
-                    "created": a.get("created", ""),
-                    "updated": a.get("updated", ""),
-                    "cluster_name": a.get("clusterName", ""),
-                    "replica_set_name": a.get("replicaSetName", ""),
-                    "metric_name": a.get("metricName", ""),
-                    "current_value": a.get("currentValue", {}),
-                })
+                alerts.append(
+                    {
+                        "id": a.get("id", ""),
+                        "event_type": a.get("eventTypeName", ""),
+                        "status": a.get("status", ""),
+                        "created": a.get("created", ""),
+                        "updated": a.get("updated", ""),
+                        "cluster_name": a.get("clusterName", ""),
+                        "replica_set_name": a.get("replicaSetName", ""),
+                        "metric_name": a.get("metricName", ""),
+                        "current_value": a.get("currentValue", {}),
+                    }
+                )
             return {
                 "source": "mongodb_atlas",
                 "available": True,
@@ -258,7 +266,10 @@ def _resolve_primary_process(
     target: dict[str, Any] | None = None
     for p in processes:
         hostname = p.get("hostname", "")
-        if hostname.lower().startswith(cluster_name.lower() + "-") or hostname.lower() == cluster_name.lower():
+        if (
+            hostname.lower().startswith(cluster_name.lower() + "-")
+            or hostname.lower() == cluster_name.lower()
+        ):
             if p.get("typeName") == "REPLICA_PRIMARY":
                 target = p
                 break
@@ -271,9 +282,7 @@ def atlas_is_available(sources: dict[str, dict]) -> bool:
     """Check if MongoDB Atlas integration credentials are present."""
     atlas = sources.get("mongodb_atlas", {})
     return bool(
-        atlas.get("api_public_key")
-        and atlas.get("api_private_key")
-        and atlas.get("project_id")
+        atlas.get("api_public_key") and atlas.get("api_private_key") and atlas.get("project_id")
     )
 
 
@@ -418,12 +427,14 @@ def get_performance_advisor(
 
             suggested_indexes = []
             for idx in index_data.get("suggestedIndexes", []):
-                suggested_indexes.append({
-                    "namespace": idx.get("namespace", ""),
-                    "index": idx.get("index", []),
-                    "weight": idx.get("weight", 0),
-                    "impact": idx.get("impact", []),
-                })
+                suggested_indexes.append(
+                    {
+                        "namespace": idx.get("namespace", ""),
+                        "index": idx.get("index", []),
+                        "weight": idx.get("weight", 0),
+                        "impact": idx.get("impact", []),
+                    }
+                )
 
             # Get slow queries
             resp = client.get(
@@ -435,11 +446,13 @@ def get_performance_advisor(
 
             slow_queries = []
             for sq in slow_data.get("slowQueries", []):
-                slow_queries.append({
-                    "namespace": sq.get("namespace", ""),
-                    "line": sq.get("line", "")[:200],
-                    "millis": sq.get("millis", 0),
-                })
+                slow_queries.append(
+                    {
+                        "namespace": sq.get("namespace", ""),
+                        "line": sq.get("line", "")[:200],
+                        "millis": sq.get("millis", 0),
+                    }
+                )
 
             return {
                 "source": "mongodb_atlas",
@@ -485,15 +498,17 @@ def get_cluster_events(
 
             events = []
             for e in data.get("results", []):
-                events.append({
-                    "id": e.get("id", ""),
-                    "event_type": e.get("eventTypeName", ""),
-                    "created": e.get("created", ""),
-                    "cluster_name": e.get("clusterName", ""),
-                    "replica_set_name": e.get("replicaSetName", ""),
-                    "is_global_admin": e.get("isGlobalAdmin", False),
-                    "target_username": e.get("targetUsername", ""),
-                })
+                events.append(
+                    {
+                        "id": e.get("id", ""),
+                        "event_type": e.get("eventTypeName", ""),
+                        "created": e.get("created", ""),
+                        "cluster_name": e.get("clusterName", ""),
+                        "replica_set_name": e.get("replicaSetName", ""),
+                        "is_global_admin": e.get("isGlobalAdmin", False),
+                        "target_username": e.get("targetUsername", ""),
+                    }
+                )
             return {
                 "source": "mongodb_atlas",
                 "available": True,

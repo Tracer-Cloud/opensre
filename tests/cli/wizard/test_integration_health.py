@@ -179,7 +179,10 @@ def test_validate_aws_integration_succeeds_with_role_assumption(monkeypatch) -> 
 
     class _FakeAssumedSts:
         def get_caller_identity(self) -> dict[str, str]:
-            return {"Account": "123456789012", "Arn": "arn:aws:sts::123456789012:assumed-role/demo/session"}
+            return {
+                "Account": "123456789012",
+                "Arn": "arn:aws:sts::123456789012:assumed-role/demo/session",
+            }
 
     def _client(service_name: str, **kwargs):
         if service_name != "sts":
@@ -271,7 +274,9 @@ class _FakeVercelClient:
 def test_validate_vercel_integration_succeeds(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.cli.wizard.integration_health.VercelClient",
-        lambda _config: _FakeVercelClient({"success": True, "projects": [{"id": "p1"}], "total": 1}),
+        lambda _config: _FakeVercelClient(
+            {"success": True, "projects": [{"id": "p1"}], "total": 1}
+        ),
     )
 
     result = validate_vercel_integration(api_token="tok_test")

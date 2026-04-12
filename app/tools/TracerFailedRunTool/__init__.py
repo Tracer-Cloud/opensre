@@ -15,7 +15,9 @@ from app.tools.tool_decorator import tool
 FAILED_STATUSES = ("failed", "error")
 
 
-def build_tracer_run_url(pipeline_name: str, trace_id: str | None, org_slug: str | None = None) -> str | None:
+def build_tracer_run_url(
+    pipeline_name: str, trace_id: str | None, org_slug: str | None = None
+) -> str | None:
     """Build Tracer run URL using the organization slug from the client."""
     if not trace_id:
         return None
@@ -57,7 +59,10 @@ def _find_failed_run(client: Any, pipeline_names: Iterable[str]) -> PipelineRunS
     input_schema={
         "type": "object",
         "properties": {
-            "pipeline_name": {"type": "string", "description": "Optional pipeline name to filter runs"},
+            "pipeline_name": {
+                "type": "string",
+                "description": "Optional pipeline name to filter runs",
+            },
         },
         "required": [],
     },
@@ -77,7 +82,9 @@ def fetch_failed_run(pipeline_name: str | None = None) -> dict[str, Any]:
             "pipelines_checked": len(pipeline_names),
         }
 
-    run_url = build_tracer_run_url(failed_run.pipeline_name, failed_run.trace_id, client.organization_slug)
+    run_url = build_tracer_run_url(
+        failed_run.pipeline_name, failed_run.trace_id, client.organization_slug
+    )
     return {
         "found": True,
         "pipeline_name": failed_run.pipeline_name,

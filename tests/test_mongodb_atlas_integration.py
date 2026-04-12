@@ -14,9 +14,7 @@ from app.nodes.resolve_integrations.node import _classify_integrations
 
 class TestMongoDBAtlasConfig:
     def test_default_values(self):
-        config = MongoDBAtlasConfig(
-            api_public_key="pub", api_private_key="priv", project_id="proj"
-        )
+        config = MongoDBAtlasConfig(api_public_key="pub", api_private_key="priv", project_id="proj")
         assert config.base_url == "https://cloud.mongodb.com/api/atlas/v2"
         assert config.timeout_seconds == 15.0
         assert config.max_results == 50
@@ -34,18 +32,30 @@ class TestMongoDBAtlasConfig:
         assert config.base_url == "https://cloud.mongodb.com/api/atlas/v2"
 
     def test_is_configured(self):
-        assert MongoDBAtlasConfig(
-            api_public_key="pub", api_private_key="priv", project_id="proj"
-        ).is_configured is True
-        assert MongoDBAtlasConfig(
-            api_public_key="", api_private_key="priv", project_id="proj"
-        ).is_configured is False
-        assert MongoDBAtlasConfig(
-            api_public_key="pub", api_private_key="", project_id="proj"
-        ).is_configured is False
-        assert MongoDBAtlasConfig(
-            api_public_key="pub", api_private_key="priv", project_id=""
-        ).is_configured is False
+        assert (
+            MongoDBAtlasConfig(
+                api_public_key="pub", api_private_key="priv", project_id="proj"
+            ).is_configured
+            is True
+        )
+        assert (
+            MongoDBAtlasConfig(
+                api_public_key="", api_private_key="priv", project_id="proj"
+            ).is_configured
+            is False
+        )
+        assert (
+            MongoDBAtlasConfig(
+                api_public_key="pub", api_private_key="", project_id="proj"
+            ).is_configured
+            is False
+        )
+        assert (
+            MongoDBAtlasConfig(
+                api_public_key="pub", api_private_key="priv", project_id=""
+            ).is_configured
+            is False
+        )
 
 
 class TestMongoDBAtlasBuild:
@@ -59,11 +69,14 @@ class TestMongoDBAtlasBuild:
         assert config.api_public_key == "pub"
         assert config.project_id == "proj"
 
-    @patch.dict(os.environ, {
-        "MONGODB_ATLAS_PUBLIC_KEY": "env-pub",
-        "MONGODB_ATLAS_PRIVATE_KEY": "env-priv",
-        "MONGODB_ATLAS_PROJECT_ID": "env-proj",
-    })
+    @patch.dict(
+        os.environ,
+        {
+            "MONGODB_ATLAS_PUBLIC_KEY": "env-pub",
+            "MONGODB_ATLAS_PRIVATE_KEY": "env-priv",
+            "MONGODB_ATLAS_PROJECT_ID": "env-proj",
+        },
+    )
     def test_config_from_env(self):
         config = mongodb_atlas_config_from_env()
         assert config is not None
@@ -86,9 +99,7 @@ class TestMongoDBAtlasValidation:
         mock_client.get.return_value = mock_resp
         mock_get_client.return_value = mock_client
 
-        config = MongoDBAtlasConfig(
-            api_public_key="pub", api_private_key="priv", project_id="proj"
-        )
+        config = MongoDBAtlasConfig(api_public_key="pub", api_private_key="priv", project_id="proj")
         result = validate_mongodb_atlas_config(config)
 
         assert result.ok is True
@@ -98,9 +109,7 @@ class TestMongoDBAtlasValidation:
 
     @patch("app.integrations.mongodb_atlas._get_client", side_effect=Exception("Network error"))
     def test_validate_exception(self, _):
-        config = MongoDBAtlasConfig(
-            api_public_key="pub", api_private_key="priv", project_id="proj"
-        )
+        config = MongoDBAtlasConfig(api_public_key="pub", api_private_key="priv", project_id="proj")
         result = validate_mongodb_atlas_config(config)
         assert result.ok is False
         assert "Network error" in result.detail
@@ -123,7 +132,7 @@ class TestResolveIntegrations:
                     "api_public_key": "pub",
                     "api_private_key": "priv",
                     "project_id": "proj",
-                }
+                },
             }
         ]
         resolved = _classify_integrations(integrations)
@@ -141,7 +150,7 @@ class TestResolveIntegrations:
                     "api_public_key": "pub",
                     "api_private_key": "priv",
                     "project_id": "proj",
-                }
+                },
             }
         ]
         resolved = _classify_integrations(integrations)
@@ -157,7 +166,7 @@ class TestResolveIntegrations:
                     "api_public_key": "",
                     "api_private_key": "",
                     "project_id": "proj",
-                }
+                },
             }
         ]
         resolved = _classify_integrations(integrations)

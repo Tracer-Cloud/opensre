@@ -104,6 +104,8 @@ def run_local_llm_setup() -> int:
     _console.print(f"Config:    [dim]{env_path}[/dim]")
     _console.print(f"Store:     [dim]{store_path}[/dim]")
     _console.print("\nTry it now:")
-    _console.print("  [bold]opensre investigate[/bold]   — launches interactive mode, try a sample alert")
+    _console.print(
+        "  [bold]opensre investigate[/bold]   — launches interactive mode, try a sample alert"
+    )
     _console.print("  [bold]opensre onboard[/bold]       — configure observability integrations")
     return 0

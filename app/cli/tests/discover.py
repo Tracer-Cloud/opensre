@@ -86,7 +86,9 @@ _TARGET_METADATA: dict[str, _TargetMetadata] = {
     "datadog-demo": {
         "display_name": "Datadog Demo",
         "tags": ("demo", "datadog", "k8s", "infra-heavy"),
-        "requirements": TestRequirement(env_vars=("DD_API_KEY", "DD_APP_KEY"), notes=("Docker/Kubernetes",)),
+        "requirements": TestRequirement(
+            env_vars=("DD_API_KEY", "DD_APP_KEY"), notes=("Docker/Kubernetes",)
+        ),
     },
     "crashloop-demo": {
         "display_name": "CrashLoopBackOff Demo",
@@ -121,7 +123,9 @@ _TARGET_METADATA: dict[str, _TargetMetadata] = {
     "test-k8s-eks": {
         "display_name": "Kubernetes + Datadog On EKS",
         "tags": ("k8s", "aws", "datadog", "infra-heavy"),
-        "requirements": TestRequirement(env_vars=("DD_API_KEY", "DD_APP_KEY"), notes=("EKS cluster",)),
+        "requirements": TestRequirement(
+            env_vars=("DD_API_KEY", "DD_APP_KEY"), notes=("EKS cluster",)
+        ),
     },
     "trigger-alert": {
         "display_name": "Trigger K8s Alert",
@@ -305,6 +309,7 @@ def _discover_rds_synthetic_scenarios() -> list[TestCatalogItem]:
         if scenario_yml.exists():
             try:
                 import yaml  # type: ignore[import-untyped]
+
                 meta = yaml.safe_load(scenario_yml.read_text()) or {}
                 failure_mode = meta.get("failure_mode", "")
                 if failure_mode:

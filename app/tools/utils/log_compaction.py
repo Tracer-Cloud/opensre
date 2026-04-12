@@ -31,7 +31,9 @@ from typing import Any
 
 # Patterns that vary across otherwise-identical log lines
 _VARIABLE_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.IGNORECASE),  # UUIDs
+    re.compile(
+        r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.IGNORECASE
+    ),  # UUIDs
     re.compile(r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\s]*"),  # ISO timestamps
     re.compile(r"\b\d{10,13}\b"),  # epoch millis / nanos
     re.compile(r"\b\d+\.\d+\.\d+\.\d+(:\d+)?\b"),  # IP addresses (with optional port)
@@ -131,16 +133,44 @@ _ERROR_TYPE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("ConnectionTimeout", re.compile(r"timeout|timed?\s*out", re.IGNORECASE)),
     ("ConnectionRefused", re.compile(r"connection\s*(refused|reset|closed)", re.IGNORECASE)),
     ("DNSResolution", re.compile(r"dns|name\s*resolution|resolve\s*host", re.IGNORECASE)),
-    ("AuthenticationError", re.compile(r"auth(entication|orization)?\s*(fail|error|denied)|401|403", re.IGNORECASE)),
-    ("OutOfMemory", re.compile(r"(out\s*of\s*memory|oom\s*kill|memory\s*(error|exceed|limit))", re.IGNORECASE)),
+    (
+        "AuthenticationError",
+        re.compile(r"auth(entication|orization)?\s*(fail|error|denied)|401|403", re.IGNORECASE),
+    ),
+    (
+        "OutOfMemory",
+        re.compile(r"(out\s*of\s*memory|oom\s*kill|memory\s*(error|exceed|limit))", re.IGNORECASE),
+    ),
     ("DiskFull", re.compile(r"(no\s*space|disk\s*full|storage\s*(full|limit))", re.IGNORECASE)),
     ("RateLimited", re.compile(r"rate\s*limit|throttl|429", re.IGNORECASE)),
-    ("SchemaValidation", re.compile(r"(schema|validation|missing\s*field|invalid\s*(field|column|type))", re.IGNORECASE)),
-    ("NullReference", re.compile(r"(null\s*pointer|none\s*type|attribute\s*error|nil\s*reference)", re.IGNORECASE)),
-    ("PermissionDenied", re.compile(r"permission\s*denied|access\s*denied|forbidden", re.IGNORECASE)),
-    ("ResourceNotFound", re.compile(r"(not\s*found|404|no\s*such\s*(file|key|bucket))", re.IGNORECASE)),
-    ("SyntaxError", re.compile(r"(syntax\s*error|parse\s*error|unexpected\s*token)", re.IGNORECASE)),
-    ("ImportError", re.compile(r"(import\s*error|module\s*not\s*found|no\s*module\s*named)", re.IGNORECASE)),
+    (
+        "SchemaValidation",
+        re.compile(
+            r"(schema|validation|missing\s*field|invalid\s*(field|column|type))", re.IGNORECASE
+        ),
+    ),
+    (
+        "NullReference",
+        re.compile(
+            r"(null\s*pointer|none\s*type|attribute\s*error|nil\s*reference)", re.IGNORECASE
+        ),
+    ),
+    (
+        "PermissionDenied",
+        re.compile(r"permission\s*denied|access\s*denied|forbidden", re.IGNORECASE),
+    ),
+    (
+        "ResourceNotFound",
+        re.compile(r"(not\s*found|404|no\s*such\s*(file|key|bucket))", re.IGNORECASE),
+    ),
+    (
+        "SyntaxError",
+        re.compile(r"(syntax\s*error|parse\s*error|unexpected\s*token)", re.IGNORECASE),
+    ),
+    (
+        "ImportError",
+        re.compile(r"(import\s*error|module\s*not\s*found|no\s*module\s*named)", re.IGNORECASE),
+    ),
     ("Exception", re.compile(r"exception|traceback|stack\s*trace", re.IGNORECASE)),
 ]
 
@@ -162,7 +192,9 @@ def _extract_components(message: str) -> list[str]:
     components: list[str] = []
 
     # key=value patterns (service=foo, host=bar, db=baz, …)
-    for match in re.finditer(r"(?:service|host|component|db|table|queue|topic|bucket)=([^\s,;]+)", message, re.IGNORECASE):
+    for match in re.finditer(
+        r"(?:service|host|component|db|table|queue|topic|bucket)=([^\s,;]+)", message, re.IGNORECASE
+    ):
         components.append(match.group(1))
 
     # Quoted identifiers ("upstream-api", 'db-pool')
@@ -287,7 +319,8 @@ def compact_logs(
     error_keywords = ("error", "fail", "exception", "traceback")
 
     error_logs = [
-        log for log in logs
+        log
+        for log in logs
         if any(kw in str(log.get("message", "")).lower() for kw in error_keywords)
         or "error" in str(log.get("log_level", "")).lower()
     ]

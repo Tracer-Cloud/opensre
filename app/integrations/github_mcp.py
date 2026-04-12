@@ -128,14 +128,16 @@ def github_mcp_config_from_env() -> GitHubMCPConfig | None:
     elif not url:
         return None
 
-    return build_github_mcp_config({
-        "url": url or DEFAULT_GITHUB_MCP_URL,
-        "mode": mode or DEFAULT_GITHUB_MCP_MODE,
-        "command": command,
-        "args": [part for part in args_env.split() if part],
-        "auth_token": auth_token,
-        "toolsets": [part.strip() for part in toolsets_env.split(",") if part.strip()],
-    })
+    return build_github_mcp_config(
+        {
+            "url": url or DEFAULT_GITHUB_MCP_URL,
+            "mode": mode or DEFAULT_GITHUB_MCP_MODE,
+            "command": command,
+            "args": [part for part in args_env.split() if part],
+            "auth_token": auth_token,
+            "toolsets": [part.strip() for part in toolsets_env.split(",") if part.strip()],
+        }
+    )
 
 
 @asynccontextmanager
@@ -154,7 +156,11 @@ async def _open_github_mcp_session(config: GitHubMCPConfig) -> AsyncIterator[Cli
                 args=list(config.args),
                 env={
                     **os.environ,
-                    **({"GITHUB_PERSONAL_ACCESS_TOKEN": config.auth_token} if config.auth_token else {}),
+                    **(
+                        {"GITHUB_PERSONAL_ACCESS_TOKEN": config.auth_token}
+                        if config.auth_token
+                        else {}
+                    ),
                 },
             )
             read_stream, write_stream = await stack.enter_async_context(stdio_client(server_params))
@@ -223,18 +229,22 @@ def _tool_result_to_dict(result: types.CallToolResult) -> dict[str, Any]:
         elif isinstance(item, types.EmbeddedResource):
             resource = item.resource
             if isinstance(resource, types.TextResourceContents):
-                content_items.append({
-                    "type": "resource_text",
-                    "uri": str(resource.uri),
-                    "text": resource.text,
-                })
+                content_items.append(
+                    {
+                        "type": "resource_text",
+                        "uri": str(resource.uri),
+                        "text": resource.text,
+                    }
+                )
                 text_parts.append(resource.text)
             elif isinstance(resource, types.BlobResourceContents):
-                content_items.append({
-                    "type": "resource_blob",
-                    "uri": str(resource.uri),
-                    "mime_type": resource.mimeType,
-                })
+                content_items.append(
+                    {
+                        "type": "resource_blob",
+                        "uri": str(resource.uri),
+                        "mime_type": resource.mimeType,
+                    }
+                )
         else:
             content_items.append({"type": getattr(item, "type", "unknown")})
 

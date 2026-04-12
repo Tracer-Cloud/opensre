@@ -48,5 +48,7 @@ def get_health_response() -> HealthResponse:
 @app.get("/health", response_model=HealthResponse)
 def health(response: Response) -> HealthResponse:
     health_response = get_health_response()
-    response.status_code = status.HTTP_200_OK if health_response.ok else status.HTTP_503_SERVICE_UNAVAILABLE
+    response.status_code = (
+        status.HTTP_200_OK if health_response.ok else status.HTTP_503_SERVICE_UNAVAILABLE
+    )
     return health_response

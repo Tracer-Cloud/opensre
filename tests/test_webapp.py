@@ -12,7 +12,9 @@ def client() -> TestClient:
     return TestClient(app)
 
 
-def test_health_ok_returns_200_and_payload(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_health_ok_returns_200_and_payload(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr("app.webapp._graph_loaded", lambda: True)
     monkeypatch.setattr("app.webapp._llm_configured", lambda: True)
     monkeypatch.setattr("app.webapp.get_version", lambda: "0.1.0")
@@ -30,7 +32,9 @@ def test_health_ok_returns_200_and_payload(client: TestClient, monkeypatch: pyte
     }
 
 
-def test_health_unhealthy_returns_503_and_payload(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_health_unhealthy_returns_503_and_payload(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr("app.webapp._graph_loaded", lambda: False)
     monkeypatch.setattr("app.webapp._llm_configured", lambda: True)
     monkeypatch.setattr("app.webapp.get_version", lambda: "0.1.0")
@@ -48,7 +52,9 @@ def test_health_unhealthy_returns_503_and_payload(client: TestClient, monkeypatc
     }
 
 
-def test_health_payload_has_stable_keys(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_health_payload_has_stable_keys(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr("app.webapp._graph_loaded", lambda: True)
     monkeypatch.setattr("app.webapp._llm_configured", lambda: False)
     monkeypatch.setattr("app.webapp.get_version", lambda: "0.1.0")
@@ -56,4 +62,10 @@ def test_health_payload_has_stable_keys(client: TestClient, monkeypatch: pytest.
 
     response = client.get("/health")
 
-    assert sorted(response.json().keys()) == ["env", "graph_loaded", "llm_configured", "ok", "version"]
+    assert sorted(response.json().keys()) == [
+        "env",
+        "graph_loaded",
+        "llm_configured",
+        "ok",
+        "version",
+    ]

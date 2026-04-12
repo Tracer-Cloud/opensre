@@ -22,6 +22,7 @@ import requests
 s3_client = boto3.client("s3")
 PIPELINE_NAME = "upstream_downstream_pipeline_lambda_ingester"
 
+
 class _NoopSpan:
     def set_attribute(self, *_args, **_kwargs) -> None:
         return None
@@ -160,11 +161,15 @@ def lambda_handler(event: dict, context: Any) -> dict:
         return payload
 
     execution_run_id = correlation_id
-    logger.info(json.dumps({
-        "event": "lambda_invocation",
-        "execution_run_id": execution_run_id,
-        "correlation_id": correlation_id,
-    }))
+    logger.info(
+        json.dumps(
+            {
+                "event": "lambda_invocation",
+                "execution_run_id": execution_run_id,
+                "correlation_id": correlation_id,
+            }
+        )
+    )
 
     # Fetch data from external API
     try:
@@ -178,17 +183,25 @@ def lambda_handler(event: dict, context: Any) -> dict:
             data = api_response.get("data", [])
             api_meta = api_response.get("meta", {})
             span.set_attribute("record_count", len(data))
-        logger.info(json.dumps({
-            "event": "external_api_fetch_complete",
-            "execution_run_id": execution_run_id,
-            "record_count": len(data),
-        }))
+        logger.info(
+            json.dumps(
+                {
+                    "event": "external_api_fetch_complete",
+                    "execution_run_id": execution_run_id,
+                    "record_count": len(data),
+                }
+            )
+        )
     except Exception as e:
-        logger.error(json.dumps({
-            "event": "external_api_error",
-            "execution_run_id": execution_run_id,
-            "error": str(e),
-        }))
+        logger.error(
+            json.dumps(
+                {
+                    "event": "external_api_error",
+                    "execution_run_id": execution_run_id,
+                    "error": str(e),
+                }
+            )
+        )
         return {
             "statusCode": 500,
             "error": f"External API call failed: {str(e)}",
@@ -220,11 +233,15 @@ def lambda_handler(event: dict, context: Any) -> dict:
                 Body=json.dumps(audit_payload, indent=2),
                 ContentType="application/json",
             )
-            logger.info(json.dumps({
-                "event": "s3_write_complete",
-                "execution_run_id": execution_run_id,
-                "audit_key": audit_key,
-            }))
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "s3_write_complete",
+                        "execution_run_id": execution_run_id,
+                        "audit_key": audit_key,
+                    }
+                )
+            )
 
             # Write main data with audit_key in metadata
             s3_client.put_object(
@@ -241,20 +258,28 @@ def lambda_handler(event: dict, context: Any) -> dict:
                     "audit_key": audit_key,
                 },
             )
-            logger.info(json.dumps({
-                "event": "s3_data_written",
-                "execution_run_id": execution_run_id,
-                "s3_key": s3_key,
-                "record_count": len(data),
-                "correlation_id": correlation_id,
-                "schema_version": api_meta.get("schema_version"),
-            }))
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "s3_data_written",
+                        "execution_run_id": execution_run_id,
+                        "s3_key": s3_key,
+                        "record_count": len(data),
+                        "correlation_id": correlation_id,
+                        "schema_version": api_meta.get("schema_version"),
+                    }
+                )
+            )
     except Exception as e:
-        logger.error(json.dumps({
-            "event": "s3_write_error",
-            "execution_run_id": execution_run_id,
-            "error": str(e),
-        }))
+        logger.error(
+            json.dumps(
+                {
+                    "event": "s3_write_error",
+                    "execution_run_id": execution_run_id,
+                    "error": str(e),
+                }
+            )
+        )
         return {
             "statusCode": 500,
             "error": f"S3 write failed: {str(e)}",

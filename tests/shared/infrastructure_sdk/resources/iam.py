@@ -40,7 +40,9 @@ LAMBDA_BASIC_EXECUTION_POLICY = "arn:aws:iam::aws:policy/service-role/AWSLambdaB
 ECS_TASK_EXECUTION_POLICY = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 
 
-def create_lambda_execution_role(name: str, stack_name: str, region: str = DEFAULT_REGION) -> dict[str, Any]:
+def create_lambda_execution_role(
+    name: str, stack_name: str, region: str = DEFAULT_REGION
+) -> dict[str, Any]:
     """Create basic Lambda execution role with CloudWatch logs policy.
 
     Args:
@@ -67,7 +69,9 @@ def create_lambda_execution_role(name: str, stack_name: str, region: str = DEFAU
     return role
 
 
-def create_ecs_task_role(name: str, stack_name: str, region: str = DEFAULT_REGION) -> dict[str, Any]:
+def create_ecs_task_role(
+    name: str, stack_name: str, region: str = DEFAULT_REGION
+) -> dict[str, Any]:
     """Create ECS task role.
 
     Args:
@@ -89,7 +93,9 @@ def create_ecs_task_role(name: str, stack_name: str, region: str = DEFAULT_REGIO
     )
 
 
-def create_ecs_execution_role(name: str, stack_name: str, region: str = DEFAULT_REGION) -> dict[str, Any]:
+def create_ecs_execution_role(
+    name: str, stack_name: str, region: str = DEFAULT_REGION
+) -> dict[str, Any]:
     """Create ECS execution role with ECR and logs permissions.
 
     Args:

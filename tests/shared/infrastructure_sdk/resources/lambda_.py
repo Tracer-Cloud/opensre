@@ -219,7 +219,9 @@ def create_function(
     }
 
 
-def update_function_code(name: str, code_zip: bytes, region: str = DEFAULT_REGION) -> dict[str, Any]:
+def update_function_code(
+    name: str, code_zip: bytes, region: str = DEFAULT_REGION
+) -> dict[str, Any]:
     """Update existing function code.
 
     Args:

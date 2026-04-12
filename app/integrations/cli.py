@@ -41,19 +41,21 @@ def _json_echo(data: Any) -> None:
     print(json.dumps(data, indent=2, default=str))
 
 
-_SECRET_KEYS = frozenset({
-    "api_token",
-    "api_key",
-    "api_private_key",
-    "app_key",
-    "password",
-    "secret_access_key",
-    "session_token",
-    "jwt_token",
-    "webhook_url",
-    "auth_token",
-    "connection_string",
-})
+_SECRET_KEYS = frozenset(
+    {
+        "api_token",
+        "api_key",
+        "api_private_key",
+        "app_key",
+        "password",
+        "secret_access_key",
+        "session_token",
+        "jwt_token",
+        "webhook_url",
+        "auth_token",
+        "connection_string",
+    }
+)
 
 
 def _p(label: str, default: str = "", secret: bool = False) -> str:
@@ -78,13 +80,19 @@ def _die(msg: str) -> NoReturn:
 
 def _mask(obj: Any) -> Any:
     if isinstance(obj, dict):
-        return {k: (v[:4] + "****" if isinstance(v, str) and v else "****") if k in _SECRET_KEYS else _mask(v) for k, v in obj.items()}
+        return {
+            k: (v[:4] + "****" if isinstance(v, str) and v else "****")
+            if k in _SECRET_KEYS
+            else _mask(v)
+            for k, v in obj.items()
+        }
     if isinstance(obj, list):
         return [_mask(i) for i in obj]
     return obj
 
 
 # ─── setup flows ──────────────────────────────────────────────────────────────
+
 
 def _setup_grafana() -> None:
     endpoint = _p("Instance URL (e.g. https://myorg.grafana.net)")
@@ -100,7 +108,9 @@ def _setup_datadog() -> None:
     site = _p("Site", default="datadoghq.com")
     if not api_key or not app_key:
         _die("api_key and app_key are required.")
-    upsert_integration("datadog", {"credentials": {"api_key": api_key, "app_key": app_key, "site": site}})
+    upsert_integration(
+        "datadog", {"credentials": {"api_key": api_key, "app_key": app_key, "site": site}}
+    )
 
 
 def _setup_honeycomb() -> None:
@@ -152,13 +162,30 @@ def _setup_aws() -> None:
         role_arn = _p("IAM Role ARN")
         if not role_arn:
             _die("role_arn is required.")
-        upsert_integration("aws", {"role_arn": role_arn, "external_id": _p("External ID (optional)"), "credentials": {"region": region}})
+        upsert_integration(
+            "aws",
+            {
+                "role_arn": role_arn,
+                "external_id": _p("External ID (optional)"),
+                "credentials": {"region": region},
+            },
+        )
     else:
         access_key = _p("AWS_ACCESS_KEY_ID", secret=True)
         secret_key = _p("AWS_SECRET_ACCESS_KEY", secret=True)
         if not access_key or not secret_key:
             _die("access_key and secret_key are required.")
-        upsert_integration("aws", {"credentials": {"access_key_id": access_key, "secret_access_key": secret_key, "session_token": _p("Session token (optional)"), "region": region}})
+        upsert_integration(
+            "aws",
+            {
+                "credentials": {
+                    "access_key_id": access_key,
+                    "secret_access_key": secret_key,
+                    "session_token": _p("Session token (optional)"),
+                    "region": region,
+                }
+            },
+        )
 
 
 def _setup_slack() -> None:
@@ -198,7 +225,18 @@ def _setup_rds() -> None:
     password = _p("Password", secret=True)
     if not host or not database or not username:
         _die("host, database, and username are required.")
-    upsert_integration("rds", {"credentials": {"host": host, "port": int(port) if port.isdigit() else 5432, "database": database, "username": username, "password": password}})
+    upsert_integration(
+        "rds",
+        {
+            "credentials": {
+                "host": host,
+                "port": int(port) if port.isdigit() else 5432,
+                "database": database,
+                "username": username,
+                "password": password,
+            }
+        },
+    )
 
 
 def _setup_tracer() -> None:
@@ -264,7 +302,9 @@ def _setup_sentry() -> None:
 
 
 def _setup_mongodb() -> None:
-    connection_string = _p("Connection string (e.g. mongodb+srv://user:pass@cluster.example.net)", secret=True)
+    connection_string = _p(
+        "Connection string (e.g. mongodb+srv://user:pass@cluster.example.net)", secret=True
+    )
     database = _p("Database name")
     auth_source = _p("Auth source", default="admin")
     tls_choice = questionary.select(
@@ -333,7 +373,6 @@ _HANDLERS: dict[str, Any] = {
 
 SUPPORTED = ", ".join(_HANDLERS)
 SUPPORTED_VERIFY = ", ".join(SUPPORTED_VERIFY_SERVICES)
-
 
 
 def cmd_setup(service: str | None) -> str:

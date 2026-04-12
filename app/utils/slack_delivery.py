@@ -72,7 +72,9 @@ def swap_reaction(
     add_reaction(add_emoji, channel, timestamp, token)
 
 
-def build_action_blocks(investigation_url: str, investigation_id: str | None = None) -> list[dict[str, Any]]:
+def build_action_blocks(
+    investigation_url: str, investigation_id: str | None = None
+) -> list[dict[str, Any]]:
     """Build Slack Block Kit action blocks with interactive buttons.
 
     Args:
@@ -84,9 +86,18 @@ def build_action_blocks(investigation_url: str, investigation_id: str | None = N
         List of Block Kit block dicts ready for the blocks parameter.
     """
     feedback_options = [
-        {"text": {"type": "plain_text", "text": "\U0001f44d Accurate"}, "value": f"accurate|{investigation_id or ''}"},
-        {"text": {"type": "plain_text", "text": "\U0001f914 Partially accurate"}, "value": f"partial|{investigation_id or ''}"},
-        {"text": {"type": "plain_text", "text": "\U0001f44e Inaccurate"}, "value": f"inaccurate|{investigation_id or ''}"},
+        {
+            "text": {"type": "plain_text", "text": "\U0001f44d Accurate"},
+            "value": f"accurate|{investigation_id or ''}",
+        },
+        {
+            "text": {"type": "plain_text", "text": "\U0001f914 Partially accurate"},
+            "value": f"partial|{investigation_id or ''}",
+        },
+        {
+            "text": {"type": "plain_text", "text": "\U0001f44e Inaccurate"},
+            "value": f"inaccurate|{investigation_id or ''}",
+        },
     ]
     elements: list[dict[str, Any]] = [
         {
@@ -163,9 +174,7 @@ def send_slack_report(
             )
             return (True, "") if webhook_ok else (False, "webhook=failed")
         logger.debug("[slack] Delivery skipped: no thread_ts (channel=%s)", channel)
-        debug_print(
-            "Slack delivery skipped: no thread_ts and no SLACK_WEBHOOK_URL configured."
-        )
+        debug_print("Slack delivery skipped: no thread_ts and no SLACK_WEBHOOK_URL configured.")
         return False, "no_thread_ts"
 
     if access_token and channel:
@@ -173,7 +182,9 @@ def send_slack_report(
             slack_message, channel, thread_ts, access_token, blocks=blocks, **extra
         )
         if not success:
-            logger.info("[slack] Direct post failed (%s), falling back to webapp delivery", direct_error)
+            logger.info(
+                "[slack] Direct post failed (%s), falling back to webapp delivery", direct_error
+            )
             webapp_ok = _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks, **extra)
             if not webapp_ok:
                 return False, f"direct={direct_error}, webapp=failed"
@@ -215,13 +226,18 @@ def _post_direct(
             response_meta = data.get("response_metadata", {})
             logger.error(
                 "[slack] Direct post FAILED: error=%s, metadata=%s (channel=%s, thread_ts=%s)",
-                error, response_meta, channel, thread_ts,
+                error,
+                response_meta,
+                channel,
+                thread_ts,
             )
             return False, f"slack_error={error}"
         warnings = data.get("response_metadata", {}).get("warnings", [])
         if warnings:
             logger.warning("[slack] Reply posted with warnings: %s", warnings)
-        logger.info("[slack] Reply posted successfully (thread_ts=%s, ts=%s)", thread_ts, data.get("ts"))
+        logger.info(
+            "[slack] Reply posted successfully (thread_ts=%s, ts=%s)", thread_ts, data.get("ts")
+        )
         return True, ""
     except Exception as exc:  # noqa: BLE001
         logger.error(

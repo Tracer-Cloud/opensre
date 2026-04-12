@@ -42,7 +42,12 @@ def test_run_happy_path() -> None:
 
     async def fake_fetch_all(**kwargs):
         return {
-            "logs": {"success": True, "logs": [{"message": "error in pipeline"}], "total": 1, "duration_ms": 50},
+            "logs": {
+                "success": True,
+                "logs": [{"message": "error in pipeline"}],
+                "total": 1,
+                "duration_ms": 50,
+            },
             "monitors": {"success": True, "monitors": [{"id": 1}], "duration_ms": 30},
             "events": {"success": True, "events": [{"id": "e1"}], "duration_ms": 20},
         }
@@ -86,7 +91,9 @@ def test_run_extracts_failed_pods() -> None:
         return {
             "logs": {
                 "success": True,
-                "logs": [{"message": "OOMKilled", "tags": ["pod_name:my-pod", "kube_namespace:default"]}],
+                "logs": [
+                    {"message": "OOMKilled", "tags": ["pod_name:my-pod", "kube_namespace:default"]}
+                ],
                 "total": 1,
                 "duration_ms": 10,
             },

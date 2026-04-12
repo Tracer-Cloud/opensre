@@ -130,6 +130,7 @@ class AsyncJWKSCache:
             # Cache the result
             self._cache[jwks_url] = CachedJWKS(keys=jwks_data, fetched_at=now)
             from typing import cast
+
             return cast(dict[str, Any], jwks_data)
 
     def clear(self) -> None:
@@ -291,6 +292,7 @@ def verify_jwt(token: str) -> JWTClaims:
         if loop.is_running():
             # Already inside an async context (e.g. LangGraph thread) — run in a new loop
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(asyncio.run, verify_jwt_async(token))
                 return future.result()

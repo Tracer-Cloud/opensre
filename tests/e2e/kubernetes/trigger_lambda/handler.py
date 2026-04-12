@@ -42,8 +42,18 @@ SERVICE_ACCOUNT = os.environ.get("SERVICE_ACCOUNT", "etl-pipeline-sa")
 
 VALID_PAYLOAD = {
     "data": [
-        {"customer_id": "CUST-001", "order_id": "ORD-001", "amount": 99.99, "timestamp": "2026-01-01"},
-        {"customer_id": "CUST-002", "order_id": "ORD-002", "amount": 149.50, "timestamp": "2026-01-01"},
+        {
+            "customer_id": "CUST-001",
+            "order_id": "ORD-001",
+            "amount": 99.99,
+            "timestamp": "2026-01-01",
+        },
+        {
+            "customer_id": "CUST-002",
+            "order_id": "ORD-002",
+            "amount": 149.50,
+            "timestamp": "2026-01-01",
+        },
     ]
 }
 
@@ -58,6 +68,7 @@ INVALID_PAYLOAD = {
 # EKS auth + K8s API
 # ---------------------------------------------------------------------------
 
+
 def _get_eks_token() -> str:
     """Generate an EKS bearer token using botocore presigned STS request."""
     session = boto3.Session()
@@ -70,9 +81,7 @@ def _get_eks_token() -> str:
     )
     SigV4QueryAuth(credentials, "sts", REGION, expires=60).add_auth(request)
 
-    return "k8s-aws-v1." + base64.urlsafe_b64encode(
-        request.url.encode()
-    ).rstrip(b"=").decode()
+    return "k8s-aws-v1." + base64.urlsafe_b64encode(request.url.encode()).rstrip(b"=").decode()
 
 
 def _k8s_request(method: str, path: str, body: dict | None = None) -> dict:
@@ -136,7 +145,11 @@ def _ensure_namespace_and_service_account() -> None:
             _k8s_request(
                 "POST",
                 f"/api/v1/namespaces/{NAMESPACE}/serviceaccounts",
-                {"apiVersion": "v1", "kind": "ServiceAccount", "metadata": {"name": SERVICE_ACCOUNT}},
+                {
+                    "apiVersion": "v1",
+                    "kind": "ServiceAccount",
+                    "metadata": {"name": SERVICE_ACCOUNT},
+                },
             )
         else:
             raise
@@ -172,12 +185,14 @@ def _create_job(job_name: str, stage: str, env_vars: dict[str, str]) -> None:
                 "spec": {
                     "serviceAccountName": SERVICE_ACCOUNT,
                     "restartPolicy": "Never",
-                    "containers": [{
-                        "name": stage,
-                        "image": IMAGE_URI,
-                        "imagePullPolicy": "Always",
-                        "env": env,
-                    }],
+                    "containers": [
+                        {
+                            "name": stage,
+                            "image": IMAGE_URI,
+                            "imagePullPolicy": "Always",
+                            "env": env,
+                        }
+                    ],
                 },
             },
         },
@@ -204,6 +219,7 @@ def _wait_for_job(job_name: str, timeout: int = 90) -> str:
 # S3 data upload
 # ---------------------------------------------------------------------------
 
+
 def _upload_data(payload: dict) -> tuple[str, str]:
     """Upload test data to S3. Returns (s3_key, correlation_id)."""
     s3 = boto3.client("s3")
@@ -225,10 +241,11 @@ def _upload_data(payload: dict) -> tuple[str, str]:
 # Lambda handler
 # ---------------------------------------------------------------------------
 
+
 def lambda_handler(event: dict, context) -> dict:
-    inject_error = (
-        event.get("queryStringParameters", {}) or {}
-    ).get("inject_error", "").lower() == "true"
+    inject_error = (event.get("queryStringParameters", {}) or {}).get(
+        "inject_error", ""
+    ).lower() == "true"
 
     run_id = f"api-{uuid.uuid4().hex[:8]}"
     payload = INVALID_PAYLOAD if inject_error else VALID_PAYLOAD
@@ -256,23 +273,29 @@ def lambda_handler(event: dict, context) -> dict:
         _create_job("etl-extract", "extract", {**base_env, "S3_KEY": s3_key})
         extract_status = _wait_for_job("etl-extract", timeout=90)
         if extract_status != "complete":
-            return _response(500, {
-                "error": f"Extract job {extract_status}",
-                "pipeline_run_id": run_id,
-            })
+            return _response(
+                500,
+                {
+                    "error": f"Extract job {extract_status}",
+                    "pipeline_run_id": run_id,
+                },
+            )
 
         # Submit transform job (will fail on bad data -- async, let Datadog catch it)
         transform_job = "etl-transform-error" if inject_error else "etl-transform"
         _create_job(transform_job, "transform", base_env)
 
-        return _response(200, {
-            "status": "submitted",
-            "pipeline_run_id": run_id,
-            "inject_error": inject_error,
-            "s3_key": s3_key,
-            "correlation_id": correlation_id,
-            "transform_job": transform_job,
-        })
+        return _response(
+            200,
+            {
+                "status": "submitted",
+                "pipeline_run_id": run_id,
+                "inject_error": inject_error,
+                "s3_key": s3_key,
+                "correlation_id": correlation_id,
+                "transform_job": transform_job,
+            },
+        )
 
     except Exception as e:
         return _response(500, {"error": str(e), "pipeline_run_id": run_id})

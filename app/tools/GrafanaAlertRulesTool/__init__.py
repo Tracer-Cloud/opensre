@@ -61,7 +61,12 @@ def query_grafana_alert_rules(
 
     client = _resolve_grafana_client(grafana_endpoint, grafana_api_key)
     if not client or not client.is_configured:
-        return {"source": "grafana_alerts", "available": False, "error": "Grafana integration not configured", "rules": []}
+        return {
+            "source": "grafana_alerts",
+            "available": False,
+            "error": "Grafana integration not configured",
+            "rules": [],
+        }
 
     rules = client.query_alert_rules(folder=folder)
     return {

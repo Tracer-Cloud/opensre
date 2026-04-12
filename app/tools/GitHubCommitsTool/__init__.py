@@ -75,7 +75,12 @@ def list_github_commits(
     """List recent commits for a GitHub repository through the MCP server."""
     config = _resolve_config(github_url, github_mode, github_token, github_command, github_args)
     if config is None:
-        return {"source": "github", "available": False, "error": "GitHub MCP integration is not configured.", "commits": []}
+        return {
+            "source": "github",
+            "available": False,
+            "error": "GitHub MCP integration is not configured.",
+            "commits": [],
+        }
 
     arguments: dict[str, Any] = {"owner": owner, "repo": repo, "perPage": per_page}
     if path:

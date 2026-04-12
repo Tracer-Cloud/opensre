@@ -90,10 +90,12 @@ def validate_sentry_integration(**kwargs):
 
     return _validate(**kwargs)
 
+
 def validate_notion_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_notion_integration as _validate
 
     return _validate(**kwargs)
+
 
 def validate_jira_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_jira_integration as _validate
@@ -850,6 +852,7 @@ def _configure_sentry() -> tuple[str, str]:
             return "Sentry", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
+
 def _configure_notion() -> tuple[str, str]:
     _, credentials = _integration_defaults("notion")
     _console.print("\n[bold]Notion Integration[/bold]")
@@ -865,10 +868,13 @@ def _configure_notion() -> tuple[str, str]:
         _render_integration_result("Notion", result)
 
         if result.ok:
-            upsert_integration("notion", {"credentials": {"api_key": api_key, "database_id": database_id}})
+            upsert_integration(
+                "notion", {"credentials": {"api_key": api_key, "database_id": database_id}}
+            )
             env_path = sync_env_values({"NOTION_DATABASE_ID": database_id})
             return "Notion", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
 
 def _configure_jira() -> tuple[str, str]:
     _, credentials = _integration_defaults("jira")

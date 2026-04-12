@@ -190,7 +190,11 @@ def test_run_interactive_picker_returns_zero_on_escape(monkeypatch) -> None:
     monkeypatch.setattr(interactive, "_require_interactive_dependencies", lambda: None)
     monkeypatch.setattr(interactive.sys, "stdin", SimpleNamespace(isatty=lambda: True))
     monkeypatch.setattr(interactive.sys, "stdout", SimpleNamespace(isatty=lambda: True))
-    monkeypatch.setattr(interactive, "choose_interactive_item", lambda _catalog: (_ for _ in ()).throw(KeyboardInterrupt()))  # noqa: E501
+    monkeypatch.setattr(
+        interactive,
+        "choose_interactive_item",
+        lambda _catalog: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )  # noqa: E501
 
     assert interactive.run_interactive_picker(catalog) == 0
 
@@ -230,6 +234,8 @@ def test_run_interactive_picker_returns_to_selection_after_escape_from_confirm(m
         return True
 
     monkeypatch.setattr(interactive, "_confirm_run", _mock_confirm)
-    monkeypatch.setattr(interactive, "run_catalog_item", lambda item: 7 if item.id == "make:test-full" else 1)
+    monkeypatch.setattr(
+        interactive, "run_catalog_item", lambda item: 7 if item.id == "make:test-full" else 1
+    )
 
     assert interactive.run_interactive_picker(Catalog(items=(first, second))) == 7

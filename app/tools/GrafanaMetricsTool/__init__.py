@@ -72,13 +72,28 @@ def query_grafana_metrics(
 
     client = _resolve_grafana_client(grafana_endpoint, grafana_api_key)
     if not client or not client.is_configured:
-        return {"source": "grafana_mimir", "available": False, "error": "Grafana integration not configured", "metrics": []}
+        return {
+            "source": "grafana_mimir",
+            "available": False,
+            "error": "Grafana integration not configured",
+            "metrics": [],
+        }
     if not client.mimir_datasource_uid:
-        return {"source": "grafana_mimir", "available": False, "error": "Mimir datasource not found", "metrics": []}
+        return {
+            "source": "grafana_mimir",
+            "available": False,
+            "error": "Mimir datasource not found",
+            "metrics": [],
+        }
 
     result = client.query_mimir(metric_name, service_name=service_name)
     if not result.get("success"):
-        return {"source": "grafana_mimir", "available": False, "error": result.get("error", "Unknown error"), "metrics": []}
+        return {
+            "source": "grafana_mimir",
+            "available": False,
+            "error": result.get("error", "Unknown error"),
+            "metrics": [],
+        }
 
     return {
         "source": "grafana_mimir",

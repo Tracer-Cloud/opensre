@@ -87,12 +87,14 @@ class CoralogixLogsTool(BaseTool):
         coralogix_base_url: str = "https://api.coralogix.com",
         **_kwargs: Any,
     ) -> dict[str, Any]:
-        config = CoralogixIntegrationConfig.model_validate({
-            "api_key": coralogix_api_key or "",
-            "base_url": coralogix_base_url,
-            "application_name": application_name,
-            "subsystem_name": subsystem_name,
-        })
+        config = CoralogixIntegrationConfig.model_validate(
+            {
+                "api_key": coralogix_api_key or "",
+                "base_url": coralogix_base_url,
+                "application_name": application_name,
+                "subsystem_name": subsystem_name,
+            }
+        )
         client = CoralogixClient(config)
         if not client.is_configured:
             return {

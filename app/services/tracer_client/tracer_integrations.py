@@ -29,9 +29,7 @@ class GrafanaIntegrationCredentials:
 class TracerIntegrationsMixin(TracerClientBase):
     """Mixin for fetching integration credentials from the web app."""
 
-    def get_integration_credentials(
-        self, service: str
-    ) -> list[dict[str, Any]]:
+    def get_integration_credentials(self, service: str) -> list[dict[str, Any]]:
         """Fetch integration credentials for a service from /api/integrations.
 
         Args:
@@ -72,7 +70,10 @@ class TracerIntegrationsMixin(TracerClientBase):
                 try:
                     integration["credentials"] = json.loads(creds)
                 except (json.JSONDecodeError, TypeError):
-                    logger.warning("Malformed credentials JSON for integration %s", integration.get("id", "unknown"))
+                    logger.warning(
+                        "Malformed credentials JSON for integration %s",
+                        integration.get("id", "unknown"),
+                    )
                     integration["credentials"] = {}
 
         return integrations
@@ -102,7 +103,10 @@ class TracerIntegrationsMixin(TracerClientBase):
             try:
                 credentials = json.loads(credentials)
             except (json.JSONDecodeError, TypeError):
-                logger.warning("Malformed Grafana credentials JSON for integration %s", integration.get("id", "unknown"))
+                logger.warning(
+                    "Malformed Grafana credentials JSON for integration %s",
+                    integration.get("id", "unknown"),
+                )
                 credentials = {}
 
         return GrafanaIntegrationCredentials(

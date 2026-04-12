@@ -9,9 +9,7 @@ def validate_data(raw_records: list[dict], required_fields: list[str]) -> None:
     for i, record in enumerate(raw_records):
         missing = [f for f in required_fields if f not in record]
         if missing:
-            raise DomainError(
-                f"Schema validation failed: Missing fields {missing} in record {i}"
-            )
+            raise DomainError(f"Schema validation failed: Missing fields {missing} in record {i}")
 
 
 def transform_data(raw_records: list[dict]) -> list[ProcessedRecord]:

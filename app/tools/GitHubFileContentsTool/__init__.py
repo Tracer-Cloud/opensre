@@ -75,7 +75,12 @@ def get_github_file_contents(
     """Fetch a file or directory from GitHub through the MCP server."""
     config = _resolve_config(github_url, github_mode, github_token, github_command, github_args)
     if config is None:
-        return {"source": "github", "available": False, "error": "GitHub MCP integration is not configured.", "file": {}}
+        return {
+            "source": "github",
+            "available": False,
+            "error": "GitHub MCP integration is not configured.",
+            "file": {},
+        }
 
     arguments = {"owner": owner, "repo": repo, "path": path}
     if ref:

@@ -17,9 +17,7 @@ class TestEKSNodegroupHealthToolContract(BaseToolContract):
 
 def test_is_available_requires_cluster_name() -> None:
     rt = get_eks_nodegroup_health.__opensre_registered_tool__
-    assert rt.is_available({
-        "eks": {"connection_verified": True, "cluster_name": "c1"}
-    }) is True
+    assert rt.is_available({"eks": {"connection_verified": True, "cluster_name": "c1"}}) is True
     assert rt.is_available({"eks": {"connection_verified": True}}) is False
     assert rt.is_available({}) is False
 

@@ -314,9 +314,11 @@ def validate_sentry_integration(
     result = validate_sentry_config(config)
     return IntegrationHealthResult(ok=result.ok, detail=result.detail)
 
+
 def validate_notion_integration(*, api_key: str, database_id: str) -> IntegrationHealthResult:
     """Validate Notion connectivity by querying the target database."""
     import httpx
+
     try:
         resp = httpx.get(
             f"https://api.notion.com/v1/databases/{database_id}",
@@ -327,14 +329,22 @@ def validate_notion_integration(*, api_key: str, database_id: str) -> Integratio
             timeout=10,
         )
         if resp.status_code == 200:
-            return IntegrationHealthResult(ok=True, detail="Notion database reachable and token valid.")
+            return IntegrationHealthResult(
+                ok=True, detail="Notion database reachable and token valid."
+            )
         if resp.status_code == 401:
             return IntegrationHealthResult(ok=False, detail="Notion API key is invalid or expired.")
         if resp.status_code == 404:
-            return IntegrationHealthResult(ok=False, detail="Notion database not found. Check the database ID and sharing settings.")
-        return IntegrationHealthResult(ok=False, detail=f"Notion returned unexpected status {resp.status_code}.")
+            return IntegrationHealthResult(
+                ok=False,
+                detail="Notion database not found. Check the database ID and sharing settings.",
+            )
+        return IntegrationHealthResult(
+            ok=False, detail=f"Notion returned unexpected status {resp.status_code}."
+        )
     except Exception as e:
         return IntegrationHealthResult(ok=False, detail=f"Notion validation failed: {e}")
+
 
 def validate_gitlab_integration(
     *,
@@ -342,14 +352,10 @@ def validate_gitlab_integration(
     auth_token: str,
 ) -> IntegrationHealthResult:
     """Validate Gitlab connectivity with an users api."""
-    config = build_gitlab_config(
-        {
-            "base_url": base_url,
-            "auth_token": auth_token
-        }
-    )
+    config = build_gitlab_config({"base_url": base_url, "auth_token": auth_token})
     result = validate_gitlab_config(config)
     return IntegrationHealthResult(ok=result.ok, detail=result.detail)
+
 
 def validate_google_docs_integration(
     *,
@@ -416,7 +422,9 @@ def validate_vercel_integration(*, api_token: str, team_id: str = "") -> Integra
         return IntegrationHealthResult(ok=False, detail=f"Vercel validation failed: {err}")
 
 
-def validate_jira_integration(*, base_url: str, email: str, api_token: str, project_key: str) -> IntegrationHealthResult:
+def validate_jira_integration(
+    *, base_url: str, email: str, api_token: str, project_key: str
+) -> IntegrationHealthResult:
     """Validate Jira connectivity and project key accessibility."""
     import httpx
 
@@ -438,16 +446,29 @@ def validate_jira_integration(*, base_url: str, email: str, api_token: str, proj
                 timeout=10,
             )
             if project_resp.status_code == 404:
-                return IntegrationHealthResult(ok=False, detail=f"Project '{project_key}' not found. Check the project key.")
+                return IntegrationHealthResult(
+                    ok=False, detail=f"Project '{project_key}' not found. Check the project key."
+                )
             if project_resp.status_code != 200:
-                return IntegrationHealthResult(ok=False, detail=f"Could not verify project '{project_key}': HTTP {project_resp.status_code}.")
+                return IntegrationHealthResult(
+                    ok=False,
+                    detail=f"Could not verify project '{project_key}': HTTP {project_resp.status_code}.",
+                )
 
-            return IntegrationHealthResult(ok=True, detail=f"Jira connected as {display}, project '{project_key}' verified.")
+            return IntegrationHealthResult(
+                ok=True, detail=f"Jira connected as {display}, project '{project_key}' verified."
+            )
         if resp.status_code == 401:
-            return IntegrationHealthResult(ok=False, detail="Jira credentials invalid. Check email and API token.")
+            return IntegrationHealthResult(
+                ok=False, detail="Jira credentials invalid. Check email and API token."
+            )
         if resp.status_code == 404:
-            return IntegrationHealthResult(ok=False, detail="Jira base URL not found. Check the URL.")
-        return IntegrationHealthResult(ok=False, detail=f"Jira returned unexpected status {resp.status_code}.")
+            return IntegrationHealthResult(
+                ok=False, detail="Jira base URL not found. Check the URL."
+            )
+        return IntegrationHealthResult(
+            ok=False, detail=f"Jira returned unexpected status {resp.status_code}."
+        )
     except Exception as e:
         return IntegrationHealthResult(ok=False, detail=f"Jira validation failed: {e}")
 

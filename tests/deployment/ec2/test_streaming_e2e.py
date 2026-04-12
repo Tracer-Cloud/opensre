@@ -50,8 +50,7 @@ class TestEC2Streaming:
         logger.info("Nodes seen: %s", seen)
         assert "extract_alert" in seen, f"extract_alert not in streamed nodes: {seen}"
         assert any(
-            node in seen
-            for node in ("plan_actions", "investigate", "diagnose", "publish")
+            node in seen for node in ("plan_actions", "investigate", "diagnose", "publish")
         ), f"Expected downstream investigation nodes, got {seen}"
 
         has_output = (
@@ -60,8 +59,7 @@ class TestEC2Streaming:
             or result.final_state.get("is_noise")
         )
         assert has_output, (
-            "Final state missing root_cause/report/is_noise: "
-            f"{list(result.final_state.keys())}"
+            f"Final state missing root_cause/report/is_noise: {list(result.final_state.keys())}"
         )
 
         logger.info(

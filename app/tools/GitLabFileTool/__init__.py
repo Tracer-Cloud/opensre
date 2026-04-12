@@ -63,7 +63,12 @@ def get_gitlab_file_contents(
     """Read the contents of a specific file from a GitLab repository."""
     config = _resolve_config(gitlab_url, gitlab_token)
     if config is None:
-        return {"source": "gitlab", "available": False, "error": "gitlab integration is not configured.", "file": {}}
+        return {
+            "source": "gitlab",
+            "available": False,
+            "error": "gitlab integration is not configured.",
+            "file": {},
+        }
 
     result = get_gitlab_file(
         config=config,
@@ -72,7 +77,12 @@ def get_gitlab_file_contents(
         file_path=file_path,
     )
     if result.get("size", 0) > 50_000:
-        return {"source": "gitlab", "available": False, "error": f"File too large to read ({result['size']} bytes)", "file": {}}
+        return {
+            "source": "gitlab",
+            "available": False,
+            "error": f"File too large to read ({result['size']} bytes)",
+            "file": {},
+        }
 
     content_raw = result.get("content", "")
     if content_raw:

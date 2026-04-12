@@ -57,9 +57,7 @@ def _generate_eks_token(cluster_name: str, assumed_creds: dict[str, Any], region
         logger.error("[eks] %s", msg)
         raise RuntimeError(msg)
 
-    token = "k8s-aws-v1." + base64.urlsafe_b64encode(
-        signed_url.encode()
-    ).decode().rstrip("=")
+    token = "k8s-aws-v1." + base64.urlsafe_b64encode(signed_url.encode()).decode().rstrip("=")
     logger.info("[eks] Token generated for cluster=%s (length=%d)", cluster_name, len(token))
     return token
 
@@ -92,7 +90,10 @@ def build_k8s_clients(
     ca_data = cluster_info["certificateAuthority"]["data"]
     logger.info(
         "[eks] Cluster %s — status=%s version=%s endpoint=%s",
-        cluster_name, status, k8s_version, endpoint,
+        cluster_name,
+        status,
+        k8s_version,
+        endpoint,
     )
 
     ca_bytes = base64.b64decode(ca_data)

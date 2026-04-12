@@ -276,7 +276,9 @@ def get_invocation_logs_by_request_id(
     logs_client = _get_cloudwatch_logs_client()
     if not logs_client:
         return {"success": False, "error": "boto3 not available"}
-    credentials_error = require_aws_credentials(context="lambda_client.get_invocation_logs_by_request_id")
+    credentials_error = require_aws_credentials(
+        context="lambda_client.get_invocation_logs_by_request_id"
+    )
     if credentials_error:
         return credentials_error
 

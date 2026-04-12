@@ -17,9 +17,7 @@ class TestEKSDescribeAddonToolContract(BaseToolContract):
 
 def test_is_available_requires_cluster_name() -> None:
     rt = describe_eks_addon.__opensre_registered_tool__
-    assert rt.is_available({
-        "eks": {"connection_verified": True, "cluster_name": "c1"}
-    }) is True
+    assert rt.is_available({"eks": {"connection_verified": True, "cluster_name": "c1"}}) is True
     assert rt.is_available({"eks": {"connection_verified": True}}) is False
     assert rt.is_available({}) is False
 
@@ -50,7 +48,9 @@ def test_run_happy_path() -> None:
 
 def test_run_handles_client_error() -> None:
     mock_client = MagicMock()
-    error = ClientError({"Error": {"Code": "NotFoundException", "Message": "Addon not found"}}, "DescribeAddon")
+    error = ClientError(
+        {"Error": {"Code": "NotFoundException", "Message": "Addon not found"}}, "DescribeAddon"
+    )
     mock_client.describe_addon.side_effect = error
     with patch("app.tools.EKSDescribeAddonTool.EKSClient", return_value=mock_client):
         result = describe_eks_addon(

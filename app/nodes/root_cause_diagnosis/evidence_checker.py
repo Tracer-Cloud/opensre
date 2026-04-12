@@ -13,17 +13,19 @@ _ERROR_ANNOTATION_KEYS = ("error", "error_message", "log_excerpt", "failed_steps
 
 # Evidence keys whose presence (even with empty values) confirms investigation was attempted.
 # An empty grafana_logs list is itself a healthy signal: no errors found during investigation.
-_INVESTIGATED_EVIDENCE_KEYS = frozenset({
-    "grafana_logs",
-    "grafana_metrics",
-    "grafana_alert_rules",
-    "aws_cloudwatch_metrics",
-    "aws_rds_events",
-    "aws_performance_insights",
-    "cloudwatch_logs",
-    "datadog_logs",
-    "datadog_monitors",
-})
+_INVESTIGATED_EVIDENCE_KEYS = frozenset(
+    {
+        "grafana_logs",
+        "grafana_metrics",
+        "grafana_alert_rules",
+        "aws_cloudwatch_metrics",
+        "aws_rds_events",
+        "aws_performance_insights",
+        "cloudwatch_logs",
+        "datadog_logs",
+        "datadog_monitors",
+    }
+)
 
 
 def check_evidence_availability(
@@ -68,13 +70,24 @@ def check_evidence_availability(
         has_alert_evidence = True
     elif isinstance(raw_alert, dict):
         annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
-        body = raw_alert.get("body", "") or raw_alert.get("text", "") or raw_alert.get("message", "")
+        body = (
+            raw_alert.get("body", "") or raw_alert.get("text", "") or raw_alert.get("message", "")
+        )
         has_alert_evidence = bool(
             body
-            or (annotations and any(
-                annotations.get(k)
-                for k in ("log_excerpt", "failed_steps", "error", "error_message", "cloudwatch_logs_url")
-            ))
+            or (
+                annotations
+                and any(
+                    annotations.get(k)
+                    for k in (
+                        "log_excerpt",
+                        "failed_steps",
+                        "error",
+                        "error_message",
+                        "cloudwatch_logs_url",
+                    )
+                )
+            )
         )
 
     return has_tracer_evidence, has_cloudwatch_evidence, has_alert_evidence
@@ -115,9 +128,7 @@ def is_clearly_healthy(raw_alert: dict[str, Any] | str, evidence: dict[str, Any]
         return False
 
     # Condition 3: no error-signal annotations.
-    annotations = (
-        raw_alert.get("commonAnnotations", raw_alert.get("annotations", {})) or {}
-    )
+    annotations = raw_alert.get("commonAnnotations", raw_alert.get("annotations", {})) or {}
     if any(annotations.get(key) for key in _ERROR_ANNOTATION_KEYS):
         return False
 

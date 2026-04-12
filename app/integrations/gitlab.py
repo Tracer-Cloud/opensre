@@ -58,10 +58,13 @@ def gitlab_config_from_env() -> GitlabConfig | None:
     auth_token = os.getenv("GITLAB_ACCESS_TOKEN", "").strip()
     if not auth_token:
         return None
-    return build_gitlab_config({
-        "base_url": os.getenv("GITLAB_BASE_URL", DEFAULT_GITLAB_BASE_URL).strip() or DEFAULT_GITLAB_BASE_URL,
-        "auth_token": auth_token,
-    })
+    return build_gitlab_config(
+        {
+            "base_url": os.getenv("GITLAB_BASE_URL", DEFAULT_GITLAB_BASE_URL).strip()
+            or DEFAULT_GITLAB_BASE_URL,
+            "auth_token": auth_token,
+        }
+    )
 
 
 def _request_json(
@@ -95,8 +98,7 @@ def validate_gitlab_config(config: GitlabConfig) -> GitlabValidationResult:
         user = validate_gitlab_connection(config=config)
         username = user.get("username", "unknown")
         return GitlabValidationResult(
-            ok=True,
-            detail=f"GitLab connectivity successful. Authenticated as @{username}"
+            ok=True, detail=f"GitLab connectivity successful. Authenticated as @{username}"
         )
     except httpx.HTTPStatusError as err:
         detail = err.response.text.strip() or str(err)
@@ -120,12 +122,7 @@ def validate_gitlab_connection(
 
 
 def get_gitlab_commits(
-    *,
-    config: GitlabConfig,
-    project_id: str,
-    ref_name="main",
-    since: str,
-    per_page: int = 10
+    *, config: GitlabConfig, project_id: str, ref_name="main", since: str, per_page: int = 10
 ) -> list[dict[str, Any]]:
     """Fetch gitlab commits for project."""
 
@@ -152,7 +149,7 @@ def get_gitlab_mrs(
     state: str = "merged",
     target_branch: str = "main",
     updated_after: str,
-    per_page: int = 10
+    per_page: int = 10,
 ) -> list[dict[str, Any]]:
     """Fetch gitlab Merge requests for project."""
 
@@ -165,7 +162,7 @@ def get_gitlab_mrs(
             ("state", state),
             ("updated_after", updated_after),
             ("target_branch", target_branch),
-            ("per_page", per_page)
+            ("per_page", per_page),
         ],
     )
     return payload if isinstance(payload, list) else []
@@ -191,7 +188,7 @@ def get_gitlab_pipelines(
             ("status", status),
             ("updated_after", updated_after),
             ("ref", ref),
-            ("per_page", per_page)
+            ("per_page", per_page),
         ],
     )
     return payload if isinstance(payload, list) else []
@@ -207,7 +204,7 @@ def get_gitlab_file(
     """Fetch particular gitlab file"""
 
     encoded_project_id = quote(project_id, safe="")
-    encoded_path = quote(file_path, safe='')
+    encoded_path = quote(file_path, safe="")
     payload = _request_json(
         config,
         "GET",
@@ -219,11 +216,9 @@ def get_gitlab_file(
     return payload if isinstance(payload, dict) else {}
 
 
-def post_gitlab_mr_note(*,
-    config: GitlabConfig,
-    project_id: str,
-    mr_iid: str,
-    body: str) -> dict[str, Any]:
+def post_gitlab_mr_note(
+    *, config: GitlabConfig, project_id: str, mr_iid: str, body: str
+) -> dict[str, Any]:
     """Post findings back on mr as comment"""
 
     encoded_project_id = quote(project_id, safe="")
@@ -232,6 +227,6 @@ def post_gitlab_mr_note(*,
         config,
         "POST",
         f"/projects/{encoded_project_id}/merge_requests/{mr_iid}/notes",
-        json=json_body
+        json=json_body,
     )
     return payload if isinstance(payload, dict) else {}

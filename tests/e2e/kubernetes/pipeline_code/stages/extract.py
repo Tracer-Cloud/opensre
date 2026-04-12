@@ -23,10 +23,14 @@ def main() -> None:
         source_key=S3_KEY,
     )
 
-    print(json.dumps({
-        "stage": "extract",
-        "status": "success",
-        "record_count": len(records),
-        "correlation_id": correlation_id,
-        "output": f"s3://{LANDING_BUCKET}/{output_key}",
-    }))
+    print(
+        json.dumps(
+            {
+                "stage": "extract",
+                "status": "success",
+                "record_count": len(records),
+                "correlation_id": correlation_id,
+                "output": f"s3://{LANDING_BUCKET}/{output_key}",
+            }
+        )
+    )
