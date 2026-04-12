@@ -9,7 +9,9 @@ from app.cli.wizard.prompts import checkbox, select
 
 
 def test_select_prompt_registers_tab_navigation() -> None:
-    question = select("Provider", [Choice("Anthropic", value="anthropic"), Choice("OpenAI", value="openai")])
+    question = select(
+        "Provider", [Choice("Anthropic", value="anthropic"), Choice("OpenAI", value="openai")]
+    )
     key_bindings = question.application.key_bindings
     assert key_bindings is not None
     bindings = {binding.keys for binding in key_bindings.bindings}
@@ -72,7 +74,9 @@ def test_select_prompt_arrow_navigation_changes_selection() -> None:
 
 
 def test_checkbox_prompt_registers_tab_navigation() -> None:
-    question = checkbox("Integrations", [Choice("Grafana", value="grafana"), Choice("Slack", value="slack")])
+    question = checkbox(
+        "Integrations", [Choice("Grafana", value="grafana"), Choice("Slack", value="slack")]
+    )
     key_bindings = question.application.key_bindings
     assert key_bindings is not None
     bindings = {binding.keys for binding in key_bindings.bindings}

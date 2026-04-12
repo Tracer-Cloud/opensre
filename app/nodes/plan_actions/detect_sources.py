@@ -121,7 +121,6 @@ def _extract_issue_id_from_url(value: str) -> str:
     return parts[index + 1].strip()
 
 
-
 def detect_sources(
     raw_alert: dict[str, Any] | str,
     context: dict[str, Any],
@@ -175,9 +174,7 @@ def detect_sources(
     # nested annotations so EKS/k8s fields extracted by the LLM are visible here.
     annotations: dict[str, Any] = {}
     if isinstance(raw_alert, dict):
-        nested = (
-            raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
-        )
+        nested = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
         # Merge: nested annotations first, then top-level enriched fields override/fill gaps
         annotations = {**nested, **{k: v for k, v in raw_alert.items() if v and k not in nested}}
 
@@ -422,16 +419,19 @@ def detect_sources(
             sources["grafana"] = grafana_params
 
     # Only include Datadog when alert came from Datadog, or when source is truly unknown
-    if resolved_integrations and resolved_integrations.get("datadog") and alert_source in ("datadog", ""):
+    if (
+        resolved_integrations
+        and resolved_integrations.get("datadog")
+        and alert_source in ("datadog", "")
+    ):
         dd_int = resolved_integrations["datadog"]
         dd_api_key = dd_int.get("api_key", "")
         dd_app_key = dd_int.get("app_key", "")
 
         if dd_api_key and dd_app_key:
             # kube_namespace: prefer LLM-injected top-level field, fall back to annotations
-            kube_namespace = (
-                raw_alert.get("kube_namespace", "")
-                or annotations.get("kube_namespace", "")
+            kube_namespace = raw_alert.get("kube_namespace", "") or annotations.get(
+                "kube_namespace", ""
             )
 
             # Build a default log query from alert context.
@@ -484,13 +484,15 @@ def detect_sources(
 
             sources["datadog"] = dd_params
 
-    if resolved_integrations and resolved_integrations.get("honeycomb") and alert_source in ("honeycomb", ""):
+    if (
+        resolved_integrations
+        and resolved_integrations.get("honeycomb")
+        and alert_source in ("honeycomb", "")
+    ):
         honeycomb_int = resolved_integrations["honeycomb"]
         honeycomb_api_key = str(honeycomb_int.get("api_key", "")).strip()
         honeycomb_dataset = str(honeycomb_int.get("dataset", "__all__")).strip() or "__all__"
-        honeycomb_base_url = str(
-            honeycomb_int.get("base_url", "https://api.honeycomb.io")
-        ).strip()
+        honeycomb_base_url = str(honeycomb_int.get("base_url", "https://api.honeycomb.io")).strip()
         if honeycomb_api_key:
             sources["honeycomb"] = {
                 "dataset": honeycomb_dataset,
@@ -507,12 +509,14 @@ def detect_sources(
                 "connection_verified": True,
             }
 
-    if resolved_integrations and resolved_integrations.get("coralogix") and alert_source in ("coralogix", ""):
+    if (
+        resolved_integrations
+        and resolved_integrations.get("coralogix")
+        and alert_source in ("coralogix", "")
+    ):
         coralogix_int = resolved_integrations["coralogix"]
         coralogix_api_key = str(coralogix_int.get("api_key", "")).strip()
-        coralogix_base_url = str(
-            coralogix_int.get("base_url", "https://api.coralogix.com")
-        ).strip()
+        coralogix_base_url = str(coralogix_int.get("base_url", "https://api.coralogix.com")).strip()
         if coralogix_api_key and coralogix_base_url:
             application_name = str(
                 annotations.get("application_name")
@@ -563,10 +567,7 @@ def detect_sources(
     # Detect EKS: uses the AWS integration (EKS maps to aws in resolve_integrations)
     _eks_int = (resolved_integrations or {}).get("aws")
     if _eks_int and _eks_int.get("role_arn"):
-        eks_cluster = (
-            annotations.get("eks_cluster")
-            or annotations.get("cluster_name")
-        )
+        eks_cluster = annotations.get("eks_cluster") or annotations.get("cluster_name")
         kube_namespace = (
             annotations.get("kube_namespace")
             or annotations.get("kubernetes_namespace")
@@ -580,8 +581,7 @@ def detect_sources(
                 "namespace": kube_namespace,
                 "pod_name": annotations.get("pod_name", ""),
                 "deployment": (
-                    annotations.get("deployment")
-                    or annotations.get("kube_deployment", "")
+                    annotations.get("deployment") or annotations.get("kube_deployment", "")
                 ),
                 "node_name": annotations.get("node_name", ""),
                 "region": (
@@ -597,14 +597,12 @@ def detect_sources(
 
     github_int = (resolved_integrations or {}).get("github")
     if github_int:
-        repo_url = (
-            str(
-                annotations.get("repo_url")
-                or annotations.get("repository_url")
-                or annotations.get("vercel_repo_url")
-                or raw_alert.get("repo_url", "")
-                or raw_alert.get("vercel_repo_url", "")
-            )
+        repo_url = str(
+            annotations.get("repo_url")
+            or annotations.get("repository_url")
+            or annotations.get("vercel_repo_url")
+            or raw_alert.get("repo_url", "")
+            or raw_alert.get("vercel_repo_url", "")
         )
         owner = str(
             annotations.get("github_owner")
@@ -673,7 +671,9 @@ def detect_sources(
     gitlab_int = (resolved_integrations or {}).get("gitlab")
     if gitlab_int:
         repo_url = str(
-            annotations.get("repo_url") or annotations.get("repository_url") or raw_alert.get("repo_url", "")
+            annotations.get("repo_url")
+            or annotations.get("repository_url")
+            or raw_alert.get("repo_url", "")
         )
         project_id = str(
             annotations.get("gitlab_project")
@@ -693,7 +693,8 @@ def detect_sources(
                     or annotations.get("gitlab_ref")
                     or annotations.get("ref_name")
                     or raw_alert.get("branch", "")
-                ).strip() or "main",
+                ).strip()
+                or "main",
                 "file_path": str(
                     annotations.get("file_path")
                     or annotations.get("gitlab_path")
@@ -705,8 +706,7 @@ def detect_sources(
                 ).strip(),
                 "gitlab_url": str(gitlab_int.get("base_url", "")).strip(),
                 "gitlab_token": str(gitlab_int.get("auth_token", "")).strip(),
-                "merge_request_iid" : str(
-                    annotations.get("mr_iid", "")).strip(),
+                "merge_request_iid": str(annotations.get("mr_iid", "")).strip(),
                 "connection_verified": True,
             }
     vercel_int = (resolved_integrations or {}).get("vercel")
@@ -715,20 +715,16 @@ def detect_sources(
             "api_token": str(vercel_int.get("api_token", "")).strip(),
             "team_id": str(vercel_int.get("team_id", "")).strip(),
             "project_id": str(
-                annotations.get("vercel_project_id")
-                or raw_alert.get("vercel_project_id", "")
+                annotations.get("vercel_project_id") or raw_alert.get("vercel_project_id", "")
             ).strip(),
             "project_name": str(
-                annotations.get("vercel_project_name")
-                or raw_alert.get("vercel_project_name", "")
+                annotations.get("vercel_project_name") or raw_alert.get("vercel_project_name", "")
             ).strip(),
             "project_slug": str(
-                annotations.get("vercel_project_slug")
-                or raw_alert.get("vercel_project_slug", "")
+                annotations.get("vercel_project_slug") or raw_alert.get("vercel_project_slug", "")
             ).strip(),
             "deployment_id": str(
-                annotations.get("vercel_deployment_id")
-                or raw_alert.get("vercel_deployment_id", "")
+                annotations.get("vercel_deployment_id") or raw_alert.get("vercel_deployment_id", "")
             ).strip(),
             "selected_log_id": str(
                 annotations.get("vercel_selected_log_id")
@@ -760,8 +756,7 @@ def detect_sources(
                 or raw_alert.get("vercel_github_commit_ref", "")
             ).strip(),
             "error_message": str(
-                annotations.get("error")
-                or raw_alert.get("error_message", "")
+                annotations.get("error") or raw_alert.get("error_message", "")
             ).strip(),
             "connection_verified": True,
         }
@@ -791,8 +786,7 @@ def detect_sources(
             sources["sentry"] = {
                 "organization_slug": str(sentry_int.get("organization_slug", "")).strip(),
                 "project_slug": str(
-                    annotations.get("sentry_project")
-                    or sentry_int.get("project_slug", "")
+                    annotations.get("sentry_project") or sentry_int.get("project_slug", "")
                 ).strip(),
                 "issue_id": issue_id,
                 "query": sentry_query,
@@ -811,9 +805,7 @@ def detect_sources(
                 or mongodb_int.get("database", "")
             ).strip()
             mongodb_collection = str(
-                annotations.get("mongodb_collection")
-                or annotations.get("collection")
-                or ""
+                annotations.get("mongodb_collection") or annotations.get("collection") or ""
             ).strip()
             sources["mongodb"] = {
                 "connection_string": mongodb_connection_string,
@@ -827,15 +819,15 @@ def detect_sources(
     atlas_int = (resolved_integrations or {}).get("mongodb_atlas")
     if atlas_int and str(atlas_int.get("api_public_key", "")).strip():
         atlas_cluster = str(
-            annotations.get("atlas_cluster_name")
-            or annotations.get("cluster_name")
-            or ""
+            annotations.get("atlas_cluster_name") or annotations.get("cluster_name") or ""
         ).strip()
         sources["mongodb_atlas"] = {
             "api_public_key": str(atlas_int.get("api_public_key", "")).strip(),
             "api_private_key": str(atlas_int.get("api_private_key", "")).strip(),
             "project_id": str(atlas_int.get("project_id", "")).strip(),
-            "base_url": str(atlas_int.get("base_url", "https://cloud.mongodb.com/api/atlas/v2")).strip(),
+            "base_url": str(
+                atlas_int.get("base_url", "https://cloud.mongodb.com/api/atlas/v2")
+            ).strip(),
             "cluster_name": atlas_cluster,
             "connection_verified": True,
         }
@@ -843,12 +835,10 @@ def detect_sources(
     opsgenie_int = (resolved_integrations or {}).get("opsgenie")
     if opsgenie_int and str(opsgenie_int.get("api_key", "")).strip():
         alert_id = str(
-            annotations.get("opsgenie_alert_id")
-            or raw_alert.get("opsgenie_alert_id", "")
+            annotations.get("opsgenie_alert_id") or raw_alert.get("opsgenie_alert_id", "")
         ).strip()
         opsgenie_query = str(
-            annotations.get("opsgenie_query")
-            or raw_alert.get("alert_name", "")
+            annotations.get("opsgenie_query") or raw_alert.get("alert_name", "")
         ).strip()
         sources["opsgenie"] = {
             "api_key": str(opsgenie_int.get("api_key", "")).strip(),

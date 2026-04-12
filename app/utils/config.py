@@ -183,7 +183,12 @@ def get_rw_api_key() -> str:
 
 def _is_grafana_hostname(endpoint: str) -> bool:
     hostname = urlparse(endpoint).hostname or ""
-    return hostname == "grafana.net" or hostname.endswith(".grafana.net") or hostname == "grafana.com" or hostname.endswith(".grafana.com")
+    return (
+        hostname == "grafana.net"
+        or hostname.endswith(".grafana.net")
+        or hostname == "grafana.com"
+        or hostname.endswith(".grafana.com")
+    )
 
 
 def is_grafana_otlp_endpoint(value: str | None = None) -> bool:

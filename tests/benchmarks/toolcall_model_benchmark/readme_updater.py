@@ -50,9 +50,7 @@ def render_readme_summary(cases: Sequence[Any], summary: Any) -> str:
     ``total_estimated_cost_usd``, ``total_duration_seconds`` on summary).
     """
     lines: list[str] = []
-    lines.append(
-        "| Scenario | Status | Duration (s) | Tokens | Est. Cost (USD) |"
-    )
+    lines.append("| Scenario | Status | Duration (s) | Tokens | Est. Cost (USD) |")
     lines.append("|---|---|---:|---:|---:|")
     for c in cases:
         lines.append(
@@ -130,13 +128,15 @@ def _parse_report_to_metrics(
                 continue
             cols = [c.strip() for c in line.split("|")[1:-1]]
             if len(cols) >= 7:
-                cases.append(_CaseMetrics(
-                    scenario_id=cols[0],
-                    run_status=cols[1],
-                    duration_seconds=float(cols[2]),
-                    total_tokens=int(cols[5]),
-                    estimated_cost_usd=float(cols[6]),
-                ))
+                cases.append(
+                    _CaseMetrics(
+                        scenario_id=cols[0],
+                        run_status=cols[1],
+                        duration_seconds=float(cols[2]),
+                        total_tokens=int(cols[5]),
+                        estimated_cost_usd=float(cols[6]),
+                    )
+                )
 
     # Parse summary section
     in_summary = False
@@ -156,18 +156,24 @@ def _parse_report_to_metrics(
         return None
 
     case_count = int(summary_kv.get("Cases", str(len(cases))))
-    success_count = int(summary_kv.get(
-        "Successful runs",
-        str(sum(1 for c in cases if c.run_status == "ok")),
-    ))
-    total_duration = float(summary_kv.get(
-        "Total duration (s)",
-        str(sum(c.duration_seconds for c in cases)),
-    ))
-    total_cost = float(summary_kv.get(
-        "Total estimated cost (USD)",
-        str(sum(c.estimated_cost_usd for c in cases)),
-    ))
+    success_count = int(
+        summary_kv.get(
+            "Successful runs",
+            str(sum(1 for c in cases if c.run_status == "ok")),
+        )
+    )
+    total_duration = float(
+        summary_kv.get(
+            "Total duration (s)",
+            str(sum(c.duration_seconds for c in cases)),
+        )
+    )
+    total_cost = float(
+        summary_kv.get(
+            "Total estimated cost (USD)",
+            str(sum(c.estimated_cost_usd for c in cases)),
+        )
+    )
 
     summary = _SummaryMetrics(
         case_count=case_count,

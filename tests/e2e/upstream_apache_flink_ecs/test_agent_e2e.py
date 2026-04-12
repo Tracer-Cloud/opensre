@@ -233,7 +233,9 @@ def test_agent_investigation(failure_data: dict):
     # Require at least 4/5 checks to pass (schema change detection is critical)
     min_required = 4
     if passed_count < min_required:
-        print(f"\nFailed: Agent passed {passed_count}/{len(success_checks)} checks, need {min_required}")
+        print(
+            f"\nFailed: Agent passed {passed_count}/{len(success_checks)} checks, need {min_required}"
+        )
         return False
     if not success_checks["Schema change detected"]:
         print("\nFailed: Agent must detect schema change as root cause")

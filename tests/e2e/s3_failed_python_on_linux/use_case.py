@@ -258,12 +258,18 @@ def step5_transform_with_jq(execution_run_id: str, run_id: str, trace_id: str) -
         return result
 
 
-def main(log_file: str = "production.log", run_id: str | None = None, trace_id: str | None = None) -> dict:
+def main(
+    log_file: str = "production.log", run_id: str | None = None, trace_id: str | None = None
+) -> dict:
     execution_run_id = run_id or str(uuid.uuid4())
     trace_identifier = trace_id or execution_run_id
 
-    logger.info("DATA ENGINEERING PIPELINE START main_pid=%s log_file=%s execution_run_id=%s",
-                os.getpid(), log_file, execution_run_id)
+    logger.info(
+        "DATA ENGINEERING PIPELINE START main_pid=%s log_file=%s execution_run_id=%s",
+        os.getpid(),
+        log_file,
+        execution_run_id,
+    )
     start_time = time.time()
     results: list[dict] = []
 

@@ -26,14 +26,16 @@ DEFAULT_OUTPUT_DIR = "docs/daily-updates"
 MAX_PROMPT_FILES = 25
 MAX_PROMPT_BODY_CHARS = 1200
 MAX_HIGHLIGHTS = 20
-BOT_LOGINS = frozenset({
-    "dependabot",
-    "dependabot[bot]",
-    "github-actions",
-    "github-actions[bot]",
-    "copilot",
-    "copilot[bot]",
-})
+BOT_LOGINS = frozenset(
+    {
+        "dependabot",
+        "dependabot[bot]",
+        "github-actions",
+        "github-actions[bot]",
+        "copilot",
+        "copilot[bot]",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +110,9 @@ def _parse_iso_datetime(value: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
-def compute_daily_window(*, now: datetime | None = None, london_date: date | None = None) -> DailyWindow:
+def compute_daily_window(
+    *, now: datetime | None = None, london_date: date | None = None
+) -> DailyWindow:
     """Return the London calendar day and UTC bounds used for GitHub queries."""
     if london_date is None:
         now_utc = now or datetime.now(UTC)
@@ -176,7 +180,9 @@ def _paginate_github(url: str, token: str) -> list[Any]:
     while next_url:
         payload, headers = _github_json(next_url, token)
         if not isinstance(payload, list):
-            raise RuntimeError(f"Expected list payload from GitHub API, got {type(payload).__name__}.")
+            raise RuntimeError(
+                f"Expected list payload from GitHub API, got {type(payload).__name__}."
+            )
         items.extend(payload)
         next_url = _next_link(headers)
     return items
@@ -198,7 +204,9 @@ def _user_is_bot(user: dict[str, Any] | None) -> bool:
     login = _string(user.get("login")).lower()
     if not login:
         return False
-    return login in BOT_LOGINS or login.endswith("[bot]") or _string(user.get("type")).lower() == "bot"
+    return (
+        login in BOT_LOGINS or login.endswith("[bot]") or _string(user.get("type")).lower() == "bot"
+    )
 
 
 def _name_looks_like_bot(name: str) -> bool:
@@ -277,7 +285,9 @@ def _build_contributors(
     return tuple(sorted(contributors.values(), key=lambda item: item.display_name.lower()))
 
 
-def fetch_merged_pull_requests(repository: str, window: DailyWindow, token: str) -> tuple[PullRequestSummary, ...]:
+def fetch_merged_pull_requests(
+    repository: str, window: DailyWindow, token: str
+) -> tuple[PullRequestSummary, ...]:
     """Fetch merged PRs for a single London-local day."""
     closed_prs_url = _github_repo_api_url(
         repository,
@@ -326,13 +336,17 @@ def fetch_merged_pull_requests(repository: str, window: DailyWindow, token: str)
                 author_display_name = _resolve_user_display_name(author_login, token, user_cache)
 
         labels_payload = detail_payload.get("labels")
-        labels = tuple(
-            sorted(
-                _string(label.get("name"))
-                for label in labels_payload
-                if isinstance(label, dict) and _string(label.get("name"))
+        labels = (
+            tuple(
+                sorted(
+                    _string(label.get("name"))
+                    for label in labels_payload
+                    if isinstance(label, dict) and _string(label.get("name"))
+                )
             )
-        ) if isinstance(labels_payload, list) else ()
+            if isinstance(labels_payload, list)
+            else ()
+        )
 
         changed_files = tuple(
             _string(file_payload.get("filename"))
@@ -340,7 +354,12 @@ def fetch_merged_pull_requests(repository: str, window: DailyWindow, token: str)
             if isinstance(file_payload, dict) and _string(file_payload.get("filename"))
         )
 
-        contributors = _build_contributors(author_user if isinstance(author_user, dict) else None, commit_payloads, token, user_cache)
+        contributors = _build_contributors(
+            author_user if isinstance(author_user, dict) else None,
+            commit_payloads,
+            token,
+            user_cache,
+        )
         results.append(
             PullRequestSummary(
                 number=number,
@@ -377,7 +396,9 @@ def _thanks_line(pull_requests: tuple[PullRequestSummary, ...]) -> str:
     contributors: dict[str, str] = {}
     for pull_request in pull_requests:
         for contributor in pull_request.contributors:
-            key = contributor.login.lower() if contributor.login else contributor.display_name.lower()
+            key = (
+                contributor.login.lower() if contributor.login else contributor.display_name.lower()
+            )
             contributors[key] = contributor.display_name
     return (
         "Thanks to everyone who contributed yesterday:\n\n"
@@ -402,7 +423,9 @@ def _prompt_file_list(changed_files: tuple[str, ...]) -> str:
     return ", ".join(files) + suffix
 
 
-def _build_summary_prompt(repository: str, window: DailyWindow, pull_requests: tuple[PullRequestSummary, ...]) -> str:
+def _build_summary_prompt(
+    repository: str, window: DailyWindow, pull_requests: tuple[PullRequestSummary, ...]
+) -> str:
     sections: list[str] = [
         "You are writing a factual internal engineering daily update.",
         f"Repository: {repository}",
@@ -423,18 +446,23 @@ def _build_summary_prompt(repository: str, window: DailyWindow, pull_requests: t
 
     for pull_request in pull_requests:
         labels = ", ".join(pull_request.labels) or "none"
-        contributors = ", ".join(contributor.display_name for contributor in pull_request.contributors) or "unknown"
-        sections.extend([
-            f"- Title: {pull_request.title}",
-            f"  Author: {pull_request.author_display_name or pull_request.author_login or 'unknown'}",
-            f"  Contributors: {contributors}",
-            f"  Merged at: {pull_request.merged_at.isoformat()}",
-            f"  Labels: {labels}",
-            f"  Additions/Deletions: +{pull_request.additions} / -{pull_request.deletions}",
-            f"  Files: {_prompt_file_list(pull_request.changed_files)}",
-            f"  Body: {_truncate(pull_request.body, limit=MAX_PROMPT_BODY_CHARS) or 'No body provided.'}",
-            "",
-        ])
+        contributors = (
+            ", ".join(contributor.display_name for contributor in pull_request.contributors)
+            or "unknown"
+        )
+        sections.extend(
+            [
+                f"- Title: {pull_request.title}",
+                f"  Author: {pull_request.author_display_name or pull_request.author_login or 'unknown'}",
+                f"  Contributors: {contributors}",
+                f"  Merged at: {pull_request.merged_at.isoformat()}",
+                f"  Labels: {labels}",
+                f"  Additions/Deletions: +{pull_request.additions} / -{pull_request.deletions}",
+                f"  Files: {_prompt_file_list(pull_request.changed_files)}",
+                f"  Body: {_truncate(pull_request.body, limit=MAX_PROMPT_BODY_CHARS) or 'No body provided.'}",
+                "",
+            ]
+        )
 
     return "\n".join(sections).strip()
 
@@ -495,7 +523,9 @@ def summarize_highlights(
     return build_fallback_highlights(pull_requests), True
 
 
-def build_daily_update(repository: str, window: DailyWindow, pull_requests: tuple[PullRequestSummary, ...]) -> DailyUpdate:
+def build_daily_update(
+    repository: str, window: DailyWindow, pull_requests: tuple[PullRequestSummary, ...]
+) -> DailyUpdate:
     """Create the normalized daily update document and Slack summary."""
     highlights, fallback_used = summarize_highlights(repository, window, pull_requests)
     repo_name = repository.rsplit("/", 1)[-1].lower()
@@ -526,16 +556,23 @@ def render_markdown(update: DailyUpdate) -> str:
         "",
     ]
     lines.extend(f"- {highlight}" for highlight in update.highlights)
-    lines.extend([
-        "",
-        "## Source pull requests",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Source pull requests",
+            "",
+        ]
+    )
 
     if update.pull_requests:
         for pull_request in update.pull_requests:
-            contributor_names = format_name_list(contributor.display_name for contributor in pull_request.contributors)
-            files = ", ".join(f"`{path}`" for path in pull_request.changed_files[:10]) or "_No file list returned._"
+            contributor_names = format_name_list(
+                contributor.display_name for contributor in pull_request.contributors
+            )
+            files = (
+                ", ".join(f"`{path}`" for path in pull_request.changed_files[:10])
+                or "_No file list returned._"
+            )
             if len(pull_request.changed_files) > 10:
                 files += f", and {len(pull_request.changed_files) - 10} more"
             labels = ", ".join(f"`{label}`" for label in pull_request.labels) or "_none_"
@@ -547,15 +584,17 @@ def render_markdown(update: DailyUpdate) -> str:
     else:
         lines.append("- No pull requests were merged during this London calendar day.")
 
-    lines.extend([
-        "",
-        "## Generation metadata",
-        "",
-        f"- Generator version: `opensre {get_version()}`",
-        f"- Fallback summary used: `{'yes' if update.fallback_used else 'no'}`",
-        f"- UTC window: `{update.window.start_utc.isoformat()}` to `{update.window.end_utc.isoformat()}`",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Generation metadata",
+            "",
+            f"- Generator version: `opensre {get_version()}`",
+            f"- Fallback summary used: `{'yes' if update.fallback_used else 'no'}`",
+            f"- UTC window: `{update.window.start_utc.isoformat()}` to `{update.window.end_utc.isoformat()}`",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -583,11 +622,7 @@ def update_docs_navigation(output_dir: Path) -> Path:
     config = json.loads(docs_json.read_text(encoding="utf-8"))
 
     archive_slugs = sorted(
-        (
-            f"daily-updates/{p.stem}"
-            for p in output_dir.glob("*.mdx")
-            if p.name != "overview.mdx"
-        ),
+        (f"daily-updates/{p.stem}" for p in output_dir.glob("*.mdx") if p.name != "overview.mdx"),
         reverse=True,
     )
 

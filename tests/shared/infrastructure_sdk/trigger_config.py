@@ -98,7 +98,11 @@ def discover_runtime_outputs() -> dict[str, str] | None:
     """Discover runtime outputs without mutating infrastructure."""
     try:
         outputs = load_outputs(STACK_NAME)
-        if outputs.get("landing_bucket") and outputs.get("processed_bucket") and outputs.get("ecr_image_uri"):
+        if (
+            outputs.get("landing_bucket")
+            and outputs.get("processed_bucket")
+            and outputs.get("ecr_image_uri")
+        ):
             return {
                 "landing_bucket": outputs["landing_bucket"],
                 "processed_bucket": outputs["processed_bucket"],
@@ -110,9 +114,11 @@ def discover_runtime_outputs() -> dict[str, str] | None:
 
     lambda_client = get_boto3_client("lambda", REGION)
     try:
-        env = lambda_client.get_function_configuration(
-            FunctionName=TRIGGER_LAMBDA_NAME
-        ).get("Environment", {}).get("Variables", {})
+        env = (
+            lambda_client.get_function_configuration(FunctionName=TRIGGER_LAMBDA_NAME)
+            .get("Environment", {})
+            .get("Variables", {})
+        )
     except Exception:
         env = {}
 

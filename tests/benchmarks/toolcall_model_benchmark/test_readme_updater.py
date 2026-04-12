@@ -151,7 +151,9 @@ class TestExtractSummaryFromReport:
 class TestUpdaterMainEntryPoint:
     """Integration tests for the standalone ``main()`` entry point."""
 
-    def test_updates_readme_from_cached_results(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_updates_readme_from_cached_results(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         # Set up directory structure mirroring the repo
         readme = tmp_path / "README.md"
         readme.write_text(SAMPLE_README, encoding="utf-8")
@@ -176,7 +178,9 @@ class TestUpdaterMainEntryPoint:
         assert "docs/benchmarks/results.md" in content
         assert "_No benchmark results yet._" not in content
 
-    def test_returns_error_when_no_results(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_returns_error_when_no_results(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         readme = tmp_path / "README.md"
         readme.write_text(SAMPLE_README, encoding="utf-8")
 

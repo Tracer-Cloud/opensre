@@ -139,12 +139,17 @@ class TestParseArgs:
         assert args.md_out == "/tmp/results.md"
 
     def test_all_flags_together(self) -> None:
-        args = parse_args([
-            "--scenario", "001-replication-lag",
-            "--md-out", "/tmp/out.md",
-            "--no-update-readme",
-            "--readme-path", "/tmp/README.md",
-        ])
+        args = parse_args(
+            [
+                "--scenario",
+                "001-replication-lag",
+                "--md-out",
+                "/tmp/out.md",
+                "--no-update-readme",
+                "--readme-path",
+                "/tmp/README.md",
+            ]
+        )
         assert args.scenario == ["001-replication-lag"]
         assert args.md_out == "/tmp/out.md"
         assert args.no_update_readme is True

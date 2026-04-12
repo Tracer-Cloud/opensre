@@ -53,8 +53,16 @@ class _CheckboxControl(InquirerControl):
                 tokens.append(("", "\n"))
                 continue
 
-            indicator = f"{INDICATOR_SELECTED if selected else INDICATOR_UNSELECTED} " if self.use_indicator else ""
-            indicator_class = "class:highlighted" if is_pointed else ("class:selected" if selected else "class:text")
+            indicator = (
+                f"{INDICATOR_SELECTED if selected else INDICATOR_UNSELECTED} "
+                if self.use_indicator
+                else ""
+            )
+            indicator_class = (
+                "class:highlighted"
+                if is_pointed
+                else ("class:selected" if selected else "class:text")
+            )
             text_class = "class:highlighted" if is_pointed else "class:text"
 
             if is_pointed:

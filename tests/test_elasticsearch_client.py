@@ -46,6 +46,7 @@ class TestElasticsearchConfig:
 
 # ── Client.is_configured ──────────────────────────────────────────────────────
 
+
 class TestElasticsearchClientIsConfigured:
     def test_configured_with_url_only(self) -> None:
         client = ElasticsearchClient(ElasticsearchConfig(url="http://localhost:9200"))
@@ -57,6 +58,7 @@ class TestElasticsearchClientIsConfigured:
 
 
 # ── check_security ────────────────────────────────────────────────────────────
+
 
 class TestCheckSecurity:
     def test_security_disabled_returns_false(self) -> None:
@@ -82,7 +84,10 @@ class TestCheckSecurity:
         assert result["security_enabled"] is True
 
     def test_check_security_handles_connection_error(self) -> None:
-        with patch("app.services.elasticsearch.client.httpx.get", side_effect=Exception("connection refused")):
+        with patch(
+            "app.services.elasticsearch.client.httpx.get",
+            side_effect=Exception("connection refused"),
+        ):
             client = ElasticsearchClient(ElasticsearchConfig(url="http://localhost:9200"))
             result = client.check_security()
 
@@ -102,6 +107,7 @@ class TestCheckSecurity:
 
 
 # ── list_indices ──────────────────────────────────────────────────────────────
+
 
 class TestListIndices:
     def _make_client(self) -> ElasticsearchClient:
@@ -147,6 +153,7 @@ class TestListIndices:
 
 # ── list_data_streams ─────────────────────────────────────────────────────────
 
+
 class TestListDataStreams:
     def test_returns_data_streams(self) -> None:
         mock_resp = MagicMock()
@@ -181,6 +188,7 @@ class TestListDataStreams:
 
 
 # ── search_logs ───────────────────────────────────────────────────────────────
+
 
 class TestSearchLogs:
     def test_search_returns_hits(self) -> None:
@@ -252,6 +260,7 @@ class TestSearchLogs:
 
 # ── get_cluster_health ────────────────────────────────────────────────────────
 
+
 class TestGetClusterHealth:
     def test_returns_cluster_health(self) -> None:
         mock_resp = MagicMock()
@@ -292,17 +301,21 @@ class TestGetClusterHealth:
 
 # ── package exports ───────────────────────────────────────────────────────────
 
+
 def test_package_exports() -> None:
     from app.services.elasticsearch import ElasticsearchClient as C  # noqa: F401
     from app.services.elasticsearch import ElasticsearchConfig as Cfg
+
     assert C is not None
     assert Cfg is not None
 
 
 # ── tool factory helpers ──────────────────────────────────────────────────────
 
+
 def test_make_client_returns_none_without_url() -> None:
     from app.tools.ElasticsearchLogsTool._client import make_client
+
     assert make_client(None) is None
     assert make_client("") is None
 
@@ -310,12 +323,14 @@ def test_make_client_returns_none_without_url() -> None:
 def test_make_client_returns_client_with_url() -> None:
     from app.services.elasticsearch import ElasticsearchClient
     from app.tools.ElasticsearchLogsTool._client import make_client
+
     client = make_client("http://localhost:9200")
     assert isinstance(client, ElasticsearchClient)
 
 
 def test_make_client_passes_api_key() -> None:
     from app.tools.ElasticsearchLogsTool._client import make_client
+
     client = make_client("http://localhost:9200", api_key="abc123")
     assert client is not None
     assert client.config.api_key == "abc123"
@@ -323,6 +338,7 @@ def test_make_client_passes_api_key() -> None:
 
 def test_unavailable_response_shape() -> None:
     from app.tools.ElasticsearchLogsTool._client import unavailable
+
     result = unavailable("elasticsearch_logs", "logs", "not configured")
     assert result["available"] is False
     assert result["source"] == "elasticsearch_logs"
@@ -332,8 +348,10 @@ def test_unavailable_response_shape() -> None:
 
 # ── BaseTool wrapper ──────────────────────────────────────────────────────────
 
+
 def test_tool_name_and_source() -> None:
     from app.tools.ElasticsearchLogsTool import ElasticsearchLogsTool
+
     t = ElasticsearchLogsTool()
     assert t.name == "query_elasticsearch_logs"
     assert t.source == "elasticsearch"
@@ -341,6 +359,7 @@ def test_tool_name_and_source() -> None:
 
 def test_tool_is_available_when_connection_verified() -> None:
     from app.tools.ElasticsearchLogsTool import ElasticsearchLogsTool
+
     t = ElasticsearchLogsTool()
     sources = {"elasticsearch": {"connection_verified": True, "url": "http://localhost:9200"}}
     assert t.is_available(sources) is True
@@ -348,12 +367,14 @@ def test_tool_is_available_when_connection_verified() -> None:
 
 def test_tool_is_not_available_without_source() -> None:
     from app.tools.ElasticsearchLogsTool import ElasticsearchLogsTool
+
     t = ElasticsearchLogsTool()
     assert t.is_available({}) is False
 
 
 def test_tool_run_returns_unavailable_without_url() -> None:
     from app.tools.ElasticsearchLogsTool import ElasticsearchLogsTool
+
     t = ElasticsearchLogsTool()
     result = t.run(query="error", url=None)
     assert result["available"] is False

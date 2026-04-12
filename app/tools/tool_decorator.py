@@ -88,18 +88,20 @@ def tool(  # noqa: UP047
     """
 
     def should_register_function() -> bool:
-        return any([
-            name is not None,
-            description is not None,
-            input_schema is not None,
-            source is not None,
-            surfaces is not None,
-            bool(use_cases),
-            bool(requires),
-            bool(outputs),
-            is_available is not None,
-            extract_params is not None,
-        ])
+        return any(
+            [
+                name is not None,
+                description is not None,
+                input_schema is not None,
+                source is not None,
+                surfaces is not None,
+                bool(use_cases),
+                bool(requires),
+                bool(outputs),
+                is_available is not None,
+                extract_params is not None,
+            ]
+        )
 
     def attach(target: F | BaseTool) -> F | BaseTool:
         if isinstance(target, BaseTool):
@@ -132,6 +134,7 @@ def tool(  # noqa: UP047
         return target
 
     if func is None:
+
         def wrapper(inner: F) -> F:
             return cast(F, attach(inner))
 

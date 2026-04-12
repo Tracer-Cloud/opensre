@@ -33,7 +33,9 @@ def test_scenario_metadata_is_valid() -> None:
         assert meta.engine, f"{fixture.scenario_id}: engine must be set"
         assert meta.failure_mode, f"{fixture.scenario_id}: failure_mode must be set"
         assert meta.region, f"{fixture.scenario_id}: region must be set"
-        assert meta.available_evidence, f"{fixture.scenario_id}: available_evidence must not be empty"
+        assert meta.available_evidence, (
+            f"{fixture.scenario_id}: available_evidence must not be empty"
+        )
         unknown = set(meta.available_evidence) - VALID_EVIDENCE_SOURCES
         assert not unknown, f"{fixture.scenario_id}: unknown evidence sources {unknown}"
 
@@ -111,12 +113,14 @@ def test_level4_scenario(fixture) -> None:
 
 
 def _write_minimal_answer_yml(scenario_dir: Path) -> None:
-    (scenario_dir / "answer.yml").write_text(textwrap.dedent("""\
+    (scenario_dir / "answer.yml").write_text(
+        textwrap.dedent("""\
         root_cause_category: test_category
         required_keywords:
           - test_keyword
         model_response: "Test model response."
-    """))
+    """)
+    )
 
 
 class TestScenarioInheritance:
@@ -127,12 +131,14 @@ class TestScenarioInheritance:
         scenario_dir = tmp_path / "999-test-inherit"
         scenario_dir.mkdir()
 
-        (scenario_dir / "scenario.yml").write_text(textwrap.dedent("""\
+        (scenario_dir / "scenario.yml").write_text(
+            textwrap.dedent("""\
             base: 000-healthy
             scenario_id: 999-test-inherit
             failure_mode: cpu_saturation
             severity: critical
-        """))
+        """)
+        )
         _write_minimal_answer_yml(scenario_dir)
 
         # Symlink the suite directory so _resolve_base_dir can find 000-healthy.
@@ -167,12 +173,14 @@ class TestScenarioInheritance:
         real_dir = SUITE_DIR / "999-test-fallback"
         real_dir.mkdir(exist_ok=True)
         try:
-            (real_dir / "scenario.yml").write_text(textwrap.dedent("""\
+            (real_dir / "scenario.yml").write_text(
+                textwrap.dedent("""\
                 base: 000-healthy
                 scenario_id: 999-test-fallback
                 failure_mode: healthy
                 severity: info
-            """))
+            """)
+            )
             _write_minimal_answer_yml(real_dir)
 
             fixture = load_scenario(real_dir)
@@ -195,21 +203,27 @@ class TestScenarioInheritance:
         real_dir = SUITE_DIR / "999-test-override"
         real_dir.mkdir(exist_ok=True)
         try:
-            (real_dir / "scenario.yml").write_text(textwrap.dedent("""\
+            (real_dir / "scenario.yml").write_text(
+                textwrap.dedent("""\
                 base: 000-healthy
                 scenario_id: 999-test-override
                 failure_mode: healthy
                 severity: info
-            """))
+            """)
+            )
             _write_minimal_answer_yml(real_dir)
 
-            custom_events = {"events": [{
-                "date": "2026-04-01T00:00:00Z",
-                "message": "Custom test event",
-                "source_identifier": "payments-prod",
-                "source_type": "db-instance",
-                "event_categories": ["notification"],
-            }]}
+            custom_events = {
+                "events": [
+                    {
+                        "date": "2026-04-01T00:00:00Z",
+                        "message": "Custom test event",
+                        "source_identifier": "payments-prod",
+                        "source_type": "db-instance",
+                        "event_categories": ["notification"],
+                    }
+                ]
+            }
             (real_dir / "aws_rds_events.json").write_text(json.dumps(custom_events))
 
             fixture = load_scenario(real_dir)
@@ -229,18 +243,22 @@ class TestScenarioInheritance:
         real_dir.mkdir(exist_ok=True)
         real_dir_b.mkdir(exist_ok=True)
         try:
-            (real_dir.joinpath("scenario.yml")).write_text(textwrap.dedent("""\
+            (real_dir.joinpath("scenario.yml")).write_text(
+                textwrap.dedent("""\
                 base: 000-healthy
                 scenario_id: 999-test-chain-a
                 failure_mode: healthy
                 severity: info
-            """))
-            (real_dir_b / "scenario.yml").write_text(textwrap.dedent("""\
+            """)
+            )
+            (real_dir_b / "scenario.yml").write_text(
+                textwrap.dedent("""\
                 base: 999-test-chain-a
                 scenario_id: 999-test-chain-b
                 failure_mode: healthy
                 severity: info
-            """))
+            """)
+            )
             _write_minimal_answer_yml(real_dir_b)
 
             with pytest.raises(ValueError, match="Chained inheritance is not supported"):
@@ -256,12 +274,14 @@ class TestScenarioInheritance:
         real_dir = SUITE_DIR / "999-test-missing-base"
         real_dir.mkdir(exist_ok=True)
         try:
-            (real_dir / "scenario.yml").write_text(textwrap.dedent("""\
+            (real_dir / "scenario.yml").write_text(
+                textwrap.dedent("""\
                 base: 999-nonexistent
                 scenario_id: 999-test-missing-base
                 failure_mode: healthy
                 severity: info
-            """))
+            """)
+            )
             _write_minimal_answer_yml(real_dir)
 
             with pytest.raises(ValueError, match="Base scenario '999-nonexistent' not found"):

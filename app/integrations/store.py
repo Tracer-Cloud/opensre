@@ -108,9 +108,7 @@ def remove_integration(service: str) -> bool:
     """Remove integration for a service. Returns True if something was removed."""
     data = _load_raw()
     before = len(data.get("integrations", []))
-    data["integrations"] = [
-        i for i in data.get("integrations", []) if i.get("service") != service
-    ]
+    data["integrations"] = [i for i in data.get("integrations", []) if i.get("service") != service]
     removed = len(data["integrations"]) < before
     if removed:
         _save(data)

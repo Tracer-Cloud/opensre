@@ -29,7 +29,11 @@ class GrafanaAccountConfig(StrictConfigModel):
     def uses_local_anonymous_auth(self) -> bool:
         """Allow localhost Grafana to work without a bearer token."""
         host = urlparse(self.instance_url).hostname or ""
-        return bool(self.instance_url and not self.read_token and host in {"localhost", "127.0.0.1", "0.0.0.0"})
+        return bool(
+            self.instance_url
+            and not self.read_token
+            and host in {"localhost", "127.0.0.1", "0.0.0.0"}
+        )
 
     @property
     def is_configured(self) -> bool:

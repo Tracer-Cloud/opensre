@@ -194,7 +194,10 @@ def create_service(
         response = ecs_client.create_service(**config)
         service_arn = response["service"]["serviceArn"]
     except ClientError as e:
-        if "ServiceAlreadyExists" in str(e) or e.response["Error"]["Code"] == "InvalidParameterException":
+        if (
+            "ServiceAlreadyExists" in str(e)
+            or e.response["Error"]["Code"] == "InvalidParameterException"
+        ):
             # Update existing service
             ecs_client.update_service(
                 cluster=cluster,

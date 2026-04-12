@@ -42,19 +42,27 @@ def test_run_happy_path() -> None:
         "content": '{"key": "value"}',
         "metadata": {},
     }
-    with patch("app.tools.S3GetObjectTool.get_full_object", return_value={"success": True, "data": fake_data}):
+    with patch(
+        "app.tools.S3GetObjectTool.get_full_object",
+        return_value={"success": True, "data": fake_data},
+    ):
         result = get_s3_object(bucket="my-bucket", key="my-key.json")
     assert result["found"] is True
     assert result["size"] == 1024
 
 
 def test_run_not_found() -> None:
-    with patch("app.tools.S3GetObjectTool.get_full_object", return_value={"success": True, "exists": False}):
+    with patch(
+        "app.tools.S3GetObjectTool.get_full_object", return_value={"success": True, "exists": False}
+    ):
         result = get_s3_object(bucket="b", key="k")
     assert result["found"] is False
 
 
 def test_run_api_error() -> None:
-    with patch("app.tools.S3GetObjectTool.get_full_object", return_value={"success": False, "error": "Access denied"}):
+    with patch(
+        "app.tools.S3GetObjectTool.get_full_object",
+        return_value={"success": False, "error": "Access denied"},
+    ):
         result = get_s3_object(bucket="b", key="k")
     assert "error" in result

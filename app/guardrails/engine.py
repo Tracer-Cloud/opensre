@@ -41,9 +41,7 @@ class GuardrailBlockedError(Exception):
 
     def __init__(self, rule_names: tuple[str, ...]) -> None:
         self.rule_names = rule_names
-        super().__init__(
-            f"Guardrail blocked by rules: {', '.join(rule_names)}."
-        )
+        super().__init__(f"Guardrail blocked by rules: {', '.join(rule_names)}.")
 
 
 class GuardrailEngine:
@@ -74,13 +72,15 @@ class GuardrailEngine:
         for rule in self._rules:
             for pattern in rule.patterns:
                 for m in pattern.finditer(text):
-                    matches.append(ScanMatch(
-                        rule_name=rule.name,
-                        action=rule.action,
-                        matched_text=m.group(),
-                        start=m.start(),
-                        end=m.end(),
-                    ))
+                    matches.append(
+                        ScanMatch(
+                            rule_name=rule.name,
+                            action=rule.action,
+                            matched_text=m.group(),
+                            start=m.start(),
+                            end=m.end(),
+                        )
+                    )
 
             for keyword in rule.keywords:
                 start = 0
@@ -88,18 +88,18 @@ class GuardrailEngine:
                     idx = text_lower.find(keyword, start)
                     if idx == -1:
                         break
-                    matches.append(ScanMatch(
-                        rule_name=rule.name,
-                        action=rule.action,
-                        matched_text=text[idx:idx + len(keyword)],
-                        start=idx,
-                        end=idx + len(keyword),
-                    ))
+                    matches.append(
+                        ScanMatch(
+                            rule_name=rule.name,
+                            action=rule.action,
+                            matched_text=text[idx : idx + len(keyword)],
+                            start=idx,
+                            end=idx + len(keyword),
+                        )
+                    )
                     start = idx + len(keyword)
 
-        blocking_rules = tuple(
-            m.rule_name for m in matches if m.action == GuardrailAction.BLOCK
-        )
+        blocking_rules = tuple(m.rule_name for m in matches if m.action == GuardrailAction.BLOCK)
         return ScanResult(
             matches=tuple(matches),
             blocked=len(blocking_rules) > 0,
@@ -135,7 +135,7 @@ class GuardrailEngine:
             if match.end > seen_end:
                 continue
             replacement = self._get_replacement(match.rule_name)
-            redacted = redacted[:match.start] + replacement + redacted[match.end:]
+            redacted = redacted[: match.start] + replacement + redacted[match.end :]
             seen_end = match.start
 
         return redacted

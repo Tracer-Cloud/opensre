@@ -27,9 +27,12 @@ def _reset_engine() -> None:
 
 class TestLLMClientGuardrails:
     def test_redacts_before_api_call(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        config = _write_rules(tmp_path, [
-            {"name": "aws_key", "action": "redact", "patterns": ["AKIA[0-9A-Z]{16}"]},
-        ])
+        config = _write_rules(
+            tmp_path,
+            [
+                {"name": "aws_key", "action": "redact", "patterns": ["AKIA[0-9A-Z]{16}"]},
+            ],
+        )
         monkeypatch.setattr("app.guardrails.engine.get_default_rules_path", lambda: config)
         monkeypatch.setattr("app.guardrails.rules.get_default_rules_path", lambda: config)
 
@@ -39,9 +42,13 @@ class TestLLMClientGuardrails:
             @staticmethod
             def create(**kwargs: object) -> object:
                 captured.update(kwargs)
-                return type("R", (), {
-                    "content": [type("B", (), {"type": "text", "text": "ok"})()],
-                })()
+                return type(
+                    "R",
+                    (),
+                    {
+                        "content": [type("B", (), {"type": "text", "text": "ok"})()],
+                    },
+                )()
 
         class _FakeClient:
             messages = _FakeMessages()
@@ -59,9 +66,12 @@ class TestLLMClientGuardrails:
         assert "[REDACTED:aws_key]" in msg_content
 
     def test_blocks_and_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        config = _write_rules(tmp_path, [
-            {"name": "blocker", "action": "block", "keywords": ["forbidden"]},
-        ])
+        config = _write_rules(
+            tmp_path,
+            [
+                {"name": "blocker", "action": "block", "keywords": ["forbidden"]},
+            ],
+        )
         monkeypatch.setattr("app.guardrails.engine.get_default_rules_path", lambda: config)
         monkeypatch.setattr("app.guardrails.rules.get_default_rules_path", lambda: config)
 
@@ -73,7 +83,9 @@ class TestLLMClientGuardrails:
         with pytest.raises(GuardrailBlockedError, match="blocker"):
             client.invoke("this is forbidden")
 
-    def test_passthrough_when_no_rules(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_passthrough_when_no_rules(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setattr(
             "app.guardrails.engine.get_default_rules_path",
             lambda: tmp_path / "missing.yml",
@@ -85,9 +97,13 @@ class TestLLMClientGuardrails:
             @staticmethod
             def create(**kwargs: object) -> object:
                 captured.update(kwargs)
-                return type("R", (), {
-                    "content": [type("B", (), {"type": "text", "text": "ok"})()],
-                })()
+                return type(
+                    "R",
+                    (),
+                    {
+                        "content": [type("B", (), {"type": "text", "text": "ok"})()],
+                    },
+                )()
 
         class _FakeClient:
             messages = _FakeMessages()
@@ -106,9 +122,12 @@ class TestLLMClientGuardrails:
 
 class TestOpenAIClientGuardrails:
     def test_redacts_before_api_call(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        config = _write_rules(tmp_path, [
-            {"name": "aws_key", "action": "redact", "patterns": ["AKIA[0-9A-Z]{16}"]},
-        ])
+        config = _write_rules(
+            tmp_path,
+            [
+                {"name": "aws_key", "action": "redact", "patterns": ["AKIA[0-9A-Z]{16}"]},
+            ],
+        )
         monkeypatch.setattr("app.guardrails.engine.get_default_rules_path", lambda: config)
         monkeypatch.setattr("app.guardrails.rules.get_default_rules_path", lambda: config)
 
@@ -118,11 +137,21 @@ class TestOpenAIClientGuardrails:
             @staticmethod
             def create(**kwargs: object) -> object:
                 captured.update(kwargs)
-                return type("R", (), {
-                    "choices": [type("C", (), {
-                        "message": type("M", (), {"content": "ok"})(),
-                    })()],
-                })()
+                return type(
+                    "R",
+                    (),
+                    {
+                        "choices": [
+                            type(
+                                "C",
+                                (),
+                                {
+                                    "message": type("M", (), {"content": "ok"})(),
+                                },
+                            )()
+                        ],
+                    },
+                )()
 
         class _FakeChat:
             completions = _FakeCompletions()
@@ -154,11 +183,16 @@ class _FakeMessage:
 
 class TestChatNodeGuardrails:
     def test_redacts_message_content(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        config = _write_rules(tmp_path, [
-            {"name": "aws_key", "action": "redact", "patterns": ["AKIA[0-9A-Z]{16}"]},
-        ])
+        config = _write_rules(
+            tmp_path,
+            [
+                {"name": "aws_key", "action": "redact", "patterns": ["AKIA[0-9A-Z]{16}"]},
+            ],
+        )
         monkeypatch.setattr("app.guardrails.engine.get_default_rules_path", lambda: config)
         monkeypatch.setattr("app.guardrails.rules.get_default_rules_path", lambda: config)
 
@@ -177,11 +211,16 @@ class TestChatNodeGuardrails:
         assert msgs[1].content == "key is AKIAIOSFODNN7EXAMPLE"
 
     def test_blocks_on_chat_content(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        config = _write_rules(tmp_path, [
-            {"name": "blocker", "action": "block", "keywords": ["forbidden"]},
-        ])
+        config = _write_rules(
+            tmp_path,
+            [
+                {"name": "blocker", "action": "block", "keywords": ["forbidden"]},
+            ],
+        )
         monkeypatch.setattr("app.guardrails.engine.get_default_rules_path", lambda: config)
         monkeypatch.setattr("app.guardrails.rules.get_default_rules_path", lambda: config)
 
@@ -192,11 +231,16 @@ class TestChatNodeGuardrails:
             _apply_guardrails_to_messages(msgs)
 
     def test_skips_non_string_content(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        config = _write_rules(tmp_path, [
-            {"name": "r1", "action": "redact", "keywords": ["secret"]},
-        ])
+        config = _write_rules(
+            tmp_path,
+            [
+                {"name": "r1", "action": "redact", "keywords": ["secret"]},
+            ],
+        )
         monkeypatch.setattr("app.guardrails.engine.get_default_rules_path", lambda: config)
         monkeypatch.setattr("app.guardrails.rules.get_default_rules_path", lambda: config)
 
@@ -208,7 +252,9 @@ class TestChatNodeGuardrails:
         _apply_guardrails_to_messages(msgs)
 
     def test_noop_when_no_rules(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
             "app.guardrails.engine.get_default_rules_path",

@@ -108,7 +108,8 @@ def query_grafana_logs(
                 logs.append({"timestamp": ts_ns, "message": line, **stream_labels})
         error_keywords = ("error", "fail", "exception", "traceback")
         error_logs = [
-            log for log in logs
+            log
+            for log in logs
             if "error" in str(log.get("log_level", "")).lower()
             or any(kw in log.get("message", "").lower() for kw in error_keywords)
         ]
@@ -136,9 +137,19 @@ def query_grafana_logs(
 
     client = _resolve_grafana_client(grafana_endpoint, grafana_api_key)
     if not client or not client.is_configured:
-        return {"source": "grafana_loki", "available": False, "error": "Grafana integration not configured", "logs": []}
+        return {
+            "source": "grafana_loki",
+            "available": False,
+            "error": "Grafana integration not configured",
+            "logs": [],
+        }
     if not client.loki_datasource_uid:
-        return {"source": "grafana_loki", "available": False, "error": "Loki datasource not found", "logs": []}
+        return {
+            "source": "grafana_loki",
+            "available": False,
+            "error": "Loki datasource not found",
+            "logs": [],
+        }
 
     def _build_query(label: str, value: str) -> str:
         if execution_run_id:
@@ -150,18 +161,26 @@ def query_grafana_logs(
 
     if result.get("success") and not result.get("logs") and pipeline_name:
         fallback_query = _build_query("pipeline_name", pipeline_name)
-        fallback = client.query_loki(fallback_query, time_range_minutes=time_range_minutes, limit=limit)
+        fallback = client.query_loki(
+            fallback_query, time_range_minutes=time_range_minutes, limit=limit
+        )
         if fallback.get("success") and fallback.get("logs"):
             result = fallback
             query = fallback_query
 
     if not result.get("success"):
-        return {"source": "grafana_loki", "available": False, "error": result.get("error", "Unknown error"), "logs": []}
+        return {
+            "source": "grafana_loki",
+            "available": False,
+            "error": result.get("error", "Unknown error"),
+            "logs": [],
+        }
 
     logs_data = result.get("logs", [])
     error_keywords = ("error", "fail", "exception", "traceback")
     error_logs = [
-        log for log in logs_data
+        log
+        for log in logs_data
         if "error" in str(log.get("log_level", "")).lower()
         or any(kw in log.get("message", "").lower() for kw in error_keywords)
     ]

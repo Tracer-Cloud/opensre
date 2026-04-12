@@ -18,7 +18,10 @@ from app.tools.tool_decorator import tool
     input_schema={
         "type": "object",
         "properties": {
-            "run_id": {"type": "string", "description": "The unique identifier for the pipeline run"},
+            "run_id": {
+                "type": "string",
+                "description": "The unique identifier for the pipeline run",
+            },
         },
         "required": ["run_id"],
     },

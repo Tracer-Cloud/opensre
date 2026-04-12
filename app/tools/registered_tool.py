@@ -140,15 +140,17 @@ class RegisteredTool:
     origin_name: str = ""
 
     def __post_init__(self) -> None:
-        metadata = ToolMetadata.model_validate({
-            "name": self.name,
-            "description": self.description,
-            "input_schema": self.input_schema,
-            "source": self.source,
-            "use_cases": self.use_cases,
-            "requires": self.requires,
-            "outputs": self.outputs,
-        })
+        metadata = ToolMetadata.model_validate(
+            {
+                "name": self.name,
+                "description": self.description,
+                "input_schema": self.input_schema,
+                "source": self.source,
+                "use_cases": self.use_cases,
+                "requires": self.requires,
+                "outputs": self.outputs,
+            }
+        )
         self.name = metadata.name
         self.description = metadata.description
         self.input_schema = metadata.input_schema
@@ -184,8 +186,8 @@ class RegisteredTool:
         surfaces: Iterable[str] | None = None,
     ) -> RegisteredTool:
         metadata = tool.metadata()
-        resolved_surfaces = surfaces or getattr(tool, "surfaces", None) or getattr(
-            tool.__class__, "surfaces", None
+        resolved_surfaces = (
+            surfaces or getattr(tool, "surfaces", None) or getattr(tool.__class__, "surfaces", None)
         )
         return cls(
             name=metadata.name,
@@ -238,4 +240,3 @@ class RegisteredTool:
             origin_module=func.__module__,
             origin_name=func.__name__,
         )
-

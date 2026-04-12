@@ -60,19 +60,33 @@ def get_eks_events(
     logger.info("[eks] get_eks_events cluster=%s ns=%s", cluster_name, namespace)
     try:
         core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
-        event_list = core_v1.list_event_for_all_namespaces() if namespace == "all" else core_v1.list_namespaced_event(namespace=namespace)
+        event_list = (
+            core_v1.list_event_for_all_namespaces()
+            if namespace == "all"
+            else core_v1.list_namespaced_event(namespace=namespace)
+        )
         warning_events = [
             {
-                "namespace": e.metadata.namespace, "reason": e.reason, "message": e.message,
-                "type": e.type, "count": e.count,
+                "namespace": e.metadata.namespace,
+                "reason": e.reason,
+                "message": e.message,
+                "type": e.type,
+                "count": e.count,
                 "involved_object": f"{e.involved_object.kind}/{e.involved_object.name}",
-                "first_time": str(e.first_timestamp), "last_time": str(e.last_timestamp),
+                "first_time": str(e.first_timestamp),
+                "last_time": str(e.last_timestamp),
             }
-            for e in event_list.items if e.type == "Warning"
+            for e in event_list.items
+            if e.type == "Warning"
         ]
         return {
-            "source": "eks", "available": True, "cluster_name": cluster_name, "namespace": namespace,
-            "warning_events": warning_events, "total_warning_count": len(warning_events), "error": None,
+            "source": "eks",
+            "available": True,
+            "cluster_name": cluster_name,
+            "namespace": namespace,
+            "warning_events": warning_events,
+            "total_warning_count": len(warning_events),
+            "error": None,
         }
     except Exception as e:
         logger.error("[eks] get_eks_events FAILED: %s", e, exc_info=True)

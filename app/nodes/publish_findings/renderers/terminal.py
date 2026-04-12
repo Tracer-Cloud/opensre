@@ -24,7 +24,7 @@ def _rich_line_with_links(text: str) -> Text:
     for m in _SLACK_LINK_RE.finditer(text):
         # Text before the match
         if m.start() > cursor:
-            result.append(text[cursor:m.start()])
+            result.append(text[cursor : m.start()])
         url = m.group(1)
         label = m.group(2) or url
         result.append(label, style=f"link {url} bold blue underline")
@@ -35,7 +35,7 @@ def _rich_line_with_links(text: str) -> Text:
     sub_cursor = 0
     for m in _URL_RE.finditer(remaining):
         if m.start() > sub_cursor:
-            result.append(remaining[sub_cursor:m.start()])
+            result.append(remaining[sub_cursor : m.start()])
         url = m.group(0).rstrip(".,;)")
         result.append(url, style=f"link {url} bold blue underline")
         sub_cursor = m.end()
@@ -47,9 +47,11 @@ def _rich_line_with_links(text: str) -> Text:
 
 def _strip_slack_links(text: str) -> str:
     """Convert Slack <url|label> to plain 'label (url)' for plain text mode."""
+
     def _repl(m: re.Match) -> str:
         url, label = m.group(1), m.group(2)
         return f"{label} ({url})" if label else url
+
     return _SLACK_LINK_RE.sub(_repl, text)
 
 
@@ -105,6 +107,7 @@ def _render_rich_evidence_item(console: Console, line: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Main render entry points
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def render_report(slack_message: str, root_cause_category: str | None = None) -> None:
     """Render the final RCA report to terminal."""

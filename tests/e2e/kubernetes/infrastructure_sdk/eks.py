@@ -70,7 +70,9 @@ EKS_UNSUPPORTED_AZS = {"us-east-1e"}
 PIPELINE_DIR = Path(__file__).parent.parent / "pipeline_code"
 
 
-def _run(cmd: list[str], *, check: bool = True, capture: bool = True) -> subprocess.CompletedProcess[str]:
+def _run(
+    cmd: list[str], *, check: bool = True, capture: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=check, capture_output=capture, text=True)
 
 
@@ -78,8 +80,11 @@ def _run(cmd: list[str], *, check: bool = True, capture: bool = True) -> subproc
 # IAM
 # ---------------------------------------------------------------------------
 
+
 def _create_role_with_trust(
-    name: str, trust_policy: dict, managed_policies: list[str],
+    name: str,
+    trust_policy: dict,
+    managed_policies: list[str],
 ) -> dict[str, Any]:
     """Create an IAM role with a trust policy and attach managed policies."""
     iam_client = get_boto3_client("iam", REGION)
@@ -110,7 +115,9 @@ def _create_role_with_trust(
 
 
 def _create_cluster_role() -> dict[str, Any]:
-    return _create_role_with_trust(CLUSTER_ROLE_NAME, EKS_CLUSTER_TRUST_POLICY, EKS_CLUSTER_POLICIES)
+    return _create_role_with_trust(
+        CLUSTER_ROLE_NAME, EKS_CLUSTER_TRUST_POLICY, EKS_CLUSTER_POLICIES
+    )
 
 
 def _create_node_role() -> dict[str, Any]:
@@ -120,6 +127,7 @@ def _create_node_role() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # EKS Cluster
 # ---------------------------------------------------------------------------
+
 
 def _cluster_exists() -> str | None:
     """Return cluster status if it exists, None otherwise."""
@@ -168,7 +176,10 @@ def _wait_for_cluster(target_status: str, timeout: int = 900) -> None:
             elapsed = int(time.monotonic() - (deadline - timeout))
             print(f"  Cluster status: {status} ({elapsed}s elapsed)")
         except ClientError as e:
-            if target_status == "DELETED" and e.response["Error"]["Code"] == "ResourceNotFoundException":
+            if (
+                target_status == "DELETED"
+                and e.response["Error"]["Code"] == "ResourceNotFoundException"
+            ):
                 return
             raise
         time.sleep(15)
@@ -178,6 +189,7 @@ def _wait_for_cluster(target_status: str, timeout: int = 900) -> None:
 # ---------------------------------------------------------------------------
 # Node Group
 # ---------------------------------------------------------------------------
+
 
 def _node_group_exists() -> str | None:
     eks = get_boto3_client("eks", REGION)
@@ -228,7 +240,10 @@ def _wait_for_node_group(target_status: str, timeout: int = 600) -> None:
             elapsed = int(time.monotonic() - (deadline - timeout))
             print(f"  Node group status: {status} ({elapsed}s elapsed)")
         except ClientError as e:
-            if target_status == "DELETED" and e.response["Error"]["Code"] == "ResourceNotFoundException":
+            if (
+                target_status == "DELETED"
+                and e.response["Error"]["Code"] == "ResourceNotFoundException"
+            ):
                 return
             raise
         time.sleep(15)
@@ -238,6 +253,7 @@ def _wait_for_node_group(target_status: str, timeout: int = 600) -> None:
 # ---------------------------------------------------------------------------
 # EKS Add-ons
 # ---------------------------------------------------------------------------
+
 
 def _get_latest_addon_version(addon_name: str) -> str:
     """Look up the latest compatible version for an EKS add-on."""
@@ -312,6 +328,7 @@ def _delete_addons() -> None:
 # ECR + Image
 # ---------------------------------------------------------------------------
 
+
 def _setup_ecr_and_push_image() -> str:
     """Create ECR repo, build and push the ETL job image. Returns full image URI."""
     repo = ecr.create_repository(ECR_REPO_NAME, STACK_NAME, REGION)
@@ -329,6 +346,7 @@ def _setup_ecr_and_push_image() -> str:
 # ---------------------------------------------------------------------------
 # kubeconfig
 # ---------------------------------------------------------------------------
+
 
 def update_kubeconfig() -> None:
     """Configure kubectl to talk to the EKS cluster."""
@@ -375,14 +393,13 @@ def ensure_nodegroup_capacity() -> None:
 # Subnet filtering
 # ---------------------------------------------------------------------------
 
+
 def _filter_eks_subnets(subnet_ids: list[str]) -> list[str]:
     """Remove subnets in AZs that EKS doesn't support."""
     ec2 = get_boto3_client("ec2", REGION)
     resp = ec2.describe_subnets(SubnetIds=subnet_ids)
     filtered = [
-        s["SubnetId"]
-        for s in resp["Subnets"]
-        if s["AvailabilityZone"] not in EKS_UNSUPPORTED_AZS
+        s["SubnetId"] for s in resp["Subnets"] if s["AvailabilityZone"] not in EKS_UNSUPPORTED_AZS
     ]
     excluded = len(subnet_ids) - len(filtered)
     if excluded:
@@ -464,6 +481,7 @@ def _grant_ci_access() -> None:
 # Deploy / Destroy orchestration
 # ---------------------------------------------------------------------------
 
+
 def deploy_eks_stack() -> dict[str, Any]:
     """Deploy the full EKS stack: IAM, cluster, nodes, ECR image."""
     print(f"\n{'=' * 60}")
@@ -487,6 +505,7 @@ def deploy_eks_stack() -> dict[str, Any]:
     image_uri = _setup_ecr_and_push_image()
 
     import uuid
+
     suffix = uuid.uuid4().hex[:8]
     landing_bucket = s3.create_bucket(f"tracer-k8s-landing-{suffix}", STACK_NAME, REGION)
     processed_bucket = s3.create_bucket(f"tracer-k8s-processed-{suffix}", STACK_NAME, REGION)
@@ -564,6 +583,7 @@ def destroy_eks_stack() -> None:
 def get_ecr_image_uri() -> str:
     """Load saved outputs and return the ECR image URI."""
     from tests.shared.infrastructure_sdk.config import load_outputs
+
     outputs = load_outputs(STACK_NAME)
     return outputs["ecr_image_uri"]
 
@@ -584,11 +604,13 @@ TRIGGER_LAMBDA_POLICIES = [
 
 _EKS_DESCRIBE_POLICY_DOCUMENT = {
     "Version": "2012-10-17",
-    "Statement": [{
-        "Effect": "Allow",
-        "Action": ["eks:DescribeCluster"],
-        "Resource": "*",
-    }],
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": ["eks:DescribeCluster"],
+            "Resource": "*",
+        }
+    ],
 }
 
 _TRIGGER_INLINE_POLICY_NAME = "eks-describe"
@@ -628,7 +650,11 @@ def deploy_trigger_lambda(outputs: dict[str, Any]) -> str:
             code = e.response["Error"]["Code"]
             if code == "ResourceInUseException":
                 break
-            if code == "InvalidRequestException" and "authentication mode" in str(e) and attempt < 9:
+            if (
+                code == "InvalidRequestException"
+                and "authentication mode" in str(e)
+                and attempt < 9
+            ):
                 time.sleep(10)
                 continue
             raise
@@ -710,6 +736,7 @@ def destroy_trigger_lambda() -> None:
 
 if __name__ == "__main__":
     import sys
+
     if len(sys.argv) > 1 and sys.argv[1] == "destroy":
         destroy_eks_stack()
     else:

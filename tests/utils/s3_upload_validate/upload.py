@@ -10,8 +10,10 @@ from botocore.exceptions import ClientError
 
 class TestData(NamedTuple):
     """Test data uploaded to S3."""
+
     key: str
     correlation_id: str
+
 
 def upload_test_data(
     bucket: str,
@@ -34,6 +36,7 @@ def upload_test_data(
 
     print(f"📤 Uploaded: s3://{bucket}/{key}")
     return TestData(key, correlation_id)
+
 
 def verify_output(
     bucket: str,
@@ -65,8 +68,18 @@ TEST_TIMESTAMP = "20260101-120000"
 # Fixed payloads for local testing
 VALID_PAYLOAD = {
     "data": [
-        {"customer_id": "CUST-001", "order_id": "ORD-001", "amount": 99.99, "timestamp": TEST_TIMESTAMP},
-        {"customer_id": "CUST-002", "order_id": "ORD-002", "amount": 149.50, "timestamp": TEST_TIMESTAMP},
+        {
+            "customer_id": "CUST-001",
+            "order_id": "ORD-001",
+            "amount": 99.99,
+            "timestamp": TEST_TIMESTAMP,
+        },
+        {
+            "customer_id": "CUST-002",
+            "order_id": "ORD-002",
+            "amount": 149.50,
+            "timestamp": TEST_TIMESTAMP,
+        },
     ]
 }
 

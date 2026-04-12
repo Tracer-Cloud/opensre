@@ -65,11 +65,24 @@ def get_eks_pod_logs(
     logger.info("[eks] get_eks_pod_logs cluster=%s ns=%s pod=%s", cluster_name, namespace, pod_name)
     try:
         core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
-        logs = core_v1.read_namespaced_pod_log(name=pod_name, namespace=namespace, tail_lines=tail_lines)
+        logs = core_v1.read_namespaced_pod_log(
+            name=pod_name, namespace=namespace, tail_lines=tail_lines
+        )
         return {
-            "source": "eks", "available": True, "cluster_name": cluster_name,
-            "namespace": namespace, "pod_name": pod_name, "logs": logs, "error": None,
+            "source": "eks",
+            "available": True,
+            "cluster_name": cluster_name,
+            "namespace": namespace,
+            "pod_name": pod_name,
+            "logs": logs,
+            "error": None,
         }
     except Exception as e:
-        logger.error("[eks] get_eks_pod_logs failed cluster=%s pod=%s error=%s", cluster_name, pod_name, e, exc_info=True)
+        logger.error(
+            "[eks] get_eks_pod_logs failed cluster=%s pod=%s error=%s",
+            cluster_name,
+            pod_name,
+            e,
+            exc_info=True,
+        )
         return {"source": "eks", "available": False, "pod_name": pod_name, "error": str(e)}

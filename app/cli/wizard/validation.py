@@ -80,6 +80,7 @@ def _check_ollama(host: str, model: str) -> ValidationResult:
         )
     available = [m["name"] for m in r.json().get("models", [])]
     from app.cli.local_llm.ollama import normalize_model_tag
+
     normalized_model = normalize_model_tag(model)
     base_name = model.split(":")[0]
     matched = normalized_model in available or any(m.split(":")[0] == base_name for m in available)
@@ -108,7 +109,9 @@ def _check_ollama(host: str, model: str) -> ValidationResult:
             ok=False,
             detail=f"Model '{model}' is pulled but failed to respond: {err}",
         )
-    return ValidationResult(ok=True, detail=f"Ollama reachable. Model '{model}' is ready.", sample_response=sample_text)
+    return ValidationResult(
+        ok=True, detail=f"Ollama reachable. Model '{model}' is ready.", sample_response=sample_text
+    )
 
 
 def validate_provider_credentials(
@@ -137,7 +140,9 @@ def validate_provider_credentials(
                 for block in getattr(anthropic_response, "content", [])
                 if getattr(block, "type", None) == "text"
             ).strip()
-            return ValidationResult(ok=True, detail="Anthropic API key validated.", sample_response=sample_text)
+            return ValidationResult(
+                ok=True, detail="Anthropic API key validated.", sample_response=sample_text
+            )
 
         # All OpenAI-compatible providers (openai, openrouter, gemini, nvidia)
         base_url = _get_provider_base_url(provider.value)
@@ -156,7 +161,9 @@ def validate_provider_credentials(
                 max_tokens=24,
             )
         sample_text = (openai_response.choices[0].message.content or "").strip()
-        return ValidationResult(ok=True, detail=f"{provider.label} API key validated.", sample_response=sample_text)
+        return ValidationResult(
+            ok=True, detail=f"{provider.label} API key validated.", sample_response=sample_text
+        )
     except anthropic_auth_error:
         return ValidationResult(ok=False, detail="Anthropic rejected the API key.")
     except openai_auth_error:

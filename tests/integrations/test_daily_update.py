@@ -35,7 +35,8 @@ def _pull_request(
         changed_files=("app/integrations/daily_update.py", ".github/workflows/daily-update.yml"),
         additions=120,
         deletions=10,
-        contributors=contributors or (Contributor(login=author_display_name.lower(), display_name=author_display_name),),
+        contributors=contributors
+        or (Contributor(login=author_display_name.lower(), display_name=author_display_name),),
     )
 
 
@@ -74,10 +75,12 @@ def test_github_repo_api_url_keeps_owner_repo_segments() -> None:
 
 
 def test_build_fallback_highlights_uses_titles() -> None:
-    highlights = build_fallback_highlights((
-        _pull_request(number=1, title="Flatten app package"),
-        _pull_request(number=2, title="Add more synthetic tests"),
-    ))
+    highlights = build_fallback_highlights(
+        (
+            _pull_request(number=1, title="Flatten app package"),
+            _pull_request(number=2, title="Add more synthetic tests"),
+        )
+    )
 
     assert highlights == (
         "Flatten app package (#1) \u2014 Alice",

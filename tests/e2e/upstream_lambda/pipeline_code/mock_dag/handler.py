@@ -31,6 +31,7 @@ class _NoopTracer:
     def start_as_current_span(self, *_args, **_kwargs):
         yield _NoopSpan()
 
+
 def lambda_handler(event, context):
     """
     Entrypoint: Adapts S3 events to Domain Logic.

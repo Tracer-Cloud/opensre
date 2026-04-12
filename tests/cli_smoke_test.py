@@ -470,7 +470,8 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
     # One `j` per PtyAction (burst writes are not separate keys). The select list wraps;
     # from the first option, len(choices)-1 steps reach "Skip for now" without wrapping past it.
     integration_down = [
-        PtyAction(expect="Choose an integration to configure", send=b"j", timeout=5.0) for _ in range(15)
+        PtyAction(expect="Choose an integration to configure", send=b"j", timeout=5.0)
+        for _ in range(15)
     ]
     result = _run_cli_pty(
         cli_sandbox,

@@ -31,6 +31,9 @@ def test_run_happy_path() -> None:
 
 
 def test_run_error_propagated() -> None:
-    with patch("app.tools.MongoDBReplicaStatusTool.get_rs_status", return_value={"error": "not a replica set"}):
+    with patch(
+        "app.tools.MongoDBReplicaStatusTool.get_rs_status",
+        return_value={"error": "not a replica set"},
+    ):
         result = get_mongodb_replica_status(connection_string="mongodb://localhost:27017")
     assert "error" in result

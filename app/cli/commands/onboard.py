@@ -23,7 +23,9 @@ def _load_local_config() -> dict[str, Any]:
     return load_local_config(get_store_path())
 
 
-def _run_onboarding_command(run_command: RunCommand, *, load_config: ConfigLoader = _load_local_config) -> None:
+def _run_onboarding_command(
+    run_command: RunCommand, *, load_config: ConfigLoader = _load_local_config
+) -> None:
     capture_onboard_started()
     try:
         exit_code = run_command()

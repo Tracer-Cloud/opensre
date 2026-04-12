@@ -40,7 +40,9 @@ def get_recent_messages(channel_id: str, oldest: str = "0") -> list[dict[str, An
     if not token:
         return []
 
-    url = f"https://slack.com/api/conversations.history?channel={channel_id}&oldest={oldest}&limit=10"
+    url = (
+        f"https://slack.com/api/conversations.history?channel={channel_id}&oldest={oldest}&limit=10"
+    )
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     with urllib.request.urlopen(req, timeout=10) as resp:
         data = json.loads(resp.read())

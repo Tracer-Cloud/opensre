@@ -25,9 +25,7 @@ def get_default_vpc(region: str = DEFAULT_REGION) -> dict[str, Any]:
     """
     ec2_client = get_boto3_client("ec2", region)
 
-    response = ec2_client.describe_vpcs(
-        Filters=[{"Name": "is-default", "Values": ["true"]}]
-    )
+    response = ec2_client.describe_vpcs(Filters=[{"Name": "is-default", "Values": ["true"]}])
 
     if not response["Vpcs"]:
         raise ValueError(f"No default VPC found in region {region}")
@@ -52,9 +50,7 @@ def get_public_subnets(vpc_id: str, region: str = DEFAULT_REGION) -> list[str]:
     ec2_client = get_boto3_client("ec2", region)
 
     # Get all subnets in VPC
-    response = ec2_client.describe_subnets(
-        Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
-    )
+    response = ec2_client.describe_subnets(Filters=[{"Name": "vpc-id", "Values": [vpc_id]}])
 
     # For default VPC, all subnets are public
     # For custom VPCs, check route tables for internet gateway
@@ -88,17 +84,11 @@ def get_private_subnets(vpc_id: str, region: str = DEFAULT_REGION) -> list[str]:
     """
     ec2_client = get_boto3_client("ec2", region)
 
-    response = ec2_client.describe_subnets(
-        Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
-    )
+    response = ec2_client.describe_subnets(Filters=[{"Name": "vpc-id", "Values": [vpc_id]}])
 
     public_subnets = set(get_public_subnets(vpc_id, region))
 
-    return [
-        s["SubnetId"]
-        for s in response["Subnets"]
-        if s["SubnetId"] not in public_subnets
-    ]
+    return [s["SubnetId"] for s in response["Subnets"] if s["SubnetId"] not in public_subnets]
 
 
 def _has_internet_gateway_route(subnet_id: str, ec2_client: Any) -> bool:

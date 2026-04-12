@@ -160,8 +160,7 @@ class PrefectFlowRunsTool(BaseTool):
 
             flow_runs: list[dict[str, Any]] = runs_result.get("flow_runs", [])
             failed_runs = [
-                r for r in flow_runs
-                if r.get("state_type", "").upper() in _FAILED_STATES
+                r for r in flow_runs if r.get("state_type", "").upper() in _FAILED_STATES
             ]
 
             logs: list[dict[str, Any]] = []
@@ -175,13 +174,12 @@ class PrefectFlowRunsTool(BaseTool):
                 if logs_result.get("success"):
                     logs = logs_result.get("logs", [])
                     error_log_lines = [
-                        line for line in logs
+                        line
+                        for line in logs
                         if any(kw in line.get("message", "").lower() for kw in _ERROR_KEYWORDS)
                     ]
                 else:
-                    logs_error = logs_result.get(
-                        "error", "Unknown error fetching logs."
-                    )
+                    logs_error = logs_result.get("error", "Unknown error fetching logs.")
 
         result: dict[str, Any] = {
             "source": "prefect",

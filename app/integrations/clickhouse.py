@@ -78,7 +78,10 @@ def clickhouse_config_from_env() -> ClickHouseConfig | None:
     return build_clickhouse_config(
         {
             "host": host,
-            "port": int(os.getenv("CLICKHOUSE_PORT", str(DEFAULT_CLICKHOUSE_PORT)) or str(DEFAULT_CLICKHOUSE_PORT)),
+            "port": int(
+                os.getenv("CLICKHOUSE_PORT", str(DEFAULT_CLICKHOUSE_PORT))
+                or str(DEFAULT_CLICKHOUSE_PORT)
+            ),
             "database": os.getenv("CLICKHOUSE_DATABASE", DEFAULT_CLICKHOUSE_DATABASE).strip(),
             "username": os.getenv("CLICKHOUSE_USER", DEFAULT_CLICKHOUSE_USER).strip(),
             "password": os.getenv("CLICKHOUSE_PASSWORD", "").strip(),

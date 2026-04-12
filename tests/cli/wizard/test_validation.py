@@ -115,7 +115,9 @@ def test_validate_provider_credentials_returns_success_for_valid_anthropic_key(m
 def test_validate_provider_credentials_returns_failure_for_bad_openai_key(monkeypatch) -> None:
     auth_error = OpenAIAuthError(
         "unauthorized",
-        response=httpx.Response(401, request=_request("https://api.openai.com/v1/chat/completions")),
+        response=httpx.Response(
+            401, request=_request("https://api.openai.com/v1/chat/completions")
+        ),
         body=None,
     )
     monkeypatch.setattr(

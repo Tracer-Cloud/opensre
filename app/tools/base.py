@@ -69,15 +69,17 @@ class BaseTool(ABC):
     @classmethod
     def metadata(cls) -> ToolMetadata:
         """Return validated tool metadata for this subclass."""
-        return ToolMetadata.model_validate({
-            "name": getattr(cls, "name", ""),
-            "description": getattr(cls, "description", ""),
-            "input_schema": getattr(cls, "input_schema", {}),
-            "source": getattr(cls, "source", ""),
-            "use_cases": list(getattr(cls, "use_cases", [])),
-            "requires": list(getattr(cls, "requires", [])),
-            "outputs": dict(getattr(cls, "outputs", {})),
-        })
+        return ToolMetadata.model_validate(
+            {
+                "name": getattr(cls, "name", ""),
+                "description": getattr(cls, "description", ""),
+                "input_schema": getattr(cls, "input_schema", {}),
+                "source": getattr(cls, "source", ""),
+                "use_cases": list(getattr(cls, "use_cases", [])),
+                "requires": list(getattr(cls, "requires", [])),
+                "outputs": dict(getattr(cls, "outputs", {})),
+            }
+        )
 
     @property
     def inputs(self) -> dict[str, str]:

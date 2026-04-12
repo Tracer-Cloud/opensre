@@ -56,24 +56,38 @@ def list_eks_deployments(
     logger.info("[eks] list_eks_deployments cluster=%s ns=%s", cluster_name, namespace)
     try:
         _, apps_v1 = build_k8s_clients(cluster_name, role_arn, external_id, region)
-        dep_list = apps_v1.list_deployment_for_all_namespaces() if namespace == "all" else apps_v1.list_namespaced_deployment(namespace=namespace)
+        dep_list = (
+            apps_v1.list_deployment_for_all_namespaces()
+            if namespace == "all"
+            else apps_v1.list_namespaced_deployment(namespace=namespace)
+        )
         deployments = []
         for dep in dep_list.items:
             status = dep.status
             desired = dep.spec.replicas or 0
             ready = status.ready_replicas or 0
             unavailable = status.unavailable_replicas or 0
-            deployments.append({
-                "name": dep.metadata.name, "namespace": dep.metadata.namespace,
-                "desired": desired, "ready": ready,
-                "available": status.available_replicas or 0, "unavailable": unavailable,
-                "degraded": unavailable > 0 or ready < desired,
-            })
+            deployments.append(
+                {
+                    "name": dep.metadata.name,
+                    "namespace": dep.metadata.namespace,
+                    "desired": desired,
+                    "ready": ready,
+                    "available": status.available_replicas or 0,
+                    "unavailable": unavailable,
+                    "degraded": unavailable > 0 or ready < desired,
+                }
+            )
         degraded = [d for d in deployments if d["degraded"]]
         return {
-            "source": "eks", "available": True, "cluster_name": cluster_name, "namespace": namespace,
-            "total_deployments": len(deployments), "deployments": deployments,
-            "degraded_deployments": degraded, "error": None,
+            "source": "eks",
+            "available": True,
+            "cluster_name": cluster_name,
+            "namespace": namespace,
+            "total_deployments": len(deployments),
+            "deployments": deployments,
+            "degraded_deployments": degraded,
+            "error": None,
         }
     except Exception as e:
         logger.error("[eks] list_eks_deployments FAILED: %s", e, exc_info=True)

@@ -19,20 +19,22 @@ def _gl_creds(gl: dict) -> dict:
         "gitlab_token": gl.get("gitlab_token"),
     }
 
+
 def _gitlab_available(sources: dict) -> bool:
     return bool(sources.get("gitlab", {}).get("connection_verified"))
 
-def _resolve_config(
-    gitlab_url: str | None,
-    gitlab_token: str | None
-) -> GitlabConfig | None:
+
+def _resolve_config(gitlab_url: str | None, gitlab_token: str | None) -> GitlabConfig | None:
     env_config = gitlab_config_from_env()
     if any([gitlab_url, gitlab_token]):
-        return build_gitlab_config({
-            "base_url": gitlab_url or (env_config.base_url if env_config else ""),
-            "auth_token": gitlab_token or (env_config.auth_token if env_config else ""),
-        })
+        return build_gitlab_config(
+            {
+                "base_url": gitlab_url or (env_config.base_url if env_config else ""),
+                "auth_token": gitlab_token or (env_config.auth_token if env_config else ""),
+            }
+        )
     return env_config
+
 
 def _list_gitlab_commits_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     gl = sources["gitlab"]
@@ -85,15 +87,16 @@ def list_gitlab_commits(
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """List recent commits for a Gitlab repository"""
-    config = _resolve_config(gitlab_url,  gitlab_token)
+    config = _resolve_config(gitlab_url, gitlab_token)
     if config is None:
-        return {"source": "gitlab", "available": False, "error": "gitlab integration is not configured.", "commits": []}
+        return {
+            "source": "gitlab",
+            "available": False,
+            "error": "gitlab integration is not configured.",
+            "commits": [],
+        }
 
     result = get_gitlab_commits(
-        config=config,
-        project_id=project_id,
-        ref_name=ref_name,
-        since=since,
-        per_page=per_page
+        config=config, project_id=project_id, ref_name=ref_name, since=since, per_page=per_page
     )
     return {"source": "gitlab", "available": True, "commits": result}

@@ -19,6 +19,7 @@ from app.utils.ingest_delivery import send_ingest
 
 logger = logging.getLogger(__name__)
 
+
 def _build_mr_note(slack_message: str) -> str:
     body = slack_message.strip()
     if len(body) > 4000:
@@ -38,7 +39,10 @@ def generate_report(state: InvestigationState) -> dict:
     # First ingest: persist the report and get back the investigation_id
     investigation_id: str | None = None
     try:
-        state_with_report = cast(InvestigationState, {**state, "problem_report": {"report_md": slack_message}, "summary": short_summary})
+        state_with_report = cast(
+            InvestigationState,
+            {**state, "problem_report": {"report_md": slack_message}, "summary": short_summary},
+        )
         investigation_id = send_ingest(state_with_report)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[publish] ingest failed: %s", exc)
@@ -48,7 +52,17 @@ def generate_report(state: InvestigationState) -> dict:
     # Second ingest: update the record with the investigation_url so the web app can link to it
     if investigation_id:
         try:
-            state_with_url = cast(InvestigationState, {**state, "problem_report": {"report_md": slack_message, "investigation_url": investigation_url}, "summary": short_summary})
+            state_with_url = cast(
+                InvestigationState,
+                {
+                    **state,
+                    "problem_report": {
+                        "report_md": slack_message,
+                        "investigation_url": investigation_url,
+                    },
+                    "summary": short_summary,
+                },
+            )
             send_ingest(state_with_url)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[publish] ingest url update failed: %s", exc)
@@ -73,6 +87,7 @@ def generate_report(state: InvestigationState) -> dict:
 
     if report_posted and _token and _channel and _alert_ts:
         from app.utils.slack_delivery import swap_reaction
+
         swap_reaction("eyes", "clipboard", _channel, _alert_ts, _token)
     elif thread_ts and not report_posted:
         raise RuntimeError(
@@ -87,17 +102,22 @@ def generate_report(state: InvestigationState) -> dict:
         if _mr_iid and _project_id:
             try:
                 from app.integrations.gitlab import build_gitlab_config, post_gitlab_mr_note
-                _gl_config = build_gitlab_config({
-                    "base_url": _gl.get("gitlab_url", ""),
-                    "auth_token": _gl.get("gitlab_token", ""),
-                })
+
+                _gl_config = build_gitlab_config(
+                    {
+                        "base_url": _gl.get("gitlab_url", ""),
+                        "auth_token": _gl.get("gitlab_token", ""),
+                    }
+                )
                 post_gitlab_mr_note(
                     config=_gl_config,
                     project_id=_project_id,
                     mr_iid=_mr_iid,
-                    body=_build_mr_note(slack_message)
+                    body=_build_mr_note(slack_message),
                 )
-                logger.info("[publish] GitLab MR note posted: project=%s mr_iid=%s", _project_id, _mr_iid)
+                logger.info(
+                    "[publish] GitLab MR note posted: project=%s mr_iid=%s", _project_id, _mr_iid
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[publish] GitLab MR write-back failed: %s", exc)
 

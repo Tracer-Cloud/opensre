@@ -94,6 +94,7 @@ def run_test(
 
         print(f"✗ Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         return False, correlation_id
 

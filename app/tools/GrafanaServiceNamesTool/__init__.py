@@ -56,7 +56,12 @@ def query_grafana_service_names(
 
     client = _resolve_grafana_client(grafana_endpoint, grafana_api_key)
     if not client or not client.is_configured:
-        return {"source": "grafana_loki_labels", "available": False, "error": "Grafana integration not configured", "service_names": []}
+        return {
+            "source": "grafana_loki_labels",
+            "available": False,
+            "error": "Grafana integration not configured",
+            "service_names": [],
+        }
 
     service_names = client.query_loki_label_values("service_name")
     return {

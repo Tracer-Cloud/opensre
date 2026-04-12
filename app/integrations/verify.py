@@ -229,9 +229,15 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
             "source": source_by_service.get("mongodb_atlas", "local env"),
             "config": {
                 "api_public_key": str(mongodb_atlas_integration.get("api_public_key", "")).strip(),
-                "api_private_key": str(mongodb_atlas_integration.get("api_private_key", "")).strip(),
+                "api_private_key": str(
+                    mongodb_atlas_integration.get("api_private_key", "")
+                ).strip(),
                 "project_id": str(mongodb_atlas_integration.get("project_id", "")).strip(),
-                "base_url": str(mongodb_atlas_integration.get("base_url", "https://cloud.mongodb.com/api/atlas/v2")).strip(),
+                "base_url": str(
+                    mongodb_atlas_integration.get(
+                        "base_url", "https://cloud.mongodb.com/api/atlas/v2"
+                    )
+                ).strip(),
             },
         }
     else:
@@ -244,7 +250,9 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                     "api_public_key": atlas_pub,
                     "api_private_key": atlas_priv,
                     "project_id": os.getenv("MONGODB_ATLAS_PROJECT_ID", "").strip(),
-                    "base_url": os.getenv("MONGODB_ATLAS_BASE_URL", "https://cloud.mongodb.com/api/atlas/v2").strip(),
+                    "base_url": os.getenv(
+                        "MONGODB_ATLAS_BASE_URL", "https://cloud.mongodb.com/api/atlas/v2"
+                    ).strip(),
                 },
             }
 

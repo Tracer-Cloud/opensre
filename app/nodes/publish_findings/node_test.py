@@ -114,6 +114,7 @@ def test_gitlab_writeback_calls_post_when_enabled(monkeypatch: pytest.MonkeyPatc
         patch("app.integrations.gitlab.build_gitlab_config", return_value=MagicMock()),
     ):
         from app.nodes.publish_findings.node import generate_report
+
         generate_report(_make_state())  # type: ignore[arg-type]
 
     mock_post_note.assert_called_once()
@@ -136,6 +137,7 @@ def test_gitlab_writeback_skipped_when_env_var_not_set(monkeypatch: pytest.Monke
         patch("app.integrations.gitlab.post_gitlab_mr_note", mock_post_note),
     ):
         from app.nodes.publish_findings.node import generate_report
+
         generate_report(_make_state())  # type: ignore[arg-type]
 
     mock_post_note.assert_not_called()
@@ -145,7 +147,9 @@ def test_gitlab_writeback_skipped_when_mr_iid_missing(monkeypatch: pytest.Monkey
     _patch_generate_report_deps(monkeypatch)
     monkeypatch.setenv("GITLAB_MR_WRITEBACK", "true")
 
-    state = _make_state(available_sources={"gitlab": {"project_id": "my-org/my-repo", "merge_request_iid": ""}})
+    state = _make_state(
+        available_sources={"gitlab": {"project_id": "my-org/my-repo", "merge_request_iid": ""}}
+    )
     mock_post_note = MagicMock()
     mock_send_slack = MagicMock(return_value=(False, None))
     mock_build_action_blocks = MagicMock(return_value=[])
@@ -156,6 +160,7 @@ def test_gitlab_writeback_skipped_when_mr_iid_missing(monkeypatch: pytest.Monkey
         patch("app.integrations.gitlab.post_gitlab_mr_note", mock_post_note),
     ):
         from app.nodes.publish_findings.node import generate_report
+
         generate_report(state)  # type: ignore[arg-type]
 
     mock_post_note.assert_not_called()
@@ -171,10 +176,13 @@ def test_gitlab_writeback_failure_does_not_raise(monkeypatch: pytest.MonkeyPatch
     with (
         patch("app.utils.slack_delivery.send_slack_report", mock_send_slack),
         patch("app.utils.slack_delivery.build_action_blocks", mock_build_action_blocks),
-        patch("app.integrations.gitlab.post_gitlab_mr_note", side_effect=RuntimeError("network error")),
+        patch(
+            "app.integrations.gitlab.post_gitlab_mr_note", side_effect=RuntimeError("network error")
+        ),
         patch("app.integrations.gitlab.build_gitlab_config", return_value=MagicMock()),
     ):
         from app.nodes.publish_findings.node import generate_report
+
         result = generate_report(_make_state())  # type: ignore[arg-type]
 
     assert "slack_message" in result  # report returned despite write-back failure

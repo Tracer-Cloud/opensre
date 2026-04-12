@@ -65,5 +65,10 @@ def list_bitbucket_commits(
     """Fetch recent commits from a Bitbucket repository."""
     config = _resolve_config(workspace, username, app_password)
     if config is None:
-        return {"source": "bitbucket", "available": False, "error": "Bitbucket integration is not configured.", "commits": []}
+        return {
+            "source": "bitbucket",
+            "available": False,
+            "error": "Bitbucket integration is not configured.",
+            "commits": [],
+        }
     return list_commits(config, repo_slug=repo_slug, path=path, limit=limit)

@@ -32,15 +32,17 @@ def test_is_available_false_without_connection_verified(tool: PrefectFlowRunsToo
 
 
 def test_extract_params_maps_source_fields(tool: PrefectFlowRunsTool) -> None:
-    params = tool.extract_params({
-        "prefect": {
-            "api_url": "http://localhost:4200/api",
-            "api_key": "key_abc",
-            "account_id": "acc_1",
-            "workspace_id": "ws_1",
-            "connection_verified": True,
+    params = tool.extract_params(
+        {
+            "prefect": {
+                "api_url": "http://localhost:4200/api",
+                "api_key": "key_abc",
+                "account_id": "acc_1",
+                "workspace_id": "ws_1",
+                "connection_verified": True,
+            }
         }
-    })
+    )
     assert params["api_url"] == "http://localhost:4200/api"
     assert params["api_key"] == "key_abc"
     assert params["account_id"] == "acc_1"
@@ -144,7 +146,11 @@ def test_run_empty_flow_runs(tool: PrefectFlowRunsTool) -> None:
 
 def test_run_fetches_logs_when_run_id_provided(tool: PrefectFlowRunsTool) -> None:
     logs = [
-        {"timestamp": "2026-01-01T00:00:00Z", "level": "ERROR", "message": "Task crashed with exitcode 1"},
+        {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "level": "ERROR",
+            "message": "Task crashed with exitcode 1",
+        },
         {"timestamp": "2026-01-01T00:00:01Z", "level": "INFO", "message": "Flow run started"},
     ]
     mock_client = MagicMock()

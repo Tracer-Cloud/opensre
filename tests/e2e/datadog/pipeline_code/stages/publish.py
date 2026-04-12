@@ -16,11 +16,15 @@ def main() -> None:
     with open(output_path, "w") as f:
         json.dump(payload, f)
 
-    print(json.dumps({
-        "stage": "publish",
-        "status": "success",
-        "pipeline": PIPELINE_NAME,
-        "run_id": PIPELINE_RUN_ID,
-        "record_count": len(payload["records"]),
-        "output": output_path,
-    }))
+    print(
+        json.dumps(
+            {
+                "stage": "publish",
+                "status": "success",
+                "pipeline": PIPELINE_NAME,
+                "run_id": PIPELINE_RUN_ID,
+                "record_count": len(payload["records"]),
+                "output": output_path,
+            }
+        )
+    )

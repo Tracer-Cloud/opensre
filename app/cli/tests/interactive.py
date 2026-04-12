@@ -67,7 +67,12 @@ _CATEGORY_OPTIONS: list[tuple[str, str]] = [
 
 
 def _require_interactive_dependencies() -> None:
-    if _questionary is None or _QuestionaryChoice is None or _select_prompt is None or _STYLE is None:
+    if (
+        _questionary is None
+        or _QuestionaryChoice is None
+        or _select_prompt is None
+        or _STYLE is None
+    ):
         raise RuntimeError(
             "Interactive test browsing requires optional terminal dependencies. "
             "Use `opensre tests list` or `opensre tests run <id>` in this environment."
@@ -96,7 +101,9 @@ def _item_title(item: TestCatalogItem) -> str:
     return f"{item.display_name}{suffix}"
 
 
-def _select_item(items: list[TestCatalogItem], *, prompt: str, allow_back: bool = False) -> TestCatalogItem:
+def _select_item(
+    items: list[TestCatalogItem], *, prompt: str, allow_back: bool = False
+) -> TestCatalogItem:
     _require_interactive_dependencies()
     choices = [_QuestionaryChoice(title=_item_title(item), value=item.id) for item in items]
     result = _select_prompt(
@@ -117,7 +124,9 @@ def _select_item(items: list[TestCatalogItem], *, prompt: str, allow_back: bool 
     raise ValueError(f"Unknown selected item: {selected_id}")
 
 
-def _matching_children(item: TestCatalogItem, *, category: str, search: str) -> list[TestCatalogItem]:
+def _matching_children(
+    item: TestCatalogItem, *, category: str, search: str
+) -> list[TestCatalogItem]:
     return [child for child in item.children if child.matches(category=category, search=search)]
 
 
@@ -130,7 +139,9 @@ def _resolve_suite_selection(
     if not item.children:
         return item
 
-    matching_children = _matching_children(item, category=category, search=search) or list(item.children)
+    matching_children = _matching_children(item, category=category, search=search) or list(
+        item.children
+    )
     if len(matching_children) == 1:
         return matching_children[0]
     return _select_item(
@@ -184,7 +195,9 @@ def choose_interactive_item(catalog: TestCatalog) -> tuple[TestCatalogItem, bool
         while True:
             try:
                 if len(filtered) == 1:
-                    return _resolve_suite_selection(filtered[0], category=category, search=search), True
+                    return _resolve_suite_selection(
+                        filtered[0], category=category, search=search
+                    ), True
 
                 selected = _select_item(filtered, prompt="Choose a test or suite:", allow_back=True)
                 return _resolve_suite_selection(selected, category=category, search=search), False
@@ -195,7 +208,9 @@ def choose_interactive_item(catalog: TestCatalog) -> tuple[TestCatalogItem, bool
 def run_interactive_picker(catalog: TestCatalog) -> int:
     _require_interactive_dependencies()
     if not sys.stdin.isatty() or not sys.stdout.isatty():
-        raise RuntimeError("Interactive terminal required. Use `opensre tests list` or `opensre tests run <id>`.")
+        raise RuntimeError(
+            "Interactive terminal required. Use `opensre tests list` or `opensre tests run <id>`."
+        )
 
     try:
         while True:

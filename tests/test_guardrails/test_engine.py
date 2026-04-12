@@ -55,9 +55,11 @@ class TestScan:
         assert result.matches[0].matched_text == "SECRET-HOST"
 
     def test_multiple_matches_same_text(self) -> None:
-        engine = GuardrailEngine([
-            _rule(name="r1", patterns=["\\d{4}"]),
-        ])
+        engine = GuardrailEngine(
+            [
+                _rule(name="r1", patterns=["\\d{4}"]),
+            ]
+        )
         result = engine.scan("codes 1234 and 5678")
         assert len(result.matches) == 2
 
@@ -97,9 +99,11 @@ class TestApply:
         assert "[REDACTED:test]" in result
 
     def test_uses_custom_replacement(self) -> None:
-        engine = GuardrailEngine([
-            _rule(patterns=["\\d{16}"], replacement="[CC_MASKED]"),
-        ])
+        engine = GuardrailEngine(
+            [
+                _rule(patterns=["\\d{16}"], replacement="[CC_MASKED]"),
+            ]
+        )
         result = engine.apply("card 4111111111111111")
         assert "[CC_MASKED]" in result
 
@@ -166,18 +170,22 @@ class TestEdgeCases:
         assert "[REDACTED:test]" in result
 
     def test_overlapping_keyword_matches(self) -> None:
-        engine = GuardrailEngine([
-            _rule(name="r1", action="redact", keywords=["secret"]),
-            _rule(name="r2", action="redact", keywords=["secret_key"]),
-        ])
+        engine = GuardrailEngine(
+            [
+                _rule(name="r1", action="redact", keywords=["secret"]),
+                _rule(name="r2", action="redact", keywords=["secret_key"]),
+            ]
+        )
         result = engine.scan("my secret_key here")
         assert len(result.matches) >= 2
 
     def test_multiple_rules_on_same_span(self) -> None:
-        engine = GuardrailEngine([
-            _rule(name="r1", action="audit", keywords=["token"]),
-            _rule(name="r2", action="redact", keywords=["token"]),
-        ])
+        engine = GuardrailEngine(
+            [
+                _rule(name="r1", action="audit", keywords=["token"]),
+                _rule(name="r2", action="redact", keywords=["token"]),
+            ]
+        )
         result = engine.apply("my token value")
         assert "[REDACTED:r2]" in result
 
@@ -201,10 +209,12 @@ class TestEdgeCases:
         assert "5678" not in result
 
     def test_mixed_block_and_redact(self) -> None:
-        engine = GuardrailEngine([
-            _rule(name="blocker", action="block", keywords=["forbidden"]),
-            _rule(name="redactor", action="redact", keywords=["secret"]),
-        ])
+        engine = GuardrailEngine(
+            [
+                _rule(name="blocker", action="block", keywords=["forbidden"]),
+                _rule(name="redactor", action="redact", keywords=["secret"]),
+            ]
+        )
         with pytest.raises(GuardrailBlockedError):
             engine.apply("secret and forbidden")
 
@@ -245,9 +255,16 @@ class TestIsActive:
 class TestSingleton:
     def test_get_returns_engine(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         config = tmp_path / "guardrails.yml"
-        config.write_text(yaml.dump({"rules": [
-            {"name": "t", "action": "audit", "keywords": ["test"]},
-        ]}), encoding="utf-8")
+        config.write_text(
+            yaml.dump(
+                {
+                    "rules": [
+                        {"name": "t", "action": "audit", "keywords": ["test"]},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
         monkeypatch.setattr("app.guardrails.engine.get_default_rules_path", lambda: config)
         reset_guardrail_engine()
 

@@ -35,7 +35,10 @@ def _monitors_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     input_schema={
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "Optional monitor filter (e.g., 'tag:pipeline:tracer-ai-agent')"},
+            "query": {
+                "type": "string",
+                "description": "Optional monitor filter (e.g., 'tag:pipeline:tracer-ai-agent')",
+            },
             "api_key": {"type": "string"},
             "app_key": {"type": "string"},
             "site": {"type": "string", "default": "datadoghq.com"},

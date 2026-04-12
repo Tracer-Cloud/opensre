@@ -60,11 +60,24 @@ OPENROUTER_MODELS = (
     ModelOption(value="anthropic/claude-opus-4.6", label="Claude Opus 4.6 (via OpenRouter)"),
     ModelOption(value="anthropic/claude-sonnet-4.5", label="Claude Sonnet 4.5 (via OpenRouter)"),
     ModelOption(value="anthropic/claude-haiku-4.5", label="Claude Haiku 4.5 (via OpenRouter)"),
-    ModelOption(value="google/gemini-3.1-pro-preview", label="Gemini 3.1 Pro (preview, via OpenRouter)"),
-    ModelOption(value="google/gemini-3-flash-preview", label="Gemini 3 Flash (preview, via OpenRouter)"),
-    ModelOption(value="google/gemini-3.1-flash-lite-preview", label="Gemini 3.1 Flash-Lite (preview, via OpenRouter)"),
-    ModelOption(value="google/gemini-3.1-flash-image-preview", label="Gemini 3.1 Flash Image (preview, via OpenRouter)"),
-    ModelOption(value="google/gemini-3-pro-image-preview", label="Gemini 3 Pro Image (preview, via OpenRouter)"),
+    ModelOption(
+        value="google/gemini-3.1-pro-preview", label="Gemini 3.1 Pro (preview, via OpenRouter)"
+    ),
+    ModelOption(
+        value="google/gemini-3-flash-preview", label="Gemini 3 Flash (preview, via OpenRouter)"
+    ),
+    ModelOption(
+        value="google/gemini-3.1-flash-lite-preview",
+        label="Gemini 3.1 Flash-Lite (preview, via OpenRouter)",
+    ),
+    ModelOption(
+        value="google/gemini-3.1-flash-image-preview",
+        label="Gemini 3.1 Flash Image (preview, via OpenRouter)",
+    ),
+    ModelOption(
+        value="google/gemini-3-pro-image-preview",
+        label="Gemini 3 Pro Image (preview, via OpenRouter)",
+    ),
     ModelOption(value="meta-llama/llama-4-maverick", label="Llama 4 Maverick (via OpenRouter)"),
     ModelOption(value="meta-llama/llama-4-scout", label="Llama 4 Scout (via OpenRouter)"),
     ModelOption(value="mistralai/mistral-large-2512", label="Mistral Large 3 (via OpenRouter)"),
@@ -86,7 +99,10 @@ GEMINI_MODELS = (
 )
 
 NVIDIA_MODELS = (
-    ModelOption(value=NVIDIA_REASONING_MODEL, label="Nemotron 3 Super 120B (5x higher throughput for agentic AI)"),
+    ModelOption(
+        value=NVIDIA_REASONING_MODEL,
+        label="Nemotron 3 Super 120B (5x higher throughput for agentic AI)",
+    ),
     ModelOption(value="nvidia/nemotron-3-nano-30b-a3b", label="Nemotron 3 Nano 30B"),
 )
 

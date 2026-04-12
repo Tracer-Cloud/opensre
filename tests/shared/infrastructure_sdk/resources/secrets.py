@@ -157,7 +157,9 @@ def list_secrets(
     return secrets
 
 
-def get_secret_for_ecs(secret_name: str, json_key: str | None = None, region: str = DEFAULT_REGION) -> dict[str, str]:
+def get_secret_for_ecs(
+    secret_name: str, json_key: str | None = None, region: str = DEFAULT_REGION
+) -> dict[str, str]:
     """Get secret reference for ECS container definition.
 
     Args:

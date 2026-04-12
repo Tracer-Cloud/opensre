@@ -37,11 +37,17 @@ def test_run_wizard_advanced_remote_falls_back_to_local(monkeypatch, tmp_path, c
     monkeypatch.setattr(flow.questionary, "password", _mock_password)
     monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
     monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
-    monkeypatch.setattr(flow, "probe_remote_target", lambda: ProbeResult("remote", True, "remote ok"))
+    monkeypatch.setattr(
+        flow, "probe_remote_target", lambda: ProbeResult("remote", True, "remote ok")
+    )
     monkeypatch.setattr(
         flow,
         "build_demo_action_response",
-        lambda: {"success": True, "topics": ["recovery_remediation"], "guidance": [{"topic": "recovery_remediation"}]},
+        lambda: {
+            "success": True,
+            "topics": ["recovery_remediation"],
+            "guidance": [{"topic": "recovery_remediation"}],
+        },
     )
 
     def _save_local_config(**kwargs):
@@ -110,10 +116,12 @@ def test_run_wizard_configures_optional_integrations(monkeypatch, tmp_path, caps
         m.ask.return_value = next(select_responses)
         return m
 
-    password_responses = iter([
-        "llm-secret",
-        "grafana-token",
-    ])
+    password_responses = iter(
+        [
+            "llm-secret",
+            "grafana-token",
+        ]
+    )
     text_responses = iter(["https://grafana.example.com"])
 
     def _mock_password(*_args, **_kwargs):
@@ -262,11 +270,13 @@ def test_run_wizard_configures_honeycomb(monkeypatch, tmp_path) -> None:
 def test_run_wizard_configures_coralogix(monkeypatch, tmp_path) -> None:
     select_responses = iter(["quickstart", "anthropic", "coralogix"])
     password_responses = iter(["llm-secret", "cx_test"])
-    text_responses = iter([
-        "https://api.coralogix.com",
-        "payments",
-        "worker",
-    ])
+    text_responses = iter(
+        [
+            "https://api.coralogix.com",
+            "payments",
+            "worker",
+        ]
+    )
     saved_integrations: list[tuple[str, dict]] = []
     synced_env_values: list[dict[str, str]] = []
 
@@ -341,20 +351,26 @@ def test_run_wizard_configures_coralogix(monkeypatch, tmp_path) -> None:
 
 
 def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, capsys) -> None:
-    select_responses = iter([
-        "quickstart",
-        "anthropic",
-        "github",
-        flow.DEFAULT_GITHUB_MCP_MODE,
-    ])
-    text_responses = iter([
-        flow.DEFAULT_GITHUB_MCP_URL,
-        "repos,issues,pull_requests,actions",
-    ])
-    password_responses = iter([
-        "llm-secret",
-        "ghp_test",
-    ])
+    select_responses = iter(
+        [
+            "quickstart",
+            "anthropic",
+            "github",
+            flow.DEFAULT_GITHUB_MCP_MODE,
+        ]
+    )
+    text_responses = iter(
+        [
+            flow.DEFAULT_GITHUB_MCP_URL,
+            "repos,issues,pull_requests,actions",
+        ]
+    )
+    password_responses = iter(
+        [
+            "llm-secret",
+            "ghp_test",
+        ]
+    )
     saved_integrations: list[tuple[str, dict]] = []
     synced_env_values: list[dict[str, str]] = []
 
@@ -383,9 +399,7 @@ def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, caps
         "validate_github_mcp_integration",
         lambda **_kwargs: flow.IntegrationHealthResult(ok=True, detail="GitHub MCP ok"),
     )
-    monkeypatch.setattr(
-        flow,
-        "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
+    monkeypatch.setattr(flow, "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
     monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
     monkeypatch.setattr(flow, "save_llm_api_key", lambda *_args, **_kwargs: None)
 
@@ -649,10 +663,12 @@ def test_run_wizard_gitlab_retries_on_validation_failure(monkeypatch, tmp_path) 
     # First attempt: wrong token; second attempt: correct token
     password_responses = iter(["llm-secret", "bad_token", "glpat_good"])
     # base_url is prompted on each retry
-    text_responses = iter([
-        "https://gitlab.com/api/v4",
-        "https://gitlab.com/api/v4",
-    ])
+    text_responses = iter(
+        [
+            "https://gitlab.com/api/v4",
+            "https://gitlab.com/api/v4",
+        ]
+    )
     saved_integrations: list[tuple[str, dict]] = []
     synced_env_values: list[dict[str, str]] = []
     validation_call_count = 0
@@ -725,7 +741,9 @@ def test_run_wizard_gitlab_retries_on_validation_failure(monkeypatch, tmp_path) 
     ]
 
 
-def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(monkeypatch, tmp_path) -> None:
+def test_run_wizard_switches_provider_and_keeps_store_and_env_in_sync(
+    monkeypatch, tmp_path
+) -> None:
     # Saved: anthropic. User says yes to "Change provider?" and picks openai.
     select_responses = iter(["quickstart", "openai", "skip"])
     confirm_responses = iter([True])  # "Change provider?" -> Yes

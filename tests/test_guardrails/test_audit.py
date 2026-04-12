@@ -27,7 +27,9 @@ class TestAuditLogger:
     def test_entry_has_expected_fields(self, tmp_path: Path) -> None:
         log_path = tmp_path / "audit.jsonl"
         logger = AuditLogger(path=log_path)
-        logger.log(rule_name="cc", action="redact", matched_text_preview="4111", context="llm_invoke")
+        logger.log(
+            rule_name="cc", action="redact", matched_text_preview="4111", context="llm_invoke"
+        )
 
         entry = json.loads(log_path.read_text(encoding="utf-8").strip())
         assert entry["rule_name"] == "cc"
