@@ -27,6 +27,7 @@ from app.integrations.models import (
 )
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config
+from app.integrations.postgresql import build_postgresql_config
 from app.integrations.sentry import build_sentry_config
 from app.output import get_tracker
 from app.services.vercel import VercelConfig
@@ -55,6 +56,8 @@ _SERVICE_KEY_MAP = {
     "gitlab": "gitlab",
     "mongodb": "mongodb",
     "mongo": "mongodb",
+    "postgresql": "postgresql",
+    "postgres": "postgresql",
     "mongodb_atlas": "mongodb_atlas",
     "atlas": "mongodb_atlas",
     "vercel": "vercel",
@@ -243,6 +246,24 @@ def _classify_integrations(
 
             if mongodb_config.connection_string:
                 resolved["mongodb"] = mongodb_config.model_dump()
+
+        elif key == "postgresql":
+            try:
+                postgresql_config = build_postgresql_config(
+                    {
+                        "host": credentials.get("host", ""),
+                        "port": credentials.get("port", 5432),
+                        "database": credentials.get("database", ""),
+                        "username": credentials.get("username", "postgres"),
+                        "password": credentials.get("password", ""),
+                        "ssl_mode": credentials.get("ssl_mode", "prefer"),
+                    }
+                )
+            except Exception:
+                continue
+
+            if postgresql_config.host and postgresql_config.database:
+                resolved["postgresql"] = postgresql_config.model_dump()
 
         elif key == "mongodb_atlas":
             try:
@@ -580,6 +601,30 @@ confluence_base_url = os.getenv("CONFLUENCE_BASE_URL", "").strip()
                 "service": "mongodb",
                 "status": "active",
                 "credentials": mongodb_config.model_dump(exclude={"integration_id"}),
+            }
+        )
+
+    postgresql_host = os.getenv("POSTGRESQL_HOST", "").strip()
+    postgresql_database = os.getenv("POSTGRESQL_DATABASE", "").strip()
+    if postgresql_host and postgresql_database:
+        postgresql_config = build_postgresql_config(
+            {
+                "host": postgresql_host,
+                "port": int(_pg_port)
+                if (_pg_port := os.getenv("POSTGRESQL_PORT", "").strip()) and _pg_port.isdigit()
+                else 5432,
+                "database": postgresql_database,
+                "username": os.getenv("POSTGRESQL_USERNAME", "postgres").strip() or "postgres",
+                "password": os.getenv("POSTGRESQL_PASSWORD", "").strip(),
+                "ssl_mode": os.getenv("POSTGRESQL_SSL_MODE", "prefer").strip() or "prefer",
+            }
+        )
+        integrations.append(
+            {
+                "id": "env-postgresql",
+                "service": "postgresql",
+                "status": "active",
+                "credentials": postgresql_config.model_dump(exclude={"integration_id"}),
             }
         )
 

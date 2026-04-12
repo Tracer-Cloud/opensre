@@ -7,8 +7,7 @@ Usage:
     python -m app.integrations remove <service>
     python -m app.integrations verify [service] [--send-slack-test]
 
-Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, mongodb_atlas, slack, opensearch, rds, tracer, github, sentry
-Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, slack, opensearch, rds, tracer, github, sentry, vercel
+Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, postgresql, mongodb_atlas, slack, opensearch, rds, tracer, github, sentry, vercel
 """
 
 from __future__ import annotations
@@ -334,6 +333,41 @@ def _setup_mongodb() -> None:
     )
 
 
+def _setup_postgresql() -> None:
+    host = _p("Host (e.g. localhost or postgres.example.com)")
+    database = _p("Database name")
+    if not host or not database:
+        _die("host and database are required.")
+    port = _p("Port", default="5432")
+    username = _p("Username", default="postgres")
+    password = _p("Password", secret=True)
+    ssl_mode_choice = questionary.select(
+        "SSL mode",
+        choices=[
+            questionary.Choice("prefer (recommended)", value="prefer"),
+            questionary.Choice("require", value="require"),
+            questionary.Choice("disable", value="disable"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if ssl_mode_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    upsert_integration(
+        "postgresql",
+        {
+            "credentials": {
+                "host": host,
+                "port": int(port) if port.isdigit() else 5432,
+                "database": database,
+                "username": username or "postgres",
+                "password": password,
+                "ssl_mode": ssl_mode_choice,
+            }
+        },
+    )
+
+
 def _setup_mongodb_atlas() -> None:
     api_public_key = _p("Atlas API public key")
     api_private_key = _p("Atlas API private key", secret=True)
@@ -390,6 +424,7 @@ _HANDLERS: dict[str, Any] = {
     "sentry": _setup_sentry,
     "mongodb": _setup_mongodb,
     "confluence": _setup_confluence
+    "postgresql": _setup_postgresql,
 }
 
 SUPPORTED = ", ".join(_HANDLERS)

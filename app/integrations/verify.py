@@ -26,6 +26,7 @@ from app.integrations.models import (
 )
 from app.integrations.mongodb import build_mongodb_config, validate_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config, validate_mongodb_atlas_config
+from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
 from app.nodes.resolve_integrations.node import (
@@ -51,6 +52,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "github",
     "sentry",
     "mongodb",
+    "postgresql",
     "mongodb_atlas",
     "google_docs",
     "vercel",
@@ -222,6 +224,29 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                     "database": os.getenv("MONGODB_DATABASE", "").strip(),
                     "auth_source": os.getenv("MONGODB_AUTH_SOURCE", "admin").strip() or "admin",
                     "tls": os.getenv("MONGODB_TLS", "true").strip().lower() in ("true", "1", "yes"),
+                },
+            }
+
+    postgresql_integration = classified_integrations.get("postgresql")
+    if isinstance(postgresql_integration, dict):
+        effective["postgresql"] = {
+            "source": source_by_service.get("postgresql", "local env"),
+            "config": postgresql_integration,
+        }
+    else:
+        pg_host = os.getenv("POSTGRESQL_HOST", "").strip()
+        pg_database = os.getenv("POSTGRESQL_DATABASE", "").strip()
+        if pg_host and pg_database:
+            _pg_port = os.getenv("POSTGRESQL_PORT", "").strip()
+            effective["postgresql"] = {
+                "source": "local env",
+                "config": {
+                    "host": pg_host,
+                    "port": int(_pg_port) if _pg_port.isdigit() else 5432,
+                    "database": pg_database,
+                    "username": os.getenv("POSTGRESQL_USERNAME", "postgres").strip() or "postgres",
+                    "password": os.getenv("POSTGRESQL_PASSWORD", "").strip(),
+                    "ssl_mode": os.getenv("POSTGRESQL_SSL_MODE", "prefer").strip() or "prefer",
                 },
             }
 
@@ -702,6 +727,17 @@ def _verify_mongodb(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_postgresql(source: str, config: dict[str, Any]) -> dict[str, str]:
+    postgresql_config = build_postgresql_config(config)
+    result = validate_postgresql_config(postgresql_config)
+    return _result(
+        "postgresql",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def _verify_mongodb_atlas(source: str, config: dict[str, Any]) -> dict[str, str]:
     atlas_config = build_mongodb_atlas_config(config)
     result = validate_mongodb_atlas_config(atlas_config)
@@ -927,6 +963,8 @@ def verify_integrations(
             results.append(_verify_sentry(source, config))
         elif current_service == "mongodb":
             results.append(_verify_mongodb(source, config))
+        elif current_service == "postgresql":
+            results.append(_verify_postgresql(source, config))
         elif current_service == "mongodb_atlas":
             results.append(_verify_mongodb_atlas(source, config))
         elif current_service == "google_docs":
