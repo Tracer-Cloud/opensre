@@ -386,13 +386,6 @@ Thanks goes to these amazing people:
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/qorexdev">
-            <img src="https://avatars.githubusercontent.com/u/248982649?v=4" width="100" alt="qorexdev"/>
-            <br />
-            <sub><b>qorexdev</b></sub>
-        </a>
-    </td>
-            <td align="center">
         <a href="https://github.com/ramandagar">
             <img src="https://avatars.githubusercontent.com/u/89700171?v=4" width="100" alt="ramandagar"/>
             <br />
@@ -406,8 +399,6 @@ Thanks goes to these amazing people:
             <sub><b>mvanhorn</b></sub>
         </a>
     </td>
-		</tr>
-		<tr>
             <td align="center">
         <a href="https://github.com/abhishek-marathe04">
             <img src="https://avatars.githubusercontent.com/u/175933950?v=4" width="100" alt="abhishek-marathe04"/>
@@ -415,6 +406,8 @@ Thanks goes to these amazing people:
             <sub><b>abhishek-marathe04</b></sub>
         </a>
     </td>
+		</tr>
+		<tr>
             <td align="center">
         <a href="https://github.com/yashksaini-coder">
             <img src="https://avatars.githubusercontent.com/u/115717039?v=4" width="100" alt="yashksaini-coder"/>
