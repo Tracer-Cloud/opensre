@@ -26,7 +26,6 @@ Refs
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from typing import Any
@@ -210,8 +209,13 @@ class TestVercelRemoteConnection:
         client = RemoteAgentClient("https://example.com")
         result = client.preflight()
 
-        # We care that it doesn't crash and reports a meaningful status.
+        # The host is reachable but doesn't serve /ok properly, so
+        # preflight should report a non-healthy state with diagnostics.
         assert isinstance(result, PreflightResult)
+        assert result.ok is False or result.error or result.status_label != "healthy", (
+            f"Expected degraded/failed preflight against example.com, "
+            f"got ok={result.ok} error={result.error!r} status={result.status_label}"
+        )
         logger.info(
             "Wrong-host diagnostics: ok=%s error=%r status=%s",
             result.ok,
@@ -227,6 +231,9 @@ class TestVercelRemoteConnection:
         with httpx.Client(timeout=30) as client:
             resp = client.get(url)
 
+        assert resp.status_code == 200, (
+            f"/api/health returned {resp.status_code}: {resp.text[:300]}"
+        )
         body = resp.json()
         assert "status" in body, f"Missing 'status' key: {body}"
         assert "service" in body, f"Missing 'service' key: {body}"
@@ -237,6 +244,9 @@ class TestVercelRemoteConnection:
         with httpx.Client(timeout=30) as client:
             resp = client.get(url)
 
+        assert resp.status_code == 200, (
+            f"/api/ok returned {resp.status_code}: {resp.text[:300]}"
+        )
         body = resp.json()
         assert "ok" in body, f"Missing 'ok' key: {body}"
         assert body["ok"] is True
