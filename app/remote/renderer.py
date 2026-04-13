@@ -76,10 +76,16 @@ class StreamRenderer:
         """
         _print_connection_banner()
 
-        for event in events:
-            self._handle_event(event)
+        try:
+            for event in events:
+                self._handle_event(event)
+        finally:
+            # Always stop the active spinner thread, even if the stream
+            # raises (e.g. LLM quota exhausted). Otherwise the background
+            # thread keeps writing \r + erase-line escapes forever and
+            # corrupts any subsequent prompt/output.
+            self._finish_active_node()
 
-        self._finish_active_node()
         self._print_report()
         return dict(self._final_state)
 
