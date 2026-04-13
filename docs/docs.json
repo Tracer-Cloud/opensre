@@ -54,6 +54,7 @@
             "defaultOpen": true,
             "pages": [
               "mongodb",
+              "mariadb",
               "honeycomb",
               "coralogix",
               "sentry",

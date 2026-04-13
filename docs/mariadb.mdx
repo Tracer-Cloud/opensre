@@ -1,0 +1,145 @@
+---
+title: "MariaDB"
+description: "Connect MariaDB so OpenSRE can diagnose database issues during investigations"
+---
+
+OpenSRE uses MariaDB diagnostics to investigate database-related alerts — checking server health, finding slow queries, monitoring replication, and analyzing active threads and InnoDB engine state.
+
+## Prerequisites
+
+- MariaDB 10.5+ (10.11 LTS or 11.x recommended)
+- Network access from the OpenSRE environment to your MariaDB instance
+- A database user with at least `SELECT` + `PROCESS` privileges (and `SELECT` on `performance_schema` for slow-query insights)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup mariadb
+```
+
+You will be prompted for host, port, database, username, password, and whether to enable SSL.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+MARIADB_HOST=db.example.com
+MARIADB_PORT=3306
+MARIADB_DATABASE=production
+MARIADB_USERNAME=opensre_ro
+MARIADB_PASSWORD=...
+MARIADB_SSL=true
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MARIADB_HOST` | — | **Required.** MariaDB server hostname or IP |
+| `MARIADB_PORT` | `3306` | MariaDB server port |
+| `MARIADB_DATABASE` | — | **Required.** Target database for slow-query analysis |
+| `MARIADB_USERNAME` | _(empty)_ | Database user |
+| `MARIADB_PASSWORD` | _(empty)_ | Database password |
+| `MARIADB_SSL` | `true` | Use TLS with certificate verification |
+
+### Option 3: Persistent store
+
+Credentials are automatically persisted to `~/.tracer/integrations.json` with `0o600` permissions:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "mariadb-prod",
+      "service": "mariadb",
+      "status": "active",
+      "credentials": {
+        "host": "db.example.com",
+        "port": 3306,
+        "database": "production",
+        "username": "opensre_ro",
+        "password": "...",
+        "ssl": true
+      }
+    }
+  ]
+}
+```
+
+## Recommended user setup
+
+Create a dedicated read-only user for OpenSRE so it cannot modify data:
+
+```sql
+CREATE USER 'opensre_ro'@'%' IDENTIFIED BY 'strong-password';
+GRANT SELECT, PROCESS, REPLICATION CLIENT ON *.* TO 'opensre_ro'@'%';
+GRANT SELECT ON performance_schema.* TO 'opensre_ro'@'%';
+FLUSH PRIVILEGES;
+```
+
+The `PROCESS` privilege lets OpenSRE read `information_schema.PROCESSLIST`. `REPLICATION CLIENT` enables `SHOW ALL SLAVES STATUS` / `SHOW SLAVE STATUS`. `SELECT` on `performance_schema` is only needed if you want slow-query insights.
+
+## TLS configuration
+
+SSL is enabled by default and uses the system CA bundle to verify the server certificate. Set `MARIADB_SSL=false` only in trusted local networks (development).
+
+## Investigation tools
+
+When OpenSRE investigates a MariaDB-related alert, five diagnostic tools are available:
+
+### Process list
+
+Retrieves active threads from `information_schema.PROCESSLIST`, excluding sleeping connections. Results are sorted by duration so long-running queries appear first.
+
+### Global status
+
+Returns a curated set of key metrics from `SHOW GLOBAL STATUS` — thread counts, connection totals, slow query count, InnoDB buffer pool statistics, row lock waits, and uptime.
+
+### InnoDB status
+
+Runs `SHOW ENGINE INNODB STATUS` and returns the full engine status text (truncated to 4 KB). Useful for investigating deadlocks, buffer pool pressure, and I/O patterns.
+
+### Slow queries
+
+Reads `performance_schema.events_statements_summary_by_digest` to list statements by average execution time. Requires `performance_schema` to be enabled.
+
+<Info>
+If `performance_schema` is disabled, the tool returns an informative note instead of failing. Enable it in `my.cnf` with `performance_schema=ON`.
+</Info>
+
+### Replication status
+
+Runs `SHOW ALL SLAVES STATUS` (MariaDB multi-source replication) with a fallback to `SHOW SLAVE STATUS` for older versions. Returns all configured replication channels, each with I/O thread state, SQL thread state, seconds behind master, last error, and log positions.
+
+## Verify
+
+```bash
+opensre integrations verify mariadb
+```
+
+Expected output:
+
+```
+SERVICE   SOURCE       STATUS    DETAIL
+mariadb   local env    passed    Connected to MariaDB 11.8.6-MariaDB; target database: production.
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection refused** | Verify host/port, check firewall rules, and confirm MariaDB is listening on the network interface (`bind-address` in `my.cnf`). |
+| **Access denied for user** | Confirm the username/password and that the user is granted access from the OpenSRE host (`'opensre_ro'@'%'` or a specific IP). |
+| **SSL: CERTIFICATE_VERIFY_FAILED** | The server certificate is not trusted by the system CA bundle. Install the correct CA or set `MARIADB_SSL=false` in trusted networks. |
+| **performance_schema is disabled** | Slow-query tool returns an empty list with a note. Enable in `my.cnf`: `performance_schema=ON`. |
+| **SELECT command denied on performance_schema** | Grant `SELECT` on `performance_schema.*` to the user. |
+| **This server is not configured as a replica** | Expected on standalone instances — replication tool returns an empty channel list, other tools still work. |
+
+## Security best practices
+
+- Use a **dedicated read-only** user — never `root` or an admin account.
+- Always enable **TLS** in production (`MARIADB_SSL=true`, which is the default).
+- Keep passwords out of source control — use `.env` or the persistent store.
+- Rotate credentials periodically and scope them to specific hosts where possible.
