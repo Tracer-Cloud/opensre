@@ -54,6 +54,7 @@
             "defaultOpen": true,
             "pages": [
               "mongodb",
+              "mariadb",
               "honeycomb",
               "coralogix",
               "sentry",
@@ -66,7 +67,8 @@
               "opsgenie",
               "jira",
               "prefect",
-              "google-docs"
+              "google-docs",
+              "discord"
             ]
           }
         ]
@@ -81,6 +83,9 @@
         "group": "Daily Updates",
         "pages": [
           "daily-updates/overview",
+          "daily-updates/2026-04-12",
+          "daily-updates/2026-04-11",
+          "daily-updates/2026-04-10",
           "daily-updates/2026-04-09",
           "daily-updates/2026-04-08",
           "daily-updates/2026-04-07",

@@ -4,21 +4,21 @@ on:
   push:
     branches: [main]
     paths:
-      - 'app/**'
-      - 'tests/**'
-      - 'pyproject.toml'
-      - 'pytest.ini'
-      - 'Makefile'
-      - '.github/workflows/ci.yml'
+      - "app/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "pytest.ini"
+      - "Makefile"
+      - ".github/workflows/ci.yml"
   pull_request:
     branches: [main]
     paths:
-      - 'app/**'
-      - 'tests/**'
-      - 'pyproject.toml'
-      - 'pytest.ini'
-      - 'Makefile'
-      - '.github/workflows/ci.yml'
+      - "app/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "pytest.ini"
+      - "Makefile"
+      - ".github/workflows/ci.yml"
 
 permissions:
   contents: read
@@ -69,12 +69,12 @@ jobs:
         continue-on-error: false
 
   # ---------------------------------------------------------------
-  # Test: runs only after lint + typecheck pass (avoids wasting CI
+  # Test: runs only after quality (ruff) + typecheck pass (avoids wasting CI
   # minutes on a run that would be discarded anyway)
   # ---------------------------------------------------------------
   test:
     runs-on: ubuntu-latest
-    needs: [lint, typecheck]
+    needs: [quality, typecheck]
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       JWT_TOKEN: ${{ secrets.JWT_TOKEN }}
@@ -129,7 +129,7 @@ jobs:
   # ---------------------------------------------------------------
   test-kubernetes:
     runs-on: ubuntu-latest
-    needs: [lint, typecheck]
+    needs: [quality, typecheck]
     continue-on-error: true
     if: >-
       github.event_name == 'push' ||
@@ -162,7 +162,8 @@ jobs:
   # ---------------------------------------------------------------
   test-thorough:
     runs-on: ubuntu-latest
-    needs: [quality, test]
+    # Depends only on `test`; it already gates on `quality` + `typecheck` (avoids redundant edges).
+    needs: [test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false

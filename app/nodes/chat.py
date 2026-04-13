@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from importlib import import_module
-from typing import Any, cast
+from typing import Any, TypeAlias, cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import SystemMessage, ToolMessage
@@ -65,7 +65,7 @@ def _normalize_messages(msgs: list[Any]) -> list[ChatMessage]:
 
 # ── Chat LLM ─────────────────────────────────────────────────────────────
 
-type ToolEnabledChatModel = Runnable[object, object]
+ToolEnabledChatModel: TypeAlias = Runnable[object, object]  # noqa: UP040
 
 _chat_llm_cache: dict[str, BaseChatModel] = {}
 _chat_llm_with_tools_cache: dict[str, ToolEnabledChatModel] = {}

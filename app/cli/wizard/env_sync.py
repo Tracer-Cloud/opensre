@@ -84,7 +84,9 @@ def sync_provider_env(
     for p in SUPPORTED_PROVIDERS:
         stale_keys |= _provider_specific_keys(p)
 
-    active_keys = {provider.model_env, provider.api_key_env}
+    # Keep the active provider's model keys but always remove API key entries
+    # (API keys are persisted via the system keyring, not .env).
+    active_keys = {provider.model_env}
     if provider.legacy_model_env:
         active_keys.add(provider.legacy_model_env)
     stale_keys -= active_keys

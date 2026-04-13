@@ -244,6 +244,18 @@ def _map_coralogix_logs(data: dict) -> dict:
     }
 
 
+def _map_diagnostic_code_result(data: dict, current_evidence: dict) -> dict:
+    executions = list(current_evidence.get("diagnostic_executions", []))
+    executions.append({
+        "code": data.get("code", ""),
+        "inputs": data.get("inputs", {}),
+        "stdout": data.get("stdout", ""),
+        "stderr": data.get("stderr", ""),
+        "exit_code": data.get("exit_code"),
+        "timed_out": data.get("timed_out", False),
+        "success": data.get("success", False),
+    })
+    return {"diagnostic_executions": executions}
 def _map_vercel_deployment_status(data: dict) -> dict:
     return {
         "vercel_deployments": data.get("deployments", []),
@@ -335,6 +347,10 @@ def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) ->
 
     for action_name, result in execution_results.items():
         if not result.success:
+            continue
+
+        if action_name == "run_diagnostic_code":
+            evidence.update(_map_diagnostic_code_result(result.data, evidence))
             continue
 
         mapper = EVIDENCE_MAPPERS.get(action_name)
@@ -448,6 +464,14 @@ def build_evidence_summary(execution_results: dict) -> str:
             elif action_name == "query_coralogix_logs" and data.get("logs"):
                 error_count = len(data.get("error_logs", []))
                 summary_parts.append(f"coralogix:{len(data['logs'])} logs ({error_count} errors)")
+            elif action_name == "run_diagnostic_code":
+                if data.get("success"):
+                    stdout_lines = len(data.get("stdout", "").splitlines())
+                    summary_parts.append(f"diagnostic:executed ({stdout_lines} output lines)")
+                elif data.get("timed_out"):
+                    summary_parts.append("diagnostic:timed out")
+                else:
+                    summary_parts.append("diagnostic:failed")
             elif action_name == "vercel_deployment_status":
                 failed_count = len(data.get("failed_deployments", []))
                 total = int(data.get("total", 0) or 0)

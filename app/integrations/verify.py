@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import boto3
@@ -12,6 +13,7 @@ import requests
 from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.config import get_tracer_base_url
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
+from app.integrations.mariadb import build_mariadb_config, validate_mariadb_config
 from app.integrations.models import (
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
@@ -25,6 +27,7 @@ from app.integrations.models import (
 )
 from app.integrations.mongodb import build_mongodb_config, validate_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config, validate_mongodb_atlas_config
+from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
 from app.nodes.resolve_integrations.node import (
@@ -50,16 +53,46 @@ SUPPORTED_VERIFY_SERVICES = (
     "github",
     "sentry",
     "mongodb",
+    "postgresql",
     "mongodb_atlas",
+    "mariadb",
     "google_docs",
     "vercel",
     "opsgenie",
     "kafka",
     "clickhouse",
     "bitbucket",
+    "discord",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
+
+
+@dataclass(slots=True)
+class MariaDBConfig:
+    host: str
+    port: int
+    database: str
+    username: str
+    password: str = field(repr=False)
+    ssl: bool
+
+    @classmethod
+    def from_env(cls) -> MariaDBConfig | None:
+        mariadb_host = os.getenv("MARIADB_HOST", "").strip()
+        mariadb_database = os.getenv("MARIADB_DATABASE", "").strip()
+        if not (mariadb_host and mariadb_database):
+            return None
+
+        mariadb_port = os.getenv("MARIADB_PORT", "3306").strip()
+        return cls(
+            host=mariadb_host,
+            port=int(mariadb_port) if mariadb_port.isdigit() else 3306,
+            database=mariadb_database,
+            username=os.getenv("MARIADB_USERNAME", "").strip(),
+            password=os.getenv("MARIADB_PASSWORD", "").strip(),
+            ssl=os.getenv("MARIADB_SSL", "true").strip().lower() in ("true", "1", "yes"),
+        )
 
 
 def _result(
@@ -223,15 +256,44 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 },
             }
 
+    postgresql_integration = classified_integrations.get("postgresql")
+    if isinstance(postgresql_integration, dict):
+        effective["postgresql"] = {
+            "source": source_by_service.get("postgresql", "local env"),
+            "config": postgresql_integration,
+        }
+    else:
+        pg_host = os.getenv("POSTGRESQL_HOST", "").strip()
+        pg_database = os.getenv("POSTGRESQL_DATABASE", "").strip()
+        if pg_host and pg_database:
+            _pg_port = os.getenv("POSTGRESQL_PORT", "").strip()
+            effective["postgresql"] = {
+                "source": "local env",
+                "config": {
+                    "host": pg_host,
+                    "port": int(_pg_port) if _pg_port.isdigit() else 5432,
+                    "database": pg_database,
+                    "username": os.getenv("POSTGRESQL_USERNAME", "postgres").strip() or "postgres",
+                    "password": os.getenv("POSTGRESQL_PASSWORD", "").strip(),
+                    "ssl_mode": os.getenv("POSTGRESQL_SSL_MODE", "prefer").strip() or "prefer",
+                },
+            }
+
     mongodb_atlas_integration = classified_integrations.get("mongodb_atlas")
     if isinstance(mongodb_atlas_integration, dict):
         effective["mongodb_atlas"] = {
             "source": source_by_service.get("mongodb_atlas", "local env"),
             "config": {
                 "api_public_key": str(mongodb_atlas_integration.get("api_public_key", "")).strip(),
-                "api_private_key": str(mongodb_atlas_integration.get("api_private_key", "")).strip(),
+                "api_private_key": str(
+                    mongodb_atlas_integration.get("api_private_key", "")
+                ).strip(),
                 "project_id": str(mongodb_atlas_integration.get("project_id", "")).strip(),
-                "base_url": str(mongodb_atlas_integration.get("base_url", "https://cloud.mongodb.com/api/atlas/v2")).strip(),
+                "base_url": str(
+                    mongodb_atlas_integration.get(
+                        "base_url", "https://cloud.mongodb.com/api/atlas/v2"
+                    )
+                ).strip(),
             },
         }
     else:
@@ -244,8 +306,31 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                     "api_public_key": atlas_pub,
                     "api_private_key": atlas_priv,
                     "project_id": os.getenv("MONGODB_ATLAS_PROJECT_ID", "").strip(),
-                    "base_url": os.getenv("MONGODB_ATLAS_BASE_URL", "https://cloud.mongodb.com/api/atlas/v2").strip(),
+                    "base_url": os.getenv(
+                        "MONGODB_ATLAS_BASE_URL", "https://cloud.mongodb.com/api/atlas/v2"
+                    ).strip(),
                 },
+            }
+
+    mariadb_integration = classified_integrations.get("mariadb")
+    if isinstance(mariadb_integration, dict):
+        effective["mariadb"] = {
+            "source": source_by_service.get("mariadb", "local env"),
+            "config": {
+                "host": str(mariadb_integration.get("host", "")).strip(),
+                "port": mariadb_integration.get("port", 3306),
+                "database": str(mariadb_integration.get("database", "")).strip(),
+                "username": str(mariadb_integration.get("username", "")).strip(),
+                "password": str(mariadb_integration.get("password", "")).strip(),
+                "ssl": mariadb_integration.get("ssl", True),
+            },
+        }
+    else:
+        mariadb_env_config = MariaDBConfig.from_env()
+        if mariadb_env_config:
+            effective["mariadb"] = {
+                "source": "local env",
+                "config": asdict(mariadb_env_config),
             }
 
     google_docs_integration = classified_integrations.get("google_docs")
@@ -368,6 +453,30 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                     "workspace": bitbucket_workspace,
                     "username": os.getenv("BITBUCKET_USERNAME", "").strip(),
                     "app_password": os.getenv("BITBUCKET_APP_PASSWORD", "").strip(),
+                },
+            }
+
+    discord_integration = classified_integrations.get("discord")
+    if isinstance(discord_integration, dict):
+        effective["discord"] = {
+            "source": source_by_service.get("discord", "local env"),
+            "config": {
+                "bot_token": str(discord_integration.get("bot_token", "")).strip(),
+                "application_id": str(discord_integration.get("application_id", "")).strip(),
+                "public_key": str(discord_integration.get("public_key", "")).strip(),
+                "default_channel_id": discord_integration.get("default_channel_id"),
+            },
+        }
+    else:
+        discord_bot_token = os.getenv("DISCORD_BOT_TOKEN", "").strip()
+        if discord_bot_token:
+            effective["discord"] = {
+                "source": "local env",
+                "config": {
+                    "bot_token": discord_bot_token,
+                    "application_id": os.getenv("DISCORD_APPLICATION_ID", "").strip(),
+                    "public_key": os.getenv("DISCORD_PUBLIC_KEY", "").strip(),
+                    "default_channel_id": os.getenv("DISCORD_DEFAULT_CHANNEL_ID", "").strip() or None,
                 },
             }
 
@@ -681,11 +790,33 @@ def _verify_mongodb(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_postgresql(source: str, config: dict[str, Any]) -> dict[str, str]:
+    postgresql_config = build_postgresql_config(config)
+    result = validate_postgresql_config(postgresql_config)
+    return _result(
+        "postgresql",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def _verify_mongodb_atlas(source: str, config: dict[str, Any]) -> dict[str, str]:
     atlas_config = build_mongodb_atlas_config(config)
     result = validate_mongodb_atlas_config(atlas_config)
     return _result(
         "mongodb_atlas",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_mariadb(source: str, config: dict[str, Any]) -> dict[str, str]:
+    mariadb_config = build_mariadb_config(config)
+    result = validate_mariadb_config(mariadb_config)
+    return _result(
+        "mariadb",
         source,
         "passed" if result.ok else "failed",
         result.detail,
@@ -829,6 +960,40 @@ def _verify_bitbucket(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_discord(source: str, config: dict[str, Any]) -> dict[str, str]:
+    bot_token = str(config.get("bot_token", "")).strip()
+    if not bot_token:
+        return _result("discord", source, "missing", "Missing bot token.")
+
+    try:
+        response = httpx.get(
+            "https://discord.com/api/v10/users/@me",
+            headers={"Authorization": f"Bot {bot_token}"},
+            timeout=10.0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _result("discord", source, "failed", f"Bot token validation failed: {exc}")
+
+    if not response.is_success:
+        return _result(
+            "discord",
+            source,
+            "failed",
+            f"Discord API returned {response.status_code}: {response.text[:200]}",
+        )
+
+    data = response.json()
+
+    username = str(data.get("username", "")).strip()
+    bot_id = str(data.get("id", "")).strip()
+    return _result(
+        "discord",
+        source,
+        "passed",
+        f"Connected to Discord API as bot {username} (id {bot_id}).",
+    )
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -883,8 +1048,12 @@ def verify_integrations(
             results.append(_verify_sentry(source, config))
         elif current_service == "mongodb":
             results.append(_verify_mongodb(source, config))
+        elif current_service == "postgresql":
+            results.append(_verify_postgresql(source, config))
         elif current_service == "mongodb_atlas":
             results.append(_verify_mongodb_atlas(source, config))
+        elif current_service == "mariadb":
+            results.append(_verify_mariadb(source, config))
         elif current_service == "google_docs":
             results.append(_verify_google_docs(source, config))
         elif current_service == "vercel":
@@ -897,6 +1066,8 @@ def verify_integrations(
             results.append(_verify_clickhouse(source, config))
         elif current_service == "bitbucket":
             results.append(_verify_bitbucket(source, config))
+        elif current_service == "discord":
+            results.append(_verify_discord(source, config))
 
     return results
 

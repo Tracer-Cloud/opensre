@@ -1,0 +1,45 @@
+{
+  "title": "[FIRING:1] PostgreSQL Slow Query Alert",
+  "state": "alerting",
+  "commonLabels": {
+    "alertname": "PostgreSQLSlowQuery",
+    "severity": "warning",
+    "cluster": "prod-pg-cluster",
+    "environment": "production",
+    "postgresql_instance": "prod-primary.postgres.net"
+  },
+  "commonAnnotations": {
+    "summary": "PostgreSQL instance has queries running longer than 30 seconds",
+    "description": "PostgreSQL cluster prod-pg-cluster primary node is experiencing slow query execution. Average query time: 45 seconds. Threshold: 30 seconds.",
+    "runbook": "https://wiki.example.com/postgresql/slow-queries",
+    "dashboard": "https://monitoring.example.com/d/postgresql-cluster",
+    "instance": "prod-primary.postgres.net:5432",
+    "postgresql_database": "application_db",
+    "postgresql_table": "events",
+    "postgresql_schema": "public",
+    "timestamp": "2024-01-15T10:30:00Z",
+    "correlation_id": "postgres-alert-correlation-001"
+  },
+  "externalURL": "https://monitoring.example.com",
+  "version": "4",
+  "groupKey": "{}:{alertname=\"PostgreSQLSlowQuery\"}",
+  "truncatedAlerts": 0,
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "PostgreSQLSlowQuery",
+        "severity": "warning",
+        "cluster": "prod-pg-cluster",
+        "postgresql_instance": "prod-primary.postgres.net"
+      },
+      "annotations": {
+        "summary": "PostgreSQL instance has queries running longer than 30 seconds",
+        "description": "PostgreSQL cluster prod-pg-cluster primary node is experiencing slow query execution.",
+        "instance": "prod-primary.postgres.net:5432"
+      },
+      "startsAt": "2024-01-15T10:25:00Z",
+      "endsAt": "0001-01-01T00:00:00Z"
+    }
+  ]
+}

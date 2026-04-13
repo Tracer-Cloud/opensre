@@ -63,6 +63,7 @@ def _load_raw() -> dict[str, Any]:
 def _save(data: dict[str, Any]) -> None:
     STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
     STORE_PATH.write_text(json.dumps(data, indent=2) + "\n")
+    STORE_PATH.chmod(0o600)
 
 
 def load_integrations() -> list[dict[str, Any]]:

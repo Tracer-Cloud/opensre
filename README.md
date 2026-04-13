@@ -462,6 +462,13 @@ Thanks goes to these amazing people:
             <sub><b>mayankbharati-ops</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/harshareddy832">
+            <img src="https://avatars.githubusercontent.com/u/53609097?v=4" width="100" alt="harshareddy832"/>
+            <br />
+            <sub><b>harshareddy832</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>

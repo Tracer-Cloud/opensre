@@ -478,3 +478,26 @@ def validate_opsgenie_integration(
             ok=False,
             detail=f"OpsGenie validation failed: {err}",
         )
+
+
+def validate_discord_bot(*, bot_token: str) -> IntegrationHealthResult:
+    """Validate a Discord bot token by calling the /users/@me endpoint."""
+    import httpx
+
+    try:
+        resp = httpx.get(
+            "https://discord.com/api/v10/users/@me",
+            headers={"Authorization": f"Bot {bot_token}"},
+            timeout=10,
+        )
+    except httpx.RequestError as err:
+        return IntegrationHealthResult(ok=False, detail=f"Discord API unreachable: {err}")
+
+    if resp.status_code == 200:
+        username = resp.json().get("username", "unknown")
+        return IntegrationHealthResult(ok=True, detail=f"Discord bot authenticated as @{username}.")
+    if resp.status_code == 401:
+        return IntegrationHealthResult(ok=False, detail="Discord bot token is invalid or revoked.")
+    return IntegrationHealthResult(
+        ok=False, detail=f"Discord API returned unexpected HTTP {resp.status_code}."
+    )
