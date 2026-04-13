@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import Any, Optional
 
 from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
@@ -750,7 +750,7 @@ def _merge_integrations_by_service(
 
 @traceable(name="node_resolve_integrations")
 def node_resolve_integrations(
-    state: InvestigationState, config: RunnableConfig | None = None
+    state: InvestigationState, config: Optional[RunnableConfig] = None  # noqa: UP045
 ) -> dict:
     """Fetch all org integrations and classify them by service.
 
