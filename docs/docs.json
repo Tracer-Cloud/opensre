@@ -54,6 +54,7 @@
             "defaultOpen": true,
             "pages": [
               "mongodb",
+              "mariadb",
               "honeycomb",
               "coralogix",
               "sentry",
@@ -66,7 +67,8 @@
               "opsgenie",
               "jira",
               "prefect",
-              "google-docs"
+              "google-docs",
+              "discord"
             ]
           }
         ]
