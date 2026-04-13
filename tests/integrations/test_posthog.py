@@ -114,9 +114,6 @@ def test_query_bounce_rate_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.period == "24h"
     assert isinstance(result.queried_at, datetime)
     assert result.queried_at.tzinfo == UTC
-=======
-    assert "401" in result.detail
->>>>>>> 0a43141 (fix posthog tests and validation issues)
 
 
 def test_query_bounce_rate_clamps_to_one(monkeypatch: pytest.MonkeyPatch) -> None:
