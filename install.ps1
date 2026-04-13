@@ -33,6 +33,11 @@ function Invoke-OpenSreWithRetry {
             return & $Operation
         }
         catch {
+            $statusCode = Get-OpenSreHttpStatusCodeFromError -ErrorRecord $_
+            if ($null -ne $statusCode -and $statusCode -ge 400 -and $statusCode -lt 500) {
+                throw "Failed to $Description. $($_.Exception.Message)"
+            }
+
             if ($attempt -ge $MaxAttempts) {
                 throw "Failed to $Description after $attempt attempts. $($_.Exception.Message)"
             }
@@ -42,6 +47,42 @@ function Invoke-OpenSreWithRetry {
             $attempt += 1
         }
     }
+}
+
+function Get-OpenSreHttpStatusCodeFromError {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Management.Automation.ErrorRecord]$ErrorRecord
+    )
+
+    $exception = $ErrorRecord.Exception
+
+    while ($null -ne $exception) {
+        if ($exception.PSObject.Properties["Response"] -and $null -ne $exception.Response) {
+            $response = $exception.Response
+            if ($response.PSObject.Properties["StatusCode"] -and $null -ne $response.StatusCode) {
+                try {
+                    return [int]$response.StatusCode
+                }
+                catch {
+                    return $null
+                }
+            }
+        }
+
+        if ($exception.PSObject.Properties["StatusCode"] -and $null -ne $exception.StatusCode) {
+            try {
+                return [int]$exception.StatusCode
+            }
+            catch {
+                return $null
+            }
+        }
+
+        $exception = $exception.InnerException
+    }
+
+    return $null
 }
 
 function Enable-OpenSreTls {
