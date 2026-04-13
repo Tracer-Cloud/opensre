@@ -108,6 +108,7 @@ def _prompt_github_repo_report_level() -> GitHubMcpDisplayDetailLevel:
         return cast(GitHubMcpDisplayDetailLevel, sel)
     return "summary"
 
+
 def _parse_port(raw: str, default: int = 3306) -> int:
     """Parse a port string, returning *default* for invalid or out-of-range values."""
     try:
@@ -356,6 +357,7 @@ def _setup_github() -> None:
         sys.exit(1)
 
     upsert_integration("github", {"credentials": credentials})
+
 
 def _setup_gitlab() -> None:
     base_url = _p("Gitlab base URL", default=DEFAULT_GITLAB_BASE_URL)
