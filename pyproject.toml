@@ -89,7 +89,7 @@ dev = [
     "boto3-stubs[essential]",
 ]
 kafka = [
-    "confluent-kafka>=2.3.0",
+    "confluent-kafka>=2.14.0",
 ]
 clickhouse = [
     "clickhouse-connect>=0.8.0",
