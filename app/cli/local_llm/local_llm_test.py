@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from app.cli.local_llm.hardware import HardwareProfile, recommend_model
-from app.cli.local_llm.ollama import is_model_present, pull_model
+from app.cli.local_llm.ollama import is_model_present, normalize_model_tag, pull_model
 from app.cli.wizard.config import PROVIDER_BY_VALUE
 from app.cli.wizard.validation import validate_provider_credentials
 
@@ -90,7 +90,25 @@ def test_recommend_model_apple_silicon_16gb_low_free_ram_returns_3b() -> None:
 
 
 # ---------------------------------------------------------------------------
-# is_model_present — exact tag matching
+# _normalize_model_tag — tag normalization helper
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_model_tag_adds_latest_to_untagged() -> None:
+    """Test that models without tags get :latest appended"""
+    assert normalize_model_tag("llama3.2") == "llama3.2:latest"
+    assert normalize_model_tag("mistral") == "mistral:latest"
+
+
+def test_normalize_model_tag_preserves_explicit_tags() -> None:
+    """Test that models with explicit tags are unchanged"""
+    assert normalize_model_tag("llama3.1:8b") == "llama3.1:8b"
+    assert normalize_model_tag("llama3.2:7b") == "llama3.2:7b"
+    assert normalize_model_tag("qwen2.5:14b") == "qwen2.5:14b"
+
+
+# ---------------------------------------------------------------------------
+# is_model_present — tag-aware model checking
 # ---------------------------------------------------------------------------
 
 
@@ -112,6 +130,18 @@ def test_is_model_present_returns_false_on_connection_error(monkeypatch) -> None
 
     monkeypatch.setattr(httpx, "get", _raise)
     assert is_model_present("llama3.1:8b") is False
+
+
+def test_is_model_present_normalizes_tags_to_latest(monkeypatch) -> None:
+    """Test that models without explicit tags are normalized to :latest"""
+    monkeypatch.setattr(httpx, "get", lambda *_a, **_kw: _tags_response(["llama3.2:latest"]))
+    assert is_model_present("llama3.2") is True  # Should normalize to llama3.2:latest
+
+
+def test_is_model_present_preserves_explicit_tags(monkeypatch) -> None:
+    """Test that models with explicit tags are unchanged"""
+    monkeypatch.setattr(httpx, "get", lambda *_a, **_kw: _tags_response(["llama3.1:8b"]))
+    assert is_model_present("llama3.1:8b") is True  # Explicit tag unchanged
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +208,7 @@ def test_validate_ollama_returns_failure_when_model_not_pulled(monkeypatch) -> N
 
 
 def test_validate_ollama_returns_failure_when_inference_fails(monkeypatch) -> None:
-    monkeypatch.setattr(httpx, "get", lambda *_a, **_kw: _tags_response(["llama3.2"]))
+    monkeypatch.setattr(httpx, "get", lambda *_a, **_kw: _tags_response(["llama3.2:latest"]))
 
     def _raise(*_a, **_kw):
         raise httpx.ConnectError("refused")
@@ -196,7 +226,7 @@ def test_validate_ollama_returns_failure_when_inference_fails(monkeypatch) -> No
 
 
 def test_validate_ollama_returns_success_on_valid_inference(monkeypatch) -> None:
-    monkeypatch.setattr(httpx, "get", lambda *_a, **_kw: _tags_response(["llama3.2"]))
+    monkeypatch.setattr(httpx, "get", lambda *_a, **_kw: _tags_response(["llama3.2:latest"]))
     monkeypatch.setattr(httpx, "post", lambda *_a, **_kw: _chat_response("OpenSRE ready"))
 
     result = validate_provider_credentials(
@@ -214,7 +244,8 @@ def test_validate_ollama_returns_success_on_valid_inference(monkeypatch) -> None
     [
         ("llama3.1:8b", ["llama3.1:8b"], True),  # exact match
         ("llama3.1:8b", ["llama3.1:latest"], False),  # different tag — must fail
-        ("llama3.2", ["llama3.2"], True),  # no tag — exact match
+        ("llama3.2", ["llama3.2:latest"], True),  # no tag — normalizes to :latest
+        ("llama3.2", ["llama3.2:8b"], True),  # fallback fuzzy matching — user has different variant
     ],
 )
 def test_validate_ollama_exact_tag_matching(monkeypatch, model, available, should_pass) -> None:

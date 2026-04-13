@@ -1,0 +1,95 @@
+---
+title: "Honeycomb"
+description: "Connect Honeycomb so OpenSRE can query traces during investigations"
+---
+
+OpenSRE queries Honeycomb to surface distributed traces during alert investigations — identifying slow spans, high-error services, and query patterns correlated with incidents.
+
+## Prerequisites
+
+- Honeycomb account (classic or environments-based)
+- API key with query access
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **Honeycomb** when prompted and provide your API key and dataset.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+HONEYCOMB_API_KEY=your-api-key
+HONEYCOMB_DATASET=your-dataset      # optional, defaults to __all__
+HONEYCOMB_API_URL=https://api.honeycomb.io  # optional
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `HONEYCOMB_API_KEY` | — | **Required.** Honeycomb API key |
+| `HONEYCOMB_DATASET` | `__all__` | Dataset to query (classic) or `__all__` for environments |
+| `HONEYCOMB_API_URL` | `https://api.honeycomb.io` | Override for EU region or proxies |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "honeycomb-prod",
+      "service": "honeycomb",
+      "status": "active",
+      "credentials": {
+        "api_key": "your-api-key",
+        "dataset": "__all__",
+        "base_url": "https://api.honeycomb.io"
+      }
+    }
+  ]
+}
+```
+
+## Creating an API key
+
+1. In Honeycomb, go to **Account** → **API Keys**
+2. Click **Create API Key**
+3. Set the environment and enable **Query Data** permission
+4. Copy the key
+
+<Tip>
+Use `__all__` as the dataset to query across all datasets in an environment. For EU accounts, set `HONEYCOMB_API_URL=https://api.eu1.honeycomb.io`.
+</Tip>
+
+## Verify
+
+```bash
+opensre integrations verify --service honeycomb
+```
+
+Expected output:
+
+```
+Service: honeycomb
+Status: passed
+Detail: Connected to https://api.honeycomb.io (environment production) and queried dataset __all__
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Confirm the API key is correct and has Query Data permission |
+| **Dataset not found** | Use `__all__` or check the exact dataset name in Honeycomb |
+| **EU account unreachable** | Set `HONEYCOMB_API_URL=https://api.eu1.honeycomb.io` |
+
+## Security best practices
+
+- Use a dedicated **read-only** API key scoped to query access.
+- Store the API key in `.env`, not in source code.

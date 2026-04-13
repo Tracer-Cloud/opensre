@@ -58,6 +58,8 @@ dependencies = [
     "google-auth>=2.0.0,<3.0.0",
     # MongoDB
     "pymongo>=4.6.0,<6.0.0",
+    # MariaDB
+    "pymysql>=1.1.0,<2.0.0",
 ]
 
 [project.urls]
@@ -79,6 +81,8 @@ dev = [
     "ruff>=0.4.0",
     "mypy>=1.10.0",
     "types-requests",
+    "types-psycopg2",
+    "types-PyMySQL",
     "types-PyYAML",
     "boto3-stubs[essential]",
 ]
@@ -87,6 +91,9 @@ kafka = [
 ]
 clickhouse = [
     "clickhouse-connect>=0.8.0",
+]
+postgresql = [
+    "psycopg2-binary>=2.9.0,<3.0.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -97,6 +104,11 @@ markers = [
     "synthetic: LLM-based synthetic RCA scenario tests (non-deterministic)",
 ]
 
+# With pytest-xdist (-n auto), each worker writes a fragment; put them under
+# .pytest_cache/ (already gitignored) instead of .coverage.<hostname>.* at repo root.
+[tool.coverage.run]
+data_file = ".pytest_cache/.coverage"
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "S"]
 
@@ -106,9 +118,9 @@ select = ["E", "F", "I", "S"]
 "tests/**/*_test.py" = ["S101"]
 "tests/**/test_*.py" = ["S101"]
 # vendored third-party pipeline code — not ours to fix
-"tests/test_case_upstream_lambda/pipeline_code/**" = ["S"]
-"tests/test_case_upstream_apache_flink_ecs/pipeline_code/**" = ["S"]
-"tests/test_case_upstream_prefect_ecs_fargate/pipeline_code/**" = ["S"]
+"tests/e2e/upstream_lambda/pipeline_code/**" = ["S"]
+"tests/e2e/upstream_apache_flink_ecs/pipeline_code/**" = ["S"]
+"tests/e2e/upstream_prefect_ecs_fargate/pipeline_code/**" = ["S"]
 # subprocess / url-open / temp-file usage in infra helpers is intentional
 "tests/shared/**" = ["S108", "S310", "S603", "S607"]
 "tests/**/infrastructure_sdk/**" = ["S108", "S603", "S607"]

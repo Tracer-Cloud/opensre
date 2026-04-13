@@ -1,0 +1,95 @@
+---
+title: "GitLab"
+description: "Connect GitLab so OpenSRE can correlate pipeline failures and merge requests with incidents"
+---
+
+OpenSRE queries GitLab to retrieve recent commits, merge requests, failed pipelines, and file contents — helping trace which code change or deployment triggered an alert.
+
+## Prerequisites
+
+- GitLab account (GitLab.com or self-hosted)
+- Personal access token or group/project access token
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **GitLab** when prompted and provide your access token.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+GITLAB_ACCESS_TOKEN=glpat-your-token
+GITLAB_BASE_URL=https://gitlab.com/api/v4   # optional, for self-hosted
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GITLAB_ACCESS_TOKEN` | — | **Required.** GitLab personal or project access token |
+| `GITLAB_BASE_URL` | `https://gitlab.com/api/v4` | Override for self-hosted GitLab |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "gitlab-prod",
+      "service": "gitlab",
+      "status": "active",
+      "credentials": {
+        "url": "https://gitlab.com/api/v4",
+        "access_token": "glpat-your-token"
+      }
+    }
+  ]
+}
+```
+
+## Creating a personal access token
+
+1. In GitLab, go to **User Settings** → **Access Tokens**
+2. Click **Add new token**
+3. Enable the following scopes: `read_api`, `read_repository`
+4. Set an expiry and click **Create personal access token**
+5. Copy the token
+
+<Info>
+For self-hosted GitLab, set `GITLAB_BASE_URL=https://gitlab.example.com/api/v4`.
+</Info>
+
+## Verify
+
+```bash
+opensre integrations verify --service gitlab
+```
+
+Expected output:
+
+```
+Service: gitlab
+Status: passed
+Detail: GitLab connectivity successful. Authenticated as @your-username
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Check that the token is valid and has `read_api` scope |
+| **404 Not Found** | Verify the project ID and that the token has access to that project |
+| **Connection refused** | Check `GITLAB_BASE_URL` for self-hosted instances |
+| **Token expired** | Rotate the access token in GitLab settings |
+
+## Security best practices
+
+- Use a **read-only** token with only `read_api` and `read_repository` scopes.
+- Prefer **project access tokens** scoped to the repositories OpenSRE needs.
+- Store the token in `.env`, not in source code.

@@ -10,6 +10,7 @@ from app.cli.local_llm.ollama import (
     install,
     is_installed,
     is_server_running,
+    normalize_model_tag,
     pull_model,
     start_server,
     wait_for_server,
@@ -68,7 +69,7 @@ def run_local_llm_setup() -> int:
     ).ask()
     if not chosen:
         return 1
-    chosen = chosen.strip()
+    chosen = normalize_model_tag(chosen.strip())  # Ensure explicit tag
 
     _console.print()
     if not pull_model(chosen, _console, host=host):

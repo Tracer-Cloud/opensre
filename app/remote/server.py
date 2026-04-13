@@ -11,8 +11,16 @@ Start with::
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import json as _json
+import logging
 import os
 import re
+import shutil
+import time
+import urllib.error
+import urllib.request
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -22,14 +30,28 @@ from typing import Any
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
 from pydantic import BaseModel
+from starlette.responses import StreamingResponse
 
-from app.remote.system_metrics import collect_system_metrics
+from app.remote.vercel_poller import (
+    VercelInvestigationCandidate,
+    VercelPoller,
+    VercelResolutionError,
+    enrich_remote_alert_from_vercel,
+)
 from app.version import get_version
 
 load_dotenv(override=False)
 
 INVESTIGATIONS_DIR = Path("/opt/opensre/investigations")
 _AUTH_KEY = os.getenv("OPENSRE_API_KEY", "")
+_STARTED_AT = datetime.now(tz=UTC)
+_START_TIME_MONOTONIC = time.monotonic()
+_INSTANCE_METADATA: dict[str, str | None] = {
+    "instance_id": None,
+    "region": os.getenv("AWS_REGION") or None,
+    "public_ip": None,
+}
+logger = logging.getLogger(__name__)
 
 
 def _check_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -41,7 +63,18 @@ def _check_api_key(x_api_key: str | None = Header(default=None)) -> None:
 @asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     INVESTIGATIONS_DIR.mkdir(parents=True, exist_ok=True)
-    yield
+    _refresh_instance_metadata()
+    poller = VercelPoller(investigations_dir=INVESTIGATIONS_DIR)
+    poller_task: asyncio.Task[None] | None = None
+    if poller.is_enabled:
+        poller_task = asyncio.create_task(_run_vercel_poller(poller))
+    try:
+        yield
+    finally:
+        if poller_task is not None:
+            poller_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await poller_task
 
 
 app = FastAPI(
@@ -62,6 +95,7 @@ class InvestigateRequest(BaseModel):
     alert_name: str | None = None
     pipeline_name: str | None = None
     severity: str | None = None
+    vercel_url: str | None = None
 
 
 class InvestigateResponse(BaseModel):
@@ -79,6 +113,12 @@ class InvestigationMeta(BaseModel):
     alert_name: str
 
 
+class DeepHealthCheck(BaseModel):
+    name: str
+    status: str
+    detail: str
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -86,40 +126,54 @@ class InvestigationMeta(BaseModel):
 
 @app.get("/ok")
 def health_check() -> dict[str, Any]:
+    uptime_seconds = max(0, int(time.monotonic() - _START_TIME_MONOTONIC))
     return {
         "ok": True,
         "version": get_version(),
-        "server_type": "lightweight",
-        "endpoints": ["/investigate", "/investigate/stream", "/investigations"],
-        "system": collect_system_metrics(),
+        "started_at": _STARTED_AT.isoformat(),
+        "uptime_seconds": uptime_seconds,
+        "instance_id": _INSTANCE_METADATA.get("instance_id"),
+        "region": _INSTANCE_METADATA.get("region"),
+        "public_ip": _INSTANCE_METADATA.get("public_ip"),
+    }
+
+
+@app.get("/version")
+def version_check() -> dict[str, str]:
+    return {"version": get_version()}
+
+
+@app.get("/health/deep")
+def deep_health_check() -> dict[str, Any]:
+    checks = [_check_llm_connectivity(), _check_disk_health(), _check_memory_health()]
+    status = "passed"
+    if any(check.status == "failed" for check in checks):
+        status = "failed"
+    elif any(check.status in {"warn", "missing"} for check in checks):
+        status = "warn"
+
+    return {
+        "status": status,
+        "checks": [check.model_dump() for check in checks],
     }
 
 
 @app.post("/investigate", response_model=InvestigateResponse)
 def investigate(req: InvestigateRequest) -> InvestigateResponse:
     """Run an investigation and persist the result as a ``.md`` file."""
-    import logging
-    import traceback
-
-    from app.cli.investigate import run_investigation_cli
-
-    logger = logging.getLogger(__name__)
-
     try:
-        result = run_investigation_cli(
-            raw_alert=req.raw_alert,
+        raw_alert = _normalized_request_alert(req)
+        result, alert_name, pipeline_name, severity = _execute_investigation(
+            raw_alert=raw_alert,
             alert_name=req.alert_name,
             pipeline_name=req.pipeline_name,
             severity=req.severity,
         )
+    except VercelResolutionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        tb = traceback.format_exc()
-        logger.error("Investigation failed: %s\n%s", exc, tb)
+        logger.exception("Investigation failed")
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
-
-    alert_name = req.alert_name or req.raw_alert.get("alert_name") or "incident"
-    pipeline_name = req.pipeline_name or req.raw_alert.get("pipeline_name") or "unknown"
-    severity = req.severity or req.raw_alert.get("severity") or "warning"
 
     inv_id = _make_id(alert_name)
     _save_investigation(
@@ -151,20 +205,18 @@ async def investigate_stream(req: InvestigateRequest) -> Response:
     as a ``.md`` file once the stream completes, matching the behaviour of
     the blocking ``/investigate`` endpoint.
     """
-    import json as _json
-    import logging
-
-    from starlette.responses import StreamingResponse
-
     from app.cli.investigate import resolve_investigation_context
     from app.config import LLMSettings
     from app.pipeline.runners import astream_investigation
 
-    logger = logging.getLogger(__name__)
-
     LLMSettings.from_env()
+    try:
+        raw_alert = _normalized_request_alert(req)
+    except VercelResolutionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     alert_name, pipeline_name, severity = resolve_investigation_context(
-        raw_alert=req.raw_alert,
+        raw_alert=raw_alert,
         alert_name=req.alert_name,
         pipeline_name=req.pipeline_name,
         severity=req.severity,
@@ -178,7 +230,7 @@ async def investigate_stream(req: InvestigateRequest) -> Response:
                 alert_name,
                 pipeline_name,
                 severity,
-                raw_alert=req.raw_alert,
+                raw_alert=raw_alert,
             ):
                 if event.kind == "on_chain_end":
                     output = event.data.get("data", {}).get("output", {})
@@ -233,6 +285,45 @@ def _persist_streamed_result(
         logger.exception("Failed to persist streamed investigation")
 
 
+async def _handle_polled_candidate(candidate: VercelInvestigationCandidate) -> bool:
+    """Run and persist RCA for a polled Vercel candidate."""
+    try:
+        result, alert_name, pipeline_name, severity = await asyncio.to_thread(
+            _execute_investigation,
+            raw_alert=candidate.raw_alert,
+            alert_name=candidate.alert_name,
+            pipeline_name=candidate.pipeline_name,
+            severity=candidate.severity,
+        )
+    except Exception:
+        logger.exception(
+            "Background Vercel investigation failed for deployment %s",
+            candidate.dedupe_key,
+        )
+        return False
+
+    inv_id = _make_id(alert_name)
+    await asyncio.to_thread(
+        _save_investigation,
+        inv_id=inv_id,
+        alert_name=alert_name,
+        pipeline_name=pipeline_name,
+        severity=severity,
+        result=result,
+    )
+    logger.info(
+        "Persisted background Vercel investigation %s for deployment %s",
+        inv_id,
+        candidate.dedupe_key,
+    )
+    return True
+
+
+async def _run_vercel_poller(poller: VercelPoller) -> None:
+    """Run the Vercel poller in background lifecycle task."""
+    await poller.run_forever(_handle_polled_candidate)
+
+
 @app.get("/investigations", response_model=list[InvestigationMeta])
 def list_investigations() -> list[InvestigationMeta]:
     """List all persisted investigation ``.md`` files."""
@@ -256,12 +347,10 @@ def list_investigations() -> list[InvestigationMeta]:
 @app.get("/investigations/{inv_id}")
 def get_investigation(inv_id: str) -> Response:
     """Return the raw ``.md`` content of a single investigation."""
-    safe_path = _safe_investigation_path(inv_id)
-    if not os.path.exists(safe_path):
+    path = _safe_investigation_path(inv_id)
+    if not path.exists():
         raise HTTPException(status_code=404, detail=f"Investigation {inv_id} not found")
-    with open(safe_path, encoding="utf-8") as fh:
-        content = fh.read()
-    return Response(content=content, media_type="text/markdown")
+    return Response(content=path.read_text(encoding="utf-8"), media_type="text/markdown")
 
 
 # ---------------------------------------------------------------------------
@@ -272,14 +361,11 @@ def get_investigation(inv_id: str) -> Response:
 _SAFE_INV_ID = re.compile(r"[\w\-]+")
 
 
-def _safe_investigation_path(inv_id: str) -> str:
+def _safe_investigation_path(inv_id: str) -> Path:
     """Resolve an investigation file path with path-traversal protection.
 
     Rejects any ID that contains characters outside ``[\\w-]`` and verifies
     the normalised path stays inside INVESTIGATIONS_DIR.
-
-    Returns the realpath string so CodeQL can verify the normpath+startswith
-    sanitisation pattern without re-wrapping in Path().
     """
     if not _SAFE_INV_ID.fullmatch(inv_id):
         raise HTTPException(status_code=400, detail="Invalid investigation ID")
@@ -287,11 +373,118 @@ def _safe_investigation_path(inv_id: str) -> str:
     fullpath = os.path.realpath(os.path.join(base, f"{inv_id}.md"))
     if not fullpath.startswith(base + os.sep):
         raise HTTPException(status_code=400, detail="Invalid investigation ID")
-    return fullpath
+    return Path(fullpath)
 
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60]
+
+
+def _refresh_instance_metadata() -> None:
+    token = _imds_token()
+    _INSTANCE_METADATA["instance_id"] = _imds_get("latest/meta-data/instance-id", token=token)
+    if not _INSTANCE_METADATA.get("region"):
+        _INSTANCE_METADATA["region"] = _imds_get("latest/meta-data/placement/region", token=token)
+    _INSTANCE_METADATA["public_ip"] = _imds_get("latest/meta-data/public-ipv4", token=token)
+
+
+def _imds_token() -> str | None:
+    req = urllib.request.Request(
+        "http://169.254.169.254/latest/api/token",
+        method="PUT",
+        headers={"X-aws-ec2-metadata-token-ttl-seconds": "21600"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=0.3) as response:
+            return response.read().decode("utf-8").strip() or None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return None
+
+
+def _imds_get(path: str, *, token: str | None) -> str | None:
+    headers = {"X-aws-ec2-metadata-token": token} if token else {}
+    req = urllib.request.Request(f"http://169.254.169.254/{path}", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=0.3) as response:
+            return response.read().decode("utf-8").strip() or None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return None
+
+
+def _check_llm_connectivity() -> DeepHealthCheck:
+    provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
+    if provider != "bedrock":
+        return DeepHealthCheck(
+            name="LLM provider",
+            status="passed",
+            detail="Bedrock check skipped (LLM_PROVIDER is not bedrock).",
+        )
+
+    region = _INSTANCE_METADATA.get("region") or os.getenv("AWS_REGION") or "us-east-1"
+    try:
+        import boto3
+
+        bedrock = boto3.client("bedrock", region_name=region)
+        bedrock.list_foundation_models(byProvider="Anthropic")
+        return DeepHealthCheck(
+            name="Bedrock connectivity",
+            status="passed",
+            detail=f"Connected to Bedrock in {region}.",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return DeepHealthCheck(
+            name="Bedrock connectivity",
+            status="failed",
+            detail=f"Failed to reach Bedrock in {region}: {type(exc).__name__}: {exc}",
+        )
+
+
+def _check_disk_health() -> DeepHealthCheck:
+    usage = shutil.disk_usage("/")
+    if usage.total == 0:
+        return DeepHealthCheck(
+            name="Disk", status="missing", detail="Unable to determine disk size."
+        )
+    used_pct = int((usage.used / usage.total) * 100)
+    status = "passed" if used_pct < 85 else "warn"
+    detail = f"{used_pct}% used ({usage.used // (1024**3)}GiB / {usage.total // (1024**3)}GiB)"
+    return DeepHealthCheck(name="Disk", status=status, detail=detail)
+
+
+def _check_memory_health() -> DeepHealthCheck:
+    meminfo_path = Path("/proc/meminfo")
+    if not meminfo_path.exists():
+        return DeepHealthCheck(
+            name="Memory",
+            status="missing",
+            detail="/proc/meminfo unavailable on this platform.",
+        )
+
+    values: dict[str, int] = {}
+    try:
+        for line in meminfo_path.read_text(encoding="utf-8").splitlines():
+            if ":" not in line:
+                continue
+            key, raw = line.split(":", 1)
+            number = raw.strip().split(" ", 1)[0]
+            if number.isdigit():
+                values[key] = int(number)
+    except OSError as exc:
+        return DeepHealthCheck(
+            name="Memory", status="missing", detail=f"Unable to read meminfo: {exc}"
+        )
+
+    total_kb = values.get("MemTotal")
+    avail_kb = values.get("MemAvailable")
+    if not total_kb or avail_kb is None:
+        return DeepHealthCheck(
+            name="Memory", status="missing", detail="Incomplete /proc/meminfo data."
+        )
+
+    used_pct = int(((total_kb - avail_kb) / total_kb) * 100)
+    status = "passed" if used_pct < 90 else "warn"
+    detail = f"{used_pct}% used ({(total_kb - avail_kb) // 1024}MiB / {total_kb // 1024}MiB)"
+    return DeepHealthCheck(name="Memory", status=status, detail=detail)
 
 
 def _make_id(alert_name: str) -> str:
@@ -316,12 +509,14 @@ def _save_investigation(
     pipeline_name: str,
     severity: str,
     result: dict[str, Any],
-) -> str:
+) -> Path:
     ts = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     if result.get("is_noise"):
         root_cause = "Alert classified as noise — no investigation performed."
-        report = "The alert was automatically classified as noise (non-actionable) during extraction."
+        report = (
+            "The alert was automatically classified as noise (non-actionable) during extraction."
+        )
         problem_md = result.get("problem_md") or "N/A"
     else:
         root_cause = result.get("root_cause") or "N/A"
@@ -336,7 +531,41 @@ def _save_investigation(
         f"## Report\n{report}\n\n"
         f"## Problem Description\n{problem_md}\n"
     )
-    safe_path = _safe_investigation_path(inv_id)
-    with open(safe_path, "w", encoding="utf-8") as fh:
-        fh.write(md)
-    return safe_path
+    path = _safe_investigation_path(inv_id)
+    path.write_text(md, encoding="utf-8")
+    return path
+
+
+def _normalized_request_alert(req: InvestigateRequest) -> dict[str, Any]:
+    """Merge optional Vercel URL input into the alert and resolve it when present."""
+    raw_alert = dict(req.raw_alert)
+    if req.vercel_url:
+        raw_alert.setdefault("vercel_url", req.vercel_url)
+        raw_alert.setdefault("vercel_log_url", req.vercel_url)
+    resolved_alert = enrich_remote_alert_from_vercel(raw_alert)
+    return resolved_alert if isinstance(resolved_alert, dict) else raw_alert
+
+
+def _execute_investigation(
+    *,
+    raw_alert: dict[str, Any],
+    alert_name: str | None,
+    pipeline_name: str | None,
+    severity: str | None,
+) -> tuple[dict[str, Any], str, str, str]:
+    """Run the RCA pipeline and return both the result and resolved metadata."""
+    from app.cli.investigate import resolve_investigation_context, run_investigation_cli
+
+    resolved_alert_name, resolved_pipeline_name, resolved_severity = resolve_investigation_context(
+        raw_alert=raw_alert,
+        alert_name=alert_name,
+        pipeline_name=pipeline_name,
+        severity=severity,
+    )
+    result = run_investigation_cli(
+        raw_alert=raw_alert,
+        alert_name=resolved_alert_name,
+        pipeline_name=resolved_pipeline_name,
+        severity=resolved_severity,
+    )
+    return result, resolved_alert_name, resolved_pipeline_name, resolved_severity

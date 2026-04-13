@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+__all__ = (
+    "ALERT_TEMPLATE_CHOICES",
+    "MANAGED_INTEGRATION_SERVICES",
+    "SAMPLE_ALERT_OPTIONS",
+    "SETUP_SERVICES",
+    "VERIFY_SERVICES",
+)
+
 ALERT_TEMPLATE_CHOICES: tuple[str, ...] = (
     "generic",
     "datadog",
@@ -23,27 +31,39 @@ SETUP_SERVICES: tuple[str, ...] = (
     "coralogix",
     "datadog",
     "grafana",
+    "github",
     "honeycomb",
+    "mariadb",
     "mongodb",
+    "mongodb_atlas",
     "opensearch",
     "rds",
-    "slack",
-    "tracer",
-)
-
-VERIFY_SERVICES: tuple[str, ...] = (
-    "aws",
-    "coralogix",
-    "datadog",
-    "grafana",
-    "honeycomb",
-    "mongodb",
-    "opsgenie",
+    "sentry",
     "slack",
     "tracer",
     "vercel",
 )
 
+VERIFY_SERVICES: tuple[str, ...] = (
+    "aws",
+    "bitbucket",
+    "clickhouse",
+    "coralogix",
+    "datadog",
+    "github",
+    "google_docs",
+    "grafana",
+    "honeycomb",
+    "kafka",
+    "mariadb",
+    "mongodb",
+    "mongodb_atlas",
+    "opsgenie",
+    "sentry",
+    "slack",
+    "tracer",
+    "vercel",
+)
 MANAGED_INTEGRATION_SERVICES: tuple[str, ...] = tuple(
     sorted(set(SETUP_SERVICES) | set(VERIFY_SERVICES))
 )

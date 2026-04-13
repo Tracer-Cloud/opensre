@@ -14,13 +14,15 @@ from rich.table import Table
 from rich.text import Text
 
 
-def _status_badge(status: str) -> Text:
+def status_badge(status: str) -> Text:
     normalized = status.strip().lower()
-    if normalized == "passed":
+    if normalized in {"passed", "pass", "ok", "healthy"}:
         return Text("PASSED", style="bold green")
+    if normalized in {"warn", "warning", "degraded", "outdated"}:
+        return Text("WARN", style="bold yellow")
     if normalized == "missing":
         return Text("MISSING", style="bold yellow")
-    if normalized == "failed":
+    if normalized in {"failed", "fail", "error", "unhealthy"}:
         return Text("FAILED", style="bold red")
     return Text(normalized.upper() or "UNKNOWN", style="bold")
 
@@ -60,9 +62,20 @@ def render_health_report(
     console.print()
     console.print(Panel.fit("[bold cyan]OpenSRE Health[/bold cyan]", border_style="cyan"))
 
+    from app.guardrails.rules import get_default_rules_path, load_rules
+
+    rules_path = get_default_rules_path()
+    if rules_path.exists():
+        rules = load_rules(rules_path)
+        enabled = [r for r in rules if r.enabled]
+        guardrails_status = f"{len(enabled)} rules active ({rules_path})"
+    else:
+        guardrails_status = "not configured"
+
     meta = Table.grid(padding=(0, 1))
     meta.add_row("[bold]Environment[/bold]", environment)
     meta.add_row("[bold]Integration store[/bold]", store_path_text)
+    meta.add_row("[bold]Guardrails[/bold]", guardrails_status)
     console.print(meta)
 
     summary = Text.assemble(
@@ -89,7 +102,7 @@ def render_health_report(
         table.add_row(
             result["service"] or "-",
             result["source"] or "-",
-            _status_badge(result["status"]),
+            status_badge(result["status"]),
             result["detail"] or "-",
         )
 

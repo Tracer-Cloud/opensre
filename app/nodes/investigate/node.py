@@ -53,12 +53,14 @@ def node_investigate(state: InvestigationState) -> dict:
 
     # Execute actions and summarize results
     execution_results = execute_actions(planned_actions, available_actions, available_sources)
+    plan_audit = state.get("plan_audit", {})
     evidence, executed_hypotheses, evidence_summary = summarize_execution_results(
         execution_results=execution_results,
         current_evidence=input_data.evidence,
         executed_hypotheses=input_data.executed_hypotheses,
         investigation_loop_count=input_data.investigation_loop_count,
         rationale=plan_rationale,
+        plan_audit=plan_audit,
     )
 
     # If we just discovered Grafana service names and the current service_name is still

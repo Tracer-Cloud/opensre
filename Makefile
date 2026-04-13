@@ -78,15 +78,15 @@ langgraph-deploy: check-langgraph check-docker check-langsmith-api-key
 
 # Run CloudWatch demo
 cloudwatch-demo:
-	$(PYTHON) -m tests.e2e.cloudwatch_demo.test_orchestrator
+	$(PYTHON) -m tests.e2e.cloudwatch_demo.test_aws
 
 # Run Datadog demo (local kind cluster + real DD monitor + investigation agent)
 datadog-demo:
-	$(PYTHON) -m tests.e2e.datadog.test_orchestrator
+	$(PYTHON) -m tests.e2e.datadog.test_local
 
 # Run CrashLoopBackOff  demo
 crashloop-demo:
-	$(PYTHON) -m tests.e2e.crashloop.test_orchestrator
+	$(PYTHON) -m tests.e2e.crashloop.test_local
 
 # Run Prefect ECS Fargate E2E test (alias for demo)
 prefect-demo:
@@ -273,7 +273,8 @@ clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
-	rm -rf .coverage htmlcov/ 2>/dev/null || true
+	find . -maxdepth 1 \( -name '.coverage' -o -name '.coverage.*' \) -delete 2>/dev/null || true
+	rm -rf htmlcov/ 2>/dev/null || true
 
 # Lint code
 lint:

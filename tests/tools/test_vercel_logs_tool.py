@@ -26,11 +26,13 @@ def test_extract_params_maps_source_fields(tool: VercelLogsTool) -> None:
         "vercel": {
             "api_token": "tok_abc",
             "team_id": "team_1",
+            "project_id": "prj_1",
             "deployment_id": "dpl_xyz",
             "connection_verified": True,
         }
     })
     assert params["api_token"] == "tok_abc"
+    assert params["project_id"] == "prj_1"
     assert params["deployment_id"] == "dpl_xyz"
     assert params["include_runtime_logs"] is True
 
@@ -79,8 +81,10 @@ def test_run_includes_runtime_logs_by_default(tool: VercelLogsTool) -> None:
     }
 
     with patch("app.tools.VercelLogsTool.make_vercel_client", return_value=mock_client):
-        result = tool.run(api_token="tok_test", deployment_id="dpl_xyz")
+        result = tool.run(api_token="tok_test", deployment_id="dpl_xyz", project_id="prj_9")
 
+    mock_client.get_runtime_logs.assert_called_once()
+    assert mock_client.get_runtime_logs.call_args.kwargs.get("project_id") == "prj_9"
     assert result["total_runtime_logs"] == 2
     assert len(result["runtime_logs"]) == 2
 

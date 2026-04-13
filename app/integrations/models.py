@@ -194,6 +194,77 @@ class MongoDBIntegrationConfig(StrictConfigModel):
         return normalized or "admin"
 
 
+class PostgreSQLIntegrationConfig(StrictConfigModel):
+    """Normalized PostgreSQL credentials used by resolution and verification flows."""
+
+    host: str
+    port: int = 5432
+    database: str
+    username: str = "postgres"
+    password: str = ""
+    ssl_mode: str = "prefer"
+    integration_id: str = ""
+
+    @field_validator("host", mode="before")
+    @classmethod
+    def _normalize_host(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("database", mode="before")
+    @classmethod
+    def _normalize_database(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _normalize_username(cls, value: object) -> str:
+        normalized = str(value or "postgres").strip()
+        return normalized or "postgres"
+
+    @field_validator("ssl_mode", mode="before")
+    @classmethod
+    def _normalize_ssl_mode(cls, value: object) -> str:
+        normalized = str(value or "prefer").strip()
+        return normalized or "prefer"
+
+class MariaDBIntegrationConfig(StrictConfigModel):
+    """Normalized MariaDB credentials used by resolution and verification flows."""
+
+    host: str
+    port: int = 3306
+    database: str
+    username: str
+    password: str = ""
+    ssl: bool = True
+    integration_id: str = ""
+
+    @field_validator("host", "database", "username", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+
+class MongoDBAtlasIntegrationConfig(StrictConfigModel):
+    """Normalized MongoDB Atlas API credentials used by resolution and verification flows."""
+
+    api_public_key: str
+    api_private_key: str
+    project_id: str
+    base_url: str = "https://cloud.mongodb.com/api/atlas/v2"
+    integration_id: str = ""
+
+    @field_validator("api_public_key", "api_private_key", "project_id", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: object) -> str:
+        normalized = str(value or "https://cloud.mongodb.com/api/atlas/v2").strip().rstrip("/")
+        return normalized or "https://cloud.mongodb.com/api/atlas/v2"
+
+
 class GoogleDocsIntegrationConfig(StrictConfigModel):
     """Normalized Google Docs (Drive API) credentials for incident report generation."""
 
@@ -210,19 +281,17 @@ class GoogleDocsIntegrationConfig(StrictConfigModel):
     @field_validator("timeout_seconds", mode="before")
     @classmethod
     def _validate_timeout(cls, value: object) -> int:
-        """Validate timeout is a positive integer with reasonable bounds."""
-        # Handle string or numeric input
         if isinstance(value, str):
             try:
                 timeout = int(value)
             except ValueError:
                 return 30
-        elif isinstance(value, (int, float)):
+        elif isinstance(value, int | float):
             timeout = int(value)
         else:
             return 30
-        # Enforce reasonable bounds: 5 seconds minimum, 300 seconds maximum
         return max(5, min(timeout, 300))
+
 
 class GitLabIntegrationConfig(StrictConfigModel):
     """Normalized Gitlab credentials used by resolution and verification flows."""
@@ -230,6 +299,7 @@ class GitLabIntegrationConfig(StrictConfigModel):
     url: str
     access_token: str
     integration_id: str = ""
+
 
 class OpsGenieIntegrationConfig(StrictConfigModel):
     """Normalized OpsGenie credentials used by resolution and verification flows."""
@@ -243,6 +313,19 @@ class OpsGenieIntegrationConfig(StrictConfigModel):
     def _normalize_region(cls, value: object) -> str:
         raw = str(value or "us").strip().lower()
         return raw if raw in ("us", "eu") else "us"
+
+
+class NotionIntegrationConfig(StrictConfigModel):
+    """Normalized Notion credentials used by resolution and verification flows."""
+
+    api_key: str
+    database_id: str
+    integration_id: str = ""
+
+    @field_validator("api_key", "database_id", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
 
 
 class PrefectIntegrationConfig(StrictConfigModel):
@@ -283,12 +366,16 @@ class EffectiveIntegrations(StrictConfigModel):
     github: EffectiveIntegrationEntry | None = None
     sentry: EffectiveIntegrationEntry | None = None
     mongodb: EffectiveIntegrationEntry | None = None
+    mongodb_atlas: EffectiveIntegrationEntry | None = None
+    mariadb: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
     gitlab: EffectiveIntegrationEntry | None = None
     vercel: EffectiveIntegrationEntry | None = None
     jira: EffectiveIntegrationEntry | None = None
     opsgenie: EffectiveIntegrationEntry | None = None
+    notion: EffectiveIntegrationEntry | None = None
     prefect: EffectiveIntegrationEntry | None = None
     kafka: EffectiveIntegrationEntry | None = None
     clickhouse: EffectiveIntegrationEntry | None = None
+    postgresql: EffectiveIntegrationEntry | None = None
     bitbucket: EffectiveIntegrationEntry | None = None
