@@ -39,8 +39,8 @@ MARIADB_SSL=true
 | `MARIADB_HOST` | — | **Required.** MariaDB server hostname or IP |
 | `MARIADB_PORT` | `3306` | MariaDB server port |
 | `MARIADB_DATABASE` | — | **Required.** Target database for slow-query analysis |
-| `MARIADB_USERNAME` | _(empty)_ | Database user |
-| `MARIADB_PASSWORD` | _(empty)_ | Database password |
+| `MARIADB_USERNAME` | — | **Required.** Database user |
+| `MARIADB_PASSWORD` | _(empty)_ | Database password; required unless the user is configured for passwordless authentication |
 | `MARIADB_SSL` | `true` | Use TLS with certificate verification |
 
 ### Option 3: Persistent store
