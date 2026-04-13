@@ -99,7 +99,7 @@ Returns a curated set of key metrics from `SHOW GLOBAL STATUS` — thread counts
 
 ### InnoDB status
 
-Runs `SHOW ENGINE INNODB STATUS` and returns the full engine status text (truncated to 4 KB). Useful for investigating deadlocks, buffer pool pressure, and I/O patterns.
+Runs `SHOW ENGINE INNODB STATUS` and returns the engine status text, truncated to 4000 characters with a truncation marker appended when shortening occurs. Useful for investigating deadlocks, buffer pool pressure, and I/O patterns.
 
 ### Slow queries
 
