@@ -41,7 +41,7 @@ dependencies = [
     # Utilities
     "python-dotenv>=1.0.0",
     "click>=8.1.0",
-    "rich>=13.0.0",
+    "rich>=15.0.0",
     "questionary>=2.1.0",
     "PyYAML>=6.0",
     # OpenTelemetry
