@@ -97,12 +97,10 @@ def sync_provider_env(
     keys_to_remove: set[str] = set()
     for p in SUPPORTED_PROVIDERS:
         keys_to_remove |= _provider_specific_keys(p)
-    active_non_secret: set[str] = {provider.model_env}
-        stale_keys |= _provider_specific_keys(p)
 
     # Keep the active provider's model keys but always remove API key entries
     # (API keys are persisted via the system keyring, not .env).
-    active_keys = {provider.model_env}
+    active_non_secret: set[str] = {provider.model_env}
     if provider.legacy_model_env:
         active_non_secret.add(provider.legacy_model_env)
     keys_to_remove -= active_non_secret
