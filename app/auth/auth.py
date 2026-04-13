@@ -64,7 +64,7 @@ async def on_thread_create(ctx: Auth.types.AuthContext, value: dict[str, Any]) -
 
 @auth.on.threads.read
 async def on_thread_read(
-    ctx: Auth.types.AuthContext,
+    ctx: Auth.types.AuthContext,  # noqa: ARG001
     value: Any,  # noqa: ARG001
 ) -> None:
     return None
@@ -72,7 +72,7 @@ async def on_thread_read(
 
 @auth.on.threads.update
 async def on_thread_update(
-    ctx: Auth.types.AuthContext,
+    ctx: Auth.types.AuthContext,  # noqa: ARG001
     value: Any,  # noqa: ARG001
 ) -> None:
     return None
@@ -80,7 +80,7 @@ async def on_thread_update(
 
 @auth.on.threads.delete
 async def on_thread_delete(
-    ctx: Auth.types.AuthContext,
+    ctx: Auth.types.AuthContext,  # noqa: ARG001
     value: Any,  # noqa: ARG001
 ) -> None:
     return None
@@ -93,7 +93,7 @@ async def on_thread_search(ctx: Auth.types.AuthContext, value: Any) -> dict[str,
 
 @auth.on.threads.create_run
 async def on_thread_create_run(
-    ctx: Auth.types.AuthContext,
+    ctx: Auth.types.AuthContext,  # noqa: ARG001
     value: Any,  # noqa: ARG001
 ) -> None:
     return None

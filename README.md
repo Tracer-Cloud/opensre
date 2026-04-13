@@ -467,6 +467,10 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/49764726?v=4" width="100" alt="farazghani"/>
             <br />
             <sub><b>farazghani</b></sub>
+        <a href="https://github.com/harshareddy832">
+            <img src="https://avatars.githubusercontent.com/u/53609097?v=4" width="100" alt="harshareddy832"/>
+            <br />
+            <sub><b>harshareddy832</b></sub>
         </a>
     </td>
 		</tr>

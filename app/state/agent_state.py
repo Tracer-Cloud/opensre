@@ -84,6 +84,9 @@ class AgentState(TypedDict, total=False):
     # Slack context (when triggered from Slack message)
     slack_context: dict[str, Any]
 
+    # Discord context (when triggered from Discord interaction)
+    discord_context: dict[str, Any]
+
     # LangGraph context (injected from config by inject_auth_node)
     thread_id: str
     run_id: str
@@ -145,6 +148,7 @@ class AgentStateModel(StrictConfigModel):
     executed_hypotheses: list[dict[str, Any]] = Field(default_factory=list)
     investigation_started_at: float = 0.0
     slack_context: dict[str, Any] = Field(default_factory=dict)
+    discord_context: dict[str, Any] = Field(default_factory=dict)
     thread_id: str = ""
     run_id: str = ""
     auth_token: str = Field(default="", alias="_auth_token", exclude=True)

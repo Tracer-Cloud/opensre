@@ -77,6 +77,11 @@ def generate_report(state: InvestigationState) -> dict:
     _token = slack_ctx.get("access_token")
     _alert_ts = slack_ctx.get("ts") or slack_ctx.get("thread_ts")
 
+    resolved = state.get("resolved_integrations") or {}
+    discord_creds = resolved.get("discord", {})
+    logger.debug("[publish] slack_ctx=%s", slack_ctx)
+    logger.debug("[publish] discord creds present=%s keys=%s", bool(discord_creds), list(discord_creds.keys()) if discord_creds else [])
+
     report_posted, delivery_error = send_slack_report(
         slack_message,
         channel=_channel,
@@ -85,6 +90,7 @@ def generate_report(state: InvestigationState) -> dict:
         blocks=all_blocks,
     )
 
+    logger.debug("[publish] slack delivery: posted=%s channel=%s thread_ts=%s error=%s", report_posted, _channel, thread_ts, delivery_error)
     if report_posted and _token and _channel and _alert_ts:
         from app.utils.slack_delivery import swap_reaction
 
@@ -93,6 +99,27 @@ def generate_report(state: InvestigationState) -> dict:
         raise RuntimeError(
             f"[publish] Slack delivery failed: channel={_channel}, thread_ts={thread_ts}, reason={delivery_error}"
         )
+
+    # Discord delivery — uses integration credentials if configured
+    if discord_creds:
+        from app.utils.discord_delivery import send_discord_report
+        discord_ctx = state.get("discord_context") or {}
+        bot_token = discord_ctx.get("bot_token") or discord_creds.get("bot_token", "")
+        channel_id = discord_ctx.get("channel_id") or discord_creds.get("default_channel_id", "")
+        thread_id = discord_ctx.get("thread_id", "")
+        logger.debug("[publish] discord delivery: channel_id=%s thread_id=%s bot_token_present=%s", channel_id, thread_id, bool(bot_token))
+        if bot_token and channel_id:
+            discord_posted, discord_error = send_discord_report(
+                slack_message,
+                {"bot_token": bot_token, "channel_id": channel_id, "thread_id": thread_id},
+            )
+            logger.debug("[publish] discord delivery: posted=%s error=%s", discord_posted, discord_error)
+            if not discord_posted:
+                logger.warning("[publish] Discord delivery failed: channel=%s error=%s", channel_id, discord_error)
+        else:
+            logger.debug("[publish] discord delivery: skipped — bot_token_present=%s channel_id=%s", bool(bot_token), channel_id)
+    else:
+        logger.debug("[publish] discord delivery: no discord integration configured")
 
     # GitLab MR write-back (opt-in via GITLAB_MR_WRITEBACK env var)
     if os.getenv("GITLAB_MR_WRITEBACK", "").lower() in ("true", "1", "yes"):

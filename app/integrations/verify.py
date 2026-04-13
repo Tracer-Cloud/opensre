@@ -13,6 +13,7 @@ from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.config import get_tracer_base_url
 from app.integrations.clients.confluence import build_confluence_config, validate_confluence_config
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
+from app.integrations.mariadb import build_mariadb_config, validate_mariadb_config
 from app.integrations.models import (
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
@@ -54,6 +55,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "mongodb",
     "postgresql",
     "mongodb_atlas",
+    "mariadb",
     "google_docs",
     "vercel",
     "opsgenie",
@@ -61,6 +63,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "clickhouse",
     "bitbucket",
     "confluence",
+    "discord",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -283,6 +286,35 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 },
             }
 
+    mariadb_integration = classified_integrations.get("mariadb")
+    if isinstance(mariadb_integration, dict):
+        effective["mariadb"] = {
+            "source": source_by_service.get("mariadb", "local env"),
+            "config": {
+                "host": str(mariadb_integration.get("host", "")).strip(),
+                "port": mariadb_integration.get("port", 3306),
+                "database": str(mariadb_integration.get("database", "")).strip(),
+                "username": str(mariadb_integration.get("username", "")).strip(),
+                "password": str(mariadb_integration.get("password", "")).strip(),
+                "ssl": mariadb_integration.get("ssl", True),
+            },
+        }
+    else:
+        mariadb_host = os.getenv("MARIADB_HOST", "").strip()
+        mariadb_database = os.getenv("MARIADB_DATABASE", "").strip()
+        if mariadb_host and mariadb_database:
+            effective["mariadb"] = {
+                "source": "local env",
+                "config": {
+                    "host": mariadb_host,
+                    "port": int(os.getenv("MARIADB_PORT", "3306").strip() or "3306") if os.getenv("MARIADB_PORT", "3306").strip().isdigit() else 3306,
+                    "database": mariadb_database,
+                    "username": os.getenv("MARIADB_USERNAME", "").strip(),
+                    "password": os.getenv("MARIADB_PASSWORD", "").strip(),
+                    "ssl": os.getenv("MARIADB_SSL", "true").strip().lower() in ("true", "1", "yes"),
+                },
+            }
+
     google_docs_integration = classified_integrations.get("google_docs")
     if isinstance(google_docs_integration, dict):
         effective["google_docs"] = {
@@ -416,6 +448,30 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                 "space_key": str(confluence_integration.get("space_key", "")).strip(),
             },
         }
+
+    discord_integration = classified_integrations.get("discord")
+    if isinstance(discord_integration, dict):
+        effective["discord"] = {
+            "source": source_by_service.get("discord", "local env"),
+            "config": {
+                "bot_token": str(discord_integration.get("bot_token", "")).strip(),
+                "application_id": str(discord_integration.get("application_id", "")).strip(),
+                "public_key": str(discord_integration.get("public_key", "")).strip(),
+                "default_channel_id": discord_integration.get("default_channel_id"),
+            },
+        }
+    else:
+        discord_bot_token = os.getenv("DISCORD_BOT_TOKEN", "").strip()
+        if discord_bot_token:
+            effective["discord"] = {
+                "source": "local env",
+                "config": {
+                    "bot_token": discord_bot_token,
+                    "application_id": os.getenv("DISCORD_APPLICATION_ID", "").strip(),
+                    "public_key": os.getenv("DISCORD_PUBLIC_KEY", "").strip(),
+                    "default_channel_id": os.getenv("DISCORD_DEFAULT_CHANNEL_ID", "").strip() or None,
+                },
+            }
 
     return EffectiveIntegrations.model_validate(effective).model_dump(exclude_none=True)
 
@@ -749,6 +805,17 @@ def _verify_mongodb_atlas(source: str, config: dict[str, Any]) -> dict[str, str]
     )
 
 
+def _verify_mariadb(source: str, config: dict[str, Any]) -> dict[str, str]:
+    mariadb_config = build_mariadb_config(config)
+    result = validate_mariadb_config(mariadb_config)
+    return _result(
+        "mariadb",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
     """Validate Google Docs credentials and folder access."""
     from app.services.google_docs import GoogleDocsClient
@@ -906,6 +973,39 @@ def _verify_confluence(source: str, config: dict[str, Any]) -> dict[str, str]:
         source,
         "passed" if result.ok else "failed",
         result.detail,
+      
+      
+def _verify_discord(source: str, config: dict[str, Any]) -> dict[str, str]:
+    bot_token = str(config.get("bot_token", "")).strip()
+    if not bot_token:
+        return _result("discord", source, "missing", "Missing bot token.")
+
+    try:
+        response = httpx.get(
+            "https://discord.com/api/v10/users/@me",
+            headers={"Authorization": f"Bot {bot_token}"},
+            timeout=10.0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _result("discord", source, "failed", f"Bot token validation failed: {exc}")
+
+    if not response.is_success:
+        return _result(
+            "discord",
+            source,
+            "failed",
+            f"Discord API returned {response.status_code}: {response.text[:200]}",
+        )
+
+    data = response.json()
+
+    username = str(data.get("username", "")).strip()
+    bot_id = str(data.get("id", "")).strip()
+    return _result(
+        "discord",
+        source,
+        "passed",
+        f"Connected to Discord API as bot {username} (id {bot_id}).",
     )
 
 
@@ -967,6 +1067,8 @@ def verify_integrations(
             results.append(_verify_postgresql(source, config))
         elif current_service == "mongodb_atlas":
             results.append(_verify_mongodb_atlas(source, config))
+        elif current_service == "mariadb":
+            results.append(_verify_mariadb(source, config))
         elif current_service == "google_docs":
             results.append(_verify_google_docs(source, config))
         elif current_service == "vercel":
@@ -981,6 +1083,8 @@ def verify_integrations(
             results.append(_verify_bitbucket(source, config))
         elif current_service == "confluence":
             results.append(_verify_confluence(source, config))
+        elif current_service == "discord":
+            results.append(_verify_discord(source, config))
 
     return results
 

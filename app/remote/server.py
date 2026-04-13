@@ -28,9 +28,21 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
+from nacl.exceptions import BadSignatureError
+from nacl.signing import VerifyKey
 from pydantic import BaseModel
-from starlette.responses import StreamingResponse
+from starlette.responses import JSONResponse, StreamingResponse
 
 from app.remote.vercel_poller import (
     VercelInvestigationCandidate,
@@ -42,7 +54,7 @@ from app.version import get_version
 
 load_dotenv(override=False)
 
-INVESTIGATIONS_DIR = Path("/opt/opensre/investigations")
+INVESTIGATIONS_DIR = Path(os.getenv("INVESTIGATIONS_DIR", "/opt/opensre/investigations"))
 _AUTH_KEY = os.getenv("OPENSRE_API_KEY", "")
 _STARTED_AT = datetime.now(tz=UTC)
 _START_TIME_MONOTONIC = time.monotonic()
@@ -84,6 +96,9 @@ app = FastAPI(
     dependencies=[Depends(_check_api_key)],
 )
 
+# Separate router to bypass global _check_api_key, as Discord controls the request format
+discord_router = APIRouter()
+
 
 # ---------------------------------------------------------------------------
 # Models
@@ -113,15 +128,152 @@ class InvestigationMeta(BaseModel):
     alert_name: str
 
 
+class DiscordInteraction(BaseModel):
+    type: int
+    data: dict[str, Any] | None = None
+    token: str | None = None
+    application_id: str | None = None
+    channel_id: str | None = None
+
+
 class DeepHealthCheck(BaseModel):
     name: str
     status: str
     detail: str
 
+# ---------------------------------------------------------------------------
+# Discord helpers
+# ---------------------------------------------------------------------------
+
+_DISCORD_PUBLIC_KEY = os.getenv("DISCORD_PUBLIC_KEY", "")
+_DISCORD_APPLICATION_ID = os.getenv("DISCORD_APPLICATION_ID", "")
+
+
+def _verify_discord_signature(body: bytes, signature: str, timestamp: str) -> None:
+    if not _DISCORD_PUBLIC_KEY:
+        raise HTTPException(status_code=500, detail="DISCORD_PUBLIC_KEY not configured")
+    try:
+        VerifyKey(bytes.fromhex(_DISCORD_PUBLIC_KEY)).verify(
+            timestamp.encode() + body, bytes.fromhex(signature)
+        )
+    except (BadSignatureError, ValueError) as exc:
+        raise HTTPException(status_code=401, detail="Invalid request signature") from exc
+
+
+def _discord_post_followup(
+    application_id: str,
+    interaction_token: str,
+    *,
+    content: str = "",
+    embeds: list[dict[str, Any]] | None = None,
+) -> None:
+    """Complete a deferred Discord interaction by posting a followup message."""
+    import httpx
+
+    payload: dict[str, Any] = {}
+    if content:
+        payload["content"] = content
+    if embeds:
+        payload["embeds"] = embeds
+    try:
+        resp = httpx.post(
+            f"https://discord.com/api/v10/webhooks/{application_id}/{interaction_token}",
+            json=payload,
+            timeout=15.0,
+        )
+        if resp.status_code not in (200, 204):
+            logger.warning("[discord] followup failed: %s %s", resp.status_code, resp.text[:200])
+    except Exception:
+        logger.exception("[discord] followup request failed")
+
+
+async def _run_discord_investigation(interaction: DiscordInteraction) -> None:
+    """Background task: run investigation from a Discord slash command and post results."""
+    # Extract the alert value from slash command options
+    options = (interaction.data or {}).get("options", [])
+    alert_raw = next(
+        (str(opt.get("value", "")) for opt in options if opt.get("name") == "alert"), ""
+    )
+
+    # Accept JSON alert payload or plain-text description
+    try:
+        raw_alert: dict[str, Any] = _json.loads(alert_raw)
+    except (_json.JSONDecodeError, ValueError):
+        raw_alert = {"alert_name": alert_raw, "description": alert_raw}
+
+    try:
+        result, resolved_name, _pipeline, _sev = await asyncio.to_thread(
+            _execute_investigation,
+            raw_alert=raw_alert,
+            alert_name=raw_alert.get("alert_name"),
+            pipeline_name=raw_alert.get("pipeline_name"),
+            severity=raw_alert.get("severity"),
+        )
+    except Exception:
+        logger.exception("[discord] background investigation failed")
+        app_id = interaction.application_id or _DISCORD_APPLICATION_ID
+        if app_id and interaction.token:
+            _discord_post_followup(
+                app_id,
+                interaction.token,
+                content="Investigation failed — check server logs for details.",
+            )
+        return
+
+    root_cause = result.get("root_cause") or "N/A"
+    report = result.get("report") or "N/A"
+    is_noise = bool(result.get("is_noise"))
+
+    def _truncate(text: str, limit: int = 1024) -> str:
+        return (text[: limit - 1] + "…") if len(text) > limit else text
+
+    raw_title = f"Investigation Complete: {resolved_name}"
+    embed: dict[str, Any] = {
+        "title": _truncate(raw_title, 256),
+        "color": 0x95A5A6 if is_noise else 0xE74C3C,
+        "fields": [
+            {"name": "Root Cause", "value": _truncate(root_cause), "inline": False},
+            {"name": "Report", "value": _truncate(report), "inline": False},
+        ],
+        "footer": {"text": "OpenSRE Investigation"},
+    }
+
+    # Post via interaction followup webhook (the deferred response requires this)
+    app_id = interaction.application_id or _DISCORD_APPLICATION_ID
+    if app_id and interaction.token:
+        await asyncio.to_thread(
+            _discord_post_followup, app_id, interaction.token, embeds=[embed]
+        )
+
 
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+
+@discord_router.post("/discord/interactions")
+async def discord_interactions(
+    request: Request, background_tasks: BackgroundTasks
+) -> Response:
+    body = await request.body()
+    sig = request.headers.get("X-Signature-Ed25519", "")
+    ts = request.headers.get("X-Signature-Timestamp", "")
+    _verify_discord_signature(body, sig, ts)
+
+    interaction = DiscordInteraction.model_validate_json(body)
+
+    if interaction.type == 1:  # PING — Discord endpoint verification
+        return JSONResponse({"type": 1})
+
+    if interaction.type == 2:  # APPLICATION_COMMAND — slash command
+        background_tasks.add_task(_run_discord_investigation, interaction)
+        # type 5 = DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE ("Bot is thinking…")
+        return JSONResponse({"type": 5})
+
+    raise HTTPException(status_code=400, detail="Unsupported interaction type")
+
+
+app.include_router(discord_router)
 
 
 @app.get("/ok")

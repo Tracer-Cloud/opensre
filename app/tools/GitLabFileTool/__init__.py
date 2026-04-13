@@ -17,7 +17,7 @@ def _get_gitlab_file_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     return {
         "project_id": gl["project_id"],
         "file_path": gl.get("file_path", ""),
-        "ref": gl.get("ref", "main"),
+        "ref": gl.get("ref_name", "main"),
         **_gl_creds(gl),
     }
 
