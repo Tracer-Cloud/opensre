@@ -39,7 +39,7 @@ dependencies = [
     # AWS
     "boto3>=1.34.0",
     # Utilities
-    "python-dotenv>=1.0.0",
+    "python-dotenv>=1.2.2",
     "click>=8.1.0",
     "rich>=13.0.0",
     "questionary>=2.1.0",
