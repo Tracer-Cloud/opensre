@@ -92,7 +92,7 @@ kafka = [
     "confluent-kafka>=2.14.0",
 ]
 clickhouse = [
-    "clickhouse-connect>=0.8.0",
+    "clickhouse-connect>=0.15.1",
 ]
 postgresql = [
     "psycopg2-binary>=2.9.0,<3.0.0",
