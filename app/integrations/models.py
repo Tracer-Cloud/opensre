@@ -400,8 +400,10 @@ class EffectiveIntegrations(StrictConfigModel):
     opsgenie: EffectiveIntegrationEntry | None = None
     notion: EffectiveIntegrationEntry | None = None
     prefect: EffectiveIntegrationEntry | None = None
+    posthog: EffectiveIntegrationEntry | None = None
     kafka: EffectiveIntegrationEntry | None = None
     clickhouse: EffectiveIntegrationEntry | None = None
     postgresql: EffectiveIntegrationEntry | None = None
     bitbucket: EffectiveIntegrationEntry | None = None
     discord: EffectiveIntegrationEntry | None = None
+    trello: EffectiveIntegrationEntry | None = None

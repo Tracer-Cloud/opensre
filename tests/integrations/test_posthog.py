@@ -87,15 +87,6 @@ def test_validate_posthog_config_unauthorized(monkeypatch: pytest.MonkeyPatch) -
             response=response,
         )
 
-    def mock_request(*args, **kwargs):
-        return httpx.Response(
-            200,
-            json={"results": [[750, 1000]]},
-            request=httpx.Request(
-                "POST",
-                "https://us.i.posthog.com/api/projects/123/query/",
-            ),
-        )
     monkeypatch.setattr("app.integrations.posthog._request_json", fake_request_json)
 
     result = validate_posthog_config(config)
@@ -123,6 +114,9 @@ def test_query_bounce_rate_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.period == "24h"
     assert isinstance(result.queried_at, datetime)
     assert result.queried_at.tzinfo == UTC
+=======
+    assert "401" in result.detail
+>>>>>>> 0a43141 (fix posthog tests and validation issues)
 
 
 def test_query_bounce_rate_clamps_to_one(monkeypatch: pytest.MonkeyPatch) -> None:
