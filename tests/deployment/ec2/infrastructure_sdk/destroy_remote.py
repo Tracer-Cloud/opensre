@@ -7,11 +7,11 @@ import time
 
 from botocore.exceptions import ClientError
 
+from app.deployment.ec2_config import delete_remote_outputs, load_remote_outputs
 from tests.deployment.ec2.infrastructure_sdk.instance import (
     delete_instance_profile,
     terminate_instance,
 )
-from tests.shared.infrastructure_sdk.config import delete_outputs, load_outputs
 from tests.shared.infrastructure_sdk.deployer import DEFAULT_REGION
 from tests.shared.infrastructure_sdk.resources.vpc import delete_security_group
 
@@ -34,7 +34,7 @@ def destroy() -> dict[str, list[str]]:
     results: dict[str, list[str]] = {"deleted": [], "failed": []}
 
     try:
-        outputs = load_outputs(STACK_NAME)
+        outputs = load_remote_outputs()
     except FileNotFoundError:
         print("No outputs file found — attempting cleanup by known names.")
         outputs = {}
@@ -81,7 +81,7 @@ def destroy() -> dict[str, list[str]]:
         results["failed"].append(msg)
         print(f"  - Failed: {e}")
 
-    delete_outputs(STACK_NAME)
+    delete_remote_outputs()
 
     elapsed = time.time() - start_time
     print()

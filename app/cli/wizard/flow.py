@@ -90,10 +90,16 @@ def validate_sentry_integration(**kwargs):
 
     return _validate(**kwargs)
 
+def validate_notion_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_notion_integration as _validate
+
+    return _validate(**kwargs)
+
 def validate_jira_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_jira_integration as _validate
 
     return _validate(**kwargs)
+
 
 def validate_google_docs_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_google_docs_integration as _validate
@@ -109,6 +115,12 @@ def validate_vercel_integration(**kwargs):
 
 def validate_opsgenie_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_opsgenie_integration as _validate
+
+    return _validate(**kwargs)
+
+
+def validate_discord_bot(**kwargs):
+    from app.cli.wizard.integration_health import validate_discord_bot as _validate
 
     return _validate(**kwargs)
 
@@ -779,23 +791,12 @@ def _configure_gitlab() -> tuple[str, str]:
         )
 
         with _console.status("Validating Gitlab integration...", spinner="dots"):
-            result = validate_gitlab_integration(
-                base_url=base_url,
-                auth_token=auth_token
-            )
+            result = validate_gitlab_integration(base_url=base_url, auth_token=auth_token)
         _render_integration_result("Gitlab", result)
         if result.ok:
-            credentials = {
-                "base_url": base_url,
-                "auth_token": auth_token
-            }
+            credentials = {"base_url": base_url, "auth_token": auth_token}
             upsert_integration("gitlab", {"credentials": credentials})
-            env_path = sync_env_values(
-                {
-                    "GITLAB_BASE_URL": base_url,
-                    "GITLAB_ACCESS_TOKEN": auth_token,
-                }
-            )
+            env_path = sync_env_values({"GITLAB_BASE_URL": base_url})
             return "Gitlab", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
@@ -855,10 +856,32 @@ def _configure_sentry() -> tuple[str, str]:
             return "Sentry", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
+def _configure_notion() -> tuple[str, str]:
+    _, credentials = _integration_defaults("notion")
+    _console.print("\n[bold]Notion Integration[/bold]")
+    _console.print("Create an internal integration at https://www.notion.so/my-integrations")
+    _console.print("then share your target database with the integration.\n")
+
+    while True:
+        api_key = _prompt_value("Notion API key (secret_...)", secret=True)
+        database_id = _prompt_value("Notion database ID")
+
+        with _console.status("Validating Notion connection...", spinner="dots"):
+            result = validate_notion_integration(api_key=api_key, database_id=database_id)
+        _render_integration_result("Notion", result)
+
+        if result.ok:
+            upsert_integration("notion", {"credentials": {"api_key": api_key, "database_id": database_id}})
+            env_path = sync_env_values({"NOTION_DATABASE_ID": database_id})
+            return "Notion", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
 def _configure_jira() -> tuple[str, str]:
     _, credentials = _integration_defaults("jira")
     _console.print("\n[bold]Jira Integration[/bold]")
-    _console.print("Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens\n")
+    _console.print(
+        "Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens\n"
+    )
 
     while True:
         base_url = _prompt_value("Jira base URL (e.g. https://myteam.atlassian.net)")
@@ -876,15 +899,21 @@ def _configure_jira() -> tuple[str, str]:
         _render_integration_result("Jira", result)
 
         if result.ok:
-            upsert_integration("jira", {"credentials": {
-                "base_url": base_url,
-                "email": email,
-                "api_token": api_token,
-                "project_key": project_key,
-            }})
+            upsert_integration(
+                "jira",
+                {
+                    "credentials": {
+                        "base_url": base_url,
+                        "email": email,
+                        "api_token": api_token,
+                        "project_key": project_key,
+                    }
+                },
+            )
             env_path = sync_env_values({})
             return "Jira", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
 
 def _configure_google_docs() -> tuple[str, str]:
     _, credentials = _integration_defaults("google_docs")
@@ -974,6 +1003,59 @@ def _configure_opsgenie() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_discord() -> tuple[str, str]:
+    _, credentials = _integration_defaults("discord")
+    _console.print(
+        "\n[bold]Discord Integration[/bold]\n"
+        "[dim]Get your credentials from https://discord.com/developers/applications.[/]\n"
+    )
+    while True:
+        bot_token = _prompt_value(
+            "Discord bot token",
+            default=_string_value(credentials.get("bot_token")),
+            secret=True,
+        )
+        application_id = _prompt_value(
+            "Discord application ID",
+            default=_string_value(credentials.get("application_id")),
+        )
+        public_key = _prompt_value(
+            "Discord public key (from Developer Portal)",
+            default=_string_value(credentials.get("public_key")),
+        )
+        default_channel_id = _prompt_value(
+            "Default channel ID (optional)",
+            default=_string_value(credentials.get("default_channel_id")),
+            allow_empty=True,
+        )
+        with _console.status("Validating Discord bot token...", spinner="dots"):
+            result = validate_discord_bot(bot_token=bot_token)
+        _render_integration_result("Discord", result)
+        if result.ok:
+            upsert_integration(
+                "discord",
+                {
+                    "credentials": {
+                        "bot_token": bot_token,
+                        "application_id": application_id,
+                        "public_key": public_key,
+                        "default_channel_id": default_channel_id,
+                    }
+                },
+            )
+            from app.integrations.cli import _register_discord_slash_command
+
+            _register_discord_slash_command(application_id, bot_token)
+            env_path = sync_env_values({
+                "DISCORD_BOT_TOKEN": bot_token,
+                "DISCORD_APPLICATION_ID": application_id,
+                "DISCORD_PUBLIC_KEY": public_key,
+                "DISCORD_DEFAULT_CHANNEL_ID": default_channel_id,
+            })
+            return "Discord", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_selected_integrations() -> tuple[list[str], str | None]:
     configured: list[str] = []
     last_env_path: str | None = None
@@ -996,6 +1078,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         Choice(value="honeycomb", label="Honeycomb", hint="Query traces and spans from Honeycomb"),
         Choice(value="coralogix", label="Coralogix", hint="Query logs from Coralogix DataPrime"),
         Choice(value="slack", label="Slack", hint="Send findings to a webhook or channel"),
+        Choice(value="discord", label="Discord", hint="Trigger investigations via slash commands and post findings to threads"),
         Choice(value="aws", label="AWS", hint="Inspect CloudWatch, EKS, and account resources"),
         Choice(
             value="github", label="GitHub MCP", hint="Let the agent inspect repos, PRs, and issues"
@@ -1003,9 +1086,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         Choice(
             value="sentry", label="Sentry", hint="Investigate errors, events, and issue history"
         ),
-        Choice(
-            value="gitlab", label="Gitlab", hint="Let the agent inspect repos, PRs, and issues"
-        ),
+        Choice(value="gitlab", label="Gitlab", hint="Let the agent inspect repos, PRs, and issues"),
         Choice(
             value="google_docs",
             label="Google Docs",
@@ -1014,7 +1095,9 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         Choice(
             value="vercel",
             label="Vercel",
-            hint="Monitor deployments and fetch runtime logs",
+            hint=(
+                "Deployments, build output, and logs tools; runtime-log API can lag the dashboard"
+            ),
         ),
         Choice(
             value="jira",
@@ -1025,6 +1108,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             value="opsgenie",
             label="OpsGenie",
             hint="Investigate alerts and triage state from OpsGenie",
+        ),
+        Choice(
+            value="notion",
+            label="Notion",
+            hint="Post investigation reports to a Notion database",
         ),
         Choice(
             value="skip",
@@ -1047,6 +1135,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "honeycomb": _configure_honeycomb,
         "coralogix": _configure_coralogix,
         "slack": _configure_slack,
+        "discord": _configure_discord,
         "aws": _configure_aws,
         "github": _configure_github_mcp,
         "sentry": _configure_sentry,
@@ -1055,6 +1144,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "vercel": _configure_vercel,
         "jira": _configure_jira,
         "opsgenie": _configure_opsgenie,
+        "notion": _configure_notion,
     }
     _SERVICE_LABELS = {
         "grafana_local": "grafana local",
@@ -1063,6 +1153,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "honeycomb": "honeycomb",
         "coralogix": "coralogix",
         "slack": "slack",
+        "discord": "discord",
         "aws": "aws",
         "github": "github mcp",
         "sentry": "sentry",
@@ -1071,9 +1162,15 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "vercel": "vercel",
         "jira": "jira",
         "opsgenie": "opsgenie",
+        "notion": "notion",
     }
 
     _step(f"Service · {_SERVICE_LABELS.get(selected_service, selected_service)}")
+    if selected_service == "vercel":
+        _console.print(
+            "[dim]Note: Vercel's runtime-log API may omit or delay lines compared to the "
+            "dashboard. Deployment and build checks still apply; there is no CLI incident browser.[/]"
+        )
     try:
         label, env_path = handlers[selected_service]()
         configured.append(label)
@@ -1118,7 +1215,9 @@ def run_wizard(_argv: list[str] | None = None) -> int:
     defaults = _local_defaults()
     saved_provider_value = defaults["provider"] if isinstance(defaults["provider"], str) else None
     saved_model_value = defaults["model"] if isinstance(defaults["model"], str) else ""
-    default_wizard_mode = defaults["wizard_mode"] if isinstance(defaults["wizard_mode"], str) else "quickstart"
+    default_wizard_mode = (
+        defaults["wizard_mode"] if isinstance(defaults["wizard_mode"], str) else "quickstart"
+    )
     default_provider_value = (
         saved_provider_value
         if saved_provider_value in PROVIDER_BY_VALUE

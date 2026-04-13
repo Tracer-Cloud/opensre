@@ -22,6 +22,7 @@ class InvestigateInput(BaseModel):
     )
     evidence: dict[str, Any] = Field(default_factory=dict, description="Current evidence")
     investigation_loop_count: int = Field(default=0, description="Number of investigation loops")
+    tool_budget: int = Field(default=10, ge=1, le=50, description="Maximum tools per step")
 
     @classmethod
     def from_state(cls, state: InvestigationState | dict[str, Any]) -> "InvestigateInput":
@@ -35,6 +36,7 @@ class InvestigateInput(BaseModel):
             executed_hypotheses=state.get("executed_hypotheses", []),
             evidence=state.get("evidence", {}),
             investigation_loop_count=state.get("investigation_loop_count", 0),
+            tool_budget=state.get("tool_budget", 10),
         )
 
 

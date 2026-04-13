@@ -314,6 +314,27 @@ def validate_sentry_integration(
     result = validate_sentry_config(config)
     return IntegrationHealthResult(ok=result.ok, detail=result.detail)
 
+def validate_notion_integration(*, api_key: str, database_id: str) -> IntegrationHealthResult:
+    """Validate Notion connectivity by querying the target database."""
+    import httpx
+    try:
+        resp = httpx.get(
+            f"https://api.notion.com/v1/databases/{database_id}",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Notion-Version": "2022-06-28",
+            },
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return IntegrationHealthResult(ok=True, detail="Notion database reachable and token valid.")
+        if resp.status_code == 401:
+            return IntegrationHealthResult(ok=False, detail="Notion API key is invalid or expired.")
+        if resp.status_code == 404:
+            return IntegrationHealthResult(ok=False, detail="Notion database not found. Check the database ID and sharing settings.")
+        return IntegrationHealthResult(ok=False, detail=f"Notion returned unexpected status {resp.status_code}.")
+    except Exception as e:
+        return IntegrationHealthResult(ok=False, detail=f"Notion validation failed: {e}")
 
 def validate_gitlab_integration(
     *,
@@ -457,3 +478,26 @@ def validate_opsgenie_integration(
             ok=False,
             detail=f"OpsGenie validation failed: {err}",
         )
+
+
+def validate_discord_bot(*, bot_token: str) -> IntegrationHealthResult:
+    """Validate a Discord bot token by calling the /users/@me endpoint."""
+    import httpx
+
+    try:
+        resp = httpx.get(
+            "https://discord.com/api/v10/users/@me",
+            headers={"Authorization": f"Bot {bot_token}"},
+            timeout=10,
+        )
+    except httpx.RequestError as err:
+        return IntegrationHealthResult(ok=False, detail=f"Discord API unreachable: {err}")
+
+    if resp.status_code == 200:
+        username = resp.json().get("username", "unknown")
+        return IntegrationHealthResult(ok=True, detail=f"Discord bot authenticated as @{username}.")
+    if resp.status_code == 401:
+        return IntegrationHealthResult(ok=False, detail="Discord bot token is invalid or revoked.")
+    return IntegrationHealthResult(
+        ok=False, detail=f"Discord API returned unexpected HTTP {resp.status_code}."
+    )

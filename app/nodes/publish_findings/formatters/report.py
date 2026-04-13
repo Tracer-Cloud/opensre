@@ -248,56 +248,6 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
     return ""
 
 
-def _compress_for_title(sentence: str) -> str:
-    """Extract a short, punchy title phrase from a root cause sentence."""
-    s = re.sub(
-        r"^(?:most likely|likely|probably|possibly|it appears(?: that)?|this suggests(?: that)?)\s+",
-        "",
-        sentence,
-        flags=re.IGNORECASE,
-    ).strip()
-    for connector in (" because ", " due to ", ", but ", " where ", ", causing ", ": "):
-        idx = s.lower().find(connector)
-        if idx != -1:
-            candidate = s[idx + len(connector):].strip()
-            if len(candidate) >= 10:
-                s = candidate
-                break
-    for stop in (",", ";"):
-        idx = s.find(stop)
-        if idx > 15:
-            s = s[:idx].strip()
-            break
-    if s:
-        s = s[0].upper() + s[1:]
-    if len(s) > 150:
-        s = s[:147].rsplit(" ", 1)[0].rstrip(" ,;") + "..."
-    return s
-
-
-def _build_report_title(
-    pipeline_name: str, alert_name: str | None, root_cause_sentence: str = ""
-) -> str:
-    """Build a descriptive report title.
-
-    Priority:
-    1. Compressed root cause phrase (most specific — the actual error)
-    2. Alert name (stripped of brackets/pipeline prefix)
-    3. "{pipeline_name} incident" (generic fallback)
-    """
-    if root_cause_sentence:
-        compressed = _compress_for_title(root_cause_sentence)
-        if compressed:
-            return f"{pipeline_name}: {compressed}"
-
-    if alert_name and alert_name.lower() not in ("unknown", "unknown alert", ""):
-        clean = re.sub(r"^\[.*?\]\s*", "", alert_name).strip()
-        if clean:
-            return f"{pipeline_name}: {clean}"
-
-    return f"{pipeline_name} incident"
-
-
 # ---------------------------------------------------------------------------
 # Text renderer (Slack mrkdwn fallback + terminal + ingest report_md)
 # ---------------------------------------------------------------------------

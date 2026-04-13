@@ -19,10 +19,11 @@ _HELP_COMMANDS: tuple[tuple[str, str], ...] = (
     ("onboard", "Run the interactive onboarding wizard."),
     ("investigate", "Run an RCA investigation against an alert payload."),
     ("deploy", "Deploy OpenSRE to a cloud environment (EC2)."),
-    ("remote", "Connect to a remote deployed agent."),
+    ("remote", "Connect to remote agents and hosted service ops."),
     ("tests", "Browse and run inventoried tests from the terminal."),
     ("integrations", "Manage local integration credentials."),
     ("health", "Check integration and agent setup status."),
+    ("doctor", "Run a full environment diagnostic."),
     ("update", "Check for a newer version and update if one is available."),
     ("version", "Print detailed version, Python and OS info."),
 )
@@ -32,14 +33,20 @@ _LANDING_COMMANDS: tuple[tuple[str, str], ...] = (
     ("opensre investigate -i alert.json", "Run RCA against an alert payload"),
     ("opensre deploy ec2", "Deploy investigation server on AWS EC2"),
     ("opensre remote --url <ip> health", "Check a remote deployed agent"),
+    ("opensre remote ops status", "Inspect hosted service status (Railway)"),
     ("opensre tests", "Browse and run inventoried tests"),
     ("opensre integrations list", "Show configured integrations"),
     ("opensre health", "Check integration and agent setup status"),
+    ("opensre doctor", "Run a full environment diagnostic"),
     ("opensre update", "Update to the latest version"),
     ("opensre version", "Print detailed version, Python and OS info"),
 )
 
 _SHORT_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("--json, -j", "Emit machine-readable JSON output."),
+    ("--verbose", "Print extra diagnostic information."),
+    ("--debug", "Print debug-level logs and traces."),
+    ("--yes, -y", "Auto-confirm all interactive prompts."),
     ("--version", "Show the version and exit."),
     ("-h, --help", "Show this message and exit."),
 )
