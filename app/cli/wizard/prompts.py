@@ -124,6 +124,18 @@ def _base_bindings(
     bindings.add(Keys.Right, eager=True)(_move_down)
     bindings.add(Keys.Left, eager=True)(_move_up)
 
+    # In PTY-driven tests we sometimes "paste" many `j` presses as a single burst write.
+    # When terminals enable bracketed paste, prompt_toolkit reports this as a BracketedPaste
+    # key event with the full pasted text in `event.data`. Treat a paste of `j` characters as
+    # repeated downward navigation so automation remains deterministic.
+    @bindings.add(Keys.BracketedPaste, eager=True)
+    def _handle_bracketed_paste(event: Any) -> None:
+        text = getattr(event, "data", "") or ""
+        if text and set(text) == {"j"}:
+            for _ in range(len(text)):
+                _move_down(event)
+            return
+
     if allow_toggle:
 
         @bindings.add(" ", eager=True)
