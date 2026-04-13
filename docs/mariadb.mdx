@@ -111,7 +111,7 @@ If `performance_schema` is disabled, the tool returns an informative note instea
 
 ### Replication status
 
-Runs `SHOW ALL SLAVES STATUS` (MariaDB multi-source replication) with a fallback to `SHOW SLAVE STATUS` for older versions. Returns all configured replication channels, each with I/O thread state, SQL thread state, seconds behind master, last error, and log positions.
+Runs `SHOW ALL REPLICAS STATUS` (MariaDB multi-source replication; alias: `SHOW ALL SLAVES STATUS` on older builds) with a fallback to `SHOW REPLICA STATUS`. Returns all configured replication channels, each with I/O thread state, SQL thread state, seconds behind primary, last error, and log positions.
 
 ## Verify
 
