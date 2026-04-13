@@ -40,15 +40,18 @@ async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
     except (JWTInvalidIssuerError, JWTMissingClaimError, JWTVerificationError) as e:
         raise Auth.exceptions.HTTPException(status_code=401, detail=str(e)) from e
 
-    return cast(Auth.types.MinimalUserDict, {
-        "identity": claims.sub,
-        "is_authenticated": True,
-        "org_id": claims.organization,
-        "organization_slug": claims.organization_slug,
-        "email": claims.email,
-        "full_name": claims.full_name,
-        "token": parts[1],  # Raw JWT for downstream API calls
-    })
+    return cast(
+        Auth.types.MinimalUserDict,
+        {
+            "identity": claims.sub,
+            "is_authenticated": True,
+            "org_id": claims.organization,
+            "organization_slug": claims.organization_slug,
+            "email": claims.email,
+            "full_name": claims.full_name,
+            "token": parts[1],  # Raw JWT for downstream API calls
+        },
+    )
 
 
 # Threads - no filtering to allow stateless runs
@@ -61,21 +64,24 @@ async def on_thread_create(ctx: Auth.types.AuthContext, value: dict[str, Any]) -
 
 @auth.on.threads.read
 async def on_thread_read(
-    ctx: Auth.types.AuthContext, value: Any  # noqa: ARG001
+    ctx: Auth.types.AuthContext,  # noqa: ARG001
+    value: Any,  # noqa: ARG001
 ) -> None:
     return None
 
 
 @auth.on.threads.update
 async def on_thread_update(
-    ctx: Auth.types.AuthContext, value: Any  # noqa: ARG001
+    ctx: Auth.types.AuthContext,  # noqa: ARG001
+    value: Any,  # noqa: ARG001
 ) -> None:
     return None
 
 
 @auth.on.threads.delete
 async def on_thread_delete(
-    ctx: Auth.types.AuthContext, value: Any  # noqa: ARG001
+    ctx: Auth.types.AuthContext,  # noqa: ARG001
+    value: Any,  # noqa: ARG001
 ) -> None:
     return None
 
@@ -87,7 +93,8 @@ async def on_thread_search(ctx: Auth.types.AuthContext, value: Any) -> dict[str,
 
 @auth.on.threads.create_run
 async def on_thread_create_run(
-    ctx: Auth.types.AuthContext, value: Any  # noqa: ARG001
+    ctx: Auth.types.AuthContext,  # noqa: ARG001
+    value: Any,  # noqa: ARG001
 ) -> None:
     return None
 

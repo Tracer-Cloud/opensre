@@ -701,9 +701,7 @@ def detect_sources(
                     or raw_alert.get("file_path", "")
                 ).strip(),
                 "since": _alert_since_iso(raw_alert),
-                "updated_after": str(
-                    annotations.get("startsAt") or raw_alert.get("startsAt", "")
-                ).strip(),
+                "updated_after": _alert_since_iso(raw_alert),
                 "gitlab_url": str(gitlab_int.get("base_url", "")).strip(),
                 "gitlab_token": str(gitlab_int.get("auth_token", "")).strip(),
                 "merge_request_iid": str(annotations.get("mr_iid", "")).strip(),
@@ -855,6 +853,18 @@ def detect_sources(
                 atlas_int.get("base_url", "https://cloud.mongodb.com/api/atlas/v2")
             ).strip(),
             "cluster_name": atlas_cluster,
+            "connection_verified": True,
+        }
+
+    mariadb_int = (resolved_integrations or {}).get("mariadb")
+    if mariadb_int and str(mariadb_int.get("host", "")).strip() and str(mariadb_int.get("database", "")).strip():
+        sources["mariadb"] = {
+            "host": str(mariadb_int.get("host", "")).strip(),
+            "port": mariadb_int.get("port", 3306),
+            "database": str(mariadb_int.get("database", "")).strip(),
+            "username": str(mariadb_int.get("username", "")).strip(),
+            "password": str(mariadb_int.get("password", "")).strip(),
+            "ssl": mariadb_int.get("ssl", True),
             "connection_verified": True,
         }
 

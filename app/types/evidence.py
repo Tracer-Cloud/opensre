@@ -21,6 +21,7 @@ EvidenceSource = Literal[
     "mongodb",
     "postgresql",
     "mongodb_atlas",
+    "mariadb",
     "kafka",
     "clickhouse",
     "google_docs",

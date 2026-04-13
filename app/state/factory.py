@@ -36,6 +36,7 @@ STATE_DEFAULTS: dict[str, Any] = {
     "hypotheses": [],
     "executed_hypotheses": [],
     "slack_context": {},
+    "discord_context": {},
     "thread_id": "",
     "run_id": "",
     "_auth_token": "",

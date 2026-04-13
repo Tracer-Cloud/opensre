@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -227,6 +228,22 @@ class PostgreSQLIntegrationConfig(StrictConfigModel):
         normalized = str(value or "prefer").strip()
         return normalized or "prefer"
 
+class MariaDBIntegrationConfig(StrictConfigModel):
+    """Normalized MariaDB credentials used by resolution and verification flows."""
+
+    host: str
+    port: int = 3306
+    database: str
+    username: str
+    password: str = ""
+    ssl: bool = True
+    integration_id: str = ""
+
+    @field_validator("host", "database", "username", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
 
 class MongoDBAtlasIntegrationConfig(StrictConfigModel):
     """Normalized MongoDB Atlas API credentials used by resolution and verification flows."""
@@ -329,6 +346,30 @@ class PrefectIntegrationConfig(StrictConfigModel):
     def _normalize_str(cls, value: object) -> str:
         return str(value or "").strip()
 
+class DiscordBotConfig(StrictConfigModel):
+    """Discord runtime config."""
+
+    bot_token: str          # Bot token for API calls
+    application_id: str = ""  # For slash command registration (required for inbound only)
+    public_key: str = ""      # For signature verification (required for inbound only)
+    default_channel_id: str | None = None  # Fallback for CLI-triggered findings
+
+    @field_validator("bot_token")
+    @classmethod
+    def _validate_bot_token(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("bot_token cannot be empty or just whitespace")
+        return v
+
+    @field_validator("public_key")
+    @classmethod
+    def _validate_public_key(cls, v: str) -> str:
+        if not v.strip():
+            return v  # optional — only needed for inbound interactions endpoint
+        if not re.fullmatch(r"[0-9a-fA-F]+", v):
+            raise ValueError("public_key must be a valid hexadecimal string")
+        return v
+
 
 class EffectiveIntegrationEntry(StrictConfigModel):
     """Resolved integration entry with source metadata."""
@@ -351,6 +392,7 @@ class EffectiveIntegrations(StrictConfigModel):
     sentry: EffectiveIntegrationEntry | None = None
     mongodb: EffectiveIntegrationEntry | None = None
     mongodb_atlas: EffectiveIntegrationEntry | None = None
+    mariadb: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
     gitlab: EffectiveIntegrationEntry | None = None
     vercel: EffectiveIntegrationEntry | None = None
@@ -362,3 +404,4 @@ class EffectiveIntegrations(StrictConfigModel):
     clickhouse: EffectiveIntegrationEntry | None = None
     postgresql: EffectiveIntegrationEntry | None = None
     bitbucket: EffectiveIntegrationEntry | None = None
+    discord: EffectiveIntegrationEntry | None = None

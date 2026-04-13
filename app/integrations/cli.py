@@ -7,7 +7,7 @@ Usage:
     python -m app.integrations remove <service>
     python -m app.integrations verify [service] [--send-slack-test]
 
-Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, postgresql, mongodb_atlas, slack, opensearch, rds, tracer, github, sentry, vercel
+Supported services: aws, coralogix, datadog, grafana, honeycomb, mariadb, discord, mongodb, mongodb_atlas, postgresql, slack, opensearch, rds, tracer, github, sentry, vercel
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from app.integrations.github_mcp import (
     print_github_mcp_validation_report,
     validate_github_mcp_config,
 )
+from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL
 from app.integrations.store import (
     STORE_PATH,
     get_integration,
@@ -49,21 +50,20 @@ def _json_echo(data: Any) -> None:
     print(json.dumps(data, indent=2, default=str))
 
 
-_SECRET_KEYS = frozenset(
-    {
-        "api_token",
-        "api_key",
-        "api_private_key",
-        "app_key",
-        "password",
-        "secret_access_key",
-        "session_token",
-        "jwt_token",
-        "webhook_url",
-        "auth_token",
-        "connection_string",
-    }
-)
+_SECRET_KEYS = frozenset({
+    "api_token",
+    "api_key",
+    "api_private_key",
+    "app_key",
+    "bot_token",
+    "password",
+    "secret_access_key",
+    "session_token",
+    "jwt_token",
+    "webhook_url",
+    "auth_token",
+    "connection_string",
+})
 
 
 def _p(label: str, default: str = "", secret: bool = False) -> str:
@@ -107,6 +107,15 @@ def _prompt_github_repo_report_level() -> GitHubMcpDisplayDetailLevel:
     if sel in ("summary", "standard", "full"):
         return cast(GitHubMcpDisplayDetailLevel, sel)
     return "summary"
+def _parse_port(raw: str, default: int = 3306) -> int:
+    """Parse a port string, returning *default* for invalid or out-of-range values."""
+    try:
+        port = int(raw)
+    except (ValueError, TypeError):
+        return default
+    if port < 1 or port > 65535:
+        return default
+    return port
 
 
 def _mask(obj: Any) -> Any:
@@ -347,6 +356,19 @@ def _setup_github() -> None:
 
     upsert_integration("github", {"credentials": credentials})
 
+def _setup_gitlab() -> None:
+    base_url = _p("Gitlab base URL", default=DEFAULT_GITLAB_BASE_URL)
+    auth_token = _p("Gitlab access token", secret=True)
+    upsert_integration(
+        "gitlab",
+        {
+            "credentials": {
+                "base_url": base_url,
+                "auth_token": auth_token
+            }
+        },
+    )
+
 
 def _setup_sentry() -> None:
     base_url = _p("Sentry URL", default="https://sentry.io")
@@ -399,6 +421,37 @@ def _setup_mongodb() -> None:
             }
         },
     )
+
+def _register_discord_slash_command(application_id: str, bot_token: str) -> None:
+    import httpx
+
+    url = f"https://discord.com/api/v10/applications/{application_id}/commands"
+    payload = {
+        "name": "investigate",
+        "description": "Trigger an OpenSRE investigation",
+        "options": [
+            {"name": "alert", "description": "Alert JSON or description", "type": 3, "required": True}
+        ],
+    }
+    resp = httpx.put(url, json=[payload], headers={"Authorization": f"Bot {bot_token}"}, timeout=10)
+    if resp.is_success:
+        print("  ✓ /investigate slash command registered.")
+    else:
+        print(f"  ⚠ Slash command registration failed ({resp.status_code}): {resp.text}")
+
+
+def _setup_discord() -> None:
+    bot_token = _p("Discord bot token", secret=True)
+    application_id = _p("Discord application ID")
+    public_key = _p("Discord public key (from Developer Portal)")
+    default_channel_id = _p("Default channel ID (optional)")
+    upsert_integration("discord", {"credentials": {
+        "bot_token": bot_token,
+        "application_id": application_id,
+        "public_key": public_key,
+        "default_channel_id": default_channel_id,
+    }})
+    _register_discord_slash_command(application_id, bot_token)
 
 
 def _setup_postgresql() -> None:
@@ -456,19 +509,58 @@ def _setup_mongodb_atlas() -> None:
     )
 
 
+def _setup_mariadb() -> None:
+    host = _p("Host (e.g. db.example.com)")
+    port = _p("Port", default="3306")
+    database = _p("Database name")
+    username = _p("Username")
+    password = _p("Password", secret=True)
+    ssl_choice = questionary.select(
+        "SSL enabled?",
+        choices=[
+            questionary.Choice("Yes", value="1"),
+            questionary.Choice("No", value="0"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if ssl_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    ssl = ssl_choice == "1"
+    if not host or not database or not username:
+        _die("host, database, and username are required.")
+    upsert_integration(
+        "mariadb",
+        {
+            "credentials": {
+                "host": host,
+                "port": _parse_port(port),
+                "database": database,
+                "username": username,
+                "password": password,
+                "ssl": ssl,
+            }
+        },
+    )
+
+
 _HANDLERS: dict[str, Any] = {
     "aws": _setup_aws,
     "coralogix": _setup_coralogix,
     "datadog": _setup_datadog,
     "grafana": _setup_grafana,
     "honeycomb": _setup_honeycomb,
+    "mariadb": _setup_mariadb,
+    "mongodb_atlas": _setup_mongodb_atlas,
     "slack": _setup_slack,
     "opensearch": _setup_opensearch,
     "rds": _setup_rds,
     "tracer": _setup_tracer,
     "github": _setup_github,
+    "gitlab": _setup_gitlab,
     "sentry": _setup_sentry,
     "mongodb": _setup_mongodb,
+    "discord": _setup_discord,
     "postgresql": _setup_postgresql,
 }
 

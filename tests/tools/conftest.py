@@ -128,6 +128,13 @@ def mock_agent_state(overrides: dict | None = None) -> dict[str, Any]:
             "project_id": "test-project-id",
             "base_url": "https://cloud.mongodb.com/api/atlas/v2",
         },
+        "mariadb": {
+            "host": "localhost",
+            "port": 3306,
+            "database": "testdb",
+            "username": "testuser",
+            "password": "",
+        },
     }
     if overrides:
         for key, value in overrides.items():

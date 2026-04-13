@@ -121,6 +121,12 @@ def validate_opsgenie_integration(**kwargs):
     return _validate(**kwargs)
 
 
+def validate_discord_bot(**kwargs):
+    from app.cli.wizard.integration_health import validate_discord_bot as _validate
+
+    return _validate(**kwargs)
+
+
 def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
 
@@ -1064,6 +1070,59 @@ def _configure_opsgenie() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_discord() -> tuple[str, str]:
+    _, credentials = _integration_defaults("discord")
+    _console.print(
+        "\n[bold]Discord Integration[/bold]\n"
+        "[dim]Get your credentials from https://discord.com/developers/applications.[/]\n"
+    )
+    while True:
+        bot_token = _prompt_value(
+            "Discord bot token",
+            default=_string_value(credentials.get("bot_token")),
+            secret=True,
+        )
+        application_id = _prompt_value(
+            "Discord application ID",
+            default=_string_value(credentials.get("application_id")),
+        )
+        public_key = _prompt_value(
+            "Discord public key (from Developer Portal)",
+            default=_string_value(credentials.get("public_key")),
+        )
+        default_channel_id = _prompt_value(
+            "Default channel ID (optional)",
+            default=_string_value(credentials.get("default_channel_id")),
+            allow_empty=True,
+        )
+        with _console.status("Validating Discord bot token...", spinner="dots"):
+            result = validate_discord_bot(bot_token=bot_token)
+        _render_integration_result("Discord", result)
+        if result.ok:
+            upsert_integration(
+                "discord",
+                {
+                    "credentials": {
+                        "bot_token": bot_token,
+                        "application_id": application_id,
+                        "public_key": public_key,
+                        "default_channel_id": default_channel_id,
+                    }
+                },
+            )
+            from app.integrations.cli import _register_discord_slash_command
+
+            _register_discord_slash_command(application_id, bot_token)
+            env_path = sync_env_values({
+                "DISCORD_BOT_TOKEN": bot_token,
+                "DISCORD_APPLICATION_ID": application_id,
+                "DISCORD_PUBLIC_KEY": public_key,
+                "DISCORD_DEFAULT_CHANNEL_ID": default_channel_id,
+            })
+            return "Discord", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_selected_integrations() -> tuple[list[str], str | None]:
     configured: list[str] = []
     last_env_path: str | None = None
@@ -1086,6 +1145,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         Choice(value="honeycomb", label="Honeycomb", hint="Query traces and spans from Honeycomb"),
         Choice(value="coralogix", label="Coralogix", hint="Query logs from Coralogix DataPrime"),
         Choice(value="slack", label="Slack", hint="Send findings to a webhook or channel"),
+        Choice(value="discord", label="Discord", hint="Trigger investigations via slash commands and post findings to threads"),
         Choice(value="aws", label="AWS", hint="Inspect CloudWatch, EKS, and account resources"),
         Choice(
             value="github", label="GitHub MCP", hint="Let the agent inspect repos, PRs, and issues"
@@ -1142,6 +1202,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "honeycomb": _configure_honeycomb,
         "coralogix": _configure_coralogix,
         "slack": _configure_slack,
+        "discord": _configure_discord,
         "aws": _configure_aws,
         "github": _configure_github_mcp,
         "sentry": _configure_sentry,
@@ -1159,6 +1220,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "honeycomb": "honeycomb",
         "coralogix": "coralogix",
         "slack": "slack",
+        "discord": "discord",
         "aws": "aws",
         "github": "github mcp",
         "sentry": "sentry",
