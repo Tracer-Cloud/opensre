@@ -177,9 +177,13 @@ def _discord_post_followup(
     if embeds:
         payload["embeds"] = embeds
     try:
+        headers: dict[str, str] = {}
+        if _DISCORD_BOT_TOKEN:
+            headers["Authorization"] = f"Bot {_DISCORD_BOT_TOKEN}"
         resp = httpx.post(
             f"https://discord.com/api/v10/webhooks/{application_id}/{interaction_token}",
             json=payload,
+            headers=headers or None,
             timeout=15.0,
         )
         if resp.status_code not in (200, 204):

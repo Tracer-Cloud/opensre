@@ -108,7 +108,6 @@ def _prompt_github_repo_report_level() -> GitHubMcpDisplayDetailLevel:
         return cast(GitHubMcpDisplayDetailLevel, sel)
     return "summary"
 
-
 def _parse_port(raw: str, default: int = 3306) -> int:
     """Parse a port string, returning *default* for invalid or out-of-range values."""
     try:
