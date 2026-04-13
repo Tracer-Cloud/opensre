@@ -83,6 +83,22 @@ opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 opensre update
 ```
 
+### Interactive mode
+
+Running `opensre` with no arguments enters a persistent REPL session — an incident response terminal in the style of Claude Code. Describe an alert in plain text, watch the investigation stream live, then ask follow-up questions that stay grounded in what just ran.
+
+```bash
+opensre
+# › MongoDB orders cluster is dropping connections since 14:00 UTC
+# ...live streaming investigation...
+# › why was the connection pool exhausted?
+# ...grounded follow-up answer...
+# › /status
+# › /exit
+```
+
+Slash commands: `/help`, `/status`, `/clear`, `/reset`, `/trust`, `/exit`. Ctrl+C cancels an in-flight investigation while keeping the session state intact.
+
 ---
 
 ## Remote Hosted Ops (Railway)
