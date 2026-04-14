@@ -72,7 +72,7 @@ def _alert_since_iso(raw_alert: dict[str, Any]) -> str:
             if alert_time.year >= 2000:
                 return (alert_time - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
         except (ValueError, TypeError):
-            pass  # Invalid or malformed timestamp string — fall through to the default below
+            return (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     return (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -908,6 +908,26 @@ def detect_sources(
             "region": str(opsgenie_int.get("region", "us")).strip(),
             "alert_id": alert_id,
             "query": opsgenie_query,
+            "connection_verified": True,
+        }
+
+    mysql_int = (resolved_integrations or {}).get("mysql")
+    if mysql_int and str(mysql_int.get("host", "")).strip() and str(mysql_int.get("database", "")).strip():
+        mysql_host = str(mysql_int.get("host", "")).strip()
+        mysql_database = str(mysql_int.get("database", "")).strip()
+        mysql_database = str(
+            annotations.get("mysql_database")
+            or annotations.get("database")
+            or mysql_database
+        ).strip()
+        mysql_table = str(
+            annotations.get("mysql_table") or annotations.get("table") or ""
+        ).strip()
+        sources["mysql"] = {
+            "host": mysql_host,
+            "port": mysql_int.get("port", 3306),
+            "database": mysql_database,
+            "table": mysql_table,
             "connection_verified": True,
         }
 

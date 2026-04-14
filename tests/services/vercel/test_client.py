@@ -540,9 +540,6 @@ def test_make_vercel_client_forwards_team_id() -> None:
 def test_context_manager_closes_on_exception() -> None:
     c = _client()
     _ = c._get_client()
-    try:
-        with c:
-            raise ValueError("test error")
-    except ValueError:
-        pass
+    with pytest.raises(ValueError), c:
+        raise ValueError("test error")
     assert c._client is None

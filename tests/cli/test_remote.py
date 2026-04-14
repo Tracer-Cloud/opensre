@@ -4,7 +4,6 @@ import os
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 from click.testing import CliRunner
 
 from app.cli.__main__ import cli

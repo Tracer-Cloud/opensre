@@ -9,7 +9,7 @@ import pkgutil
 from functools import lru_cache
 from types import ModuleType
 
-import app.tools as tools_package
+from app import tools as tools_package
 from app.tools.base import BaseTool
 from app.tools.registered_tool import REGISTERED_TOOL_ATTR, RegisteredTool, ToolSurface
 

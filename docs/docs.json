@@ -30,10 +30,7 @@
     "groups": [
       {
         "group": "Getting started",
-        "pages": [
-          "quickstart",
-          "faq"
-        ]
+        "pages": ["quickstart", "faq"]
       },
       {
         "group": "Integrations",
@@ -42,12 +39,7 @@
           {
             "group": "Enterprise",
             "defaultOpen": true,
-            "pages": [
-              "datadog",
-              "grafana",
-              "slack",
-              "aws"
-            ]
+            "pages": ["datadog", "grafana", "slack", "aws"]
           },
           {
             "group": "Local",
@@ -69,21 +61,22 @@
               "prefect",
               "google-docs",
               "discord",
-              "openclaw"
+              "mysql",
+              "openclaw",
+              "postgresql"
             ]
           }
         ]
       },
       {
         "group": "Investigations",
-        "pages": [
-          "investigation-overview"
-        ]
+        "pages": ["investigation-overview"]
       },
       {
         "group": "Daily Updates",
         "pages": [
           "daily-updates/overview",
+          "daily-updates/2026-04-13",
           "daily-updates/2026-04-12",
           "daily-updates/2026-04-11",
           "daily-updates/2026-04-10",
@@ -102,10 +95,7 @@
         "pages": [
           {
             "group": "Getting started",
-            "pages": [
-              "introduction-monitoring",
-              "quickstart-monitoring"
-            ]
+            "pages": ["introduction-monitoring", "quickstart-monitoring"]
           },
           {
             "group": "Key Use Cases",

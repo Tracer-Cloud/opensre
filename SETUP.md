@@ -10,14 +10,21 @@
 
 1. Fork and clone the repo:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/open-sre-agent.git
-   cd open-sre-agent
+   git clone https://github.com/YOUR_USERNAME/opensre.git
+   cd opensre
    ```
 
 2. Create a virtual environment:
+   - (venv)
    ```bash
    python -m venv .venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+   - (conda)
+   ```bash
+   # replace "opensre" if needed
+   conda create -n opensre python=3.11
+   conda activate opensre
    ```
 
 3. Install dependencies:

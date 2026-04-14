@@ -66,7 +66,7 @@ def stop_running_tasks() -> None:
                 print(f"  [OK] Stopped task: {task_arn.split('/')[-1]}")
             except ClientError:
                 # Task may have already stopped between list and stop calls
-                pass
+                continue
 
         # Wait for tasks to stop
         if task_arns:
@@ -242,7 +242,7 @@ def deregister_task_definitions() -> None:
                     print(f"  [OK] Deregistered: {task_def_arn.split('/')[-1]}")
                 except ClientError:
                     # Task definition may be already deregistered or in use; skip and continue
-                    pass
+                    continue
         except ClientError as e:
             print(f"  [WARN] Could not list task definitions for {family}: {e}")
 
@@ -289,9 +289,9 @@ def destroy() -> dict:
     try:
         delete_outputs(STACK_NAME)
         print("  [OK] Deleted outputs file")
-    except Exception:
+    except Exception as e:
         # Outputs file may not exist if deployment was incomplete
-        pass
+        print(f"  [WARN] Could not delete outputs file: {e}")
 
     # Also run tag-based cleanup for any missed resources
     print("  Running tag-based cleanup...")
