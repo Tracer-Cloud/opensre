@@ -58,9 +58,10 @@ async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
 @auth.on.threads.create  # type: ignore[arg-type]
 async def on_thread_create(ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
     """Tag thread with org_id and enforce org-scoped access."""
+    org_id = _get_org_id(ctx)
     md = value.setdefault("metadata", {})
-    md["org_id"] = _get_org_id(ctx)
-    return {"org_id": _get_org_id(ctx)}
+    md["org_id"] = org_id
+    return {"org_id": org_id}
 
 
 @auth.on.threads.read
