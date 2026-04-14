@@ -173,7 +173,10 @@ def _classify_integrations(
                 continue
 
             if airflow_config.is_configured:
-                resolved["airflow"] = airflow_config.model_dump()
+                resolved["airflow"] = {
+                    **airflow_config.model_dump(),
+                    "integration_id": integration.get("id", ""),
+                }
 
         else:
             resolved[key] = {
