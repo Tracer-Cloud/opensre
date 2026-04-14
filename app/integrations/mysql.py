@@ -53,11 +53,6 @@ class MySQLConfig(StrictConfigModel):
         normalized = str(value or DEFAULT_MYSQL_USER).strip()
         return normalized or DEFAULT_MYSQL_USER
 
-    @field_validator("password", mode="before")
-    @classmethod
-    def _normalize_password(cls, value: Any) -> str:
-        return str(value or "").strip()
-
     @field_validator("ssl_mode", mode="before")
     @classmethod
     def _normalize_ssl_mode(cls, value: Any) -> str:
@@ -93,7 +88,7 @@ def mysql_config_from_env() -> MySQLConfig | None:
         "port": int(_mysql_port) if (_mysql_port := os.getenv("MYSQL_PORT", "").strip()).isdigit() else DEFAULT_MYSQL_PORT,
         "database": database,
         "username": os.getenv("MYSQL_USERNAME", DEFAULT_MYSQL_USER).strip() or DEFAULT_MYSQL_USER,
-        "password": os.getenv("MYSQL_PASSWORD", "").strip(),
+        "password": os.getenv("MYSQL_PASSWORD", ""),
         "ssl_mode": os.getenv("MYSQL_SSL_MODE", DEFAULT_MYSQL_SSL_MODE).strip() or DEFAULT_MYSQL_SSL_MODE,
     })
 

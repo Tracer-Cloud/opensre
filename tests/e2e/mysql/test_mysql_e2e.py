@@ -170,18 +170,27 @@ class TestMySQLVerification:
         assert mysql_result["status"] == "passed"
         mock_get_connection.assert_called_once()
 
-    def test_verify_integrations_structure(self):
-        """Verify integrations returns expected result structure."""
-        try:
-            results = verify_integrations(service="mysql")
-            assert isinstance(results, list)
-            for result in results:
-                if result["service"] == "mysql":
-                    assert "status" in result
-                    assert "detail" in result
-                    assert result["status"] in ("passed", "missing", "failed")
-        except Exception:
-            pass
+    @patch("app.integrations.mysql._get_connection")
+    def test_verify_integrations_structure(self, mock_get_connection, monkeypatch):
+        """Verify integrations returns a list with expected result fields."""
+        monkeypatch.setenv("MYSQL_HOST", "localhost")
+        monkeypatch.setenv("MYSQL_DATABASE", "testdb")
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchone.return_value = {"VERSION()": "8.0.32"}
+        mock_get_connection.return_value = mock_conn
+
+        results = verify_integrations(service="mysql")
+        assert isinstance(results, list)
+        for result in results:
+            if result["service"] == "mysql":
+                assert "status" in result
+                assert "detail" in result
+                assert result["status"] in ("passed", "missing", "failed")
 
 
 class TestMySQLToolsAvailability:

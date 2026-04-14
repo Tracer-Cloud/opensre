@@ -51,11 +51,6 @@ class PostgreSQLConfig(StrictConfigModel):
         normalized = str(value or DEFAULT_POSTGRESQL_USER).strip()
         return normalized or DEFAULT_POSTGRESQL_USER
 
-    @field_validator("password", mode="before")
-    @classmethod
-    def _normalize_password(cls, value: Any) -> str:
-        return str(value or "").strip()
-
     @field_validator("ssl_mode", mode="before")
     @classmethod
     def _normalize_ssl_mode(cls, value: Any) -> str:
@@ -91,7 +86,7 @@ def postgresql_config_from_env() -> PostgreSQLConfig | None:
         "port": int(_pg_port) if (_pg_port := os.getenv("POSTGRESQL_PORT", "").strip()).isdigit() else DEFAULT_POSTGRESQL_PORT,
         "database": database,
         "username": os.getenv("POSTGRESQL_USERNAME", DEFAULT_POSTGRESQL_USER).strip(),
-        "password": os.getenv("POSTGRESQL_PASSWORD", "").strip(),
+        "password": os.getenv("POSTGRESQL_PASSWORD", ""),
         "ssl_mode": os.getenv("POSTGRESQL_SSL_MODE", DEFAULT_POSTGRESQL_SSL_MODE).strip(),
     })
 
