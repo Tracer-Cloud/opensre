@@ -66,6 +66,22 @@ def test_protected_remote_endpoint_requires_matching_api_key(
     assert valid_response.json() == []
 
 
+@pytest.mark.parametrize("path", ["/ok", "/version", "/health/deep"])
+@pytest.mark.parametrize("configured_key", [None, "secret-key"])
+def test_health_endpoints_do_not_require_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+    remote_client: TestClient,
+    path: str,
+    configured_key: str | None,
+) -> None:
+    monkeypatch.setattr(remote_server, "_AUTH_KEY", configured_key)
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+
+    response = remote_client.get(path)
+
+    assert response.status_code == 200
+
+
 def test_investigate_enriches_pasted_vercel_url(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 

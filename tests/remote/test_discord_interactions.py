@@ -97,6 +97,25 @@ def test_discord_interactions_ping_returns_type_1(monkeypatch: pytest.MonkeyPatc
     assert resp.json() == {"type": 1}
 
 
+def test_discord_interactions_do_not_require_api_key_when_remote_auth_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    signing_key = SigningKey.generate()
+    monkeypatch.setattr(
+        "app.remote.server._DISCORD_PUBLIC_KEY",
+        signing_key.verify_key.encode().hex(),
+    )
+    monkeypatch.setattr("app.remote.server._AUTH_KEY", "secret-key")
+    client = _make_client()
+
+    body = json.dumps({"type": 1}).encode()
+    headers = _sign_body(signing_key, body)
+    resp = client.post("/discord/interactions", content=body, headers=headers)
+
+    assert resp.status_code == 200
+    assert resp.json() == {"type": 1}
+
+
 # ---------------------------------------------------------------------------
 # APPLICATION_COMMAND (type 2)
 # ---------------------------------------------------------------------------
