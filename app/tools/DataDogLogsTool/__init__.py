@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from app.tools.DataDogLogsTool._client import make_client, unavailable
 from app.tools.tool_decorator import tool
+from app.tools.utils.availability import datadog_available_or_backend
 from app.tools.utils.compaction import compact_logs, summarize_counts
 
 _ERROR_KEYWORDS = (
@@ -31,19 +32,8 @@ def _dd_creds(dd: dict) -> dict:
     }
 
 
-def _dd_available_or_backend(sources: dict[str, dict]) -> bool:
-    """Available when real Datadog credentials are present OR a fixture backend is injected.
-
-    Used by tools whose extract_params can delegate to a mock ``datadog_backend``
-    (synthetic harness under ``tests/synthetic/eks/``).  Tools without backend
-    support continue to use ``_logs_is_available`` / their own check.
-    """
-    dd = sources.get("datadog", {})
-    return bool(dd.get("connection_verified") or dd.get("_backend"))
-
-
 def _logs_is_available(sources: dict[str, dict]) -> bool:
-    return _dd_available_or_backend(sources)
+    return datadog_available_or_backend(sources)
 
 
 def _logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:

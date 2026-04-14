@@ -49,11 +49,9 @@ class DatadogBackend(Protocol):
 
     def query_logs(self, query: str = "", **kwargs: Any) -> dict[str, Any]:
         """Return a response matching ``query_datadog_logs``."""
-        ...
 
     def query_monitors(self, query: str | None = None, **kwargs: Any) -> dict[str, Any]:
         """Return a response matching ``query_datadog_monitors``."""
-        ...
 
 
 class FixtureDatadogBackend:

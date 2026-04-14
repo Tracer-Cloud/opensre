@@ -580,6 +580,16 @@ def detect_sources(
     _has_injected_eks_backend = bool(_eks_int and "_backend" in _eks_int)
     if _eks_int and (_eks_int.get("role_arn") or _has_injected_eks_backend):
         eks_cluster = annotations.get("eks_cluster") or annotations.get("cluster_name")
+        # When a backend is injected but the alert omits cluster_name from its
+        # annotations, fall back to the first cluster_names entry on the
+        # integration dict.  Without this fallback, backend-only investigations
+        # silently produce zero EKS tool activity — future synthetic scenarios
+        # that forget to put cluster_name in commonAnnotations would otherwise
+        # fail with no diagnostic.
+        if not eks_cluster and _has_injected_eks_backend:
+            cluster_names = _eks_int.get("cluster_names") or []
+            if cluster_names:
+                eks_cluster = cluster_names[0]
         kube_namespace = (
             annotations.get("kube_namespace")
             or annotations.get("kubernetes_namespace")

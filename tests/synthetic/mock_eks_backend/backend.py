@@ -41,27 +41,22 @@ class EKSBackend(Protocol):
 
     def list_pods(self, cluster_name: str = "", namespace: str = "", **kwargs: Any) -> dict[str, Any]:
         """Return a response matching ``list_eks_pods``."""
-        ...
 
     def get_events(self, cluster_name: str = "", namespace: str = "", **kwargs: Any) -> dict[str, Any]:
         """Return a response matching ``get_eks_events``."""
-        ...
 
     def list_deployments(
         self, cluster_name: str = "", namespace: str = "", **kwargs: Any
     ) -> dict[str, Any]:
         """Return a response matching ``list_eks_deployments``."""
-        ...
 
     def get_node_health(self, cluster_name: str = "", **kwargs: Any) -> dict[str, Any]:
         """Return a response matching ``get_eks_node_health``."""
-        ...
 
     def get_pod_logs(
         self, cluster_name: str = "", namespace: str = "", pod_name: str = "", **kwargs: Any
     ) -> dict[str, Any]:
         """Return a response matching ``get_eks_pod_logs``."""
-        ...
 
 
 class FixtureEKSBackend:

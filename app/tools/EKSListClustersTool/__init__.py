@@ -17,17 +17,6 @@ def _eks_available(sources: dict[str, dict]) -> bool:
     return bool(sources.get("eks", {}).get("connection_verified"))
 
 
-def _eks_available_or_backend(sources: dict[str, dict]) -> bool:
-    """Available when real EKS credentials are present OR a fixture backend is injected.
-
-    Used by tools whose extract_params can delegate to a mock ``eks_backend``
-    (synthetic harness under ``tests/synthetic/eks/``).  Tools without backend
-    support continue to use :func:`_eks_available`.
-    """
-    eks = sources.get("eks", {})
-    return bool(eks.get("connection_verified") or eks.get("_backend"))
-
-
 def _eks_creds(eks: dict) -> dict:
     return {
         "role_arn": eks.get("role_arn", ""),

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from app.tools.DataDogLogsTool import _dd_available_or_backend, _dd_creds
+from app.tools.DataDogLogsTool import _dd_creds
 from app.tools.DataDogLogsTool._client import make_client, unavailable
 from app.tools.tool_decorator import tool
+from app.tools.utils.availability import datadog_available_or_backend
 
 
 def _monitors_is_available(sources: dict[str, dict]) -> bool:
-    return _dd_available_or_backend(sources)
+    return datadog_available_or_backend(sources)
 
 
 def _monitors_extract_params(sources: dict[str, dict]) -> dict[str, Any]:

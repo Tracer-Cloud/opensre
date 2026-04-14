@@ -30,13 +30,16 @@ _EVIDENCE_KEY_MAP: dict[str, str] = {
 
 @dataclass(frozen=True)
 class TrajectoryScore:
-    actual_sequence: list[str]
-    expected_sequence: list[str]
+    actual_sequence: list[str]    # flattened actions from executed_hypotheses
+    expected_sequence: list[str]  # from answer_key.optimal_trajectory
     loops_used: int
     max_loops: int
+    # Set-membership check: every expected action appears somewhere in actual.
+    # Ordering is intentionally not enforced — actions execute in parallel and
+    # completion order is non-deterministic.
     sequencing_ok: bool
-    calibration_ok: bool
-    efficiency_score: float
+    calibration_ok: bool           # loops_used <= max_loops
+    efficiency_score: float        # mean(sequencing_ok, calibration_ok)
 
 
 @dataclass(frozen=True)
@@ -179,6 +182,10 @@ def score_trajectory(
         final_state.get("investigation_loop_count") or len(executed_hypotheses)
     )
 
+    # Every expected action must appear somewhere in actual_sequence.  The check
+    # is set-membership, not positional: when a real LLM skips a required action
+    # entirely, this flips to False.  See the TrajectoryScore docstring above for
+    # the rationale for ignoring order.
     sequencing_ok = set(expected) <= set(actual_sequence)
     calibration_ok = loops_used <= max_loops
     efficiency_score = (int(sequencing_ok) + int(calibration_ok)) / 2.0

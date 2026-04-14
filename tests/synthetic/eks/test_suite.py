@@ -392,14 +392,6 @@ def test_level4_scenario(fixture) -> None:
 # ---------------------------------------------------------------------------
 
 
-_BASE_SCENARIO_YML = textwrap.dedent("""\
-    base: 000-healthy
-    scenario_id: 999-test-scenario
-    failure_mode: crashloop_backoff
-    severity: critical
-""")
-
-
 def _write_minimal_answer_yml(scenario_dir: Path) -> None:
     (scenario_dir / "answer.yml").write_text(textwrap.dedent("""\
         root_cause_category: test_category
