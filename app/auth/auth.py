@@ -54,36 +54,28 @@ async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
     )
 
 
-# Threads - no filtering to allow stateless runs
+# Threads - filter by org
 @auth.on.threads.create  # type: ignore[arg-type]
-async def on_thread_create(ctx: Auth.types.AuthContext, value: dict[str, Any]) -> None:
-    """Tag thread with org_id but don't filter."""
+async def on_thread_create(ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
+    """Tag thread with org_id and enforce org-scoped access."""
     md = value.setdefault("metadata", {})
     md["org_id"] = _get_org_id(ctx)
+    return {"org_id": _get_org_id(ctx)}
 
 
 @auth.on.threads.read
-async def on_thread_read(
-    ctx: Auth.types.AuthContext,  # noqa: ARG001
-    value: Any,  # noqa: ARG001
-) -> None:
-    return None
+async def on_thread_read(ctx: Auth.types.AuthContext, value: Any) -> dict[str, str]:  # noqa: ARG001
+    return {"org_id": _get_org_id(ctx)}
 
 
 @auth.on.threads.update
-async def on_thread_update(
-    ctx: Auth.types.AuthContext,  # noqa: ARG001
-    value: Any,  # noqa: ARG001
-) -> None:
-    return None
+async def on_thread_update(ctx: Auth.types.AuthContext, value: Any) -> dict[str, str]:  # noqa: ARG001
+    return {"org_id": _get_org_id(ctx)}
 
 
 @auth.on.threads.delete
-async def on_thread_delete(
-    ctx: Auth.types.AuthContext,  # noqa: ARG001
-    value: Any,  # noqa: ARG001
-) -> None:
-    return None
+async def on_thread_delete(ctx: Auth.types.AuthContext, value: Any) -> dict[str, str]:  # noqa: ARG001
+    return {"org_id": _get_org_id(ctx)}
 
 
 @auth.on.threads.search
@@ -92,11 +84,8 @@ async def on_thread_search(ctx: Auth.types.AuthContext, value: Any) -> dict[str,
 
 
 @auth.on.threads.create_run
-async def on_thread_create_run(
-    ctx: Auth.types.AuthContext,  # noqa: ARG001
-    value: Any,  # noqa: ARG001
-) -> None:
-    return None
+async def on_thread_create_run(ctx: Auth.types.AuthContext, value: Any) -> dict[str, str]:  # noqa: ARG001
+    return {"org_id": _get_org_id(ctx)}
 
 
 # Assistants - filter by org
