@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT_PATH = ROOT / "pyproject.toml"
 APP_VERSION_PATH = ROOT / "app" / "version.py"
-VERSION_PATTERN = re.compile(r"^v?(?P<version>\d{4}\.\d{1,2}\.\d{1,2})$")
+VERSION_PATTERN = re.compile(r"v?(?P<version>\d{4}\.\d{1,2}\.\d{1,2})")
 
 
 def _normalize_release_version(raw_value: str) -> str:
@@ -37,9 +37,12 @@ def _replace_project_version(version: str, text: str) -> str:
             continue
 
         if in_project_section and line.lstrip().startswith("version = "):
-            prefix, _, _ = line.partition("=")
-            line_ending = _line_ending_for(line)
-            lines[index] = f'{prefix}= "{version}"{line_ending}'
+            lines[index] = re.sub(
+                r'(?P<prefix>\bversion\s*=\s*")[^"]+(?P<suffix>")',
+                rf"\g<prefix>{version}\g<suffix>",
+                line,
+                count=1,
+            )
             return "".join(lines)
 
     msg = f"Could not find [project].version in {PYPROJECT_PATH}."
