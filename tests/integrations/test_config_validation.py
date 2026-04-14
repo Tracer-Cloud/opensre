@@ -92,3 +92,13 @@ def test_tracer_config_strips_bearer_prefix() -> None:
     })
 
     assert config.jwt_token == "test-token"
+
+
+def test_posthog_config_rejects_unknown_fields_with_suggestion() -> None:
+    from app.integrations.posthog import build_posthog_config
+
+    with pytest.raises(ValidationError, match="proejct_id.*project_id"):
+        build_posthog_config({
+            "personal_api_key": "phx_test",
+            "proejct_id": "12345",
+        })

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import boto3
@@ -26,6 +27,7 @@ from app.integrations.models import (
 )
 from app.integrations.mongodb import build_mongodb_config, validate_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config, validate_mongodb_atlas_config
+from app.integrations.mysql import build_mysql_config, validate_mysql_config
 from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
@@ -62,9 +64,37 @@ SUPPORTED_VERIFY_SERVICES = (
     "clickhouse",
     "bitbucket",
     "discord",
+    "mysql",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
+
+
+@dataclass(slots=True)
+class MariaDBConfig:
+    host: str
+    port: int
+    database: str
+    username: str
+    password: str = field(repr=False)
+    ssl: bool
+
+    @classmethod
+    def from_env(cls) -> MariaDBConfig | None:
+        mariadb_host = os.getenv("MARIADB_HOST", "").strip()
+        mariadb_database = os.getenv("MARIADB_DATABASE", "").strip()
+        if not (mariadb_host and mariadb_database):
+            return None
+
+        mariadb_port = os.getenv("MARIADB_PORT", "3306").strip()
+        return cls(
+            host=mariadb_host,
+            port=int(mariadb_port) if mariadb_port.isdigit() else 3306,
+            database=mariadb_database,
+            username=os.getenv("MARIADB_USERNAME", "").strip(),
+            password=os.getenv("MARIADB_PASSWORD", "").strip(),
+            ssl=os.getenv("MARIADB_SSL", "true").strip().lower() in ("true", "1", "yes"),
+        )
 
 
 def _result(
@@ -298,19 +328,11 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
             },
         }
     else:
-        mariadb_host = os.getenv("MARIADB_HOST", "").strip()
-        mariadb_database = os.getenv("MARIADB_DATABASE", "").strip()
-        if mariadb_host and mariadb_database:
+        mariadb_env_config = MariaDBConfig.from_env()
+        if mariadb_env_config:
             effective["mariadb"] = {
                 "source": "local env",
-                "config": {
-                    "host": mariadb_host,
-                    "port": int(os.getenv("MARIADB_PORT", "3306").strip() or "3306") if os.getenv("MARIADB_PORT", "3306").strip().isdigit() else 3306,
-                    "database": mariadb_database,
-                    "username": os.getenv("MARIADB_USERNAME", "").strip(),
-                    "password": os.getenv("MARIADB_PASSWORD", "").strip(),
-                    "ssl": os.getenv("MARIADB_SSL", "true").strip().lower() in ("true", "1", "yes"),
-                },
+                "config": asdict(mariadb_env_config),
             }
 
     google_docs_integration = classified_integrations.get("google_docs")
@@ -457,6 +479,29 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                     "application_id": os.getenv("DISCORD_APPLICATION_ID", "").strip(),
                     "public_key": os.getenv("DISCORD_PUBLIC_KEY", "").strip(),
                     "default_channel_id": os.getenv("DISCORD_DEFAULT_CHANNEL_ID", "").strip() or None,
+                },
+            }
+
+    mysql_integration = classified_integrations.get("mysql")
+    if isinstance(mysql_integration, dict):
+        effective["mysql"] = {
+            "source": source_by_service.get("mysql", "local env"),
+            "config": mysql_integration,
+        }
+    else:
+        mysql_host = os.getenv("MYSQL_HOST", "").strip()
+        mysql_database = os.getenv("MYSQL_DATABASE", "").strip()
+        if mysql_host and mysql_database:
+            _mysql_port = os.getenv("MYSQL_PORT", "").strip()
+            effective["mysql"] = {
+                "source": "local env",
+                "config": {
+                    "host": mysql_host,
+                    "port": int(_mysql_port) if _mysql_port.isdigit() else 3306,
+                    "database": mysql_database,
+                    "username": os.getenv("MYSQL_USERNAME", "root").strip() or "root",
+                    "password": os.getenv("MYSQL_PASSWORD", "").strip(),
+                    "ssl_mode": os.getenv("MYSQL_SSL_MODE", "preferred").strip() or "preferred",
                 },
             }
 
@@ -974,6 +1019,17 @@ def _verify_discord(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_mysql(source: str, config: dict[str, Any]) -> dict[str, str]:
+    mysql_config = build_mysql_config(config)
+    result = validate_mysql_config(mysql_config)
+    return _result(
+        "mysql",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -1048,6 +1104,8 @@ def verify_integrations(
             results.append(_verify_bitbucket(source, config))
         elif current_service == "discord":
             results.append(_verify_discord(source, config))
+        elif current_service == "mysql":
+            results.append(_verify_mysql(source, config))
 
     return results
 

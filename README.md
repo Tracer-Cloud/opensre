@@ -85,32 +85,6 @@ opensre update
 
 ---
 
-## Remote Hosted Ops (Railway)
-
-After deploying a hosted service, you can run post-deploy operations from the CLI:
-
-```bash
-# inspect service status, URL, deployment metadata
-opensre remote ops --provider railway --project <project> --service <service> status
-
-# tail recent logs
-opensre remote ops --provider railway --project <project> --service <service> logs --lines 200
-
-# stream logs live
-opensre remote ops --provider railway --project <project> --service <service> logs --follow
-
-# trigger restart/redeploy
-opensre remote ops --provider railway --project <project> --service <service> restart --yes
-```
-
-OpenSRE saves your last used `provider`/`project`/`service`, so you can run:
-
-```bash
-opensre remote ops status
-opensre remote ops logs --follow
-```
-
----
 
 ## Development
 
@@ -467,6 +441,29 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/53609097?v=4" width="100" alt="harshareddy832"/>
             <br />
             <sub><b>harshareddy832</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/sundaram2021">
+            <img src="https://avatars.githubusercontent.com/u/93595231?v=4" width="100" alt="sundaram2021"/>
+            <br />
+            <sub><b>sundaram2021</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/micheal000010000-hub">
+            <img src="https://avatars.githubusercontent.com/u/249460313?v=4" width="100" alt="micheal000010000-hub"/>
+            <br />
+            <sub><b>micheal000010000-hub</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/ljivesh">
+            <img src="https://avatars.githubusercontent.com/u/96004270?v=4" width="100" alt="ljivesh"/>
+            <br />
+            <sub><b>ljivesh</b></sub>
         </a>
     </td>
 		</tr>

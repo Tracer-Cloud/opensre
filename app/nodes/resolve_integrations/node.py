@@ -28,6 +28,7 @@ from app.integrations.models import (
 )
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config
+from app.integrations.mysql import build_mysql_config
 from app.integrations.postgresql import build_postgresql_config
 from app.integrations.sentry import build_sentry_config
 from app.output import get_tracker
@@ -65,6 +66,7 @@ _SERVICE_KEY_MAP = {
     "vercel": "vercel",
     "opsgenie": "opsgenie",
     "discord": "discord",
+    "mysql": "mysql",
 }
 
 
@@ -360,6 +362,30 @@ def _classify_integrations(
                 continue
             if discord_config.bot_token:
                 resolved["discord"] = discord_config.model_dump()
+
+        elif key == "mysql":
+            try:
+                mysql_config = build_mysql_config({
+                    "host": credentials.get("host", ""),
+                    "port": credentials.get("port", 3306),
+                    "database": credentials.get("database", ""),
+                    "username": credentials.get("username", "root"),
+                    "password": credentials.get("password", ""),
+                    "ssl_mode": credentials.get("ssl_mode", "preferred"),
+                })
+            except Exception:
+                continue
+
+            if mysql_config.host and mysql_config.database:
+                resolved["mysql"] = {
+                    "host": mysql_config.host,
+                    "port": mysql_config.port,
+                    "database": mysql_config.database,
+                    "username": mysql_config.username,
+                    "password": mysql_config.password,
+                    "ssl_mode": mysql_config.ssl_mode,
+                    "integration_id": integration.get("id", ""),
+                }
 
         else:
             resolved[key] = {
@@ -723,6 +749,30 @@ def _load_env_integrations() -> list[dict[str, Any]]:
             })
         except Exception:
             logger.debug("Failed to load MariaDB config from env", exc_info=True)
+
+    mysql_host = os.getenv("MYSQL_HOST", "").strip()
+    mysql_database = os.getenv("MYSQL_DATABASE", "").strip()
+    if mysql_host and mysql_database:
+        mysql_config = build_mysql_config(
+            {
+                "host": mysql_host,
+                "port": int(_mysql_port)
+                if (_mysql_port := os.getenv("MYSQL_PORT", "").strip()) and _mysql_port.isdigit()
+                else 3306,
+                "database": mysql_database,
+                "username": os.getenv("MYSQL_USERNAME", "root").strip() or "root",
+                "password": os.getenv("MYSQL_PASSWORD", "").strip(),
+                "ssl_mode": os.getenv("MYSQL_SSL_MODE", "preferred").strip() or "preferred",
+            }
+        )
+        integrations.append(
+            {
+                "id": "env-mysql",
+                "service": "mysql",
+                "status": "active",
+                "credentials": mysql_config.model_dump(exclude={"integration_id"}),
+            }
+        )
 
     return integrations
 

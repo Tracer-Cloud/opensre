@@ -16,6 +16,7 @@ import json as _json
 import logging
 import os
 import re
+import secrets
 import shutil
 import time
 import urllib.error
@@ -54,7 +55,13 @@ from app.version import get_version
 load_dotenv(override=False)
 
 INVESTIGATIONS_DIR = Path(os.getenv("INVESTIGATIONS_DIR", "/opt/opensre/investigations"))
-_AUTH_KEY = os.getenv("OPENSRE_API_KEY", "")
+_AUTH_KEY = os.getenv("OPENSRE_API_KEY")
+_AUTH_EXEMPT_PATHS = {
+    "/discord/interactions",
+    "/health/deep",
+    "/ok",
+    "/version",
+}
 _STARTED_AT = datetime.now(tz=UTC)
 _START_TIME_MONOTONIC = time.monotonic()
 _INSTANCE_METADATA: dict[str, str | None] = {
@@ -65,9 +72,20 @@ _INSTANCE_METADATA: dict[str, str | None] = {
 logger = logging.getLogger(__name__)
 
 
-def _check_api_key(x_api_key: str | None = Header(default=None)) -> None:
-    """Reject requests when OPENSRE_API_KEY is set and the header doesn't match."""
-    if _AUTH_KEY and x_api_key != _AUTH_KEY:
+def _configured_auth_key() -> str | None:
+    auth_key = (_AUTH_KEY or "").strip()
+    return auth_key or None
+
+
+def _check_api_key(
+    request: Request, x_api_key: str | None = Header(default=None)
+) -> None:
+    """Reject protected remote API requests unless a valid API key is configured."""
+    if request.url.path in _AUTH_EXEMPT_PATHS:
+        return
+
+    auth_key = _configured_auth_key()
+    if auth_key is None or not secrets.compare_digest(x_api_key or "", auth_key):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
 
