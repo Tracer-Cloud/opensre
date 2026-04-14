@@ -305,17 +305,20 @@ def validate_openclaw_integration(
     args: list[str] | None = None,
 ) -> IntegrationHealthResult:
     """Validate OpenClaw MCP connectivity by listing available tools."""
-    config = build_openclaw_config(
-        {
-            "url": url,
-            "mode": mode,
-            "auth_token": auth_token,
-            "command": command,
-            "args": args or [],
-        }
-    )
-    result = validate_openclaw_config(config)
-    return IntegrationHealthResult(ok=result.ok, detail=result.detail)
+    try:
+        config = build_openclaw_config(
+            {
+                "url": url,
+                "mode": mode,
+                "auth_token": auth_token,
+                "command": command,
+                "args": args or [],
+            }
+        )
+        result = validate_openclaw_config(config)
+        return IntegrationHealthResult(ok=result.ok, detail=result.detail)
+    except Exception as err:
+        return IntegrationHealthResult(ok=False, detail=f"OpenClaw validation failed: {err}")
 
 
 def validate_sentry_integration(
