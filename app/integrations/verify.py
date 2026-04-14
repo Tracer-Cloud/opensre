@@ -27,8 +27,8 @@ from app.integrations.models import (
 )
 from app.integrations.mongodb import build_mongodb_config, validate_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config, validate_mongodb_atlas_config
-from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
 from app.integrations.mysql import build_mysql_config, validate_mysql_config
+from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
 from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
