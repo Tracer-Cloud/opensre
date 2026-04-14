@@ -62,6 +62,14 @@ def _openclaw_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     }
 
 
+def _openclaw_conversation_params(sources: dict[str, dict]) -> dict[str, Any]:
+    params = _openclaw_extract_params(sources)
+    openclaw = sources.get("openclaw", {})
+    params["search"] = openclaw.get("openclaw_search_query") or ""
+    params["limit"] = 10
+    return params
+
+
 def _normalize_tool_result(result: dict[str, Any]) -> dict[str, Any]:
     if result.get("is_error"):
         return {
@@ -80,6 +88,18 @@ def _normalize_tool_result(result: dict[str, Any]) -> dict[str, Any]:
         "structured_content": result.get("structured_content"),
         "content": result.get("content", []),
     }
+
+
+def _conversation_rows_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
+    structured = result.get("structured_content")
+    if isinstance(structured, list):
+        return [item for item in structured if isinstance(item, dict)]
+    if isinstance(structured, dict):
+        conversations = structured.get("conversations")
+        if isinstance(conversations, list):
+            return [item for item in conversations if isinstance(item, dict)]
+        return [structured]
+    return []
 
 
 @tool(
@@ -141,6 +161,81 @@ def list_openclaw_bridge_tools(
         "endpoint": config.command if config.mode == "stdio" else config.url,
         "tools": tools,
     }
+
+
+@tool(
+    name="search_openclaw_conversations",
+    source="openclaw",
+    description="Search recent OpenClaw conversations through the configured MCP bridge.",
+    use_cases=[
+        "Checking whether an engineer already discussed the failing service in OpenClaw",
+        "Pulling recent OpenClaw context before querying external systems",
+    ],
+    surfaces=("investigation", "chat"),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "search": {"type": "string"},
+            "limit": {"type": "integer"},
+            "openclaw_url": {"type": "string"},
+            "openclaw_mode": {"type": "string"},
+            "openclaw_token": {"type": "string"},
+            "openclaw_command": {"type": "string"},
+            "openclaw_args": {"type": "array"},
+        },
+        "required": [],
+    },
+    is_available=_openclaw_available,
+    extract_params=_openclaw_conversation_params,
+)
+def search_openclaw_conversations(
+    search: str = "",
+    limit: int = 10,
+    openclaw_url: str | None = None,
+    openclaw_mode: str | None = None,
+    openclaw_token: str | None = None,
+    openclaw_command: str | None = None,
+    openclaw_args: list[str] | None = None,
+    **_kwargs: Any,
+) -> dict[str, Any]:
+    """Search recent OpenClaw conversations through the MCP bridge."""
+    config = _resolve_config(
+        openclaw_url,
+        openclaw_mode,
+        openclaw_token,
+        openclaw_command,
+        openclaw_args,
+    )
+    if config is None:
+        return {
+            "source": "openclaw",
+            "available": False,
+            "error": "OpenClaw MCP integration is not configured.",
+            "conversations": [],
+        }
+
+    arguments: dict[str, Any] = {
+        "limit": max(1, min(limit, 25)),
+        "includeDerivedTitles": True,
+        "includeLastMessage": True,
+    }
+    if search.strip():
+        arguments["search"] = search.strip()
+
+    try:
+        result = invoke_openclaw_mcp_tool(config, "conversations_list", arguments)
+    except Exception as err:  # noqa: BLE001
+        return {
+            "source": "openclaw",
+            "available": False,
+            "error": describe_openclaw_error(err, config),
+            "conversations": [],
+        }
+
+    payload = _normalize_tool_result(result)
+    payload["search"] = search.strip()
+    payload["conversations"] = _conversation_rows_from_result(result)
+    return payload
 
 
 @tool(

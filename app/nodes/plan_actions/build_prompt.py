@@ -156,8 +156,9 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
             f"""OpenClaw MCP Available:
 - Transport: {openclaw.get("openclaw_mode") or "unknown"}
 - Endpoint: {endpoint}
-- Use list_openclaw_tools to inspect the available OpenClaw bridge tools
-- Use call_openclaw_tool to read OpenClaw conversations, poll events, or send a reply through an existing route"""
+- Search hint: {openclaw.get("openclaw_search_query") or "recent conversations"}
+- Start with search_openclaw_conversations to inspect recent OpenClaw context before generic tool calls
+- Use list_openclaw_tools only if you need to inspect the raw bridge surface"""
         )
 
     if "vercel" in available_sources and "github" in available_sources:

@@ -17,6 +17,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
 
@@ -145,6 +146,26 @@ def _dedupe_preserving_order(items: list[str]) -> list[str]:
     return unique
 
 
+def _uses_openclaw_cli_mcp_bridge(config: OpenClawConfig) -> bool:
+    command_name = Path(config.command or "").name.lower()
+    return (
+        config.mode == "stdio"
+        and command_name == "openclaw"
+        and tuple(config.args[:2]) == _OPENCLAW_STDIO_ARGS
+    )
+
+
+def _looks_like_openclaw_gateway_unavailable(messages: list[str]) -> bool:
+    indicators = (
+        "connection closed",
+        "econnrefused",
+        "connect failed",
+        "could not connect",
+        "closed before connect",
+    )
+    return any(indicator in message.lower() for message in messages for indicator in indicators)
+
+
 def _describe_exception(err: BaseException) -> list[str]:
     if isinstance(err, BaseExceptionGroup):
         messages: list[str] = []
@@ -195,6 +216,13 @@ def describe_openclaw_error(
         hints.append(
             "Install the OpenClaw CLI or set `OPENCLAW_MCP_COMMAND` to the full executable "
             "path."
+        )
+
+    if _uses_openclaw_cli_mcp_bridge(config) and _looks_like_openclaw_gateway_unavailable(messages):
+        hints.append(
+            "The `openclaw mcp serve` bridge needs a running OpenClaw Gateway. "
+            "Check `openclaw gateway status`, then start it with `openclaw gateway run` "
+            "(foreground) or `openclaw gateway install` followed by `openclaw gateway start`."
         )
 
     if hints:

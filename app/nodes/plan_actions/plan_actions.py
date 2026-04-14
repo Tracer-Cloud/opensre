@@ -1,6 +1,6 @@
 """Plan investigation actions from available inputs."""
 
-from typing import Any
+from typing import Any, cast, get_args
 
 from pydantic import BaseModel
 
@@ -16,9 +16,87 @@ from app.tools.investigation_registry import (
     get_available_actions,
     get_prioritized_actions,
 )
+from app.types.evidence import EvidenceSource
 
 # Default tool budget if not specified in state
 DEFAULT_TOOL_BUDGET = 10
+_PRIORITIZATION_SOURCES = frozenset(get_args(EvidenceSource))
+
+
+def _get_executed_action_names(executed_hypotheses: list[dict[str, Any]]) -> set[str]:
+    executed_actions: set[str] = set()
+    for hypothesis in executed_hypotheses:
+        actions = hypothesis.get("actions", [])
+        if isinstance(actions, list):
+            executed_actions.update(str(action) for action in actions if str(action).strip())
+    return executed_actions
+
+
+def _seed_action_names_for_sources(
+    available_sources: dict[str, dict],
+) -> list[str]:
+    seeded: list[str] = []
+
+    if "s3_audit" in available_sources:
+        seeded.append("get_s3_object")
+
+    if "openclaw" in available_sources:
+        seeded.append("search_openclaw_conversations")
+        seeded.append("list_openclaw_tools")
+
+    return seeded
+
+
+def _seed_plan_actions(
+    planned_actions: list[str],
+    available_action_names: list[str],
+    available_sources: dict[str, dict],
+) -> list[str]:
+    allowed_seeds = [
+        action_name
+        for action_name in _seed_action_names_for_sources(available_sources)
+        if action_name in available_action_names
+    ]
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for action_name in [*allowed_seeds, *planned_actions]:
+        if action_name in seen:
+            continue
+        seen.add(action_name)
+        result.append(action_name)
+    return result
+
+
+def _ensure_seed_actions_available(
+    available_actions: list,
+    action_pool: list,
+    available_sources: dict[str, dict],
+    tool_budget: int,
+    executed_hypotheses: list[dict[str, Any]],
+) -> tuple[list, list[str]]:
+    selected = list(available_actions)
+    selected_names = {action.name for action in selected}
+    executed_action_names = _get_executed_action_names(executed_hypotheses)
+    pool_by_name = {action.name: action for action in action_pool}
+    seed_actions: list = []
+
+    for action_name in _seed_action_names_for_sources(available_sources):
+        if action_name in executed_action_names:
+            continue
+        action = pool_by_name.get(action_name)
+        if action is None or action_name in selected_names:
+            continue
+        if not action.is_available(available_sources):
+            continue
+        seed_actions.append(action)
+        selected_names.add(action_name)
+
+    if seed_actions:
+        selected = [*seed_actions, *selected]
+
+    selected = selected[:tool_budget]
+    return selected, [action.name for action in selected]
 
 
 def detect_reroute_trigger(
@@ -129,7 +207,16 @@ def plan_actions(
 
     all_actions = get_available_actions()
     keywords = extract_keywords(input_data.problem_md, input_data.alert_name)
-    candidate_actions = get_prioritized_actions(keywords=keywords) if keywords else all_actions
+    prioritization_sources = [
+        cast(EvidenceSource, source_name)
+        for source_name in available_sources
+        if source_name in _PRIORITIZATION_SOURCES
+    ]
+    candidate_actions = (
+        get_prioritized_actions(sources=prioritization_sources, keywords=keywords)
+        if keywords or prioritization_sources
+        else all_actions
+    )
 
     # Apply tool budget to cap the selected tool set before prompt construction
     available_actions, available_action_names = select_actions(
@@ -137,6 +224,13 @@ def plan_actions(
         available_sources=available_sources,
         executed_hypotheses=input_data.executed_hypotheses,
         tool_budget=tool_budget,
+    )
+    available_actions, available_action_names = _ensure_seed_actions_available(
+        available_actions=available_actions,
+        action_pool=all_actions,
+        available_sources=available_sources,
+        tool_budget=tool_budget,
+        executed_hypotheses=input_data.executed_hypotheses,
     )
 
     if not available_action_names:
@@ -161,14 +255,11 @@ def plan_actions(
         memory_context="",
     )
 
-    # Ensure audit trail is fetched when s3_audit source is available
-    # Insert at position 0 to ensure it is kept after budget truncation
-    if (
-        "s3_audit" in available_sources
-        and "get_s3_object" not in plan.actions
-        and "get_s3_object" in available_action_names
-    ):
-        plan.actions.insert(0, "get_s3_object")
+    plan.actions = _seed_plan_actions(
+        planned_actions=plan.actions,
+        available_action_names=available_action_names,
+        available_sources=available_sources,
+    )
 
     debug_print(f"Plan: {plan.actions} | {plan.rationale[:100]}...")
     if len(plan.actions) > tool_budget:

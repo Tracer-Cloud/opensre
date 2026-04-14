@@ -1,233 +1,76 @@
 ---
 title: "OpenClaw"
-description: "Connect OpenSRE to OpenClaw so your AI coding assistant can trigger investigations and surface errors directly in your IDE"
+description: "Connect OpenSRE to OpenClaw with the minimum setup needed to run investigations from your editor"
 ---
 
-OpenClaw is an AI coding assistant that communicates over the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
-By connecting OpenSRE as an MCP server inside OpenClaw, you can run root-cause analysis and catch production errors without leaving your editor.
+OpenClaw can call OpenSRE's `run_rca` MCP tool so you can investigate alerts from your editor.
 
----
+## Setup
 
-## How it works
-
-There are **two directions** to this integration — pick the one that matches your workflow:
-
-| Direction | What it does |
-|---|---|
-| **OpenClaw → OpenSRE** (this page) | OpenClaw calls OpenSRE's `run_rca` tool to investigate alerts from your IDE |
-| **OpenSRE → OpenClaw** | OpenSRE resolves your OpenClaw MCP bridge as a credential and can call back into OpenClaw tools during an investigation |
-
-Most users only need **direction 1**. Direction 2 is for advanced pipelines where OpenSRE orchestrates OpenClaw as a tool.
-
----
-
-## Direction 1: OpenClaw calls OpenSRE (recommended)
-
-### Step 1: Start the OpenSRE MCP server
-
-Install OpenSRE and start the server:
+### 1. Start OpenSRE MCP
 
 ```bash
-pip install opensre
 opensre-mcp
 ```
 
-This starts an MCP server on `stdio` that exposes the `run_rca` tool.
+### 2. Add OpenSRE to OpenClaw
 
-### Step 2: Add OpenSRE to OpenClaw's MCP config
-
-In OpenClaw, open **Settings → MCP Servers** (or edit your `mcp_config.json`) and add:
+In OpenClaw, add this MCP server:
 
 ```json
 {
-  "mcpServers": {
-    "opensre": {
-      "command": "opensre-mcp",
-      "args": []
+    "mcpServers": {
+        "opensre": {
+            "command": "opensre-mcp",
+            "args": []
+        }
     }
-  }
 }
 ```
 
-<Tip>
-If `opensre-mcp` is not on your PATH, use the full path: `"/path/to/venv/bin/opensre-mcp"`.
-</Tip>
+If `opensre-mcp` is not on your `PATH`, use the full path to the binary in your virtualenv.
 
-### Step 3: Set your integrations
+### 3. Configure one observability integration
 
-OpenSRE needs at least one observability integration (Datadog, Grafana, Sentry, etc.) to investigate alerts.
-Set environment variables before starting OpenClaw:
-
-```bash
-# Example: Datadog
-export DD_API_KEY=your_api_key
-export DD_APP_KEY=your_app_key
-
-# Example: Sentry
-export SENTRY_ORG_SLUG=my-org
-export SENTRY_AUTH_TOKEN=sntrys_...
-```
-
-Or run the setup wizard once:
+Run the wizard once and connect Datadog, Grafana, Sentry, or another backend:
 
 ```bash
 opensre integrations setup
 ```
 
-This writes credentials to `~/.tracer/integrations.json` so they persist across sessions.
+### 4. Run a smoke test
 
-### Step 4: Investigate from OpenClaw
-
-In OpenClaw, use the `run_rca` tool directly in chat:
-
-```
-Run an investigation on this alert:
-{"title": "High error rate on /api/checkout", "service": "checkout", "severity": "critical"}
-```
-
-OpenSRE will query your connected integrations, correlate logs and metrics, and return a structured root-cause analysis.
-
-A ready-to-paste example tool payload is available in the repo at:
+In OpenClaw, choose `run_rca` and paste the contents of:
 
 ```text
 tests/fixtures/openclaw_test_alert.json
 ```
 
----
+## Optional: let OpenSRE call OpenClaw
 
-## Direction 2: OpenSRE resolves OpenClaw as an integration
-
-This allows the OpenSRE investigation pipeline to call tools exposed by your OpenClaw MCP bridge.
-
-### Option A: Environment variables
+If you want the OpenSRE investigation pipeline to query OpenClaw during RCA runs, use the OpenClaw stdio bridge:
 
 ```bash
-OPENCLAW_MCP_MODE=stdio
-OPENCLAW_MCP_COMMAND=openclaw
-OPENCLAW_MCP_ARGS="mcp serve"
+export OPENCLAW_MCP_MODE=stdio
+export OPENCLAW_MCP_COMMAND=openclaw
+export OPENCLAW_MCP_ARGS="mcp serve"
 ```
 
-| Variable | Default | Description |
-|---|---|---|
-| `OPENCLAW_MCP_MODE` | `stdio` in the wizard | Transport: `streamable-http`, `sse`, or `stdio` |
-| `OPENCLAW_MCP_AUTH_TOKEN` | — | Bearer token for authentication |
-| `OPENCLAW_MCP_COMMAND` | — | Executable to launch (stdio mode only) |
-| `OPENCLAW_MCP_ARGS` | — | Space-separated args for stdio mode |
-| `OPENCLAW_MCP_URL` | — | Custom OpenClaw MCP endpoint URL (HTTP/SSE modes only) |
-
-For advanced/custom remote MCP transports only:
+Keep the OpenClaw Gateway running while you investigate:
 
 ```bash
-OPENCLAW_MCP_MODE=streamable-http
-OPENCLAW_MCP_URL=https://your-custom-openclaw-mcp-endpoint
-OPENCLAW_MCP_AUTH_TOKEN=your_bearer_token
+openclaw gateway run
 ```
 
-### Option B: Interactive CLI
+Verify it with:
 
 ```bash
-opensre integrations setup
+opensre integrations verify openclaw
 ```
-
-Select **OpenClaw** when prompted.
-
-### Option C: Persistent store (`~/.tracer/integrations.json`)
-
-```json
-{
-  "version": 1,
-  "integrations": [
-    {
-      "id": "openclaw-prod",
-      "service": "openclaw",
-      "status": "active",
-      "credentials": {
-        "mode": "stdio",
-        "command": "openclaw",
-        "args": ["mcp", "serve"]
-      }
-    }
-  ]
-}
-```
-
-### Verify the integration
-
-```bash
-opensre integrations verify --service openclaw
-```
-
-Expected output when connected:
-
-```
-  SERVICE    SOURCE       STATUS      DETAIL
-  openclaw   local env    passed      OpenClaw MCP connected via stdio (openclaw); discovered 8 tool(s).
-```
-
----
-
-## Transport modes
-
-| Mode | When to use |
-|---|---|
-| `stdio` | Recommended for OpenClaw itself. Use `openclaw mcp serve` |
-| `streamable-http` | Advanced/custom remote MCP transport if you expose the bridge through HTTP streaming |
-| `sse` | Advanced/custom remote MCP transport if you expose the bridge through SSE |
-
----
-
-## Catching errors in OpenClaw
-
-### Pattern 1: Paste an error, trigger investigation
-
-Copy a stack trace or error message into OpenClaw and ask:
-
-```
-This error appeared in production 10 minutes ago. Investigate it:
-
-TypeError: Cannot read properties of undefined (reading 'userId')
-  at /app/checkout/handler.js:42:18
-  ...
-```
-
-OpenClaw calls `run_rca` → OpenSRE queries your logs and returns a root-cause analysis in your editor.
-
-### Pattern 2: Trigger from an alert webhook
-
-Point your alerting tool (Datadog, Grafana, PagerDuty) at OpenSRE's webhook endpoint, then review findings in OpenClaw:
-
-```bash
-opensre serve  # starts the webhook server
-```
-
-When an alert fires, OpenSRE runs the investigation automatically. You can then ask OpenClaw to show you the latest findings:
-
-```
-Show me the most recent OpenSRE investigation result.
-```
-
-### Pattern 3: Investigate by service name
-
-```
-Run an OpenSRE investigation for the payment-service — it had a spike in 5xx errors at 14:30 UTC today.
-```
-
----
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| **`opensre-mcp` not found** | Ensure `opensre` is installed in the same Python environment OpenClaw uses, or provide the full path |
-| **`run_rca` returns "No integrations configured"** | Set at least one observability env var (e.g. `DD_API_KEY` + `DD_APP_KEY`) or run `opensre integrations setup` |
-| **OpenClaw verify fails against `http://127.0.0.1:18789/`** | That URL is OpenClaw's Control UI/Gateway, not the MCP bridge. Use `OPENCLAW_MCP_MODE=stdio`, `OPENCLAW_MCP_COMMAND=openclaw`, `OPENCLAW_MCP_ARGS="mcp serve"` |
-| **Auth errors on a custom OpenClaw MCP endpoint** | Verify `OPENCLAW_MCP_AUTH_TOKEN` matches what the server expects; the `Bearer` prefix is stripped automatically |
-| **stdio mode: process exits immediately** | Check `OPENCLAW_MCP_COMMAND` path, prefer `openclaw`, and verify `OPENCLAW_MCP_ARGS` starts with `mcp serve` |
-
----
-
-## Security
-
-- Store `OPENCLAW_MCP_AUTH_TOKEN` in `.env`, not in source code, when you use a custom HTTP/SSE transport.
-- Use a read-only token where possible — OpenSRE only reads from OpenClaw, it never writes.
-- For hosted instances, ensure the MCP endpoint is behind HTTPS.
+- `opensre-mcp` not found: use the full path to the binary inside your virtualenv.
+- `run_rca` says no integrations configured: run `opensre integrations setup` and add Datadog, Grafana, or Sentry.
+- Verify fails against `http://127.0.0.1:18789/`: that URL is the OpenClaw Control UI/Gateway, not the MCP bridge. Use `openclaw mcp serve`.
+- `search_openclaw_conversations` fails with `Connection closed` or `ECONNREFUSED`: the OpenClaw Gateway is not running. Check `openclaw gateway status`, then run `openclaw gateway run`.

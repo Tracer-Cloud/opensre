@@ -526,14 +526,14 @@ def summarize_execution_results(
     """
     evidence = merge_evidence(current_evidence, execution_results)
 
-    # Only track successful actions in hypothesis history (allow retries of failed actions)
-    successful_actions = [
-        action_name for action_name, result in execution_results.items() if result.success
-    ]
-
-    if successful_actions:
+    attempted_actions = list(execution_results.keys())
+    if attempted_actions:
         executed_hypotheses = track_hypothesis(
-            executed_hypotheses, successful_actions, rationale, investigation_loop_count, plan_audit
+            executed_hypotheses,
+            attempted_actions,
+            rationale,
+            investigation_loop_count,
+            plan_audit,
         )
 
     evidence_summary = build_evidence_summary(execution_results)

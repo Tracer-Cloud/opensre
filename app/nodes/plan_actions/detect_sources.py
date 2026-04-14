@@ -673,6 +673,15 @@ def detect_sources(
         openclaw_url = str(openclaw_int.get("url", "")).strip()
         openclaw_command = str(openclaw_int.get("command", "")).strip()
         if openclaw_url or openclaw_command:
+            openclaw_search_query = str(
+                annotations.get("openclaw_search")
+                or raw_alert.get("openclaw_search", "")
+                or service_name
+                or pipeline_name
+                or raw_alert.get("alert_name", "")
+                or raw_alert.get("title", "")
+                or annotations.get("summary", "")
+            ).strip()
             sources["openclaw"] = {
                 "openclaw_url": openclaw_url,
                 "openclaw_mode": str(
@@ -682,6 +691,7 @@ def detect_sources(
                 "openclaw_token": str(openclaw_int.get("auth_token", "")).strip(),
                 "openclaw_command": openclaw_command,
                 "openclaw_args": openclaw_int.get("args", []),
+                "openclaw_search_query": openclaw_search_query,
                 "connection_verified": True,
             }
 

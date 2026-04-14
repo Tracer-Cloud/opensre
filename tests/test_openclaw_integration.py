@@ -339,6 +339,14 @@ class TestDescribeOpenClawError:
         assert "Command not found" in detail
         assert "openclaw mcp serve" in detail
 
+    def test_gateway_unavailable_receives_gateway_hint(self) -> None:
+        config = OpenClawConfig(mode="stdio", command="openclaw", args=["mcp", "serve"])
+
+        detail = describe_openclaw_error(RuntimeError("Connection closed"), config)
+
+        assert "openclaw gateway status" in detail
+        assert "openclaw gateway run" in detail
+
 
 # ---------------------------------------------------------------------------
 # list_openclaw_tools (integration via mock)
