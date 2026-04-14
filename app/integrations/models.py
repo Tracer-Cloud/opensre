@@ -392,18 +392,20 @@ class DiscordBotConfig(StrictConfigModel):
     @field_validator("bot_token")
     @classmethod
     def _validate_bot_token(cls, v: str) -> str:
-        if not v.strip():
+        stripped = v.strip()
+        if not stripped:
             raise ValueError("bot_token cannot be empty or just whitespace")
-        return v
+        return stripped
 
     @field_validator("public_key")
     @classmethod
     def _validate_public_key(cls, v: str) -> str:
-        if not v.strip():
-            return v  # optional — only needed for inbound interactions endpoint
-        if not re.fullmatch(r"[0-9a-fA-F]+", v):
+        stripped = v.strip()
+        if not stripped:
+            return stripped  # optional — only needed for inbound interactions endpoint
+        if not re.fullmatch(r"[0-9a-fA-F]+", stripped):
             raise ValueError("public_key must be a valid hexadecimal string")
-        return v
+        return stripped
 
 
 class EffectiveIntegrationEntry(StrictConfigModel):
