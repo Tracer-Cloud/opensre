@@ -895,6 +895,24 @@ def detect_sources(
             "connection_verified": True,
         }
 
+    alertmanager_int = (resolved_integrations or {}).get("alertmanager")
+    if alertmanager_int and str(alertmanager_int.get("base_url", "")).strip():
+        # Carry label filters from the alert when present so tools can pre-scope the query
+        filter_labels: list[str] = []
+        alertname = str(
+            common_labels.get("alertname") or annotations.get("alertname") or ""
+        ).strip()
+        if alertname:
+            filter_labels.append(f'alertname="{alertname}"')
+        sources["alertmanager"] = {
+            "base_url": str(alertmanager_int.get("base_url", "")).strip().rstrip("/"),
+            "bearer_token": str(alertmanager_int.get("bearer_token", "")).strip(),
+            "username": str(alertmanager_int.get("username", "")).strip(),
+            "password": str(alertmanager_int.get("password", "")).strip(),
+            "filter_labels": filter_labels,
+            "connection_verified": True,
+        }
+
     opsgenie_int = (resolved_integrations or {}).get("opsgenie")
     if opsgenie_int and str(opsgenie_int.get("api_key", "")).strip():
         alert_id = str(

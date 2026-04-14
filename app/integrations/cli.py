@@ -7,7 +7,7 @@ Usage:
     python -m app.integrations remove <service>
     python -m app.integrations verify [service] [--send-slack-test]
 
-Supported services: aws, coralogix, datadog, grafana, honeycomb, mariadb, discord, mongodb, mongodb_atlas, postgresql, slack, opensearch, rds, tracer, github, sentry, vercel
+Supported services: alertmanager, aws, coralogix, datadog, grafana, honeycomb, mariadb, discord, mongodb, mongodb_atlas, postgresql, slack, opensearch, rds, tracer, github, sentry, vercel
 """
 
 from __future__ import annotations
@@ -513,7 +513,43 @@ def _setup_mariadb() -> None:
     )
 
 
+def _setup_alertmanager() -> None:
+    base_url = _p("Alertmanager URL (e.g. http://alertmanager:9093)")
+    if not base_url:
+        _die("base_url is required.")
+
+    auth_choice = questionary.select(
+        "  Authentication method:",
+        choices=[
+            questionary.Choice("None (unauthenticated / internal network)", value="none"),
+            questionary.Choice("Bearer token (reverse proxy auth)", value="bearer"),
+            questionary.Choice("Basic auth (username + password)", value="basic"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if auth_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+
+    credentials: dict[str, Any] = {"base_url": base_url}
+
+    if auth_choice == "bearer":
+        bearer_token = _p("Bearer token", secret=True)
+        if not bearer_token:
+            _die("Bearer token is required for bearer auth.")
+        credentials["bearer_token"] = bearer_token
+    elif auth_choice == "basic":
+        username = _p("Username")
+        if not username:
+            _die("Username is required for basic auth.")
+        credentials["username"] = username
+        credentials["password"] = _p("Password", secret=True)
+
+    upsert_integration("alertmanager", {"credentials": credentials})
+
+
 _HANDLERS: dict[str, Any] = {
+    "alertmanager": _setup_alertmanager,
     "aws": _setup_aws,
     "coralogix": _setup_coralogix,
     "datadog": _setup_datadog,
