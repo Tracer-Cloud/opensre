@@ -1,11 +1,11 @@
-
 import os
+
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, Field, field_validator
 
+from pydantic import BaseModel, Field, field_validator
 
 DEFAULT_TRELLO_BASE_URL = "https://api.trello.com/1"
 
