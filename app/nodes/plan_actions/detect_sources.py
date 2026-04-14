@@ -884,4 +884,24 @@ def detect_sources(
             "connection_verified": True,
         }
 
+    mysql_int = (resolved_integrations or {}).get("mysql")
+    if mysql_int and str(mysql_int.get("host", "")).strip() and str(mysql_int.get("database", "")).strip():
+        mysql_host = str(mysql_int.get("host", "")).strip()
+        mysql_database = str(mysql_int.get("database", "")).strip()
+        mysql_database = str(
+            annotations.get("mysql_database")
+            or annotations.get("database")
+            or mysql_database
+        ).strip()
+        mysql_table = str(
+            annotations.get("mysql_table") or annotations.get("table") or ""
+        ).strip()
+        sources["mysql"] = {
+            "host": mysql_host,
+            "port": mysql_int.get("port", 3306),
+            "database": mysql_database,
+            "table": mysql_table,
+            "connection_verified": True,
+        }
+
     return sources

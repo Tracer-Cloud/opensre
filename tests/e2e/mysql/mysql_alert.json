@@ -1,0 +1,44 @@
+{
+  "title": "[FIRING:1] MySQL Slow Query Alert",
+  "state": "alerting",
+  "commonLabels": {
+    "alertname": "MySQLSlowQuery",
+    "severity": "warning",
+    "cluster": "prod-mysql-cluster",
+    "environment": "production",
+    "mysql_instance": "prod-primary.mysql.net"
+  },
+  "commonAnnotations": {
+    "summary": "MySQL instance has queries running longer than 30 seconds",
+    "description": "MySQL cluster prod-mysql-cluster primary node is experiencing slow query execution. Average query time: 45 seconds. Threshold: 30 seconds.",
+    "runbook": "https://wiki.example.com/mysql/slow-queries",
+    "dashboard": "https://monitoring.example.com/d/mysql-cluster",
+    "instance": "prod-primary.mysql.net:3306",
+    "mysql_database": "application_db",
+    "mysql_table": "events",
+    "timestamp": "2024-01-15T10:30:00Z",
+    "correlation_id": "mysql-alert-correlation-001"
+  },
+  "externalURL": "https://monitoring.example.com",
+  "version": "4",
+  "groupKey": "{}:{alertname=\"MySQLSlowQuery\"}",
+  "truncatedAlerts": 0,
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "MySQLSlowQuery",
+        "severity": "warning",
+        "cluster": "prod-mysql-cluster",
+        "mysql_instance": "prod-primary.mysql.net"
+      },
+      "annotations": {
+        "summary": "MySQL instance has queries running longer than 30 seconds",
+        "description": "MySQL cluster prod-mysql-cluster primary node is experiencing slow query execution.",
+        "instance": "prod-primary.mysql.net:3306"
+      },
+      "startsAt": "2024-01-15T10:25:00Z",
+      "endsAt": "0001-01-01T00:00:00Z"
+    }
+  ]
+}

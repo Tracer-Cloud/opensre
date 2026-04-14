@@ -228,6 +228,41 @@ class PostgreSQLIntegrationConfig(StrictConfigModel):
         normalized = str(value or "prefer").strip()
         return normalized or "prefer"
 
+
+class MySQLIntegrationConfig(StrictConfigModel):
+    """Normalized MySQL credentials used by resolution and verification flows."""
+
+    host: str
+    port: int = 3306
+    database: str
+    username: str = "root"
+    password: str = ""
+    ssl_mode: str = "preferred"
+    integration_id: str = ""
+
+    @field_validator("host", mode="before")
+    @classmethod
+    def _normalize_host(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("database", mode="before")
+    @classmethod
+    def _normalize_database(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _normalize_username(cls, value: object) -> str:
+        normalized = str(value or "root").strip()
+        return normalized or "root"
+
+    @field_validator("ssl_mode", mode="before")
+    @classmethod
+    def _normalize_ssl_mode(cls, value: object) -> str:
+        normalized = str(value or "preferred").strip()
+        return normalized or "preferred"
+
+
 class MariaDBIntegrationConfig(StrictConfigModel):
     """Normalized MariaDB credentials used by resolution and verification flows."""
 
@@ -405,3 +440,4 @@ class EffectiveIntegrations(StrictConfigModel):
     postgresql: EffectiveIntegrationEntry | None = None
     bitbucket: EffectiveIntegrationEntry | None = None
     discord: EffectiveIntegrationEntry | None = None
+    mysql: EffectiveIntegrationEntry | None = None
