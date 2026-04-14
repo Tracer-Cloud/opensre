@@ -23,6 +23,15 @@ _INVESTIGATED_EVIDENCE_KEYS = frozenset({
     "cloudwatch_logs",
     "datadog_logs",
     "datadog_monitors",
+    # Kubernetes / EKS evidence keys — written by the _map_eks_* mappers in
+    # app/nodes/investigate/processing/post_process.py.  Without these, a pure
+    # Kubernetes healthy investigation never satisfies the evidence gate below
+    # and the reasoning LLM is invoked on a clean state for no reason.
+    "eks_pods",
+    "eks_events",
+    "eks_deployments",
+    "eks_node_health",
+    "eks_pod_logs",
 })
 
 
