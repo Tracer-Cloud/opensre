@@ -57,7 +57,12 @@ load_dotenv(override=False)
 
 INVESTIGATIONS_DIR = Path(os.getenv("INVESTIGATIONS_DIR", "/opt/opensre/investigations"))
 _AUTH_KEY = os.getenv("OPENSRE_API_KEY")
-_AUTH_EXEMPT_PATHS = {"/discord/interactions"}
+_AUTH_EXEMPT_PATHS = {
+    "/discord/interactions",
+    "/health/deep",
+    "/ok",
+    "/version",
+}
 _STARTED_AT = datetime.now(tz=UTC)
 _START_TIME_MONOTONIC = time.monotonic()
 _INSTANCE_METADATA: dict[str, str | None] = {
