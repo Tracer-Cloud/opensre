@@ -74,7 +74,9 @@ jobs:
 
   build-python-dist:
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [verify, prepare]
+    env:
+      TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
 
     steps:
       - uses: actions/checkout@v5
@@ -85,6 +87,10 @@ jobs:
           python-version: "3.13"
           cache: "pip"
 
+      - name: Sync release version
+        shell: bash
+        run: python packaging/sync_release_version.py --tag "$TAG_NAME"
+
       - name: Build Python distributions
         run: |
           python -m pip install --upgrade pip
@@ -92,6 +98,14 @@ jobs:
           pip install build twine
           python -m build
           twine check dist/*
+
+      - name: Verify Python distribution version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${TAG_NAME#v}"
+          test -f "dist/opensre-${VERSION}.tar.gz"
+          test -f "dist/opensre-${VERSION}-py3-none-any.whl"
 
       - name: Upload Python distributions
         uses: actions/upload-artifact@v4
@@ -143,6 +157,10 @@ jobs:
           python-version: "3.13"
           cache: "pip"
 
+      - name: Sync release version
+        shell: bash
+        run: python packaging/sync_release_version.py --tag "$TAG_NAME"
+
       - name: Install binary build dependencies
         run: |
           python -m pip install --upgrade pip
@@ -156,14 +174,29 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          ./dist/${{ matrix.binary_name }} --version
+          VERSION="${TAG_NAME#v}"
+          VERSION_OUTPUT="$(./dist/${{ matrix.binary_name }} --version 2>&1)"
+          printf '%s\n' "$VERSION_OUTPUT"
+          case "$VERSION_OUTPUT" in
+            *"$VERSION"*) ;;
+            *)
+              printf 'Binary version mismatch: expected %s but saw %s\n' "$VERSION" "$VERSION_OUTPUT" >&2
+              exit 1
+              ;;
+          esac
           ./dist/${{ matrix.binary_name }} -h >/dev/null
 
       - name: Smoke test binary
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          & ".\dist\${{ matrix.binary_name }}" --version
+          $expectedVersion = $env:TAG_NAME.TrimStart("v")
+          $versionOutput = & ".\dist\${{ matrix.binary_name }}" --version 2>&1 | Out-String
+          $versionText = $versionOutput.Trim()
+          Write-Host $versionText
+          if ($versionText -notmatch [regex]::Escape($expectedVersion)) {
+            throw "Binary version mismatch. Expected '$expectedVersion' but saw '$versionText'."
+          }
           & ".\dist\${{ matrix.binary_name }}" -h | Out-Null
 
       - name: Package binary archive
