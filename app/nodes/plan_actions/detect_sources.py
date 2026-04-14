@@ -418,17 +418,21 @@ def detect_sources(
                 grafana_params["_backend"] = grafana_int["_backend"]
             sources["grafana"] = grafana_params
 
-    # Only include Datadog when alert came from Datadog, or when source is truly unknown
-    if (
-        resolved_integrations
-        and resolved_integrations.get("datadog")
-        and alert_source in ("datadog", "")
-    ):
+    # Only include Datadog when alert came from Datadog, or when source is truly unknown,
+    # or when a pre-injected backend is present (e.g. FixtureDatadogBackend for synthetic tests).
+    dd_int = None
+    if resolved_integrations and resolved_integrations.get("datadog"):
         dd_int = resolved_integrations["datadog"]
+
+    _has_injected_dd_backend = bool(dd_int and "_backend" in dd_int)
+    if dd_int and not (_has_injected_dd_backend or alert_source in ("datadog", "")):
+        dd_int = None  # suppress real Datadog for non-Datadog alerts
+
+    if dd_int:
         dd_api_key = dd_int.get("api_key", "")
         dd_app_key = dd_int.get("app_key", "")
 
-        if dd_api_key and dd_app_key:
+        if _has_injected_dd_backend or (dd_api_key and dd_app_key):
             # kube_namespace: prefer LLM-injected top-level field, fall back to annotations
             kube_namespace = raw_alert.get("kube_namespace", "") or annotations.get(
                 "kube_namespace", ""
@@ -462,12 +466,17 @@ def detect_sources(
                 "api_key": dd_api_key,
                 "app_key": dd_app_key,
                 "site": dd_int.get("site", "datadoghq.com"),
-                "connection_verified": True,
                 "pipeline_name": pipeline_name,
                 "default_query": default_query,
                 "monitor_query": f"tag:pipeline:{pipeline_name}" if pipeline_name else None,
                 "time_range_minutes": alert_time_range_minutes,
             }
+            if _has_injected_dd_backend:
+                # Backend-only path: only fixture-aware Datadog tools should activate,
+                # so connection_verified stays unset to keep the real-Datadog tools quiet.
+                dd_params["_backend"] = dd_int["_backend"]
+            else:
+                dd_params["connection_verified"] = True
 
             kube_job = annotations.get("kube_job", "") or annotations.get("kube_job_name", "")
             kube_deployment = annotations.get("kube_deployment", "")
@@ -564,9 +573,12 @@ def detect_sources(
                 "connection_verified": True,
             }
 
-    # Detect EKS: uses the AWS integration (EKS maps to aws in resolve_integrations)
+    # Detect EKS: uses the AWS integration (EKS maps to aws in resolve_integrations).
+    # A pre-injected _backend (e.g. FixtureEKSBackend for synthetic tests) bypasses
+    # the role_arn credential gate the same way the Grafana path does.
     _eks_int = (resolved_integrations or {}).get("aws")
-    if _eks_int and _eks_int.get("role_arn"):
+    _has_injected_eks_backend = bool(_eks_int and "_backend" in _eks_int)
+    if _eks_int and (_eks_int.get("role_arn") or _has_injected_eks_backend):
         eks_cluster = annotations.get("eks_cluster") or annotations.get("cluster_name")
         kube_namespace = (
             annotations.get("kube_namespace")
@@ -576,7 +588,7 @@ def detect_sources(
         )
 
         if eks_cluster:
-            sources["eks"] = {
+            eks_params: dict[str, Any] = {
                 "cluster_name": eks_cluster,
                 "namespace": kube_namespace,
                 "pod_name": annotations.get("pod_name", ""),
@@ -589,11 +601,17 @@ def detect_sources(
                     or annotations.get("region")
                     or _eks_int.get("region", "us-east-1")
                 ),
-                "role_arn": _eks_int["role_arn"],
+                "role_arn": _eks_int.get("role_arn", ""),
                 "external_id": _eks_int.get("external_id", ""),
                 "cluster_names": _eks_int.get("cluster_names", []),
-                "connection_verified": True,
             }
+            if _has_injected_eks_backend:
+                # Backend-only path: only fixture-aware EKS tools should activate,
+                # so connection_verified stays unset to keep the real-AWS tools quiet.
+                eks_params["_backend"] = _eks_int["_backend"]
+            else:
+                eks_params["connection_verified"] = True
+            sources["eks"] = eks_params
 
     github_int = (resolved_integrations or {}).get("github")
     if github_int:
