@@ -211,7 +211,7 @@ def test_send_discord_report_truncates_description_to_4096(monkeypatch: pytest.M
 
     monkeypatch.setattr(
         "app.utils.discord_delivery.httpx.post",
-        lambda **kw: (captured.update({"embeds": kw["json"].get("embeds", [])}) or _mock_response(200, {"id": "m-1"})),  # type: ignore[misc]
+        lambda *_a, **kw: (captured.update({"embeds": kw["json"].get("embeds", [])}) or _mock_response(200, {"id": "m-1"})),  # type: ignore[misc]
     )
     long_report = "x" * 5000
     send_discord_report(long_report, {"channel_id": "chan-1", "bot_token": "tok"})

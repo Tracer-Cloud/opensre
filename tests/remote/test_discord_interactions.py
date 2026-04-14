@@ -178,7 +178,6 @@ async def test_run_discord_investigation_posts_followup_on_success(
 
     monkeypatch.setattr("app.remote.server._execute_investigation", _fake_execute)
     monkeypatch.setattr("app.remote.server._discord_post_followup", _fake_followup)
-    monkeypatch.setattr("app.remote.server._DISCORD_BOT_TOKEN", "")
 
     await _run_discord_investigation(interaction)
 
@@ -210,7 +209,6 @@ async def test_run_discord_investigation_parses_plain_text_alert(
 
     monkeypatch.setattr("app.remote.server._execute_investigation", _fake_execute)
     monkeypatch.setattr("app.remote.server._discord_post_followup", lambda *_a, **_kw: None)
-    monkeypatch.setattr("app.remote.server._DISCORD_BOT_TOKEN", "")
 
     await _run_discord_investigation(interaction)
 
@@ -243,7 +241,6 @@ async def test_run_discord_investigation_posts_failure_message_on_exception(
 
     monkeypatch.setattr("app.remote.server._execute_investigation", _raise)
     monkeypatch.setattr("app.remote.server._discord_post_followup", _fake_followup)
-    monkeypatch.setattr("app.remote.server._DISCORD_BOT_TOKEN", "")
 
     await _run_discord_investigation(interaction)
 
@@ -275,7 +272,6 @@ async def test_run_discord_investigation_noise_uses_grey_color(
 
     monkeypatch.setattr("app.remote.server._execute_investigation", _fake_execute)
     monkeypatch.setattr("app.remote.server._discord_post_followup", _fake_followup)
-    monkeypatch.setattr("app.remote.server._DISCORD_BOT_TOKEN", "")
 
     await _run_discord_investigation(interaction)
 

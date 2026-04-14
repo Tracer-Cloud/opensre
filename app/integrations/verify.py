@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import boto3
@@ -67,6 +68,33 @@ SUPPORTED_VERIFY_SERVICES = (
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
+
+
+@dataclass(slots=True)
+class MariaDBConfig:
+    host: str
+    port: int
+    database: str
+    username: str
+    password: str = field(repr=False)
+    ssl: bool
+
+    @classmethod
+    def from_env(cls) -> MariaDBConfig | None:
+        mariadb_host = os.getenv("MARIADB_HOST", "").strip()
+        mariadb_database = os.getenv("MARIADB_DATABASE", "").strip()
+        if not (mariadb_host and mariadb_database):
+            return None
+
+        mariadb_port = os.getenv("MARIADB_PORT", "3306").strip()
+        return cls(
+            host=mariadb_host,
+            port=int(mariadb_port) if mariadb_port.isdigit() else 3306,
+            database=mariadb_database,
+            username=os.getenv("MARIADB_USERNAME", "").strip(),
+            password=os.getenv("MARIADB_PASSWORD", "").strip(),
+            ssl=os.getenv("MARIADB_SSL", "true").strip().lower() in ("true", "1", "yes"),
+        )
 
 
 def _result(
@@ -300,19 +328,11 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
             },
         }
     else:
-        mariadb_host = os.getenv("MARIADB_HOST", "").strip()
-        mariadb_database = os.getenv("MARIADB_DATABASE", "").strip()
-        if mariadb_host and mariadb_database:
+        mariadb_env_config = MariaDBConfig.from_env()
+        if mariadb_env_config:
             effective["mariadb"] = {
                 "source": "local env",
-                "config": {
-                    "host": mariadb_host,
-                    "port": int(os.getenv("MARIADB_PORT", "3306").strip() or "3306") if os.getenv("MARIADB_PORT", "3306").strip().isdigit() else 3306,
-                    "database": mariadb_database,
-                    "username": os.getenv("MARIADB_USERNAME", "").strip(),
-                    "password": os.getenv("MARIADB_PASSWORD", "").strip(),
-                    "ssl": os.getenv("MARIADB_SSL", "true").strip().lower() in ("true", "1", "yes"),
-                },
+                "config": asdict(mariadb_env_config),
             }
 
     google_docs_integration = classified_integrations.get("google_docs")
