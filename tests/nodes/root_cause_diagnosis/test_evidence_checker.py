@@ -67,6 +67,7 @@ class TestIsClearlyHealthyEKSEvidence:
                 {"name": "payments-api", "desired": 3, "ready": 3, "available": 3, "unavailable": 0}
             ],
             "eks_node_health": [{"name": "ip-10-0-1-42", "ready": "True"}],
+            "eks_pod_logs": "started http server on :8080",
         }
         assert is_clearly_healthy(_healthy_alert(), evidence) is True
 
