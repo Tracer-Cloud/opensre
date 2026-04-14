@@ -136,8 +136,10 @@ def create_trello_card(
         "/cards",
         params=[
             ("idList", target_list_id),
-            ("name", name),
-            ("desc", desc),
         ],
+        json={
+            "name": name,
+            "desc": desc,
+        },
     )
     return payload if isinstance(payload, dict) else {}
