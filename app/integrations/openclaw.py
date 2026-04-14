@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Coroutine, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal, TypedDict, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -35,6 +35,32 @@ _OPENCLAW_CONTROL_UI_HOSTS = frozenset({"127.0.0.1", "localhost", "0.0.0.0"})
 _OPENCLAW_CONTROL_UI_PORT = 18789
 _OPENCLAW_STDIO_COMMAND = "openclaw"
 _OPENCLAW_STDIO_ARGS = ("mcp", "serve")
+class OpenClawToolDescriptor(TypedDict):
+    """A tool exposed by the OpenClaw MCP bridge."""
+
+    name: str
+    description: str
+    input_schema: object | None
+
+
+class OpenClawContentItem(TypedDict, total=False):
+    """Normalized content item returned by an MCP tool call."""
+
+    type: str
+    text: str
+    uri: str
+    mime_type: str
+
+
+class OpenClawToolCallResult(TypedDict, total=False):
+    """Normalized response from an OpenClaw MCP tool call."""
+
+    is_error: bool
+    text: str
+    content: list[OpenClawContentItem]
+    structured_content: object | None
+    tool: str
+    arguments: dict[str, object]
 
 
 class OpenClawConfig(StrictConfigModel):
@@ -51,18 +77,18 @@ class OpenClawConfig(StrictConfigModel):
 
     @field_validator("url", mode="before")
     @classmethod
-    def _normalize_url(cls, value: Any) -> str:
+    def _normalize_url(cls, value: object) -> str:
         return str(value or "").strip().rstrip("/")
 
     @field_validator("mode", mode="before")
     @classmethod
-    def _normalize_mode(cls, value: Any) -> str:
+    def _normalize_mode(cls, value: object) -> str:
         normalized = str(value or DEFAULT_OPENCLAW_MCP_MODE).strip().lower()
         return normalized or DEFAULT_OPENCLAW_MCP_MODE
 
     @field_validator("auth_token", mode="before")
     @classmethod
-    def _normalize_auth_token(cls, value: Any) -> str:
+    def _normalize_auth_token(cls, value: object) -> str:
         token = str(value or "").strip()
         if token.lower().startswith("bearer "):
             token = token.split(None, 1)[1].strip()
@@ -70,19 +96,21 @@ class OpenClawConfig(StrictConfigModel):
 
     @field_validator("command", mode="before")
     @classmethod
-    def _normalize_command(cls, value: Any) -> str:
+    def _normalize_command(cls, value: object) -> str:
         return str(value or "").strip()
 
     @field_validator("args", mode="before")
     @classmethod
-    def _normalize_args(cls, value: Any) -> tuple[str, ...]:
+    def _normalize_args(cls, value: object) -> tuple[str, ...]:
         if value is None:
+            return ()
+        if not isinstance(value, (list, tuple, set)):
             return ()
         return tuple(str(arg).strip() for arg in value if str(arg).strip())
 
     @field_validator("headers", mode="before")
     @classmethod
-    def _normalize_headers(cls, value: Any) -> dict[str, str]:
+    def _normalize_headers(cls, value: object) -> dict[str, str]:
         if not isinstance(value, dict):
             return {}
         return {str(k): str(v).strip() for k, v in value.items() if str(v).strip()}
@@ -230,7 +258,7 @@ def describe_openclaw_error(
     return detail
 
 
-def build_openclaw_config(raw: dict[str, Any] | None) -> OpenClawConfig:
+def build_openclaw_config(raw: Mapping[str, object] | None) -> OpenClawConfig:
     """Build a normalized OpenClaw config object from env/store data."""
     return OpenClawConfig.model_validate(raw or {})
 
@@ -338,13 +366,13 @@ async def _open_openclaw_session(config: OpenClawConfig) -> AsyncIterator[Client
         await stack.aclose()
 
 
-def _run_async(coro: Any) -> Any:
+def _run_async(coro: Coroutine[object, object, object]) -> object:
     return asyncio.run(coro)
 
 
-def _tool_result_to_dict(result: types.CallToolResult) -> dict[str, Any]:
+def _tool_result_to_dict(result: types.CallToolResult) -> OpenClawToolCallResult:
     text_parts: list[str] = []
-    content_items: list[dict[str, Any]] = []
+    content_items: list[OpenClawContentItem] = []
 
     for item in result.content:
         if isinstance(item, types.TextContent):
@@ -366,7 +394,7 @@ def _tool_result_to_dict(result: types.CallToolResult) -> dict[str, Any]:
                     {
                         "type": "resource_blob",
                         "uri": str(resource.uri),
-                        "mime_type": resource.mimeType,
+                        "mime_type": resource.mimeType or "",
                     }
                 )
         else:
@@ -388,9 +416,9 @@ async def _list_tools_async(config: OpenClawConfig) -> list[types.Tool]:
         return list(result.tools)
 
 
-def list_openclaw_tools(config: OpenClawConfig) -> list[dict[str, Any]]:
+def list_openclaw_tools(config: OpenClawConfig) -> list[OpenClawToolDescriptor]:
     """List available tools from an OpenClaw MCP server."""
-    tools = _run_async(_list_tools_async(config))
+    tools = _list_tools_sync(config)
     return [
         {
             "name": tool.name,
@@ -401,11 +429,15 @@ def list_openclaw_tools(config: OpenClawConfig) -> list[dict[str, Any]]:
     ]
 
 
+def _list_tools_sync(config: OpenClawConfig) -> list[types.Tool]:
+    return cast(list[types.Tool], _run_async(_list_tools_async(config)))
+
+
 async def _call_tool_async(
     config: OpenClawConfig,
     tool_name: str,
-    arguments: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+    arguments: dict[str, object] | None = None,
+) -> OpenClawToolCallResult:
     async with _open_openclaw_session(config) as session:
         result = await session.call_tool(tool_name, arguments or {})
         payload = _tool_result_to_dict(result)
@@ -417,11 +449,10 @@ async def _call_tool_async(
 def call_openclaw_tool(
     config: OpenClawConfig,
     tool_name: str,
-    arguments: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+    arguments: dict[str, object] | None = None,
+) -> OpenClawToolCallResult:
     """Call an OpenClaw MCP tool and normalize the result."""
-    result: dict[str, Any] = _run_async(_call_tool_async(config, tool_name, arguments))
-    return result
+    return cast(OpenClawToolCallResult, _run_async(_call_tool_async(config, tool_name, arguments)))
 
 
 def validate_openclaw_config(config: OpenClawConfig) -> OpenClawValidationResult:

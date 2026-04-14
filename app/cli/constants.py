@@ -64,6 +64,7 @@ VERIFY_SERVICES: tuple[str, ...] = (
     "mongodb",
     "mongodb_atlas",
     "mysql",
+    "openclaw",
     "opsgenie",
     "postgresql",
     "sentry",

@@ -1,11 +1,11 @@
 """Investigation prompt construction with available actions."""
 
-from typing import Any
-
 from pydantic import BaseModel, ValidationError
 
+from app.nodes.investigate.types import ExecutedHypothesis
 
-def _get_executed_sources(executed_hypotheses: list[dict[str, Any]]) -> set[str]:
+
+def _get_executed_sources(executed_hypotheses: list[ExecutedHypothesis]) -> set[str]:
     """Extract executed sources from hypotheses history."""
     executed_sources_set = set()
     for h in executed_hypotheses:
@@ -224,7 +224,7 @@ IMPORTANT: Always start with discovery actions before fetching specific resource
 
 def build_investigation_prompt(
     problem_md: str,
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
     available_actions: list,
     available_sources: dict[str, dict],
     memory_context: str = "",
@@ -319,7 +319,7 @@ def apply_tool_budget(actions: list, budget: int) -> list:
 def select_actions(
     actions: list,
     available_sources: dict[str, dict],
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
     tool_budget: int = 10,
 ) -> tuple[list, list[str]]:
     """
@@ -357,7 +357,7 @@ def plan_actions_with_llm(
     llm,
     plan_model: type[BaseModel],
     problem_md: str,
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
     available_actions: list,
     available_sources: dict[str, dict],
     memory_context: str = "",
