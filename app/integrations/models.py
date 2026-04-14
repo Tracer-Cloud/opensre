@@ -443,4 +443,3 @@ class EffectiveIntegrations(StrictConfigModel):
     trello: EffectiveIntegrationEntry | None = None
     discord: EffectiveIntegrationEntry | None = None
     mysql: EffectiveIntegrationEntry | None = None
-    trello: EffectiveIntegrationEntry | None = None
