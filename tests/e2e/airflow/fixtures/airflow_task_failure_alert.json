@@ -1,0 +1,19 @@
+{
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "AirflowTaskFailure",
+        "severity": "critical",
+        "service": "data-platform"
+      },
+      "annotations": {
+        "summary": "Airflow DAG task failure detected",
+        "description": "A task in an Airflow DAG failed repeatedly and needs investigation."
+      }
+    }
+  ],
+  "commonAnnotations": {
+    "summary": "Airflow DAG task failure detected"
+  }
+}

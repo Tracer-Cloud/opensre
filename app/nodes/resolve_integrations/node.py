@@ -13,6 +13,7 @@ from typing import Any
 
 from langsmith import traceable
 
+from app.integrations.airflow import DEFAULT_AIRFLOW_BASE_URL, build_airflow_config
 from app.output import get_tracker
 from app.state import InvestigationState
 
@@ -32,6 +33,8 @@ _SERVICE_KEY_MAP = {
     "datadog": "datadog",
     "github": "github",
     "github_mcp": "github",
+    "airflow": "airflow",
+    "apache airflow": "airflow",
     "sentry": "sentry",
 }
 
@@ -152,6 +155,25 @@ def _classify_integrations(
                     "project_slug": project_slug,
                     "integration_id": integration.get("id", ""),
                 }
+
+        elif key == "airflow":
+            try:
+                airflow_config = build_airflow_config(
+                    {
+                        "base_url": credentials.get("base_url", DEFAULT_AIRFLOW_BASE_URL),
+                        "username": credentials.get("username", ""),
+                        "password": credentials.get("password", ""),
+                        "auth_token": credentials.get("auth_token", ""),
+                        "timeout_seconds": credentials.get("timeout_seconds", 15.0),
+                        "verify_ssl": credentials.get("verify_ssl", True),
+                        "max_results": credentials.get("max_results", 50),
+                    }
+                )
+            except Exception:
+                continue
+
+            if airflow_config.is_configured:
+                resolved["airflow"] = airflow_config.model_dump()
 
         else:
             resolved[key] = {
@@ -278,6 +300,31 @@ def _load_env_integrations() -> list[dict[str, Any]]:
                 "project_slug": os.getenv("SENTRY_PROJECT_SLUG", "").strip(),
             },
         })
+
+    airflow_username = os.getenv("AIRFLOW_USERNAME", "").strip()
+    airflow_auth_token = os.getenv("AIRFLOW_AUTH_TOKEN", "").strip()
+    if airflow_username or airflow_auth_token:
+        airflow_config = build_airflow_config(
+            {
+                "base_url": os.getenv("AIRFLOW_BASE_URL", DEFAULT_AIRFLOW_BASE_URL).strip()
+                or DEFAULT_AIRFLOW_BASE_URL,
+                "username": airflow_username,
+                "password": os.getenv("AIRFLOW_PASSWORD", "").strip(),
+                "auth_token": airflow_auth_token,
+                "timeout_seconds": os.getenv("AIRFLOW_TIMEOUT_SECONDS", "15").strip(),
+                "verify_ssl": os.getenv("AIRFLOW_VERIFY_SSL", "true").strip().lower()
+                in ("true", "1", "yes"),
+                "max_results": os.getenv("AIRFLOW_MAX_RESULTS", "50").strip(),
+            }
+        )
+        integrations.append(
+            {
+                "id": "env-airflow",
+                "service": "airflow",
+                "status": "active",
+                "credentials": airflow_config.model_dump(),
+            }
+        )
 
     return integrations
 
