@@ -247,15 +247,19 @@ def get_server_status(config: MySQLConfig) -> dict[str, Any]:
                 all_status = {row["Variable_name"]: row["Value"] for row in cur.fetchall()}
                 metrics = {k: all_status[k] for k in sorted(_STATUS_KEYS) if k in all_status}
 
-                cur.execute("SHOW VARIABLES WHERE Variable_name IN ('max_connections', 'innodb_buffer_pool_size', 'version', 'version_comment')")
+                cur.execute(
+                    "SHOW VARIABLES WHERE Variable_name IN ("
+                    + ", ".join(f"'{k}'" for k in sorted(_VARIABLE_KEYS))
+                    + ")"
+                )
                 variables = {row["Variable_name"]: row["Value"] for row in cur.fetchall()}
 
                 # Calculate InnoDB buffer pool hit ratio
                 pool_reads = int(all_status.get("Innodb_buffer_pool_reads", 0))
                 pool_requests = int(all_status.get("Innodb_buffer_pool_read_requests", 0))
                 pool_hit_ratio = 0.0
-                if pool_reads + pool_requests > 0:
-                    pool_hit_ratio = round((1 - pool_reads / (pool_reads + pool_requests)) * 100, 2)
+                if pool_requests > 0:
+                    pool_hit_ratio = round((1 - pool_reads / pool_requests) * 100, 2)
 
                 return {
                     "source": "mysql",
@@ -389,6 +393,7 @@ def get_replication_status(config: MySQLConfig) -> dict[str, Any]:
                         import pymysql as _pymysql
 
                         if isinstance(stmt_err, _pymysql.err.ProgrammingError):
+                            # SHOW REPLICA STATUS not supported on MySQL < 8.0.22; try SHOW SLAVE STATUS fallback
                             continue
                         raise
 

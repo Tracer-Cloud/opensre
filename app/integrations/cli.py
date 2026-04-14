@@ -434,7 +434,7 @@ def _setup_mysql() -> None:
     ssl_mode_choice = questionary.select(
         "SSL mode",
         choices=[
-            questionary.Choice("preferred (recommended)", value="preferred"),
+            questionary.Choice("preferred (encrypted, no cert verification)", value="preferred"),
             questionary.Choice("required", value="required"),
             questionary.Choice("disabled", value="disabled"),
         ],
