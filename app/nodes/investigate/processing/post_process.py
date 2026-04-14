@@ -531,11 +531,15 @@ def summarize_execution_results(
     """
     evidence = merge_evidence(current_evidence, execution_results)
 
-    attempted_actions = list(execution_results.keys())
-    if attempted_actions:
+    # Only successes go into executed_hypotheses: planning filters out any name seen there,
+    # so recording failures would block retries for transient errors on any tool.
+    successful_actions = [
+        name for name, result in execution_results.items() if result.success
+    ]
+    if successful_actions:
         executed_hypotheses = track_hypothesis(
             executed_hypotheses,
-            attempted_actions,
+            successful_actions,
             rationale,
             investigation_loop_count,
             plan_audit,

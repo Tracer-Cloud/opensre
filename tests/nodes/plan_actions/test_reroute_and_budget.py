@@ -273,7 +273,8 @@ def test_plan_actions_keeps_openclaw_seeded_when_budget_is_full(monkeypatch):
     assert reroute_reason == ""
 
 
-def test_summarize_execution_results_tracks_failed_attempts():
+def test_summarize_execution_results_does_not_record_failed_actions_in_hypotheses():
+    """Failed runs must stay re-plannable; only successes populate executed_hypotheses."""
     execution_results = {
         "search_openclaw_conversations": ActionExecutionResult(
             action_name="search_openclaw_conversations",
@@ -293,7 +294,7 @@ def test_summarize_execution_results_tracks_failed_attempts():
     )
 
     assert evidence == {}
-    assert executed_hypotheses[0]["actions"] == ["search_openclaw_conversations"]
+    assert executed_hypotheses == []
     assert "FAILED" in evidence_summary
 
 
