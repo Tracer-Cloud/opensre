@@ -217,9 +217,10 @@ class TestValidateOpenClawConfig:
             result = validate_openclaw_config(config)
 
         assert result.ok is True
-        assert "streamable-http" in result.detail
-        assert "openclaw.example.com" in result.detail
-        assert "2 tool(s)" in result.detail
+        assert result.detail == (
+            "OpenClaw MCP connected via streamable-http (https://openclaw.example.com/mcp); "
+            "discovered 2 tool(s)."
+        )
         assert result.tool_names == ("list_alerts", "run_rca")
 
     def test_failed_result_on_exception(self) -> None:
