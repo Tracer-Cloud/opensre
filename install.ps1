@@ -426,12 +426,10 @@ function Get-OpenSreBinaryPathFromArchive {
     throw "Archive did not contain '$BinaryName'."
 }
 
-function Assert-OpenSreBinaryVersion {
+function Get-OpenSreBinaryVersionInfo {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$BinaryPath,
-        [Parameter(Mandatory = $true)]
-        [string]$ExpectedVersion
+        [string]$BinaryPath
     )
 
     try {
@@ -442,8 +440,15 @@ function Assert-OpenSreBinaryVersion {
     }
 
     $versionText = ($versionOutput | Out-String).Trim()
-    if ($versionText -notmatch [Regex]::Escape($ExpectedVersion)) {
-        throw "Downloaded binary version mismatch. Expected '$ExpectedVersion' but got '$versionText'."
+    $detectedVersion = ""
+    $match = [System.Text.RegularExpressions.Regex]::Match($versionText, '\d{4}\.\d{1,2}\.\d{1,2}')
+    if ($match.Success) {
+        $detectedVersion = $match.Value
+    }
+
+    return [pscustomobject]@{
+        Text = $versionText
+        Version = $detectedVersion
     }
 }
 
@@ -451,6 +456,7 @@ function Install-OpenSre {
     $repo = if ($env:OPENSRE_INSTALL_REPO) { $env:OPENSRE_INSTALL_REPO } else { "Tracer-Cloud/opensre" }
     $installDir = if ($env:OPENSRE_INSTALL_DIR) { $env:OPENSRE_INSTALL_DIR } else { Get-OpenSreDefaultInstallDir }
     $binaryName = "opensre.exe"
+    $requestedVersion = if ($env:OPENSRE_VERSION) { $env:OPENSRE_VERSION.Trim().TrimStart("v") } else { "" }
 
     Enable-OpenSreTls
 
@@ -496,7 +502,23 @@ function Install-OpenSre {
         Expand-Archive -LiteralPath $archivePath -DestinationPath $tmpDir -Force
 
         $binaryPath = Get-OpenSreBinaryPathFromArchive -ExtractionRoot $tmpDir -BinaryName $binaryName
-        Assert-OpenSreBinaryVersion -BinaryPath $binaryPath -ExpectedVersion $version
+        $binaryVersionInfo = Get-OpenSreBinaryVersionInfo -BinaryPath $binaryPath
+        $binaryVersionText = [string]$binaryVersionInfo.Text
+        $binaryVersion = [string]$binaryVersionInfo.Version
+
+        if ($binaryVersionText -notmatch [Regex]::Escape($version)) {
+            if ($requestedVersion) {
+                throw "Downloaded binary version mismatch. Expected '$version' but got '$binaryVersionText'."
+            }
+
+            if (-not $binaryVersion) {
+                throw "Downloaded binary version mismatch. Expected '$version' but got '$binaryVersionText'."
+            }
+
+            Write-Warning "Latest release metadata reports v$version, but the downloaded binary reports v$binaryVersion. Installing the verified binary anyway."
+            $version = $binaryVersion
+        }
+
         Copy-Item -LiteralPath $binaryPath -Destination (Join-Path $installDir $binaryName) -Force
     }
     finally {
