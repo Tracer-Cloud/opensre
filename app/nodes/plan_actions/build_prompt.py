@@ -149,6 +149,17 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Use search_github_code and get_github_file_contents to trace the failure into code"""
         )
 
+    if "openclaw" in available_sources:
+        openclaw = available_sources["openclaw"]
+        endpoint = openclaw.get("openclaw_command") or openclaw.get("openclaw_url") or "unknown"
+        hints.append(
+            f"""OpenClaw MCP Available:
+- Transport: {openclaw.get("openclaw_mode") or "unknown"}
+- Endpoint: {endpoint}
+- Use list_openclaw_tools to inspect the available OpenClaw bridge tools
+- Use call_openclaw_tool to read OpenClaw conversations, poll events, or send a reply through an existing route"""
+        )
+
     if "vercel" in available_sources and "github" in available_sources:
         hints.append(
             """Vercel And GitHub Correlation Available:

@@ -68,7 +68,8 @@
               "jira",
               "prefect",
               "google-docs",
-              "discord"
+              "discord",
+              "openclaw"
             ]
           }
         ]

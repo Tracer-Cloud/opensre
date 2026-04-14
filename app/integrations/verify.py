@@ -26,6 +26,7 @@ from app.integrations.models import (
 )
 from app.integrations.mongodb import build_mongodb_config, validate_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config, validate_mongodb_atlas_config
+from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
 from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
@@ -62,6 +63,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "clickhouse",
     "bitbucket",
     "discord",
+    "openclaw",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -457,6 +459,43 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
                     "application_id": os.getenv("DISCORD_APPLICATION_ID", "").strip(),
                     "public_key": os.getenv("DISCORD_PUBLIC_KEY", "").strip(),
                     "default_channel_id": os.getenv("DISCORD_DEFAULT_CHANNEL_ID", "").strip() or None,
+                },
+            }
+
+    openclaw_integration = classified_integrations.get("openclaw")
+    if isinstance(openclaw_integration, dict):
+        effective["openclaw"] = {
+            "source": source_by_service.get("openclaw", "local env"),
+            "config": {
+                "url": str(openclaw_integration.get("url", "")).strip(),
+                "mode": str(openclaw_integration.get("mode", "streamable-http")).strip(),
+                "command": str(openclaw_integration.get("command", "")).strip(),
+                "args": openclaw_integration.get("args", []),
+                "auth_token": str(openclaw_integration.get("auth_token", "")).strip(),
+            },
+        }
+    else:
+        openclaw_url = os.getenv("OPENCLAW_MCP_URL", "").strip()
+        openclaw_command = os.getenv("OPENCLAW_MCP_COMMAND", "").strip()
+        openclaw_mode = (
+            os.getenv("OPENCLAW_MCP_MODE", "streamable-http").strip().lower()
+            or "streamable-http"
+        )
+        if (openclaw_mode == "stdio" and openclaw_command) or (
+            openclaw_mode != "stdio" and openclaw_url
+        ):
+            effective["openclaw"] = {
+                "source": "local env",
+                "config": {
+                    "url": openclaw_url,
+                    "mode": openclaw_mode,
+                    "command": openclaw_command,
+                    "args": [
+                        part
+                        for part in os.getenv("OPENCLAW_MCP_ARGS", "").strip().split()
+                        if part
+                    ],
+                    "auth_token": os.getenv("OPENCLAW_MCP_AUTH_TOKEN", "").strip(),
                 },
             }
 
@@ -974,6 +1013,25 @@ def _verify_discord(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_openclaw(source: str, config: dict[str, Any]) -> dict[str, str]:
+    try:
+        openclaw_config = build_openclaw_config(config)
+    except Exception as exc:
+        return _result("openclaw", source, "failed", f"Invalid OpenClaw config: {exc}")
+
+    if not openclaw_config.is_configured:
+        return _result(
+            "openclaw",
+            source,
+            "missing",
+            "OpenClaw is not configured: provide a URL (HTTP/SSE) or command (stdio).",
+        )
+
+    result = validate_openclaw_config(openclaw_config)
+    status = "passed" if result.ok else "failed"
+    return _result("openclaw", source, status, result.detail)
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -1048,6 +1106,8 @@ def verify_integrations(
             results.append(_verify_bitbucket(source, config))
         elif current_service == "discord":
             results.append(_verify_discord(source, config))
+        elif current_service == "openclaw":
+            results.append(_verify_openclaw(source, config))
 
     return results
 

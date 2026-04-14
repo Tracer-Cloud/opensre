@@ -133,9 +133,18 @@ You can start the MCP server with:
 opensre-mcp
 ```
 
-This exposes the `run_rca` tool for MCP clients (e.g., OpenClaw).
+This exposes the `run_rca` tool for MCP clients.
 
-### OpenClaw MCP Configuration (Example)
+---
+
+## Connecting OpenClaw
+
+OpenClaw is an AI coding assistant that can call OpenSRE's `run_rca` tool via MCP — letting you investigate production errors without leaving your editor.
+
+### Step 1: Add OpenSRE to OpenClaw's MCP config
+
+In OpenClaw, open **Settings → MCP Servers** and add:
+
 ```json
 {
   "mcpServers": {
@@ -147,7 +156,70 @@ This exposes the `run_rca` tool for MCP clients (e.g., OpenClaw).
 }
 ```
 
+If `opensre-mcp` is not on your `PATH`, use the full path:
+```json
+{ "command": "/path/to/venv/bin/opensre-mcp" }
+```
+
+### Step 2: Configure at least one observability integration
+
+OpenSRE needs credentials to query logs/metrics when it investigates. Set env vars before launching OpenClaw:
+
+```bash
+# Datadog
+export DD_API_KEY=your_api_key
+export DD_APP_KEY=your_app_key
+
+# OR Sentry
+export SENTRY_ORG_SLUG=my-org
+export SENTRY_AUTH_TOKEN=sntrys_...
+```
+
+Or run the interactive setup once (writes to `~/.tracer/integrations.json`):
+
+```bash
+opensre integrations setup
+```
+
+### Step 3: Investigate from OpenClaw
+
+In OpenClaw chat, call `run_rca` directly:
+
+```
+Run an investigation on: {"title": "High error rate on /api/checkout", "service": "checkout"}
+```
+
+OpenSRE queries your connected integrations and returns a structured root-cause analysis in the editor.
+
+### Optional: Connect OpenSRE back to OpenClaw
+
+If you want OpenSRE to call tools exposed by your OpenClaw MCP server during investigations:
+
+```bash
+# Recommended: use OpenClaw's stdio MCP bridge
+export OPENCLAW_MCP_MODE=stdio
+export OPENCLAW_MCP_COMMAND=openclaw
+export OPENCLAW_MCP_ARGS="mcp serve"
+
+# Advanced/custom remote MCP transport
+# export OPENCLAW_MCP_MODE=streamable-http
+# export OPENCLAW_MCP_URL=https://your-custom-openclaw-mcp-endpoint
+# export OPENCLAW_MCP_AUTH_TOKEN=your_bearer_token
+```
+
+Verify:
+```bash
+opensre integrations verify --service openclaw
+```
+
+Full documentation: `docs/openclaw.mdx`
+
+---
+
 ### Demo Alert Payload
 
-A realistic example alert payload is available at:
+A ready-to-paste OpenClaw `run_rca` payload is available at:
+`tests/fixtures/openclaw_test_alert.json`
+
+A more realistic full-fidelity alert fixture is also available at:
 `tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json`

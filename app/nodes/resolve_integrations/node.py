@@ -28,6 +28,7 @@ from app.integrations.models import (
 )
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config
+from app.integrations.openclaw import build_openclaw_config
 from app.integrations.postgresql import build_postgresql_config
 from app.integrations.sentry import build_sentry_config
 from app.output import get_tracker
@@ -65,6 +66,7 @@ _SERVICE_KEY_MAP = {
     "vercel": "vercel",
     "opsgenie": "opsgenie",
     "discord": "discord",
+    "openclaw": "openclaw",
 }
 
 
@@ -360,6 +362,23 @@ def _classify_integrations(
                 continue
             if discord_config.bot_token:
                 resolved["discord"] = discord_config.model_dump()
+
+        elif key == "openclaw":
+            try:
+                openclaw_config = build_openclaw_config(
+                    {
+                        "url": credentials.get("url", ""),
+                        "mode": credentials.get("mode", "streamable-http"),
+                        "command": credentials.get("command", ""),
+                        "args": credentials.get("args", []),
+                        "auth_token": credentials.get("auth_token", ""),
+                        "integration_id": integration.get("id", ""),
+                    }
+                )
+            except Exception:
+                continue
+            if openclaw_config.is_configured:
+                resolved["openclaw"] = openclaw_config.model_dump()
 
         else:
             resolved[key] = {
@@ -702,6 +721,37 @@ def _load_env_integrations() -> list[dict[str, Any]]:
                 "credentials": atlas_config.model_dump(exclude={"integration_id"}),
             }
         )
+
+    openclaw_url = os.getenv("OPENCLAW_MCP_URL", "").strip()
+    openclaw_command = os.getenv("OPENCLAW_MCP_COMMAND", "").strip()
+    openclaw_mode = os.getenv("OPENCLAW_MCP_MODE", "streamable-http").strip().lower() or "streamable-http"
+    if (openclaw_mode == "stdio" and openclaw_command) or (
+        openclaw_mode != "stdio" and openclaw_url
+    ):
+        try:
+            openclaw_config = build_openclaw_config(
+                {
+                    "url": openclaw_url,
+                    "mode": openclaw_mode,
+                    "command": openclaw_command,
+                    "args": [
+                        part
+                        for part in os.getenv("OPENCLAW_MCP_ARGS", "").strip().split()
+                        if part
+                    ],
+                    "auth_token": os.getenv("OPENCLAW_MCP_AUTH_TOKEN", "").strip(),
+                }
+            )
+            integrations.append(
+                {
+                    "id": "env-openclaw",
+                    "service": "openclaw",
+                    "status": "active",
+                    "credentials": openclaw_config.model_dump(exclude={"integration_id"}),
+                }
+            )
+        except Exception:
+            logger.debug("Failed to load OpenClaw config from env", exc_info=True)
 
     mariadb_host = os.getenv("MARIADB_HOST", "").strip()
     mariadb_database = os.getenv("MARIADB_DATABASE", "").strip()

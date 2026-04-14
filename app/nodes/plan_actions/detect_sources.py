@@ -1,7 +1,7 @@
 """Data source detection for dynamic investigation.
 
-Scans alert annotations and state context to detect available data sources
-(CloudWatch, S3, local files, Tracer Web, Grafana, Honeycomb, Coralogix)
+    Scans alert annotations and state context to detect available data sources
+    (CloudWatch, S3, local files, Tracer Web, Grafana, Honeycomb, Coralogix, OpenClaw)
 and extract their parameters.
 """
 
@@ -665,6 +665,23 @@ def detect_sources(
                 "github_token": str(github_int.get("auth_token", "")).strip(),
                 "github_command": str(github_int.get("command", "")).strip(),
                 "github_args": github_int.get("args", []),
+                "connection_verified": True,
+            }
+
+    openclaw_int = (resolved_integrations or {}).get("openclaw")
+    if openclaw_int:
+        openclaw_url = str(openclaw_int.get("url", "")).strip()
+        openclaw_command = str(openclaw_int.get("command", "")).strip()
+        if openclaw_url or openclaw_command:
+            sources["openclaw"] = {
+                "openclaw_url": openclaw_url,
+                "openclaw_mode": str(
+                    openclaw_int.get("mode", "streamable-http")
+                ).strip()
+                or "streamable-http",
+                "openclaw_token": str(openclaw_int.get("auth_token", "")).strip(),
+                "openclaw_command": openclaw_command,
+                "openclaw_args": openclaw_int.get("args", []),
                 "connection_verified": True,
             }
 

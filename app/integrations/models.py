@@ -405,3 +405,4 @@ class EffectiveIntegrations(StrictConfigModel):
     postgresql: EffectiveIntegrationEntry | None = None
     bitbucket: EffectiveIntegrationEntry | None = None
     discord: EffectiveIntegrationEntry | None = None
+    openclaw: EffectiveIntegrationEntry | None = None
