@@ -126,10 +126,6 @@ Generate the benchmark report:
 make benchmark
 ```
 
-<!-- BENCHMARK-START -->
-_No benchmark results yet. Run `make benchmark` to generate._
-<!-- BENCHMARK-END -->
-
 ---
 
 ## Capabilities
