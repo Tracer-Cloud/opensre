@@ -9,9 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.integrations.openclaw import (
-    DEFAULT_OPENCLAW_MCP_MODE,
     OpenClawConfig,
-    OpenClawValidationResult,
     _tool_result_to_dict,
     build_openclaw_config,
     describe_openclaw_error,

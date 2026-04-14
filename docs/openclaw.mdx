@@ -40,11 +40,13 @@ opensre integrations setup
 
 ### 4. Run a smoke test
 
-In OpenClaw, choose `run_rca` and paste the contents of:
+Run the fixture directly with the investigate command:
 
-```text
-tests/fixtures/openclaw_test_alert.json
+```bash
+opensre investigate -i tests/fixtures/openclaw_test_alert.json
 ```
+
+Once that works, you can call OpenSRE from OpenClaw through the `run_rca` MCP tool.
 
 ## Optional: let OpenSRE call OpenClaw
 

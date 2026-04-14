@@ -215,6 +215,9 @@ def test_plan_actions_keeps_openclaw_seeded_when_budget_is_full(monkeypatch):
     actions.append(MockAction("search_openclaw_conversations", "openclaw"))
     actions.append(MockAction("list_openclaw_tools", "openclaw"))
 
+    def _mock_get_available_actions():
+        return actions
+
     def _mock_get_prioritized_actions(sources=None, keywords=None):
         _ = (sources, keywords)
         return actions
@@ -225,13 +228,13 @@ def test_plan_actions_keeps_openclaw_seeded_when_budget_is_full(monkeypatch):
             rationale="Mocked planner output",
         )
 
-    monkeypatch.setattr(plan_actions_module, "get_available_actions", lambda: actions)
+    monkeypatch.setattr(plan_actions_module, "get_available_actions", _mock_get_available_actions)
     monkeypatch.setattr(
         plan_actions_module,
         "get_prioritized_actions",
         _mock_get_prioritized_actions,
     )
-    monkeypatch.setattr(plan_actions_module, "get_llm_for_tools", lambda: object())
+    monkeypatch.setattr(plan_actions_module, "get_llm_for_tools", object)
     monkeypatch.setattr(
         plan_actions_module,
         "plan_actions_with_llm",

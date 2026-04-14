@@ -171,10 +171,10 @@ opensre integrations setup
 
 ### 3. Run a test
 
-In OpenClaw, choose `run_rca` and paste the contents of:
+Run the fixture directly from the CLI:
 
-```
-tests/fixtures/openclaw_test_alert.json
+```bash
+opensre investigate -i tests/fixtures/openclaw_test_alert.json
 ```
 
 ### 4. Optional: let OpenSRE call OpenClaw
