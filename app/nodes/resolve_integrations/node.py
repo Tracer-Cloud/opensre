@@ -761,6 +761,8 @@ def _load_env_integrations() -> list[dict[str, Any]]:
                 "verify_ssl": os.getenv("AIRFLOW_VERIFY_SSL", "true").strip().lower()
                 in ("true", "1", "yes"),
                 "max_results": os.getenv("AIRFLOW_MAX_RESULTS", "50").strip(),
+            }
+    )
     atlas_pub = os.getenv("MONGODB_ATLAS_PUBLIC_KEY", "").strip()
     atlas_priv = os.getenv("MONGODB_ATLAS_PRIVATE_KEY", "").strip()
     atlas_project = os.getenv("MONGODB_ATLAS_PROJECT_ID", "").strip()
@@ -781,6 +783,11 @@ def _load_env_integrations() -> list[dict[str, Any]]:
                 "service": "airflow",
                 "status": "active",
                 "credentials": airflow_config.model_dump(),
+            }
+        )
+
+        integrations.append(
+            {
                 "id": "env-mongodb-atlas",
                 "service": "mongodb_atlas",
                 "status": "active",
