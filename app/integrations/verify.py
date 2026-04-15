@@ -30,6 +30,7 @@ from app.integrations.mongodb_atlas import build_mongodb_atlas_config, validate_
 from app.integrations.mysql import build_mysql_config, validate_mysql_config
 from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
 from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
+from app.integrations.rabbitmq import build_rabbitmq_config, validate_rabbitmq_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.services.coralogix import CoralogixClient
 from app.services.datadog.client import DatadogClient, DatadogConfig
@@ -52,6 +53,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "postgresql",
     "mongodb_atlas",
     "mariadb",
+    "rabbitmq",
     "google_docs",
     "vercel",
     "opsgenie",
@@ -425,6 +427,17 @@ def _verify_mariadb(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_rabbitmq(source: str, config: dict[str, Any]) -> dict[str, str]:
+    rabbitmq_config = build_rabbitmq_config(config)
+    result = validate_rabbitmq_config(rabbitmq_config)
+    return _result(
+        "rabbitmq",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
     """Validate Google Docs credentials and folder access."""
     from app.services.google_docs import GoogleDocsClient
@@ -686,6 +699,8 @@ def verify_integrations(
             results.append(_verify_mongodb_atlas(source, config))
         elif current_service == "mariadb":
             results.append(_verify_mariadb(source, config))
+        elif current_service == "rabbitmq":
+            results.append(_verify_rabbitmq(source, config))
         elif current_service == "google_docs":
             results.append(_verify_google_docs(source, config))
         elif current_service == "vercel":

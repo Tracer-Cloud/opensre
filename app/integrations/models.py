@@ -280,6 +280,30 @@ class MariaDBIntegrationConfig(StrictConfigModel):
         return str(value or "").strip()
 
 
+class RabbitMQIntegrationConfig(StrictConfigModel):
+    """Normalized RabbitMQ Management API credentials used by resolution and verification flows."""
+
+    host: str
+    management_port: int = 15672
+    username: str
+    password: str = ""
+    vhost: str = "/"
+    ssl: bool = False
+    verify_ssl: bool = True
+    integration_id: str = ""
+
+    @field_validator("host", "username", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("vhost", mode="before")
+    @classmethod
+    def _normalize_vhost(cls, value: object) -> str:
+        raw = str(value or "").strip()
+        return raw or "/"
+
+
 class MongoDBAtlasIntegrationConfig(StrictConfigModel):
     """Normalized MongoDB Atlas API credentials used by resolution and verification flows."""
 
@@ -428,6 +452,7 @@ class EffectiveIntegrations(StrictConfigModel):
     mongodb: EffectiveIntegrationEntry | None = None
     mongodb_atlas: EffectiveIntegrationEntry | None = None
     mariadb: EffectiveIntegrationEntry | None = None
+    rabbitmq: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
     gitlab: EffectiveIntegrationEntry | None = None
     vercel: EffectiveIntegrationEntry | None = None
