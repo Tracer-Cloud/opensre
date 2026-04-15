@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import platform
+import sys
 import time
 
 import click
@@ -131,7 +132,7 @@ def investigate_command(
     """Run an RCA investigation against an alert payload."""
     from app.cli import write_json
     from app.cli.alert_templates import build_alert_template
-    from app.cli.investigate import run_investigation_cli_streaming
+    from app.cli.investigate import run_investigation_cli, run_investigation_cli_streaming
     from app.cli.payload import load_payload
 
     capture_investigation_started(
@@ -150,7 +151,17 @@ def investigate_command(
             input_json=input_json,
             interactive=interactive,
         )
-        result = run_investigation_cli_streaming(raw_alert=payload)
+        # Only stream the live UI when the user is interactively watching stdout
+        # and hasn't asked for machine-readable JSON. Otherwise the spinner and
+        # ANSI control codes corrupt the JSON payload that consumers expect on
+        # stdout (pipes, redirection, --json, CI logs).
+        stream_to_stdout = (
+            sys.stdout.isatty() and not is_json_output() and output is None
+        )
+        if stream_to_stdout:
+            result = run_investigation_cli_streaming(raw_alert=payload)
+        else:
+            result = run_investigation_cli(raw_alert=payload)
         write_json(result, output)
     except SystemExit:
         raise
