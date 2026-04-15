@@ -304,7 +304,7 @@ def deploy_railway(
         capture_deploy_completed(target="railway", dry_run=dry_run)
     else:
         capture_deploy_failed(target="railway", dry_run=dry_run)
-        raise SystemExit(exit_code)    
+        raise SystemExit(exit_code)
 
 
 @deploy.command(name="langsmith")
