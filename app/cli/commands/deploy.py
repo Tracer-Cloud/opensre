@@ -302,6 +302,7 @@ def deploy_railway(
     )
     if exit_code == 0:
         capture_deploy_completed(target="railway", dry_run=dry_run)
+        raise SystemExit(0)
     else:
         capture_deploy_failed(target="railway", dry_run=dry_run)
         raise SystemExit(exit_code)
