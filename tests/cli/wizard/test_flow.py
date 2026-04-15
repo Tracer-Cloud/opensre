@@ -464,8 +464,14 @@ def test_run_wizard_reuses_saved_defaults_when_user_keeps_provider(monkeypatch, 
         m.ask.return_value = False
         return m
 
+    def _mock_password(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = "saved-secret"
+        return m
+
     monkeypatch.setattr(flow, "select_prompt", _mock_select)
     monkeypatch.setattr(flow.questionary, "confirm", _mock_confirm)
+    monkeypatch.setattr(flow.questionary, "password", _mock_password)
     monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
     monkeypatch.setattr(
         flow,
@@ -509,7 +515,10 @@ def test_run_wizard_reuses_saved_defaults_when_user_keeps_provider(monkeypatch, 
     assert saved["provider"] == "openai"
     assert saved["model"] == "gpt-5.4"
     assert "api_key" not in saved
-    assert saved_llm_keys == [("OPENAI_API_KEY", "saved-secret")]
+    assert saved_llm_keys == [
+        ("OPENAI_API_KEY", "saved-secret"),
+        ("OPENAI_API_KEY", "saved-secret"),
+    ]
 
 
 def test_run_wizard_persists_matching_local_config_and_env(monkeypatch, tmp_path) -> None:

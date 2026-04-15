@@ -1416,27 +1416,26 @@ def run_wizard(_argv: list[str] | None = None) -> int:
             )
         ]
         model = provider.default_model
-        if not has_api_key:
-            if provider.value == "ollama":
-                _step("Ollama Configuration")
-                try:
-                    api_key = _prompt_value(
-                        "Ollama host URL (OLLAMA_HOST, e.g., http://localhost:11434)",
-                        secret=False,
-                    )
-                except KeyboardInterrupt:
-                    _console.print("\n[yellow]Setup cancelled.[/]")
-                    return 1
-            else:
-                _step("API Key")
-                try:
-                    api_key = _prompt_value(
-                        f"{provider.label} API key ({provider.api_key_env})",
-                        secret=True,
-                    )
-                except KeyboardInterrupt:
-                    _console.print("\n[yellow]Setup cancelled.[/]")
-                    return 1
+        if provider.value == "ollama":
+            _step("Ollama Configuration")
+            try:
+                api_key = _prompt_value(
+                    "Ollama host URL (OLLAMA_HOST, e.g., http://localhost:11434)",
+                    secret=False,
+                )
+            except KeyboardInterrupt:
+                _console.print("\n[yellow]Setup cancelled.[/]")
+                return 1
+        else:
+            _step("API Key")
+            try:
+                api_key = _prompt_value(
+                    f"{provider.label} API key ({provider.api_key_env})",
+                    secret=True,
+                )
+            except KeyboardInterrupt:
+                _console.print("\n[yellow]Setup cancelled.[/]")
+                return 1
         if not _persist_llm_api_key(provider.api_key_env, api_key):
             return 1
     else:
@@ -1449,29 +1448,28 @@ def run_wizard(_argv: list[str] | None = None) -> int:
             if not _persist_llm_api_key(provider.api_key_env, legacy_api_key):
                 return 1
             has_api_key = True
-        if not has_api_key:
-            if provider.value == "ollama":
-                _step("Ollama Configuration")
-                try:
-                    api_key = _prompt_value(
-                        "Ollama host URL (OLLAMA_HOST, e.g., http://localhost:11434)",
-                        secret=False,
-                    )
-                except KeyboardInterrupt:
-                    _console.print("\n[yellow]Setup cancelled.[/]")
-                    return 1
-            else:
-                _step("API Key")
-                try:
-                    api_key = _prompt_value(
-                        f"{provider.label} API key ({provider.api_key_env})",
-                        secret=True,
-                    )
-                except KeyboardInterrupt:
-                    _console.print("\n[yellow]Setup cancelled.[/]")
-                    return 1
-                if not _persist_llm_api_key(provider.api_key_env, api_key):
-                    return 1
+        if provider.value == "ollama":
+            _step("Ollama Configuration")
+            try:
+                api_key = _prompt_value(
+                    "Ollama host URL (OLLAMA_HOST, e.g., http://localhost:11434)",
+                    secret=False,
+                )
+            except KeyboardInterrupt:
+                _console.print("\n[yellow]Setup cancelled.[/]")
+                return 1
+        else:
+            _step("API Key")
+            try:
+                api_key = _prompt_value(
+                    f"{provider.label} API key ({provider.api_key_env})",
+                    secret=True,
+                )
+            except KeyboardInterrupt:
+                _console.print("\n[yellow]Setup cancelled.[/]")
+                return 1
+            if not _persist_llm_api_key(provider.api_key_env, api_key):
+                return 1
 
     probes = {
         "local": local_probe.as_dict(),
