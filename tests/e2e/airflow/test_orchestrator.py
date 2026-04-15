@@ -182,8 +182,6 @@ def test_airflow_investigation_e2e():
     raw_alert.setdefault("commonAnnotations", {})["airflow_base_url"] = base_url
     raw_alert["commonAnnotations"]["airflow_dag_id"] = dag_id
 
-    print(f"\nRunning investigation with Airflow supplementary evidence for DAG {dag_id}")
-
     investigation_result = run_investigation_cli(
         alert_name=f"Airflow DAG failure: {dag_id}",
         pipeline_name=dag_id,
@@ -193,7 +191,6 @@ def test_airflow_investigation_e2e():
 
     root_cause = investigation_result.get("root_cause", "")
 
-    print(f"Root cause: {root_cause}")
 
     assert root_cause, (
         "Investigation produced no root cause. "
