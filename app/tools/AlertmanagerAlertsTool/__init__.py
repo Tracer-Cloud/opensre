@@ -12,7 +12,7 @@ from typing import Any
 from app.services.alertmanager import make_alertmanager_client
 from app.tools.base import BaseTool
 
-_FIRING_STATES = {"active"}
+_FIRING_STATES = {"active", "unprocessed"}
 
 
 class AlertmanagerAlertsTool(BaseTool):

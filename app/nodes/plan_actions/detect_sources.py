@@ -903,7 +903,8 @@ def detect_sources(
             common_labels.get("alertname") or annotations.get("alertname") or ""
         ).strip()
         if alertname:
-            filter_labels.append(f'alertname="{alertname}"')
+            escaped = alertname.replace("\\", "\\\\").replace('"', '\\"')
+            filter_labels.append(f'alertname="{escaped}"')
         sources["alertmanager"] = {
             "base_url": str(alertmanager_int.get("base_url", "")).strip().rstrip("/"),
             "bearer_token": str(alertmanager_int.get("bearer_token", "")).strip(),

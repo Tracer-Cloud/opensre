@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 import httpx
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 from app.strict_config import StrictConfigModel
 
@@ -42,6 +42,15 @@ class AlertmanagerConfig(StrictConfigModel):
     @classmethod
     def _normalize_str(cls, value: object) -> str:
         return str(value or "").strip()
+
+    @model_validator(mode="after")
+    def _no_dual_auth(self) -> AlertmanagerConfig:
+        if self.bearer_token and self.username:
+            raise ValueError(
+                "Alertmanager config has both bearer_token and username set; "
+                "use one auth method only."
+            )
+        return self
 
     @property
     def headers(self) -> dict[str, str]:
