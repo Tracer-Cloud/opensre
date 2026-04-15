@@ -30,6 +30,16 @@ class TestDispatchSlash:
         for name in SLASH_COMMANDS:
             assert name in output
 
+    def test_question_mark_shortcut_runs_help(self) -> None:
+        """`/?` is the canonical shortcut for `/help` (vim / less convention)."""
+        session = ReplSession()
+        console, buf = _capture()
+        assert dispatch_slash("/?", session, console) is True
+        output = buf.getvalue()
+        # Any slash command name suffices as proof the help table rendered.
+        assert "/help" in output
+        assert "/list" in output
+
     def test_trust_toggle(self) -> None:
         session = ReplSession()
         console, _ = _capture()

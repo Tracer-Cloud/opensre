@@ -12,6 +12,7 @@ InputKind = Literal["slash", "new_alert", "follow_up"]
 # Bare words that map to slash commands — users often forget the leading slash.
 _BARE_COMMAND_ALIASES = frozenset({
     "help",
+    "?",  # iconic shortcut for help, matches vim, less, many REPLs
     "exit",
     "quit",
     "clear",

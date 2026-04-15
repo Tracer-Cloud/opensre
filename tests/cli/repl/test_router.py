@@ -19,6 +19,17 @@ class TestClassifyInput:
         for word in ("help", "exit", "quit", "status", "clear", "reset", "trust"):
             assert classify_input(word, session) == "slash", word
 
+    def test_bare_question_mark_is_slash(self) -> None:
+        """Typing `?` at the prompt should route to /help, not be mistaken for
+        a new alert or a follow-up."""
+        session = ReplSession()
+        assert classify_input("?", session) == "slash"
+        assert classify_input("  ?  ", session) == "slash"
+        # Even with prior investigation state, bare `?` is the help shortcut —
+        # not a short follow-up question.
+        session.last_state = {"root_cause": "disk full"}
+        assert classify_input("?", session) == "slash"
+
     def test_bare_command_is_case_insensitive(self) -> None:
         session = ReplSession()
         assert classify_input("HELP", session) == "slash"

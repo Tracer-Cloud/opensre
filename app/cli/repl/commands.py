@@ -197,6 +197,7 @@ def _cmd_list(session: ReplSession, console: Console, args: list[str]) -> bool: 
 
 SLASH_COMMANDS: dict[str, SlashCommand] = {
     "/help": SlashCommand("/help", "show available commands", _cmd_help),
+    "/?": SlashCommand("/?", "shortcut for /help", _cmd_help),
     "/exit": SlashCommand("/exit", "exit the REPL", _cmd_exit),
     "/quit": SlashCommand("/quit", "alias for /exit", _cmd_exit),
     "/clear": SlashCommand("/clear", "clear the screen and re-render the banner", _cmd_clear),
