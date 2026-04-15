@@ -66,12 +66,17 @@ def _is_short_question(text: str) -> bool:
     stripped = text.strip()
     if not stripped:
         return False
-    # A reasonable heuristic: short (< ~90 chars) and ends with '?' or starts
-    # with a question cue.
+    # A reasonable heuristic: short (< ~90 chars) and either ends with '?' or
+    # starts with a question cue.  The length guard applies to both branches so
+    # that a long incident description phrased as a question ("CPU usage on
+    # orders-api has been climbing steadily for the past two hours — what
+    # changed?") routes to a fresh investigation instead of the follow-up path.
+    if len(stripped) >= 90:
+        return False
     lower = stripped.lower()
     if stripped.endswith("?"):
         return True
-    return len(stripped) < 90 and any(lower.startswith(cue) for cue in _FOLLOW_UP_CUES)
+    return any(lower.startswith(cue) for cue in _FOLLOW_UP_CUES)
 
 
 def _mentions_alert_signal(text: str) -> bool:

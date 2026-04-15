@@ -58,3 +58,15 @@ class TestClassifyInput:
             "around 14:00 UTC today and our on-call is paged"
         )
         assert classify_input(long_text, session) == "new_alert"
+
+    def test_long_question_is_still_new_alert(self) -> None:
+        # A long incident description phrased as a question should not be
+        # mistaken for a follow-up — only short question-shaped input gets
+        # the follow-up routing.
+        session = ReplSession()
+        session.last_state = {"root_cause": "disk full"}
+        long_question = (
+            "CPU usage on orders-api has been climbing steadily for the past "
+            "two hours and we just paged the on-call engineer — what changed?"
+        )
+        assert classify_input(long_question, session) == "new_alert"
