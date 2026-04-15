@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from app.cli.repl.banner import render_banner
@@ -180,7 +181,7 @@ def _cmd_list(session: ReplSession, console: Console, args: list[str]) -> bool: 
 
     if sub and sub not in ("", "all"):
         console.print(
-            f"[red]unknown list target:[/red] {sub}  "
+            f"[red]unknown list target:[/red] {escape(sub)}  "
             "(try [bold]/list integrations[/bold], [bold]/list models[/bold], "
             "or [bold]/list mcp[/bold])"
         )
@@ -220,6 +221,8 @@ def dispatch_slash(command_line: str, session: ReplSession, console: Console) ->
     args = parts[1:]
     cmd = SLASH_COMMANDS.get(name)
     if cmd is None:
-        console.print(f"[red]unknown command:[/red] {name}  (type [bold]/help[/bold])")
+        console.print(
+            f"[red]unknown command:[/red] {escape(name)}  (type [bold]/help[/bold])"
+        )
         return True
     return cmd.handler(session, console, args)

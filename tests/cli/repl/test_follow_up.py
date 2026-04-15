@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
-from app.cli.repl.follow_up import _summarize_evidence, _summarize_last_state
+import io
+from unittest.mock import MagicMock
+
+from rich.console import Console
+
+from app.cli.repl.follow_up import (
+    _summarize_evidence,
+    _summarize_last_state,
+    answer_follow_up,
+)
+from app.cli.repl.session import ReplSession
 
 
 class TestSummarizeEvidence:
@@ -67,3 +77,62 @@ class TestSummarizeLastState:
         summary = _summarize_last_state(state)
         assert "Alert: Test" in summary
         assert "Evidence" not in summary
+
+
+class TestAnswerFollowUpMarkupSafety:
+    """Regression: LLM output with bracket sequences (e.g. [OOMKilled]) was
+    being silently truncated by Rich's markup parser.  All LLM and exception
+    text must be markup-escaped before interpolation."""
+
+    def _run_with_response(self, monkeypatch: object, response_text: str) -> str:
+        fake_client = MagicMock()
+        fake_response = MagicMock()
+        fake_response.content = response_text
+        fake_client.invoke.return_value = fake_response
+
+        # follow_up.py imports get_llm_for_reasoning lazily inside the function,
+        # so patch at the source module.
+        monkeypatch.setattr(  # type: ignore[attr-defined]
+            "app.services.llm_client.get_llm_for_reasoning",
+            lambda: fake_client,
+        )
+
+        session = ReplSession()
+        session.last_state = {"alert_name": "test", "root_cause": "x"}
+
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, highlight=False, width=200)
+        answer_follow_up("what happened?", session, console)
+        return buf.getvalue()
+
+    def test_llm_output_with_brackets_not_truncated(self, monkeypatch: object) -> None:
+        response = (
+            "The pod hit [OOMKilled] at [2026-04-15 14:00:00 UTC] on "
+            "[service-name=orders-api] — see [ERROR] in logs."
+        )
+        output = self._run_with_response(monkeypatch, response)
+        assert "[OOMKilled]" in output
+        assert "[ERROR]" in output
+        assert "orders-api" in output
+        assert "2026-04-15 14:00:00 UTC" in output
+
+    def test_exception_message_with_brackets_not_dropped(
+        self, monkeypatch: object
+    ) -> None:
+        def _boom() -> None:
+            raise RuntimeError("config error: missing [api_key] in [datadog] section")
+
+        monkeypatch.setattr(  # type: ignore[attr-defined]
+            "app.services.llm_client.get_llm_for_reasoning",
+            _boom,
+        )
+
+        session = ReplSession()
+        session.last_state = {"alert_name": "test", "root_cause": "x"}
+
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, highlight=False, width=200)
+        answer_follow_up("why?", session, console)
+        output = buf.getvalue()
+        assert "[api_key]" in output
+        assert "[datadog]" in output

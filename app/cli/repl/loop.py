@@ -8,6 +8,7 @@ import sys
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import ANSI
 from rich.console import Console
+from rich.markup import escape
 
 from app.cli.repl.banner import render_banner
 from app.cli.repl.commands import dispatch_slash
@@ -30,7 +31,9 @@ def _run_new_alert(text: str, session: ReplSession, console: Console) -> None:
         session.record("alert", text, ok=False)
         return
     except Exception as exc:  # noqa: BLE001
-        console.print(f"[red]investigation failed:[/red] {exc}")
+        # Exception repr may contain brackets (stack frame refs, config
+        # dicts) that Rich would eat as markup tags — escape before printing.
+        console.print(f"[red]investigation failed:[/red] {escape(str(exc))}")
         session.record("alert", text, ok=False)
         return
 

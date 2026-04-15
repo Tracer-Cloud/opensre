@@ -119,18 +119,44 @@ class TestListCommand:
         dispatch_slash("/list mcps", ReplSession(), console)
         assert "openclaw" in buf.getvalue()
 
-    def test_list_models_shows_provider_and_models(self) -> None:
+    def _patch_llm(self, monkeypatch: object) -> None:
+        """Provide a stable fake LLMSettings so the test doesn't depend on env."""
+        from app.cli.repl import commands as cmd_module
+
+        class _FakeLLM:
+            provider = "anthropic"
+            anthropic_reasoning_model = "claude-opus-4"
+            anthropic_toolcall_model = "claude-haiku-4"
+
+        monkeypatch.setattr(  # type: ignore[attr-defined]
+            cmd_module, "_load_llm_settings", lambda: _FakeLLM()
+        )
+
+    def test_list_models_shows_provider_and_models(self, monkeypatch: object) -> None:
+        self._patch_llm(monkeypatch)
         console, buf = _capture()
         dispatch_slash("/list models", ReplSession(), console)
         output = buf.getvalue()
-        # Whatever provider the test env resolves to, we should at least print
-        # the labels.
         assert "provider" in output
         assert "reasoning model" in output
         assert "toolcall model" in output
+        assert "anthropic" in output
+
+    def test_list_models_handles_missing_env_gracefully(
+        self, monkeypatch: object
+    ) -> None:
+        from app.cli.repl import commands as cmd_module
+
+        monkeypatch.setattr(  # type: ignore[attr-defined]
+            cmd_module, "_load_llm_settings", lambda: None
+        )
+        console, buf = _capture()
+        dispatch_slash("/list models", ReplSession(), console)
+        assert "LLM settings unavailable" in buf.getvalue()
 
     def test_list_default_shows_all_three_sections(self, monkeypatch: object) -> None:
         self._patch_verify(monkeypatch)
+        self._patch_llm(monkeypatch)
         console, buf = _capture()
         dispatch_slash("/list", ReplSession(), console)
         output = buf.getvalue()

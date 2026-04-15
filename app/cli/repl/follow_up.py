@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from rich.console import Console
+from rich.markup import escape
 
 from app.cli.repl.session import ReplSession
 
@@ -95,12 +96,15 @@ def answer_follow_up(question: str, session: ReplSession, console: Console) -> N
         client = get_llm_for_reasoning()
         response = client.invoke(prompt)
     except Exception as exc:  # noqa: BLE001
-        console.print(f"[red]follow-up failed:[/red] {exc}")
+        console.print(f"[red]follow-up failed:[/red] {escape(str(exc))}")
         return
 
     text = getattr(response, "content", None) or str(response)
+    # LLM output routinely contains brackets ([ERROR], [OOMKilled], ISO
+    # timestamps, service names) that Rich would interpret as markup tags and
+    # silently drop.  Escape everything that isn't our own markup.
     console.print()
-    console.print(f"[bold cyan]answer:[/bold cyan] {text}")
+    console.print(f"[bold cyan]answer:[/bold cyan] {escape(text)}")
     console.print()
 
 
