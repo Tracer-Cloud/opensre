@@ -13,6 +13,7 @@ from rich.text import Text
 
 from app.cli.wizard.config import PROVIDER_BY_VALUE, SUPPORTED_PROVIDERS
 from app.cli.wizard.env_sync import sync_env_values, sync_provider_env
+from app.cli.wizard.integration_health import IntegrationHealthResult
 from app.cli.wizard.probes import ProbeResult, probe_local_target, probe_remote_target
 from app.cli.wizard.prompts import select as select_prompt
 from app.cli.wizard.store import get_store_path, load_local_config, save_local_config
@@ -155,13 +156,6 @@ def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
 
     return _get()
-
-
-@dataclass(frozen=True)
-class IntegrationHealthResult:
-    ok: bool
-    detail: str
-
 
 _STYLE = questionary.Style(
     [
