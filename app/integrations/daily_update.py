@@ -632,6 +632,31 @@ def update_docs_navigation(_output_dir: Path) -> Path:
     return docs_json
 
 
+def _extract_highlights_from_archive(archive_path: Path, *, limit: int = 1) -> str:
+    """Extract first highlight(s) from an archive file for the overview."""
+    if not archive_path.exists():
+        return "No updates"
+    content = archive_path.read_text(encoding="utf-8")
+    lines = content.split("\n")
+    in_main_updates = False
+    highlights: list[str] = []
+    for line in lines:
+        if line.startswith("## Main updates shipped"):
+            in_main_updates = True
+            continue
+        if in_main_updates and line.startswith("## "):
+            break
+        if in_main_updates and line.startswith("- "):
+            highlight = line[2:].strip()
+            if highlight and not highlight.startswith("No pull requests"):
+                highlights.append(highlight)
+                if len(highlights) >= limit:
+                    break
+    if not highlights:
+        return "No updates"
+    return highlights[0].rsplit("\u2014", 1)[0].strip()
+
+
 def regenerate_overview(output_dir: Path) -> Path:
     """Rebuild the overview page listing all daily updates in reverse chronological order."""
     overview_path = output_dir / "overview.mdx"
@@ -641,26 +666,48 @@ def regenerate_overview(output_dir: Path) -> Path:
         reverse=True,
     )
 
+    latest = archive_files[:6]
+    archive = archive_files[6:]
+
     lines = [
         "---",
         'title: "Daily Updates"',
-        'description: "Automatically generated daily engineering updates from merged pull requests"',
+        'description: "OpenSRE engineering daily updates from merged pull requests"',
         "---",
         "",
         "Daily updates are generated each evening (Europe/London) from the pull requests merged that day.",
         "",
-        "| Date | Link |",
-        "| ---- | ---- |",
+        "## Latest Updates",
+        "",
+        "| Date | Highlights |",
+        "| ---- | ----------- |",
     ]
-    for archive_file in archive_files:
+    for archive_file in latest:
         slug = f"daily-updates/{archive_file.stem}"
-        lines.append(f"| {archive_file.stem} | [{archive_file.stem}](/{slug}) |")
+        highlight = _extract_highlights_from_archive(archive_file, limit=1)
+        if len(highlight) > 60:
+            highlight = highlight[:57].rsplit(" ", 1)[0] + "..."
+        lines.append(f"| {archive_file.stem} | [View](/{slug}) \u2014 {highlight} |")
+
+    if archive:
+        lines.extend(
+            [
+                "",
+                "## Archive",
+                "",
+                "| Date | Link |",
+                "| ---- | ---- |",
+            ]
+        )
+        for archive_file in archive:
+            slug = f"daily-updates/{archive_file.stem}"
+            lines.append(f"| {archive_file.stem} | [View](/{slug}) |")
 
     if not archive_files:
-        lines.append("| — | No daily updates yet. |")
+        lines.append("| \u2014 | No daily updates yet. |")
 
     lines.append("")
-    overview_path.write_text("\n".join(lines), encoding="utf-8")
+    overview_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return overview_path
 
 
