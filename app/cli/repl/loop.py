@@ -16,10 +16,6 @@ from app.cli.repl.router import classify_input
 from app.cli.repl.session import ReplSession
 
 
-def _is_slash(text: str) -> bool:
-    return text.lstrip().startswith("/")
-
-
 def _run_new_alert(text: str, session: ReplSession, console: Console) -> None:
     """Dispatch a free-text alert description to the streaming pipeline."""
     from app.cli.investigate import run_investigation_for_session
