@@ -25,8 +25,8 @@ from app.cli.langsmith_deploy import (
     validate_langsmith_api_key,
 )
 from app.deployment.ec2_config import load_remote_outputs
-from app.integrations.store import upsert_integration
 from app.deployment.health import poll_deployment_health
+from app.integrations.store import upsert_integration
 
 
 def _deploy_style(questionary: Any) -> Any:
@@ -303,10 +303,6 @@ def deploy_railway(
     if exit_code == 0:
         capture_deploy_completed(target="railway", dry_run=dry_run)
 
-    else:
-        capture_deploy_failed(target="railway", dry_run=dry_run)
-    raise SystemExit(rc)
-
 
 @deploy.command(name="langsmith")
 @click.option("--api-key", default=None, help="LangSmith API key")
@@ -356,8 +352,8 @@ def deploy_langsmith(api_key: str | None, build_only: bool, deployment_name: str
     click.echo(output)
 
     if rc != 0:
-      capture_deploy_failed(target="railway", dry_run=dry_run)
+      capture_deploy_failed(target="railway", dry_run=build_only)
       raise SystemExit(rc)
-      
+
     return
 
