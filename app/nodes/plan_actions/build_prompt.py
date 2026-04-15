@@ -1,11 +1,11 @@
 """Investigation prompt construction with available actions."""
 
-from typing import Any
-
 from pydantic import BaseModel, ValidationError
 
+from app.nodes.investigate.types import ExecutedHypothesis
 
-def _get_executed_sources(executed_hypotheses: list[dict[str, Any]]) -> set[str]:
+
+def _get_executed_sources(executed_hypotheses: list[ExecutedHypothesis]) -> set[str]:
     """Extract executed sources from hypotheses history."""
     executed_sources_set = set()
     for h in executed_hypotheses:
@@ -97,7 +97,9 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
         grafana = available_sources["grafana"]
         loki_only = grafana.get("loki_only", False)
         grafana_label = "Grafana Local (Loki only)" if loki_only else "Grafana Cloud"
-        traces_hint = "" if loki_only else "\n- Use query_grafana_traces to find distributed traces in Tempo"
+        traces_hint = (
+            "" if loki_only else "\n- Use query_grafana_traces to find distributed traces in Tempo"
+        )
         hints.append(
             f"""{grafana_label} Available:
 - Service Name: {grafana.get("service_name")}
@@ -121,6 +123,51 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Use query_datadog_logs to search for pipeline errors, PIPELINE_ERROR patterns, and application logs
 - Use query_datadog_monitors to check monitor states and alerting configuration
 - Use query_datadog_events to find deployments and infrastructure changes"""
+        )
+
+    if "vercel" in available_sources:
+        vercel = available_sources["vercel"]
+        hints.append(
+            f"""Vercel Deployment Context Available:
+- Project: {vercel.get("project_name") or vercel.get("project_slug") or vercel.get("project_id")}
+- Deployment ID: {vercel.get("deployment_id") or "unknown"}
+- Selected Log ID: {vercel.get("selected_log_id") or "not provided"}
+- Log URL: {vercel.get("log_url") or "not provided"}
+- Use vercel_deployment_status to inspect recent failed deployments and their git metadata
+- Use vercel_deployment_logs to inspect build output and runtime logs for the deployment"""
+        )
+
+    if "github" in available_sources:
+        github = available_sources["github"]
+        hints.append(
+            f"""GitHub Repository Context Available:
+- Repository: {github.get("owner")}/{github.get("repo")}
+- Commit SHA: {github.get("sha") or "unknown"}
+- Ref: {github.get("ref") or "unknown"}
+- Code Query: {github.get("query") or "exception OR error"}
+- Use list_github_commits to correlate the deployment window with recent code changes
+- Use search_github_code and get_github_file_contents to trace the failure into code"""
+        )
+
+    if "openclaw" in available_sources:
+        openclaw = available_sources["openclaw"]
+        endpoint = openclaw.get("openclaw_command") or openclaw.get("openclaw_url") or "unknown"
+        hints.append(
+            f"""OpenClaw MCP Available:
+- Transport: {openclaw.get("openclaw_mode") or "unknown"}
+- Endpoint: {endpoint}
+- Search hint: {openclaw.get("openclaw_search_query") or "recent conversations"}
+- Start with search_openclaw_conversations to inspect recent OpenClaw context before generic tool calls
+- Use list_openclaw_tools only if you need to inspect the raw bridge surface"""
+        )
+
+    if "vercel" in available_sources and "github" in available_sources:
+        hints.append(
+            """Vercel And GitHub Correlation Available:
+- Prioritise a deployment-to-code workflow
+- First inspect Vercel deployment status and logs
+- Then correlate the deployment commit SHA or ref with GitHub commits and code search results
+- Prefer git evidence that matches the failing Vercel deployment over unrelated repository history"""
         )
 
     if "honeycomb" in available_sources:
@@ -177,7 +224,7 @@ IMPORTANT: Always start with discovery actions before fetching specific resource
 
 def build_investigation_prompt(
     problem_md: str,
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
     available_actions: list,
     available_sources: dict[str, dict],
     memory_context: str = "",
@@ -253,10 +300,27 @@ Consider what information would help diagnose the root cause.
     return prompt
 
 
+def apply_tool_budget(actions: list, budget: int) -> list:
+    """
+    Apply a tool budget to cap the number of actions selected.
+
+    Args:
+        actions: List of available actions
+        budget: Maximum number of actions to allow
+
+    Returns:
+        Budget-capped list of actions
+    """
+    if len(actions) <= budget:
+        return actions
+    return actions[:budget]
+
+
 def select_actions(
     actions: list,
     available_sources: dict[str, dict],
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
+    tool_budget: int = 10,
 ) -> tuple[list, list[str]]:
     """
     Select available actions based on sources and execution history.
@@ -265,25 +329,25 @@ def select_actions(
         actions: Candidate actions to filter
         available_sources: Dictionary mapping source type to parameters
         executed_hypotheses: History of executed hypotheses
+        tool_budget: Maximum number of tools to select (default: 10)
 
     Returns:
         Tuple of (available_actions, available_action_names)
     """
-    available_actions = [
-        action
-        for action in actions
-        if action.is_available(available_sources)
-    ]
+    available_actions = [action for action in actions if action.is_available(available_sources)]
 
     executed_actions_flat = set()
     for hyp in executed_hypotheses:
-        actions = hyp.get("actions", [])
-        if isinstance(actions, list):
-            executed_actions_flat.update(actions)
+        actions_list = hyp.get("actions", [])
+        if isinstance(actions_list, list):
+            executed_actions_flat.update(actions_list)
 
     available_actions = [
         action for action in available_actions if action.name not in executed_actions_flat
     ]
+
+    # Apply tool budget to cap the selected tool set
+    available_actions = apply_tool_budget(available_actions, tool_budget)
     available_action_names = [action.name for action in available_actions]
 
     return available_actions, available_action_names
@@ -293,7 +357,7 @@ def plan_actions_with_llm(
     llm,
     plan_model: type[BaseModel],
     problem_md: str,
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
     available_actions: list,
     available_sources: dict[str, dict],
     memory_context: str = "",

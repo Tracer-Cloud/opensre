@@ -1,0 +1,56 @@
+{
+  "alert_payload": {
+    "title": "[FIRING:1] Checkout API error rate spike",
+    "alert_name": "Checkout API error rate spike",
+    "pipeline_name": "checkout_api",
+    "severity": "critical",
+    "message": "checkout-api is returning elevated 5xx responses after the latest deploy.",
+    "text": "Investigate checkout-api failures in production around the latest deploy window.",
+    "commonLabels": {
+      "alertname": "CheckoutApiHighErrorRate",
+      "severity": "critical",
+      "pipeline_name": "checkout_api",
+      "service_name": "checkout-api",
+      "environment": "production"
+    },
+    "commonAnnotations": {
+      "summary": "checkout-api is returning elevated 5xx responses in production",
+      "description": "Error rate crossed 12% during the last 10 minutes. Check recent deploys, application logs, and upstream dependencies.",
+      "service_name": "checkout-api",
+      "query": "service:checkout-api status:error",
+      "correlation_id": "openclaw-smoke-001"
+    },
+    "alerts": [
+      {
+        "status": "firing",
+        "labels": {
+          "alertname": "CheckoutApiHighErrorRate",
+          "severity": "critical",
+          "pipeline_name": "checkout_api",
+          "service_name": "checkout-api",
+          "environment": "production"
+        },
+        "annotations": {
+          "summary": "checkout-api is returning elevated 5xx responses in production",
+          "description": "Error rate crossed 12% during the last 10 minutes. Check recent deploys, application logs, and upstream dependencies.",
+          "service_name": "checkout-api",
+          "query": "service:checkout-api status:error",
+          "correlation_id": "openclaw-smoke-001"
+        },
+        "startsAt": "2026-04-13T09:30:00Z",
+        "endsAt": "0001-01-01T00:00:00Z",
+        "generatorURL": "",
+        "fingerprint": "openclaw-smoke-alert-001"
+      }
+    ],
+    "version": "4",
+    "groupLabels": {
+      "alertname": "CheckoutApiHighErrorRate"
+    },
+    "groupKey": "{}:{alertname=\"CheckoutApiHighErrorRate\"}",
+    "truncatedAlerts": 0
+  },
+  "alert_name": "Checkout API error rate spike",
+  "pipeline_name": "checkout_api",
+  "severity": "critical"
+}

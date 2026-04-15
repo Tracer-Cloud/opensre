@@ -1,0 +1,35 @@
+{
+  "title": "[FIRING:1] MySQL Slow Query Alert",
+  "state": "alerting",
+  "version": "4",
+  "externalURL": "http://localhost:3000",
+  "commonLabels": {
+    "alertname": "MySQLSlowQuery",
+    "severity": "warning",
+    "cluster": "local-dev",
+    "environment": "development",
+    "mysql_instance": "localhost:3307"
+  },
+  "commonAnnotations": {
+    "summary": "MySQL slow query detected on opensre_test",
+    "description": "Queries exceeding 100ms threshold detected on opensre_test database.",
+    "mysql_database": "opensre_test",
+    "mysql_table": "users"
+  },
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "MySQLSlowQuery",
+        "severity": "warning",
+        "mysql_instance": "localhost:3307"
+      },
+      "annotations": {
+        "summary": "MySQL slow query detected on opensre_test",
+        "mysql_database": "opensre_test"
+      },
+      "startsAt": "2026-04-14T08:00:00Z",
+      "endsAt": "0001-01-01T00:00:00Z"
+    }
+  ]
+}

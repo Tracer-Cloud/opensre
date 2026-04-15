@@ -12,6 +12,7 @@ from app.cli.commands.general import (
     update_command,
     version_command,
 )
+from app.cli.commands.guardrails import guardrails
 from app.cli.commands.integrations import integrations
 from app.cli.commands.onboard import onboard
 from app.cli.commands.remote import remote
@@ -24,6 +25,7 @@ _COMMANDS: tuple[click.Command, ...] = (
     remote,
     tests,
     integrations,
+    guardrails,
     health_command,
     doctor_command,
     update_command,

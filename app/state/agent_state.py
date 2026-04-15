@@ -55,6 +55,12 @@ class AgentState(TypedDict, total=False):
     available_sources: dict[str, dict]
     available_action_names: list[str]
 
+    # Tool budget enforcement - caps the number of tools per investigation step
+    tool_budget: int  # Maximum tools to select per step (default: 10)
+
+    # Audit trail for each planning step - records rerouting and budget decisions
+    plan_audit: dict[str, Any]  # Audit data with loop, budget, reroute_reason, etc
+
     # Resolved integrations (from resolve_integrations node)
     resolved_integrations: dict[str, Any]
 
@@ -77,6 +83,9 @@ class AgentState(TypedDict, total=False):
 
     # Slack context (when triggered from Slack message)
     slack_context: dict[str, Any]
+
+    # Discord context (when triggered from Discord interaction)
+    discord_context: dict[str, Any]
 
     # LangGraph context (injected from config by inject_auth_node)
     thread_id: str
@@ -118,6 +127,12 @@ class AgentStateModel(StrictConfigModel):
     plan_rationale: str = ""
     available_sources: dict[str, dict[str, Any]] = Field(default_factory=dict)
     available_action_names: list[str] = Field(default_factory=list)
+    tool_budget: int = Field(
+        default=10, ge=1, le=50, description="Maximum tools to select per step"
+    )
+    plan_audit: dict[str, Any] = Field(
+        default_factory=dict, description="Audit trail for planning step"
+    )
     resolved_integrations: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
     evidence: dict[str, Any] = Field(default_factory=dict)
@@ -133,6 +148,7 @@ class AgentStateModel(StrictConfigModel):
     executed_hypotheses: list[dict[str, Any]] = Field(default_factory=list)
     investigation_started_at: float = 0.0
     slack_context: dict[str, Any] = Field(default_factory=dict)
+    discord_context: dict[str, Any] = Field(default_factory=dict)
     thread_id: str = ""
     run_id: str = ""
     auth_token: str = Field(default="", alias="_auth_token", exclude=True)

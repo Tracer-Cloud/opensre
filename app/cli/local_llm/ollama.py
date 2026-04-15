@@ -6,7 +6,6 @@ import shutil
 import subprocess
 import sys
 import time
-from subprocess import DEVNULL
 from typing import TYPE_CHECKING
 
 import httpx
@@ -60,7 +59,11 @@ def is_server_running(host: str = DEFAULT_OLLAMA_HOST) -> bool:
 
 
 def start_server() -> subprocess.Popen:  # type: ignore[type-arg]
-    return subprocess.Popen(["ollama", "serve"], stdout=DEVNULL, stderr=DEVNULL)  # noqa: S603, S607
+    return subprocess.Popen(  # noqa: S603, S607
+        ["ollama", "serve"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def wait_for_server(host: str, timeout_s: int = 30) -> bool:
