@@ -1,7 +1,7 @@
 """Data source detection for dynamic investigation.
 
-Scans alert annotations and state context to detect available data sources
-(CloudWatch, S3, local files, Tracer Web, Grafana, Honeycomb, Coralogix)
+    Scans alert annotations and state context to detect available data sources
+    (CloudWatch, S3, local files, Tracer Web, Grafana, Honeycomb, Coralogix, OpenClaw)
 and extract their parameters.
 """
 
@@ -72,7 +72,7 @@ def _alert_since_iso(raw_alert: dict[str, Any]) -> str:
             if alert_time.year >= 2000:
                 return (alert_time - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
         except (ValueError, TypeError):
-            pass  # Invalid or malformed timestamp string — fall through to the default below
+            return (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     return (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -668,6 +668,33 @@ def detect_sources(
                 "connection_verified": True,
             }
 
+    openclaw_int = (resolved_integrations or {}).get("openclaw")
+    if openclaw_int:
+        openclaw_url = str(openclaw_int.get("url", "")).strip()
+        openclaw_command = str(openclaw_int.get("command", "")).strip()
+        if openclaw_url or openclaw_command:
+            openclaw_search_query = str(
+                annotations.get("openclaw_search")
+                or raw_alert.get("openclaw_search", "")
+                or service_name
+                or pipeline_name
+                or raw_alert.get("alert_name", "")
+                or raw_alert.get("title", "")
+                or annotations.get("summary", "")
+            ).strip()
+            sources["openclaw"] = {
+                "openclaw_url": openclaw_url,
+                "openclaw_mode": str(
+                    openclaw_int.get("mode", "streamable-http")
+                ).strip()
+                or "streamable-http",
+                "openclaw_token": str(openclaw_int.get("auth_token", "")).strip(),
+                "openclaw_command": openclaw_command,
+                "openclaw_args": openclaw_int.get("args", []),
+                "openclaw_search_query": openclaw_search_query,
+                "connection_verified": True,
+            }
+
     gitlab_int = (resolved_integrations or {}).get("gitlab")
     if gitlab_int:
         repo_url = str(
@@ -881,6 +908,26 @@ def detect_sources(
             "region": str(opsgenie_int.get("region", "us")).strip(),
             "alert_id": alert_id,
             "query": opsgenie_query,
+            "connection_verified": True,
+        }
+
+    mysql_int = (resolved_integrations or {}).get("mysql")
+    if mysql_int and str(mysql_int.get("host", "")).strip() and str(mysql_int.get("database", "")).strip():
+        mysql_host = str(mysql_int.get("host", "")).strip()
+        mysql_database = str(mysql_int.get("database", "")).strip()
+        mysql_database = str(
+            annotations.get("mysql_database")
+            or annotations.get("database")
+            or mysql_database
+        ).strip()
+        mysql_table = str(
+            annotations.get("mysql_table") or annotations.get("table") or ""
+        ).strip()
+        sources["mysql"] = {
+            "host": mysql_host,
+            "port": mysql_int.get("port", 3306),
+            "database": mysql_database,
+            "table": mysql_table,
             "connection_verified": True,
         }
 

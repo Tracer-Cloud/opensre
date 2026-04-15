@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import questionary
 from rich.console import Console
@@ -21,6 +22,10 @@ from app.llm_credentials import has_llm_api_key, save_llm_api_key
 _console = Console()
 DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 DEFAULT_GITHUB_MCP_MODE = "streamable-http"
+DEFAULT_OPENCLAW_MCP_URL = "http://127.0.0.1:18789/"
+DEFAULT_OPENCLAW_MCP_MODE = "stdio"
+DEFAULT_OPENCLAW_MCP_COMMAND = "openclaw"
+DEFAULT_OPENCLAW_MCP_ARGS = ("mcp", "serve")
 DEFAULT_SENTRY_URL = "https://sentry.io"
 DEFAULT_GITLAB_BASE_URL = "https://gitlab.com/api/v4"
 _ASCII_HEADER = """\
@@ -90,10 +95,25 @@ def validate_sentry_integration(**kwargs):
 
     return _validate(**kwargs)
 
+
+def _looks_like_openclaw_control_ui_url(value: object) -> bool:
+    parsed = urlparse(str(value or "").strip())
+    host = (parsed.hostname or "").strip().lower()
+    if host not in {"127.0.0.1", "localhost", "0.0.0.0"}:
+        return False
+
+    port = parsed.port
+    if port is None:
+        port = 443 if parsed.scheme == "https" else 80
+
+    return port == 18789 and parsed.path.rstrip("/") == ""
+
+
 def validate_notion_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_notion_integration as _validate
 
     return _validate(**kwargs)
+
 
 def validate_jira_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_jira_integration as _validate
@@ -121,6 +141,12 @@ def validate_opsgenie_integration(**kwargs):
 
 def validate_discord_bot(**kwargs):
     from app.cli.wizard.integration_health import validate_discord_bot as _validate
+
+    return _validate(**kwargs)
+
+
+def validate_openclaw_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_openclaw_integration as _validate
 
     return _validate(**kwargs)
 
@@ -776,6 +802,110 @@ def _configure_github_mcp() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_openclaw() -> tuple[str, str]:
+    _, credentials = _integration_defaults("openclaw")
+    stored_command = _string_value(credentials.get("command"))
+    stored_args = credentials.get("args")
+    use_stdio_defaults = _looks_like_openclaw_control_ui_url(credentials.get("url")) or (
+        stored_command == "openclaw-mcp" and not _joined_values(stored_args, separator=" ", fallback="")
+    )
+    default_mode = (
+        DEFAULT_OPENCLAW_MCP_MODE
+        if use_stdio_defaults
+        else _string_value(credentials.get("mode"), DEFAULT_OPENCLAW_MCP_MODE)
+    )
+
+    while True:
+        mode = _choose(
+            "Choose the OpenClaw MCP transport:",
+            [
+                Choice(value="stdio", label="stdio (recommended)"),
+                Choice(value="streamable-http", label="Streamable HTTP"),
+                Choice(value="sse", label="SSE"),
+            ],
+            default=default_mode,
+        )
+
+        url = ""
+        command = ""
+        args: list[str] = []
+        auth_token = ""
+        if mode == "stdio":
+            command = _prompt_value(
+                "OpenClaw MCP command",
+                default=(
+                    DEFAULT_OPENCLAW_MCP_COMMAND
+                    if use_stdio_defaults
+                    else _string_value(credentials.get("command"), DEFAULT_OPENCLAW_MCP_COMMAND)
+                ),
+            )
+            args_raw = _prompt_value(
+                "OpenClaw MCP args",
+                default=(
+                    " ".join(DEFAULT_OPENCLAW_MCP_ARGS)
+                    if use_stdio_defaults
+                    else _joined_values(
+                        credentials.get("args"),
+                        separator=" ",
+                        fallback=" ".join(DEFAULT_OPENCLAW_MCP_ARGS),
+                    )
+                ),
+                allow_empty=True,
+            )
+            args = [part for part in args_raw.split() if part]
+        else:
+            url = _prompt_value(
+                "OpenClaw MCP URL",
+                default=_string_value(credentials.get("url"), DEFAULT_OPENCLAW_MCP_URL),
+            )
+            auth_token = _prompt_value(
+                "OpenClaw auth token (optional)",
+                default=_string_value(credentials.get("auth_token")),
+                secret=True,
+                allow_empty=True,
+            )
+
+        credentials = {
+            **credentials,
+            "url": url,
+            "mode": mode,
+            "auth_token": auth_token,
+            "command": command,
+            "args": args,
+        }
+
+        with _console.status("Validating OpenClaw MCP integration...", spinner="dots"):
+            result = validate_openclaw_integration(
+                url=url,
+                mode=mode,
+                auth_token=auth_token,
+                command=command,
+                args=args,
+            )
+        _render_integration_result("OpenClaw", result)
+        if result.ok:
+            credentials_dict = {
+                "url": url,
+                "mode": mode,
+                "auth_token": auth_token,
+                "command": command,
+                "args": args,
+            }
+            upsert_integration("openclaw", {"credentials": credentials_dict})
+            env_path = sync_env_values(
+                {
+                    "OPENCLAW_MCP_URL": url,
+                    "OPENCLAW_MCP_MODE": mode,
+                    "OPENCLAW_MCP_AUTH_TOKEN": auth_token,
+                    "OPENCLAW_MCP_COMMAND": command,
+                    "OPENCLAW_MCP_ARGS": " ".join(args),
+                }
+            )
+            return "OpenClaw", str(env_path)
+        default_mode = mode
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_gitlab() -> tuple[str, str]:
     _, credentials = _integration_defaults("gitlab")
 
@@ -1115,6 +1245,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             hint="Post investigation reports to a Notion database",
         ),
         Choice(
+            value="openclaw",
+            label="OpenClaw",
+            hint="Connect OpenSRE to OpenClaw so your AI coding assistant can trigger investigations",
+        ),
+        Choice(
             value="skip",
             label="Skip for now",
             hint="Finish onboarding without configuring an integration",
@@ -1145,6 +1280,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "jira": _configure_jira,
         "opsgenie": _configure_opsgenie,
         "notion": _configure_notion,
+        "openclaw": _configure_openclaw,
     }
     _SERVICE_LABELS = {
         "grafana_local": "grafana local",
@@ -1163,6 +1299,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "jira": "jira",
         "opsgenie": "opsgenie",
         "notion": "notion",
+        "openclaw": "openclaw",
     }
 
     _step(f"Service · {_SERVICE_LABELS.get(selected_service, selected_service)}")

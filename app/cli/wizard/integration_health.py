@@ -16,6 +16,7 @@ from app.integrations.models import (
     HoneycombIntegrationConfig,
     SlackWebhookConfig,
 )
+from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.services.coralogix import CoralogixClient
 from app.services.datadog import DatadogClient, DatadogConfig
@@ -293,6 +294,31 @@ def validate_github_mcp_integration(
     )
     result = validate_github_mcp_config(config)
     return IntegrationHealthResult(ok=result.ok, detail=result.detail)
+
+
+def validate_openclaw_integration(
+    *,
+    url: str = "",
+    mode: str,
+    auth_token: str = "",
+    command: str = "",
+    args: list[str] | None = None,
+) -> IntegrationHealthResult:
+    """Validate OpenClaw MCP connectivity by listing available tools."""
+    try:
+        config = build_openclaw_config(
+            {
+                "url": url,
+                "mode": mode,
+                "auth_token": auth_token,
+                "command": command,
+                "args": args or [],
+            }
+        )
+        result = validate_openclaw_config(config)
+        return IntegrationHealthResult(ok=result.ok, detail=result.detail)
+    except Exception as err:
+        return IntegrationHealthResult(ok=False, detail=f"OpenClaw validation failed: {err}")
 
 
 def validate_sentry_integration(

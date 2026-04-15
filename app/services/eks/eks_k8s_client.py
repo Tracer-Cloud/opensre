@@ -5,13 +5,15 @@ Programmatic equivalent of `aws eks get-token` — no kubectl binary required.
 
 import base64
 import logging
+import os
 import tempfile
+import weakref
 from typing import Any
 
 import boto3
 import botocore.auth
 import botocore.awsrequest
-from botocore.credentials import Credentials as BotoCreds
+import botocore.credentials
 from kubernetes import client as k8s_client
 
 logger = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ def _generate_eks_token(cluster_name: str, assumed_creds: dict[str, Any], region
     x-k8s-aws-id header included in the canonical request before signing.
     This matches exactly what aws-iam-authenticator and `aws eks get-token` do.
     """
-    creds = BotoCreds(
+    creds = botocore.credentials.Credentials(
         access_key=assumed_creds["AccessKeyId"],
         secret_key=assumed_creds["SecretAccessKey"],
         token=assumed_creds["SessionToken"],
@@ -62,6 +64,13 @@ def _generate_eks_token(cluster_name: str, assumed_creds: dict[str, Any], region
     ).decode().rstrip("=")
     logger.info("[eks] Token generated for cluster=%s (length=%d)", cluster_name, len(token))
     return token
+
+
+def _delete_temp_cert(path: str) -> None:
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        return
 
 
 def build_k8s_clients(
@@ -110,5 +119,10 @@ def build_k8s_clients(
     configuration.api_key = {"authorization": f"Bearer {token}"}
 
     logger.info("[eks] K8s client built — host=%s", endpoint)
-    api_client = k8s_client.ApiClient(configuration)
+    try:
+        api_client = k8s_client.ApiClient(configuration)
+    except Exception:
+        _delete_temp_cert(ca_path)
+        raise
+    api_client._ca_cert_cleanup = weakref.finalize(api_client, _delete_temp_cert, ca_path)
     return k8s_client.CoreV1Api(api_client), k8s_client.AppsV1Api(api_client)

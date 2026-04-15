@@ -51,11 +51,6 @@ class PostgreSQLConfig(StrictConfigModel):
         normalized = str(value or DEFAULT_POSTGRESQL_USER).strip()
         return normalized or DEFAULT_POSTGRESQL_USER
 
-    @field_validator("password", mode="before")
-    @classmethod
-    def _normalize_password(cls, value: Any) -> str:
-        return str(value or "").strip()
-
     @field_validator("ssl_mode", mode="before")
     @classmethod
     def _normalize_ssl_mode(cls, value: Any) -> str:
@@ -91,12 +86,14 @@ def postgresql_config_from_env() -> PostgreSQLConfig | None:
         "port": int(_pg_port) if (_pg_port := os.getenv("POSTGRESQL_PORT", "").strip()).isdigit() else DEFAULT_POSTGRESQL_PORT,
         "database": database,
         "username": os.getenv("POSTGRESQL_USERNAME", DEFAULT_POSTGRESQL_USER).strip(),
-        "password": os.getenv("POSTGRESQL_PASSWORD", "").strip(),
+        "password": os.getenv("POSTGRESQL_PASSWORD", ""),
         "ssl_mode": os.getenv("POSTGRESQL_SSL_MODE", DEFAULT_POSTGRESQL_SSL_MODE).strip(),
     })
 
 
-def resolve_postgresql_config(host: str, database: str, port: int = DEFAULT_POSTGRESQL_PORT) -> PostgreSQLConfig:
+def resolve_postgresql_config(
+    host: str, database: str, port: int = DEFAULT_POSTGRESQL_PORT
+) -> PostgreSQLConfig:
     """Build a config for the given host/database, resolving credentials from store or env.
 
     The LLM supplies only identifying params (host, database, port).
@@ -108,32 +105,36 @@ def resolve_postgresql_config(host: str, database: str, port: int = DEFAULT_POST
     stored = get_integration("postgresql")
     if stored:
         creds = stored.get("credentials", {})
-        return build_postgresql_config({
-            "host": host,
-            "port": creds.get("port", port),
-            "database": database,
-            "username": creds.get("username", DEFAULT_POSTGRESQL_USER),
-            "password": creds.get("password", ""),
-            "ssl_mode": creds.get("ssl_mode", DEFAULT_POSTGRESQL_SSL_MODE),
-        })
+        return build_postgresql_config(
+            {
+                "host": host,
+                "port": creds.get("port", port),
+                "database": database,
+                "username": creds.get("username", DEFAULT_POSTGRESQL_USER),
+                "password": creds.get("password", ""),
+                "ssl_mode": creds.get("ssl_mode", DEFAULT_POSTGRESQL_SSL_MODE),
+            }
+        )
 
     env_cfg = postgresql_config_from_env()
     if env_cfg:
-        return build_postgresql_config({
-            "host": host,
-            "port": port,
-            "database": database,
-            "username": env_cfg.username,
-            "password": env_cfg.password,
-            "ssl_mode": env_cfg.ssl_mode,
-        })
+        return build_postgresql_config(
+            {
+                "host": host,
+                "port": port,
+                "database": database,
+                "username": env_cfg.username,
+                "password": env_cfg.password,
+                "ssl_mode": env_cfg.ssl_mode,
+            }
+        )
 
     return build_postgresql_config({"host": host, "port": port, "database": database})
 
 
 def _get_connection(config: PostgreSQLConfig) -> Any:
     """Create a psycopg2 connection from config. Caller must close."""
-    import psycopg2
+    import psycopg2  # type: ignore[import-untyped]
 
     return psycopg2.connect(
         host=config.host,
@@ -168,10 +169,7 @@ def validate_postgresql_config(config: PostgreSQLConfig) -> PostgreSQLValidation
 
             return PostgreSQLValidationResult(
                 ok=True,
-                detail=(
-                    f"Connected to PostgreSQL {version}; "
-                    f"target database: {config.database}."
-                ),
+                detail=(f"Connected to PostgreSQL {version}; target database: {config.database}."),
             )
         finally:
             conn.close()
@@ -193,7 +191,9 @@ def get_server_status(config: PostgreSQLConfig) -> dict[str, Any]:
             cursor = conn.cursor()
 
             # Get server version and uptime
-            cursor.execute("SELECT version(), date_trunc('second', current_timestamp - pg_postmaster_start_time()) as uptime")
+            cursor.execute(
+                "SELECT version(), date_trunc('second', current_timestamp - pg_postmaster_start_time()) as uptime"
+            )
             version_info, uptime = cursor.fetchone()
             version = version_info.split()[1] if version_info else "unknown"
 
@@ -282,7 +282,8 @@ def get_current_queries(
         try:
             cursor = conn.cursor()
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     pid,
                     usename,
@@ -301,22 +302,26 @@ def get_current_queries(
                     AND pid != pg_backend_pid()
                 ORDER BY query_start ASC
                 LIMIT %s
-            """, (threshold_seconds, config.max_results))
+            """,
+                (threshold_seconds, config.max_results),
+            )
 
             queries = []
             for row in cursor.fetchall():
-                queries.append({
-                    "pid": row[0],
-                    "username": row[1],
-                    "application_name": row[2] or "",
-                    "client_addr": row[3] or "local",
-                    "state": row[4],
-                    "query_start": str(row[5]),
-                    "duration_seconds": row[6],
-                    "wait_event_type": row[7] or "",
-                    "wait_event": row[8] or "",
-                    "query_truncated": row[9] or "",
-                })
+                queries.append(
+                    {
+                        "pid": row[0],
+                        "username": row[1],
+                        "application_name": row[2] or "",
+                        "client_addr": row[3] or "local",
+                        "state": row[4],
+                        "query_start": str(row[5]),
+                        "duration_seconds": row[6],
+                        "wait_event_type": row[7] or "",
+                        "wait_event": row[8] or "",
+                        "query_truncated": row[9] or "",
+                    }
+                )
 
             cursor.close()
             return {
@@ -382,22 +387,24 @@ def get_replication_status(config: PostgreSQLConfig) -> dict[str, Any]:
 
             replicas = []
             for row in cursor.fetchall():
-                replicas.append({
-                    "pid": row[0],
-                    "username": row[1],
-                    "application_name": row[2] or "",
-                    "client_addr": row[3] or "local",
-                    "client_hostname": row[4] or "",
-                    "state": row[5],
-                    "sent_lsn": row[6] or "",
-                    "write_lsn": row[7] or "",
-                    "flush_lsn": row[8] or "",
-                    "replay_lsn": row[9] or "",
-                    "write_lag": str(row[10]) if row[10] else "",
-                    "flush_lag": str(row[11]) if row[11] else "",
-                    "replay_lag": str(row[12]) if row[12] else "",
-                    "sync_state": row[13] or "",
-                })
+                replicas.append(
+                    {
+                        "pid": row[0],
+                        "username": row[1],
+                        "application_name": row[2] or "",
+                        "client_addr": row[3] or "local",
+                        "client_hostname": row[4] or "",
+                        "state": row[5],
+                        "sent_lsn": row[6] or "",
+                        "write_lsn": row[7] or "",
+                        "flush_lsn": row[8] or "",
+                        "replay_lsn": row[9] or "",
+                        "write_lag": str(row[10]) if row[10] else "",
+                        "flush_lag": str(row[11]) if row[11] else "",
+                        "replay_lag": str(row[12]) if row[12] else "",
+                        "sync_state": row[13] or "",
+                    }
+                )
 
             # Get current WAL position on primary
             cursor.execute("SELECT pg_current_wal_lsn()")
@@ -479,7 +486,8 @@ def get_slow_queries(
                 }
 
             # Get slow queries by mean execution time
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     queryid,
                     left(query, 500) as query_truncated,
@@ -495,22 +503,26 @@ def get_slow_queries(
                 WHERE mean_exec_time >= %s
                 ORDER BY mean_exec_time DESC
                 LIMIT %s
-            """, (threshold_ms, effective_limit))
+            """,
+                (threshold_ms, effective_limit),
+            )
 
             queries = []
             for row in cursor.fetchall():
-                queries.append({
-                    "queryid": str(row[0]) if row[0] else "",
-                    "query_truncated": row[1] or "",
-                    "calls": row[2],
-                    "total_time_ms": row[3],
-                    "mean_time_ms": row[4],
-                    "min_time_ms": row[5],
-                    "max_time_ms": row[6],
-                    "stddev_time_ms": row[7],
-                    "total_rows": row[8],
-                    "cache_hit_percent": round(row[9] or 0, 2),
-                })
+                queries.append(
+                    {
+                        "queryid": str(row[0]) if row[0] else "",
+                        "query_truncated": row[1] or "",
+                        "calls": row[2],
+                        "total_time_ms": row[3],
+                        "mean_time_ms": row[4],
+                        "min_time_ms": row[5],
+                        "max_time_ms": row[6],
+                        "stddev_time_ms": row[7],
+                        "total_rows": row[8],
+                        "cache_hit_percent": round(row[9] or 0, 2),
+                    }
+                )
 
             cursor.close()
             return {
@@ -544,7 +556,8 @@ def get_table_stats(
         try:
             cursor = conn.cursor()
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     schemaname,
                     relname,
@@ -568,7 +581,9 @@ def get_table_stats(
                 WHERE schemaname = %s
                 ORDER BY pg_total_relation_size(t.relid) DESC
                 LIMIT %s
-            """, (schema_name, config.max_results))
+            """,
+                (schema_name, config.max_results),
+            )
 
             tables = []
             for row in cursor.fetchall():
@@ -578,36 +593,38 @@ def get_table_stats(
                 if total_scans > 0:
                     index_usage = round(((row[9] or 0) / total_scans) * 100, 2)
 
-                tables.append({
-                    "schema": row[0],
-                    "table_name": row[1],
-                    "tuples": {
-                        "inserted": row[2] or 0,
-                        "updated": row[3] or 0,
-                        "deleted": row[4] or 0,
-                        "live": row[5] or 0,
-                        "dead": row[6] or 0,
-                    },
-                    "scans": {
-                        "sequential": row[7] or 0,
-                        "sequential_tuples": row[8] or 0,
-                        "index": row[9] or 0,
-                        "index_tuples": row[10] or 0,
-                        "index_usage_percent": index_usage,
-                    },
-                    "maintenance": {
-                        "last_vacuum": str(row[11]) if row[11] else None,
-                        "last_autovacuum": str(row[12]) if row[12] else None,
-                        "last_analyze": str(row[13]) if row[13] else None,
-                        "last_autoanalyze": str(row[14]) if row[14] else None,
-                    },
-                    "size": {
-                        "total_bytes": row[15] or 0,
-                        "table_bytes": row[16] or 0,
-                        "indexes_bytes": row[17] or 0,
-                        "total_mb": round((row[15] or 0) / 1024 / 1024, 2),
-                    },
-                })
+                tables.append(
+                    {
+                        "schema": row[0],
+                        "table_name": row[1],
+                        "tuples": {
+                            "inserted": row[2] or 0,
+                            "updated": row[3] or 0,
+                            "deleted": row[4] or 0,
+                            "live": row[5] or 0,
+                            "dead": row[6] or 0,
+                        },
+                        "scans": {
+                            "sequential": row[7] or 0,
+                            "sequential_tuples": row[8] or 0,
+                            "index": row[9] or 0,
+                            "index_tuples": row[10] or 0,
+                            "index_usage_percent": index_usage,
+                        },
+                        "maintenance": {
+                            "last_vacuum": str(row[11]) if row[11] else None,
+                            "last_autovacuum": str(row[12]) if row[12] else None,
+                            "last_analyze": str(row[13]) if row[13] else None,
+                            "last_autoanalyze": str(row[14]) if row[14] else None,
+                        },
+                        "size": {
+                            "total_bytes": row[15] or 0,
+                            "table_bytes": row[16] or 0,
+                            "indexes_bytes": row[17] or 0,
+                            "total_mb": round((row[15] or 0) / 1024 / 1024, 2),
+                        },
+                    }
+                )
 
             cursor.close()
             return {

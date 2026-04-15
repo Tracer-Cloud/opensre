@@ -1,11 +1,12 @@
 """Plan actions node - planning only."""
 
-from typing import Any
+from typing import cast
 
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from app.nodes.investigate.models import InvestigateInput
+from app.nodes.investigate.types import PlanAudit
 from app.nodes.plan_actions.plan_actions import plan_actions as build_plan_actions
 from app.output import debug_print, get_tracker
 from app.state import InvestigationState
@@ -45,12 +46,13 @@ def node_plan_actions(state: InvestigationState) -> dict:
         plan_model=InvestigationPlan,
         resolved_integrations=state.get("resolved_integrations"),
     )
+    typed_plan = cast(InvestigationPlan | None, plan)
 
-    planned_actions = plan.actions if plan else []
-    plan_rationale = plan.rationale if plan else ""
+    planned_actions = typed_plan.actions if typed_plan else []
+    plan_rationale = typed_plan.rationale if typed_plan else ""
 
     # Build audit entry for this planning step
-    audit_entry: dict[str, Any] = {
+    audit_entry: PlanAudit = {
         "loop": loop_count,
         "tool_budget": input_data.tool_budget,
         "planned_count": len(planned_actions),
@@ -60,7 +62,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
         audit_entry["reroute_reason"] = reroute_reason
 
     # Safety check: if we're in a loop but can't plan new actions, stop the investigation
-    if not available_action_names or plan is None:
+    if not available_action_names or typed_plan is None:
         if loop_count > 0:
             debug_print(
                 f"WARNING: Loop {loop_count} but no new actions can be planned. "

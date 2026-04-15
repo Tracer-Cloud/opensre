@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.remote.system_metrics import (
@@ -45,7 +46,11 @@ class TestCollectSystemMetrics:
         assert disk["free_gb"] >= 0
 
     def test_cpu_returns_none_when_unavailable(self) -> None:
-        with patch("os.getloadavg", side_effect=OSError):
+        def _raise_loadavg() -> tuple[float, float, float]:
+            raise OSError
+
+        fake_os = SimpleNamespace(getloadavg=_raise_loadavg, cpu_count=lambda: 1)
+        with patch("app.remote.system_metrics.os", fake_os):
             assert _collect_cpu() is None
 
     def test_disk_returns_none_when_unavailable(self) -> None:
@@ -57,7 +62,11 @@ class TestCollectSystemMetrics:
             assert _collect_uptime() is None
 
     def test_process_returns_none_on_failure(self) -> None:
-        with patch("resource.getrusage", side_effect=Exception("no")):
+        def _raise_getrusage(_rusage_self: object) -> None:
+            raise Exception("no")
+
+        fake_resource = SimpleNamespace(getrusage=_raise_getrusage, RUSAGE_SELF=object())
+        with patch("app.remote.system_metrics._resource", fake_resource):
             assert _collect_process() is None
 
 

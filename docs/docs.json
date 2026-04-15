@@ -68,7 +68,10 @@
               "jira",
               "prefect",
               "google-docs",
-              "discord"
+              "discord",
+              "mysql",
+              "openclaw",
+              "postgresql"
             ]
           }
         ]
@@ -83,6 +86,8 @@
         "group": "Daily Updates",
         "pages": [
           "daily-updates/overview",
+          "daily-updates/2026-04-14",
+          "daily-updates/2026-04-13",
           "daily-updates/2026-04-12",
           "daily-updates/2026-04-11",
           "daily-updates/2026-04-10",

@@ -423,6 +423,41 @@ def _setup_postgresql() -> None:
     )
 
 
+def _setup_mysql() -> None:
+    host = _p("Host (e.g. localhost or mysql.example.com)")
+    database = _p("Database name")
+    if not host or not database:
+        _die("host and database are required.")
+    port = _p("Port", default="3306")
+    username = _p("Username", default="root")
+    password = _p("Password", secret=True)
+    ssl_mode_choice = questionary.select(
+        "SSL mode",
+        choices=[
+            questionary.Choice("preferred (encrypted, no cert verification)", value="preferred"),
+            questionary.Choice("required", value="required"),
+            questionary.Choice("disabled", value="disabled"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if ssl_mode_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    upsert_integration(
+        "mysql",
+        {
+            "credentials": {
+                "host": host,
+                "port": int(port) if port.isdigit() else 3306,
+                "database": database,
+                "username": username or "root",
+                "password": password,
+                "ssl_mode": ssl_mode_choice,
+            }
+        },
+    )
+
+
 def _setup_mongodb_atlas() -> None:
     api_public_key = _p("Atlas API public key")
     api_private_key = _p("Atlas API private key", secret=True)
@@ -497,6 +532,7 @@ _HANDLERS: dict[str, Any] = {
     "mongodb": _setup_mongodb,
     "discord": _setup_discord,
     "postgresql": _setup_postgresql,
+    "mysql": _setup_mysql,
 }
 
 SUPPORTED = ", ".join(_HANDLERS)

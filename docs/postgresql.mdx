@@ -1,0 +1,165 @@
+---
+title: "PostgreSQL"
+description: "Connect PostgreSQL so OpenSRE can diagnose database issues during investigations"
+---
+
+OpenSRE uses PostgreSQL diagnostics to investigate database-related alerts — checking server health, surfacing slow queries, monitoring replication status, and analyzing table statistics.
+
+## Prerequisites
+
+- PostgreSQL 10+ (12+ recommended for full `pg_stat_statements` support)
+- Network access from the OpenSRE environment to your PostgreSQL instance
+- A read-only user with access to system views
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **PostgreSQL** when prompted and provide your host, database, and credentials.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+POSTGRESQL_HOST=your-postgresql-host
+POSTGRESQL_PORT=5432
+POSTGRESQL_DATABASE=your-database
+POSTGRESQL_USERNAME=opensre_readonly
+POSTGRESQL_PASSWORD=your-password
+POSTGRESQL_SSL_MODE=prefer   # prefer, require, or disable
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `POSTGRESQL_HOST` | — | **Required.** PostgreSQL hostname or IP |
+| `POSTGRESQL_PORT` | `5432` | PostgreSQL port |
+| `POSTGRESQL_DATABASE` | — | **Required.** Target database |
+| `POSTGRESQL_USERNAME` | `postgres` | Username |
+| `POSTGRESQL_PASSWORD` | _(empty)_ | Password |
+| `POSTGRESQL_SSL_MODE` | `prefer` | SSL mode: `prefer`, `require`, or `disable` |
+
+### Option 3: Persistent store
+
+Integrations are automatically persisted to `~/.tracer/integrations.json`:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "postgresql-prod",
+      "service": "postgresql",
+      "status": "active",
+      "credentials": {
+        "host": "prod-primary.postgres.example.com",
+        "port": 5432,
+        "database": "application_db",
+        "username": "opensre_readonly",
+        "password": "your-password",
+        "ssl_mode": "prefer"
+      }
+    }
+  ]
+}
+```
+
+## Creating a read-only user
+
+```sql
+-- Create the user
+CREATE USER opensre_readonly WITH PASSWORD 'secure-password';
+
+-- Grant access to system views
+GRANT pg_monitor TO opensre_readonly;
+
+-- Grant access to the target database
+GRANT CONNECT ON DATABASE application_db TO opensre_readonly;
+\c application_db
+GRANT USAGE ON SCHEMA public TO opensre_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO opensre_readonly;
+```
+
+<Info>
+`pg_monitor` (available in PostgreSQL 10+) grants read access to all monitoring views including `pg_stat_activity`, `pg_stat_replication`, and `pg_stat_statements` without superuser privileges.
+</Info>
+
+## Enabling slow query tracking
+
+Slow query analysis requires the `pg_stat_statements` extension. Add to `postgresql.conf`:
+
+```ini
+shared_preload_libraries = 'pg_stat_statements'
+pg_stat_statements.track = all
+```
+
+Then restart PostgreSQL and run:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+```
+
+## Investigation tools
+
+When OpenSRE investigates a PostgreSQL-related alert, five diagnostic tools are available:
+
+### Server status
+
+Retrieves version, uptime, connection counts (total, active, idle, max), transaction commit/rollback rates, and buffer cache hit ratio per database. Useful for spotting connection saturation or cache efficiency drops.
+
+### Current queries
+
+Lists active queries running longer than a configurable threshold (default 1 s), excluding the monitoring connection itself. Includes PID, user, client address, duration, wait event, and a truncated query string.
+
+### Replication status
+
+Uses `pg_is_in_recovery()` to reliably detect replica vs primary. On a primary, reports WAL position and per-replica lag (write, flush, replay). Returns a note if the server is a replica or if no replicas are connected.
+
+### Slow queries
+
+Reads `pg_stat_statements` to surface queries with the highest mean execution time. Results include call count, total/mean/min/max execution time (in ms with sub-millisecond precision), rows returned, and buffer cache hit percentage.
+
+<Info>
+Slow query data requires the `pg_stat_statements` extension to be installed and loaded via `shared_preload_libraries`. OpenSRE returns an informative message if the extension is not available.
+</Info>
+
+### Table statistics
+
+Reads `pg_stat_user_tables` and `pg_class` for a given schema (default `public`). Returns insert/update/delete/live/dead tuple counts, sequential vs index scan ratios, last vacuum/analyze timestamps, and table sizes in bytes and MB.
+
+## Verify
+
+```bash
+opensre integrations verify --service postgresql
+```
+
+Expected output:
+
+```
+Service: postgresql
+Status: passed
+Detail: Connected to PostgreSQL 16.1; target database: application_db
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection refused** | Verify host, port, and firewall rules. Check `listen_addresses` in `postgresql.conf` and `pg_hba.conf` for the connecting host. |
+| **Authentication failed** | Confirm username and password. Check `pg_hba.conf` for the correct auth method (`md5`, `scram-sha-256`). |
+| **SSL error** | Set `POSTGRESQL_SSL_MODE=disable` to test without SSL, or `require` to enforce it. |
+| **Permission denied on pg_stat_activity** | Grant `pg_monitor` role to the OpenSRE user. |
+| **pg_stat_statements not found** | Add `pg_stat_statements` to `shared_preload_libraries`, restart PostgreSQL, then run `CREATE EXTENSION pg_stat_statements;`. |
+| **Replication shows replica, not primary** | Expected — the tool correctly identifies the server as a replica and returns a note. Connect to the primary for replication lag details. |
+
+## Security best practices
+
+- Use a **dedicated read-only user** with `pg_monitor` — avoid superuser credentials for monitoring.
+- Enable **SSL** (`POSTGRESQL_SSL_MODE=require`) in production environments.
+- Use `scram-sha-256` authentication in `pg_hba.conf` rather than `md5`.
+- Store credentials in `.env`, never in source code.
+- Rotate credentials periodically.

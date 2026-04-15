@@ -31,4 +31,6 @@ EvidenceSource = Literal[
     "prefect",
     "gitlab",
     "bitbucket",
+    "openclaw",
+    "mysql",
 ]

@@ -27,7 +27,6 @@ def _set_env_value(lines: list[str], key: str, value: str) -> list[str]:
     return updated
 
 
-
 def sync_env_values(
     values: dict[str, str],
     *,
@@ -35,7 +34,11 @@ def sync_env_values(
 ) -> Path:
     """Write multiple environment values into the target .env file."""
     target_path = env_path or PROJECT_ENV_PATH
-    existing = target_path.read_text(encoding="utf-8").splitlines(keepends=True) if target_path.exists() else []
+    existing = (
+        target_path.read_text(encoding="utf-8").splitlines(keepends=True)
+        if target_path.exists()
+        else []
+    )
 
     lines = existing
     for key, value in values.items():
@@ -78,7 +81,11 @@ def sync_provider_env(
     from app.cli.wizard.config import SUPPORTED_PROVIDERS
 
     target_path = env_path or PROJECT_ENV_PATH
-    existing = target_path.read_text(encoding="utf-8").splitlines(keepends=True) if target_path.exists() else []
+    existing = (
+        target_path.read_text(encoding="utf-8").splitlines(keepends=True)
+        if target_path.exists()
+        else []
+    )
 
     stale_keys: set[str] = set()
     for p in SUPPORTED_PROVIDERS:

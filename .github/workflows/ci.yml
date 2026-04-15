@@ -30,26 +30,36 @@ concurrency:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    name: quality (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+          cache: "pip"
 
       - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
 
       - name: Lint with ruff
-        run: ruff check app/ tests/
+        run: python -m ruff check app/ tests/
 
   typecheck:
-    runs-on: ubuntu-latest
+    name: typecheck (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
 
@@ -65,7 +75,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Type check with mypy
-        run: make typecheck
+        run: python -m mypy app/
         continue-on-error: false
 
   # ---------------------------------------------------------------
@@ -73,7 +83,12 @@ jobs:
   # minutes on a run that would be discarded anyway)
   # ---------------------------------------------------------------
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     needs: [quality, typecheck]
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -93,32 +108,35 @@ jobs:
       GCLOUD_RW_API_KEY: ${{ secrets.GCLOUD_RW_API_KEY }}
       GCLOUD_OTLP_ENDPOINT: ${{ secrets.GCLOUD_OTLP_ENDPOINT }}
       GCLOUD_OTLP_AUTH_HEADER: ${{ secrets.GCLOUD_OTLP_AUTH_HEADER }}
+      PYTHONUTF8: "1"
 
     steps:
       - uses: actions/checkout@v5
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+          cache: "pip"
 
       - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
 
       - name: Run pytest with coverage
-        env:
-          PYTEST_ADDOPTS: --ignore=tests/synthetic
-        run: make test-cov
+        run: >-
+          python -m pytest -n auto -v --cov=app --cov-report=term-missing
+          --ignore=tests/e2e/kubernetes_local_alert_simulation
+          --ignore=tests/synthetic
+          -m "not synthetic"
         continue-on-error: false
 
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report
+          name: coverage-report-${{ runner.os }}
           path: |
             htmlcov/
             .coverage

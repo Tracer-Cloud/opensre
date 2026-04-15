@@ -2,7 +2,9 @@
 
 import json
 from collections.abc import Callable
-from typing import Any
+
+from app.nodes.investigate.execution.execute_actions import ActionExecutionResult
+from app.nodes.investigate.types import ExecutedHypothesis, PlanAudit
 
 
 def _parse_vendor_audit_from_logs(logs: list) -> dict | None:
@@ -332,7 +334,10 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
 }
 
 
-def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) -> dict[str, Any]:
+def merge_evidence(
+    current_evidence: dict[str, object],
+    execution_results: dict[str, ActionExecutionResult],
+) -> dict[str, object]:
     """
     Merge execution results into evidence state.
 
@@ -361,12 +366,12 @@ def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) ->
 
 
 def track_hypothesis(
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
     action_names: list[str],
     rationale: str,
     investigation_loop_count: int,
-    plan_audit: dict[str, Any] | None = None,
-) -> list[dict[str, Any]]:
+    plan_audit: PlanAudit | None = None,
+) -> list[ExecutedHypothesis]:
     """
     Track executed hypothesis for deduplication and audit trail.
 
@@ -380,7 +385,7 @@ def track_hypothesis(
     Returns:
         Updated executed_hypotheses list with audit trail
     """
-    new_hypothesis: dict[str, Any] = {
+    new_hypothesis: ExecutedHypothesis = {
         "actions": action_names,
         "rationale": rationale,
         "loop_count": investigation_loop_count,
@@ -392,7 +397,7 @@ def track_hypothesis(
     return executed_hypotheses
 
 
-def build_evidence_summary(execution_results: dict) -> str:
+def build_evidence_summary(execution_results: dict[str, ActionExecutionResult]) -> str:
     """
     Build a summary of what evidence was collected.
 
@@ -503,13 +508,13 @@ def build_evidence_summary(execution_results: dict) -> str:
 
 
 def summarize_execution_results(
-    execution_results: dict,
-    current_evidence: dict[str, Any],
-    executed_hypotheses: list[dict[str, Any]],
+    execution_results: dict[str, ActionExecutionResult],
+    current_evidence: dict[str, object],
+    executed_hypotheses: list[ExecutedHypothesis],
     investigation_loop_count: int,
     rationale: str,
-    plan_audit: dict[str, Any] | None = None,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    plan_audit: PlanAudit | None = None,
+) -> tuple[dict[str, object], list[ExecutedHypothesis], str]:
     """
     Summarize execution results into evidence and hypotheses.
 
@@ -526,14 +531,18 @@ def summarize_execution_results(
     """
     evidence = merge_evidence(current_evidence, execution_results)
 
-    # Only track successful actions in hypothesis history (allow retries of failed actions)
+    # Only successes go into executed_hypotheses: planning filters out any name seen there,
+    # so recording failures would block retries for transient errors on any tool.
     successful_actions = [
-        action_name for action_name, result in execution_results.items() if result.success
+        name for name, result in execution_results.items() if result.success
     ]
-
     if successful_actions:
         executed_hypotheses = track_hypothesis(
-            executed_hypotheses, successful_actions, rationale, investigation_loop_count, plan_audit
+            executed_hypotheses,
+            successful_actions,
+            rationale,
+            investigation_loop_count,
+            plan_audit,
         )
 
     evidence_summary = build_evidence_summary(execution_results)
