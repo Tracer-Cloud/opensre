@@ -71,3 +71,91 @@ class TestDispatchSlash:
         session = ReplSession()
         console, _ = _capture()
         assert dispatch_slash("   ", session, console) is True
+
+
+class TestListCommand:
+    """Coverage for /list integrations / models / mcp and the default summary."""
+
+    _FAKE_INTEGRATIONS = [
+        {"service": "datadog", "source": "store", "status": "ok", "detail": "API ok"},
+        {"service": "slack", "source": "env", "status": "missing", "detail": "No bot token"},
+        {"service": "github", "source": "store", "status": "ok", "detail": "MCP ok"},
+        {"service": "openclaw", "source": "store", "status": "failed", "detail": "401 from server"},
+    ]
+
+    def _patch_verify(self, monkeypatch: object) -> None:
+        # Import inside test to match the lazy-import used by the handler.
+        from app.cli.repl import commands as cmd_module
+
+        monkeypatch.setattr(  # type: ignore[attr-defined]
+            cmd_module,
+            "_load_verified_integrations",
+            lambda: list(self._FAKE_INTEGRATIONS),
+        )
+
+    def test_list_integrations_excludes_mcp_services(self, monkeypatch: object) -> None:
+        self._patch_verify(monkeypatch)
+        console, buf = _capture()
+        dispatch_slash("/list integrations", ReplSession(), console)
+        output = buf.getvalue()
+        assert "datadog" in output
+        assert "slack" in output
+        # MCP-classified services are reserved for /list mcp.
+        assert "openclaw" not in output
+        assert "github" not in output
+
+    def test_list_mcp_shows_only_mcp_services(self, monkeypatch: object) -> None:
+        self._patch_verify(monkeypatch)
+        console, buf = _capture()
+        dispatch_slash("/list mcp", ReplSession(), console)
+        output = buf.getvalue()
+        assert "openclaw" in output
+        assert "github" in output
+        assert "datadog" not in output
+
+    def test_list_mcps_alias(self, monkeypatch: object) -> None:
+        self._patch_verify(monkeypatch)
+        console, buf = _capture()
+        dispatch_slash("/list mcps", ReplSession(), console)
+        assert "openclaw" in buf.getvalue()
+
+    def test_list_models_shows_provider_and_models(self) -> None:
+        console, buf = _capture()
+        dispatch_slash("/list models", ReplSession(), console)
+        output = buf.getvalue()
+        # Whatever provider the test env resolves to, we should at least print
+        # the labels.
+        assert "provider" in output
+        assert "reasoning model" in output
+        assert "toolcall model" in output
+
+    def test_list_default_shows_all_three_sections(self, monkeypatch: object) -> None:
+        self._patch_verify(monkeypatch)
+        console, buf = _capture()
+        dispatch_slash("/list", ReplSession(), console)
+        output = buf.getvalue()
+        assert "Integrations" in output
+        assert "MCP servers" in output
+        assert "LLM connection" in output
+
+    def test_list_unknown_target_prints_hint(self, monkeypatch: object) -> None:
+        self._patch_verify(monkeypatch)
+        console, buf = _capture()
+        dispatch_slash("/list bogus", ReplSession(), console)
+        output = buf.getvalue()
+        assert "unknown list target" in output
+        assert "/list integrations" in output
+
+    def test_list_empty_integrations_prints_onboarding_hint(
+        self, monkeypatch: object
+    ) -> None:
+        from app.cli.repl import commands as cmd_module
+
+        monkeypatch.setattr(  # type: ignore[attr-defined]
+            cmd_module,
+            "_load_verified_integrations",
+            list,  # callable returning []
+        )
+        console, buf = _capture()
+        dispatch_slash("/list integrations", ReplSession(), console)
+        assert "opensre onboard" in buf.getvalue()

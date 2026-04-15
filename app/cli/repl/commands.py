@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from rich.console import Console
 from rich.table import Table
@@ -72,6 +73,127 @@ def _cmd_status(session: ReplSession, console: Console, args: list[str]) -> bool
     return True
 
 
+# MCP-type services are rendered separately under `/list mcp` so the default
+# `/list integrations` view stays focused on alert-source / data integrations.
+_MCP_SERVICES = frozenset({"github", "openclaw"})
+
+
+def _load_verified_integrations() -> list[dict[str, str]]:
+    """Import lazily so an unconfigured store doesn't slow down every REPL turn."""
+    from app.integrations.verify import verify_integrations
+
+    return verify_integrations()
+
+
+def _load_llm_settings() -> Any | None:
+    """Best-effort LLM settings load; returns None if env is misconfigured."""
+    try:
+        from app.config import LLMSettings
+
+        return LLMSettings.from_env()
+    except Exception:  # noqa: BLE001 — env/config errors are expected here
+        return None
+
+
+def _status_style(status: str) -> str:
+    return {
+        "ok": "green",
+        "configured": "green",
+        "missing": "yellow",
+        "failed": "red",
+    }.get(status, "dim")
+
+
+def _render_integrations_table(console: Console, results: list[dict[str, str]]) -> None:
+    rows = [r for r in results if r.get("service") not in _MCP_SERVICES]
+    if not rows:
+        console.print("[dim]no integrations configured.  try `opensre onboard` to add one.[/dim]")
+        return
+    table = Table(title="Integrations", title_style="bold cyan")
+    table.add_column("service", style="bold")
+    table.add_column("source", style="dim")
+    table.add_column("status")
+    table.add_column("detail", style="dim", overflow="fold")
+    for row in rows:
+        status = row.get("status", "unknown")
+        table.add_row(
+            row.get("service", "?"),
+            row.get("source", "?"),
+            f"[{_status_style(status)}]{status}[/{_status_style(status)}]",
+            row.get("detail", ""),
+        )
+    console.print(table)
+
+
+def _render_mcp_table(console: Console, results: list[dict[str, str]]) -> None:
+    rows = [r for r in results if r.get("service") in _MCP_SERVICES]
+    if not rows:
+        console.print("[dim]no MCP servers configured.[/dim]")
+        return
+    table = Table(title="MCP servers", title_style="bold cyan")
+    table.add_column("server", style="bold")
+    table.add_column("source", style="dim")
+    table.add_column("status")
+    table.add_column("detail", style="dim", overflow="fold")
+    for row in rows:
+        status = row.get("status", "unknown")
+        table.add_row(
+            row.get("service", "?"),
+            row.get("source", "?"),
+            f"[{_status_style(status)}]{status}[/{_status_style(status)}]",
+            row.get("detail", ""),
+        )
+    console.print(table)
+
+
+def _render_models_table(console: Console) -> None:
+    settings = _load_llm_settings()
+    if settings is None:
+        console.print("[red]LLM settings unavailable[/red] — check provider env vars.")
+        return
+    provider = str(getattr(settings, "provider", "unknown"))
+    reasoning_attr = f"{provider}_reasoning_model"
+    toolcall_attr = f"{provider}_toolcall_model"
+    table = Table(title="LLM connection", title_style="bold cyan", show_header=False)
+    table.add_column("key", style="bold")
+    table.add_column("value")
+    table.add_row("provider", provider)
+    table.add_row("reasoning model", str(getattr(settings, reasoning_attr, "—")))
+    table.add_row("toolcall model", str(getattr(settings, toolcall_attr, "—")))
+    console.print(table)
+
+
+def _cmd_list(session: ReplSession, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    sub = (args[0].lower() if args else "").strip()
+
+    if sub in ("integrations", "integration", "int"):
+        _render_integrations_table(console, _load_verified_integrations())
+        return True
+
+    if sub in ("mcp", "mcps"):
+        _render_mcp_table(console, _load_verified_integrations())
+        return True
+
+    if sub in ("models", "model", "llm", "llms"):
+        _render_models_table(console)
+        return True
+
+    if sub and sub not in ("", "all"):
+        console.print(
+            f"[red]unknown list target:[/red] {sub}  "
+            "(try [bold]/list integrations[/bold], [bold]/list models[/bold], "
+            "or [bold]/list mcp[/bold])"
+        )
+        return True
+
+    # Default: summary view — show everything compactly.
+    results = _load_verified_integrations()
+    _render_integrations_table(console, results)
+    _render_mcp_table(console, results)
+    _render_models_table(console)
+    return True
+
+
 SLASH_COMMANDS: dict[str, SlashCommand] = {
     "/help": SlashCommand("/help", "show available commands", _cmd_help),
     "/exit": SlashCommand("/exit", "exit the REPL", _cmd_exit),
@@ -80,6 +202,12 @@ SLASH_COMMANDS: dict[str, SlashCommand] = {
     "/reset": SlashCommand("/reset", "clear session state (keeps trust mode)", _cmd_reset),
     "/trust": SlashCommand("/trust", "toggle trust mode ('/trust off' to disable)", _cmd_trust),
     "/status": SlashCommand("/status", "show session status", _cmd_status),
+    "/list": SlashCommand(
+        "/list",
+        "list integrations, MCP servers, and the active LLM connection "
+        "('/list integrations', '/list models', '/list mcp')",
+        _cmd_list,
+    ),
 }
 
 
