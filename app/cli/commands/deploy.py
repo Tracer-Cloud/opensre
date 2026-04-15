@@ -167,8 +167,6 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
         return
 
     if action == "langsmith":
-        capture_cli_invoked()
-        capture_deploy_started(target="langsmith", dry_run=False)
 
         # 2. LangGraph CLI check
         ok, msg = is_langgraph_cli_installed()
@@ -202,6 +200,9 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
 
         # 6. Persist to .env
         persist_langsmith_env(api_key, deployment_name)
+
+        capture_cli_invoked()
+        capture_deploy_started(target="langsmith", dry_run=False)
 
         # 7. Deploy
         console.print("[cyan]Deploying to LangSmith...[/cyan]")
