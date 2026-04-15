@@ -46,6 +46,7 @@ _SECRET_KEYS = frozenset({
     "api_key",
     "api_private_key",
     "app_key",
+    "bearer_token",
     "bot_token",
     "password",
     "secret_access_key",

@@ -212,47 +212,6 @@ class AlertmanagerClient:
             logger.warning("[alertmanager] List silences error: %s", e)
             return {"success": False, "error": str(e)}
 
-    def create_silence(
-        self,
-        matchers: list[dict[str, Any]],
-        starts_at: str,
-        ends_at: str,
-        created_by: str,
-        comment: str,
-    ) -> dict[str, Any]:
-        """Create a silence in Alertmanager.
-
-        Args:
-            matchers: List of label matchers, e.g. [{"name": "alertname", "value": "HighErrorRate", "isEqual": True, "isRegex": False}].
-            starts_at: ISO8601 start time.
-            ends_at: ISO8601 end time.
-            created_by: Author identifier.
-            comment: Reason for the silence (used as investigation write-back).
-        """
-        payload = {
-            "matchers": matchers,
-            "startsAt": starts_at,
-            "endsAt": ends_at,
-            "createdBy": created_by,
-            "comment": comment,
-        }
-        try:
-            resp = self._get_client().post("/api/v2/silences", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return {"success": True, "silence_id": data.get("silenceID", "")}
-        except httpx.HTTPStatusError as e:
-            logger.warning(
-                "[alertmanager] Create silence HTTP failure status=%s",
-                e.response.status_code,
-            )
-            return {
-                "success": False,
-                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
-            }
-        except Exception as e:
-            logger.warning("[alertmanager] Create silence error: %s", e)
-            return {"success": False, "error": str(e)}
 
 
 def make_alertmanager_client(

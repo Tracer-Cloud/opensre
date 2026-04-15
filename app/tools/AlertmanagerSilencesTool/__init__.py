@@ -2,8 +2,7 @@
 
 Queries the Alertmanager v2 API for active and expired silences.
 Useful for understanding whether an alert was intentionally suppressed
-(planned maintenance, known issue) and for writing back investigation
-findings as a new silence comment.
+(planned maintenance, known issue).
 """
 
 from __future__ import annotations
@@ -15,20 +14,18 @@ from app.tools.base import BaseTool
 
 
 class AlertmanagerSilencesTool(BaseTool):
-    """Query Alertmanager silences to detect suppressed alerts and write back investigation findings."""
+    """Query Alertmanager silences to detect suppressed alerts."""
 
     name = "alertmanager_silences"
     source = "alertmanager"
     description = (
         "Query Alertmanager silences to see which alerts are currently suppressed and why. "
-        "Helps distinguish planned maintenance windows from unexpected alert suppression. "
-        "Can also optionally create a new silence to document the investigation's findings."
+        "Helps distinguish planned maintenance windows from unexpected alert suppression."
     )
     use_cases = [
         "Checking whether a firing alert has been silenced (planned maintenance vs real incident)",
         "Listing active silences to understand current operational state",
         "Determining if an alert is suppressed by an ongoing maintenance window",
-        "Writing back investigation root cause as a silence comment for operator awareness",
     ]
     requires = ["base_url"]
     input_schema = {
