@@ -537,9 +537,13 @@ def test_make_vercel_client_forwards_team_id() -> None:
     assert client.config.team_id == "team_xyz"
 
 
+def _raise_value_error() -> None:
+    raise ValueError("test error")
+
+
 def test_context_manager_closes_on_exception() -> None:
     c = _client()
     _ = c._get_client()
     with pytest.raises(ValueError), c:
-        raise ValueError("test error")
+        _raise_value_error()
     assert c._client is None
