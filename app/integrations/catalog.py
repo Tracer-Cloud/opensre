@@ -518,20 +518,20 @@ def load_env_integrations() -> list[dict[str, Any]]:
             }
         )
         aws_credentials = aws_config.credentials
-        assert aws_credentials is not None
-        integrations.append(
-            {
-                "id": "env-aws",
-                "service": "aws",
-                "status": "active",
-                "credentials": {
-                    "access_key_id": aws_credentials.access_key_id,
-                    "secret_access_key": aws_credentials.secret_access_key,
-                    "session_token": aws_credentials.session_token,
-                    "region": aws_config.region,
-                },
-            }
-        )
+        if aws_credentials is not None:
+            integrations.append(
+                {
+                    "id": "env-aws",
+                    "service": "aws",
+                    "status": "active",
+                    "credentials": {
+                        "access_key_id": aws_credentials.access_key_id,
+                        "secret_access_key": aws_credentials.secret_access_key,
+                        "session_token": aws_credentials.session_token,
+                        "region": aws_config.region,
+                    },
+                }
+            )
 
     github_mode = os.getenv("GITHUB_MCP_MODE", "streamable-http").strip() or "streamable-http"
     github_url = os.getenv("GITHUB_MCP_URL", "").strip()
