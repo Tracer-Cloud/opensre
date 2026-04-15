@@ -146,6 +146,7 @@ def validate_langsmith_integration(**kwargs):
     ok, detail = _validate(kwargs["api_key"])
     return IntegrationHealthResult(ok=ok, detail=detail)
 
+
 def validate_discord_bot(**kwargs):
     from app.cli.wizard.integration_health import validate_discord_bot as _validate
 
