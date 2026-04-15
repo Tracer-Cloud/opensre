@@ -1,6 +1,7 @@
 """Main orchestration node for report generation and publishing."""
 
 import logging
+import os
 from typing import cast
 
 from langsmith import traceable
@@ -17,6 +18,13 @@ from app.state import InvestigationState
 from app.utils.ingest_delivery import send_ingest
 
 logger = logging.getLogger(__name__)
+
+def _build_mr_note(slack_message: str) -> str:
+    body = slack_message.strip()
+    if len(body) > 4000:
+        body = body[:3997] + "..."
+
+    return f"### RCA Finding\n\n<details>\n<summary>Investigation summary</summary>\n\n{body}\n\n</details>"
 
 
 def generate_report(state: InvestigationState) -> dict:
@@ -55,6 +63,11 @@ def generate_report(state: InvestigationState) -> dict:
     _token = slack_ctx.get("access_token")
     _alert_ts = slack_ctx.get("ts") or slack_ctx.get("thread_ts")
 
+    resolved = state.get("resolved_integrations") or {}
+    discord_creds = resolved.get("discord", {})
+    logger.debug("[publish] slack_ctx=%s", slack_ctx)
+    logger.debug("[publish] discord creds present=%s keys=%s", bool(discord_creds), list(discord_creds.keys()) if discord_creds else [])
+
     report_posted, delivery_error = send_slack_report(
         slack_message,
         channel=_channel,
@@ -63,6 +76,7 @@ def generate_report(state: InvestigationState) -> dict:
         blocks=all_blocks,
     )
 
+    logger.debug("[publish] slack delivery: posted=%s channel=%s thread_ts=%s error=%s", report_posted, _channel, thread_ts, delivery_error)
     if report_posted and _token and _channel and _alert_ts:
         from app.utils.slack_delivery import swap_reaction
         swap_reaction("eyes", "clipboard", _channel, _alert_ts, _token)
@@ -70,6 +84,49 @@ def generate_report(state: InvestigationState) -> dict:
         raise RuntimeError(
             f"[publish] Slack delivery failed: channel={_channel}, thread_ts={thread_ts}, reason={delivery_error}"
         )
+
+    # Discord delivery — uses integration credentials if configured
+    if discord_creds:
+        from app.utils.discord_delivery import send_discord_report
+        discord_ctx = state.get("discord_context") or {}
+        bot_token = discord_ctx.get("bot_token") or discord_creds.get("bot_token", "")
+        channel_id = discord_ctx.get("channel_id") or discord_creds.get("default_channel_id", "")
+        thread_id = discord_ctx.get("thread_id", "")
+        logger.debug("[publish] discord delivery: channel_id=%s thread_id=%s bot_token_present=%s", channel_id, thread_id, bool(bot_token))
+        if bot_token and channel_id:
+            discord_posted, discord_error = send_discord_report(
+                slack_message,
+                {"bot_token": bot_token, "channel_id": channel_id, "thread_id": thread_id},
+            )
+            logger.debug("[publish] discord delivery: posted=%s error=%s", discord_posted, discord_error)
+            if not discord_posted:
+                logger.warning("[publish] Discord delivery failed: channel=%s error=%s", channel_id, discord_error)
+        else:
+            logger.debug("[publish] discord delivery: skipped — bot_token_present=%s channel_id=%s", bool(bot_token), channel_id)
+    else:
+        logger.debug("[publish] discord delivery: no discord integration configured")
+
+    # GitLab MR write-back (opt-in via GITLAB_MR_WRITEBACK env var)
+    if os.getenv("GITLAB_MR_WRITEBACK", "").lower() in ("true", "1", "yes"):
+        _gl = (state.get("available_sources") or {}).get("gitlab", {})
+        _mr_iid = _gl.get("merge_request_iid", "")
+        _project_id = _gl.get("project_id", "")
+        if _mr_iid and _project_id:
+            try:
+                from app.integrations.gitlab import build_gitlab_config, post_gitlab_mr_note
+                _gl_config = build_gitlab_config({
+                    "base_url": _gl.get("gitlab_url", ""),
+                    "auth_token": _gl.get("gitlab_token", ""),
+                })
+                post_gitlab_mr_note(
+                    config=_gl_config,
+                    project_id=_project_id,
+                    mr_iid=_mr_iid,
+                    body=_build_mr_note(slack_message)
+                )
+                logger.info("[publish] GitLab MR note posted: project=%s mr_iid=%s", _project_id, _mr_iid)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[publish] GitLab MR write-back failed: %s", exc)
 
     return {"slack_message": slack_message, "report": slack_message}
 

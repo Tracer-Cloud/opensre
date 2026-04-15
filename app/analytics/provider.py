@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import importlib.metadata
 import os
 import platform
 import queue
@@ -11,13 +12,12 @@ import threading
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, TypeAlias
 
 import httpx
 
 from app.analytics.events import Event
 from app.cli.wizard.store import get_store_path
-from app.version import get_version
 
 _CONFIG_DIR = get_store_path().parent
 _ANONYMOUS_ID_PATH = _CONFIG_DIR / "anonymous_id"
@@ -30,8 +30,8 @@ _QUEUE_SIZE = 128
 _SEND_TIMEOUT = 2.0
 _SHUTDOWN_WAIT = 1.0
 
-type PropertyValue = str | bool
-type Properties = dict[str, PropertyValue]
+PropertyValue: TypeAlias = str | bool  # noqa: UP040
+Properties: TypeAlias = dict[str, PropertyValue]  # noqa: UP040
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +73,10 @@ def _touch_once(path: Path) -> bool:
 
 
 def _cli_version() -> str:
-    return get_version()
+    try:
+        return importlib.metadata.version("opensre")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
 
 
 _BASE_PROPERTIES: Final[Properties] = {
@@ -146,7 +149,6 @@ class Analytics:
                 finally:
                     self._queue.task_done()
                     self._mark_done()
-            # Drain anything queued before shutdown sentinel arrived.
             while True:
                 try:
                     item = self._queue.get_nowait()

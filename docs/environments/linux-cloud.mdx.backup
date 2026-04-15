@@ -1,0 +1,40 @@
+---
+title: "Linux (Cloud)"
+description: "Install Tracer on Linux under two minutes"
+---
+
+### Install Tracer on Linux under two minutes
+Before you begin: Launch an EC2 instance, connect via SSH, and run all commands directly on the host
+Recommended Instance Type:c6a.2xlarge - Ubuntu 22.04+
+Recommended AWS Instance: c6a.2xlarge (8 vCPUs, 16 GB RAM); Cost per hour: $0.27/hr
+Operating System: Ubuntu 22.04+
+Recommended compute: 8 vCPUs and 16 GB RAM with minimum of 4 vCPUs and 8 GB RAM
+01
+Install Tracer
+Run the following command to install Tracer:
+Awaiting Connection
+
+curl -sSL https://install.tracer.cloud | sh
+
+02
+Start Tracer agent
+To start tracking a pipeline, run the following command:
+Awaiting Connection
+
+sudo tracer init --user_token
+
+<Info> Go to our [onboarding](https://app.tracer.cloud/tracer-bioinformatics/settings/tokens) to get your own personal token.</Info>
+
+What happens next?
+You will then be prompted to configure the pipeline name. Filling this out ensures that each pipeline is uniquely identifiable, customizable, and easy to search later on.
+
+Tracer is now tracking your pipeline. Every run you launch for this pipeline will be automatically monitored.
+You will only need to run tracer init again for a new pipeline, not per pipeline run.
+03
+Launch pipeline
+You can now choose to run any pipeline you want or use 'tracer demo' to launch a prepared pipeline.
+Run your own pipeline by following your usual workflow or run this line in your terminal:
+
+sudo tracer demo
+
+tracer demo will run an nf-core fastquorum pipeline. This pipeline requires minimum 2GB RAM, 1 core vCPU, and 30GB storage to run efficiently.

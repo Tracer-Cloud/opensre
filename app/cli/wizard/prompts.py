@@ -11,9 +11,81 @@ from prompt_toolkit.keys import Keys  # type: ignore[import-not-found]
 from prompt_toolkit.styles import Style  # type: ignore[import-not-found]
 from questionary import Choice
 from questionary.prompts import common
-from questionary.prompts.common import InquirerControl
+from questionary.prompts.common import (
+    INDICATOR_SELECTED,
+    INDICATOR_UNSELECTED,
+    InquirerControl,
+    Separator,
+)
 from questionary.question import Question
 from questionary.styles import merge_styles_default
+
+
+class _CheckboxControl(InquirerControl):
+    """Render checked items neutrally unless they are the active row."""
+
+    def _get_choice_tokens(self) -> list[tuple[str, str]]:  # type: ignore[override]
+        tokens: list[tuple[str, str]] = []
+
+        for index, choice in enumerate(self.filtered_choices):
+            selected = choice.value in self.selected_options
+            is_pointed = index == self.pointed_at
+
+            if is_pointed:
+                if self.pointer is not None:
+                    tokens.append(("class:pointer", f" {self.pointer} "))
+                else:
+                    tokens.append(("class:text", " " * 3))
+                tokens.append(("[SetCursorPosition]", ""))
+            else:
+                pointer_length = len(self.pointer) if self.pointer is not None else 1
+                tokens.append(("class:text", " " * (2 + pointer_length)))
+
+            if isinstance(choice, Separator):
+                tokens.append(("class:separator", f"{choice.title}"))
+                tokens.append(("", "\n"))
+                continue
+
+            if choice.disabled:
+                tokens.append(("class:disabled", f"- {choice.title}"))
+                if not isinstance(choice.disabled, bool):
+                    tokens.append(("class:disabled", f" ({choice.disabled})"))
+                tokens.append(("", "\n"))
+                continue
+
+            indicator = f"{INDICATOR_SELECTED if selected else INDICATOR_UNSELECTED} " if self.use_indicator else ""
+            indicator_class = "class:highlighted" if is_pointed else ("class:selected" if selected else "class:text")
+            text_class = "class:highlighted" if is_pointed else "class:text"
+
+            if is_pointed:
+                tokens.append((indicator_class, indicator))
+                if isinstance(choice.title, list):
+                    for _style, text in choice.title:
+                        tokens.append((text_class, text))
+                else:
+                    tokens.append((text_class, f"{choice.title}"))
+            else:
+                tokens.append((indicator_class, indicator))
+                if isinstance(choice.title, list):
+                    for _style, text in choice.title:
+                        tokens.append((text_class, text))
+                else:
+                    tokens.append((text_class, f"{choice.title}"))
+
+            tokens.append(("", "\n"))
+
+        if tokens:
+            tokens.pop()
+        return tokens
+
+
+def _layout_kwargs(*, input: Any | None = None, output: Any | None = None) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {}
+    if input is not None:
+        kwargs["input"] = input
+    if output is not None:
+        kwargs["output"] = output
+    return kwargs
 
 
 def _base_bindings(
@@ -32,11 +104,13 @@ def _base_bindings(
         ic.select_next()
         while not ic.is_selection_valid():
             ic.select_next()
+        _event.app.invalidate()
 
     def _move_up(_event: Any) -> None:
         ic.select_previous()
         while not ic.is_selection_valid():
             ic.select_previous()
+        _event.app.invalidate()
 
     bindings.add(Keys.Down, eager=True)(_move_down)
     bindings.add(Keys.Up, eager=True)(_move_up)
@@ -46,6 +120,8 @@ def _base_bindings(
     bindings.add(Keys.ControlP, eager=True)(_move_up)
     bindings.add(Keys.ControlI, eager=True)(_move_down)
     bindings.add(Keys.BackTab, eager=True)(_move_up)
+    bindings.add(Keys.Right, eager=True)(_move_down)
+    bindings.add(Keys.Left, eager=True)(_move_up)
 
     if allow_toggle:
 
@@ -56,10 +132,7 @@ def _base_bindings(
                 ic.selected_options.remove(pointed_choice)
             else:
                 ic.selected_options.append(pointed_choice)
-
-    @bindings.add(Keys.Any)
-    def _ignore(_event: Any) -> None:
-        """Ignore unrelated keys."""
+            _event.app.invalidate()
 
     return bindings
 
@@ -72,11 +145,13 @@ def select(
     style: Style | None = None,
     instruction: str | None = None,
     escape_result: Any | None = None,
+    input: Any | None = None,
+    output: Any | None = None,
 ) -> Question:
-    """Render a single-select prompt with Tab navigation."""
+    """Render a single-select prompt with navigation-only movement."""
     ic = InquirerControl(
         choices,
-        default,
+        None,
         pointer=">",
         initial_choice=default,
         show_description=False,
@@ -93,11 +168,9 @@ def select(
 
     bindings = _base_bindings(ic)
 
-    if escape_result is not None:
-
-        @bindings.add(Keys.Escape, eager=True)
-        def _escape(event: Any) -> None:
-            event.app.exit(result=escape_result)
+    @bindings.add(Keys.Escape, eager=True)
+    def _escape(event: Any) -> None:
+        event.app.exit(result=escape_result)
 
     @bindings.add(Keys.ControlM, eager=True)
     def _submit(event: Any) -> None:
@@ -106,9 +179,15 @@ def select(
 
     return Question(
         Application(
-            layout=common.create_inquirer_layout(ic, _tokens),
+            layout=common.create_inquirer_layout(
+                ic,
+                _tokens,
+                **_layout_kwargs(input=input, output=output),
+            ),
             key_bindings=bindings,
             style=merge_styles_default([style]),
+            input=input,
+            output=output,
         )
     )
 
@@ -121,14 +200,16 @@ def checkbox(
     instruction: str | None = None,
     initial_choice: str | None = None,
     default: Any | None = None,
+    input: Any | None = None,
+    output: Any | None = None,
 ) -> Question:
-    """Render a multi-select prompt with Tab navigation."""
+    """Render a multi-select prompt with explicit space-to-toggle behavior."""
     # If no explicit initial_choice, place cursor on first choice
     if initial_choice is None and choices:
         first = choices[0]
         initial_choice = first.value if isinstance(first, Choice) else None
 
-    ic = InquirerControl(
+    ic = _CheckboxControl(
         choices,
         pointer=">",
         initial_choice=initial_choice,
@@ -152,6 +233,10 @@ def checkbox(
 
     bindings = _base_bindings(ic, allow_toggle=True)
 
+    @bindings.add(Keys.Escape, eager=True)
+    def _escape_checkbox(event: Any) -> None:
+        event.app.exit(result=None)
+
     @bindings.add(Keys.ControlM, eager=True)
     def _submit(event: Any) -> None:
         ic.is_answered = True
@@ -159,8 +244,14 @@ def checkbox(
 
     return Question(
         Application(
-            layout=common.create_inquirer_layout(ic, _tokens),
+            layout=common.create_inquirer_layout(
+                ic,
+                _tokens,
+                **_layout_kwargs(input=input, output=output),
+            ),
             key_bindings=bindings,
             style=merge_styles_default([style]),
+            input=input,
+            output=output,
         )
     )

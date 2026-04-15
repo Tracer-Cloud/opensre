@@ -37,12 +37,13 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from pathlib import Path
 from typing import Any
+
+from app.constants import INTEGRATIONS_STORE_PATH
 
 logger = logging.getLogger(__name__)
 
-STORE_PATH = Path.home() / ".tracer" / "integrations.json"
+STORE_PATH = INTEGRATIONS_STORE_PATH
 _VERSION = 1
 
 
@@ -62,6 +63,7 @@ def _load_raw() -> dict[str, Any]:
 def _save(data: dict[str, Any]) -> None:
     STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
     STORE_PATH.write_text(json.dumps(data, indent=2) + "\n")
+    STORE_PATH.chmod(0o600)
 
 
 def load_integrations() -> list[dict[str, Any]]:

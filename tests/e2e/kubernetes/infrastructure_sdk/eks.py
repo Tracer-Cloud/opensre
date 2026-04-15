@@ -400,20 +400,27 @@ CI_IAM_PRINCIPAL = "arn:aws:iam::395261708130:user/github-actions-ci-readonly"
 def _enable_api_auth_mode() -> None:
     """Switch cluster to API_AND_CONFIG_MAP auth so access entries work."""
     eks_client = get_boto3_client("eks", REGION)
+    resp = eks_client.describe_cluster(name=CLUSTER_NAME)
+    mode = resp["cluster"]["accessConfig"]["authenticationMode"]
+    if mode == "API_AND_CONFIG_MAP":
+        return
+
+    print("Enabling API_AND_CONFIG_MAP authentication mode...")
     try:
-        resp = eks_client.describe_cluster(name=CLUSTER_NAME)
-        mode = resp["cluster"]["accessConfig"]["authenticationMode"]
-        if mode == "API_AND_CONFIG_MAP":
-            return
-        print("Enabling API_AND_CONFIG_MAP authentication mode...")
         eks_client.update_cluster_config(
             name=CLUSTER_NAME,
             accessConfig={"authenticationMode": "API_AND_CONFIG_MAP"},
         )
-        _wait_for_cluster("ACTIVE", timeout=120)
-    except ClientError:
-        # Already in the desired mode; update is a no-op
-        pass
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] in (
+            "InvalidRequestException",
+            "ResourceInUseException",
+        ):
+            # Already in the desired mode; update is a no-op
+            return
+        raise
+
+    _wait_for_cluster("ACTIVE", timeout=120)
 
 
 def _wait_for_auth_mode(expected: str, timeout: int = 180) -> bool:
@@ -428,7 +435,8 @@ def _wait_for_auth_mode(expected: str, timeout: int = 180) -> bool:
                 return True
         except ClientError:
             # Cluster may not be reachable yet during creation; retry
-            pass
+            time.sleep(5)
+            continue
         time.sleep(5)
     return False
 

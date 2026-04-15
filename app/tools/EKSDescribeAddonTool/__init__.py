@@ -2,26 +2,35 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from botocore.exceptions import ClientError
 
-from app.integrations.clients.eks.eks_client import EKSClient
-from app.tools.base import BaseTool
+from app.services.eks.eks_client import EKSClient
 from app.tools.EKSListClustersTool import _eks_available, _eks_creds
+from app.tools.tool_decorator import tool
 
 
-class EKSDescribeAddonTool(BaseTool):
-    """Describe an EKS addon — coredns, kube-proxy, vpc-cni, aws-ebs-csi-driver, etc."""
+def _addon_is_available(sources: dict[str, dict]) -> bool:
+    return bool(_eks_available(sources) and sources.get("eks", {}).get("cluster_name"))
 
-    name = "describe_eks_addon"
-    source = "eks"
-    description = "Describe an EKS addon — coredns, kube-proxy, vpc-cni, aws-ebs-csi-driver, etc."
-    use_cases = [
+
+def _addon_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
+    eks = sources["eks"]
+    return {"cluster_name": eks["cluster_name"], "addon_name": "coredns", **_eks_creds(eks)}
+
+
+@tool(
+    name="describe_eks_addon",
+    source="eks",
+    description="Describe an EKS addon — coredns, kube-proxy, vpc-cni, aws-ebs-csi-driver, etc.",
+    use_cases=[
         "Investigating DNS resolution failures (coredns)",
         "Checking networking issues (vpc-cni)",
         "Finding storage attachment failures (ebs-csi)",
-    ]
-    requires = ["cluster_name"]
-    input_schema = {
+    ],
+    requires=["cluster_name"],
+    input_schema={
         "type": "object",
         "properties": {
             "cluster_name": {"type": "string"},
@@ -31,29 +40,29 @@ class EKSDescribeAddonTool(BaseTool):
             "region": {"type": "string", "default": "us-east-1"},
         },
         "required": ["cluster_name", "role_arn"],
-    }
-
-    def is_available(self, sources: dict) -> bool:
-        return bool(_eks_available(sources) and sources.get("eks", {}).get("cluster_name"))
-
-    def extract_params(self, sources: dict) -> dict:
-        eks = sources["eks"]
-        return {"cluster_name": eks["cluster_name"], "addon_name": "coredns", **_eks_creds(eks)}
-
-    def run(self, cluster_name: str, addon_name: str, role_arn: str, external_id: str = "", region: str = "us-east-1", **_kwargs) -> dict:
-        try:
-            client = EKSClient(role_arn=role_arn, external_id=external_id, region=region)
-            addon = client.describe_addon(cluster_name, addon_name)
-            return {
-                "source": "eks", "available": True, "cluster_name": cluster_name,
-                "addon_name": addon_name, "status": addon.get("status"),
-                "addon_version": addon.get("addonVersion"), "health": addon.get("health", {}),
-                "marketplace_version": addon.get("marketplaceVersion"), "error": None,
-            }
-        except ClientError as e:
-            return {"source": "eks", "available": False, "cluster_name": cluster_name, "addon_name": addon_name, "error": str(e)}
-        except Exception as e:
-            return {"source": "eks", "available": False, "cluster_name": cluster_name, "addon_name": addon_name, "error": str(e)}
-
-
-describe_eks_addon = EKSDescribeAddonTool()
+    },
+    is_available=_addon_is_available,
+    extract_params=_addon_extract_params,
+)
+def describe_eks_addon(
+    cluster_name: str,
+    addon_name: str,
+    role_arn: str,
+    external_id: str = "",
+    region: str = "us-east-1",
+    **_kwargs: Any,
+) -> dict[str, Any]:
+    """Describe an EKS addon — coredns, kube-proxy, vpc-cni, aws-ebs-csi-driver, etc."""
+    try:
+        client = EKSClient(role_arn=role_arn, external_id=external_id, region=region)
+        addon = client.describe_addon(cluster_name, addon_name)
+        return {
+            "source": "eks", "available": True, "cluster_name": cluster_name,
+            "addon_name": addon_name, "status": addon.get("status"),
+            "addon_version": addon.get("addonVersion"), "health": addon.get("health", {}),
+            "marketplace_version": addon.get("marketplaceVersion"), "error": None,
+        }
+    except ClientError as e:
+        return {"source": "eks", "available": False, "cluster_name": cluster_name, "addon_name": addon_name, "error": str(e)}
+    except Exception as e:
+        return {"source": "eks", "available": False, "cluster_name": cluster_name, "addon_name": addon_name, "error": str(e)}

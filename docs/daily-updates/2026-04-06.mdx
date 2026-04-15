@@ -1,0 +1,44 @@
+---
+title: "Daily Update — 2026-04-06"
+description: "OpenSRE engineering daily update for 2026-04-06 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+abhishek-marathe04, Ankit Juneja, Ankit Juneja, Matt Van Horn, Raman, Vaibhav Upreti, and vincenthus 🙏🚀
+
+## Main updates shipped (April 6, 2026)
+
+- feat: real-time streaming UI, interactive deploy, and multi-remote support — vincenthus
+- feat: Add GitLab integration with investigation tools and optional MR commenting.(Fixes Issue #318) — abhishek-marathe04
+- feat: add remote LangGraph agent connection (health + trigger) — vincenthus
+- feat: add Bitbucket integration for dev-tools investigation — Matt Van Horn
+- feat: add Kafka integration for streaming and consumer-lag RCA — Matt Van Horn
+- feat: add ClickHouse integration for OLAP database RCA — Matt Van Horn
+- feat: add SSE streaming to remote investigate endpoint — vincenthus
+- chore: refactor cli — Vaibhav Upreti
+- perf(ci): speed up CI pipeline with uv, pytest-xdist, and job consolidation — vincenthus
+- fix: resolve critical ollama tag matching issue causing redundant downloads — Ankit Juneja
+- Feat/daily update 20 highlights — vincenthus
+- fix: remove typo in contributors workflow API URL (fixes issue #212) — Raman
+
+## Source pull requests
+
+- [#398](https://github.com/Tracer-Cloud/opensre/pull/398) feat: add remote LangGraph agent connection (health + trigger) (author: vincenthus; contributors: vincenthus; labels: _none_; files: `Makefile`, `app/cli/__main__.py`, `app/cli/wizard/store.py`, `app/config.py`, `app/graph_pipeline.py`, `app/remote/__init__.py`, `app/remote/client.py`, `app/remote/renderer.py`, `app/remote/server.py`, `app/remote/stream.py`, and 29 more)
+- [#401](https://github.com/Tracer-Cloud/opensre/pull/401) chore: refactor cli (author: Vaibhav Upreti; contributors: Vaibhav Upreti; labels: _none_; files: `app/cli/__main__.py`, `app/cli/args.py`, `app/cli/commands/__init__.py`, `app/cli/commands/deploy.py`, `app/cli/commands/general.py`, `app/cli/commands/integrations.py`, `app/cli/commands/onboard.py`, `app/cli/commands/remote.py`, `app/cli/commands/tests.py`, `app/cli/constants.py`, and 2 more)
+- [#400](https://github.com/Tracer-Cloud/opensre/pull/400) feat: add SSE streaming to remote investigate endpoint (author: vincenthus; contributors: Matt Van Horn and vincenthus; labels: _none_; files: `.env.example`, `app/integrations/clickhouse.py`, `app/integrations/models.py`, `app/integrations/verify.py`, `app/tools/ClickHouseQueryActivityTool/__init__.py`, `app/tools/ClickHouseSystemHealthTool/__init__.py`, `app/types/evidence.py`, `pyproject.toml`, `tests/integrations/test_clickhouse.py`)
+- [#405](https://github.com/Tracer-Cloud/opensre/pull/405) fix: remove typo in contributors workflow API URL (fixes issue #212) (author: Raman; contributors: Raman; labels: _none_; files: `.github/workflows/contributors.yml`)
+- [#403](https://github.com/Tracer-Cloud/opensre/pull/403) feat: add Bitbucket integration for dev-tools investigation (author: Matt Van Horn; contributors: Matt Van Horn and vincenthus; labels: _none_; files: `.env.example`, `app/integrations/bitbucket.py`, `app/integrations/models.py`, `app/integrations/verify.py`, `app/tools/BitbucketCommitsTool/__init__.py`, `app/tools/BitbucketFileContentsTool/__init__.py`, `app/tools/BitbucketSearchCodeTool/__init__.py`, `app/types/evidence.py`, `tests/integrations/test_bitbucket.py`)
+- [#409](https://github.com/Tracer-Cloud/opensre/pull/409) Feat/daily update 20 highlights (author: vincenthus; contributors: Matt Van Horn and vincenthus; labels: _none_; files: `.github/workflows/daily-update.yml`, `.github/workflows/security-autofix.yml`, `app/integrations/clickhouse.py`, `app/integrations/daily_update.py`, `app/integrations/verify.py`, `app/remote/server.py`, `tests/integrations/test_daily_update.py`)
+- [#402](https://github.com/Tracer-Cloud/opensre/pull/402) feat: add ClickHouse integration for OLAP database RCA (author: Matt Van Horn; contributors: Matt Van Horn and vincenthus; labels: _none_; files: `app/remote/server.py`)
+- [#410](https://github.com/Tracer-Cloud/opensre/pull/410) perf(ci): speed up CI pipeline with uv, pytest-xdist, and job consolidation (author: vincenthus; contributors: vincenthus; labels: _none_; files: `.github/workflows/ci.yml`, `Makefile`, `pyproject.toml`, `pytest.ini`)
+- [#404](https://github.com/Tracer-Cloud/opensre/pull/404) feat: add Kafka integration for streaming and consumer-lag RCA (author: Matt Van Horn; contributors: Matt Van Horn and vincenthus; labels: _none_; files: `.env.example`, `app/integrations/kafka.py`, `app/integrations/models.py`, `app/integrations/verify.py`, `app/tools/KafkaConsumerGroupTool/__init__.py`, `app/tools/KafkaTopicHealthTool/__init__.py`, `app/types/evidence.py`, `mypy.ini`, `pyproject.toml`, `tests/integrations/test_kafka.py`)
+- [#407](https://github.com/Tracer-Cloud/opensre/pull/407) feat: Add GitLab integration with investigation tools and optional MR commenting.(Fixes Issue #318) (author: abhishek-marathe04; contributors: abhishek-marathe04; labels: _none_; files: `.env.example`, `app/cli/wizard/flow.py`, `app/cli/wizard/integration_health.py`, `app/integrations/gitlab.py`, `app/integrations/gitlab_test.py`, `app/integrations/models.py`, `app/nodes/plan_actions/detect_sources.py`, `app/nodes/plan_actions/detect_sources_test.py`, `app/nodes/publish_findings/node.py`, `app/nodes/publish_findings/node_test.py`, and 11 more)
+- [#412](https://github.com/Tracer-Cloud/opensre/pull/412) feat: real-time streaming UI, interactive deploy, and multi-remote support (author: vincenthus; contributors: vincenthus; labels: _none_; files: `app/cli/__main__.py`, `app/cli/commands/__init__.py`, `app/cli/commands/deploy.py`, `app/cli/commands/doctor.py`, `app/cli/commands/general.py`, `app/cli/commands/remote.py`, `app/cli/commands/tests.py`, `app/cli/context.py`, `app/cli/errors.py`, `app/cli/exit_codes.py`, and 28 more)
+- [#408](https://github.com/Tracer-Cloud/opensre/pull/408) fix: resolve critical ollama tag matching issue causing redundant downloads (author: Ankit Juneja; contributors: Ankit Juneja and Ankit Juneja; labels: _none_; files: `app/cli/local_llm/command.py`, `app/cli/local_llm/local_llm_test.py`, `app/cli/local_llm/ollama.py`, `app/cli/wizard/validation.py`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-05T23:00:00+00:00` to `2026-04-06T23:00:00+00:00`

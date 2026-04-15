@@ -325,11 +325,7 @@ def validate_performance_insights(data: dict[str, Any]) -> PerformanceInsightsFi
 
 def validate_answer_key(data: dict[str, Any]) -> AnswerKeySchema:
     _require_str(data, "root_cause_category", ctx="answer.yml")
-    keywords = data.get("required_keywords")
-    if not isinstance(keywords, list) or not keywords:
-        raise ValueError("answer.yml: 'required_keywords' must be a non-empty list")
-    if not all(isinstance(k, str) and k.strip() for k in keywords):
-        raise ValueError("answer.yml: all required_keywords must be non-empty strings")
+    _require_non_empty_str_list(data, "required_keywords", "answer.yml", required=True)
     _require_str(data, "model_response", ctx="answer.yml")
     for opt_list_field in ("forbidden_categories", "forbidden_keywords", "required_evidence_sources"):
         val = data.get(opt_list_field)
@@ -349,12 +345,7 @@ def validate_answer_key(data: dict[str, Any]) -> AnswerKeySchema:
     if max_loops is not None and (not isinstance(max_loops, int) or max_loops < 1):
         raise ValueError("answer.yml: 'max_investigation_loops' must be a positive integer when present")
     for axis2_list_field in ("ruling_out_keywords", "required_queries"):
-        val = data.get(axis2_list_field)
-        if val is not None:
-            if not isinstance(val, list) or not val:
-                raise ValueError(f"answer.yml: '{axis2_list_field}' must be a non-empty list when present")
-            if not all(isinstance(k, str) and k.strip() for k in val):
-                raise ValueError(f"answer.yml: all '{axis2_list_field}' entries must be non-empty strings")
+        _require_non_empty_str_list(data, axis2_list_field, "answer.yml")
     return data  # type: ignore[return-value]
 
 
@@ -390,3 +381,23 @@ def _require_str(obj: dict[str, Any], key: str, ctx: str = "") -> None:
     prefix = f"{ctx}: " if ctx else ""
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{prefix}missing or empty required string field '{key}'")
+
+def _require_non_empty_str_list(
+    obj: dict[str, Any],
+    key: str,
+    ctx: str,
+    *,
+    required: bool = False,
+) -> None:
+    value = obj.get(key)
+
+    if value is None:
+        if required:
+            raise ValueError(f"{ctx}: '{key}' must be a non-empty list")
+        return
+
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{ctx}: '{key}' must be a non-empty list")
+
+    if not all(isinstance(item, str) and item.strip() for item in value):
+        raise ValueError(f"{ctx}: all '{key}' entries must be non-empty strings")

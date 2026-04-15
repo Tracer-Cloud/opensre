@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.integrations.clients.datadog import DatadogClient, DatadogConfig
-from app.integrations.clients.datadog.client import DatadogAsyncClient
+from app.services.datadog import DatadogClient, DatadogConfig
+from app.services.datadog.client import DatadogAsyncClient
 
 _DEFAULT_SITE = "datadoghq.com"
 

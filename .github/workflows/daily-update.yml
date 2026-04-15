@@ -1,0 +1,85 @@
+name: Daily Update
+
+on:
+  schedule:
+    # Once daily in UTC. GitHub does not guarantee the exact minute; a previous gate
+    # required Europe/London == 23:59 and almost never matched delayed runners, so
+    # scheduled runs skipped generation. We target "yesterday" in London (see below).
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+    inputs:
+      london_date:
+        description: "Optional London date to generate (YYYY-MM-DD). For manual reruns, defaults to yesterday in Europe/London."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  daily-update:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      LLM_PROVIDER: ${{ vars.DAILY_UPDATE_LLM_PROVIDER || 'anthropic' }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Resolve target London date
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -n "${{ inputs.london_date }}" ]; then
+              echo "DAILY_UPDATE_DATE=${{ inputs.london_date }}" >> "$GITHUB_ENV"
+            else
+              echo "DAILY_UPDATE_DATE=$(TZ=Europe/London date -d 'yesterday' +%F)" >> "$GITHUB_ENV"
+            fi
+          else
+            echo "DAILY_UPDATE_DATE=$(TZ=Europe/London date -d 'yesterday' +%F)" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Generate archive
+        id: generate
+        run: python -m app.integrations.daily_update
+
+      - name: Commit generated archive
+        shell: bash
+        run: |
+          archive_path="${{ steps.generate.outputs.archive_path }}"
+          overview_path="${{ steps.generate.outputs.overview_path }}"
+          docs_json_path="${{ steps.generate.outputs.docs_json_path }}"
+          if [ -z "$archive_path" ]; then
+            echo "Daily update generator did not emit archive_path."
+            exit 1
+          fi
+
+          if [ -z "$(git status --short -- "$archive_path" "$overview_path" "$docs_json_path")" ]; then
+            echo "No archive changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$archive_path" "$overview_path" "$docs_json_path"
+          git commit -m "docs(daily-update): archive ${{ steps.generate.outputs.london_date }}"
+          git push

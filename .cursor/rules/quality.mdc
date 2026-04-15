@@ -1,0 +1,43 @@
+---
+description: Pre-commit quality checklist and PR standards
+alwaysApply: true
+---
+
+# Quality Standards
+
+## Before Every PR
+
+All three must pass — CI blocks merging if any fail:
+
+```bash
+make lint        # ruff: style and import checking
+make typecheck   # mypy: type annotation checking
+make test-cov    # pytest: tests with coverage report
+```
+
+## PR Checklist
+
+- Link to the relevant GitHub issue (`Fixes #123`)
+- All local checks pass
+- Tests added for bug fixes and new features
+- Documentation updated if behavior changed
+- Self-reviewed your own code
+- Edge cases considered
+- Breaking changes called out explicitly
+
+## AI-Assisted Code
+
+If AI tools were used to generate code:
+- Review every line (not just skim)
+- Understand the logic and can explain it
+- Test edge cases
+- Match project conventions
+- Verify tests pass
+
+## Code Quality Principles
+
+- Clarity over cleverness
+- DRY: extract common patterns
+- Strong typing on all function signatures
+- One responsibility per function/class
+- Comments explain "why", not "what"

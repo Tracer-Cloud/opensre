@@ -2,7 +2,9 @@
 
 import json
 from collections.abc import Callable
-from typing import Any
+
+from app.nodes.investigate.execution.execute_actions import ActionExecutionResult
+from app.nodes.investigate.types import ExecutedHypothesis, PlanAudit
 
 
 def _parse_vendor_audit_from_logs(logs: list) -> dict | None:
@@ -221,6 +223,84 @@ def _map_datadog_investigate(data: dict) -> dict:
     }
 
 
+def _map_honeycomb_traces(data: dict) -> dict:
+    return {
+        "honeycomb_traces": data.get("traces", []),
+        "honeycomb_trace_count": data.get("total_traces", 0),
+        "honeycomb_dataset": data.get("dataset", ""),
+        "honeycomb_service_name": data.get("service_name", ""),
+        "honeycomb_trace_id": data.get("trace_id", ""),
+        "honeycomb_query_url": data.get("query_url", ""),
+    }
+
+
+def _map_coralogix_logs(data: dict) -> dict:
+    return {
+        "coralogix_logs": data.get("logs", []),
+        "coralogix_error_logs": data.get("error_logs", []),
+        "coralogix_logs_query": data.get("query", ""),
+        "coralogix_logs_count": data.get("total", 0),
+        "coralogix_application_name": data.get("application_name", ""),
+        "coralogix_subsystem_name": data.get("subsystem_name", ""),
+        "coralogix_trace_id": data.get("trace_id", ""),
+    }
+
+
+def _map_diagnostic_code_result(data: dict, current_evidence: dict) -> dict:
+    executions = list(current_evidence.get("diagnostic_executions", []))
+    executions.append({
+        "code": data.get("code", ""),
+        "inputs": data.get("inputs", {}),
+        "stdout": data.get("stdout", ""),
+        "stderr": data.get("stderr", ""),
+        "exit_code": data.get("exit_code"),
+        "timed_out": data.get("timed_out", False),
+        "success": data.get("success", False),
+    })
+    return {"diagnostic_executions": executions}
+def _map_vercel_deployment_status(data: dict) -> dict:
+    return {
+        "vercel_deployments": data.get("deployments", []),
+        "vercel_failed_deployments": data.get("failed_deployments", []),
+        "vercel_project_id": data.get("project_id", ""),
+        "vercel_deployments_total": data.get("total", 0),
+    }
+
+
+def _map_vercel_deployment_logs(data: dict) -> dict:
+    return {
+        "vercel_deployment": data.get("deployment", {}),
+        "vercel_deployment_id": data.get("deployment_id", ""),
+        "vercel_events": data.get("events", []),
+        "vercel_error_events": data.get("error_events", []),
+        "vercel_runtime_logs": data.get("runtime_logs", []),
+        "vercel_total_events": data.get("total_events", 0),
+        "vercel_total_runtime_logs": data.get("total_runtime_logs", 0),
+    }
+
+
+def _map_github_code_search(data: dict) -> dict:
+    return {
+        "github_code_matches": data.get("matches", []) or [],
+        "github_code_query": data.get("query", ""),
+        "github_code_text": data.get("text", ""),
+    }
+
+
+def _map_github_file_contents(data: dict) -> dict:
+    return {
+        "github_file": data.get("file", {}),
+        "github_file_text": data.get("text", ""),
+    }
+
+
+def _map_github_commits(data: dict) -> dict:
+    return {
+        "github_commits": data.get("commits", []) or [],
+        "github_commits_text": data.get("text", ""),
+    }
+
+
 EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "get_failed_jobs": _map_failed_jobs,
     "get_failed_tools": _map_failed_tools,
@@ -244,10 +324,20 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "query_datadog_monitors": _map_datadog_monitors,
     "query_datadog_events": _map_datadog_events,
     "query_datadog_all": _map_datadog_investigate,
+    "query_honeycomb_traces": _map_honeycomb_traces,
+    "query_coralogix_logs": _map_coralogix_logs,
+    "vercel_deployment_status": _map_vercel_deployment_status,
+    "vercel_deployment_logs": _map_vercel_deployment_logs,
+    "search_github_code": _map_github_code_search,
+    "get_github_file_contents": _map_github_file_contents,
+    "list_github_commits": _map_github_commits,
 }
 
 
-def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) -> dict[str, Any]:
+def merge_evidence(
+    current_evidence: dict[str, object],
+    execution_results: dict[str, ActionExecutionResult],
+) -> dict[str, object]:
     """
     Merge execution results into evidence state.
 
@@ -264,6 +354,10 @@ def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) ->
         if not result.success:
             continue
 
+        if action_name == "run_diagnostic_code":
+            evidence.update(_map_diagnostic_code_result(result.data, evidence))
+            continue
+
         mapper = EVIDENCE_MAPPERS.get(action_name)
         if mapper:
             evidence.update(mapper(result.data))
@@ -272,33 +366,38 @@ def merge_evidence(current_evidence: dict[str, Any], execution_results: dict) ->
 
 
 def track_hypothesis(
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
     action_names: list[str],
     rationale: str,
     investigation_loop_count: int,
-) -> list[dict[str, Any]]:
+    plan_audit: PlanAudit | None = None,
+) -> list[ExecutedHypothesis]:
     """
-    Track executed hypothesis for deduplication.
+    Track executed hypothesis for deduplication and audit trail.
 
     Args:
         executed_hypotheses: Current list of executed hypotheses
         action_names: List of actions that were executed
         rationale: Rationale for executing these actions
         investigation_loop_count: Current loop count
+        plan_audit: Optional audit data from planning step (rerouting, budget, etc)
 
     Returns:
-        Updated executed_hypotheses list
+        Updated executed_hypotheses list with audit trail
     """
-    new_hypothesis = {
+    new_hypothesis: ExecutedHypothesis = {
         "actions": action_names,
         "rationale": rationale,
         "loop_count": investigation_loop_count,
     }
+    # Include audit data if rerouting occurred or budget was enforced
+    if plan_audit:
+        new_hypothesis["audit"] = plan_audit
     executed_hypotheses.append(new_hypothesis)
     return executed_hypotheses
 
 
-def build_evidence_summary(execution_results: dict) -> str:
+def build_evidence_summary(execution_results: dict[str, ActionExecutionResult]) -> str:
     """
     Build a summary of what evidence was collected.
 
@@ -365,6 +464,36 @@ def build_evidence_summary(execution_results: dict) -> str:
                     f"datadog:{len(logs)} logs ({len(error_logs)} errors), "
                     f"{len(monitors)} monitors, {len(events)} events{timing}"
                 )
+            elif action_name == "query_honeycomb_traces" and data.get("traces"):
+                summary_parts.append(f"honeycomb:{len(data['traces'])} traces")
+            elif action_name == "query_coralogix_logs" and data.get("logs"):
+                error_count = len(data.get("error_logs", []))
+                summary_parts.append(f"coralogix:{len(data['logs'])} logs ({error_count} errors)")
+            elif action_name == "run_diagnostic_code":
+                if data.get("success"):
+                    stdout_lines = len(data.get("stdout", "").splitlines())
+                    summary_parts.append(f"diagnostic:executed ({stdout_lines} output lines)")
+                elif data.get("timed_out"):
+                    summary_parts.append("diagnostic:timed out")
+                else:
+                    summary_parts.append("diagnostic:failed")
+            elif action_name == "vercel_deployment_status":
+                failed_count = len(data.get("failed_deployments", []))
+                total = int(data.get("total", 0) or 0)
+                summary_parts.append(f"vercel:{total} deployments ({failed_count} failed)")
+            elif action_name == "vercel_deployment_logs":
+                events = len(data.get("events", []))
+                error_events = len(data.get("error_events", []))
+                runtime_logs = len(data.get("runtime_logs", []))
+                summary_parts.append(
+                    f"vercel:{events} events ({error_events} errors), {runtime_logs} runtime logs"
+                )
+            elif action_name == "search_github_code" and data.get("matches"):
+                summary_parts.append(f"github:{len(data['matches'])} code matches")
+            elif action_name == "get_github_file_contents" and data.get("file"):
+                summary_parts.append("github:file contents retrieved")
+            elif action_name == "list_github_commits" and data.get("commits"):
+                summary_parts.append(f"github:{len(data['commits'])} commits")
         else:
             # Log action failures for debugging
             error_msg = f"{action_name}:FAILED({result.error[:50] if result.error else 'unknown'})"
@@ -379,12 +508,13 @@ def build_evidence_summary(execution_results: dict) -> str:
 
 
 def summarize_execution_results(
-    execution_results: dict,
-    current_evidence: dict[str, Any],
-    executed_hypotheses: list[dict[str, Any]],
+    execution_results: dict[str, ActionExecutionResult],
+    current_evidence: dict[str, object],
+    executed_hypotheses: list[ExecutedHypothesis],
     investigation_loop_count: int,
     rationale: str,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    plan_audit: PlanAudit | None = None,
+) -> tuple[dict[str, object], list[ExecutedHypothesis], str]:
     """
     Summarize execution results into evidence and hypotheses.
 
@@ -394,20 +524,25 @@ def summarize_execution_results(
         executed_hypotheses: History of executed hypotheses
         investigation_loop_count: Current loop count
         rationale: Rationale for executing these actions
+        plan_audit: Optional audit data from planning step (rerouting, budget, etc)
 
     Returns:
         Tuple of (evidence, executed_hypotheses, evidence_summary)
     """
     evidence = merge_evidence(current_evidence, execution_results)
 
-    # Only track successful actions in hypothesis history (allow retries of failed actions)
+    # Only successes go into executed_hypotheses: planning filters out any name seen there,
+    # so recording failures would block retries for transient errors on any tool.
     successful_actions = [
-        action_name for action_name, result in execution_results.items() if result.success
+        name for name, result in execution_results.items() if result.success
     ]
-
     if successful_actions:
         executed_hypotheses = track_hypothesis(
-            executed_hypotheses, successful_actions, rationale, investigation_loop_count
+            executed_hypotheses,
+            successful_actions,
+            rationale,
+            investigation_loop_count,
+            plan_audit,
         )
 
     evidence_summary = build_evidence_summary(execution_results)

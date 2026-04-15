@@ -4,13 +4,24 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.tools.base import BaseTool
 from app.tools.DataDogLogsTool._client import make_client, unavailable
+from app.tools.tool_decorator import tool
+from app.tools.utils.compaction import compact_logs, summarize_counts
 
 _ERROR_KEYWORDS = (
-    "error", "fail", "exception", "traceback", "pipeline_error",
-    "critical", "killed", "oomkilled", "crash", "panic", "timeout",
+    "error",
+    "fail",
+    "exception",
+    "traceback",
+    "pipeline_error",
+    "critical",
+    "killed",
+    "oomkilled",
+    "crash",
+    "panic",
+    "timeout",
 )
+
 
 def _dd_creds(dd: dict) -> dict:
     return {
@@ -20,20 +31,32 @@ def _dd_creds(dd: dict) -> dict:
     }
 
 
-class DataDogLogsTool(BaseTool):
-    """Search Datadog logs for pipeline errors, exceptions, and application events."""
+def _logs_is_available(sources: dict[str, dict]) -> bool:
+    return bool(sources.get("datadog", {}).get("connection_verified"))
 
-    name = "query_datadog_logs"
-    source = "datadog"
-    description = "Search Datadog logs for pipeline errors, exceptions, and application events."
-    use_cases = [
+
+def _logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
+    dd = sources["datadog"]
+    return {
+        "query": dd.get("default_query", ""),
+        "time_range_minutes": dd.get("time_range_minutes", 60),
+        "limit": 50,
+        **_dd_creds(dd),
+    }
+
+
+@tool(
+    name="query_datadog_logs",
+    source="datadog",
+    description="Search Datadog logs for pipeline errors, exceptions, and application events.",
+    use_cases=[
         "Investigating pipeline errors reported by Datadog monitors",
         "Finding error logs in Kubernetes namespaces",
         "Searching for PIPELINE_ERROR patterns and ETL failures",
         "Correlating log events with Datadog alerts",
-    ]
-    requires = []
-    input_schema = {
+    ],
+    requires=[],
+    input_schema={
         "type": "object",
         "properties": {
             "query": {"type": "string", "description": "Datadog log search query"},
@@ -44,52 +67,46 @@ class DataDogLogsTool(BaseTool):
             "site": {"type": "string", "default": "datadoghq.com"},
         },
         "required": ["query"],
+    },
+    is_available=_logs_is_available,
+    extract_params=_logs_extract_params,
+)
+def query_datadog_logs(
+    query: str,
+    time_range_minutes: int = 60,
+    limit: int = 50,
+    api_key: str | None = None,
+    app_key: str | None = None,
+    site: str = "datadoghq.com",
+    **_kwargs: Any,
+) -> dict[str, Any]:
+    """Search Datadog logs for pipeline errors, exceptions, and application events."""
+    client = make_client(api_key, app_key, site)
+    if not client:
+        return unavailable("datadog_logs", "logs", "Datadog integration not configured")
+
+    result = client.search_logs(query, time_range_minutes=time_range_minutes, limit=limit)
+    if not result.get("success"):
+        return unavailable("datadog_logs", "logs", result.get("error", "Unknown error"))
+
+    logs = result.get("logs", [])
+    error_logs = [
+        log for log in logs if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)
+    ]
+
+    # Compact logs to stay within prompt limits
+    compacted_logs = compact_logs(logs, limit=50)
+    compacted_error_logs = compact_logs(error_logs, limit=30)
+
+    result_data = {
+        "source": "datadog_logs",
+        "available": True,
+        "logs": compacted_logs,
+        "error_logs": compacted_error_logs,
+        "total": result.get("total", 0),
+        "query": query,
     }
-
-    def is_available(self, sources: dict) -> bool:
-        return bool(sources.get("datadog", {}).get("connection_verified"))
-
-    def extract_params(self, sources: dict) -> dict:
-        dd = sources["datadog"]
-        return {
-            "query": dd.get("default_query", ""),
-            "time_range_minutes": dd.get("time_range_minutes", 60),
-            "limit": 50,
-            **_dd_creds(dd),
-        }
-
-    def run(
-        self,
-        query: str,
-        time_range_minutes: int = 60,
-        limit: int = 50,
-        api_key: str | None = None,
-        app_key: str | None = None,
-        site: str = "datadoghq.com",
-        **_kwargs: Any,
-    ) -> dict:
-        client = make_client(api_key, app_key, site)
-        if not client:
-            return unavailable("datadog_logs", "logs", "Datadog integration not configured")
-
-        result = client.search_logs(query, time_range_minutes=time_range_minutes, limit=limit)
-        if not result.get("success"):
-            return unavailable("datadog_logs", "logs", result.get("error", "Unknown error"))
-
-        logs = result.get("logs", [])
-        error_logs = [
-            log for log in logs
-            if any(kw in log.get("message", "").lower() for kw in _ERROR_KEYWORDS)
-        ]
-        return {
-            "source": "datadog_logs",
-            "available": True,
-            "logs": logs[:50],
-            "error_logs": error_logs[:30],
-            "total": result.get("total", 0),
-            "query": query,
-        }
-
-
-# Backward-compatible alias
-query_datadog_logs = DataDogLogsTool()
+    summary = summarize_counts(result.get("total", 0), len(compacted_logs), "logs")
+    if summary:
+        result_data["truncation_note"] = summary
+    return result_data

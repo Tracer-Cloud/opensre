@@ -1,0 +1,131 @@
+---
+title: 'How to use OpenSRE with Dagster'
+sidebarTitle: 'Dagster'
+description: 'Execution insight beneath assets and jobs'
+---
+
+Dagster orchestrates data and scientific workflows by defining assets, jobs, and execution graphs. It determines what runs, when it runs, and how results are materialized, but it does not observe how code behaves while executing inside processes, containers, or the operating system.
+
+OpenSRE complements Dagster by exposing execution behavior: CPU, memory, disk, and network usage, during asset and job execution, without modifying Dagster definitions or runtime configuration.
+
+<Note>
+For a conceptual overview, see [How OpenSRE fits in your stack](/comparisons/overview).
+</Note>
+
+## What Dagster does well
+
+Dagster provides strong orchestration and structure for workflows, including:
+
+- Asset and job definitions
+- Dependency graphs and execution ordering
+- Materialization tracking and lineage
+- Run history, logs, and execution state
+
+These capabilities make Dagster effective for managing complex workflows and data dependencies. They focus on logical structure and execution state.
+
+## What Dagster does not see at runtime
+
+Dagster tracks whether an asset or op ran and whether it succeeded, but it does not observe execution inside the runtime environment. It does not show:
+
+- CPU utilization during asset or op execution
+- Memory pressure or over-allocation
+- Disk and network I/O contention
+- Short-lived subprocesses invoked by ops
+- Idle time while code waits on I/O or external systems
+
+This behavior occurs below the orchestration layer and is not visible through asset metadata or run logs.
+
+## Why this gap matters in practice
+
+Dagster assets often wrap complex computations, database operations, or external tools. Resource requirements are commonly estimated conservatively to ensure successful runs.
+
+Without execution-level visibility, teams struggle to answer:
+
+- Why an asset materialization is slower than expected
+- Whether allocated resources are actually used
+- Whether performance is limited by compute, I/O, or memory
+- Why costs increase even when workflows appear unchanged
+
+As a result, pipelines may be correct and reproducible, yet inefficient.
+
+## What OpenSRE adds
+
+OpenSRE observes execution directly from the host and container runtime and adds:
+
+- Observed CPU, memory, disk, and network usage per run and op
+- Visibility into subprocesses and nested tools invoked by assets
+- Detection of stalls, idle execution, and contention
+- Attribution of resource usage by job, asset, and execution unit
+
+These insights are based on observed behavior, not on configuration, metadata, or assumptions.
+
+<iframe
+  src="https://vakisr.github.io/tracer-radar-chart/quadrant-chart-dagster.html"
+  width="100%"
+  height="1450"
+  style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
+  title="Dagster + OpenSRE Pipeline Intelligence"
+/>
+
+
+## Example: understanding slow asset materialization
+
+A Dagster asset consistently materializes slower than expected. Logs show no errors. OpenSRE reveals:
+
+- Low CPU utilization
+- High disk I/O wait time
+- Short-lived helper processes repeatedly accessing storage
+
+This indicates an I/O-bound workload rather than insufficient compute. Increasing CPU or memory would not improve performance.
+
+OpenSRE makes this distinction explicit by observing runtime behavior instead of inferring it from execution duration alone.
+
+## Using execution insight to tune workflows
+
+With execution-level data, teams can make informed changes, such as:
+
+- Reducing CPU or memory allocations for underutilized assets
+- Selecting instance types better suited for I/O-heavy workloads
+- Separating compute-heavy and I/O-heavy assets
+- Identifying ops that block on external systems
+
+These adjustments can lower cost, stabilize runtimes, or both.
+
+## Observability comparison
+
+<iframe
+  src="https://vakisr.github.io/tracer-radar-chart/radar-chart-dagster.html"
+  width="100%"
+  height="700px"
+  style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
+  title="Dagster vs OpenSRE+Dagster Radar Chart"
+/>
+
+This comparison highlights the difference between asset-level orchestration visibility and execution-level observation.
+
+## What OpenSRE does not replace
+
+OpenSRE is not an orchestration framework.
+
+- It does not replace Dagster
+- It does not define assets, jobs, or dependencies
+- It does not modify pipeline logic or execution plans
+
+Dagster remains responsible for orchestration. OpenSRE makes execution behavior visible.
+
+## When to use OpenSRE with Dagster
+
+OpenSRE is most useful when teams need to:
+
+- Explain slow or inconsistent asset materializations
+- Identify idle or inefficient execution within jobs
+- Diagnose performance issues beyond logs and run state
+- Attribute resource usage and cost to specific assets or jobs
+
+OpenSRE operates independently of Dagster and supports workflows written in any language or toolchain.
+
+## Summary
+
+Dagster defines and orchestrates assets and jobs. OpenSRE adds execution-level visibility that shows how those assets and jobs actually behave at runtime. Together, they provide both structure and insight, without changes to existing workflows.
+
+<div style={{ height: '50vh' }}></div>

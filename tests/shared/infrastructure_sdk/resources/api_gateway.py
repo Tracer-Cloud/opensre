@@ -81,7 +81,7 @@ def create_resource(
         pathPart=path_part,
     )
 
-    return response["id"]
+    return str(response["id"])
 
 
 def create_proxy_resource(

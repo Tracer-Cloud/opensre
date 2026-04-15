@@ -16,7 +16,6 @@ _TARGETS_TO_INDEX = (
     "test-cov",
     "test-grafana",
     "demo",
-    "local-rca-demo",
     "cloudwatch-demo",
     "datadog-demo",
     "crashloop-demo",
@@ -78,11 +77,6 @@ _TARGET_METADATA: dict[str, _TargetMetadata] = {
         "display_name": "Prefect ECS Demo",
         "tags": ("demo", "aws"),
         "requirements": TestRequirement(notes=("AWS infra",)),
-    },
-    "local-rca-demo": {
-        "display_name": "Bundled Local RCA Demo",
-        "tags": ("demo", "local"),
-        "requirements": TestRequirement(env_vars=("ANTHROPIC_API_KEY", "OPENAI_API_KEY")),
     },
     "cloudwatch-demo": {
         "display_name": "CloudWatch Demo",
@@ -316,7 +310,7 @@ def _discover_rds_synthetic_scenarios() -> list[TestCatalogItem]:
                 if failure_mode:
                     display_name = f"{scenario_id}  [{failure_mode}]"
             except Exception:  # noqa: BLE001 — best-effort enrichment; malformed YAML is fine
-                pass
+                display_name = scenario_id
         items.append(
             TestCatalogItem(
                 id=f"synthetic:{scenario_id}",

@@ -1,7 +1,7 @@
-"""Investigation action type — BaseTool is the canonical action representation."""
+"""Investigation action type — RegisteredTool is the canonical representation."""
 
-from app.tools.base import BaseTool
+from app.tools.registered_tool import RegisteredTool
 
-# InvestigationAction is now an alias for BaseTool.
+# InvestigationAction is now an alias for RegisteredTool.
 # All callers that import InvestigationAction continue to work unchanged.
-InvestigationAction = BaseTool
+InvestigationAction = RegisteredTool

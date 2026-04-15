@@ -1,299 +1,206 @@
-# Local Setup Guide
-
-This guide covers two local paths:
-
-- A live local Grafana RCA demo
-- The full local development flow with your Tracer account
+# Development Environment Setup
 
 ## Prerequisites
 
-- Python 3.11+
-- `make`
+- Python 3.11 or later
+- Git
+- Make (standard on macOS/Linux; see Windows section below)
 
-## 1. Fastest path: live local Grafana RCA demo
+## Quick Setup (All Platforms)
 
-If you want to see a minimal RCA report against a real local Grafana stack, start here.
-
-- Docker
-- Python 3.11+
-- `make`
-
-1. Install dependencies:
-
+1. Fork and clone the repo:
    ```bash
-   make install
+   git clone https://github.com/YOUR_USERNAME/opensre.git
+   cd opensre
    ```
 
-2. Copy the example env file:
-
+2. Create a virtual environment:
+   - (venv)
    ```bash
-   cp .env.example .env
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+   - (conda)
+   ```bash
+   # replace "opensre" if needed
+   conda create -n opensre python=3.11
+   conda activate opensre
    ```
 
-3. Add one LLM key to `.env`:
-
+3. Install dependencies:
    ```bash
-   ANTHROPIC_API_KEY=your-anthropic-api-key
+   pip install -e ".[dev]"
    ```
 
-   Or, if you prefer OpenAI:
-
+4. Verify setup by running checks:
    ```bash
-   LLM_PROVIDER=openai
-   OPENAI_API_KEY=your-openai-api-key
+   make lint && make typecheck && make test-cov
    ```
 
-4. Run the live local Grafana RCA example:
+All three must pass before you're ready to develop.
 
-   ```bash
-   make local-grafana-live
+---
+
+## Windows-Specific Setup
+
+Windows does not include `make` by default. Install it to use our development task runner.
+
+### Option A: Chocolatey (Recommended)
+
+1. Open PowerShell as Administrator
+   - Search "PowerShell" in Start Menu
+   - Right-click → "Run as administrator"
+
+2. Install Chocolatey (review the script first):
+   ```powershell
+   Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
    ```
 
-This single command starts the local `Grafana + Loki` stack if needed, seeds failure logs into Loki, and runs the RCA demo. It still uses a synthetic alert payload and does not require a Tracer account or real Slack, Datadog, or AWS credentials.
-
-When you are done, stop the stack:
-
-```bash
-make grafana-local-down
-```
-
-If you want a generic no-Docker bundled RCA example instead, run:
-
-```bash
-make local-rca-demo
-```
-
-## 2. Full local development setup
-
-Use this path when you want to run the agent locally with your Tracer account and your own integrations.
-
-### Install dependencies
-
-```bash
-make install
-```
-
-Recommended: install the local quality gate so every commit runs lint and typecheck first.
-
-```bash
-make install-hooks
-```
-
-### Configure env variables
-
-1. Copy the example env file:
-
-   ```bash
-   cp .env.example .env
+3. Install make:
+   ```powershell
+   choco install make
    ```
 
-2. Add one LLM key to `.env`:
-
+4. Restart your terminal and verify:
    ```bash
-   ANTHROPIC_API_KEY=your-anthropic-api-key
+   make --version
    ```
 
-   Or, if you prefer OpenAI:
+### Option B: winget
 
-   ```bash
-   LLM_PROVIDER=openai
-   OPENAI_API_KEY=your-openai-api-key
-   ```
+If you prefer winget (Windows Package Manager):
 
-At this stage, only one LLM API key is mandatory. Everything else depends on which path you want to test:
-
-- Required for any RCA run: `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
-- Required only for the `Tracer Web App path`: `JWT_TOKEN`
-- Optional per system: `DD_*`, `GRAFANA_*`, `AWS_*`, `GITHUB_MCP_*`, `SENTRY_*`
-- Optional only for Slack delivery: `SLACK_WEBHOOK_URL`
-- Optional only for LangGraph deploy: `LANGSMITH_API_KEY`
-
-### Choose an integration source
-
-You can run `Flow B` in two supported ways:
-
-- `Tracer Web App path`: use integrations already configured in Tracer and authenticate locally with `JWT_TOKEN`
-- `Local config path`: store integrations in `~/.tracer/integrations.json` or define them in `.env`
-
-Both paths are supported. During investigations, Tracer uses this priority:
-
-1. Inbound auth token from a web request or Slack-triggered run
-2. `JWT_TOKEN` for Tracer web app integrations, with `~/.tracer/integrations.json` and `.env` filling missing services
-3. `~/.tracer/integrations.json`
-4. `.env` fallback integrations
-
-### Tracer Web App path
-
-Use this path if you already configured integrations in Tracer.
-
-1. Go to `https://app.tracer.cloud`, sign in, and create or copy your Tracer API token from settings.
-2. In `.env`, set:
-
-   ```bash
-   JWT_TOKEN=your-tracer-token-from-app.tracer.cloud
-   ```
-
-3. Verify Tracer connectivity:
-
-   ```bash
-   make verify-integrations SERVICE=tracer
-   ```
-
-4. If some services are not configured in Tracer yet, you can still add them locally via `~/.tracer` or `.env` and they will be used as fallback.
-
-### Local config path
-
-Use this path if you want to test or build integrations without depending on the Tracer web app.
-
-For a first real-system run, you do not need every integration:
-
-- `Datadog` or `Grafana` is enough to prove the RCA path against a real observability source
-- Add `AWS` only if you want AWS evidence
-- Add `GitHub MCP` only if you want repository/code investigation during failures
-- Add `Sentry` only if you want issue and event evidence from Sentry
-- Add `SLACK_WEBHOOK_URL` only if you want the final report posted to Slack
-
-You can use `.env.example` as a reference for any other optional integrations you want to enable.
-
-If you want help configuring the local LLM provider and optional local integrations, run the onboarding flow:
-
-```bash
-opensre onboard
+```powershell
+winget install GnuWin32.Make
 ```
 
-The onboarding flow writes your provider choice and default model to `~/.opensre/opensre.json`, syncs the active local LLM settings into `.env`, and can also validate and save optional Grafana, Datadog, Slack, AWS, GitHub MCP, and Sentry integration settings for local development.
-
-Because this repo is installed in editable mode via `make install`, `opensre onboard` targets your local checkout while you are coding. If you change `pyproject.toml` entrypoints later, rerun `make install` once to refresh the launcher.
-
-If you enabled hooks with `make install-hooks`, each commit will also run `make lint` and `make typecheck` before Git creates the commit.
-
-### GitHub MCP setup notes
-
-If you want the agent to inspect repository source code, commit history, and repository structure during failures, configure `GitHub MCP` in `opensre onboard` or `python -m app.integrations setup github`.
-
-- Hosted GitHub MCP uses `https://api.githubcopilot.com/mcp/`
-- Supported transport modes in this repo are `streamable-http`, `sse`, and `stdio`
-- For local verification after setup, run:
-
+Restart your terminal and verify:
 ```bash
-make verify-integrations SERVICE=github
+make --version
 ```
 
-### Sentry token recommendations
+### Option C: Manual Commands (No make required)
 
-If you want Sentry-backed issue or event investigation, configure `Sentry` in `opensre onboard` or `python -m app.integrations setup sentry`.
-
-Recommended token choice:
-
-- Use a `Sentry Organization Token` first for least-privilege automation
-- Create it in `Settings > Developer Settings > Organization Tokens`
-- Use an `Internal Integration` only if you need broader organization-level API scopes than the organization token provides
-- The local validation and investigation helpers need a token that can read issues and events
-
-After setup, verify it with:
+If you can't install make, you can run these approximate equivalents directly instead (they are close to, but not always identical to, the Makefile targets; see comments for differences):
 
 ```bash
-make verify-integrations SERVICE=sentry
+# Linting (rough equivalent of `make lint`; this also applies auto-fixes via --fix)
+python -m ruff check app/ tests/ --fix
+
+# Type checking (equivalent of `make typecheck`)
+mypy app/
+
+# Tests with coverage (rough equivalent of `make test-cov`; the Makefile version may add --cov-report/--ignore flags)
+pytest --cov=app tests/
 ```
 
-### Run the LangGraph dev UI
+---
 
-Start the LangGraph dev server:
+## Troubleshooting
+
+### Virtual environment not activating
+- **macOS/Linux:** Make sure you ran `source .venv/bin/activate`
+- **Windows:** Use `.venv\Scripts\activate` instead
+
+### Command not found: python
+- Make sure Python 3.11+ is installed and in your PATH
+- Verify with: `python --version`
+
+### pip install fails
+- Update pip: `pip install --upgrade pip`
+- Try installing in the venv again: `pip install -e ".[dev]"`
+
+### make: command not found (Windows)
+- See Windows-Specific Setup section above
+- Or use Option C (manual commands)
+
+### Import errors when running code
+- Make sure you've activated the virtual environment
+- Reinstall dependencies: `pip install -e ".[dev]"`
+
+---
+
+## Verify Your Setup
+
+Run this to confirm everything is working:
 
 ```bash
-make dev
+make lint && make typecheck && make test-cov
 ```
 
-Then open `http://localhost:2024` in your browser. From there you can send alerts to the agent and inspect the graph step by step while developing.
+If all three pass, you're ready to start developing! See `CONTRIBUTING.md` for the development workflow.
 
-### Deploy to LangGraph
 
-For a fast hosted path, you can deploy this repo directly with the LangGraph CLI.
+---
 
-Prerequisites:
+## Running OpenSRE MCP Server
 
-- Docker running locally
-- `langgraph` CLI installed
-- `LANGSMITH_API_KEY` set in `.env` or your shell
+You can start the MCP server with:
+```bash
+opensre-mcp
+```
 
-Build the agent image locally:
+This exposes the `run_rca` tool for MCP clients.
+
+---
+
+## Connecting OpenClaw
+
+Use OpenClaw to call OpenSRE's `run_rca` tool.
+
+### 1. Add OpenSRE to OpenClaw
+
+In OpenClaw, open **Settings → MCP Servers** and add:
+
+```json
+{
+  "mcpServers": {
+    "opensre": {
+      "command": "opensre-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+If `opensre-mcp` is not on your `PATH`, use the full path:
+```json
+{ "command": "/path/to/venv/bin/opensre-mcp" }
+```
+
+### 2. Configure one observability integration
+
+Run the setup wizard once and connect Datadog, Grafana, Sentry, or another backend:
 
 ```bash
-make langgraph-build
+opensre integrations setup
 ```
 
-Deploy it:
+### 3. Run a test
+
+Run the fixture directly from the CLI:
 
 ```bash
-make langgraph-deploy
+opensre investigate -i tests/fixtures/openclaw_test_alert.json
 ```
 
-As of March 25, 2026, the official LangGraph CLI docs describe `langgraph deploy` as the command that builds and deploys in one step.
+### 4. Optional: let OpenSRE call OpenClaw
 
-### Run your own alert payload locally
-
-Once your `.env` or local integrations are configured, you can run the RCA pipeline against your own alert JSON without changing code.
-
-Print a starter template first if you do not already have an alert payload:
+If you want the OpenSRE investigation pipeline to query OpenClaw during RCA runs:
 
 ```bash
-make alert-template TEMPLATE=datadog
-make alert-template TEMPLATE=grafana
-make alert-template TEMPLATE=generic
+export OPENCLAW_MCP_MODE=stdio
+export OPENCLAW_MCP_COMMAND=openclaw
+export OPENCLAW_MCP_ARGS="mcp serve"
 ```
 
-From a file:
+Keep the OpenClaw Gateway running while you investigate:
 
 ```bash
-python -m app.main --input /path/to/alert.json
-make investigate-alert ALERT=/path/to/alert.json
+openclaw gateway run
 ```
 
-Paste JSON into the terminal:
-
+Verify:
 ```bash
-python -m app.main --interactive
+opensre integrations verify openclaw
 ```
-
-You can also override top-level metadata if your alert payload does not include it:
-
-```bash
-python -m app.main \
-  --input /path/to/alert.json \
-  --alert-name "Datadog monitor: High error rate" \
-  --pipeline-name payments_etl \
-  --severity critical
-```
-
-### Send RCA reports to Slack
-
-For standalone local investigations, set an incoming webhook URL:
-
-```bash
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
-```
-
-With `SLACK_WEBHOOK_URL` configured, CLI investigations that do not have Slack thread context will post the RCA report to Slack as a top-level message.
-
-### Troubleshooting
-
-- `make verify-integrations` shows everything as `missing`
-  Add credentials to `.env`, or run `python -m app.integrations setup <service>`, or set `JWT_TOKEN` for the Tracer Web App path.
-
-- `make verify-integrations SERVICE=tracer` fails
-  Check that `JWT_TOKEN` is valid and from the correct Tracer org. If you use a local-only path, this check is optional.
-
-- `python -m app.main --input ...` says `Alert JSON file not found`
-  Check the path you passed to `--input`, or start with `make alert-template TEMPLATE=datadog > /tmp/alert.json`.
-
-- `python -m app.main --input ...` fails during LLM planning
-  Check that `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` is set and that your machine has outbound network access.
-
-- You see `[actions] EKS actions unavailable: No module named 'kubernetes'`
-  This does not block Datadog, Grafana, AWS, or Slack paths. Install all dependencies with `make install` if you need EKS actions.
-
-- `make local-grafana-live` says the Docker daemon is not running
-  Start Docker Desktop, OrbStack, or Colima, then rerun the command.
-
-- `make langgraph-build` or `make langgraph-deploy` fails immediately
-  Check that Docker is running, `langgraph` is installed, and `LANGSMITH_API_KEY` is set.

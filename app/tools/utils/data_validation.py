@@ -83,7 +83,7 @@ class MetricsValidator:
         for key in ["percent", "percentage", "usage_percent"]:
             if key in normalized:
                 value = normalized[key]
-                if isinstance(value, (int, float)) and value > 100:
+                if isinstance(value, int | float) and value > 100:
                     self._flag_impossible_percentage(key, value, normalized)
 
         # Attach validation issues to the response
@@ -113,7 +113,7 @@ class MetricsValidator:
         if "percent" in memory_data:
             raw_percent = memory_data["percent"]
 
-            if isinstance(raw_percent, (int, float)) and raw_percent > 100:
+            if isinstance(raw_percent, int | float) and raw_percent > 100:
                 # Infer the most likely unit and interpretation
                 interpretation = self._infer_memory_unit(raw_percent)
 
@@ -137,7 +137,7 @@ class MetricsValidator:
         # Also check for "ram" field (common in API responses)
         if "ram" in memory_data:
             raw_ram = memory_data["ram"]
-            if isinstance(raw_ram, (int, float)) and raw_ram > 100:
+            if isinstance(raw_ram, int | float) and raw_ram > 100:
                 interpretation = self._infer_memory_unit(raw_ram)
                 self.issues.append(
                     ValidationIssue(
@@ -221,7 +221,7 @@ class MetricsValidator:
 
             # CPU can legitimately exceed 100% (multi-core)
             # But beyond 1000% is suspicious for most workloads
-            if isinstance(raw_percent, (int, float)) and raw_percent > 1000:
+            if isinstance(raw_percent, int | float) and raw_percent > 1000:
                 self.issues.append(
                     ValidationIssue(
                         field="cpu.percent",
@@ -252,7 +252,7 @@ class MetricsValidator:
         if "percent" in disk_data:
             raw_percent = disk_data["percent"]
 
-            if isinstance(raw_percent, (int, float)) and raw_percent > 100:
+            if isinstance(raw_percent, int | float) and raw_percent > 100:
                 self.issues.append(
                     ValidationIssue(
                         field="disk.percent",
@@ -283,7 +283,7 @@ class MetricsValidator:
         # Check "ram" field (often used instead of "memory")
         if "ram" in normalized:
             raw_ram = normalized["ram"]
-            if isinstance(raw_ram, (int, float)) and raw_ram > 100:
+            if isinstance(raw_ram, int | float) and raw_ram > 100:
                 interpretation = self._infer_memory_unit(raw_ram)
                 self.issues.append(
                     ValidationIssue(
@@ -304,7 +304,7 @@ class MetricsValidator:
         # Check "max_ram" if present
         if "max_ram" in normalized:
             raw_max_ram = normalized["max_ram"]
-            if isinstance(raw_max_ram, (int, float)) and raw_max_ram > 100:
+            if isinstance(raw_max_ram, int | float) and raw_max_ram > 100:
                 interpretation = self._infer_memory_unit(raw_max_ram)
                 self.issues.append(
                     ValidationIssue(
@@ -324,7 +324,7 @@ class MetricsValidator:
 
     def _flag_impossible_percentage(self, field: str, value: Any, data: dict) -> None:
         """Flag an impossible percentage value."""
-        if isinstance(value, (int, float)) and value > 100:
+        if isinstance(value, int | float) and value > 100:
             # For memory-related fields, use intelligent inference
             if "memory" in field.lower() or "ram" in field.lower():
                 interpretation = self._infer_memory_unit(value)
