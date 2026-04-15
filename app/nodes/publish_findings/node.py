@@ -16,6 +16,7 @@ from app.nodes.publish_findings.renderers.terminal import render_report
 from app.nodes.publish_findings.report_context import build_report_context
 from app.state import InvestigationState
 from app.utils.ingest_delivery import send_ingest
+from app.utils.whatsapp_delivery import send_whatsapp_report
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,11 @@ def generate_report(state: InvestigationState) -> dict:
         access_token=_token,
         blocks=all_blocks,
     )
+    if os.getenv("ENABLE_WHATSAPP", "false").lower() in ("true", "1", "yes"):
+        try:
+            send_whatsapp_report(slack_message)
+        except Exception as exc:
+            logger.warning("[publish] WhatsApp delivery failed: %s", exc)
 
     logger.debug("[publish] slack delivery: posted=%s channel=%s thread_ts=%s error=%s", report_posted, _channel, thread_ts, delivery_error)
     if report_posted and _token and _channel and _alert_ts:
