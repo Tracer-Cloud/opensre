@@ -167,6 +167,8 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
         return
 
     if action == "langsmith":
+        capture_cli_invoked()
+        capture_deploy_started(target="langsmith", dry_run=False)
 
         # 2. LangGraph CLI check
         ok, msg = is_langgraph_cli_installed()
@@ -177,7 +179,7 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
         # 3. API key resolve
         api_key = resolve_langsmith_api_key()
         if not api_key:
-            api_key = questionary.text("LangSmith API key:").ask()
+            api_key = questionary.password("LangSmith API key:").ask()
             if not api_key:
                 return
 
@@ -189,6 +191,14 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
 
         # 5. Deployment name
         deployment_name = resolve_deployment_name()
+
+        if not questionary.confirm(
+            f"Deploy to LangSmith with deployment '{deployment_name}'?",
+            default=True,
+            style=style,
+        ).ask():
+            console.print("  [dim]Cancelled.[/dim]")
+            return
 
         # 6. Persist to .env
         persist_langsmith_env(api_key, deployment_name)
@@ -205,12 +215,14 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
 
         # 8. Show URL
         if code == 0:
+            capture_deploy_completed(target="langsmith", dry_run=False)
             url = extract_deployment_url(output)
             if url:
                 console.print(f"[green]Deployment URL:[/green] {url}")
             else:
                 console.print("[yellow]Deployment succeeded but no URL found[/yellow]")
         else:
+            capture_deploy_failed(target="langsmith", dry_run=False)
             console.print("[red]Deployment failed[/red]")
 
         return
