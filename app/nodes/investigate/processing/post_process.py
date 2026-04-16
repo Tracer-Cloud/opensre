@@ -182,6 +182,46 @@ def _map_grafana_service_names(data: dict) -> dict:
     }
 
 
+def _map_eks_pods(data: dict) -> dict:
+    return {
+        "eks_pods": data.get("pods", []),
+        "eks_failing_pods": data.get("failing_pods", []),
+        "eks_high_restart_pods": data.get("high_restart_pods", []),
+        "eks_total_pods": data.get("total_pods", 0),
+    }
+
+
+def _map_eks_events(data: dict) -> dict:
+    return {
+        "eks_events": data.get("warning_events", []),
+        "eks_total_warning_count": data.get("total_warning_count", 0),
+    }
+
+
+def _map_eks_deployments(data: dict) -> dict:
+    return {
+        "eks_deployments": data.get("deployments", []),
+        "eks_degraded_deployments": data.get("degraded_deployments", []),
+        "eks_total_deployments": data.get("total_deployments", 0),
+    }
+
+
+def _map_eks_node_health(data: dict) -> dict:
+    return {
+        "eks_node_health": data.get("nodes", []),
+        "eks_not_ready_count": data.get("not_ready_count", 0),
+        "eks_total_nodes": data.get("total_nodes", 0),
+    }
+
+
+def _map_eks_pod_logs(data: dict) -> dict:
+    return {
+        "eks_pod_logs": data.get("logs", ""),
+        "eks_pod_logs_pod_name": data.get("pod_name", ""),
+        "eks_pod_logs_namespace": data.get("namespace", ""),
+    }
+
+
 def _map_datadog_logs(data: dict) -> dict:
     return {
         "datadog_logs": data.get("logs", []),
@@ -320,6 +360,11 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "query_grafana_metrics": _map_grafana_metrics,
     "query_grafana_alert_rules": _map_grafana_alert_rules,
     "query_grafana_service_names": _map_grafana_service_names,
+    "list_eks_pods": _map_eks_pods,
+    "get_eks_events": _map_eks_events,
+    "list_eks_deployments": _map_eks_deployments,
+    "get_eks_node_health": _map_eks_node_health,
+    "get_eks_pod_logs": _map_eks_pod_logs,
     "query_datadog_logs": _map_datadog_logs,
     "query_datadog_monitors": _map_datadog_monitors,
     "query_datadog_events": _map_datadog_events,
@@ -445,6 +490,26 @@ def build_evidence_summary(execution_results: dict[str, ActionExecutionResult]) 
                 summary_parts.append(f"grafana:{len(data['rules'])} alert rules")
             elif action_name == "query_grafana_service_names" and data.get("service_names"):
                 summary_parts.append(f"grafana:{len(data['service_names'])} services")
+            elif action_name == "list_eks_pods" and data.get("pods") is not None:
+                failing = len(data.get("failing_pods", []))
+                summary_parts.append(f"eks:{data.get('total_pods', 0)} pods ({failing} failing)")
+            elif action_name == "get_eks_events" and data.get("warning_events") is not None:
+                summary_parts.append(
+                    f"eks:{data.get('total_warning_count', 0)} warning events"
+                )
+            elif action_name == "list_eks_deployments" and data.get("deployments") is not None:
+                degraded = len(data.get("degraded_deployments", []))
+                summary_parts.append(
+                    f"eks:{data.get('total_deployments', 0)} deployments ({degraded} degraded)"
+                )
+            elif action_name == "get_eks_node_health" and data.get("nodes") is not None:
+                not_ready = data.get("not_ready_count", 0)
+                summary_parts.append(
+                    f"eks:{data.get('total_nodes', 0)} nodes ({not_ready} not ready)"
+                )
+            elif action_name == "get_eks_pod_logs" and data.get("logs"):
+                line_count = len(str(data.get("logs", "")).splitlines())
+                summary_parts.append(f"eks:{line_count} log lines from {data.get('pod_name', '')}")
             elif action_name == "query_datadog_logs" and data.get("logs"):
                 error_count = len(data.get("error_logs", []))
                 summary_parts.append(f"datadog:{len(data['logs'])} logs ({error_count} errors)")
