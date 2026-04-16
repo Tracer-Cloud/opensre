@@ -430,7 +430,7 @@ def get_resource_stats(
                 (minutes,),
             )
 
-            samples = []
+            samples: list[dict[str, Any]] = []
             for row in cursor.fetchall():
                 samples.append(
                     {
@@ -449,12 +449,12 @@ def get_resource_stats(
             # Compute summary
             throttling_risk = "none"
             if samples:
-                max_cpu = max(s["avg_cpu_percent"] for s in samples)
-                max_io = max(s["avg_data_io_percent"] for s in samples)
-                max_log = max(s["avg_log_write_percent"] for s in samples)
-                max_workers = max(s["max_worker_percent"] for s in samples)
-                max_memory = max(s["avg_memory_usage_percent"] for s in samples)
-                peak = max(max_cpu, max_io, max_log, max_workers, max_memory)
+                max_cpu: float = max(float(s["avg_cpu_percent"]) for s in samples)
+                max_io: float = max(float(s["avg_data_io_percent"]) for s in samples)
+                max_log: float = max(float(s["avg_log_write_percent"]) for s in samples)
+                max_workers: float = max(float(s["max_worker_percent"]) for s in samples)
+                max_memory: float = max(float(s["avg_memory_usage_percent"]) for s in samples)
+                peak: float = max(max_cpu, max_io, max_log, max_workers, max_memory)
                 if peak >= 95:
                     throttling_risk = "critical"
                 elif peak >= 80:
