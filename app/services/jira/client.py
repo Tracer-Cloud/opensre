@@ -168,7 +168,7 @@ class JiraClient:
         try:
             with self._get_client() as client:
                 resp = client.post(
-                    f"{self.config.api_base}/search",
+                    f"{self.config.api_base}/issue/search",
                     json=payload,
                 )
                 resp.raise_for_status()
