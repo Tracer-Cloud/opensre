@@ -344,10 +344,10 @@ def _map_eks_pod_logs(data: dict) -> dict:
 def _map_eks_deployment_status(data: dict) -> dict:
     return {
         "eks_deployment_status": {
-            "deployment_name": data.get("deployment_name"),
-            "desired_replicas": data.get("desired_replicas"),
-            "ready_replicas": data.get("ready_replicas"),
-            "unavailable_replicas": data.get("unavailable_replicas"),
+            "deployment_name": data.get("deployment_name", ""),
+            "desired_replicas": data.get("desired_replicas", 0),
+            "ready_replicas": data.get("ready_replicas", 0),
+            "unavailable_replicas": data.get("unavailable_replicas", 0),
             "conditions": data.get("conditions", []),
         }
     }
