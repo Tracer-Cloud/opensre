@@ -298,7 +298,7 @@ class TestGetQueueBacklog:
     def test_returns_queues_sorted_by_backlog(self, patched_client: Any) -> None:
         patched_client(
             {
-                "/api/queues": [
+                "/api/queues//": [
                     {
                         "name": "small-q",
                         "vhost": "/",
@@ -329,7 +329,7 @@ class TestGetQueueBacklog:
         assert result["queues"][1]["name"] == "small-q"
 
     def test_error_path_returns_available_false(self, patched_client: Any) -> None:
-        patched_client({"/api/queues": httpx.Response(500, text="fail")})
+        patched_client({"/api/queues//": httpx.Response(500, text="fail")})
         result = get_queue_backlog(CONFIGURED)
         assert result["available"] is False
         assert "500" in result["error"]
@@ -344,7 +344,7 @@ class TestGetConsumerHealth:
     def test_returns_consumers(self, patched_client: Any) -> None:
         patched_client(
             {
-                "/api/consumers": [
+                "/api/consumers//": [
                     {
                         "consumer_tag": "amq.ctag-1",
                         "queue": {"name": "orders", "vhost": "/"},
@@ -401,6 +401,7 @@ class TestGetBrokerOverview:
         assert result["alarms"]["ok"] is True
 
     def test_alarm_failure_surfaces_detail(self, patched_client: Any) -> None:
+        # RabbitMQ returns HTTP 503 (not 200) when alarms are active.
         patched_client(
             {
                 "/api/overview": {
@@ -410,10 +411,13 @@ class TestGetBrokerOverview:
                     "object_totals": {},
                     "message_stats": {},
                 },
-                "/api/healthchecks/alarms": {
-                    "status": "failed",
-                    "reason": "resource alarm active on node rmq@node1",
-                },
+                "/api/healthchecks/alarms": httpx.Response(
+                    503,
+                    json={
+                        "status": "failed",
+                        "reason": "resource alarm active on node rmq@node1",
+                    },
+                ),
             }
         )
         result = get_broker_overview(CONFIGURED)

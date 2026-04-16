@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import httpx
 import pytest
@@ -228,7 +227,7 @@ class TestRabbitMQPipelineFlow:
             ]
 
             def handler(request: httpx.Request) -> httpx.Response:
-                if request.url.path == "/api/queues":
+                if request.url.path == "/api/queues//orders":
                     return httpx.Response(200, json=queues_payload)
                 return httpx.Response(404, text="not found")
 

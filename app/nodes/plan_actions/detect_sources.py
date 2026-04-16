@@ -905,7 +905,7 @@ def detect_sources(
             "host": str(rabbitmq_int.get("host", "")).strip(),
             "management_port": rabbitmq_int.get("management_port", 15672),
             "username": str(rabbitmq_int.get("username", "")).strip(),
-            "password": str(rabbitmq_int.get("password", "")).strip(),
+            "password": str(rabbitmq_int.get("password") or "").strip(),
             "vhost": str(rabbitmq_int.get("vhost", "/")).strip() or "/",
             "ssl": rabbitmq_int.get("ssl", False),
             "verify_ssl": rabbitmq_int.get("verify_ssl", True),

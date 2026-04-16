@@ -26,7 +26,7 @@ def test_run_happy_path() -> None:
         "total_connections": 1,
         "returned": 1,
         "connections": [
-            {"name": "app-1", "user": "admin", "vhost": "/", "recv_rate_bps": 1024.0}
+            {"name": "app-1", "user": "admin", "vhost": "/", "recv_rate_bytes_per_sec": 1024.0}
         ],
     }
     with patch(

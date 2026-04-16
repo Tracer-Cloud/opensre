@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+import urllib.parse
 from dataclasses import dataclass
 from typing import Any
 
@@ -104,7 +105,8 @@ def build_rabbitmq_config(raw: dict[str, Any] | None) -> RabbitMQConfig:
 def rabbitmq_config_from_env() -> RabbitMQConfig | None:
     """Load a RabbitMQ config from env vars."""
     host = os.getenv("RABBITMQ_HOST", "").strip()
-    if not host:
+    username = os.getenv("RABBITMQ_USERNAME", "").strip()
+    if not host or not username:
         return None
     return build_rabbitmq_config(
         {
@@ -138,6 +140,12 @@ def _error_evidence(err: str) -> dict[str, Any]:
     return {"source": "rabbitmq", "available": False, "error": err}
 
 
+def _vhost_path(base: str, vhost: str) -> str:
+    """Build a vhost-scoped API path, URL-encoding the vhost segment."""
+    encoded = urllib.parse.quote(vhost, safe="")
+    return f"{base}/{encoded}"
+
+
 def _http_get(client: httpx.Client, path: str) -> tuple[Any | None, str | None]:
     """Fetch a JSON endpoint; return (data, error_message)."""
     try:
@@ -148,11 +156,13 @@ def _http_get(client: httpx.Client, path: str) -> tuple[Any | None, str | None]:
     if response.status_code == 401:
         return None, "RabbitMQ authentication failed (check username/password)."
     if response.status_code == 404:
-        return None, (
-            "RabbitMQ Management API not found — enable the "
-            "`rabbitmq_management` plugin on the broker: "
-            "`rabbitmq-plugins enable rabbitmq_management`."
-        )
+        if path == "/api/overview":
+            return None, (
+                "RabbitMQ Management API not found — enable the "
+                "`rabbitmq_management` plugin on the broker: "
+                "`rabbitmq-plugins enable rabbitmq_management`."
+            )
+        return None, f"RabbitMQ endpoint not found: {path}"
     if response.status_code >= 400:
         return None, (
             f"RabbitMQ management API returned HTTP {response.status_code}: "
@@ -254,11 +264,12 @@ def get_queue_backlog(
     effective_limit = min(max_results or config.max_results, config.max_results)
     try:
         with _get_client(config) as client:
-            data, err = _http_get(client, "/api/queues")
+            path = _vhost_path("/api/queues", config.vhost)
+            data, err = _http_get(client, path)
             if err is not None:
                 return _error_evidence(err)
             if not isinstance(data, list):
-                return _error_evidence("Unexpected /api/queues response.")
+                return _error_evidence(f"Unexpected {path} response.")
             summarized = [_summarize_queue(q) for q in data]
             summarized.sort(
                 key=lambda q: q["messages_ready"] + q["messages_unacknowledged"],
@@ -288,11 +299,12 @@ def get_consumer_health(
     effective_limit = min(max_results or config.max_results, config.max_results)
     try:
         with _get_client(config) as client:
-            data, err = _http_get(client, "/api/consumers")
+            path = _vhost_path("/api/consumers", config.vhost)
+            data, err = _http_get(client, path)
             if err is not None:
                 return _error_evidence(err)
             if not isinstance(data, list):
-                return _error_evidence("Unexpected /api/consumers response.")
+                return _error_evidence(f"Unexpected {path} response.")
             consumers = []
             for entry in data[:effective_limit]:
                 queue = entry.get("queue") or {}
@@ -339,16 +351,30 @@ def get_broker_overview(config: RabbitMQConfig) -> dict[str, Any]:
             msg_stats = overview.get("message_stats") or {}
             object_totals = overview.get("object_totals") or {}
 
-            alarms, alarm_err = _http_get(client, "/api/healthchecks/alarms")
+            # /api/healthchecks/alarms returns HTTP 503 (not 200) when alarms
+            # are active, so we can't use _http_get which treats >=400 as error.
             alarm_payload: dict[str, Any] = {"ok": False, "detail": "unknown"}
-            if alarm_err:
-                alarm_payload = {"ok": False, "detail": alarm_err}
-            elif isinstance(alarms, dict):
-                status = str(alarms.get("status", "unknown")).lower()
-                alarm_payload = {
-                    "ok": status == "ok",
-                    "detail": alarms.get("reason", status),
-                }
+            try:
+                alarm_resp = client.get("/api/healthchecks/alarms")
+            except httpx.RequestError as exc:
+                alarm_payload = {"ok": False, "detail": str(exc)}
+            else:
+                if alarm_resp.status_code == 200:
+                    alarm_payload = {"ok": True, "detail": "ok"}
+                else:
+                    try:
+                        alarm_body = alarm_resp.json()
+                        alarm_payload = {
+                            "ok": False,
+                            "detail": str(
+                                alarm_body.get("reason", alarm_resp.text[:200])
+                            ),
+                        }
+                    except ValueError:
+                        alarm_payload = {
+                            "ok": False,
+                            "detail": alarm_resp.text[:200],
+                        }
 
             return {
                 "source": "rabbitmq",
@@ -432,6 +458,7 @@ def get_connection_stats(
     effective_limit = min(max_results or config.max_results, config.max_results)
     try:
         with _get_client(config) as client:
+            # /api/connections has no vhost-scoped variant; filter client-side.
             data, err = _http_get(client, "/api/connections")
             if err is not None:
                 return _error_evidence(err)
@@ -440,6 +467,8 @@ def get_connection_stats(
 
             connections = []
             for conn in data:
+                if conn.get("vhost", "/") != config.vhost:
+                    continue
                 recv_oct = conn.get("recv_oct_details") or {}
                 send_oct = conn.get("send_oct_details") or {}
                 connections.append(
@@ -453,11 +482,11 @@ def get_connection_stats(
                         "peer_host": conn.get("peer_host", ""),
                         "peer_port": conn.get("peer_port", 0),
                         "ssl": bool(conn.get("ssl", False)),
-                        "recv_rate_bps": recv_oct.get("rate", 0.0),
-                        "send_rate_bps": send_oct.get("rate", 0.0),
+                        "recv_rate_bytes_per_sec": recv_oct.get("rate", 0.0),
+                        "send_rate_bytes_per_sec": send_oct.get("rate", 0.0),
                     }
                 )
-            connections.sort(key=lambda c: c["recv_rate_bps"], reverse=True)
+            connections.sort(key=lambda c: c["recv_rate_bytes_per_sec"], reverse=True)
             truncated = connections[:effective_limit]
             return {
                 "source": "rabbitmq",
