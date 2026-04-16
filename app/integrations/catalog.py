@@ -18,6 +18,7 @@ from app.integrations.models import (
     EffectiveIntegrations,
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
+    JiraIntegrationConfig,
     OpsGenieIntegrationConfig,
     SlackWebhookConfig,
 )
@@ -57,6 +58,7 @@ _SERVICE_KEY_MAP = {
     "mariadb": "mariadb",
     "vercel": "vercel",
     "opsgenie": "opsgenie",
+    "jira": "jira",
     "discord": "discord",
     "openclaw": "openclaw",
     "mysql": "mysql",
@@ -331,6 +333,22 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
                 continue
             if opsgenie_config.api_key:
                 resolved["opsgenie"] = opsgenie_config.model_dump()
+
+        elif key == "jira":
+            try:
+                jira_config = JiraIntegrationConfig.model_validate(
+                    {
+                        "base_url": credentials.get("base_url", ""),
+                        "email": credentials.get("email", ""),
+                        "api_token": credentials.get("api_token", ""),
+                        "project_key": credentials.get("project_key", ""),
+                        "integration_id": integration.get("id", ""),
+                    }
+                )
+            except Exception:
+                continue
+            if jira_config.base_url and jira_config.email and jira_config.api_token:
+                resolved["jira"] = jira_config.model_dump()
 
         elif key == "discord":
             try:
@@ -675,6 +693,28 @@ def load_env_integrations() -> list[dict[str, Any]]:
             }
         )
 
+    jira_base_url = os.getenv("JIRA_BASE_URL", "").strip()
+    jira_email = os.getenv("JIRA_EMAIL", "").strip()
+    jira_api_token = os.getenv("JIRA_API_TOKEN", "").strip()
+    jira_project_key = os.getenv("JIRA_PROJECT_KEY", "").strip()
+    if jira_base_url and jira_email and jira_api_token:
+        jira_config = JiraIntegrationConfig.model_validate(
+            {
+                "base_url": jira_base_url,
+                "email": jira_email,
+                "api_token": jira_api_token,
+                "project_key": jira_project_key,
+            }
+        )
+        integrations.append(
+            {
+                "id": "env-jira",
+                "service": "jira",
+                "status": "active",
+                "credentials": jira_config.model_dump(exclude={"integration_id"}),
+            }
+        )
+
     discord_bot_token = os.getenv("DISCORD_BOT_TOKEN", "").strip()
     if discord_bot_token:
         discord_config = DiscordBotConfig.model_validate(
@@ -883,6 +923,7 @@ def resolve_effective_integrations(
         "mariadb",
         "vercel",
         "opsgenie",
+        "jira",
         "discord",
         "openclaw",
         "mysql",
