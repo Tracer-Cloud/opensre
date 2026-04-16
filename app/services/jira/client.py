@@ -25,7 +25,6 @@ class JiraClient:
             self.config.base_url
             and self.config.email
             and self.config.api_token
-            and self.config.project_key
         )
 
     def _get_client(self) -> httpx.Client:
@@ -216,8 +215,8 @@ class JiraClient:
                     "success": True,
                     "issue_key": data.get("key"),
                     "summary": fields.get("summary", ""),
-                    "status": fields.get("status", {}).get("name", ""),
-                    "priority": fields.get("priority", {}).get("name", ""),
+                    "status": (fields.get("status") or {}).get("name", ""),
+                    "priority": (fields.get("priority") or {}).get("name", ""),
                     "description": fields.get("description", ""),
                     "labels": fields.get("labels", []),
                 }

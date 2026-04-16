@@ -911,6 +911,16 @@ def detect_sources(
             "connection_verified": True,
         }
 
+    jira_int = (resolved_integrations or {}).get("jira")
+    if jira_int and str(jira_int.get("base_url", "")).strip() and str(jira_int.get("api_token", "")).strip():
+        sources["jira"] = {
+            "base_url": str(jira_int.get("base_url", "")).strip(),
+            "email": str(jira_int.get("email", "")).strip(),
+            "api_token": str(jira_int.get("api_token", "")).strip(),
+            "project_key": str(jira_int.get("project_key", "")).strip(),
+            "connection_verified": True,
+        }
+
     mysql_int = (resolved_integrations or {}).get("mysql")
     if mysql_int and str(mysql_int.get("host", "")).strip() and str(mysql_int.get("database", "")).strip():
         mysql_host = str(mysql_int.get("host", "")).strip()
