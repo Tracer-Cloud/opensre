@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
@@ -7,7 +8,11 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy
 ROOT = Path(SPECPATH).parent
 
 hiddenimports = collect_submodules("app")
-datas = collect_data_files("app") + copy_metadata("opensre")
+try:
+    _opensre_dist = copy_metadata("opensre")
+except PackageNotFoundError:
+    _opensre_dist = []
+datas = collect_data_files("app") + _opensre_dist
 
 block_cipher = None
 
