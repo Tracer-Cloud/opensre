@@ -912,7 +912,12 @@ def detect_sources(
         }
 
     jira_int = (resolved_integrations or {}).get("jira")
-    if jira_int and str(jira_int.get("base_url", "")).strip() and str(jira_int.get("api_token", "")).strip():
+    if (
+        jira_int
+        and str(jira_int.get("base_url", "")).strip()
+        and str(jira_int.get("email", "")).strip()
+        and str(jira_int.get("api_token", "")).strip()
+    ):
         sources["jira"] = {
             "base_url": str(jira_int.get("base_url", "")).strip(),
             "email": str(jira_int.get("email", "")).strip(),
