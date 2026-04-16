@@ -22,6 +22,7 @@ from pydantic import BaseModel, ValidationError
 from app.config import (
     ANTHROPIC_LLM_CONFIG,
     GEMINI_BASE_URL,
+    MINIMAX_BASE_URL,
     NVIDIA_BASE_URL,
     OPENAI_LLM_CONFIG,
     OPENROUTER_BASE_URL,
@@ -478,6 +479,18 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
             max_tokens=config.max_tokens,
             base_url=NVIDIA_BASE_URL,
             api_key_env="NVIDIA_API_KEY",
+        )
+    elif provider == "minimax":
+        from app.config import MINIMAX_LLM_CONFIG
+
+        config = MINIMAX_LLM_CONFIG
+        model = settings.minimax_reasoning_model if model_type == "reasoning" else settings.minimax_toolcall_model
+        return OpenAILLMClient(
+            model=model,
+            max_tokens=config.max_tokens,
+            base_url=MINIMAX_BASE_URL,
+            api_key_env="MINIMAX_API_KEY",
+            temperature=1.0,
         )
     elif provider == "ollama":
         from app.config import OLLAMA_LLM_CONFIG

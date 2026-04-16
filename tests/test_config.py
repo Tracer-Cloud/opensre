@@ -31,3 +31,34 @@ def test_llm_settings_from_env_uses_secure_local_api_key(monkeypatch) -> None:
 
     assert settings.provider == "openai"
     assert settings.openai_api_key == "stored-secret"
+
+
+def test_llm_settings_require_minimax_api_key() -> None:
+    with pytest.raises(ValidationError, match="MINIMAX_API_KEY"):
+        LLMSettings.model_validate({"provider": "minimax"})
+
+
+def test_llm_settings_minimax_provider_accepted() -> None:
+    settings = LLMSettings.model_validate({
+        "provider": "minimax",
+        "minimax_api_key": "mm-test-key",
+    })
+    assert settings.provider == "minimax"
+    assert settings.minimax_api_key == "mm-test-key"
+    assert settings.minimax_reasoning_model == "MiniMax-M2.7"
+    assert settings.minimax_toolcall_model == "MiniMax-M2.7-highspeed"
+
+
+def test_llm_settings_from_env_minimax(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "minimax")
+    monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "app.config.resolve_llm_api_key",
+        lambda env_var: "mm-stored-key" if env_var == "MINIMAX_API_KEY" else "",
+    )
+
+    settings = LLMSettings.from_env()
+
+    assert settings.provider == "minimax"
+    assert settings.minimax_api_key == "mm-stored-key"
+
