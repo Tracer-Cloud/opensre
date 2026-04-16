@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Instance | `payments-prod` |
-| Outage Duration | ~45 seconds |
+| Outage Duration | ~45 seconds (RDS promotion); connections recovered by 08:07Z |
 | Root Cause Category | `infrastructure` |
 | Status | ✅ Resolved |
 
