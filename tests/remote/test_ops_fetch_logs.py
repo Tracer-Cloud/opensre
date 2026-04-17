@@ -98,6 +98,39 @@ def test_fetch_logs_raises_on_non_zero_exit() -> None:
         provider.fetch_logs(scope, lines=10)
 
 
+def test_fetch_logs_appends_stderr_when_both_present() -> None:
+    provider = RailwayRemoteOpsProvider()
+    scope = RemoteServiceScope(provider="railway", project="proj", service="svc")
+
+    with (
+        patch("app.remote.ops.shutil.which", return_value="/usr/local/bin/railway"),
+        patch(
+            "app.remote.ops.subprocess.run",
+            side_effect=_make_run(log_output="main log line", log_stderr="advisory message"),
+        ),
+    ):
+        result = provider.fetch_logs(scope, lines=10)
+
+    assert "main log line" in result
+    assert "[stderr: advisory message]" in result
+
+
+def test_fetch_logs_returns_stderr_when_stdout_empty() -> None:
+    provider = RailwayRemoteOpsProvider()
+    scope = RemoteServiceScope(provider="railway", project="proj", service="svc")
+
+    with (
+        patch("app.remote.ops.shutil.which", return_value="/usr/local/bin/railway"),
+        patch(
+            "app.remote.ops.subprocess.run",
+            side_effect=_make_run(log_output="", log_stderr="warning: logs delayed"),
+        ),
+    ):
+        result = provider.fetch_logs(scope, lines=10)
+
+    assert result == "warning: logs delayed"
+
+
 def test_fetch_logs_passes_tail_argument() -> None:
     provider = RailwayRemoteOpsProvider()
     scope = RemoteServiceScope(provider="railway", project="proj", service="svc")

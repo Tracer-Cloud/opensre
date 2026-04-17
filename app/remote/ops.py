@@ -211,7 +211,13 @@ class RailwayRemoteOpsProvider(RemoteOpsProvider):
             scope=scope,
             capture_output=True,
         )
-        return (result.stdout or "").strip()
+        stdout = (result.stdout or "").strip()
+        stderr = (result.stderr or "").strip()
+        if stderr and not stdout:
+            return stderr
+        if stderr:
+            return f"{stdout}\n[stderr: {stderr}]"
+        return stdout
 
     def restart(self, scope: RemoteServiceScope) -> RestartResult:
         data = self._read_json(["redeploy", "--json"], scope=scope)

@@ -183,7 +183,7 @@ def investigate_command(
             output=output,
         )
         return
-    if slack_thread and not service:
+    if slack_thread:
         from app.cli.errors import OpenSREError
 
         raise OpenSREError(
