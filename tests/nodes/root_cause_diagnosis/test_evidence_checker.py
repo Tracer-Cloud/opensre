@@ -1,5 +1,3 @@
-import pytest
-
 from app.nodes.root_cause_diagnosis.evidence_checker import is_clearly_healthy
 
 
