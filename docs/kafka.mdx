@@ -1,0 +1,121 @@
+---
+title: "Kafka"
+description: "Connect Kafka so OpenSRE can inspect topic health and consumer group lag during investigations"
+---
+
+OpenSRE queries Kafka to retrieve topic partition health, consumer group lag, and broker metadata — helping diagnose lag spikes, under-replicated partitions, and consumer group failures during incidents.
+
+## Prerequisites
+
+- Apache Kafka cluster (2.x or later)
+- Network access from the OpenSRE environment to the Kafka brokers
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **Kafka** when prompted and provide your bootstrap servers.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+KAFKA_BOOTSTRAP_SERVERS=broker1:9092,broker2:9092
+KAFKA_SECURITY_PROTOCOL=PLAINTEXT    # or SASL_SSL, SSL, SASL_PLAINTEXT
+KAFKA_SASL_MECHANISM=PLAIN           # optional, for SASL
+KAFKA_SASL_USERNAME=your-username    # optional
+KAFKA_SASL_PASSWORD=your-password    # optional
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `KAFKA_BOOTSTRAP_SERVERS` | — | **Required.** Comma-separated broker addresses |
+| `KAFKA_SECURITY_PROTOCOL` | `PLAINTEXT` | Security protocol: `PLAINTEXT`, `SSL`, `SASL_PLAINTEXT`, `SASL_SSL` |
+| `KAFKA_SASL_MECHANISM` | — | SASL mechanism: `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512` |
+| `KAFKA_SASL_USERNAME` | — | SASL username |
+| `KAFKA_SASL_PASSWORD` | — | SASL password |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "kafka-prod",
+      "service": "kafka",
+      "status": "active",
+      "credentials": {
+        "bootstrap_servers": "broker1:9092,broker2:9092",
+        "security_protocol": "SASL_SSL",
+        "sasl_mechanism": "PLAIN",
+        "sasl_username": "your-username",
+        "sasl_password": "your-password"
+      }
+    }
+  ]
+}
+```
+
+## Common configurations
+
+**MSK (AWS Managed Kafka) with IAM:**
+
+```bash
+KAFKA_BOOTSTRAP_SERVERS=b-1.your-cluster.kafka.us-east-1.amazonaws.com:9098
+KAFKA_SECURITY_PROTOCOL=SASL_SSL
+KAFKA_SASL_MECHANISM=AWS_MSK_IAM
+```
+
+**Confluent Cloud:**
+
+```bash
+KAFKA_BOOTSTRAP_SERVERS=pkc-xxxxx.us-east-1.aws.confluent.cloud:9092
+KAFKA_SECURITY_PROTOCOL=SASL_SSL
+KAFKA_SASL_MECHANISM=PLAIN
+KAFKA_SASL_USERNAME=your-api-key
+KAFKA_SASL_PASSWORD=your-api-secret
+```
+
+## Investigation tools
+
+When OpenSRE investigates a Kafka-related alert, two diagnostic tools are available:
+
+- **Topic health** — lists topic partition metadata: leader, replicas, ISR status, and under-replicated partitions
+- **Consumer group lag** — retrieves committed offsets vs high watermarks per partition for a specific consumer group
+
+All operations are read-only.
+
+## Verify
+
+```bash
+opensre integrations verify --service kafka
+```
+
+Expected output:
+
+```
+Service: kafka
+Status: passed
+Detail: Connected to Kafka cluster with 3 broker(s) and 42 topic(s)
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection timeout** | Check broker hostnames, ports, and firewall rules |
+| **Authentication failed** | Verify SASL credentials and mechanism match the broker config |
+| **SSL handshake error** | Ensure the broker's TLS certificate is trusted or configure a CA cert |
+| **Leader not available** | Broker may be restarting — wait and retry |
+
+## Security best practices
+
+- Use **SASL_SSL** in production — avoid `PLAINTEXT` outside of local development.
+- Create a dedicated Kafka user with **Describe** permissions only — no produce or consume.
+- Store credentials in `.env`, not in source code.

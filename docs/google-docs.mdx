@@ -1,0 +1,104 @@
+---
+title: "Google Docs"
+description: "Connect Google Docs so OpenSRE can write investigation reports to your Google Drive"
+---
+
+OpenSRE can write investigation findings directly to Google Drive as formatted Google Docs — creating a persistent, shareable record of each incident investigation linked to your team's existing Drive folder.
+
+## Prerequisites
+
+- Google Cloud project with the Google Drive API enabled
+- Service account with access to a shared Drive folder
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **Google Docs** when prompted and provide your credentials file path and folder ID.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+GOOGLE_CREDENTIALS_FILE=/path/to/service-account.json
+GOOGLE_DRIVE_FOLDER_ID=your-google-drive-folder-id
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GOOGLE_CREDENTIALS_FILE` | — | **Required.** Path to the service account JSON file |
+| `GOOGLE_DRIVE_FOLDER_ID` | — | **Required.** Google Drive folder ID for investigation reports |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "google-docs-prod",
+      "service": "google_docs",
+      "status": "active",
+      "credentials": {
+        "credentials_file": "/path/to/service-account.json",
+        "folder_id": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+      }
+    }
+  ]
+}
+```
+
+## Creating a service account
+
+1. In Google Cloud Console, go to **IAM & Admin** → **Service Accounts**
+2. Click **Create Service Account**
+3. Give it a name (e.g., `opensre-docs`) and click **Create**
+4. Skip role assignment and click **Done**
+5. Click on the service account → **Keys** → **Add Key** → **Create new key** (JSON)
+6. Download the JSON file
+
+## Granting Drive folder access
+
+1. In Google Drive, open the folder where reports should be saved
+2. Click **Share**
+3. Add the service account email (e.g., `opensre-docs@your-project.iam.gserviceaccount.com`)
+4. Set the permission to **Editor**
+
+## Finding the folder ID
+
+The folder ID appears in the Drive URL:
+`https://drive.google.com/drive/folders/<folder-id>`
+
+## Verify
+
+```bash
+opensre integrations verify --service google_docs
+```
+
+Expected output:
+
+```
+Service: google_docs
+Status: passed
+Detail: Connected to Drive folder 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms (3 items in folder)
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Credentials file not found** | Check the path in `GOOGLE_CREDENTIALS_FILE` — use an absolute path |
+| **403 Forbidden** | The service account hasn't been added to the Drive folder with Editor access |
+| **Drive API not enabled** | Enable the **Google Drive API** in your Google Cloud project |
+| **Folder not found** | Confirm the folder ID and that the service account has access |
+
+## Security best practices
+
+- Keep the service account JSON file outside of your repository — add it to `.gitignore`.
+- Grant the service account access **only** to the specific Drive folder it needs.
+- Rotate the service account key periodically via Google Cloud Console.

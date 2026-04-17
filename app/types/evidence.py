@@ -1,0 +1,38 @@
+"""Evidence source type — the canonical set of data source identifiers."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+EvidenceSource = Literal[
+    "storage",
+    "batch",
+    "tracer_web",
+    "cloudwatch",
+    "aws_sdk",
+    "knowledge",
+    "grafana",
+    "datadog",
+    "honeycomb",
+    "coralogix",
+    "eks",
+    "github",
+    "sentry",
+    "mongodb",
+    "postgresql",
+    "mongodb_atlas",
+    "mariadb",
+    "kafka",
+    "clickhouse",
+    "azure_sql",
+    "google_docs",
+    "vercel",
+    "opsgenie",
+    "jira",
+    "elasticsearch",
+    "prefect",
+    "gitlab",
+    "bitbucket",
+    "openclaw",
+    "mysql",
+]

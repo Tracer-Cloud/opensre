@@ -20,7 +20,7 @@ def get_boto3_client(service: str, region: str = DEFAULT_REGION) -> Any:
         connect_timeout=10,
         read_timeout=30,
     )
-    return boto3.client(service, region_name=region, config=config)
+    return boto3.client(service, region_name=region, config=config)  # type: ignore[call-overload]
 
 
 def get_boto3_resource(service: str, region: str = DEFAULT_REGION) -> Any:
@@ -30,7 +30,7 @@ def get_boto3_resource(service: str, region: str = DEFAULT_REGION) -> Any:
         connect_timeout=10,
         read_timeout=30,
     )
-    return boto3.resource(service, region_name=region, config=config)
+    return boto3.resource(service, region_name=region, config=config)  # type: ignore[call-overload]
 
 
 def get_standard_tags(stack_name: str) -> list[dict[str, str]]:
@@ -116,7 +116,8 @@ def wait_for_condition(
                 return True
         except Exception:
             # AWS resource may not be ready yet; retry until timeout
-            pass
+            time.sleep(delay_seconds)
+            continue
         time.sleep(delay_seconds)
 
     raise TimeoutError(f"Timeout waiting for {description} after {max_attempts * delay_seconds}s")

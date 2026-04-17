@@ -66,6 +66,39 @@ def build_alert_template(template_name: str) -> dict[str, Any]:
             },
         }
 
+    if template == "honeycomb":
+        return {
+            "alert_name": "Honeycomb alert: checkout-api latency regression",
+            "pipeline_name": "checkout_api",
+            "severity": "critical",
+            "alert_source": "honeycomb",
+            "message": "Honeycomb detected high latency in checkout_api spans",
+            "service_name": "checkout-api",
+            "trace_id": "replace-me",
+            "commonAnnotations": {
+                "summary": "checkout-api spans are timing out in production",
+                "service_name": "checkout-api",
+                "trace_id": "replace-me",
+            },
+        }
+
+    if template == "coralogix":
+        return {
+            "alert_name": "Coralogix alert: payments worker errors",
+            "pipeline_name": "payments_worker",
+            "severity": "critical",
+            "alert_source": "coralogix",
+            "message": "Coralogix detected repeated exceptions in payments_worker",
+            "application_name": "payments",
+            "subsystem_name": "worker",
+            "commonAnnotations": {
+                "summary": "payments worker is logging repeated timeout exceptions",
+                "application_name": "payments",
+                "subsystem_name": "worker",
+                "log_query": "source logs | filter $l.applicationname == 'payments' | limit 50",
+            },
+        }
+
     raise ValueError(
-        "Unknown alert template. Supported templates: generic, datadog, grafana."
+        "Unknown alert template. Supported templates: generic, datadog, grafana, honeycomb, coralogix."
     )

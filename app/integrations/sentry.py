@@ -7,20 +7,29 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from pydantic import Field, field_validator
+
+from app.strict_config import StrictConfigModel
 
 DEFAULT_SENTRY_URL = "https://sentry.io"
 DEFAULT_SENTRY_STATS_PERIOD = "24h"
 
 
-@dataclass(frozen=True)
-class SentryConfig:
+class SentryConfig(StrictConfigModel):
     """Normalized Sentry connection settings."""
 
     base_url: str = DEFAULT_SENTRY_URL
     organization_slug: str = ""
     auth_token: str = ""
     project_slug: str = ""
-    timeout_seconds: float = 15.0
+    timeout_seconds: float = Field(default=15.0, gt=0)
+    integration_id: str = ""
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: Any) -> str:
+        normalized = str(value or DEFAULT_SENTRY_URL).strip()
+        return normalized or DEFAULT_SENTRY_URL
 
     @property
     def api_base_url(self) -> str:
@@ -45,14 +54,7 @@ class SentryValidationResult:
 
 def build_sentry_config(raw: dict[str, Any] | None) -> SentryConfig:
     """Build a normalized Sentry config object from env/store data."""
-    raw = raw or {}
-    return SentryConfig(
-        base_url=str(raw.get("base_url", DEFAULT_SENTRY_URL)).strip() or DEFAULT_SENTRY_URL,
-        organization_slug=str(raw.get("organization_slug", "")).strip(),
-        auth_token=str(raw.get("auth_token", "")).strip(),
-        project_slug=str(raw.get("project_slug", "")).strip(),
-        timeout_seconds=float(raw.get("timeout_seconds", 15.0) or 15.0),
-    )
+    return SentryConfig.model_validate(raw or {})
 
 
 def sentry_config_from_env() -> SentryConfig | None:

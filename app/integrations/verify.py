@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 import boto3
@@ -11,19 +10,61 @@ import requests
 
 from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.config import get_tracer_base_url
-from app.integrations.clients.datadog.client import DatadogClient, DatadogConfig
-from app.integrations.clients.tracer_client.client import TracerClient
-from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
-from app.integrations.sentry import build_sentry_config, validate_sentry_config
-from app.integrations.store import load_integrations
-from app.nodes.resolve_integrations.node import (
-    _classify_integrations,
-    _load_env_integrations,
-    _merge_local_integrations,
+from app.integrations.azure_sql import build_azure_sql_config, validate_azure_sql_config
+from app.integrations.catalog import (
+    resolve_effective_integrations as _resolve_effective_integrations,
 )
+from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
+from app.integrations.mariadb import build_mariadb_config, validate_mariadb_config
+from app.integrations.models import (
+    AWSIntegrationConfig,
+    CoralogixIntegrationConfig,
+    DatadogIntegrationConfig,
+    GoogleDocsIntegrationConfig,
+    GrafanaIntegrationConfig,
+    HoneycombIntegrationConfig,
+    SlackWebhookConfig,
+    TracerIntegrationConfig,
+)
+from app.integrations.mongodb import build_mongodb_config, validate_mongodb_config
+from app.integrations.mongodb_atlas import build_mongodb_atlas_config, validate_mongodb_atlas_config
+from app.integrations.mysql import build_mysql_config, validate_mysql_config
+from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
+from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
+from app.integrations.sentry import build_sentry_config, validate_sentry_config
+from app.services.coralogix import CoralogixClient
+from app.services.datadog.client import DatadogClient, DatadogConfig
+from app.services.honeycomb import HoneycombClient
+from app.services.opsgenie import OpsGenieClient, OpsGenieConfig
+from app.services.tracer_client.client import TracerClient
+from app.services.vercel.client import VercelClient, VercelConfig
 
-SUPPORTED_VERIFY_SERVICES = ("grafana", "datadog", "aws", "slack", "tracer", "github", "sentry")
-CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "aws"})
+SUPPORTED_VERIFY_SERVICES = (
+    "grafana",
+    "datadog",
+    "honeycomb",
+    "coralogix",
+    "aws",
+    "slack",
+    "tracer",
+    "github",
+    "sentry",
+    "mongodb",
+    "postgresql",
+    "azure_sql",
+    "mongodb_atlas",
+    "mariadb",
+    "google_docs",
+    "vercel",
+    "opsgenie",
+    "kafka",
+    "clickhouse",
+    "bitbucket",
+    "discord",
+    "mysql",
+    "openclaw",
+)
+CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
 
 
@@ -42,91 +83,14 @@ def _result(
 
 
 def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
-    """Resolve effective local integrations from ~/.tracer and env vars."""
-    store_integrations = load_integrations()
-    env_integrations = _load_env_integrations()
-    merged_integrations = _merge_local_integrations(store_integrations, env_integrations)
-    classified_integrations = _classify_integrations(merged_integrations)
-
-    source_by_service: dict[str, str] = {}
-    for integration in env_integrations:
-        service = str(integration.get("service", "")).strip().lower()
-        if service:
-            source_by_service[service] = "local env"
-    for integration in store_integrations:
-        service = str(integration.get("service", "")).strip().lower()
-        if service:
-            source_by_service[service] = "local store"
-
-    effective: dict[str, dict[str, Any]] = {}
-    for service in CORE_VERIFY_SERVICES:
-        resolved_integration = classified_integrations.get(service)
-        if isinstance(resolved_integration, dict):
-            effective[service] = {
-                "source": source_by_service.get(service, "local env"),
-                "config": resolved_integration,
-            }
-
-    tracer_integration = classified_integrations.get("tracer")
-    if isinstance(tracer_integration, dict):
-        tracer_credentials = tracer_integration.get("credentials", {})
-        effective["tracer"] = {
-            "source": source_by_service.get("tracer", "local store"),
-            "config": {
-                "base_url": str(tracer_credentials.get("base_url", "")).strip(),
-                "jwt_token": str(tracer_credentials.get("jwt_token", "")).strip(),
-            },
-        }
-    else:
-        jwt_token = os.getenv("JWT_TOKEN", "").strip()
-        if jwt_token:
-            effective["tracer"] = {
-                "source": "local env",
-                "config": {
-                    "base_url": os.getenv("TRACER_API_URL", "").strip() or get_tracer_base_url(),
-                    "jwt_token": jwt_token,
-                },
-            }
-
-    slack_webhook_url = os.getenv("SLACK_WEBHOOK_URL", "").strip()
-    if slack_webhook_url:
-        effective["slack"] = {
-            "source": "local env",
-            "config": {"webhook_url": slack_webhook_url},
-        }
-
-    github_integration = classified_integrations.get("github")
-    if isinstance(github_integration, dict):
-        effective["github"] = {
-            "source": source_by_service.get("github", "local env"),
-            "config": {
-                "url": str(github_integration.get("url", "")).strip(),
-                "mode": str(github_integration.get("mode", "streamable-http")).strip(),
-                "command": str(github_integration.get("command", "")).strip(),
-                "args": github_integration.get("args", []),
-                "auth_token": str(github_integration.get("auth_token", "")).strip(),
-                "toolsets": github_integration.get("toolsets", []),
-            },
-        }
-
-    sentry_integration = classified_integrations.get("sentry")
-    if isinstance(sentry_integration, dict):
-        effective["sentry"] = {
-            "source": source_by_service.get("sentry", "local env"),
-            "config": {
-                "base_url": str(sentry_integration.get("base_url", "")).strip(),
-                "organization_slug": str(sentry_integration.get("organization_slug", "")).strip(),
-                "auth_token": str(sentry_integration.get("auth_token", "")).strip(),
-                "project_slug": str(sentry_integration.get("project_slug", "")).strip(),
-            },
-        }
-
-    return effective
+    """Resolve effective local integrations from ~/.tracer and environment variables."""
+    return _resolve_effective_integrations()
 
 
 def _verify_grafana(source: str, config: dict[str, Any]) -> dict[str, str]:
-    endpoint = str(config.get("endpoint", "")).rstrip("/")
-    api_key = str(config.get("api_key", "")).strip()
+    grafana_config = GrafanaIntegrationConfig.model_validate(config)
+    endpoint = grafana_config.endpoint
+    api_key = grafana_config.api_key
     if not endpoint or not api_key:
         return _result("grafana", source, "missing", "Missing endpoint or API token.")
 
@@ -167,11 +131,10 @@ def _verify_grafana(source: str, config: dict[str, Any]) -> dict[str, str]:
 
 
 def _verify_datadog(source: str, config: dict[str, Any]) -> dict[str, str]:
+    datadog_integration_config = DatadogIntegrationConfig.model_validate(config)
     datadog_client = DatadogClient(
-        DatadogConfig(
-            api_key=str(config.get("api_key", "")).strip(),
-            app_key=str(config.get("app_key", "")).strip(),
-            site=str(config.get("site", "datadoghq.com")).strip() or "datadoghq.com",
+        DatadogConfig.model_validate(
+            datadog_integration_config.model_dump(exclude={"integration_id"})
         )
     )
     if not datadog_client.is_configured:
@@ -194,10 +157,89 @@ def _verify_datadog(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_honeycomb(source: str, config: dict[str, Any]) -> dict[str, str]:
+    honeycomb_config = HoneycombIntegrationConfig.model_validate(config)
+    honeycomb_client = HoneycombClient(honeycomb_config)
+    if not honeycomb_client.is_configured:
+        return _result("honeycomb", source, "missing", "Missing Honeycomb API key or dataset.")
+
+    auth_result = honeycomb_client.validate_access()
+    if not auth_result.get("success"):
+        return _result(
+            "honeycomb",
+            source,
+            "failed",
+            f"Auth check failed: {auth_result.get('error', 'unknown error')}",
+        )
+
+    query_result = honeycomb_client.run_query(
+        {
+            "calculations": [{"op": "COUNT"}],
+            "time_range": 900,
+        },
+        limit=1,
+    )
+    if not query_result.get("success"):
+        return _result(
+            "honeycomb",
+            source,
+            "failed",
+            f"Query check failed: {query_result.get('error', 'unknown error')}",
+        )
+
+    environment = auth_result.get("environment", {})
+    environment_slug = (
+        str(environment.get("slug", "")).strip() if isinstance(environment, dict) else ""
+    )
+    environment_label = environment_slug or "classic"
+    return _result(
+        "honeycomb",
+        source,
+        "passed",
+        (
+            f"Connected to {honeycomb_config.base_url} "
+            f"(environment {environment_label}) and queried dataset {honeycomb_config.dataset}."
+        ),
+    )
+
+
+def _verify_coralogix(source: str, config: dict[str, Any]) -> dict[str, str]:
+    coralogix_config = CoralogixIntegrationConfig.model_validate(config)
+    coralogix_client = CoralogixClient(coralogix_config)
+    if not coralogix_client.is_configured:
+        return _result("coralogix", source, "missing", "Missing Coralogix API key or API URL.")
+
+    result = coralogix_client.validate_access()
+    if not result.get("success"):
+        return _result(
+            "coralogix",
+            source,
+            "failed",
+            f"DataPrime check failed: {result.get('error', 'unknown error')}",
+        )
+
+    scope: list[str] = []
+    if coralogix_config.application_name:
+        scope.append(f"application {coralogix_config.application_name}")
+    if coralogix_config.subsystem_name:
+        scope.append(f"subsystem {coralogix_config.subsystem_name}")
+    scope_detail = f" ({', '.join(scope)})" if scope else ""
+    return _result(
+        "coralogix",
+        source,
+        "passed",
+        (
+            f"Connected to {coralogix_config.base_url}{scope_detail}; "
+            f"DataPrime returned {result.get('total', 0)} row(s)."
+        ),
+    )
+
+
 def _build_sts_client(config: dict[str, Any]) -> tuple[Any, str, str]:
-    region = str(config.get("region", "us-east-1")).strip() or "us-east-1"
-    role_arn = str(config.get("role_arn", "")).strip()
-    external_id = str(config.get("external_id", "")).strip()
+    aws_config = AWSIntegrationConfig.model_validate(config)
+    region = aws_config.region
+    role_arn = aws_config.role_arn
+    external_id = aws_config.external_id
     if role_arn:
         base_sts_client = boto3.client("sts", region_name=region)
         assume_role_args: dict[str, str] = {
@@ -219,14 +261,14 @@ def _build_sts_client(config: dict[str, Any]) -> tuple[Any, str, str]:
             region,
         )
 
-    credentials = config.get("credentials", {})
+    credentials = aws_config.credentials
     return (
         boto3.client(
             "sts",
             region_name=region,
-            aws_access_key_id=str(credentials.get("access_key_id", "")).strip(),
-            aws_secret_access_key=str(credentials.get("secret_access_key", "")).strip(),
-            aws_session_token=str(credentials.get("session_token", "")).strip() or None,
+            aws_access_key_id=credentials.access_key_id if credentials else "",
+            aws_secret_access_key=credentials.secret_access_key if credentials else "",
+            aws_session_token=(credentials.session_token if credentials else "") or None,
         ),
         "access-keys",
         region,
@@ -259,9 +301,11 @@ def _verify_slack(
     *,
     send_slack_test: bool,
 ) -> dict[str, str]:
-    webhook_url = str(config.get("webhook_url", "")).strip()
-    if not webhook_url:
+    try:
+        slack_config = SlackWebhookConfig.model_validate(config)
+    except Exception:
         return _result("slack", source, "missing", "SLACK_WEBHOOK_URL is not configured.")
+    webhook_url = slack_config.webhook_url
 
     if not send_slack_test:
         return _result(
@@ -290,16 +334,18 @@ def _verify_slack(
 
 
 def _verify_tracer(source: str, config: dict[str, Any]) -> dict[str, str]:
-    base_url = str(config.get("base_url", "")).strip() or get_tracer_base_url()
-    jwt_token = str(config.get("jwt_token", "")).strip()
-    if jwt_token.lower().startswith("bearer "):
-        jwt_token = jwt_token.split(None, 1)[1].strip()
-    if not jwt_token:
+    try:
+        tracer_config = TracerIntegrationConfig.model_validate(config)
+    except Exception:
         return _result("tracer", source, "missing", "Missing JWT token for Tracer web app access.")
+    base_url = tracer_config.base_url or get_tracer_base_url()
+    jwt_token = tracer_config.jwt_token
 
     org_id = extract_org_id_from_jwt(jwt_token)
     if not org_id:
-        return _result("tracer", source, "failed", "JWT token does not contain an organization claim.")
+        return _result(
+            "tracer", source, "failed", "JWT token does not contain an organization claim."
+        )
 
     try:
         tracer_client = TracerClient(base_url, org_id, jwt_token)
@@ -337,6 +383,262 @@ def _verify_sentry(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_mongodb(source: str, config: dict[str, Any]) -> dict[str, str]:
+    mongodb_config = build_mongodb_config(config)
+    result = validate_mongodb_config(mongodb_config)
+    return _result(
+        "mongodb",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_postgresql(source: str, config: dict[str, Any]) -> dict[str, str]:
+    postgresql_config = build_postgresql_config(config)
+    result = validate_postgresql_config(postgresql_config)
+    return _result(
+        "postgresql",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_azure_sql(source: str, config: dict[str, Any]) -> dict[str, str]:
+    azure_sql_config = build_azure_sql_config(config)
+    result = validate_azure_sql_config(azure_sql_config)
+    return _result(
+        "azure_sql",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_mongodb_atlas(source: str, config: dict[str, Any]) -> dict[str, str]:
+    atlas_config = build_mongodb_atlas_config(config)
+    result = validate_mongodb_atlas_config(atlas_config)
+    return _result(
+        "mongodb_atlas",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_mariadb(source: str, config: dict[str, Any]) -> dict[str, str]:
+    mariadb_config = build_mariadb_config(config)
+    result = validate_mariadb_config(mariadb_config)
+    return _result(
+        "mariadb",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
+    """Validate Google Docs credentials and folder access."""
+    from app.services.google_docs import GoogleDocsClient
+
+    try:
+        google_docs_config = GoogleDocsIntegrationConfig.model_validate(config)
+    except Exception as err:
+        return _result("google_docs", source, "missing", str(err))
+
+    if not google_docs_config.credentials_file or not google_docs_config.folder_id:
+        return _result("google_docs", source, "missing", "Missing credentials_file or folder_id.")
+
+    client = GoogleDocsClient(google_docs_config)
+    if not client.is_configured:
+        return _result(
+            "google_docs",
+            source,
+            "failed",
+            f"Credentials file not found: {google_docs_config.credentials_file}",
+        )
+
+    result = client.validate_access()
+    if not result.get("success"):
+        return _result(
+            "google_docs",
+            source,
+            "failed",
+            f"Folder access check failed: {result.get('error', 'unknown error')}",
+        )
+
+    return _result(
+        "google_docs",
+        source,
+        "passed",
+        f"Connected to Drive folder {google_docs_config.folder_id} "
+        f"({result.get('file_count', 0)} items in folder).",
+    )
+
+
+def _verify_vercel(
+    source: str,
+    config: dict[str, Any],
+) -> dict[str, str]:
+    try:
+        vercel_config = VercelConfig.model_validate(config)
+    except Exception:
+        return _result("vercel", source, "missing", "Missing API token for Vercel access.")
+    if not vercel_config.api_token:
+        return _result("vercel", source, "missing", "Missing API token for Vercel access.")
+
+    client = VercelClient(vercel_config)
+    with client:
+        result = client.list_projects()
+        if not result.get("success"):
+            return _result(
+                "vercel",
+                source,
+                "failed",
+                f"Vercel project list failed: {result.get('error', 'unknown error')}",
+            )
+
+        base_detail = f"Connected to Vercel API and listed {result.get('total', 0)} project(s)."
+        return _result("vercel", source, "passed", base_detail)
+
+
+def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
+    try:
+        opsgenie_config = OpsGenieConfig.model_validate(
+            {
+                "api_key": config.get("api_key", ""),
+                "region": config.get("region", "us"),
+            }
+        )
+    except Exception as err:
+        return _result("opsgenie", source, "missing", str(err))
+
+    client = OpsGenieClient(opsgenie_config)
+    if not client.is_configured:
+        return _result("opsgenie", source, "missing", "Missing API key.")
+
+    with client:
+        result = client.list_alerts(limit=1)
+    if not result.get("success"):
+        return _result(
+            "opsgenie",
+            source,
+            "failed",
+            f"Alert list check failed: {result.get('error', 'unknown error')}",
+        )
+
+    return _result(
+        "opsgenie",
+        source,
+        "passed",
+        f"Connected to OpsGenie ({opsgenie_config.region.upper()} region); API key accepted.",
+    )
+
+
+def _verify_kafka(source: str, config: dict[str, Any]) -> dict[str, str]:
+    from app.integrations.kafka import build_kafka_config, validate_kafka_config
+
+    kafka_config = build_kafka_config(config)
+    result = validate_kafka_config(kafka_config)
+    return _result(
+        "kafka",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_clickhouse(source: str, config: dict[str, Any]) -> dict[str, str]:
+    from app.integrations.clickhouse import build_clickhouse_config, validate_clickhouse_config
+
+    clickhouse_config = build_clickhouse_config(config)
+    result = validate_clickhouse_config(clickhouse_config)
+    return _result(
+        "clickhouse",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_bitbucket(source: str, config: dict[str, Any]) -> dict[str, str]:
+    from app.integrations.bitbucket import build_bitbucket_config, validate_bitbucket_config
+
+    bitbucket_config = build_bitbucket_config(config)
+    result = validate_bitbucket_config(bitbucket_config)
+    return _result(
+        "bitbucket",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_discord(source: str, config: dict[str, Any]) -> dict[str, str]:
+    bot_token = str(config.get("bot_token", "")).strip()
+    if not bot_token:
+        return _result("discord", source, "missing", "Missing bot token.")
+
+    try:
+        response = httpx.get(
+            "https://discord.com/api/v10/users/@me",
+            headers={"Authorization": f"Bot {bot_token}"},
+            timeout=10.0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _result("discord", source, "failed", f"Bot token validation failed: {exc}")
+
+    if not response.is_success:
+        return _result(
+            "discord",
+            source,
+            "failed",
+            f"Discord API returned {response.status_code}: {response.text[:200]}",
+        )
+
+    data = response.json()
+
+    username = str(data.get("username", "")).strip()
+    bot_id = str(data.get("id", "")).strip()
+    return _result(
+        "discord",
+        source,
+        "passed",
+        f"Connected to Discord API as bot {username} (id {bot_id}).",
+    )
+
+
+def _verify_openclaw(source: str, config: dict[str, Any]) -> dict[str, str]:
+    try:
+        openclaw_config = build_openclaw_config(config)
+    except Exception as exc:
+        return _result("openclaw", source, "failed", f"Invalid OpenClaw config: {exc}")
+
+    if not openclaw_config.is_configured:
+        return _result(
+            "openclaw",
+            source,
+            "missing",
+            "OpenClaw is not configured: provide a URL (HTTP/SSE) or command (stdio).",
+        )
+
+    result = validate_openclaw_config(openclaw_config)
+    status = "passed" if result.ok else "failed"
+    return _result("openclaw", source, status, result.detail)
+
+
+def _verify_mysql(source: str, config: dict[str, Any]) -> dict[str, str]:
+    mysql_config = build_mysql_config(config)
+    result = validate_mysql_config(mysql_config)
+    return _result(
+        "mysql",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -351,7 +653,9 @@ def verify_integrations(
         if current_service == "slack":
             integration = effective_integrations.get("slack")
             if not integration:
-                results.append(_result("slack", "-", "missing", "SLACK_WEBHOOK_URL is not configured."))
+                results.append(
+                    _result("slack", "-", "missing", "SLACK_WEBHOOK_URL is not configured.")
+                )
                 continue
             results.append(
                 _verify_slack(
@@ -364,7 +668,9 @@ def verify_integrations(
 
         integration = effective_integrations.get(current_service)
         if not integration:
-            results.append(_result(current_service, "-", "missing", "Not configured in local store or env."))
+            results.append(
+                _result(current_service, "-", "missing", "Not configured in local store or env.")
+            )
             continue
 
         source = str(integration["source"])
@@ -373,6 +679,10 @@ def verify_integrations(
             results.append(_verify_grafana(source, config))
         elif current_service == "datadog":
             results.append(_verify_datadog(source, config))
+        elif current_service == "honeycomb":
+            results.append(_verify_honeycomb(source, config))
+        elif current_service == "coralogix":
+            results.append(_verify_coralogix(source, config))
         elif current_service == "aws":
             results.append(_verify_aws(source, config))
         elif current_service == "tracer":
@@ -381,6 +691,34 @@ def verify_integrations(
             results.append(_verify_github(source, config))
         elif current_service == "sentry":
             results.append(_verify_sentry(source, config))
+        elif current_service == "mongodb":
+            results.append(_verify_mongodb(source, config))
+        elif current_service == "postgresql":
+            results.append(_verify_postgresql(source, config))
+        elif current_service == "azure_sql":
+            results.append(_verify_azure_sql(source, config))
+        elif current_service == "mongodb_atlas":
+            results.append(_verify_mongodb_atlas(source, config))
+        elif current_service == "mariadb":
+            results.append(_verify_mariadb(source, config))
+        elif current_service == "google_docs":
+            results.append(_verify_google_docs(source, config))
+        elif current_service == "vercel":
+            results.append(_verify_vercel(source, config))
+        elif current_service == "opsgenie":
+            results.append(_verify_opsgenie(source, config))
+        elif current_service == "kafka":
+            results.append(_verify_kafka(source, config))
+        elif current_service == "clickhouse":
+            results.append(_verify_clickhouse(source, config))
+        elif current_service == "bitbucket":
+            results.append(_verify_bitbucket(source, config))
+        elif current_service == "discord":
+            results.append(_verify_discord(source, config))
+        elif current_service == "openclaw":
+            results.append(_verify_openclaw(source, config))
+        elif current_service == "mysql":
+            results.append(_verify_mysql(source, config))
 
     return results
 

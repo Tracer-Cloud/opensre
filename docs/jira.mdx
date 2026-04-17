@@ -1,0 +1,76 @@
+---
+title: "Jira"
+description: "Connect Jira so OpenSRE can create and update incident tickets automatically"
+---
+
+OpenSRE connects to Jira to create incident tickets, update existing issues, and add investigation findings as comments — keeping your team's workflow in sync with automated investigations.
+
+## Prerequisites
+
+- Jira Cloud account (Jira Server/Data Center also supported)
+- API token and project access
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **Jira** when prompted and provide your base URL, email, API token, and project key.
+
+### Option 2: Persistent store
+
+Add to `~/.tracer/integrations.json`:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "jira-prod",
+      "service": "jira",
+      "status": "active",
+      "credentials": {
+        "base_url": "https://your-org.atlassian.net",
+        "email": "you@example.com",
+        "api_token": "your-api-token",
+        "project_key": "OPS"
+      }
+    }
+  ]
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `base_url` | **Required.** Your Jira instance URL (e.g., `https://your-org.atlassian.net`) |
+| `email` | **Required.** Email address associated with the API token |
+| `api_token` | **Required.** Jira API token |
+| `project_key` | **Required.** Default project key for new issues (e.g., `OPS`, `SRE`) |
+
+## Creating a Jira API token
+
+1. Go to [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
+2. Click **Create API token**
+3. Give it a label (e.g., `opensre`)
+4. Copy the token
+
+<Info>
+For Jira Data Center/Server, use a personal access token from **Profile** → **Personal Access Tokens** instead.
+</Info>
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Check email and API token combination |
+| **404 Not Found** | Verify `base_url` (include `https://`) and `project_key` |
+| **403 Forbidden** | The user may lack permission to create issues in the project |
+
+## Security best practices
+
+- Use a **dedicated Jira user** for OpenSRE with only the permissions it needs (create and comment on issues).
+- Store credentials in `~/.tracer/integrations.json`, not in source code or environment variables.
+- Rotate the API token periodically.

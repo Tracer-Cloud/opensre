@@ -1,0 +1,87 @@
+---
+title: "Slurm"
+description: "Monitor Slurm workloads with OpenSRE"
+---
+
+OpenSRE integrates with Slurm, providing detailed observability for batch jobs and array tasks.
+It works by running the OpenSRE agent on each compute node — no modification to job scripts required.
+
+## Why use OpenSRE in combination with Slurm
+
+Slurm gives job-level scheduling visibility, but not what happens inside the job.
+OpenSRE adds that missing layer:
+
+- Per-process telemetry inside each job allocation
+- Job array correlation and node-level performance
+- Resource and cost insights across users and queues
+- Zero changes to job submission or scripts
+- Real-time updates in the OpenSRE dashboard
+
+## Getting Started
+
+### Prerequisites
+
+- Slurm cluster access with sudo or admin privileges for installation
+- OpenSRE installed on [your operating system](/environments/overview)
+
+### Just run your pipeline, OpenSRE will automatically attach
+
+If OpenSRE is already installed on your operating system, you only need to enable the OpenSRE agent for pipelines that have not been run with OpenSRE before.<br/>
+In that case, run the following command:
+
+```bash
+sudo tracer init --token <your-token>
+```
+<Info> Go to our [onboarding](https://app.tracer.cloud/dashboard) to get your own personal token</Info>
+
+When running this command, you will be asked to name your pipeline for clear labeling in the dashboard.
+
+## Examples
+
+Run a Slurm pipeline under OpenSRE:
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=test
+#SBATCH --cpus-per-task=8
+#SBATCH --time=01:00:00
+
+module load python
+python analysis.py
+```
+
+Submit this job as usual with:
+```bashsbatch 
+my_job.sh
+```
+
+or launch the OpenSRE demo workflow:
+
+```bash
+sudo tracer demo
+```
+
+Once the pipeline starts, open the OpenSRE dashboard, and you’ll see each Slurm job as a timeline step updating in real time.
+
+<Card href="https://app.tracer.cloud/">
+  <img
+    className="block dark:hidden"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="OpenSRE Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+  <img
+    className="hidden dark:block"
+    src="/images/logo/tracer/Tracer Full Body - Black.png"
+    alt="OpenSRE Logo"
+    style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
+  />
+
+  <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1 rem', color: 'inherit' }}>
+    Watch your pipeline run in the OpenSRE dashboard
+  </div>
+
+  <div style={{ color: 'inherit' }}>
+    View real-time metrics, resource usage, and performance insights for your pipeline runs.
+  </div>
+</Card>

@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from app.outbound_telemetry.config import load_env
+from app.utils.config import load_env
 
 # Environment loading
 _PROJECT_ROOT = Path(__file__).parent.parent

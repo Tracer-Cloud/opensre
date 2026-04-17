@@ -11,7 +11,7 @@ from app.integrations.github_mcp import (
     call_github_mcp_tool,
     github_mcp_config_from_env,
 )
-from app.tools.base import BaseTool
+from app.tools.tool_decorator import tool
 
 
 def _resolve_config(
@@ -69,19 +69,33 @@ def _gh_available(sources: dict) -> bool:
     return bool(sources.get("github", {}).get("connection_verified"))
 
 
-class GitHubSearchCodeTool(BaseTool):
-    """Search GitHub repository code through the configured GitHub MCP server."""
+def _search_github_code_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
+    gh = sources["github"]
+    return {
+        "owner": gh["owner"],
+        "repo": gh["repo"],
+        "query": gh.get("query") or "exception OR error",
+        **_gh_creds(gh),
+    }
 
-    name = "search_github_code"
-    source = "github"
-    description = "Search GitHub repository code through the configured GitHub MCP server."
-    use_cases = [
+
+def _search_github_code_available(sources: dict[str, dict]) -> bool:
+    gh = sources.get("github", {})
+    return bool(_gh_available(sources) and gh.get("owner") and gh.get("repo"))
+
+
+@tool(
+    name="search_github_code",
+    source="github",
+    description="Search GitHub repository code through the configured GitHub MCP server.",
+    use_cases=[
         "Investigating alerts that mention a repository, branch, or commit",
         "Finding source code related to failures, exceptions, and stack frames",
         "Tracing config, workflow, or application code that may explain an incident",
-    ]
-    requires = ["owner", "repo", "query"]
-    input_schema = {
+    ],
+    requires=["owner", "repo", "query"],
+    surfaces=("investigation", "chat"),
+    input_schema={
         "type": "object",
         "properties": {
             "owner": {"type": "string"},
@@ -92,43 +106,29 @@ class GitHubSearchCodeTool(BaseTool):
             "github_token": {"type": "string"},
         },
         "required": ["owner", "repo", "query"],
-    }
+    },
+    is_available=_search_github_code_available,
+    extract_params=_search_github_code_extract_params,
+)
+def search_github_code(
+    owner: str,
+    repo: str,
+    query: str,
+    github_url: str | None = None,
+    github_mode: str | None = None,
+    github_token: str | None = None,
+    github_command: str | None = None,
+    github_args: list[str] | None = None,
+    **_kwargs: Any,
+) -> dict[str, Any]:
+    """Search GitHub repository code through the configured GitHub MCP server."""
+    config = _resolve_config(github_url, github_mode, github_token, github_command, github_args)
+    if config is None:
+        return {"source": "github", "available": False, "error": "GitHub MCP integration is not configured.", "matches": []}
 
-    def is_available(self, sources: dict) -> bool:
-        gh = sources.get("github", {})
-        return bool(_gh_available(sources) and gh.get("owner") and gh.get("repo"))
-
-    def extract_params(self, sources: dict) -> dict:
-        gh = sources["github"]
-        return {
-            "owner": gh["owner"],
-            "repo": gh["repo"],
-            "query": gh.get("query") or "exception OR error",
-            **_gh_creds(gh),
-        }
-
-    def run(
-        self,
-        owner: str,
-        repo: str,
-        query: str,
-        github_url: str | None = None,
-        github_mode: str | None = None,
-        github_token: str | None = None,
-        github_command: str | None = None,
-        github_args: list[str] | None = None,
-        **_kwargs: Any,
-    ) -> dict[str, Any]:
-        config = _resolve_config(github_url, github_mode, github_token, github_command, github_args)
-        if config is None:
-            return {"source": "github", "available": False, "error": "GitHub MCP integration is not configured.", "matches": []}
-
-        final_query = build_github_code_search_query(owner, repo, query)
-        result = call_github_mcp_tool(config, "search_code", {"query": final_query})
-        payload = _normalize_tool_result(result)
-        payload["matches"] = payload.pop("structured_content", None)
-        payload["query"] = final_query
-        return payload
-
-
-search_github_code = GitHubSearchCodeTool()
+    final_query = build_github_code_search_query(owner, repo, query)
+    result = call_github_mcp_tool(config, "search_code", {"query": final_query})
+    payload = _normalize_tool_result(result)
+    payload["matches"] = payload.pop("structured_content", None)
+    payload["query"] = final_query
+    return payload

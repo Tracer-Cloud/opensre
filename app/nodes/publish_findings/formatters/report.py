@@ -36,18 +36,26 @@ def render_cloudwatch_link(ctx: ReportContext) -> str:
         view_link = format_slack_link("CloudWatch Logs", url) if url else None
         if view_link:
             return f"\n*{view_link}*\n"
-        return (
-            "\n*CloudWatch Logs:*\n"
-            f"* Log Group: {cw_group}\n"
-            f"* Log Stream: {cw_stream}\n"
-        )
+        return f"\n*CloudWatch Logs:*\n* Log Group: {cw_group}\n* Log Stream: {cw_stream}\n"
 
     return ""
+
+
+def _format_provenance_lines(ctx: ReportContext) -> list[str]:
+    provenance = ctx.get("source_provenance") or {}
+    lines: list[str] = []
+    for source_name, entry in provenance.items():
+        label = entry.get("label") or source_name.title()
+        summary = entry.get("summary") or ""
+        if summary:
+            lines.append(f"• {label}: {summary}")
+    return lines
 
 
 # ---------------------------------------------------------------------------
 # Shared section helpers — called by both text and block renderers
 # ---------------------------------------------------------------------------
+
 
 def _render_claim_lines(ctx: ReportContext) -> tuple[list[str], list[str]]:
     """Return (validated_lines, non_validated_lines) as plain mrkdwn bullet strings.
@@ -121,12 +129,12 @@ def _mrkdwn_section(text: str) -> "dict | None":
 
 # Maps LLM source name → ordered list of evidence dict keys to try for a log message
 _EVIDENCE_LOG_KEYS: dict[str, list[str]] = {
-    "datadog_logs":    ["datadog_error_logs", "datadog_logs"],
-    "datadog":         ["datadog_error_logs", "datadog_logs"],
-    "grafana_logs":    ["grafana_error_logs", "grafana_logs"],
-    "grafana":         ["grafana_error_logs", "grafana_logs"],
+    "datadog_logs": ["datadog_error_logs", "datadog_logs"],
+    "datadog": ["datadog_error_logs", "datadog_logs"],
+    "grafana_logs": ["grafana_error_logs", "grafana_logs"],
+    "grafana": ["grafana_error_logs", "grafana_logs"],
     "cloudwatch_logs": ["cloudwatch_logs"],
-    "cloudwatch":      ["cloudwatch_logs"],
+    "cloudwatch": ["cloudwatch_logs"],
 }
 
 
@@ -143,6 +151,7 @@ def _resolve_evidence_tags(text: str, evidence: dict) -> str:
     Tries error logs first, then all logs for the named source. If no message
     is found the tag is removed silently to avoid leaking raw LLM annotations.
     """
+
     def _replace(m: re.Match) -> str:
         source = m.group(1).strip().lower()
         for key in _EVIDENCE_LOG_KEYS.get(source, []):
@@ -158,7 +167,13 @@ def _resolve_evidence_tags(text: str, evidence: dict) -> str:
 
 def _get_top_error_log(evidence: dict) -> str | None:
     """Return the first error log message from available evidence sources."""
-    for key in ("datadog_error_logs", "datadog_logs", "grafana_error_logs", "grafana_logs", "cloudwatch_logs"):
+    for key in (
+        "datadog_error_logs",
+        "datadog_logs",
+        "grafana_error_logs",
+        "grafana_logs",
+        "cloudwatch_logs",
+    ):
         logs = evidence.get(key) or []
         if logs:
             msg = _extract_log_message(logs[0])
@@ -170,6 +185,7 @@ def _get_top_error_log(evidence: dict) -> str | None:
 # ---------------------------------------------------------------------------
 # Root cause derivation helpers
 # ---------------------------------------------------------------------------
+
 
 def _first_sentence(text: str) -> str:
     """Return the first sentence from text, normalized to one line."""
@@ -248,59 +264,10 @@ def _derive_root_cause_sentence(ctx: ReportContext) -> str:
     return ""
 
 
-def _compress_for_title(sentence: str) -> str:
-    """Extract a short, punchy title phrase from a root cause sentence."""
-    s = re.sub(
-        r"^(?:most likely|likely|probably|possibly|it appears(?: that)?|this suggests(?: that)?)\s+",
-        "",
-        sentence,
-        flags=re.IGNORECASE,
-    ).strip()
-    for connector in (" because ", " due to ", ", but ", " where ", ", causing ", ": "):
-        idx = s.lower().find(connector)
-        if idx != -1:
-            candidate = s[idx + len(connector):].strip()
-            if len(candidate) >= 10:
-                s = candidate
-                break
-    for stop in (",", ";"):
-        idx = s.find(stop)
-        if idx > 15:
-            s = s[:idx].strip()
-            break
-    if s:
-        s = s[0].upper() + s[1:]
-    if len(s) > 150:
-        s = s[:147].rsplit(" ", 1)[0].rstrip(" ,;") + "..."
-    return s
-
-
-def _build_report_title(
-    pipeline_name: str, alert_name: str | None, root_cause_sentence: str = ""
-) -> str:
-    """Build a descriptive report title.
-
-    Priority:
-    1. Compressed root cause phrase (most specific — the actual error)
-    2. Alert name (stripped of brackets/pipeline prefix)
-    3. "{pipeline_name} incident" (generic fallback)
-    """
-    if root_cause_sentence:
-        compressed = _compress_for_title(root_cause_sentence)
-        if compressed:
-            return f"{pipeline_name}: {compressed}"
-
-    if alert_name and alert_name.lower() not in ("unknown", "unknown alert", ""):
-        clean = re.sub(r"^\[.*?\]\s*", "", alert_name).strip()
-        if clean:
-            return f"{pipeline_name}: {clean}"
-
-    return f"{pipeline_name} incident"
-
-
 # ---------------------------------------------------------------------------
 # Text renderer (Slack mrkdwn fallback + terminal + ingest report_md)
 # ---------------------------------------------------------------------------
+
 
 def format_slack_message(ctx: ReportContext) -> str:
     """Format a plain-text Slack message for the RCA report.
@@ -326,10 +293,21 @@ def format_slack_message(ctx: ReportContext) -> str:
         # Use a larger markdown heading so that "Findings" stands out as a section.
         conclusion_block += "\n## Findings\n" + "\n".join(validated_lines) + "\n"
     if non_validated_lines:
-        conclusion_block += "\n*Non-Validated Claims (Inferred):*\n" + "\n".join(non_validated_lines) + "\n"
+        conclusion_block += (
+            "\n*Non-Validated Claims (Inferred):*\n" + "\n".join(non_validated_lines) + "\n"
+        )
+
+    provenance_lines = _format_provenance_lines(ctx)
+    provenance_block = ""
+    if provenance_lines:
+        provenance_block = (
+            "\n*Provenance:*\n" + _sanitize_for_slack("\n".join(provenance_lines)) + "\n"
+        )
 
     trace_steps = build_investigation_trace(ctx)
-    trace_block = "\n## Investigation Trace\n" + "\n".join(trace_steps) + "\n" if trace_steps else ""
+    trace_block = (
+        "\n## Investigation Trace\n" + "\n".join(trace_steps) + "\n" if trace_steps else ""
+    )
 
     cited_section = _sanitize_for_slack(format_cited_evidence_section(ctx))
     cloudwatch_link = render_cloudwatch_link(ctx)
@@ -343,7 +321,7 @@ def format_slack_message(ctx: ReportContext) -> str:
     # Do not prefix with a separate [RCA] title line; the consumer can render
     # section headings (Root Cause text, Findings, Investigation Trace) with
     # larger fonts as needed.
-    return f"""{conclusion_block}{trace_block}
+    return f"""{conclusion_block}{provenance_block}{trace_block}
 {cited_section}
 {cloudwatch_link}{meta_block}
 """
@@ -352,6 +330,7 @@ def format_slack_message(ctx: ReportContext) -> str:
 # ---------------------------------------------------------------------------
 # Block Kit renderer (Slack interactive cards)
 # ---------------------------------------------------------------------------
+
 
 def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     """Build Slack Block Kit blocks for the RCA report.
@@ -382,37 +361,56 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
     # ── Failed Pods ──
     datadog_site = ctx.get("datadog_site", "datadoghq.com")
     all_pods = get_failed_pods(ctx)
-    pod_lines = [line for p in all_pods[:5] if (line := format_pod_line(p, datadog_site, bullet="\u2022 "))]
+    pod_lines = [
+        line for p in all_pods[:5] if (line := format_pod_line(p, datadog_site, bullet="\u2022 "))
+    ]
     if len(all_pods) > 5:
         pod_lines.append(f"• ... and {len(all_pods) - 5} more pods")
     if pod_lines:
         blocks.append({"type": "divider"})
-        blocks.append({
-            "type": "header",
-            "text": {"type": "plain_text", "text": "Failed Pods"},
-        })
+        blocks.append(
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "Failed Pods"},
+            }
+        )
         _add(_mrkdwn_section("\n".join(pod_lines)))
 
     # ── Validated Claims (Findings) and Non-Validated Claims ──
     validated_lines, non_validated_lines = _render_claim_lines(ctx)
     if validated_lines:
         blocks.append({"type": "divider"})
-        blocks.append({
-            "type": "header",
-            "text": {"type": "plain_text", "text": "Findings"},
-        })
+        blocks.append(
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "Findings"},
+            }
+        )
         _add(_mrkdwn_section("\n".join(validated_lines)))
     if non_validated_lines:
         _add(_mrkdwn_section("*Inferred (not yet validated)*\n" + "\n".join(non_validated_lines)))
+
+    provenance_lines = _format_provenance_lines(ctx)
+    if provenance_lines:
+        blocks.append({"type": "divider"})
+        blocks.append(
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "Provenance"},
+            }
+        )
+        _add(_mrkdwn_section("\n".join(provenance_lines)))
 
     # ── Investigation Trace ──
     trace_steps = build_investigation_trace(ctx)
     if trace_steps:
         blocks.append({"type": "divider"})
-        blocks.append({
-            "type": "header",
-            "text": {"type": "plain_text", "text": "Investigation Trace"},
-        })
+        blocks.append(
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "Investigation Trace"},
+            }
+        )
         _add(_mrkdwn_section("\n".join(trace_steps)))
 
     # ── Cited Evidence ──
@@ -434,10 +432,12 @@ def build_slack_blocks(ctx: ReportContext) -> list[dict]:
         meta_parts.append(f"Alert: {alert_id}")
     if meta_parts:
         blocks.append({"type": "divider"})
-        blocks.append({
-            "type": "context",
-            "elements": [{"type": "mrkdwn", "text": " | ".join(meta_parts)}],
-        })
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": " | ".join(meta_parts)}],
+            }
+        )
 
     # Slack hard-limits messages to 50 blocks — truncate from the middle to keep
     # the header (first block) and meta/actions (last 2 blocks) intact.

@@ -1,0 +1,151 @@
+---
+title: "MongoDB"
+description: "Connect MongoDB so OpenSRE can diagnose database issues during investigations"
+---
+
+OpenSRE uses MongoDB diagnostics to investigate database-related alerts — checking server health, finding slow queries, monitoring replica sets, and analyzing collection statistics.
+
+## Prerequisites
+
+- MongoDB 4.0+ (4.4+ recommended)
+- Network access from the OpenSRE environment to your MongoDB instance
+- Valid credentials (if authentication is enabled)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **MongoDB** when prompted and provide your connection string and target database.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+MONGODB_CONNECTION_STRING=mongodb+srv://user:pass@cluster.example.net
+MONGODB_DATABASE=production
+MONGODB_AUTH_SOURCE=admin
+MONGODB_TLS=true
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MONGODB_CONNECTION_STRING` | — | **Required.** MongoDB connection URI |
+| `MONGODB_DATABASE` | _(empty)_ | Target database for profiler and collection stats |
+| `MONGODB_AUTH_SOURCE` | `admin` | Authentication database |
+| `MONGODB_TLS` | `true` | Use TLS for the connection |
+
+### Option 3: Persistent store
+
+Integrations are automatically persisted to `~/.tracer/integrations.json`:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "mongodb-prod",
+      "service": "mongodb",
+      "status": "active",
+      "credentials": {
+        "connection_string": "mongodb+srv://user:pass@cluster.example.net",
+        "database": "production",
+        "auth_source": "admin",
+        "tls": true
+      }
+    }
+  ]
+}
+```
+
+## Connection string formats
+
+```bash
+# Localhost (no auth)
+mongodb://localhost:27017
+
+# Username/password
+mongodb://user:password@host:27017/database?authSource=admin
+
+# Replica set
+mongodb://host1:27017,host2:27017,host3:27017/?replicaSet=rs0
+
+# Atlas (SRV)
+mongodb+srv://user:password@cluster.example.net
+```
+
+<Tip>
+URL-encode special characters in credentials: `@` → `%40`, `:` → `%3A`, `#` → `%23`
+</Tip>
+
+## TLS configuration
+
+TLS is enabled by default. For custom certificates:
+
+```bash
+MONGODB_CA_CERT=/path/to/ca.pem      # Custom CA certificate
+MONGODB_TLS_INSECURE=true             # Skip validation (dev only)
+```
+
+## Investigation tools
+
+When OpenSRE investigates a MongoDB-related alert, five diagnostic tools are available:
+
+### Server status
+
+Retrieves version, uptime, connection counts, operation counters, and memory usage. Useful for spotting high connection counts or unusual memory pressure.
+
+### Current operations
+
+Lists operations running longer than a configurable threshold (default 1 s). Surfaces long-running queries and lock contention.
+
+### Replica set status
+
+Reports member states, health, heartbeat intervals, and optime lag. Identifies unreachable members or sync delays.
+
+### Profiler
+
+Reads the `system.profile` collection to surface slow queries, collection scans, and index usage. Requires `MONGODB_DATABASE` to be configured and profiling enabled on the target database.
+
+<Info>
+Enable profiling with `db.setProfilingLevel(1)` (slow queries only) or `db.setProfilingLevel(2)` (all queries).
+</Info>
+
+### Collection statistics
+
+Returns document count, storage size, index count, and average object size for a given collection.
+
+## Verify
+
+```bash
+opensre integrations verify --service mongodb
+```
+
+Expected output:
+
+```
+Service: mongodb
+Status: passed
+Detail: Connected to MongoDB 6.0.5; target database: production
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection refused** | Verify the host/port, check firewalls, and ensure MongoDB is running. For Atlas, whitelist the OpenSRE IP. |
+| **Authentication failed** | Confirm username/password and `authSource`. Test with `mongosh` first. |
+| **SSL: CERTIFICATE_VERIFY_FAILED** | Provide a CA cert via `MONGODB_CA_CERT` or set `MONGODB_TLS_INSECURE=true` for dev. |
+| **Profiling is disabled** | Run `db.setProfilingLevel(1)` on the target database. |
+| **Server is not part of a replica set** | Expected for standalone instances — replica set tools return empty results, other tools still work. |
+
+## Security best practices
+
+- Use a **read-only** MongoDB user for monitoring — avoid admin credentials.
+- Always enable **TLS** in production.
+- Store connection strings in `.env`, never in code.
+- Rotate credentials periodically.

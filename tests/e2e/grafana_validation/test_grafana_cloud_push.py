@@ -3,7 +3,7 @@ import os
 import pytest
 
 pytestmark = pytest.mark.skip(reason="outbound telemetry has been removed from this project")
-from app.outbound_telemetry.config import (
+from app.utils.config import (
     configure_grafana_cloud,
     get_otlp_auth_header,
     get_otlp_endpoint,

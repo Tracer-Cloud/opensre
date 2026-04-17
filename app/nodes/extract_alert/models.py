@@ -18,7 +18,10 @@ class AlertDetails(BaseModel):
     severity: str = Field(description="Severity of the alert (e.g. critical, high, warning, info)")
     alert_source: str | None = Field(
         default=None,
-        description="Platform that fired the alert: 'grafana', 'datadog', 'cloudwatch', or None if unknown",
+        description=(
+            "Platform that fired the alert: 'grafana', 'datadog', 'honeycomb', "
+            "'coralogix', 'cloudwatch', or None if unknown"
+        ),
     )
     environment: str | None = Field(default=None, description="Environment, if present")
     summary: str | None = Field(default=None, description="Short alert summary, if present")

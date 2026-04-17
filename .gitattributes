@@ -1,5 +1,6 @@
 # Mark vendored third-party code so GitHub's analysis tools skip it.
 # This suppresses false-positive code scanning alerts in code we don't own.
+*.sh                                                        text eol=lf
 tests/test_case_upstream_lambda/pipeline_code/**          linguist-vendored=true
 tests/test_case_upstream_apache_flink_ecs/pipeline_code/** linguist-vendored=true
 tests/test_case_upstream_prefect_ecs_fargate/pipeline_code/** linguist-vendored=true

@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 
 PACKAGE_NAME = "opensre"
-DEFAULT_VERSION = "0.1.3"
+DEFAULT_VERSION = "2026.4.7"
 
 
 def get_version() -> str:

@@ -1,0 +1,78 @@
+---
+title: "OpenClaw"
+description: "Connect OpenSRE to OpenClaw with the minimum setup needed to run investigations from your editor"
+---
+
+OpenClaw can call OpenSRE's `run_rca` MCP tool so you can investigate alerts from your editor.
+
+## Setup
+
+### 1. Start OpenSRE MCP
+
+```bash
+opensre-mcp
+```
+
+### 2. Add OpenSRE to OpenClaw
+
+In OpenClaw, add this MCP server:
+
+```json
+{
+    "mcpServers": {
+        "opensre": {
+            "command": "opensre-mcp",
+            "args": []
+        }
+    }
+}
+```
+
+If `opensre-mcp` is not on your `PATH`, use the full path to the binary in your virtualenv.
+
+### 3. Configure one observability integration
+
+Run the wizard once and connect Datadog, Grafana, Sentry, or another backend:
+
+```bash
+opensre integrations setup
+```
+
+### 4. Run a smoke test
+
+Run the fixture directly with the investigate command:
+
+```bash
+opensre investigate -i tests/fixtures/openclaw_test_alert.json
+```
+
+Once that works, you can call OpenSRE from OpenClaw through the `run_rca` MCP tool.
+
+## Optional: let OpenSRE call OpenClaw
+
+If you want the OpenSRE investigation pipeline to query OpenClaw during RCA runs, use the OpenClaw stdio bridge:
+
+```bash
+export OPENCLAW_MCP_MODE=stdio
+export OPENCLAW_MCP_COMMAND=openclaw
+export OPENCLAW_MCP_ARGS="mcp serve"
+```
+
+Keep the OpenClaw Gateway running while you investigate:
+
+```bash
+openclaw gateway run
+```
+
+Verify it with:
+
+```bash
+opensre integrations verify openclaw
+```
+
+## Troubleshooting
+
+- `opensre-mcp` not found: use the full path to the binary inside your virtualenv.
+- `run_rca` says no integrations configured: run `opensre integrations setup` and add Datadog, Grafana, or Sentry.
+- Verify fails against `http://127.0.0.1:18789/`: that URL is the OpenClaw Control UI/Gateway, not the MCP bridge. Use `openclaw mcp serve`.
+- `search_openclaw_conversations` fails with `Connection closed` or `ECONNREFUSED`: the OpenClaw Gateway is not running. Check `openclaw gateway status`, then run `openclaw gateway run`.

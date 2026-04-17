@@ -1,0 +1,90 @@
+---
+title: "Prefect"
+description: "Connect Prefect so OpenSRE can inspect flow runs, workers, and deployments during investigations"
+---
+
+OpenSRE queries Prefect to retrieve recent flow runs, their logs, worker health, and deployment status — helping diagnose pipeline failures and identify stalled or crashed orchestration jobs.
+
+## Prerequisites
+
+- Prefect Cloud account or self-hosted Prefect Server
+- API key (Prefect Cloud) or accessible API URL (self-hosted)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **Prefect** when prompted and provide your API URL and API key.
+
+### Option 2: Persistent store
+
+Add to `~/.tracer/integrations.json`:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "prefect-prod",
+      "service": "prefect",
+      "status": "active",
+      "credentials": {
+        "api_url": "https://api.prefect.cloud/api",
+        "api_key": "your-prefect-api-key",
+        "account_id": "your-account-id",
+        "workspace_id": "your-workspace-id"
+      }
+    }
+  ]
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `api_url` | `https://api.prefect.cloud/api` | Prefect API URL (override for self-hosted) |
+| `api_key` | — | Prefect Cloud API key |
+| `account_id` | — | Prefect Cloud account ID |
+| `workspace_id` | — | Prefect Cloud workspace ID |
+
+## Prefect Cloud setup
+
+1. In Prefect Cloud, go to your **profile icon** → **API Keys**
+2. Click **Create API Key**
+3. Copy the key, account ID, and workspace ID from the URL: `https://app.prefect.cloud/account/<account-id>/workspace/<workspace-id>/`
+
+## Self-hosted Prefect Server
+
+For self-hosted Prefect Server, set `api_url` to your server's API endpoint (no API key required if unauthenticated):
+
+```json
+{
+  "api_url": "http://prefect-server:4200/api",
+  "api_key": ""
+}
+```
+
+## Investigation tools
+
+When OpenSRE investigates a Prefect-related alert, three diagnostic tools are available:
+
+- **Flow runs** — lists recent flow runs filtered by state (FAILED, CRASHED, etc.)
+- **Flow run logs** — retrieves log output for a specific flow run
+- **Workers** — checks worker health and heartbeat status across work pools
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Check your API key and account/workspace IDs |
+| **Connection refused** | Verify `api_url` is reachable — check firewall rules for self-hosted |
+| **No flow runs returned** | Flow runs may have been purged — check retention settings |
+
+## Security best practices
+
+- Use a **service account API key** rather than a personal key.
+- For self-hosted, restrict network access to the Prefect API to trusted IPs.
+- Store credentials in `~/.tracer/integrations.json`, not in source code.

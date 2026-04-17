@@ -1,0 +1,224 @@
+---
+title: 'Data model'
+sidebarTitle: 'Data model'
+description: 'How OpenSRE structures execution data'
+---
+
+OpenSRE organizes execution data into a small set of core entities that reflect how real workloads run: runs, tasks, tools, containers, and hosts.
+
+This data model allows OpenSRE to map low-level execution signals to the way teams reason about pipelines and infrastructure, without relying on workflow metadata, logs, or application instrumentation.
+
+This page describes those entities and how they relate to each other.
+
+## Overview
+
+At a high level:
+
+- OpenSRE/collect observes execution events at the operating system level
+- These events are correlated into structured entities
+- Higher-level products (OpenSRE/tune and OpenSRE/sweep) operate on this shared model
+
+<CardGroup cols={3}>
+  <Card title="Workflow-agnostic" icon="puzzle-piece">
+    Works with any orchestrator or scheduler
+  </Card>
+  <Card title="Stable" icon="shield-check">
+    Consistent across environments
+  </Card>
+  <Card title="Expressive" icon="diagram-project">
+    Represents complex, multi-process execution
+  </Card>
+</CardGroup>
+
+## Core entities
+
+### Runs
+
+A run represents a single execution of a pipeline or workload.
+
+A run typically corresponds to:
+
+- A workflow execution (for example, a Nextflow or Snakemake run)
+- A batch job or experiment
+- A repeated invocation of the same pipeline configuration
+
+Runs provide the top-level boundary for grouping execution data and comparing behavior across executions.
+
+### Tasks
+
+A task represents a logical unit of work within a run.
+
+Tasks often correspond to:
+
+- Workflow steps or processes
+- Batch jobs or array jobs
+- Scheduled units of execution
+
+A task may:
+
+- Run on one or multiple hosts
+- Execute sequentially or in parallel
+- Spawn multiple tools and subprocesses
+
+Tasks are the primary unit used for performance comparison and tuning.
+
+### Tools
+
+A tool represents an executable program invoked during a task.
+
+Examples include:
+
+- Native binaries (for example, bwa, samtools)
+- Interpreters and scripts (python, bash)
+- JVM-based tools
+- Short-lived helper binaries and child processes
+
+OpenSRE identifies tools based on observed process execution, not logs or configuration. Even tools that produce no logs are captured as first-class entities.
+
+### Containers
+
+A container represents an execution context defined by container runtimes or Linux namespaces.
+
+Containers:
+
+- Group related processes
+- Provide isolation boundaries
+- May contain multiple tools and subprocesses
+
+OpenSRE does not require containers to be present, but when they are used, container context is preserved and reflected in the data model.
+
+### Hosts
+
+A host represents a physical or virtual machine where execution occurs.
+
+Hosts include:
+
+- Cloud instances (for example, EC2)
+- On-premises nodes
+- Batch or HPC worker nodes
+
+Host-level data provides the infrastructure context needed to understand scheduling behavior, resource contention, and idle time.
+
+## Relationships between entities
+
+The entities form a hierarchy:
+
+- A run contains one or more tasks
+- A task invokes one or more tools
+- Tools execute within a container or directly on a host
+- All execution ultimately occurs on a host
+
+This structure allows OpenSRE to:
+
+- Attribute resource usage accurately
+- Compare behavior across runs and tasks
+- Correlate infrastructure behavior with pipeline execution
+
+## How correlation works
+
+OpenSRE correlates execution events using identifiers exposed by the operating system, including:
+
+- Process IDs and parent–child relationships
+- Cgroups and namespaces
+- Container runtime metadata (when available)
+
+This correlation happens automatically and does not require:
+
+- Workflow engine integration
+- Application instrumentation
+- Explicit tagging
+
+The result is a consistent execution model across heterogeneous environments.
+
+## What the data model enables
+
+This data model is the foundation for OpenSRE's higher-level capabilities.
+
+It enables:
+
+- Execution timelines organized by run, task, and tool
+- Resource usage attribution at meaningful boundaries
+- Detection of idle execution and contention
+- Cost attribution aligned with real execution behavior
+- Cross-run comparison and regression detection
+
+OpenSRE/tune and OpenSRE/sweep operate on this shared structure rather than raw telemetry.
+
+## What the data model does not represent
+
+<Warning>
+**The data model intentionally excludes:**
+- Application payloads or scientific input/output data
+- Source code, function calls, or language-level execution traces
+- Domain-specific semantics or correctness
+</Warning>
+
+OpenSRE models how workloads execute, not what they compute.
+
+## Orchestrator terminology mapping (reference)
+
+OpenSRE's data model is framework- and language-agnostic. The table below shows how OpenSRE entities typically align with common orchestrator concepts. Exact mappings may vary by workflow engine and configuration.
+
+<CardGroup cols={5}>
+  <Card title="Run" icon="play">
+    Workflow run, DAG run, execution
+  </Card>
+  <Card title="Task" icon="list-check">
+    Process, step, task, op, node
+  </Card>
+  <Card title="Tool" icon="wrench">
+    Binary, script, container entrypoint
+  </Card>
+  <Card title="Container" icon="cube">
+    Pod, container, namespace
+  </Card>
+  <Card title="Host" icon="server">
+    Worker node, instance, executor host
+  </Card>
+</CardGroup>
+
+| OpenSRE concept | Common equivalents |
+| --- | --- |
+| Run | Workflow run, DAG run, execution |
+| Task | Process, step, task, op, node |
+| Tool | Binary, script, container entrypoint |
+| Container | Pod, container, namespace |
+| Host | Worker node, instance, executor host |
+
+<Tip>This mapping is provided for orientation only. OpenSRE does not depend on orchestrator metadata to build its execution model.</Tip>
+
+## When to read this page
+
+This page is most useful if you:
+
+- Want to understand how OpenSRE structures execution data
+- Are integrating OpenSRE data into external systems
+- Need clarity on attribution boundaries and terminology
+- Are evaluating OpenSRE for complex or regulated environments
+
+<CardGroup cols={3}>
+  <Card href="/technology/tracer-collect">
+    <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
+    </span>
+    <br />
+    Execution capture details
+  </Card>
+  <Card href="/technology/tracer-tune">
+    <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
+    </span>
+    <br />
+    Optimization and analysis
+  </Card>
+  <Card href="/technology/tracer-sweep">
+    <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #4436BD, #5646E2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
+    </span>
+    <br />
+    Cloud waste discovery
+  </Card>
+</CardGroup>
+
+<div style={{ height: '50vh' }}></div>
+

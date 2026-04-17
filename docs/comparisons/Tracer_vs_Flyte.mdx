@@ -1,0 +1,132 @@
+---
+title: 'How to use OpenSRE with Flyte'
+sidebarTitle: 'Flyte'
+description: 'Execution insight beneath tasks and workflows'
+---
+
+Flyte orchestrates data and ML workflows by defining tasks, workflows, and launch plans. It determines how tasks are scheduled, retried, and executed across compute environments, but it does not observe how code behaves once a task is running inside a container or node.
+
+OpenSRE complements Flyte by exposing execution behavior: CPU, memory, disk, and network usage, during task execution, without modifying Flyte task definitions, container images, or execution semantics.
+
+<Note>
+For a conceptual overview, see [How OpenSRE fits in your stack](/comparisons/overview).
+</Note>
+
+## What Flyte does well
+
+Flyte provides strong guarantees around workflow structure and execution, including:
+
+- Task and workflow definitions with typed inputs and outputs
+- Deterministic execution and reproducibility
+- Scheduling, retries, and failure handling
+- Execution metadata, logs, and lineage
+- Environment isolation via containers
+
+These capabilities make Flyte particularly effective for ML pipelines and data workflows where correctness, versioning, and reproducibility matter.
+
+## What Flyte does not see at runtime
+
+Flyte tracks task state and execution outcomes, but it does not observe what happens inside the running task container. It does not show:
+
+- CPU utilization during task execution
+- Memory pressure, spikes, or over-allocation
+- Disk and network I/O contention
+- Subprocesses launched inside tasks (e.g. Python tools, CLIs, native binaries)
+- Idle time while tasks wait on data, storage, or external systems
+
+This execution behavior occurs below the Flyte control plane and is not visible through task metadata or logs alone.
+
+## Why this gap matters in practice
+
+Flyte tasks often wrap complex workloads: model training, feature generation, data transformation, or external tools invoked from Python. Resource requests are typically set conservatively to avoid retries or failures.
+
+Without execution-level visibility, teams struggle to answer:
+
+- Why a task runtime increased without code changes
+- Whether requested CPU or memory is actually used
+- Whether performance is limited by compute, I/O, or memory
+- Why infrastructure cost grows while workflows appear stable
+
+As a result, workflows remain correct and reproducible, but inefficient.
+
+## What OpenSRE adds
+
+OpenSRE observes execution directly from the host and container runtime and adds:
+
+- Observed CPU, memory, disk, and network usage per task execution
+- Visibility into subprocesses and nested tools invoked within tasks
+- Detection of stalls, idle time, and resource contention
+- Attribution of resource usage to workflows, tasks, and execution attempts
+
+These insights are derived from observed runtime behavior, not from task configuration or declared resource requests.
+
+<iframe
+  src="https://vakisr.github.io/tracer-radar-chart/quadrant-chart-flyte.html"
+  width="100%"
+  height="1450"
+  style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
+  title="Flyte + OpenSRE Pipeline Intelligence"
+/>
+
+## Example: diagnosing a slow Flyte task
+
+A Flyte task responsible for feature generation begins taking significantly longer, despite no changes to task code or inputs. Flyte logs show successful execution with no errors.
+
+OpenSRE reveals:
+
+- Low average CPU utilization
+- Sustained disk I/O wait
+- Repeated short-lived subprocesses reading from shared storage
+
+This indicates an I/O-bound workload rather than insufficient compute. Increasing CPU requests would not reduce runtime. OpenSRE makes this visible by observing execution behavior directly, rather than inferring causes from task duration.
+
+## Using execution insight to tune Flyte workflows
+
+With execution-level data, teams can make targeted changes such as:
+
+- Reducing CPU or memory requests for underutilized tasks
+- Choosing instance types better suited for I/O-heavy workloads
+- Separating compute-heavy and data-access-heavy tasks
+- Identifying tasks that block on external systems or storage
+
+These adjustments can reduce cost, improve predictability, or both.
+
+## Observability comparison
+
+<iframe
+  src="https://vakisr.github.io/tracer-radar-chart/radar-chart-flyte.html"
+  width="100%"
+  height="700px"
+  style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
+  title="Flyte vs OpenSRE+Flyte Radar Chart"
+/>
+
+This comparison highlights the difference between Flyte's task-level orchestration visibility and OpenSRE's execution-level observation.
+
+## What OpenSRE does not replace
+
+OpenSRE is not an orchestration framework.
+
+- It does not replace Flyte
+- It does not define tasks, workflows, or launch plans
+- It does not change execution logic, retries, or scheduling
+
+Flyte remains responsible for orchestration and correctness. OpenSRE makes execution behavior visible.
+
+## When to use OpenSRE with Flyte
+
+OpenSRE is most useful when teams need to:
+
+- Explain slow or inconsistent task runtimes
+- Identify idle or over-provisioned resources
+- Diagnose performance issues beyond logs and task state
+- Attribute resource usage and cost to specific workflows or tasks
+
+OpenSRE operates independently of Flyte and supports workflows written in any language or toolchain.
+
+## Summary
+
+Flyte defines and orchestrates tasks and workflows with strong guarantees around correctness and reproducibility. OpenSRE adds execution-level visibility that shows how those tasks actually behave at runtime. Together, they provide both control and insight, without changes to existing Flyte workflows.
+
+<div style={{ height: '50vh' }}></div>
+

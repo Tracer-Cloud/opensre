@@ -1,0 +1,108 @@
+---
+title: "Bitbucket"
+description: "Connect Bitbucket so OpenSRE can correlate recent commits and code changes with incidents"
+---
+
+OpenSRE queries Bitbucket to retrieve recent commits, file contents, and code search results — helping trace which change in a Bitbucket-hosted repository triggered an incident.
+
+## Prerequisites
+
+- Bitbucket Cloud account
+- App password with repository read access
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **Bitbucket** when prompted and provide your workspace, username, and app password.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+BITBUCKET_WORKSPACE=your-workspace-slug
+BITBUCKET_USERNAME=your-username
+BITBUCKET_APP_PASSWORD=your-app-password
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `BITBUCKET_WORKSPACE` | — | **Required.** Bitbucket workspace slug |
+| `BITBUCKET_USERNAME` | — | **Required.** Bitbucket username |
+| `BITBUCKET_APP_PASSWORD` | — | **Required.** Bitbucket app password |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "bitbucket-prod",
+      "service": "bitbucket",
+      "status": "active",
+      "credentials": {
+        "workspace": "your-workspace-slug",
+        "username": "your-username",
+        "app_password": "your-app-password"
+      }
+    }
+  ]
+}
+```
+
+## Creating an app password
+
+1. In Bitbucket, go to **Personal settings** → **App passwords**
+2. Click **Create app password**
+3. Give it a label (e.g., `opensre`)
+4. Enable the following permissions: **Repositories: Read**
+5. Copy the generated password
+
+<Info>
+The workspace slug is the identifier in your Bitbucket URL: `https://bitbucket.org/<workspace>/`
+</Info>
+
+## Investigation tools
+
+When OpenSRE investigates a Bitbucket-related alert, three tools are available:
+
+- **Commits** — retrieves recent commits for a repository, optionally filtered by file path
+- **File contents** — fetches the contents of a file at a specific revision
+- **Code search** — searches code across the workspace or a specific repository
+
+All operations are read-only.
+
+## Verify
+
+```bash
+opensre integrations verify --service bitbucket
+```
+
+Expected output:
+
+```
+Service: bitbucket
+Status: passed
+Detail: Authenticated as Your Name; workspace: your-workspace
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Check username and app password combination |
+| **Workspace not found** | Verify the workspace slug — it's case-sensitive |
+| **403 Forbidden** | Ensure the app password has **Repositories: Read** permission |
+| **Code search unavailable** | Code search requires a Bitbucket Cloud Standard or Premium plan |
+
+## Security best practices
+
+- Use an **app password** rather than your account password — app passwords can be revoked individually.
+- Scope permissions to **Repositories: Read** only.
+- Store credentials in `.env`, not in source code.

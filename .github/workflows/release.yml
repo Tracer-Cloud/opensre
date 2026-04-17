@@ -1,20 +1,53 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  schedule:
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional tag to release (e.g. v2026.4.5). Defaults to today's vYYYY.M.D (UTC)."
+        required: false
+        type: string
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.tag.outputs.tag_name }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag name
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
+            echo "tag_name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          year="$(date -u +%Y)"
+          month="$(date -u +%-m)"
+          day="$(date -u +%-d)"
+          echo "tag_name=v${year}.${month}.${day}" >> "$GITHUB_OUTPUT"
+
   verify:
     runs-on: ubuntu-latest
+    needs: prepare
 
     steps:
       - uses: actions/checkout@v5
@@ -36,9 +69,14 @@ jobs:
       - name: Type check
         run: make typecheck
 
+      - name: CLI smoke tests
+        run: make test-cli-smoke
+
   build-python-dist:
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [verify, prepare]
+    env:
+      TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
 
     steps:
       - uses: actions/checkout@v5
@@ -49,6 +87,10 @@ jobs:
           python-version: "3.13"
           cache: "pip"
 
+      - name: Sync release version
+        shell: bash
+        run: python packaging/sync_release_version.py --tag "$TAG_NAME"
+
       - name: Build Python distributions
         run: |
           python -m pip install --upgrade pip
@@ -56,6 +98,14 @@ jobs:
           pip install build twine
           python -m build
           twine check dist/*
+
+      - name: Verify Python distribution version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${TAG_NAME#v}"
+          test -f "dist/opensre-${VERSION}.tar.gz"
+          test -f "dist/opensre-${VERSION}-py3-none-any.whl"
 
       - name: Upload Python distributions
         uses: actions/upload-artifact@v4
@@ -65,7 +115,7 @@ jobs:
           if-no-files-found: error
 
   build-binaries:
-    needs: verify
+    needs: [verify, prepare]
     strategy:
       fail-fast: false
       matrix:
@@ -90,7 +140,13 @@ jobs:
             target: windows-x64
             binary_name: opensre.exe
             archive_ext: zip
+          # windows-arm64 is currently excluded from the default release matrix:
+          # cryptography does not publish win_arm64 wheels, so dependency install
+          # falls back to a source build that requires an OpenSSL toolchain on the
+          # GitHub-hosted runner.
     runs-on: ${{ matrix.runner }}
+    env:
+      TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
 
     steps:
       - uses: actions/checkout@v5
@@ -101,20 +157,55 @@ jobs:
           python-version: "3.13"
           cache: "pip"
 
+      - name: Sync release version
+        shell: bash
+        run: python packaging/sync_release_version.py --tag "$TAG_NAME"
+
       - name: Install binary build dependencies
+        shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install .
           pip install pyinstaller
 
       - name: Build binary
         run: pyinstaller packaging/opensre.spec --clean --noconfirm
 
+      - name: Smoke test binary
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          VERSION="${TAG_NAME#v}"
+          VERSION_OUTPUT="$(./dist/${{ matrix.binary_name }} --version 2>&1)"
+          printf '%s\n' "$VERSION_OUTPUT"
+          case "$VERSION_OUTPUT" in
+            *"$VERSION"*) ;;
+            *)
+              printf 'Binary version mismatch: expected %s but saw %s\n' "$VERSION" "$VERSION_OUTPUT" >&2
+              exit 1
+              ;;
+          esac
+          ./dist/${{ matrix.binary_name }} -h >/dev/null
+
+      - name: Smoke test binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $expectedVersion = $env:TAG_NAME.TrimStart("v")
+          $versionOutput = & ".\dist\${{ matrix.binary_name }}" --version 2>&1 | Out-String
+          $versionText = $versionOutput.Trim()
+          Write-Host $versionText
+          if ($versionText -notmatch [regex]::Escape($expectedVersion)) {
+            throw "Binary version mismatch. Expected '$expectedVersion' but saw '$versionText'."
+          }
+          & ".\dist\${{ matrix.binary_name }}" -h | Out-Null
+
       - name: Package binary archive
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${TAG_NAME#v}"
           ASSET_BASENAME="opensre_${VERSION}_${{ matrix.target }}"
           tar -C dist -czf "${ASSET_BASENAME}.tar.gz" "${{ matrix.binary_name }}"
           shasum -a 256 "${ASSET_BASENAME}.tar.gz" > "${ASSET_BASENAME}.tar.gz.sha256"
@@ -123,7 +214,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $version = $env:TAG_NAME.TrimStart("v")
           $assetBaseName = "opensre_${version}_${{ matrix.target }}"
           Compress-Archive -Path "dist\${{ matrix.binary_name }}" -DestinationPath "${assetBaseName}.zip"
           $hash = (Get-FileHash -Algorithm SHA256 "${assetBaseName}.zip").Hash.ToLowerInvariant()
@@ -141,6 +232,7 @@ jobs:
   publish-release:
     runs-on: ubuntu-latest
     needs:
+      - prepare
       - build-python-dist
       - build-binaries
 
@@ -148,6 +240,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
 
       - name: Download release artifacts
         uses: actions/download-artifact@v4
@@ -161,11 +254,42 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          TAG_NAME="${GITHUB_REF_NAME}"
-          GENERATED_NOTES="$(gh api "repos/${{ github.repository }}/releases/generate-notes" \
-            -f tag_name="$TAG_NAME" \
-            -f target_commitish="${GITHUB_SHA}" \
-            --jq .body)"
+          set -euo pipefail
+
+          TAG_NAME="${{ needs.prepare.outputs.tag_name }}"
+          default_branch="${{ github.event.repository.default_branch }}"
+
+          git fetch origin "$default_branch" --tags --force
+          target_sha="$(git rev-parse "origin/$default_branch")"
+
+          # Generate changelog including commit authors (contributors).
+          previous_tag="$(
+            git tag --list 'v[0-9][0-9][0-9][0-9].[0-9]*.[0-9]*' --sort=-v:refname \
+              | grep -v -x "$TAG_NAME" \
+              | head -n 1 \
+              || true
+          )"
+
+          range_spec="$target_sha"
+          if [ -n "$previous_tag" ]; then
+            range_spec="${previous_tag}..${target_sha}"
+          fi
+
+          {
+            echo "## Changelog"
+            echo
+            if [ -n "$previous_tag" ]; then
+              echo "_Changes since ${previous_tag}_"
+            else
+              echo "_Changes up to ${TAG_NAME}_"
+            fi
+            echo
+            git log "$range_spec" --no-merges --pretty='- %s (%h) — %an'
+            echo
+          } > GENERATED_CHANGELOG.md
+
+          GENERATED_NOTES="$(cat GENERATED_CHANGELOG.md)"
+
           {
             echo "## Install"
             echo
@@ -201,11 +325,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
+          set -euo pipefail
+
+          TAG_NAME="${{ needs.prepare.outputs.tag_name }}"
+          default_branch="${{ github.event.repository.default_branch }}"
+          git fetch origin "$default_branch" --tags --force
+          target_sha="$(git rev-parse "origin/$default_branch")"
+
+          if gh release view "$TAG_NAME" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists; nothing to do."
+            exit 0
+          fi
+
+          gh release create "$TAG_NAME" \
             release-assets/* \
             --repo "${{ github.repository }}" \
-            --verify-tag \
-            --title "${GITHUB_REF_NAME}" \
+            --target "$target_sha" \
+            --title "Latest" \
             --notes-file RELEASE_NOTES.md
 
       # - name: Update Homebrew formula

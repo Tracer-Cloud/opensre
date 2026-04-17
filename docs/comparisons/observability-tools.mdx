@@ -1,0 +1,102 @@
+---
+title: 'Observability and telemetry tools'
+sidebarTitle: 'Overview'
+description: 'How OpenSRE adds execution-aware context to metrics, logs, and dashboards'
+---
+
+Observability and telemetry tools collect, store, and visualize metrics, logs, and traces reported by systems and applications. They are effective at showing what was reported over time and at supporting alerting and dashboards across many environments.
+
+OpenSRE complements these tools by observing what actually executes at runtime. It captures execution behavior directly from the host and container runtime and organizes this data by pipeline, run, task, and tool.
+
+<Note>
+If you're new to OpenSRE or want a conceptual overview, see [How OpenSRE fits in your stack](/comparisons/overview).
+</Note>
+
+## What observability tools do well
+
+Observability and telemetry platforms are designed to:
+
+- Collect metrics emitted by applications and system exporters
+- Store and query time-series data
+- Visualize metrics, logs, and traces in dashboards
+- Trigger alerts based on thresholds or rules
+
+They are typically system-centric or service-centric, and rely on reported telemetry.
+
+## Where reported telemetry stops
+
+Because observability and telemetry tools depend on emitted signals and periodic collection, they often lack visibility into:
+
+- Short-lived processes and subprocesses that start and finish between scrapes
+- Execution behavior between metric intervals, including stalls and idle time
+- Resource contention inside containers or tasks, such as I/O blocking or memory pressure
+- How reported metrics map to specific pipeline runs, steps, or tools
+- How infrastructure cost relates to actual execution, rather than to hosts, services, or time windows
+
+As a result, cost is typically inferred from aggregated usage metrics (for example, instance-hours or container uptime), rather than attributed to the execution units that caused the spend.
+
+This makes it difficult to answer questions such as which pipeline step drove a cost increase, whether resources were idle during execution, or which tools are responsible for sustained spend. These questions require execution-aware attribution, not just reported metrics.
+
+As a result, conclusions about performance bottlenecks or cost drivers may be incomplete or misleading, particularly in pipelines with heterogeneous tools, nested execution, or variable workloads.
+
+These limitations are a direct consequence of relying on reported telemetry rather than observing execution itself. Execution-level observation captures what actually runs on the system:
+
+- When processes are scheduled
+- When they block on I/O
+- How memory is allocated and reclaimed
+- How long resources are consumed by each execution unit
+
+This removes the need to infer execution behavior from indirect signals and allows performance and cost to be attributed to observed runtime activity, rather than to proxies.
+
+## What OpenSRE adds
+
+OpenSRE observes execution directly from the operating system and runtime. When used alongside observability and telemetry tools, it adds:
+
+- Execution-level visibility for pipelines, runs, tasks, and tools
+- Observed CPU, memory, disk, and network behavior
+- Insight into stalls, idle execution, and contention
+- Resource usage and cost attribution aligned with actual work
+
+OpenSRE does not replace metrics backends or dashboards. It adds execution context that reported telemetry alone cannot provide.
+
+## How OpenSRE works with current observability and telemetry tools
+
+The pages below describe how OpenSRE works alongside common observability platforms used in scientific, data, HPC, and cloud environments.
+
+Select a tool to see how OpenSRE adds additional observability.
+
+<CardGroup cols={2}>
+  <Card title="OpenSRE and Datadog" icon="chart-line" href="/comparisons/Tracer_vs_Datadog">
+    **Pipeline-level insight within broad observability**
+
+    OpenSRE organizes execution behavior around pipelines instead of services or hosts.
+  </Card>
+  <Card title="OpenSRE and Grafana" icon="chart-line" href="/comparisons/Tracer_vs_Grafana">
+    **Execution-aware dashboards without manual wiring**
+
+    OpenSRE provides pipeline-aware views that reduce the need to infer execution behavior from generic dashboards.
+  </Card>
+  <Card title="OpenSRE and Prometheus" icon="chart-line" href="/comparisons/Tracer_vs_Prometheus">
+    **Observed execution versus scraped metrics**
+
+    OpenSRE captures runtime behavior that may not appear in scraped or aggregated metrics.
+  </Card>
+</CardGroup>
+
+## When OpenSRE is useful with observability tools
+
+OpenSRE is most useful alongside observability and telemetry platforms when teams need to:
+
+- Understand pipeline behavior beyond reported metrics
+- Diagnose performance issues involving short-lived tasks
+- Attribute resource usage and cost to specific workflows or tools
+- Reduce manual dashboard configuration and metric correlation
+
+OpenSRE focuses on execution behavior. Observability tools continue to provide metric storage, dashboards, and alerting across broader systems.
+
+## Where to go next
+
+- [How OpenSRE fits in your stack](/comparisons/overview) – conceptual overview
+- Individual integration pages – tool-specific execution gaps and observability comparisons
+
+<div style={{ height: '50vh' }}></div>
