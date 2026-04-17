@@ -8,10 +8,11 @@ over strings, lists, and dicts. The placeholder map is serialized to
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.masking.detectors import DetectedIdentifier, find_identifiers
-from app.masking.policy import MaskingPolicy
+from app.masking.policy import MaskingPolicy, compile_extra_patterns
 
 
 class MaskingContext:
@@ -32,6 +33,8 @@ class MaskingContext:
         }
         # running counter per kind so placeholder numbers stay stable within a run
         self._counters: dict[str, int] = self._derive_counters()
+        # Compile extra regex patterns once per context to avoid per-call work
+        self._compiled_extras: dict[str, re.Pattern[str]] = compile_extra_patterns(policy)
 
     @classmethod
     def from_state(cls, state: dict[str, Any]) -> MaskingContext:
@@ -52,14 +55,18 @@ class MaskingContext:
         return dict(self._placeholder_map)
 
     def _derive_counters(self) -> dict[str, int]:
-        counters: dict[str, int] = {}
+        # Accumulate the maximum index per kind across the whole map first,
+        # then add 1 once at the end. Doing "+1" inside the loop would
+        # over-count when the map is iterated out of ascending order
+        # (e.g. <NS_2>, <NS_0> would yield 4 instead of 3).
+        max_index: dict[str, int] = {}
         for placeholder in self._placeholder_map:
             kind, _, index = placeholder.strip("<>").rpartition("_")
             if not kind or not index.isdigit():
                 continue
             key = kind.lower()
-            counters[key] = max(counters.get(key, -1), int(index)) + 1
-        return counters
+            max_index[key] = max(max_index.get(key, -1), int(index))
+        return {key: value + 1 for key, value in max_index.items()}
 
     def _new_placeholder(self, kind: str) -> str:
         index = self._counters.get(kind, 0)
@@ -81,7 +88,7 @@ class MaskingContext:
         """
         if not self.policy.enabled or not text:
             return text
-        matches = find_identifiers(text, self.policy)
+        matches = find_identifiers(text, self.policy, self._compiled_extras)
         if not matches:
             return text
         return self._apply_replacements(text, matches)

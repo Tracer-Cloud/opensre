@@ -113,3 +113,45 @@ def test_empty_string_masked_to_empty_string() -> None:
     ctx = _enabled_ctx()
     assert ctx.mask("") == ""
     assert ctx.unmask("") == ""
+
+
+def test_counters_stable_when_map_iterated_out_of_order() -> None:
+    """Regression: a placeholder map with <NS_2> before <NS_0> must not
+    inflate the counter (previously yielded 4 instead of 3)."""
+    policy = MaskingPolicy.model_validate({"enabled": True, "kinds": ALL_KINDS})
+    # Intentionally insert in non-ascending index order
+    seeded = {
+        "<NAMESPACE_2>": "gamma",
+        "<NAMESPACE_0>": "alpha",
+        "<NAMESPACE_1>": "beta",
+    }
+    ctx = MaskingContext(policy=policy, placeholder_map=seeded)
+    # Allocate a fresh namespace; its index must be exactly 3 (one past the max).
+    masked = ctx.mask("kube_namespace:delta fresh")
+    fresh_placeholder = next(
+        p for p, v in ctx.placeholder_map.items() if v == "delta"
+    )
+    assert fresh_placeholder == "<NAMESPACE_3>"
+    assert "<NAMESPACE_3>" in masked
+
+
+def test_partial_overlap_matches_do_not_corrupt_text() -> None:
+    """Regression: if a custom extra regex overlaps partially with a built-in
+    detector, both matches must not survive or _apply_replacements splices
+    overlapping spans and produces corrupted output."""
+    # Custom pattern that partially overlaps with the IP detector region.
+    policy = MaskingPolicy.model_validate(
+        {
+            "enabled": True,
+            "kinds": ("ip_address",),
+            # Matches "192.168.1." inside "192.168.1.50" — partial overlap with
+            # the IP detector's full 192.168.1.50 span.
+            "extra_patterns": {"partial": r"(192\.168\.1\.)"},
+        }
+    )
+    ctx = MaskingContext(policy=policy)
+    masked = ctx.mask("host 192.168.1.50 online")
+    # Exactly one placeholder used; the other overlap was dropped.
+    assert masked.count("<") == 1
+    # Round trip returns the original text byte-for-byte.
+    assert ctx.unmask(masked) == "host 192.168.1.50 online"

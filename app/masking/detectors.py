@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.masking.policy import IdentifierKind, MaskingPolicy, _compile_extra_patterns
+from app.masking.policy import IdentifierKind, MaskingPolicy, compile_extra_patterns
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,11 @@ _SERVICE_NAME_RE = re.compile(
 _HOSTNAME_RE = re.compile(
     r"\b("
     r"kind-[a-z0-9][-a-z0-9]*"  # local kind clusters
-    r"|ip-\d+-\d+-\d+-\d+(?:\.[a-z0-9.-]+)*"  # ec2-style internal hostnames
+    # ec2-style internal hostnames: ip-10-0-1-23.ec2.internal
+    # Note: the inner character class excludes '.' so the outer (?:\.LABEL)*
+    # has no ambiguity and cannot backtrack exponentially (CodeQL ReDoS).
+    r"|ip-\d+-\d+-\d+-\d+(?:\.[a-z0-9][a-z0-9-]*)*"
+    # Generic DNS-style: label(.label)+.(tld)
     r"|[a-z0-9][-a-z0-9]*(?:\.[a-z0-9][-a-z0-9]*)+\.(?:com|net|org|io|internal|local|cloud)"
     r")\b",
     re.IGNORECASE,
@@ -70,12 +74,21 @@ _BUILTIN_DETECTORS: dict[IdentifierKind, re.Pattern[str]] = {
 }
 
 
-def find_identifiers(text: str, policy: MaskingPolicy) -> list[DetectedIdentifier]:
+def find_identifiers(
+    text: str,
+    policy: MaskingPolicy,
+    compiled_extras: dict[str, re.Pattern[str]] | None = None,
+) -> list[DetectedIdentifier]:
     """Return all identifiers found in ``text`` under ``policy``.
 
     Matches are returned sorted by start position. When two detectors match
-    overlapping regions, the longer match wins so we do not partially mask
-    a substring of a larger identifier.
+    overlapping regions (fully contained *or partially overlapping*), the
+    longer earlier match wins so we never corrupt the output in
+    ``_apply_replacements``.
+
+    ``compiled_extras`` may be passed by callers that want to compile the
+    policy's extra regex patterns once per investigation instead of on
+    every call.
     """
     if not policy.enabled or not text:
         return []
@@ -85,43 +98,52 @@ def find_identifiers(text: str, policy: MaskingPolicy) -> list[DetectedIdentifie
     for kind, pattern in _BUILTIN_DETECTORS.items():
         if not policy.is_kind_enabled(kind):
             continue
-        for match in pattern.finditer(text):
-            # Prefer group(1) if defined, else the full match.
-            if match.groups():
-                start, end = match.span(1)
-                value = match.group(1)
-            else:
-                start, end = match.span()
-                value = match.group()
-            if value:
-                found.append(
-                    DetectedIdentifier(kind=kind, start=start, end=end, value=value)
-                )
+        _append_matches(pattern, text, kind, found)
 
-    for label, extra in _compile_extra_patterns(policy).items():
-        for match in extra.finditer(text):
-            if match.groups():
-                start, end = match.span(1)
-                value = match.group(1)
-            else:
-                start, end = match.span()
-                value = match.group()
-            if value:
-                found.append(
-                    DetectedIdentifier(kind=label, start=start, end=end, value=value)
-                )
+    extras = compiled_extras if compiled_extras is not None else compile_extra_patterns(policy)
+    for label, extra in extras.items():
+        _append_matches(extra, text, label, found)
 
     return _resolve_overlaps(found)
 
 
+def _append_matches(
+    pattern: re.Pattern[str],
+    text: str,
+    kind: str,
+    out: list[DetectedIdentifier],
+) -> None:
+    for match in pattern.finditer(text):
+        # Prefer group(1) if defined (contextual detectors), else the full match.
+        if match.groups():
+            start, end = match.span(1)
+            value = match.group(1)
+        else:
+            start, end = match.span()
+            value = match.group()
+        if value:
+            out.append(DetectedIdentifier(kind=kind, start=start, end=end, value=value))
+
+
 def _resolve_overlaps(matches: list[DetectedIdentifier]) -> list[DetectedIdentifier]:
-    """Drop matches that are fully contained inside a longer sibling match."""
+    """Drop matches that overlap (fully or partially) a longer earlier match.
+
+    Sort by start ASC, then by length DESC so the longest match at each
+    start position is considered first. For each candidate, drop it if any
+    already-kept match shares even a single character — this prevents
+    ``_apply_replacements`` from processing overlapping spans and producing
+    corrupted output when replacements are spliced in reverse.
+    """
     if not matches:
         return []
     by_start = sorted(matches, key=lambda m: (m.start, -(m.end - m.start)))
     result: list[DetectedIdentifier] = []
     for m in by_start:
-        if any(kept.start <= m.start and kept.end >= m.end and kept is not m for kept in result):
+        # Partial-overlap check: kept.start < m.end AND kept.end > m.start
+        # means [kept.start, kept.end) and [m.start, m.end) share characters.
+        if any(
+            kept.start < m.end and kept.end > m.start and kept is not m for kept in result
+        ):
             continue
         result.append(m)
     return sorted(result, key=lambda m: m.start)

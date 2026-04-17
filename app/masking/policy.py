@@ -134,8 +134,12 @@ def _parse_bool(value: str | None) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _compile_extra_patterns(policy: MaskingPolicy) -> dict[str, re.Pattern[str]]:
-    """Compile extra regex patterns once, with the label as the key."""
+def compile_extra_patterns(policy: MaskingPolicy) -> dict[str, re.Pattern[str]]:
+    """Compile a policy's extra regex patterns into a label→Pattern dict.
+
+    Public helper so callers (e.g. MaskingContext) can compile once per
+    investigation rather than on every mask call.
+    """
     compiled: dict[str, re.Pattern[str]] = {}
     for label, pattern in policy.extra_patterns.items():
         try:
@@ -151,4 +155,5 @@ __all__ = [
     "ALL_KINDS",
     "IdentifierKind",
     "MaskingPolicy",
+    "compile_extra_patterns",
 ]

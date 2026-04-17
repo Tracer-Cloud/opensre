@@ -114,6 +114,23 @@ def test_overlapping_matches_resolved_longest_wins() -> None:
     assert len(hostnames) == 1
 
 
+def test_hostname_regex_handles_adversarial_input_quickly() -> None:
+    """Regression test for ReDoS flagged by CodeQL on the hostname regex.
+
+    A string with many alternating '-' and '.' characters should not cause
+    exponential backtracking. We cap the runtime at 1 second; with the
+    previous vulnerable pattern this would hang well beyond that.
+    """
+    import time
+
+    adversarial = "ip-10-0-1-23" + ("-." * 50) + "X"
+    start = time.perf_counter()
+    # Trigger all detectors — the hostname detector was the vulnerable one.
+    find_identifiers(adversarial, _policy())
+    elapsed = time.perf_counter() - start
+    assert elapsed < 1.0, f"hostname regex took {elapsed:.2f}s on adversarial input"
+
+
 def test_extra_regex_pattern_is_applied() -> None:
     policy = MaskingPolicy.model_validate(
         {
