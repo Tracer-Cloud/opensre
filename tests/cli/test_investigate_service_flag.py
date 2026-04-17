@@ -31,7 +31,8 @@ def _fake_result() -> dict[str, object]:
     }
 
 
-def test_service_flag_invokes_runtime_investigation() -> None:
+def test_service_flag_invokes_runtime_investigation(monkeypatch) -> None:
+    monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
     runner = CliRunner()
     with (
         patch(
@@ -55,7 +56,8 @@ def test_service_flag_invokes_runtime_investigation() -> None:
     assert kwargs["raw_alert"]["service"]["provider"] == "railway"
 
 
-def test_service_flag_writes_output_file(tmp_path) -> None:
+def test_service_flag_writes_output_file(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
     runner = CliRunner()
     output_path = tmp_path / "result.json"
 
