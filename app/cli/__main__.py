@@ -52,7 +52,7 @@ def cli(
 
     if ctx.invoked_subcommand is None:
         capture_cli_invoked()
-        click.echo("🚧 OpenSRE is in Developer Preview — features may change.", err=True)
+        click.echo("🚧 OpenSRE is in Public Beta — features may change.", err=True)
         render_landing()
         raise SystemExit(0)
 
