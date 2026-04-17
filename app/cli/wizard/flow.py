@@ -1416,11 +1416,12 @@ def run_wizard(_argv: list[str] | None = None) -> int:
             )
         ]
         model = provider.default_model
-        _step("API Key")
+        _step(provider.credential_label.title())
         try:
             api_key = _prompt_value(
-                f"{provider.label} API key ({provider.api_key_env})",
-                secret=True,
+                f"{provider.label} {provider.credential_label} ({provider.api_key_env})",
+                default=provider.credential_default,
+                secret=provider.credential_secret,
             )
         except KeyboardInterrupt:
             _console.print("\n[yellow]Setup cancelled.[/]")
@@ -1438,11 +1439,12 @@ def run_wizard(_argv: list[str] | None = None) -> int:
                 return 1
             has_api_key = True
         if not has_api_key:
-            _step("API Key")
+            _step(provider.credential_label.title())
             try:
                 api_key = _prompt_value(
-                    f"{provider.label} API key ({provider.api_key_env})",
-                    secret=True,
+                    f"{provider.label} {provider.credential_label} ({provider.api_key_env})",
+                    default=provider.credential_default,
+                    secret=provider.credential_secret,
                 )
             except KeyboardInterrupt:
                 _console.print("\n[yellow]Setup cancelled.[/]")
