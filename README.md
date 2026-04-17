@@ -6,8 +6,7 @@
 
 <h1>OpenSRE: Build Your Own AI SRE Agents</h1>
 
-**Public Beta** — OpenSRE is available for early use and active development.  
-Some features may change as the system evolves.
+**Public Beta** — Core workflows are stable for early use, while APIs and integrations may evolve over time.
 
 <p>The open-source framework for AI SRE agents, and the training and evaluation environment they need to improve. Connect the 40+ tools you already run, define your own workflows, and investigate incidents on your own infrastructure.</p>
 
@@ -76,15 +75,6 @@ irm https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.ps1 | ie
 ```bash
 pipx install opensre
 ``` -->
-
----
-
-## Status
-
-OpenSRE is currently in public beta. The core workflows are functional, but the product is still evolving.
-You may encounter incomplete features or changes between releases.
-
-OpenSRE is best suited for exploration, evaluation, and development environments at this stage.
 
 ---
 
