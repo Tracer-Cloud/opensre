@@ -88,6 +88,48 @@ opensre update
 
 ---
 
+## Railway Deployment
+
+Before running `opensre deploy railway`, make sure the target Railway project has
+both Postgres and Redis services, and that your OpenSRE service has `DATABASE_URI`
+and `REDIS_URI` set to those connection strings. The containerized LangGraph
+runtime will not boot without those backing services wired in.
+
+```bash
+# create/link Railway Postgres and Redis first, then set DATABASE_URI and REDIS_URI
+opensre deploy railway --project <project> --service <service> --yes
+```
+
+If the deploy starts but the service never becomes healthy, verify that
+`DATABASE_URI` and `REDIS_URI` are present on the Railway service and point to the
+project Postgres and Redis instances.
+
+### Remote Hosted Ops
+
+After deploying a hosted service, you can run post-deploy operations from the CLI:
+
+```bash
+# inspect service status, URL, deployment metadata
+opensre remote ops --provider railway --project <project> --service <service> status
+
+# tail recent logs
+opensre remote ops --provider railway --project <project> --service <service> logs --lines 200
+
+# stream logs live
+opensre remote ops --provider railway --project <project> --service <service> logs --follow
+
+# trigger restart/redeploy
+opensre remote ops --provider railway --project <project> --service <service> restart --yes
+```
+
+OpenSRE saves your last used `provider`/`project`/`service`, so you can run:
+
+```bash
+opensre remote ops status
+opensre remote ops logs --follow
+```
+
+---
 
 ## Development
 
