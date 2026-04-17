@@ -1419,8 +1419,8 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         _step("API Key")
         try:
             api_key = _prompt_value(
-                f"{provider.label} API key ({provider.api_key_env})",
-                secret=True,
+                provider.prompt_label or f"{provider.label} API key ({provider.api_key_env})",
+                secret=provider.is_secret,
             )
         except KeyboardInterrupt:
             _console.print("\n[yellow]Setup cancelled.[/]")
@@ -1441,8 +1441,8 @@ def run_wizard(_argv: list[str] | None = None) -> int:
             _step("API Key")
             try:
                 api_key = _prompt_value(
-                    f"{provider.label} API key ({provider.api_key_env})",
-                    secret=True,
+                    provider.prompt_label or f"{provider.label} API key ({provider.api_key_env})",
+                    secret=provider.is_secret,
                 )
             except KeyboardInterrupt:
                 _console.print("\n[yellow]Setup cancelled.[/]")

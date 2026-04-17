@@ -40,6 +40,11 @@ class ProviderOption:
     models: tuple[ModelOption, ...]
     #: If set, ``sync_provider_env`` also writes this key (same value) for legacy .env files.
     legacy_model_env: str | None = None
+    #: Whether this credential is a secret (masked in the prompt). Set to False for
+    #: non-secret values such as host URLs (e.g. Ollama).
+    is_secret: bool = True
+    #: Custom prompt label. If None, defaults to "{label} API key ({api_key_env})"
+    prompt_label: str | None = None
 
 
 ANTHROPIC_MODELS = (
@@ -156,6 +161,8 @@ SUPPORTED_PROVIDERS = (
         model_env="OLLAMA_MODEL",
         default_model=DEFAULT_OLLAMA_MODEL,
         models=OLLAMA_MODELS,
+        is_secret=False,
+        prompt_label="Ollama host URL (OLLAMA_HOST, e.g. http://localhost:11434/)",
     ),
 )
 
