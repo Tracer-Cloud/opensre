@@ -80,7 +80,8 @@
         "group": "Investigations",
         "pages": [
           "investigation-overview",
-          "remote-runtime-investigation"
+          "remote-runtime-investigation",
+          "masking"
         ]
       },
       {

@@ -5,6 +5,7 @@ from typing import cast
 
 from langsmith import traceable
 
+from app.masking import MaskingContext
 from app.nodes.investigate.execution import execute_actions
 from app.nodes.investigate.models import InvestigateInput, InvestigateOutput
 from app.nodes.investigate.processing import (
@@ -89,11 +90,23 @@ def node_investigate(state: InvestigationState) -> dict:
             )
             available_sources["grafana"]["service_name"] = best
 
+    # Apply reversible masking to evidence before it flows to downstream LLM
+    # nodes. No-op when OPENSRE_MASK_ENABLED is not set.
+    masking_ctx = MaskingContext.from_state(cast(dict[str, object], state))
+    masked_evidence = masking_ctx.mask_value(evidence)
+    masking_map = masking_ctx.to_state()
+
     tracker.complete(
         "investigate",
         fields_updated=["evidence", "executed_hypotheses"],
         message=evidence_summary,
     )
 
-    output = InvestigateOutput(evidence=evidence, executed_hypotheses=executed_hypotheses)
-    return {**output.to_dict(), "available_sources": available_sources}
+    output = InvestigateOutput(evidence=masked_evidence, executed_hypotheses=executed_hypotheses)
+    result: dict[str, object] = {
+        **output.to_dict(),
+        "available_sources": available_sources,
+    }
+    if masking_map:
+        result["masking_map"] = masking_map
+    return result
