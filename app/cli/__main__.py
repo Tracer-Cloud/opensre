@@ -33,6 +33,21 @@ from app.version import get_version
 @click.option("--verbose", is_flag=True, help="Print extra diagnostic information.")
 @click.option("--debug", is_flag=True, help="Print debug-level logs and traces.")
 @click.option("--yes", "-y", is_flag=True, help="Auto-confirm all interactive prompts.")
+@click.option(
+    "--no-interactive",
+    "interactive",
+    is_flag=True,
+    default=True,
+    flag_value=False,
+    help="Disable the interactive REPL and print the landing page instead.",
+)
+@click.option(
+    "--layout",
+    type=click.Choice(["classic", "pinned"]),
+    default=None,
+    help="REPL layout: 'classic' (scrolling) or 'pinned' (fixed input bar). "
+    "Overrides OPENSRE_LAYOUT env var and ~/.opensre/config.yml.",
+)
 @click.pass_context
 def cli(
     ctx: click.Context,
@@ -40,6 +55,8 @@ def cli(
     verbose: bool,
     debug: bool,
     yes: bool,
+    interactive: bool,
+    layout: str | None,
 ) -> None:
     """OpenSRE - open-source SRE agent for automated incident investigation and root cause analysis."""
     ctx.ensure_object(dict)
@@ -55,8 +72,13 @@ def cli(
         capture_cli_invoked()
         if sys.stdin.isatty() and sys.stdout.isatty():
             from app.cli.repl import run_repl
+            from app.cli.repl.config import ReplConfig
 
-            raise SystemExit(run_repl())
+            config = ReplConfig.load(
+                cli_enabled=interactive,
+                cli_layout=layout,
+            )
+            raise SystemExit(run_repl(config=config))
         render_landing()
         raise SystemExit(0)
 

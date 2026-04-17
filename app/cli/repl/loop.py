@@ -12,6 +12,7 @@ from rich.markup import escape
 
 from app.cli.repl.banner import render_banner
 from app.cli.repl.commands import dispatch_slash
+from app.cli.repl.config import ReplConfig
 from app.cli.repl.follow_up import answer_follow_up
 from app.cli.repl.router import classify_input
 from app.cli.repl.session import ReplSession
@@ -83,7 +84,7 @@ async def _run_one_turn(
     return True
 
 
-async def _repl_main(initial_input: str | None = None) -> int:
+async def _repl_main(initial_input: str | None = None, config: ReplConfig | None = None) -> int:  # noqa: ARG001
     # force_terminal + truecolor so Rich always emits full ANSI, even after
     # prompt_toolkit has claimed and released stdout for input handling.
     # Without this, slash-command output after the first prompt renders as
@@ -117,15 +118,20 @@ async def _repl_main(initial_input: str | None = None) -> int:
             return 0
 
 
-def run_repl(initial_input: str | None = None) -> int:
+def run_repl(initial_input: str | None = None, config: ReplConfig | None = None) -> int:
     """Enter the interactive REPL. Returns the exit code."""
+    cfg = config or ReplConfig.load()
+
+    if not cfg.enabled:
+        return 0
+
     if not sys.stdin.isatty() and initial_input is None:
         # In non-TTY contexts (piped input, CI), don't start an interactive loop.
         # Callers should use `opensre investigate` instead.
         return 0
 
     try:
-        return asyncio.run(_repl_main(initial_input=initial_input))
+        return asyncio.run(_repl_main(initial_input=initial_input, config=cfg))
     except (EOFError, KeyboardInterrupt):
         return 0
 
