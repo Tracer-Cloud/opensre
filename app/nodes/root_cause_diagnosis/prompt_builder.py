@@ -138,10 +138,12 @@ def _build_database_directive() -> str:
     return """
 **CRITICAL: Database Resource Exhaustion vs CPU Saturation**
 When evaluating database health metrics (especially RDS/Postgres):
-- Connection pool leaks (exhausting `max_connections`) are a `resource_exhaustion` root cause. High CPU is often just a secondary symptom of accumulated idle sessions. If connections are near 100%, the root cause is connection exhaustion, not CPU saturation.
-- Storage exhaustion (when `FreeStorageSpace` approaches 0) blocks all writes and causes Write IOPS to collapse to 0. The root cause is `resource_exhaustion` due to storage limits, not a general system failure.
-- A single bad query driving CPU near 100% while connections and storage are healthy is `cpu_saturation`/`code_defect` (missing index, unoptimized join).
-- ALWAYS trace the causal chain properly (e.g., connection leak -> accumulated idle sessions -> connections maxed out -> new requests blocked -> secondary CPU elevation).
+- Connection pool leaks (exhausting `max_connections`) are a `resource_exhaustion` root cause. High CPU is often just a secondary symptom of accumulated idle sessions. If connections are near 100%, the root cause is connection exhaustion, not CPU saturation. If connections are near 100% AND CPU is near 100%, look for a single shared root cause: a connection pool leak holding open scan-heavy queries, causing both (do not treat them as two independent problems).
+- Storage exhaustion (when `FreeStorageSpace` approaches 0) blocks all writes and causes Write IOPS to collapse to 0. The root cause is `resource_exhaustion` due to storage limits. If the `FreeStorageSpace` metric is completely missing, you MUST infer storage exhaustion from indirect signals: WriteIOPS dropping to 0, WriteLatency spiking, and RDS events indicating 'ran out of storage space'.
+- A single bad query driving CPU near 100% while connections and storage are healthy is `resource_exhaustion` due to CPU saturation (e.g. missing index, full table scans at high ReadIOPS). Pay close attention to Performance Insights to identify the exact query.
+- Replication lag: If a massive write-heavy workload on the primary generates WAL faster than the read replica can replay it, resulting in ReplicaLag spikes, the root cause is `resource_exhaustion` driven by the write workload on the primary. Watch out for red herrings: if concurrent analytics queries cause high CPU, do NOT label it as `cpu_saturation` if the actual failing metric (like ReplicaLag) is driven by the write-heavy workload. The CPU spike is an independent issue.
+- Healthy Systems: If metrics are oscillating but remain within normal operating bounds (e.g. connections at 55-65%, CPU at 40-70%, no error logs), the system is `healthy`. Resist diagnosing `resource_exhaustion` from noisy oscillating metrics. The alert may just be a warning threshold firing correctly during peak traffic.
+- ALWAYS trace the causal chain properly (e.g., connection leak -> idle sessions -> connections maxed out, OR missing index -> full table scans -> ReadIOPS -> CPU saturated, OR write burst -> WAL generation -> ReplicaLag).
 """
 
 def _extract_k8s_tags_from_evidence(evidence: dict[str, Any]) -> dict[str, str]:
