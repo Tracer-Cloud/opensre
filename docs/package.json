@@ -1,0 +1,26 @@
+{
+  "name": "@tracer-cloud/opensre-docs",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Mintlify documentation site for OpenSRE.",
+  "scripts": {
+    "dev": "mint dev",
+    "update": "mint update"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tracer-Cloud/opensre.git",
+    "directory": "docs"
+  },
+  "keywords": [
+    "opensre",
+    "tracer",
+    "docs",
+    "mintlify"
+  ],
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/Tracer-Cloud/opensre/issues"
+  },
+  "homepage": "https://github.com/Tracer-Cloud/opensre/tree/main/docs#readme"
+}

@@ -1,6 +1,7 @@
 """Tests for langgraph_client.py."""
 
-import unittest
+from unittest import TestCase
+from unittest import main as unittest_main
 from unittest.mock import MagicMock, patch
 
 import requests
@@ -9,7 +10,7 @@ from tests.utils.conftest import LANGGRAPH_REMOTE_ENDPOINT
 from tests.utils.langgraph_client import fire_alert_to_remote_langgraph_client
 
 
-class TestLangGraphClient(unittest.TestCase):
+class TestLangGraphClient(TestCase):
     @patch("requests.post")
     def test_fire_alert_to_remote_langgraph_client_success(self, mock_post):
         """Test successful alert firing to remote endpoint."""
@@ -40,7 +41,9 @@ class TestLangGraphClient(unittest.TestCase):
         self.assertEqual(kwargs["json"]["input"]["pipeline_name"], pipeline_name)
         self.assertEqual(kwargs["json"]["input"]["severity"], severity)
         self.assertEqual(kwargs["json"]["input"]["raw_alert"], raw_alert)
-        self.assertTrue(kwargs["stream"])
+        self.assertIs(kwargs["stream"], True)
+        # Verify that HTTP errors are checked
+        mock_response.raise_for_status.assert_called_once()
 
         self.assertEqual(response, mock_response)
 
@@ -64,4 +67,4 @@ class TestLangGraphClient(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest_main()

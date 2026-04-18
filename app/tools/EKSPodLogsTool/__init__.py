@@ -3,26 +3,39 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
-from app.integrations.clients.eks.eks_k8s_client import build_k8s_clients
-from app.tools.base import BaseTool
+from app.services.eks.eks_k8s_client import build_k8s_clients
 from app.tools.EKSListClustersTool import _eks_available, _eks_creds
+from app.tools.tool_decorator import tool
 
 logger = logging.getLogger(__name__)
 
 
-class EKSPodLogsTool(BaseTool):
-    """Fetch logs from a specific EKS pod."""
+def _pod_logs_is_available(sources: dict[str, dict]) -> bool:
+    return bool(_eks_available(sources) and sources.get("eks", {}).get("pod_name"))
 
-    name = "get_eks_pod_logs"
-    source = "eks"
-    description = "Fetch logs from a specific EKS pod."
-    use_cases = [
+
+def _pod_logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
+    eks = sources["eks"]
+    return {
+        "cluster_name": eks["cluster_name"],
+        "namespace": eks.get("namespace", "default"),
+        "pod_name": eks["pod_name"],
+        **_eks_creds(eks),
+    }
+
+
+@tool(
+    name="get_eks_pod_logs",
+    source="eks",
+    description="Fetch logs from a specific EKS pod.",
+    use_cases=[
         "Fetching crash logs from a specific pod",
         "Reviewing application output for a known failing pod",
-    ]
-    requires = ["cluster_name", "pod_name"]
-    input_schema = {
+    ],
+    requires=["cluster_name", "pod_name"],
+    input_schema={
         "type": "object",
         "properties": {
             "cluster_name": {"type": "string"},
@@ -34,32 +47,29 @@ class EKSPodLogsTool(BaseTool):
             "tail_lines": {"type": "integer", "default": 100},
         },
         "required": ["cluster_name", "namespace", "pod_name", "role_arn"],
-    }
-
-    def is_available(self, sources: dict) -> bool:
-        return bool(_eks_available(sources) and sources.get("eks", {}).get("pod_name"))
-
-    def extract_params(self, sources: dict) -> dict:
-        eks = sources["eks"]
+    },
+    is_available=_pod_logs_is_available,
+    extract_params=_pod_logs_extract_params,
+)
+def get_eks_pod_logs(
+    cluster_name: str,
+    namespace: str,
+    pod_name: str,
+    role_arn: str,
+    external_id: str = "",
+    region: str = "us-east-1",
+    tail_lines: int = 100,
+    **_kwargs: Any,
+) -> dict[str, Any]:
+    """Fetch logs from a specific EKS pod."""
+    logger.info("[eks] get_eks_pod_logs cluster=%s ns=%s pod=%s", cluster_name, namespace, pod_name)
+    try:
+        core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
+        logs = core_v1.read_namespaced_pod_log(name=pod_name, namespace=namespace, tail_lines=tail_lines)
         return {
-            "cluster_name": eks["cluster_name"],
-            "namespace": eks.get("namespace", "default"),
-            "pod_name": eks["pod_name"],
-            **_eks_creds(eks),
+            "source": "eks", "available": True, "cluster_name": cluster_name,
+            "namespace": namespace, "pod_name": pod_name, "logs": logs, "error": None,
         }
-
-    def run(self, cluster_name: str, namespace: str, pod_name: str, role_arn: str, external_id: str = "", region: str = "us-east-1", tail_lines: int = 100, **_kwargs) -> dict:
-        logger.info("[eks] get_eks_pod_logs cluster=%s ns=%s pod=%s", cluster_name, namespace, pod_name)
-        try:
-            core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
-            logs = core_v1.read_namespaced_pod_log(name=pod_name, namespace=namespace, tail_lines=tail_lines)
-            return {
-                "source": "eks", "available": True, "cluster_name": cluster_name,
-                "namespace": namespace, "pod_name": pod_name, "logs": logs, "error": None,
-            }
-        except Exception as e:
-            logger.error("[eks] get_eks_pod_logs failed cluster=%s pod=%s error=%s", cluster_name, pod_name, e, exc_info=True)
-            return {"source": "eks", "available": False, "pod_name": pod_name, "error": str(e)}
-
-
-get_eks_pod_logs = EKSPodLogsTool()
+    except Exception as e:
+        logger.error("[eks] get_eks_pod_logs failed cluster=%s pod=%s error=%s", cluster_name, pod_name, e, exc_info=True)
+        return {"source": "eks", "available": False, "pod_name": pod_name, "error": str(e)}

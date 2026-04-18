@@ -1,0 +1,33 @@
+---
+title: "Daily Update — 2026-04-04"
+description: "OpenSRE engineering daily update for 2026-04-04 (Europe/London)"
+---
+
+Thanks to everyone who contributed today: Ceren Camkiran, Shoaib Ansari, shoaib050326, Shriyash soni, and vincenthus 🙏🚀
+
+## Main updates shipped
+
+- Daily update workflow simplified -- Slack delivery removed so the workflow now only generates and commits markdown archives under `docs/daily-updates`, with telemetry debug redaction broadened to catch sensitive key substrings like `oauth_refresh_token`.
+- Production Dockerfile shipped -- new repo-root `Dockerfile` uses Python 3.11 slim, installs deps from `pyproject.toml`, includes `langgraph-cli`, exposes port 2024, runs as non-root, and adds a `HEALTHCHECK` against the `/ok` endpoint; comprehensive structural tests added in `app/dockerfile_test.py`.
+- MCP server wired up -- `opensre-mcp` CLI entrypoint added to `pyproject.toml` and setup/OpenClaw configuration documented in `docs/SETUP.md`.
+- Contributors workflow hardened -- retry logic and explicit HTTP/network error handling added to API calls, broad exception swallowing removed from first-commit lookup, and sort order aligned to earliest-first as documented (fixes #212).
+- `TracerClientBase._get` typing tightened -- input changed to `Mapping[str, Any]` and return typed as `JSONDict`; runtime behaviour unchanged and focused unit tests added for URL construction, param passing, and empty-param defaults.
+- Docs links fixed -- all `opensre.com` references replaced with `tracer.mintlify.app` across README, CONTRIBUTING, SECURITY, and Mintlify config files to unblock access while the custom domain misconfiguration is resolved upstream.
+- Test quality improved -- `MemoryKeyring._entries` moved from class-level to instance attribute to prevent state bleed between tests, and `client_test.py` assertions strengthened with identity checks and `raise_for_status` verification.
+
+## Source pull requests
+
+- [#339](https://github.com/Tracer-Cloud/opensre/pull/339) fix: remove daily update Slack delivery and broaden debug redaction (author: vincenthus; contributors: vincenthus; labels: _none_; files: `.github/workflows/daily-update.yml`, `app/analytics/provider.py`, `app/analytics/provider_test.py`, `app/integrations/daily_update.py`, `app/integrations/daily_update_test.py`, `docs/daily-updates/2026-04-02.md`)
+- [#305](https://github.com/Tracer-Cloud/opensre/pull/305) Add MCP CLI entrypoint for opensre_mcp (author: Ceren Camkiran; contributors: Ceren Camkiran and vincenthus; labels: _none_; files: `pyproject.toml`)
+- [#299](https://github.com/Tracer-Cloud/opensre/pull/299) Add production Dockerfile at repo root for container deployment (author: shoaib050326; contributors: Shoaib Ansari and shoaib050326; labels: _none_; files: `Dockerfile`, `app/dockerfile_test.py`)
+- [#341](https://github.com/Tracer-Cloud/opensre/pull/341) Fix spelling errors in daily updates and strengthen test assertions (author: Copilot; contributors: no human contributors recorded in merged PRs today; labels: _none_; files: `docs/daily-updates/2026-04-02.md`, `docs/daily-updates/2026-04-03.md`, `tests/shared/keyring_backend.py`, `tests/utils/langgraph_client/client_test.py`)
+- [#306](https://github.com/Tracer-Cloud/opensre/pull/306) Add MCP server usage and OpenClaw configuration docs (author: Ceren Camkiran; contributors: Ceren Camkiran; labels: _none_; files: `docs/SETUP.md`)
+- [#310](https://github.com/Tracer-Cloud/opensre/pull/310) fix(ci): harden contributors updater and align earliest-first ordering (author: Shriyash soni; contributors: Shriyash soni; labels: _none_; files: `.github/workflows/contributors.yml`)
+- [#312](https://github.com/Tracer-Cloud/opensre/pull/312) refactor(types): tighten TracerClientBase _get typing (author: Shriyash soni; contributors: Shriyash soni; labels: _none_; files: `app/integrations/clients/tracer_client/tracer_client_base.py`, `app/integrations/clients/tracer_client/tracer_client_base_test.py`)
+- [#346](https://github.com/Tracer-Cloud/opensre/pull/346) fix(docs): point docs links to working Mintlify URL (author: vincenthus; contributors: vincenthus; labels: _none_; files: `CONTRIBUTING.md`, `README.md`, `SECURITY.md`, `docs-mintlify/Sitemap Tracer.xml`, `docs-mintlify/docs.json`, `docs-mintlify/technology/product-benefits.mdx`, `docs-mintlify/toc-actions.js`)
+
+## Generation metadata
+
+- Generator version: `opensre 0.1.0`
+- Fallback summary used: `no`
+- UTC window: `2026-04-03T23:00:00+00:00` to `2026-04-04T23:00:00+00:00`

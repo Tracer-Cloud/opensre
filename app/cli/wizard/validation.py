@@ -48,6 +48,69 @@ class ValidationResult:
     sample_response: str = ""
 
 
+def _get_provider_base_url(provider_value: str) -> str | None:
+    """Get the base_url for OpenAI-compatible non-OpenAI providers, or None for native OpenAI."""
+    if provider_value == "openrouter":
+        from app.config import OPENROUTER_BASE_URL
+
+        return OPENROUTER_BASE_URL
+    if provider_value == "gemini":
+        from app.config import GEMINI_BASE_URL
+
+        return GEMINI_BASE_URL
+    if provider_value == "nvidia":
+        from app.config import NVIDIA_BASE_URL
+
+        return NVIDIA_BASE_URL
+    return None
+
+
+def _check_ollama(host: str, model: str) -> ValidationResult:
+    """Check Ollama server connectivity and verify model responds to inference."""
+    import httpx
+
+    tags_url = f"{host.rstrip('/')}/api/tags"
+    try:
+        r = httpx.get(tags_url, timeout=5.0)
+        r.raise_for_status()
+    except Exception as err:
+        return ValidationResult(
+            ok=False,
+            detail=f"Cannot reach Ollama at {host}. Is it running? Try: ollama serve\n({err})",
+        )
+    available = [m["name"] for m in r.json().get("models", [])]
+    from app.cli.local_llm.ollama import normalize_model_tag
+    normalized_model = normalize_model_tag(model)
+    base_name = model.split(":")[0]
+    matched = normalized_model in available or any(m.split(":")[0] == base_name for m in available)
+    if not matched:
+        listed = ", ".join(available) or "none pulled yet"
+        return ValidationResult(
+            ok=False,
+            detail=f"Model '{model}' not found. Run: ollama pull {model}\nAvailable: {listed}",
+        )
+    # Verify the model actually responds to an inference request
+    chat_url = f"{host.rstrip('/')}/v1/chat/completions"
+    try:
+        resp = httpx.post(
+            chat_url,
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],
+                "max_tokens": 24,
+            },
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+        sample_text = (resp.json()["choices"][0]["message"]["content"] or "").strip()
+    except Exception as err:
+        return ValidationResult(
+            ok=False,
+            detail=f"Model '{model}' is pulled but failed to respond: {err}",
+        )
+    return ValidationResult(ok=True, detail=f"Ollama reachable. Model '{model}' is ready.", sample_response=sample_text)
+
+
 def validate_provider_credentials(
     *,
     provider: ProviderOption,
@@ -55,6 +118,9 @@ def validate_provider_credentials(
     model: str,
 ) -> ValidationResult:
     """Run a tiny live request against the selected provider."""
+    if provider.value == "ollama":
+        return _check_ollama(host=api_key, model=model)
+
     anthropic_client_cls, anthropic_auth_error = _load_anthropic_client()
     openai_client_cls, openai_auth_error = _load_openai_client()
 
@@ -73,8 +139,11 @@ def validate_provider_credentials(
             ).strip()
             return ValidationResult(ok=True, detail="Anthropic API key validated.", sample_response=sample_text)
 
-        openai_client = openai_client_cls(api_key=api_key, timeout=30.0)
-        if model.startswith(("o1", "o3", "o4", "gpt-5")):
+        # All OpenAI-compatible providers (openai, openrouter, gemini, nvidia)
+        base_url = _get_provider_base_url(provider.value)
+        openai_client = openai_client_cls(api_key=api_key, base_url=base_url, timeout=30.0)
+        # Only native OpenAI reasoning models use max_completion_tokens; others use max_tokens
+        if provider.value == "openai" and model.startswith(("o1", "o3", "o4", "gpt-5")):
             openai_response = openai_client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],
@@ -87,11 +156,11 @@ def validate_provider_credentials(
                 max_tokens=24,
             )
         sample_text = (openai_response.choices[0].message.content or "").strip()
-        return ValidationResult(ok=True, detail="OpenAI API key validated.", sample_response=sample_text)
+        return ValidationResult(ok=True, detail=f"{provider.label} API key validated.", sample_response=sample_text)
     except anthropic_auth_error:
         return ValidationResult(ok=False, detail="Anthropic rejected the API key.")
     except openai_auth_error:
-        return ValidationResult(ok=False, detail="OpenAI rejected the API key.")
+        return ValidationResult(ok=False, detail=f"{provider.label} rejected the API key.")
     except Exception as err:
         return ValidationResult(ok=False, detail=f"Validation request failed: {err}")
 

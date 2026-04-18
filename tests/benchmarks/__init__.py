@@ -1,1 +1,1 @@
-"""Test helpers and benchmark notebooks live under ``tests/benchmarks``."""
+"""Benchmark helpers live under ``tests/benchmarks``."""

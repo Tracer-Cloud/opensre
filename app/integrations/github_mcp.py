@@ -12,15 +12,17 @@ import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass, field
-from typing import Any, cast
+from dataclasses import dataclass
+from typing import Any, Literal, cast
 
 import httpx
 from mcp import ClientSession, StdioServerParameters, types  # type: ignore[import-not-found]
 from mcp.client.sse import sse_client  # type: ignore[import-not-found]
 from mcp.client.stdio import stdio_client  # type: ignore[import-not-found]
+from pydantic import Field, field_validator, model_validator
 
 from app.integrations.mcp_streamable_http_compat import streamable_http_client
+from app.strict_config import StrictConfigModel
 
 DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 DEFAULT_GITHUB_MCP_MODE = "streamable-http"
@@ -33,18 +35,60 @@ REQUIRED_SOURCE_INVESTIGATION_TOOLS = (
 )
 
 
-@dataclass(frozen=True)
-class GitHubMCPConfig:
+class GitHubMCPConfig(StrictConfigModel):
     """Normalized GitHub MCP connection settings."""
 
     url: str = DEFAULT_GITHUB_MCP_URL
-    mode: str = DEFAULT_GITHUB_MCP_MODE
+    mode: Literal["stdio", "sse", "streamable-http"] = "streamable-http"
     auth_token: str = ""
     command: str = ""
     args: tuple[str, ...] = ()
-    headers: dict[str, str] = field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
     toolsets: tuple[str, ...] = DEFAULT_GITHUB_MCP_TOOLSETS
-    timeout_seconds: float = 15.0
+    timeout_seconds: float = Field(default=15.0, gt=0)
+    integration_id: str = ""
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _normalize_url(cls, value: Any) -> str:
+        normalized = str(value or DEFAULT_GITHUB_MCP_URL).strip()
+        return normalized or DEFAULT_GITHUB_MCP_URL
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _normalize_mode(cls, value: Any) -> str:
+        normalized = str(value or DEFAULT_GITHUB_MCP_MODE).strip().lower()
+        return normalized or DEFAULT_GITHUB_MCP_MODE
+
+    @field_validator("args", mode="before")
+    @classmethod
+    def _normalize_args(cls, value: Any) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        return tuple(str(arg).strip() for arg in value if str(arg).strip())
+
+    @field_validator("headers", mode="before")
+    @classmethod
+    def _normalize_headers(cls, value: Any) -> dict[str, str]:
+        if not isinstance(value, dict):
+            return {}
+        return {str(key): str(item).strip() for key, item in value.items() if str(item).strip()}
+
+    @field_validator("toolsets", mode="before")
+    @classmethod
+    def _normalize_toolsets(cls, value: Any) -> tuple[str, ...]:
+        if value is None:
+            return DEFAULT_GITHUB_MCP_TOOLSETS
+        toolsets = tuple(str(toolset).strip() for toolset in value if str(toolset).strip())
+        return toolsets or DEFAULT_GITHUB_MCP_TOOLSETS
+
+    @model_validator(mode="after")
+    def _validate_transport_requirements(self) -> GitHubMCPConfig:
+        if self.mode == "stdio" and not self.command:
+            raise ValueError("GitHub MCP mode 'stdio' requires a non-empty command.")
+        if self.mode != "stdio" and not self.url:
+            raise ValueError(f"GitHub MCP mode '{self.mode}' requires a non-empty url.")
+        return self
 
     @property
     def request_headers(self) -> dict[str, str]:
@@ -66,22 +110,7 @@ class GitHubMCPValidationResult:
 
 def build_github_mcp_config(raw: dict[str, Any] | None) -> GitHubMCPConfig:
     """Build a normalized config object from env/store data."""
-    raw = raw or {}
-    mode = str(raw.get("mode", DEFAULT_GITHUB_MCP_MODE)).strip().lower() or DEFAULT_GITHUB_MCP_MODE
-    headers = raw.get("headers") or {}
-    toolsets = raw.get("toolsets") or DEFAULT_GITHUB_MCP_TOOLSETS
-    args = raw.get("args") or []
-    return GitHubMCPConfig(
-        url=str(raw.get("url", DEFAULT_GITHUB_MCP_URL)).strip() or DEFAULT_GITHUB_MCP_URL,
-        mode=mode,
-        auth_token=str(raw.get("auth_token", "")).strip(),
-        command=str(raw.get("command", "")).strip(),
-        args=tuple(str(arg) for arg in args if str(arg).strip()),
-        headers={str(key): str(value) for key, value in headers.items() if str(value).strip()},
-        toolsets=tuple(str(toolset) for toolset in toolsets if str(toolset).strip())
-        or DEFAULT_GITHUB_MCP_TOOLSETS,
-        timeout_seconds=float(raw.get("timeout_seconds", 15.0) or 15.0),
-    )
+    return GitHubMCPConfig.model_validate(raw or {})
 
 
 def github_mcp_config_from_env() -> GitHubMCPConfig | None:

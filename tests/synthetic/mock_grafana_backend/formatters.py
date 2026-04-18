@@ -9,6 +9,7 @@ Endpoints modelled:
     Mimir  /api/v1/query_range          ← aws_cloudwatch_metrics.json
     Loki   /loki/api/v1/query_range     ← aws_rds_events.json
     Ruler  /api/v1/rules                ← alert.json
+    Tempo  /api/search                  ← (empty — RDS scenarios have no traces)
 """
 
 from __future__ import annotations
@@ -152,6 +153,20 @@ def format_loki_query_range(rds_events_fixture: dict[str, Any]) -> dict[str, Any
 # ---------------------------------------------------------------------------
 # Ruler / Alertmanager
 # ---------------------------------------------------------------------------
+
+
+def format_tempo_search() -> dict[str, Any]:
+    """Return an empty Tempo /api/search response.
+
+    RDS synthetic scenarios do not include trace fixture data, so the mock
+    returns a structurally valid but empty response.  This allows the traces
+    tool to report ``available=True`` with zero traces instead of failing
+    with "Grafana integration not configured".
+    """
+    return {
+        "traces": [],
+        "metrics": {},
+    }
 
 
 def format_ruler_rules(alert_fixture: dict[str, Any]) -> dict[str, Any]:

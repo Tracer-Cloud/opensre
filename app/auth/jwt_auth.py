@@ -14,7 +14,6 @@ from typing import Any
 
 import httpx
 import jwt
-from jwt import PyJWK
 
 from app.config import (
     CLERK_CONFIG_DEV,
@@ -199,7 +198,7 @@ def get_signing_key_from_jwks(jwks_data: dict[str, Any], token: str) -> Any:
     for key_data in keys:
         if key_data.get("kid") == kid:
             try:
-                jwk = PyJWK.from_dict(key_data)
+                jwk = jwt.PyJWK.from_dict(key_data)
                 return jwk.key
             except Exception as e:
                 raise JWTVerificationError(f"Failed to parse JWK: {e}") from e

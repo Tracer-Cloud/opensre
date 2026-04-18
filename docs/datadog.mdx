@@ -1,0 +1,58 @@
+---
+title: "Datadog"
+---
+
+### Step 1: Create API Key
+
+In Datadog, create an API Key.
+
+To create an API key, go to your organizational settings in Datadog and click **API Keys**. Or visit [https://app.datadoghq.com/organization-settings/api-keys](https://app.datadoghq.com/organization-settings/api-keys)
+
+1. Click **\+ New Key** at the top right of the screen
+2. Name your new key **tracer**
+
+   <Frame>
+     ![Datadog API Key](/images/datadog_api_key.webp)
+   </Frame>
+
+3. Copy your new API key and hit **Finish**
+
+### Step 2: Create Application Key
+
+In Datadog, create an Application Key.
+
+To create an Application Key, go to your personal settings in Datadog and click **Application Keys**. Or visit [https://app.datadoghq.com/personal-settings/application-keys](https://app.datadoghq.com/personal-settings/application-keys)
+
+1. Click **\+ New Key** at the top right of the screen
+2. Name your new key **tracer**
+
+   <Frame>
+     ![Datadog App Key](/images/datadog_app_key.webp)
+   </Frame>
+
+3. Click **Edit Scope** and ensure the following minimum requirements:
+   - events_read
+   - logs_read_data
+   - logs_read_index_data
+   - monitors_read
+
+   <Frame>
+     ![Datadog App Key Scope](/images/datadog_app_key_scope.webp)
+   </Frame>
+
+4. Under **Actions API Access** — click **Enable**
+
+   <Frame>
+     ![Datadog App Key Configuration](/images/datadog_app_key_configuration.webp)
+   </Frame>
+
+### Step 3: Connect Datadog to OpenSRE
+
+1. In OpenSRE, go to **Integrations** → **Datadog**
+2. Enter a name
+3. Paste your [<u>API Key</u>](https://app.datadoghq.com/account/login?next=%2Forganization-settings%2Fapi-keys) and [<u>Application Key</u>](https://app.datadoghq.com/account/login?next=%2Forganization-settings%2Fapplication-keys) from Datadog
+4. Click **Save**.
+
+   <Frame>
+     ![Connect Datadog](/images/connect_datadog.png)
+   </Frame>

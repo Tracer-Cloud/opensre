@@ -1,0 +1,17 @@
+---
+title: "Why eBPF"
+description: "Understanding why OpenSRE uses eBPF for observability"
+---
+
+Traditional approaches rely on logs, metrics exporters, or code instrumentation.<br/>
+With eBPF, OpenSRE:
+
+**See everything**<br/>System calls, process lifecycle, I/O, and scheduling events
+
+**Stay lightweight**<br/>Sampling at kernel level without copying large data
+
+**Stay safe**<br/>Verified, sandboxed bytecode that cannot crash your node
+
+**Stay universal**<br/>Works with any container, binary, or programming language
+
+The result: zero-overhead visibility into black-box tools, a critical advantage for bioinformatics and computational biology pipelines.

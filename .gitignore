@@ -63,6 +63,9 @@ coverage.xml
 .dmypy.json
 dmypy.json
 
+# ruff
+.ruff_cache/
+
 # Pyre type checker
 .pyre/
 
@@ -121,3 +124,4 @@ tests/test_case_upstream_downstream_pipeline/pipeline_code/api_ingester/bin/
 CLAUDE_PERSONAL.md
 tasks/
 app/memories
+.aider*
