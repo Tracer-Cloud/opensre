@@ -20,7 +20,7 @@ def extract_alert_details(state: InvestigationState) -> AlertDetails:
     prompt = f"""Classify and extract fields from this alert message.
 
 is_noise=true ONLY for: casual chat, greetings, trivial messages ("ok", "thanks"), or replies to existing investigation reports.
-is_noise=false (default) for: any alert, error, failure, incident, warning, monitoring notification.
+is_noise=false (default) for: any alert, error, failure, incident, warning, monitoring notification (including health checks and informational states).
 When in doubt, set is_noise=false.
 
 Extract these fields from the message text:

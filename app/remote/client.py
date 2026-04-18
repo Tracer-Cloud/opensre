@@ -155,7 +155,7 @@ class RemoteAgentClient:
                     remote_version = parsed
                     version_source = "/version"
         except Exception:  # noqa: BLE001
-            pass
+            return remote_version, version_source
         return remote_version, version_source
 
     def _fetch_deep_checks(self, client: httpx.Client) -> list[dict[str, str]]:

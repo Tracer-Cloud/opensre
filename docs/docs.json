@@ -12,10 +12,6 @@
     "dark": "#000000"
   },
   "favicon": "/favicon.ico",
-  "logo": {
-    "light": "/images/logo/tracer/tracer-docs-dark.svg",
-    "dark": "/images/logo/tracer/tracer-docs-light.svg"
-  },
   "styles": {
     "css": "/custom.css"
   },
@@ -43,29 +39,55 @@
         "group": "Integrations",
         "pages": [
           "intergrations-overview",
-          "datadog",
-          "grafana",
-          "mongodb",
-          "slack"
+          {
+            "group": "Enterprise",
+            "defaultOpen": true,
+            "pages": [
+              "datadog",
+              "grafana",
+              "slack",
+              "aws"
+            ]
+          },
+          {
+            "group": "Local",
+            "defaultOpen": true,
+            "pages": [
+              "mongodb",
+              "mariadb",
+              "honeycomb",
+              "coralogix",
+              "sentry",
+              "github",
+              "gitlab",
+              "bitbucket",
+              "vercel",
+              "kafka",
+              "clickhouse",
+              "opsgenie",
+              "jira",
+              "prefect",
+              "google-docs",
+              "discord",
+              "mysql",
+              "openclaw",
+              "postgresql"
+            ]
+          }
         ]
       },
       {
         "group": "Investigations",
         "pages": [
-          "investigation-overview"
+          "investigation-overview",
+          "remote-runtime-investigation",
+          "masking"
         ]
       },
       {
         "group": "Daily Updates",
         "pages": [
-          "daily-updates/overview",
-          "daily-updates/2026-04-08",
-          "daily-updates/2026-04-07",
-          "daily-updates/2026-04-06",
-          "daily-updates/2026-04-05",
-          "daily-updates/2026-04-04",
-          "daily-updates/2026-04-03",
-          "daily-updates/2026-04-02"
+          "daily-updates/overview"
         ]
       },
       {
@@ -225,5 +247,9 @@
       "format": "woff2",
       "weight": 400
     }
+  },
+  "logo": {
+    "light": "/images/logo/tracer/opensre-docs-logo-dark.svg",
+    "dark": "/images/logo/tracer/opensre-docs-logo-light.svg"
   }
 }

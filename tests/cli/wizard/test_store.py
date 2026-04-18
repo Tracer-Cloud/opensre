@@ -2,18 +2,11 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from app.cli.wizard.store import (
-    delete_named_remote,
-    load_active_remote_name,
     load_local_config,
-    load_named_remotes,
-    load_remote_url,
+    load_remote_ops_config,
     save_local_config,
-    save_named_remote,
-    save_remote_url,
-    set_active_remote,
+    save_remote_ops_config,
 )
 
 
@@ -56,93 +49,35 @@ def test_load_local_config_returns_independent_empty_payloads(tmp_path) -> None:
     assert second["targets"] == {}
 
 
-# ---------------------------------------------------------------------------
-# Named remotes
-# ---------------------------------------------------------------------------
+def test_remote_ops_config_round_trip(tmp_path) -> None:
+    store_path = tmp_path / "opensre.json"
+
+    save_remote_ops_config(
+        provider="railway",
+        project="proj-a",
+        service="svc-a",
+        path=store_path,
+    )
+
+    loaded = load_remote_ops_config(store_path)
+    assert loaded == {"provider": "railway", "project": "proj-a", "service": "svc-a"}
 
 
-class TestNamedRemotes:
-    def test_save_named_remote_creates_entry(self, tmp_path) -> None:
-        store_path = tmp_path / "opensre.json"
+def test_remote_ops_config_clears_project_and_service(tmp_path) -> None:
+    store_path = tmp_path / "opensre.json"
 
-        save_named_remote("ec2", "http://1.2.3.4:8080", source="deploy", path=store_path)
+    save_remote_ops_config(
+        provider="railway",
+        project="proj-b",
+        service="svc-b",
+        path=store_path,
+    )
+    save_remote_ops_config(
+        provider="railway",
+        project=None,
+        service=None,
+        path=store_path,
+    )
 
-        remotes = load_named_remotes(store_path)
-        assert remotes == {"ec2": "http://1.2.3.4:8080"}
-
-    def test_save_named_remote_with_set_active(self, tmp_path) -> None:
-        store_path = tmp_path / "opensre.json"
-
-        save_named_remote(
-            "ec2", "http://1.2.3.4:8080", set_active=True, source="deploy", path=store_path
-        )
-
-        assert load_remote_url(store_path) == "http://1.2.3.4:8080"
-        assert load_active_remote_name(store_path) == "ec2"
-
-    def test_multiple_remotes(self, tmp_path) -> None:
-        store_path = tmp_path / "opensre.json"
-
-        save_named_remote("ec2", "http://1.2.3.4:8080", source="deploy", path=store_path)
-        save_named_remote("local", "http://localhost:8080", source="manual", path=store_path)
-
-        remotes = load_named_remotes(store_path)
-        assert remotes == {
-            "ec2": "http://1.2.3.4:8080",
-            "local": "http://localhost:8080",
-        }
-
-    def test_set_active_remote_switches_url(self, tmp_path) -> None:
-        store_path = tmp_path / "opensre.json"
-
-        save_named_remote(
-            "ec2", "http://1.2.3.4:8080", set_active=True, source="deploy", path=store_path
-        )
-        save_named_remote("local", "http://localhost:8080", source="manual", path=store_path)
-
-        url = set_active_remote("local", store_path)
-
-        assert url == "http://localhost:8080"
-        assert load_remote_url(store_path) == "http://localhost:8080"
-        assert load_active_remote_name(store_path) == "local"
-
-    def test_set_active_remote_raises_for_unknown_name(self, tmp_path) -> None:
-        store_path = tmp_path / "opensre.json"
-
-        with pytest.raises(KeyError, match="No remote named 'missing'"):
-            set_active_remote("missing", store_path)
-
-    def test_delete_named_remote(self, tmp_path) -> None:
-        store_path = tmp_path / "opensre.json"
-
-        save_named_remote("ec2", "http://1.2.3.4:8080", set_active=True, path=store_path)
-        save_named_remote("local", "http://localhost:8080", path=store_path)
-
-        delete_named_remote("ec2", store_path)
-
-        assert load_named_remotes(store_path) == {"local": "http://localhost:8080"}
-        assert load_active_remote_name(store_path) is None
-
-    def test_deploy_overwrites_existing_ec2_remote(self, tmp_path) -> None:
-        store_path = tmp_path / "opensre.json"
-
-        save_named_remote("ec2", "http://old-ip:8080", set_active=True, path=store_path)
-        save_named_remote("ec2", "http://new-ip:8080", set_active=True, path=store_path)
-
-        remotes = load_named_remotes(store_path)
-        assert remotes == {"ec2": "http://new-ip:8080"}
-        assert load_remote_url(store_path) == "http://new-ip:8080"
-
-    def test_save_remote_url_still_works_standalone(self, tmp_path) -> None:
-        """Backward compat: save_remote_url still sets the active URL."""
-        store_path = tmp_path / "opensre.json"
-
-        save_remote_url("http://legacy:8080", store_path)
-
-        assert load_remote_url(store_path) == "http://legacy:8080"
-
-    def test_load_named_remotes_empty_on_fresh_store(self, tmp_path) -> None:
-        store_path = tmp_path / "opensre.json"
-
-        assert load_named_remotes(store_path) == {}
-        assert load_active_remote_name(store_path) is None
+    loaded = load_remote_ops_config(store_path)
+    assert loaded == {"provider": "railway", "project": None, "service": None}

@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-import app.integrations.vercel_incidents as vercel_incidents
+from app.integrations import vercel_incidents
 from app.remote.vercel_poller import VercelInvestigationCandidate, VercelResolutionError
 from app.services.vercel import VercelConfig
 
