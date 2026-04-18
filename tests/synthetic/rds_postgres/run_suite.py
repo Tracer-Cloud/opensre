@@ -300,7 +300,6 @@ def score_result(
 
         reasoning_text = " ".join([root_cause_text, validated_text, causal_chain_text])
 
-        mentions_failover = "failover" in reasoning_text
         mentions_event_reasoning = (
             "rds" in reasoning_text
             and (
