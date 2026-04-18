@@ -81,7 +81,8 @@
         "pages": [
           "investigation-overview",
           "remote-runtime-investigation",
-          "masking"
+          "masking",
+          "multi-instance-integrations"
         ]
       },
       {

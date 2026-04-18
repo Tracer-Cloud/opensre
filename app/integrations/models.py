@@ -431,11 +431,53 @@ class DiscordBotConfig(StrictConfigModel):
         return v
 
 
+class IntegrationInstance(StrictConfigModel):
+    """One named instance of a provider.
+
+    A single integration record (e.g. a ``grafana`` entry in the store) can
+    carry multiple named instances — for example, a ``prod`` and a
+    ``staging`` Grafana cluster. The name is normalized to lowercase and
+    tag keys are constrained to ``^[a-z][a-z0-9_-]*$``.
+    """
+
+    name: str = "default"
+    tags: dict[str, str] = Field(default_factory=dict)
+    credentials: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _normalize_name(cls, value: object) -> str:
+        text = str(value or "default").strip().lower()
+        return text or "default"
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _normalize_tags(cls, value: object) -> dict[str, str]:
+        if not isinstance(value, dict):
+            return {}
+        normalized: dict[str, str] = {}
+        for k, v in value.items():
+            key = str(k).strip().lower()
+            val = str(v).strip().lower()
+            if key and val and re.match(r"^[a-z][a-z0-9_-]*$", key):
+                normalized[key] = val
+        return normalized
+
+
 class EffectiveIntegrationEntry(StrictConfigModel):
-    """Resolved integration entry with source metadata."""
+    """Resolved integration entry with source metadata.
+
+    ``config`` is the flat default-instance view (backward compat). When
+    multiple instances are configured for the service, ``instances`` carries
+    them as ``[{name, tags, config, integration_id}, ...]`` — a pass-through
+    JSON shape (not the strict ``IntegrationInstance`` model) so the
+    catalog layer can enrich each with the already-classified flat config
+    without re-validating through Pydantic's forbidding config.
+    """
 
     source: str
     config: dict[str, Any]
+    instances: list[dict[str, Any]] | None = None
 
 
 class EffectiveIntegrations(StrictConfigModel):

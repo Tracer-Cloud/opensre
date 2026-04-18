@@ -384,11 +384,33 @@ def detect_sources(
     grafana_int = None
     grafana_local = False
     if resolved_integrations:
-        if resolved_integrations.get("grafana_local"):
-            grafana_int = resolved_integrations["grafana_local"]
-            grafana_local = True
-        elif resolved_integrations.get("grafana"):
-            grafana_int = resolved_integrations["grafana"]
+        # Multi-instance support: an alert may carry a ``grafana_instance`` hint
+        # naming a specific configured instance (e.g. ``"prod"``, ``"staging"``).
+        # When the hint matches, select that instance; otherwise fall back to
+        # the default (first) instance. See app/integrations/selectors.py.
+        grafana_hint: str | None = None
+        if isinstance(raw_alert, dict):
+            hint_candidate = raw_alert.get("grafana_instance")
+            if not hint_candidate:
+                nested = raw_alert.get("annotations")
+                if isinstance(nested, dict):
+                    hint_candidate = nested.get("grafana_instance")
+            if hint_candidate:
+                grafana_hint = str(hint_candidate).strip().lower() or None
+
+        if grafana_hint:
+            from app.integrations.selectors import get_instance_by_name
+
+            selected = get_instance_by_name(resolved_integrations, "grafana", grafana_hint)
+            if selected is not None:
+                grafana_int = selected
+
+        if grafana_int is None:
+            if resolved_integrations.get("grafana_local"):
+                grafana_int = resolved_integrations["grafana_local"]
+                grafana_local = True
+            elif resolved_integrations.get("grafana"):
+                grafana_int = resolved_integrations["grafana"]
 
     # When a _backend is injected we allow any alert_source; otherwise restrict to Grafana/unknown.
     _has_injected_backend = bool(grafana_int and "_backend" in grafana_int)

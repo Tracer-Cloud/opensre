@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any
@@ -67,9 +68,42 @@ _SERVICE_KEY_MAP = {
 }
 
 
+_STRUCTURAL_RECORD_FIELDS = frozenset({"id", "service", "status", "instances"})
+
+
+def _record_instances(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalize a record (v1 or v2 shape) into a list of instance dicts.
+
+    v2 records return their ``instances`` list directly. v1 records are
+    migrated on the fly: ``credentials`` plus every non-structural top-level
+    field (e.g. AWS ``role_arn``) become the single ``default`` instance's
+    credentials. This matches the v1→v2 store migration so downstream
+    classification logic reads ONE uniform shape.
+    """
+    if isinstance(record.get("instances"), list):
+        return [
+            inst if isinstance(inst, dict) else {} for inst in record["instances"]
+        ]
+    credentials = dict(record.get("credentials", {}))
+    for key, value in record.items():
+        if key in _STRUCTURAL_RECORD_FIELDS or key == "credentials":
+            continue
+        credentials.setdefault(key, value)
+    return [{"name": "default", "tags": {}, "credentials": credentials}]
+
+
 def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
-    """Classify active integrations by service into normalized runtime configs."""
+    """Classify active integrations by service into normalized runtime configs.
+
+    Backward compat: for each ``service``, ``resolved[service]`` is the flat
+    config dict of the DEFAULT (first) instance, matching the pre-multi-instance
+    contract. When multiple instances exist (or an instance has an explicit
+    non-``default`` name), a sibling key ``_all_{service}_instances`` carries
+    all of them as ``[{name, tags, config, integration_id}, ...]``. See
+    ``app/integrations/selectors.py`` for consumers.
+    """
     resolved: dict[str, Any] = {}
+    all_instances: dict[str, list[dict[str, Any]]] = {}
 
     active = [integration for integration in integrations if integration.get("status") == "active"]
 
@@ -83,369 +117,462 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
             continue
 
         key = _SERVICE_KEY_MAP.get(service_lower, service_lower)
-        credentials = integration.get("credentials", {})
+        record_id = str(integration.get("id", "")).strip()
 
-        if key in ("grafana", "grafana_local"):
-            try:
-                grafana_config = GrafanaIntegrationConfig.model_validate(
-                    {
-                        "endpoint": credentials.get("endpoint", ""),
-                        "api_key": credentials.get("api_key", ""),
-                        "integration_id": integration.get("id", ""),
-                    }
-                )
-            except Exception:
+        for instance in _record_instances(integration):
+            credentials = instance.get("credentials", {}) or {}
+            instance_name = str(instance.get("name", "default")).strip().lower() or "default"
+            instance_tags = instance.get("tags", {}) or {}
+            flat_view, flat_key = _classify_service_instance(
+                key, credentials, record_id=record_id
+            )
+            if flat_view is None or flat_key is None:
                 continue
-            if not grafana_config.endpoint:
-                continue
-            if grafana_config.is_local:
-                resolved["grafana_local"] = {
-                    "endpoint": grafana_config.endpoint,
-                    "api_key": "",
-                    "integration_id": grafana_config.integration_id,
+            resolved.setdefault(flat_key, flat_view)
+            all_instances.setdefault(flat_key, []).append(
+                {
+                    "name": instance_name,
+                    "tags": instance_tags,
+                    "config": flat_view,
+                    "integration_id": record_id,
                 }
-            elif grafana_config.api_key and grafana_config.api_key != "local":
-                resolved["grafana"] = grafana_config.model_dump()
+            )
 
-        elif key == "aws":
-            if "aws" in resolved:
-                continue
-            raw_config: dict[str, Any] = {
-                "region": credentials.get("region", "us-east-1"),
-                "role_arn": integration.get("role_arn", ""),
-                "external_id": integration.get("external_id", ""),
-                "integration_id": integration.get("id", ""),
-            }
-            if credentials.get("access_key_id") and credentials.get("secret_access_key"):
-                raw_config["credentials"] = {
-                    "access_key_id": credentials.get("access_key_id", ""),
-                    "secret_access_key": credentials.get("secret_access_key", ""),
-                    "session_token": credentials.get("session_token", ""),
-                }
-            try:
-                resolved["aws"] = AWSIntegrationConfig.model_validate(raw_config).model_dump(
-                    exclude_none=True
-                )
-            except Exception:
-                continue
-
-        elif key == "datadog":
-            try:
-                datadog_config = DatadogIntegrationConfig.model_validate(
-                    {
-                        "api_key": credentials.get("api_key", ""),
-                        "app_key": credentials.get("app_key", ""),
-                        "site": credentials.get("site", "datadoghq.com"),
-                        "integration_id": integration.get("id", ""),
-                    }
-                )
-            except Exception:
-                continue
-            if datadog_config.api_key and datadog_config.app_key:
-                resolved["datadog"] = datadog_config.model_dump()
-
-        elif key == "honeycomb":
-            try:
-                honeycomb_config = HoneycombIntegrationConfig.model_validate(
-                    {
-                        "api_key": credentials.get("api_key", ""),
-                        "dataset": credentials.get("dataset", ""),
-                        "base_url": credentials.get("base_url", ""),
-                        "integration_id": integration.get("id", ""),
-                    }
-                )
-            except Exception:
-                continue
-            if honeycomb_config.api_key:
-                resolved["honeycomb"] = honeycomb_config.model_dump()
-
-        elif key == "coralogix":
-            try:
-                coralogix_config = CoralogixIntegrationConfig.model_validate(
-                    {
-                        "api_key": credentials.get("api_key", ""),
-                        "base_url": credentials.get("base_url", ""),
-                        "application_name": credentials.get("application_name", ""),
-                        "subsystem_name": credentials.get("subsystem_name", ""),
-                        "integration_id": integration.get("id", ""),
-                    }
-                )
-            except Exception:
-                continue
-            if coralogix_config.api_key:
-                resolved["coralogix"] = coralogix_config.model_dump()
-
-        elif key == "github":
-            try:
-                github_config = build_github_mcp_config(
-                    {
-                        "url": credentials.get("url", ""),
-                        "mode": credentials.get("mode", "streamable-http"),
-                        "command": credentials.get("command", ""),
-                        "args": credentials.get("args", []),
-                        "auth_token": credentials.get("auth_token", ""),
-                        "toolsets": credentials.get("toolsets", []),
-                        "integration_id": integration.get("id", ""),
-                    }
-                )
-            except Exception:
-                continue
-            resolved["github"] = github_config.model_dump()
-
-        elif key == "sentry":
-            try:
-                sentry_config = build_sentry_config(
-                    {
-                        "base_url": credentials.get("base_url", "https://sentry.io"),
-                        "organization_slug": credentials.get("organization_slug", ""),
-                        "auth_token": credentials.get("auth_token", ""),
-                        "project_slug": credentials.get("project_slug", ""),
-                        "integration_id": integration.get("id", ""),
-                    }
-                )
-            except Exception:
-                continue
-            if sentry_config.organization_slug and sentry_config.auth_token:
-                resolved["sentry"] = sentry_config.model_dump()
-
-        elif key == "gitlab":
-            try:
-                gitlab_config = build_gitlab_config(
-                    {
-                        "base_url": credentials.get("base_url", ""),
-                        "auth_token": credentials.get("auth_token", ""),
-                    }
-                )
-            except Exception:
-                continue
-            resolved["gitlab"] = gitlab_config.model_dump()
-
-        elif key == "mongodb":
-            try:
-                mongodb_config = build_mongodb_config(
-                    {
-                        "connection_string": credentials.get("connection_string", ""),
-                        "database": credentials.get("database", ""),
-                        "auth_source": credentials.get("auth_source", "admin"),
-                        "tls": credentials.get("tls", True),
-                    }
-                )
-            except Exception:
-                continue
-
-            if mongodb_config.connection_string:
-                resolved["mongodb"] = mongodb_config.model_dump()
-
-        elif key == "postgresql":
-            try:
-                postgresql_config = build_postgresql_config(
-                    {
-                        "host": credentials.get("host", ""),
-                        "port": credentials.get("port", 5432),
-                        "database": credentials.get("database", ""),
-                        "username": credentials.get("username", "postgres"),
-                        "password": credentials.get("password", ""),
-                        "ssl_mode": credentials.get("ssl_mode", "prefer"),
-                    }
-                )
-            except Exception:
-                continue
-
-            if postgresql_config.host and postgresql_config.database:
-                resolved["postgresql"] = postgresql_config.model_dump()
-
-        elif key == "mongodb_atlas":
-            try:
-                atlas_config = build_mongodb_atlas_config(
-                    {
-                        "api_public_key": credentials.get("api_public_key", ""),
-                        "api_private_key": credentials.get("api_private_key", ""),
-                        "project_id": credentials.get("project_id", ""),
-                        "base_url": credentials.get(
-                            "base_url", "https://cloud.mongodb.com/api/atlas/v2"
-                        ),
-                    }
-                )
-            except Exception:
-                continue
-
-            if (
-                atlas_config.api_public_key
-                and atlas_config.api_private_key
-                and atlas_config.project_id
-            ):
-                resolved["mongodb_atlas"] = {
-                    "api_public_key": atlas_config.api_public_key,
-                    "api_private_key": atlas_config.api_private_key,
-                    "project_id": atlas_config.project_id,
-                    "base_url": atlas_config.base_url,
-                    "integration_id": integration.get("id", ""),
-                }
-
-        elif key == "mariadb":
-            try:
-                mariadb_config = build_mariadb_config(
-                    {
-                        "host": credentials.get("host", ""),
-                        "port": credentials.get("port", 3306),
-                        "database": credentials.get("database", ""),
-                        "username": credentials.get("username", ""),
-                        "password": credentials.get("password", ""),
-                        "ssl": credentials.get("ssl", True),
-                    }
-                )
-            except Exception:
-                continue
-
-            if mariadb_config.host and mariadb_config.database:
-                resolved["mariadb"] = {
-                    "host": mariadb_config.host,
-                    "port": mariadb_config.port,
-                    "database": mariadb_config.database,
-                    "username": mariadb_config.username,
-                    "password": mariadb_config.password,
-                    "ssl": mariadb_config.ssl,
-                    "integration_id": integration.get("id", ""),
-                }
-
-        elif key == "vercel":
-            try:
-                vercel_config = VercelConfig.model_validate(
-                    {
-                        "api_token": credentials.get("api_token", ""),
-                        "team_id": credentials.get("team_id", ""),
-                        "integration_id": integration.get("id", ""),
-                    }
-                )
-            except Exception:
-                continue
-
-            if vercel_config.api_token:
-                resolved["vercel"] = vercel_config.model_dump()
-
-        elif key == "opsgenie":
-            try:
-                opsgenie_config = OpsGenieIntegrationConfig.model_validate(
-                    {
-                        "api_key": credentials.get("api_key", ""),
-                        "region": credentials.get("region", "us"),
-                        "integration_id": integration.get("id", ""),
-                    }
-                )
-            except Exception:
-                continue
-            if opsgenie_config.api_key:
-                resolved["opsgenie"] = opsgenie_config.model_dump()
-
-        elif key == "jira":
-            try:
-                jira_config = JiraIntegrationConfig.model_validate(
-                    {
-                        "base_url": credentials.get("base_url", ""),
-                        "email": credentials.get("email", ""),
-                        "api_token": credentials.get("api_token", ""),
-                        "project_key": credentials.get("project_key", ""),
-                        "integration_id": integration.get("id", ""),
-                    }
-                )
-            except Exception:
-                continue
-            if jira_config.base_url and jira_config.email and jira_config.api_token:
-                resolved["jira"] = jira_config.model_dump()
-
-        elif key == "discord":
-            try:
-                discord_config = DiscordBotConfig.model_validate(
-                    {
-                        "bot_token": credentials.get("bot_token", ""),
-                        "application_id": credentials.get("application_id", ""),
-                        "public_key": credentials.get("public_key", ""),
-                        "default_channel_id": credentials.get("default_channel_id"),
-                    }
-                )
-            except Exception:
-                continue
-            if discord_config.bot_token:
-                resolved["discord"] = discord_config.model_dump()
-
-        elif key == "openclaw":
-            try:
-                openclaw_config = build_openclaw_config(
-                    {
-                        "url": credentials.get("url", ""),
-                        "mode": credentials.get("mode", "streamable-http"),
-                        "command": credentials.get("command", ""),
-                        "args": credentials.get("args", []),
-                        "auth_token": credentials.get("auth_token", ""),
-                        "integration_id": integration.get("id", ""),
-                    }
-                )
-            except Exception:
-                continue
-            if openclaw_config.is_configured:
-                resolved["openclaw"] = openclaw_config.model_dump()
-
-        elif key == "mysql":
-            try:
-                mysql_config = build_mysql_config(
-                    {
-                        "host": credentials.get("host", ""),
-                        "port": credentials.get("port", 3306),
-                        "database": credentials.get("database", ""),
-                        "username": credentials.get("username", "root"),
-                        "password": credentials.get("password", ""),
-                        "ssl_mode": credentials.get("ssl_mode", "preferred"),
-                    }
-                )
-            except Exception:
-                continue
-
-            if mysql_config.host and mysql_config.database:
-                resolved["mysql"] = {
-                    "host": mysql_config.host,
-                    "port": mysql_config.port,
-                    "database": mysql_config.database,
-                    "username": mysql_config.username,
-                    "password": mysql_config.password,
-                    "ssl_mode": mysql_config.ssl_mode,
-                    "integration_id": integration.get("id", ""),
-                }
-
-        elif key == "azure_sql":
-            try:
-                azure_sql_config = build_azure_sql_config(
-                    {
-                        "server": credentials.get("server", ""),
-                        "port": credentials.get("port", 1433),
-                        "database": credentials.get("database", ""),
-                        "username": credentials.get("username", ""),
-                        "password": credentials.get("password", ""),
-                        "driver": credentials.get("driver", "ODBC Driver 18 for SQL Server"),
-                        "encrypt": credentials.get("encrypt", True),
-                    }
-                )
-            except Exception:
-                continue
-
-            if azure_sql_config.server and azure_sql_config.database:
-                resolved["azure_sql"] = azure_sql_config.model_dump()
-
-        else:
-            resolved[key] = {
-                "credentials": credentials,
-                "integration_id": integration.get("id", ""),
-            }
+    for service, instances in all_instances.items():
+        if len(instances) > 1 or (instances and instances[0]["name"] != "default"):
+            resolved[f"_all_{service}_instances"] = instances
 
     resolved["_all"] = active
     return resolved
+
+
+def _classify_service_instance(
+    key: str, credentials: dict[str, Any], *, record_id: str
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Classify one instance into (flat_view, resolved_key).
+
+    Returns ``(None, None)`` when the instance is invalid or should be skipped
+    (e.g. required field missing). The returned ``resolved_key`` is usually
+    ``key`` itself, but Grafana splits into ``grafana`` or ``grafana_local``
+    based on its ``is_local`` property.
+    """
+    if key in ("grafana", "grafana_local"):
+        try:
+            grafana_config = GrafanaIntegrationConfig.model_validate(
+                {
+                    "endpoint": credentials.get("endpoint", ""),
+                    "api_key": credentials.get("api_key", ""),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if not grafana_config.endpoint:
+            return None, None
+        if grafana_config.is_local:
+            return {
+                "endpoint": grafana_config.endpoint,
+                "api_key": "",
+                "integration_id": grafana_config.integration_id,
+            }, "grafana_local"
+        if grafana_config.api_key and grafana_config.api_key != "local":
+            return grafana_config.model_dump(), "grafana"
+        return None, None
+
+    if key == "aws":
+        raw_config: dict[str, Any] = {
+            "region": credentials.get("region", "us-east-1"),
+            "role_arn": credentials.get("role_arn", ""),
+            "external_id": credentials.get("external_id", ""),
+            "integration_id": record_id,
+        }
+        if credentials.get("access_key_id") and credentials.get("secret_access_key"):
+            raw_config["credentials"] = {
+                "access_key_id": credentials.get("access_key_id", ""),
+                "secret_access_key": credentials.get("secret_access_key", ""),
+                "session_token": credentials.get("session_token", ""),
+            }
+        try:
+            return (
+                AWSIntegrationConfig.model_validate(raw_config).model_dump(exclude_none=True),
+                "aws",
+            )
+        except Exception:
+            return None, None
+
+    if key == "datadog":
+        try:
+            datadog_config = DatadogIntegrationConfig.model_validate(
+                {
+                    "api_key": credentials.get("api_key", ""),
+                    "app_key": credentials.get("app_key", ""),
+                    "site": credentials.get("site", "datadoghq.com"),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if datadog_config.api_key and datadog_config.app_key:
+            return datadog_config.model_dump(), "datadog"
+        return None, None
+
+    if key == "honeycomb":
+        try:
+            honeycomb_config = HoneycombIntegrationConfig.model_validate(
+                {
+                    "api_key": credentials.get("api_key", ""),
+                    "dataset": credentials.get("dataset", ""),
+                    "base_url": credentials.get("base_url", ""),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if honeycomb_config.api_key:
+            return honeycomb_config.model_dump(), "honeycomb"
+        return None, None
+
+    if key == "coralogix":
+        try:
+            coralogix_config = CoralogixIntegrationConfig.model_validate(
+                {
+                    "api_key": credentials.get("api_key", ""),
+                    "base_url": credentials.get("base_url", ""),
+                    "application_name": credentials.get("application_name", ""),
+                    "subsystem_name": credentials.get("subsystem_name", ""),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if coralogix_config.api_key:
+            return coralogix_config.model_dump(), "coralogix"
+        return None, None
+
+    if key == "github":
+        try:
+            github_config = build_github_mcp_config(
+                {
+                    "url": credentials.get("url", ""),
+                    "mode": credentials.get("mode", "streamable-http"),
+                    "command": credentials.get("command", ""),
+                    "args": credentials.get("args", []),
+                    "auth_token": credentials.get("auth_token", ""),
+                    "toolsets": credentials.get("toolsets", []),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        return github_config.model_dump(), "github"
+
+    if key == "sentry":
+        try:
+            sentry_config = build_sentry_config(
+                {
+                    "base_url": credentials.get("base_url", "https://sentry.io"),
+                    "organization_slug": credentials.get("organization_slug", ""),
+                    "auth_token": credentials.get("auth_token", ""),
+                    "project_slug": credentials.get("project_slug", ""),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if sentry_config.organization_slug and sentry_config.auth_token:
+            return sentry_config.model_dump(), "sentry"
+        return None, None
+
+    if key == "gitlab":
+        try:
+            gitlab_config = build_gitlab_config(
+                {
+                    "base_url": credentials.get("base_url", ""),
+                    "auth_token": credentials.get("auth_token", ""),
+                }
+            )
+        except Exception:
+            return None, None
+        return gitlab_config.model_dump(), "gitlab"
+
+    if key == "mongodb":
+        try:
+            mongodb_config = build_mongodb_config(
+                {
+                    "connection_string": credentials.get("connection_string", ""),
+                    "database": credentials.get("database", ""),
+                    "auth_source": credentials.get("auth_source", "admin"),
+                    "tls": credentials.get("tls", True),
+                }
+            )
+        except Exception:
+            return None, None
+        if mongodb_config.connection_string:
+            return mongodb_config.model_dump(), "mongodb"
+        return None, None
+
+    if key == "postgresql":
+        try:
+            postgresql_config = build_postgresql_config(
+                {
+                    "host": credentials.get("host", ""),
+                    "port": credentials.get("port", 5432),
+                    "database": credentials.get("database", ""),
+                    "username": credentials.get("username", "postgres"),
+                    "password": credentials.get("password", ""),
+                    "ssl_mode": credentials.get("ssl_mode", "prefer"),
+                }
+            )
+        except Exception:
+            return None, None
+        if postgresql_config.host and postgresql_config.database:
+            return postgresql_config.model_dump(), "postgresql"
+        return None, None
+
+    if key == "mongodb_atlas":
+        try:
+            atlas_config = build_mongodb_atlas_config(
+                {
+                    "api_public_key": credentials.get("api_public_key", ""),
+                    "api_private_key": credentials.get("api_private_key", ""),
+                    "project_id": credentials.get("project_id", ""),
+                    "base_url": credentials.get(
+                        "base_url", "https://cloud.mongodb.com/api/atlas/v2"
+                    ),
+                }
+            )
+        except Exception:
+            return None, None
+        if (
+            atlas_config.api_public_key
+            and atlas_config.api_private_key
+            and atlas_config.project_id
+        ):
+            return {
+                "api_public_key": atlas_config.api_public_key,
+                "api_private_key": atlas_config.api_private_key,
+                "project_id": atlas_config.project_id,
+                "base_url": atlas_config.base_url,
+                "integration_id": record_id,
+            }, "mongodb_atlas"
+        return None, None
+
+    if key == "mariadb":
+        try:
+            mariadb_config = build_mariadb_config(
+                {
+                    "host": credentials.get("host", ""),
+                    "port": credentials.get("port", 3306),
+                    "database": credentials.get("database", ""),
+                    "username": credentials.get("username", ""),
+                    "password": credentials.get("password", ""),
+                    "ssl": credentials.get("ssl", True),
+                }
+            )
+        except Exception:
+            return None, None
+        if mariadb_config.host and mariadb_config.database:
+            return {
+                "host": mariadb_config.host,
+                "port": mariadb_config.port,
+                "database": mariadb_config.database,
+                "username": mariadb_config.username,
+                "password": mariadb_config.password,
+                "ssl": mariadb_config.ssl,
+                "integration_id": record_id,
+            }, "mariadb"
+        return None, None
+
+    if key == "vercel":
+        try:
+            vercel_config = VercelConfig.model_validate(
+                {
+                    "api_token": credentials.get("api_token", ""),
+                    "team_id": credentials.get("team_id", ""),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if vercel_config.api_token:
+            return vercel_config.model_dump(), "vercel"
+        return None, None
+
+    if key == "opsgenie":
+        try:
+            opsgenie_config = OpsGenieIntegrationConfig.model_validate(
+                {
+                    "api_key": credentials.get("api_key", ""),
+                    "region": credentials.get("region", "us"),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if opsgenie_config.api_key:
+            return opsgenie_config.model_dump(), "opsgenie"
+        return None, None
+
+    if key == "jira":
+        try:
+            jira_config = JiraIntegrationConfig.model_validate(
+                {
+                    "base_url": credentials.get("base_url", ""),
+                    "email": credentials.get("email", ""),
+                    "api_token": credentials.get("api_token", ""),
+                    "project_key": credentials.get("project_key", ""),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if jira_config.base_url and jira_config.email and jira_config.api_token:
+            return jira_config.model_dump(), "jira"
+        return None, None
+
+    if key == "discord":
+        try:
+            discord_config = DiscordBotConfig.model_validate(
+                {
+                    "bot_token": credentials.get("bot_token", ""),
+                    "application_id": credentials.get("application_id", ""),
+                    "public_key": credentials.get("public_key", ""),
+                    "default_channel_id": credentials.get("default_channel_id"),
+                }
+            )
+        except Exception:
+            return None, None
+        if discord_config.bot_token:
+            return discord_config.model_dump(), "discord"
+        return None, None
+
+    if key == "openclaw":
+        try:
+            openclaw_config = build_openclaw_config(
+                {
+                    "url": credentials.get("url", ""),
+                    "mode": credentials.get("mode", "streamable-http"),
+                    "command": credentials.get("command", ""),
+                    "args": credentials.get("args", []),
+                    "auth_token": credentials.get("auth_token", ""),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if openclaw_config.is_configured:
+            return openclaw_config.model_dump(), "openclaw"
+        return None, None
+
+    if key == "mysql":
+        try:
+            mysql_config = build_mysql_config(
+                {
+                    "host": credentials.get("host", ""),
+                    "port": credentials.get("port", 3306),
+                    "database": credentials.get("database", ""),
+                    "username": credentials.get("username", "root"),
+                    "password": credentials.get("password", ""),
+                    "ssl_mode": credentials.get("ssl_mode", "preferred"),
+                }
+            )
+        except Exception:
+            return None, None
+        if mysql_config.host and mysql_config.database:
+            return {
+                "host": mysql_config.host,
+                "port": mysql_config.port,
+                "database": mysql_config.database,
+                "username": mysql_config.username,
+                "password": mysql_config.password,
+                "ssl_mode": mysql_config.ssl_mode,
+                "integration_id": record_id,
+            }, "mysql"
+        return None, None
+
+    if key == "azure_sql":
+        try:
+            azure_sql_config = build_azure_sql_config(
+                {
+                    "server": credentials.get("server", ""),
+                    "port": credentials.get("port", 1433),
+                    "database": credentials.get("database", ""),
+                    "username": credentials.get("username", ""),
+                    "password": credentials.get("password", ""),
+                    "driver": credentials.get("driver", "ODBC Driver 18 for SQL Server"),
+                    "encrypt": credentials.get("encrypt", True),
+                }
+            )
+        except Exception:
+            return None, None
+        if azure_sql_config.server and azure_sql_config.database:
+            return azure_sql_config.model_dump(), "azure_sql"
+        return None, None
+
+    # Fallback for unknown services: pass through credentials + record id.
+    return {"credentials": credentials, "integration_id": record_id}, key
+
+
+def _parse_instances_env(env_name: str, service: str) -> dict[str, Any] | None:
+    """Parse ``<SERVICE>_INSTANCES`` env var into a v2 integration record.
+
+    Accepts a JSON array of instance entries. Each entry may be either
+    ``{"name": ..., "tags": {...}, "credentials": {...}}`` or a flat
+    ``{"name": ..., "tags": {...}, <field>: <value>, ...}`` — we accept
+    both shapes and normalize to ``credentials``. Returns None if the env
+    var is unset, empty, invalid JSON, or not a non-empty list (logs a
+    warning on parse failure so callers can fall through to legacy vars).
+
+    Critical: always returns a SINGLE record with multiple instances inside,
+    never multiple records — otherwise ``merge_integrations_by_service``
+    would drop all but one (PR #527 bug #2).
+    """
+    raw = os.getenv(env_name, "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "%s is not valid JSON; falling back to legacy vars: %s", env_name, exc
+        )
+        return None
+    if not isinstance(parsed, list) or not parsed:
+        return None
+    instances: list[dict[str, Any]] = []
+    for entry in parsed:
+        if not isinstance(entry, dict):
+            continue
+        nested_creds = entry.get("credentials")
+        if isinstance(nested_creds, dict):
+            credentials = dict(nested_creds)
+        else:
+            credentials = {k: v for k, v in entry.items() if k not in {"name", "tags"}}
+        name = str(entry.get("name", "default")).strip().lower() or "default"
+        tags = entry.get("tags") if isinstance(entry.get("tags"), dict) else {}
+        instances.append({"name": name, "tags": tags, "credentials": credentials})
+    if not instances:
+        return None
+    return {
+        "id": f"env-{service}",
+        "service": service,
+        "status": "active",
+        "instances": instances,
+    }
 
 
 def load_env_integrations() -> list[dict[str, Any]]:
     """Build integration records from local environment variables."""
     integrations: list[dict[str, Any]] = []
 
-    grafana_endpoint = os.getenv("GRAFANA_INSTANCE_URL", "").strip()
-    grafana_api_key = os.getenv("GRAFANA_READ_TOKEN", "").strip()
+    grafana_multi = _parse_instances_env("GRAFANA_INSTANCES", "grafana")
+    if grafana_multi is not None:
+        integrations.append(grafana_multi)
+        grafana_endpoint = ""
+        grafana_api_key = ""
+    else:
+        grafana_endpoint = os.getenv("GRAFANA_INSTANCE_URL", "").strip()
+        grafana_api_key = os.getenv("GRAFANA_READ_TOKEN", "").strip()
     if grafana_endpoint and grafana_api_key:
         grafana_config = GrafanaIntegrationConfig.model_validate(
             {
@@ -465,9 +592,16 @@ def load_env_integrations() -> list[dict[str, Any]]:
             }
         )
 
-    datadog_api_key = os.getenv("DD_API_KEY", "").strip()
-    datadog_app_key = os.getenv("DD_APP_KEY", "").strip()
-    datadog_site = os.getenv("DD_SITE", "datadoghq.com").strip() or "datadoghq.com"
+    datadog_multi = _parse_instances_env("DD_INSTANCES", "datadog")
+    if datadog_multi is not None:
+        integrations.append(datadog_multi)
+        datadog_api_key = ""
+        datadog_app_key = ""
+        datadog_site = ""
+    else:
+        datadog_api_key = os.getenv("DD_API_KEY", "").strip()
+        datadog_app_key = os.getenv("DD_APP_KEY", "").strip()
+        datadog_site = os.getenv("DD_SITE", "datadoghq.com").strip() or "datadoghq.com"
     if datadog_api_key and datadog_app_key:
         datadog_config = DatadogIntegrationConfig.model_validate(
             {
@@ -485,7 +619,12 @@ def load_env_integrations() -> list[dict[str, Any]]:
             }
         )
 
-    honeycomb_api_key = os.getenv("HONEYCOMB_API_KEY", "").strip()
+    honeycomb_multi = _parse_instances_env("HONEYCOMB_INSTANCES", "honeycomb")
+    if honeycomb_multi is not None:
+        integrations.append(honeycomb_multi)
+        honeycomb_api_key = ""
+    else:
+        honeycomb_api_key = os.getenv("HONEYCOMB_API_KEY", "").strip()
     if honeycomb_api_key:
         honeycomb_config = HoneycombIntegrationConfig.model_validate(
             {
@@ -503,7 +642,12 @@ def load_env_integrations() -> list[dict[str, Any]]:
             }
         )
 
-    coralogix_api_key = os.getenv("CORALOGIX_API_KEY", "").strip()
+    coralogix_multi = _parse_instances_env("CORALOGIX_INSTANCES", "coralogix")
+    if coralogix_multi is not None:
+        integrations.append(coralogix_multi)
+        coralogix_api_key = ""
+    else:
+        coralogix_api_key = os.getenv("CORALOGIX_API_KEY", "").strip()
     if coralogix_api_key:
         coralogix_config = CoralogixIntegrationConfig.model_validate(
             {
@@ -522,12 +666,22 @@ def load_env_integrations() -> list[dict[str, Any]]:
             }
         )
 
-    aws_role_arn = os.getenv("AWS_ROLE_ARN", "").strip()
-    aws_external_id = os.getenv("AWS_EXTERNAL_ID", "").strip()
-    aws_region = os.getenv("AWS_REGION", "us-east-1").strip() or "us-east-1"
-    aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
-    aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
-    aws_session_token = os.getenv("AWS_SESSION_TOKEN", "").strip()
+    aws_multi = _parse_instances_env("AWS_INSTANCES", "aws")
+    if aws_multi is not None:
+        integrations.append(aws_multi)
+        aws_role_arn = ""
+        aws_external_id = ""
+        aws_region = "us-east-1"
+        aws_access_key_id = ""
+        aws_secret_access_key = ""
+        aws_session_token = ""
+    else:
+        aws_role_arn = os.getenv("AWS_ROLE_ARN", "").strip()
+        aws_external_id = os.getenv("AWS_EXTERNAL_ID", "").strip()
+        aws_region = os.getenv("AWS_REGION", "us-east-1").strip() or "us-east-1"
+        aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
+        aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
+        aws_session_token = os.getenv("AWS_SESSION_TOKEN", "").strip()
     if aws_role_arn:
         aws_config = AWSIntegrationConfig.model_validate(
             {
@@ -983,6 +1137,9 @@ def resolve_effective_integrations(
                 source_by_service.get(service, "local env"),
                 resolved_integration,
             )
+            all_instances = classified_integrations.get(f"_all_{service}_instances")
+            if isinstance(all_instances, list) and len(all_instances) > 1:
+                effective[service]["instances"] = all_instances
 
     if "datadog" not in effective:
         datadog_store_integration = store_integration_by_service.get("datadog")
