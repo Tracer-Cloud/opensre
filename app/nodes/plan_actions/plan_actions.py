@@ -1,6 +1,6 @@
 """Plan investigation actions from available inputs."""
 
-from typing import Any, cast
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -107,11 +107,10 @@ def plan_actions(
     # Create masking context for this investigation
     masking_context = MaskingContext.create()
 
-    available_sources_raw = detect_sources(
+    # Unmasked sources are returned to callers for tool execution.
+    available_sources = detect_sources(
         input_data.raw_alert, input_data.context, resolved_integrations=resolved_integrations
     )
-    # Unmasked sources are returned to callers for tool execution.
-    available_sources = cast(dict[str, dict], available_sources_raw)
 
     # Enhance sources with dynamically discovered information from evidence (e.g., audit_key from S3 metadata)
     s3_object = input_data.evidence.get("s3_object", {})
