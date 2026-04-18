@@ -6,6 +6,7 @@ from typing import cast
 
 from langsmith import traceable
 
+from app.masking import MaskingContext
 from app.nodes.publish_findings.formatters.report import (
     build_slack_blocks,
     format_slack_message,
@@ -35,6 +36,13 @@ def generate_report(state: InvestigationState) -> dict:
     short_summary = state.get("problem_md")
     slack_message = format_slack_message(ctx)
 
+    # Restore any masked infrastructure identifiers in user-facing output.
+    # No-op when masking is disabled or the state has no placeholders.
+    masking_ctx = MaskingContext.from_state(dict(state))
+    slack_message = masking_ctx.unmask(slack_message)
+    if isinstance(short_summary, str):
+        short_summary = masking_ctx.unmask(short_summary)
+
     # First ingest: persist the report and get back the investigation_id
     investigation_id: str | None = None
     try:
@@ -54,6 +62,7 @@ def generate_report(state: InvestigationState) -> dict:
             logger.warning("[publish] ingest url update failed: %s", exc)
 
     all_blocks = build_slack_blocks(ctx) + build_action_blocks(investigation_url, investigation_id)
+    all_blocks = masking_ctx.unmask_value(all_blocks)
     render_report(slack_message, root_cause_category=state.get("root_cause_category"))
     open_in_editor(slack_message)
 

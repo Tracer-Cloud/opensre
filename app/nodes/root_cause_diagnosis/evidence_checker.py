@@ -23,6 +23,12 @@ _INVESTIGATED_EVIDENCE_KEYS = frozenset({
     "cloudwatch_logs",
     "datadog_logs",
     "datadog_monitors",
+    "eks_pods",
+    "eks_events",
+    "eks_deployments",
+    "eks_node_health",
+    "eks_pod_logs",
+    "eks_deployment_status",
 })
 
 
@@ -43,23 +49,29 @@ def check_evidence_availability(
     web_run = context.get("tracer_web_run", {})
     has_tracer_evidence = web_run.get("found")
     has_cloudwatch_evidence = bool(
-        evidence.get("error_logs")
-        or evidence.get("cloudwatch_logs")
-        or evidence.get("grafana_logs")
-        or evidence.get("grafana_error_logs")
-        or evidence.get("grafana_traces")
-        or evidence.get("grafana_metrics")
-        or evidence.get("datadog_logs")
-        or evidence.get("datadog_monitors")
-        or evidence.get("datadog_events")
+        evidence.get("error_logs") is not None
+        or evidence.get("cloudwatch_logs") is not None
+        or evidence.get("grafana_logs") is not None
+        or evidence.get("grafana_error_logs") is not None
+        or evidence.get("grafana_traces") is not None
+        or evidence.get("grafana_metrics") is not None
+        or evidence.get("datadog_logs") is not None
+        or evidence.get("datadog_monitors") is not None
+        or evidence.get("datadog_events") is not None
         or evidence.get("s3_object", {}).get("found")
         or evidence.get("s3_audit_payload", {}).get("found")
-        or evidence.get("s3_marker")
-        or evidence.get("lambda_function")
-        or evidence.get("lambda_logs")
-        or evidence.get("aws_cloudwatch_metrics")
-        or evidence.get("aws_rds_events")
-        or evidence.get("aws_performance_insights")
+        or evidence.get("s3_marker") is not None
+        or evidence.get("lambda_function") is not None
+        or evidence.get("lambda_logs") is not None
+        or evidence.get("aws_cloudwatch_metrics") is not None
+        or evidence.get("aws_rds_events") is not None
+        or evidence.get("aws_performance_insights") is not None
+        or evidence.get("eks_pods") is not None
+        or evidence.get("eks_events") is not None
+        or evidence.get("eks_node_health") is not None
+        or evidence.get("eks_deployments") is not None
+        or evidence.get("eks_pod_logs") is not None
+        or evidence.get("eks_deployment_status") is not None
     )
 
     # Check for evidence in alert annotations or raw text

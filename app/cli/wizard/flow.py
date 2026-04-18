@@ -13,6 +13,7 @@ from rich.text import Text
 
 from app.cli.wizard.config import PROVIDER_BY_VALUE, SUPPORTED_PROVIDERS
 from app.cli.wizard.env_sync import sync_env_values, sync_provider_env
+from app.cli.wizard.integration_health import IntegrationHealthResult
 from app.cli.wizard.probes import ProbeResult, probe_local_target, probe_remote_target
 from app.cli.wizard.prompts import select as select_prompt
 from app.cli.wizard.store import get_store_path, load_local_config, save_local_config
@@ -161,13 +162,6 @@ def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
 
     return _get()
-
-
-@dataclass(frozen=True)
-class IntegrationHealthResult:
-    ok: bool
-    detail: str
-
 
 _STYLE = questionary.Style(
     [
@@ -1483,11 +1477,12 @@ def run_wizard(_argv: list[str] | None = None) -> int:
             )
         ]
         model = provider.default_model
-        _step("API Key")
+        _step(provider.credential_label.title())
         try:
             api_key = _prompt_value(
-                f"{provider.label} API key ({provider.api_key_env})",
-                secret=True,
+                f"{provider.label} {provider.credential_label} ({provider.api_key_env})",
+                default=provider.credential_default,
+                secret=provider.credential_secret,
             )
         except KeyboardInterrupt:
             _console.print("\n[yellow]Setup cancelled.[/]")
@@ -1505,11 +1500,12 @@ def run_wizard(_argv: list[str] | None = None) -> int:
                 return 1
             has_api_key = True
         if not has_api_key:
-            _step("API Key")
+            _step(provider.credential_label.title())
             try:
                 api_key = _prompt_value(
-                    f"{provider.label} API key ({provider.api_key_env})",
-                    secret=True,
+                    f"{provider.label} {provider.credential_label} ({provider.api_key_env})",
+                    default=provider.credential_default,
+                    secret=provider.credential_secret,
                 )
             except KeyboardInterrupt:
                 _console.print("\n[yellow]Setup cancelled.[/]")

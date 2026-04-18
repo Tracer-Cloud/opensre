@@ -28,7 +28,7 @@ File format:
 }
 
 Each entry mirrors the shape returned by /api/integrations so that
-_classify_integrations() in node_resolve_integrations can consume both
+classify_integrations() in app.integrations.catalog can consume both
 sources without any special-casing.
 """
 

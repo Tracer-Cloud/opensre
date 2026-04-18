@@ -229,6 +229,30 @@ class PostgreSQLIntegrationConfig(StrictConfigModel):
         return normalized or "prefer"
 
 
+class AzureSQLIntegrationConfig(StrictConfigModel):
+    """Normalized Azure SQL Database credentials used by resolution and verification flows."""
+
+    server: str
+    port: int = 1433
+    database: str
+    username: str = ""
+    password: str = ""
+    driver: str = "ODBC Driver 18 for SQL Server"
+    encrypt: bool = True
+    integration_id: str = ""
+
+    @field_validator("server", "database", "username", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("driver", mode="before")
+    @classmethod
+    def _normalize_driver(cls, value: object) -> str:
+        normalized = str(value or "ODBC Driver 18 for SQL Server").strip()
+        return normalized or "ODBC Driver 18 for SQL Server"
+
+
 class MySQLIntegrationConfig(StrictConfigModel):
     """Normalized MySQL credentials used by resolution and verification flows."""
 
@@ -381,12 +405,13 @@ class PrefectIntegrationConfig(StrictConfigModel):
     def _normalize_str(cls, value: object) -> str:
         return str(value or "").strip()
 
+
 class DiscordBotConfig(StrictConfigModel):
     """Discord runtime config."""
 
-    bot_token: str          # Bot token for API calls
+    bot_token: str  # Bot token for API calls
     application_id: str = ""  # For slash command registration (required for inbound only)
-    public_key: str = ""      # For signature verification (required for inbound only)
+    public_key: str = ""  # For signature verification (required for inbound only)
     default_channel_id: str | None = None  # Fallback for CLI-triggered findings
 
     @field_validator("bot_token")
@@ -468,6 +493,7 @@ class EffectiveIntegrations(StrictConfigModel):
     kafka: EffectiveIntegrationEntry | None = None
     clickhouse: EffectiveIntegrationEntry | None = None
     postgresql: EffectiveIntegrationEntry | None = None
+    azure_sql: EffectiveIntegrationEntry | None = None
     bitbucket: EffectiveIntegrationEntry | None = None
     trello: EffectiveIntegrationEntry | None = None
     discord: EffectiveIntegrationEntry | None = None

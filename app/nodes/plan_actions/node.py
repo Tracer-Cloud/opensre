@@ -51,6 +51,30 @@ def node_plan_actions(state: InvestigationState) -> dict:
     planned_actions = typed_plan.actions if typed_plan else []
     plan_rationale = typed_plan.rationale if typed_plan else ""
 
+    # Code-level guard: If the LLM returns an empty plan (e.g. for a healthy/informational alert),
+    # forcibly seed a verification action to prevent infinite looping on insufficient evidence.
+    if not planned_actions and available_action_names:
+        fallback_candidates = [
+            "query_grafana_metrics",
+            "query_grafana_logs",
+            "query_datadog_all",
+            "query_datadog_logs",
+            "query_honeycomb_traces",
+            "query_coralogix_logs",
+            "get_cloudwatch_logs",
+            "get_host_metrics",
+            "list_eks_pods",
+            "get_eks_events",
+        ]
+        for candidate in fallback_candidates:
+            if candidate in available_action_names:
+                planned_actions = [candidate]
+                plan_rationale = "Controller fallback: LLM returned empty plan. Forcing verification action."
+                break
+        if not planned_actions:
+            planned_actions = [available_action_names[0]]
+            plan_rationale = "Controller fallback: LLM returned empty plan. Forcing available verification action."
+
     # Build audit entry for this planning step
     audit_entry: PlanAudit = {
         "loop": loop_count,

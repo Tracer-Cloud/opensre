@@ -140,10 +140,10 @@ jobs:
             target: windows-x64
             binary_name: opensre.exe
             archive_ext: zip
-          - runner: windows-11-arm
-            target: windows-arm64
-            binary_name: opensre.exe
-            archive_ext: zip
+          # windows-arm64 is currently excluded from the default release matrix:
+          # cryptography does not publish win_arm64 wheels, so dependency install
+          # falls back to a source build that requires an OpenSSL toolchain on the
+          # GitHub-hosted runner.
     runs-on: ${{ matrix.runner }}
     env:
       TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
@@ -162,9 +162,11 @@ jobs:
         run: python packaging/sync_release_version.py --tag "$TAG_NAME"
 
       - name: Install binary build dependencies
+        shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install .
           pip install pyinstaller
 
       - name: Build binary
