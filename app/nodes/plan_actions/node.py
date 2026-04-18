@@ -1,11 +1,12 @@
 """Plan actions node - planning only."""
 
-from typing import Any
+from typing import cast
 
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from app.nodes.investigate.models import InvestigateInput
+from app.nodes.investigate.types import PlanAudit
 from app.nodes.plan_actions.plan_actions import plan_actions as build_plan_actions
 from app.output import debug_print, get_tracker
 from app.state import InvestigationState
@@ -45,12 +46,37 @@ def node_plan_actions(state: InvestigationState) -> dict:
         plan_model=InvestigationPlan,
         resolved_integrations=state.get("resolved_integrations"),
     )
+    typed_plan = cast(InvestigationPlan | None, plan)
 
-    planned_actions = plan.actions if plan else []
-    plan_rationale = plan.rationale if plan else ""
+    planned_actions = typed_plan.actions if typed_plan else []
+    plan_rationale = typed_plan.rationale if typed_plan else ""
+
+    # Code-level guard: If the LLM returns an empty plan (e.g. for a healthy/informational alert),
+    # forcibly seed a verification action to prevent infinite looping on insufficient evidence.
+    if not planned_actions and available_action_names:
+        fallback_candidates = [
+            "query_grafana_metrics",
+            "query_grafana_logs",
+            "query_datadog_all",
+            "query_datadog_logs",
+            "query_honeycomb_traces",
+            "query_coralogix_logs",
+            "get_cloudwatch_logs",
+            "get_host_metrics",
+            "list_eks_pods",
+            "get_eks_events",
+        ]
+        for candidate in fallback_candidates:
+            if candidate in available_action_names:
+                planned_actions = [candidate]
+                plan_rationale = "Controller fallback: LLM returned empty plan. Forcing verification action."
+                break
+        if not planned_actions:
+            planned_actions = [available_action_names[0]]
+            plan_rationale = "Controller fallback: LLM returned empty plan. Forcing available verification action."
 
     # Build audit entry for this planning step
-    audit_entry: dict[str, Any] = {
+    audit_entry: PlanAudit = {
         "loop": loop_count,
         "tool_budget": input_data.tool_budget,
         "planned_count": len(planned_actions),
@@ -60,7 +86,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
         audit_entry["reroute_reason"] = reroute_reason
 
     # Safety check: if we're in a loop but can't plan new actions, stop the investigation
-    if not available_action_names or plan is None:
+    if not available_action_names or typed_plan is None:
         if loop_count > 0:
             debug_print(
                 f"WARNING: Loop {loop_count} but no new actions can be planned. "

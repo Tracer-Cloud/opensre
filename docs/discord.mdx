@@ -1,0 +1,133 @@
+---
+title: "Discord"
+---
+
+OpenSRE's Discord integration lets you trigger investigations with the `/investigate` slash command and receive findings as formatted embeds in a dedicated thread — all without leaving Discord.
+
+---
+
+## Step 1: Create a Discord Application and Bot
+
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) and click **New Application**.
+2. Give it a name (e.g. `OpenSRE`) and click **Create**.
+3. Open the **Bot** tab on the left sidebar.
+   - Click **Add Bot** → **Yes, do it!**
+   - Under **Token**, click **Reset Token** and copy the value. This is your **Bot Token** — treat it like a password.
+   - Under **Privileged Gateway Intents**, no additional intents are required.
+4. Open the **General Information** tab and copy:
+   - **Application ID**
+   - **Public Key**
+
+---
+
+## Step 2: Set Bot Permissions and Invite to Your Server
+
+1. Open the **OAuth2 → URL Generator** tab.
+2. Under **Scopes**, select:
+   - `bot`
+   - `applications.commands`
+3. Under **Bot Permissions**, select:
+   - `Send Messages`
+   - `Create Public Threads`
+   - `Send Messages in Threads`
+   - `Embed Links`
+   - `Read Message History`
+4. Copy the generated URL and open it in your browser.
+5. Select the server you want to add OpenSRE to and click **Authorize**.
+
+---
+
+## Step 3: Set the Interactions Endpoint URL
+
+Discord requires your server to verify it owns the endpoint before slash commands will work.
+
+1. In the **General Information** tab of your application, find **Interactions Endpoint URL**.
+2. Set it to:
+   ```
+   https://<your-opensre-host>/discord/interactions
+   ```
+   Replace `<your-opensre-host>` with the public hostname where your OpenSRE server is running.
+3. Click **Save Changes**. Discord will immediately send a `PING` to that URL and expect a valid response — OpenSRE handles this automatically.
+
+<Note>
+The `/discord/interactions` endpoint must be publicly reachable over HTTPS. If you are running locally, use a tunnel such as `ngrok` for testing.
+</Note>
+
+---
+
+## Step 4: Configure the Integration in OpenSRE
+
+Run the setup wizard and select **Discord**:
+
+```bash
+opensre onboard
+```
+
+When prompted, enter:
+- **Bot Token** — from Step 1
+- **Application ID** — from Step 1
+- **Public Key** — from Step 1
+- **Default channel ID** *(optional)* — the channel where findings are posted when an investigation is triggered from the CLI rather than from a slash command. To find a channel ID, right-click the channel in Discord → **Copy Channel ID** (requires Developer Mode to be enabled in Discord settings).
+
+OpenSRE will validate your bot token and automatically register the `/investigate` slash command on your application.
+
+The wizard writes the following environment variables to your `.env` file:
+
+| Variable | Description |
+|---|---|
+| `DISCORD_BOT_TOKEN` | Bot token for API calls |
+| `DISCORD_APPLICATION_ID` | Application ID for slash command registration |
+| `DISCORD_PUBLIC_KEY` | Ed25519 public key for signature verification |
+| `DISCORD_DEFAULT_CHANNEL_ID` | Fallback channel for CLI-triggered findings |
+
+---
+
+## Step 5: Trigger an Investigation
+
+In any Discord channel the bot has access to, run:
+
+```
+/investigate alert:<alert text or JSON>
+```
+
+OpenSRE will:
+1. Acknowledge the command immediately (Discord's "thinking..." state).
+2. Run the investigation in the background.
+3. Post the findings as a rich embed in the same channel.
+4. Create a thread on that message for follow-up context.
+
+---
+
+## Required Bot Permissions Summary
+
+| Permission | Why it's needed |
+|---|---|
+| `Send Messages` | Post the initial investigation result embed |
+| `Create Public Threads` | Open a thread on the result message |
+| `Send Messages in Threads` | Post follow-up content into the thread |
+| `Embed Links` | Render structured embeds (root cause, evidence, recommendations) |
+| `Read Message History` | Required for thread creation on existing messages |
+
+---
+
+## Troubleshooting
+
+**Slash command not appearing in Discord**
+
+The `/investigate` command is registered globally and may take up to one hour to propagate. Re-running `opensre onboard` and selecting Discord will re-register the command.
+
+**`DISCORD_PUBLIC_KEY not configured` error on your server**
+
+Ensure `DISCORD_PUBLIC_KEY` is set in your environment before starting the OpenSRE server. Check with:
+
+```bash
+opensre onboard
+```
+
+**Discord returns "This interaction failed"**
+
+This means the background investigation task encountered an error or your server did not respond to the followup within Discord's 15-minute window. Check your OpenSRE server logs for details.
+
+**401 on the interactions endpoint**
+
+Your server's public key does not match the one Discord is signing with. Verify `DISCORD_PUBLIC_KEY` matches the value in the **General Information** tab of your Discord application.

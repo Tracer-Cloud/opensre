@@ -1,0 +1,109 @@
+---
+title: "GitLab"
+---
+
+OpenSRE's GitLab integration gives the investigation agent read access to your merge requests, commits, pipelines, and files for root cause analysis. Optionally, it can write investigation findings back as a note on the relevant MR.
+
+---
+
+## Step 1: Create a GitLab Access Token
+
+OpenSRE supports both **Personal Access Tokens** and **Project Access Tokens**. A Project Access Token is recommended for production — it is scoped to a single project and does not depend on a user account.
+
+### Personal Access Token (quickest for local use)
+
+1. In GitLab, go to your avatar → **Edit profile** → **Access Tokens**.
+2. Click **Add new token**.
+3. Give it a name (e.g. `opensre`) and set an expiry date.
+4. Select the following scopes:
+   - `read_api` — required for reading MRs, commits, pipelines, and files
+   - `api` — required only if you enable MR write-back (posting findings as MR notes)
+5. Click **Create personal access token** and copy the value immediately — it is shown only once.
+
+### Project Access Token (recommended for server deployments)
+
+1. Open your GitLab project → **Settings** → **Access Tokens**.
+2. Click **Add new token**.
+3. Give it a name, set a role of **Reporter** (or **Developer** if write-back is needed), and select the same scopes as above.
+4. Click **Create project access token** and copy the value.
+
+<Note>
+If your GitLab instance is self-hosted, make sure your OpenSRE server can reach it over the network before proceeding.
+</Note>
+
+---
+
+## Step 2: Configure the Integration in OpenSRE
+
+Run the setup wizard and select **GitLab**:
+
+```bash
+opensre onboard
+```
+
+When prompted, enter:
+
+- **GitLab base URL** — leave as `https://gitlab.com/api/v4` for GitLab.com, or change to your self-hosted instance URL (e.g. `https://gitlab.example.com/api/v4`)
+- **GitLab access token** — from Step 1
+
+The wizard validates your token by calling the GitLab API and writes the following to your `.env` file:
+
+| Variable | Description |
+|---|---|
+| `GITLAB_ACCESS_TOKEN` | Token used for all GitLab API calls |
+| `GITLAB_BASE_URL` | API base URL (defaults to `https://gitlab.com/api/v4`) |
+
+---
+
+## What the Agent Can Do
+
+Once connected, OpenSRE automatically uses GitLab as an investigation source when an alert contains a GitLab MR reference. The agent can:
+
+| Capability | What it reads |
+|---|---|
+| Merge requests | MR title, description, author, reviewers, labels, diff stats |
+| Commits | Commit messages, authors, and changed files in a branch or MR |
+| Pipelines | Pipeline status, failed jobs, and job logs |
+| Files | File contents at a specific ref for diff analysis |
+
+---
+
+## MR Write-back (optional)
+
+OpenSRE can post a formatted investigation summary directly as a note on the GitLab MR that triggered the alert. This is opt-in and disabled by default.
+
+To enable it, set the following environment variable:
+
+```bash
+GITLAB_MR_WRITEBACK=true
+```
+
+When enabled, after each investigation OpenSRE posts a collapsible `### RCA Finding` note on the MR. The note is truncated to 4000 characters if needed.
+
+**Requirements for write-back:**
+- Your access token must have the `api` scope (not just `read_api`)
+- The alert payload must include a GitLab MR IID and project ID so OpenSRE can identify the target MR
+
+---
+
+## Troubleshooting
+
+**Validation fails with 401**
+
+Your token is invalid or has expired. Regenerate it in GitLab and re-run `opensre onboard`.
+
+**Validation fails with 403**
+
+Your token does not have sufficient scopes. Ensure `read_api` is selected (and `api` if using write-back).
+
+**Self-hosted instance not reachable**
+
+Verify that `GITLAB_BASE_URL` ends in `/api/v4` and that your OpenSRE server can reach the GitLab host. Test with:
+
+```bash
+curl -H "Authorization: Bearer <your-token>" https://your-gitlab-host/api/v4/user
+```
+
+**MR write-back not posting**
+
+Check that `GITLAB_MR_WRITEBACK=true` is set in your environment and that the alert payload contains `gitlab.merge_request_iid` and `gitlab.project_id` fields. Review OpenSRE server logs for `[publish] GitLab MR` entries.

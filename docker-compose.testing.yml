@@ -1,0 +1,72 @@
+version: "3.8"
+
+services:
+  postgres-test:
+    image: postgres:16
+    container_name: opensre-postgres-test
+    environment:
+      POSTGRES_DB: opensre_test
+      POSTGRES_USER: opensre
+      POSTGRES_PASSWORD: test123
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    command: |
+      postgres -c shared_preload_libraries=pg_stat_statements
+               -c pg_stat_statements.track=all
+               -c pg_stat_statements.max=10000
+               -c pg_stat_statements.track_utility=off
+               -c log_min_duration_statement=100
+               -c log_statement=all
+               -c log_destination=stderr
+               -c logging_collector=on
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opensre -d opensre_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql-test:
+    image: mysql:8.0
+    container_name: opensre-mysql-test
+    environment:
+      MYSQL_DATABASE: opensre_test
+      MYSQL_USER: opensre
+      MYSQL_PASSWORD: test123
+      MYSQL_ROOT_PASSWORD: root123
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_test_data:/var/lib/mysql
+    command: |
+      --slow_query_log=1
+      --slow_query_log_file=/var/log/mysql/slow.log
+      --long_query_time=0.1
+      --general_log=1
+      --general_log_file=/var/log/mysql/general.log
+      --log-queries-not-using-indexes=1
+      --binlog_format=ROW
+      --server-id=1
+      --log-bin=mysql-bin
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "opensre",
+          "-ptest123",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_test_data:
+    driver: local
+  mysql_test_data:
+    driver: local

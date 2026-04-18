@@ -25,7 +25,10 @@ class _TestIdType(click.ParamType):
     name = "test_id"
 
     def shell_complete(
-        self, ctx: click.Context, param: click.Parameter, incomplete: str  # noqa: ARG002
+        self,
+        ctx: click.Context,  # noqa: ARG002
+        param: click.Parameter,  # noqa: ARG002
+        incomplete: str,  # noqa: ARG002
     ) -> list[click.shell_completion.CompletionItem]:
         try:
             from app.cli.tests.discover import load_test_catalog

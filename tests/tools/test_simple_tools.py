@@ -14,7 +14,7 @@ from app.tools.registered_tool import REGISTERED_TOOL_ATTR, RegisteredTool
 
 def test_simple_tools_excluded_from_registry() -> None:
     """Verify simple_tools are excluded from production registry."""
-    import app.tools.registry as registry_module
+    from app.tools import registry as registry_module
 
     tool_map = registry_module.get_registered_tool_map()
 

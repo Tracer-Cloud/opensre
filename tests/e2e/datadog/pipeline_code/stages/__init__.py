@@ -1,4 +1,3 @@
-import os
 import sys
 
 from config import PIPELINE_STAGE

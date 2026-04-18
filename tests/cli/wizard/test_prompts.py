@@ -8,24 +8,37 @@ from questionary import Choice
 from app.cli.wizard.prompts import checkbox, select
 
 
-def test_select_prompt_registers_tab_navigation() -> None:
-    question = select("Provider", [Choice("Anthropic", value="anthropic"), Choice("OpenAI", value="openai")])
-    key_bindings = question.application.key_bindings
-    assert key_bindings is not None
-    bindings = {binding.keys for binding in key_bindings.bindings}
+def _build_select_question(message: str, choices, *, pipe_input):
+    return select(message, choices, input=pipe_input, output=DummyOutput())
 
-    assert (Keys.ControlI,) in bindings
-    assert (Keys.BackTab,) in bindings
-    assert (Keys.Right,) in bindings
-    assert (Keys.Left,) in bindings
+
+def _build_checkbox_question(message: str, choices, *, pipe_input):
+    return checkbox(message, choices, input=pipe_input, output=DummyOutput())
+
+
+def test_select_prompt_registers_tab_navigation() -> None:
+    with create_pipe_input() as pipe_input:
+        question = _build_select_question(
+            "Provider",
+            [Choice("Anthropic", value="anthropic"), Choice("OpenAI", value="openai")],
+            pipe_input=pipe_input,
+        )
+        key_bindings = question.application.key_bindings
+        assert key_bindings is not None
+        bindings = {binding.keys for binding in key_bindings.bindings}
+
+        assert (Keys.ControlI,) in bindings
+        assert (Keys.BackTab,) in bindings
+        assert (Keys.Right,) in bindings
+        assert (Keys.Left,) in bindings
 
 
 def test_select_prompt_tab_navigation_changes_selection() -> None:
     # Simulate pressing Tab to move from the first to the second option, then Enter to select it.
     choices = [Choice("Anthropic", value="anthropic"), Choice("OpenAI", value="openai")]
-    question = select("Provider", choices)
 
     with create_pipe_input() as pipe_input:
+        question = _build_select_question("Provider", choices, pipe_input=pipe_input)
         # Tab followed by Enter
         pipe_input.send_text("\t\n")
 
@@ -40,9 +53,9 @@ def test_select_prompt_tab_navigation_changes_selection() -> None:
 
 def test_select_prompt_escape_cancels() -> None:
     choices = [Choice("Anthropic", value="anthropic"), Choice("OpenAI", value="openai")]
-    question = select("Provider", choices)
 
     with create_pipe_input() as pipe_input:
+        question = _build_select_question("Provider", choices, pipe_input=pipe_input)
         pipe_input.send_bytes(b"\x1b")
 
         application = question.application
@@ -56,9 +69,9 @@ def test_select_prompt_escape_cancels() -> None:
 
 def test_select_prompt_arrow_navigation_changes_selection() -> None:
     choices = [Choice("Anthropic", value="anthropic"), Choice("OpenAI", value="openai")]
-    question = select("Provider", choices)
 
     with create_pipe_input() as pipe_input:
+        question = _build_select_question("Provider", choices, pipe_input=pipe_input)
         pipe_input.send_bytes(b"\x1b[B")
         pipe_input.send_text("\n")
 
@@ -72,22 +85,27 @@ def test_select_prompt_arrow_navigation_changes_selection() -> None:
 
 
 def test_checkbox_prompt_registers_tab_navigation() -> None:
-    question = checkbox("Integrations", [Choice("Grafana", value="grafana"), Choice("Slack", value="slack")])
-    key_bindings = question.application.key_bindings
-    assert key_bindings is not None
-    bindings = {binding.keys for binding in key_bindings.bindings}
+    with create_pipe_input() as pipe_input:
+        question = _build_checkbox_question(
+            "Integrations",
+            [Choice("Grafana", value="grafana"), Choice("Slack", value="slack")],
+            pipe_input=pipe_input,
+        )
+        key_bindings = question.application.key_bindings
+        assert key_bindings is not None
+        bindings = {binding.keys for binding in key_bindings.bindings}
 
-    assert (Keys.ControlI,) in bindings
-    assert (Keys.BackTab,) in bindings
-    assert (Keys.Right,) in bindings
-    assert (Keys.Left,) in bindings
+        assert (Keys.ControlI,) in bindings
+        assert (Keys.BackTab,) in bindings
+        assert (Keys.Right,) in bindings
+        assert (Keys.Left,) in bindings
 
 
 def test_checkbox_prompt_escape_cancels() -> None:
     choices = [Choice("Grafana", value="grafana"), Choice("Slack", value="slack")]
-    question = checkbox("Integrations", choices)
 
     with create_pipe_input() as pipe_input:
+        question = _build_checkbox_question("Integrations", choices, pipe_input=pipe_input)
         pipe_input.send_bytes(b"\x1b")
 
         application = question.application
@@ -101,9 +119,9 @@ def test_checkbox_prompt_escape_cancels() -> None:
 
 def test_checkbox_prompt_space_toggles_current_choice() -> None:
     choices = [Choice("Grafana", value="grafana"), Choice("Slack", value="slack")]
-    question = checkbox("Integrations", choices)
 
     with create_pipe_input() as pipe_input:
+        question = _build_checkbox_question("Integrations", choices, pipe_input=pipe_input)
         pipe_input.send_text(" \n")
 
         application = question.application
