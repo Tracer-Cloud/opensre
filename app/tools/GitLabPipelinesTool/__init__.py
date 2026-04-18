@@ -16,7 +16,7 @@ def _list_gitlab_pipelines_extract_params(sources: dict[str, dict]) -> dict[str,
     return {
         "project_id": gl["project_id"],
         "updated_after": gl["updated_after"],
-        "ref": gl.get("ref", "main"),
+        "ref": gl.get("ref_name", "main"),
         "status": "failed",
         "per_page": 10,
         **_gl_creds(gl),

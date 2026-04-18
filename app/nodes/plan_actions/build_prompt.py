@@ -1,13 +1,12 @@
 """Investigation prompt construction with available actions."""
 
-from typing import Any
-
 from pydantic import BaseModel, ValidationError
 
+from app.nodes.investigate.types import ExecutedHypothesis
 from app.utils.masking import MaskingContext, mask_text, unmask_text
 
 
-def _get_executed_sources(executed_hypotheses: list[dict[str, Any]]) -> set[str]:
+def _get_executed_sources(executed_hypotheses: list[ExecutedHypothesis]) -> set[str]:
     """Extract executed sources from hypotheses history."""
     executed_sources_set = set()
     for h in executed_hypotheses:
@@ -151,6 +150,18 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Use search_github_code and get_github_file_contents to trace the failure into code"""
         )
 
+    if "openclaw" in available_sources:
+        openclaw = available_sources["openclaw"]
+        endpoint = openclaw.get("openclaw_command") or openclaw.get("openclaw_url") or "unknown"
+        hints.append(
+            f"""OpenClaw MCP Available:
+- Transport: {openclaw.get("openclaw_mode") or "unknown"}
+- Endpoint: {endpoint}
+- Search hint: {openclaw.get("openclaw_search_query") or "recent conversations"}
+- Start with search_openclaw_conversations to inspect recent OpenClaw context before generic tool calls
+- Use list_openclaw_tools only if you need to inspect the raw bridge surface"""
+        )
+
     if "vercel" in available_sources and "github" in available_sources:
         hints.append(
             """Vercel And GitHub Correlation Available:
@@ -214,7 +225,7 @@ IMPORTANT: Always start with discovery actions before fetching specific resource
 
 def build_investigation_prompt(
     problem_md: str,
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
     available_actions: list,
     available_sources: dict[str, dict],
     memory_context: str = "",
@@ -272,7 +283,7 @@ This upstream trace reveals root causes outside the failed service (external API
 Use these proven investigation sequences as guidance for action selection.
 """
 
-    prompt = f"""You are investigating a data pipeline incident.
+    prompt = f"""You are investigating an alert or incident.
 
 Problem Context:
 {problem_context}
@@ -285,7 +296,7 @@ Available Investigation Actions:
 Executed Actions: {", ".join(executed_actions) if executed_actions else "None"}
 
 Task: Select the most relevant actions to execute now based on the problem context.
-Consider what information would help diagnose the root cause.
+Consider what information would help diagnose the root cause. If the alert appears healthy or informational, you MUST still query the relevant monitoring platforms (metrics, logs, alert rules) to verify its status before concluding.
 """
     return prompt
 
@@ -309,7 +320,7 @@ def apply_tool_budget(actions: list, budget: int) -> list:
 def select_actions(
     actions: list,
     available_sources: dict[str, dict],
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
     tool_budget: int = 10,
 ) -> tuple[list, list[str]]:
     """
@@ -347,7 +358,7 @@ def plan_actions_with_llm(
     llm,
     plan_model: type[BaseModel],
     problem_md: str,
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
     available_actions: list,
     available_sources: dict[str, dict],
     memory_context: str = "",

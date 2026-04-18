@@ -1,6 +1,7 @@
 """Lambda client for function inspection and log retrieval."""
 
 import base64
+from contextlib import suppress
 from io import BytesIO
 from typing import Any
 from zipfile import ZipFile
@@ -216,19 +217,13 @@ def get_recent_invocations(
                     current_invocation["logs"].append(message)
                     # Parse REPORT for duration and memory
                     if "Duration:" in message:
-                        try:
+                        with suppress(IndexError, ValueError):
                             duration_part = message.split("Duration: ")[1].split()[0]
                             current_invocation["duration_ms"] = float(duration_part)
-                        except (IndexError, ValueError):
-                            # REPORT line has unexpected format; skip metric
-                            pass
                     if "Memory Used:" in message:
-                        try:
+                        with suppress(IndexError, ValueError):
                             memory_part = message.split("Memory Used: ")[1].split()[0]
                             current_invocation["memory_used_mb"] = int(memory_part)
-                        except (IndexError, ValueError):
-                            # REPORT line has unexpected format; skip metric
-                            pass
                     invocations.append(current_invocation)
                     current_invocation = None
             elif current_invocation:

@@ -10,14 +10,21 @@
 
 1. Fork and clone the repo:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/open-sre-agent.git
-   cd open-sre-agent
+   git clone https://github.com/YOUR_USERNAME/opensre.git
+   cd opensre
    ```
 
 2. Create a virtual environment:
+   - (venv)
    ```bash
    python -m venv .venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+   - (conda)
+   ```bash
+   # replace "opensre" if needed
+   conda create -n opensre python=3.11
+   conda activate opensre
    ```
 
 3. Install dependencies:
@@ -133,9 +140,18 @@ You can start the MCP server with:
 opensre-mcp
 ```
 
-This exposes the `run_rca` tool for MCP clients (e.g., OpenClaw).
+This exposes the `run_rca` tool for MCP clients.
 
-### OpenClaw MCP Configuration (Example)
+---
+
+## Connecting OpenClaw
+
+Use OpenClaw to call OpenSRE's `run_rca` tool.
+
+### 1. Add OpenSRE to OpenClaw
+
+In OpenClaw, open **Settings → MCP Servers** and add:
+
 ```json
 {
   "mcpServers": {
@@ -147,7 +163,44 @@ This exposes the `run_rca` tool for MCP clients (e.g., OpenClaw).
 }
 ```
 
-### Demo Alert Payload
+If `opensre-mcp` is not on your `PATH`, use the full path:
+```json
+{ "command": "/path/to/venv/bin/opensre-mcp" }
+```
 
-A realistic example alert payload is available at:
-`tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json`
+### 2. Configure one observability integration
+
+Run the setup wizard once and connect Datadog, Grafana, Sentry, or another backend:
+
+```bash
+opensre integrations setup
+```
+
+### 3. Run a test
+
+Run the fixture directly from the CLI:
+
+```bash
+opensre investigate -i tests/fixtures/openclaw_test_alert.json
+```
+
+### 4. Optional: let OpenSRE call OpenClaw
+
+If you want the OpenSRE investigation pipeline to query OpenClaw during RCA runs:
+
+```bash
+export OPENCLAW_MCP_MODE=stdio
+export OPENCLAW_MCP_COMMAND=openclaw
+export OPENCLAW_MCP_ARGS="mcp serve"
+```
+
+Keep the OpenClaw Gateway running while you investigate:
+
+```bash
+openclaw gateway run
+```
+
+Verify:
+```bash
+opensre integrations verify openclaw
+```

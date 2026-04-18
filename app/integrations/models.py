@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -194,6 +195,115 @@ class MongoDBIntegrationConfig(StrictConfigModel):
         return normalized or "admin"
 
 
+class PostgreSQLIntegrationConfig(StrictConfigModel):
+    """Normalized PostgreSQL credentials used by resolution and verification flows."""
+
+    host: str
+    port: int = 5432
+    database: str
+    username: str = "postgres"
+    password: str = ""
+    ssl_mode: str = "prefer"
+    integration_id: str = ""
+
+    @field_validator("host", mode="before")
+    @classmethod
+    def _normalize_host(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("database", mode="before")
+    @classmethod
+    def _normalize_database(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _normalize_username(cls, value: object) -> str:
+        normalized = str(value or "postgres").strip()
+        return normalized or "postgres"
+
+    @field_validator("ssl_mode", mode="before")
+    @classmethod
+    def _normalize_ssl_mode(cls, value: object) -> str:
+        normalized = str(value or "prefer").strip()
+        return normalized or "prefer"
+
+
+class AzureSQLIntegrationConfig(StrictConfigModel):
+    """Normalized Azure SQL Database credentials used by resolution and verification flows."""
+
+    server: str
+    port: int = 1433
+    database: str
+    username: str = ""
+    password: str = ""
+    driver: str = "ODBC Driver 18 for SQL Server"
+    encrypt: bool = True
+    integration_id: str = ""
+
+    @field_validator("server", "database", "username", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("driver", mode="before")
+    @classmethod
+    def _normalize_driver(cls, value: object) -> str:
+        normalized = str(value or "ODBC Driver 18 for SQL Server").strip()
+        return normalized or "ODBC Driver 18 for SQL Server"
+
+
+class MySQLIntegrationConfig(StrictConfigModel):
+    """Normalized MySQL credentials used by resolution and verification flows."""
+
+    host: str
+    port: int = 3306
+    database: str
+    username: str = "root"
+    password: str = ""
+    ssl_mode: str = "preferred"
+    integration_id: str = ""
+
+    @field_validator("host", mode="before")
+    @classmethod
+    def _normalize_host(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("database", mode="before")
+    @classmethod
+    def _normalize_database(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _normalize_username(cls, value: object) -> str:
+        normalized = str(value or "root").strip()
+        return normalized or "root"
+
+    @field_validator("ssl_mode", mode="before")
+    @classmethod
+    def _normalize_ssl_mode(cls, value: object) -> str:
+        normalized = str(value or "preferred").strip()
+        return normalized or "preferred"
+
+
+class MariaDBIntegrationConfig(StrictConfigModel):
+    """Normalized MariaDB credentials used by resolution and verification flows."""
+
+    host: str
+    port: int = 3306
+    database: str
+    username: str
+    password: str = ""
+    ssl: bool = True
+    integration_id: str = ""
+
+    @field_validator("host", "database", "username", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+
 class MongoDBAtlasIntegrationConfig(StrictConfigModel):
     """Normalized MongoDB Atlas API credentials used by resolution and verification flows."""
 
@@ -242,12 +352,14 @@ class GoogleDocsIntegrationConfig(StrictConfigModel):
             return 30
         return max(5, min(timeout, 300))
 
+
 class GitLabIntegrationConfig(StrictConfigModel):
     """Normalized Gitlab credentials used by resolution and verification flows."""
 
     url: str
     access_token: str
     integration_id: str = ""
+
 
 class OpsGenieIntegrationConfig(StrictConfigModel):
     """Normalized OpsGenie credentials used by resolution and verification flows."""
@@ -294,6 +406,31 @@ class PrefectIntegrationConfig(StrictConfigModel):
         return str(value or "").strip()
 
 
+class DiscordBotConfig(StrictConfigModel):
+    """Discord runtime config."""
+
+    bot_token: str  # Bot token for API calls
+    application_id: str = ""  # For slash command registration (required for inbound only)
+    public_key: str = ""  # For signature verification (required for inbound only)
+    default_channel_id: str | None = None  # Fallback for CLI-triggered findings
+
+    @field_validator("bot_token")
+    @classmethod
+    def _validate_bot_token(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("bot_token cannot be empty or just whitespace")
+        return v
+
+    @field_validator("public_key")
+    @classmethod
+    def _validate_public_key(cls, v: str) -> str:
+        if not v.strip():
+            return v  # optional — only needed for inbound interactions endpoint
+        if not re.fullmatch(r"[0-9a-fA-F]+", v):
+            raise ValueError("public_key must be a valid hexadecimal string")
+        return v
+
+
 class EffectiveIntegrationEntry(StrictConfigModel):
     """Resolved integration entry with source metadata."""
 
@@ -315,6 +452,7 @@ class EffectiveIntegrations(StrictConfigModel):
     sentry: EffectiveIntegrationEntry | None = None
     mongodb: EffectiveIntegrationEntry | None = None
     mongodb_atlas: EffectiveIntegrationEntry | None = None
+    mariadb: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
     gitlab: EffectiveIntegrationEntry | None = None
     vercel: EffectiveIntegrationEntry | None = None
@@ -322,6 +460,13 @@ class EffectiveIntegrations(StrictConfigModel):
     opsgenie: EffectiveIntegrationEntry | None = None
     notion: EffectiveIntegrationEntry | None = None
     prefect: EffectiveIntegrationEntry | None = None
+    posthog: EffectiveIntegrationEntry | None = None
     kafka: EffectiveIntegrationEntry | None = None
     clickhouse: EffectiveIntegrationEntry | None = None
+    postgresql: EffectiveIntegrationEntry | None = None
+    azure_sql: EffectiveIntegrationEntry | None = None
     bitbucket: EffectiveIntegrationEntry | None = None
+    trello: EffectiveIntegrationEntry | None = None
+    discord: EffectiveIntegrationEntry | None = None
+    openclaw: EffectiveIntegrationEntry | None = None
+    mysql: EffectiveIntegrationEntry | None = None

@@ -623,6 +623,7 @@ class TestGoogleDocsClientErrorHandling:
 
         class MockHttpError(Exception):
             def __init__(self) -> None:
+                super().__init__()
                 self.resp = type("obj", (object,), {"status": 403})()
 
         exc = MockHttpError()
@@ -637,6 +638,7 @@ class TestGoogleDocsClientErrorHandling:
 
         class MockHttpError(Exception):
             def __init__(self) -> None:
+                super().__init__()
                 self.resp = type("obj", (object,), {"status": 404})()
 
         exc = MockHttpError()
@@ -651,6 +653,7 @@ class TestGoogleDocsClientErrorHandling:
 
         class MockHttpError(Exception):
             def __init__(self) -> None:
+                super().__init__()
                 self.resp = type("obj", (object,), {"status": 429})()
 
         exc = MockHttpError()

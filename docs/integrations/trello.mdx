@@ -1,0 +1,43 @@
+---
+title: "Trello Integration"
+description: "Set up the Trello integration for incident task tracking."
+---
+
+# Trello Integration
+
+The Trello integration allows OpenSRE to create Trello cards from investigation findings.
+
+## Prerequisites
+
+You will need:
+
+- Trello API key
+- Trello token
+- Target Trello list ID
+
+You can generate your API key and token here:
+https://developer.atlassian.com/cloud/trello/guides/rest-api/api-introduction/
+
+## Setup
+
+Set the following environment variables:
+
+```bash
+TRELLO_API_KEY=your_api_key
+TRELLO_TOKEN=your_token
+TRELLO_LIST_ID=your_list_id
+```
+
+## Usage
+
+Once configured, the integration can:
+
+- Validate Trello connection
+- Create cards from investigation results
+- Send incident title and description to Trello
+
+## Notes
+
+- Cards are created in the specified `list_id`
+- Authentication is done via API key and token
+- Card content is sent in the request body (not query params)

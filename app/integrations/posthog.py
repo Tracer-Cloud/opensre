@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -48,7 +49,10 @@ class PostHogConfig(StrictConfigModel):
     @classmethod
     def _normalize_bounce_rate_window(cls, value: Any) -> str:
         normalized = str(value or DEFAULT_POSTHOG_BOUNCE_WINDOW).strip()
-        return normalized or DEFAULT_POSTHOG_BOUNCE_WINDOW
+        normalized = normalized or DEFAULT_POSTHOG_BOUNCE_WINDOW
+        if not re.fullmatch(r"\d+[smhdw]", normalized):
+            raise ValueError("bounce_rate_window must match <number><unit>, e.g. 24h")
+        return normalized
 
     @property
     def api_base_url(self) -> str:
@@ -104,7 +108,6 @@ def posthog_config_from_env() -> PostHogConfig | None:
             "base_url": os.getenv("POSTHOG_BASE_URL", DEFAULT_POSTHOG_URL),
             "project_id": project_id,
             "personal_api_key": personal_api_key,
-            # ❗ FIX: float() kaldırıldı (P1 fix)
             "timeout_seconds": os.getenv("POSTHOG_TIMEOUT_SECONDS", "15.0"),
             "bounce_rate_threshold": os.getenv(
                 "POSTHOG_BOUNCE_THRESHOLD", str(DEFAULT_POSTHOG_BOUNCE_THRESHOLD)
@@ -154,7 +157,6 @@ def validate_posthog_config(config: PostHogConfig) -> PostHogValidationResult:
         return PostHogValidationResult(ok=False, detail=str(err))
 
 
-# ✅ FIX: gerçek PostHog query (P0 fix)
 def query_bounce_rate(
     config: PostHogConfig,
     *,
@@ -192,7 +194,6 @@ def query_bounce_rate(
 
     bounce_rate = 0.0
     if total_sessions > 0:
-        # ✅ FIX: clamp (P2 fix)
         bounce_rate = min(bounced_sessions / total_sessions, 1.0)
 
     return BounceRateResult(
@@ -200,7 +201,6 @@ def query_bounce_rate(
         total_sessions=total_sessions,
         bounced_sessions=bounced_sessions,
         period=period,
-        # ✅ mypy + ruff compatible
         queried_at=datetime.now(UTC),
     )
 

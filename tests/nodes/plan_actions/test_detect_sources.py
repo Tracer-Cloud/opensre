@@ -52,3 +52,23 @@ def test_detect_sources_includes_coralogix_with_scoped_default_query() -> None:
     assert sources["coralogix"]["application_name"] == "payments"
     assert sources["coralogix"]["subsystem_name"] == "worker"
     assert "$l.applicationname == 'payments'" in sources["coralogix"]["default_query"]
+
+
+def test_detect_sources_includes_openclaw_when_resolved() -> None:
+    sources = detect_sources(
+        raw_alert={"alert_name": "checkout-api failures", "service": "checkout-api"},
+        context={},
+        resolved_integrations={
+            "openclaw": {
+                "mode": "stdio",
+                "command": "openclaw",
+                "args": ["mcp", "serve"],
+                "auth_token": "",
+            }
+        },
+    )
+
+    assert sources["openclaw"]["openclaw_mode"] == "stdio"
+    assert sources["openclaw"]["openclaw_command"] == "openclaw"
+    assert sources["openclaw"]["openclaw_args"] == ["mcp", "serve"]
+    assert sources["openclaw"]["openclaw_search_query"] == "checkout-api"
