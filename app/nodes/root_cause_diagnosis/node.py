@@ -115,6 +115,10 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
                     "[REDACTED: Output contained invalid placeholders that could not be "
                     "safely unmasked. Raw response stored in state._masked_raw_response for debugging.]"
                 )
+                # Store the raw response for inclusion in the returned dict
+                masked_raw_response = raw_response_for_debug
+            else:
+                masked_raw_response = None
 
     # Unmask the response to restore original identifiers for user-facing output
     response_text = unmask_text(response_text, masking_context)
@@ -149,7 +153,7 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
         message=f"validity:{validity_score:.0%}",
     )
 
-    return {
+    result_dict = {
         "root_cause": result.root_cause,
         "root_cause_category": result.root_cause_category,
         "causal_chain": result.causal_chain,
@@ -160,6 +164,10 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
         "remediation_steps": [],
         "investigation_loop_count": next_loop_count,
     }
+    # Include raw response if panic mode was activated
+    if 'masked_raw_response' in locals():
+        result_dict["_masked_raw_response"] = masked_raw_response
+    return result_dict
 
 
 def _handle_healthy_finding(state: InvestigationState, tracker, evidence: dict) -> dict:
