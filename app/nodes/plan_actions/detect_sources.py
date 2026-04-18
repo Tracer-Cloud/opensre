@@ -5,12 +5,15 @@
 and extract their parameters.
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
 from app.services.coralogix import build_coralogix_logs_query
 from app.tools.GrafanaLogsTool import _map_pipeline_to_service_name
+
+logger = logging.getLogger(__name__)
 
 
 def _alert_time_range_minutes(raw_alert: dict[str, Any]) -> int:
@@ -404,6 +407,14 @@ def detect_sources(
             selected = get_instance_by_name(resolved_integrations, "grafana", grafana_hint)
             if selected is not None:
                 grafana_int = selected
+            else:
+                # A hint that does not resolve is almost always a typo or a
+                # removed instance — warn so operators notice instead of
+                # silently querying the wrong Grafana.
+                logger.warning(
+                    "grafana_instance hint %r not found; falling back to default instance",
+                    grafana_hint,
+                )
 
         if grafana_int is None:
             if resolved_integrations.get("grafana_local"):

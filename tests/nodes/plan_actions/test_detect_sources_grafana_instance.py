@@ -69,6 +69,21 @@ def test_unknown_hint_falls_back_to_default_instance() -> None:
     assert sources["grafana"]["grafana_endpoint"] == "https://prod.grafana.net"
 
 
+def test_unknown_hint_logs_warning(caplog) -> None:
+    """Operators should notice an unresolved hint (typo, removed instance)
+    instead of silently querying the wrong Grafana."""
+    import logging
+
+    raw_alert = {"alert_source": "grafana", "grafana_instance": "qa-east"}
+    with caplog.at_level(logging.WARNING, logger="app.nodes.plan_actions.detect_sources"):
+        detect_sources(
+            raw_alert, {}, resolved_integrations=_multi_instance_resolved()
+        )
+    assert any(
+        "grafana_instance hint 'qa-east' not found" in r.message for r in caplog.records
+    )
+
+
 def test_hint_in_annotations_is_respected() -> None:
     raw_alert = {
         "alert_source": "grafana",

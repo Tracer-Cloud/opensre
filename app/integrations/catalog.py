@@ -30,7 +30,7 @@ from app.integrations.mysql import build_mysql_config
 from app.integrations.openclaw import build_openclaw_config
 from app.integrations.postgresql import build_postgresql_config
 from app.integrations.sentry import build_sentry_config
-from app.integrations.store import load_integrations
+from app.integrations.store import _STRUCTURAL_RECORD_FIELDS, load_integrations
 from app.services.vercel import VercelConfig
 
 logger = logging.getLogger(__name__)
@@ -66,9 +66,6 @@ _SERVICE_KEY_MAP = {
     "mysql": "mysql",
     "azure_sql": "azure_sql",
 }
-
-
-_STRUCTURAL_RECORD_FIELDS = frozenset({"id", "service", "status", "instances"})
 
 
 def _record_instances(record: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1138,7 +1135,14 @@ def resolve_effective_integrations(
                 resolved_integration,
             )
             all_instances = classified_integrations.get(f"_all_{service}_instances")
-            if isinstance(all_instances, list) and len(all_instances) > 1:
+            # Mirror the publication condition used by classify_integrations:
+            # sibling key is emitted when there is more than one instance OR
+            # when a single instance has a non-default name. Both cases are
+            # user-meaningful and should propagate to the effective view.
+            if isinstance(all_instances, list) and all_instances and (
+                len(all_instances) > 1
+                or str(all_instances[0].get("name", "default")) != "default"
+            ):
                 effective[service]["instances"] = all_instances
 
     if "datadog" not in effective:

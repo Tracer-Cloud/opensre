@@ -157,6 +157,31 @@ def test_classify_inactive_record_is_skipped() -> None:
     assert "grafana" not in resolved
 
 
+def test_resolve_effective_integrations_propagates_single_non_default_instance() -> None:
+    """Regression: when classify publishes _all_*_instances for a single
+    non-default-named instance, resolve_effective_integrations must also
+    propagate it so CLI/verify consumers see the instance metadata."""
+    from app.integrations.catalog import resolve_effective_integrations
+
+    single_prod = {
+        "id": "env-grafana",
+        "service": "grafana",
+        "status": "active",
+        "instances": [
+            {
+                "name": "prod",  # non-default name
+                "tags": {"env": "prod"},
+                "credentials": {"endpoint": "https://p", "api_key": "kp"},
+            }
+        ],
+    }
+    resolved = resolve_effective_integrations(
+        store_integrations=[], env_integrations=[single_prod]
+    )
+    assert "instances" in resolved["grafana"]
+    assert resolved["grafana"]["instances"][0]["name"] == "prod"
+
+
 def test_resolve_effective_integrations_carries_instances_through_pydantic() -> None:
     """Regression: EffectiveIntegrations.model_validate must accept the
     {name, tags, config, integration_id} instance shape we build. Previously
