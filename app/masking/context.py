@@ -108,7 +108,12 @@ class MaskingContext:
         if not text or not self._placeholder_map:
             return text
         result = text
-        for placeholder, original in self._placeholder_map.items():
+        # Sort by descending length so longer (more specific) placeholders are
+        # replaced first. This prevents a short placeholder like <NS_1> from
+        # matching inside a longer one like <NS_10> and corrupting the output.
+        for placeholder, original in sorted(
+            self._placeholder_map.items(), key=lambda kv: len(kv[0]), reverse=True
+        ):
             if placeholder in result:
                 result = result.replace(placeholder, original)
         return result
