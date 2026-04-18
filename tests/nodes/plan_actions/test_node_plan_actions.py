@@ -30,8 +30,7 @@ def test_node_plan_actions_emits_retrieval_controls(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         node_module,
         "build_plan_actions",
-        lambda **_kwargs: (plan, {"knowledge": {}}, ["get_logs"], []),
-    )
+        lambda **_kwargs: (plan, {"knowledge": {}}, ["get_logs"], [], False, ""),
     monkeypatch.setattr(node_module, "get_tracker", lambda: tracker)
 
     result = node_module.node_plan_actions(
