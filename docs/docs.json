@@ -12,10 +12,6 @@
     "dark": "#000000"
   },
   "favicon": "/favicon.ico",
-  "logo": {
-    "light": "/images/logo/tracer/tracer-docs-dark.svg",
-    "dark": "/images/logo/tracer/tracer-docs-light.svg"
-  },
   "styles": {
     "css": "/custom.css"
   },
@@ -43,16 +39,49 @@
         "group": "Integrations",
         "pages": [
           "intergrations-overview",
-          "datadog",
-          "grafana",
-          "mongodb",
-          "slack"
+          {
+            "group": "Enterprise",
+            "defaultOpen": true,
+            "pages": [
+              "datadog",
+              "grafana",
+              "slack",
+              "aws"
+            ]
+          },
+          {
+            "group": "Local",
+            "defaultOpen": true,
+            "pages": [
+              "mongodb",
+              "mariadb",
+              "honeycomb",
+              "coralogix",
+              "sentry",
+              "github",
+              "gitlab",
+              "bitbucket",
+              "vercel",
+              "kafka",
+              "clickhouse",
+              "opsgenie",
+              "jira",
+              "prefect",
+              "google-docs",
+              "discord",
+              "mysql",
+              "openclaw",
+              "postgresql"
+            ]
+          }
         ]
       },
       {
         "group": "Investigations",
         "pages": [
-          "investigation-overview"
+          "investigation-overview",
+          "remote-runtime-investigation",
+          "masking"
         ]
       },
       {
@@ -188,7 +217,7 @@
       "linkedin": "https://linkedin.com/company/tracercloud",
       "slack": "https://join.slack.com/t/tracer-cloud/shared_invite/zt-3ifakcs2e-igoUEH8ygMlfxgJGLxsqeA"
     },
-    "copyright": "© 2025 Tracer Cloud. All rights reserved."
+    "copyright": "\u00a9 2025 Tracer Cloud. All rights reserved."
   },
   "integrations": {
     "posthog": {
@@ -218,5 +247,9 @@
       "format": "woff2",
       "weight": 400
     }
+  },
+  "logo": {
+    "light": "/images/logo/tracer/opensre-docs-logo-dark.svg",
+    "dark": "/images/logo/tracer/opensre-docs-logo-light.svg"
   }
 }

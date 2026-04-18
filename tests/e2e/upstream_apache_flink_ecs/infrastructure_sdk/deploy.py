@@ -79,13 +79,19 @@ def deploy() -> dict:
     task_role = iam.create_ecs_task_role(f"{STACK_NAME}-task-role", STACK_NAME, REGION)
 
     print("  - Creating ECS execution role...")
-    execution_role = iam.create_ecs_execution_role(f"{STACK_NAME}-execution-role", STACK_NAME, REGION)
+    execution_role = iam.create_ecs_execution_role(
+        f"{STACK_NAME}-execution-role", STACK_NAME, REGION
+    )
 
     print("  - Creating Lambda trigger role...")
-    trigger_lambda_role = iam.create_lambda_execution_role(f"{STACK_NAME}-trigger-role", STACK_NAME, REGION)
+    trigger_lambda_role = iam.create_lambda_execution_role(
+        f"{STACK_NAME}-trigger-role", STACK_NAME, REGION
+    )
 
     print("  - Creating Mock API Lambda role...")
-    mock_api_role = iam.create_lambda_execution_role(f"{STACK_NAME}-mock-api-role", STACK_NAME, REGION)
+    mock_api_role = iam.create_lambda_execution_role(
+        f"{STACK_NAME}-mock-api-role", STACK_NAME, REGION
+    )
 
     # Security group
     print("  - Creating security group...")
@@ -189,16 +195,28 @@ def deploy() -> dict:
             "PROCESSED_BUCKET": processed_bucket_name,
             "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
             "OTEL_SERVICE_NAME": "flink-etl-pipeline",
-            "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_flink,pipeline.framework=flink,test_case=test_case_upstream_apache_flink_ecs",
+            "OTEL_RESOURCE_ATTRIBUTES": "pipeline.name=upstream_downstream_pipeline_flink,pipeline.framework=flink,test_case=e2e_upstream_apache_flink_ecs",
         },
         secrets=[
-            {"name": "GCLOUD_HOSTED_METRICS_URL", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_METRICS_URL::"},
-            {"name": "GCLOUD_HOSTED_METRICS_ID", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_METRICS_ID::"},
-            {"name": "GCLOUD_HOSTED_LOGS_URL", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_LOGS_URL::"},
+            {
+                "name": "GCLOUD_HOSTED_METRICS_URL",
+                "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_METRICS_URL::",
+            },
+            {
+                "name": "GCLOUD_HOSTED_METRICS_ID",
+                "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_METRICS_ID::",
+            },
+            {
+                "name": "GCLOUD_HOSTED_LOGS_URL",
+                "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_LOGS_URL::",
+            },
             {"name": "GCLOUD_HOSTED_LOGS_ID", "valueFrom": f"{secret_arn}:GCLOUD_HOSTED_LOGS_ID::"},
             {"name": "GCLOUD_RW_API_KEY", "valueFrom": f"{secret_arn}:GCLOUD_RW_API_KEY::"},
             {"name": "GCLOUD_OTLP_ENDPOINT", "valueFrom": f"{secret_arn}:GCLOUD_OTLP_ENDPOINT::"},
-            {"name": "GCLOUD_OTLP_AUTH_HEADER", "valueFrom": f"{secret_arn}:GCLOUD_OTLP_AUTH_HEADER::"},
+            {
+                "name": "GCLOUD_OTLP_AUTH_HEADER",
+                "valueFrom": f"{secret_arn}:GCLOUD_OTLP_AUTH_HEADER::",
+            },
         ],
         log_group=log_group_name,
         region=REGION,
@@ -342,7 +360,9 @@ otelcol.exporter.otlphttp "grafana" {
     print(f"    Mock API URL: {mock_api['invoke_url']}")
 
     # Trigger Lambda
-    trigger_code_dir = project_root / "tests/e2e/upstream_apache_flink_ecs/pipeline_code/trigger_lambda"
+    trigger_code_dir = (
+        project_root / "tests/e2e/upstream_apache_flink_ecs/pipeline_code/trigger_lambda"
+    )
     requirements_file = trigger_code_dir / "requirements.txt"
     print(f"  - Bundling Trigger Lambda from: {trigger_code_dir}")
     trigger_code = lambda_.bundle_code(trigger_code_dir, requirements_file)

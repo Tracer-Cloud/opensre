@@ -25,7 +25,6 @@ class JiraClient:
             self.config.base_url
             and self.config.email
             and self.config.api_token
-            and self.config.project_key
         )
 
     def _get_client(self) -> httpx.Client:
@@ -141,6 +140,69 @@ class JiraClient:
             logger.warning("[jira] Add comment error: %s", e)
             return {"success": False, "error": str(e)}
 
+    def search_issues(
+        self,
+        jql: str = "",
+        max_results: int = 20,
+    ) -> dict[str, Any]:
+        """Search Jira issues via JQL to find related incidents, bugs, or tasks."""
+        if not jql and self.config.project_key:
+            jql = f"project = {self.config.project_key} ORDER BY updated DESC"
+        elif not jql:
+            jql = "ORDER BY updated DESC"
+
+        payload: dict[str, Any] = {
+            "jql": jql,
+            "maxResults": min(max_results, 100),
+            "fields": [
+                "summary",
+                "status",
+                "priority",
+                "labels",
+                "created",
+                "updated",
+                "assignee",
+            ],
+        }
+
+        try:
+            with self._get_client() as client:
+                resp = client.post(
+                    f"{self.config.api_base}/issue/search",
+                    json=payload,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+                issues = []
+                for item in data.get("issues", []):
+                    fields = item.get("fields", {})
+                    assignee = fields.get("assignee") or {}
+                    issues.append(
+                        {
+                            "issue_key": item.get("key", ""),
+                            "summary": fields.get("summary", ""),
+                            "status": (fields.get("status") or {}).get("name", ""),
+                            "priority": (fields.get("priority") or {}).get("name", ""),
+                            "labels": fields.get("labels", []),
+                            "assignee": assignee.get("displayName", ""),
+                            "created": fields.get("created", ""),
+                            "updated": fields.get("updated", ""),
+                        }
+                    )
+
+                return {
+                    "success": True,
+                    "issues": issues,
+                    "total": data.get("total", len(issues)),
+                }
+        except httpx.HTTPStatusError as e:
+            logger.warning("[jira] Search issues HTTP failure status=%s", e.response.status_code)
+            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+        except Exception as e:
+            logger.warning("[jira] Search issues error: %s", e)
+            return {"success": False, "error": str(e)}
+
     def get_issue(self, issue_key: str) -> dict[str, Any]:
         """Fetch an existing Jira issue to pull context into the investigation."""
         try:
@@ -153,8 +215,8 @@ class JiraClient:
                     "success": True,
                     "issue_key": data.get("key"),
                     "summary": fields.get("summary", ""),
-                    "status": fields.get("status", {}).get("name", ""),
-                    "priority": fields.get("priority", {}).get("name", ""),
+                    "status": (fields.get("status") or {}).get("name", ""),
+                    "priority": (fields.get("priority") or {}).get("name", ""),
                     "description": fields.get("description", ""),
                     "labels": fields.get("labels", []),
                 }
@@ -164,3 +226,27 @@ class JiraClient:
         except Exception as e:
             logger.warning("[jira] Get issue error: %s", e)
             return {"success": False, "error": str(e)}
+
+
+def make_jira_client(
+    base_url: str | None,
+    email: str | None,
+    api_token: str | None,
+    project_key: str | None = None,
+) -> JiraClient | None:
+    """Create a JiraClient if valid credentials are provided."""
+    url = (base_url or "").strip()
+    mail = (email or "").strip()
+    token = (api_token or "").strip()
+    if not (url and mail and token):
+        return None
+    try:
+        config = JiraIntegrationConfig(
+            base_url=url,
+            email=mail,
+            api_token=token,
+            project_key=(project_key or "").strip(),
+        )
+        return JiraClient(config)
+    except Exception:
+        return None

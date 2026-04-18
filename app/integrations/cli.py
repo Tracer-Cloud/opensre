@@ -7,17 +7,18 @@ Usage:
     python -m app.integrations remove <service>
     python -m app.integrations verify [service] [--send-slack-test]
 
-Supported services: aws, coralogix, datadog, grafana, honeycomb, mongodb, slack, opensearch, rds, tracer, github, sentry
+Supported services: aws, azure_sql, coralogix, datadog, grafana, honeycomb, mariadb, discord, mongodb, mongodb_atlas, postgresql, slack, opensearch, rds, tracer, github, sentry, vercel
 """
 
 from __future__ import annotations
 
 import json
 import sys
-from typing import Any
+from typing import Any, NoReturn
 
 import questionary
 
+from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL
 from app.integrations.store import (
     STORE_PATH,
     get_integration,
@@ -40,18 +41,22 @@ def _json_echo(data: Any) -> None:
     print(json.dumps(data, indent=2, default=str))
 
 
-_SECRET_KEYS = frozenset({
-    "api_token",
-    "api_key",
-    "app_key",
-    "password",
-    "secret_access_key",
-    "session_token",
-    "jwt_token",
-    "webhook_url",
-    "auth_token",
-    "connection_string",
-})
+_SECRET_KEYS = frozenset(
+    {
+        "api_token",
+        "api_key",
+        "api_private_key",
+        "app_key",
+        "bot_token",
+        "password",
+        "secret_access_key",
+        "session_token",
+        "jwt_token",
+        "webhook_url",
+        "auth_token",
+        "connection_string",
+    }
+)
 
 
 def _p(label: str, default: str = "", secret: bool = False) -> str:
@@ -69,20 +74,37 @@ def _p(label: str, default: str = "", secret: bool = False) -> str:
     return result.strip() or default
 
 
-def _die(msg: str) -> None:
+def _die(msg: str) -> NoReturn:
     print(f"  error: {msg}", file=sys.stderr)
     sys.exit(1)
 
 
+def _parse_port(raw: str, default: int = 3306) -> int:
+    """Parse a port string, returning *default* for invalid or out-of-range values."""
+    try:
+        port = int(raw)
+    except (ValueError, TypeError):
+        return default
+    if port < 1 or port > 65535:
+        return default
+    return port
+
+
 def _mask(obj: Any) -> Any:
     if isinstance(obj, dict):
-        return {k: (v[:4] + "****" if isinstance(v, str) and v else "****") if k in _SECRET_KEYS else _mask(v) for k, v in obj.items()}
+        return {
+            k: (v[:4] + "****" if isinstance(v, str) and v else "****")
+            if k in _SECRET_KEYS
+            else _mask(v)
+            for k, v in obj.items()
+        }
     if isinstance(obj, list):
         return [_mask(i) for i in obj]
     return obj
 
 
 # ─── setup flows ──────────────────────────────────────────────────────────────
+
 
 def _setup_grafana() -> None:
     endpoint = _p("Instance URL (e.g. https://myorg.grafana.net)")
@@ -98,7 +120,9 @@ def _setup_datadog() -> None:
     site = _p("Site", default="datadoghq.com")
     if not api_key or not app_key:
         _die("api_key and app_key are required.")
-    upsert_integration("datadog", {"credentials": {"api_key": api_key, "app_key": app_key, "site": site}})
+    upsert_integration(
+        "datadog", {"credentials": {"api_key": api_key, "app_key": app_key, "site": site}}
+    )
 
 
 def _setup_honeycomb() -> None:
@@ -150,13 +174,30 @@ def _setup_aws() -> None:
         role_arn = _p("IAM Role ARN")
         if not role_arn:
             _die("role_arn is required.")
-        upsert_integration("aws", {"role_arn": role_arn, "external_id": _p("External ID (optional)"), "credentials": {"region": region}})
+        upsert_integration(
+            "aws",
+            {
+                "role_arn": role_arn,
+                "external_id": _p("External ID (optional)"),
+                "credentials": {"region": region},
+            },
+        )
     else:
         access_key = _p("AWS_ACCESS_KEY_ID", secret=True)
         secret_key = _p("AWS_SECRET_ACCESS_KEY", secret=True)
         if not access_key or not secret_key:
             _die("access_key and secret_key are required.")
-        upsert_integration("aws", {"credentials": {"access_key_id": access_key, "secret_access_key": secret_key, "session_token": _p("Session token (optional)"), "region": region}})
+        upsert_integration(
+            "aws",
+            {
+                "credentials": {
+                    "access_key_id": access_key,
+                    "secret_access_key": secret_key,
+                    "session_token": _p("Session token (optional)"),
+                    "region": region,
+                }
+            },
+        )
 
 
 def _setup_slack() -> None:
@@ -196,7 +237,18 @@ def _setup_rds() -> None:
     password = _p("Password", secret=True)
     if not host or not database or not username:
         _die("host, database, and username are required.")
-    upsert_integration("rds", {"credentials": {"host": host, "port": int(port) if port.isdigit() else 5432, "database": database, "username": username, "password": password}})
+    upsert_integration(
+        "rds",
+        {
+            "credentials": {
+                "host": host,
+                "port": int(port) if port.isdigit() else 5432,
+                "database": database,
+                "username": username,
+                "password": password,
+            }
+        },
+    )
 
 
 def _setup_tracer() -> None:
@@ -205,6 +257,14 @@ def _setup_tracer() -> None:
     if not base_url or not jwt_token:
         _die("base_url and jwt_token are required.")
     upsert_integration("tracer", {"credentials": {"base_url": base_url, "jwt_token": jwt_token}})
+
+
+def _setup_vercel() -> None:
+    api_token = _p("Vercel API token", secret=True)
+    team_id = _p("Team ID (optional for personal accounts)")
+    if not api_token:
+        _die("api_token is required.")
+    upsert_integration("vercel", {"credentials": {"api_token": api_token, "team_id": team_id}})
 
 
 def _setup_github() -> None:
@@ -233,6 +293,15 @@ def _setup_github() -> None:
     upsert_integration("github", {"credentials": credentials})
 
 
+def _setup_gitlab() -> None:
+    base_url = _p("Gitlab base URL", default=DEFAULT_GITLAB_BASE_URL)
+    auth_token = _p("Gitlab access token", secret=True)
+    upsert_integration(
+        "gitlab",
+        {"credentials": {"base_url": base_url, "auth_token": auth_token}},
+    )
+
+
 def _setup_sentry() -> None:
     base_url = _p("Sentry URL", default="https://sentry.io")
     organization_slug = _p("Organization slug")
@@ -254,7 +323,9 @@ def _setup_sentry() -> None:
 
 
 def _setup_mongodb() -> None:
-    connection_string = _p("Connection string (e.g. mongodb+srv://user:pass@cluster.example.net)", secret=True)
+    connection_string = _p(
+        "Connection string (e.g. mongodb+srv://user:pass@cluster.example.net)", secret=True
+    )
     database = _p("Database name")
     auth_source = _p("Auth source", default="admin")
     tls_choice = questionary.select(
@@ -284,27 +355,241 @@ def _setup_mongodb() -> None:
     )
 
 
+def _register_discord_slash_command(application_id: str, bot_token: str) -> None:
+    import httpx
+
+    url = f"https://discord.com/api/v10/applications/{application_id}/commands"
+    payload = {
+        "name": "investigate",
+        "description": "Trigger an OpenSRE investigation",
+        "options": [
+            {
+                "name": "alert",
+                "description": "Alert JSON or description",
+                "type": 3,
+                "required": True,
+            }
+        ],
+    }
+    resp = httpx.put(url, json=[payload], headers={"Authorization": f"Bot {bot_token}"}, timeout=10)
+    if resp.is_success:
+        print("  ✓ /investigate slash command registered.")
+    else:
+        print(f"  ⚠ Slash command registration failed ({resp.status_code}): {resp.text}")
+
+
+def _setup_discord() -> None:
+    bot_token = _p("Discord bot token", secret=True)
+    application_id = _p("Discord application ID")
+    public_key = _p("Discord public key (from Developer Portal)")
+    default_channel_id = _p("Default channel ID (optional)")
+    upsert_integration(
+        "discord",
+        {
+            "credentials": {
+                "bot_token": bot_token,
+                "application_id": application_id,
+                "public_key": public_key,
+                "default_channel_id": default_channel_id,
+            }
+        },
+    )
+    _register_discord_slash_command(application_id, bot_token)
+
+
+def _setup_postgresql() -> None:
+    host = _p("Host (e.g. localhost or postgres.example.com)")
+    database = _p("Database name")
+    if not host or not database:
+        _die("host and database are required.")
+    port = _p("Port", default="5432")
+    username = _p("Username", default="postgres")
+    password = _p("Password", secret=True)
+    ssl_mode_choice = questionary.select(
+        "SSL mode",
+        choices=[
+            questionary.Choice("prefer (recommended)", value="prefer"),
+            questionary.Choice("require", value="require"),
+            questionary.Choice("disable", value="disable"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if ssl_mode_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    upsert_integration(
+        "postgresql",
+        {
+            "credentials": {
+                "host": host,
+                "port": int(port) if port.isdigit() else 5432,
+                "database": database,
+                "username": username or "postgres",
+                "password": password,
+                "ssl_mode": ssl_mode_choice,
+            }
+        },
+    )
+
+
+def _setup_mysql() -> None:
+    host = _p("Host (e.g. localhost or mysql.example.com)")
+    database = _p("Database name")
+    if not host or not database:
+        _die("host and database are required.")
+    port = _p("Port", default="3306")
+    username = _p("Username", default="root")
+    password = _p("Password", secret=True)
+    ssl_mode_choice = questionary.select(
+        "SSL mode",
+        choices=[
+            questionary.Choice("preferred (encrypted, no cert verification)", value="preferred"),
+            questionary.Choice("required", value="required"),
+            questionary.Choice("disabled", value="disabled"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if ssl_mode_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    upsert_integration(
+        "mysql",
+        {
+            "credentials": {
+                "host": host,
+                "port": int(port) if port.isdigit() else 3306,
+                "database": database,
+                "username": username or "root",
+                "password": password,
+                "ssl_mode": ssl_mode_choice,
+            }
+        },
+    )
+
+
+def _setup_mongodb_atlas() -> None:
+    api_public_key = _p("Atlas API public key")
+    api_private_key = _p("Atlas API private key", secret=True)
+    project_id = _p("Atlas project ID (group ID)")
+    base_url = _p("Atlas API base URL", default="https://cloud.mongodb.com/api/atlas/v2")
+    if not api_public_key or not api_private_key or not project_id:
+        _die("api_public_key, api_private_key, and project_id are required.")
+    upsert_integration(
+        "mongodb_atlas",
+        {
+            "credentials": {
+                "api_public_key": api_public_key,
+                "api_private_key": api_private_key,
+                "project_id": project_id,
+                "base_url": base_url,
+            }
+        },
+    )
+
+
+def _setup_mariadb() -> None:
+    host = _p("Host (e.g. db.example.com)")
+    port = _p("Port", default="3306")
+    database = _p("Database name")
+    username = _p("Username")
+    password = _p("Password", secret=True)
+    ssl_choice = questionary.select(
+        "SSL enabled?",
+        choices=[
+            questionary.Choice("Yes", value="1"),
+            questionary.Choice("No", value="0"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if ssl_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    ssl = ssl_choice == "1"
+    if not host or not database or not username:
+        _die("host, database, and username are required.")
+    upsert_integration(
+        "mariadb",
+        {
+            "credentials": {
+                "host": host,
+                "port": _parse_port(port),
+                "database": database,
+                "username": username,
+                "password": password,
+                "ssl": ssl,
+            }
+        },
+    )
+
+
 _HANDLERS: dict[str, Any] = {
     "aws": _setup_aws,
     "coralogix": _setup_coralogix,
     "datadog": _setup_datadog,
     "grafana": _setup_grafana,
     "honeycomb": _setup_honeycomb,
+    "mariadb": _setup_mariadb,
+    "mongodb_atlas": _setup_mongodb_atlas,
     "slack": _setup_slack,
     "opensearch": _setup_opensearch,
     "rds": _setup_rds,
     "tracer": _setup_tracer,
+    "vercel": _setup_vercel,
     "github": _setup_github,
+    "gitlab": _setup_gitlab,
     "sentry": _setup_sentry,
     "mongodb": _setup_mongodb,
+    "discord": _setup_discord,
+    "postgresql": _setup_postgresql,
+    "mysql": _setup_mysql,
 }
+
+
+def _setup_azure_sql() -> None:
+    server = _p("Server (e.g. myserver.database.windows.net)")
+    database = _p("Database name")
+    if not server or not database:
+        _die("server and database are required.")
+    port = _p("Port", default="1433")
+    username = _p("Username")
+    password = _p("Password", secret=True)
+    driver = _p("ODBC driver", default="ODBC Driver 18 for SQL Server")
+    encrypt_choice = questionary.select(
+        "Encrypt connection?",
+        choices=[
+            questionary.Choice("Yes (recommended for Azure)", value="1"),
+            questionary.Choice("No", value="0"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if encrypt_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    encrypt = encrypt_choice == "1"
+    upsert_integration(
+        "azure_sql",
+        {
+            "credentials": {
+                "server": server,
+                "port": _parse_port(port, default=1433),
+                "database": database,
+                "username": username,
+                "password": password,
+                "driver": driver or "ODBC Driver 18 for SQL Server",
+                "encrypt": encrypt,
+            }
+        },
+    )
+
+
+_HANDLERS["azure_sql"] = _setup_azure_sql
+
 
 SUPPORTED = ", ".join(_HANDLERS)
 SUPPORTED_VERIFY = ", ".join(SUPPORTED_VERIFY_SERVICES)
 
 
-
-def cmd_setup(service: str | None) -> None:
+def cmd_setup(service: str | None) -> str:
     if not service:
         try:
             service = questionary.select(
@@ -317,10 +602,10 @@ def cmd_setup(service: str | None) -> None:
             sys.exit(1)
     if not service or service not in _HANDLERS:
         _die(f"Usage: setup <service>. Supported: {SUPPORTED}")
-        return
     print(f"\n  Setting up {_B}{service}{_R}\n")
     _HANDLERS[service]()
     print(f"\n  ✓ Saved → {STORE_PATH}\n")
+    return service
 
 
 def cmd_list() -> None:
@@ -372,17 +657,23 @@ def cmd_remove(service: str | None) -> None:
         print(f"  No integration found for '{service}'.")
 
 
-def cmd_verify(service: str | None, *, send_slack_test: bool = False) -> None:
+def cmd_verify(
+    service: str | None,
+    *,
+    send_slack_test: bool = False,
+) -> int:
     from app.cli.context import is_json_output
 
     if service and service not in SUPPORTED_VERIFY_SERVICES:
         _die(f"Usage: verify [service]. Supported: {SUPPORTED_VERIFY}")
-        return
 
-    results = verify_integrations(service=service, send_slack_test=send_slack_test)
+    results = verify_integrations(
+        service=service,
+        send_slack_test=send_slack_test,
+    )
 
     if is_json_output():
         _json_echo(results)
     else:
         print(format_verification_results(results))
-    sys.exit(verification_exit_code(results, requested_service=service))
+    return int(verification_exit_code(results, requested_service=service))

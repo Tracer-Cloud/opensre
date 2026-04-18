@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-import app.tools.registry as registry_module
+from app.tools import registry as registry_module
 from app.tools.base import BaseTool
 from app.tools.investigation_registry.actions import get_available_actions
 from app.tools.registered_tool import REGISTERED_TOOL_ATTR, RegisteredTool

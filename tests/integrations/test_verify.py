@@ -33,7 +33,7 @@ class _FakeResponse:
 
 def test_resolve_effective_integrations_prefers_local_store(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "app.integrations.verify.load_integrations",
+        "app.integrations.catalog.load_integrations",
         lambda: [
             {
                 "id": "grafana-local",
@@ -62,7 +62,7 @@ def test_resolve_effective_integrations_prefers_local_store(monkeypatch: pytest.
 def test_resolve_effective_integrations_includes_honeycomb_and_coralogix_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("app.integrations.verify.load_integrations", lambda: [])
+    monkeypatch.setattr("app.integrations.catalog.load_integrations", lambda: [])
     monkeypatch.setenv("HONEYCOMB_API_KEY", "hny_test")
     monkeypatch.setenv("HONEYCOMB_DATASET", "prod-api")
     monkeypatch.setenv("CORALOGIX_API_KEY", "cx_test")
@@ -79,7 +79,7 @@ def test_resolve_effective_integrations_keeps_incomplete_datadog_store_record(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.integrations.verify.load_integrations",
+        "app.integrations.catalog.load_integrations",
         lambda: [
             {
                 "id": "datadog-local",
@@ -421,7 +421,7 @@ def test_verify_integrations_dispatches_to_vercel(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr("app.integrations.verify.VercelClient", _FakeVercelClient)
     monkeypatch.setattr(
-        "app.integrations.verify.load_integrations",
+        "app.integrations.catalog.load_integrations",
         lambda: [
             {
                 "id": "vercel-1",
@@ -441,7 +441,7 @@ def test_verify_integrations_dispatches_to_vercel(monkeypatch: pytest.MonkeyPatc
 
 def test_resolve_effective_integrations_includes_vercel_from_store(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "app.integrations.verify.load_integrations",
+        "app.integrations.catalog.load_integrations",
         lambda: [
             {
                 "id": "vercel-store-1",
@@ -462,7 +462,7 @@ def test_resolve_effective_integrations_includes_vercel_from_store(monkeypatch: 
 
 
 def test_resolve_effective_integrations_includes_vercel_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.integrations.verify.load_integrations", lambda: [])
+    monkeypatch.setattr("app.integrations.catalog.load_integrations", lambda: [])
     monkeypatch.setenv("VERCEL_API_TOKEN", "tok_env")
     monkeypatch.setenv("VERCEL_TEAM_ID", "team_env")
 

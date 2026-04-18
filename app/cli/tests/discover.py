@@ -310,7 +310,7 @@ def _discover_rds_synthetic_scenarios() -> list[TestCatalogItem]:
                 if failure_mode:
                     display_name = f"{scenario_id}  [{failure_mode}]"
             except Exception:  # noqa: BLE001 — best-effort enrichment; malformed YAML is fine
-                pass
+                display_name = scenario_id
         items.append(
             TestCatalogItem(
                 id=f"synthetic:{scenario_id}",

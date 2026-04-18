@@ -8,11 +8,13 @@ from typing import TYPE_CHECKING, Any
 
 import click
 
+from app.cli.commands.remote_health import _save_remote_base_url, run_remote_health_check
 from app.cli.context import is_json_output, is_yes
 from app.cli.errors import OpenSREError
 
 if TYPE_CHECKING:
     from app.remote.client import PreflightResult, RemoteAgentClient
+    from app.remote.ops import RemoteOpsProvider, RemoteServiceScope
 
 
 def _context_value(ctx: click.Context, key: str) -> str | None:
@@ -47,18 +49,6 @@ def _load_remote_client(ctx: click.Context, *, missing_url_hint: str) -> RemoteA
     return RemoteAgentClient(resolved_url, api_key=_context_value(ctx, "api_key"))
 
 
-def _save_remote_base_url(client: RemoteAgentClient) -> None:
-    from app.cli.wizard.store import save_remote_url
-
-    save_remote_url(client.base_url)
-
-    from app.cli.wizard.store import load_named_remotes, save_named_remote
-
-    remotes = load_named_remotes()
-    if client.base_url not in remotes.values():
-        save_named_remote("custom", client.base_url, set_active=True, source="cli")
-
-
 def _parse_alert_json(alert_json: str) -> dict[str, Any]:
     try:
         payload = json.loads(alert_json)
@@ -81,16 +71,7 @@ def _sample_alert_payload() -> dict[str, str]:
     }
 
 
-def _resolve_active_url(ctx: click.Context) -> str | None:
-    """Return the active remote URL, preferring --url flag over the store."""
-    from app.cli.wizard.store import load_remote_url
-
-    return _context_value(ctx, "url") or load_remote_url()
-
-
-def _browse_investigations(
-    ctx: click.Context, style: Any, questionary: Any, console: Any
-) -> None:
+def _browse_investigations(ctx: click.Context, style: Any, questionary: Any, console: Any) -> None:
     """Fetch remote investigations and let the user pick one to view."""
     import httpx
 
@@ -129,7 +110,7 @@ def _browse_investigations(
             for inv in investigations
         ]
         choices.append(questionary.Separator())
-        choices.append(questionary.Choice("← Back", value="_back"))
+        choices.append(questionary.Choice("<- Back", value="_back"))
 
         selected = questionary.select(
             "Select an investigation to view:",
@@ -157,7 +138,7 @@ def _browse_investigations(
         after = questionary.select(
             "",
             choices=[
-                questionary.Choice("← Back to list", value="back"),
+                questionary.Choice("<- Back to list", value="back"),
                 questionary.Choice("Save to file", value="save"),
                 questionary.Choice("Exit", value="exit"),
             ],
@@ -186,24 +167,6 @@ def _run_preflight(url: str, api_key: str | None, console: Any) -> PreflightResu
         return client.preflight()
 
 
-def _preflight_payload(preflight: PreflightResult) -> dict[str, Any]:
-    """Serialize preflight results for JSON output."""
-    return {
-        "ok": preflight.ok,
-        "version": preflight.version,
-        "server_type": preflight.server_type,
-        "endpoints": preflight.endpoints,
-        "latency_ms": preflight.latency_ms,
-        "error": preflight.error,
-        "system": preflight.system,
-        "supports_investigate": preflight.supports_investigate,
-        "supports_stream": preflight.supports_stream,
-        "supports_live_stream": preflight.supports_live_stream,
-        "supports_langgraph": preflight.supports_langgraph,
-        "status": preflight.status_label,
-    }
-
-
 def _render_preflight_status(
     url: str,
     label: str,
@@ -212,17 +175,13 @@ def _render_preflight_status(
 ) -> None:
     """Print a rich one-liner showing connection health."""
     if preflight is None:
-        console.print(
-            "  [bold cyan]Remote Agent[/bold cyan]  [dim]no remote URL configured[/dim]"
-        )
+        console.print("  [bold cyan]Remote Agent[/bold cyan]  [dim]no remote URL configured[/dim]")
         return
 
     base = f"[bold]{url}[/bold] [dim]({label})[/dim]"
 
     if not preflight.ok:
-        console.print(
-            f"  [bold cyan]Remote Agent[/bold cyan]  [red]●[/red] {base}"
-        )
+        console.print(f"  [bold cyan]Remote Agent[/bold cyan]  [red]●[/red] {base}")
         console.print(f"  [red]{preflight.error}[/red]")
         return
 
@@ -255,20 +214,16 @@ def _render_preflight_status(
         if uptime:
             metric_parts.append(f"up: {uptime['human']}")
         if metric_parts:
-            console.print(f"  [dim]{' │ '.join(metric_parts)}[/dim]")
+            console.print(f"  [dim]{' | '.join(metric_parts)}[/dim]")
 
     if preflight.supports_investigate and not preflight.supports_live_stream:
-        console.print(
-            "  [yellow]Live investigation streaming unavailable on this remote.[/yellow]"
-        )
+        console.print("  [yellow]Live investigation streaming unavailable on this remote.[/yellow]")
         console.print(
             "  [dim]Redeploy the latest remote server to stream LangGraph step events.[/dim]"
         )
 
 
-def _render_health_with_preflight(
-    preflight: PreflightResult, base_url: str, console: Any
-) -> None:
+def _render_health_with_preflight(preflight: PreflightResult, base_url: str, console: Any) -> None:
     """Render health using the already-gathered preflight result."""
     from rich.panel import Panel
     from rich.table import Table
@@ -308,92 +263,6 @@ def _render_health_with_preflight(
     )
 
 
-def _render_health_rich(data: dict[str, Any], base_url: str) -> None:
-    """Render health-check JSON as a Rich panel with system metrics table."""
-    from rich import box
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.table import Table
-
-    console = Console(highlight=False)
-    console.print()
-
-    version = data.get("version", "unknown")
-    server_type = data.get("server_type", "unknown")
-    endpoints = data.get("endpoints") or []
-
-    header = Table.grid(padding=(0, 2))
-    header.add_row("[bold]URL[/bold]", base_url)
-    header.add_row("[bold]Version[/bold]", version)
-    header.add_row("[bold]Server type[/bold]", server_type)
-    header.add_row("[bold]Endpoints[/bold]", ", ".join(endpoints) or "none")
-    console.print(Panel(header, title="[bold cyan]Remote Agent Health[/bold cyan]", border_style="cyan"))
-
-    system = data.get("system")
-    if not system:
-        console.print()
-        return
-
-    table = Table(box=box.SIMPLE_HEAVY, show_header=True, title="System Metrics")
-    table.add_column("Metric", style="bold cyan")
-    table.add_column("Value")
-
-    cpu = system.get("cpu")
-    if cpu:
-        cores = cpu.get("core_count", "?")
-        table.add_row(
-            "CPU Load (1/5/15m)",
-            f"{cpu.get('load_avg_1m', '?')} / {cpu.get('load_avg_5m', '?')}"
-            f" / {cpu.get('load_avg_15m', '?')}  ({cores} cores)",
-        )
-
-    mem = system.get("memory")
-    if mem:
-        pct = mem.get("percent", 0)
-        color = "green" if pct < 70 else ("yellow" if pct < 90 else "red")
-        table.add_row(
-            "Memory",
-            f"[{color}]{pct}%[/{color}]  "
-            f"{mem.get('used_gb', '?')}GB / {mem.get('total_gb', '?')}GB"
-            f"  ({mem.get('available_gb', '?')}GB free)",
-        )
-
-    disk = system.get("disk")
-    if disk:
-        pct = disk.get("percent", 0)
-        color = "green" if pct < 70 else ("yellow" if pct < 90 else "red")
-        table.add_row(
-            "Disk",
-            f"[{color}]{pct}%[/{color}]  "
-            f"{disk.get('used_gb', '?')}GB / {disk.get('total_gb', '?')}GB"
-            f"  ({disk.get('free_gb', '?')}GB free)",
-        )
-
-    uptime = system.get("uptime")
-    if uptime:
-        table.add_row("Uptime", uptime.get("human", "?"))
-
-    plat = system.get("platform")
-    if plat:
-        table.add_row("OS", plat.get("os", "?"))
-        table.add_row("Arch", plat.get("arch", "?"))
-        table.add_row("Python", plat.get("python", "?"))
-        table.add_row("Hostname", plat.get("hostname", "?"))
-
-    proc = system.get("process")
-    if proc:
-        parts: list[str] = []
-        if "rss_mb" in proc:
-            parts.append(f"RSS {proc['rss_mb']}MB")
-        if "open_fds" in proc:
-            parts.append(f"{proc['open_fds']} open fds")
-        if parts:
-            table.add_row("Server Process", " │ ".join(parts))
-
-    console.print(table)
-    console.print()
-
-
 def _build_investigation_choices(
     preflight: PreflightResult | None,
     questionary: Any,
@@ -410,9 +279,7 @@ def _build_investigation_choices(
 
     if preflight and preflight.supports_langgraph and not preflight.supports_stream:
         return [
-            questionary.Choice(
-                "Run investigation (custom alert)", value="investigate-langgraph"
-            ),
+            questionary.Choice("Run investigation (custom alert)", value="investigate-langgraph"),
             questionary.Choice(
                 "Run investigation (sample alert)", value="investigate-sample-langgraph"
             ),
@@ -472,9 +339,31 @@ def _build_deploy_choices(
         label = "Redeploy remote (enable streaming)"
 
     return [
-        questionary.Separator("─── Deploy"),
+        questionary.Separator("--- Deploy"),
         questionary.Choice(label, value="redeploy-ec2"),
     ]
+
+
+def _resolve_remote_ops_scope(ctx: click.Context) -> tuple[RemoteOpsProvider, RemoteServiceScope]:
+    from app.cli.wizard.store import load_remote_ops_config
+    from app.remote.ops import RemoteServiceScope, resolve_remote_ops_provider
+
+    stored = load_remote_ops_config()
+
+    provider_raw = _context_value(ctx, "ops_provider") or stored.get("provider") or "railway"
+    provider = str(provider_raw).strip().lower()
+    project = _context_value(ctx, "ops_project") or stored.get("project")
+    service = _context_value(ctx, "ops_service") or stored.get("service")
+
+    remote_provider = resolve_remote_ops_provider(provider)
+    scope = RemoteServiceScope(provider=provider, project=project, service=service)
+    return remote_provider, scope
+
+
+def _persist_remote_ops_scope(scope: RemoteServiceScope) -> None:
+    from app.cli.wizard.store import save_remote_ops_config
+
+    save_remote_ops_config(provider=scope.provider, project=scope.project, service=scope.service)
 
 
 def _run_remote_interactive(ctx: click.Context) -> None:
@@ -586,7 +475,6 @@ def _run_remote_interactive(ctx: click.Context) -> None:
                 continue
 
             _redeploy_ec2(ctx, branch=branch, console=console)
-            explicit_url = None
             remotes = load_named_remotes()
             active_name = load_active_remote_name()
             url = load_remote_url()
@@ -632,9 +520,7 @@ def _run_remote_interactive(ctx: click.Context) -> None:
                     if remote_url == switched_url:
                         set_active_remote(name)
                         active_name = name
-                        console.print(
-                            f"  Active remote: [bold]{name}[/bold] → {switched_url}"
-                        )
+                        console.print(f"  Active remote: [bold]{name}[/bold] → {switched_url}")
                         break
                 url = switched_url
                 ctx.obj["url"] = url
@@ -777,8 +663,7 @@ def _handle_stream_404(
 
     if preflight.supports_langgraph:
         console.print(
-            "  [yellow]Streaming endpoint not available — "
-            "LangGraph deployment detected.[/yellow]"
+            "  [yellow]Streaming endpoint not available — LangGraph deployment detected.[/yellow]"
         )
         console.print("  [dim]Auto-switching to LangGraph trigger path...[/dim]")
         console.print()
@@ -829,9 +714,7 @@ def _run_langgraph_investigation(ctx: click.Context, raw_alert: dict[str, Any]) 
             from rich.console import Console
 
             console = Console(highlight=False)
-            console.print(
-                "  [yellow]LangGraph endpoint not available on this server.[/yellow]"
-            )
+            console.print("  [yellow]LangGraph endpoint not available on this server.[/yellow]")
             console.print("  [dim]Falling back to lightweight server path...[/dim]")
             console.print()
             _run_streamed_investigation(ctx, raw_alert)
@@ -853,8 +736,12 @@ def _run_langgraph_investigation(ctx: click.Context, raw_alert: dict[str, Any]) 
 
 
 @click.group(name="remote", invoke_without_command=True)
-@click.option("--url", default=None, help="Remote agent base URL (e.g. 1.2.3.4 or http://host:2024).")
-@click.option("--api-key", default=None, envvar="OPENSRE_API_KEY", help="API key for the remote agent.")
+@click.option(
+    "--url", default=None, help="Remote agent base URL (e.g. 1.2.3.4 or http://host:2024)."
+)
+@click.option(
+    "--api-key", default=None, envvar="OPENSRE_API_KEY", help="API key for the remote agent."
+)
 @click.pass_context
 def remote(ctx: click.Context, url: str | None, api_key: str | None) -> None:
     """Connect to and trigger a remote deployed agent."""
@@ -874,37 +761,144 @@ def remote(ctx: click.Context, url: str | None, api_key: str | None) -> None:
         _run_remote_interactive(ctx)
 
 
-@remote.command(name="health")
+@remote.group(name="ops")
+@click.option("--provider", "ops_provider", default=None, help="Remote provider (e.g. railway).")
+@click.option("--project", "ops_project", default=None, help="Provider project ID/name.")
+@click.option("--service", "ops_service", default=None, help="Provider service ID/name.")
 @click.pass_context
-def remote_health(ctx: click.Context) -> None:
-    """Check the health of a remote deployed agent."""
-    import httpx
-    from rich.console import Console
+def remote_ops(
+    ctx: click.Context,
+    ops_provider: str | None,
+    ops_project: str | None,
+    ops_service: str | None,
+) -> None:
+    """Run provider-level post-deploy operations on hosted services."""
+    ctx.ensure_object(dict)
+    ctx.obj["ops_provider"] = ops_provider
+    ctx.obj["ops_project"] = ops_project
+    ctx.obj["ops_service"] = ops_service
 
+
+@remote_ops.command(name="status")
+@click.option("--json", "as_json", is_flag=True, default=False, help="Print raw JSON output.")
+@click.pass_context
+def remote_ops_status(ctx: click.Context, as_json: bool) -> None:
+    """Inspect deployment status and metadata for a hosted service."""
+    from app.remote.ops import RemoteOpsError
+
+    try:
+        provider, scope = _resolve_remote_ops_scope(ctx)
+        status = provider.status(scope)
+        _persist_remote_ops_scope(scope)
+    except RemoteOpsError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    payload = {
+        "provider": status.provider,
+        "project": status.project,
+        "service": status.service,
+        "deployment_id": status.deployment_id,
+        "deployment_status": status.deployment_status,
+        "environment": status.environment,
+        "url": status.url,
+        "health": status.health,
+        "metadata": status.metadata,
+    }
+    if as_json:
+        click.echo(json.dumps(payload, indent=2))
+        return
+
+    click.echo(f"Provider: {status.provider}")
+    click.echo(f"Project: {status.project or '-'}")
+    click.echo(f"Service: {status.service or '-'}")
+    click.echo(f"Deployment: {status.deployment_id or '-'}")
+    click.echo(f"Status: {status.deployment_status or '-'}")
+    click.echo(f"Environment: {status.environment or '-'}")
+    click.echo(f"Health: {status.health}")
+    click.echo(f"URL: {status.url or '-'}")
+    if status.metadata:
+        click.echo("Metadata:")
+        for key, value in status.metadata.items():
+            click.echo(f"  {key}: {value}")
+
+
+@remote_ops.command(name="logs")
+@click.option("--follow", is_flag=True, default=False, help="Stream logs continuously.")
+@click.option(
+    "--lines", default=200, type=click.IntRange(1), help="Number of recent log lines to tail."
+)
+@click.pass_context
+def remote_ops_logs(ctx: click.Context, follow: bool, lines: int) -> None:
+    """Tail or stream provider logs for a hosted service."""
+    from app.remote.ops import RemoteOpsError
+
+    try:
+        provider, scope = _resolve_remote_ops_scope(ctx)
+        provider.logs(scope, lines=lines, follow=follow)
+        _persist_remote_ops_scope(scope)
+    except RemoteOpsError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@remote_ops.command(name="restart")
+@click.option("--yes", is_flag=True, default=False, help="Skip confirmation prompt.")
+@click.option("--json", "as_json", is_flag=True, default=False, help="Print raw JSON output.")
+@click.pass_context
+def remote_ops_restart(ctx: click.Context, yes: bool, as_json: bool) -> None:
+    """Request a restart or redeploy for a hosted service."""
+    from app.remote.ops import RemoteOpsError
+
+    try:
+        provider, scope = _resolve_remote_ops_scope(ctx)
+    except RemoteOpsError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    target = scope.service or "selected service"
+    if not yes and not click.confirm(f"Restart/redeploy {target} on {scope.provider}?"):
+        click.echo("Cancelled.")
+        return
+
+    try:
+        result = provider.restart(scope)
+        _persist_remote_ops_scope(scope)
+    except RemoteOpsError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    payload = {
+        "provider": result.provider,
+        "project": result.project,
+        "service": result.service,
+        "requested": result.requested,
+        "deployment_id": result.deployment_id,
+        "message": result.message,
+    }
+    if as_json:
+        click.echo(json.dumps(payload, indent=2))
+        return
+
+    click.echo(result.message)
+    if result.deployment_id:
+        click.echo(f"Deployment: {result.deployment_id}")
+
+
+@remote.command(name="health")
+@click.option(
+    "--json", "output_json", is_flag=True, help="Print machine-readable JSON health report."
+)
+@click.pass_context
+def remote_health(ctx: click.Context, output_json: bool) -> None:
+    """Check the health of a remote deployed agent."""
     client = _load_remote_client(
         ctx,
         missing_url_hint="Pass a URL or run 'opensre remote health <url>'.",
     )
-    try:
-        preflight = client.preflight()
-        _save_remote_base_url(client)
-    except httpx.TimeoutException as exc:
-        raise OpenSREError(
-            f"Connection timed out reaching {client.base_url}.",
-            suggestion="Check network connectivity and verify the remote agent is running.",
-        ) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise OpenSREError(
-            f"Health check failed: {exc}",
-            suggestion="Verify the remote URL with 'opensre remote --url <host> health'.",
-        ) from exc
-
-    if is_json_output():
-        click.echo(json.dumps(_preflight_payload(preflight), indent=2))
-        return
-
-    console = Console(highlight=False)
-    _render_health_with_preflight(preflight, client.base_url, console)
+    run_remote_health_check(
+        base_url=client.base_url,
+        api_key=_context_value(ctx, "api_key"),
+        output_json=output_json,
+        save_url=True,
+        client=client,
+    )
 
 
 @remote.command(name="trigger")
@@ -915,28 +909,16 @@ def remote_trigger(ctx: click.Context, alert_json: str | None, detach: bool) -> 
     """Trigger an investigation on a remote deployed agent and stream results."""
     import httpx
 
+    from app.remote.renderer import StreamRenderer
+
     client = _load_remote_client(
         ctx,
         missing_url_hint="Pass --url or run 'opensre remote trigger --url <host>'.",
     )
+    if detach:
+        click.echo("Detach mode is not yet supported; streaming inline.")
     try:
-        if detach:
-            payload = _parse_alert_json(alert_json) if alert_json else _sample_alert_payload()
-            result = client.investigate(payload)
-            _save_remote_base_url(client)
-            inv_id = result.get("id", "N/A")
-            if is_json_output():
-                click.echo(json.dumps({"id": inv_id, "status": "triggered"}))
-            else:
-                click.echo(f"  Investigation triggered: {inv_id}")
-                click.echo("  Use 'opensre remote pull --latest' to download results.")
-            return
-
-        from app.remote.renderer import StreamRenderer
-
-        events = client.trigger_investigation(
-            _parse_alert_json(alert_json) if alert_json else None
-        )
+        events = client.trigger_investigation(_parse_alert_json(alert_json) if alert_json else None)
         StreamRenderer().render_stream(events)
         _save_remote_base_url(client)
     except httpx.TimeoutException as exc:
@@ -953,12 +935,14 @@ def remote_trigger(ctx: click.Context, alert_json: str | None, detach: bool) -> 
 
 @remote.command(name="investigate")
 @click.option("--alert-json", default=None, help="Inline alert JSON payload string.")
-@click.option("--sample", is_flag=True, default=False, help="Use the built-in sample alert payload.")
+@click.option(
+    "--sample", is_flag=True, default=False, help="Use the built-in sample alert payload."
+)
 @click.option(
     "--no-stream",
     is_flag=True,
     default=False,
-    help="Disable live streaming and wait for the full result.",
+    help="Use blocking /investigate instead of live streaming.",
 )
 @click.pass_context
 def remote_investigate(
@@ -1022,7 +1006,9 @@ def _run_blocking_investigation(ctx: click.Context, raw_alert: dict[str, Any]) -
 
 
 @remote.command(name="pull")
-@click.option("--latest", is_flag=True, default=False, help="Download only the most recent investigation.")
+@click.option(
+    "--latest", is_flag=True, default=False, help="Download only the most recent investigation."
+)
 @click.option("--all", "pull_all", is_flag=True, default=False, help="Download all investigations.")
 @click.option("--output-dir", default="./investigations", help="Directory to save .md files to.")
 @click.pass_context

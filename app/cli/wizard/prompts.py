@@ -79,6 +79,15 @@ class _CheckboxControl(InquirerControl):
         return tokens
 
 
+def _layout_kwargs(*, input: Any | None = None, output: Any | None = None) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {}
+    if input is not None:
+        kwargs["input"] = input
+    if output is not None:
+        kwargs["output"] = output
+    return kwargs
+
+
 def _base_bindings(
     ic: InquirerControl,
     *,
@@ -136,6 +145,8 @@ def select(
     style: Style | None = None,
     instruction: str | None = None,
     escape_result: Any | None = None,
+    input: Any | None = None,
+    output: Any | None = None,
 ) -> Question:
     """Render a single-select prompt with navigation-only movement."""
     ic = InquirerControl(
@@ -157,11 +168,9 @@ def select(
 
     bindings = _base_bindings(ic)
 
-    if escape_result is not None:
-
-        @bindings.add(Keys.Escape, eager=True)
-        def _escape(event: Any) -> None:
-            event.app.exit(result=escape_result)
+    @bindings.add(Keys.Escape, eager=True)
+    def _escape(event: Any) -> None:
+        event.app.exit(result=escape_result)
 
     @bindings.add(Keys.ControlM, eager=True)
     def _submit(event: Any) -> None:
@@ -170,9 +179,15 @@ def select(
 
     return Question(
         Application(
-            layout=common.create_inquirer_layout(ic, _tokens),
+            layout=common.create_inquirer_layout(
+                ic,
+                _tokens,
+                **_layout_kwargs(input=input, output=output),
+            ),
             key_bindings=bindings,
             style=merge_styles_default([style]),
+            input=input,
+            output=output,
         )
     )
 
@@ -185,6 +200,8 @@ def checkbox(
     instruction: str | None = None,
     initial_choice: str | None = None,
     default: Any | None = None,
+    input: Any | None = None,
+    output: Any | None = None,
 ) -> Question:
     """Render a multi-select prompt with explicit space-to-toggle behavior."""
     # If no explicit initial_choice, place cursor on first choice
@@ -216,6 +233,10 @@ def checkbox(
 
     bindings = _base_bindings(ic, allow_toggle=True)
 
+    @bindings.add(Keys.Escape, eager=True)
+    def _escape_checkbox(event: Any) -> None:
+        event.app.exit(result=None)
+
     @bindings.add(Keys.ControlM, eager=True)
     def _submit(event: Any) -> None:
         ic.is_answered = True
@@ -223,8 +244,14 @@ def checkbox(
 
     return Question(
         Application(
-            layout=common.create_inquirer_layout(ic, _tokens),
+            layout=common.create_inquirer_layout(
+                ic,
+                _tokens,
+                **_layout_kwargs(input=input, output=output),
+            ),
             key_bindings=bindings,
             style=merge_styles_default([style]),
+            input=input,
+            output=output,
         )
     )

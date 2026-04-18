@@ -18,6 +18,7 @@ from app.analytics.cli import capture_cli_invoked
 from app.analytics.provider import capture_first_run_if_needed, shutdown_analytics
 from app.cli.commands import register_commands
 from app.cli.layout import RichGroup, render_landing
+from app.cli.prompt_support import install_questionary_escape_cancel
 from app.version import get_version
 
 
@@ -51,9 +52,9 @@ def cli(
 
     if ctx.invoked_subcommand is None:
         capture_cli_invoked()
+        click.echo("🚧 OpenSRE is in Public Beta — features may change.", err=True)
         render_landing()
         raise SystemExit(0)
-
 
 register_commands(cli)
 
@@ -61,6 +62,7 @@ register_commands(cli)
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``opensre`` console script."""
     load_dotenv(override=False)
+    install_questionary_escape_cancel()
     capture_first_run_if_needed()
 
     try:

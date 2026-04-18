@@ -1,37 +1,36 @@
 <div align="center">
 
 <p align="center">
-  <img width="2136" height="476" alt="github-readme-tracer-banner" src="https://github.com/user-attachments/assets/fac67ac2-e40e-4d58-8421-829ed0ce2a4d" />
+  <img src="docs/logo/opensre-logomark-full.svg" alt="OpenSRE" width="360" />
 </p>
 
 <h1>OpenSRE: Build Your Own AI SRE Agents</h1>
 
-<p>The open-source framework for AI SRE agents, and the training and evaluation environment they need to improve. Connect the 40+ tools you already run, define your own workflows, and investigate incidents on your own infrastructure.</p>
+
+<p>The open-source framework for AI SRE agents, and the training and evaluation environment they need to improve. Connect the 60+ tools you already run, define your own workflows, and investigate incidents on your own infrastructure.</p>
 
 <p>
   <a href="https://github.com/Tracer-Cloud/opensre/stargazers"><img src="https://img.shields.io/github/stars/Tracer-Cloud/opensre?style=flat-square&color=FF6B00" alt="Stars"></a>
   <a href="https://github.com/Tracer-Cloud/opensre/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License"></a>
   <a href="https://github.com/Tracer-Cloud/opensre/blob/main/.github/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Tracer-Cloud/opensre/ci.yml?style=flat-square&label=CI" alt="CI"></a>
   <img src="https://img.shields.io/badge/open%20source-forever-brightgreen?style=flat-square" alt="Open Source">
+  <a href="https://discord.gg/7NTpevXf7w"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 <p align="center">
   <strong>
-    <a href="https://app.tracer.cloud/">Getting Started</a> ·
-    <a href="https://tracer.cloud/">Tracer Agent</a> ·
-    <a href="https://tracer.mintlify.app/">Docs</a> ·
+    <a href="https://www.opensre.com/docs/quickstart">Quickstart</a> ·
+    <a href="https://www.opensre.com/docs">Docs</a> ·
     <a href="https://tracer.mintlify.app/faq">FAQ</a> ·
     <a href="https://trust.tracer.cloud/">Security</a>
   </strong>
 </p>
 
-<p>
-  <a href="https://join.slack.com/share/enQtMTA4NTIyNjEwOTczNDgtODMzN2QyMGZhMjljZDJhMzAwNDg1YTc4ZTA0MjBkY2U5YTFhNTJjZmIyM2ViNGY1Y2I5MGMyMDRmOGFhMjM2Nw">
-    <img src="https://img.shields.io/badge/➜_Click_To_Join_Our_Slack-white?style=for-the-badge&logo=slack&logoColor=4A154B" alt="Join Slack">
-  </a>
-</p>
-
 </div>
+
+---
+
+> 🚧 Public Alpha: Core workflows are usable for early exploration, though not yet fully stable. The project is in active development, and APIs and integrations may evolve
 
 ---
 
@@ -52,6 +51,7 @@ We do that by:
 - building easy-to-deploy, customizable AI SRE agents for production incident investigation and response
 - running scored synthetic RCA suites that check root-cause accuracy, required evidence, and adversarial red herrings [(tests/synthetic)](tests/synthetic/rds_postgres)
 - running real-world end-to-end tests across cloud-backed scenarios including Kubernetes, EC2, CloudWatch, Lambda, ECS Fargate, and Flink [(tests/e2e)](tests/e2e)
+- keeping semantic test-catalog naming so e2e vs synthetic and local vs cloud boundaries stay obvious [(tests/README.md)](tests/README.md)
 
 Our mission is to build AI SRE agents on top of this, scale it to thousands of realistic infrastructure failure scenarios, and establish OpenSRE as the benchmark and training ground for AI SRE.
 
@@ -90,9 +90,52 @@ opensre update
 
 ---
 
+## Railway Deployment
+
+Before running `opensre deploy railway`, make sure the target Railway project has
+both Postgres and Redis services, and that your OpenSRE service has `DATABASE_URI`
+and `REDIS_URI` set to those connection strings. The containerized LangGraph
+runtime will not boot without those backing services wired in.
+
+```bash
+# create/link Railway Postgres and Redis first, then set DATABASE_URI and REDIS_URI
+opensre deploy railway --project <project> --service <service> --yes
+```
+
+If the deploy starts but the service never becomes healthy, verify that
+`DATABASE_URI` and `REDIS_URI` are present on the Railway service and point to the
+project Postgres and Redis instances.
+
+### Remote Hosted Ops
+
+After deploying a hosted service, you can run post-deploy operations from the CLI:
+
+```bash
+# inspect service status, URL, deployment metadata
+opensre remote ops --provider railway --project <project> --service <service> status
+
+# tail recent logs
+opensre remote ops --provider railway --project <project> --service <service> logs --lines 200
+
+# stream logs live
+opensre remote ops --provider railway --project <project> --service <service> logs --follow
+
+# trigger restart/redeploy
+opensre remote ops --provider railway --project <project> --service <service> restart --yes
+```
+
+OpenSRE saves your last used `provider`/`project`/`service`, so you can run:
+
+```bash
+opensre remote ops status
+opensre remote ops logs --follow
+```
+
+---
+
 ## Development
 
-> **New to Tracer?** See [SETUP.md](SETUP.md) for detailed platform-specific setup instructions, including Windows setup, environment configuration, and more.
+> **New to OpenSRE?** See [SETUP.md](SETUP.md) for detailed platform-specific setup instructions, including Windows setup, environment configuration, and more.
 
 ```bash
 git clone https://github.com/Tracer-Cloud/opensre
@@ -108,11 +151,15 @@ opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 
 ## How OpenSRE Works
 
-<img width="4096" height="2187" alt="tracer-how-it-works-illustration" src="https://github.com/user-attachments/assets/8b50fe5c-470c-4982-866f-4f90c3e251d1" />
+<img
+  alt="tracer-how-it-works-illustration"
+  src="https://github.com/user-attachments/assets/8b50fe5c-470c-4982-866f-4f90c3e251d1"
+  style="width: 100%; height: auto;"
+/>
 
 ### Investigation Workflow
 
-When an alert fires, Tracer automatically:
+When an alert fires, OpenSRE automatically:
 
 1. **Fetches** the alert context and correlated logs, metrics, and traces
 2. **Reasons** across your connected systems to identify anomalies
@@ -130,10 +177,6 @@ Generate the benchmark report:
 make benchmark
 ```
 
-<!-- BENCHMARK-START -->
-_No benchmark results yet. Run `make benchmark` to generate._
-<!-- BENCHMARK-END -->
-
 ---
 
 ## Capabilities
@@ -141,7 +184,7 @@ _No benchmark results yet. Run `make benchmark` to generate._
 |                                          |                                                                                  |
 | ---------------------------------------- | -------------------------------------------------------------------------------- |
 | 🔍 **Structured incident investigation** | Correlated root-cause analysis across all your signals                           |
-| 📋 **Runbook-aware reasoning**           | Tracer reads your runbooks and applies them automatically                        |
+| 📋 **Runbook-aware reasoning**           | OpenSRE reads your runbooks and applies them automatically                       |
 | 🔮 **Predictive failure detection**      | Catch emerging issues before they page you                                       |
 | 🔗 **Evidence-backed root cause**        | Every conclusion is linked to the data behind it                                 |
 | 🤖 **Full LLM flexibility**              | Bring your own model — Anthropic, OpenAI, Ollama, Gemini, OpenRouter, NVIDIA NIM |
@@ -169,11 +212,11 @@ OpenSRE connects to 40+ tools and services across the modern cloud stack, from L
 
 ## Contributing
 
-Tracer is community-built. Every integration, improvement, and bug fix makes it better for thousands of engineers. We actively review PRs and welcome contributors of all experience levels.
+OpenSRE is community-built. Every integration, improvement, and bug fix makes it better for thousands of engineers. We actively review PRs and welcome contributors of all experience levels.
 
 <p>
-  <a href="https://join.slack.com/share/enQtMTA4NTIyNjEwOTczNDgtODMzN2QyMGZhMjljZDJhMzAwNDg1YTc4ZTA0MjBkY2U5YTFhNTJjZmIyM2ViNGY1Y2I5MGMyMDRmOGFhMjM2Nw">
-    <img src="https://img.shields.io/badge/Join%20our%20Community%20Slack-4A154B?style=for-the-badge&logo=slack&logoColor=white" alt="Join our Community Slack" />
+  <a href="https://discord.gg/7NTpevXf7w">
+    <img src="https://img.shields.io/badge/Join%20our%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join our Discord" />
   </a>
 </p>
 
@@ -182,7 +225,7 @@ Good first issues are labeled [`good first issue`](https://github.com/Tracer-Clo
 - 🐛 Report bugs or missing edge cases
 - 🔌 Add a new tool integration
 - 📖 Improve documentation or runbook examples
-- ⭐ Star the repo - it helps other engineers find Tracer
+- ⭐ Star the repo - it helps other engineers find OpenSRE
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 
@@ -390,13 +433,6 @@ Thanks goes to these amazing people:
         </a>
     </td>
             <td align="center">
-        <a href="https://github.com/qorexdev">
-            <img src="https://avatars.githubusercontent.com/u/248982649?v=4" width="100" alt="qorexdev"/>
-            <br />
-            <sub><b>qorexdev</b></sub>
-        </a>
-    </td>
-            <td align="center">
         <a href="https://github.com/ramandagar">
             <img src="https://avatars.githubusercontent.com/u/89700171?v=4" width="100" alt="ramandagar"/>
             <br />
@@ -410,13 +446,129 @@ Thanks goes to these amazing people:
             <sub><b>mvanhorn</b></sub>
         </a>
     </td>
-		</tr>
-		<tr>
             <td align="center">
         <a href="https://github.com/abhishek-marathe04">
             <img src="https://avatars.githubusercontent.com/u/175933950?v=4" width="100" alt="abhishek-marathe04"/>
             <br />
             <sub><b>abhishek-marathe04</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/yashksaini-coder">
+            <img src="https://avatars.githubusercontent.com/u/115717039?v=4" width="100" alt="yashksaini-coder"/>
+            <br />
+            <sub><b>yashksaini-coder</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/haliaeetusvocifer">
+            <img src="https://avatars.githubusercontent.com/u/20953018?v=4" width="100" alt="haliaeetusvocifer"/>
+            <br />
+            <sub><b>haliaeetusvocifer</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Bahtya">
+            <img src="https://avatars.githubusercontent.com/u/34988899?v=4" width="100" alt="Bahtya"/>
+            <br />
+            <sub><b>Bahtya</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/mayankbharati-ops">
+            <img src="https://avatars.githubusercontent.com/u/245952278?v=4" width="100" alt="mayankbharati-ops"/>
+            <br />
+            <sub><b>mayankbharati-ops</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/harshareddy832">
+            <img src="https://avatars.githubusercontent.com/u/53609097?v=4" width="100" alt="harshareddy832"/>
+            <br />
+            <sub><b>harshareddy832</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/sundaram2021">
+            <img src="https://avatars.githubusercontent.com/u/93595231?v=4" width="100" alt="sundaram2021"/>
+            <br />
+            <sub><b>sundaram2021</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/micheal000010000-hub">
+            <img src="https://avatars.githubusercontent.com/u/249460313?v=4" width="100" alt="micheal000010000-hub"/>
+            <br />
+            <sub><b>micheal000010000-hub</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/ljivesh">
+            <img src="https://avatars.githubusercontent.com/u/96004270?v=4" width="100" alt="ljivesh"/>
+            <br />
+            <sub><b>ljivesh</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/gautamjain1503">
+            <img src="https://avatars.githubusercontent.com/u/97388837?v=4" width="100" alt="gautamjain1503"/>
+            <br />
+            <sub><b>gautamjain1503</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/mudittt">
+            <img src="https://avatars.githubusercontent.com/u/96051296?v=4" width="100" alt="mudittt"/>
+            <br />
+            <sub><b>mudittt</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/hamzzaaamalik">
+            <img src="https://avatars.githubusercontent.com/u/147706212?v=4" width="100" alt="hamzzaaamalik"/>
+            <br />
+            <sub><b>hamzzaaamalik</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/octo-patch">
+            <img src="https://avatars.githubusercontent.com/u/266937838?v=4" width="100" alt="octo-patch"/>
+            <br />
+            <sub><b>octo-patch</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/fuleinist">
+            <img src="https://avatars.githubusercontent.com/u/1163738?v=4" width="100" alt="fuleinist"/>
+            <br />
+            <sub><b>fuleinist</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/yas789">
+            <img src="https://avatars.githubusercontent.com/u/84193712?v=4" width="100" alt="yas789"/>
+            <br />
+            <sub><b>yas789</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/sharkello">
+            <img src="https://avatars.githubusercontent.com/u/159360024?v=4" width="100" alt="sharkello"/>
+            <br />
+            <sub><b>sharkello</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/aniruddhaadak80">
+            <img src="https://avatars.githubusercontent.com/u/127435065?v=4" width="100" alt="aniruddhaadak80"/>
+            <br />
+            <sub><b>aniruddhaadak80</b></sub>
         </a>
     </td>
 		</tr>

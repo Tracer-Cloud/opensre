@@ -6,7 +6,7 @@ import os
 from typing import Final
 
 import keyring  # type: ignore[import-not-found,import-untyped]
-from keyring.errors import KeyringError  # type: ignore[import-not-found,import-untyped]
+import keyring.errors  # type: ignore[import-not-found,import-untyped]
 
 _KEYRING_SERVICE: Final = "opensre.llm"
 _DISABLED_VALUES: Final = frozenset({"1", "true", "yes", "on"})
@@ -25,7 +25,7 @@ def resolve_llm_api_key(env_var: str) -> str:
         return ""
     try:
         return (keyring.get_password(_KEYRING_SERVICE, env_var) or "").strip()
-    except KeyringError:
+    except keyring.errors.KeyringError:
         return ""
 
 
@@ -46,7 +46,7 @@ def save_llm_api_key(env_var: str, value: str) -> None:
         )
     try:
         keyring.set_password(_KEYRING_SERVICE, env_var, normalized)
-    except KeyringError as exc:
+    except keyring.errors.KeyringError as exc:
         raise RuntimeError(
             "Secure local credential storage is unavailable. "
             f"Set {env_var} in your shell or configure a working system keychain."
@@ -59,5 +59,5 @@ def delete_llm_api_key(env_var: str) -> None:
         return
     try:
         keyring.delete_password(_KEYRING_SERVICE, env_var)
-    except KeyringError:
+    except keyring.errors.KeyringError:
         return

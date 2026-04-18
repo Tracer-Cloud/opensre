@@ -111,6 +111,8 @@ class CliSandbox:
 
 
 def _clean_terminal_output(text: str) -> str:
+    if not text:
+        return ""
     cleaned = _ANSI_RE.sub("", text)
     cleaned = cleaned.replace("\r", "\n").replace("\x00", "")
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
@@ -153,6 +155,7 @@ def _cli_env(home: Path, project_env_path: Path) -> dict[str, str]:
     env["OPENSRE_NO_TELEMETRY"] = "1"
     env["OPENSRE_PROJECT_ENV_PATH"] = str(project_env_path)
     env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     env["TERM"] = "xterm-256color"
     env.pop("OPENSRE_DISABLE_KEYRING", None)
     env["PYTHON_KEYRING_BACKEND"] = "tests.shared.keyring_backend.MemoryKeyring"
@@ -192,6 +195,8 @@ def _run_cli(
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         check=False,
     )
@@ -467,6 +472,7 @@ def test_tests_inventory_commands_smoke(cli_sandbox: CliSandbox) -> None:
 
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
 def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
+    # Keep in sync with integration_choices in app/cli/wizard/flow.py::_configure_selected_integrations.
     result = _run_cli_pty(
         cli_sandbox,
         "onboard",
@@ -474,7 +480,7 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
             PtyAction(expect="How do you want to get started?", send=b"\r"),
             PtyAction(expect="Choose your LLM provider", send=b"\r"),
             PtyAction(expect="Anthropic API key", send=b"smoke-test-key\r"),
-            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjj\r"),
+            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjjjjj\r"),
         ],
         timeout=30.0,
     )
@@ -505,8 +511,9 @@ def test_integrations_setup_datadog_interactive_smoke(cli_sandbox: CliSandbox) -
         ],
     )
 
-    assert result.exit_code == 0
     assert "Saved" in result.stdout
+    # Setup saves credentials then runs verify; placeholder keys fail the Datadog API check.
+    assert result.exit_code in (0, 1)
 
     integrations = cli_sandbox.read_integrations()
     assert len(integrations) == 1

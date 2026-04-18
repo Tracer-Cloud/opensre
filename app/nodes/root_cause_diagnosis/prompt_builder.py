@@ -28,6 +28,8 @@ ALLOWED_EVIDENCE_SOURCES = [
     "datadog_logs",
     "datadog_monitors",
     "datadog_events",
+    "vercel",
+    "github",
 ]
 
 
@@ -69,8 +71,8 @@ DEFINITIONS:
 
 RULES:
 - Do NOT introduce external domain knowledge that is not visible in the evidence (e.g., what a tool usually does).
-- Do NOT reference source code files or line numbers unless they appear explicitly in the log evidence below.
-- You can ONLY use information present in the evidence logs shown below. If a traceback shows file names and line numbers, you may reference them.
+- Do NOT reference source code files or line numbers unless they appear explicitly in the evidence below.
+- You can ONLY use information present in the evidence sections shown below. If GitHub evidence includes file paths, snippets, commits, or content, you may reference them.
 - VALIDATED_CLAIMS should be factual and specific (no "maybe", "likely", "appears").
 - NON_VALIDATED_CLAIMS may include "likely/maybe", but must stay consistent with evidence.
 - Keep each claim to one sentence.
@@ -238,19 +240,30 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     s3_object = evidence.get("s3_object", {})
     s3_audit_payload = evidence.get("s3_audit_payload", {})
     vendor_audit_from_logs = evidence.get("vendor_audit_from_logs", {})
+    vercel_deployment = evidence.get("vercel_deployment", {})
+    vercel_failed_deployments = evidence.get("vercel_failed_deployments", [])
+    vercel_error_events = evidence.get("vercel_error_events", [])
+    vercel_runtime_logs = evidence.get("vercel_runtime_logs", [])
+    github_code_matches = evidence.get("github_code_matches", [])
+    github_file = evidence.get("github_file", {})
+    github_commits = evidence.get("github_commits", [])
 
     # Extract alert annotations
     raw_alert = state.get("raw_alert", {})
     cloudwatch_url = None
+    vercel_url: str | None = None
     alert_annotations: dict[str, Any] = {}
     raw_alert_text: str = ""
     if isinstance(raw_alert, str):
         raw_alert_text = raw_alert
     elif isinstance(raw_alert, dict):
         cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
+        vercel_url = raw_alert.get("vercel_log_url") or raw_alert.get("vercel_url")
         alert_annotations = (
             raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
         )
+    else:
+        vercel_url = None
 
     # CloudWatch logs
     if cloudwatch_logs:
@@ -450,6 +463,26 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
                 section += f"  {event['message'][:200]}\n"
         sections.append(section)
 
+    if vercel_deployment or vercel_failed_deployments:
+        sections.append(
+            _build_vercel_evidence_section(
+                vercel_deployment=vercel_deployment,
+                vercel_failed_deployments=vercel_failed_deployments,
+                vercel_error_events=vercel_error_events,
+                vercel_runtime_logs=vercel_runtime_logs,
+                vercel_url=str(vercel_url or ""),
+            )
+        )
+
+    if github_commits or github_code_matches or github_file:
+        sections.append(
+            _build_github_evidence_section(
+                github_commits=github_commits,
+                github_code_matches=github_code_matches,
+                github_file=github_file,
+            )
+        )
+
     # Alert annotations
     if alert_annotations:
         section = _build_alert_annotations_section(alert_annotations)
@@ -574,6 +607,166 @@ def _build_performance_insights_section(performance_insights: dict[str, Any]) ->
             if db_load is not None:
                 section += f" | db_load={db_load}"
             section += "\n"
+
+    return section
+
+
+def _extract_vercel_git_metadata(meta: dict[str, Any]) -> dict[str, str]:
+    """Normalize git metadata from Vercel deployment evidence."""
+    return {
+        "repo": str(meta.get("github_repo") or meta.get("githubRepo") or "").strip(),
+        "sha": str(meta.get("github_commit_sha") or meta.get("githubCommitSha") or "").strip(),
+        "ref": str(meta.get("github_commit_ref") or meta.get("githubCommitRef") or "").strip(),
+    }
+
+
+def _format_vercel_runtime_log(log: Any) -> str:
+    """Format a runtime log entry into a compact single-line excerpt."""
+    if not isinstance(log, dict):
+        return str(log)[:300]
+
+    message = log.get("message")
+    if not message:
+        payload = log.get("payload")
+        if isinstance(payload, dict):
+            message = payload.get("text") or payload.get("message") or payload.get("body") or ""
+        elif payload:
+            message = str(payload)
+
+    prefix_parts = [str(log.get("type", "")).strip(), str(log.get("source", "")).strip()]
+    prefix = " ".join(part for part in prefix_parts if part)
+    text = str(message or "")[:260]
+    return f"{prefix}: {text}" if prefix else text
+
+
+def _build_vercel_evidence_section(
+    *,
+    vercel_deployment: dict[str, Any],
+    vercel_failed_deployments: list[dict[str, Any]],
+    vercel_error_events: list[dict[str, Any]],
+    vercel_runtime_logs: list[dict[str, Any]],
+    vercel_url: str,
+) -> str:
+    """Build a Vercel deployment evidence section."""
+    section = "\nVercel Deployment Evidence:\n"
+
+    if vercel_deployment:
+        git_meta = _extract_vercel_git_metadata(vercel_deployment.get("meta", {}))
+        section += f"- Deployment ID: {vercel_deployment.get('id', 'unknown')}\n"
+        section += f"- State: {vercel_deployment.get('state', 'unknown')}\n"
+        if vercel_deployment.get("error"):
+            section += f"- Deployment Error: {vercel_deployment.get('error')}\n"
+        if git_meta["repo"]:
+            section += f"- GitHub Repo: {git_meta['repo']}\n"
+        if git_meta["sha"]:
+            section += f"- Commit SHA: {git_meta['sha']}\n"
+        if git_meta["ref"]:
+            section += f"- Commit Ref: {git_meta['ref']}\n"
+
+    if vercel_failed_deployments:
+        section += f"Failed Deployments ({len(vercel_failed_deployments)}):\n"
+        for deployment in vercel_failed_deployments[:5]:
+            if not isinstance(deployment, dict):
+                continue
+            git_meta = _extract_vercel_git_metadata(deployment.get("meta", {}))
+            line = (
+                f"- {deployment.get('id', 'unknown')} "
+                f"[{deployment.get('state', 'unknown')}]"
+            )
+            if deployment.get("error"):
+                line += f" error={str(deployment.get('error'))[:140]}"
+            if git_meta["sha"]:
+                line += f" sha={git_meta['sha'][:12]}"
+            if git_meta["ref"]:
+                line += f" ref={git_meta['ref']}"
+            section += f"{line}\n"
+
+    if vercel_error_events:
+        section += f"Vercel Error Events ({len(vercel_error_events)}):\n"
+        for event in vercel_error_events[:8]:
+            if not isinstance(event, dict):
+                continue
+            section += f"- {str(event.get('text', ''))[:280]}\n"
+
+    if vercel_runtime_logs:
+        section += f"Vercel Runtime Logs ({len(vercel_runtime_logs)}):\n"
+        for log in vercel_runtime_logs[:8]:
+            formatted = _format_vercel_runtime_log(log)
+            if formatted:
+                section += f"- {formatted}\n"
+
+    if vercel_url:
+        section += f"\n[Citation: View full logs at {vercel_url}]\n"
+
+    return section
+
+
+def _build_github_evidence_section(
+    *,
+    github_commits: list[Any],
+    github_code_matches: list[Any],
+    github_file: Any,
+) -> str:
+    """Build a GitHub evidence section from MCP-backed code data."""
+    section = "\nGitHub Code Evidence:\n"
+
+    if github_commits:
+        section += f"Recent Commits ({len(github_commits)}):\n"
+        for commit in github_commits[:5]:
+            if not isinstance(commit, dict):
+                section += f"- {str(commit)[:220]}\n"
+                continue
+            commit_info = commit.get("commit", {}) if isinstance(commit.get("commit"), dict) else {}
+            sha = str(commit.get("sha") or commit.get("oid") or commit_info.get("oid") or "")[:12]
+            message = str(
+                commit.get("message")
+                or commit.get("messageHeadline")
+                or commit_info.get("message")
+                or "unknown"
+            )[:220]
+            section += f"- {sha or 'unknown'}: {message}\n"
+
+    if github_code_matches:
+        section += f"Code Search Matches ({len(github_code_matches)}):\n"
+        for match in github_code_matches[:5]:
+            if not isinstance(match, dict):
+                section += f"- {str(match)[:220]}\n"
+                continue
+            path = str(
+                match.get("path")
+                or match.get("file")
+                or match.get("name")
+                or match.get("filename")
+                or "unknown"
+            )[:180]
+            snippets = match.get("matches") or match.get("fragments") or match.get("lines") or []
+            if isinstance(snippets, list) and snippets:
+                snippet_text = "; ".join(str(item)[:140] for item in snippets[:2])
+            else:
+                snippet_text = str(match.get("text", ""))[:220]
+            section += f"- {path}: {snippet_text}\n"
+
+    if github_file:
+        section += "GitHub File Contents:\n"
+        if isinstance(github_file, dict):
+            path = str(
+                github_file.get("path")
+                or github_file.get("name")
+                or github_file.get("filename")
+                or ""
+            ).strip()
+            if path:
+                section += f"- Path: {path}\n"
+            content = github_file.get("content")
+            if isinstance(content, str) and content:
+                section += f"{content[:1000]}\n"
+            else:
+                section += f"- Details: {json.dumps(github_file, default=str)[:1000]}\n"
+        elif isinstance(github_file, list):
+            for item in github_file[:5]:
+                section += f"- {json.dumps(item, default=str)[:220]}\n"
+        else:
+            section += f"- {str(github_file)[:1000]}\n"
 
     return section
 

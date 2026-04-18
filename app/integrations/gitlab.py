@@ -157,16 +157,18 @@ def get_gitlab_mrs(
     """Fetch gitlab Merge requests for project."""
 
     encoded_project_id = quote(project_id, safe="")
+    params: list[tuple[str, str | int | float | bool | None]] = [
+        ("state", state),
+        ("target_branch", target_branch),
+        ("per_page", per_page),
+    ]
+    if updated_after:
+        params.append(("updated_after", updated_after))
     payload = _request_json(
         config,
         "GET",
         f"/projects/{encoded_project_id}/merge_requests",
-        params=[
-            ("state", state),
-            ("updated_after", updated_after),
-            ("target_branch", target_branch),
-            ("per_page", per_page)
-        ],
+        params=params,
     )
     return payload if isinstance(payload, list) else []
 
@@ -183,16 +185,18 @@ def get_gitlab_pipelines(
     """Fetch gitlab pipelines for project."""
 
     encoded_project_id = quote(project_id, safe="")
+    params: list[tuple[str, str | int | float | bool | None]] = [
+        ("status", status),
+        ("ref", ref),
+        ("per_page", per_page),
+    ]
+    if updated_after:
+        params.append(("updated_after", updated_after))
     payload = _request_json(
         config,
         "GET",
         f"/projects/{encoded_project_id}/pipelines",
-        params=[
-            ("status", status),
-            ("updated_after", updated_after),
-            ("ref", ref),
-            ("per_page", per_page)
-        ],
+        params=params,
     )
     return payload if isinstance(payload, list) else []
 
