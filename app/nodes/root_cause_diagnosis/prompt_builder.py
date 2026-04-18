@@ -133,12 +133,13 @@ Audit evidence shows external API interactions. For data pipeline failures:
 """
     return ""
 
+
 def _build_database_directive(evidence: dict[str, Any]) -> str:
     """Build RDS / Database root cause disambiguation directive."""
     has_db_evidence = bool(
-        evidence.get("aws_cloudwatch_metrics")
-        or evidence.get("aws_rds_events")
+        evidence.get("aws_rds_events")
         or evidence.get("aws_performance_insights")
+        or bool(evidence.get("aws_cloudwatch_metrics", {}).get("DBInstanceIdentifier"))
     )
     if not has_db_evidence:
         return ""
