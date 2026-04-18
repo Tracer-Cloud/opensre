@@ -146,6 +146,36 @@ def test_classify_with_migrated_v1_aws_record_works() -> None:
     assert resolved["aws"]["role_arn"] == "arn:aws:iam::123:role/r"
 
 
+def test_local_and_cloud_grafana_share_all_grafana_instances_bucket() -> None:
+    """Regression for Devesh36 review: a local Grafana instance (classified
+    as grafana_local) must be discoverable via the same _all_grafana_instances
+    key that selectors look up under "grafana", so a hint like
+    grafana_instance: "local" finds it."""
+    v2_mixed = {
+        "id": "env-grafana",
+        "service": "grafana",
+        "status": "active",
+        "instances": [
+            {
+                "name": "local",
+                "tags": {"env": "dev"},
+                "credentials": {"endpoint": "http://localhost:3000", "api_key": "local"},
+            },
+            {
+                "name": "prod",
+                "tags": {"env": "prod"},
+                "credentials": {"endpoint": "https://prod.grafana.net", "api_key": "kp"},
+            },
+        ],
+    }
+    resolved = classify_integrations([v2_mixed])
+    # Both instances land in the same bucket under the "grafana" family key.
+    assert "_all_grafana_instances" in resolved
+    assert "_all_grafana_local_instances" not in resolved
+    names = [i["name"] for i in resolved["_all_grafana_instances"]]
+    assert set(names) == {"local", "prod"}
+
+
 def test_classify_inactive_record_is_skipped() -> None:
     inactive = {
         "id": "g1",

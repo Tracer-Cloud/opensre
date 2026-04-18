@@ -407,6 +407,14 @@ def detect_sources(
             selected = get_instance_by_name(resolved_integrations, "grafana", grafana_hint)
             if selected is not None:
                 grafana_int = selected
+                # The classifier strips api_key to "" for local grafana and
+                # rejects cloud grafana with an empty api_key, so an empty
+                # api_key in a classified instance uniquely identifies a
+                # local instance. Mirror the local flag so downstream gating
+                # (loki_only, anonymous-auth acceptance) works the same as
+                # the non-hint fallback path.
+                if not selected.get("api_key"):
+                    grafana_local = True
             else:
                 # A hint that does not resolve is almost always a typo or a
                 # removed instance — warn so operators notice instead of

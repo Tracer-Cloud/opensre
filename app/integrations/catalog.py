@@ -68,6 +68,21 @@ _SERVICE_KEY_MAP = {
 }
 
 
+# Services whose classifier emits multiple flat keys but which represent the
+# same "family" for multi-instance discovery. For example, Grafana splits into
+# ``grafana`` (cloud) and ``grafana_local`` (localhost), but selector helpers
+# only look up ``_all_grafana_instances``. Grouping both under the family key
+# ensures a hint like ``grafana_instance: "local"`` can find a local instance.
+_SERVICE_FAMILY = {
+    "grafana": "grafana",
+    "grafana_local": "grafana",
+}
+
+
+def _family_key(flat_key: str) -> str:
+    return _SERVICE_FAMILY.get(flat_key, flat_key)
+
+
 def _record_instances(record: dict[str, Any]) -> list[dict[str, Any]]:
     """Normalize a record (v1 or v2 shape) into a list of instance dicts.
 
@@ -126,7 +141,9 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
             if flat_view is None or flat_key is None:
                 continue
             resolved.setdefault(flat_key, flat_view)
-            all_instances.setdefault(flat_key, []).append(
+            # Bucket under the family key so related classifier outputs (e.g.
+            # grafana + grafana_local) share one _all_<family>_instances list.
+            all_instances.setdefault(_family_key(flat_key), []).append(
                 {
                     "name": instance_name,
                     "tags": instance_tags,
@@ -530,8 +547,16 @@ def _parse_instances_env(env_name: str, service: str) -> dict[str, Any] | None:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
+        # Do NOT include exc.msg or the raw value — JSONDecodeError messages
+        # embed a slice of the offending input, which could leak a fragment
+        # of an API key if the env var was accidentally populated with a
+        # credential instead of a JSON array. Log only position + line/col.
         logger.warning(
-            "%s is not valid JSON; falling back to legacy vars: %s", env_name, exc
+            "%s is not valid JSON (parse failed at line %d col %d); "
+            "falling back to legacy vars",
+            env_name,
+            exc.lineno,
+            exc.colno,
         )
         return None
     if not isinstance(parsed, list) or not parsed:

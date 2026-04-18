@@ -103,6 +103,48 @@ def test_hint_normalized_to_lowercase() -> None:
     assert sources["grafana"]["grafana_endpoint"] == "https://staging.grafana.net"
 
 
+def test_local_grafana_in_multi_instance_setup_discoverable_by_hint() -> None:
+    """Regression: a local Grafana classified as grafana_local must still be
+    findable in _all_grafana_instances when its sibling is a cloud instance."""
+    resolved = {
+        "grafana": {
+            "endpoint": "https://prod.grafana.net",
+            "api_key": "kp",
+            "integration_id": "env-grafana",
+        },
+        "grafana_local": {
+            "endpoint": "http://localhost:3000",
+            "api_key": "",
+            "integration_id": "env-grafana",
+        },
+        "_all_grafana_instances": [
+            {
+                "name": "local",
+                "tags": {"env": "dev"},
+                "config": {
+                    "endpoint": "http://localhost:3000",
+                    "api_key": "",
+                    "integration_id": "env-grafana",
+                },
+                "integration_id": "env-grafana",
+            },
+            {
+                "name": "prod",
+                "tags": {"env": "prod"},
+                "config": {
+                    "endpoint": "https://prod.grafana.net",
+                    "api_key": "kp",
+                    "integration_id": "env-grafana",
+                },
+                "integration_id": "env-grafana",
+            },
+        ],
+    }
+    raw_alert = {"alert_source": "grafana", "grafana_instance": "local"}
+    sources = detect_sources(raw_alert, {}, resolved_integrations=resolved)
+    assert sources["grafana"]["grafana_endpoint"] == "http://localhost:3000"
+
+
 def test_single_instance_setup_unchanged() -> None:
     """Backward compat: a resolved dict without _all_grafana_instances still
     routes to the single flat entry."""
