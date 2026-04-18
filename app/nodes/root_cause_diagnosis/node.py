@@ -56,7 +56,12 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     tracker.start("diagnose_root_cause", "Analyzing evidence")
 
     # Create masking context for this investigation
-    masking_context = MaskingContext.create()
+    # Use existing masking_map from state if available (for round-trip masking)
+    masking_map = state.get("masking_map")
+    if masking_map and isinstance(masking_map, dict):
+        masking_context = MaskingContext.from_existing_map(masking_map)
+    else:
+        masking_context = MaskingContext.create()
 
     context = state.get("context", {})
     evidence = state.get("evidence", {})

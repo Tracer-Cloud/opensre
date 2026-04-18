@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from app.utils.masking.placeholder import PlaceholderMap
+from app.utils.masking.placeholder import _PLACEHOLDER_TEMPLATES, PlaceholderMap
 from app.utils.masking.policies import (
     CompiledPolicy,
     MaskingPolicy,
@@ -47,6 +47,51 @@ class MaskingContext:
             policy = MaskingPolicy.from_env()
         compiled = get_compiled_policy(policy)
         placeholder_map = PlaceholderMap(max_placeholders=policy.max_placeholders)
+        return cls(policy=compiled, placeholder_map=placeholder_map)
+
+    @classmethod
+    def from_existing_map(
+        cls, masking_map: dict[str, str], policy: MaskingPolicy | None = None
+    ) -> MaskingContext:
+        """Create a masking context from an existing masking_map.
+
+        Args:
+            masking_map: Dict mapping placeholders to original values (e.g., {"<POD_0>": "pod-name"})
+            policy: Masking policy (loads from env if not provided)
+
+        Returns:
+            Masking context with the existing mappings loaded
+        """
+        if policy is None:
+            policy = MaskingPolicy.from_env()
+        compiled = get_compiled_policy(policy)
+        placeholder_map = PlaceholderMap(max_placeholders=policy.max_placeholders)
+
+        # Load existing mappings (reverse: placeholder -> value to value -> placeholder)
+        for placeholder, value in masking_map.items():
+            placeholder_map.placeholder_to_value[placeholder] = value
+            placeholder_map.value_to_placeholder[value] = placeholder
+
+            # Update type counters based on placeholder pattern
+            matched_type = None
+            for type_name in _PLACEHOLDER_TEMPLATES:
+                if placeholder.startswith(f"<{type_name}_"):
+                    matched_type = type_name
+                    break
+
+            # Use CUSTOM type for unknown placeholder patterns
+            if matched_type is None and placeholder.startswith("<") and "_" in placeholder:
+                matched_type = "CUSTOM"
+
+            if matched_type:
+                current_count = placeholder_map.type_counters.get(matched_type, 0)
+                # Extract index from placeholder to determine counter
+                try:
+                    index = int(placeholder.rstrip(">").split("_")[-1])
+                    placeholder_map.type_counters[matched_type] = max(current_count, index + 1)
+                except (ValueError, IndexError):
+                    placeholder_map.type_counters[matched_type] = current_count + 1
+
         return cls(policy=compiled, placeholder_map=placeholder_map)
 
     def mask_text(self, text: str) -> str:

@@ -62,7 +62,8 @@ def test_diagnose_unmasks_root_cause_and_claims() -> None:
     llm_response = _mock_llm_response(
         "ROOT_CAUSE: <POD_0> in <NAMESPACE_0> OOMKilled"
     )
-    parsed = _mock_parse_result("<POD_0> in <NAMESPACE_0> OOMKilled")
+    # The parse_root_cause receives the UNMASKED text, so use unmasked values here
+    parsed = _mock_parse_result("etl-worker-7d9f8b-xkp2q in tracer-test OOMKilled")
 
     with (
         patch.object(diag_node, "get_llm_for_reasoning") as mock_llm_factory,
@@ -74,7 +75,7 @@ def test_diagnose_unmasks_root_cause_and_claims() -> None:
             return_value=(False, False, True),
         ),
         patch.object(diag_node, "validate_and_categorize_claims", return_value=([
-            {"claim": "<POD_0> entered CrashLoopBackOff", "validation_status": "validated"}
+            {"claim": "etl-worker-7d9f8b-xkp2q entered CrashLoopBackOff", "validation_status": "validated"}
         ], [])),
         patch.object(diag_node, "calculate_validity_score", return_value=0.9),
         patch.object(diag_node, "check_vendor_evidence_missing", return_value=False),
