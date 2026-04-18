@@ -1,6 +1,6 @@
 """Plan investigation actions from available inputs."""
 
-from typing import Any, cast, get_args
+from typing import cast, get_args
 
 from pydantic import BaseModel
 
