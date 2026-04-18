@@ -193,7 +193,7 @@ make benchmark
 
 ## Integrations
 
-OpenSRE connects to 40+ tools and services across the modern cloud stack, from LLM providers and observability platforms to infrastructure, databases, and incident management.
+OpenSRE connects to 60+ tools and services across the modern cloud stack, from LLM providers and observability platforms to infrastructure, databases, and incident management.
 
 | Category | Integrations | Roadmap |
 | --- | --- | --- |
