@@ -617,7 +617,7 @@ def parse_root_cause(response: str) -> RootCauseResult:
                 "CAUSAL_CHAIN:",
             ):
                 if delimiter in after:
-                    root_cause = after.split(delimiter)[0].strip()
+                    root_cause = after.split(delimiter, 1)[0].strip()
                     break
             else:
                 root_cause = after.strip()
