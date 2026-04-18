@@ -310,7 +310,7 @@ def score_result(
         )
 
         if mentions_failover and not mentions_event_reasoning:
-            failure_reason = "RDS events gathered but not used as primary reasoning signal"        
+            failure_reason = "RDS events gathered but not used as primary reasoning signal"
 
     passed = not failure_reason
     trajectory = score_trajectory(fixture, final_state)
