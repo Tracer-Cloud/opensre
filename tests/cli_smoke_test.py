@@ -518,7 +518,8 @@ def test_integrations_setup_datadog_interactive_smoke(cli_sandbox: CliSandbox) -
     integrations = cli_sandbox.read_integrations()
     assert len(integrations) == 1
     assert integrations[0]["service"] == "datadog"
-    assert integrations[0]["credentials"]["site"] == "datadoghq.com"
+    # v2 store shape: credentials live inside the default instance.
+    assert integrations[0]["instances"][0]["credentials"]["site"] == "datadoghq.com"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
