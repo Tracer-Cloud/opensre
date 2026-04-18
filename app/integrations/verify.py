@@ -17,7 +17,6 @@ from app.integrations.catalog import (
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.mariadb import build_mariadb_config, validate_mariadb_config
 from app.integrations.models import (
-    AlertmanagerIntegrationConfig,
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
     DatadogIntegrationConfig,
