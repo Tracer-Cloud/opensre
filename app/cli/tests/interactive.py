@@ -33,7 +33,7 @@ _select_prompt: Any = _select_prompt_impl
 _console = Console()
 _BACK = object()
 _EXIT = object()
-_RUN_ALL = "__run_all__"
+_RUN_ALL = object()
 
 
 class _GoBack(Exception):
@@ -141,6 +141,29 @@ def _resolve_suite_selection(
     )
 
 
+def _expand_runnable_items(
+    items: list[TestCatalogItem],
+    *,
+    category: str,
+    search: str,
+) -> list[TestCatalogItem]:
+    runnable: list[TestCatalogItem] = []
+    for item in items:
+        if item.children:
+            matching_children = _matching_children(item, category=category, search=search)
+            runnable.extend(
+                _expand_runnable_items(
+                    matching_children or list(item.children),
+                    category=category,
+                    search=search,
+                )
+            )
+            continue
+        if item.is_runnable:
+            runnable.append(item)
+    return runnable
+
+
 def _confirm_run(item: TestCatalogItem) -> bool:
     _console.print(f"\n[bold]{item.display_name}[/]")
     _console.print(item.description)
@@ -194,7 +217,7 @@ def _select_item_or_all(
         raise KeyboardInterrupt
     if result is _BACK:
         raise _GoBack
-    if result == _RUN_ALL:
+    if result is _RUN_ALL:
         return items
     selected_id = str(result)
     for item in items:
@@ -226,7 +249,11 @@ def choose_interactive_item(
                     filtered, prompt="Choose a test or suite:", allow_back=True,
                 )
                 if isinstance(selection, list):
-                    return selection, False
+                    return _expand_runnable_items(
+                        selection,
+                        category=category,
+                        search=search,
+                    ), False
                 return (
                     _resolve_suite_selection(selection, category=category, search=search),
                     False,
@@ -236,9 +263,8 @@ def choose_interactive_item(
 
 
 def _confirm_run_all(items: list[TestCatalogItem]) -> bool:
-    runnable = [i for i in items if i.is_runnable]
-    _console.print(f"\n[bold]Run All — {len(runnable)} test(s)[/]")
-    for item in runnable:
+    _console.print(f"\n[bold]Run All — {len(items)} test(s)[/]")
+    for item in items:
         _console.print(f"  • {item.display_name}")
 
     result = _select_prompt(
@@ -271,13 +297,15 @@ def run_interactive_picker(catalog: TestCatalog) -> int:
             selection, auto_selected = choose_interactive_item(catalog)
 
             if isinstance(selection, list):
+                if not selection:
+                    _console.print("[yellow]No runnable tests in this selection.[/]")
+                    continue
                 try:
                     if not _confirm_run_all(selection):
                         return 0
                 except _GoBack:
                     continue
-                runnable = [i for i in selection if i.is_runnable]
-                return run_catalog_items(runnable)
+                return run_catalog_items(selection)
 
             if auto_selected:
                 return run_catalog_item(selection)
