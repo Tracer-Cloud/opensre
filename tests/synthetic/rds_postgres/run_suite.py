@@ -309,7 +309,7 @@ def score_result(
             )
         )
 
-        if mentions_failover and not mentions_event_reasoning:
+        if not mentions_event_reasoning:
             failure_reason = "RDS events gathered but not used as primary reasoning signal"
 
     passed = not failure_reason
