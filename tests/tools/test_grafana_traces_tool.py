@@ -77,6 +77,7 @@ def test_run_with_injected_backend() -> None:
     assert result["available"] is True
     assert result["source"] == "grafana_tempo"
     assert result["total_traces"] == 1
+    assert len(result["pipeline_spans"]) == 1
     backend.query_traces.assert_called_once_with(service_name="svc")
 
 

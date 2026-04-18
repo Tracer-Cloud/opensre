@@ -13,6 +13,21 @@ from app.tools.tool_decorator import tool
 from app.tools.utils.compaction import DEFAULT_TRACE_LIMIT, compact_traces, summarize_counts
 
 
+def _extract_pipeline_spans(traces: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    pipeline_spans: list[dict[str, Any]] = []
+    for trace in traces:
+        for span in trace.get("spans", []):
+            if span.get("name") in ["extract_data", "validate_data", "transform_data", "load_data"]:
+                pipeline_spans.append(
+                    {
+                        "span_name": span.get("name"),
+                        "execution_run_id": span.get("attributes", {}).get("execution.run_id"),
+                        "record_count": span.get("attributes", {}).get("record_count"),
+                    }
+                )
+    return pipeline_spans
+
+
 def _query_grafana_traces_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     grafana = sources["grafana"]
     return {
@@ -81,7 +96,7 @@ def query_grafana_traces(
             "source": "grafana_tempo",
             "available": True,
             "traces": compacted_traces,
-            "pipeline_spans": [],
+            "pipeline_spans": _extract_pipeline_spans(compacted_traces),
             "total_traces": len(traces),
             "service_name": service_name,
             "execution_run_id": execution_run_id,
@@ -131,23 +146,11 @@ def query_grafana_traces(
     compacted_traces = compact_traces(traces, limit=limit)
     summary = summarize_counts(len(traces), len(compacted_traces), "traces")
 
-    pipeline_spans = []
-    for trace in compacted_traces:
-        for span in trace.get("spans", []):
-            if span.get("name") in ["extract_data", "validate_data", "transform_data", "load_data"]:
-                pipeline_spans.append(
-                    {
-                        "span_name": span.get("name"),
-                        "execution_run_id": span.get("attributes", {}).get("execution.run_id"),
-                        "record_count": span.get("attributes", {}).get("record_count"),
-                    }
-                )
-
     result_data = {
         "source": "grafana_tempo",
         "available": True,
         "traces": compacted_traces,
-        "pipeline_spans": pipeline_spans,
+        "pipeline_spans": _extract_pipeline_spans(compacted_traces),
         "total_traces": result.get("total_traces", 0),
         "service_name": service_name,
         "execution_run_id": execution_run_id,

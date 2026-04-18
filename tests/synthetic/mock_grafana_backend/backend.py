@@ -58,7 +58,7 @@ class GrafanaBackend(Protocol):
 class FixtureGrafanaBackend:
     """GrafanaBackend implementation backed by a ScenarioFixture.
 
-    All three methods delegate to the pure formatter functions, converting
+    All four methods delegate to the pure formatter functions, converting
     AWS-faithful fixture data into the Grafana wire format the agent expects.
     No HTTP calls, no external dependencies.
     """
