@@ -32,6 +32,7 @@ from app.integrations.mysql import build_mysql_config, validate_mysql_config
 from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
 from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
+from app.services.alertmanager import AlertmanagerClient, AlertmanagerConfig
 from app.services.coralogix import CoralogixClient
 from app.services.datadog.client import DatadogClient, DatadogConfig
 from app.services.honeycomb import HoneycombClient
@@ -40,6 +41,7 @@ from app.services.tracer_client.client import TracerClient
 from app.services.vercel.client import VercelClient, VercelConfig
 
 SUPPORTED_VERIFY_SERVICES = (
+    "alertmanager",
     "grafana",
     "datadog",
     "honeycomb",
@@ -503,6 +505,44 @@ def _verify_vercel(
         return _result("vercel", source, "passed", base_detail)
 
 
+def _verify_alertmanager(source: str, config: dict[str, Any]) -> dict[str, str]:
+    base_url = str(config.get("base_url", ""))
+    if not base_url:
+        return _result("alertmanager", source, "missing", "Missing base_url.")
+
+    try:
+        alertmanager_config = AlertmanagerConfig.model_validate(
+            {
+                "base_url": base_url,
+                "bearer_token": config.get("bearer_token", ""),
+                "username": config.get("username", ""),
+                "password": config.get("password", ""),
+            }
+        )
+    except Exception as err:
+        return _result("alertmanager", source, "missing", str(err))
+
+    with AlertmanagerClient(alertmanager_config) as client:
+        result = client.get_status()
+
+    if not result.get("success"):
+        return _result(
+            "alertmanager",
+            source,
+            "failed",
+            f"Status check failed: {result.get('error', 'unknown error')}",
+        )
+
+    status_data = result.get("status", {})
+    cluster_status = status_data.get("cluster", {}).get("status", "unknown") if isinstance(status_data, dict) else "ok"
+    return _result(
+        "alertmanager",
+        source,
+        "passed",
+        f"Connected to Alertmanager at {base_url}; cluster status: {cluster_status}.",
+    )
+
+
 def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
     try:
         opsgenie_config = OpsGenieConfig.model_validate(
@@ -719,6 +759,8 @@ def verify_integrations(
             results.append(_verify_openclaw(source, config))
         elif current_service == "mysql":
             results.append(_verify_mysql(source, config))
+        elif current_service == "alertmanager":
+            results.append(_verify_alertmanager(source, config))
 
     return results
 
