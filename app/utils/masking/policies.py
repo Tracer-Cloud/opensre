@@ -220,9 +220,14 @@ def get_compiled_policy(policy: MaskingPolicy) -> CompiledPolicy:
     # Check cache
     if key in _compiled_policy_cache:
         # Maintain true LRU semantics by moving the accessed key to the end.
-        compiled = _compiled_policy_cache.pop(key)
-        _compiled_policy_cache[key] = compiled
-        return compiled
+        # Use sentinel to avoid race condition: if another thread evicts the key
+        # between our check and pop, we'll get None and fall through to recompile.
+        _sentinel = object()
+        compiled = _compiled_policy_cache.pop(key, _sentinel)
+        if compiled is not _sentinel:
+            _compiled_policy_cache[key] = compiled
+            return compiled
+        # Another thread evicted the key between our check and pop; fall through to recompile.
 
     # Evict if at capacity (simple FIFO-style)
     if len(_compiled_policy_cache) >= _MAX_CACHE_SIZE:

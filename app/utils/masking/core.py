@@ -73,9 +73,12 @@ class MaskingContext:
             placeholder_map.value_to_placeholder[value] = placeholder
 
             # Update type counters based on placeholder pattern
+            # Match against actual template prefixes (e.g., "<ACCOUNT_" for ACCOUNT_ID type)
             matched_type = None
-            for type_name in _PLACEHOLDER_TEMPLATES:
-                if placeholder.startswith(f"<{type_name}_"):
+            for type_name, template in _PLACEHOLDER_TEMPLATES.items():
+                # Extract prefix from template (e.g., "<ACCOUNT_{index}>" -> "<ACCOUNT_")
+                prefix = template.split("{")[0]
+                if placeholder.startswith(prefix):
                     matched_type = type_name
                     break
 
