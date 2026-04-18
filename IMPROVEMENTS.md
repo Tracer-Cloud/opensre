@@ -1,4 +1,4 @@
-Improvements suggested by @sharkello
+Improvements suggested by `@sharkello`
 
 Summary
 -------
@@ -8,16 +8,16 @@ Top items
 ---------
 - Add a short TL;DR at the top of README with a one‑line quickstart (try in <5 minutes).
 - Provide a copy‑paste Getting Started (docker / single command / minimal example).
-- Add 1–3 small examples in an  folder showing the most common use cases.
-- Add a  template and 3 ready‑to‑assign small tasks to attract contributors.
+- Add 1–3 small examples in an `examples/` folder showing the most common use cases.
+- Add a `good-first-issue` template and 3 ready‑to‑assign small tasks to attract contributors.
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md (short), and PR/Issue templates.
 - Add a lightweight CI workflow (syntax check / build) and a badge in README.
 
 Suggested "Good first issues"
 -----------------------------
-- "Add a minimal quickstart example" — add  with copy‑paste commands. Labels: , .
-- "Add CI badge" — enable a minimal GitHub Actions workflow and insert the badge into README. Labels: , .
-- "Polish README TL;DR" — shorten top of README to 3 lines and add a one‑command try it. Labels: , .
+- "Add a minimal quickstart example" — add `examples/quickstart.sh` with copy‑paste commands. Labels: `good first issue`, `documentation`.
+- "Add CI badge" — enable a minimal GitHub Actions workflow and insert the badge into README. Labels: `good first issue`, `enhancement`.
+- "Polish README TL;DR" — shorten top of README to 3 lines and add a one‑command try it. Labels: `good first issue`, `documentation`.
 
 Notes
 -----
