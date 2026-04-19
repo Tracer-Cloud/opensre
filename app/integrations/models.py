@@ -137,9 +137,15 @@ class MicrosoftTeamsWebhookConfig(StrictConfigModel):
         if parsed.scheme != "https" or not parsed.netloc:
             raise ValueError("Microsoft Teams webhook must be a valid HTTPS URL.")
         netloc = parsed.netloc.lower()
-        if not (netloc.endswith(".office.com") or netloc.endswith(".microsoft.com")):
+        _TEAMS_VALID_HOSTS = (
+            ".office.com",
+            ".microsoft.com",
+            ".powerplatform.com",
+            ".logic.azure.com",
+        )
+        if not any(netloc.endswith(h) for h in _TEAMS_VALID_HOSTS):
             raise ValueError(
-                "Microsoft Teams webhook host must be an Office 365 or Microsoft domain."
+                "Microsoft Teams webhook host must be an Office 365, Microsoft, or Power Platform domain."
             )
         return self
 

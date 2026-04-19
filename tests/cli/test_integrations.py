@@ -109,7 +109,7 @@ def test_integrations_setup_skips_auto_verify_for_unverifiable_service() -> None
 
 
 def test_setup_ms_teams_saves_credentials(monkeypatch) -> None:
-    webhook_url = "https://outlook.office.com/webhook/test-url"
+    webhook_url = "https://prod-01.westus.logic.azure.com/workflows/test"
 
     saved: list[tuple[str, dict[str, object]]] = []
     monkeypatch.setattr("app.integrations.cli._p", lambda _l, **_k: webhook_url)
@@ -182,7 +182,7 @@ def test_integrations_verify_accepts_ms_teams() -> None:
 def test_verify_ms_teams_handler_sends_adaptive_card() -> None:
     from app.integrations.verify import _verify_ms_teams
 
-    webhook_url = "https://outlook.office.com/webhook/test"
+    webhook_url = "https://default123.environment.api.powerplatform.com/powerautomate/test"
     config = {"webhook_url": webhook_url}
 
     with patch("httpx.post") as mock_post:
