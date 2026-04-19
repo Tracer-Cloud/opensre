@@ -22,6 +22,7 @@ from app.integrations.betterstack import (
     betterstack_extract_params,
     betterstack_is_available,
     build_betterstack_config,
+    query_logs,
     validate_betterstack_config,
 )
 
@@ -317,3 +318,149 @@ class TestValidateBetterStackConfig:
         assert req.content == b"SELECT 1 FORMAT JSONEachRow"
         # Basic auth header is populated by httpx from the client's ``auth`` tuple.
         assert req.headers.get("authorization", "").lower().startswith("basic ")
+
+
+class TestQueryLogs:
+    def test_not_configured(self) -> None:
+        result = query_logs(BetterStackConfig(), table="t1_x_logs")
+        assert result["available"] is False
+        assert "not configured" in result["error"].lower()
+        assert result["rows"] == []
+        assert result["row_count"] == 0
+
+    def test_invalid_table_name_rejected(self, patched_sql_client) -> None:
+        called = {"n": 0}
+
+        def _never(_req: httpx.Request) -> httpx.Response:
+            called["n"] += 1
+            return httpx.Response(200, text="")
+
+        patched_sql_client(_never)
+        result = query_logs(_configured(), table="t1; DROP TABLE users;--")
+        assert result["available"] is False
+        assert "invalid" in result["error"].lower()
+        assert called["n"] == 0  # must not fire a request
+
+    def test_empty_table_rejected(self) -> None:
+        result = query_logs(_configured(), table="")
+        assert result["available"] is False
+        assert "invalid" in result["error"].lower()
+
+    def test_invalid_since_rejected(self, patched_sql_client) -> None:
+        patched_sql_client(lambda _r: httpx.Response(200, text=""))
+        result = query_logs(
+            _configured(), table="t1_myapp_logs", since="not-a-timestamp"
+        )
+        assert result["available"] is False
+        assert "since" in result["error"].lower()
+
+    def test_invalid_until_rejected(self, patched_sql_client) -> None:
+        patched_sql_client(lambda _r: httpx.Response(200, text=""))
+        result = query_logs(
+            _configured(), table="t1_myapp_logs", until="nope"
+        )
+        assert result["available"] is False
+        assert "until" in result["error"].lower()
+
+    def test_happy_path_parses_jsoneachrow(self, patched_sql_client) -> None:
+        body = (
+            '{"dt":"2026-04-20T00:00:00Z","raw":"hello"}\n'
+            '{"dt":"2026-04-20T00:00:01Z","raw":"world"}\n'
+        )
+        patched_sql_client(lambda _r: httpx.Response(200, text=body))
+        result = query_logs(_configured(), table="t1_myapp_logs")
+        assert result["available"] is True
+        assert result["table"] == "t1_myapp_logs"
+        assert result["row_count"] == 2
+        assert result["rows"][0]["raw"] == "hello"
+        assert result["rows"][1]["raw"] == "world"
+
+    def test_empty_body_is_zero_rows(self, patched_sql_client) -> None:
+        patched_sql_client(lambda _r: httpx.Response(200, text=""))
+        result = query_logs(_configured(), table="t1_myapp_logs")
+        assert result["available"] is True
+        assert result["rows"] == []
+        assert result["row_count"] == 0
+
+    def test_skips_malformed_rows(self, patched_sql_client) -> None:
+        body = '{"ok":1}\nnot-json\n{"ok":2}\n'
+        patched_sql_client(lambda _r: httpx.Response(200, text=body))
+        result = query_logs(_configured(), table="t1_myapp_logs")
+        assert result["row_count"] == 2
+        assert result["rows"] == [{"ok": 1}, {"ok": 2}]
+
+    def test_401_reported_as_auth(self, patched_sql_client) -> None:
+        patched_sql_client(lambda _r: httpx.Response(401, text="nope"))
+        result = query_logs(_configured(), table="t1_myapp_logs")
+        assert result["available"] is False
+        assert "authentication" in result["error"].lower()
+
+    def test_5xx_reports_status_and_body(self, patched_sql_client) -> None:
+        patched_sql_client(lambda _r: httpx.Response(500, text="boom"))
+        result = query_logs(_configured(), table="t1_myapp_logs")
+        assert result["available"] is False
+        assert "500" in result["error"]
+        assert "boom" in result["error"]
+
+    def test_request_error_surfaced(self, patched_sql_client) -> None:
+        def _raiser(_r: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("dns failed")
+
+        patched_sql_client(_raiser)
+        result = query_logs(_configured(), table="t1_myapp_logs")
+        assert result["available"] is False
+        assert "request failed" in result["error"].lower()
+
+    def test_limit_clamped_to_config_max_rows(self, patched_sql_client) -> None:
+        captured: dict[str, httpx.Request] = {}
+
+        def _capturing(req: httpx.Request) -> httpx.Response:
+            captured["req"] = req
+            return httpx.Response(200, text="")
+
+        patched_sql_client(_capturing)
+        config = BetterStackConfig(
+            query_endpoint="https://x",
+            username="u",
+            password="p",
+            max_rows=50,
+        )
+        result = query_logs(config, table="t1_myapp_logs", limit=9999)
+        assert result["limit"] == 50
+        body = captured["req"].content.decode()
+        assert "LIMIT 50" in body
+
+    def test_sql_contains_time_bounds_when_set(
+        self, patched_sql_client
+    ) -> None:
+        captured: dict[str, httpx.Request] = {}
+
+        def _capturing(req: httpx.Request) -> httpx.Response:
+            captured["req"] = req
+            return httpx.Response(200, text="")
+
+        patched_sql_client(_capturing)
+        query_logs(
+            _configured(),
+            table="t1_myapp_logs",
+            since="2026-04-20T00:00:00Z",
+            until="2026-04-20T01:00:00Z",
+        )
+        body = captured["req"].content.decode()
+        assert "FROM remote(t1_myapp_logs)" in body
+        assert "dt >= parseDateTime64BestEffort('2026-04-20T00:00:00Z'" in body
+        assert "dt <= parseDateTime64BestEffort('2026-04-20T01:00:00Z'" in body
+        assert body.rstrip().endswith("FORMAT JSONEachRow")
+
+    def test_sql_omits_where_when_no_bounds(self, patched_sql_client) -> None:
+        captured: dict[str, httpx.Request] = {}
+
+        def _capturing(req: httpx.Request) -> httpx.Response:
+            captured["req"] = req
+            return httpx.Response(200, text="")
+
+        patched_sql_client(_capturing)
+        query_logs(_configured(), table="t1_myapp_logs")
+        body = captured["req"].content.decode()
+        assert "WHERE" not in body
+        assert "ORDER BY dt DESC" in body

@@ -17,9 +17,12 @@ surfaces to the planner through ``extract_params``.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -35,6 +38,10 @@ _MAX_ALLOWED_ROWS = 10_000
 _REQUIRED_CONTENT_TYPE = "plain/text"
 _REQUIRED_QUERY_PARAMS = {"output_format_pretty_row_numbers": "0"}
 _VALIDATION_PROBE_SQL = "SELECT 1 FORMAT JSONEachRow"
+# Better Stack source tables are ``t{team_id}_{source_name}_logs`` — always a
+# ClickHouse-safe bare identifier. Anything else in the FROM position would be
+# SQL injection, so we reject unless it matches this whitelist.
+_TABLE_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 
 class BetterStackConfig(StrictConfigModel):
@@ -226,6 +233,169 @@ def validate_betterstack_config(
     )
 
 
+# ---------------------------------------------------------------------------
+# Log-query functions
+# ---------------------------------------------------------------------------
+
+
+def _error_evidence(error: str, *, table: str = "") -> dict[str, Any]:
+    """Standard error-shape dict returned by query functions on failure."""
+    return {
+        "source": "betterstack",
+        "available": False,
+        "error": error,
+        "table": table,
+        "rows": [],
+        "row_count": 0,
+    }
+
+
+def _validate_table_name(table: str) -> str | None:
+    """Return the table name if it is a safe bare identifier, else ``None``."""
+    cleaned = (table or "").strip()
+    if not cleaned or not _TABLE_NAME_RE.fullmatch(cleaned):
+        return None
+    return cleaned
+
+
+def _validate_iso_timestamp(value: str | None) -> str | None:
+    """Pass-through the ISO-8601 timestamp when parseable; else ``None``.
+
+    Used to reject injected SQL fragments before inlining into the WHERE clause.
+    """
+    if not value:
+        return None
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return value
+
+
+def _build_logs_query(
+    table: str,
+    since: str | None,
+    until: str | None,
+    limit: int,
+) -> str:
+    """Build a ClickHouse ``remote(...)`` query for recent log rows."""
+    where_parts: list[str] = []
+    if since:
+        where_parts.append(
+            f"dt >= parseDateTime64BestEffort('{since}', 3, 'UTC')"
+        )
+    if until:
+        where_parts.append(
+            f"dt <= parseDateTime64BestEffort('{until}', 3, 'UTC')"
+        )
+    where_sql = f"\nWHERE {' AND '.join(where_parts)}" if where_parts else ""
+    return (
+        "SELECT dt, raw\n"
+        f"FROM remote({table}){where_sql}\n"
+        "ORDER BY dt DESC\n"
+        f"LIMIT {limit}\n"
+        "FORMAT JSONEachRow"
+    )
+
+
+def _parse_json_each_row(body: str) -> list[dict[str, Any]]:
+    """Parse a ClickHouse ``FORMAT JSONEachRow`` body into a list of dicts."""
+    rows: list[dict[str, Any]] = []
+    for line in body.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            rows.append(parsed)
+    return rows
+
+
+def query_logs(
+    config: BetterStackConfig,
+    table: str,
+    since: str | None = None,
+    until: str | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Fetch recent log rows for a Better Stack source table.
+
+    Parameters:
+        config: authenticated ``BetterStackConfig``.
+        table: source table name (e.g. ``t123456_myapp_logs``); must match
+            ``[A-Za-z0-9_]+``.
+        since: optional ISO-8601 lower-bound timestamp.
+        until: optional ISO-8601 upper-bound timestamp.
+        limit: optional row cap; clamped to ``config.max_rows``.
+    """
+    if not config.is_configured:
+        return _error_evidence("Not configured.", table=table)
+
+    safe_table = _validate_table_name(table)
+    if safe_table is None:
+        return _error_evidence(
+            f"Invalid Better Stack table name: {table!r}. "
+            "Expected a ClickHouse bare identifier (e.g. t123456_myapp_logs).",
+            table=table,
+        )
+
+    since_sql = _validate_iso_timestamp(since)
+    if since and since_sql is None:
+        return _error_evidence(
+            f"Invalid 'since' timestamp: {since!r}. Expected ISO-8601.",
+            table=safe_table,
+        )
+    until_sql = _validate_iso_timestamp(until)
+    if until and until_sql is None:
+        return _error_evidence(
+            f"Invalid 'until' timestamp: {until!r}. Expected ISO-8601.",
+            table=safe_table,
+        )
+
+    effective_limit = min(int(limit or config.max_rows), config.max_rows)
+    sql = _build_logs_query(safe_table, since_sql, until_sql, effective_limit)
+
+    try:
+        with _sql_client(config) as client:
+            response, err = _post_sql(client, config.query_endpoint, sql)
+    except Exception as err:  # noqa: BLE001 — final-resort guard around transport setup
+        logger.debug("Better Stack query_logs failed", exc_info=True)
+        return _error_evidence(
+            f"Better Stack connection failed: {err}", table=safe_table
+        )
+
+    if err is not None or response is None:
+        return _error_evidence(
+            err or "Better Stack request returned no response.",
+            table=safe_table,
+        )
+
+    if response.status_code == 401:
+        return _error_evidence(
+            "Better Stack authentication failed (check credentials).",
+            table=safe_table,
+        )
+    if response.status_code != 200:
+        return _error_evidence(
+            f"Better Stack query returned HTTP {response.status_code}: "
+            f"{response.text[:200]}",
+            table=safe_table,
+        )
+
+    rows = _parse_json_each_row(response.text)
+    return {
+        "source": "betterstack",
+        "available": True,
+        "table": safe_table,
+        "rows": rows,
+        "row_count": len(rows),
+        "limit": effective_limit,
+    }
+
+
 __all__ = [
     "DEFAULT_BETTERSTACK_MAX_ROWS",
     "DEFAULT_BETTERSTACK_TIMEOUT_S",
@@ -235,5 +405,6 @@ __all__ = [
     "betterstack_extract_params",
     "betterstack_is_available",
     "build_betterstack_config",
+    "query_logs",
     "validate_betterstack_config",
 ]
