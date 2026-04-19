@@ -201,8 +201,14 @@ class RegisteredTool:
         resolved_surfaces = surfaces or getattr(tool, "surfaces", None) or getattr(
             tool.__class__, "surfaces", None
         )
-        resolved_tags = tags or getattr(tool, "tags", None) or getattr(tool.__class__, "tags", ())
-        resolved_cost_tier = (
+        resolved_tags = tuple(
+            cast(
+                Iterable[str],
+                tags or getattr(tool, "tags", None) or getattr(tool.__class__, "tags", ()),
+            )
+        )
+        resolved_cost_tier = cast(
+            CostTier | None,
             cost_tier
             or getattr(tool, "cost_tier", None)
             or getattr(tool.__class__, "cost_tier", None)
@@ -219,7 +225,7 @@ class RegisteredTool:
             run=tool.run,  # type: ignore[attr-defined]
             is_available=tool.is_available,
             extract_params=tool.extract_params,
-            tags=tuple(resolved_tags),
+            tags=resolved_tags,
             cost_tier=resolved_cost_tier,
             origin_module=tool.__class__.__module__,
             origin_name=tool.__class__.__name__,
