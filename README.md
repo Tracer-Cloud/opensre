@@ -151,7 +151,7 @@ git clone https://github.com/Tracer-Cloud/opensre
 cd opensre
 make install
 # run opensre onboard to configure your local LLM provider
-# and optionally validate/save Grafana, Datadog, Honeycomb, Coralogix, Slack, AWS, GitHub MCP, and Sentry integrations
+# and optionally validate/save Grafana, Datadog, Honeycomb, Coralogix, Slack, Microsoft Teams, AWS, GitHub MCP, and Sentry integrations
 opensre onboard
 opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 ```
@@ -213,7 +213,7 @@ OpenSRE connects to 60+ tools and services across the modern cloud stack, from L
 | **Data Platform** | Apache Airflow · Apache Kafka · Apache Spark · Prefect · RabbitMQ | |
 | **Dev Tools** | <img src="docs/assets/icons/github.webp" width="16"> GitHub · GitHub MCP · Bitbucket | [GitLab](https://github.com/Tracer-Cloud/opensre/issues/318) |
 | **Incident Management** | <img src="docs/assets/icons/pagerduty.png" width="16"> PagerDuty · Opsgenie · Jira | [ServiceNow](https://github.com/Tracer-Cloud/opensre/issues/314) · [incident.io](https://github.com/Tracer-Cloud/opensre/issues/317) · [Alertmanager](https://github.com/Tracer-Cloud/opensre/issues/316) · [Linear](https://github.com/Tracer-Cloud/opensre/issues/124) · [Trello](https://github.com/Tracer-Cloud/opensre/issues/361) |
-| **Communication** | <img src="docs/assets/icons/slack.png" width="16"> Slack · Google Docs | [Discord](https://github.com/Tracer-Cloud/opensre/issues/359) · [Teams](https://github.com/Tracer-Cloud/opensre/issues/138) · [WhatsApp](https://github.com/Tracer-Cloud/opensre/issues/360) · [Confluence](https://github.com/Tracer-Cloud/opensre/issues/313) · [Notion](https://github.com/Tracer-Cloud/opensre/issues/286) |
+| **Communication** | <img src="docs/assets/icons/slack.png" width="16"> Slack · Microsoft Teams · Google Docs | [Discord](https://github.com/Tracer-Cloud/opensre/issues/359) · [WhatsApp](https://github.com/Tracer-Cloud/opensre/issues/360) · [Confluence](https://github.com/Tracer-Cloud/opensre/issues/313) · [Notion](https://github.com/Tracer-Cloud/opensre/issues/286) |
 | **Agent Deployment** | <img src="docs/assets/icons/vercel.png" width="16"> Vercel · <img src="docs/assets/icons/langsmith.png" width="16"> LangSmith · <img src="docs/assets/icons/aws.png" width="16"> EC2 · <img src="docs/assets/icons/aws.png" width="16"> ECS | [Railway](https://github.com/Tracer-Cloud/opensre/issues/271) |
 | **Protocols** | <img src="docs/assets/icons/mcp.svg" width="16"> MCP · <img src="docs/assets/icons/acp.png" width="16"> ACP · <img src="docs/assets/icons/openclaw.jpg" width="16"> OpenClaw | |
 
