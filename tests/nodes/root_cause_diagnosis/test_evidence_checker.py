@@ -103,6 +103,38 @@ class TestIsClearlyHealthyExistingSources:
         assert is_clearly_healthy(_healthy_alert(), evidence) is True
 
 
+class TestIsClearlyHealthyAlertmanagerCoralogixHoneycombEvidence:
+    """Pure Alertmanager / Coralogix / Honeycomb healthy states must satisfy the gate.
+
+    Same drift class as the EKS fix in #582: mappers write these keys into the
+    evidence dict but the short-circuit's recognised-keys set was not updated
+    alongside the integrations, so healthy alerts from these stacks never
+    fast-path out of the reasoning LLM.
+    """
+
+    @pytest.mark.parametrize(
+        "evidence_key",
+        [
+            "alertmanager_alerts",
+            "alertmanager_silences",
+            "coralogix_logs",
+            "coralogix_error_logs",
+            "honeycomb_traces",
+        ],
+    )
+    def test_single_new_evidence_key_triggers_short_circuit(self, evidence_key: str) -> None:
+        evidence = {evidence_key: []}
+        assert is_clearly_healthy(_healthy_alert(), evidence) is True
+
+    def test_critical_severity_still_rejects_with_alertmanager_evidence(self) -> None:
+        # Safety: the severity gate must still guard against false-healthy
+        # diagnoses when the new keys are present on a firing critical alert.
+        alert = _healthy_alert()
+        alert["commonLabels"] = {"severity": "critical"}
+        evidence = {"alertmanager_alerts": [{"fingerprint": "abc"}]}
+        assert is_clearly_healthy(alert, evidence) is False
+
+
 class TestIsClearlyHealthyRejectsUnhealthyStates:
     """Every gate condition must still reject non-healthy alerts."""
 

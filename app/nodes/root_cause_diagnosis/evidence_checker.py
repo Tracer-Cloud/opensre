@@ -33,6 +33,14 @@ _INVESTIGATED_EVIDENCE_KEYS = frozenset({
     "eks_node_health",
     "eks_pod_logs",
     "eks_deployment_status",
+    # Alertmanager / Coralogix / Honeycomb evidence keys — written by the
+    # corresponding _map_* mappers in app/nodes/investigate/processing/post_process.py.
+    # Same drift class as the EKS entries above (see #670 / original EKS fix #582).
+    "alertmanager_alerts",
+    "alertmanager_silences",
+    "coralogix_logs",
+    "coralogix_error_logs",
+    "honeycomb_traces",
 })
 
 
