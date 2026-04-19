@@ -15,6 +15,7 @@ def _minimal_toolset_for_validation() -> list[dict[str, Any]]:
 
     names = (
         "get_file_contents",
+        "get_me",
         "get_repository_tree",
         "list_commits",
         "search_code",
@@ -135,6 +136,7 @@ def test_validate_github_mcp_config_fails_when_no_repo_list_tool(
         }
         for n in (
             "get_file_contents",
+            "get_me",
             "get_repository_tree",
             "list_commits",
             "search_code",
@@ -177,6 +179,7 @@ def test_validate_github_mcp_config_reports_actual_attempts_for_starred_view(
         }
         for n in (
             "get_file_contents",
+            "get_me",
             "get_repository_tree",
             "list_commits",
             "search_code",
@@ -245,6 +248,7 @@ def test_validate_github_mcp_config_uses_search_repositories_when_no_list_tool(
         }
         for n in (
             "get_file_contents",
+            "get_me",
             "get_repository_tree",
             "list_commits",
             "search_code",
@@ -308,6 +312,7 @@ def test_validate_github_mcp_config_succeeds_from_get_me_profile_without_list_to
         }
         for n in (
             "get_file_contents",
+            "get_me",
             "get_repository_tree",
             "list_commits",
             "search_code",
@@ -344,6 +349,79 @@ def test_validate_github_mcp_config_succeeds_from_get_me_profile_without_list_to
     assert result.repo_access_count == 5
     assert result.repo_access_samples == ()
     assert "get_me profile" in result.detail
+
+
+def test_validate_github_mcp_config_fails_when_get_me_tool_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tools = [
+        {
+            "name": n,
+            "description": "",
+            "input_schema": {"type": "object", "properties": {}},
+        }
+        for n in (
+            "get_file_contents",
+            "get_repository_tree",
+            "list_commits",
+            "search_code",
+            "list_repositories",
+        )
+    ]
+
+    def fake_list_tools(_config: Any) -> list[dict[str, Any]]:
+        return tools
+
+    monkeypatch.setattr("app.integrations.github_mcp.list_github_mcp_tools", fake_list_tools)
+    monkeypatch.setattr(
+        "app.integrations.github_mcp.call_github_mcp_tool",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("get_me should not run")),
+    )
+
+    cfg = github_mcp_module.build_github_mcp_config(
+        {"url": "https://api.githubcopilot.com/mcp/", "mode": "streamable-http"}
+    )
+    result = github_mcp_module.validate_github_mcp_config(cfg)
+
+    assert result.ok is False
+    assert result.failure_category == "insufficient_tools"
+    assert "required identity tool 'get_me'" in result.detail
+
+
+def test_validate_github_mcp_config_handles_truthy_non_dict_get_me_structured_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tools = _minimal_toolset_for_validation()
+
+    def fake_list_tools(_config: Any) -> list[dict[str, Any]]:
+        return tools
+
+    def fake_call(_config: Any, name: str, _args: dict[str, Any] | None = None) -> dict[str, Any]:
+        if name == "get_me":
+            return {
+                "is_error": False,
+                "structured_content": [{"login": "alice"}],
+                "text": '{"login": "alice"}',
+            }
+        if name == "list_repositories":
+            return {
+                "is_error": False,
+                "structured_content": [{"full_name": "org/one", "private": False, "fork": False}],
+                "text": "",
+            }
+        raise AssertionError(f"unexpected tool {name}")
+
+    monkeypatch.setattr("app.integrations.github_mcp.list_github_mcp_tools", fake_list_tools)
+    monkeypatch.setattr("app.integrations.github_mcp.call_github_mcp_tool", fake_call)
+
+    cfg = github_mcp_module.build_github_mcp_config(
+        {"url": "https://api.githubcopilot.com/mcp/", "mode": "streamable-http"}
+    )
+    result = github_mcp_module.validate_github_mcp_config(cfg)
+
+    assert result.ok is True
+    assert result.authenticated_user == "alice"
+    assert result.repo_access_samples == ("org/one",)
 
 
 def test_repo_probe_capture_limit_respects_env(monkeypatch: pytest.MonkeyPatch) -> None:

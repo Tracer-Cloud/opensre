@@ -915,6 +915,17 @@ def validate_github_mcp_config(
                 failure_category="insufficient_tools",
             )
 
+        if "get_me" not in tool_names:
+            return GitHubMCPValidationResult(
+                ok=False,
+                detail=(
+                    "GitHub MCP connected, but the required identity tool 'get_me' is not exposed. "
+                    "Widen your toolsets to include it."
+                ),
+                tool_names=tool_names,
+                failure_category="insufficient_tools",
+            )
+
         me_result = call_github_mcp_tool(config, "get_me", {})
         if me_result.get("is_error"):
             detail = me_result.get("text") or "Unknown authentication failure."
@@ -925,7 +936,10 @@ def validate_github_mcp_config(
                 failure_category="authentication",
             )
 
-        structured = me_result.get("structured_content") or {}
+        structured: dict[str, Any] = {}
+        raw_structured = me_result.get("structured_content")
+        if isinstance(raw_structured, dict):
+            structured = raw_structured
         profile_pub, profile_priv = _repo_visibility_counts_from_get_me_profile(
             structured, me_result.get("text", "")
         )
