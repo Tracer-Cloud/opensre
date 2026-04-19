@@ -301,6 +301,22 @@ def _map_github_commits(data: dict) -> dict:
     }
 
 
+def _map_alertmanager_alerts(data: dict) -> dict:
+    return {
+        "alertmanager_alerts": data.get("alerts") or [],
+        "alertmanager_firing_alerts": data.get("firing_alerts") or [],
+        "alertmanager_alerts_total": data.get("total") or 0,
+    }
+
+
+def _map_alertmanager_silences(data: dict) -> dict:
+    return {
+        "alertmanager_silences": data.get("silences") or [],
+        "alertmanager_active_silences": data.get("active_silences") or [],
+        "alertmanager_silences_total": data.get("total") or 0,
+    }
+
+
 def _map_eks_pods(data: dict) -> dict:
     return {
         "eks_pods": data.get("pods", []),
@@ -383,6 +399,8 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "search_github_code": _map_github_code_search,
     "get_github_file_contents": _map_github_file_contents,
     "list_github_commits": _map_github_commits,
+    "alertmanager_alerts": _map_alertmanager_alerts,
+    "alertmanager_silences": _map_alertmanager_silences,
     "list_eks_pods": _map_eks_pods,
     "get_eks_events": _map_eks_events,
     "list_eks_deployments": _map_eks_deployments,
@@ -572,6 +590,14 @@ def build_evidence_summary(execution_results: dict[str, ActionExecutionResult]) 
                 summary_parts.append("github:file contents retrieved")
             elif action_name == "list_github_commits" and data.get("commits"):
                 summary_parts.append(f"github:{len(data['commits'])} commits")
+            elif action_name == "alertmanager_alerts":
+                firing_count = len(data.get("firing_alerts") or [])
+                total = data.get("total", 0)
+                summary_parts.append(f"alertmanager:{total} alerts ({firing_count} firing)")
+            elif action_name == "alertmanager_silences":
+                active_count = len(data.get("active_silences") or [])
+                total = data.get("total", 0)
+                summary_parts.append(f"alertmanager:{total} silences ({active_count} active)")
             elif action_name == "get_eks_deployment_status" and data.get("deployment_name"):
                 summary_parts.append("eks:deployment status retrieved")
         else:

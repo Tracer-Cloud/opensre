@@ -3,7 +3,6 @@ required_keywords:
   - failover
   - Multi-AZ
   - health check failure
-  - recovered
 required_evidence_sources:
   - aws_rds_events
 optimal_trajectory:

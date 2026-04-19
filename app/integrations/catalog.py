@@ -13,6 +13,7 @@ from app.integrations.github_mcp import build_github_mcp_config
 from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL, build_gitlab_config
 from app.integrations.mariadb import build_mariadb_config
 from app.integrations.models import (
+    AlertmanagerIntegrationConfig,
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
     DatadogIntegrationConfig,
@@ -65,6 +66,7 @@ _SERVICE_KEY_MAP = {
     "openclaw": "openclaw",
     "mysql": "mysql",
     "azure_sql": "azure_sql",
+    "alertmanager": "alertmanager",
 }
 
 
@@ -521,6 +523,23 @@ def _classify_service_instance(
             return None, None
         if azure_sql_config.server and azure_sql_config.database:
             return azure_sql_config.model_dump(), "azure_sql"
+        return None, None
+
+    if key == "alertmanager":
+        try:
+            alertmanager_config = AlertmanagerIntegrationConfig.model_validate(
+                {
+                    "base_url": credentials.get("base_url", ""),
+                    "bearer_token": credentials.get("bearer_token", ""),
+                    "username": credentials.get("username", ""),
+                    "password": credentials.get("password", ""),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if alertmanager_config.base_url:
+            return alertmanager_config.model_dump(), "alertmanager"
         return None, None
 
     # Fallback for unknown services: pass through credentials + record id.
@@ -1059,6 +1078,28 @@ def load_env_integrations() -> list[dict[str, Any]]:
             }
         )
 
+    alertmanager_url = os.getenv("ALERTMANAGER_URL", "").strip().rstrip("/")
+    if alertmanager_url:
+        try:
+            alertmanager_config = AlertmanagerIntegrationConfig.model_validate(
+                {
+                    "base_url": alertmanager_url,
+                    "bearer_token": os.getenv("ALERTMANAGER_BEARER_TOKEN", "").strip(),
+                    "username": os.getenv("ALERTMANAGER_USERNAME", "").strip(),
+                    "password": os.getenv("ALERTMANAGER_PASSWORD", "").strip(),
+                }
+            )
+            integrations.append(
+                {
+                    "id": "env-alertmanager",
+                    "service": "alertmanager",
+                    "status": "active",
+                    "credentials": alertmanager_config.model_dump(exclude={"integration_id"}),
+                }
+            )
+        except Exception:
+            logger.debug("Failed to load Alertmanager config from env", exc_info=True)
+
     return integrations
 
 
@@ -1151,6 +1192,7 @@ def resolve_effective_integrations(
         "openclaw",
         "mysql",
         "azure_sql",
+        "alertmanager",
     )
     for service in direct_services:
         resolved_integration = classified_integrations.get(service)
