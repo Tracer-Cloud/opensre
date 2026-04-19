@@ -50,7 +50,7 @@ class AirflowConfig(BaseModel):
 
     @property
     def auth(self) -> tuple[str, str] | None:
-        if self.username:
+        if self.username and not self.auth_token:
             return (self.username, self.password)
         return None
 
@@ -300,7 +300,6 @@ def get_recent_airflow_failures(
 
     Strategy:
     - fetch recent DAG runs
-    - keep failed DAG runs first, but also inspect recent runs generally
     - fetch task instances for each run
     - return failed/up_for_retry/upstream_failed task evidence
     """

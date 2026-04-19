@@ -12,7 +12,11 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
-from app.integrations.airflow import DEFAULT_AIRFLOW_BASE_URL, build_airflow_config
+from app.integrations.airflow import (
+    DEFAULT_AIRFLOW_BASE_URL,
+    airflow_config_from_env,
+    build_airflow_config,
+)
 from app.integrations.github_mcp import build_github_mcp_config
 from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL, build_gitlab_config
 from app.integrations.mariadb import build_mariadb_config
@@ -747,22 +751,8 @@ def _load_env_integrations() -> list[dict[str, Any]]:
             "credentials": discord_config.model_dump(),
         })
 
-    airflow_username = os.getenv("AIRFLOW_USERNAME", "").strip()
-    airflow_auth_token = os.getenv("AIRFLOW_AUTH_TOKEN", "").strip()
-    if airflow_username or airflow_auth_token:
-        airflow_config = build_airflow_config(
-            {
-                "base_url": os.getenv("AIRFLOW_BASE_URL", DEFAULT_AIRFLOW_BASE_URL).strip()
-                or DEFAULT_AIRFLOW_BASE_URL,
-                "username": airflow_username,
-                "password": os.getenv("AIRFLOW_PASSWORD", "").strip(),
-                "auth_token": airflow_auth_token,
-                "timeout_seconds": os.getenv("AIRFLOW_TIMEOUT_SECONDS", "15").strip(),
-                "verify_ssl": os.getenv("AIRFLOW_VERIFY_SSL", "true").strip().lower()
-                in ("true", "1", "yes"),
-                "max_results": os.getenv("AIRFLOW_MAX_RESULTS", "50").strip(),
-            }
-        )
+    airflow_config = airflow_config_from_env()
+    if airflow_config is not None:
         integrations.append(
             {
                 "id": "env-airflow",

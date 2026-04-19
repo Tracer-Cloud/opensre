@@ -5,6 +5,7 @@ import pytest
 
 from app.integrations.airflow import (
     AirflowConfig,
+    airflow_config_from_env,
     build_airflow_config,
     get_airflow_dag_runs,
     get_airflow_task_instances,
@@ -32,6 +33,34 @@ def test_validate_airflow_config_requires_auth() -> None:
 
     assert result.ok is False
     assert "Airflow auth is required" in result.detail
+
+
+def test_airflow_auth_omits_basic_auth_when_token_present() -> None:
+    config = AirflowConfig(
+        auth_token="test-token",
+        username="airflow-user",
+        password="super-secret",
+    )
+
+    assert config.headers["Authorization"] == "Bearer test-token"
+    assert config.auth is None
+
+
+def test_airflow_config_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AIRFLOW_BASE_URL", "https://airflow.example.com/api/v1/")
+    monkeypatch.setenv("AIRFLOW_AUTH_TOKEN", "env-token")
+    monkeypatch.setenv("AIRFLOW_VERIFY_SSL", "false")
+    monkeypatch.setenv("AIRFLOW_TIMEOUT_SECONDS", "30")
+    monkeypatch.setenv("AIRFLOW_MAX_RESULTS", "25")
+
+    config = airflow_config_from_env()
+
+    assert config is not None
+    assert config.base_url == "https://airflow.example.com/api/v1"
+    assert config.auth_token == "env-token"
+    assert config.verify_ssl is False
+    assert config.timeout_seconds == 30.0
+    assert config.max_results == 25
 
 
 def test_get_airflow_dag_runs(monkeypatch: pytest.MonkeyPatch) -> None:
