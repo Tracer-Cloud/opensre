@@ -49,8 +49,8 @@ Message:
         details = cast(
             AlertDetails,
             llm.with_structured_output(AlertDetails)
-               .with_config(run_name="LLM – Classify + extract alert")
-               .invoke(prompt),
+            .with_config(run_name="LLM – Classify + extract alert")
+            .invoke(prompt),
         )
         debug_print(
             f"Alert classified: {'NOISE' if details.is_noise else 'ALERT'} | "
@@ -62,7 +62,9 @@ Message:
         return _fallback_details(state, raw_alert)
 
 
-def _fallback_details(state: InvestigationState, raw_alert: str | dict[str, Any]) -> AlertDetails:
+def _fallback_details(
+    state: InvestigationState, raw_alert: str | dict[str, Any]
+) -> AlertDetails:
     """Best-effort extraction without LLM when it fails."""
     alert_name = state.get("alert_name", "unknown")
     pipeline_name = state.get("pipeline_name", "unknown")
@@ -70,7 +72,9 @@ def _fallback_details(state: InvestigationState, raw_alert: str | dict[str, Any]
 
     if isinstance(raw_alert, dict):
         labels = raw_alert.get("labels", {})
-        annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
+        annotations = raw_alert.get("annotations", {}) or raw_alert.get(
+            "commonAnnotations", {}
+        )
         alert_name = labels.get("alertname", alert_name)
         pipeline_name = (
             labels.get("pipeline")
