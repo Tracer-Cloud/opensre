@@ -15,7 +15,8 @@ optimal_trajectory:
   - query_datadog_logs
 max_investigation_loops: 3
 ruling_out_keywords:
-  - probe
+  - not OOM
+  - exit code 0
 required_queries:
   - list_eks_pods
   - get_eks_pod_logs
