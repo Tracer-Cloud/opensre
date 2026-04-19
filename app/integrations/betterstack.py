@@ -17,16 +17,24 @@ surfaces to the planner through ``extract_params``.
 
 from __future__ import annotations
 
+import logging
 import os
+from dataclasses import dataclass
 from typing import Any
 
+import httpx
 from pydantic import Field, field_validator
 
 from app.strict_config import StrictConfigModel
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_BETTERSTACK_TIMEOUT_S = 15
 DEFAULT_BETTERSTACK_MAX_ROWS = 500
 _MAX_ALLOWED_ROWS = 10_000
+_REQUIRED_CONTENT_TYPE = "plain/text"
+_REQUIRED_QUERY_PARAMS = {"output_format_pretty_row_numbers": "0"}
+_VALIDATION_PROBE_SQL = "SELECT 1 FORMAT JSONEachRow"
 
 
 class BetterStackConfig(StrictConfigModel):
@@ -122,12 +130,110 @@ def betterstack_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     }
 
 
+@dataclass(frozen=True)
+class BetterStackValidationResult:
+    """Outcome of validating a Better Stack integration against the SQL endpoint."""
+
+    ok: bool
+    detail: str
+
+
+def _sql_client(config: BetterStackConfig) -> httpx.Client:
+    """Build an authenticated ``httpx.Client`` scoped to the Better Stack SQL API."""
+    return httpx.Client(
+        auth=(config.username, config.password),
+        timeout=float(config.timeout_seconds),
+    )
+
+
+def _post_sql(
+    client: httpx.Client,
+    endpoint: str,
+    query: str,
+) -> tuple[httpx.Response | None, str | None]:
+    """POST a SQL statement to the Better Stack query endpoint.
+
+    Returns ``(response, None)`` on a transport-level success (any HTTP status),
+    or ``(None, error_message)`` on a transport-level failure (DNS, TLS,
+    timeout, etc.). Callers are responsible for interpreting non-2xx status
+    codes since the error phrasing depends on the operation (probe vs query).
+    """
+    try:
+        response = client.post(
+            endpoint,
+            params=_REQUIRED_QUERY_PARAMS,
+            content=query.encode("utf-8"),
+            headers={"Content-Type": _REQUIRED_CONTENT_TYPE},
+        )
+    except httpx.RequestError as err:
+        return None, f"Better Stack request failed: {err}"
+    return response, None
+
+
+def validate_betterstack_config(
+    config: BetterStackConfig,
+) -> BetterStackValidationResult:
+    """Validate Better Stack reachability with a cheap ``SELECT 1`` probe."""
+    if not config.is_configured:
+        return BetterStackValidationResult(
+            ok=False,
+            detail="Better Stack query_endpoint and username are required.",
+        )
+
+    try:
+        with _sql_client(config) as client:
+            response, err = _post_sql(
+                client, config.query_endpoint, _VALIDATION_PROBE_SQL
+            )
+    except Exception as err:  # noqa: BLE001 — final-resort guard around transport setup
+        logger.debug("Better Stack validate_config failed", exc_info=True)
+        return BetterStackValidationResult(
+            ok=False, detail=f"Better Stack connection failed: {err}"
+        )
+
+    if err is not None:
+        return BetterStackValidationResult(ok=False, detail=err)
+    assert response is not None  # noqa: S101 — narrow for mypy; _post_sql contract guarantees non-None on err=None
+
+    status = response.status_code
+    if status == 200:
+        body = response.text.strip()
+        if not body:
+            return BetterStackValidationResult(
+                ok=False,
+                detail="Better Stack SQL endpoint returned an empty body for the probe.",
+            )
+        return BetterStackValidationResult(
+            ok=True,
+            detail=f"Connected to Better Stack SQL API at {config.query_endpoint}.",
+        )
+    if status == 401:
+        return BetterStackValidationResult(
+            ok=False,
+            detail="Better Stack authentication failed (check BETTERSTACK_USERNAME / BETTERSTACK_PASSWORD).",
+        )
+    if status == 404:
+        return BetterStackValidationResult(
+            ok=False,
+            detail=(
+                "Better Stack endpoint not found — verify BETTERSTACK_QUERY_ENDPOINT "
+                "matches your region (e.g. https://eu-nbg-2-connect.betterstackdata.com)."
+            ),
+        )
+    return BetterStackValidationResult(
+        ok=False,
+        detail=f"Better Stack API returned HTTP {status}: {response.text[:200]}",
+    )
+
+
 __all__ = [
     "DEFAULT_BETTERSTACK_MAX_ROWS",
     "DEFAULT_BETTERSTACK_TIMEOUT_S",
     "BetterStackConfig",
+    "BetterStackValidationResult",
     "betterstack_config_from_env",
     "betterstack_extract_params",
     "betterstack_is_available",
     "build_betterstack_config",
+    "validate_betterstack_config",
 ]

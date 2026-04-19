@@ -1,24 +1,65 @@
 """Unit tests for the Better Stack integration module.
 
-Mirrors the test_rabbitmq.py pattern: config layer + helper coverage. HTTP
-interaction is mocked via ``httpx.MockTransport`` in follow-up commits once
-``validate_betterstack_config`` and ``query_logs`` land.
+Mirrors the test_rabbitmq.py pattern: config layer + validation against
+mocked ``httpx.MockTransport`` responses, no real Better Stack calls.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
+import httpx
 import pytest
 from pydantic import ValidationError
 
+from app.integrations import betterstack as bs_module
 from app.integrations.betterstack import (
     DEFAULT_BETTERSTACK_MAX_ROWS,
     DEFAULT_BETTERSTACK_TIMEOUT_S,
     BetterStackConfig,
+    BetterStackValidationResult,
     betterstack_config_from_env,
     betterstack_extract_params,
     betterstack_is_available,
     build_betterstack_config,
+    validate_betterstack_config,
 )
+
+# ---------------------------------------------------------------------------
+# Mock transport helper
+# ---------------------------------------------------------------------------
+
+
+Handler = Callable[[httpx.Request], httpx.Response]
+
+
+@pytest.fixture
+def patched_sql_client(monkeypatch: pytest.MonkeyPatch):
+    """Monkeypatch ``_sql_client`` to route through an ``httpx.MockTransport``.
+
+    Returns a callable ``install(handler)`` that accepts a per-test request
+    handler and wires it into the module under test.
+    """
+
+    def install(handler: Handler) -> None:
+        def _fake_client(config: BetterStackConfig) -> httpx.Client:
+            return httpx.Client(
+                auth=(config.username, config.password),
+                timeout=float(config.timeout_seconds),
+                transport=httpx.MockTransport(handler),
+            )
+
+        monkeypatch.setattr(bs_module, "_sql_client", _fake_client)
+
+    return install
+
+
+def _configured() -> BetterStackConfig:
+    return BetterStackConfig(
+        query_endpoint="https://eu-nbg-2-connect.betterstackdata.com",
+        username="u",
+        password="p",
+    )
 
 
 class TestBetterStackConfig:
@@ -207,3 +248,72 @@ class TestBetterStackHelpers:
         )
         params["tables"].append("t2")
         assert original == ["t1"]
+
+
+class TestValidateBetterStackConfig:
+    def test_returns_not_configured_when_missing_creds(self) -> None:
+        result = validate_betterstack_config(BetterStackConfig())
+        assert isinstance(result, BetterStackValidationResult)
+        assert result.ok is False
+        assert "required" in result.detail.lower()
+
+    def test_ok_on_200_probe(self, patched_sql_client) -> None:
+        patched_sql_client(lambda _req: httpx.Response(200, text='{"1":1}\n'))
+        result = validate_betterstack_config(_configured())
+        assert result.ok is True
+        assert "eu-nbg-2-connect.betterstackdata.com" in result.detail
+
+    def test_fails_on_empty_body(self, patched_sql_client) -> None:
+        patched_sql_client(lambda _req: httpx.Response(200, text=""))
+        result = validate_betterstack_config(_configured())
+        assert result.ok is False
+        assert "empty body" in result.detail.lower()
+
+    def test_fails_on_401_with_auth_hint(self, patched_sql_client) -> None:
+        patched_sql_client(lambda _req: httpx.Response(401, text="bad creds"))
+        result = validate_betterstack_config(_configured())
+        assert result.ok is False
+        assert "authentication" in result.detail.lower()
+        assert "BETTERSTACK_USERNAME" in result.detail
+
+    def test_fails_on_404_with_endpoint_hint(self, patched_sql_client) -> None:
+        patched_sql_client(lambda _req: httpx.Response(404, text="not found"))
+        result = validate_betterstack_config(_configured())
+        assert result.ok is False
+        assert "endpoint" in result.detail.lower()
+        assert "BETTERSTACK_QUERY_ENDPOINT" in result.detail
+
+    def test_fails_on_500_includes_status_and_body(self, patched_sql_client) -> None:
+        patched_sql_client(lambda _req: httpx.Response(500, text="boom"))
+        result = validate_betterstack_config(_configured())
+        assert result.ok is False
+        assert "500" in result.detail
+        assert "boom" in result.detail
+
+    def test_fails_on_request_error(self, patched_sql_client) -> None:
+        def _raiser(_req: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("dns failed")
+
+        patched_sql_client(_raiser)
+        result = validate_betterstack_config(_configured())
+        assert result.ok is False
+        assert "request failed" in result.detail.lower()
+        assert "dns failed" in result.detail
+
+    def test_probe_uses_required_wire_contract(self, patched_sql_client) -> None:
+        captured: dict[str, httpx.Request] = {}
+
+        def _capturing(req: httpx.Request) -> httpx.Response:
+            captured["req"] = req
+            return httpx.Response(200, text='{"1":1}\n')
+
+        patched_sql_client(_capturing)
+        validate_betterstack_config(_configured())
+
+        req = captured["req"]
+        assert req.method == "POST"
+        assert req.url.params.get("output_format_pretty_row_numbers") == "0"
+        assert req.headers.get("content-type") == "plain/text"
+        assert req.content == b"SELECT 1 FORMAT JSONEachRow"
+        # Basic auth header is populated by httpx from the client's ``auth`` tuple.
+        assert req.headers.get("authorization", "").lower().startswith("basic ")
