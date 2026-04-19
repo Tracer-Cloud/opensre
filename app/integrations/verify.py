@@ -14,7 +14,6 @@ from app.integrations.azure_sql import build_azure_sql_config, validate_azure_sq
 from app.integrations.catalog import (
     resolve_effective_integrations as _resolve_effective_integrations,
 )
-from app.integrations.store import load_integrations  # re-exported for tests/monkeypatch
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.mariadb import build_mariadb_config, validate_mariadb_config
 from app.integrations.models import (
@@ -33,6 +32,9 @@ from app.integrations.mysql import build_mysql_config, validate_mysql_config
 from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
 from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
+from app.integrations.store import (
+    load_integrations,  # noqa: F401  re-exported for tests/monkeypatch
+)
 from app.services.alertmanager import AlertmanagerClient, AlertmanagerConfig
 from app.services.coralogix import CoralogixClient
 from app.services.datadog.client import DatadogClient, DatadogConfig
@@ -90,13 +92,8 @@ def _result(
 
 
 def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
-    """Resolve effective local integrations from ~/.tracer and environment variables.
-
-    Reads the store via the locally bound ``load_integrations`` so tests can
-    monkeypatch ``app.integrations.verify.load_integrations`` to inject store
-    fixtures without reaching the on-disk store.
-    """
-    return _resolve_effective_integrations(store_integrations=load_integrations())
+    """Resolve effective local integrations from ~/.tracer and environment variables."""
+    return _resolve_effective_integrations()
 
 
 def _verify_grafana(source: str, config: dict[str, Any]) -> dict[str, str]:

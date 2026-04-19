@@ -66,6 +66,15 @@ _SERVICE_KEY_MAP = {
     "openclaw": "openclaw",
     "mysql": "mysql",
     "azure_sql": "azure_sql",
+    "bitbucket": "bitbucket",
+    "snowflake": "snowflake",
+    "azure": "azure",
+    "azure monitor": "azure",
+    "azure_monitor": "azure",
+    "openobserve": "openobserve",
+    "open observe": "openobserve",
+    "opensearch": "opensearch",
+    "open search": "opensearch",
     "alertmanager": "alertmanager",
 }
 
@@ -553,6 +562,22 @@ def _classify_service_instance(
         if alertmanager_config.base_url:
             return alertmanager_config.model_dump(), "alertmanager"
         return None, None
+
+    if key == "bitbucket":
+        workspace = str(credentials.get("workspace", "")).strip()
+        if not workspace:
+            return None, None
+        base_url = str(
+            credentials.get("base_url", "https://api.bitbucket.org/2.0")
+        ).strip() or "https://api.bitbucket.org/2.0"
+        return {
+            "workspace": workspace,
+            "username": str(credentials.get("username", "")).strip(),
+            "app_password": str(credentials.get("app_password", "")).strip(),
+            "base_url": base_url,
+            "max_results": max(1, min(_safe_int(credentials.get("max_results", 25), 25), 100)),
+            "integration_id": record_id,
+        }, "bitbucket"
 
     if key == "snowflake":
         account_identifier = str(
@@ -1158,6 +1183,26 @@ def load_env_integrations() -> list[dict[str, Any]]:
             }
         )
 
+    bitbucket_workspace = os.getenv("BITBUCKET_WORKSPACE", "").strip()
+    if bitbucket_workspace:
+        integrations.append(
+            {
+                "id": "env-bitbucket",
+                "service": "bitbucket",
+                "status": "active",
+                "credentials": {
+                    "workspace": bitbucket_workspace,
+                    "username": os.getenv("BITBUCKET_USERNAME", "").strip(),
+                    "app_password": os.getenv("BITBUCKET_APP_PASSWORD", "").strip(),
+                    "base_url": os.getenv(
+                        "BITBUCKET_BASE_URL", "https://api.bitbucket.org/2.0"
+                    ).strip()
+                    or "https://api.bitbucket.org/2.0",
+                    "max_results": _safe_int(os.getenv("BITBUCKET_MAX_RESULTS", "25"), 25),
+                },
+            }
+        )
+
     snowflake_account = (
         os.getenv("SNOWFLAKE_ACCOUNT_IDENTIFIER", "").strip()
         or os.getenv("SNOWFLAKE_ACCOUNT", "").strip()
@@ -1510,29 +1555,6 @@ def resolve_effective_integrations(
                     "password": os.getenv("CLICKHOUSE_PASSWORD", "").strip(),
                     "secure": os.getenv("CLICKHOUSE_SECURE", "false").strip().lower()
                     in ("true", "1", "yes"),
-                },
-            )
-
-    bitbucket_integration = classified_integrations.get("bitbucket")
-    if isinstance(bitbucket_integration, dict):
-        bitbucket_credentials = _raw_credentials(bitbucket_integration)
-        effective["bitbucket"] = _effective_entry(
-            source_by_service.get("bitbucket", "local env"),
-            {
-                "workspace": str(bitbucket_credentials.get("workspace", "")).strip(),
-                "username": str(bitbucket_credentials.get("username", "")).strip(),
-                "app_password": str(bitbucket_credentials.get("app_password", "")).strip(),
-            },
-        )
-    else:
-        bitbucket_workspace = os.getenv("BITBUCKET_WORKSPACE", "").strip()
-        if bitbucket_workspace:
-            effective["bitbucket"] = _effective_entry(
-                "local env",
-                {
-                    "workspace": bitbucket_workspace,
-                    "username": os.getenv("BITBUCKET_USERNAME", "").strip(),
-                    "app_password": os.getenv("BITBUCKET_APP_PASSWORD", "").strip(),
                 },
             )
 
