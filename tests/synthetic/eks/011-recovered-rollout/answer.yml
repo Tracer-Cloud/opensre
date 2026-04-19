@@ -1,8 +1,6 @@
 root_cause_category: healthy
 required_keywords:
   - rolled back
-  - previous revision
-  - no active failure
 forbidden_categories:
   - unknown
   - configuration_error

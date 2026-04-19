@@ -18,7 +18,7 @@
     },
     {
       "timestamp": "2026-04-18T10:30:00Z",
-      "message": "[payments-api] no further restarts observed since 09:45:00Z; container_uptime > 60 minutes; healthy",
+      "message": "[payments-api] no further restarts observed since 09:25:00Z; container_uptime > 60 minutes; healthy",
       "status": "info",
       "service": "payments-api",
       "host": "payments-api-7f9dd8b6c4-x7gr9",
