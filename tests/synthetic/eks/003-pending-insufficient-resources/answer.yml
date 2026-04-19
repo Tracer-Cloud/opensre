@@ -1,0 +1,38 @@
+root_cause_category: resource_exhaustion
+required_keywords:
+  - cpu
+  - Unschedulable
+forbidden_categories:
+  - healthy
+  - unknown
+  - dependency_failure
+  - data_quality
+  - code_defect
+  - configuration_error
+optimal_trajectory:
+  - list_eks_pods
+  - get_eks_events
+  - get_eks_node_health
+max_investigation_loops: 3
+ruling_out_keywords:
+  - nodes
+  - Ready
+required_queries:
+  - list_eks_pods
+  - get_eks_events
+  - get_eks_node_health
+model_response: |
+  ROOT_CAUSE: Pod payments-api-7f9dd8b6c4-c12fj cannot be scheduled onto any node. Both nodes are Ready=True but their allocatable CPU is nearly zero (100m and 50m left), so the kube-scheduler returns 'Insufficient cpu' and the pod stays Pending with PodScheduled=False reason=Unschedulable.
+  ROOT_CAUSE_CATEGORY: resource_exhaustion
+
+  VALIDATED_CLAIMS:
+  - Pod is Pending with PodScheduled=False reason=Unschedulable. [evidence: eks_pods]
+  - Warning event FailedScheduling '0/2 nodes are available: 2 Insufficient cpu'. [evidence: eks_events]
+  - Both nodes report Ready=True but allocatable_cpu below 200m, confirming cluster-level CPU exhaustion. [evidence: eks_node_health]
+
+  NON_VALIDATED_CLAIMS:
+  - Resolution requires node autoscaling, additional capacity, or rightsizing of noisy workloads.
+  - Nodes show no MemoryPressure/DiskPressure, so the constraint is specifically CPU.
+
+  CAUSAL_CHAIN:
+  - Cumulative CPU requests from existing pods consume nearly all allocatable CPU, the new replica's CPU request cannot fit, the scheduler marks it Unschedulable, and the pod remains Pending until capacity becomes available.

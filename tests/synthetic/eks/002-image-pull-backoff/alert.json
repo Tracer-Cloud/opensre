@@ -1,0 +1,27 @@
+{
+  "title": "[synthetic-k8s] ImagePullBackOff — payments-api new ReplicaSet",
+  "state": "alerting",
+  "alert_source": "datadog",
+  "commonLabels": {
+    "alertname": "KubernetesPodImagePullBackOff",
+    "severity": "critical",
+    "pipeline_name": "k8s-eks-synthetic",
+    "service": "payments-api",
+    "cluster_name": "payments-prod-eks",
+    "namespace": "payments",
+    "workload_type": "deployment",
+    "workload_name": "payments-api"
+  },
+  "commonAnnotations": {
+    "summary": "New replicas of payments-api are stuck in ImagePullBackOff after a deploy.",
+    "description": "The new ReplicaSet cannot start any pods; the old ReplicaSet's pods continue to serve traffic but no new replicas come online.",
+    "error": "Container runtime cannot pull image payments:v2.1.0-bad — registry returned 'manifest unknown'.",
+    "suspected_symptom": "Pods Pending, no containers running.",
+    "cluster_name": "payments-prod-eks",
+    "kube_namespace": "payments",
+    "kube_deployment": "payments-api",
+    "kube_pod": "payments-api-9c1d2e3f4-2hk8w",
+    "k8s_failure_mode": "image_pull_backoff",
+    "context_sources": "eks"
+  }
+}

@@ -369,39 +369,3 @@ def get_collection_stats(
             client.close()
     except Exception as err:  # noqa: BLE001
         return {"source": "mongodb", "available": False, "error": str(err)}
-
-
-def get_db_stats(config: MongoDBConfig) -> dict[str, Any]:
-    """Retrieve database-level statistics.
-
-    Read-only: uses the ``dbStats`` command.
-    """
-    if not config.is_configured:
-        return {"source": "mongodb", "available": False, "error": "Not configured."}
-    if not config.database:
-        return {
-            "source": "mongodb",
-            "available": False,
-            "error": "Database name is required.",
-        }
-
-    try:
-        client = _get_client(config)
-        try:
-            db = client[config.database]
-            stats = db.command("dbStats")
-            return {
-                "source": "mongodb",
-                "available": True,
-                "db": stats.get("db", ""),
-                "collections": stats.get("collections", 0),
-                "objects": stats.get("objects", 0),
-                "data_size_bytes": stats.get("dataSize", 0),
-                "storage_size_bytes": stats.get("storageSize", 0),
-                "indexes": stats.get("indexes", 0),
-                "index_size_bytes": stats.get("indexSize", 0),
-            }
-        finally:
-            client.close()
-    except Exception as err:  # noqa: BLE001
-        return {"source": "mongodb", "available": False, "error": str(err)}

@@ -1,0 +1,27 @@
+{
+  "title": "[synthetic-k8s] Pod restarting repeatedly — payments-api-7f9dd8b6c4-liv1k",
+  "state": "alerting",
+  "alert_source": "datadog",
+  "commonLabels": {
+    "alertname": "KubernetesPodRestarting",
+    "severity": "critical",
+    "pipeline_name": "k8s-eks-synthetic",
+    "service": "payments-api",
+    "cluster_name": "payments-prod-eks",
+    "namespace": "payments",
+    "workload_type": "deployment",
+    "workload_name": "payments-api"
+  },
+  "commonAnnotations": {
+    "summary": "Pod payments-api-7f9dd8b6c4-liv1k has restarted 6 times in 12 minutes.",
+    "description": "One replica of payments-api keeps restarting, while the other two are Running and Ready. Application logs show normal request processing right up to each termination.",
+    "error": "Container exit codes are 0 (clean shutdown), not crash-style — yet kubelet keeps restarting the pod.",
+    "suspected_symptom": "Repeated restarts without OOM, crash, or image pull errors.",
+    "cluster_name": "payments-prod-eks",
+    "kube_namespace": "payments",
+    "kube_deployment": "payments-api",
+    "kube_pod": "payments-api-7f9dd8b6c4-liv1k",
+    "k8s_failure_mode": "crashloop_backoff",
+    "context_sources": "eks"
+  }
+}

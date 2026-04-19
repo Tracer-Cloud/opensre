@@ -1,0 +1,70 @@
+{
+  "pods": [
+    {
+      "name": "payments-api-9c1d2e3f4-2hk8w",
+      "namespace": "payments",
+      "phase": "Pending",
+      "node_name": "ip-10-0-1-42.us-east-1.compute.internal",
+      "start_time": "2026-04-18T10:30:00Z",
+      "containers": [
+        {
+          "name": "payments-api",
+          "ready": false,
+          "restart_count": 0,
+          "state": {
+            "waiting": true,
+            "reason": "ImagePullBackOff",
+            "message": "Back-off pulling image \"payments:v2.1.0-bad\": manifest unknown"
+          }
+        }
+      ],
+      "conditions": [
+        {"type": "Initialized", "status": "True", "reason": "", "message": ""},
+        {"type": "Ready", "status": "False", "reason": "ContainersNotReady", "message": "containers with unready status: [payments-api]"},
+        {"type": "ContainersReady", "status": "False", "reason": "ContainersNotReady", "message": "containers with unready status: [payments-api]"},
+        {"type": "PodScheduled", "status": "True", "reason": "", "message": ""}
+      ]
+    },
+    {
+      "name": "payments-api-9c1d2e3f4-pm44r",
+      "namespace": "payments",
+      "phase": "Pending",
+      "node_name": "ip-10-0-1-73.us-east-1.compute.internal",
+      "start_time": "2026-04-18T10:30:05Z",
+      "containers": [
+        {
+          "name": "payments-api",
+          "ready": false,
+          "restart_count": 0,
+          "state": {
+            "waiting": true,
+            "reason": "ImagePullBackOff",
+            "message": "Back-off pulling image \"payments:v2.1.0-bad\": manifest unknown"
+          }
+        }
+      ],
+      "conditions": [
+        {"type": "Initialized", "status": "True", "reason": "", "message": ""},
+        {"type": "Ready", "status": "False", "reason": "ContainersNotReady", "message": "containers with unready status: [payments-api]"},
+        {"type": "ContainersReady", "status": "False", "reason": "ContainersNotReady", "message": "containers with unready status: [payments-api]"},
+        {"type": "PodScheduled", "status": "True", "reason": "", "message": ""}
+      ]
+    },
+    {
+      "name": "payments-api-7f9dd8b6c4-x7gr9",
+      "namespace": "payments",
+      "phase": "Running",
+      "node_name": "ip-10-0-1-42.us-east-1.compute.internal",
+      "start_time": "2026-04-13T14:02:11Z",
+      "containers": [
+        {"name": "payments-api", "ready": true, "restart_count": 0, "state": {"running": true, "started_at": "2026-04-13T14:02:19Z"}}
+      ],
+      "conditions": [
+        {"type": "Initialized", "status": "True", "reason": "", "message": ""},
+        {"type": "Ready", "status": "True", "reason": "", "message": ""},
+        {"type": "ContainersReady", "status": "True", "reason": "", "message": ""},
+        {"type": "PodScheduled", "status": "True", "reason": "", "message": ""}
+      ]
+    }
+  ]
+}

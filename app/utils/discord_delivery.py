@@ -9,7 +9,13 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-def post_discord_message(channel_id: str, embeds:list[dict[str, Any]], bot_token:str, content: str = "") -> tuple[bool, str, str] :
+
+def post_discord_message(
+    channel_id: str,
+    embeds: list[dict[str, Any]],
+    bot_token: str,
+    content: str = "",
+) -> tuple[bool, str, str]:
     """Call discord channels api to post message on channel.
 
     Returns True on success, False on expected failures.
@@ -17,7 +23,7 @@ def post_discord_message(channel_id: str, embeds:list[dict[str, Any]], bot_token
     logger.debug("[discord] post message params channel_id: %s", channel_id)
     try:
         resp = httpx.post(
-            f"https://discord.com/api/v10/channels/{channel_id}/messages",
+            url=f"https://discord.com/api/v10/channels/{channel_id}/messages",
             json={"content": content, "embeds": embeds},
             headers={
                 "Authorization": f"Bot {bot_token}",
@@ -32,22 +38,29 @@ def post_discord_message(channel_id: str, embeds:list[dict[str, Any]], bot_token
             logger.warning("[discord] api response %s", data)
             error_message = data.get("message", data.get("error", "unknown"))
             logger.warning("[discord] post message failed: %s", error_message)
-            return (False, error_message, "")
+            return False, error_message, ""
         message_id: str = str(data.get("id") or "")
-        return (True, error_message, message_id)
+        return True, error_message, message_id
     except Exception as exc:  # noqa: BLE001
         logger.warning("[discord] post message exception: %s", exc)
-        return (False, str(exc), "")
+        return False, str(exc), ""
 
 
-def create_discord_thread(channel_id: str, message_id: str, name:str, bot_token:str) -> tuple[bool, str, str] :
+def create_discord_thread(
+    channel_id: str,
+    message_id: str,
+    name: str,
+    bot_token: str,
+) -> tuple[bool, str, str]:
     """Call discord channels api to create a thread.
 
     Returns True on success, False on expected failures.
     """
     try:
         resp = httpx.post(
-            f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}/threads",
+            url=(
+                f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}/threads"
+            ),
             json={"name": name, "auto_archive_duration": 1440},
             headers={
                 "Authorization": f"Bot {bot_token}",
@@ -60,12 +73,12 @@ def create_discord_thread(channel_id: str, message_id: str, name:str, bot_token:
         if resp.status_code not in (200, 201):
             error_message = data.get("message", data.get("error", "unknown"))
             logger.warning("[discord] create thread failed: %s", error_message)
-            return (False, error_message, "")
+            return False, error_message, ""
         thread_id: str = str(data.get("id") or "")
-        return (True, error_message, thread_id)
+        return True, error_message, thread_id
     except Exception as exc:  # noqa: BLE001
         logger.warning("[discord] create thread exception: %s", exc)
-        return (False, str(exc), "")
+        return False, str(exc), ""
 
 
 _EMBED_TITLE_LIMIT = 256

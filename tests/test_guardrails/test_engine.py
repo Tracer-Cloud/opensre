@@ -173,6 +173,26 @@ class TestEdgeCases:
         result = engine.scan("my secret_key here")
         assert len(result.matches) >= 2
 
+    def test_overlapping_keyword_redaction_prefers_longest(self) -> None:
+        """Overlapping keywords at the same start must redact the longest match."""
+        engine = GuardrailEngine([
+            _rule(name="r1", action="redact", keywords=["secret"]),
+            _rule(name="r2", action="redact", keywords=["secret_key"]),
+        ])
+        result = engine.apply("my secret_key=xyz")
+        # The longer keyword "secret_key" should win; no leftover "_key"
+        assert "_key" not in result
+        assert "=xyz" in result
+
+    def test_overlapping_keyword_same_rule_redaction(self) -> None:
+        """Overlapping keywords within a single rule must redact the longest match."""
+        engine = GuardrailEngine([
+            _rule(name="r1", action="redact", keywords=["api", "api_key"]),
+        ])
+        result = engine.apply("my api_key=123")
+        assert "_key" not in result
+        assert "=123" in result
+
     def test_multiple_rules_on_same_span(self) -> None:
         engine = GuardrailEngine([
             _rule(name="r1", action="audit", keywords=["token"]),

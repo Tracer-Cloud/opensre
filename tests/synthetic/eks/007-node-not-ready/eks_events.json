@@ -1,0 +1,24 @@
+{
+  "warning_events": [
+    {
+      "namespace": "default",
+      "reason": "NodeNotReady",
+      "message": "Node ip-10-0-1-73.us-east-1.compute.internal status is now: NodeNotReady",
+      "type": "Warning",
+      "count": 1,
+      "involved_object": "Node/ip-10-0-1-73.us-east-1.compute.internal",
+      "first_time": "2026-04-18T10:40:00Z",
+      "last_time": "2026-04-18T10:40:00Z"
+    },
+    {
+      "namespace": "default",
+      "reason": "NodeControllerEviction",
+      "message": "Marking for deletion Pod payments-api-7f9dd8b6c4-k2m4p from Node ip-10-0-1-73.us-east-1.compute.internal",
+      "type": "Warning",
+      "count": 1,
+      "involved_object": "Node/ip-10-0-1-73.us-east-1.compute.internal",
+      "first_time": "2026-04-18T10:45:00Z",
+      "last_time": "2026-04-18T10:45:00Z"
+    }
+  ]
+}

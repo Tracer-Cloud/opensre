@@ -472,7 +472,9 @@ def test_tests_inventory_commands_smoke(cli_sandbox: CliSandbox) -> None:
 
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
 def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
-    # Keep in sync with integration_choices in app/cli/wizard/flow.py::_configure_selected_integrations.
+    # One `j` per keypress (burst writes are not separate keys). The select list wraps;
+    # from the first option, len(choices)-1 steps reach "Skip for now" without wrapping past it.
+    # 18 integrations + "Skip for now" = 19 choices → 18 j's from the top.
     result = _run_cli_pty(
         cli_sandbox,
         "onboard",
@@ -480,7 +482,7 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
             PtyAction(expect="How do you want to get started?", send=b"\r"),
             PtyAction(expect="Choose your LLM provider", send=b"\r"),
             PtyAction(expect="Anthropic API key", send=b"smoke-test-key\r"),
-            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjjjjj\r"),
+            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjjjjjj\r"),
         ],
         timeout=30.0,
     )
@@ -518,7 +520,8 @@ def test_integrations_setup_datadog_interactive_smoke(cli_sandbox: CliSandbox) -
     integrations = cli_sandbox.read_integrations()
     assert len(integrations) == 1
     assert integrations[0]["service"] == "datadog"
-    assert integrations[0]["credentials"]["site"] == "datadoghq.com"
+    # v2 store shape: credentials live inside the default instance.
+    assert integrations[0]["instances"][0]["credentials"]["site"] == "datadoghq.com"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
@@ -561,3 +564,11 @@ def test_tests_interactive_launcher_smoke(cli_sandbox: CliSandbox) -> None:
 
     assert result.exit_code == 0
     assert "Choose a test category:" in result.stdout
+
+
+def test_deploy_help_smoke(cli_sandbox: CliSandbox) -> None:
+    result = _run_cli(cli_sandbox, "deploy", "-h")
+
+    assert result.exit_code == 0
+    assert "ec2" in result.stdout
+    assert "langsmith" in result.stdout

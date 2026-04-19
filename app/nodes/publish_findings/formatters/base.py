@@ -14,30 +14,6 @@ def format_code_block(payload: str, language: str) -> str:
     return f"```{language}\n{payload}\n```"
 
 
-def format_json_block(payload: str) -> str:
-    """Wrap JSON content in a markdown code block.
-
-    Args:
-        payload: JSON string to wrap
-
-    Returns:
-        Markdown-formatted JSON code block
-    """
-    return format_code_block(payload, "json")
-
-
-def format_text_block(payload: str) -> str:
-    """Wrap text content in a markdown code block.
-
-    Args:
-        payload: Text string to wrap
-
-    Returns:
-        Markdown-formatted text code block
-    """
-    return format_code_block(payload, "text")
-
-
 def shorten_text(text: str, max_chars: int = 120, suffix: str = "...") -> str:
     """Shorten text to a maximum length.
 

@@ -63,6 +63,16 @@ class RemoteOpsProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def fetch_logs(self, scope: RemoteServiceScope, *, lines: int) -> str:
+        """Return the last ``lines`` log entries as text for programmatic use.
+
+        Unlike ``logs()`` which streams to stdout for interactive CLI use,
+        ``fetch_logs()`` captures the output and returns it so callers can
+        feed it into an investigation or other pipeline.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def restart(self, scope: RemoteServiceScope) -> RestartResult:
         raise NotImplementedError
 
@@ -194,6 +204,20 @@ class RailwayRemoteOpsProvider(RemoteOpsProvider):
         if follow:
             args.append("--follow")
         self._railway_command(args, scope=scope, capture_output=False)
+
+    def fetch_logs(self, scope: RemoteServiceScope, *, lines: int) -> str:
+        result = self._railway_command(
+            ["logs", "--tail", str(lines)],
+            scope=scope,
+            capture_output=True,
+        )
+        stdout = (result.stdout or "").strip()
+        stderr = (result.stderr or "").strip()
+        if stderr and not stdout:
+            return stderr
+        if stderr:
+            return f"{stdout}\n[stderr: {stderr}]"
+        return stdout
 
     def restart(self, scope: RemoteServiceScope) -> RestartResult:
         data = self._read_json(["redeploy", "--json"], scope=scope)

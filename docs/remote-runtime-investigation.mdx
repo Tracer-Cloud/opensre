@@ -1,0 +1,76 @@
+---
+title: 'Remote Runtime Investigation'
+description: 'Start an RCA investigation for a deployed service by name'
+---
+
+## Overview
+
+`opensre investigate --service <name>` kicks off a runtime investigation for a deployed service. Instead of passing an alert payload, OpenSRE gathers live signals from the service (deployment status, recent logs, health probe) and feeds them into the existing investigation pipeline as evidence.
+
+## Prerequisites
+
+You must have deployed a service via `opensre deploy` (or registered a named remote) and configured a remote ops provider.
+
+1. **Deploy or register a named remote:**
+   ```bash
+   opensre deploy ec2        # creates a named remote "ec2"
+   # or register manually:
+   opensre remote health https://my-service.up.railway.app
+   ```
+
+2. **Configure the remote ops provider (once):**
+   ```bash
+   opensre remote ops status     # prompts for provider/project/service on first run
+   ```
+
+## Usage
+
+```bash
+opensre investigate --service <name>
+```
+
+For example:
+```bash
+opensre investigate --service api-backend
+opensre investigate --service api-backend --output ./rca.json
+```
+
+The command will:
+
+1. Resolve `<name>` against your named-remote registry
+2. Fetch deployment status via the configured ops provider (e.g. Railway)
+3. Fetch the most recent ~100 log lines
+4. Probe the service's `/health` or `/ok` endpoint
+5. Package all of this into an alert payload
+6. Run the standard RCA pipeline against it
+
+The output is the same structured RCA report you'd get from running `opensre investigate -i <alert-file>`.
+
+## Incorporating Slack thread context
+
+Pass `--slack-thread CHANNEL/TS` to also pull the messages from a specific Slack thread as investigation context. This is useful when an incident originated in a Slack conversation.
+
+```bash
+export SLACK_BOT_TOKEN=xoxb-...
+opensre investigate --service api-backend --slack-thread C01234/1712345.000001
+```
+
+Requirements:
+- `SLACK_BOT_TOKEN` must be set in the environment. The bot must have the `channels:history` and `groups:history` OAuth scopes for the channel you're reading.
+- The `CHANNEL/TS` reference can be obtained from Slack's "Copy link to message" option — it's the last two path segments of the link.
+
+The thread's messages, users, timestamps, and reactions are fetched via Slack's `conversations.replies` API and included under the `slack_thread` key in the alert payload. If fetching fails (bad token, wrong channel, network error), the investigation still proceeds with the error recorded in the payload.
+
+## Mutual exclusion
+
+`--service` cannot be combined with `--input`, `--input-json`, `--interactive`, or `--print-template`. Use `--service` on its own.
+
+## Extending to other providers
+
+The `RemoteOpsProvider` abstract class (in `app/remote/ops.py`) defines the provider interface. To add support for another provider (EC2, ECS, Vercel, etc.), implement a new subclass with `status()`, `logs()`, `fetch_logs()`, and `restart()` methods, then register it in `resolve_remote_ops_provider()`.
+
+## Known limitations
+
+- **Currently supports only Railway** — other providers have `status`/`logs` hooks but no `fetch_logs` implementation yet.
+- **Slack context is thread-scoped** — this initial version pulls a specific thread via `--slack-thread`. It does not search Slack history or resolve linked runbooks.
+- **`alert_source` is re-inferred by the LLM** — the LLM in the extract-alert step may infer an `alert_source` from the log text (e.g. "datadog" if the logs mention Datadog), which routes to provider-specific tools. This is the intended behavior.

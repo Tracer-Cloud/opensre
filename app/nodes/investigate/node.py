@@ -5,6 +5,7 @@ from typing import cast
 
 from langsmith import traceable
 
+from app.masking import MaskingContext
 from app.nodes.investigate.execution import execute_actions
 from app.nodes.investigate.models import InvestigateInput, InvestigateOutput
 from app.nodes.investigate.processing import (
@@ -56,7 +57,9 @@ def node_investigate(state: InvestigationState) -> dict:
     # Execute actions and summarize results
     execution_results = execute_actions(planned_actions, available_actions, available_sources)
     raw_plan_audit = state.get("plan_audit")
-    plan_audit = cast(PlanAudit | None, raw_plan_audit if isinstance(raw_plan_audit, dict) else None)
+    plan_audit = cast(
+        PlanAudit | None, raw_plan_audit if isinstance(raw_plan_audit, dict) else None
+    )
     evidence, executed_hypotheses, evidence_summary = summarize_execution_results(
         execution_results=execution_results,
         current_evidence=input_data.evidence,
@@ -82,12 +85,19 @@ def node_investigate(state: InvestigationState) -> dict:
         no_logs_yet = not evidence.get("grafana_logs")
         # Only update if the current service_name doesn't match anything in Loki
         if no_logs_yet and current_service not in discovered_services:
-            # Prefer a service that contains the pipeline name, otherwise take the first
-            best = next(
-                (s for s in discovered_services if pipeline_name and pipeline_name in s),
-                discovered_services[0],
-            )
-            available_sources["grafana"]["service_name"] = best
+            matching_services = [
+                s for s in discovered_services if pipeline_name and pipeline_name in s
+            ]
+            if matching_services:
+                available_sources["grafana"]["service_name"] = matching_services[0]
+            elif discovered_services:
+                available_sources["grafana"]["service_name"] = discovered_services[0]
+
+    # Apply reversible masking to evidence before it flows to downstream LLM
+    # nodes. No-op when OPENSRE_MASK_ENABLED is not set.
+    masking_ctx = MaskingContext.from_state(cast(dict[str, object], state))
+    masked_evidence = masking_ctx.mask_value(evidence)
+    masking_map = masking_ctx.to_state()
 
     tracker.complete(
         "investigate",
@@ -95,5 +105,11 @@ def node_investigate(state: InvestigationState) -> dict:
         message=evidence_summary,
     )
 
-    output = InvestigateOutput(evidence=evidence, executed_hypotheses=executed_hypotheses)
-    return {**output.to_dict(), "available_sources": available_sources}
+    output = InvestigateOutput(evidence=masked_evidence, executed_hypotheses=executed_hypotheses)
+    result: dict[str, object] = {
+        **output.to_dict(),
+        "available_sources": available_sources,
+    }
+    if masking_map:
+        result["masking_map"] = masking_map
+    return result

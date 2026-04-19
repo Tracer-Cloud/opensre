@@ -3,24 +3,26 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from app.services.eks.eks_k8s_client import build_k8s_clients
-from app.tools.EKSListClustersTool import _eks_available, _eks_creds
+from app.tools.EKSListClustersTool import _eks_creds
 from app.tools.tool_decorator import tool
+from app.tools.utils.availability import eks_available_or_backend
 
 logger = logging.getLogger(__name__)
 
 
 def _events_is_available(sources: dict[str, dict]) -> bool:
-    return bool(_eks_available(sources) and sources.get("eks", {}).get("cluster_name"))
+    return bool(eks_available_or_backend(sources) and sources.get("eks", {}).get("cluster_name"))
 
 
 def _events_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     eks = sources["eks"]
     return {
-        "cluster_name": eks["cluster_name"],
+        "cluster_name": eks.get("cluster_name", ""),
         "namespace": eks.get("namespace", "default"),
+        "eks_backend": eks.get("_backend"),
         **_eks_creds(eks),
     }
 
@@ -51,13 +53,23 @@ def _events_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 def get_eks_events(
     cluster_name: str,
     namespace: str,
-    role_arn: str,
+    role_arn: str = "",
     external_id: str = "",
     region: str = "us-east-1",
+    eks_backend: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
-    """Get Kubernetes Warning events in a namespace."""
+    """Get Kubernetes Warning events in a namespace.
+
+    When ``eks_backend`` is provided (e.g. a FixtureEKSBackend from the synthetic
+    harness) the call short-circuits and returns the backend's response directly.
+    """
     logger.info("[eks] get_eks_events cluster=%s ns=%s", cluster_name, namespace)
+    if eks_backend is not None:
+        return cast(
+            "dict[str, Any]",
+            eks_backend.get_events(cluster_name=cluster_name, namespace=namespace),
+        )
     try:
         core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
         event_list = core_v1.list_event_for_all_namespaces() if namespace == "all" else core_v1.list_namespaced_event(namespace=namespace)

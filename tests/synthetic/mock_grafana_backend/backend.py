@@ -20,6 +20,7 @@ from tests.synthetic.mock_grafana_backend.formatters import (
     format_loki_query_range,
     format_mimir_query_range,
     format_ruler_rules,
+    format_tempo_search,
 )
 
 if TYPE_CHECKING:
@@ -30,10 +31,11 @@ if TYPE_CHECKING:
 class GrafanaBackend(Protocol):
     """Minimal observability interface used by the RDS investigation agent.
 
-    Three methods — one per evidence pillar:
+    Four methods — one per evidence pillar:
         query_timeseries  → Mimir/Prometheus matrix response
         query_logs        → Loki streams response
         query_alert_rules → Grafana Ruler rules response
+        query_traces      → Tempo search response
     """
 
     def query_timeseries(self, query: str = "", **kwargs: Any) -> dict[str, Any]:
@@ -48,11 +50,15 @@ class GrafanaBackend(Protocol):
         """Return a Grafana Ruler /api/v1/rules response."""
         pass
 
+    def query_traces(self, **kwargs: Any) -> dict[str, Any]:
+        """Return a Tempo-compatible search response."""
+        pass
+
 
 class FixtureGrafanaBackend:
     """GrafanaBackend implementation backed by a ScenarioFixture.
 
-    All three methods delegate to the pure formatter functions, converting
+    All four methods delegate to the pure formatter functions, converting
     AWS-faithful fixture data into the Grafana wire format the agent expects.
     No HTTP calls, no external dependencies.
     """
@@ -79,3 +85,6 @@ class FixtureGrafanaBackend:
 
     def query_alert_rules(self, **_: Any) -> dict[str, Any]:
         return format_ruler_rules(self._fixture.alert)
+
+    def query_traces(self, **_: Any) -> dict[str, Any]:
+        return format_tempo_search()

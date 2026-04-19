@@ -36,6 +36,7 @@ from tests.synthetic.mock_grafana_backend.formatters import (
     format_loki_query_range,
     format_mimir_query_range,
     format_ruler_rules,
+    format_tempo_search,
 )
 
 if TYPE_CHECKING:
@@ -87,6 +88,9 @@ class SelectiveGrafanaBackend:
 
     def query_alert_rules(self, **_: Any) -> dict[str, Any]:
         return format_ruler_rules(self._fixture.alert)
+
+    def query_traces(self, **_: Any) -> dict[str, Any]:
+        return format_tempo_search()
 
     def reset(self) -> None:
         """Clear the queried_metrics audit log (useful for re-running a scenario)."""

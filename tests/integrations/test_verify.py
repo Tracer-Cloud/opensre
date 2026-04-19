@@ -12,6 +12,7 @@ from app.integrations.verify import (
     _verify_grafana,
     _verify_honeycomb,
     _verify_sentry,
+    _verify_snowflake,
     _verify_tracer,
     _verify_vercel,
     resolve_effective_integrations,
@@ -73,6 +74,20 @@ def test_resolve_effective_integrations_includes_honeycomb_and_coralogix_env(
 
     assert effective["honeycomb"]["config"]["dataset"] == "prod-api"
     assert effective["coralogix"]["config"]["application_name"] == "payments"
+
+
+def test_resolve_effective_integrations_skips_snowflake_without_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.integrations.catalog.load_integrations", lambda: [])
+    monkeypatch.setenv("SNOWFLAKE_ACCOUNT_IDENTIFIER", "env-account")
+    monkeypatch.delenv("SNOWFLAKE_TOKEN", raising=False)
+    monkeypatch.setenv("SNOWFLAKE_USER", "service-user")
+    monkeypatch.setenv("SNOWFLAKE_PASSWORD", "secret")
+
+    effective = resolve_effective_integrations()
+
+    assert "snowflake" not in effective
 
 
 def test_resolve_effective_integrations_keeps_incomplete_datadog_store_record(
@@ -156,6 +171,21 @@ def test_verify_datadog_accepts_integration_id() -> None:
 
     assert result["status"] == "missing"
     assert "Missing API key" in result["detail"]
+
+
+def test_verify_snowflake_requires_token() -> None:
+    result = _verify_snowflake(
+        "local env",
+        {
+            "account_identifier": "xy12345.us-east-1",
+            "user": "service-user",
+            "password": "secret",
+            "token": "",
+        },
+    )
+
+    assert result["status"] == "missing"
+    assert result["detail"] == "Missing token credentials."
 
 
 def test_verify_honeycomb_uses_auth_and_query(monkeypatch: pytest.MonkeyPatch) -> None:

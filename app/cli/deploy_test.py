@@ -121,6 +121,25 @@ class TestDeployToRailway:
         assert result["dry_run"] is True
         assert "dry-run" in result["logs"][0].lower()
 
+    def test_failed_deploy_includes_database_hint(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def mock_run_command(cmd: list[str], **kwargs: object) -> object:  # noqa: ARG001
+            class Result:
+                returncode = 1
+                stdout = ""
+                stderr = "container failed to boot"
+
+            return Result()
+
+        monkeypatch.setattr("app.cli.deploy._run_command", mock_run_command)
+
+        result = deploy_to_railway(wait_for_health=False, auth_detail="user@example.com")
+
+        assert result["success"] is False
+        logs = "\n".join(result["logs"])
+        assert "Postgres and Redis services" in logs
+        assert "DATABASE_URI" in logs
+        assert "REDIS_URI" in logs
+
     def test_successful_deploy(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("app.cli.deploy.is_railway_cli_installed", lambda: True)
         monkeypatch.setattr(
@@ -188,6 +207,42 @@ class TestDeployToRailway:
         result = deploy_to_railway(wait_for_health=True)
         assert result["success"] is True
         assert requested_urls == ["https://myapp.up.railway.app/ok"]
+
+    def test_health_check_timeout_includes_database_hint(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def mock_run_command(cmd: list[str], **kwargs: object) -> object:  # noqa: ARG001
+            class Result:
+                returncode = 0
+                stdout = "https://myapp.up.railway.app"
+                stderr = ""
+
+            return Result()
+
+        class MockResponse:
+            status_code = 503
+
+        monkeypatch.setattr("app.cli.deploy._run_command", mock_run_command)
+        monkeypatch.setattr("httpx.get", lambda *_args, **_kwargs: MockResponse())
+        monkeypatch.setattr("time.sleep", lambda _x: None)
+
+        times = iter([0.0, 0.0, 0.02])
+        monkeypatch.setattr("time.time", lambda: next(times))
+
+        result = deploy_to_railway(
+            wait_for_health=True,
+            health_timeout=0.01,
+            health_interval=0.0,
+            auth_detail="user@example.com",
+        )
+
+        assert result["success"] is True
+        logs = "\n".join(result["logs"])
+        assert "Health check timed out" in logs
+        assert "Postgres and Redis services" in logs
+        assert "DATABASE_URI" in logs
+        assert "REDIS_URI" in logs
 
     def test_domain_fallback_adds_https_scheme(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("app.cli.deploy.is_railway_cli_installed", lambda: True)
