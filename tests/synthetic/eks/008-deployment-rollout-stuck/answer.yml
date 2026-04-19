@@ -1,0 +1,42 @@
+root_cause_category: configuration_error
+required_keywords:
+  - rollout
+  - ReplicaSet
+  - deployment
+forbidden_categories:
+  - healthy
+  - unknown
+  - resource_exhaustion
+  - dependency_failure
+  - infrastructure
+optimal_trajectory:
+  - list_eks_deployments
+  - list_eks_pods
+  - get_eks_events
+  - get_eks_pod_logs
+max_investigation_loops: 3
+ruling_out_keywords:
+  - not OOM
+  - not quota
+  - old ReplicaSet
+required_queries:
+  - list_eks_deployments
+  - list_eks_pods
+  - get_eks_events
+  - get_eks_pod_logs
+model_response: |
+  ROOT_CAUSE: Deployment payments-api is stuck mid-rollout. The new ReplicaSet's pods crash on startup and remain in CrashLoopBackOff, so zero new replicas become available and the deployment controller emits ProgressDeadlineExceeded. The old ReplicaSet's pod is still Running and Ready, which is why user-facing traffic continues — the failure is scoped to the new revision, not to the workload as a whole.
+  ROOT_CAUSE_CATEGORY: configuration_error
+
+  VALIDATED_CLAIMS:
+  - Deployment reports desired=3, ready=1, available=1, unavailable=2 — only the old-ReplicaSet pod is Ready; the two new-ReplicaSet pods are not. [evidence: eks_deployments]
+  - New-ReplicaSet pods (payments-api-newrs-7c-001, -002) show state.waiting.reason=CrashLoopBackOff with restart_count=6. [evidence: eks_pods]
+  - Warning event ProgressDeadlineExceeded on the deployment confirms the progress-deadline timer has fired. [evidence: eks_events]
+  - Old-ReplicaSet pod (payments-api-7f9dd8b6c4-x7gr9) is still Running and Ready. [evidence: eks_pods]
+
+  NON_VALIDATED_CLAIMS:
+  - The new container image likely has a startup regression (bad config, failing migration, or missing dependency); rolling back to the previous revision will restore new-ReplicaSet capacity.
+  - Node health, DNS, and quota are all fine — the block is confined to this deployment's new revision.
+
+  CAUSAL_CHAIN:
+  - A new deployment revision is applied, the new ReplicaSet creates its pods, those pods crash shortly after starting, kubelet restarts them, they stay in CrashLoopBackOff, the deployment controller waits for them to become Ready, the progressDeadlineSeconds timer expires, the deployment emits ProgressDeadlineExceeded, and the old ReplicaSet continues to serve user traffic unchanged.

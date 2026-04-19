@@ -1,16 +1,19 @@
 """Data source detection for dynamic investigation.
 
-Scans alert annotations and state context to detect available data sources
-(CloudWatch, S3, local files, Tracer Web, Grafana, Honeycomb, Coralogix)
+    Scans alert annotations and state context to detect available data sources
+    (CloudWatch, S3, local files, Tracer Web, Grafana, Honeycomb, Coralogix, OpenClaw)
 and extract their parameters.
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
 from app.services.coralogix import build_coralogix_logs_query
 from app.tools.GrafanaLogsTool import _map_pipeline_to_service_name
+
+logger = logging.getLogger(__name__)
 
 
 def _alert_time_range_minutes(raw_alert: dict[str, Any]) -> int:
@@ -72,7 +75,7 @@ def _alert_since_iso(raw_alert: dict[str, Any]) -> str:
             if alert_time.year >= 2000:
                 return (alert_time - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
         except (ValueError, TypeError):
-            pass  # Invalid or malformed timestamp string — fall through to the default below
+            return (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     return (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -119,7 +122,6 @@ def _extract_issue_id_from_url(value: str) -> str:
     if index + 1 >= len(parts):
         return ""
     return parts[index + 1].strip()
-
 
 
 def detect_sources(
@@ -175,9 +177,7 @@ def detect_sources(
     # nested annotations so EKS/k8s fields extracted by the LLM are visible here.
     annotations: dict[str, Any] = {}
     if isinstance(raw_alert, dict):
-        nested = (
-            raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
-        )
+        nested = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
         # Merge: nested annotations first, then top-level enriched fields override/fill gaps
         annotations = {**nested, **{k: v for k, v in raw_alert.items() if v and k not in nested}}
 
@@ -387,11 +387,49 @@ def detect_sources(
     grafana_int = None
     grafana_local = False
     if resolved_integrations:
-        if resolved_integrations.get("grafana_local"):
-            grafana_int = resolved_integrations["grafana_local"]
-            grafana_local = True
-        elif resolved_integrations.get("grafana"):
-            grafana_int = resolved_integrations["grafana"]
+        # Multi-instance support: an alert may carry a ``grafana_instance`` hint
+        # naming a specific configured instance (e.g. ``"prod"``, ``"staging"``).
+        # When the hint matches, select that instance; otherwise fall back to
+        # the default (first) instance. See app/integrations/selectors.py.
+        grafana_hint: str | None = None
+        if isinstance(raw_alert, dict):
+            hint_candidate = raw_alert.get("grafana_instance")
+            if not hint_candidate:
+                nested = raw_alert.get("annotations")
+                if isinstance(nested, dict):
+                    hint_candidate = nested.get("grafana_instance")
+            if hint_candidate:
+                grafana_hint = str(hint_candidate).strip().lower() or None
+
+        if grafana_hint:
+            from app.integrations.selectors import get_instance_by_name
+
+            selected = get_instance_by_name(resolved_integrations, "grafana", grafana_hint)
+            if selected is not None:
+                grafana_int = selected
+                # The classifier strips api_key to "" for local grafana and
+                # rejects cloud grafana with an empty api_key, so an empty
+                # api_key in a classified instance uniquely identifies a
+                # local instance. Mirror the local flag so downstream gating
+                # (loki_only, anonymous-auth acceptance) works the same as
+                # the non-hint fallback path.
+                if not selected.get("api_key"):
+                    grafana_local = True
+            else:
+                # A hint that does not resolve is almost always a typo or a
+                # removed instance — warn so operators notice instead of
+                # silently querying the wrong Grafana.
+                logger.warning(
+                    "grafana_instance hint %r not found; falling back to default instance",
+                    grafana_hint,
+                )
+
+        if grafana_int is None:
+            if resolved_integrations.get("grafana_local"):
+                grafana_int = resolved_integrations["grafana_local"]
+                grafana_local = True
+            elif resolved_integrations.get("grafana"):
+                grafana_int = resolved_integrations["grafana"]
 
     # When a _backend is injected we allow any alert_source; otherwise restrict to Grafana/unknown.
     _has_injected_backend = bool(grafana_int and "_backend" in grafana_int)
@@ -421,17 +459,24 @@ def detect_sources(
                 grafana_params["_backend"] = grafana_int["_backend"]
             sources["grafana"] = grafana_params
 
-    # Only include Datadog when alert came from Datadog, or when source is truly unknown
-    if resolved_integrations and resolved_integrations.get("datadog") and alert_source in ("datadog", ""):
+    # Only include Datadog when alert came from Datadog, or when source is truly unknown,
+    # or when a pre-injected backend is present (e.g. FixtureDatadogBackend for synthetic tests).
+    dd_int = None
+    if resolved_integrations and resolved_integrations.get("datadog"):
         dd_int = resolved_integrations["datadog"]
+
+    _has_injected_dd_backend = bool(dd_int and "_backend" in dd_int)
+    if dd_int and not (_has_injected_dd_backend or alert_source in ("datadog", "")):
+        dd_int = None  # suppress real Datadog for non-Datadog alerts
+
+    if dd_int:
         dd_api_key = dd_int.get("api_key", "")
         dd_app_key = dd_int.get("app_key", "")
 
-        if dd_api_key and dd_app_key:
+        if _has_injected_dd_backend or (dd_api_key and dd_app_key):
             # kube_namespace: prefer LLM-injected top-level field, fall back to annotations
-            kube_namespace = (
-                raw_alert.get("kube_namespace", "")
-                or annotations.get("kube_namespace", "")
+            kube_namespace = raw_alert.get("kube_namespace", "") or annotations.get(
+                "kube_namespace", ""
             )
 
             # Build a default log query from alert context.
@@ -462,12 +507,17 @@ def detect_sources(
                 "api_key": dd_api_key,
                 "app_key": dd_app_key,
                 "site": dd_int.get("site", "datadoghq.com"),
-                "connection_verified": True,
                 "pipeline_name": pipeline_name,
                 "default_query": default_query,
                 "monitor_query": f"tag:pipeline:{pipeline_name}" if pipeline_name else None,
                 "time_range_minutes": alert_time_range_minutes,
             }
+            if _has_injected_dd_backend:
+                # Backend-only path: only fixture-aware Datadog tools should activate,
+                # so connection_verified stays unset to keep the real-Datadog tools quiet.
+                dd_params["_backend"] = dd_int["_backend"]
+            else:
+                dd_params["connection_verified"] = True
 
             kube_job = annotations.get("kube_job", "") or annotations.get("kube_job_name", "")
             kube_deployment = annotations.get("kube_deployment", "")
@@ -484,13 +534,15 @@ def detect_sources(
 
             sources["datadog"] = dd_params
 
-    if resolved_integrations and resolved_integrations.get("honeycomb") and alert_source in ("honeycomb", ""):
+    if (
+        resolved_integrations
+        and resolved_integrations.get("honeycomb")
+        and alert_source in ("honeycomb", "")
+    ):
         honeycomb_int = resolved_integrations["honeycomb"]
         honeycomb_api_key = str(honeycomb_int.get("api_key", "")).strip()
         honeycomb_dataset = str(honeycomb_int.get("dataset", "__all__")).strip() or "__all__"
-        honeycomb_base_url = str(
-            honeycomb_int.get("base_url", "https://api.honeycomb.io")
-        ).strip()
+        honeycomb_base_url = str(honeycomb_int.get("base_url", "https://api.honeycomb.io")).strip()
         if honeycomb_api_key:
             sources["honeycomb"] = {
                 "dataset": honeycomb_dataset,
@@ -507,12 +559,14 @@ def detect_sources(
                 "connection_verified": True,
             }
 
-    if resolved_integrations and resolved_integrations.get("coralogix") and alert_source in ("coralogix", ""):
+    if (
+        resolved_integrations
+        and resolved_integrations.get("coralogix")
+        and alert_source in ("coralogix", "")
+    ):
         coralogix_int = resolved_integrations["coralogix"]
         coralogix_api_key = str(coralogix_int.get("api_key", "")).strip()
-        coralogix_base_url = str(
-            coralogix_int.get("base_url", "https://api.coralogix.com")
-        ).strip()
+        coralogix_base_url = str(coralogix_int.get("base_url", "https://api.coralogix.com")).strip()
         if coralogix_api_key and coralogix_base_url:
             application_name = str(
                 annotations.get("application_name")
@@ -560,13 +614,23 @@ def detect_sources(
                 "connection_verified": True,
             }
 
-    # Detect EKS: uses the AWS integration (EKS maps to aws in resolve_integrations)
+    # Detect EKS: uses the AWS integration (EKS maps to aws in resolve_integrations).
+    # A pre-injected _backend (e.g. FixtureEKSBackend for synthetic tests) bypasses
+    # the role_arn credential gate the same way the Grafana path does.
     _eks_int = (resolved_integrations or {}).get("aws")
-    if _eks_int and _eks_int.get("role_arn"):
-        eks_cluster = (
-            annotations.get("eks_cluster")
-            or annotations.get("cluster_name")
-        )
+    _has_injected_eks_backend = bool(_eks_int and "_backend" in _eks_int)
+    if _eks_int and (_eks_int.get("role_arn") or _has_injected_eks_backend):
+        eks_cluster = annotations.get("eks_cluster") or annotations.get("cluster_name")
+        # When a backend is injected but the alert omits cluster_name from its
+        # annotations, fall back to the first cluster_names entry on the
+        # integration dict.  Without this fallback, backend-only investigations
+        # silently produce zero EKS tool activity — future synthetic scenarios
+        # that forget to put cluster_name in commonAnnotations would otherwise
+        # fail with no diagnostic.
+        if not eks_cluster and _has_injected_eks_backend:
+            cluster_names = _eks_int.get("cluster_names") or []
+            if cluster_names:
+                eks_cluster = cluster_names[0]
         kube_namespace = (
             annotations.get("kube_namespace")
             or annotations.get("kubernetes_namespace")
@@ -575,13 +639,12 @@ def detect_sources(
         )
 
         if eks_cluster:
-            sources["eks"] = {
+            eks_params: dict[str, Any] = {
                 "cluster_name": eks_cluster,
                 "namespace": kube_namespace,
                 "pod_name": annotations.get("pod_name", ""),
                 "deployment": (
-                    annotations.get("deployment")
-                    or annotations.get("kube_deployment", "")
+                    annotations.get("deployment") or annotations.get("kube_deployment", "")
                 ),
                 "node_name": annotations.get("node_name", ""),
                 "region": (
@@ -589,22 +652,26 @@ def detect_sources(
                     or annotations.get("region")
                     or _eks_int.get("region", "us-east-1")
                 ),
-                "role_arn": _eks_int["role_arn"],
+                "role_arn": _eks_int.get("role_arn", ""),
                 "external_id": _eks_int.get("external_id", ""),
                 "cluster_names": _eks_int.get("cluster_names", []),
-                "connection_verified": True,
             }
+            if _has_injected_eks_backend:
+                # Backend-only path: only fixture-aware EKS tools should activate,
+                # so connection_verified stays unset to keep the real-AWS tools quiet.
+                eks_params["_backend"] = _eks_int["_backend"]
+            else:
+                eks_params["connection_verified"] = True
+            sources["eks"] = eks_params
 
     github_int = (resolved_integrations or {}).get("github")
     if github_int:
-        repo_url = (
-            str(
-                annotations.get("repo_url")
-                or annotations.get("repository_url")
-                or annotations.get("vercel_repo_url")
-                or raw_alert.get("repo_url", "")
-                or raw_alert.get("vercel_repo_url", "")
-            )
+        repo_url = str(
+            annotations.get("repo_url")
+            or annotations.get("repository_url")
+            or annotations.get("vercel_repo_url")
+            or raw_alert.get("repo_url", "")
+            or raw_alert.get("vercel_repo_url", "")
         )
         owner = str(
             annotations.get("github_owner")
@@ -670,10 +737,39 @@ def detect_sources(
                 "connection_verified": True,
             }
 
+    openclaw_int = (resolved_integrations or {}).get("openclaw")
+    if openclaw_int:
+        openclaw_url = str(openclaw_int.get("url", "")).strip()
+        openclaw_command = str(openclaw_int.get("command", "")).strip()
+        if openclaw_url or openclaw_command:
+            openclaw_search_query = str(
+                annotations.get("openclaw_search")
+                or raw_alert.get("openclaw_search", "")
+                or service_name
+                or pipeline_name
+                or raw_alert.get("alert_name", "")
+                or raw_alert.get("title", "")
+                or annotations.get("summary", "")
+            ).strip()
+            sources["openclaw"] = {
+                "openclaw_url": openclaw_url,
+                "openclaw_mode": str(
+                    openclaw_int.get("mode", "streamable-http")
+                ).strip()
+                or "streamable-http",
+                "openclaw_token": str(openclaw_int.get("auth_token", "")).strip(),
+                "openclaw_command": openclaw_command,
+                "openclaw_args": openclaw_int.get("args", []),
+                "openclaw_search_query": openclaw_search_query,
+                "connection_verified": True,
+            }
+
     gitlab_int = (resolved_integrations or {}).get("gitlab")
     if gitlab_int:
         repo_url = str(
-            annotations.get("repo_url") or annotations.get("repository_url") or raw_alert.get("repo_url", "")
+            annotations.get("repo_url")
+            or annotations.get("repository_url")
+            or raw_alert.get("repo_url", "")
         )
         project_id = str(
             annotations.get("gitlab_project")
@@ -693,20 +789,18 @@ def detect_sources(
                     or annotations.get("gitlab_ref")
                     or annotations.get("ref_name")
                     or raw_alert.get("branch", "")
-                ).strip() or "main",
+                ).strip()
+                or "main",
                 "file_path": str(
                     annotations.get("file_path")
                     or annotations.get("gitlab_path")
                     or raw_alert.get("file_path", "")
                 ).strip(),
                 "since": _alert_since_iso(raw_alert),
-                "updated_after": str(
-                    annotations.get("startsAt") or raw_alert.get("startsAt", "")
-                ).strip(),
+                "updated_after": _alert_since_iso(raw_alert),
                 "gitlab_url": str(gitlab_int.get("base_url", "")).strip(),
                 "gitlab_token": str(gitlab_int.get("auth_token", "")).strip(),
-                "merge_request_iid" : str(
-                    annotations.get("mr_iid", "")).strip(),
+                "merge_request_iid": str(annotations.get("mr_iid", "")).strip(),
                 "connection_verified": True,
             }
     vercel_int = (resolved_integrations or {}).get("vercel")
@@ -715,20 +809,16 @@ def detect_sources(
             "api_token": str(vercel_int.get("api_token", "")).strip(),
             "team_id": str(vercel_int.get("team_id", "")).strip(),
             "project_id": str(
-                annotations.get("vercel_project_id")
-                or raw_alert.get("vercel_project_id", "")
+                annotations.get("vercel_project_id") or raw_alert.get("vercel_project_id", "")
             ).strip(),
             "project_name": str(
-                annotations.get("vercel_project_name")
-                or raw_alert.get("vercel_project_name", "")
+                annotations.get("vercel_project_name") or raw_alert.get("vercel_project_name", "")
             ).strip(),
             "project_slug": str(
-                annotations.get("vercel_project_slug")
-                or raw_alert.get("vercel_project_slug", "")
+                annotations.get("vercel_project_slug") or raw_alert.get("vercel_project_slug", "")
             ).strip(),
             "deployment_id": str(
-                annotations.get("vercel_deployment_id")
-                or raw_alert.get("vercel_deployment_id", "")
+                annotations.get("vercel_deployment_id") or raw_alert.get("vercel_deployment_id", "")
             ).strip(),
             "selected_log_id": str(
                 annotations.get("vercel_selected_log_id")
@@ -760,8 +850,7 @@ def detect_sources(
                 or raw_alert.get("vercel_github_commit_ref", "")
             ).strip(),
             "error_message": str(
-                annotations.get("error")
-                or raw_alert.get("error_message", "")
+                annotations.get("error") or raw_alert.get("error_message", "")
             ).strip(),
             "connection_verified": True,
         }
@@ -791,8 +880,7 @@ def detect_sources(
             sources["sentry"] = {
                 "organization_slug": str(sentry_int.get("organization_slug", "")).strip(),
                 "project_slug": str(
-                    annotations.get("sentry_project")
-                    or sentry_int.get("project_slug", "")
+                    annotations.get("sentry_project") or sentry_int.get("project_slug", "")
                 ).strip(),
                 "issue_id": issue_id,
                 "query": sentry_query,
@@ -811,9 +899,7 @@ def detect_sources(
                 or mongodb_int.get("database", "")
             ).strip()
             mongodb_collection = str(
-                annotations.get("mongodb_collection")
-                or annotations.get("collection")
-                or ""
+                annotations.get("mongodb_collection") or annotations.get("collection") or ""
             ).strip()
             sources["mongodb"] = {
                 "connection_string": mongodb_connection_string,
@@ -824,37 +910,127 @@ def detect_sources(
                 "connection_verified": True,
             }
 
+    postgresql_int = (resolved_integrations or {}).get("postgresql")
+    if postgresql_int:
+        postgresql_host = str(postgresql_int.get("host", "")).strip()
+        postgresql_database = str(postgresql_int.get("database", "")).strip()
+        if postgresql_host and postgresql_database:
+            # Check for PostgreSQL-specific annotations first, then fall back to configured values
+            postgresql_database = str(
+                annotations.get("postgresql_database")
+                or annotations.get("database")
+                or postgresql_database
+            ).strip()
+            postgresql_table = str(
+                annotations.get("postgresql_table") or annotations.get("table") or ""
+            ).strip()
+            postgresql_schema = str(
+                annotations.get("postgresql_schema") or annotations.get("schema") or "public"
+            ).strip()
+            sources["postgresql"] = {
+                "host": postgresql_host,
+                "port": postgresql_int.get("port", 5432),
+                "database": postgresql_database,
+                "table": postgresql_table,
+                "schema": postgresql_schema,
+                "connection_verified": True,
+            }
+
     atlas_int = (resolved_integrations or {}).get("mongodb_atlas")
     if atlas_int and str(atlas_int.get("api_public_key", "")).strip():
         atlas_cluster = str(
-            annotations.get("atlas_cluster_name")
-            or annotations.get("cluster_name")
-            or ""
+            annotations.get("atlas_cluster_name") or annotations.get("cluster_name") or ""
         ).strip()
         sources["mongodb_atlas"] = {
             "api_public_key": str(atlas_int.get("api_public_key", "")).strip(),
             "api_private_key": str(atlas_int.get("api_private_key", "")).strip(),
             "project_id": str(atlas_int.get("project_id", "")).strip(),
-            "base_url": str(atlas_int.get("base_url", "https://cloud.mongodb.com/api/atlas/v2")).strip(),
+            "base_url": str(
+                atlas_int.get("base_url", "https://cloud.mongodb.com/api/atlas/v2")
+            ).strip(),
             "cluster_name": atlas_cluster,
+            "connection_verified": True,
+        }
+
+    mariadb_int = (resolved_integrations or {}).get("mariadb")
+    if mariadb_int and str(mariadb_int.get("host", "")).strip() and str(mariadb_int.get("database", "")).strip():
+        sources["mariadb"] = {
+            "host": str(mariadb_int.get("host", "")).strip(),
+            "port": mariadb_int.get("port", 3306),
+            "database": str(mariadb_int.get("database", "")).strip(),
+            "username": str(mariadb_int.get("username", "")).strip(),
+            "password": str(mariadb_int.get("password", "")).strip(),
+            "ssl": mariadb_int.get("ssl", True),
+            "connection_verified": True,
+        }
+
+    alertmanager_int = (resolved_integrations or {}).get("alertmanager")
+    if alertmanager_int and str(alertmanager_int.get("base_url", "")).strip():
+        # Carry label filters from the alert when present so tools can pre-scope the query
+        filter_labels: list[str] = []
+        alertname = str(
+            common_labels.get("alertname") or annotations.get("alertname") or ""
+        ).strip()
+        if alertname:
+            escaped = alertname.replace("\\", "\\\\").replace('"', '\\"')
+            filter_labels.append(f'alertname="{escaped}"')
+        sources["alertmanager"] = {
+            "base_url": str(alertmanager_int.get("base_url", "")).strip().rstrip("/"),
+            "bearer_token": str(alertmanager_int.get("bearer_token", "")).strip(),
+            "username": str(alertmanager_int.get("username", "")).strip(),
+            "password": str(alertmanager_int.get("password", "")).strip(),
+            "filter_labels": filter_labels,
             "connection_verified": True,
         }
 
     opsgenie_int = (resolved_integrations or {}).get("opsgenie")
     if opsgenie_int and str(opsgenie_int.get("api_key", "")).strip():
         alert_id = str(
-            annotations.get("opsgenie_alert_id")
-            or raw_alert.get("opsgenie_alert_id", "")
+            annotations.get("opsgenie_alert_id") or raw_alert.get("opsgenie_alert_id", "")
         ).strip()
         opsgenie_query = str(
-            annotations.get("opsgenie_query")
-            or raw_alert.get("alert_name", "")
+            annotations.get("opsgenie_query") or raw_alert.get("alert_name", "")
         ).strip()
         sources["opsgenie"] = {
             "api_key": str(opsgenie_int.get("api_key", "")).strip(),
             "region": str(opsgenie_int.get("region", "us")).strip(),
             "alert_id": alert_id,
             "query": opsgenie_query,
+            "connection_verified": True,
+        }
+
+    jira_int = (resolved_integrations or {}).get("jira")
+    if (
+        jira_int
+        and str(jira_int.get("base_url", "")).strip()
+        and str(jira_int.get("email", "")).strip()
+        and str(jira_int.get("api_token", "")).strip()
+    ):
+        sources["jira"] = {
+            "base_url": str(jira_int.get("base_url", "")).strip(),
+            "email": str(jira_int.get("email", "")).strip(),
+            "api_token": str(jira_int.get("api_token", "")).strip(),
+            "project_key": str(jira_int.get("project_key", "")).strip(),
+            "connection_verified": True,
+        }
+
+    mysql_int = (resolved_integrations or {}).get("mysql")
+    if mysql_int and str(mysql_int.get("host", "")).strip() and str(mysql_int.get("database", "")).strip():
+        mysql_host = str(mysql_int.get("host", "")).strip()
+        mysql_database = str(mysql_int.get("database", "")).strip()
+        mysql_database = str(
+            annotations.get("mysql_database")
+            or annotations.get("database")
+            or mysql_database
+        ).strip()
+        mysql_table = str(
+            annotations.get("mysql_table") or annotations.get("table") or ""
+        ).strip()
+        sources["mysql"] = {
+            "host": mysql_host,
+            "port": mysql_int.get("port", 3306),
+            "database": mysql_database,
+            "table": mysql_table,
             "connection_verified": True,
         }
 

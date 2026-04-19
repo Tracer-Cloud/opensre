@@ -1,0 +1,8 @@
+base: 000-healthy
+scenario_id: 003-pending-insufficient-resources
+failure_mode: pending_pod
+severity: warning
+scenario_difficulty: 1
+adversarial_signals:
+  - nodes_report_ready
+  - no_pod_level_errors

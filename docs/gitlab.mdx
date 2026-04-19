@@ -1,95 +1,109 @@
 ---
 title: "GitLab"
-description: "Connect GitLab so OpenSRE can correlate pipeline failures and merge requests with incidents"
 ---
 
-OpenSRE queries GitLab to retrieve recent commits, merge requests, failed pipelines, and file contents — helping trace which code change or deployment triggered an alert.
+OpenSRE's GitLab integration gives the investigation agent read access to your merge requests, commits, pipelines, and files for root cause analysis. Optionally, it can write investigation findings back as a note on the relevant MR.
 
-## Prerequisites
+---
 
-- GitLab account (GitLab.com or self-hosted)
-- Personal access token or group/project access token
+## Step 1: Create a GitLab Access Token
 
-## Setup
+OpenSRE supports both **Personal Access Tokens** and **Project Access Tokens**. A Project Access Token is recommended for production — it is scoped to a single project and does not depend on a user account.
 
-### Option 1: Interactive CLI
+### Personal Access Token (quickest for local use)
 
-```bash
-opensre integrations setup
-```
+1. In GitLab, go to your avatar → **Edit profile** → **Access Tokens**.
+2. Click **Add new token**.
+3. Give it a name (e.g. `opensre`) and set an expiry date.
+4. Select the following scopes:
+   - `read_api` — required for reading MRs, commits, pipelines, and files
+   - `api` — required only if you enable MR write-back (posting findings as MR notes)
+5. Click **Create personal access token** and copy the value immediately — it is shown only once.
 
-Select **GitLab** when prompted and provide your access token.
+### Project Access Token (recommended for server deployments)
 
-### Option 2: Environment variables
+1. Open your GitLab project → **Settings** → **Access Tokens**.
+2. Click **Add new token**.
+3. Give it a name, set a role of **Reporter** (or **Developer** if write-back is needed), and select the same scopes as above.
+4. Click **Create project access token** and copy the value.
 
-Add to your `.env`:
+<Note>
+If your GitLab instance is self-hosted, make sure your OpenSRE server can reach it over the network before proceeding.
+</Note>
 
-```bash
-GITLAB_ACCESS_TOKEN=glpat-your-token
-GITLAB_BASE_URL=https://gitlab.com/api/v4   # optional, for self-hosted
-```
+---
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `GITLAB_ACCESS_TOKEN` | — | **Required.** GitLab personal or project access token |
-| `GITLAB_BASE_URL` | `https://gitlab.com/api/v4` | Override for self-hosted GitLab |
+## Step 2: Configure the Integration in OpenSRE
 
-### Option 3: Persistent store
-
-```json
-{
-  "version": 1,
-  "integrations": [
-    {
-      "id": "gitlab-prod",
-      "service": "gitlab",
-      "status": "active",
-      "credentials": {
-        "url": "https://gitlab.com/api/v4",
-        "access_token": "glpat-your-token"
-      }
-    }
-  ]
-}
-```
-
-## Creating a personal access token
-
-1. In GitLab, go to **User Settings** → **Access Tokens**
-2. Click **Add new token**
-3. Enable the following scopes: `read_api`, `read_repository`
-4. Set an expiry and click **Create personal access token**
-5. Copy the token
-
-<Info>
-For self-hosted GitLab, set `GITLAB_BASE_URL=https://gitlab.example.com/api/v4`.
-</Info>
-
-## Verify
+Run the setup wizard and select **GitLab**:
 
 ```bash
-opensre integrations verify --service gitlab
+opensre onboard
 ```
 
-Expected output:
+When prompted, enter:
 
+- **GitLab base URL** — leave as `https://gitlab.com/api/v4` for GitLab.com, or change to your self-hosted instance URL (e.g. `https://gitlab.example.com/api/v4`)
+- **GitLab access token** — from Step 1
+
+The wizard validates your token by calling the GitLab API and writes the following to your `.env` file:
+
+| Variable | Description |
+|---|---|
+| `GITLAB_ACCESS_TOKEN` | Token used for all GitLab API calls |
+| `GITLAB_BASE_URL` | API base URL (defaults to `https://gitlab.com/api/v4`) |
+
+---
+
+## What the Agent Can Do
+
+Once connected, OpenSRE automatically uses GitLab as an investigation source when an alert contains a GitLab MR reference. The agent can:
+
+| Capability | What it reads |
+|---|---|
+| Merge requests | MR title, description, author, reviewers, labels, diff stats |
+| Commits | Commit messages, authors, and changed files in a branch or MR |
+| Pipelines | Pipeline status, failed jobs, and job logs |
+| Files | File contents at a specific ref for diff analysis |
+
+---
+
+## MR Write-back (optional)
+
+OpenSRE can post a formatted investigation summary directly as a note on the GitLab MR that triggered the alert. This is opt-in and disabled by default.
+
+To enable it, set the following environment variable:
+
+```bash
+GITLAB_MR_WRITEBACK=true
 ```
-Service: gitlab
-Status: passed
-Detail: GitLab connectivity successful. Authenticated as @your-username
-```
+
+When enabled, after each investigation OpenSRE posts a collapsible `### RCA Finding` note on the MR. The note is truncated to 4000 characters if needed.
+
+**Requirements for write-back:**
+- Your access token must have the `api` scope (not just `read_api`)
+- The alert payload must include a GitLab MR IID and project ID so OpenSRE can identify the target MR
+
+---
 
 ## Troubleshooting
 
-| Symptom | Fix |
-| --- | --- |
-| **401 Unauthorized** | Check that the token is valid and has `read_api` scope |
-| **404 Not Found** | Verify the project ID and that the token has access to that project |
-| **Connection refused** | Check `GITLAB_BASE_URL` for self-hosted instances |
-| **Token expired** | Rotate the access token in GitLab settings |
+**Validation fails with 401**
 
-## Security best practices
+Your token is invalid or has expired. Regenerate it in GitLab and re-run `opensre onboard`.
 
-- Use a **read-only** token with only `read_api` and `read_repository` scopes.
-- Prefer **project access tokens** scoped to the repositories OpenSRE needs.
-- Store the token in `.env`, not in source code.
+**Validation fails with 403**
+
+Your token does not have sufficient scopes. Ensure `read_api` is selected (and `api` if using write-back).
+
+**Self-hosted instance not reachable**
+
+Verify that `GITLAB_BASE_URL` ends in `/api/v4` and that your OpenSRE server can reach the GitLab host. Test with:
+
+```bash
+curl -H "Authorization: Bearer <your-token>" https://your-gitlab-host/api/v4/user
+```
+
+**MR write-back not posting**
+
+Check that `GITLAB_MR_WRITEBACK=true` is set in your environment and that the alert payload contains `gitlab.merge_request_iid` and `gitlab.project_id` fields. Review OpenSRE server logs for `[publish] GitLab MR` entries.

@@ -289,6 +289,28 @@ def score_result(
                 failure_reason = f"required evidence not gathered: {source_key!r}"
                 break
 
+    # 5. Primary evidence check — for failover scenarios, RDS events must be
+    # explicitly reflected in the reasoning, not just gathered in state.
+    if not failure_reason and "aws_rds_events" in answer_key.required_evidence_sources:
+        root_cause_text = _normalize_text(root_cause)
+        validated_text = _normalize_text(
+            " ".join(claim.get("claim", "") for claim in final_state.get("validated_claims", []))
+        )
+        causal_chain_text = _normalize_text(" ".join(final_state.get("causal_chain", [])))
+
+        reasoning_text = " ".join([root_cause_text, validated_text, causal_chain_text])
+
+        mentions_event_reasoning = (
+            "rds" in reasoning_text
+            and (
+                "event" in reasoning_text
+                or "timeline" in reasoning_text
+            )
+        )
+
+        if not mentions_event_reasoning:
+            failure_reason = "RDS events gathered but not used as primary reasoning signal"
+
     passed = not failure_reason
     trajectory = score_trajectory(fixture, final_state)
     reasoning = score_reasoning(fixture, final_state, queried_metrics)

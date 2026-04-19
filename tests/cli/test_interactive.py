@@ -46,13 +46,13 @@ def test_choose_interactive_item_prompts_when_multiple_matches_exist(monkeypatch
 
     monkeypatch.setattr(interactive, "_choose_category", lambda: "ci-safe")
 
-    def _mock_select_item(items, *, prompt: str, allow_back: bool = False):
+    def _mock_select_item_or_all(items, *, prompt: str, allow_back: bool = False):
         _ = allow_back
         selected_prompts.append(prompt)
         selected_item_ids.append([item.id for item in items])
         return items[0]
 
-    monkeypatch.setattr(interactive, "_select_item", _mock_select_item)
+    monkeypatch.setattr(interactive, "_select_item_or_all", _mock_select_item_or_all)
 
     item, auto_selected = interactive.choose_interactive_item(catalog)
 
@@ -109,14 +109,14 @@ def test_choose_interactive_item_reselects_category_after_escape(monkeypatch) ->
 
     monkeypatch.setattr(interactive, "_choose_category", lambda: next(category_choices))
 
-    def _mock_select_item(items, *, prompt: str, allow_back: bool = False):
+    def _mock_select_item_or_all(items, *, prompt: str, allow_back: bool = False):
         _ = allow_back
         selected_prompts.append(prompt)
         if len(selected_prompts) == 1:
             raise interactive._GoBack
         return items[0]
 
-    monkeypatch.setattr(interactive, "_select_item", _mock_select_item)
+    monkeypatch.setattr(interactive, "_select_item_or_all", _mock_select_item_or_all)
 
     item, _ = interactive.choose_interactive_item(catalog)
 
@@ -172,7 +172,11 @@ def test_choose_interactive_item_returns_to_parent_list_after_escape(monkeypatch
             raise interactive._GoBack
         return leaf
 
+    def _mock_select_item_or_all(items, *, prompt: str, allow_back: bool = False):
+        return _mock_select_item(items, prompt=prompt, allow_back=allow_back)
+
     monkeypatch.setattr(interactive, "_select_item", _mock_select_item)
+    monkeypatch.setattr(interactive, "_select_item_or_all", _mock_select_item_or_all)
 
     item, _ = interactive.choose_interactive_item(catalog)
 
@@ -181,6 +185,87 @@ def test_choose_interactive_item_returns_to_parent_list_after_escape(monkeypatch
         "Choose a test or suite:",
         "Select a scenario from Demo Suite:",
         "Choose a test or suite:",
+    ]
+
+
+def test_select_item_or_all_allows_literal_run_all_item_id(monkeypatch) -> None:
+    item = CatalogItem(
+        id="__run_all__",
+        kind="make_target",
+        display_name="Literal Run All Test",
+        description="A test whose id matches the old sentinel string.",
+        command=("make", "test-cov"),
+        tags=("ci-safe",),
+    )
+
+    def _mock_select_prompt(*_args, **_kwargs):
+        return SimpleNamespace(ask=lambda: "__run_all__")
+
+    monkeypatch.setattr(interactive, "_require_interactive_dependencies", lambda: None)
+    monkeypatch.setattr(
+        interactive,
+        "_QuestionaryChoice",
+        lambda *, title, value: {"title": title, "value": value},
+    )
+    monkeypatch.setattr(interactive, "_select_prompt", _mock_select_prompt)
+
+    selection = interactive._select_item_or_all([item], prompt="Choose a test or suite:")
+
+    assert selection is item
+
+
+def test_choose_interactive_item_expands_run_all_suites(monkeypatch) -> None:
+    suite = CatalogItem(
+        id="suite:demo",
+        kind="suite",
+        display_name="Demo Suite",
+        description="A grouped demo suite.",
+        tags=("demo",),
+        children=(
+            CatalogItem(
+                id="scenario:demo:first",
+                kind="scenario",
+                display_name="First scenario",
+                description="First child.",
+                command=("make", "demo-first"),
+                tags=("demo",),
+            ),
+            CatalogItem(
+                id="scenario:demo:second",
+                kind="scenario",
+                display_name="Second scenario",
+                description="Second child.",
+                command=("make", "demo-second"),
+                tags=("demo",),
+            ),
+        ),
+    )
+    leaf = CatalogItem(
+        id="make:demo",
+        kind="make_target",
+        display_name="Standalone Demo",
+        description="Run the demo.",
+        command=("make", "demo"),
+        tags=("demo",),
+    )
+    catalog = Catalog(items=(suite, leaf))
+
+    def _mock_select_item_or_all(
+        items, *, prompt: str, allow_back: bool = False
+    ):
+        _ = (prompt, allow_back)
+        return items
+
+    monkeypatch.setattr(interactive, "_choose_category", lambda: "demo")
+    monkeypatch.setattr(interactive, "_select_item_or_all", _mock_select_item_or_all)
+
+    selection, auto_selected = interactive.choose_interactive_item(catalog)
+
+    assert auto_selected is False
+    assert [item.id for item in selection] == [
+        "scenario:demo:first",
+        "scenario:demo:second",
+        "make:demo",
     ]
 
 
@@ -233,3 +318,24 @@ def test_run_interactive_picker_returns_to_selection_after_escape_from_confirm(m
     monkeypatch.setattr(interactive, "run_catalog_item", lambda item: 7 if item.id == "make:test-full" else 1)
 
     assert interactive.run_interactive_picker(Catalog(items=(first, second))) == 7
+
+
+def test_run_catalog_items_skips_non_runnable_items() -> None:
+    runnable = CatalogItem(
+        id="make:test-cov",
+        kind="make_target",
+        display_name="Coverage Suite",
+        description="Run coverage.",
+        command=("make", "test-cov"),
+        tags=("ci-safe",),
+    )
+    suite = CatalogItem(
+        id="suite:ci-safe",
+        kind="suite",
+        display_name="Grouped CI Tests",
+        description="A suite without a direct command.",
+        tags=("ci-safe",),
+        children=(runnable,),
+    )
+
+    assert interactive.run_catalog_items([suite, runnable], dry_run=True) == 0

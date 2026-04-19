@@ -1,5 +1,6 @@
 """VPC lookup and security group management."""
 
+import logging
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -9,6 +10,8 @@ from tests.shared.infrastructure_sdk.deployer import (
     get_boto3_client,
     get_standard_tags,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def get_default_vpc(region: str = DEFAULT_REGION) -> dict[str, Any]:
@@ -161,7 +164,7 @@ def create_security_group(
             }
     except ClientError:
         # Security group doesn't exist yet; fall through to create
-        pass
+        logger.debug("Security group lookup failed before create", exc_info=True)
 
     # Create new
     tag_specs = []

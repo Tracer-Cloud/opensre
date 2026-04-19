@@ -1,0 +1,30 @@
+---
+title: "Daily Update — 2026-04-15"
+description: "OpenSRE engineering daily update for 2026-04-15 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+Devesh, Sundaram Kumar Jha, and vincenthus 🙏🚀
+
+## Main updates shipped (April 15, 2026)
+
+- refactor(integrations): consolidate integration resolution and verification around a shared catalog (#none) — Sundaram Kumar Jha
+- feat: add Windows CI coverage and fix Windows test portability — Sundaram Kumar Jha
+- fix: refactor daily update generation and improve overview documentation — Devesh
+- fix: resolve CodeQL unreachable-code warnings (#396, #397) — vincenthus
+- fix: resolve LangGraph config parameter type warning — vincenthus
+
+## Source pull requests
+
+- [#588](https://github.com/Tracer-Cloud/opensre/pull/588) fix: resolve CodeQL unreachable-code warnings (#396, #397) (author: vincenthus; contributors: vincenthus; labels: _none_; files: `tests/services/opsgenie/test_client.py`, `tests/services/vercel/test_client.py`)
+- [#589](https://github.com/Tracer-Cloud/opensre/pull/589) fix: resolve LangGraph config parameter type warning (author: vincenthus; contributors: vincenthus; labels: _none_; files: `app/nodes/resolve_integrations/node.py`)
+- [#590](https://github.com/Tracer-Cloud/opensre/pull/590) feat: add Windows CI coverage and fix Windows test portability (author: Sundaram Kumar Jha; contributors: Sundaram Kumar Jha; labels: _none_; files: `.github/workflows/ci.yml`, `app/cli/wizard/prompts.py`, `pyproject.toml`, `tests/app/remote/test_system_metrics.py`, `tests/cli/test_prompt_support.py`, `tests/cli/wizard/test_prompts.py`, `tests/cli_smoke_test.py`, `tests/integrations/test_store.py`)
+- [#592](https://github.com/Tracer-Cloud/opensre/pull/592) fix: refactor daily update generation and improve overview documentation (author: Devesh; contributors: Devesh; labels: _none_; files: `app/integrations/daily_update.py`, `docs/daily-updates/overview.mdx`, `docs/docs.json`)
+- [#594](https://github.com/Tracer-Cloud/opensre/pull/594) refactor(integrations): consolidate integration resolution and verification around a shared catalog (author: Sundaram Kumar Jha; contributors: Sundaram Kumar Jha; labels: _none_; files: `app/cli/wizard/flow.py`, `app/integrations/catalog.py`, `app/integrations/store.py`, `app/integrations/verify.py`, `app/nodes/resolve_integrations/node.py`, `tests/integrations/test_verify.py`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-14T23:00:00+00:00` to `2026-04-15T23:00:00+00:00`

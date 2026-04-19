@@ -11,6 +11,7 @@ from app.types.evidence import EvidenceSource
 # Deterministic fallback set when no tools match detected sources.
 # These are low-cost, always-safe tools that provide broad coverage.
 FALLBACK_TOOLS: tuple[str, ...] = ("get_sre_guidance",)
+DETERMINISTIC_FALLBACK_REASON = "included as deterministic fallback (no high-confidence match)"
 
 
 def get_prioritized_actions(
@@ -78,7 +79,7 @@ def get_prioritized_actions_with_reasons(
     if top_score == 0:
         for action, _score, action_reasons in scored:
             if action.name in FALLBACK_TOOLS:
-                action_reasons.append("included as deterministic fallback (no high-confidence match)")
+                action_reasons.append(DETERMINISTIC_FALLBACK_REASON)
 
     actions = [action for action, _, _ in scored]
     reasons = [
