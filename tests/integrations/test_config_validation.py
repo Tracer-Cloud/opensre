@@ -9,6 +9,7 @@ from app.integrations.github_mcp import (
 )
 from app.integrations.models import (
     AWSIntegrationConfig,
+    BetterStackIntegrationConfig,
     CoralogixIntegrationConfig,
     HoneycombIntegrationConfig,
     SlackWebhookConfig,
@@ -17,6 +18,32 @@ from app.integrations.models import (
 from app.integrations.sentry import build_sentry_config
 from app.services.datadog.client import DatadogConfig
 from app.services.grafana.config import GrafanaAccountConfig
+
+
+def test_betterstack_config_rejects_unknown_fields_with_suggestion() -> None:
+    with pytest.raises(ValidationError, match="query_endpont.*query_endpoint"):
+        BetterStackIntegrationConfig(
+            query_endpont="https://x",  # type: ignore[call-arg]
+            username="u",
+        )
+
+
+def test_betterstack_config_strips_trailing_slash_and_whitespace() -> None:
+    cfg = BetterStackIntegrationConfig(
+        query_endpoint="  https://eu-nbg-2-connect.betterstackdata.com/  ",
+        username="  user  ",
+    )
+    assert cfg.query_endpoint == "https://eu-nbg-2-connect.betterstackdata.com"
+    assert cfg.username == "user"
+
+
+def test_betterstack_config_tables_from_comma_string() -> None:
+    cfg = BetterStackIntegrationConfig(
+        query_endpoint="https://x",
+        username="u",
+        tables="t1_myapp_logs, t2_gateway_logs",  # type: ignore[arg-type]
+    )
+    assert cfg.tables == ["t1_myapp_logs", "t2_gateway_logs"]
 
 
 def test_sentry_config_rejects_unknown_fields_with_suggestion() -> None:

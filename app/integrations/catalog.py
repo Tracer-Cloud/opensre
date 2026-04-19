@@ -9,6 +9,7 @@ from typing import Any
 
 from app.config import get_tracer_base_url
 from app.integrations.azure_sql import build_azure_sql_config
+from app.integrations.betterstack import build_betterstack_config
 from app.integrations.github_mcp import build_github_mcp_config
 from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL, build_gitlab_config
 from app.integrations.mariadb import build_mariadb_config
@@ -62,6 +63,10 @@ _SERVICE_KEY_MAP = {
     "mariadb": "mariadb",
     "rabbitmq": "rabbitmq",
     "amqp": "rabbitmq",
+    "betterstack": "betterstack",
+    "better_stack": "betterstack",
+    "better stack": "betterstack",
+    "logtail": "betterstack",
     "vercel": "vercel",
     "opsgenie": "opsgenie",
     "jira": "jira",
@@ -556,6 +561,28 @@ def _classify_service_instance(
                 "verify_ssl": rabbitmq_config.verify_ssl,
                 "integration_id": record_id,
             }, "rabbitmq"
+        return None, None
+
+    if key == "betterstack":
+        try:
+            bs_config = build_betterstack_config(
+                {
+                    "query_endpoint": credentials.get("query_endpoint", ""),
+                    "username": credentials.get("username", ""),
+                    "password": credentials.get("password", ""),
+                    "tables": credentials.get("tables", []),
+                }
+            )
+        except Exception:
+            return None, None
+        if bs_config.query_endpoint and bs_config.username:
+            return {
+                "query_endpoint": bs_config.query_endpoint,
+                "username": bs_config.username,
+                "password": bs_config.password,
+                "tables": list(bs_config.tables),
+                "integration_id": record_id,
+            }, "betterstack"
         return None, None
 
     if key == "azure_sql":
@@ -1197,6 +1224,29 @@ def load_env_integrations() -> list[dict[str, Any]]:
         except Exception:
             logger.debug("Failed to load RabbitMQ config from env", exc_info=True)
 
+    bs_endpoint = os.getenv("BETTERSTACK_QUERY_ENDPOINT", "").strip()
+    bs_username = os.getenv("BETTERSTACK_USERNAME", "").strip()
+    if bs_endpoint and bs_username:
+        try:
+            bs_config = build_betterstack_config(
+                {
+                    "query_endpoint": bs_endpoint,
+                    "username": bs_username,
+                    "password": os.getenv("BETTERSTACK_PASSWORD", ""),
+                    "tables": os.getenv("BETTERSTACK_TABLES", ""),
+                }
+            )
+            integrations.append(
+                {
+                    "id": "env-betterstack",
+                    "service": "betterstack",
+                    "status": "active",
+                    "credentials": bs_config.model_dump(exclude={"integration_id"}),
+                }
+            )
+        except Exception:
+            logger.debug("Failed to load Better Stack config from env", exc_info=True)
+
     mysql_host = os.getenv("MYSQL_HOST", "").strip()
     mysql_database = os.getenv("MYSQL_DATABASE", "").strip()
     if mysql_host and mysql_database:
@@ -1461,6 +1511,7 @@ def resolve_effective_integrations(
         "mongodb_atlas",
         "mariadb",
         "rabbitmq",
+        "betterstack",
         "vercel",
         "opsgenie",
         "jira",

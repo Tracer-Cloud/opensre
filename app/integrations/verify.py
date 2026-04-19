@@ -11,6 +11,7 @@ import requests
 from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.config import get_tracer_base_url
 from app.integrations.azure_sql import build_azure_sql_config, validate_azure_sql_config
+from app.integrations.betterstack import build_betterstack_config, validate_betterstack_config
 from app.integrations.catalog import (
     resolve_effective_integrations as _resolve_effective_integrations,
 )
@@ -58,6 +59,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "mongodb_atlas",
     "mariadb",
     "rabbitmq",
+    "betterstack",
     "google_docs",
     "vercel",
     "opsgenie",
@@ -457,6 +459,17 @@ def _verify_rabbitmq(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_betterstack(source: str, config: dict[str, Any]) -> dict[str, str]:
+    bs_config = build_betterstack_config(config)
+    result = validate_betterstack_config(bs_config)
+    return _result(
+        "betterstack",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
     """Validate Google Docs credentials and folder access."""
     from app.services.google_docs import GoogleDocsClient
@@ -816,6 +829,8 @@ def verify_integrations(
             results.append(_verify_mariadb(source, config))
         elif current_service == "rabbitmq":
             results.append(_verify_rabbitmq(source, config))
+        elif current_service == "betterstack":
+            results.append(_verify_betterstack(source, config))
         elif current_service == "google_docs":
             results.append(_verify_google_docs(source, config))
         elif current_service == "vercel":
