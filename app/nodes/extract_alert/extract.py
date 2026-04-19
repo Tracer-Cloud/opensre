@@ -24,7 +24,7 @@ is_noise=false (default) for: any alert, error, failure, incident, warning, moni
 When in doubt, set is_noise=false.
 
 CRITICAL INSTRUCTIONS FOR RCA CAPABILITY:
-- Ensure routing fields like `alert_source` are correctly identified. If it looks like a synthetic payload or JSON test fixture from `tests/synthetic/`, ensure EKS markers trigger the `eks` source and RDS markers trigger the `cloudwatch` source.
+- Ensure routing fields like `alert_source` are correctly identified. If it looks like a synthetic payload or JSON test fixture, ensure EKS markers trigger the `eks` source and RDS markers trigger the `cloudwatch` source.
 - Preserve Kubernetes and database identifiers verbatim (namespace, cluster, pod, deployment). Do not abbreviate or change case. These are mandatory for routing downstream log/metric searches.
 - If `error_message` or `log_query` exist in the payload, extract them precisely. Downstream parsing relies on exact string matches.
 

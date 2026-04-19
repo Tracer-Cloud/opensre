@@ -38,7 +38,7 @@ Always respond in clear markdown."""
 
 ROUTER_PROMPT = """Classify the user message:
 
-- "tracer_data" if the user is asking to investigate an alert/incident (e.g., pasting a synthetic alert JSON from tests/synthetic/), requesting RCA, or requesting an analysis that likely requires querying live or fixture-backed data (e.g., logs, metrics, traces, failed runs/tasks/jobs, error messages, service health, Kubernetes or RDS alerts, etc.).
+- "tracer_data" if the user is asking to investigate an alert/incident (e.g., pasting a synthetic alert JSON payload), requesting RCA, or requesting an analysis that likely requires querying live or fixture-backed data (e.g., logs, metrics, traces, failed runs/tasks/jobs, error messages, service health, Kubernetes or RDS alerts, etc.).
 - "general" for conceptual SRE questions, greetings, general knowledge, or theoretical best practices.
 
 Respond with ONLY: tracer_data or general"""
