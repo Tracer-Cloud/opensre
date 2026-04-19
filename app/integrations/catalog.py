@@ -23,6 +23,7 @@ from app.integrations.models import (
     JiraIntegrationConfig,
     OpsGenieIntegrationConfig,
     SlackWebhookConfig,
+    VictoriaLogsIntegrationConfig,
 )
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config
@@ -46,6 +47,7 @@ _SERVICE_KEY_MAP = {
     "datadog": "datadog",
     "honeycomb": "honeycomb",
     "coralogix": "coralogix",
+    "victoria_logs": "victoria_logs",
     "carologix": "coralogix",
     "github": "github",
     "github_mcp": "github",
@@ -73,7 +75,11 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
     """Classify active integrations by service into normalized runtime configs."""
     resolved: dict[str, Any] = {}
 
-    active = [integration for integration in integrations if integration.get("status") == "active"]
+    active = [
+        integration
+        for integration in integrations
+        if integration.get("status") == "active"
+    ]
 
     for integration in active:
         service = str(integration.get("service") or "").strip()
@@ -118,16 +124,18 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
                 "external_id": integration.get("external_id", ""),
                 "integration_id": integration.get("id", ""),
             }
-            if credentials.get("access_key_id") and credentials.get("secret_access_key"):
+            if credentials.get("access_key_id") and credentials.get(
+                "secret_access_key"
+            ):
                 raw_config["credentials"] = {
                     "access_key_id": credentials.get("access_key_id", ""),
                     "secret_access_key": credentials.get("secret_access_key", ""),
                     "session_token": credentials.get("session_token", ""),
                 }
             try:
-                resolved["aws"] = AWSIntegrationConfig.model_validate(raw_config).model_dump(
-                    exclude_none=True
-                )
+                resolved["aws"] = AWSIntegrationConfig.model_validate(
+                    raw_config
+                ).model_dump(exclude_none=True)
             except Exception:
                 continue
 
@@ -176,6 +184,20 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
                 continue
             if coralogix_config.api_key:
                 resolved["coralogix"] = coralogix_config.model_dump()
+
+        elif key == "victoria_logs":
+            try:
+                victoria_logs_config = VictoriaLogsIntegrationConfig.model_validate(
+                    {
+                        "base_url": credentials.get("base_url", ""),
+                        "tenant_id": credentials.get("tenant_id", "0"),
+                        "integration_id": integration.get("id", ""),
+                    }
+                )
+            except Exception:
+                continue
+            if victoria_logs_config.base_url:
+                resolved["victoria_logs"] = victoria_logs_config.model_dump()
 
         elif key == "github":
             try:
@@ -422,7 +444,9 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
                         "database": credentials.get("database", ""),
                         "username": credentials.get("username", ""),
                         "password": credentials.get("password", ""),
-                        "driver": credentials.get("driver", "ODBC Driver 18 for SQL Server"),
+                        "driver": credentials.get(
+                            "driver", "ODBC Driver 18 for SQL Server"
+                        ),
                         "encrypt": credentials.get("encrypt", True),
                     }
                 )
@@ -532,6 +556,25 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 "subsystem_name": os.getenv("CORALOGIX_SUBSYSTEM_NAME", "").strip(),
             }
         )
+
+    victoria_logs_base_url = os.getenv("VICTORIA_LOGS_BASE_URL", "").strip()
+    if victoria_logs_base_url:
+        victoria_logs_config = VictoriaLogsIntegrationConfig.model_validate(
+            {
+                "base_url": victoria_logs_base_url,
+                "tenant_id": os.getenv("VICTORIA_LOGS_TENANT_ID", "0").strip() or "0",
+            }
+        )
+        integrations.append(
+            {
+                "id": "env-victoria-logs",
+                "service": "victoria_logs",
+                "status": "active",
+                "credentials": victoria_logs_config.model_dump(
+                    exclude={"integration_id"}
+                ),
+            }
+        )
         integrations.append(
             {
                 "id": "env-coralogix",
@@ -592,13 +635,17 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 }
             )
 
-    github_mode = os.getenv("GITHUB_MCP_MODE", "streamable-http").strip() or "streamable-http"
+    github_mode = (
+        os.getenv("GITHUB_MCP_MODE", "streamable-http").strip() or "streamable-http"
+    )
     github_url = os.getenv("GITHUB_MCP_URL", "").strip()
     github_command = os.getenv("GITHUB_MCP_COMMAND", "").strip()
     github_args = os.getenv("GITHUB_MCP_ARGS", "").strip()
     github_auth_token = os.getenv("GITHUB_MCP_AUTH_TOKEN", "").strip()
     github_toolsets = os.getenv("GITHUB_MCP_TOOLSETS", "").strip()
-    if (github_mode == "stdio" and github_command) or (github_mode != "stdio" and github_url):
+    if (github_mode == "stdio" and github_command) or (
+        github_mode != "stdio" and github_url
+    ):
         github_config = build_github_mcp_config(
             {
                 "url": github_url,
@@ -606,7 +653,9 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 "command": github_command,
                 "args": [part for part in github_args.split() if part],
                 "auth_token": github_auth_token,
-                "toolsets": [part.strip() for part in github_toolsets.split(",") if part.strip()],
+                "toolsets": [
+                    part.strip() for part in github_toolsets.split(",") if part.strip()
+                ],
             }
         )
         integrations.append(
@@ -643,7 +692,9 @@ def load_env_integrations() -> list[dict[str, Any]]:
     if gitlab_access_token:
         gitlab_config = build_gitlab_config(
             {
-                "base_url": os.getenv("GITLAB_BASE_URL", DEFAULT_GITLAB_BASE_URL).strip()
+                "base_url": os.getenv(
+                    "GITLAB_BASE_URL", DEFAULT_GITLAB_BASE_URL
+                ).strip()
                 or DEFAULT_GITLAB_BASE_URL,
                 "auth_token": gitlab_access_token,
             }
@@ -663,8 +714,10 @@ def load_env_integrations() -> list[dict[str, Any]]:
             {
                 "connection_string": mongodb_connection_string,
                 "database": os.getenv("MONGODB_DATABASE", "").strip(),
-                "auth_source": os.getenv("MONGODB_AUTH_SOURCE", "admin").strip() or "admin",
-                "tls": os.getenv("MONGODB_TLS", "true").strip().lower() in ("true", "1", "yes"),
+                "auth_source": os.getenv("MONGODB_AUTH_SOURCE", "admin").strip()
+                or "admin",
+                "tls": os.getenv("MONGODB_TLS", "true").strip().lower()
+                in ("true", "1", "yes"),
             }
         )
         integrations.append(
@@ -682,13 +735,18 @@ def load_env_integrations() -> list[dict[str, Any]]:
         postgresql_config = build_postgresql_config(
             {
                 "host": postgresql_host,
-                "port": int(_pg_port)
-                if (_pg_port := os.getenv("POSTGRESQL_PORT", "").strip()) and _pg_port.isdigit()
-                else 5432,
+                "port": (
+                    int(_pg_port)
+                    if (_pg_port := os.getenv("POSTGRESQL_PORT", "").strip())
+                    and _pg_port.isdigit()
+                    else 5432
+                ),
                 "database": postgresql_database,
-                "username": os.getenv("POSTGRESQL_USERNAME", "postgres").strip() or "postgres",
+                "username": os.getenv("POSTGRESQL_USERNAME", "postgres").strip()
+                or "postgres",
                 "password": os.getenv("POSTGRESQL_PASSWORD", "").strip(),
-                "ssl_mode": os.getenv("POSTGRESQL_SSL_MODE", "prefer").strip() or "prefer",
+                "ssl_mode": os.getenv("POSTGRESQL_SSL_MODE", "prefer").strip()
+                or "prefer",
             }
         )
         integrations.append(
@@ -763,7 +821,10 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 "bot_token": discord_bot_token,
                 "application_id": os.getenv("DISCORD_APPLICATION_ID", "").strip(),
                 "public_key": os.getenv("DISCORD_PUBLIC_KEY", "").strip(),
-                "default_channel_id": os.getenv("DISCORD_DEFAULT_CHANNEL_ID", "").strip() or None,
+                "default_channel_id": os.getenv(
+                    "DISCORD_DEFAULT_CHANNEL_ID", ""
+                ).strip()
+                or None,
             }
         )
         integrations.append(
@@ -812,7 +873,9 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "mode": openclaw_mode,
                     "command": openclaw_command,
                     "args": [
-                        part for part in os.getenv("OPENCLAW_MCP_ARGS", "").strip().split() if part
+                        part
+                        for part in os.getenv("OPENCLAW_MCP_ARGS", "").strip().split()
+                        if part
                     ],
                     "auth_token": os.getenv("OPENCLAW_MCP_AUTH_TOKEN", "").strip(),
                 }
@@ -822,7 +885,9 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "id": "env-openclaw",
                     "service": "openclaw",
                     "status": "active",
-                    "credentials": openclaw_config.model_dump(exclude={"integration_id"}),
+                    "credentials": openclaw_config.model_dump(
+                        exclude={"integration_id"}
+                    ),
                 }
             )
         except Exception:
@@ -839,7 +904,8 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "database": mariadb_database,
                     "username": os.getenv("MARIADB_USERNAME", "").strip(),
                     "password": os.getenv("MARIADB_PASSWORD", "").strip(),
-                    "ssl": os.getenv("MARIADB_SSL", "true").strip().lower() in ("true", "1", "yes"),
+                    "ssl": os.getenv("MARIADB_SSL", "true").strip().lower()
+                    in ("true", "1", "yes"),
                 }
             )
             integrations.append(
@@ -847,7 +913,9 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "id": "env-mariadb",
                     "service": "mariadb",
                     "status": "active",
-                    "credentials": mariadb_config.model_dump(exclude={"integration_id"}),
+                    "credentials": mariadb_config.model_dump(
+                        exclude={"integration_id"}
+                    ),
                 }
             )
         except Exception:
@@ -859,13 +927,17 @@ def load_env_integrations() -> list[dict[str, Any]]:
         mysql_config = build_mysql_config(
             {
                 "host": mysql_host,
-                "port": int(_mysql_port)
-                if (_mysql_port := os.getenv("MYSQL_PORT", "").strip()) and _mysql_port.isdigit()
-                else 3306,
+                "port": (
+                    int(_mysql_port)
+                    if (_mysql_port := os.getenv("MYSQL_PORT", "").strip())
+                    and _mysql_port.isdigit()
+                    else 3306
+                ),
                 "database": mysql_database,
                 "username": os.getenv("MYSQL_USERNAME", "root").strip() or "root",
                 "password": os.getenv("MYSQL_PASSWORD", "").strip(),
-                "ssl_mode": os.getenv("MYSQL_SSL_MODE", "preferred").strip() or "preferred",
+                "ssl_mode": os.getenv("MYSQL_SSL_MODE", "preferred").strip()
+                or "preferred",
             }
         )
         integrations.append(
@@ -888,7 +960,9 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 "database": azure_sql_database,
                 "username": os.getenv("AZURE_SQL_USERNAME", "").strip(),
                 "password": os.getenv("AZURE_SQL_PASSWORD", "").strip(),
-                "driver": os.getenv("AZURE_SQL_DRIVER", "ODBC Driver 18 for SQL Server").strip(),
+                "driver": os.getenv(
+                    "AZURE_SQL_DRIVER", "ODBC Driver 18 for SQL Server"
+                ).strip(),
                 "encrypt": os.getenv("AZURE_SQL_ENCRYPT", "true").strip().lower()
                 in ("true", "1", "yes"),
             }
@@ -918,7 +992,9 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "id": "env-alertmanager",
                     "service": "alertmanager",
                     "status": "active",
-                    "credentials": alertmanager_config.model_dump(exclude={"integration_id"}),
+                    "credentials": alertmanager_config.model_dump(
+                        exclude={"integration_id"}
+                    ),
                 }
             )
         except Exception:
@@ -985,14 +1061,20 @@ def resolve_effective_integrations(
 ) -> dict[str, dict[str, Any]]:
     """Resolve effective local integrations from ~/.tracer and environment variables."""
     store_records = (
-        list(store_integrations) if store_integrations is not None else load_integrations()
+        list(store_integrations)
+        if store_integrations is not None
+        else load_integrations()
     )
     env_records = (
-        list(env_integrations) if env_integrations is not None else load_env_integrations()
+        list(env_integrations)
+        if env_integrations is not None
+        else load_env_integrations()
     )
     merged_integrations = merge_local_integrations(store_records, env_records)
     classified_integrations = classify_integrations(merged_integrations)
-    source_by_service, store_integration_by_service = _service_metadata(store_records, env_records)
+    source_by_service, store_integration_by_service = _service_metadata(
+        store_records, env_records
+    )
 
     effective: dict[str, dict[str, Any]] = {}
 
@@ -1002,6 +1084,7 @@ def resolve_effective_integrations(
         "datadog",
         "honeycomb",
         "coralogix",
+        "victoria_logs",
         "github",
         "sentry",
         "gitlab",
@@ -1035,9 +1118,13 @@ def resolve_effective_integrations(
                 {
                     "api_key": str(datadog_credentials.get("api_key", "")).strip(),
                     "app_key": str(datadog_credentials.get("app_key", "")).strip(),
-                    "site": str(datadog_credentials.get("site", "datadoghq.com")).strip()
+                    "site": str(
+                        datadog_credentials.get("site", "datadoghq.com")
+                    ).strip()
                     or "datadoghq.com",
-                    "integration_id": str(datadog_store_integration.get("id", "")).strip(),
+                    "integration_id": str(
+                        datadog_store_integration.get("id", "")
+                    ).strip(),
                 },
             )
 
@@ -1057,7 +1144,8 @@ def resolve_effective_integrations(
             effective["tracer"] = _effective_entry(
                 "local env",
                 {
-                    "base_url": os.getenv("TRACER_API_URL", "").strip() or get_tracer_base_url(),
+                    "base_url": os.getenv("TRACER_API_URL", "").strip()
+                    or get_tracer_base_url(),
                     "jwt_token": jwt_token,
                 },
             )
@@ -1067,10 +1155,16 @@ def resolve_effective_integrations(
         slack_credentials = _raw_credentials(slack_store_integration)
         webhook_url = str(slack_credentials.get("webhook_url", "")).strip()
         if webhook_url:
-            slack_config = SlackWebhookConfig.model_validate({"webhook_url": webhook_url})
-            effective["slack"] = _effective_entry("local store", slack_config.model_dump())
+            slack_config = SlackWebhookConfig.model_validate(
+                {"webhook_url": webhook_url}
+            )
+            effective["slack"] = _effective_entry(
+                "local store", slack_config.model_dump()
+            )
     elif slack_webhook_url := os.getenv("SLACK_WEBHOOK_URL", "").strip():
-        slack_config = SlackWebhookConfig.model_validate({"webhook_url": slack_webhook_url})
+        slack_config = SlackWebhookConfig.model_validate(
+            {"webhook_url": slack_webhook_url}
+        )
         effective["slack"] = _effective_entry("local env", slack_config.model_dump())
 
     google_docs_integration = classified_integrations.get("google_docs")
@@ -1103,13 +1197,21 @@ def resolve_effective_integrations(
         effective["kafka"] = _effective_entry(
             source_by_service.get("kafka", "local env"),
             {
-                "bootstrap_servers": str(kafka_credentials.get("bootstrap_servers", "")).strip(),
+                "bootstrap_servers": str(
+                    kafka_credentials.get("bootstrap_servers", "")
+                ).strip(),
                 "security_protocol": str(
                     kafka_credentials.get("security_protocol", "PLAINTEXT")
                 ).strip(),
-                "sasl_mechanism": str(kafka_credentials.get("sasl_mechanism", "")).strip(),
-                "sasl_username": str(kafka_credentials.get("sasl_username", "")).strip(),
-                "sasl_password": str(kafka_credentials.get("sasl_password", "")).strip(),
+                "sasl_mechanism": str(
+                    kafka_credentials.get("sasl_mechanism", "")
+                ).strip(),
+                "sasl_username": str(
+                    kafka_credentials.get("sasl_username", "")
+                ).strip(),
+                "sasl_password": str(
+                    kafka_credentials.get("sasl_password", "")
+                ).strip(),
             },
         )
     else:
@@ -1119,7 +1221,9 @@ def resolve_effective_integrations(
                 "local env",
                 {
                     "bootstrap_servers": kafka_servers,
-                    "security_protocol": os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT").strip(),
+                    "security_protocol": os.getenv(
+                        "KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"
+                    ).strip(),
                     "sasl_mechanism": os.getenv("KAFKA_SASL_MECHANISM", "").strip(),
                     "sasl_username": os.getenv("KAFKA_SASL_USERNAME", "").strip(),
                     "sasl_password": os.getenv("KAFKA_SASL_PASSWORD", "").strip(),
@@ -1134,8 +1238,12 @@ def resolve_effective_integrations(
             {
                 "host": str(clickhouse_credentials.get("host", "")).strip(),
                 "port": clickhouse_credentials.get("port", 8123),
-                "database": str(clickhouse_credentials.get("database", "default")).strip(),
-                "username": str(clickhouse_credentials.get("username", "default")).strip(),
+                "database": str(
+                    clickhouse_credentials.get("database", "default")
+                ).strip(),
+                "username": str(
+                    clickhouse_credentials.get("username", "default")
+                ).strip(),
                 "password": str(clickhouse_credentials.get("password", "")).strip(),
                 "secure": clickhouse_credentials.get("secure", False),
             },
@@ -1164,7 +1272,9 @@ def resolve_effective_integrations(
             {
                 "workspace": str(bitbucket_credentials.get("workspace", "")).strip(),
                 "username": str(bitbucket_credentials.get("username", "")).strip(),
-                "app_password": str(bitbucket_credentials.get("app_password", "")).strip(),
+                "app_password": str(
+                    bitbucket_credentials.get("app_password", "")
+                ).strip(),
             },
         )
     else:

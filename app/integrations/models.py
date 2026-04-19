@@ -55,7 +55,9 @@ class HoneycombIntegrationConfig(StrictConfigModel):
     @field_validator("dataset", mode="before")
     @classmethod
     def _normalize_dataset(cls, value: object) -> str:
-        return str(value or DEFAULT_HONEYCOMB_DATASET).strip() or DEFAULT_HONEYCOMB_DATASET
+        return (
+            str(value or DEFAULT_HONEYCOMB_DATASET).strip() or DEFAULT_HONEYCOMB_DATASET
+        )
 
     @field_validator("base_url", mode="before")
     @classmethod
@@ -321,7 +323,9 @@ class MongoDBAtlasIntegrationConfig(StrictConfigModel):
     @field_validator("base_url", mode="before")
     @classmethod
     def _normalize_base_url(cls, value: object) -> str:
-        normalized = str(value or "https://cloud.mongodb.com/api/atlas/v2").strip().rstrip("/")
+        normalized = (
+            str(value or "https://cloud.mongodb.com/api/atlas/v2").strip().rstrip("/")
+        )
         return normalized or "https://cloud.mongodb.com/api/atlas/v2"
 
 
@@ -410,7 +414,9 @@ class DiscordBotConfig(StrictConfigModel):
     """Discord runtime config."""
 
     bot_token: str  # Bot token for API calls
-    application_id: str = ""  # For slash command registration (required for inbound only)
+    application_id: str = (
+        ""  # For slash command registration (required for inbound only)
+    )
     public_key: str = ""  # For signature verification (required for inbound only)
     default_channel_id: str | None = None  # Fallback for CLI-triggered findings
 
@@ -502,3 +508,10 @@ class EffectiveIntegrations(StrictConfigModel):
     openclaw: EffectiveIntegrationEntry | None = None
     mysql: EffectiveIntegrationEntry | None = None
     alertmanager: EffectiveIntegrationEntry | None = None
+
+
+class VictoriaLogsIntegrationConfig(StrictConfigModel):
+    """Normalized Victoria Logs credentials used by resolution and verification flows."""
+
+    base_url: str = ""
+    tenant_id: str = "0"

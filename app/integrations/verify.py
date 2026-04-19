@@ -14,7 +14,10 @@ from app.integrations.azure_sql import build_azure_sql_config, validate_azure_sq
 from app.integrations.catalog import (
     resolve_effective_integrations as _resolve_effective_integrations,
 )
-from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
+from app.integrations.github_mcp import (
+    build_github_mcp_config,
+    validate_github_mcp_config,
+)
 from app.integrations.mariadb import build_mariadb_config, validate_mariadb_config
 from app.integrations.models import (
     AWSIntegrationConfig,
@@ -25,12 +28,19 @@ from app.integrations.models import (
     HoneycombIntegrationConfig,
     SlackWebhookConfig,
     TracerIntegrationConfig,
+    VictoriaLogsIntegrationConfig,
 )
 from app.integrations.mongodb import build_mongodb_config, validate_mongodb_config
-from app.integrations.mongodb_atlas import build_mongodb_atlas_config, validate_mongodb_atlas_config
+from app.integrations.mongodb_atlas import (
+    build_mongodb_atlas_config,
+    validate_mongodb_atlas_config,
+)
 from app.integrations.mysql import build_mysql_config, validate_mysql_config
 from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
-from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
+from app.integrations.postgresql import (
+    build_postgresql_config,
+    validate_postgresql_config,
+)
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.services.alertmanager import AlertmanagerClient, AlertmanagerConfig
 from app.services.coralogix import CoralogixClient
@@ -39,6 +49,7 @@ from app.services.honeycomb import HoneycombClient
 from app.services.opsgenie import OpsGenieClient, OpsGenieConfig
 from app.services.tracer_client.client import TracerClient
 from app.services.vercel.client import VercelClient, VercelConfig
+from app.services.victoria_logs import VictoriaLogsClient
 
 SUPPORTED_VERIFY_SERVICES = (
     "alertmanager",
@@ -46,6 +57,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "datadog",
     "honeycomb",
     "coralogix",
+    "victoria_logs",
     "aws",
     "slack",
     "tracer",
@@ -66,7 +78,9 @@ SUPPORTED_VERIFY_SERVICES = (
     "mysql",
     "openclaw",
 )
-CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
+CORE_VERIFY_SERVICES = frozenset(
+    {"grafana", "datadog", "honeycomb", "coralogix", "victoria_logs", "aws"}
+)
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
 
 
@@ -105,7 +119,9 @@ def _verify_grafana(source: str, config: dict[str, Any]) -> dict[str, str]:
         response.raise_for_status()
         payload = response.json()
     except Exception as exc:  # noqa: BLE001
-        return _result("grafana", source, "failed", f"Datasource discovery failed: {exc}")
+        return _result(
+            "grafana", source, "failed", f"Datasource discovery failed: {exc}"
+        )
 
     datasources = payload if isinstance(payload, list) else []
     supported_types = sorted(
@@ -140,7 +156,9 @@ def _verify_datadog(source: str, config: dict[str, Any]) -> dict[str, str]:
         )
     )
     if not datadog_client.is_configured:
-        return _result("datadog", source, "missing", "Missing API key or application key.")
+        return _result(
+            "datadog", source, "missing", "Missing API key or application key."
+        )
 
     result = datadog_client.list_monitors()
     if not result.get("success"):
@@ -163,7 +181,9 @@ def _verify_honeycomb(source: str, config: dict[str, Any]) -> dict[str, str]:
     honeycomb_config = HoneycombIntegrationConfig.model_validate(config)
     honeycomb_client = HoneycombClient(honeycomb_config)
     if not honeycomb_client.is_configured:
-        return _result("honeycomb", source, "missing", "Missing Honeycomb API key or dataset.")
+        return _result(
+            "honeycomb", source, "missing", "Missing Honeycomb API key or dataset."
+        )
 
     auth_result = honeycomb_client.validate_access()
     if not auth_result.get("success"):
@@ -191,7 +211,9 @@ def _verify_honeycomb(source: str, config: dict[str, Any]) -> dict[str, str]:
 
     environment = auth_result.get("environment", {})
     environment_slug = (
-        str(environment.get("slug", "")).strip() if isinstance(environment, dict) else ""
+        str(environment.get("slug", "")).strip()
+        if isinstance(environment, dict)
+        else ""
     )
     environment_label = environment_slug or "classic"
     return _result(
@@ -209,7 +231,9 @@ def _verify_coralogix(source: str, config: dict[str, Any]) -> dict[str, str]:
     coralogix_config = CoralogixIntegrationConfig.model_validate(config)
     coralogix_client = CoralogixClient(coralogix_config)
     if not coralogix_client.is_configured:
-        return _result("coralogix", source, "missing", "Missing Coralogix API key or API URL.")
+        return _result(
+            "coralogix", source, "missing", "Missing Coralogix API key or API URL."
+        )
 
     result = coralogix_client.validate_access()
     if not result.get("success"):
@@ -233,6 +257,39 @@ def _verify_coralogix(source: str, config: dict[str, Any]) -> dict[str, str]:
         (
             f"Connected to {coralogix_config.base_url}{scope_detail}; "
             f"DataPrime returned {result.get('total', 0)} row(s)."
+        ),
+    )
+
+
+def _verify_victoria_logs(source: str, config: dict[str, Any]) -> dict[str, str]:
+    vl_config = VictoriaLogsIntegrationConfig.model_validate(config)
+    vl_client = VictoriaLogsClient(vl_config)
+    if not vl_client.is_configured:
+        return _result(
+            "victoria_logs", source, "missing", "Missing Victoria Logs base_url."
+        )
+
+    result = vl_client.query_logs(query="*", limit=1)
+    if not result.get("success"):
+        return _result(
+            "victoria_logs",
+            source,
+            "failed",
+            f"LogsQL check failed: {result.get('error', 'unknown error')}",
+        )
+
+    scope_detail = (
+        f" (tenant {vl_config.tenant_id})"
+        if vl_config.tenant_id and vl_config.tenant_id != "0"
+        else ""
+    )
+    return _result(
+        "victoria_logs",
+        source,
+        "passed",
+        (
+            f"Connected to {vl_config.base_url}{scope_detail}; "
+            f"query returned {len(result.get('rows', []))} row(s)."
         ),
     )
 
@@ -270,7 +327,8 @@ def _build_sts_client(config: dict[str, Any]) -> tuple[Any, str, str]:
             region_name=region,
             aws_access_key_id=credentials.access_key_id if credentials else "",
             aws_secret_access_key=credentials.secret_access_key if credentials else "",
-            aws_session_token=(credentials.session_token if credentials else "") or None,
+            aws_session_token=(credentials.session_token if credentials else "")
+            or None,
         ),
         "access-keys",
         region,
@@ -287,7 +345,9 @@ def _verify_aws(source: str, config: dict[str, Any]) -> dict[str, str]:
     account_id = str(identity.get("Account", "")).strip()
     arn = str(identity.get("Arn", "")).strip()
     if not account_id or not arn:
-        return _result("aws", source, "failed", "STS returned an incomplete caller identity.")
+        return _result(
+            "aws", source, "failed", "STS returned an incomplete caller identity."
+        )
 
     return _result(
         "aws",
@@ -306,7 +366,9 @@ def _verify_slack(
     try:
         slack_config = SlackWebhookConfig.model_validate(config)
     except Exception:
-        return _result("slack", source, "missing", "SLACK_WEBHOOK_URL is not configured.")
+        return _result(
+            "slack", source, "missing", "SLACK_WEBHOOK_URL is not configured."
+        )
     webhook_url = slack_config.webhook_url
 
     if not send_slack_test:
@@ -339,14 +401,19 @@ def _verify_tracer(source: str, config: dict[str, Any]) -> dict[str, str]:
     try:
         tracer_config = TracerIntegrationConfig.model_validate(config)
     except Exception:
-        return _result("tracer", source, "missing", "Missing JWT token for Tracer web app access.")
+        return _result(
+            "tracer", source, "missing", "Missing JWT token for Tracer web app access."
+        )
     base_url = tracer_config.base_url or get_tracer_base_url()
     jwt_token = tracer_config.jwt_token
 
     org_id = extract_org_id_from_jwt(jwt_token)
     if not org_id:
         return _result(
-            "tracer", source, "failed", "JWT token does not contain an organization claim."
+            "tracer",
+            source,
+            "failed",
+            "JWT token does not contain an organization claim.",
         )
 
     try:
@@ -450,7 +517,9 @@ def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
         return _result("google_docs", source, "missing", str(err))
 
     if not google_docs_config.credentials_file or not google_docs_config.folder_id:
-        return _result("google_docs", source, "missing", "Missing credentials_file or folder_id.")
+        return _result(
+            "google_docs", source, "missing", "Missing credentials_file or folder_id."
+        )
 
     client = GoogleDocsClient(google_docs_config)
     if not client.is_configured:
@@ -486,9 +555,13 @@ def _verify_vercel(
     try:
         vercel_config = VercelConfig.model_validate(config)
     except Exception:
-        return _result("vercel", source, "missing", "Missing API token for Vercel access.")
+        return _result(
+            "vercel", source, "missing", "Missing API token for Vercel access."
+        )
     if not vercel_config.api_token:
-        return _result("vercel", source, "missing", "Missing API token for Vercel access.")
+        return _result(
+            "vercel", source, "missing", "Missing API token for Vercel access."
+        )
 
     client = VercelClient(vercel_config)
     with client:
@@ -501,7 +574,9 @@ def _verify_vercel(
                 f"Vercel project list failed: {result.get('error', 'unknown error')}",
             )
 
-        base_detail = f"Connected to Vercel API and listed {result.get('total', 0)} project(s)."
+        base_detail = (
+            f"Connected to Vercel API and listed {result.get('total', 0)} project(s)."
+        )
         return _result("vercel", source, "passed", base_detail)
 
 
@@ -534,7 +609,11 @@ def _verify_alertmanager(source: str, config: dict[str, Any]) -> dict[str, str]:
         )
 
     status_data = result.get("status", {})
-    cluster_status = status_data.get("cluster", {}).get("status", "unknown") if isinstance(status_data, dict) else "ok"
+    cluster_status = (
+        status_data.get("cluster", {}).get("status", "unknown")
+        if isinstance(status_data, dict)
+        else "ok"
+    )
     return _result(
         "alertmanager",
         source,
@@ -590,7 +669,10 @@ def _verify_kafka(source: str, config: dict[str, Any]) -> dict[str, str]:
 
 
 def _verify_clickhouse(source: str, config: dict[str, Any]) -> dict[str, str]:
-    from app.integrations.clickhouse import build_clickhouse_config, validate_clickhouse_config
+    from app.integrations.clickhouse import (
+        build_clickhouse_config,
+        validate_clickhouse_config,
+    )
 
     clickhouse_config = build_clickhouse_config(config)
     result = validate_clickhouse_config(clickhouse_config)
@@ -603,7 +685,10 @@ def _verify_clickhouse(source: str, config: dict[str, Any]) -> dict[str, str]:
 
 
 def _verify_bitbucket(source: str, config: dict[str, Any]) -> dict[str, str]:
-    from app.integrations.bitbucket import build_bitbucket_config, validate_bitbucket_config
+    from app.integrations.bitbucket import (
+        build_bitbucket_config,
+        validate_bitbucket_config,
+    )
 
     bitbucket_config = build_bitbucket_config(config)
     result = validate_bitbucket_config(bitbucket_config)
@@ -627,7 +712,9 @@ def _verify_discord(source: str, config: dict[str, Any]) -> dict[str, str]:
             timeout=10.0,
         )
     except Exception as exc:  # noqa: BLE001
-        return _result("discord", source, "failed", f"Bot token validation failed: {exc}")
+        return _result(
+            "discord", source, "failed", f"Bot token validation failed: {exc}"
+        )
 
     if not response.is_success:
         return _result(
@@ -694,7 +781,9 @@ def verify_integrations(
             integration = effective_integrations.get("slack")
             if not integration:
                 results.append(
-                    _result("slack", "-", "missing", "SLACK_WEBHOOK_URL is not configured.")
+                    _result(
+                        "slack", "-", "missing", "SLACK_WEBHOOK_URL is not configured."
+                    )
                 )
                 continue
             results.append(
@@ -709,7 +798,12 @@ def verify_integrations(
         integration = effective_integrations.get(current_service)
         if not integration:
             results.append(
-                _result(current_service, "-", "missing", "Not configured in local store or env.")
+                _result(
+                    current_service,
+                    "-",
+                    "missing",
+                    "Not configured in local store or env.",
+                )
             )
             continue
 
@@ -723,6 +817,8 @@ def verify_integrations(
             results.append(_verify_honeycomb(source, config))
         elif current_service == "coralogix":
             results.append(_verify_coralogix(source, config))
+        elif current_service == "victoria_logs":
+            results.append(_verify_victoria_logs(source, config))
         elif current_service == "aws":
             results.append(_verify_aws(source, config))
         elif current_service == "tracer":
@@ -789,9 +885,15 @@ def verification_exit_code(
         return 1
 
     if requested_service:
-        return 1 if any(result["status"] in {"missing", "failed"} for result in results) else 0
+        return (
+            1
+            if any(result["status"] in {"missing", "failed"} for result in results)
+            else 0
+        )
 
-    core_results = [result for result in results if result["service"] in CORE_VERIFY_SERVICES]
+    core_results = [
+        result for result in results if result["service"] in CORE_VERIFY_SERVICES
+    ]
     if not any(result["status"] == "passed" for result in core_results):
         return 1
     return 0

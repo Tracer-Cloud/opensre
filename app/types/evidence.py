@@ -36,4 +36,5 @@ EvidenceSource = Literal[
     "openclaw",
     "mysql",
     "alertmanager",
+    "victoria_logs",
 ]
