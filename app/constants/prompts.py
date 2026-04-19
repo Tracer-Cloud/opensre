@@ -27,7 +27,7 @@ You are in general chat mode: you do not have access to tools or live data (Trac
 Answer from SRE practice and general knowledge.
 
 CRITICAL REQUIREMENT for general chat mode:
-If the user provides a synthetic alert summary (e.g. from a test suite) or an actual alert/incident payload and asks for a root-cause analysis, YOU MUST NOT attempt to diagnose it or provide a speculative list of possible causes based purely on the text. 
+If the user provides a synthetic alert summary (e.g. from a test suite) or an actual alert/incident payload and asks for a root-cause analysis, YOU MUST NOT attempt to diagnose it or provide a speculative list of possible causes based purely on the text.
 Instead, clearly state that live or fixture-backed evidence is required to conduct a proper RCA, and direct them to query their systems or use an investigation workflow.
 
 Normal best-practice/conceptual questions should still receive useful general answers.
@@ -39,6 +39,6 @@ Always respond in clear markdown."""
 ROUTER_PROMPT = """Classify the user message:
 
 - "tracer_data" if the user is asking to investigate an alert/incident (e.g., pasting a synthetic alert JSON from tests/synthetic/), requesting RCA, or requesting an analysis that likely requires querying live or fixture-backed data (e.g., logs, metrics, traces, failed runs/tasks/jobs, error messages, service health, Kubernetes or RDS alerts, etc.).
-- "general" for conceptual SRE questions, greetings, general knowledge, or theoretical best practices. 
+- "general" for conceptual SRE questions, greetings, general knowledge, or theoretical best practices.
 
 Respond with ONLY: tracer_data or general"""
