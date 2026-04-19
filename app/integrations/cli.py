@@ -5,9 +5,9 @@ Usage:
     python -m app.integrations list
     python -m app.integrations show <service>
     python -m app.integrations remove <service>
-    python -m app.integrations verify [service] [--send-slack-test]
+    python -m app.integrations verify [service] [--send-slack-test] [--send-teams-test]
 
-Supported services: alertmanager, aws, azure_sql, coralogix, datadog, grafana, honeycomb, mariadb, discord, mongodb, mongodb_atlas, postgresql, slack, opensearch, rds, tracer, github, sentry, vercel
+Supported services: alertmanager, aws, azure_sql, coralogix, datadog, grafana, honeycomb, mariadb, discord, mongodb, mongodb_atlas, ms_teams, postgresql, slack, opensearch, rds, tracer, github, sentry, vercel
 """
 
 from __future__ import annotations
