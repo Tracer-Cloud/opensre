@@ -131,3 +131,36 @@ select = ["E", "F", "I", "S"]
 "tests/shared/**" = ["S108", "S310", "S603", "S607"]
 "tests/**/infrastructure_sdk/**" = ["S108", "S603", "S607"]
 "tests/**/trigger_lambda/**" = ["S108", "S603", "S607"]
+
+[tool.vulture]
+paths = ["app"]
+exclude = [
+  "app/tools/simple_tools.py",          # explicitly skipped by the registry
+  "app/dockerfile_test.py",
+  "app/**/*_test.py",                   # inline pytest modules
+]
+ignore_decorators = [
+  "@*.command",          # Click / Typer subcommands
+  "@*.group",
+  "@*.callback",
+  "@app.*",              # FastAPI routes
+  "@*router.*",          # FastAPI sub-routers (discord_router etc.)
+  "@auth.on.*",          # LangGraph auth callbacks
+  "@field_validator",    # Pydantic validators
+  "@model_validator",
+  "@validator",
+  "@cache",
+  "@lru_cache",
+  "@tool",               # @app.tools.tool_decorator.tool registrations
+  "@mcp.tool",
+  "@register*",
+]
+ignore_names = [
+  "shell_complete", "format_help", "show",        # Click overrides
+  "_normalize_*",                                  # Pydantic field validators
+  "_require_*",                                    # Pydantic model validators
+  "on_thread_*", "on_assistant_*", "on_cron_*",    # LangGraph auth handlers
+  "discord_interactions", "health_check",
+  "version_check", "deep_health_check",
+  "investigate_stream",
+]
