@@ -62,9 +62,11 @@ def _post_via_ms_teams_webhook(
         ],
     }
     if extra:
-        # For Workflows, extra fields are typically ignored or must be mapped
-        # into the body, but we keep the update for compatibility.
-        payload.update(extra)
+        # Merge extra into the card body rather than the top-level payload
+        # to avoid overwriting the Adaptive Card envelope keys.
+        payload["attachments"][0]["content"]["body"].append(
+            {"type": "TextBlock", "text": str(extra), "wrap": True}
+        )
 
     try:
         response = httpx.post(webhook_url, json=payload, timeout=10.0, follow_redirects=True)
