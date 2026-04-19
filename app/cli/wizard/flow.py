@@ -135,6 +135,12 @@ def validate_vercel_integration(**kwargs):
     return _validate(**kwargs)
 
 
+def validate_betterstack_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_betterstack_integration as _validate
+
+    return _validate(**kwargs)
+
+
 def validate_alertmanager_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_alertmanager_integration as _validate
 
@@ -1181,6 +1187,61 @@ def _configure_vercel() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_betterstack() -> tuple[str, str]:
+    _, credentials = _integration_defaults("betterstack")
+    while True:
+        query_endpoint = _prompt_value(
+            "Better Stack SQL query endpoint (e.g. https://eu-nbg-2-connect.betterstackdata.com)",
+            default=_string_value(credentials.get("query_endpoint")),
+        )
+        username = _prompt_value(
+            "Better Stack username (Integrations > Connect ClickHouse HTTP client)",
+            default=_string_value(credentials.get("username")),
+        )
+        password = _prompt_value(
+            "Better Stack password",
+            default=_string_value(credentials.get("password")),
+            secret=True,
+        )
+        tables_raw = _prompt_value(
+            "Better Stack source tables (comma-separated, optional hint for the planner)",
+            default=_joined_values(credentials.get("tables"), separator=",", fallback=""),
+            allow_empty=True,
+        )
+        tables = [part.strip() for part in tables_raw.split(",") if part.strip()]
+
+        with _console.status("Validating Better Stack integration...", spinner="dots"):
+            result = validate_betterstack_integration(
+                query_endpoint=query_endpoint,
+                username=username,
+                password=password,
+                tables=tables,
+            )
+        _render_integration_result("Better Stack", result)
+        if result.ok:
+            upsert_integration(
+                "betterstack",
+                {
+                    "credentials": {
+                        "query_endpoint": query_endpoint,
+                        "username": username,
+                        "password": password,
+                        "tables": tables,
+                    }
+                },
+            )
+            env_path = sync_env_values(
+                {
+                    "BETTERSTACK_QUERY_ENDPOINT": query_endpoint,
+                    "BETTERSTACK_USERNAME": username,
+                    "BETTERSTACK_PASSWORD": password,
+                    "BETTERSTACK_TABLES": ",".join(tables),
+                }
+            )
+            return "Better Stack", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_alertmanager() -> tuple[str, str]:
     _, credentials = _integration_defaults("alertmanager")
     while True:
@@ -1351,6 +1412,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             ),
         ),
         Choice(
+            value="betterstack",
+            label="Better Stack Telemetry",
+            hint="Query logs from Better Stack (ClickHouse SQL over HTTP)",
+        ),
+        Choice(
             value="jira",
             label="Jira",
             hint="File and update incident tickets automatically",
@@ -1403,6 +1469,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "gitlab": _configure_gitlab,
         "google_docs": _configure_google_docs,
         "vercel": _configure_vercel,
+        "betterstack": _configure_betterstack,
         "jira": _configure_jira,
         "alertmanager": _configure_alertmanager,
         "opsgenie": _configure_opsgenie,
