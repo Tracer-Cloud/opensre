@@ -147,18 +147,6 @@ def load_active_remote_name(path: Path | None = None) -> str | None:
     return name
 
 
-def delete_named_remote(name: str, path: Path | None = None) -> None:
-    """Remove a named remote from the store."""
-    store_path = path or get_store_path()
-    data = _load_raw(store_path)
-    remotes: dict[str, Any] = data.get("remote", {}).get("remotes", {})
-    remotes.pop(name, None)
-    if data.get("remote", {}).get("active_name") == name:
-        data["remote"].pop("active_name", None)
-    store_path.parent.mkdir(parents=True, exist_ok=True)
-    store_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-
-
 def load_remote_ops_config(path: Path | None = None) -> dict[str, str | None]:
     """Return persisted remote ops config values."""
     data = _load_raw(path)

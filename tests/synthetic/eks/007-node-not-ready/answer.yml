@@ -1,0 +1,38 @@
+root_cause_category: infrastructure
+required_keywords:
+  - node
+  - Unknown
+  - kubelet
+forbidden_categories:
+  - healthy
+  - unknown
+  - resource_exhaustion
+  - code_defect
+  - data_quality
+optimal_trajectory:
+  - get_eks_node_health
+  - list_eks_pods
+  - get_eks_events
+max_investigation_loops: 3
+ruling_out_keywords:
+  - healthy node
+  - not at fault
+required_queries:
+  - get_eks_node_health
+  - list_eks_pods
+model_response: |
+  ROOT_CAUSE: Node ip-10-0-1-73.us-east-1.compute.internal has stopped reporting kubelet heartbeat to the control plane; the node condition has flipped to Ready=Unknown with MemoryPressure=True, and pods scheduled to that node show phase=Unknown with condition Ready=Unknown reason=NodeLost. Sibling node ip-10-0-1-42 is Ready and its pod is Running, isolating the failure to the node rather than the workload.
+  ROOT_CAUSE_CATEGORY: infrastructure
+
+  VALIDATED_CLAIMS:
+  - Node ip-10-0-1-73.us-east-1.compute.internal condition Ready=Unknown with MemoryPressure=True. [evidence: eks_node_health]
+  - Node ip-10-0-1-42.us-east-1.compute.internal is Ready=True with no pressure conditions. [evidence: eks_node_health]
+  - Pod on the failing node shows phase=Unknown reason=NodeLost; the pod on the healthy node is Running and Ready. [evidence: eks_pods]
+  - Warning event NodeNotReady 'Node ip-10-0-1-73 status is now: NodeNotReady' corroborates the node-level failure. [evidence: eks_events]
+
+  NON_VALIDATED_CLAIMS:
+  - Underlying cause is infrastructure-side (kubelet crash, control-plane connectivity loss, or EC2 instance impairment) — workload owners cannot resolve this from inside the pod.
+  - Cordoning and draining the unhealthy node, then letting the deployment reschedule, would restore capacity.
+
+  CAUSAL_CHAIN:
+  - Kubelet on ip-10-0-1-73 stops reporting to the control plane, the node controller flips Ready to Unknown after the grace period, the scheduler marks pods on that node phase=Unknown, a NodeNotReady event is emitted, pod-eviction-timeout has not yet elapsed, and capacity stays degraded while the healthy node serves all traffic.

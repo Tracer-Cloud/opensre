@@ -9,6 +9,7 @@ from pydantic import Field, field_validator
 
 from app.strict_config import StrictConfigModel
 from app.types.evidence import EvidenceSource
+from app.types.retrieval import RetrievalControls
 
 
 class ToolMetadata(StrictConfigModel):
@@ -21,6 +22,10 @@ class ToolMetadata(StrictConfigModel):
     use_cases: list[str] = Field(default_factory=list)
     requires: list[str] = Field(default_factory=list)
     outputs: dict[str, str] = Field(default_factory=dict)
+    retrieval_controls: RetrievalControls = Field(
+        default_factory=RetrievalControls,
+        description="Declares which structured retrieval controls this tool supports",
+    )
 
     @field_validator("name", "description")
     @classmethod
@@ -45,6 +50,10 @@ class BaseTool(ABC):
     safety and readability.  The method is **not** declared here to avoid
     forcing every subclass into a single ``**kwargs`` signature — the
     ``__call__`` protocol provides the uniform dispatch contract instead.
+
+    Backward compatibility: ``retrieval_controls`` is optional. Tools that
+    don't declare it default to no supported controls. Existing tools continue
+    to work without modification.
     """
 
     name: ClassVar[str]
@@ -56,6 +65,9 @@ class BaseTool(ABC):
     outputs: ClassVar[dict[str, str]] = (
         {}
     )  # Output field -> description (optional, for prompting)
+    retrieval_controls: ClassVar[RetrievalControls] = (
+        RetrievalControls()
+    )  # Declares supported controls
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -67,6 +79,7 @@ class BaseTool(ABC):
         cls.use_cases = metadata.use_cases
         cls.requires = metadata.requires
         cls.outputs = metadata.outputs
+        cls.retrieval_controls = metadata.retrieval_controls
 
     @classmethod
     def metadata(cls) -> ToolMetadata:
@@ -80,6 +93,9 @@ class BaseTool(ABC):
                 "use_cases": list(getattr(cls, "use_cases", [])),
                 "requires": list(getattr(cls, "requires", [])),
                 "outputs": dict(getattr(cls, "outputs", {})),
+                "retrieval_controls": getattr(
+                    cls, "retrieval_controls", RetrievalControls()
+                ),
             }
         )
 

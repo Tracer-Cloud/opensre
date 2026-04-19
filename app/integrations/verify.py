@@ -41,6 +41,7 @@ from app.integrations.postgresql import (
     build_postgresql_config,
     validate_postgresql_config,
 )
+from app.integrations.rabbitmq import build_rabbitmq_config, validate_rabbitmq_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.services.alertmanager import AlertmanagerClient, AlertmanagerConfig
 from app.services.coralogix import CoralogixClient
@@ -49,7 +50,7 @@ from app.services.honeycomb import HoneycombClient
 from app.services.opsgenie import OpsGenieClient, OpsGenieConfig
 from app.services.tracer_client.client import TracerClient
 from app.services.vercel.client import VercelClient, VercelConfig
-from app.services.victoria_logs import VictoriaLogsClient
+from app.services.victoria_logs.client import VictoriaLogsClient
 
 SUPPORTED_VERIFY_SERVICES = (
     "alertmanager",
@@ -57,7 +58,6 @@ SUPPORTED_VERIFY_SERVICES = (
     "datadog",
     "honeycomb",
     "coralogix",
-    "victoria_logs",
     "aws",
     "slack",
     "tracer",
@@ -68,6 +68,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "azure_sql",
     "mongodb_atlas",
     "mariadb",
+    "rabbitmq",
     "google_docs",
     "vercel",
     "opsgenie",
@@ -77,9 +78,14 @@ SUPPORTED_VERIFY_SERVICES = (
     "discord",
     "mysql",
     "openclaw",
+    "victoria_logs",
+    "snowflake",
+    "azure",
+    "openobserve",
+    "opensearch",
 )
 CORE_VERIFY_SERVICES = frozenset(
-    {"grafana", "datadog", "honeycomb", "coralogix", "victoria_logs", "aws"}
+    {"grafana", "datadog", "honeycomb", "coralogix", "aws", "victoria_logs"}
 )
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
 
@@ -261,39 +267,6 @@ def _verify_coralogix(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
-def _verify_victoria_logs(source: str, config: dict[str, Any]) -> dict[str, str]:
-    vl_config = VictoriaLogsIntegrationConfig.model_validate(config)
-    vl_client = VictoriaLogsClient(vl_config)
-    if not vl_client.is_configured:
-        return _result(
-            "victoria_logs", source, "missing", "Missing Victoria Logs base_url."
-        )
-
-    result = vl_client.query_logs(query="*", limit=1)
-    if not result.get("success"):
-        return _result(
-            "victoria_logs",
-            source,
-            "failed",
-            f"LogsQL check failed: {result.get('error', 'unknown error')}",
-        )
-
-    scope_detail = (
-        f" (tenant {vl_config.tenant_id})"
-        if vl_config.tenant_id and vl_config.tenant_id != "0"
-        else ""
-    )
-    return _result(
-        "victoria_logs",
-        source,
-        "passed",
-        (
-            f"Connected to {vl_config.base_url}{scope_detail}; "
-            f"query returned {len(result.get('rows', []))} row(s)."
-        ),
-    )
-
-
 def _build_sts_client(config: dict[str, Any]) -> tuple[Any, str, str]:
     aws_config = AWSIntegrationConfig.model_validate(config)
     region = aws_config.region
@@ -333,6 +306,25 @@ def _build_sts_client(config: dict[str, Any]) -> tuple[Any, str, str]:
         "access-keys",
         region,
     )
+
+
+def _verify_victoria_logs(source: str, config: dict[str, Any]) -> dict[str, str]:
+    try:
+        conf = VictoriaLogsIntegrationConfig.model_validate(config)
+        if not conf.base_url:
+            return _result(
+                "victoria_logs", source, "missing", "Missing Victoria Logs base_url."
+            )
+
+        client = VictoriaLogsClient(conf)
+        res = client.query_logs("*", limit=1)
+        if res.get("success"):
+            return _result("victoria_logs", source, "verified", "")
+        return _result(
+            "victoria_logs", source, "failed", res.get("error", "Unknown error")
+        )
+    except Exception as e:
+        return _result("victoria_logs", source, "failed", str(e))
 
 
 def _verify_aws(source: str, config: dict[str, Any]) -> dict[str, str]:
@@ -501,6 +493,17 @@ def _verify_mariadb(source: str, config: dict[str, Any]) -> dict[str, str]:
     result = validate_mariadb_config(mariadb_config)
     return _result(
         "mariadb",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_rabbitmq(source: str, config: dict[str, Any]) -> dict[str, str]:
+    rabbitmq_config = build_rabbitmq_config(config)
+    result = validate_rabbitmq_config(rabbitmq_config)
+    return _result(
+        "rabbitmq",
         source,
         "passed" if result.ok else "failed",
         result.detail,
@@ -766,6 +769,66 @@ def _verify_mysql(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_snowflake(source: str, config: dict[str, Any]) -> dict[str, str]:
+    account_identifier = str(config.get("account_identifier", "")).strip()
+    token = str(config.get("token", "")).strip()
+    if not account_identifier:
+        return _result("snowflake", source, "missing", "Missing account_identifier.")
+    if not token:
+        return _result("snowflake", source, "missing", "Missing token credentials.")
+    return _result(
+        "snowflake",
+        source,
+        "passed",
+        f"Snowflake credentials are configured for account {account_identifier}.",
+    )
+
+
+def _verify_azure(source: str, config: dict[str, Any]) -> dict[str, str]:
+    workspace_id = str(config.get("workspace_id", "")).strip()
+    access_token = str(config.get("access_token", "")).strip()
+    endpoint = str(config.get("endpoint", "https://api.loganalytics.io")).strip()
+    if not workspace_id:
+        return _result("azure", source, "missing", "Missing workspace_id.")
+    if not access_token:
+        return _result("azure", source, "missing", "Missing access_token.")
+    return _result(
+        "azure",
+        source,
+        "passed",
+        f"Azure Log Analytics credentials are configured for workspace "
+        f"{workspace_id} at {endpoint}.",
+    )
+
+
+def _verify_openobserve(source: str, config: dict[str, Any]) -> dict[str, str]:
+    base_url = str(config.get("base_url", "")).strip()
+    api_token = str(config.get("api_token", "")).strip()
+    username = str(config.get("username", "")).strip()
+    password = str(config.get("password", "")).strip()
+    if not base_url:
+        return _result("openobserve", source, "missing", "Missing base_url.")
+    if not api_token and not (username and password):
+        return _result(
+            "openobserve", source, "missing", "Missing api_token or username/password."
+        )
+    return _result(
+        "openobserve",
+        source,
+        "passed",
+        f"OpenObserve credentials are configured for {base_url}.",
+    )
+
+
+def _verify_opensearch(source: str, config: dict[str, Any]) -> dict[str, str]:
+    url = str(config.get("url", "")).strip()
+    if not url:
+        return _result("opensearch", source, "missing", "Missing url.")
+    return _result(
+        "opensearch", source, "passed", f"OpenSearch endpoint configured: {url}."
+    )
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -817,10 +880,10 @@ def verify_integrations(
             results.append(_verify_honeycomb(source, config))
         elif current_service == "coralogix":
             results.append(_verify_coralogix(source, config))
-        elif current_service == "victoria_logs":
-            results.append(_verify_victoria_logs(source, config))
         elif current_service == "aws":
             results.append(_verify_aws(source, config))
+        elif current_service == "victoria_logs":
+            results.append(_verify_victoria_logs(source, config))
         elif current_service == "tracer":
             results.append(_verify_tracer(source, config))
         elif current_service == "github":
@@ -837,6 +900,8 @@ def verify_integrations(
             results.append(_verify_mongodb_atlas(source, config))
         elif current_service == "mariadb":
             results.append(_verify_mariadb(source, config))
+        elif current_service == "rabbitmq":
+            results.append(_verify_rabbitmq(source, config))
         elif current_service == "google_docs":
             results.append(_verify_google_docs(source, config))
         elif current_service == "vercel":
@@ -857,6 +922,14 @@ def verify_integrations(
             results.append(_verify_mysql(source, config))
         elif current_service == "alertmanager":
             results.append(_verify_alertmanager(source, config))
+        elif current_service == "snowflake":
+            results.append(_verify_snowflake(source, config))
+        elif current_service == "azure":
+            results.append(_verify_azure(source, config))
+        elif current_service == "openobserve":
+            results.append(_verify_openobserve(source, config))
+        elif current_service == "opensearch":
+            results.append(_verify_opensearch(source, config))
 
     return results
 

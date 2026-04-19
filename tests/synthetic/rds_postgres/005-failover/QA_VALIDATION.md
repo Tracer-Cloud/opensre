@@ -57,6 +57,7 @@ A correct agent should:
 - Recognize a Multi-AZ failover triggered by a health check failure
 - Use RDS events as the primary evidence source
 - Treat CloudWatch metrics as secondary signals
+- The RDS control-plane event timeline must be the decisive signal driving the diagnosis
 - Explain the causal chain:
 
 ```
@@ -77,9 +78,10 @@ health check failure
 - [ ] Multi-AZ failover explicitly mentioned
 
 ### ✅ Evidence
-- [ ] `aws_rds_events` used as primary signal
-- [ ] RDS event timeline correctly interpreted
-- [ ] Metrics treated as supporting context, not root cause
+- [ ] `aws_rds_events` explicitly used as the primary reasoning signal
+- [ ] Failover diagnosis is derived from the RDS event timeline (not inferred from metrics)
+- [ ] Metrics/logs are used only as supporting context
+- [ ] Metrics-only reasoning should be considered incorrect
 
 ### ✅ Reasoning
 - [ ] Health check failure → failover trigger chain explained
@@ -111,3 +113,15 @@ Correct handling demonstrates:
 - Strong signal prioritization
 - Accurate causal reasoning
 - Understanding of AWS Multi-AZ failover behavior
+
+Agents that rely primarily on metrics without explicitly referencing RDS control-plane events should fail this scenario.
+
+---
+
+## What This Tests
+
+- Signal prioritization (control-plane vs metrics)
+- Correct identification of Multi-AZ failover behavior
+- Causal reasoning under misleading metric patterns
+- Ability to distinguish symptoms from root causes
+- Recognition of resolved vs active incidents

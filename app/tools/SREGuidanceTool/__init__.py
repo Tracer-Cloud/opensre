@@ -28,6 +28,8 @@ def _extract_guidance_params(sources: dict[str, dict[str, Any]]) -> dict[str, An
         "Getting remediation guidance for common pipeline failures",
         "Structuring postmortem findings and recommendations",
     ],
+    tags=("safe", "fast", "no-credentials"),
+    cost_tier="cheap",
     input_schema={
         "type": "object",
         "properties": {

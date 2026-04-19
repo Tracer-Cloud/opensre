@@ -47,6 +47,9 @@ def _list_bitbucket_commits_available(sources: dict[str, dict]) -> bool:
             "workspace": {"type": "string"},
             "username": {"type": "string"},
             "app_password": {"type": "string"},
+            "base_url": {"type": "string"},
+            "max_results": {"type": "integer"},
+            "integration_id": {"type": "string"},
         },
         "required": ["repo_slug"],
     },
@@ -58,12 +61,22 @@ def list_bitbucket_commits(
     workspace: str | None = None,
     username: str | None = None,
     app_password: str | None = None,
+    base_url: str | None = None,
+    max_results: int | None = None,
+    integration_id: str | None = None,
     path: str = "",
     limit: int = 20,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Fetch recent commits from a Bitbucket repository."""
-    config = _resolve_config(workspace, username, app_password)
+    config = _resolve_config(
+        workspace,
+        username,
+        app_password,
+        base_url,
+        max_results,
+        integration_id,
+    )
     if config is None:
         return {"source": "bitbucket", "available": False, "error": "Bitbucket integration is not configured.", "commits": []}
     return list_commits(config, repo_slug=repo_slug, path=path, limit=limit)

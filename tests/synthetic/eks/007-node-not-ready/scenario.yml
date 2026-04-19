@@ -1,0 +1,8 @@
+base: 000-healthy
+scenario_id: 007-node-not-ready
+failure_mode: node_not_ready
+severity: critical
+scenario_difficulty: 3
+adversarial_signals:
+  - partial_outage_other_node_healthy
+  - pod_phase_unknown_not_failed
