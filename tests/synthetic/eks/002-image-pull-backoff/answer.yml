@@ -25,7 +25,7 @@ model_response: |
   VALIDATED_CLAIMS:
   - New pods (payments-api-9c1d2e3f4-2hk8w, -pm44r) are Pending with container state waiting reason=ImagePullBackOff. [evidence: eks_pods]
   - Warning event Failed 'Failed to pull image payments:v2.1.0-bad: manifest unknown' fires repeatedly. [evidence: eks_events]
-  - Deployment reports available=3 from the old ReplicaSet but unavailable=2 from the new one. [evidence: eks_deployments]
+  - Deployment reports desired=3, ready=1, available=1, unavailable=2 — only the surviving old-ReplicaSet pod is counted. [evidence: eks_deployments]
 
   NON_VALIDATED_CLAIMS:
   - The image tag v2.1.0-bad was likely never pushed or was overwritten/GC'd between build and deploy.

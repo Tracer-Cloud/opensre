@@ -16,7 +16,9 @@ optimal_trajectory:
   - get_eks_pod_logs
 max_investigation_loops: 3
 ruling_out_keywords:
-  - rollout
+  - not OOM
+  - not quota
+  - old ReplicaSet
 required_queries:
   - list_eks_deployments
   - list_eks_pods
@@ -27,7 +29,7 @@ model_response: |
   ROOT_CAUSE_CATEGORY: configuration_error
 
   VALIDATED_CLAIMS:
-  - Deployment reports desired=3, ready=0, available=0, unavailable=3. [evidence: eks_deployments]
+  - Deployment reports desired=3, ready=1, available=1, unavailable=2 — only the old-ReplicaSet pod is Ready; the two new-ReplicaSet pods are not. [evidence: eks_deployments]
   - New-ReplicaSet pods (payments-api-newrs-7c-001, -002) show state.waiting.reason=CrashLoopBackOff with restart_count=6. [evidence: eks_pods]
   - Warning event ProgressDeadlineExceeded on the deployment confirms the progress-deadline timer has fired. [evidence: eks_events]
   - Old-ReplicaSet pod (payments-api-7f9dd8b6c4-x7gr9) is still Running and Ready. [evidence: eks_pods]

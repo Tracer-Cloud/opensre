@@ -4,8 +4,8 @@
       "name": "payments-api",
       "namespace": "payments",
       "desired": 3,
-      "ready": 3,
-      "available": 3,
+      "ready": 1,
+      "available": 1,
       "unavailable": 2
     }
   ]
