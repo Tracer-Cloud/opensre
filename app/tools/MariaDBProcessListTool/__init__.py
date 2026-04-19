@@ -41,5 +41,5 @@ def get_mariadb_process_list(
     )
     result = get_process_list(config)
     if _db_defaulted:
-        result["note"] = "WARNING: No database was specified; defaulted to 'mysql'. Results may not reflect application data."
+        result["default_db_warning"] = "WARNING: No database was specified; defaulted to 'mysql'. Results may not reflect application data."
     return result
