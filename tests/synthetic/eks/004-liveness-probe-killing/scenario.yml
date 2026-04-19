@@ -1,0 +1,17 @@
+base: 000-healthy
+scenario_id: 004-liveness-probe-killing
+failure_mode: probe_failure
+severity: critical
+scenario_difficulty: 2
+adversarial_signals:
+  - looks_like_crashloop
+  - app_logs_clean
+  - no_oom_markers
+available_evidence:
+  - eks_pods
+  - eks_events
+  - eks_deployments
+  - eks_node_health
+  - eks_pod_logs
+  - datadog_logs
+  - datadog_monitors

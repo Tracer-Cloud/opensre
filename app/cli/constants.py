@@ -27,6 +27,7 @@ SAMPLE_ALERT_OPTIONS: tuple[tuple[str, str], ...] = (
 )
 
 SETUP_SERVICES: tuple[str, ...] = (
+    "alertmanager",
     "aws",
     "coralogix",
     "datadog",
@@ -41,6 +42,7 @@ SETUP_SERVICES: tuple[str, ...] = (
     "mysql",
     "opensearch",
     "postgresql",
+    "rabbitmq",
     "rds",
     "sentry",
     "slack",
@@ -49,6 +51,7 @@ SETUP_SERVICES: tuple[str, ...] = (
 )
 
 VERIFY_SERVICES: tuple[str, ...] = (
+    "alertmanager",
     "aws",
     "bitbucket",
     "clickhouse",
@@ -67,6 +70,7 @@ VERIFY_SERVICES: tuple[str, ...] = (
     "openclaw",
     "opsgenie",
     "postgresql",
+    "rabbitmq",
     "sentry",
     "slack",
     "tracer",

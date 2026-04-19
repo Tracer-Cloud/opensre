@@ -7,17 +7,26 @@ Usage:
     python -m app.integrations remove <service>
     python -m app.integrations verify [service] [--send-slack-test]
 
-Supported services: aws, coralogix, datadog, grafana, honeycomb, mariadb, discord, mongodb, mongodb_atlas, postgresql, slack, opensearch, rds, tracer, github, sentry, vercel
+Supported services: alertmanager, aws, azure_sql, coralogix, datadog, grafana, honeycomb, mariadb, discord, mongodb, mongodb_atlas, postgresql, slack, opensearch, rds, tracer, github, sentry, vercel
 """
 
 from __future__ import annotations
 
 import json
 import sys
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 import questionary
 
+from app.integrations.github_mcp import (
+    GitHubMcpDisplayDetailLevel,
+    GitHubMcpRepoView,
+    GitHubMcpRepoVisibilityFilter,
+    build_github_mcp_config,
+    format_github_mcp_validation_cli_report,
+    print_github_mcp_validation_report,
+    validate_github_mcp_config,
+)
 from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL
 from app.integrations.store import (
     STORE_PATH,
@@ -41,20 +50,23 @@ def _json_echo(data: Any) -> None:
     print(json.dumps(data, indent=2, default=str))
 
 
-_SECRET_KEYS = frozenset({
-    "api_token",
-    "api_key",
-    "api_private_key",
-    "app_key",
-    "bot_token",
-    "password",
-    "secret_access_key",
-    "session_token",
-    "jwt_token",
-    "webhook_url",
-    "auth_token",
-    "connection_string",
-})
+_SECRET_KEYS = frozenset(
+    {
+        "api_token",
+        "api_key",
+        "api_private_key",
+        "app_key",
+        "bearer_token",
+        "bot_token",
+        "password",
+        "secret_access_key",
+        "session_token",
+        "jwt_token",
+        "webhook_url",
+        "auth_token",
+        "connection_string",
+    }
+)
 
 
 def _p(label: str, default: str = "", secret: bool = False) -> str:
@@ -75,6 +87,29 @@ def _p(label: str, default: str = "", secret: bool = False) -> str:
 def _die(msg: str) -> NoReturn:
     print(f"  error: {msg}", file=sys.stderr)
     sys.exit(1)
+
+
+def _prompt_github_repo_report_level() -> GitHubMcpDisplayDetailLevel:
+    """Ask how much repository access detail to print after a successful validation."""
+
+    try:
+        sel = questionary.select(
+            "  How much repository detail should we show?",
+            choices=[
+                questionary.Choice("Brief (recommended) — no repo names", value="summary"),
+                questionary.Choice("Standard — scope summary only", value="standard"),
+                questionary.Choice("Expanded — include repo names", value="full"),
+            ],
+            default="summary",
+        ).ask()
+    except (EOFError, KeyboardInterrupt):
+        print("\nAborted.")
+        sys.exit(1)
+    if sel is None:
+        return "summary"
+    if sel in ("summary", "standard", "full"):
+        return cast(GitHubMcpDisplayDetailLevel, sel)
+    return "summary"
 
 
 def _parse_port(raw: str, default: int = 3306) -> int:
@@ -286,21 +321,61 @@ def _setup_github() -> None:
         "GitHub PAT / auth token (optional if the server authenticates upstream)",
         secret=True,
     )
-    toolsets = _p("Toolsets", default="repos,issues,pull_requests,actions")
+    toolsets = _p("Toolsets", default="repos,issues,pull_requests,actions,search")
     credentials["toolsets"] = [part.strip() for part in toolsets.split(",") if part.strip()]
+
+    repo_view = questionary.select(
+        "  Which repository view should we use to verify access?",
+        choices=[
+            questionary.Choice("Auto (recommended)", value="auto"),
+            questionary.Choice("Your repositories", value="user"),
+            questionary.Choice("Accessible repositories", value="accessible"),
+            questionary.Choice("Starred repositories", value="starred"),
+            questionary.Choice("Search: user:<your_login>", value="search_user"),
+        ],
+        default="auto",
+    ).ask()
+    if repo_view is None:
+        print("\nAborted.")
+        sys.exit(1)
+    repo_visibility = questionary.select(
+        "  Filter repositories by visibility (best-effort)",
+        choices=[
+            questionary.Choice("Any (recommended)", value="any"),
+            questionary.Choice("Public only", value="public"),
+            questionary.Choice("Private only", value="private"),
+        ],
+        default="any",
+    ).ask()
+    if repo_visibility is None:
+        print("\nAborted.")
+        sys.exit(1)
+
+    print("\n  Validating GitHub MCP integration...")
+    mcp_config = build_github_mcp_config(credentials)
+    result = validate_github_mcp_config(
+        mcp_config,
+        repo_view=cast(GitHubMcpRepoView, repo_view),
+        repo_visibility=cast(GitHubMcpRepoVisibilityFilter, repo_visibility),
+    )
+    if result.ok:
+        level = _prompt_github_repo_report_level()
+        print()
+        print_github_mcp_validation_report(result, detail_level=level)
+    else:
+        for line in format_github_mcp_validation_cli_report(result).splitlines():
+            print(f"  {line}")
+        sys.exit(1)
+
     upsert_integration("github", {"credentials": credentials})
+
 
 def _setup_gitlab() -> None:
     base_url = _p("Gitlab base URL", default=DEFAULT_GITLAB_BASE_URL)
     auth_token = _p("Gitlab access token", secret=True)
     upsert_integration(
         "gitlab",
-        {
-            "credentials": {
-                "base_url": base_url,
-                "auth_token": auth_token
-            }
-        },
+        {"credentials": {"base_url": base_url, "auth_token": auth_token}},
     )
 
 
@@ -356,6 +431,7 @@ def _setup_mongodb() -> None:
         },
     )
 
+
 def _register_discord_slash_command(application_id: str, bot_token: str) -> None:
     import httpx
 
@@ -364,7 +440,12 @@ def _register_discord_slash_command(application_id: str, bot_token: str) -> None
         "name": "investigate",
         "description": "Trigger an OpenSRE investigation",
         "options": [
-            {"name": "alert", "description": "Alert JSON or description", "type": 3, "required": True}
+            {
+                "name": "alert",
+                "description": "Alert JSON or description",
+                "type": 3,
+                "required": True,
+            }
         ],
     }
     resp = httpx.put(url, json=[payload], headers={"Authorization": f"Bot {bot_token}"}, timeout=10)
@@ -379,12 +460,17 @@ def _setup_discord() -> None:
     application_id = _p("Discord application ID")
     public_key = _p("Discord public key (from Developer Portal)")
     default_channel_id = _p("Default channel ID (optional)")
-    upsert_integration("discord", {"credentials": {
-        "bot_token": bot_token,
-        "application_id": application_id,
-        "public_key": public_key,
-        "default_channel_id": default_channel_id,
-    }})
+    upsert_integration(
+        "discord",
+        {
+            "credentials": {
+                "bot_token": bot_token,
+                "application_id": application_id,
+                "public_key": public_key,
+                "default_channel_id": default_channel_id,
+            }
+        },
+    )
     _register_discord_slash_command(application_id, bot_token)
 
 
@@ -513,7 +599,43 @@ def _setup_mariadb() -> None:
     )
 
 
+def _setup_alertmanager() -> None:
+    base_url = _p("Alertmanager URL (e.g. http://alertmanager:9093)")
+    if not base_url:
+        _die("base_url is required.")
+
+    auth_choice = questionary.select(
+        "  Authentication method:",
+        choices=[
+            questionary.Choice("None (unauthenticated / internal network)", value="none"),
+            questionary.Choice("Bearer token (reverse proxy auth)", value="bearer"),
+            questionary.Choice("Basic auth (username + password)", value="basic"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if auth_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+
+    credentials: dict[str, Any] = {"base_url": base_url}
+
+    if auth_choice == "bearer":
+        bearer_token = _p("Bearer token", secret=True)
+        if not bearer_token:
+            _die("Bearer token is required for bearer auth.")
+        credentials["bearer_token"] = bearer_token
+    elif auth_choice == "basic":
+        username = _p("Username")
+        if not username:
+            _die("Username is required for basic auth.")
+        credentials["username"] = username
+        credentials["password"] = _p("Password", secret=True)
+
+    upsert_integration("alertmanager", {"credentials": credentials})
+
+
 _HANDLERS: dict[str, Any] = {
+    "alertmanager": _setup_alertmanager,
     "aws": _setup_aws,
     "coralogix": _setup_coralogix,
     "datadog": _setup_datadog,
@@ -534,6 +656,47 @@ _HANDLERS: dict[str, Any] = {
     "postgresql": _setup_postgresql,
     "mysql": _setup_mysql,
 }
+
+
+def _setup_azure_sql() -> None:
+    server = _p("Server (e.g. myserver.database.windows.net)")
+    database = _p("Database name")
+    if not server or not database:
+        _die("server and database are required.")
+    port = _p("Port", default="1433")
+    username = _p("Username")
+    password = _p("Password", secret=True)
+    driver = _p("ODBC driver", default="ODBC Driver 18 for SQL Server")
+    encrypt_choice = questionary.select(
+        "Encrypt connection?",
+        choices=[
+            questionary.Choice("Yes (recommended for Azure)", value="1"),
+            questionary.Choice("No", value="0"),
+        ],
+        instruction="(use arrow keys)",
+    ).ask()
+    if encrypt_choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    encrypt = encrypt_choice == "1"
+    upsert_integration(
+        "azure_sql",
+        {
+            "credentials": {
+                "server": server,
+                "port": _parse_port(port, default=1433),
+                "database": database,
+                "username": username,
+                "password": password,
+                "driver": driver or "ODBC Driver 18 for SQL Server",
+                "encrypt": encrypt,
+            }
+        },
+    )
+
+
+_HANDLERS["azure_sql"] = _setup_azure_sql
+
 
 SUPPORTED = ", ".join(_HANDLERS)
 SUPPORTED_VERIFY = ", ".join(SUPPORTED_VERIFY_SERVICES)
@@ -607,23 +770,16 @@ def cmd_remove(service: str | None) -> None:
         print(f"  No integration found for '{service}'.")
 
 
-def cmd_verify(
-    service: str | None,
-    *,
-    send_slack_test: bool = False,
-) -> int:
+def cmd_verify(service: str | None, *, send_slack_test: bool = False) -> int:
     from app.cli.context import is_json_output
 
     if service and service not in SUPPORTED_VERIFY_SERVICES:
         _die(f"Usage: verify [service]. Supported: {SUPPORTED_VERIFY}")
 
-    results = verify_integrations(
-        service=service,
-        send_slack_test=send_slack_test,
-    )
+    results = verify_integrations(service=service, send_slack_test=send_slack_test)
 
     if is_json_output():
         _json_echo(results)
     else:
         print(format_verification_results(results))
-    return int(verification_exit_code(results, requested_service=service))
+    return verification_exit_code(results, requested_service=service)

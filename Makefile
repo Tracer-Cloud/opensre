@@ -104,6 +104,10 @@ test-synthetic:
 test-rds-synthetic:
 	$(PYTHON) -m tests.synthetic.rds_postgres.run_suite $(if $(SCENARIO),--scenario $(SCENARIO),)
 
+# Run synthetic Kubernetes RCA benchmark suite via the CLI runner (supports --json, --scenario, --mock-backends)
+test-k8s-synthetic:
+	$(PYTHON) -m tests.synthetic.eks.run_suite $(if $(SCENARIO),--scenario $(SCENARIO),)
+
 # Boot local Grafana+Loki, seed deterministic test logs, then run the RCA pipeline
 # Requires GRAFANA_INSTANCE_URL + GRAFANA_READ_TOKEN in .env (see .env.example for local defaults)
 test-rca-grafana: grafana-local-up grafana-local-seed
@@ -267,6 +271,38 @@ test-cli-smoke:
 test-grafana:
 	@echo "Running Grafana integration tests..."
 	$(PYTHON) -m pytest tests/e2e/grafana_validation/test_grafana_cloud_queries.py -v
+
+# Spin up the local RabbitMQ stack (broker + publisher + slow consumer), wait
+# for a backlog to accumulate, then exercise the read-only diagnostic tools
+# against the real broker.  Used for the screen-video demo; NOT part of CI.
+rabbitmq-local-up:
+	@echo "Starting local RabbitMQ stack (broker + publisher + slow consumer)..."
+	docker compose -f docker-compose.rabbitmq.yml up -d
+	@echo "Waiting for broker to become healthy..."
+	@until docker compose -f docker-compose.rabbitmq.yml ps rabbitmq | grep -q "(healthy)"; do sleep 2; done
+	@echo "Broker healthy.  Letting backlog build for 20s..."
+	@sleep 20
+	@echo "Ready."
+
+rabbitmq-local-down:
+	docker compose -f docker-compose.rabbitmq.yml down -v
+
+# Run the RabbitMQ integration + tool tests, then invoke the verify command
+# against the live broker.  Requires the rabbitmq-local-up stack to be running.
+test-rabbitmq-real:
+	@echo "Running mocked RabbitMQ unit + e2e tests..."
+	$(PYTHON) -m pytest tests/integrations/test_rabbitmq.py tests/tools/test_rabbitmq_*.py tests/e2e/rabbitmq/ -v
+	@echo ""
+	@echo "Verifying against the live broker (requires \`make rabbitmq-local-up\`)..."
+	RABBITMQ_HOST=127.0.0.1 \
+	RABBITMQ_USERNAME=sre_admin \
+	RABBITMQ_PASSWORD=sre_password \
+	RABBITMQ_VHOST=/orders \
+	$(PYTHON) -c "from app.integrations.rabbitmq import rabbitmq_config_from_env, validate_rabbitmq_config, get_queue_backlog, get_broker_overview; \
+cfg = rabbitmq_config_from_env(); \
+print('validate:', validate_rabbitmq_config(cfg)); \
+print('overview:', get_broker_overview(cfg)); \
+print('backlog:', get_queue_backlog(cfg, max_results=5))"
 
 # Clean up
 clean:

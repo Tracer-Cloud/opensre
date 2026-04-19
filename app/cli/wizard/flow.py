@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import cast
 from urllib.parse import urlparse
 
 import questionary
@@ -13,6 +14,7 @@ from rich.text import Text
 
 from app.cli.wizard.config import PROVIDER_BY_VALUE, SUPPORTED_PROVIDERS
 from app.cli.wizard.env_sync import sync_env_values, sync_provider_env
+from app.cli.wizard.integration_health import IntegrationHealthResult
 from app.cli.wizard.probes import ProbeResult, probe_local_target, probe_remote_target
 from app.cli.wizard.prompts import select as select_prompt
 from app.cli.wizard.store import get_store_path, load_local_config, save_local_config
@@ -133,6 +135,12 @@ def validate_vercel_integration(**kwargs):
     return _validate(**kwargs)
 
 
+def validate_alertmanager_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_alertmanager_integration as _validate
+
+    return _validate(**kwargs)
+
+
 def validate_opsgenie_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_opsgenie_integration as _validate
 
@@ -155,12 +163,6 @@ def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
 
     return _get()
-
-
-@dataclass(frozen=True)
-class IntegrationHealthResult:
-    ok: bool
-    detail: str
 
 
 _STYLE = questionary.Style(
@@ -393,13 +395,36 @@ def _render_saved_summary(
     _console.print(f"[dim]integrations  {STORE_PATH}[/]")
 
 
-def _render_integration_result(service_label: str, result: IntegrationHealthResult) -> None:
+def _render_integration_result(
+    service_label: str,
+    result: IntegrationHealthResult,
+    *,
+    github_display_level: str | None = None,
+) -> None:
+    if result.github_mcp is not None:
+        from app.integrations.github_mcp import (
+            GitHubMcpDisplayDetailLevel,
+            print_github_mcp_validation_report,
+        )
+
+        print_github_mcp_validation_report(
+            result.github_mcp,
+            console=_console,
+            detail_level=cast(
+                GitHubMcpDisplayDetailLevel,
+                github_display_level or "standard",
+            ),
+        )
+        return
     ok = bool(result.ok)
     detail = str(result.detail)
     color = "green" if ok else "red"
     prefix = "Connected" if ok else "Failed"
     _console.print(f"[{color}]{service_label} · {prefix}[/]")
-    _console.print(f"[dim]{detail}[/]")
+    for raw_line in detail.splitlines():
+        line = raw_line.strip()
+        if line:
+            _console.print(f"[dim]{line}[/]")
 
 
 def _configure_grafana() -> tuple[str, str]:
@@ -742,7 +767,7 @@ def _configure_github_mcp() -> tuple[str, str]:
                 default=_joined_values(
                     credentials.get("args"),
                     separator=" ",
-                    fallback="stdio --toolsets repos,issues,pull_requests,actions",
+                    fallback="stdio --toolsets repos,issues,pull_requests,actions,search",
                 ),
             )
             args = [part for part in args_raw.split() if part]
@@ -758,7 +783,7 @@ def _configure_github_mcp() -> tuple[str, str]:
                 default=_joined_values(
                     credentials.get("toolsets"),
                     separator=",",
-                    fallback="repos,issues,pull_requests,actions",
+                    fallback="repos,issues,pull_requests,actions,search",
                 ),
             )
         )
@@ -769,6 +794,26 @@ def _configure_github_mcp() -> tuple[str, str]:
             allow_empty=True,
         )
 
+        repo_view = _choose(
+            "Which repository view should we use to verify access?",
+            [
+                Choice(value="auto", label="Auto (recommended)"),
+                Choice(value="user", label="Your repositories"),
+                Choice(value="starred", label="Starred repositories"),
+                Choice(value="search_user", label="Search: user:<your_login>"),
+            ],
+            default="auto",
+        )
+        repo_visibility = _choose(
+            "Filter repositories by visibility (best-effort)",
+            [
+                Choice(value="any", label="Any (recommended)"),
+                Choice(value="public", label="Public only"),
+                Choice(value="private", label="Private only"),
+            ],
+            default="any",
+        )
+
         with _console.status("Validating GitHub MCP integration...", spinner="dots"):
             result = validate_github_mcp_integration(
                 url=url,
@@ -777,8 +822,31 @@ def _configure_github_mcp() -> tuple[str, str]:
                 command=command,
                 args=args,
                 toolsets=toolsets,
+                repo_view=repo_view,
+                repo_visibility=repo_visibility,
             )
-        _render_integration_result("GitHub MCP", result)
+        display_level = "standard"
+        if result.ok:
+            display_level = _choose(
+                "How should we show repository access?",
+                [
+                    Choice(value="summary", label="Brief (recommended) — no repo names"),
+                    Choice(
+                        value="standard",
+                        label="Standard — scope summary only",
+                    ),
+                    Choice(
+                        value="full",
+                        label="Expanded — include repo names",
+                    ),
+                ],
+                default="summary",
+            )
+        _render_integration_result(
+            "GitHub MCP",
+            result,
+            github_display_level=display_level,
+        )
         if result.ok:
             credentials = {
                 "url": url,
@@ -926,7 +994,12 @@ def _configure_gitlab() -> tuple[str, str]:
         if result.ok:
             credentials = {"base_url": base_url, "auth_token": auth_token}
             upsert_integration("gitlab", {"credentials": credentials})
-            env_path = sync_env_values({"GITLAB_BASE_URL": base_url})
+            env_path = sync_env_values(
+                {
+                    "GITLAB_BASE_URL": base_url,
+                    "GITLAB_ACCESS_TOKEN": auth_token,
+                }
+            )
             return "Gitlab", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
@@ -1108,6 +1181,54 @@ def _configure_vercel() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_alertmanager() -> tuple[str, str]:
+    _, credentials = _integration_defaults("alertmanager")
+    while True:
+        base_url = _prompt_value(
+            "Alertmanager URL (e.g. http://alertmanager:9093)",
+            default=_string_value(credentials.get("base_url")),
+        )
+        if not base_url:
+            _console.print("[red]Alertmanager URL is required.[/]")
+            continue
+        auth_choice = _choose(
+            "Authentication method",
+            [
+                Choice(value="none", label="None (unauthenticated / internal network)"),
+                Choice(value="bearer", label="Bearer token (reverse proxy auth)"),
+                Choice(value="basic", label="Basic auth (username + password)"),
+            ],
+            default="none",
+        )
+        bearer_token = ""
+        username = ""
+        password = ""
+        if auth_choice == "bearer":
+            bearer_token = _prompt_value("Bearer token", secret=True)
+        elif auth_choice == "basic":
+            username = _prompt_value("Username")
+            password = _prompt_value("Password", secret=True)
+        with _console.status("Validating Alertmanager integration...", spinner="dots"):
+            result = validate_alertmanager_integration(
+                base_url=base_url,
+                bearer_token=bearer_token,
+                username=username,
+                password=password,
+            )
+        _render_integration_result("Alertmanager", result)
+        if result.ok:
+            creds: dict[str, str] = {"base_url": base_url}
+            if bearer_token:
+                creds["bearer_token"] = bearer_token
+            if username:
+                creds["username"] = username
+                creds["password"] = password
+            upsert_integration("alertmanager", {"credentials": creds})
+            env_path = sync_env_values({})
+            return "Alertmanager", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_opsgenie() -> tuple[str, str]:
     _, credentials = _integration_defaults("opsgenie")
     while True:
@@ -1235,6 +1356,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             hint="File and update incident tickets automatically",
         ),
         Choice(
+            value="alertmanager",
+            label="Alertmanager",
+            hint="Query firing alerts and silences from Prometheus Alertmanager",
+        ),
+        Choice(
             value="opsgenie",
             label="OpsGenie",
             hint="Investigate alerts and triage state from OpsGenie",
@@ -1278,6 +1404,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "google_docs": _configure_google_docs,
         "vercel": _configure_vercel,
         "jira": _configure_jira,
+        "alertmanager": _configure_alertmanager,
         "opsgenie": _configure_opsgenie,
         "notion": _configure_notion,
         "openclaw": _configure_openclaw,
@@ -1297,6 +1424,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "google_docs": "google docs",
         "vercel": "vercel",
         "jira": "jira",
+        "alertmanager": "alertmanager",
         "opsgenie": "opsgenie",
         "notion": "notion",
         "openclaw": "openclaw",
@@ -1422,11 +1550,12 @@ def run_wizard(_argv: list[str] | None = None) -> int:
             )
         ]
         model = provider.default_model
-        _step("API Key")
+        _step(provider.credential_label.title())
         try:
             api_key = _prompt_value(
-                f"{provider.label} API key ({provider.api_key_env})",
-                secret=True,
+                f"{provider.label} {provider.credential_label} ({provider.api_key_env})",
+                default=provider.credential_default,
+                secret=provider.credential_secret,
             )
         except KeyboardInterrupt:
             _console.print("\n[yellow]Setup cancelled.[/]")
@@ -1444,11 +1573,12 @@ def run_wizard(_argv: list[str] | None = None) -> int:
                 return 1
             has_api_key = True
         if not has_api_key:
-            _step("API Key")
+            _step(provider.credential_label.title())
             try:
                 api_key = _prompt_value(
-                    f"{provider.label} API key ({provider.api_key_env})",
-                    secret=True,
+                    f"{provider.label} {provider.credential_label} ({provider.api_key_env})",
+                    default=provider.credential_default,
+                    secret=provider.credential_secret,
                 )
             except KeyboardInterrupt:
                 _console.print("\n[yellow]Setup cancelled.[/]")

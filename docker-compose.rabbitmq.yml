@@ -1,0 +1,78 @@
+# Local RabbitMQ stack for integration testing and screen-video recording.
+#
+# Brings up:
+#   - a single-node broker with the management plugin enabled (port 15672)
+#   - a small publisher that posts to `orders.process` at a steady rate
+#   - a deliberately-slow consumer so a backlog builds up within seconds
+#
+# Run:
+#   docker compose -f docker-compose.rabbitmq.yml up -d
+#   # wait ~30s for the backlog to grow, then exercise the tools:
+#   make test-rabbitmq-real
+#
+# Tear down:
+#   docker compose -f docker-compose.rabbitmq.yml down -v
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: opensre-rabbitmq
+    ports:
+      - "5672:5672"      # AMQP
+      - "15672:15672"    # Management HTTP API
+    environment:
+      RABBITMQ_DEFAULT_USER: sre_admin
+      RABBITMQ_DEFAULT_PASS: sre_password
+      RABBITMQ_DEFAULT_VHOST: /orders
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  publisher:
+    image: python:3.13-slim
+    container_name: opensre-rabbitmq-publisher
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: amqp://sre_admin:sre_password@rabbitmq:5672/%2forders
+    command: >
+      sh -c "pip install --quiet pika==1.3.2 &&
+             python -c \"
+      import pika, time, os
+      params = pika.URLParameters(os.environ['RABBITMQ_URL'])
+      conn = pika.BlockingConnection(params)
+      ch = conn.channel()
+      ch.queue_declare(queue='orders.process', durable=True)
+      i = 0
+      while True:
+          ch.basic_publish(exchange='', routing_key='orders.process', body=f'msg-{i}'.encode())
+          i += 1
+          time.sleep(0.02)   # ~50 msg/s publish rate
+      \""
+
+  slow_consumer:
+    image: python:3.13-slim
+    container_name: opensre-rabbitmq-slow-consumer
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: amqp://sre_admin:sre_password@rabbitmq:5672/%2forders
+    command: >
+      sh -c "pip install --quiet pika==1.3.2 &&
+             python -c \"
+      import pika, time, os
+      params = pika.URLParameters(os.environ['RABBITMQ_URL'])
+      conn = pika.BlockingConnection(params)
+      ch = conn.channel()
+      ch.queue_declare(queue='orders.process', durable=True)
+      ch.basic_qos(prefetch_count=1)
+      def on_msg(ch_, method, _props, _body):
+          time.sleep(0.2)   # 5 msg/s consume rate → guaranteed backlog
+          ch_.basic_ack(method.delivery_tag)
+      ch.basic_consume(queue='orders.process', on_message_callback=on_msg)
+      ch.start_consuming()
+      \""

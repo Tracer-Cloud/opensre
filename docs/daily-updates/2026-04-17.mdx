@@ -1,0 +1,44 @@
+---
+title: "Daily Update — 2026-04-17"
+description: "OpenSRE engineering daily update for 2026-04-17 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+ANIRUDDHA ADAK, Ankit Juneja, Ankit Juneja, Ceren Camkiran, Chris Chen, Malik Amir Hamza, Matt Van Horn, Oluwasegun Haziz, vincenthus, and Yassir Maknaoui 🙏🚀
+
+## Main updates shipped (April 17, 2026)
+
+- feat: Add Azure SQL Database integration for managed database RCA — Oluwasegun Haziz
+- feat: add remote runtime investigation with Slack thread context (#301) — Malik Amir Hamza
+- feat: mask sensitive infrastructure identifiers before model calls (#…) — Malik Amir Hamza
+- fix(synthetic-qa): Identify healthy alerts correctly (#596) — ANIRUDDHA ADAK
+- Fix: Include eks_* keys in _INVESTIGATED_EVIDENCE_KEYS for is_clearly_healthy (Fixes #582) — ANIRUDDHA ADAK
+- fix: remove duplicate EKS mapper definitions and dict keys (CodeQL alerts) — vincenthus
+- Ask for Ollama host URL instead of API key during onboard — Matt Van Horn
+- fix(tests): prevent flaky test_validation by preloading SDK error cla… — Malik Amir Hamza
+- fix: clarify Railway deployment prerequisites — Yassir Maknaoui
+- feat(readme): add Public Beta positioning and status section — Ceren Camkiran
+- fix(docs): replace invalid --service flag with positional argument in verify commands — Ankit Juneja
+- Fix: remove invalid --service flag from integrations verify docs — Chris Chen
+
+## Source pull requests
+
+- [#622](https://github.com/Tracer-Cloud/opensre/pull/622) feat: Add Azure SQL Database integration for managed database RCA (author: Oluwasegun Haziz; contributors: Oluwasegun Haziz; labels: _none_; files: `app/integrations/azure_sql.py`, `app/integrations/catalog.py`, `app/integrations/cli.py`, `app/integrations/models.py`, `app/integrations/verify.py`, `app/tools/AzureSQLCurrentQueriesTool/__init__.py`, `app/tools/AzureSQLResourceStatsTool/__init__.py`, `app/tools/AzureSQLServerStatusTool/__init__.py`, `app/tools/AzureSQLSlowQueriesTool/__init__.py`, `app/tools/AzureSQLWaitStatsTool/__init__.py`, and 9 more)
+- [#617](https://github.com/Tracer-Cloud/opensre/pull/617) Fix: Include eks_* keys in _INVESTIGATED_EVIDENCE_KEYS for is_clearly_healthy (Fixes #582) (author: ANIRUDDHA ADAK; contributors: ANIRUDDHA ADAK; labels: _none_; files: `app/nodes/investigate/processing/post_process.py`, `app/nodes/root_cause_diagnosis/evidence_checker.py`, `pr_body.md`, `tests/nodes/investigate/test_post_process.py`, `tests/nodes/root_cause_diagnosis/test_evidence_checker.py`)
+- [#618](https://github.com/Tracer-Cloud/opensre/pull/618) fix(synthetic-qa): Identify healthy alerts correctly (#596) (author: ANIRUDDHA ADAK; contributors: ANIRUDDHA ADAK; labels: _none_; files: `app/nodes/extract_alert/extract.py`, `app/nodes/investigate/processing/post_process.py`, `app/nodes/plan_actions/build_prompt.py`, `app/nodes/plan_actions/node.py`, `app/nodes/root_cause_diagnosis/evidence_checker.py`, `tests/nodes/investigate/test_post_process.py`, `tests/nodes/root_cause_diagnosis/test_evidence_checker.py`)
+- [#623](https://github.com/Tracer-Cloud/opensre/pull/623) fix: remove duplicate EKS mapper definitions and dict keys (CodeQL alerts) (author: vincenthus; contributors: vincenthus; labels: _none_; files: `app/nodes/investigate/processing/post_process.py`, `tests/nodes/root_cause_diagnosis/test_evidence_checker.py`)
+- [#632](https://github.com/Tracer-Cloud/opensre/pull/632) fix(tests): prevent flaky test_validation by preloading SDK error cla… (author: Malik Amir Hamza; contributors: Malik Amir Hamza; labels: _none_; files: `tests/cli/wizard/test_validation.py`)
+- [#630](https://github.com/Tracer-Cloud/opensre/pull/630) feat: add remote runtime investigation with Slack thread context (#301) (author: Malik Amir Hamza; contributors: Malik Amir Hamza; labels: _none_; files: `.env.example`, `app/cli/commands/general.py`, `app/remote/ops.py`, `app/remote/runtime_alert.py`, `app/remote/slack_context.py`, `docs/docs.json`, `docs/remote-runtime-investigation.mdx`, `tests/cli/test_investigate_service_flag.py`, `tests/remote/test_ops_fetch_logs.py`, `tests/remote/test_runtime_alert.py`, and 1 more)
+- [#634](https://github.com/Tracer-Cloud/opensre/pull/634) feat: mask sensitive infrastructure identifiers before model calls (#… (author: Malik Amir Hamza; contributors: Malik Amir Hamza; labels: _none_; files: `.env.example`, `app/masking/__init__.py`, `app/masking/context.py`, `app/masking/detectors.py`, `app/masking/policy.py`, `app/nodes/investigate/node.py`, `app/nodes/publish_findings/node.py`, `app/nodes/root_cause_diagnosis/node.py`, `app/state/agent_state.py`, `app/state/factory.py`, and 9 more)
+- [#633](https://github.com/Tracer-Cloud/opensre/pull/633) feat(readme): add Public Beta positioning and status section (author: Ceren Camkiran; contributors: Ceren Camkiran; labels: _none_; files: `README.md`, `app/cli/__main__.py`)
+- [#636](https://github.com/Tracer-Cloud/opensre/pull/636) fix(docs): replace invalid --service flag with positional argument in verify commands (author: Ankit Juneja; contributors: Ankit Juneja and Ankit Juneja; labels: _none_; files: `docs/aws.mdx`, `docs/bitbucket.mdx`, `docs/clickhouse.mdx`, `docs/coralogix.mdx`, `docs/github.mdx`, `docs/google-docs.mdx`, `docs/honeycomb.mdx`, `docs/intergrations-overview.mdx`, `docs/kafka.mdx`, `docs/mongodb.mdx`, and 5 more)
+- [#637](https://github.com/Tracer-Cloud/opensre/pull/637) Fix: remove invalid --service flag from integrations verify docs (author: Chris Chen; contributors: Chris Chen; labels: _none_; files: `docs/aws.mdx`, `docs/bitbucket.mdx`, `docs/clickhouse.mdx`, `docs/coralogix.mdx`, `docs/github.mdx`, `docs/google-docs.mdx`, `docs/honeycomb.mdx`, `docs/intergrations-overview.mdx`, `docs/kafka.mdx`, `docs/mongodb.mdx`, and 5 more)
+- [#628](https://github.com/Tracer-Cloud/opensre/pull/628) Ask for Ollama host URL instead of API key during onboard (author: Matt Van Horn; contributors: Matt Van Horn; labels: _none_; files: `app/cli/wizard/config.py`, `app/cli/wizard/flow.py`)
+- [#624](https://github.com/Tracer-Cloud/opensre/pull/624) fix: clarify Railway deployment prerequisites (author: Yassir Maknaoui; contributors: Yassir Maknaoui; labels: _none_; files: `.env.example`, `README.md`, `app/cli/deploy.py`, `app/cli/deploy_test.py`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-16T23:00:00+00:00` to `2026-04-17T23:00:00+00:00`

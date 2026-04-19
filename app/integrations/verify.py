@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import boto3
@@ -12,13 +10,16 @@ import requests
 
 from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.config import get_tracer_base_url
+from app.integrations.azure_sql import build_azure_sql_config, validate_azure_sql_config
+from app.integrations.catalog import (
+    resolve_effective_integrations as _resolve_effective_integrations,
+)
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.mariadb import build_mariadb_config, validate_mariadb_config
 from app.integrations.models import (
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
     DatadogIntegrationConfig,
-    EffectiveIntegrations,
     GoogleDocsIntegrationConfig,
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
@@ -30,13 +31,9 @@ from app.integrations.mongodb_atlas import build_mongodb_atlas_config, validate_
 from app.integrations.mysql import build_mysql_config, validate_mysql_config
 from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
 from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
+from app.integrations.rabbitmq import build_rabbitmq_config, validate_rabbitmq_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
-from app.integrations.store import load_integrations
-from app.nodes.resolve_integrations.node import (
-    _classify_integrations,
-    _load_env_integrations,
-    _merge_local_integrations,
-)
+from app.services.alertmanager import AlertmanagerClient, AlertmanagerConfig
 from app.services.coralogix import CoralogixClient
 from app.services.datadog.client import DatadogClient, DatadogConfig
 from app.services.honeycomb import HoneycombClient
@@ -45,6 +42,7 @@ from app.services.tracer_client.client import TracerClient
 from app.services.vercel.client import VercelClient, VercelConfig
 
 SUPPORTED_VERIFY_SERVICES = (
+    "alertmanager",
     "grafana",
     "datadog",
     "honeycomb",
@@ -56,8 +54,10 @@ SUPPORTED_VERIFY_SERVICES = (
     "sentry",
     "mongodb",
     "postgresql",
+    "azure_sql",
     "mongodb_atlas",
     "mariadb",
+    "rabbitmq",
     "google_docs",
     "vercel",
     "opsgenie",
@@ -67,36 +67,13 @@ SUPPORTED_VERIFY_SERVICES = (
     "discord",
     "mysql",
     "openclaw",
+    "snowflake",
+    "azure",
+    "openobserve",
+    "opensearch",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
-
-
-@dataclass(slots=True)
-class MariaDBConfig:
-    host: str
-    port: int
-    database: str
-    username: str
-    password: str = field(repr=False)
-    ssl: bool
-
-    @classmethod
-    def from_env(cls) -> MariaDBConfig | None:
-        mariadb_host = os.getenv("MARIADB_HOST", "").strip()
-        mariadb_database = os.getenv("MARIADB_DATABASE", "").strip()
-        if not (mariadb_host and mariadb_database):
-            return None
-
-        mariadb_port = os.getenv("MARIADB_PORT", "3306").strip()
-        return cls(
-            host=mariadb_host,
-            port=int(mariadb_port) if mariadb_port.isdigit() else 3306,
-            database=mariadb_database,
-            username=os.getenv("MARIADB_USERNAME", "").strip(),
-            password=os.getenv("MARIADB_PASSWORD", "").strip(),
-            ssl=os.getenv("MARIADB_SSL", "true").strip().lower() in ("true", "1", "yes"),
-        )
 
 
 def _result(
@@ -114,437 +91,8 @@ def _result(
 
 
 def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
-    """Resolve effective local integrations from ~/.tracer and env vars."""
-    store_integrations = load_integrations()
-    env_integrations = _load_env_integrations()
-    merged_integrations = _merge_local_integrations(store_integrations, env_integrations)
-    classified_integrations = _classify_integrations(merged_integrations)
-
-    source_by_service: dict[str, str] = {}
-    store_integration_by_service: dict[str, dict[str, Any]] = {}
-    for integration in env_integrations:
-        service = str(integration.get("service", "")).strip().lower()
-        if service:
-            source_by_service[service] = "local env"
-    for integration in store_integrations:
-        service = str(integration.get("service", "")).strip().lower()
-        if service:
-            source_by_service[service] = "local store"
-            store_integration_by_service.setdefault(service, integration)
-
-    effective: dict[str, dict[str, Any]] = {}
-    for service in CORE_VERIFY_SERVICES:
-        resolved_integration = classified_integrations.get(service)
-        if isinstance(resolved_integration, dict):
-            effective[service] = {
-                "source": source_by_service.get(service, "local env"),
-                "config": resolved_integration,
-            }
-
-    if "datadog" not in effective:
-        datadog_store_integration = store_integration_by_service.get("datadog")
-        if isinstance(datadog_store_integration, dict):
-            datadog_credentials = datadog_store_integration.get("credentials", {})
-            if isinstance(datadog_credentials, dict):
-                effective["datadog"] = {
-                    "source": "local store",
-                    "config": {
-                        "api_key": str(datadog_credentials.get("api_key", "")).strip(),
-                        "app_key": str(datadog_credentials.get("app_key", "")).strip(),
-                        "site": str(datadog_credentials.get("site", "datadoghq.com")).strip()
-                        or "datadoghq.com",
-                        "integration_id": str(datadog_store_integration.get("id", "")).strip(),
-                    },
-                }
-
-    honeycomb_integration = classified_integrations.get("honeycomb")
-    if isinstance(honeycomb_integration, dict):
-        effective["honeycomb"] = {
-            "source": source_by_service.get("honeycomb", "local env"),
-            "config": {
-                "api_key": str(honeycomb_integration.get("api_key", "")).strip(),
-                "dataset": str(honeycomb_integration.get("dataset", "")).strip(),
-                "base_url": str(honeycomb_integration.get("base_url", "")).strip(),
-            },
-        }
-
-    coralogix_integration = classified_integrations.get("coralogix")
-    if isinstance(coralogix_integration, dict):
-        effective["coralogix"] = {
-            "source": source_by_service.get("coralogix", "local env"),
-            "config": {
-                "api_key": str(coralogix_integration.get("api_key", "")).strip(),
-                "base_url": str(coralogix_integration.get("base_url", "")).strip(),
-                "application_name": str(coralogix_integration.get("application_name", "")).strip(),
-                "subsystem_name": str(coralogix_integration.get("subsystem_name", "")).strip(),
-            },
-        }
-
-    tracer_integration = classified_integrations.get("tracer")
-    if isinstance(tracer_integration, dict):
-        tracer_credentials = tracer_integration.get("credentials", {})
-        effective["tracer"] = {
-            "source": source_by_service.get("tracer", "local store"),
-            "config": {
-                "base_url": str(tracer_credentials.get("base_url", "")).strip(),
-                "jwt_token": str(tracer_credentials.get("jwt_token", "")).strip(),
-            },
-        }
-    else:
-        jwt_token = os.getenv("JWT_TOKEN", "").strip()
-        if jwt_token:
-            effective["tracer"] = {
-                "source": "local env",
-                "config": {
-                    "base_url": os.getenv("TRACER_API_URL", "").strip() or get_tracer_base_url(),
-                    "jwt_token": jwt_token,
-                },
-            }
-
-    slack_webhook_url = os.getenv("SLACK_WEBHOOK_URL", "").strip()
-    if slack_webhook_url:
-        slack_config = SlackWebhookConfig.model_validate({"webhook_url": slack_webhook_url})
-        effective["slack"] = {
-            "source": "local env",
-            "config": slack_config.model_dump(),
-        }
-
-    github_integration = classified_integrations.get("github")
-    if isinstance(github_integration, dict):
-        effective["github"] = {
-            "source": source_by_service.get("github", "local env"),
-            "config": {
-                "url": str(github_integration.get("url", "")).strip(),
-                "mode": str(github_integration.get("mode", "streamable-http")).strip(),
-                "command": str(github_integration.get("command", "")).strip(),
-                "args": github_integration.get("args", []),
-                "auth_token": str(github_integration.get("auth_token", "")).strip(),
-                "toolsets": github_integration.get("toolsets", []),
-            },
-        }
-
-    sentry_integration = classified_integrations.get("sentry")
-    if isinstance(sentry_integration, dict):
-        effective["sentry"] = {
-            "source": source_by_service.get("sentry", "local env"),
-            "config": {
-                "base_url": str(sentry_integration.get("base_url", "")).strip(),
-                "organization_slug": str(sentry_integration.get("organization_slug", "")).strip(),
-                "auth_token": str(sentry_integration.get("auth_token", "")).strip(),
-                "project_slug": str(sentry_integration.get("project_slug", "")).strip(),
-            },
-        }
-
-    mongodb_integration = classified_integrations.get("mongodb")
-    if isinstance(mongodb_integration, dict):
-        effective["mongodb"] = {
-            "source": source_by_service.get("mongodb", "local env"),
-            "config": {
-                "connection_string": str(mongodb_integration.get("connection_string", "")).strip(),
-                "database": str(mongodb_integration.get("database", "")).strip(),
-                "auth_source": str(mongodb_integration.get("auth_source", "admin")).strip(),
-                "tls": mongodb_integration.get("tls", True),
-            },
-        }
-    else:
-        # Check env vars
-        mongodb_conn = os.getenv("MONGODB_CONNECTION_STRING", "").strip()
-        if mongodb_conn:
-            effective["mongodb"] = {
-                "source": "local env",
-                "config": {
-                    "connection_string": mongodb_conn,
-                    "database": os.getenv("MONGODB_DATABASE", "").strip(),
-                    "auth_source": os.getenv("MONGODB_AUTH_SOURCE", "admin").strip() or "admin",
-                    "tls": os.getenv("MONGODB_TLS", "true").strip().lower() in ("true", "1", "yes"),
-                },
-            }
-
-    postgresql_integration = classified_integrations.get("postgresql")
-    if isinstance(postgresql_integration, dict):
-        effective["postgresql"] = {
-            "source": source_by_service.get("postgresql", "local env"),
-            "config": postgresql_integration,
-        }
-    else:
-        pg_host = os.getenv("POSTGRESQL_HOST", "").strip()
-        pg_database = os.getenv("POSTGRESQL_DATABASE", "").strip()
-        if pg_host and pg_database:
-            _pg_port = os.getenv("POSTGRESQL_PORT", "").strip()
-            effective["postgresql"] = {
-                "source": "local env",
-                "config": {
-                    "host": pg_host,
-                    "port": int(_pg_port) if _pg_port.isdigit() else 5432,
-                    "database": pg_database,
-                    "username": os.getenv("POSTGRESQL_USERNAME", "postgres").strip() or "postgres",
-                    "password": os.getenv("POSTGRESQL_PASSWORD", "").strip(),
-                    "ssl_mode": os.getenv("POSTGRESQL_SSL_MODE", "prefer").strip() or "prefer",
-                },
-            }
-
-    mongodb_atlas_integration = classified_integrations.get("mongodb_atlas")
-    if isinstance(mongodb_atlas_integration, dict):
-        effective["mongodb_atlas"] = {
-            "source": source_by_service.get("mongodb_atlas", "local env"),
-            "config": {
-                "api_public_key": str(mongodb_atlas_integration.get("api_public_key", "")).strip(),
-                "api_private_key": str(
-                    mongodb_atlas_integration.get("api_private_key", "")
-                ).strip(),
-                "project_id": str(mongodb_atlas_integration.get("project_id", "")).strip(),
-                "base_url": str(
-                    mongodb_atlas_integration.get(
-                        "base_url", "https://cloud.mongodb.com/api/atlas/v2"
-                    )
-                ).strip(),
-            },
-        }
-    else:
-        atlas_pub = os.getenv("MONGODB_ATLAS_PUBLIC_KEY", "").strip()
-        atlas_priv = os.getenv("MONGODB_ATLAS_PRIVATE_KEY", "").strip()
-        if atlas_pub and atlas_priv:
-            effective["mongodb_atlas"] = {
-                "source": "local env",
-                "config": {
-                    "api_public_key": atlas_pub,
-                    "api_private_key": atlas_priv,
-                    "project_id": os.getenv("MONGODB_ATLAS_PROJECT_ID", "").strip(),
-                    "base_url": os.getenv(
-                        "MONGODB_ATLAS_BASE_URL", "https://cloud.mongodb.com/api/atlas/v2"
-                    ).strip(),
-                },
-            }
-
-    mariadb_integration = classified_integrations.get("mariadb")
-    if isinstance(mariadb_integration, dict):
-        effective["mariadb"] = {
-            "source": source_by_service.get("mariadb", "local env"),
-            "config": {
-                "host": str(mariadb_integration.get("host", "")).strip(),
-                "port": mariadb_integration.get("port", 3306),
-                "database": str(mariadb_integration.get("database", "")).strip(),
-                "username": str(mariadb_integration.get("username", "")).strip(),
-                "password": str(mariadb_integration.get("password", "")).strip(),
-                "ssl": mariadb_integration.get("ssl", True),
-            },
-        }
-    else:
-        mariadb_env_config = MariaDBConfig.from_env()
-        if mariadb_env_config:
-            effective["mariadb"] = {
-                "source": "local env",
-                "config": asdict(mariadb_env_config),
-            }
-
-    google_docs_integration = classified_integrations.get("google_docs")
-    if isinstance(google_docs_integration, dict):
-        effective["google_docs"] = {
-            "source": source_by_service.get("google_docs", "local env"),
-            "config": {
-                "credentials_file": str(
-                    google_docs_integration.get("credentials_file", "")
-                ).strip(),
-                "folder_id": str(google_docs_integration.get("folder_id", "")).strip(),
-            },
-        }
-    else:
-        # Check env vars
-        credentials_file = os.getenv("GOOGLE_CREDENTIALS_FILE", "").strip()
-        folder_id = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "").strip()
-        if credentials_file and folder_id:
-            effective["google_docs"] = {
-                "source": "local env",
-                "config": {
-                    "credentials_file": credentials_file,
-                    "folder_id": folder_id,
-                },
-            }
-
-    vercel_integration = classified_integrations.get("vercel")
-    if isinstance(vercel_integration, dict):
-        effective["vercel"] = {
-            "source": source_by_service.get("vercel", "local env"),
-            "config": {
-                "api_token": str(vercel_integration.get("api_token", "")).strip(),
-                "team_id": str(vercel_integration.get("team_id", "")).strip(),
-            },
-        }
-
-    opsgenie_integration = classified_integrations.get("opsgenie")
-    if isinstance(opsgenie_integration, dict):
-        effective["opsgenie"] = {
-            "source": source_by_service.get("opsgenie", "local env"),
-            "config": {
-                "api_key": str(opsgenie_integration.get("api_key", "")).strip(),
-                "region": str(opsgenie_integration.get("region", "us")).strip(),
-            },
-        }
-
-    kafka_integration = classified_integrations.get("kafka")
-    if isinstance(kafka_integration, dict):
-        effective["kafka"] = {
-            "source": source_by_service.get("kafka", "local env"),
-            "config": {
-                "bootstrap_servers": str(kafka_integration.get("bootstrap_servers", "")).strip(),
-                "security_protocol": str(
-                    kafka_integration.get("security_protocol", "PLAINTEXT")
-                ).strip(),
-                "sasl_mechanism": str(kafka_integration.get("sasl_mechanism", "")).strip(),
-                "sasl_username": str(kafka_integration.get("sasl_username", "")).strip(),
-                "sasl_password": str(kafka_integration.get("sasl_password", "")).strip(),
-            },
-        }
-    else:
-        kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "").strip()
-        if kafka_servers:
-            effective["kafka"] = {
-                "source": "local env",
-                "config": {
-                    "bootstrap_servers": kafka_servers,
-                    "security_protocol": os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT").strip(),
-                    "sasl_mechanism": os.getenv("KAFKA_SASL_MECHANISM", "").strip(),
-                    "sasl_username": os.getenv("KAFKA_SASL_USERNAME", "").strip(),
-                    "sasl_password": os.getenv("KAFKA_SASL_PASSWORD", "").strip(),
-                },
-            }
-
-    clickhouse_integration = classified_integrations.get("clickhouse")
-    if isinstance(clickhouse_integration, dict):
-        effective["clickhouse"] = {
-            "source": source_by_service.get("clickhouse", "local env"),
-            "config": {
-                "host": str(clickhouse_integration.get("host", "")).strip(),
-                "port": clickhouse_integration.get("port", 8123),
-                "database": str(clickhouse_integration.get("database", "default")).strip(),
-                "username": str(clickhouse_integration.get("username", "default")).strip(),
-                "password": str(clickhouse_integration.get("password", "")).strip(),
-                "secure": clickhouse_integration.get("secure", False),
-            },
-        }
-    else:
-        clickhouse_host = os.getenv("CLICKHOUSE_HOST", "").strip()
-        if clickhouse_host:
-            effective["clickhouse"] = {
-                "source": "local env",
-                "config": {
-                    "host": clickhouse_host,
-                    "port": int(os.getenv("CLICKHOUSE_PORT", "8123") or "8123"),
-                    "database": os.getenv("CLICKHOUSE_DATABASE", "default").strip(),
-                    "username": os.getenv("CLICKHOUSE_USER", "default").strip(),
-                    "password": os.getenv("CLICKHOUSE_PASSWORD", "").strip(),
-                    "secure": os.getenv("CLICKHOUSE_SECURE", "false").strip().lower()
-                    in ("true", "1", "yes"),
-                },
-            }
-
-    bitbucket_integration = classified_integrations.get("bitbucket")
-    if isinstance(bitbucket_integration, dict):
-        effective["bitbucket"] = {
-            "source": source_by_service.get("bitbucket", "local env"),
-            "config": {
-                "workspace": str(bitbucket_integration.get("workspace", "")).strip(),
-                "username": str(bitbucket_integration.get("username", "")).strip(),
-                "app_password": str(bitbucket_integration.get("app_password", "")).strip(),
-            },
-        }
-    else:
-        bitbucket_workspace = os.getenv("BITBUCKET_WORKSPACE", "").strip()
-        if bitbucket_workspace:
-            effective["bitbucket"] = {
-                "source": "local env",
-                "config": {
-                    "workspace": bitbucket_workspace,
-                    "username": os.getenv("BITBUCKET_USERNAME", "").strip(),
-                    "app_password": os.getenv("BITBUCKET_APP_PASSWORD", "").strip(),
-                },
-            }
-
-    discord_integration = classified_integrations.get("discord")
-    if isinstance(discord_integration, dict):
-        effective["discord"] = {
-            "source": source_by_service.get("discord", "local env"),
-            "config": {
-                "bot_token": str(discord_integration.get("bot_token", "")).strip(),
-                "application_id": str(discord_integration.get("application_id", "")).strip(),
-                "public_key": str(discord_integration.get("public_key", "")).strip(),
-                "default_channel_id": discord_integration.get("default_channel_id"),
-            },
-        }
-    else:
-        discord_bot_token = os.getenv("DISCORD_BOT_TOKEN", "").strip()
-        if discord_bot_token:
-            effective["discord"] = {
-                "source": "local env",
-                "config": {
-                    "bot_token": discord_bot_token,
-                    "application_id": os.getenv("DISCORD_APPLICATION_ID", "").strip(),
-                    "public_key": os.getenv("DISCORD_PUBLIC_KEY", "").strip(),
-                    "default_channel_id": os.getenv("DISCORD_DEFAULT_CHANNEL_ID", "").strip() or None,
-                },
-            }
-
-    openclaw_integration = classified_integrations.get("openclaw")
-    if isinstance(openclaw_integration, dict):
-        effective["openclaw"] = {
-            "source": source_by_service.get("openclaw", "local env"),
-            "config": {
-                "url": str(openclaw_integration.get("url", "")).strip(),
-                "mode": str(openclaw_integration.get("mode", "streamable-http")).strip(),
-                "command": str(openclaw_integration.get("command", "")).strip(),
-                "args": openclaw_integration.get("args", []),
-                "auth_token": str(openclaw_integration.get("auth_token", "")).strip(),
-            },
-        }
-    else:
-        openclaw_url = os.getenv("OPENCLAW_MCP_URL", "").strip()
-        openclaw_command = os.getenv("OPENCLAW_MCP_COMMAND", "").strip()
-        openclaw_mode = (
-            os.getenv("OPENCLAW_MCP_MODE", "streamable-http").strip().lower()
-            or "streamable-http"
-        )
-        if (openclaw_mode == "stdio" and openclaw_command) or (
-            openclaw_mode != "stdio" and openclaw_url
-        ):
-            effective["openclaw"] = {
-                "source": "local env",
-                "config": {
-                    "url": openclaw_url,
-                    "mode": openclaw_mode,
-                    "command": openclaw_command,
-                    "args": [
-                        part
-                        for part in os.getenv("OPENCLAW_MCP_ARGS", "").strip().split()
-                        if part
-                    ],
-                    "auth_token": os.getenv("OPENCLAW_MCP_AUTH_TOKEN", "").strip(),
-                },
-            }
-
-    mysql_integration = classified_integrations.get("mysql")
-    if isinstance(mysql_integration, dict):
-        effective["mysql"] = {
-            "source": source_by_service.get("mysql", "local env"),
-            "config": mysql_integration,
-        }
-    else:
-        mysql_host = os.getenv("MYSQL_HOST", "").strip()
-        mysql_database = os.getenv("MYSQL_DATABASE", "").strip()
-        if mysql_host and mysql_database:
-            _mysql_port = os.getenv("MYSQL_PORT", "").strip()
-            effective["mysql"] = {
-                "source": "local env",
-                "config": {
-                    "host": mysql_host,
-                    "port": int(_mysql_port) if _mysql_port.isdigit() else 3306,
-                    "database": mysql_database,
-                    "username": os.getenv("MYSQL_USERNAME", "root").strip() or "root",
-                    "password": os.getenv("MYSQL_PASSWORD", "").strip(),
-                    "ssl_mode": os.getenv("MYSQL_SSL_MODE", "preferred").strip() or "preferred",
-                },
-            }
-
-    return EffectiveIntegrations.model_validate(effective).model_dump(exclude_none=True)
+    """Resolve effective local integrations from ~/.tracer and environment variables."""
+    return _resolve_effective_integrations()
 
 
 def _verify_grafana(source: str, config: dict[str, Any]) -> dict[str, str]:
@@ -865,6 +413,17 @@ def _verify_postgresql(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_azure_sql(source: str, config: dict[str, Any]) -> dict[str, str]:
+    azure_sql_config = build_azure_sql_config(config)
+    result = validate_azure_sql_config(azure_sql_config)
+    return _result(
+        "azure_sql",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def _verify_mongodb_atlas(source: str, config: dict[str, Any]) -> dict[str, str]:
     atlas_config = build_mongodb_atlas_config(config)
     result = validate_mongodb_atlas_config(atlas_config)
@@ -881,6 +440,17 @@ def _verify_mariadb(source: str, config: dict[str, Any]) -> dict[str, str]:
     result = validate_mariadb_config(mariadb_config)
     return _result(
         "mariadb",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_rabbitmq(source: str, config: dict[str, Any]) -> dict[str, str]:
+    rabbitmq_config = build_rabbitmq_config(config)
+    result = validate_rabbitmq_config(rabbitmq_config)
+    return _result(
+        "rabbitmq",
         source,
         "passed" if result.ok else "failed",
         result.detail,
@@ -950,6 +520,44 @@ def _verify_vercel(
 
         base_detail = f"Connected to Vercel API and listed {result.get('total', 0)} project(s)."
         return _result("vercel", source, "passed", base_detail)
+
+
+def _verify_alertmanager(source: str, config: dict[str, Any]) -> dict[str, str]:
+    base_url = str(config.get("base_url", ""))
+    if not base_url:
+        return _result("alertmanager", source, "missing", "Missing base_url.")
+
+    try:
+        alertmanager_config = AlertmanagerConfig.model_validate(
+            {
+                "base_url": base_url,
+                "bearer_token": config.get("bearer_token", ""),
+                "username": config.get("username", ""),
+                "password": config.get("password", ""),
+            }
+        )
+    except Exception as err:
+        return _result("alertmanager", source, "missing", str(err))
+
+    with AlertmanagerClient(alertmanager_config) as client:
+        result = client.get_status()
+
+    if not result.get("success"):
+        return _result(
+            "alertmanager",
+            source,
+            "failed",
+            f"Status check failed: {result.get('error', 'unknown error')}",
+        )
+
+    status_data = result.get("status", {})
+    cluster_status = status_data.get("cluster", {}).get("status", "unknown") if isinstance(status_data, dict) else "ok"
+    return _result(
+        "alertmanager",
+        source,
+        "passed",
+        f"Connected to Alertmanager at {base_url}; cluster status: {cluster_status}.",
+    )
 
 
 def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
@@ -1088,6 +696,62 @@ def _verify_mysql(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_snowflake(source: str, config: dict[str, Any]) -> dict[str, str]:
+    account_identifier = str(config.get("account_identifier", "")).strip()
+    token = str(config.get("token", "")).strip()
+    if not account_identifier:
+        return _result("snowflake", source, "missing", "Missing account_identifier.")
+    if not token:
+        return _result("snowflake", source, "missing", "Missing token credentials.")
+    return _result(
+        "snowflake",
+        source,
+        "passed",
+        f"Snowflake credentials are configured for account {account_identifier}.",
+    )
+
+
+def _verify_azure(source: str, config: dict[str, Any]) -> dict[str, str]:
+    workspace_id = str(config.get("workspace_id", "")).strip()
+    access_token = str(config.get("access_token", "")).strip()
+    endpoint = str(config.get("endpoint", "https://api.loganalytics.io")).strip()
+    if not workspace_id:
+        return _result("azure", source, "missing", "Missing workspace_id.")
+    if not access_token:
+        return _result("azure", source, "missing", "Missing access_token.")
+    return _result(
+        "azure",
+        source,
+        "passed",
+        f"Azure Log Analytics credentials are configured for workspace "
+        f"{workspace_id} at {endpoint}.",
+    )
+
+
+def _verify_openobserve(source: str, config: dict[str, Any]) -> dict[str, str]:
+    base_url = str(config.get("base_url", "")).strip()
+    api_token = str(config.get("api_token", "")).strip()
+    username = str(config.get("username", "")).strip()
+    password = str(config.get("password", "")).strip()
+    if not base_url:
+        return _result("openobserve", source, "missing", "Missing base_url.")
+    if not api_token and not (username and password):
+        return _result("openobserve", source, "missing", "Missing api_token or username/password.")
+    return _result(
+        "openobserve",
+        source,
+        "passed",
+        f"OpenObserve credentials are configured for {base_url}.",
+    )
+
+
+def _verify_opensearch(source: str, config: dict[str, Any]) -> dict[str, str]:
+    url = str(config.get("url", "")).strip()
+    if not url:
+        return _result("opensearch", source, "missing", "Missing url.")
+    return _result("opensearch", source, "passed", f"OpenSearch endpoint configured: {url}.")
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -1144,10 +808,14 @@ def verify_integrations(
             results.append(_verify_mongodb(source, config))
         elif current_service == "postgresql":
             results.append(_verify_postgresql(source, config))
+        elif current_service == "azure_sql":
+            results.append(_verify_azure_sql(source, config))
         elif current_service == "mongodb_atlas":
             results.append(_verify_mongodb_atlas(source, config))
         elif current_service == "mariadb":
             results.append(_verify_mariadb(source, config))
+        elif current_service == "rabbitmq":
+            results.append(_verify_rabbitmq(source, config))
         elif current_service == "google_docs":
             results.append(_verify_google_docs(source, config))
         elif current_service == "vercel":
@@ -1166,6 +834,16 @@ def verify_integrations(
             results.append(_verify_openclaw(source, config))
         elif current_service == "mysql":
             results.append(_verify_mysql(source, config))
+        elif current_service == "alertmanager":
+            results.append(_verify_alertmanager(source, config))
+        elif current_service == "snowflake":
+            results.append(_verify_snowflake(source, config))
+        elif current_service == "azure":
+            results.append(_verify_azure(source, config))
+        elif current_service == "openobserve":
+            results.append(_verify_openobserve(source, config))
+        elif current_service == "opensearch":
+            results.append(_verify_opensearch(source, config))
 
     return results
 

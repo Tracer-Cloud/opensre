@@ -15,6 +15,15 @@ from app.analytics.cli import (
 )
 from app.cli.context import is_json_output, is_yes
 from app.cli.errors import OpenSREError
+from app.cli.langsmith_deploy import (
+    extract_deployment_url,
+    is_langgraph_cli_installed,
+    persist_langsmith_env,
+    resolve_deployment_name,
+    resolve_langsmith_api_key,
+    run_langsmith_deploy,
+    validate_langsmith_api_key,
+)
 from app.deployment.ec2_config import load_remote_outputs
 from app.deployment.health import poll_deployment_health
 
@@ -113,6 +122,10 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
             questionary.Choice("Deploy to AWS EC2 (Bedrock)", value="ec2"),
         )
 
+    choices.append(
+        questionary.Choice("Deploy to LangSmith (LangGraph)", value="langsmith"),
+    )
+
     choices.extend(
         [
             questionary.Separator(),
@@ -151,6 +164,68 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
 
     if action == "railway":
         ctx.invoke(deploy_railway)
+        return
+
+    if action == "langsmith":
+
+        # 2. LangGraph CLI check
+        ok, msg = is_langgraph_cli_installed()
+        if not ok:
+            console.print(f"[red]{msg}[/red]")
+            return
+
+        # 3. API key resolve
+        api_key = resolve_langsmith_api_key()
+        if not api_key:
+            api_key = questionary.password("LangSmith API key:").ask()
+            if not api_key:
+                return
+
+        # 4. Validate API key
+        valid, msg = validate_langsmith_api_key(api_key)
+        if not valid:
+            console.print(f"[red]{msg}[/red]")
+            return
+
+        # 5. Deployment name
+        deployment_name = resolve_deployment_name()
+
+        if not questionary.confirm(
+            f"Deploy to LangSmith with deployment '{deployment_name}'?",
+            default=True,
+            style=style,
+        ).ask():
+            console.print("  [dim]Cancelled.[/dim]")
+            return
+
+        # 6. Persist to .env
+        persist_langsmith_env(api_key, deployment_name)
+
+        capture_cli_invoked()
+        capture_deploy_started(target="langsmith", dry_run=False)
+
+        # 7. Deploy
+        console.print("[cyan]Deploying to LangSmith...[/cyan]")
+        code, output = run_langsmith_deploy(
+            api_key=api_key,
+            deployment_name=deployment_name,
+            build_only=False,
+        )
+
+        console.print(output)
+
+        # 8. Show URL
+        if code == 0:
+            capture_deploy_completed(target="langsmith", dry_run=False)
+            url = extract_deployment_url(output)
+            if url:
+                console.print(f"[green]Deployment URL:[/green] {url}")
+            else:
+                console.print("[yellow]Deployment succeeded but no URL found[/yellow]")
+        else:
+            capture_deploy_failed(target="langsmith", dry_run=False)
+            console.print("[red]Deployment failed[/red]")
+
         return
 
     if action == "down":
@@ -219,7 +294,7 @@ def deploy(ctx: click.Context) -> None:
         if is_yes() or is_json_output():
             raise OpenSREError(
                 "No subcommand provided.",
-                suggestion="Use 'opensre deploy ec2' or 'opensre deploy ec2 --down'.",
+                suggestion="Use 'opensre deploy ec2', 'opensre deploy ec2 --down', or 'opensre deploy langsmith'.",
             )
         _run_deploy_interactive(ctx)
 
@@ -296,3 +371,44 @@ def deploy_railway(
 
     capture_deploy_failed(target="railway", dry_run=dry_run)
     raise SystemExit(exit_code)
+
+
+@deploy.command(name="langsmith")
+@click.option("--api-key", default=None, help="LangSmith API key")
+@click.option("--build-only", is_flag=True, help="Build without deploy")
+@click.option("--deployment-name", default=None, help="Deployment name")
+def deploy_langsmith(api_key: str | None, build_only: bool, deployment_name: str | None) -> None:
+    """Deploy OpenSRE to LangSmith."""
+
+    ok, msg = is_langgraph_cli_installed()
+    if not ok:
+        raise click.ClickException(msg)
+
+    api_key = resolve_langsmith_api_key(api_key)
+    if not api_key:
+        raise click.ClickException("LangSmith API key not found.")
+
+    valid, msg = validate_langsmith_api_key(api_key)
+    if not valid:
+        raise click.ClickException(msg)
+
+    deployment_name = resolve_deployment_name(deployment_name)
+
+    persist_langsmith_env(api_key, deployment_name)
+
+    click.echo("Deploying to LangSmith...")
+    code, output = run_langsmith_deploy(
+        api_key=api_key,
+        deployment_name=deployment_name,
+        build_only=build_only,
+    )
+
+    click.echo(output)
+
+    if code != 0:
+        raise SystemExit(code)
+
+    url = extract_deployment_url(output)
+    if url:
+        click.echo(f"Deployment URL: {url}")
+

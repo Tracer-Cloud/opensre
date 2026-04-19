@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import logging
 
+from app.investigation_constants import MAX_INVESTIGATION_LOOPS
 from app.output import debug_print
 from app.state import AgentState, InvestigationState
 
 logger = logging.getLogger(__name__)
-
-MAX_INVESTIGATION_LOOPS = 4
 
 
 def route_by_mode(state: AgentState) -> str:

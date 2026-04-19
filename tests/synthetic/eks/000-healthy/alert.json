@@ -1,0 +1,26 @@
+{
+  "title": "[synthetic-k8s] Scheduled Health Check — payments-api",
+  "state": "normal",
+  "alert_source": "datadog",
+  "commonLabels": {
+    "alertname": "KubernetesScheduledHealthCheck",
+    "severity": "info",
+    "pipeline_name": "k8s-eks-synthetic",
+    "service": "payments-api",
+    "cluster_name": "payments-prod-eks",
+    "namespace": "payments",
+    "workload_type": "deployment",
+    "workload_name": "payments-api"
+  },
+  "commonAnnotations": {
+    "summary": "Periodic health check passed. All Kubernetes signals within normal operating bounds.",
+    "description": "Routine verification of pods, deployments, nodes, and application monitors for payments-api.",
+    "error": "",
+    "suspected_symptom": "None — workload is operating normally.",
+    "cluster_name": "payments-prod-eks",
+    "kube_namespace": "payments",
+    "kube_deployment": "payments-api",
+    "k8s_failure_mode": "healthy",
+    "context_sources": "eks,datadog"
+  }
+}

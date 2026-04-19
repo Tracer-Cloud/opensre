@@ -4,6 +4,8 @@ import os
 
 from langsmith import traceable
 
+from app.investigation_constants import MAX_INVESTIGATION_LOOPS
+from app.masking import MaskingContext
 from app.output import debug_print, get_tracker
 from app.services import get_llm_for_reasoning, parse_root_cause
 from app.state import InvestigationState
@@ -79,7 +81,7 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     loop_count = state.get("investigation_loop_count", 0)
 
     recommendations: list[str] = []
-    if check_vendor_evidence_missing(evidence) and loop_count < 3:
+    if check_vendor_evidence_missing(evidence) and loop_count < MAX_INVESTIGATION_LOOPS:
         recommendations.append("Fetch audit payload from S3 to trace external vendor interactions")
     next_loop_count = loop_count + 1 if recommendations else loop_count
 
@@ -89,14 +91,19 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
         message=f"validity:{validity_score:.0%}",
     )
 
+    # Unmask any placeholders the LLM passed through so state carries real
+    # identifiers for user-facing display. No-op when masking is disabled.
+    masking_ctx = MaskingContext.from_state(dict(state))
     return {
-        "root_cause": result.root_cause,
+        "root_cause": masking_ctx.unmask(result.root_cause),
         "root_cause_category": result.root_cause_category,
-        "causal_chain": result.causal_chain,
-        "validated_claims": validated_claims_list,
-        "non_validated_claims": non_validated_claims_list,
+        "causal_chain": [masking_ctx.unmask(step) for step in result.causal_chain],
+        "validated_claims": masking_ctx.unmask_value(validated_claims_list),
+        "non_validated_claims": masking_ctx.unmask_value(non_validated_claims_list),
         "validity_score": validity_score,
-        "investigation_recommendations": recommendations,
+        "investigation_recommendations": [
+            masking_ctx.unmask(rec) for rec in recommendations
+        ],
         "remediation_steps": [],
         "investigation_loop_count": next_loop_count,
     }
@@ -157,7 +164,7 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
     # If Grafana service names were just discovered but logs haven't been fetched yet,
     # loop back so node_plan_actions can query logs with the correct service name.
     recommendations: list[str] = []
-    if evidence.get("grafana_service_names") and not evidence.get("grafana_logs") and loop_count < 3:
+    if evidence.get("grafana_service_names") and not evidence.get("grafana_logs") and loop_count < MAX_INVESTIGATION_LOOPS:
         recommendations.append("Query Grafana logs using discovered service names")
 
     next_loop_count = loop_count + 1

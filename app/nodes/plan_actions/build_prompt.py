@@ -190,6 +190,52 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Use query_coralogix_logs to search Coralogix DataPrime logs for the failing service or error signature"""
         )
 
+    if "bitbucket" in available_sources:
+        bitbucket = available_sources["bitbucket"]
+        hints.append(
+            f"""Bitbucket Available:
+- Workspace: {bitbucket.get("workspace")}
+- Repository: {bitbucket.get("repo_slug")}
+- Ref: {bitbucket.get("ref") or "default"}
+- Use search_bitbucket_code, list_bitbucket_commits, and get_bitbucket_file_contents for targeted repository evidence"""
+        )
+
+    if "snowflake" in available_sources:
+        snowflake = available_sources["snowflake"]
+        hints.append(
+            f"""Snowflake Available:
+- Account: {snowflake.get("account_identifier")}
+- Warehouse: {snowflake.get("warehouse") or "default"}
+- Use query_snowflake_history to inspect bounded query-history evidence around the incident window"""
+        )
+
+    if "azure" in available_sources:
+        azure = available_sources["azure"]
+        hints.append(
+            f"""Azure Monitor Available:
+- Workspace ID: {azure.get("workspace_id")}
+- Query: {azure.get("query") or "default diagnostics query"}
+- Use query_azure_monitor_logs for bounded KQL evidence from Log Analytics"""
+        )
+
+    if "openobserve" in available_sources:
+        openobserve = available_sources["openobserve"]
+        hints.append(
+            f"""OpenObserve Available:
+- Organization: {openobserve.get("org")}
+- Stream: {openobserve.get("stream") or "auto"}
+- Use query_openobserve_logs for bounded log retrieval"""
+        )
+
+    if "opensearch" in available_sources:
+        opensearch = available_sources["opensearch"]
+        hints.append(
+            f"""OpenSearch Analytics Available:
+- Index Pattern: {opensearch.get("index_pattern") or "*"}
+- Query: {opensearch.get("default_query") or "*"}
+- Use query_opensearch_analytics for bounded OpenSearch-compatible evidence"""
+        )
+
     if "eks" in available_sources:
         eks = available_sources["eks"]
         hints.append(
@@ -282,7 +328,7 @@ This upstream trace reveals root causes outside the failed service (external API
 Use these proven investigation sequences as guidance for action selection.
 """
 
-    prompt = f"""You are investigating a data pipeline incident.
+    prompt = f"""You are investigating an alert or incident.
 
 Problem Context:
 {problem_context}
@@ -295,7 +341,7 @@ Available Investigation Actions:
 Executed Actions: {", ".join(executed_actions) if executed_actions else "None"}
 
 Task: Select the most relevant actions to execute now based on the problem context.
-Consider what information would help diagnose the root cause.
+Consider what information would help diagnose the root cause. If the alert appears healthy or informational, you MUST still query the relevant monitoring platforms (metrics, logs, alert rules) to verify its status before concluding.
 """
     return prompt
 

@@ -10,7 +10,7 @@ optimal_trajectory:
   - query_grafana_logs
   - query_grafana_metrics
   - query_grafana_alert_rules
-max_investigation_loops: 3
+max_investigation_loops: 4
 model_response: |
   ROOT_CAUSE: Replication lag on reporting-prod-replica-1 caused by a sustained bulk INSERT ETL job generating WAL faster than the replica can replay. The ReplicaLag CloudWatch metric is unavailable (collection gap on a recently provisioned replica), but the diagnosis is confirmed indirectly by: (1) RDS events explicitly reporting lag exceeding 900s then 1800s, (2) TransactionLogsGeneration sustaining ~195 MB/s on the primary, and (3) Performance Insights showing WAL:Lock as the dominant wait event at 4.2 AAS.
   ROOT_CAUSE_CATEGORY: resource_exhaustion

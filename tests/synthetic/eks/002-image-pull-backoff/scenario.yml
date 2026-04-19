@@ -1,0 +1,8 @@
+base: 000-healthy
+scenario_id: 002-image-pull-backoff
+failure_mode: image_pull_backoff
+severity: critical
+scenario_difficulty: 1
+adversarial_signals:
+  - old_replicas_still_healthy
+  - deployment_rollout_context
