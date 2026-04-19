@@ -71,6 +71,15 @@ class TestIsClearlyHealthyEKSEvidence:
         }
         assert is_clearly_healthy(_healthy_alert(), evidence) is True
 
+    def test_mixed_eks_and_datadog_evidence_triggers_short_circuit(self) -> None:
+        # Mixed evidence (EKS + Datadog) must also satisfy the gate — verifies
+        # the EKS keys interoperate with the existing investigated-evidence keys.
+        evidence = {
+            "eks_pods": [{"name": "payments-api-x", "phase": "Running"}],
+            "datadog_logs": [],
+        }
+        assert is_clearly_healthy(_healthy_alert(), evidence) is True
+
 
 class TestIsClearlyHealthyExistingSources:
     """Non-regression coverage for the evidence sources that already worked."""

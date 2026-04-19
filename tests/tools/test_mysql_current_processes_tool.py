@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
 from app.tools.MySQLCurrentProcessesTool import get_mysql_current_processes
@@ -9,7 +10,7 @@ from tests.tools.conftest import BaseToolContract
 
 
 class TestMySQLCurrentProcessesToolContract(BaseToolContract):
-    def get_tool_under_test(self):
+    def get_tool_under_test(self) -> Any:
         return get_mysql_current_processes.__opensre_registered_tool__
 
 

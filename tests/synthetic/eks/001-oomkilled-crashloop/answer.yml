@@ -1,0 +1,38 @@
+root_cause_category: resource_exhaustion
+required_keywords:
+  - exit code 137
+  - memory
+  - payments-api-7f9dd8b6c4-x7gr9
+forbidden_categories:
+  - healthy
+  - unknown
+  - dependency_failure
+  - data_quality
+optimal_trajectory:
+  - list_eks_pods
+  - get_eks_events
+  - get_eks_pod_logs
+max_investigation_loops: 3
+ruling_out_keywords:
+  - no image pull
+  - sibling
+required_queries:
+  - list_eks_pods
+  - get_eks_pod_logs
+model_response: |
+  ROOT_CAUSE: Container payments-api in pod payments-api-7f9dd8b6c4-x7gr9 is being OOM-killed; it exceeds its container memory limit, is terminated by the kernel with exit code 137, and kubelet keeps restarting it, producing CrashLoopBackOff. Sibling replicas are unaffected.
+  ROOT_CAUSE_CATEGORY: resource_exhaustion
+
+  VALIDATED_CLAIMS:
+  - Pod payments-api-7f9dd8b6c4-x7gr9 has restart_count=8 and lastState terminated with exit_code=137 (SIGKILL, the OOM signature). [evidence: eks_pods]
+  - The other two replicas are Running and Ready with 0 restarts, so the workload itself is fine. [evidence: eks_pods]
+  - Warning event BackOff references 'reason: OOMKilled, exit code: 137'. [evidence: eks_events]
+  - Pod logs include a kernel OOM line ('Memory cgroup out of memory: Killed process 1') immediately before termination. [evidence: eks_pod_logs]
+
+  NON_VALIDATED_CLAIMS:
+  - No ImagePullBackOff events, so this is not an image pull failure.
+  - No Liveness/Readiness probe failures, so probe misconfiguration is ruled out.
+  - Nodes are all Ready with no pressure, so this is a pod-level memory limit issue.
+
+  CAUSAL_CHAIN:
+  - Application memory footprint on this replica grows past the container memory limit, the kernel OOM-killer terminates PID 1 with SIGKILL, kubelet restarts the container, memory climbs again, the cycle repeats, and Kubernetes marks the pod CrashLoopBackOff while sibling pods keep serving traffic.

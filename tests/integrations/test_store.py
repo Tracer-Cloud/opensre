@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from unittest.mock import patch
 
 import pytest
 
 from app.integrations.store import _save
+
+
+def _assert_private_permissions(store_file) -> None:
+    mode = stat.S_IMODE(store_file.stat().st_mode)
+    if os.name == "nt":
+        # Windows file access is governed by ACLs; chmod-style mode bits are not portable here.
+        assert mode & stat.S_IWRITE
+        return
+    assert mode == 0o600, f"Expected 0o600, got 0o{mode:o}"
 
 
 class TestSavePermissions:
@@ -19,8 +29,7 @@ class TestSavePermissions:
         with patch("app.integrations.store.STORE_PATH", store_file):
             _save(data)
 
-        mode = stat.S_IMODE(store_file.stat().st_mode)
-        assert mode == 0o600, f"Expected 0o600, got 0o{mode:o}"
+        _assert_private_permissions(store_file)
 
     def test_saved_file_content_is_valid_json(self, tmp_path: pytest.TempPathFactory) -> None:
         store_file = tmp_path / "integrations.json"  # type: ignore[operator]
@@ -50,6 +59,5 @@ class TestSavePermissions:
         with patch("app.integrations.store.STORE_PATH", store_file):
             _save({"updated": True})
 
-        mode = stat.S_IMODE(store_file.stat().st_mode)
-        assert mode == 0o600
+        _assert_private_permissions(store_file)
         assert json.loads(store_file.read_text())["updated"] is True

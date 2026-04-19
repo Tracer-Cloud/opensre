@@ -1,0 +1,5 @@
+{
+  "pod_name": "payments-api-newrs-7c-001",
+  "namespace": "payments",
+  "logs": "2026-04-18T10:30:01Z INFO starting payments-api revision=v3.2.0 (config from /etc/payments/config.yaml)\n2026-04-18T10:30:01Z INFO loading database connection string from env DB_DSN\n2026-04-18T10:30:01Z FATAL configuration error: required env var DB_DSN is not set in pod spec — manifest revision v3.2.0 removed the DB_DSN entry but the application still requires it\n2026-04-18T10:30:01Z FATAL exiting with code 1\n[container terminated with exit code 1]\n[kubelet detected exit, will restart after backoff window]\n"
+}

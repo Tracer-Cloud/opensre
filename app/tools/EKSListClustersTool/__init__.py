@@ -19,7 +19,7 @@ def _eks_available(sources: dict[str, dict]) -> bool:
 
 def _eks_creds(eks: dict) -> dict:
     return {
-        "role_arn": eks["role_arn"],
+        "role_arn": eks.get("role_arn", ""),
         "external_id": eks.get("external_id", ""),
         "region": eks.get("region", "us-east-1"),
     }

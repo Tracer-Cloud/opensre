@@ -34,3 +34,22 @@ def run_catalog_item(
         check=False,
     )
     return int(result.returncode)
+
+
+def run_catalog_items(
+    items: list[TestCatalogItem],
+    *,
+    dry_run: bool = False,
+    working_directory: Path | None = None,
+) -> int:
+    """Run multiple catalog items sequentially. Returns worst (max) exit code.
+
+    Non-runnable items are skipped so callers can safely pass mixed selections.
+    """
+    worst = 0
+    for item in items:
+        if not item.is_runnable:
+            continue
+        code = run_catalog_item(item, dry_run=dry_run, working_directory=working_directory)
+        worst = max(worst, code)
+    return worst

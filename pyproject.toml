@@ -44,6 +44,7 @@ dependencies = [
     "rich>=15.0.0",
     "questionary>=2.1.1",
     "PyYAML>=6.0",
+    "tzdata>=2026.1",
     # OpenTelemetry
     "opentelemetry-api>=1.41.0",
     "opentelemetry-sdk>=1.20.0",
@@ -96,6 +97,9 @@ clickhouse = [
 ]
 postgresql = [
     "psycopg2-binary>=2.9.0,<3.0.0",
+]
+azure_sql = [
+    "pyodbc>=5.1.0,<6.0.0",
 ]
 
 [tool.setuptools.packages.find]

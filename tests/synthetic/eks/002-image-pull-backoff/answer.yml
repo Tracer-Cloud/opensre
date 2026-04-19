@@ -1,0 +1,35 @@
+root_cause_category: configuration_error
+required_keywords:
+  - ImagePullBackOff
+  - payments:v2.1.0-bad
+  - manifest
+forbidden_categories:
+  - healthy
+  - unknown
+  - resource_exhaustion
+optimal_trajectory:
+  - list_eks_pods
+  - get_eks_events
+  - list_eks_deployments
+max_investigation_loops: 3
+ruling_out_keywords:
+  - not an OOM
+  - old ReplicaSet
+required_queries:
+  - list_eks_pods
+  - get_eks_events
+model_response: |
+  ROOT_CAUSE: The newly-rolled-out ReplicaSet for payments-api references image tag 'payments:v2.1.0-bad'; the container registry returns 'manifest unknown' because that tag does not exist. Kubelet cannot pull the image, the container stays waiting with reason ImagePullBackOff, and the deployment rollout stalls — while the old ReplicaSet's pods remain healthy.
+  ROOT_CAUSE_CATEGORY: configuration_error
+
+  VALIDATED_CLAIMS:
+  - New pods (payments-api-9c1d2e3f4-2hk8w, -pm44r) are Pending with container state waiting reason=ImagePullBackOff. [evidence: eks_pods]
+  - Warning event Failed 'Failed to pull image payments:v2.1.0-bad: manifest unknown' fires repeatedly. [evidence: eks_events]
+  - Deployment reports desired=3, ready=1, available=1, unavailable=2 — only the surviving old-ReplicaSet pod is counted. [evidence: eks_deployments]
+
+  NON_VALIDATED_CLAIMS:
+  - The image tag v2.1.0-bad was likely never pushed or was overwritten/GC'd between build and deploy.
+  - No OOM, probe-failure, or scheduling events — the failure is entirely at the image pull step.
+
+  CAUSAL_CHAIN:
+  - A deploy sets the container image to a tag that does not resolve, the new ReplicaSet creates pods, kubelet asks the runtime to pull the image, the registry responds NotFound ('manifest unknown'), kubelet retries with backoff and surfaces ImagePullBackOff, the pods never become Ready, and the rollout freezes while the previous ReplicaSet keeps serving.
