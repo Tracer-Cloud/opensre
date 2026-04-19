@@ -3,7 +3,10 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.integrations.github_mcp import build_github_mcp_config
+from app.integrations.github_mcp import (
+    _remote_github_mcp_session_url,
+    build_github_mcp_config,
+)
 from app.integrations.models import (
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
@@ -38,6 +41,71 @@ def test_github_mcp_config_rejects_unknown_fields_with_suggestion() -> None:
 def test_github_mcp_stdio_requires_command() -> None:
     with pytest.raises(ValidationError, match="requires a non-empty command"):
         build_github_mcp_config({"mode": "stdio"})
+
+
+def test_github_mcp_remote_request_headers_include_x_mcp_toolsets() -> None:
+    """Explicit Copilot MCP paths use X-MCP-Toolsets to merge toolsets (remote-server.md)."""
+    cfg = build_github_mcp_config({
+        "url": "https://api.githubcopilot.com/mcp/x/issues",
+        "mode": "streamable-http",
+        "auth_token": "ghp_test",
+        "toolsets": ["repos", "issues"],
+    })
+    assert cfg.request_headers["X-MCP-Toolsets"] == "repos,issues"
+
+
+def test_github_mcp_generic_copilot_root_omits_x_mcp_toolsets() -> None:
+    """Generic /mcp uses rewritten /x/all/readonly; subset header would hide search tools."""
+    cfg = build_github_mcp_config({
+        "url": "https://api.githubcopilot.com/mcp/",
+        "mode": "streamable-http",
+        "auth_token": "ghp_test",
+        "toolsets": ["repos", "issues"],
+    })
+    assert "X-MCP-Toolsets" not in cfg.request_headers
+
+
+def test_github_mcp_stdio_omits_x_mcp_toolsets_header() -> None:
+    cfg = build_github_mcp_config({
+        "mode": "stdio",
+        "command": "github-mcp-server",
+        "toolsets": ["repos"],
+    })
+    assert "X-MCP-Toolsets" not in cfg.request_headers
+
+
+def test_remote_github_mcp_root_url_rewrites_to_x_all_readonly() -> None:
+    assert (
+        _remote_github_mcp_session_url("https://api.githubcopilot.com/mcp/")
+        == "https://api.githubcopilot.com/mcp/x/all/readonly"
+    )
+    assert (
+        _remote_github_mcp_session_url("https://api.githubcopilot.com/mcp")
+        == "https://api.githubcopilot.com/mcp/x/all/readonly"
+    )
+
+
+def test_remote_github_mcp_explicit_paths_not_rewritten() -> None:
+    url = "https://api.githubcopilot.com/mcp/x/repos"
+    assert _remote_github_mcp_session_url(url) == url
+    assert _remote_github_mcp_session_url("https://api.githubcopilot.com/mcp/readonly") == (
+        "https://api.githubcopilot.com/mcp/readonly"
+    )
+
+
+def test_remote_github_mcp_other_hosts_unchanged() -> None:
+    url = "https://example.com/mcp/"
+    assert _remote_github_mcp_session_url(url) == url
+
+
+def test_github_mcp_custom_headers_can_override_x_mcp_toolsets() -> None:
+    cfg = build_github_mcp_config({
+        "url": "https://api.githubcopilot.com/mcp/",
+        "mode": "streamable-http",
+        "toolsets": ["repos"],
+        "headers": {"X-MCP-Toolsets": "repos,pull_requests"},
+    })
+    assert cfg.request_headers["X-MCP-Toolsets"] == "repos,pull_requests"
 
 
 def test_datadog_config_rejects_unknown_fields_with_suggestion() -> None:
@@ -92,3 +160,13 @@ def test_tracer_config_strips_bearer_prefix() -> None:
     })
 
     assert config.jwt_token == "test-token"
+
+
+def test_posthog_config_rejects_unknown_fields_with_suggestion() -> None:
+    from app.integrations.posthog import build_posthog_config
+
+    with pytest.raises(ValidationError, match="proejct_id.*project_id"):
+        build_posthog_config({
+            "personal_api_key": "phx_test",
+            "proejct_id": "12345",
+        })

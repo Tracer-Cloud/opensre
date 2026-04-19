@@ -3,10 +3,13 @@ from __future__ import annotations
 import sys
 import types
 
+import pytest
+
 from app.cli.wizard.integration_health import (
     validate_aws_integration,
     validate_coralogix_integration,
     validate_datadog_integration,
+    validate_discord_bot,
     validate_github_mcp_integration,
     validate_grafana_integration,
     validate_honeycomb_integration,
@@ -14,6 +17,7 @@ from app.cli.wizard.integration_health import (
     validate_slack_webhook,
     validate_vercel_integration,
 )
+from app.integrations.github_mcp import GitHubMCPValidationResult
 
 
 class _FakeGrafanaClient:
@@ -179,7 +183,10 @@ def test_validate_aws_integration_succeeds_with_role_assumption(monkeypatch) -> 
 
     class _FakeAssumedSts:
         def get_caller_identity(self) -> dict[str, str]:
-            return {"Account": "123456789012", "Arn": "arn:aws:sts::123456789012:assumed-role/demo/session"}
+            return {
+                "Account": "123456789012",
+                "Arn": "arn:aws:sts::123456789012:assumed-role/demo/session",
+            }
 
     def _client(service_name: str, **kwargs):
         if service_name != "sts":
@@ -223,7 +230,14 @@ def test_validate_aws_integration_fails_when_boto3_client_raises(monkeypatch) ->
 def test_validate_github_mcp_integration_uses_shared_validator(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.cli.wizard.integration_health.validate_github_mcp_config",
-        lambda _config: types.SimpleNamespace(ok=True, detail="GitHub MCP ok"),
+        lambda _config, **_kwargs: GitHubMCPValidationResult(
+            ok=True,
+            detail="OK @ghuser; repos=1; owners=o; examples=o/r; mcp_tools=1",
+            authenticated_user="ghuser",
+            repo_access_count=1,
+            repo_access_scope_owners=("o",),
+            repo_access_samples=("o/r",),
+        ),
     )
 
     result = validate_github_mcp_integration(
@@ -234,7 +248,11 @@ def test_validate_github_mcp_integration_uses_shared_validator(monkeypatch) -> N
     )
 
     assert result.ok is True
-    assert result.detail == "GitHub MCP ok"
+    assert "Configuration validation: succeeded" in result.detail
+    assert "GitHub identity: @ghuser" in result.detail
+    assert "Repositories returned (probe): 1" in result.detail
+    assert result.github_mcp is not None
+    assert result.github_mcp.authenticated_user == "ghuser"
 
 
 def test_validate_sentry_integration_uses_shared_validator(monkeypatch) -> None:
@@ -271,7 +289,9 @@ class _FakeVercelClient:
 def test_validate_vercel_integration_succeeds(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.cli.wizard.integration_health.VercelClient",
-        lambda _config: _FakeVercelClient({"success": True, "projects": [{"id": "p1"}], "total": 1}),
+        lambda _config: _FakeVercelClient(
+            {"success": True, "projects": [{"id": "p1"}], "total": 1}
+        ),
     )
 
     result = validate_vercel_integration(api_token="tok_test")
@@ -332,4 +352,59 @@ def test_validate_vercel_integration_surfaces_exception(monkeypatch) -> None:
     result = validate_vercel_integration(api_token="tok_test")
 
     assert result.ok is False
-    assert "network unreachable" in result.detail
+
+
+# ---------------------------------------------------------------------------
+# validate_discord_bot
+# ---------------------------------------------------------------------------
+
+
+def test_validate_discord_bot_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "httpx.get",
+        lambda *_a, **_kw: types.SimpleNamespace(
+            status_code=200,
+            json=lambda: {"username": "my-sre-bot"},
+        ),
+    )
+    result = validate_discord_bot(bot_token="Bot.valid.token")
+    assert result.ok is True
+    assert "my-sre-bot" in result.detail
+
+
+def test_validate_discord_bot_invalid_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "httpx.get",
+        lambda *_a, **_kw: types.SimpleNamespace(
+            status_code=401,
+            json=lambda: {"message": "401: Unauthorized"},
+        ),
+    )
+    result = validate_discord_bot(bot_token="bad-token")
+    assert result.ok is False
+    assert "invalid or revoked" in result.detail.lower()
+
+
+def test_validate_discord_bot_unexpected_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "httpx.get",
+        lambda *_a, **_kw: types.SimpleNamespace(
+            status_code=500,
+            json=lambda: {},
+        ),
+    )
+    result = validate_discord_bot(bot_token="some-token")
+    assert result.ok is False
+    assert "500" in result.detail
+
+
+def test_validate_discord_bot_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    import httpx as _httpx
+
+    def _raise(*_a: object, **_kw: object) -> None:
+        raise _httpx.RequestError("connection refused")
+
+    monkeypatch.setattr("httpx.get", _raise)
+    result = validate_discord_bot(bot_token="some-token")
+    assert result.ok is False
+    assert "unreachable" in result.detail.lower()

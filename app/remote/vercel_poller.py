@@ -10,7 +10,7 @@ from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qs, urlparse
 
 from app.integrations.verify import resolve_effective_integrations
@@ -375,7 +375,9 @@ def _parallel_deployment_events_and_runtime_logs(
     def _events() -> list[dict[str, Any]]:
         with _make_client_from_config(config) as worker:
             result = worker.get_deployment_events(deployment_id, limit=log_limit)
-            return result.get("events", []) if result.get("success") else []
+            if not result.get("success"):
+                return []
+            return cast(list[dict[str, Any]], result.get("events", []))
 
     def _runtime() -> list[dict[str, Any]]:
         with _make_client_from_config(config) as worker:
@@ -384,7 +386,9 @@ def _parallel_deployment_events_and_runtime_logs(
                 limit=log_limit,
                 project_id=project_id,
             )
-            return result.get("logs", []) if result.get("success") else []
+            if not result.get("success"):
+                return []
+            return cast(list[dict[str, Any]], result.get("logs", []))
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         events_future = pool.submit(_events)

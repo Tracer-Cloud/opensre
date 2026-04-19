@@ -16,8 +16,13 @@ def test_install_questionary_escape_cancel_is_idempotent() -> None:
 
 def test_stock_questionary_select_escape_cancels() -> None:
     install_questionary_escape_cancel()
-    q = questionary.select("Pick", choices=["a", "b"])
     with create_pipe_input() as pipe_input:
+        q = questionary.select(
+            "Pick",
+            choices=["a", "b"],
+            input=pipe_input,
+            output=DummyOutput(),
+        )
         pipe_input.send_bytes(b"\x1b")
         app = q.application
         app.input = pipe_input

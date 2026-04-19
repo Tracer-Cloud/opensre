@@ -47,8 +47,9 @@ def _rich_line_with_links(text: str) -> Text:
 
 def _strip_slack_links(text: str) -> str:
     """Convert Slack <url|label> to plain 'label (url)' for plain text mode."""
-    def _repl(m: re.Match) -> str:
-        url, label = m.group(1), m.group(2)
+    def _repl(m: re.Match[str]) -> str:
+        url = str(m.group(1))
+        label = m.group(2)
         return f"{label} ({url})" if label else url
     return _SLACK_LINK_RE.sub(_repl, text)
 

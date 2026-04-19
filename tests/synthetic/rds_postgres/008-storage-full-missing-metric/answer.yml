@@ -8,7 +8,7 @@ optimal_trajectory:
   - query_grafana_logs
   - query_grafana_metrics
   - query_grafana_alert_rules
-max_investigation_loops: 3
+max_investigation_loops: 4
 model_response: |
   ROOT_CAUSE: The RDS instance ran out of storage space. FreeStorageSpace was not captured in the CloudWatch metric fixture (simulating a collection gap), but the root cause is definitively confirmed by: (1) the RDS event "DB instance ran out of storage space" at 03:08:44Z, (2) WriteIOPS collapsing to zero at T+8 min, and (3) WriteLatency climbing to 34 seconds as write queries stalled waiting for disk space that was never available.
   ROOT_CAUSE_CATEGORY: resource_exhaustion

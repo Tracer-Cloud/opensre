@@ -22,6 +22,7 @@ from pydantic import BaseModel, ValidationError
 from app.config import (
     ANTHROPIC_LLM_CONFIG,
     GEMINI_BASE_URL,
+    MINIMAX_BASE_URL,
     NVIDIA_BASE_URL,
     OPENAI_LLM_CONFIG,
     OPENROUTER_BASE_URL,
@@ -36,16 +37,18 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-_VALID_ROOT_CAUSE_CATEGORIES = frozenset({
-    "configuration_error",
-    "code_defect",
-    "data_quality",
-    "resource_exhaustion",
-    "dependency_failure",
-    "infrastructure",
-    "healthy",
-    "unknown",
-})
+_VALID_ROOT_CAUSE_CATEGORIES = frozenset(
+    {
+        "configuration_error",
+        "code_defect",
+        "data_quality",
+        "resource_exhaustion",
+        "dependency_failure",
+        "infrastructure",
+        "healthy",
+        "unknown",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -63,7 +66,9 @@ class LLMResponse:
 
 
 class LLMClient:
-    def __init__(self, *, model: str, max_tokens: int = 1024, temperature: float | None = None) -> None:
+    def __init__(
+        self, *, model: str, max_tokens: int = 1024, temperature: float | None = None
+    ) -> None:
         api_key = resolve_llm_api_key("ANTHROPIC_API_KEY")
         self._api_key = api_key
         self._client = Anthropic(api_key=api_key, timeout=60.0)
@@ -142,7 +147,9 @@ class LLMClient:
 class BedrockLLMClient:
     """LLM client using Anthropic models via Amazon Bedrock (IAM auth, no API key)."""
 
-    def __init__(self, *, model: str, max_tokens: int = 1024, temperature: float | None = None) -> None:
+    def __init__(
+        self, *, model: str, max_tokens: int = 1024, temperature: float | None = None
+    ) -> None:
         self._client = AnthropicBedrock(aws_region=os.getenv("AWS_REGION", "us-east-1"))
         self._model = model
         self._max_tokens = max_tokens
@@ -277,7 +284,9 @@ class OpenAILLMClient:
             for msg in messages:
                 msg["content"] = engine.apply(msg["content"])
 
-        token_param = "max_completion_tokens" if _uses_max_completion_tokens(self._model) else "max_tokens"
+        token_param = (
+            "max_completion_tokens" if _uses_max_completion_tokens(self._model) else "max_tokens"
+        )
         kwargs: dict[str, Any] = {
             "model": self._model,
             token_param: self._max_tokens,
@@ -317,7 +326,9 @@ class OpenAILLMClient:
 
 
 class StructuredOutputClient:
-    def __init__(self, base: LLMClient | OpenAILLMClient | BedrockLLMClient, model: type[BaseModel]) -> None:
+    def __init__(
+        self, base: LLMClient | OpenAILLMClient | BedrockLLMClient, model: type[BaseModel]
+    ) -> None:
         self._base = base
         self._model = model
 
@@ -328,9 +339,7 @@ class StructuredOutputClient:
         schema = self._model.model_json_schema()
         schema_json = json.dumps(schema, indent=2)
         wrapped_prompt = (
-            f"{prompt}\n\n"
-            "Return ONLY valid JSON that matches this schema:\n"
-            f"{schema_json}\n"
+            f"{prompt}\n\nReturn ONLY valid JSON that matches this schema:\n{schema_json}\n"
         )
         response = self._base.invoke(wrapped_prompt)
         payload = _extract_json_payload(response.content)
@@ -444,13 +453,21 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
     provider = settings.provider
     if provider == "openai":
         config = OPENAI_LLM_CONFIG
-        model = settings.openai_reasoning_model if model_type == "reasoning" else settings.openai_toolcall_model
+        model = (
+            settings.openai_reasoning_model
+            if model_type == "reasoning"
+            else settings.openai_toolcall_model
+        )
         return OpenAILLMClient(model=model, max_tokens=config.max_tokens)
     elif provider == "openrouter":
         from app.config import OPENROUTER_LLM_CONFIG
 
         config = OPENROUTER_LLM_CONFIG
-        model = settings.openrouter_reasoning_model if model_type == "reasoning" else settings.openrouter_toolcall_model
+        model = (
+            settings.openrouter_reasoning_model
+            if model_type == "reasoning"
+            else settings.openrouter_toolcall_model
+        )
         return OpenAILLMClient(
             model=model,
             max_tokens=config.max_tokens,
@@ -461,7 +478,11 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
         from app.config import GEMINI_LLM_CONFIG
 
         config = GEMINI_LLM_CONFIG
-        model = settings.gemini_reasoning_model if model_type == "reasoning" else settings.gemini_toolcall_model
+        model = (
+            settings.gemini_reasoning_model
+            if model_type == "reasoning"
+            else settings.gemini_toolcall_model
+        )
         return OpenAILLMClient(
             model=model,
             max_tokens=config.max_tokens,
@@ -472,12 +493,32 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
         from app.config import NVIDIA_LLM_CONFIG
 
         config = NVIDIA_LLM_CONFIG
-        model = settings.nvidia_reasoning_model if model_type == "reasoning" else settings.nvidia_toolcall_model
+        model = (
+            settings.nvidia_reasoning_model
+            if model_type == "reasoning"
+            else settings.nvidia_toolcall_model
+        )
         return OpenAILLMClient(
             model=model,
             max_tokens=config.max_tokens,
             base_url=NVIDIA_BASE_URL,
             api_key_env="NVIDIA_API_KEY",
+        )
+    elif provider == "minimax":
+        from app.config import MINIMAX_LLM_CONFIG
+
+        config = MINIMAX_LLM_CONFIG
+        model = (
+            settings.minimax_reasoning_model
+            if model_type == "reasoning"
+            else settings.minimax_toolcall_model
+        )
+        return OpenAILLMClient(
+            model=model,
+            max_tokens=config.max_tokens,
+            base_url=MINIMAX_BASE_URL,
+            api_key_env="MINIMAX_API_KEY",
+            temperature=1.0,
         )
     elif provider == "ollama":
         from app.config import OLLAMA_LLM_CONFIG
@@ -495,11 +536,19 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
         from app.config import BEDROCK_LLM_CONFIG
 
         config = BEDROCK_LLM_CONFIG
-        model = settings.bedrock_reasoning_model if model_type == "reasoning" else settings.bedrock_toolcall_model
+        model = (
+            settings.bedrock_reasoning_model
+            if model_type == "reasoning"
+            else settings.bedrock_toolcall_model
+        )
         return BedrockLLMClient(model=model, max_tokens=config.max_tokens)
     else:
         config = ANTHROPIC_LLM_CONFIG
-        model = settings.anthropic_reasoning_model if model_type == "reasoning" else settings.anthropic_toolcall_model
+        model = (
+            settings.anthropic_reasoning_model
+            if model_type == "reasoning"
+            else settings.anthropic_toolcall_model
+        )
         return LLMClient(model=model, max_tokens=config.max_tokens)
 
 
@@ -547,70 +596,75 @@ def parse_root_cause(response: str) -> RootCauseResult:
     causal_chain: list[str] = []
 
     if "ROOT_CAUSE_CATEGORY:" in response:
-        after = response.split("ROOT_CAUSE_CATEGORY:")[1]
-        for line in after.split("\n"):
-            candidate = line.strip().lower()
-            if candidate and candidate in _VALID_ROOT_CAUSE_CATEGORIES:
-                root_cause_category = candidate
-                break
+        parts = response.split("ROOT_CAUSE_CATEGORY:", 1)
+        if len(parts) > 1:
+            after = parts[1]
+            for line in after.split("\n"):
+                candidate = line.strip().lower()
+                if candidate and candidate in _VALID_ROOT_CAUSE_CATEGORIES:
+                    root_cause_category = candidate
+                    break
 
     if "ROOT_CAUSE:" in response:
-        parts = response.split("ROOT_CAUSE:")[1]
-
-        # Extract the root cause sentence (text before first section header)
-        for delimiter in ("ROOT_CAUSE_CATEGORY:", "VALIDATED_CLAIMS:", "NON_VALIDATED_CLAIMS:", "CAUSAL_CHAIN:"):
-            if delimiter in parts:
-                root_cause = parts.split(delimiter)[0].strip()
-                break
-        else:
-            root_cause = parts.strip()
-
-        # Extract validated claims
-        if "VALIDATED_CLAIMS:" in parts:
-            validated_section = parts.split("VALIDATED_CLAIMS:")[1]
-            if "NON_VALIDATED_CLAIMS:" in validated_section:
-                validated_text = validated_section.split("NON_VALIDATED_CLAIMS:")[0]
-            elif "CAUSAL_CHAIN:" in validated_section:
-                validated_text = validated_section.split("CAUSAL_CHAIN:")[0]
+        parts = response.split("ROOT_CAUSE:", 1)
+        if len(parts) > 1:
+            after = parts[1]
+            # Extract the root cause sentence (text before first section header)
+            for delimiter in (
+                "ROOT_CAUSE_CATEGORY:",
+                "VALIDATED_CLAIMS:",
+                "NON_VALIDATED_CLAIMS:",
+                "CAUSAL_CHAIN:",
+            ):
+                if delimiter in after:
+                    root_cause = after.split(delimiter, 1)[0].strip()
+                    break
             else:
-                validated_text = validated_section
+                root_cause = after.strip()
 
-            for line in validated_text.strip().split("\n"):
-                line = line.strip().lstrip("*-• ").strip()
-                if (
-                    line
-                    and not line.startswith("NON_")
-                    and not line.startswith("CAUSAL_CHAIN")
-                    and not line.startswith("CONFIDENCE")
-                    and not line.startswith("ROOT_CAUSE")
-                ):
-                    validated_claims.append(line)
+            # Extract validated claims
+            if "VALIDATED_CLAIMS:" in after:
+                validated_section = after.split("VALIDATED_CLAIMS:", 1)[1]
+                if "NON_VALIDATED_CLAIMS:" in validated_section:
+                    validated_text = validated_section.split("NON_VALIDATED_CLAIMS:", 1)[0]
+                elif "CAUSAL_CHAIN:" in validated_section:
+                    validated_text = validated_section.split("CAUSAL_CHAIN:", 1)[0]
+                else:
+                    validated_text = validated_section
 
-        # Extract non-validated claims
-        if "NON_VALIDATED_CLAIMS:" in parts:
-            non_validated_section = parts.split("NON_VALIDATED_CLAIMS:")[1]
-            if "CAUSAL_CHAIN:" in non_validated_section:
-                non_validated_text = non_validated_section.split("CAUSAL_CHAIN:")[0]
-            else:
-                non_validated_text = non_validated_section
+                for line in validated_text.strip().split("\n"):
+                    line = line.strip().lstrip("*-• ").strip()
+                    if (
+                        line
+                        and not line.startswith("NON_")
+                        and not line.startswith("CAUSAL_CHAIN")
+                        and not line.startswith("CONFIDENCE")
+                        and not line.startswith("ROOT_CAUSE")
+                    ):
+                        validated_claims.append(line)
 
-            for line in non_validated_text.strip().split("\n"):
-                line = line.strip().lstrip("*-• ").strip()
-                if (
-                    line
-                    and not line.startswith("CAUSAL_CHAIN")
-                ):
-                    non_validated_claims.append(line)
+            # Extract non-validated claims
+            if "NON_VALIDATED_CLAIMS:" in after:
+                non_validated_section = after.split("NON_VALIDATED_CLAIMS:", 1)[1]
+                if "CAUSAL_CHAIN:" in non_validated_section:
+                    non_validated_text = non_validated_section.split("CAUSAL_CHAIN:", 1)[0]
+                else:
+                    non_validated_text = non_validated_section
 
-        # Extract causal chain
-        if "CAUSAL_CHAIN:" in parts:
-            causal_section = parts.split("CAUSAL_CHAIN:")[1]
-            causal_text = causal_section
+                for line in non_validated_text.strip().split("\n"):
+                    line = line.strip().lstrip("*-• ").strip()
+                    if line and not line.startswith("CAUSAL_CHAIN"):
+                        non_validated_claims.append(line)
 
-            for line in causal_text.strip().split("\n"):
-                line = line.strip().lstrip("*-• ").strip()
-                if line:
-                    causal_chain.append(line)
+            # Extract causal chain
+            if "CAUSAL_CHAIN:" in after:
+                causal_section = after.split("CAUSAL_CHAIN:", 1)[1]
+                causal_text = causal_section
+
+                for line in causal_text.strip().split("\n"):
+                    line = line.strip().lstrip("*-• ").strip()
+                    if line:
+                        causal_chain.append(line)
 
     return RootCauseResult(
         root_cause=root_cause,

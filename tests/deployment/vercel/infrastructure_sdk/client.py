@@ -33,6 +33,20 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(body.encode())
 """
 
+# Mirrors the /ok endpoint that RemoteAgentClient.health() expects.
+OK_HANDLER_SOURCE = """\
+from http.server import BaseHTTPRequestHandler
+import json
+
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        body = json.dumps({"ok": True, "service": "opensre", "deployment": "vercel"})
+        self.wfile.write(body.encode())
+"""
+
 
 class VercelPermissionError(PermissionError):
     """Raised when the token lacks required permissions."""
@@ -180,9 +194,17 @@ def create_deployment(
         "name": project_name,
         "files": [
             {"file": "api/health.py", "data": HEALTH_HANDLER_SOURCE},
+            {"file": "api/ok.py", "data": OK_HANDLER_SOURCE},
         ],
-        "builds": [{"src": "api/health.py", "use": "@vercel/python"}],
-        "routes": [{"src": "/api/health", "dest": "/api/health.py"}],
+        "builds": [
+            {"src": "api/health.py", "use": "@vercel/python"},
+            {"src": "api/ok.py", "use": "@vercel/python"},
+        ],
+        "routes": [
+            {"src": "/api/health", "dest": "/api/health.py"},
+            {"src": "/api/ok", "dest": "/api/ok.py"},
+            {"src": "/ok", "dest": "/api/ok.py"},
+        ],
         "target": "production",
     }
 

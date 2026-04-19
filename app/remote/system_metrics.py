@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import platform
-import resource
 import shutil
 import socket
 import subprocess
@@ -17,6 +16,13 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+
+_resource: Any | None
+
+try:
+    import resource as _resource
+except ModuleNotFoundError:
+    _resource = None
 
 
 def collect_system_metrics() -> dict[str, Any]:
@@ -58,8 +64,11 @@ def collect_system_metrics() -> dict[str, Any]:
 
 
 def _collect_cpu() -> dict[str, Any] | None:
+    getloadavg = getattr(os, "getloadavg", None)
+    if getloadavg is None:
+        return None
     try:
-        load1, load5, load15 = os.getloadavg()
+        load1, load5, load15 = getloadavg()
         return {
             "load_avg_1m": round(load1, 2),
             "load_avg_5m": round(load5, 2),
@@ -82,7 +91,7 @@ def _collect_memory() -> dict[str, Any] | None:
         if sys.platform == "darwin":
             return _memory_darwin()
     except Exception:  # noqa: BLE001
-        pass
+        return None
     return None
 
 
@@ -171,7 +180,7 @@ def _collect_uptime() -> dict[str, Any] | None:
         if sys.platform == "darwin":
             return _uptime_darwin()
     except Exception:  # noqa: BLE001
-        pass
+        return None
     return None
 
 
@@ -226,8 +235,16 @@ def _collect_platform() -> dict[str, Any]:
 
 
 def _collect_process() -> dict[str, Any] | None:
+    if _resource is None:
+        return None
+
+    getrusage = getattr(_resource, "getrusage", None)
+    rusage_self = getattr(_resource, "RUSAGE_SELF", None)
+    if getrusage is None or rusage_self is None:
+        return None
+
     try:
-        usage = resource.getrusage(resource.RUSAGE_SELF)
+        usage = getrusage(rusage_self)
         # maxrss is in kB on Linux, bytes on macOS
         rss_kb = usage.ru_maxrss if sys.platform == "linux" else usage.ru_maxrss // 1024
         result: dict[str, Any] = {"rss_mb": round(rss_kb / 1024, 1)}

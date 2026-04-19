@@ -126,7 +126,7 @@ class GuardrailEngine:
 
         redact_matches = sorted(
             [m for m in result.matches if m.action == GuardrailAction.REDACT],
-            key=lambda m: m.start,
+            key=lambda m: (m.start, m.end),
             reverse=True,
         )
         seen_end = len(text)

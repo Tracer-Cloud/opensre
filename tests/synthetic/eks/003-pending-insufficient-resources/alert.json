@@ -1,0 +1,27 @@
+{
+  "title": "[synthetic-k8s] Pod Pending for 12 minutes — payments-api",
+  "state": "alerting",
+  "alert_source": "datadog",
+  "commonLabels": {
+    "alertname": "KubernetesPodPending",
+    "severity": "warning",
+    "pipeline_name": "k8s-eks-synthetic",
+    "service": "payments-api",
+    "cluster_name": "payments-prod-eks",
+    "namespace": "payments",
+    "workload_type": "deployment",
+    "workload_name": "payments-api"
+  },
+  "commonAnnotations": {
+    "summary": "Pod payments-api-7f9dd8b6c4-c12fj is Pending with no containers started for over 12 minutes.",
+    "description": "A scale-up replica of payments-api cannot be scheduled onto any node. All nodes report Ready=True.",
+    "error": "PodScheduled=False with reason Unschedulable.",
+    "suspected_symptom": "Scheduling failure despite nodes appearing healthy.",
+    "cluster_name": "payments-prod-eks",
+    "kube_namespace": "payments",
+    "kube_deployment": "payments-api",
+    "kube_pod": "payments-api-7f9dd8b6c4-c12fj",
+    "k8s_failure_mode": "pending_pod",
+    "context_sources": "eks"
+  }
+}

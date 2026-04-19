@@ -9,7 +9,7 @@ import pkgutil
 from functools import lru_cache
 from types import ModuleType
 
-import app.tools as tools_package
+from app import tools as tools_package
 from app.tools.base import BaseTool
 from app.tools.registered_tool import REGISTERED_TOOL_ATTR, RegisteredTool, ToolSurface
 
@@ -23,8 +23,6 @@ _SKIP_MODULE_NAMES = {
     "tool_decorator",
     "investigation_registry",
     "utils",
-    "simple_tools",
-    "simple_tools_test",
 }
 
 # Preserve the current chat surface while the repo migrates toward explicit
