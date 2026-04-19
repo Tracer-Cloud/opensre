@@ -30,12 +30,8 @@ concurrency:
 
 jobs:
   quality:
-    name: quality (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+    name: quality
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
@@ -54,12 +50,8 @@ jobs:
         run: python -m ruff check app/ tests/
 
   typecheck:
-    name: typecheck (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+    name: typecheck
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 

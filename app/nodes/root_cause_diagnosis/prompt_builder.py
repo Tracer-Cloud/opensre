@@ -1,5 +1,6 @@
 """Prompt construction for root cause diagnosis."""
 
+import datetime
 import json
 from typing import Any
 
@@ -139,7 +140,10 @@ def _build_database_directive(evidence: dict[str, Any]) -> str:
     has_db_evidence = bool(
         evidence.get("aws_rds_events")
         or evidence.get("aws_performance_insights")
-        or bool(evidence.get("aws_cloudwatch_metrics", {}).get("DBInstanceIdentifier"))
+        or bool(
+            evidence.get("aws_cloudwatch_metrics", {}).get("DBInstanceIdentifier")
+            or evidence.get("aws_cloudwatch_metrics", {}).get("db_instance_identifier")
+        )
     )
     if not has_db_evidence:
         return ""
@@ -149,9 +153,9 @@ When evaluating database health metrics (especially RDS/Postgres):
 - Connection pool leaks (exhausting `max_connections`) are a `resource_exhaustion` root cause. High CPU is often just a secondary symptom of accumulated idle sessions. If connections are near 100%, the root cause is connection exhaustion, not CPU saturation. If connections are near 100% AND CPU is near 100%, look for a single shared root cause: a connection pool leak holding open scan-heavy queries, causing both (do not treat them as two independent problems).
 - Storage exhaustion (when `FreeStorageSpace` approaches 0) blocks all writes and causes Write IOPS to collapse to 0. The root cause is `resource_exhaustion` due to storage limits. If the `FreeStorageSpace` metric is completely missing, you MUST infer storage exhaustion from indirect signals: WriteIOPS dropping to 0, WriteLatency spiking, and RDS events indicating 'ran out of storage space'.
 - A single bad query driving CPU near 100% while connections and storage are healthy is `resource_exhaustion` due to CPU saturation (e.g. missing index, full table scans at high ReadIOPS). Pay close attention to Performance Insights to identify the exact query.
-- Checkpoint Storms / VACUUM FREEZE: If CPU is high but the dominant wait event is `LWLock:BufferMapping` with massive WriteIOPS, the root cause is an I/O storm from checkpointing (e.g., `VACUUM FREEZE`) and should be classified as `resource_exhaustion`, NOT `cpu_saturation`/`code_defect`. The high CPU is a downstream symptom of I/O contention.
-- Replication lag: If a massive write-heavy workload on the primary generates WAL faster than the read replica can replay it, resulting in ReplicaLag spikes, the root cause is `resource_exhaustion` driven by the write workload on the primary. Watch out for red herrings: if concurrent analytics queries cause high CPU, do NOT label it as `cpu_saturation` if the actual failing metric (like ReplicaLag) is driven by the write-heavy workload. If the `ReplicaLag` metric is missing, infer lag from RDS events (e.g., 'exceeded 900s') and high `TransactionLogsGeneration`.
-- Compositional Faults: If two completely independent workloads cause two separate faults simultaneously (e.g., CPU saturation from an analytics SELECT AND storage exhaustion from an audit_log INSERT), explicitly identify BOTH as independent root causes. Connection spikes and ReplicaLag are often just downstream symptoms of the blocked writers.
+- Checkpoint Storms / VACUUM FREEZE: If CPU is high but the dominant wait event is `LWLock:BufferMapping` with massive WriteIOPS, the root cause is an I/O storm from checkpointing (e.g., `VACUUM FREEZE`) and should be classified as `resource_exhaustion`, NOT `code_defect`. The high CPU is a downstream symptom of I/O contention.
+- Replication lag: If a massive write-heavy workload on the primary generates WAL faster than the read replica can replay it, resulting in ReplicaLag spikes, the root cause is `resource_exhaustion` driven by the write workload on the primary. Watch out for red herrings: if concurrent analytics queries cause high CPU, do NOT label it as `code_defect` if the actual failing metric (like ReplicaLag) is driven by the write-heavy workload. If the `ReplicaLag` metric is missing, infer lag from RDS events (e.g., 'exceeded 900s') and high `TransactionLogsGeneration`.
+- Compositional Faults: If two completely independent workloads cause two separate faults simultaneously (e.g., CPU saturation from an analytics SELECT AND storage exhaustion from an audit_log INSERT), explicitly identify BOTH as independent root causes. Use `resource_exhaustion` as ROOT_CAUSE_CATEGORY and describe both causes clearly in ROOT_CAUSE (e.g., "Two independent root causes: ..."). Trace each causal chain separately in CAUSAL_CHAIN. Connection spikes and ReplicaLag are often just downstream symptoms of the blocked writers.
 - Misleading Context: Check RDS event timestamps carefully! Ignore historical events (maintenance, failovers, replica promotions) that completed hours before the current incident started.
 - Healthy Systems / Stale Alerts: If metrics are oscillating but remain within normal operating bounds (e.g. connections at 55-65%, CPU at 40-70%, no error logs), the system is `healthy`. If a threshold was briefly crossed (e.g. low FreeStorageSpace) but autoscaling successfully expanded the volume and fully recovered the system before the investigation, the system is `healthy` and the alert is stale.
 - ALWAYS trace the causal chain properly (e.g., connection leak -> idle sessions -> connections maxed out, OR missing index -> full table scans -> ReadIOPS -> CPU saturated, OR VACUUM FREEZE -> massive WAL -> checkpoint flush -> I/O saturation -> CPU as symptom).
@@ -182,7 +186,9 @@ def _extract_k8s_tags_from_evidence(evidence: dict[str, Any]) -> dict[str, str]:
                 if not isinstance(tag, str) or ":" not in tag:
                     continue
                 key, _, val = tag.partition(":")
-                if (key.startswith("kube_") or key in ("pod_name", "container_name")) and key not in k8s:
+                if (
+                    key.startswith("kube_") or key in ("pod_name", "container_name")
+                ) and key not in k8s:
                     k8s[key] = val
     return k8s
 
@@ -195,7 +201,9 @@ def _detect_k8s_from_monitors(evidence: dict[str, Any]) -> bool:
     return False
 
 
-def _build_kubernetes_directive(state: InvestigationState, evidence: dict[str, Any]) -> str:
+def _build_kubernetes_directive(
+    state: InvestigationState, evidence: dict[str, Any]
+) -> str:
     """Build K8s diagnostic directive when Kubernetes context is detected.
 
     Detection cascade (strict priority):
@@ -246,7 +254,9 @@ Use these patterns to recognize similar failure modes and accelerate diagnosis.
 """
 
 
-def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]) -> str:
+def _build_evidence_sections(
+    state: InvestigationState, evidence: dict[str, Any]
+) -> str:
     """Build all evidence sections for the prompt."""
     sections: list[str] = []
 
@@ -282,10 +292,14 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     if isinstance(raw_alert, str):
         raw_alert_text = raw_alert
     elif isinstance(raw_alert, dict):
-        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
+        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get(
+            "cloudwatch_url"
+        )
         vercel_url = raw_alert.get("vercel_log_url") or raw_alert.get("vercel_url")
         alert_annotations = (
-            raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
+            raw_alert.get("annotations", {})
+            or raw_alert.get("commonAnnotations", {})
+            or {}
         )
     else:
         vercel_url = None
@@ -412,8 +426,12 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     if grafana_alert_rules:
         section = f"\nGrafana Alert Rules ({len(grafana_alert_rules)}):\n"
         for rule in grafana_alert_rules[:5]:
-            section += f"- {rule.get('rule_name', 'unknown')} [{rule.get('state', '')}]\n"
-            section += f"  Folder: {rule.get('folder', '')}, Group: {rule.get('group', '')}\n"
+            section += (
+                f"- {rule.get('rule_name', 'unknown')} [{rule.get('state', '')}]\n"
+            )
+            section += (
+                f"  Folder: {rule.get('folder', '')}, Group: {rule.get('group', '')}\n"
+            )
             for query in rule.get("queries", [])[:2]:
                 section += f"  Query ({query.get('ref_id', '')}): {query.get('expr', '')[:200]}\n"
             if rule.get("no_data_state"):
@@ -542,7 +560,9 @@ def _build_lambda_function_section(lambda_function: dict[str, Any]) -> str:
                 file_content = code_files.get(handler_file, "")
                 if isinstance(file_content, str):
                     code_snippet = file_content[:1000]
-                    section += f"\nHandler Code Snippet ({handler_file}):\n{code_snippet}\n"
+                    section += (
+                        f"\nHandler Code Snippet ({handler_file}):\n{code_snippet}\n"
+                    )
 
     return section
 
@@ -640,8 +660,12 @@ def _extract_vercel_git_metadata(meta: dict[str, Any]) -> dict[str, str]:
     """Normalize git metadata from Vercel deployment evidence."""
     return {
         "repo": str(meta.get("github_repo") or meta.get("githubRepo") or "").strip(),
-        "sha": str(meta.get("github_commit_sha") or meta.get("githubCommitSha") or "").strip(),
-        "ref": str(meta.get("github_commit_ref") or meta.get("githubCommitRef") or "").strip(),
+        "sha": str(
+            meta.get("github_commit_sha") or meta.get("githubCommitSha") or ""
+        ).strip(),
+        "ref": str(
+            meta.get("github_commit_ref") or meta.get("githubCommitRef") or ""
+        ).strip(),
     }
 
 
@@ -654,11 +678,19 @@ def _format_vercel_runtime_log(log: Any) -> str:
     if not message:
         payload = log.get("payload")
         if isinstance(payload, dict):
-            message = payload.get("text") or payload.get("message") or payload.get("body") or ""
+            message = (
+                payload.get("text")
+                or payload.get("message")
+                or payload.get("body")
+                or ""
+            )
         elif payload:
             message = str(payload)
 
-    prefix_parts = [str(log.get("type", "")).strip(), str(log.get("source", "")).strip()]
+    prefix_parts = [
+        str(log.get("type", "")).strip(),
+        str(log.get("source", "")).strip(),
+    ]
     prefix = " ".join(part for part in prefix_parts if part)
     text = str(message or "")[:260]
     return f"{prefix}: {text}" if prefix else text
@@ -741,8 +773,14 @@ def _build_github_evidence_section(
             if not isinstance(commit, dict):
                 section += f"- {str(commit)[:220]}\n"
                 continue
-            commit_info = commit.get("commit", {}) if isinstance(commit.get("commit"), dict) else {}
-            sha = str(commit.get("sha") or commit.get("oid") or commit_info.get("oid") or "")[:12]
+            commit_info = (
+                commit.get("commit", {})
+                if isinstance(commit.get("commit"), dict)
+                else {}
+            )
+            sha = str(
+                commit.get("sha") or commit.get("oid") or commit_info.get("oid") or ""
+            )[:12]
             message = str(
                 commit.get("message")
                 or commit.get("messageHeadline")
@@ -764,7 +802,12 @@ def _build_github_evidence_section(
                 or match.get("filename")
                 or "unknown"
             )[:180]
-            snippets = match.get("matches") or match.get("fragments") or match.get("lines") or []
+            snippets = (
+                match.get("matches")
+                or match.get("fragments")
+                or match.get("lines")
+                or []
+            )
             if isinstance(snippets, list) and snippets:
                 snippet_text = "; ".join(str(item)[:140] for item in snippets[:2])
             else:
@@ -831,15 +874,17 @@ def _format_datadog_log_entry(log: Any) -> str:
         time_part = raw_ts.split("T", 1)[1][:8]  # "HH:MM:SS"
         ts_prefix = f"[{time_part}] "
     elif isinstance(raw_ts, int | float):
-        import datetime
-        ts_prefix = f"[{datetime.datetime.utcfromtimestamp(raw_ts / 1000 if raw_ts > 1e10 else raw_ts).strftime('%H:%M:%S')}] "
+        ts_prefix = f"[{datetime.datetime.fromtimestamp(raw_ts / 1000 if raw_ts > 1e10 else raw_ts, tz=datetime.UTC).strftime('%H:%M:%S')}] "
 
     tag_parts: dict[str, str] = {}
     for t in tags:
         if not isinstance(t, str) or ":" not in t:
             continue
         k, _, v = t.partition(":")
-        if any(k.startswith(p) for p in _STRUCTURED_TAG_PREFIXES) or k in _STRUCTURED_TAG_NAMES:
+        if (
+            any(k.startswith(p) for p in _STRUCTURED_TAG_PREFIXES)
+            or k in _STRUCTURED_TAG_NAMES
+        ):
             tag_parts[k] = v
 
     if tag_parts:
@@ -881,7 +926,9 @@ def _build_s3_audit_section(s3_audit_payload: dict[str, Any]) -> str:
     if audit_content:
         try:
             audit_data = (
-                json.loads(audit_content) if isinstance(audit_content, str) else audit_content
+                json.loads(audit_content)
+                if isinstance(audit_content, str)
+                else audit_content
             )
             section += f"- Content: {json.dumps(audit_data, indent=2)[:1500]}\n"
         except (json.JSONDecodeError, TypeError):
@@ -908,10 +955,14 @@ def _build_alert_annotations_section(alert_annotations: dict[str, Any]) -> str:
     sections = []
 
     if alert_annotations.get("log_excerpt"):
-        sections.append(f"\nLog Excerpt from Alert:\n{alert_annotations['log_excerpt'][:1000]}\n")
+        sections.append(
+            f"\nLog Excerpt from Alert:\n{alert_annotations['log_excerpt'][:1000]}\n"
+        )
 
     if alert_annotations.get("failed_steps"):
-        sections.append(f"\nFailed Steps Summary:\n{alert_annotations['failed_steps']}\n")
+        sections.append(
+            f"\nFailed Steps Summary:\n{alert_annotations['failed_steps']}\n"
+        )
 
     if alert_annotations.get("error"):
         sections.append(f"\nError Message:\n{alert_annotations['error']}\n")
