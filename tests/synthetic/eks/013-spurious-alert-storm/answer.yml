@@ -27,7 +27,8 @@ model_response: |
   VALIDATED_CLAIMS:
   - Both nodes are currently Ready=True with no pressure conditions. [evidence: eks_node_health]
   - All 3 pods of payments-api are Running and Ready with restart_count=0. [evidence: eks_pods]
-  - Event timeline: NodeNotReady on ip-10-0-1-73 at 10:25:00Z, NodeReady on the same node at 10:25:30Z, with several BackOff/Unhealthy events on pods scheduled to that node clustered in the same 30-second window. No events since 10:26:00Z. [evidence: eks_events]
+  - Warning events present: NodeNotReady on ip-10-0-1-73 at 10:25:00Z plus a cluster of BackOff and Unhealthy events on pods scheduled to that node, all timestamped within the 30-second flap window (10:25:05Z–10:25:28Z). No Warning events since. [evidence: eks_events]
+  - Node-controller logs confirm the node recovered to Ready at 10:25:30Z and pods returned to Ready post-flap. [evidence: datadog_logs]
   - Datadog monitors for error rate, latency, and pod restarts are all OK. [evidence: datadog_monitors]
 
   NON_VALIDATED_CLAIMS:

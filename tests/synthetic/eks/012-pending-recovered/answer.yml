@@ -25,7 +25,8 @@ model_response: |
 
   VALIDATED_CLAIMS:
   - Pod payments-api-7f9dd8b6c4-late1 currently has phase=Running with container.ready=true, restart_count=0. [evidence: eks_pods]
-  - Event timeline: FailedScheduling at 10:25Z, TriggeredScaleUp by cluster-autoscaler at 10:26Z, Scheduled onto ip-10-0-1-99 at 10:28Z. [evidence: eks_events]
+  - The only Warning event present is the historical FailedScheduling at 10:25Z on the late1 pod. [evidence: eks_events]
+  - Control-plane logs show the cluster autoscaler triggered a node scale-up at 10:26Z and the pod was successfully Scheduled onto ip-10-0-1-99 at 10:28Z. [evidence: datadog_logs]
   - Three nodes are now Ready, including the freshly-added ip-10-0-1-99 with ample allocatable CPU. [evidence: eks_node_health]
   - Datadog monitors for error rate and latency are OK. [evidence: datadog_monitors]
 

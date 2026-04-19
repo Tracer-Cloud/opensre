@@ -27,7 +27,8 @@ model_response: |
   VALIDATED_CLAIMS:
   - Deployment payments-api reports desired=3, ready=3, available=3, unavailable=0. [evidence: eks_deployments]
   - All 3 pods are from the prior-revision ReplicaSet (payments-api-7f9dd8b6c4-*) and are Running and Ready. [evidence: eks_pods]
-  - Event timeline: ProgressDeadlineExceeded at 10:40Z, then DeploymentRollback to revision N-1 at 10:42Z, then ScalingReplicaSet of the bad RS down to 0. [evidence: eks_events]
+  - The Warning event ProgressDeadlineExceeded at 10:40Z is the only K8s event present. [evidence: eks_events]
+  - Control-plane log timeline shows DeploymentRollback to revision N-1 at 10:42Z and the deployment subsequently marked Available. [evidence: datadog_logs]
   - Datadog monitors for error rate and latency are OK. [evidence: datadog_monitors]
 
   NON_VALIDATED_CLAIMS:

@@ -27,7 +27,8 @@ model_response: |
   - Deployment payments-api reports desired=3, ready=3, available=3, unavailable=0. [evidence: eks_deployments]
   - All 3 pods of the new ReplicaSet (payments-api-7f9dd8b6c4-*) are Running and Ready with restart_count=0. [evidence: eks_pods]
   - The pod cited in the alert (payments-api-6c4ab5d9c-old1) belongs to the older ReplicaSet 6c4ab5d9c and shows phase=Running with deletion_timestamp set, indicating kubelet is tearing it down. [evidence: eks_pods]
-  - Recent events show ScalingReplicaSet for the old RS scaled to 0; no current FailedCreate or BackOff on the new RS. [evidence: eks_events]
+  - The only Warning event present is BackOff on the terminating old-RS pod; no FailedCreate or BackOff on the new-RS pods. [evidence: eks_events]
+  - Control-plane logs confirm the rollout completed at 09:33Z and the old pod is in graceful shutdown. [evidence: datadog_logs]
   - Datadog monitors for error rate and latency are OK. [evidence: datadog_monitors]
 
   NON_VALIDATED_CLAIMS:
