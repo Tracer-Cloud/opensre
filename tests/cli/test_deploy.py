@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import click
+from click import ClickException
 from click.testing import CliRunner
 
 from app.cli.__main__ import cli
@@ -17,7 +17,7 @@ def test_deploy_ec2_health_check_failure_is_non_fatal() -> None:
         patch("app.cli.commands.deploy._persist_remote_url"),
         patch(
             "app.cli.commands.remote_health.run_remote_health_check",
-            side_effect=click.ClickException("Connection timed out"),
+            side_effect=ClickException("Connection timed out"),
         ),
     ):
         result = runner.invoke(cli, ["deploy", "ec2"])

@@ -1,0 +1,5 @@
+{
+  "pod_name": "payments-api-7f9dd8b6c4-x7gr9",
+  "namespace": "payments",
+  "logs": "2026-04-18T10:44:58Z INFO startup complete, listening on :8080 memory_limit=512Mi\n2026-04-18T10:45:02Z INFO processing payment batch batch_size=5000\n2026-04-18T10:45:06Z INFO heap in use 384Mi / 512Mi\n2026-04-18T10:45:09Z WARN heap in use 496Mi / 512Mi — approaching limit\n2026-04-18T10:45:10Z [kernel] Memory cgroup out of memory: Killed process 1 (payments-api) total-vm:524288kB, anon-rss:511200kB, file-rss:0kB, oom_score_adj:1000\n[container terminated with exit code 137]\n"
+}

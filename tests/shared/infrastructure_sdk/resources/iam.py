@@ -2,6 +2,7 @@
 
 import json
 import time
+from contextlib import suppress
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -244,22 +245,16 @@ def delete_role(name: str, region: str = DEFAULT_REGION) -> None:
     iam_client = get_boto3_client("iam", region)
 
     # Detach managed policies
-    try:
+    with suppress(ClientError):
         attached = iam_client.list_attached_role_policies(RoleName=name)
         for policy in attached.get("AttachedPolicies", []):
             iam_client.detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
-    except ClientError:
-        # Role may not exist or policies already detached
-        pass
 
     # Delete inline policies
-    try:
+    with suppress(ClientError):
         inline = iam_client.list_role_policies(RoleName=name)
         for policy_name in inline.get("PolicyNames", []):
             iam_client.delete_role_policy(RoleName=name, PolicyName=policy_name)
-    except ClientError:
-        # Role may not exist or inline policies already deleted
-        pass
 
     # Delete role
     try:

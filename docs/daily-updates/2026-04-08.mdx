@@ -5,43 +5,15 @@ description: "OpenSRE engineering daily update for 2026-04-08 (Europe/London)"
 
 Thanks to everyone who contributed yesterday:
 
-bahtyar, Ceren Camkiran, Devesh, Ebrahim Sameh, Jayant Singh Bisht, Oluwasegun Haziz, Shoaib, Shoaib Ansari, Vaibhav Upreti, vincenthus, and Yash Kumar Saini 🙏🚀
+no human contributors recorded in merged PRs today 🙏🚀
 
 ## Main updates shipped (April 8, 2026)
 
-- feat: add guardrails engine for sensitive information protection — Ebrahim Sameh
-- feat: add MongoDB Atlas integration for managed document-store RCA — Yash Kumar Saini
-- feat: re-route investigations as evidence changes with tool budgets (#474) — Shoaib
-- feat: add retrieval controls and compaction for high-volume log/trace tools (#481) — Shoaib
-- Split/3 integrations verify — vincenthus
-- fix(#411): improve deployment health check CLI with Rich formatting, deep checks & actionable errors — Devesh
-- feat: add log compaction and error taxonomy for investigative pipelin… — Oluwasegun Haziz
-- Add deployment health polling and provider validation helpers — Devesh
-- Feat/notion integration v2 — Jayant Singh Bisht
-- add posthog integration tests — Ceren Camkiran
-- ci: improve speed with job gating, concurrency control, and condition… — Oluwasegun Haziz
-- Improve test catalogue semantic naming conventions — Devesh
-- Split/1 cli prompt store constants — vincenthus
-- fix: CodeQL alerts, Vercel poller lifespan, onboard smoke — vincenthus
-- fix(wizard): preserve current provider's API key during onboard — bahtyar
+- No pull requests were merged into `main` today.
 
 ## Source pull requests
 
-- [#504](https://github.com/Tracer-Cloud/opensre/pull/504) Split/3 integrations verify (author: vincenthus; contributors: vincenthus; labels: _none_; files: `.github/workflows/daily-update.yml`, `Makefile`, `app/cli/__main__.py`, `app/cli/commands/integrations.py`, `app/cli/constants.py`, `app/cli/prompt_support.py`, `app/cli/wizard/__main__.py`, `app/cli/wizard/flow.py`, `app/cli/wizard/prompts.py`, `app/cli/wizard/store.py`, and 26 more)
-- [#490](https://github.com/Tracer-Cloud/opensre/pull/490) feat: add MongoDB Atlas integration for managed document-store RCA (author: Yash Kumar Saini; contributors: Yash Kumar Saini; labels: _none_; files: `.env.example`, `app/cli/constants.py`, `app/integrations/cli.py`, `app/integrations/models.py`, `app/integrations/mongodb_atlas.py`, `app/integrations/verify.py`, `app/nodes/plan_actions/detect_sources.py`, `app/nodes/resolve_integrations/node.py`, `app/tools/MongoDBAtlasAlertsTool/__init__.py`, `app/tools/MongoDBAtlasClustersTool/__init__.py`, and 11 more)
-- [#495](https://github.com/Tracer-Cloud/opensre/pull/495) feat: add guardrails engine for sensitive information protection (author: Ebrahim Sameh; contributors: Ebrahim Sameh; labels: _none_; files: `app/cli/commands/__init__.py`, `app/cli/commands/guardrails.py`, `app/cli/health_view.py`, `app/guardrails/__init__.py`, `app/guardrails/audit.py`, `app/guardrails/cli.py`, `app/guardrails/engine.py`, `app/guardrails/rules.py`, `app/nodes/chat.py`, `app/services/llm_client.py`, and 7 more)
-- [#415](https://github.com/Tracer-Cloud/opensre/pull/415) fix(#411): improve deployment health check CLI with Rich formatting, deep checks & actionable errors (author: Devesh; contributors: Devesh and Vaibhav Upreti; labels: _none_; files: `app/cli/commands/deploy.py`, `app/cli/commands/remote.py`, `app/cli/commands/remote_health.py`, `app/cli/health_view.py`, `app/remote/client.py`, `app/remote/server.py`, `tests/app/remote/test_client.py`, `tests/cli/test_deploy.py`, `tests/cli/test_remote.py`)
-- [#503](https://github.com/Tracer-Cloud/opensre/pull/503) Split/1 cli prompt store constants (author: vincenthus; contributors: vincenthus; labels: _none_; files: `app/integrations/vercel_incidents.py`, `tests/integrations/test_vercel_incidents.py`)
-- [#500](https://github.com/Tracer-Cloud/opensre/pull/500) feat: add retrieval controls and compaction for high-volume log/trace tools (#481) (author: Shoaib; contributors: Shoaib and Shoaib Ansari; labels: _none_; files: `app/tools/CloudWatchBatchMetricsTool/__init__.py`, `app/tools/DataDogContextTool/__init__.py`, `app/tools/DataDogLogsTool/__init__.py`, `app/tools/ElasticsearchLogsTool/__init__.py`, `app/tools/GrafanaLogsTool/__init__.py`, `app/tools/GrafanaTracesTool/__init__.py`, `app/tools/LambdaInvocationLogsTool/__init__.py`, `app/tools/utils/__init__.py`, `app/tools/utils/compaction.py`, `tests/tools/test_compaction.py`)
-- [#417](https://github.com/Tracer-Cloud/opensre/pull/417) add posthog integration tests (author: Ceren Camkiran; contributors: Ceren Camkiran and Vaibhav Upreti; labels: _none_; files: `app/integrations/models.py`, `app/integrations/posthog.py`, `tests/integrations/test_posthog.py`)
-- [#362](https://github.com/Tracer-Cloud/opensre/pull/362) Feat/notion integration v2 (author: Jayant Singh Bisht; contributors: Jayant Singh Bisht and Vaibhav Upreti; labels: _none_; files: `app/cli/wizard/flow.py`, `app/cli/wizard/integration_health.py`, `app/integrations/clients/notion/__init__.py`, `app/integrations/clients/notion/client.py`, `app/integrations/models.py`, `app/remote/server.py`, `tests/integrations/test_notion_client.py`, `tests/integrations/test_posthog.py`)
-- [#502](https://github.com/Tracer-Cloud/opensre/pull/502) Improve test catalogue semantic naming conventions (author: Devesh; contributors: Devesh; labels: _none_; files: `.github/workflows/ci.yml`, `.github/workflows/tracer-demo-tools-ingest.yml`, `.github/workflows/tracer-demo.yml`, `.github/workflows/tracer-grafana.yml`, `Makefile`, `README.md`, `pyproject.toml`, `tests/README.md`, `tests/e2e/cloudwatch_demo/test_aws.py`, `tests/e2e/crashloop/test_local.py`, and 7 more)
-- [#508](https://github.com/Tracer-Cloud/opensre/pull/508) feat: re-route investigations as evidence changes with tool budgets (#474) (author: Shoaib; contributors: Shoaib and Shoaib Ansari; labels: _none_; files: `app/nodes/investigate/models.py`, `app/nodes/investigate/node.py`, `app/nodes/investigate/processing/post_process.py`, `app/nodes/plan_actions/build_prompt.py`, `app/nodes/plan_actions/node.py`, `app/nodes/plan_actions/plan_actions.py`, `app/state/agent_state.py`, `tests/nodes/plan_actions/test_reroute_and_budget.py`)
-- [#489](https://github.com/Tracer-Cloud/opensre/pull/489) ci: improve speed with job gating, concurrency control, and condition… (author: Oluwasegun Haziz; contributors: Oluwasegun Haziz and Vaibhav Upreti; labels: _none_; files: `.github/workflows/ci.yml`)
-- [#488](https://github.com/Tracer-Cloud/opensre/pull/488) feat: add log compaction and error taxonomy for investigative pipelin… (author: Oluwasegun Haziz; contributors: Oluwasegun Haziz; labels: _none_; files: `app/tools/GrafanaLogsTool/__init__.py`, `app/tools/TracerErrorLogsTool/__init__.py`, `app/tools/utils/__init__.py`, `app/tools/utils/log_compaction.py`, `app/tools/utils/log_compaction_test.py`)
-- [#420](https://github.com/Tracer-Cloud/opensre/pull/420) Add deployment health polling and provider validation helpers (author: Devesh; contributors: Devesh; labels: _none_; files: `app/cli/commands/deploy.py`, `app/deployment/__init__.py`, `app/deployment/health.py`, `app/deployment/provider_config.py`, `tests/deployment/ec2/infrastructure_sdk/instance.py`, `tests/deployment/ec2/infrastructure_sdk/remote_instance.py`, `tests/e2e/deploy/conftest.py`, `tests/e2e/deploy/test_deploy_aws_template.py`, `tests/e2e/deploy/test_deploy_railway_dry_run.py`, `tests/e2e/deploy/test_deploy_timing.py`, and 4 more)
-- [#511](https://github.com/Tracer-Cloud/opensre/pull/511) fix: CodeQL alerts, Vercel poller lifespan, onboard smoke (author: vincenthus; contributors: vincenthus; labels: _none_; files: `app/cli/commands/remote.py`, `app/cli/constants.py`, `app/cli/prompt_support.py`, `app/cli/wizard/flow.py`, `app/integrations/cli.py`, `app/remote/server.py`, `app/services/vercel/client.py`, `tests/cli/wizard/test_flow.py`, `tests/cli_smoke_test.py`, `tests/services/vercel/test_client.py`)
-- [#513](https://github.com/Tracer-Cloud/opensre/pull/513) fix(wizard): preserve current provider's API key during onboard (author: bahtyar; contributors: bahtyar; labels: _none_; files: `app/cli/wizard/env_sync.py`)
+- No pull requests were merged during this London calendar day.
 
 ## Generation metadata
 

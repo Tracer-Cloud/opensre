@@ -1,0 +1,37 @@
+root_cause_category: resource_exhaustion
+required_keywords:
+  - quota
+  - namespace
+  - cpu
+forbidden_categories:
+  - healthy
+  - unknown
+  - dependency_failure
+  - code_defect
+  - data_quality
+optimal_trajectory:
+  - list_eks_deployments
+  - get_eks_events
+  - list_eks_pods
+max_investigation_loops: 3
+ruling_out_keywords:
+  - existing pods
+  - Ready
+required_queries:
+  - list_eks_deployments
+  - get_eks_events
+model_response: |
+  ROOT_CAUSE: Deployment payments-api cannot scale from 3 to 5 replicas because the namespace's ResourceQuota 'default-quota' is exhausted. The ReplicaSet controller tries to create two new pods; the quota admission controller rejects them with 'forbidden: exceeded quota' before any node is considered, so no FailedScheduling event is emitted and the existing three pods remain fully healthy.
+  ROOT_CAUSE_CATEGORY: resource_exhaustion
+
+  VALIDATED_CLAIMS:
+  - Deployment reports desired=5, ready=3, unavailable=2. [evidence: eks_deployments]
+  - Warning event FailedCreate 'pods ... is forbidden: exceeded quota: default-quota, requested: limits.cpu=2, used=8, limited=10' identifies the admission rejection. [evidence: eks_events]
+  - No pod-level warnings on existing pods; they are Running and Ready. [evidence: eks_pods]
+
+  NON_VALIDATED_CLAIMS:
+  - Resolution requires raising the namespace quota, lowering limits.cpu on this deployment, or reducing another workload in the same namespace.
+  - This is NOT a cluster-capacity (scheduler) problem — admission control blocks pod creation before the scheduler is reached.
+
+  CAUSAL_CHAIN:
+  - HPA increases desired replicas from 3 to 5, the deployment instructs the ReplicaSet to scale up, pod creation requests hit the ResourceQuota admission webhook, the webhook sees the namespace at 8/10 cpu limits plus a 2-cpu request, admission returns 'forbidden', the ReplicaSet records FailedCreate, and the deployment remains at 3 ready / 2 unavailable.

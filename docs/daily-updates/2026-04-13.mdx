@@ -1,0 +1,48 @@
+---
+title: "Daily Update — 2026-04-13"
+description: "OpenSRE engineering daily update for 2026-04-13 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+Abhishek Marathe, Devesh, Harsha Pasham, Sundaram Kumar Jha, Vaibhav Upreti, and Yash Kumar Saini 🙏🚀
+
+## Main updates shipped (April 13, 2026)
+
+- feat: add MariaDB integration for database RCA — Yash Kumar Saini
+- feat: Add discord integration. (Fixes #359) — Abhishek Marathe
+- P2 Run one-off diagnostic Python safely during investigations — Harsha Pasham
+- fix: harden installer scripts and validate release assets — Sundaram Kumar Jha
+- ci: add Windows ARM64 binary to release pipeline — Sundaram Kumar Jha
+- refactor: convert MariaDB env config to dataclass — Devesh
+- docs: add MariaDB integration page — Yash Kumar Saini
+
+## Source pull requests
+
+- [#492](https://github.com/Tracer-Cloud/opensre/pull/492) feat: add MariaDB integration for database RCA (author: Yash Kumar Saini; contributors: Yash Kumar Saini; labels: _none_; files: `.env.example`, `app/auth/auth.py`, `app/cli/commands/tests.py`, `app/cli/constants.py`, `app/cli/wizard/env_sync.py`, `app/integrations/cli.py`, `app/integrations/mariadb.py`, `app/integrations/models.py`, `app/integrations/store.py`, `app/integrations/verify.py`, and 19 more)
+- [#485](https://github.com/Tracer-Cloud/opensre/pull/485) P2 Run one-off diagnostic Python safely during investigations (author: Harsha Pasham; contributors: Harsha Pasham and Vaibhav Upreti; labels: _none_; files: `app/nodes/investigate/processing/post_process.py`, `app/sandbox/__init__.py`, `app/sandbox/runner.py`, `app/tools/run_diagnostic_code.py`, `tests/sandbox/__init__.py`, `tests/sandbox/test_runner.py`, `tests/tools/test_run_diagnostic_code_tool.py`)
+- [#510](https://github.com/Tracer-Cloud/opensre/pull/510) feat: Add discord integration. (Fixes #359) (author: Abhishek Marathe; contributors: Abhishek Marathe and Vaibhav Upreti; labels: _none_; files: `app/cli/wizard/flow.py`, `app/cli/wizard/integration_health.py`, `app/integrations/cli.py`, `app/integrations/gitlab.py`, `app/integrations/models.py`, `app/integrations/verify.py`, `app/nodes/plan_actions/detect_sources.py`, `app/nodes/publish_findings/node.py`, `app/nodes/resolve_integrations/node.py`, `app/remote/server.py`, and 14 more)
+- [#531](https://github.com/Tracer-Cloud/opensre/pull/531) chore(deps-dev): update confluent-kafka requirement from >=2.3.0 to >=2.14.0 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#540](https://github.com/Tracer-Cloud/opensre/pull/540) chore(deps): update opentelemetry-exporter-otlp-proto-http requirement from >=1.20.0 to >=1.41.0 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#539](https://github.com/Tracer-Cloud/opensre/pull/539) chore(deps): update python-dotenv requirement from >=1.0.0 to >=1.2.2 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#543](https://github.com/Tracer-Cloud/opensre/pull/543) chore(deps-dev): update pytest-asyncio requirement from >=0.23.0 to >=1.3.0 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#537](https://github.com/Tracer-Cloud/opensre/pull/537) chore(deps-dev): update clickhouse-connect requirement from >=0.8.0 to >=0.15.1 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#546](https://github.com/Tracer-Cloud/opensre/pull/546) docs: add MariaDB integration page (author: Yash Kumar Saini; contributors: Yash Kumar Saini; labels: _none_; files: `docs/docs.json`, `docs/intergrations-overview.mdx`, `docs/mariadb.mdx`)
+- [#532](https://github.com/Tracer-Cloud/opensre/pull/532) chore(deps): update mcp requirement from >=1.20.0 to >=1.27.0 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#533](https://github.com/Tracer-Cloud/opensre/pull/533) chore(deps-dev): update pytest-cov requirement from >=4.0.0 to >=7.1.0 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#536](https://github.com/Tracer-Cloud/opensre/pull/536) chore(deps): update langsmith requirement from >=0.6.8 to >=0.7.30 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#544](https://github.com/Tracer-Cloud/opensre/pull/544) chore(deps): update rich requirement from >=13.0.0 to >=15.0.0 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#541](https://github.com/Tracer-Cloud/opensre/pull/541) chore(deps): update boto3 requirement from >=1.34.0 to >=1.42.88 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#534](https://github.com/Tracer-Cloud/opensre/pull/534) chore(deps): update google-api-python-client requirement from <3.0.0,>=2.0.0 to >=2.194.0,<3.0.0 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#542](https://github.com/Tracer-Cloud/opensre/pull/542) chore(deps): update langgraph requirement from >=0.4.0 to >=1.1.6 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#538](https://github.com/Tracer-Cloud/opensre/pull/538) chore(deps): update questionary requirement from >=2.1.0 to >=2.1.1 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#535](https://github.com/Tracer-Cloud/opensre/pull/535) chore(deps): update opentelemetry-api requirement from >=1.20.0 to >=1.41.0 (author: dependabot[bot]; contributors: no human contributors recorded in merged PRs today; labels: `dependencies`, `python`; files: `pyproject.toml`)
+- [#547](https://github.com/Tracer-Cloud/opensre/pull/547) refactor: convert MariaDB env config to dataclass (author: Devesh; contributors: Devesh; labels: _none_; files: `app/integrations/verify.py`)
+- [#552](https://github.com/Tracer-Cloud/opensre/pull/552) fix: harden installer scripts and validate release assets (author: Sundaram Kumar Jha; contributors: Sundaram Kumar Jha; labels: _none_; files: `install.ps1`, `install.sh`)
+- [#554](https://github.com/Tracer-Cloud/opensre/pull/554) ci: add Windows ARM64 binary to release pipeline (author: Sundaram Kumar Jha; contributors: Sundaram Kumar Jha; labels: _none_; files: `.github/workflows/release.yml`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-12T23:00:00+00:00` to `2026-04-13T23:00:00+00:00`

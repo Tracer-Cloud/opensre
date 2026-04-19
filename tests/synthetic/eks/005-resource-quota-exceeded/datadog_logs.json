@@ -1,0 +1,28 @@
+{
+  "logs": [
+    {
+      "timestamp": "2026-04-18T10:30:01Z",
+      "message": "kube-controller-manager: Error creating: pods \"payments-api-7f9dd8b6c4-aaaaa\" is forbidden: exceeded quota: default-quota, requested: limits.cpu=2, used: limits.cpu=8, limited: limits.cpu=10",
+      "status": "error",
+      "service": "kube-controller-manager",
+      "host": "payments-prod-eks-control-plane",
+      "tags": ["kube_namespace:payments", "kube_deployment:payments-api"]
+    },
+    {
+      "timestamp": "2026-04-18T10:30:02Z",
+      "message": "ResourceQuota default-quota in namespace payments at 100% of limits.cpu (8/10 used). Admission control is rejecting new pods with 'forbidden: exceeded quota'.",
+      "status": "warn",
+      "service": "kube-apiserver",
+      "host": "payments-prod-eks-control-plane",
+      "tags": ["kube_namespace:payments", "resource_quota:default-quota"]
+    },
+    {
+      "timestamp": "2026-04-18T10:31:00Z",
+      "message": "kube-controller-manager: Error creating: pods \"payments-api-7f9dd8b6c4-bbbbb\" is forbidden: exceeded quota: default-quota — namespace resource budget exhausted",
+      "status": "error",
+      "service": "kube-controller-manager",
+      "host": "payments-prod-eks-control-plane",
+      "tags": ["kube_namespace:payments", "kube_deployment:payments-api"]
+    }
+  ]
+}

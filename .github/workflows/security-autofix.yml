@@ -14,6 +14,9 @@ jobs:
   security-autofix:
     name: Scan & auto-fix security issues
     runs-on: ubuntu-latest
+    env:
+      # Opt into Node 24 for JS-based actions until it is the runner default (see GitHub changelog).
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - uses: actions/checkout@v5
@@ -22,7 +25,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
@@ -49,11 +52,13 @@ jobs:
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # Orgs can disallow the default token from opening PRs; add secret SECURITY_AUTOFIX_PAT
+      # (fine-grained PAT: contents + pull requests on this repo) if create-pull-request fails with 403.
       - name: Create Pull Request
         if: steps.changes.outputs.has_changes == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.SECURITY_AUTOFIX_PAT || secrets.GITHUB_TOKEN }}
           commit-message: "fix(security): auto-fix security warnings"
           branch: security/auto-fix
           delete-branch: true

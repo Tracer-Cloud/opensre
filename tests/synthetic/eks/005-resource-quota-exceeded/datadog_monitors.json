@@ -1,0 +1,31 @@
+{
+  "monitors": [
+    {
+      "id": 5001,
+      "name": "payments namespace ResourceQuota usage",
+      "type": "query alert",
+      "query": "max(last_5m):avg:kubernetes_state.resourcequota.cpu_limits.used{namespace:payments,resource_quota:default-quota} / avg:kubernetes_state.resourcequota.cpu_limits.hard{namespace:payments,resource_quota:default-quota} > 0.95",
+      "message": "ResourceQuota cpu_limits at or above 95% of hard cap.",
+      "overall_state": "Alert",
+      "tags": ["kube_namespace:payments", "resource_quota:default-quota"]
+    },
+    {
+      "id": 5002,
+      "name": "payments-api desired vs ready replicas",
+      "type": "query alert",
+      "query": "max(last_10m):avg:kubernetes_state.deployment.replicas_desired{kube_deployment:payments-api} - avg:kubernetes_state.deployment.replicas_ready{kube_deployment:payments-api} > 0",
+      "message": "Deployment desired/ready mismatch.",
+      "overall_state": "Alert",
+      "tags": ["kube_deployment:payments-api"]
+    },
+    {
+      "id": 5003,
+      "name": "payments-api error rate",
+      "type": "query alert",
+      "query": "avg(last_5m):sum:trace.http.errors{service:payments-api}.as_rate() > 0.05",
+      "message": "Application error rate.",
+      "overall_state": "OK",
+      "tags": ["service:payments-api"]
+    }
+  ]
+}

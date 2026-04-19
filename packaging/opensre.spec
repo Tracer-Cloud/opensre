@@ -1,13 +1,23 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 ROOT = Path(SPECPATH).parent
 
-hiddenimports = collect_submodules("app")
-datas = collect_data_files("app") + copy_metadata("opensre")
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+def _is_runtime_submodule(module_name: str) -> bool:
+    module_parts = module_name.split(".")
+    return "tests" not in module_parts and not module_parts[-1].endswith("_test")
+
+
+hiddenimports = collect_submodules("app", filter=_is_runtime_submodule)
+datas = collect_data_files("app")
 
 block_cipher = None
 

@@ -1,0 +1,38 @@
+root_cause_category: configuration_error
+required_keywords:
+  - Liveness probe
+  - probe
+  - payments-api-7f9dd8b6c4-liv1k
+forbidden_categories:
+  - healthy
+  - unknown
+  - resource_exhaustion
+  - infrastructure
+optimal_trajectory:
+  - list_eks_pods
+  - get_eks_events
+  - get_eks_pod_logs
+  - query_datadog_logs
+max_investigation_loops: 3
+ruling_out_keywords:
+  - not OOM
+  - exit code 0
+required_queries:
+  - list_eks_pods
+  - get_eks_pod_logs
+model_response: |
+  ROOT_CAUSE: Pod payments-api-7f9dd8b6c4-liv1k is being restarted by kubelet because its liveness probe (HTTP GET /healthz) returns 500; the application process itself is alive and logs normal request processing right up to each termination. Container exits with code 0 (not 137), which distinguishes this from an OOM kill.
+  ROOT_CAUSE_CATEGORY: configuration_error
+
+  VALIDATED_CLAIMS:
+  - Pod has restart_count=6 while container.state.running=true at inspection time — restarts are externally-driven, not crashes. [evidence: eks_pods]
+  - Warning event Unhealthy 'Liveness probe failed: HTTP probe failed with statuscode: 500' fires repeatedly. [evidence: eks_events]
+  - Warning event Killing 'Container failed liveness probe, will be restarted' confirms kubelet-initiated termination. [evidence: eks_events]
+  - Pod logs show clean startup, normal request handling, then 'received SIGTERM, shutting down gracefully' — the app did not crash. [evidence: eks_pod_logs]
+
+  NON_VALIDATED_CLAIMS:
+  - The /healthz endpoint likely never transitions to 200, or the probe timeout/threshold is too aggressive.
+  - Other replicas happen to receive a different traffic mix or were deployed before the misconfiguration, so they are not (yet) being killed.
+
+  CAUSAL_CHAIN:
+  - Liveness probe receives HTTP 500 from /healthz, kubelet counts consecutive failures and sends SIGTERM, the container exits cleanly (code 0), kubelet restarts it, the new container's /healthz still returns 500, and the cycle repeats — a restart pattern that superficially resembles CrashLoopBackOff but is actually probe-driven.

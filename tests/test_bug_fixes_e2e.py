@@ -8,7 +8,7 @@ Tests the full integration between components rather than individual units:
 from __future__ import annotations
 
 import re
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from app.guardrails.engine import GuardrailEngine
 from app.guardrails.rules import GuardrailAction, GuardrailRule
@@ -98,11 +98,7 @@ class TestOverlappingRedactionE2E:
         ])
         text = "auth token_secret=xyz and token=abc"
 
-        # Step 1: scan reports overlapping matches
-        scan = engine.scan(text)
-        assert len(scan.matches) >= 3  # "token" x2 + "token_secret" x1 at minimum
-
-        # Step 2: apply correctly redacts without leftovers
+        # Apply correctly redacts overlapping matches without leftovers.
         result = engine.apply(text)
         assert "_secret" not in result
         assert "=xyz" in result

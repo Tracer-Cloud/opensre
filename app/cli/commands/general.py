@@ -141,6 +141,23 @@ def health_command(watch: bool, rate: int) -> None:
     help="Print a starter alert JSON template and exit.",
 )
 @click.option(
+    "--service",
+    default=None,
+    help=(
+        "Start a runtime investigation for a deployed service by name. "
+        "Pulls status, recent logs, and health from the configured remote ops provider."
+    ),
+)
+@click.option(
+    "--slack-thread",
+    default=None,
+    help=(
+        "Optional Slack thread reference in 'CHANNEL/TS' format. When set with --service, "
+        "the thread's messages are pulled via Slack's conversations.replies API "
+        "(requires SLACK_BOT_TOKEN in the environment) and included as investigation context."
+    ),
+)
+@click.option(
     "--output", "-o", default=None, type=click.Path(), help="Output JSON file (default: stdout)."
 )
 def investigate_command(
@@ -148,9 +165,32 @@ def investigate_command(
     input_json: str | None,
     interactive: bool,
     print_template: str | None,
+    service: str | None,
+    slack_thread: str | None,
     output: str | None,
 ) -> None:
     """Run an RCA investigation against an alert payload."""
+    if service:
+        _run_service_investigation(
+            service=service,
+            slack_thread=slack_thread,
+            other_inputs={
+                "input_path": input_path,
+                "input_json": input_json,
+                "interactive": interactive,
+                "print_template": print_template,
+            },
+            output=output,
+        )
+        return
+    if slack_thread:
+        from app.cli.errors import OpenSREError
+
+        raise OpenSREError(
+            "--slack-thread requires --service.",
+            suggestion="Pass --service <name> alongside --slack-thread CHANNEL/TS.",
+        )
+
     from app.main import main as investigate_main
 
     capture_investigation_started(
@@ -177,3 +217,63 @@ def investigate_command(
     else:
         capture_investigation_failed()
     raise SystemExit(exit_code)
+
+
+def _run_service_investigation(
+    *,
+    service: str,
+    slack_thread: str | None,
+    other_inputs: dict[str, object],
+    output: str | None,
+) -> None:
+    """Run a runtime investigation for a deployed service by name."""
+    import os
+
+    from app.cli.args import write_json
+    from app.cli.errors import OpenSREError
+    from app.cli.investigate import run_investigation_cli
+    from app.remote.runtime_alert import build_runtime_alert_payload
+
+    conflicting = [
+        flag
+        for flag, value in (
+            ("--input", other_inputs.get("input_path")),
+            ("--input-json", other_inputs.get("input_json")),
+            ("--interactive", other_inputs.get("interactive")),
+            ("--print-template", other_inputs.get("print_template")),
+        )
+        if value
+    ]
+    if conflicting:
+        raise OpenSREError(
+            f"--service cannot be combined with {', '.join(conflicting)}.",
+            suggestion="Run 'opensre investigate --service <name>' on its own.",
+        )
+
+    slack_bot_token = os.getenv("SLACK_BOT_TOKEN", "").strip()
+    if slack_thread and not slack_bot_token:
+        raise OpenSREError(
+            "--slack-thread was provided but SLACK_BOT_TOKEN is not set.",
+            suggestion="Export SLACK_BOT_TOKEN=xoxb-... in your environment and retry.",
+        )
+
+    capture_investigation_started(input_path=None, input_json=None, interactive=False)
+    try:
+        raw_alert = build_runtime_alert_payload(
+            service,
+            slack_thread_ref=slack_thread,
+            slack_bot_token=slack_bot_token or None,
+        )
+        result = run_investigation_cli(
+            raw_alert=raw_alert,
+            alert_name=raw_alert.get("alert_name"),
+            pipeline_name=raw_alert.get("pipeline_name"),
+            severity=raw_alert.get("severity"),
+        )
+    except Exception:
+        capture_investigation_failed()
+        raise
+
+    capture_investigation_completed()
+    write_json(result, output)
+    raise SystemExit(SUCCESS)

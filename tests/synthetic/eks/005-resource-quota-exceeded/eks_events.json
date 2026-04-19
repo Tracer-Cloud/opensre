@@ -1,0 +1,44 @@
+{
+  "warning_events": [
+    {
+      "namespace": "payments",
+      "reason": "FailedCreate",
+      "message": "Error creating: pods \"payments-api-7f9dd8b6c4-aaaaa\" is forbidden: exceeded quota: default-quota, requested: limits.cpu=2, used: limits.cpu=8, limited: limits.cpu=10 — namespace is at its allocated CPU limit, quota admission controller is rejecting new pods",
+      "type": "Warning",
+      "count": 11,
+      "involved_object": "ReplicaSet/payments-api-7f9dd8b6c4",
+      "first_time": "2026-04-18T10:30:00Z",
+      "last_time": "2026-04-18T10:45:00Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "FailedCreate",
+      "message": "Error creating: pods \"payments-api-7f9dd8b6c4-bbbbb\" is forbidden: exceeded quota: default-quota, requested: limits.cpu=2, used: limits.cpu=8, limited: limits.cpu=10",
+      "type": "Warning",
+      "count": 11,
+      "involved_object": "ReplicaSet/payments-api-7f9dd8b6c4",
+      "first_time": "2026-04-18T10:30:30Z",
+      "last_time": "2026-04-18T10:45:00Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "QuotaExceeded",
+      "message": "ResourceQuota default-quota in namespace payments at 100% of limits.cpu (8/10 used, 2 more requested per replica). Scaling blocked at admission control before scheduler is reached.",
+      "type": "Warning",
+      "count": 1,
+      "involved_object": "ResourceQuota/default-quota",
+      "first_time": "2026-04-18T10:30:00Z",
+      "last_time": "2026-04-18T10:30:00Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "ScalingReplicaSet",
+      "message": "Scaled up replica set payments-api-7f9dd8b6c4 to 5 (HPA-driven)",
+      "type": "Normal",
+      "count": 1,
+      "involved_object": "Deployment/payments-api",
+      "first_time": "2026-04-18T10:29:58Z",
+      "last_time": "2026-04-18T10:29:58Z"
+    }
+  ]
+}

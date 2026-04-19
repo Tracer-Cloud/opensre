@@ -98,3 +98,20 @@ def test_integrations_verify_accepts_github() -> None:
         send_slack_test=False,
     )
     mock_capture.assert_called_once_with("github")
+
+
+def test_integrations_verify_accepts_openclaw() -> None:
+    runner = CliRunner()
+
+    with (
+        patch("app.cli.commands.integrations.capture_integration_verified") as mock_capture,
+        patch("app.integrations.cli.cmd_verify", return_value=1) as mock_verify,
+    ):
+        result = runner.invoke(cli, ["integrations", "verify", "openclaw"])
+
+    assert result.exit_code == 1
+    mock_verify.assert_called_once_with(
+        "openclaw",
+        send_slack_test=False,
+    )
+    mock_capture.assert_called_once_with("openclaw")
