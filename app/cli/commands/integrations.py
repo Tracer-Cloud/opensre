@@ -70,9 +70,13 @@ def remove_integration(service: str) -> None:
 @click.option(
     "--send-slack-test", is_flag=True, help="Send a test message to the configured Slack webhook."
 )
+@click.option(
+    "--send-teams-test", is_flag=True, help="Send a test message to the configured Microsoft Teams webhook."
+)
 def verify_integration(
     service: str | None,
     send_slack_test: bool,
+    send_teams_test: bool,
 ) -> None:
     """Verify integration connectivity (all services, or a specific one)."""
     from app.integrations.cli import cmd_verify
@@ -80,6 +84,7 @@ def verify_integration(
     exit_code = cmd_verify(
         service,
         send_slack_test=send_slack_test,
+        send_teams_test=send_teams_test,
     )
     capture_integration_verified(service or "all")
     raise SystemExit(exit_code)
