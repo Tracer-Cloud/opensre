@@ -59,6 +59,7 @@ def check_evidence_availability(
         or evidence.get("grafana_error_logs") is not None
         or evidence.get("grafana_traces") is not None
         or evidence.get("grafana_metrics") is not None
+        or evidence.get("grafana_alert_rules") is not None
         or evidence.get("datadog_logs") is not None
         or evidence.get("datadog_monitors") is not None
         or evidence.get("datadog_events") is not None

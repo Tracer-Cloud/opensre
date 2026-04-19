@@ -47,6 +47,43 @@
           "grafana",
           "mongodb",
           "slack"
+          {
+            "group": "Enterprise",
+            "defaultOpen": true,
+            "pages": [
+              "aws",
+              "datadog",
+              "grafana",
+              "slack"
+            ]
+          },
+          {
+            "group": "Local",
+            "defaultOpen": true,
+            "pages": [
+              "alertmanager",
+              "bitbucket",
+              "clickhouse",
+              "coralogix",
+              "discord",
+              "github",
+              "gitlab",
+              "google-docs",
+              "honeycomb",
+              "jira",
+              "kafka",
+              "mariadb",
+              "mongodb",
+              "mysql",
+              "openclaw",
+              "opsgenie",
+              "postgresql",
+              "prefect",
+              "rabbitmq",
+              "sentry",
+              "vercel"
+            ]
+          }
         ]
       },
       {

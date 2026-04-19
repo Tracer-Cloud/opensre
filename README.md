@@ -595,6 +595,29 @@ Thanks goes to these amazing people:
         </a>
     </td>
 		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/chaosreload">
+            <img src="https://avatars.githubusercontent.com/u/6723037?v=4" width="100" alt="chaosreload"/>
+            <br />
+            <sub><b>chaosreload</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/paulovitorcl">
+            <img src="https://avatars.githubusercontent.com/u/47778440?v=4" width="100" alt="paulovitorcl"/>
+            <br />
+            <sub><b>paulovitorcl</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/gbsierra">
+            <img src="https://avatars.githubusercontent.com/u/182822327?v=4" width="100" alt="gbsierra"/>
+            <br />
+            <sub><b>gbsierra</b></sub>
+        </a>
+    </td>
+		</tr>
 	</tbody>
 </table>
 <!-- readme: contributors -end -->
