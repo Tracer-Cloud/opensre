@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import sys
+import types
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -544,32 +546,47 @@ class TestGetReplicationStatus:
 
     @patch("app.integrations.mariadb._get_connection")
     def test_fallback_to_show_slave_status(self, mock_get_conn: MagicMock) -> None:
-        import pymysql
+        # Stub pymysql so this test does not require PyMySQL at import time (matches the
+        # dynamic `import pymysql` inside get_replication_status error handling).
+        class _ProgrammingError(Exception):
+            pass
 
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        columns = ["Slave_IO_Running", "Slave_SQL_Running"]
-        row = ("Yes", "Yes")
-        execute_call_count = 0
+        _fake_err = types.ModuleType("pymysql.err")
+        _fake_err.ProgrammingError = _ProgrammingError
+        _fake_pymysql = types.ModuleType("pymysql")
+        _fake_pymysql.err = _fake_err
+        _prior = sys.modules.get("pymysql")
+        sys.modules["pymysql"] = _fake_pymysql
+        try:
+            mock_conn = MagicMock()
+            mock_cursor = MagicMock()
+            columns = ["Slave_IO_Running", "Slave_SQL_Running"]
+            row = ("Yes", "Yes")
+            execute_call_count = 0
 
-        def execute_side_effect(stmt: str, *args: object, **kwargs: object) -> None:
-            nonlocal execute_call_count
-            execute_call_count += 1
-            if "ALL SLAVES" in stmt:
-                raise pymysql.err.ProgrammingError(1064, "syntax error")
+            def execute_side_effect(stmt: str, *args: object, **kwargs: object) -> None:
+                nonlocal execute_call_count
+                execute_call_count += 1
+                if "ALL SLAVES" in stmt:
+                    raise _ProgrammingError(1064, "syntax error")
 
-        mock_cursor.execute.side_effect = execute_side_effect
-        mock_cursor.fetchall.return_value = [row]
-        mock_cursor.description = [(col,) for col in columns]
-        mock_conn.cursor.return_value.__enter__ = lambda _self: mock_cursor
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-        mock_get_conn.return_value = mock_conn
+            mock_cursor.execute.side_effect = execute_side_effect
+            mock_cursor.fetchall.return_value = [row]
+            mock_cursor.description = [(col,) for col in columns]
+            mock_conn.cursor.return_value.__enter__ = lambda _self: mock_cursor
+            mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+            mock_get_conn.return_value = mock_conn
 
-        result = get_replication_status(self._config())
+            result = get_replication_status(self._config())
 
-        assert result["available"] is True
-        assert len(result["channels"]) == 1
-        assert execute_call_count == 2
+            assert result["available"] is True
+            assert len(result["channels"]) == 1
+            assert execute_call_count == 2
+        finally:
+            if _prior is not None:
+                sys.modules["pymysql"] = _prior
+            else:
+                sys.modules.pop("pymysql", None)
 
     @patch("app.integrations.mariadb._get_connection")
     def test_partial_columns_handled(self, mock_get_conn: MagicMock) -> None:

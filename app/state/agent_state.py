@@ -81,6 +81,9 @@ class AgentState(TypedDict, total=False):
     executed_hypotheses: list[dict[str, Any]]
     investigation_started_at: float
 
+    # Placeholder→original map for reversible infrastructure identifier masking
+    masking_map: dict[str, str]
+
     # Slack context (when triggered from Slack message)
     slack_context: dict[str, Any]
 
@@ -147,6 +150,7 @@ class AgentStateModel(StrictConfigModel):
     hypotheses: list[str] = Field(default_factory=list)
     executed_hypotheses: list[dict[str, Any]] = Field(default_factory=list)
     investigation_started_at: float = 0.0
+    masking_map: dict[str, str] = Field(default_factory=dict)
     slack_context: dict[str, Any] = Field(default_factory=dict)
     discord_context: dict[str, Any] = Field(default_factory=dict)
     thread_id: str = ""

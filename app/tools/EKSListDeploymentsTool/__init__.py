@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from app.services.eks.eks_k8s_client import build_k8s_clients
-from app.tools.EKSListClustersTool import _eks_available, _eks_creds
+from app.tools.EKSListClustersTool import _eks_creds
 from app.tools.tool_decorator import tool
+from app.tools.utils.availability import eks_available_or_backend
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +16,9 @@ logger = logging.getLogger(__name__)
 def _list_deployments_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     eks = sources["eks"]
     return {
-        "cluster_name": eks["cluster_name"],
+        "cluster_name": eks.get("cluster_name", ""),
         "namespace": eks.get("namespace") or "all",
+        "eks_backend": eks.get("_backend"),
         **_eks_creds(eks),
     }
 
@@ -41,19 +43,29 @@ def _list_deployments_extract_params(sources: dict[str, dict]) -> dict[str, Any]
         },
         "required": ["cluster_name", "namespace", "role_arn"],
     },
-    is_available=_eks_available,
+    is_available=eks_available_or_backend,
     extract_params=_list_deployments_extract_params,
 )
 def list_eks_deployments(
     cluster_name: str,
     namespace: str,
-    role_arn: str,
+    role_arn: str = "",
     external_id: str = "",
     region: str = "us-east-1",
+    eks_backend: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
-    """List all deployments in a namespace with replica counts and availability status."""
+    """List all deployments in a namespace with replica counts and availability status.
+
+    When ``eks_backend`` is provided (e.g. a FixtureEKSBackend from the synthetic
+    harness) the call short-circuits and returns the backend's response directly.
+    """
     logger.info("[eks] list_eks_deployments cluster=%s ns=%s", cluster_name, namespace)
+    if eks_backend is not None:
+        return cast(
+            "dict[str, Any]",
+            eks_backend.list_deployments(cluster_name=cluster_name, namespace=namespace),
+        )
     try:
         _, apps_v1 = build_k8s_clients(cluster_name, role_arn, external_id, region)
         dep_list = apps_v1.list_deployment_for_all_namespaces() if namespace == "all" else apps_v1.list_namespaced_deployment(namespace=namespace)

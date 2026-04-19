@@ -135,6 +135,14 @@ def mock_agent_state(overrides: dict | None = None) -> dict[str, Any]:
             "username": "testuser",
             "password": "",
         },
+        "mysql": {
+            "host": "localhost",
+            "port": 3306,
+            "database": "opensre_test",
+            "username": "opensre",
+            "password": "test123",
+            "ssl_mode": "preferred",
+        },
     }
     if overrides:
         for key, value in overrides.items():

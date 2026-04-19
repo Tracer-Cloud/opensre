@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import time
 from typing import Any, TypedDict
+from urllib.parse import urlparse
 
 from app.nodes.publish_findings.urls.aws import (
     build_datadog_logs_url,
@@ -25,6 +26,7 @@ from app.state import InvestigationState
 # ---------------------------------------------------------------------------
 # ReportContext — the schema that all formatters read from
 # ---------------------------------------------------------------------------
+
 
 class ReportContext(TypedDict, total=False):
     """Data extracted from state for report formatting.
@@ -83,6 +85,9 @@ class ReportContext(TypedDict, total=False):
     grafana_endpoint: str | None
     datadog_site: str | None
 
+    # Concrete source provenance, keyed by source name (grafana, eks, github, ...)
+    source_provenance: dict[str, dict[str, str]]
+
     kube_pod_name: str | None
     kube_container_name: str | None
     kube_namespace: str | None
@@ -110,6 +115,7 @@ _SOURCE_ALIASES: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Small utilities
 # ---------------------------------------------------------------------------
+
 
 def _safe_get(data: dict[str, Any] | None, *keys: str, default: Any = None) -> Any:
     """Safely navigate nested dictionaries without raising."""
@@ -147,29 +153,42 @@ def _filter_valid_claims(claims: list[dict]) -> list[dict]:
 # Phase 1: state normalization
 # ---------------------------------------------------------------------------
 
+
 class _NormalizedState:
     """All raw data extracted from InvestigationState in one place."""
 
     def __init__(self, state: InvestigationState) -> None:
         context = state.get("context", {}) or {}
         evidence = state.get("evidence", {}) or {}
+        available_sources = state.get("available_sources", {}) or {}
         raw_alert_value = state.get("raw_alert", {})
 
         self.evidence: dict[str, Any] = evidence
-        self.raw_alert: dict[str, Any] = raw_alert_value if isinstance(raw_alert_value, dict) else {}
+        self.raw_alert: dict[str, Any] = (
+            raw_alert_value if isinstance(raw_alert_value, dict) else {}
+        )
         self.web_run: dict[str, Any] = context.get("tracer_web_run", {}) or {}
         self.batch: dict[str, Any] = evidence.get("batch_jobs", {}) or {}
         self.s3: dict[str, Any] = evidence.get("s3", {}) or {}
+        self.available_sources: dict[str, dict[str, Any]] = available_sources
 
-        available_sources = state.get("available_sources", {}) or {}
-        self.grafana_endpoint: str | None = (available_sources.get("grafana") or {}).get("grafana_endpoint")
-        self.datadog_site: str = (available_sources.get("datadog") or {}).get("site") or "datadoghq.com"
+        self.grafana_endpoint: str | None = (available_sources.get("grafana") or {}).get(
+            "grafana_endpoint"
+        )
+        self.datadog_site: str = (available_sources.get("datadog") or {}).get(
+            "site"
+        ) or "datadoghq.com"
 
         self.validated_claims: list[dict] = _filter_valid_claims(state.get("validated_claims", []))
         self.non_validated_claims: list[dict] = state.get("non_validated_claims", [])
 
-        self.cloudwatch_url, self.cloudwatch_group, self.cloudwatch_stream, \
-            self.cloudwatch_region, self.alert_id = _extract_cloudwatch_info(self.raw_alert)
+        (
+            self.cloudwatch_url,
+            self.cloudwatch_group,
+            self.cloudwatch_stream,
+            self.cloudwatch_region,
+            self.alert_id,
+        ) = _extract_cloudwatch_info(self.raw_alert)
 
         started_at = state.get("investigation_started_at")
         self.duration_seconds: int | None = (
@@ -201,7 +220,9 @@ def _extract_cloudwatch_info(
         or _safe_get(annotations, "cloudwatch_url")
     )
     group = raw_alert.get("cloudwatch_log_group") or _safe_get(annotations, "cloudwatch_log_group")
-    stream = raw_alert.get("cloudwatch_log_stream") or _safe_get(annotations, "cloudwatch_log_stream")
+    stream = raw_alert.get("cloudwatch_log_stream") or _safe_get(
+        annotations, "cloudwatch_log_stream"
+    )
     region = raw_alert.get("cloudwatch_region") or _safe_get(annotations, "cloudwatch_region")
     alert_id = raw_alert.get("alert_id")
     return url, group, stream, region, alert_id
@@ -212,6 +233,7 @@ def _extract_cloudwatch_info(
 #
 # Each _add_* helper appends to the shared (catalog, source_to_id) accumulators.
 # ---------------------------------------------------------------------------
+
 
 def _add_s3_metadata(
     evidence: dict[str, Any],
@@ -300,15 +322,21 @@ def _add_grafana_logs(
         return
     grafana_query = evidence.get("grafana_logs_query") or ""
     grafana_service = evidence.get("grafana_logs_service") or ""
-    summary_parts = [p for p in [
-        grafana_service or None,
-        f"{len(grafana_logs)} logs" if grafana_logs else None,
-        f"{len(grafana_error_logs)} errors" if grafana_error_logs else None,
-    ] if p]
+    summary_parts = [
+        p
+        for p in [
+            grafana_service or None,
+            f"{len(grafana_logs)} logs" if grafana_logs else None,
+            f"{len(grafana_error_logs)} errors" if grafana_error_logs else None,
+        ]
+        if p
+    ]
     eid = "evidence/grafana/loki"
     catalog[eid] = {
         "label": "Grafana Loki Logs",
-        "url": build_grafana_explore_url(grafana_endpoint or "", grafana_query) if grafana_query else None,
+        "url": build_grafana_explore_url(grafana_endpoint or "", grafana_query)
+        if grafana_query
+        else None,
         "summary": ", ".join(summary_parts) or None,
         "snippet": _as_snippet(grafana_query) if grafana_query else None,
     }
@@ -326,12 +354,20 @@ def _add_datadog_logs(
     if not (datadog_logs or datadog_error_logs):
         return
     datadog_query = evidence.get("datadog_logs_query") or ""
-    summary_parts = [p for p in [
-        f"{len(datadog_logs)} logs" if datadog_logs else None,
-        f"{len(datadog_error_logs)} errors" if datadog_error_logs else None,
-    ] if p]
+    summary_parts = [
+        p
+        for p in [
+            f"{len(datadog_logs)} logs" if datadog_logs else None,
+            f"{len(datadog_error_logs)} errors" if datadog_error_logs else None,
+        ]
+        if p
+    ]
     top_msg = next(
-        (e.get("message", "").strip() for e in (datadog_error_logs or datadog_logs) if e.get("message")),
+        (
+            e.get("message", "").strip()
+            for e in (datadog_error_logs or datadog_logs)
+            if e.get("message")
+        ),
         None,
     )
     eid = "evidence/datadog/logs"
@@ -339,7 +375,9 @@ def _add_datadog_logs(
         "label": "Datadog Logs",
         "url": build_datadog_logs_url(datadog_query, datadog_site) if datadog_query else None,
         "summary": ", ".join(summary_parts) or None,
-        "snippet": _as_snippet(top_msg) if top_msg else (_as_snippet(datadog_query) if datadog_query else None),
+        "snippet": _as_snippet(top_msg)
+        if top_msg
+        else (_as_snippet(datadog_query) if datadog_query else None),
     }
     source_to_id["datadog_logs"] = eid
 
@@ -353,7 +391,9 @@ def _add_datadog_monitors(
     datadog_monitors = evidence.get("datadog_monitors") or []
     if not datadog_monitors:
         return
-    triggered = [m for m in datadog_monitors if m.get("overall_state") in ("Alert", "Warn", "No Data")]
+    triggered = [
+        m for m in datadog_monitors if m.get("overall_state") in ("Alert", "Warn", "No Data")
+    ]
     label = (
         f"Datadog Monitors ({len(triggered)} triggered)"
         if triggered
@@ -398,7 +438,13 @@ def _add_datadog_failed_pods(
     dd_container = evidence.get("datadog_container_name")
     raw_pods: list[dict] = evidence.get("datadog_failed_pods", [])
     if not raw_pods and evidence.get("datadog_pod_name"):
-        raw_pods = [{"pod_name": evidence["datadog_pod_name"], "namespace": dd_ns, "container": dd_container}]
+        raw_pods = [
+            {
+                "pod_name": evidence["datadog_pod_name"],
+                "namespace": dd_ns,
+                "container": dd_container,
+            }
+        ]
 
     for idx, pod in enumerate(raw_pods):
         pname = pod.get("pod_name") or pod.get("name")
@@ -411,7 +457,9 @@ def _add_datadog_failed_pods(
         if pod.get("exit_code") is not None:
             summary_parts.append(f"exit={pod['exit_code']}")
         if pod.get("memory_requested") and pod.get("memory_limit"):
-            summary_parts.append(f"mem requested={pod['memory_requested']} limit={pod['memory_limit']}")
+            summary_parts.append(
+                f"mem requested={pod['memory_requested']} limit={pod['memory_limit']}"
+            )
         eid = f"evidence/datadog/failed_pod/{pname}"
         catalog[eid] = {
             "label": f"Failed Pod: {pname}{f' ({pcontainer})' if pcontainer else ''}",
@@ -434,12 +482,16 @@ def _add_honeycomb_traces(
     dataset = evidence.get("honeycomb_dataset") or "__all__"
     service_name = evidence.get("honeycomb_service_name") or ""
     trace_id = evidence.get("honeycomb_trace_id") or ""
-    summary_parts = [part for part in [
-        f"dataset={dataset}" if dataset else None,
-        service_name or None,
-        trace_id or None,
-        f"{len(honeycomb_traces)} traces",
-    ] if part]
+    summary_parts = [
+        part
+        for part in [
+            f"dataset={dataset}" if dataset else None,
+            service_name or None,
+            trace_id or None,
+            f"{len(honeycomb_traces)} traces",
+        ]
+        if part
+    ]
     eid = "evidence/honeycomb/traces"
     catalog[eid] = {
         "label": "Honeycomb Traces",
@@ -461,12 +513,16 @@ def _add_coralogix_logs(
         return
     application_name = evidence.get("coralogix_application_name") or ""
     subsystem_name = evidence.get("coralogix_subsystem_name") or ""
-    summary_parts = [part for part in [
-        application_name or None,
-        subsystem_name or None,
-        f"{len(coralogix_logs)} logs" if coralogix_logs else None,
-        f"{len(coralogix_error_logs)} errors" if coralogix_error_logs else None,
-    ] if part]
+    summary_parts = [
+        part
+        for part in [
+            application_name or None,
+            subsystem_name or None,
+            f"{len(coralogix_logs)} logs" if coralogix_logs else None,
+            f"{len(coralogix_error_logs)} errors" if coralogix_error_logs else None,
+        ]
+        if part
+    ]
     top_msg = next(
         (
             entry.get("message", "").strip()
@@ -479,9 +535,244 @@ def _add_coralogix_logs(
     catalog[eid] = {
         "label": "Coralogix Logs",
         "summary": ", ".join(summary_parts) or None,
-        "snippet": _as_snippet(top_msg) if top_msg else _as_snippet(evidence.get("coralogix_logs_query")),
+        "snippet": _as_snippet(top_msg)
+        if top_msg
+        else _as_snippet(evidence.get("coralogix_logs_query")),
     }
     source_to_id["coralogix_logs"] = eid
+
+
+def _normalize_endpoint_target(endpoint: str) -> str:
+    parsed = urlparse(endpoint.strip())
+    return parsed.netloc or parsed.path.strip("/") or endpoint.strip()
+
+
+def _build_source_provenance(
+    available_sources: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, str]]:
+    """Return a compact provenance summary for concrete source instances."""
+    provenance: dict[str, dict[str, str]] = {}
+
+    grafana = available_sources.get("grafana") or {}
+    grafana_endpoint = str(grafana.get("grafana_endpoint") or grafana.get("endpoint") or "").strip()
+    if grafana_endpoint:
+        provenance["grafana"] = {
+            "label": "Grafana",
+            "summary": ", ".join(
+                part
+                for part in [
+                    f"instance={_normalize_endpoint_target(grafana_endpoint)}",
+                    f"service={grafana.get('service_name')}"
+                    if grafana.get("service_name")
+                    else None,
+                    f"pipeline={grafana.get('pipeline_name')}"
+                    if grafana.get("pipeline_name")
+                    else None,
+                ]
+                if part
+            ),
+        }
+
+    datadog = available_sources.get("datadog") or {}
+    if datadog:
+        provenance["datadog"] = {
+            "label": "Datadog",
+            "summary": ", ".join(
+                part
+                for part in [
+                    f"site={datadog.get('site', 'datadoghq.com')}",
+                    f"query={datadog.get('default_query')}"
+                    if datadog.get("default_query")
+                    else None,
+                    f"namespace={((datadog.get('kubernetes_context') or {}).get('namespace'))}"
+                    if (datadog.get("kubernetes_context") or {}).get("namespace")
+                    else None,
+                ]
+                if part
+            ),
+        }
+
+    honeycomb = available_sources.get("honeycomb") or {}
+    if honeycomb:
+        provenance["honeycomb"] = {
+            "label": "Honeycomb",
+            "summary": ", ".join(
+                part
+                for part in [
+                    f"dataset={honeycomb.get('dataset', '__all__')}",
+                    f"service={honeycomb.get('service_name')}"
+                    if honeycomb.get("service_name")
+                    else None,
+                    f"trace_id={honeycomb.get('trace_id')}" if honeycomb.get("trace_id") else None,
+                ]
+                if part
+            ),
+        }
+
+    coralogix = available_sources.get("coralogix") or {}
+    if coralogix:
+        provenance["coralogix"] = {
+            "label": "Coralogix",
+            "summary": ", ".join(
+                part
+                for part in [
+                    f"application={coralogix.get('application_name')}"
+                    if coralogix.get("application_name")
+                    else None,
+                    f"subsystem={coralogix.get('subsystem_name')}"
+                    if coralogix.get("subsystem_name")
+                    else None,
+                ]
+                if part
+            ),
+        }
+
+    eks = available_sources.get("eks") or {}
+    if eks:
+        provenance["eks"] = {
+            "label": "AWS EKS",
+            "summary": ", ".join(
+                part
+                for part in [
+                    f"cluster={eks.get('cluster_name')}" if eks.get("cluster_name") else None,
+                    f"namespace={eks.get('namespace')}" if eks.get("namespace") else None,
+                    f"pod={eks.get('pod_name')}" if eks.get("pod_name") else None,
+                    f"deployment={eks.get('deployment')}" if eks.get("deployment") else None,
+                    f"region={eks.get('region')}" if eks.get("region") else None,
+                ]
+                if part
+            ),
+        }
+
+    cloudwatch = available_sources.get("cloudwatch") or {}
+    if cloudwatch:
+        provenance["cloudwatch"] = {
+            "label": "CloudWatch",
+            "summary": ", ".join(
+                part
+                for part in [
+                    f"log_group={cloudwatch.get('log_group')}"
+                    if cloudwatch.get("log_group")
+                    else None,
+                    f"stream={cloudwatch.get('log_stream')}"
+                    if cloudwatch.get("log_stream")
+                    else None,
+                    f"region={cloudwatch.get('region')}" if cloudwatch.get("region") else None,
+                ]
+                if part
+            ),
+        }
+
+    s3 = available_sources.get("s3") or {}
+    if s3:
+        provenance["s3"] = {
+            "label": "S3",
+            "summary": ", ".join(
+                part
+                for part in [
+                    f"bucket={s3.get('bucket')}" if s3.get("bucket") else None,
+                    f"key={s3.get('key')}" if s3.get("key") else None,
+                    f"prefix={s3.get('prefix')}" if s3.get("prefix") else None,
+                ]
+                if part
+            ),
+        }
+
+    tracer_web = available_sources.get("tracer_web") or {}
+    if tracer_web:
+        provenance["tracer_web"] = {
+            "label": "Tracer Web",
+            "summary": ", ".join(
+                part
+                for part in [
+                    f"trace_id={tracer_web.get('trace_id')}"
+                    if tracer_web.get("trace_id")
+                    else None,
+                    f"run_url={tracer_web.get('run_url')}" if tracer_web.get("run_url") else None,
+                ]
+                if part
+            ),
+        }
+
+    github = available_sources.get("github") or {}
+    if github:
+        provenance["github"] = {
+            "label": "GitHub",
+            "summary": ", ".join(
+                part
+                for part in [
+                    f"repo={github.get('owner')}/{github.get('repo')}"
+                    if github.get("owner") and github.get("repo")
+                    else None,
+                    f"ref={github.get('ref')}" if github.get("ref") else None,
+                    f"sha={github.get('sha')}" if github.get("sha") else None,
+                ]
+                if part
+            ),
+        }
+
+    gitlab = available_sources.get("gitlab") or {}
+    if gitlab:
+        provenance["gitlab"] = {
+            "label": "GitLab",
+            "summary": ", ".join(
+                part
+                for part in [
+                    f"project={gitlab.get('project_id')}" if gitlab.get("project_id") else None,
+                    f"ref={gitlab.get('ref_name')}" if gitlab.get("ref_name") else None,
+                    f"mr={gitlab.get('merge_request_iid')}"
+                    if gitlab.get("merge_request_iid")
+                    else None,
+                ]
+                if part
+            ),
+        }
+
+    vercel = available_sources.get("vercel") or {}
+    if vercel:
+        provenance["vercel"] = {
+            "label": "Vercel",
+            "summary": ", ".join(
+                part
+                for part in [
+                    f"project={vercel.get('project_name') or vercel.get('project_slug') or vercel.get('project_id')}"
+                    if (
+                        vercel.get("project_name")
+                        or vercel.get("project_slug")
+                        or vercel.get("project_id")
+                    )
+                    else None,
+                    f"deployment_id={vercel.get('deployment_id')}"
+                    if vercel.get("deployment_id")
+                    else None,
+                    f"commit={vercel.get('github_commit_sha')}"
+                    if vercel.get("github_commit_sha")
+                    else None,
+                ]
+                if part
+            ),
+        }
+
+    return {
+        source: details
+        for source, details in provenance.items()
+        if (details.get("summary") or "").strip()
+    }
+
+
+_PROVENANCE_SOURCE_ALIASES: dict[str, str] = {
+    "cloudwatch_logs": "cloudwatch",
+    "grafana_logs": "grafana",
+    "grafana_traces": "grafana",
+    "datadog_logs": "datadog",
+    "datadog_monitors": "datadog",
+    "datadog_events": "datadog",
+    "honeycomb_traces": "honeycomb",
+    "coralogix_logs": "coralogix",
+    "s3_metadata": "s3",
+    "s3_audit": "s3",
+    # vendor_audit intentionally omitted: it is not always S3-backed
+}
 
 
 def _build_evidence_catalog(
@@ -517,6 +808,7 @@ def _build_evidence_catalog(
 # Phase 3: link claims to catalog entries
 # ---------------------------------------------------------------------------
 
+
 def _attach_evidence_to_claims(
     claims: list[dict],
     source_to_id: dict[str, str],
@@ -548,6 +840,7 @@ def _attach_evidence_to_claims(
 # Phase 4: final context assembly
 # ---------------------------------------------------------------------------
 
+
 def build_report_context(state: InvestigationState) -> ReportContext:
     """Build the full ReportContext from an InvestigationState.
 
@@ -558,10 +851,18 @@ def build_report_context(state: InvestigationState) -> ReportContext:
     4. Assemble the final dict.
     """
     ns = _NormalizedState(state)
+    source_provenance = _build_source_provenance(ns.available_sources)
     catalog, source_to_id = _build_evidence_catalog(ns)
+    # Add provenance summaries to evidence entries when possible.
+    for source_name, entry_id in source_to_id.items():
+        provenance_key = _PROVENANCE_SOURCE_ALIASES.get(source_name, source_name)
+        if provenance_key in source_provenance and entry_id in catalog:
+            catalog[entry_id]["provenance"] = source_provenance[provenance_key]["summary"]
     display_map = {eid: entry.get("display_id", eid) for eid, entry in catalog.items()}
     validated_claims = _attach_evidence_to_claims(ns.validated_claims, source_to_id, display_map)
-    non_validated_claims = _attach_evidence_to_claims(ns.non_validated_claims, source_to_id, display_map)
+    non_validated_claims = _attach_evidence_to_claims(
+        ns.non_validated_claims, source_to_id, display_map
+    )
 
     return {
         # Core RCA results
@@ -605,6 +906,7 @@ def build_report_context(state: InvestigationState) -> ReportContext:
         # Integration endpoints for deep links
         "grafana_endpoint": ns.grafana_endpoint,
         "datadog_site": ns.datadog_site,
+        "source_provenance": source_provenance,
         # Kubernetes pod details — from Datadog evidence first, then alert annotations
         "kube_pod_name": (
             ns.evidence.get("datadog_pod_name")

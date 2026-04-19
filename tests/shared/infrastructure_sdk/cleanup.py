@@ -1,11 +1,14 @@
 """Tag-based resource cleanup."""
 
+import logging
 import time
 from typing import Any
 
 from botocore.exceptions import ClientError
 
 from tests.shared.infrastructure_sdk.deployer import get_boto3_client
+
+logger = logging.getLogger(__name__)
 
 # Resource types and their deletion order (dependencies matter)
 RESOURCE_DELETION_ORDER = [
@@ -163,7 +166,7 @@ def _delete_ecs_service(arn: str, region: str) -> None:
             time.sleep(5)
         except ClientError:
             # Service may be draining or already at 0; proceed with deletion
-            pass
+            logger.debug("Could not scale ECS service before deletion", exc_info=True)
         client.delete_service(cluster=cluster, service=service, force=True)
 
 
@@ -203,7 +206,7 @@ def _delete_iam_role(arn: str, region: str) -> None:
             client.detach_role_policy(RoleName=role_name, PolicyArn=policy["PolicyArn"])
     except ClientError:
         # Role may not exist or policies already detached
-        pass
+        logger.debug("Could not detach managed role policies", exc_info=True)
 
     # Delete inline policies
     try:
@@ -212,7 +215,7 @@ def _delete_iam_role(arn: str, region: str) -> None:
             client.delete_role_policy(RoleName=role_name, PolicyName=policy_name)
     except ClientError:
         # Role may not exist or inline policies already deleted
-        pass
+        logger.debug("Could not delete inline role policies", exc_info=True)
 
     # Delete instance profiles
     try:
@@ -224,7 +227,7 @@ def _delete_iam_role(arn: str, region: str) -> None:
             )
     except ClientError:
         # Role may not exist or instance profiles already removed
-        pass
+        logger.debug("Could not remove role from instance profiles", exc_info=True)
 
     client.delete_role(RoleName=role_name)
 

@@ -1,0 +1,46 @@
+{
+  "logs": [
+    {
+      "timestamp": "2026-04-14T10:15:03Z",
+      "message": "[payments-api] Started HTTP server on :8080",
+      "status": "info",
+      "service": "payments-api",
+      "host": "ip-10-0-1-42.us-east-1.compute.internal",
+      "tags": [
+        "kube_namespace:payments",
+        "kube_deployment:payments-api",
+        "pod_name:payments-api-7f9dd8b6c4-x7gr9",
+        "env:prod",
+        "service:payments-api"
+      ]
+    },
+    {
+      "timestamp": "2026-04-14T10:16:12Z",
+      "message": "[payments-api] Processed 142 requests in the last minute, p95 latency 34ms",
+      "status": "info",
+      "service": "payments-api",
+      "host": "ip-10-0-1-42.us-east-1.compute.internal",
+      "tags": [
+        "kube_namespace:payments",
+        "kube_deployment:payments-api",
+        "pod_name:payments-api-7f9dd8b6c4-x7gr9",
+        "env:prod",
+        "service:payments-api"
+      ]
+    },
+    {
+      "timestamp": "2026-04-14T10:17:45Z",
+      "message": "[payments-api] Heartbeat OK, connection pool at 12/100",
+      "status": "info",
+      "service": "payments-api",
+      "host": "ip-10-0-1-73.us-east-1.compute.internal",
+      "tags": [
+        "kube_namespace:payments",
+        "kube_deployment:payments-api",
+        "pod_name:payments-api-7f9dd8b6c4-k2m4p",
+        "env:prod",
+        "service:payments-api"
+      ]
+    }
+  ]
+}

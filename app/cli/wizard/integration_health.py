@@ -21,7 +21,9 @@ from app.integrations.models import (
     HoneycombIntegrationConfig,
     SlackWebhookConfig,
 )
+from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
+from app.services.alertmanager import make_alertmanager_client
 from app.services.coralogix import CoralogixClient
 from app.services.datadog import DatadogClient, DatadogConfig
 from app.services.grafana import get_grafana_client_from_credentials
@@ -311,6 +313,31 @@ def validate_github_mcp_integration(
     )
 
 
+def validate_openclaw_integration(
+    *,
+    url: str = "",
+    mode: str,
+    auth_token: str = "",
+    command: str = "",
+    args: list[str] | None = None,
+) -> IntegrationHealthResult:
+    """Validate OpenClaw MCP connectivity by listing available tools."""
+    try:
+        config = build_openclaw_config(
+            {
+                "url": url,
+                "mode": mode,
+                "auth_token": auth_token,
+                "command": command,
+                "args": args or [],
+            }
+        )
+        result = validate_openclaw_config(config)
+        return IntegrationHealthResult(ok=result.ok, detail=result.detail)
+    except Exception as err:
+        return IntegrationHealthResult(ok=False, detail=f"OpenClaw validation failed: {err}")
+
+
 def validate_sentry_integration(
     *,
     base_url: str,
@@ -487,6 +514,47 @@ def validate_jira_integration(
         )
     except Exception as e:
         return IntegrationHealthResult(ok=False, detail=f"Jira validation failed: {e}")
+
+
+def validate_alertmanager_integration(
+    *,
+    base_url: str,
+    bearer_token: str = "",
+    username: str = "",
+    password: str = "",
+) -> IntegrationHealthResult:
+    """Validate Alertmanager connectivity via the /api/v2/status endpoint."""
+    if not base_url:
+        return IntegrationHealthResult(ok=False, detail="Alertmanager URL is required.")
+    client = make_alertmanager_client(
+        base_url=base_url,
+        bearer_token=bearer_token or None,
+        username=username or None,
+        password=password or None,
+    )
+    if client is None:
+        return IntegrationHealthResult(ok=False, detail="Invalid Alertmanager URL.")
+    try:
+        result = client.get_status()
+        if result.get("success"):
+            status_data = result.get("status", {})
+            cluster_status = (
+                status_data.get("cluster", {}).get("status", "unknown")
+                if isinstance(status_data, dict)
+                else "ok"
+            )
+            return IntegrationHealthResult(
+                ok=True,
+                detail=f"Connected to Alertmanager at {base_url}; cluster status: {cluster_status}.",
+            )
+        return IntegrationHealthResult(
+            ok=False,
+            detail=f"Alertmanager validation failed: {result.get('error', 'unknown error')}",
+        )
+    except Exception as err:
+        return IntegrationHealthResult(ok=False, detail=f"Alertmanager validation failed: {err}")
+    finally:
+        client.close()
 
 
 def validate_opsgenie_integration(

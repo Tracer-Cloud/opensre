@@ -111,6 +111,8 @@ class CliSandbox:
 
 
 def _clean_terminal_output(text: str) -> str:
+    if not text:
+        return ""
     cleaned = _ANSI_RE.sub("", text)
     cleaned = cleaned.replace("\r", "\n").replace("\x00", "")
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
@@ -153,6 +155,7 @@ def _cli_env(home: Path, project_env_path: Path) -> dict[str, str]:
     env["OPENSRE_NO_TELEMETRY"] = "1"
     env["OPENSRE_PROJECT_ENV_PATH"] = str(project_env_path)
     env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     env["TERM"] = "xterm-256color"
     env.pop("OPENSRE_DISABLE_KEYRING", None)
     env["PYTHON_KEYRING_BACKEND"] = "tests.shared.keyring_backend.MemoryKeyring"
@@ -192,6 +195,8 @@ def _run_cli(
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         check=False,
     )
@@ -469,6 +474,7 @@ def test_tests_inventory_commands_smoke(cli_sandbox: CliSandbox) -> None:
 def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
     # One `j` per keypress (burst writes are not separate keys). The select list wraps;
     # from the first option, len(choices)-1 steps reach "Skip for now" without wrapping past it.
+    # 18 integrations + "Skip for now" = 19 choices → 18 j's from the top.
     result = _run_cli_pty(
         cli_sandbox,
         "onboard",
@@ -476,7 +482,7 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
             PtyAction(expect="How do you want to get started?", send=b"\r"),
             PtyAction(expect="Choose your LLM provider", send=b"\r"),
             PtyAction(expect="Anthropic API key", send=b"smoke-test-key\r"),
-            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjjj\r"),
+            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjjjjjj\r"),
         ],
         timeout=30.0,
     )

@@ -35,6 +35,7 @@ STATE_DEFAULTS: dict[str, Any] = {
     "investigation_loop_count": 0,
     "hypotheses": [],
     "executed_hypotheses": [],
+    "masking_map": {},
     "slack_context": {},
     "discord_context": {},
     "thread_id": "",

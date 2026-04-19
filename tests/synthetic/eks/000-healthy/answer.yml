@@ -1,0 +1,21 @@
+root_cause_category: healthy
+required_keywords:
+  - normal
+  - no failure
+model_response: |
+  ROOT_CAUSE: The Kubernetes workload payments-api is operating within normal parameters. All three replicas of the deployment are Running and Ready with zero container restarts. No Warning events exist in the payments namespace, all nodes report Ready, and every Datadog monitor associated with the workload is in the OK state. Application logs show only routine informational messages with no errors. No anomaly detected.
+  ROOT_CAUSE_CATEGORY: healthy
+
+  VALIDATED_CLAIMS:
+  - All 3 pods of deployment payments-api are in Running phase with 0 restarts. [evidence: eks_pods]
+  - Deployment payments-api reports 3/3 replicas_ready and observed_generation matches generation. [evidence: eks_deployments]
+  - Both cluster nodes report Ready=true with no pressure conditions. [evidence: eks_node_health]
+  - No Warning events have been emitted in the payments namespace. [evidence: eks_events]
+  - Datadog monitors for payments-api latency and error rate are all in OK state. [evidence: datadog_monitors]
+  - Application logs contain only info-level messages, no errors, timeouts, or exceptions. [evidence: datadog_logs]
+
+  NON_VALIDATED_CLAIMS:
+  - The routine health check alert is scheduled and does not indicate any failure.
+
+  CAUSAL_CHAIN:
+  - Scheduled health check fired as a periodic verification. All telemetry signals are stable and within expected operating ranges. No root cause exists.

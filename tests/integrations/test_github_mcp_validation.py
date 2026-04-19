@@ -166,6 +166,72 @@ def test_validate_github_mcp_config_fails_when_no_repo_list_tool(
     assert "no repository listing or search tool was usable" in result.detail
 
 
+def test_validate_github_mcp_config_reports_actual_attempts_for_starred_view(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tools = [
+        {
+            "name": n,
+            "description": "",
+            "input_schema": {"type": "object", "properties": {}},
+        }
+        for n in (
+            "get_file_contents",
+            "get_repository_tree",
+            "list_commits",
+            "search_code",
+        )
+    ]
+    tools.extend(
+        [
+            {
+                "name": "list_starred_repositories",
+                "description": "",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"page": {"type": "integer"}},
+                    "required": ["page"],
+                },
+            },
+            {
+                "name": "search_repositories",
+                "description": "",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            },
+        ]
+    )
+
+    def fake_list_tools(_config: Any) -> list[dict[str, Any]]:
+        return tools
+
+    def fake_call(_config: Any, name: str, _args: dict[str, Any] | None = None) -> dict[str, Any]:
+        if name == "get_me":
+            return {"is_error": False, "structured_content": {"login": "carol"}, "text": ""}
+        raise AssertionError(f"unexpected tool {name}")
+
+    monkeypatch.setattr("app.integrations.github_mcp.list_github_mcp_tools", fake_list_tools)
+    monkeypatch.setattr("app.integrations.github_mcp.call_github_mcp_tool", fake_call)
+
+    cfg = github_mcp_module.build_github_mcp_config(
+        {
+            "url": "https://api.githubcopilot.com/mcp/",
+            "mode": "streamable-http",
+        }
+    )
+    result = github_mcp_module.validate_github_mcp_config(cfg, repo_view="starred")
+
+    assert result.ok is False
+    assert result.failure_category == "repository_access"
+    assert "tried: list_starred_repositories" in result.detail
+    assert "list_repositories" not in result.detail
+    assert "list_user_repositories" not in result.detail
+    assert "search_repositories" not in result.detail
+
+
 def test_validate_github_mcp_config_uses_search_repositories_when_no_list_tool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

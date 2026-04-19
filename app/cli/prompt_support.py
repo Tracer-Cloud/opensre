@@ -5,14 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import questionary.question
 from prompt_toolkit.key_binding import KeyBindings, KeyBindingsBase, merge_key_bindings
 from prompt_toolkit.keys import Keys
-from questionary.question import Question
 
 _escape_patch_installed: list[bool] = [False]
 
 
-def _with_escape_cancel(question: Question) -> Question:
+def _with_escape_cancel(question: questionary.question.Question) -> questionary.question.Question:
     """Prepend Escape handling so it wins over questionary's catch-all bindings."""
     extra = KeyBindings()
 
@@ -26,8 +26,10 @@ def _with_escape_cancel(question: Question) -> Question:
     return question
 
 
-def _wrap_question_prompt(orig: Callable[..., Question]) -> Callable[..., Question]:
-    def wrapped(*args: Any, **kwargs: Any) -> Question:
+def _wrap_question_prompt(
+    orig: Callable[..., questionary.question.Question],
+) -> Callable[..., questionary.question.Question]:
+    def wrapped(*args: Any, **kwargs: Any) -> questionary.question.Question:
         return _with_escape_cancel(orig(*args, **kwargs))
 
     wrapped.__name__ = orig.__name__

@@ -1,0 +1,28 @@
+---
+title: "Daily Update — 2026-04-16"
+description: "OpenSRE engineering daily update for 2026-04-16 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+Ceren Camkiran, Ebrahim Sameh, Malik Amir Hamza, and Octopus 🙏🚀
+
+## Main updates shipped (April 16, 2026)
+
+- feat: add Jira investigation tools for incident ticket management (#287) — Malik Amir Hamza
+- fix: plumb EKS tool output into state evidence via post_process mappers — Ebrahim Sameh
+- feat: add MiniMax provider support — Octopus
+- synthetic: strengthen validation for 005-failover — Ceren Camkiran
+
+## Source pull requests
+
+- [#584](https://github.com/Tracer-Cloud/opensre/pull/584) fix: plumb EKS tool output into state evidence via post_process mappers (author: Ebrahim Sameh; contributors: Ebrahim Sameh; labels: _none_; files: `app/nodes/investigate/processing/post_process.py`, `tests/nodes/investigate/__init__.py`, `tests/nodes/investigate/test_post_process.py`)
+- [#621](https://github.com/Tracer-Cloud/opensre/pull/621) synthetic: strengthen validation for 005-failover (author: Ceren Camkiran; contributors: Ceren Camkiran; labels: _none_; files: `tests/synthetic/rds_postgres/005-failover/QA_VALIDATION.md`, `tests/synthetic/rds_postgres/005-failover/answer.yml`)
+- [#619](https://github.com/Tracer-Cloud/opensre/pull/619) feat: add Jira investigation tools for incident ticket management (#287) (author: Malik Amir Hamza; contributors: Malik Amir Hamza; labels: _none_; files: `.env.example`, `app/integrations/catalog.py`, `app/nodes/plan_actions/detect_sources.py`, `app/services/jira/__init__.py`, `app/services/jira/client.py`, `app/tools/JiraAddCommentTool/__init__.py`, `app/tools/JiraCreateIssueTool/__init__.py`, `app/tools/JiraIssueDetailTool/__init__.py`, `app/tools/JiraSearchIssuesTool/__init__.py`, `app/types/evidence.py`, and 5 more)
+- [#620](https://github.com/Tracer-Cloud/opensre/pull/620) feat: add MiniMax provider support (author: Octopus; contributors: octo-patch and Octopus; labels: _none_; files: `app/config.py`, `app/services/llm_client.py`, `tests/services/test_llm_client.py`, `tests/test_config.py`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-15T23:00:00+00:00` to `2026-04-16T23:00:00+00:00`

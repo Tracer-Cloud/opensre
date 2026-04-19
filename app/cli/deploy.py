@@ -18,14 +18,23 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 READINESS_PATH = "/ok"
+RAILWAY_DATABASE_HINTS = (
+    "Railway prerequisites: provision Postgres and Redis services for the target project.",
+    "Set DATABASE_URI and REDIS_URI on the OpenSRE service before retrying `opensre deploy railway`.",
+)
 
 
-class DeployResult(TypedDict, total=False):
-    """Result type for deploy_to_railway function."""
+class DeployResultRequired(TypedDict):
+    """Required fields for deploy_to_railway results."""
 
     success: bool
     url: str | None
     logs: list[str]
+
+
+class DeployResult(DeployResultRequired, total=False):
+    """Result type for deploy_to_railway function."""
+
     dry_run: bool
     health_ok: bool
     error: str | None
@@ -200,7 +209,7 @@ def deploy_to_railway(
         return {
             "success": False,
             "url": None,
-            "logs": logs + [f"Deployment failed: {deploy_result.stderr}"],
+            "logs": logs + [f"Deployment failed: {deploy_result.stderr}", *RAILWAY_DATABASE_HINTS],
             "error": f"Deployment failed: {deploy_result.stderr}",
         }
 
@@ -249,6 +258,7 @@ def deploy_to_railway(
             time.sleep(health_interval)
         else:
             logs.append(f"Health check timed out after {health_timeout}s")
+            logs.extend(RAILWAY_DATABASE_HINTS)
     elif wait_for_health and not url:
         logs.append("Skipping health check: no URL available")
 

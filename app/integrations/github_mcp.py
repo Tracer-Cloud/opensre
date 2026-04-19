@@ -831,6 +831,44 @@ def _repo_probe_rows_from_tool_result(result: dict[str, Any]) -> list[GitHubMCPR
     return _collect_repo_probe_rows_from_payload(parsed)
 
 
+def _repo_probe_order_and_search_fallback(
+    view: GitHubMcpRepoView,
+) -> tuple[tuple[str, ...], bool]:
+    view_norm = view
+    if view_norm == "starred":
+        return ("list_starred_repositories",), False
+    if view_norm == "user":
+        return ("list_user_repositories",), True
+    if view_norm == "accessible":
+        return ("list_repositories",), False
+    if view_norm == "search_user":
+        return (), True
+    return _REPO_PROBE_NO_ARG_TOOLS, True
+
+
+def _repo_probe_attempts(
+    tools: list[dict[str, Any]],
+    authenticated_login: str,
+    *,
+    view: GitHubMcpRepoView = "auto",
+) -> tuple[str, ...]:
+    by_name = {str(t["name"]): t for t in tools if t.get("name")}
+    ordered, allow_search_fallback = _repo_probe_order_and_search_fallback(view)
+    attempts = tuple(name for name in ordered if name in by_name)
+    login = (authenticated_login or "").strip()
+    if allow_search_fallback and login and "search_repositories" in by_name:
+        return (*attempts, "search_repositories")
+    return attempts
+
+
+def _format_repo_probe_attempts(attempts: Sequence[str]) -> str:
+    if not attempts:
+        return "none"
+    if len(attempts) == 1:
+        return attempts[0]
+    return f"{', '.join(attempts[:-1])}, then {attempts[-1]}"
+
+
 def _plan_repo_access_probe(
     tools: list[dict[str, Any]],
     authenticated_login: str,
@@ -840,18 +878,7 @@ def _plan_repo_access_probe(
     """Pick a tool + arguments to sample repo access (hosted MCP shapes differ from local)."""
 
     by_name = {str(t["name"]): t for t in tools if t.get("name")}
-    view_norm = view
-    ordered: tuple[str, ...]
-    if view_norm == "starred":
-        ordered = ("list_starred_repositories",)
-    elif view_norm == "user":
-        ordered = ("list_user_repositories",)
-    elif view_norm == "accessible":
-        ordered = ("list_repositories",)
-    elif view_norm == "search_user":
-        ordered = ()
-    else:
-        ordered = _REPO_PROBE_NO_ARG_TOOLS
+    ordered, allow_search_fallback = _repo_probe_order_and_search_fallback(view)
 
     for name in ordered:
         entry = by_name.get(name)
@@ -860,11 +887,7 @@ def _plan_repo_access_probe(
         if _json_schema_allows_empty_object_call(entry.get("input_schema")):
             return name, {}
     login = (authenticated_login or "").strip()
-    if (
-        (view_norm in {"auto", "search_user"} or view_norm == "user")
-        and login
-        and "search_repositories" in by_name
-    ):
+    if allow_search_fallback and login and "search_repositories" in by_name:
         return "search_repositories", {"query": f"user:{login}"}
     return None
 
@@ -917,6 +940,7 @@ def validate_github_mcp_config(
         who = user_name or "authenticated GitHub user"
         plan = _plan_repo_access_probe(tools, user_name, view=repo_view)
         if plan is None:
+            attempted_tools = _repo_probe_attempts(tools, user_name, view=repo_view)
             profile_count = _repo_counts_from_get_me_profile(structured, me_result.get("text", ""))
             if profile_count is not None:
                 scope_me = (user_name,) if user_name else ()
@@ -940,7 +964,7 @@ def validate_github_mcp_config(
                 ok=False,
                 detail=(
                     f"Authenticated as {who}, but no repository listing or search tool was usable "
-                    f"(tried no-arg: {', '.join(_REPO_PROBE_NO_ARG_TOOLS)}, then search_repositories). "
+                    f"(tried: {_format_repo_probe_attempts(attempted_tools)}). "
                     "Enable toolsets that include repo listing or search (e.g. add `search` or "
                     "`stargazers` alongside repos) for api.githubcopilot.com."
                 ),

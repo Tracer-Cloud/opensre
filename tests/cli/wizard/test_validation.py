@@ -1,11 +1,32 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 from anthropic import AuthenticationError as AnthropicAuthError
 from openai import AuthenticationError as OpenAIAuthError
 
 from app.cli.wizard.config import PROVIDER_BY_VALUE
 from app.cli.wizard.validation import validate_provider_credentials
+
+
+@pytest.fixture(autouse=True)
+def _preload_sdk_error_classes(monkeypatch) -> None:
+    """Pre-populate the module-level ``*AuthError`` globals in validation.py.
+
+    ``_load_anthropic_client``/``_load_openai_client`` lazily import the SDKs
+    and override the module-level ``Anthropic``/``OpenAI`` names when their
+    matching ``*AuthError`` is ``None``. If a test monkeypatches only the
+    client class (``Anthropic`` / ``OpenAI``), the first call to the loader
+    re-imports and silently replaces that monkeypatch with the real SDK —
+    which then hits the real network using any ``ANTHROPIC_API_KEY`` /
+    ``OPENAI_API_KEY`` leaked in from the test environment.
+
+    By setting the ``*AuthError`` globals here to the real classes (already
+    imported at the top of this file), we short-circuit the loader's import
+    branch and make monkeypatches of ``Anthropic`` / ``OpenAI`` reliable.
+    """
+    monkeypatch.setattr("app.cli.wizard.validation.AnthropicAuthError", AnthropicAuthError)
+    monkeypatch.setattr("app.cli.wizard.validation.OpenAIAuthError", OpenAIAuthError)
 
 
 class _FakeAnthropicTextBlock:

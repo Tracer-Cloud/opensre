@@ -107,5 +107,5 @@ def render_landing() -> None:
 class RichGroup(click.Group):
     """Click group with a custom Rich-powered help screen."""
 
-    def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:  # noqa: ARG002
+    def format_help(self, _ctx: click.Context, _formatter: click.HelpFormatter) -> None:
         render_help()

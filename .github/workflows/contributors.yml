@@ -8,6 +8,10 @@ on:
     - cron: '0 0 * * 0'  # Weekly on Sunday
   workflow_dispatch:
 
+concurrency:
+  group: contributors-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   update-contributors:
     runs-on: ubuntu-latest
@@ -15,6 +19,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
 
       - name: Fetch and sort contributors (earliest first, no bots)
         env:
@@ -151,4 +158,7 @@ jobs:
           git config user.email "contrib-readme-action@noreply.github.com"
           git add README.md
           git diff --staged --quiet || git commit -m "docs(contributor): contrib-readme-action has updated readme"
-          git push
+          if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+          fi
+          git push origin "HEAD:${GITHUB_REF_NAME}"

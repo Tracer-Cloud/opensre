@@ -106,10 +106,15 @@ GEMINI_TOOLCALL_MODEL = "gemini-3.1-flash-lite-preview"
 NVIDIA_REASONING_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 NVIDIA_TOOLCALL_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 
+# MiniMax model constants
+MINIMAX_REASONING_MODEL = "MiniMax-M2.7"
+MINIMAX_TOOLCALL_MODEL = "MiniMax-M2.7-highspeed"
+
 # Base URLs for OpenAI-compatible providers
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+MINIMAX_BASE_URL = "https://api.minimax.io/v1"
 
 # Amazon Bedrock model constants (US cross-region inference profile IDs)
 BEDROCK_REASONING_MODEL = "us.anthropic.claude-sonnet-4-6"
@@ -119,7 +124,7 @@ BEDROCK_TOOLCALL_MODEL = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 DEFAULT_OLLAMA_MODEL = "llama3.2"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
-LLMProvider = Literal["anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock"]
+LLMProvider = Literal["anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock", "minimax"]
 
 
 class LLMSettings(StrictConfigModel):
@@ -131,6 +136,7 @@ class LLMSettings(StrictConfigModel):
     openrouter_api_key: str = ""
     gemini_api_key: str = ""
     nvidia_api_key: str = ""
+    minimax_api_key: str = ""
     ollama_model: str = DEFAULT_OLLAMA_MODEL
     ollama_host: str = DEFAULT_OLLAMA_HOST
     anthropic_reasoning_model: str = ANTHROPIC_REASONING_MODEL
@@ -143,6 +149,8 @@ class LLMSettings(StrictConfigModel):
     gemini_toolcall_model: str = GEMINI_TOOLCALL_MODEL
     nvidia_reasoning_model: str = NVIDIA_REASONING_MODEL
     nvidia_toolcall_model: str = NVIDIA_TOOLCALL_MODEL
+    minimax_reasoning_model: str = MINIMAX_REASONING_MODEL
+    minimax_toolcall_model: str = MINIMAX_TOOLCALL_MODEL
     bedrock_reasoning_model: str = BEDROCK_REASONING_MODEL
     bedrock_toolcall_model: str = BEDROCK_TOOLCALL_MODEL
     max_tokens: int = Field(default=DEFAULT_MAX_TOKENS, gt=0)
@@ -151,7 +159,7 @@ class LLMSettings(StrictConfigModel):
     @classmethod
     def _normalize_provider(cls, value: object) -> str:
         provider = str(value or "anthropic").strip().lower() or "anthropic"
-        valid_providers = ("anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock")
+        valid_providers = ("anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock", "minimax")
         if provider in valid_providers:
             return provider
         suggestion = get_close_matches(provider, valid_providers, n=1)
@@ -171,6 +179,7 @@ class LLMSettings(StrictConfigModel):
             "openrouter": self.openrouter_api_key,
             "gemini": self.gemini_api_key,
             "nvidia": self.nvidia_api_key,
+            "minimax": self.minimax_api_key,
         }
         if provider_to_key[self.provider]:
             return self
@@ -181,6 +190,7 @@ class LLMSettings(StrictConfigModel):
             "openrouter": "OPENROUTER_API_KEY",
             "gemini": "GEMINI_API_KEY",
             "nvidia": "NVIDIA_API_KEY",
+            "minimax": "MINIMAX_API_KEY",
         }[self.provider]
         raise ValueError(f"LLM provider '{self.provider}' requires {env_var} to be set.")
 
@@ -194,6 +204,7 @@ class LLMSettings(StrictConfigModel):
             "openrouter_api_key": resolve_llm_api_key("OPENROUTER_API_KEY"),
             "gemini_api_key": resolve_llm_api_key("GEMINI_API_KEY"),
             "nvidia_api_key": resolve_llm_api_key("NVIDIA_API_KEY"),
+            "minimax_api_key": resolve_llm_api_key("MINIMAX_API_KEY"),
             "anthropic_reasoning_model": os.getenv("ANTHROPIC_REASONING_MODEL", ANTHROPIC_REASONING_MODEL).strip()
             or ANTHROPIC_REASONING_MODEL,
             "anthropic_toolcall_model": os.getenv("ANTHROPIC_TOOLCALL_MODEL", ANTHROPIC_TOOLCALL_MODEL).strip()
@@ -232,6 +243,16 @@ class LLMSettings(StrictConfigModel):
                 os.getenv("NVIDIA_MODEL", NVIDIA_TOOLCALL_MODEL),
             ).strip()
             or NVIDIA_TOOLCALL_MODEL,
+            "minimax_reasoning_model": os.getenv(
+                "MINIMAX_REASONING_MODEL",
+                os.getenv("MINIMAX_MODEL", MINIMAX_REASONING_MODEL),
+            ).strip()
+            or MINIMAX_REASONING_MODEL,
+            "minimax_toolcall_model": os.getenv(
+                "MINIMAX_TOOLCALL_MODEL",
+                os.getenv("MINIMAX_MODEL", MINIMAX_TOOLCALL_MODEL),
+            ).strip()
+            or MINIMAX_TOOLCALL_MODEL,
             "bedrock_reasoning_model": os.getenv(
                 "BEDROCK_REASONING_MODEL", BEDROCK_REASONING_MODEL
             ).strip()
@@ -272,6 +293,12 @@ GEMINI_LLM_CONFIG = LLMModelConfig(
 NVIDIA_LLM_CONFIG = LLMModelConfig(
     reasoning_model=NVIDIA_REASONING_MODEL,
     toolcall_model=NVIDIA_TOOLCALL_MODEL,
+    max_tokens=DEFAULT_MAX_TOKENS,
+)
+
+MINIMAX_LLM_CONFIG = LLMModelConfig(
+    reasoning_model=MINIMAX_REASONING_MODEL,
+    toolcall_model=MINIMAX_TOOLCALL_MODEL,
     max_tokens=DEFAULT_MAX_TOKENS,
 )
 

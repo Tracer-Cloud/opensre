@@ -51,12 +51,13 @@ Or set environment variables and OpenSRE picks them up automatically.
 | Category | Integrations |
 | --- | --- |
 | **Observability** | [Honeycomb](/honeycomb), [Coralogix](/coralogix), [Sentry](/sentry) |
-| **Databases** | [MongoDB](/mongodb), [ClickHouse](/clickhouse), [Kafka](/kafka) |
+| **Databases** | [MongoDB](/mongodb), [MariaDB](/mariadb), [ClickHouse](/clickhouse), [Kafka](/kafka) |
 | **Source control** | [GitHub](/github), [GitLab](/gitlab), [Bitbucket](/bitbucket) |
 | **Deployments** | [Vercel](/vercel) |
 | **Orchestration** | [Prefect](/prefect) |
 | **Incident management** | [OpsGenie](/opsgenie), [Jira](/jira) |
 | **Reporting** | [Google Docs](/google-docs) |
+| **AI coding assistants** | [OpenClaw](/openclaw) |
 
 ### Verify local integrations
 
@@ -69,5 +70,5 @@ opensre integrations verify
 To check a specific integration:
 
 ```bash
-opensre integrations verify --service mongodb
+opensre integrations verify mongodb
 ```

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -53,14 +54,11 @@ def save_trigger_config(trigger_api_url: str) -> Path:
 
 def _discover_trigger_api_url() -> str | None:
     # First: check SDK outputs file if it has trigger API URL
-    try:
+    with suppress(FileNotFoundError):
         outputs = load_outputs(STACK_NAME)
         from_outputs = (outputs.get("trigger_api_url") or "").strip().rstrip("/")
         if from_outputs:
             return from_outputs
-    except FileNotFoundError:
-        # Outputs file not written yet; fall through to AWS tag-based discovery
-        pass
 
     # Fallback: discover API Gateway via AWS tags
     tagger = get_boto3_client("resourcegroupstaggingapi", REGION)
@@ -96,7 +94,7 @@ def _discover_trigger_api_url() -> str | None:
 
 def discover_runtime_outputs() -> dict[str, str] | None:
     """Discover runtime outputs without mutating infrastructure."""
-    try:
+    with suppress(FileNotFoundError):
         outputs = load_outputs(STACK_NAME)
         if outputs.get("landing_bucket") and outputs.get("processed_bucket") and outputs.get("ecr_image_uri"):
             return {
@@ -104,9 +102,6 @@ def discover_runtime_outputs() -> dict[str, str] | None:
                 "processed_bucket": outputs["processed_bucket"],
                 "ecr_image_uri": outputs["ecr_image_uri"],
             }
-    except FileNotFoundError:
-        # Outputs file not written yet; fall through to Lambda env-var discovery
-        pass
 
     lambda_client = get_boto3_client("lambda", REGION)
     try:

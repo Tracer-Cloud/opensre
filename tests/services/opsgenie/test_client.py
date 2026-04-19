@@ -266,14 +266,15 @@ def test_context_manager_closes_on_exit() -> None:
     assert c._client is None
 
 
+def _raise_value_error() -> None:
+    raise ValueError("test error")
+
+
 def test_context_manager_closes_on_exception() -> None:
     c = _client()
     _ = c._get_client()
-    try:
-        with c:
-            raise ValueError("test error")
-    except ValueError:
-        pass
+    with pytest.raises(ValueError), c:
+        _raise_value_error()
     assert c._client is None
 
 
