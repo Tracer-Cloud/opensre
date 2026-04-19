@@ -163,6 +163,8 @@ def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
 
     return _get()
+
+
 _STYLE = questionary.Style(
     [
         ("qmark", "fg:#5c7cfa bold"),
