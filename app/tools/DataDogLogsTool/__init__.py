@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from app.tools.DataDogLogsTool._client import make_client, unavailable
 from app.tools.tool_decorator import tool
+from app.tools.utils.availability import datadog_available_or_backend
 from app.tools.utils.compaction import compact_logs, summarize_counts
 
 _ERROR_KEYWORDS = (
@@ -32,7 +33,7 @@ def _dd_creds(dd: dict) -> dict:
 
 
 def _logs_is_available(sources: dict[str, dict]) -> bool:
-    return bool(sources.get("datadog", {}).get("connection_verified"))
+    return datadog_available_or_backend(sources)
 
 
 def _logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -41,6 +42,7 @@ def _logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
         "query": dd.get("default_query", ""),
         "time_range_minutes": dd.get("time_range_minutes", 60),
         "limit": 50,
+        "datadog_backend": dd.get("_backend"),
         **_dd_creds(dd),
     }
 
@@ -78,9 +80,17 @@ def query_datadog_logs(
     api_key: str | None = None,
     app_key: str | None = None,
     site: str = "datadoghq.com",
+    datadog_backend: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
-    """Search Datadog logs for pipeline errors, exceptions, and application events."""
+    """Search Datadog logs for pipeline errors, exceptions, and application events.
+
+    When ``datadog_backend`` is provided (e.g. a FixtureDatadogBackend from the
+    synthetic harness) the call short-circuits and returns the backend's response
+    directly.
+    """
+    if datadog_backend is not None:
+        return cast("dict[str, Any]", datadog_backend.query_logs(query=query))
     client = make_client(api_key, app_key, site)
     if not client:
         return unavailable("datadog_logs", "logs", "Datadog integration not configured")

@@ -64,6 +64,7 @@
               "vercel",
               "kafka",
               "clickhouse",
+              "alertmanager",
               "opsgenie",
               "jira",
               "prefect",
@@ -79,7 +80,9 @@
       {
         "group": "Investigations",
         "pages": [
-          "investigation-overview"
+          "investigation-overview",
+          "remote-runtime-investigation",
+          "masking"
         ]
       },
       {

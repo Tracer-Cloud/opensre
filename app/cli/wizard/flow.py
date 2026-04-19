@@ -134,6 +134,12 @@ def validate_vercel_integration(**kwargs):
     return _validate(**kwargs)
 
 
+def validate_alertmanager_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_alertmanager_integration as _validate
+
+    return _validate(**kwargs)
+
+
 def validate_opsgenie_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_opsgenie_integration as _validate
 
@@ -1102,6 +1108,54 @@ def _configure_vercel() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_alertmanager() -> tuple[str, str]:
+    _, credentials = _integration_defaults("alertmanager")
+    while True:
+        base_url = _prompt_value(
+            "Alertmanager URL (e.g. http://alertmanager:9093)",
+            default=_string_value(credentials.get("base_url")),
+        )
+        if not base_url:
+            _console.print("[red]Alertmanager URL is required.[/]")
+            continue
+        auth_choice = _choose(
+            "Authentication method",
+            [
+                Choice(value="none", label="None (unauthenticated / internal network)"),
+                Choice(value="bearer", label="Bearer token (reverse proxy auth)"),
+                Choice(value="basic", label="Basic auth (username + password)"),
+            ],
+            default="none",
+        )
+        bearer_token = ""
+        username = ""
+        password = ""
+        if auth_choice == "bearer":
+            bearer_token = _prompt_value("Bearer token", secret=True)
+        elif auth_choice == "basic":
+            username = _prompt_value("Username")
+            password = _prompt_value("Password", secret=True)
+        with _console.status("Validating Alertmanager integration...", spinner="dots"):
+            result = validate_alertmanager_integration(
+                base_url=base_url,
+                bearer_token=bearer_token,
+                username=username,
+                password=password,
+            )
+        _render_integration_result("Alertmanager", result)
+        if result.ok:
+            creds: dict[str, str] = {"base_url": base_url}
+            if bearer_token:
+                creds["bearer_token"] = bearer_token
+            if username:
+                creds["username"] = username
+                creds["password"] = password
+            upsert_integration("alertmanager", {"credentials": creds})
+            env_path = sync_env_values({})
+            return "Alertmanager", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_opsgenie() -> tuple[str, str]:
     _, credentials = _integration_defaults("opsgenie")
     while True:
@@ -1229,6 +1283,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             hint="File and update incident tickets automatically",
         ),
         Choice(
+            value="alertmanager",
+            label="Alertmanager",
+            hint="Query firing alerts and silences from Prometheus Alertmanager",
+        ),
+        Choice(
             value="opsgenie",
             label="OpsGenie",
             hint="Investigate alerts and triage state from OpsGenie",
@@ -1272,6 +1331,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "google_docs": _configure_google_docs,
         "vercel": _configure_vercel,
         "jira": _configure_jira,
+        "alertmanager": _configure_alertmanager,
         "opsgenie": _configure_opsgenie,
         "notion": _configure_notion,
         "openclaw": _configure_openclaw,
@@ -1291,6 +1351,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "google_docs": "google docs",
         "vercel": "vercel",
         "jira": "jira",
+        "alertmanager": "alertmanager",
         "opsgenie": "opsgenie",
         "notion": "notion",
         "openclaw": "openclaw",
@@ -1416,11 +1477,12 @@ def run_wizard(_argv: list[str] | None = None) -> int:
             )
         ]
         model = provider.default_model
-        _step("API Key")
+        _step(provider.credential_label.title())
         try:
             api_key = _prompt_value(
-                f"{provider.label} API key ({provider.api_key_env})",
-                secret=True,
+                f"{provider.label} {provider.credential_label} ({provider.api_key_env})",
+                default=provider.credential_default,
+                secret=provider.credential_secret,
             )
         except KeyboardInterrupt:
             _console.print("\n[yellow]Setup cancelled.[/]")
@@ -1438,11 +1500,12 @@ def run_wizard(_argv: list[str] | None = None) -> int:
                 return 1
             has_api_key = True
         if not has_api_key:
-            _step("API Key")
+            _step(provider.credential_label.title())
             try:
                 api_key = _prompt_value(
-                    f"{provider.label} API key ({provider.api_key_env})",
-                    secret=True,
+                    f"{provider.label} {provider.credential_label} ({provider.api_key_env})",
+                    default=provider.credential_default,
+                    secret=provider.credential_secret,
                 )
             except KeyboardInterrupt:
                 _console.print("\n[yellow]Setup cancelled.[/]")

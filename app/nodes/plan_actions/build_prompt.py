@@ -282,7 +282,7 @@ This upstream trace reveals root causes outside the failed service (external API
 Use these proven investigation sequences as guidance for action selection.
 """
 
-    prompt = f"""You are investigating a data pipeline incident.
+    prompt = f"""You are investigating an alert or incident.
 
 Problem Context:
 {problem_context}
@@ -295,7 +295,7 @@ Available Investigation Actions:
 Executed Actions: {", ".join(executed_actions) if executed_actions else "None"}
 
 Task: Select the most relevant actions to execute now based on the problem context.
-Consider what information would help diagnose the root cause.
+Consider what information would help diagnose the root cause. If the alert appears healthy or informational, you MUST still query the relevant monitoring platforms (metrics, logs, alert rules) to verify its status before concluding.
 """
     return prompt
 

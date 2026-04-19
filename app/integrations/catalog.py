@@ -7,10 +7,12 @@ import os
 from typing import Any
 
 from app.config import get_tracer_base_url
+from app.integrations.azure_sql import build_azure_sql_config
 from app.integrations.github_mcp import build_github_mcp_config
 from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL, build_gitlab_config
 from app.integrations.mariadb import build_mariadb_config
 from app.integrations.models import (
+    AlertmanagerIntegrationConfig,
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
     DatadogIntegrationConfig,
@@ -18,6 +20,7 @@ from app.integrations.models import (
     EffectiveIntegrations,
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
+    JiraIntegrationConfig,
     OpsGenieIntegrationConfig,
     SlackWebhookConfig,
 )
@@ -57,10 +60,14 @@ _SERVICE_KEY_MAP = {
     "mariadb": "mariadb",
     "vercel": "vercel",
     "opsgenie": "opsgenie",
+    "jira": "jira",
     "discord": "discord",
     "openclaw": "openclaw",
     "mysql": "mysql",
+    "azure_sql": "azure_sql",
+    "alertmanager": "alertmanager",
 }
+
 
 def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
     """Classify active integrations by service into normalized runtime configs."""
@@ -332,6 +339,22 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
             if opsgenie_config.api_key:
                 resolved["opsgenie"] = opsgenie_config.model_dump()
 
+        elif key == "jira":
+            try:
+                jira_config = JiraIntegrationConfig.model_validate(
+                    {
+                        "base_url": credentials.get("base_url", ""),
+                        "email": credentials.get("email", ""),
+                        "api_token": credentials.get("api_token", ""),
+                        "project_key": credentials.get("project_key", ""),
+                        "integration_id": integration.get("id", ""),
+                    }
+                )
+            except Exception:
+                continue
+            if jira_config.base_url and jira_config.email and jira_config.api_token:
+                resolved["jira"] = jira_config.model_dump()
+
         elif key == "discord":
             try:
                 discord_config = DiscordBotConfig.model_validate(
@@ -389,6 +412,42 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
                     "ssl_mode": mysql_config.ssl_mode,
                     "integration_id": integration.get("id", ""),
                 }
+
+        elif key == "azure_sql":
+            try:
+                azure_sql_config = build_azure_sql_config(
+                    {
+                        "server": credentials.get("server", ""),
+                        "port": credentials.get("port", 1433),
+                        "database": credentials.get("database", ""),
+                        "username": credentials.get("username", ""),
+                        "password": credentials.get("password", ""),
+                        "driver": credentials.get("driver", "ODBC Driver 18 for SQL Server"),
+                        "encrypt": credentials.get("encrypt", True),
+                    }
+                )
+            except Exception:
+                continue
+
+            if azure_sql_config.server and azure_sql_config.database:
+                resolved["azure_sql"] = azure_sql_config.model_dump()
+
+        elif key == "alertmanager":
+            try:
+                alertmanager_config = AlertmanagerIntegrationConfig.model_validate(
+                    {
+                        "base_url": credentials.get("base_url", ""),
+                        "bearer_token": credentials.get("bearer_token", ""),
+                        "username": credentials.get("username", ""),
+                        "password": credentials.get("password", ""),
+                        "integration_id": integration.get("id", ""),
+                    }
+                )
+            except Exception:
+                continue
+
+            if alertmanager_config.base_url:
+                resolved["alertmanager"] = alertmanager_config.model_dump()
 
         else:
             resolved[key] = {
@@ -675,6 +734,28 @@ def load_env_integrations() -> list[dict[str, Any]]:
             }
         )
 
+    jira_base_url = os.getenv("JIRA_BASE_URL", "").strip()
+    jira_email = os.getenv("JIRA_EMAIL", "").strip()
+    jira_api_token = os.getenv("JIRA_API_TOKEN", "").strip()
+    jira_project_key = os.getenv("JIRA_PROJECT_KEY", "").strip()
+    if jira_base_url and jira_email and jira_api_token:
+        jira_config = JiraIntegrationConfig.model_validate(
+            {
+                "base_url": jira_base_url,
+                "email": jira_email,
+                "api_token": jira_api_token,
+                "project_key": jira_project_key,
+            }
+        )
+        integrations.append(
+            {
+                "id": "env-jira",
+                "service": "jira",
+                "status": "active",
+                "credentials": jira_config.model_dump(exclude={"integration_id"}),
+            }
+        )
+
     discord_bot_token = os.getenv("DISCORD_BOT_TOKEN", "").strip()
     if discord_bot_token:
         discord_config = DiscordBotConfig.model_validate(
@@ -682,8 +763,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 "bot_token": discord_bot_token,
                 "application_id": os.getenv("DISCORD_APPLICATION_ID", "").strip(),
                 "public_key": os.getenv("DISCORD_PUBLIC_KEY", "").strip(),
-                "default_channel_id": os.getenv("DISCORD_DEFAULT_CHANNEL_ID", "").strip()
-                or None,
+                "default_channel_id": os.getenv("DISCORD_DEFAULT_CHANNEL_ID", "").strip() or None,
             }
         )
         integrations.append(
@@ -732,9 +812,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "mode": openclaw_mode,
                     "command": openclaw_command,
                     "args": [
-                        part
-                        for part in os.getenv("OPENCLAW_MCP_ARGS", "").strip().split()
-                        if part
+                        part for part in os.getenv("OPENCLAW_MCP_ARGS", "").strip().split() if part
                     ],
                     "auth_token": os.getenv("OPENCLAW_MCP_AUTH_TOKEN", "").strip(),
                 }
@@ -761,8 +839,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "database": mariadb_database,
                     "username": os.getenv("MARIADB_USERNAME", "").strip(),
                     "password": os.getenv("MARIADB_PASSWORD", "").strip(),
-                    "ssl": os.getenv("MARIADB_SSL", "true").strip().lower()
-                    in ("true", "1", "yes"),
+                    "ssl": os.getenv("MARIADB_SSL", "true").strip().lower() in ("true", "1", "yes"),
                 }
             )
             integrations.append(
@@ -799,6 +876,53 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 "credentials": mysql_config.model_dump(exclude={"integration_id"}),
             }
         )
+
+    azure_sql_server = os.getenv("AZURE_SQL_SERVER", "").strip()
+    azure_sql_database = os.getenv("AZURE_SQL_DATABASE", "").strip()
+    if azure_sql_server and azure_sql_database:
+        _az_port = os.getenv("AZURE_SQL_PORT", "").strip()
+        azure_sql_config = build_azure_sql_config(
+            {
+                "server": azure_sql_server,
+                "port": int(_az_port) if _az_port and _az_port.isdigit() else 1433,
+                "database": azure_sql_database,
+                "username": os.getenv("AZURE_SQL_USERNAME", "").strip(),
+                "password": os.getenv("AZURE_SQL_PASSWORD", "").strip(),
+                "driver": os.getenv("AZURE_SQL_DRIVER", "ODBC Driver 18 for SQL Server").strip(),
+                "encrypt": os.getenv("AZURE_SQL_ENCRYPT", "true").strip().lower()
+                in ("true", "1", "yes"),
+            }
+        )
+        integrations.append(
+            {
+                "id": "env-azure-sql",
+                "service": "azure_sql",
+                "status": "active",
+                "credentials": azure_sql_config.model_dump(exclude={"integration_id"}),
+            }
+        )
+
+    alertmanager_url = os.getenv("ALERTMANAGER_URL", "").strip().rstrip("/")
+    if alertmanager_url:
+        try:
+            alertmanager_config = AlertmanagerIntegrationConfig.model_validate(
+                {
+                    "base_url": alertmanager_url,
+                    "bearer_token": os.getenv("ALERTMANAGER_BEARER_TOKEN", "").strip(),
+                    "username": os.getenv("ALERTMANAGER_USERNAME", "").strip(),
+                    "password": os.getenv("ALERTMANAGER_PASSWORD", "").strip(),
+                }
+            )
+            integrations.append(
+                {
+                    "id": "env-alertmanager",
+                    "service": "alertmanager",
+                    "status": "active",
+                    "credentials": alertmanager_config.model_dump(exclude={"integration_id"}),
+                }
+            )
+        except Exception:
+            logger.debug("Failed to load Alertmanager config from env", exc_info=True)
 
     return integrations
 
@@ -860,8 +984,12 @@ def resolve_effective_integrations(
     env_integrations: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Resolve effective local integrations from ~/.tracer and environment variables."""
-    store_records = list(store_integrations) if store_integrations is not None else load_integrations()
-    env_records = list(env_integrations) if env_integrations is not None else load_env_integrations()
+    store_records = (
+        list(store_integrations) if store_integrations is not None else load_integrations()
+    )
+    env_records = (
+        list(env_integrations) if env_integrations is not None else load_env_integrations()
+    )
     merged_integrations = merge_local_integrations(store_records, env_records)
     classified_integrations = classify_integrations(merged_integrations)
     source_by_service, store_integration_by_service = _service_metadata(store_records, env_records)
@@ -883,9 +1011,12 @@ def resolve_effective_integrations(
         "mariadb",
         "vercel",
         "opsgenie",
+        "jira",
         "discord",
         "openclaw",
         "mysql",
+        "azure_sql",
+        "alertmanager",
     )
     for service in direct_services:
         resolved_integration = classified_integrations.get(service)
@@ -948,7 +1079,9 @@ def resolve_effective_integrations(
         effective["google_docs"] = _effective_entry(
             source_by_service.get("google_docs", "local env"),
             {
-                "credentials_file": str(google_docs_credentials.get("credentials_file", "")).strip(),
+                "credentials_file": str(
+                    google_docs_credentials.get("credentials_file", "")
+                ).strip(),
                 "folder_id": str(google_docs_credentials.get("folder_id", "")).strip(),
             },
         )
@@ -986,9 +1119,7 @@ def resolve_effective_integrations(
                 "local env",
                 {
                     "bootstrap_servers": kafka_servers,
-                    "security_protocol": os.getenv(
-                        "KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"
-                    ).strip(),
+                    "security_protocol": os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT").strip(),
                     "sasl_mechanism": os.getenv("KAFKA_SASL_MECHANISM", "").strip(),
                     "sasl_username": os.getenv("KAFKA_SASL_USERNAME", "").strip(),
                     "sasl_password": os.getenv("KAFKA_SASL_PASSWORD", "").strip(),

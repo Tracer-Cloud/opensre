@@ -52,6 +52,7 @@ def build_diagnosis_prompt(
 
     # Build directive sections
     upstream_directive = _build_upstream_directive(evidence)
+    database_directive = _build_database_directive(evidence)
     kubernetes_directive = _build_kubernetes_directive(state, evidence)
     memory_section = _build_memory_section(memory_context)
 
@@ -64,7 +65,7 @@ def build_diagnosis_prompt(
 Goal: Be helpful and accurate. Prefer evidence-backed explanations over speculation.
 If the exact root cause cannot be proven, provide the most likely explanation based on observed evidence,
 and clearly state what is unknown.
-{upstream_directive}{kubernetes_directive}{memory_section}
+{upstream_directive}{database_directive}{kubernetes_directive}{memory_section}
 DEFINITIONS:
 - VALIDATED_CLAIMS: Directly supported by the evidence shown below (observed facts).
 - NON_VALIDATED_CLAIMS: Plausible hypotheses or contributing factors that are NOT directly proven by the evidence.
@@ -131,6 +132,24 @@ Audit evidence shows external API interactions. For data pipeline failures:
 - Explain how the external change propagated downstream to cause the pipeline failure
 """
     return ""
+
+def _build_database_directive(evidence: dict[str, Any]) -> str:
+    """Build RDS / Database root cause disambiguation directive."""
+    has_db_evidence = bool(
+        evidence.get("aws_cloudwatch_metrics")
+        or evidence.get("aws_rds_events")
+        or evidence.get("aws_performance_insights")
+    )
+    if not has_db_evidence:
+        return ""
+    return """
+**CRITICAL: Database Resource Exhaustion vs CPU Saturation**
+When evaluating database health metrics (especially RDS/Postgres):
+- Connection pool leaks (exhausting `max_connections`) are a `resource_exhaustion` root cause. High CPU is often just a secondary symptom of accumulated idle sessions. If connections are near 100%, the root cause is connection exhaustion, not CPU saturation.
+- Storage exhaustion (when `FreeStorageSpace` approaches 0) blocks all writes and causes Write IOPS to collapse to 0. The root cause is `resource_exhaustion` due to storage limits, not a general system failure.
+- A single bad query driving CPU near 100% while connections and storage are healthy is `code_defect` (missing index, unoptimized join).
+- ALWAYS trace the causal chain properly (e.g., connection leak -> accumulated idle sessions -> connections maxed out -> new requests blocked -> secondary CPU elevation).
+"""
 
 
 def _extract_k8s_tags_from_evidence(evidence: dict[str, Any]) -> dict[str, str]:

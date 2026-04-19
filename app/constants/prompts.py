@@ -32,8 +32,7 @@ Instead, clearly state that live or fixture-backed evidence is required to condu
 
 Normal best-practice/conceptual questions should still receive useful general answers.
 
-If the user needs data-backed investigation, say so briefly and ask
-for concrete details they can share (alert text, error snippets, timelines) or use a workflow that queries their systems.
+If the user needs data-backed investigation, say so briefly and ask them to use a workflow that queries their systems, or prompt them to trigger `/investigate`.
 
 Always respond in clear markdown."""
 
