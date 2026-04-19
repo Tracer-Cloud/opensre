@@ -240,6 +240,13 @@ def _setup_slack() -> None:
     upsert_integration("slack", {"credentials": {"webhook_url": webhook_url}})
 
 
+def _setup_ms_teams() -> None:
+    webhook_url = _p("Microsoft Teams webhook URL", secret=True)
+    if not webhook_url:
+        _die("webhook_url is required.")
+    upsert_integration("ms_teams", {"credentials": {"webhook_url": webhook_url}})
+
+
 def _setup_opensearch() -> None:
     endpoint = _p("Endpoint (e.g. https://my-cluster.us-east-1.es.amazonaws.com)")
     creds: dict[str, Any] = {"endpoint": endpoint}
@@ -652,6 +659,7 @@ _HANDLERS: dict[str, Any] = {
     "gitlab": _setup_gitlab,
     "sentry": _setup_sentry,
     "mongodb": _setup_mongodb,
+    "ms_teams": _setup_ms_teams,
     "discord": _setup_discord,
     "postgresql": _setup_postgresql,
     "mysql": _setup_mysql,
@@ -770,13 +778,22 @@ def cmd_remove(service: str | None) -> None:
         print(f"  No integration found for '{service}'.")
 
 
-def cmd_verify(service: str | None, *, send_slack_test: bool = False) -> int:
+def cmd_verify(
+    service: str | None,
+    *,
+    send_slack_test: bool = False,
+    send_teams_test: bool = False,
+) -> int:
     from app.cli.context import is_json_output
 
     if service and service not in SUPPORTED_VERIFY_SERVICES:
         _die(f"Usage: verify [service]. Supported: {SUPPORTED_VERIFY}")
 
-    results = verify_integrations(service=service, send_slack_test=send_slack_test)
+    results = verify_integrations(
+        service=service,
+        send_slack_test=send_slack_test,
+        send_teams_test=send_teams_test,
+    )
 
     if is_json_output():
         _json_echo(results)

@@ -23,6 +23,7 @@ from app.integrations.models import (
     GoogleDocsIntegrationConfig,
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
+    MicrosoftTeamsWebhookConfig,
     SlackWebhookConfig,
     TracerIntegrationConfig,
 )
@@ -71,6 +72,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "azure",
     "openobserve",
     "opensearch",
+    "ms_teams",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -335,6 +337,44 @@ def _verify_slack(
 
     return _result(
         "slack",
+        source,
+        "passed",
+        "Posted a test message through the configured incoming webhook.",
+    )
+
+
+def _verify_ms_teams(
+    source: str,
+    config: dict[str, Any],
+    *,
+    send_teams_test: bool,
+) -> dict[str, str]:
+    try:
+        teams_config = MicrosoftTeamsWebhookConfig.model_validate(config)
+    except Exception:
+        return _result("ms_teams", source, "missing", "TEAMS_WEBHOOK_URL is not configured.")
+    webhook_url = teams_config.webhook_url
+
+    if not send_teams_test:
+        return _result(
+            "ms_teams",
+            source,
+            "configured",
+            "Incoming webhook configured. Re-run with --send-teams-test to post a test message.",
+        )
+
+    try:
+        response = httpx.post(
+            webhook_url,
+            json={"text": "Tracer Flow B connectivity test from local CLI (MS Teams)."},
+            timeout=10.0,
+        )
+        response.raise_for_status()
+    except Exception as exc:  # noqa: BLE001
+        return _result("ms_teams", source, "failed", f"Webhook post failed: {exc}")
+
+    return _result(
+        "ms_teams",
         source,
         "passed",
         "Posted a test message through the configured incoming webhook.",
@@ -756,6 +796,7 @@ def verify_integrations(
     service: str | None = None,
     *,
     send_slack_test: bool = False,
+    send_teams_test: bool = False,
 ) -> list[dict[str, str]]:
     """Run verification checks for configured integrations."""
     effective_integrations = resolve_effective_integrations()
@@ -775,6 +816,22 @@ def verify_integrations(
                     source=str(integration["source"]),
                     config=dict(integration["config"]),
                     send_slack_test=send_slack_test,
+                )
+            )
+            continue
+
+        if current_service == "ms_teams":
+            integration = effective_integrations.get("ms_teams")
+            if not integration:
+                results.append(
+                    _result("ms_teams", "-", "missing", "TEAMS_WEBHOOK_URL is not configured.")
+                )
+                continue
+            results.append(
+                _verify_ms_teams(
+                    source=str(integration["source"]),
+                    config=dict(integration["config"]),
+                    send_teams_test=send_teams_test,
                 )
             )
             continue

@@ -22,6 +22,7 @@ from app.integrations.models import (
     GrafanaIntegrationConfig,
     HoneycombIntegrationConfig,
     JiraIntegrationConfig,
+    MicrosoftTeamsWebhookConfig,
     OpsGenieIntegrationConfig,
     SlackWebhookConfig,
 )
@@ -37,7 +38,7 @@ from app.services.vercel import VercelConfig
 
 logger = logging.getLogger(__name__)
 
-_SKIP_SERVICES = {"slack"}
+_SKIP_SERVICES = {"slack", "ms_teams"}
 
 _SERVICE_KEY_MAP = {
     "grafana": "grafana",
@@ -79,6 +80,9 @@ _SERVICE_KEY_MAP = {
     "opensearch": "opensearch",
     "open search": "opensearch",
     "alertmanager": "alertmanager",
+    "ms_teams": "ms_teams",
+    "microsoft teams": "ms_teams",
+    "teams": "ms_teams",
 }
 
 
@@ -1538,6 +1542,17 @@ def resolve_effective_integrations(
     elif slack_webhook_url := os.getenv("SLACK_WEBHOOK_URL", "").strip():
         slack_config = SlackWebhookConfig.model_validate({"webhook_url": slack_webhook_url})
         effective["slack"] = _effective_entry("local env", slack_config.model_dump())
+
+    ms_teams_store_integration = store_integration_by_service.get("ms_teams")
+    if isinstance(ms_teams_store_integration, dict):
+        ms_teams_credentials = _raw_credentials(ms_teams_store_integration)
+        webhook_url = str(ms_teams_credentials.get("webhook_url", "")).strip()
+        if webhook_url:
+            ms_teams_config = MicrosoftTeamsWebhookConfig.model_validate({"webhook_url": webhook_url})
+            effective["ms_teams"] = _effective_entry("local store", ms_teams_config.model_dump())
+    elif ms_teams_webhook_url := os.getenv("TEAMS_WEBHOOK_URL", "").strip():
+        ms_teams_config = MicrosoftTeamsWebhookConfig.model_validate({"webhook_url": ms_teams_webhook_url})
+        effective["ms_teams"] = _effective_entry("local env", ms_teams_config.model_dump())
 
     google_docs_integration = classified_integrations.get("google_docs")
     if isinstance(google_docs_integration, dict):

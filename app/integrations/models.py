@@ -126,6 +126,19 @@ class SlackWebhookConfig(StrictConfigModel):
         return self
 
 
+class MicrosoftTeamsWebhookConfig(StrictConfigModel):
+    """Microsoft Teams webhook runtime config."""
+
+    webhook_url: str
+
+    @model_validator(mode="after")
+    def _require_valid_teams_url(self) -> MicrosoftTeamsWebhookConfig:
+        parsed = urlparse(self.webhook_url)
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValueError("Microsoft Teams webhook must be a valid HTTPS URL.")
+        return self
+
+
 class TracerIntegrationConfig(StrictConfigModel):
     """Tracer API access config."""
 
@@ -573,3 +586,4 @@ class EffectiveIntegrations(StrictConfigModel):
     openobserve: EffectiveIntegrationEntry | None = None
     opensearch: EffectiveIntegrationEntry | None = None
     alertmanager: EffectiveIntegrationEntry | None = None
+    ms_teams: EffectiveIntegrationEntry | None = None
