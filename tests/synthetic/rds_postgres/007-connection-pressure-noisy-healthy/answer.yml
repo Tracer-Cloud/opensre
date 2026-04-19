@@ -9,7 +9,7 @@ optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs
   - query_grafana_alert_rules
-max_investigation_loops: 3
+max_investigation_loops: 4
 model_response: |
   ROOT_CAUSE: No active failure detected. All metrics are within normal operating bounds for this instance class and traffic pattern. The alert fired on a warning threshold that does not indicate an actual failure.
   ROOT_CAUSE_CATEGORY: healthy

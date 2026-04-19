@@ -1,0 +1,27 @@
+{
+  "title": "[synthetic-k8s] CrashLoopBackOff — payments-api-7f9dd8b6c4-x7gr9",
+  "state": "alerting",
+  "alert_source": "datadog",
+  "commonLabels": {
+    "alertname": "KubernetesPodCrashLooping",
+    "severity": "critical",
+    "pipeline_name": "k8s-eks-synthetic",
+    "service": "payments-api",
+    "cluster_name": "payments-prod-eks",
+    "namespace": "payments",
+    "workload_type": "deployment",
+    "workload_name": "payments-api"
+  },
+  "commonAnnotations": {
+    "summary": "Pod payments-api-7f9dd8b6c4-x7gr9 has restarted 8 times in the last 25 minutes.",
+    "description": "One of three replicas of payments-api is repeatedly restarting; the other two remain Running and Ready.",
+    "error": "Container exit code 137 reported by kubelet; no ImagePullBackOff observed.",
+    "suspected_symptom": "CrashLoopBackOff on a single replica while sibling pods stay healthy.",
+    "cluster_name": "payments-prod-eks",
+    "kube_namespace": "payments",
+    "kube_deployment": "payments-api",
+    "kube_pod": "payments-api-7f9dd8b6c4-x7gr9",
+    "k8s_failure_mode": "crashloop_backoff",
+    "context_sources": "eks,datadog"
+  }
+}

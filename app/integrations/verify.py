@@ -14,6 +14,7 @@ from app.integrations.azure_sql import build_azure_sql_config, validate_azure_sq
 from app.integrations.catalog import (
     resolve_effective_integrations as _resolve_effective_integrations,
 )
+from app.integrations.store import load_integrations  # re-exported for tests/monkeypatch
 from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
 from app.integrations.mariadb import build_mariadb_config, validate_mariadb_config
 from app.integrations.models import (
@@ -32,6 +33,7 @@ from app.integrations.mysql import build_mysql_config, validate_mysql_config
 from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
 from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
+from app.services.alertmanager import AlertmanagerClient, AlertmanagerConfig
 from app.services.coralogix import CoralogixClient
 from app.services.datadog.client import DatadogClient, DatadogConfig
 from app.services.honeycomb import HoneycombClient
@@ -40,6 +42,7 @@ from app.services.tracer_client.client import TracerClient
 from app.services.vercel.client import VercelClient, VercelConfig
 
 SUPPORTED_VERIFY_SERVICES = (
+    "alertmanager",
     "grafana",
     "datadog",
     "honeycomb",
@@ -67,7 +70,6 @@ SUPPORTED_VERIFY_SERVICES = (
     "azure",
     "openobserve",
     "opensearch",
-
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -88,9 +90,13 @@ def _result(
 
 
 def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
-    """Resolve effective local integrations from ~/.tracer and environment variables."""
-    return _resolve_effective_integrations()
+    """Resolve effective local integrations from ~/.tracer and environment variables.
 
+    Reads the store via the locally bound ``load_integrations`` so tests can
+    monkeypatch ``app.integrations.verify.load_integrations`` to inject store
+    fixtures without reaching the on-disk store.
+    """
+    return _resolve_effective_integrations(store_integrations=load_integrations())
 
 
 def _verify_grafana(source: str, config: dict[str, Any]) -> dict[str, str]:
@@ -509,6 +515,44 @@ def _verify_vercel(
         return _result("vercel", source, "passed", base_detail)
 
 
+def _verify_alertmanager(source: str, config: dict[str, Any]) -> dict[str, str]:
+    base_url = str(config.get("base_url", ""))
+    if not base_url:
+        return _result("alertmanager", source, "missing", "Missing base_url.")
+
+    try:
+        alertmanager_config = AlertmanagerConfig.model_validate(
+            {
+                "base_url": base_url,
+                "bearer_token": config.get("bearer_token", ""),
+                "username": config.get("username", ""),
+                "password": config.get("password", ""),
+            }
+        )
+    except Exception as err:
+        return _result("alertmanager", source, "missing", str(err))
+
+    with AlertmanagerClient(alertmanager_config) as client:
+        result = client.get_status()
+
+    if not result.get("success"):
+        return _result(
+            "alertmanager",
+            source,
+            "failed",
+            f"Status check failed: {result.get('error', 'unknown error')}",
+        )
+
+    status_data = result.get("status", {})
+    cluster_status = status_data.get("cluster", {}).get("status", "unknown") if isinstance(status_data, dict) else "ok"
+    return _result(
+        "alertmanager",
+        source,
+        "passed",
+        f"Connected to Alertmanager at {base_url}; cluster status: {cluster_status}.",
+    )
+
+
 def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
     try:
         opsgenie_config = OpsGenieConfig.model_validate(
@@ -581,61 +625,6 @@ def _verify_bitbucket(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
-def _verify_snowflake(source: str, config: dict[str, Any]) -> dict[str, str]:
-    account_identifier = str(config.get("account_identifier", "")).strip()
-    token = str(config.get("token", "")).strip()
-    if not account_identifier:
-        return _result("snowflake", source, "missing", "Missing account_identifier.")
-    if not token:
-        return _result("snowflake", source, "missing", "Missing token credentials.")
-    return _result(
-        "snowflake",
-        source,
-        "passed",
-        f"Snowflake credentials are configured for account {account_identifier}.",
-    )
-
-
-def _verify_azure(source: str, config: dict[str, Any]) -> dict[str, str]:
-    workspace_id = str(config.get("workspace_id", "")).strip()
-    access_token = str(config.get("access_token", "")).strip()
-    endpoint = str(config.get("endpoint", "https://api.loganalytics.io")).strip()
-    if not workspace_id:
-        return _result("azure", source, "missing", "Missing workspace_id.")
-    if not access_token:
-        return _result("azure", source, "missing", "Missing access_token.")
-    return _result(
-        "azure",
-        source,
-        "passed",
-        f"Azure Log Analytics credentials are configured for workspace {workspace_id} at {endpoint}.",
-    )
-
-
-def _verify_openobserve(source: str, config: dict[str, Any]) -> dict[str, str]:
-    base_url = str(config.get("base_url", "")).strip()
-    api_token = str(config.get("api_token", "")).strip()
-    username = str(config.get("username", "")).strip()
-    password = str(config.get("password", "")).strip()
-    if not base_url:
-        return _result("openobserve", source, "missing", "Missing base_url.")
-    if not api_token and not (username and password):
-        return _result("openobserve", source, "missing", "Missing api_token or username/password.")
-    return _result(
-        "openobserve",
-        source,
-        "passed",
-        f"OpenObserve credentials are configured for {base_url}.",
-    )
-
-
-def _verify_opensearch(source: str, config: dict[str, Any]) -> dict[str, str]:
-    url = str(config.get("url", "")).strip()
-    if not url:
-        return _result("opensearch", source, "missing", "Missing url.")
-    return _result("opensearch", source, "passed", f"OpenSearch endpoint configured: {url}.")
-
-
 def _verify_discord(source: str, config: dict[str, Any]) -> dict[str, str]:
     bot_token = str(config.get("bot_token", "")).strip()
     if not bot_token:
@@ -698,6 +687,62 @@ def _verify_mysql(source: str, config: dict[str, Any]) -> dict[str, str]:
         "passed" if result.ok else "failed",
         result.detail,
     )
+
+
+def _verify_snowflake(source: str, config: dict[str, Any]) -> dict[str, str]:
+    account_identifier = str(config.get("account_identifier", "")).strip()
+    token = str(config.get("token", "")).strip()
+    if not account_identifier:
+        return _result("snowflake", source, "missing", "Missing account_identifier.")
+    if not token:
+        return _result("snowflake", source, "missing", "Missing token credentials.")
+    return _result(
+        "snowflake",
+        source,
+        "passed",
+        f"Snowflake credentials are configured for account {account_identifier}.",
+    )
+
+
+def _verify_azure(source: str, config: dict[str, Any]) -> dict[str, str]:
+    workspace_id = str(config.get("workspace_id", "")).strip()
+    access_token = str(config.get("access_token", "")).strip()
+    endpoint = str(config.get("endpoint", "https://api.loganalytics.io")).strip()
+    if not workspace_id:
+        return _result("azure", source, "missing", "Missing workspace_id.")
+    if not access_token:
+        return _result("azure", source, "missing", "Missing access_token.")
+    return _result(
+        "azure",
+        source,
+        "passed",
+        f"Azure Log Analytics credentials are configured for workspace "
+        f"{workspace_id} at {endpoint}.",
+    )
+
+
+def _verify_openobserve(source: str, config: dict[str, Any]) -> dict[str, str]:
+    base_url = str(config.get("base_url", "")).strip()
+    api_token = str(config.get("api_token", "")).strip()
+    username = str(config.get("username", "")).strip()
+    password = str(config.get("password", "")).strip()
+    if not base_url:
+        return _result("openobserve", source, "missing", "Missing base_url.")
+    if not api_token and not (username and password):
+        return _result("openobserve", source, "missing", "Missing api_token or username/password.")
+    return _result(
+        "openobserve",
+        source,
+        "passed",
+        f"OpenObserve credentials are configured for {base_url}.",
+    )
+
+
+def _verify_opensearch(source: str, config: dict[str, Any]) -> dict[str, str]:
+    url = str(config.get("url", "")).strip()
+    if not url:
+        return _result("opensearch", source, "missing", "Missing url.")
+    return _result("opensearch", source, "passed", f"OpenSearch endpoint configured: {url}.")
 
 
 def verify_integrations(
@@ -780,6 +825,8 @@ def verify_integrations(
             results.append(_verify_openclaw(source, config))
         elif current_service == "mysql":
             results.append(_verify_mysql(source, config))
+        elif current_service == "alertmanager":
+            results.append(_verify_alertmanager(source, config))
         elif current_service == "snowflake":
             results.append(_verify_snowflake(source, config))
         elif current_service == "azure":

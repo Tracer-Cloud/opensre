@@ -39,4 +39,5 @@ EvidenceSource = Literal[
     "azure",
     "openobserve",
     "opensearch",
+    "alertmanager",
 ]

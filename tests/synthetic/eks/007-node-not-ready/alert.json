@@ -1,0 +1,28 @@
+{
+  "title": "[synthetic-k8s] Node unhealthy — ip-10-0-1-73.us-east-1.compute.internal",
+  "state": "alerting",
+  "alert_source": "datadog",
+  "commonLabels": {
+    "alertname": "KubernetesNodeNotReady",
+    "severity": "critical",
+    "pipeline_name": "k8s-eks-synthetic",
+    "service": "payments-api",
+    "cluster_name": "payments-prod-eks",
+    "namespace": "payments",
+    "workload_type": "deployment",
+    "workload_name": "payments-api",
+    "kube_node": "ip-10-0-1-73.us-east-1.compute.internal"
+  },
+  "commonAnnotations": {
+    "summary": "Node ip-10-0-1-73 reports Ready=Unknown; pods on that node are unreachable.",
+    "description": "One of two worker nodes lost kubelet heartbeat. Pods scheduled to that node are now phase=Unknown. Pods on the other node are healthy.",
+    "error": "Node condition flip from Ready=True to Ready=Unknown at 10:40Z.",
+    "suspected_symptom": "Partial capacity loss correlated to a single node.",
+    "cluster_name": "payments-prod-eks",
+    "kube_namespace": "payments",
+    "kube_deployment": "payments-api",
+    "kube_node": "ip-10-0-1-73.us-east-1.compute.internal",
+    "k8s_failure_mode": "node_not_ready",
+    "context_sources": "eks"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "title": "[synthetic-k8s] Rollout stalled — payments-api",
+  "state": "alerting",
+  "alert_source": "datadog",
+  "commonLabels": {
+    "alertname": "KubernetesDeploymentRolloutStuck",
+    "severity": "critical",
+    "pipeline_name": "k8s-eks-synthetic",
+    "service": "payments-api",
+    "cluster_name": "payments-prod-eks",
+    "namespace": "payments",
+    "workload_type": "deployment",
+    "workload_name": "payments-api"
+  },
+  "commonAnnotations": {
+    "summary": "Deployment payments-api has not made rollout progress for 10+ minutes.",
+    "description": "New ReplicaSet pods crash on startup. Old ReplicaSet pods continue to serve traffic. The deployment is frozen mid-rollout.",
+    "error": "ProgressDeadlineExceeded reported on the deployment.",
+    "suspected_symptom": "Stuck rollout with 0 available replicas from the new ReplicaSet.",
+    "cluster_name": "payments-prod-eks",
+    "kube_namespace": "payments",
+    "kube_deployment": "payments-api",
+    "k8s_failure_mode": "deployment_rollout_stuck",
+    "context_sources": "eks"
+  }
+}

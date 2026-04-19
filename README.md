@@ -15,7 +15,16 @@
   <a href="https://github.com/Tracer-Cloud/opensre/blob/main/.github/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Tracer-Cloud/opensre/ci.yml?style=flat-square&label=CI" alt="CI"></a>
   <img src="https://img.shields.io/badge/open%20source-forever-brightgreen?style=flat-square" alt="Open Source">
   <a href="https://discord.gg/7NTpevXf7w"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord"></a>
+ 
 </p>
+<a href="https://trendshift.io/repositories/25889" target="_blank">
+  <img
+    src="https://trendshift.io/api/badge/repositories/25889"
+    alt="Tracer-Cloud%2Fopensre | Trendshift"
+    style="height: 30px; width: auto;"
+    height="30"
+  />
+</a>
 
 <p align="center">
   <strong>
@@ -193,7 +202,7 @@ make benchmark
 
 ## Integrations
 
-OpenSRE connects to 40+ tools and services across the modern cloud stack, from LLM providers and observability platforms to infrastructure, databases, and incident management.
+OpenSRE connects to 60+ tools and services across the modern cloud stack, from LLM providers and observability platforms to infrastructure, databases, and incident management.
 
 | Category | Integrations | Roadmap |
 | --- | --- | --- |
@@ -562,6 +571,20 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/159360024?v=4" width="100" alt="sharkello"/>
             <br />
             <sub><b>sharkello</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/kaushal-bakrania">
+            <img src="https://avatars.githubusercontent.com/u/71706867?v=4" width="100" alt="kaushal-bakrania"/>
+            <br />
+            <sub><b>kaushal-bakrania</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/darthwade">
+            <img src="https://avatars.githubusercontent.com/u/2220776?v=4" width="100" alt="darthwade"/>
+            <br />
+            <sub><b>darthwade</b></sub>
         </a>
     </td>
             <td align="center">
