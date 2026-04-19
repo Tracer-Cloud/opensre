@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
@@ -177,3 +177,25 @@ def test_integrations_verify_accepts_ms_teams() -> None:
         send_teams_test=True,
     )
     mock_capture.assert_called_once_with("ms_teams")
+
+
+def test_verify_ms_teams_handler_sends_adaptive_card() -> None:
+    from app.integrations.verify import _verify_ms_teams
+
+    webhook_url = "https://outlook.office.com/webhook/test"
+    config = {"webhook_url": webhook_url}
+
+    with patch("httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        mock_post.return_value.raise_for_status.return_value = None
+
+        result = _verify_ms_teams(source="env", config=config, send_teams_test=True)
+
+    assert result["status"] == "passed"
+    # Check that the payload contains the Adaptive Card structure
+    _, kwargs = mock_post.call_args
+    assert kwargs["json"]["type"] == "message"
+    assert (
+        kwargs["json"]["attachments"][0]["contentType"]
+        == "application/vnd.microsoft.card.adaptive"
+    )
