@@ -126,7 +126,7 @@ class AgentStateModel(StrictConfigModel):
     pipeline_name: str = ""
     severity: str = ""
     alert_source: str = ""
-    raw_alert: str | dict[str, Any] = Field(default_factory=dict)
+    raw_alert: str | dict[str, Any] = Field(default_factory=lambda: {})
     alert_json: dict[str, Any] = Field(default_factory=dict)
     planned_actions: list[str] = Field(default_factory=list)
     plan_rationale: str = ""

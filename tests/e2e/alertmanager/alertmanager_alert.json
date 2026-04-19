@@ -1,0 +1,45 @@
+{
+  "version": "4",
+  "groupKey": "{}:{alertname=\"HighErrorRate\"}",
+  "truncatedAlerts": 0,
+  "status": "firing",
+  "receiver": "opensre-webhook",
+  "groupLabels": {
+    "alertname": "HighErrorRate"
+  },
+  "commonLabels": {
+    "alertname": "HighErrorRate",
+    "severity": "critical",
+    "environment": "production",
+    "job": "api-server",
+    "service": "checkout-api"
+  },
+  "commonAnnotations": {
+    "summary": "Error rate above 5% threshold for checkout-api",
+    "description": "The checkout-api service has been returning 5xx errors at a rate of 12% for the last 5 minutes. This exceeds the critical threshold of 5%.",
+    "runbook": "https://wiki.example.com/runbooks/high-error-rate",
+    "dashboard": "https://grafana.example.com/d/api-errors"
+  },
+  "externalURL": "http://alertmanager.monitoring.svc:9093",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "HighErrorRate",
+        "severity": "critical",
+        "environment": "production",
+        "job": "api-server",
+        "service": "checkout-api",
+        "instance": "checkout-api-pod-7d9f8b-xkp2q:8080"
+      },
+      "annotations": {
+        "summary": "Error rate above 5% threshold for checkout-api",
+        "description": "The checkout-api service has been returning 5xx errors at a rate of 12% for the last 5 minutes."
+      },
+      "startsAt": "2024-01-15T10:25:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://prometheus.monitoring.svc:9090/graph?g0.expr=rate%28http_requests_total%7Bjob%3D%22api-server%22%2Cstatus%3D~%225..%22%7D%5B5m%5D%29+%3E+0.05",
+      "fingerprint": "a1b2c3d4e5f6a7b8"
+    }
+  ]
+}

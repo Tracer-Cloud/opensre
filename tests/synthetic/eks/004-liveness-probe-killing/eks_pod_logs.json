@@ -1,0 +1,5 @@
+{
+  "pod_name": "payments-api-7f9dd8b6c4-liv1k",
+  "namespace": "payments",
+  "logs": "2026-04-18T10:44:20Z INFO startup complete, listening on :8080\n2026-04-18T10:44:21Z INFO readiness endpoint ready at /healthz\n2026-04-18T10:44:25Z INFO POST /api/v1/charge 200 74ms\n2026-04-18T10:44:32Z INFO POST /api/v1/charge 200 68ms\n2026-04-18T10:44:40Z INFO POST /api/v1/refund 200 91ms\n2026-04-18T10:44:55Z INFO GET /metrics 200 4ms\n2026-04-18T10:45:00Z INFO received SIGTERM, initiating graceful shutdown\n2026-04-18T10:45:01Z INFO draining in-flight requests (0 active)\n2026-04-18T10:45:01Z INFO http server closed cleanly\n[container exited with code 0]\n"
+}

@@ -26,11 +26,15 @@ def test_node_plan_actions_emits_retrieval_controls(monkeypatch: Any) -> None:
         retrieval_controls={"get_logs": RetrievalIntent(limit=25)},
     )
 
-    monkeypatch.setattr(node_module.InvestigateInput, "from_state", lambda _state: object())
+    class _InputStub:
+        tool_budget = 10
+
+    monkeypatch.setattr(node_module.InvestigateInput, "from_state", lambda _state: _InputStub())
     monkeypatch.setattr(
         node_module,
         "build_plan_actions",
-        lambda **_kwargs: (plan, {"knowledge": {}}, ["get_logs"], [], False, ""),
+        lambda **_kwargs: (plan, {"knowledge": {}}, ["get_logs"], [], False, "", []),
+    )
     monkeypatch.setattr(node_module, "get_tracker", lambda: tracker)
 
     result = node_module.node_plan_actions(

@@ -5,6 +5,7 @@ from unittest.mock import patch
 from click.testing import CliRunner
 
 from app.cli.__main__ import cli
+from app.integrations.cli import _HANDLERS, _setup_vercel
 
 
 def test_integrations_show_redacts_api_token() -> None:
@@ -63,6 +64,30 @@ def test_integrations_setup_accepts_vercel() -> None:
     assert result.exit_code == 1
     mock_setup.assert_called_once_with("vercel")
     mock_verify.assert_called_once_with("vercel")
+
+
+def test_setup_vercel_saves_credentials(monkeypatch) -> None:
+    answers = iter(["vcp_test_token", "team_123"])
+
+    def fake_p(_label: str, default: str = "", secret: bool = False) -> str:
+        return next(answers)
+
+    saved: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr("app.integrations.cli._p", fake_p)
+    monkeypatch.setattr(
+        "app.integrations.cli.upsert_integration",
+        lambda service, entry: saved.append((service, entry)),
+    )
+
+    _setup_vercel()
+
+    assert _HANDLERS["vercel"] is _setup_vercel
+    assert saved == [
+        (
+            "vercel",
+            {"credentials": {"api_token": "vcp_test_token", "team_id": "team_123"}},
+        )
+    ]
 
 
 def test_integrations_setup_skips_auto_verify_for_unverifiable_service() -> None:

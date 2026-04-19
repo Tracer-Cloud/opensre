@@ -57,6 +57,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
         _available_actions,
         rerouted,
         reroute_reason,
+        inclusion_reasons,
     ) = build_plan_actions(
         input_data=input_data,
         plan_model=InvestigationPlan,
@@ -101,6 +102,8 @@ def node_plan_actions(state: InvestigationState) -> dict:
     }
     if rerouted:
         audit_entry["reroute_reason"] = reroute_reason
+    if inclusion_reasons:
+        audit_entry["inclusion_reasons"] = inclusion_reasons
 
     # Safety check: if we're in a loop but can't plan new actions, stop the investigation
     if not available_action_names or typed_plan is None:

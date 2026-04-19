@@ -1,6 +1,6 @@
 """Plan investigation actions from available inputs."""
 
-from typing import cast, get_args
+from typing import Any, cast, get_args
 
 from pydantic import BaseModel
 
@@ -14,11 +14,12 @@ from app.nodes.plan_actions.detect_sources import detect_sources
 from app.nodes.plan_actions.extract_keywords import extract_keywords
 from app.output import debug_print
 from app.services import get_llm_for_tools
-from app.tools.investigation_registry import (
-    get_available_actions,
-    get_prioritized_actions,
-)
+from app.tools.investigation_registry import get_available_actions
 from app.tools.investigation_registry.models import InvestigationAction
+from app.tools.investigation_registry.prioritization import (
+    DETERMINISTIC_FALLBACK_REASON,
+    get_prioritized_actions_with_reasons,
+)
 from app.types.evidence import EvidenceSource
 
 # Default tool budget if not specified in state
@@ -58,6 +59,25 @@ def _seed_action_names_for_sources(
     return seeded
 
 
+def _fallback_action_names_from_inclusion_reasons(
+    inclusion_reasons: list[dict[str, Any]],
+) -> list[str]:
+    fallback_action_names: list[str] = []
+    seen: set[str] = set()
+
+    for reason_entry in inclusion_reasons:
+        reasons = reason_entry.get("reasons", [])
+        action_name = reason_entry.get("name")
+        if not isinstance(reasons, list) or not isinstance(action_name, str):
+            continue
+        if DETERMINISTIC_FALLBACK_REASON not in reasons or action_name in seen:
+            continue
+        seen.add(action_name)
+        fallback_action_names.append(action_name)
+
+    return fallback_action_names
+
+
 def _seed_plan_actions(
     planned_actions: list[str],
     available_action_names: list[str],
@@ -85,14 +105,23 @@ def _ensure_seed_actions_available(
     available_sources: AvailableSources,
     tool_budget: int,
     executed_hypotheses: list[ExecutedHypothesis],
+    additional_required_action_names: list[str] | None = None,
 ) -> tuple[list[InvestigationAction], list[str]]:
     selected = list(available_actions)
     selected_names = {action.name for action in selected}
     executed_action_names = _get_executed_action_names(executed_hypotheses)
     pool_by_name = {action.name: action for action in action_pool}
-    seed_actions: list = []
+    seed_actions: list[InvestigationAction] = []
+    required_action_names = [
+        *_seed_action_names_for_sources(available_sources),
+        *(additional_required_action_names or []),
+    ]
+    seen_required: set[str] = set()
 
-    for action_name in _seed_action_names_for_sources(available_sources):
+    for action_name in required_action_names:
+        if action_name in seen_required:
+            continue
+        seen_required.add(action_name)
         if action_name in executed_action_names:
             continue
         action = pool_by_name.get(action_name)
@@ -173,7 +202,15 @@ def plan_actions(
     plan_model: type[BaseModel],
     _pipeline_name: str = "",
     resolved_integrations: dict[str, object] | None = None,
-) -> tuple[BaseModel | None, AvailableSources, list[str], list[InvestigationAction], bool, str]:
+) -> tuple[
+    BaseModel | None,
+    AvailableSources,
+    list[str],
+    list[InvestigationAction],
+    bool,
+    str,
+    list[dict[str, Any]],
+]:
     """
     Interpret inputs, select actions, and request a plan from the LLM.
 
@@ -187,7 +224,7 @@ def plan_actions(
         resolved_integrations: Pre-fetched integration credentials from resolve_integrations node
 
     Returns:
-        Tuple of (plan_or_none, available_sources, available_action_names, available_actions, rerouted, reroute_reason)
+        Tuple of (plan_or_none, available_sources, available_action_names, available_actions, rerouted, reroute_reason, inclusion_reasons)
     """
     # Get tool budget from input (with default)
     tool_budget = getattr(input_data, "tool_budget", DEFAULT_TOOL_BUDGET)
@@ -216,18 +253,21 @@ def plan_actions(
 
     debug_print(f"Relevant sources: {list(available_sources.keys())}")
 
-    all_actions = get_available_actions()
     keywords = extract_keywords(input_data.problem_md, input_data.alert_name)
     prioritization_sources = [
         cast(EvidenceSource, source_name)
         for source_name in available_sources
         if source_name in _PRIORITIZATION_SOURCES
     ]
-    candidate_actions = (
-        get_prioritized_actions(sources=prioritization_sources, keywords=keywords)
-        if keywords or prioritization_sources
-        else all_actions
-    )
+    all_actions = get_available_actions()
+    if keywords or prioritization_sources:
+        candidate_actions, inclusion_reasons = get_prioritized_actions_with_reasons(
+            sources=prioritization_sources,
+            keywords=keywords,
+        )
+    else:
+        candidate_actions = all_actions
+        inclusion_reasons = []
 
     # Apply tool budget to cap the selected tool set before prompt construction
     available_actions, available_action_names = select_actions(
@@ -242,6 +282,9 @@ def plan_actions(
         available_sources=available_sources,
         tool_budget=tool_budget,
         executed_hypotheses=input_data.executed_hypotheses,
+        additional_required_action_names=_fallback_action_names_from_inclusion_reasons(
+            inclusion_reasons
+        ),
     )
 
     if not available_action_names:
@@ -252,6 +295,7 @@ def plan_actions(
             available_actions,
             rerouted,
             reroute_reason,
+            inclusion_reasons,
         )
 
     llm = get_llm_for_tools()
@@ -284,4 +328,5 @@ def plan_actions(
         available_actions,
         rerouted,
         reroute_reason,
+        inclusion_reasons,
     )

@@ -1,0 +1,34 @@
+{
+  "warning_events": [
+    {
+      "namespace": "payments",
+      "reason": "ProgressDeadlineExceeded",
+      "message": "Deployment payments-api has exceeded its progress deadline (600s); ReplicaSet payments-api-newrs-7c has zero available replicas. Rollout is blocked — old ReplicaSet payments-api-7f9dd8b6c4 still serving traffic.",
+      "type": "Warning",
+      "count": 1,
+      "involved_object": "Deployment/payments-api",
+      "first_time": "2026-04-18T10:40:00Z",
+      "last_time": "2026-04-18T10:40:00Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "BackOff",
+      "message": "Back-off restarting failed container payments-api in pod payments-api-newrs-7c-001 (last exit_code=1, configuration error in new revision v3.2.0)",
+      "type": "Warning",
+      "count": 6,
+      "involved_object": "Pod/payments-api-newrs-7c-001",
+      "first_time": "2026-04-18T10:32:00Z",
+      "last_time": "2026-04-18T10:45:00Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "BackOff",
+      "message": "Back-off restarting failed container payments-api in pod payments-api-newrs-7c-002",
+      "type": "Warning",
+      "count": 6,
+      "involved_object": "Pod/payments-api-newrs-7c-002",
+      "first_time": "2026-04-18T10:32:30Z",
+      "last_time": "2026-04-18T10:45:00Z"
+    }
+  ]
+}

@@ -175,6 +175,49 @@ def test_tool_decorator_allows_retrieval_controls_override_for_base_tool() -> No
     assert not registered.retrieval_controls.limit
 
 
+def test_tool_decorator_preserves_tags_and_cost_tier_for_base_tool_instances() -> None:
+    class LookupIncidentClassTool(BaseTool):
+        name = "lookup_incident_class"
+        description = "Lookup incident metadata."
+        source = "knowledge"
+        input_schema = {
+            "type": "object",
+            "properties": {
+                "incident_id": {
+                    "type": "string",
+                    "description": "Incident identifier",
+                },
+            },
+            "required": ["incident_id"],
+        }
+
+        def run(self, incident_id: str) -> dict[str, str]:
+            return {"incident_id": incident_id}
+
+    decorated = tool(
+        LookupIncidentClassTool(),
+        tags=("safe", "fast"),
+        cost_tier="cheap",
+    )
+
+    registered = getattr(decorated, REGISTERED_TOOL_ATTR)
+    assert isinstance(registered, RegisteredTool)
+    assert registered.tags == ("safe", "fast")
+    assert registered.cost_tier == "cheap"
+
+
+def test_registered_tool_rejects_unknown_cost_tier() -> None:
+    def lookup_incident(incident_id: str) -> dict[str, str]:
+        return {"incident_id": incident_id}
+
+    with pytest.raises(ValueError, match="Unsupported cost tier"):
+        RegisteredTool.from_function(
+            lookup_incident,
+            source="knowledge",
+            cost_tier="free",  # type: ignore[arg-type]
+        )
+
+
 def test_auto_discovery_populates_investigation_and_chat_surfaces(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

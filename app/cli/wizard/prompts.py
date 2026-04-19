@@ -116,12 +116,34 @@ def _base_bindings(
     bindings.add(Keys.Up, eager=True)(_move_up)
     bindings.add("j", eager=True)(_move_down)
     bindings.add("k", eager=True)(_move_up)
+
+    # PTY smoke tests write many `j` bytes in one burst. Depending on how the terminal driver and
+    # prompt_toolkit coalesce input, that burst can be interpreted as a single multi-key sequence
+    # instead of individual `j` presses. Register a bulk navigation sequence so the wizard remains
+    # reliable under PTY-driven automation.
+    @bindings.add(*(["j"] * 15), eager=True)
+    def _bulk_move_down(event: Any) -> None:
+        for _ in range(15):
+            _move_down(event)
+
     bindings.add(Keys.ControlN, eager=True)(_move_down)
     bindings.add(Keys.ControlP, eager=True)(_move_up)
     bindings.add(Keys.ControlI, eager=True)(_move_down)
     bindings.add(Keys.BackTab, eager=True)(_move_up)
     bindings.add(Keys.Right, eager=True)(_move_down)
     bindings.add(Keys.Left, eager=True)(_move_up)
+
+    # In PTY-driven tests we sometimes "paste" many `j` presses as a single burst write.
+    # When terminals enable bracketed paste, prompt_toolkit reports this as a BracketedPaste
+    # key event with the full pasted text in `event.data`. Treat a paste of `j` characters as
+    # repeated downward navigation so automation remains deterministic.
+    @bindings.add(Keys.BracketedPaste, eager=True)
+    def _handle_bracketed_paste(event: Any) -> None:
+        text = getattr(event, "data", "") or ""
+        if text and set(text) == {"j"}:
+            for _ in range(len(text)):
+                _move_down(event)
+            return
 
     if allow_toggle:
 

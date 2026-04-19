@@ -31,7 +31,9 @@ from app.integrations.mongodb_atlas import build_mongodb_atlas_config, validate_
 from app.integrations.mysql import build_mysql_config, validate_mysql_config
 from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
 from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
+from app.integrations.rabbitmq import build_rabbitmq_config, validate_rabbitmq_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
+from app.services.alertmanager import AlertmanagerClient, AlertmanagerConfig
 from app.services.coralogix import CoralogixClient
 from app.services.datadog.client import DatadogClient, DatadogConfig
 from app.services.honeycomb import HoneycombClient
@@ -40,6 +42,7 @@ from app.services.tracer_client.client import TracerClient
 from app.services.vercel.client import VercelClient, VercelConfig
 
 SUPPORTED_VERIFY_SERVICES = (
+    "alertmanager",
     "grafana",
     "datadog",
     "honeycomb",
@@ -54,6 +57,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "azure_sql",
     "mongodb_atlas",
     "mariadb",
+    "rabbitmq",
     "google_docs",
     "vercel",
     "opsgenie",
@@ -63,6 +67,10 @@ SUPPORTED_VERIFY_SERVICES = (
     "discord",
     "mysql",
     "openclaw",
+    "snowflake",
+    "azure",
+    "openobserve",
+    "opensearch",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -438,6 +446,17 @@ def _verify_mariadb(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_rabbitmq(source: str, config: dict[str, Any]) -> dict[str, str]:
+    rabbitmq_config = build_rabbitmq_config(config)
+    result = validate_rabbitmq_config(rabbitmq_config)
+    return _result(
+        "rabbitmq",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
     """Validate Google Docs credentials and folder access."""
     from app.services.google_docs import GoogleDocsClient
@@ -501,6 +520,44 @@ def _verify_vercel(
 
         base_detail = f"Connected to Vercel API and listed {result.get('total', 0)} project(s)."
         return _result("vercel", source, "passed", base_detail)
+
+
+def _verify_alertmanager(source: str, config: dict[str, Any]) -> dict[str, str]:
+    base_url = str(config.get("base_url", ""))
+    if not base_url:
+        return _result("alertmanager", source, "missing", "Missing base_url.")
+
+    try:
+        alertmanager_config = AlertmanagerConfig.model_validate(
+            {
+                "base_url": base_url,
+                "bearer_token": config.get("bearer_token", ""),
+                "username": config.get("username", ""),
+                "password": config.get("password", ""),
+            }
+        )
+    except Exception as err:
+        return _result("alertmanager", source, "missing", str(err))
+
+    with AlertmanagerClient(alertmanager_config) as client:
+        result = client.get_status()
+
+    if not result.get("success"):
+        return _result(
+            "alertmanager",
+            source,
+            "failed",
+            f"Status check failed: {result.get('error', 'unknown error')}",
+        )
+
+    status_data = result.get("status", {})
+    cluster_status = status_data.get("cluster", {}).get("status", "unknown") if isinstance(status_data, dict) else "ok"
+    return _result(
+        "alertmanager",
+        source,
+        "passed",
+        f"Connected to Alertmanager at {base_url}; cluster status: {cluster_status}.",
+    )
 
 
 def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
@@ -639,6 +696,62 @@ def _verify_mysql(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_snowflake(source: str, config: dict[str, Any]) -> dict[str, str]:
+    account_identifier = str(config.get("account_identifier", "")).strip()
+    token = str(config.get("token", "")).strip()
+    if not account_identifier:
+        return _result("snowflake", source, "missing", "Missing account_identifier.")
+    if not token:
+        return _result("snowflake", source, "missing", "Missing token credentials.")
+    return _result(
+        "snowflake",
+        source,
+        "passed",
+        f"Snowflake credentials are configured for account {account_identifier}.",
+    )
+
+
+def _verify_azure(source: str, config: dict[str, Any]) -> dict[str, str]:
+    workspace_id = str(config.get("workspace_id", "")).strip()
+    access_token = str(config.get("access_token", "")).strip()
+    endpoint = str(config.get("endpoint", "https://api.loganalytics.io")).strip()
+    if not workspace_id:
+        return _result("azure", source, "missing", "Missing workspace_id.")
+    if not access_token:
+        return _result("azure", source, "missing", "Missing access_token.")
+    return _result(
+        "azure",
+        source,
+        "passed",
+        f"Azure Log Analytics credentials are configured for workspace "
+        f"{workspace_id} at {endpoint}.",
+    )
+
+
+def _verify_openobserve(source: str, config: dict[str, Any]) -> dict[str, str]:
+    base_url = str(config.get("base_url", "")).strip()
+    api_token = str(config.get("api_token", "")).strip()
+    username = str(config.get("username", "")).strip()
+    password = str(config.get("password", "")).strip()
+    if not base_url:
+        return _result("openobserve", source, "missing", "Missing base_url.")
+    if not api_token and not (username and password):
+        return _result("openobserve", source, "missing", "Missing api_token or username/password.")
+    return _result(
+        "openobserve",
+        source,
+        "passed",
+        f"OpenObserve credentials are configured for {base_url}.",
+    )
+
+
+def _verify_opensearch(source: str, config: dict[str, Any]) -> dict[str, str]:
+    url = str(config.get("url", "")).strip()
+    if not url:
+        return _result("opensearch", source, "missing", "Missing url.")
+    return _result("opensearch", source, "passed", f"OpenSearch endpoint configured: {url}.")
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -701,6 +814,8 @@ def verify_integrations(
             results.append(_verify_mongodb_atlas(source, config))
         elif current_service == "mariadb":
             results.append(_verify_mariadb(source, config))
+        elif current_service == "rabbitmq":
+            results.append(_verify_rabbitmq(source, config))
         elif current_service == "google_docs":
             results.append(_verify_google_docs(source, config))
         elif current_service == "vercel":
@@ -719,6 +834,16 @@ def verify_integrations(
             results.append(_verify_openclaw(source, config))
         elif current_service == "mysql":
             results.append(_verify_mysql(source, config))
+        elif current_service == "alertmanager":
+            results.append(_verify_alertmanager(source, config))
+        elif current_service == "snowflake":
+            results.append(_verify_snowflake(source, config))
+        elif current_service == "azure":
+            results.append(_verify_azure(source, config))
+        elif current_service == "openobserve":
+            results.append(_verify_openobserve(source, config))
+        elif current_service == "opensearch":
+            results.append(_verify_opensearch(source, config))
 
     return results
 
