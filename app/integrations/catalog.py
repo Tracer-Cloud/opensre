@@ -38,7 +38,7 @@ from app.services.vercel import VercelConfig
 
 logger = logging.getLogger(__name__)
 
-_SKIP_SERVICES = {"slack", "ms_teams"}
+_SKIP_SERVICES = {"slack"}
 
 _SERVICE_KEY_MAP = {
     "grafana": "grafana",
@@ -681,6 +681,15 @@ def _classify_service_instance(
             "max_results": max(1, min(_safe_int(credentials.get("max_results", 100), 100), 500)),
             "integration_id": record_id,
         }, "opensearch"
+
+    if key == "ms_teams":
+        webhook_url = str(credentials.get("webhook_url", "")).strip()
+        if not webhook_url:
+            return None, None
+        return {
+            "webhook_url": webhook_url,
+            "integration_id": record_id,
+        }, "ms_teams"
 
     # Fallback for unknown services: pass through credentials + record id.
     return {"credentials": credentials, "integration_id": record_id}, key
@@ -1379,6 +1388,23 @@ def load_env_integrations() -> list[dict[str, Any]]:
         except Exception:
             logger.debug("Failed to load Alertmanager config from env", exc_info=True)
 
+    teams_webhook_url = os.getenv("TEAMS_WEBHOOK_URL", "").strip()
+    if teams_webhook_url:
+        try:
+            teams_config = MicrosoftTeamsWebhookConfig.model_validate(
+                {"webhook_url": teams_webhook_url}
+            )
+            integrations.append(
+                {
+                    "id": "env-ms-teams",
+                    "service": "ms_teams",
+                    "status": "active",
+                    "credentials": teams_config.model_dump(),
+                }
+            )
+        except Exception:
+            logger.debug("Failed to load MS Teams config from env", exc_info=True)
+
     return integrations
 
 
@@ -1477,6 +1503,7 @@ def resolve_effective_integrations(
         "openobserve",
         "opensearch",
         "alertmanager",
+        "ms_teams",
     )
     for service in direct_services:
         resolved_integration = classified_integrations.get(service)
@@ -1543,16 +1570,6 @@ def resolve_effective_integrations(
         slack_config = SlackWebhookConfig.model_validate({"webhook_url": slack_webhook_url})
         effective["slack"] = _effective_entry("local env", slack_config.model_dump())
 
-    ms_teams_store_integration = store_integration_by_service.get("ms_teams")
-    if isinstance(ms_teams_store_integration, dict):
-        ms_teams_credentials = _raw_credentials(ms_teams_store_integration)
-        webhook_url = str(ms_teams_credentials.get("webhook_url", "")).strip()
-        if webhook_url:
-            ms_teams_config = MicrosoftTeamsWebhookConfig.model_validate({"webhook_url": webhook_url})
-            effective["ms_teams"] = _effective_entry("local store", ms_teams_config.model_dump())
-    elif ms_teams_webhook_url := os.getenv("TEAMS_WEBHOOK_URL", "").strip():
-        ms_teams_config = MicrosoftTeamsWebhookConfig.model_validate({"webhook_url": ms_teams_webhook_url})
-        effective["ms_teams"] = _effective_entry("local env", ms_teams_config.model_dump())
 
     google_docs_integration = classified_integrations.get("google_docs")
     if isinstance(google_docs_integration, dict):

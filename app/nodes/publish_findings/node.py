@@ -115,18 +115,17 @@ def generate_report(state: InvestigationState) -> dict:
     else:
         logger.debug("[publish] discord delivery: no discord integration configured")
 
-    # Microsoft Teams delivery — uses integration credentials if configured
+    # Microsoft Teams delivery — uses integration credentials if configured, falls back to env
+    from app.utils.teams_delivery import send_ms_teams_report
+
     ms_teams_creds = resolved.get("ms_teams", {})
-    if ms_teams_creds:
-        from app.utils.teams_delivery import send_ms_teams_report
-        webhook_url = ms_teams_creds.get("webhook_url", "")
-        if webhook_url:
-            teams_posted, teams_error = send_ms_teams_report(slack_message, webhook_url=webhook_url)
-            logger.debug("[publish] ms_teams delivery: posted=%s error=%s", teams_posted, teams_error)
-            if not teams_posted:
-                logger.warning("[publish] Microsoft Teams delivery failed: error=%s", teams_error)
-    else:
-        logger.debug("[publish] ms_teams delivery: no teams integration configured")
+    teams_posted, teams_error = send_ms_teams_report(
+        slack_message,
+        webhook_url=ms_teams_creds.get("webhook_url", ""),
+    )
+    logger.debug("[publish] ms_teams delivery: posted=%s error=%s", teams_posted, teams_error)
+    if not teams_posted and teams_error != "no_webhook_url":
+        logger.warning("[publish] Microsoft Teams delivery failed: error=%s", teams_error)
 
     # GitLab MR write-back (opt-in via GITLAB_MR_WRITEBACK env var)
     if os.getenv("GITLAB_MR_WRITEBACK", "").lower() in ("true", "1", "yes"):
