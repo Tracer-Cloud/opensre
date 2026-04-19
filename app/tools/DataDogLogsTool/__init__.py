@@ -50,6 +50,8 @@ def _logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 @tool(
     name="query_datadog_logs",
     source="datadog",
+    tags=("logs", "observability"),
+    cost_tier="moderate",
     description="Search Datadog logs for pipeline errors, exceptions, and application events.",
     use_cases=[
         "Investigating pipeline errors reported by Datadog monitors",

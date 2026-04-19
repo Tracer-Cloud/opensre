@@ -1,0 +1,14 @@
+{
+  "warning_events": [
+    {
+      "namespace": "payments",
+      "reason": "FailedScheduling",
+      "message": "0/2 nodes are available: 2 Insufficient cpu. preemption: 0/2 nodes are available: 2 No preemption victims found for incoming pod.",
+      "type": "Warning",
+      "count": 5,
+      "involved_object": "Pod/payments-api-7f9dd8b6c4-c12fj",
+      "first_time": "2026-04-18T10:33:10Z",
+      "last_time": "2026-04-18T10:45:00Z"
+    }
+  ]
+}

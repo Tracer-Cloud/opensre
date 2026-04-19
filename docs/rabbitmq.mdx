@@ -1,0 +1,161 @@
+---
+title: "RabbitMQ"
+description: "Connect RabbitMQ so OpenSRE can diagnose queue backlogs, consumer issues, and broker health during investigations"
+---
+
+OpenSRE uses the RabbitMQ Management HTTP API to investigate message-bus incidents — checking queue backlogs, consumer health, broker-wide resource usage, cluster partition state, and connection patterns.
+
+## Prerequisites
+
+- RabbitMQ 3.12+ (3.13 recommended)
+- The **`rabbitmq_management`** plugin must be enabled on the broker:
+  ```bash
+  rabbitmq-plugins enable rabbitmq_management
+  ```
+- Network access from the OpenSRE environment to the Management API port (default **15672**)
+- A user with at least the **`monitoring`** tag (read-only access to all management endpoints)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup rabbitmq
+```
+
+You will be prompted for host, management port, username, password, vhost, and whether to enable SSL.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+RABBITMQ_HOST=rmq.example.com
+RABBITMQ_MANAGEMENT_PORT=15672
+RABBITMQ_USERNAME=opensre_ro
+RABBITMQ_PASSWORD=...
+RABBITMQ_VHOST=/
+RABBITMQ_SSL=false
+RABBITMQ_VERIFY_SSL=true
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `RABBITMQ_HOST` | — | **Required.** RabbitMQ server hostname or IP |
+| `RABBITMQ_MANAGEMENT_PORT` | `15672` | Management API HTTP port (use `15671` for HTTPS) |
+| `RABBITMQ_USERNAME` | — | **Required.** Management API user |
+| `RABBITMQ_PASSWORD` | _(empty)_ | Management API password |
+| `RABBITMQ_VHOST` | `/` | Target vhost — diagnostic queries are scoped to this vhost |
+| `RABBITMQ_SSL` | `false` | Use HTTPS instead of HTTP for the Management API |
+| `RABBITMQ_VERIFY_SSL` | `true` | Verify the server TLS certificate; set `false` only for self-signed certs in trusted networks |
+
+### Option 3: Persistent store
+
+Credentials are automatically persisted to `~/.tracer/integrations.json` with `0o600` permissions:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "rabbitmq-prod",
+      "service": "rabbitmq",
+      "status": "active",
+      "credentials": {
+        "host": "rmq.example.com",
+        "management_port": 15672,
+        "username": "opensre_ro",
+        "password": "...",
+        "vhost": "/",
+        "ssl": false,
+        "verify_ssl": true
+      }
+    }
+  ]
+}
+```
+
+## Recommended user setup
+
+Create a dedicated monitoring user so OpenSRE has read-only access:
+
+```bash
+# Create user
+rabbitmqctl add_user opensre_ro strong-password
+
+# Grant the monitoring tag (read-only management API access)
+rabbitmqctl set_user_tags opensre_ro monitoring
+
+# Grant read-only permissions on the target vhost
+rabbitmqctl set_permissions -p / opensre_ro "^$" "^$" ".*"
+```
+
+The `monitoring` tag grants read access to all management endpoints without the ability to publish, consume, create, or delete any resources. The permissions line grants no configure or write access (`^$` matches nothing), and read access to all resources (`.*`).
+
+## TLS configuration
+
+SSL is disabled by default because most RabbitMQ Management API deployments use HTTP internally. For production environments exposed over the network, enable HTTPS:
+
+```bash
+RABBITMQ_SSL=true
+RABBITMQ_MANAGEMENT_PORT=15671
+```
+
+Set `RABBITMQ_VERIFY_SSL=false` only when connecting to brokers with self-signed certificates in trusted networks.
+
+## Investigation tools
+
+When OpenSRE investigates a RabbitMQ-related alert, five diagnostic tools are available:
+
+### Queue backlog
+
+Lists queues ranked by pending message count (ready + unacknowledged). Returns queue name, vhost, state, message counts, consumer count, consumer utilisation, memory usage, and publish/deliver/ack rates. Results are scoped to the configured vhost.
+
+### Consumer health
+
+Lists active consumers with per-queue diagnostics: consumer tag, ack mode, prefetch count, active state, and the channel/connection each consumer is bound to. Helps identify stalled or missing consumers behind a growing backlog.
+
+### Broker overview
+
+Returns a cluster-wide summary: RabbitMQ version, cluster name, total message counts, publish/deliver rates, queue/consumer/connection/channel totals, plus alarm health-check status (memory, disk, and file-descriptor alarms).
+
+### Node health
+
+Returns per-node resource utilisation: memory used vs. limit (with alarm flag), disk free vs. limit (with alarm flag), file descriptors, sockets, Erlang process usage, and cluster partition state. Essential for diagnosing backpressure, partitions, or node-level resource exhaustion.
+
+### Connection stats
+
+Lists active connections sorted by receive byte rate. Reports user, vhost, protocol, channel count, peer host/port, TLS status, and recv/send byte rates. Helps spot connection exhaustion, slow consumers, or noisy publishers. Results are filtered to the configured vhost.
+
+## Verify
+
+```bash
+opensre integrations verify rabbitmq
+```
+
+Expected output:
+
+```
+SERVICE    SOURCE       STATUS    DETAIL
+rabbitmq   local env    passed    Connected to RabbitMQ 3.13.0 (cluster: rabbit@prod-01, vhost: /).
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection refused on port 15672** | Verify the management plugin is enabled (`rabbitmq-plugins enable rabbitmq_management`) and that the port is reachable from the OpenSRE host. |
+| **Management API not found (404)** | The `rabbitmq_management` plugin is not enabled. Run `rabbitmq-plugins enable rabbitmq_management` and restart the broker if needed. |
+| **Authentication failed (401)** | Confirm the username/password and that the user exists (`rabbitmqctl list_users`). |
+| **Forbidden (403)** | The user lacks sufficient tags. Grant at least `monitoring`: `rabbitmqctl set_user_tags opensre_ro monitoring`. |
+| **SSL: CERTIFICATE_VERIFY_FAILED** | The server certificate is not trusted by the system CA bundle. Install the correct CA or set `RABBITMQ_VERIFY_SSL=false` in trusted networks. |
+| **Queues/consumers from other vhosts appear** | Check that `RABBITMQ_VHOST` is set correctly. Queue and consumer queries are scoped to this vhost. Connection stats are filtered client-side. |
+| **Empty consumer list** | Confirm consumers are connected to queues on the configured vhost. Check with `rabbitmqctl list_consumers -p /your-vhost`. |
+
+## Security best practices
+
+- Use a **dedicated `monitoring` user** — never the default `guest` account or an `administrator`-tagged user.
+- Always enable **TLS** when the Management API is exposed over the network.
+- Keep passwords out of source control — use `.env` or the persistent store.
+- Rotate credentials periodically.
+- The Management API is **read-only** from OpenSRE's perspective — no messages are published, consumed, or deleted.

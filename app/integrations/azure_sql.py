@@ -604,23 +604,3 @@ def get_wait_stats(config: AzureSQLConfig) -> dict[str, Any]:
     except Exception as err:  # noqa: BLE001
         logger.debug("Azure SQL get_wait_stats failed", exc_info=True)
         return {"source": "azure_sql", "available": False, "error": str(err)}
-
-
-def azure_sql_is_available(sources: dict[str, dict]) -> bool:
-    """Check if Azure SQL integration credentials are present."""
-    cfg = sources.get("azure_sql", {})
-    return bool(cfg.get("server") and cfg.get("database"))
-
-
-def azure_sql_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    """Extract Azure SQL credentials from resolved integrations."""
-    cfg = sources.get("azure_sql", {})
-    return {
-        "server": cfg.get("server", ""),
-        "database": cfg.get("database", ""),
-        "username": cfg.get("username", ""),
-        "password": cfg.get("password", ""),
-        "port": cfg.get("port", DEFAULT_AZURE_SQL_PORT),
-        "driver": cfg.get("driver", DEFAULT_AZURE_SQL_DRIVER),
-        "encrypt": cfg.get("encrypt", True),
-    }

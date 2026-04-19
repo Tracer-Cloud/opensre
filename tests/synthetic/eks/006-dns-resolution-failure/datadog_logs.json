@@ -1,0 +1,44 @@
+{
+  "logs": [
+    {
+      "timestamp": "2026-04-18T10:42:10Z",
+      "message": "Error: getaddrinfo ENOTFOUND postgres.production.svc.cluster.local at GetAddrInfoReqWrap.onlookup [as oncomplete] (node:dns:71:26)",
+      "status": "error",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-x7gr9",
+      "tags": ["env:prod", "service:payments-api", "kube_cluster:payments-prod-eks"]
+    },
+    {
+      "timestamp": "2026-04-18T10:42:35Z",
+      "message": "Error: getaddrinfo ENOTFOUND postgres.production.svc.cluster.local",
+      "status": "error",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-k2m4p",
+      "tags": ["env:prod", "service:payments-api", "kube_cluster:payments-prod-eks"]
+    },
+    {
+      "timestamp": "2026-04-18T10:43:01Z",
+      "message": "POST /api/v1/charge 500 14ms — DownstreamUnavailable: postgres lookup failed",
+      "status": "error",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-x7gr9",
+      "tags": ["env:prod", "service:payments-api"]
+    },
+    {
+      "timestamp": "2026-04-18T10:43:20Z",
+      "message": "dns: unable to resolve postgres.production.svc.cluster.local; retrying",
+      "status": "warn",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-9bvlq",
+      "tags": ["env:prod", "service:payments-api"]
+    },
+    {
+      "timestamp": "2026-04-18T10:44:10Z",
+      "message": "GET /api/v1/health 200 2ms",
+      "status": "info",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-x7gr9",
+      "tags": ["env:prod", "service:payments-api"]
+    }
+  ]
+}

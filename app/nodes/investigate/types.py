@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Any, TypedDict
 
 
 class PlanAudit(TypedDict, total=False):
@@ -13,6 +13,7 @@ class PlanAudit(TypedDict, total=False):
     planned_count: int
     rerouted: bool
     reroute_reason: str
+    inclusion_reasons: list[dict[str, Any]]
 
 
 class ExecutedHypothesis(TypedDict, total=False):

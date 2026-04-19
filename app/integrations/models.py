@@ -304,6 +304,30 @@ class MariaDBIntegrationConfig(StrictConfigModel):
         return str(value or "").strip()
 
 
+class RabbitMQIntegrationConfig(StrictConfigModel):
+    """Normalized RabbitMQ Management API credentials used by resolution and verification flows."""
+
+    host: str
+    management_port: int = 15672
+    username: str
+    password: str = ""
+    vhost: str = "/"
+    ssl: bool = False
+    verify_ssl: bool = True
+    integration_id: str = ""
+
+    @field_validator("host", "username", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("vhost", mode="before")
+    @classmethod
+    def _normalize_vhost(cls, value: object) -> str:
+        raw = str(value or "").strip()
+        return raw or "/"
+
+
 class MongoDBAtlasIntegrationConfig(StrictConfigModel):
     """Normalized MongoDB Atlas API credentials used by resolution and verification flows."""
 
@@ -462,11 +486,53 @@ class AlertmanagerIntegrationConfig(StrictConfigModel):
         return self
 
 
+class IntegrationInstance(StrictConfigModel):
+    """One named instance of a provider.
+
+    A single integration record (e.g. a ``grafana`` entry in the store) can
+    carry multiple named instances — for example, a ``prod`` and a
+    ``staging`` Grafana cluster. The name is normalized to lowercase and
+    tag keys are constrained to ``^[a-z][a-z0-9_-]*$``.
+    """
+
+    name: str = "default"
+    tags: dict[str, str] = Field(default_factory=dict)
+    credentials: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _normalize_name(cls, value: object) -> str:
+        text = str(value or "default").strip().lower()
+        return text or "default"
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _normalize_tags(cls, value: object) -> dict[str, str]:
+        if not isinstance(value, dict):
+            return {}
+        normalized: dict[str, str] = {}
+        for k, v in value.items():
+            key = str(k).strip().lower()
+            val = str(v).strip().lower()
+            if key and val and re.match(r"^[a-z][a-z0-9_-]*$", key):
+                normalized[key] = val
+        return normalized
+
+
 class EffectiveIntegrationEntry(StrictConfigModel):
-    """Resolved integration entry with source metadata."""
+    """Resolved integration entry with source metadata.
+
+    ``config`` is the flat default-instance view (backward compat). When
+    multiple instances are configured for the service, ``instances`` carries
+    them as ``[{name, tags, config, integration_id}, ...]`` — a pass-through
+    JSON shape (not the strict ``IntegrationInstance`` model) so the
+    catalog layer can enrich each with the already-classified flat config
+    without re-validating through Pydantic's forbidding config.
+    """
 
     source: str
     config: dict[str, Any]
+    instances: list[dict[str, Any]] | None = None
 
 
 class EffectiveIntegrations(StrictConfigModel):
@@ -484,6 +550,7 @@ class EffectiveIntegrations(StrictConfigModel):
     mongodb: EffectiveIntegrationEntry | None = None
     mongodb_atlas: EffectiveIntegrationEntry | None = None
     mariadb: EffectiveIntegrationEntry | None = None
+    rabbitmq: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
     gitlab: EffectiveIntegrationEntry | None = None
     vercel: EffectiveIntegrationEntry | None = None
@@ -501,4 +568,8 @@ class EffectiveIntegrations(StrictConfigModel):
     discord: EffectiveIntegrationEntry | None = None
     openclaw: EffectiveIntegrationEntry | None = None
     mysql: EffectiveIntegrationEntry | None = None
+    snowflake: EffectiveIntegrationEntry | None = None
+    azure: EffectiveIntegrationEntry | None = None
+    openobserve: EffectiveIntegrationEntry | None = None
+    opensearch: EffectiveIntegrationEntry | None = None
     alertmanager: EffectiveIntegrationEntry | None = None

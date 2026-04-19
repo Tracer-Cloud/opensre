@@ -107,15 +107,6 @@ def _extract_runtime_log_message(log: dict[str, Any]) -> str:
     return ""
 
 
-def _parse_runtime_logs_payload(payload: Any) -> list[dict[str, Any]]:
-    if isinstance(payload, list):
-        return [item for item in payload if isinstance(item, dict)]
-    if isinstance(payload, dict):
-        logs = payload.get("logs", [])
-        return [item for item in logs if isinstance(item, dict)] if isinstance(logs, list) else []
-    return []
-
-
 def _append_parsed_runtime_stream_value(
     parsed: Any,
     bucket: list[dict[str, Any]],
