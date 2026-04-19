@@ -11,7 +11,7 @@
           "name": "payments-api",
           "ready": true,
           "restart_count": 1,
-          "state": {"running": true, "started_at": "2026-04-18T09:45:00Z"}
+          "state": {"running": true, "started_at": "2026-04-18T09:25:00Z"}
         }
       ],
       "conditions": [
