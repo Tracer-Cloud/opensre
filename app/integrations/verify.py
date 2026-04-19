@@ -366,7 +366,26 @@ def _verify_ms_teams(
     try:
         response = httpx.post(
             webhook_url,
-            json={"text": "Tracer Flow B connectivity test from local CLI (MS Teams)."},
+            json={
+                "type": "message",
+                "attachments": [
+                    {
+                        "contentType": "application/vnd.microsoft.card.adaptive",
+                        "content": {
+                            "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                            "type": "AdaptiveCard",
+                            "version": "1.2",
+                            "body": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": "Tracer connectivity test from local CLI (MS Teams).",
+                                    "wrap": True,
+                                }
+                            ],
+                        },
+                    }
+                ],
+            },
             timeout=10.0,
         )
         response.raise_for_status()

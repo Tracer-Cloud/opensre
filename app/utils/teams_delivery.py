@@ -45,11 +45,25 @@ def _post_via_ms_teams_webhook(
     webhook_url: str,
     **extra: Any,
 ) -> bool:
-    """Post a standalone RCA report via Microsoft Teams incoming webhook."""
-    # Standard Incoming Webhook (Legacy) schema
-    # Newer Teams "Workflows" webhooks also typically support "text" top-level.
-    payload: dict[str, Any] = {"text": text}
+    # Modern Teams Workflows require an Adaptive Card payload.
+    # Legacy 'text' payloads are being retired.
+    payload: dict[str, Any] = {
+        "type": "message",
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.2",
+                    "body": [{"type": "TextBlock", "text": text, "wrap": True}],
+                },
+            }
+        ],
+    }
     if extra:
+        # For Workflows, extra fields are typically ignored or must be mapped
+        # into the body, but we keep the update for compatibility.
         payload.update(extra)
 
     try:
