@@ -9,23 +9,17 @@ Choose your platform:
 
 **macOS (Homebrew)**
 
-bash
-
 ```text
 brew install Tracer-Cloud/opensre/opensre
 ```
 
 **Linux / macOS (curl)**
 
-bash
-
 ```text
 curl -fsSL https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.sh | bash
 ```
 
 **Windows (PowerShell)**
-
-powershell
 
 ```text
 irm https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.ps1 | iex
@@ -37,8 +31,6 @@ irm https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.ps1 | ie
 
 Run the onboarding wizard to configure your LLM provider and connect your integrations (Grafana, Datadog, Honeycomb, Coralogix, Slack, AWS, GitHub MCP, Sentry):
 
-bash
-
 ```text
 opensre onboard
 ```
@@ -49,8 +41,6 @@ opensre onboard
 
 Trigger an investigation by passing in an alert file:
 
-bash
-
 ```text
 opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 ```
@@ -60,8 +50,6 @@ OpenSRE will automatically fetch alert context, reason across your connected sys
 ---
 
 ### Keep Up to Date
-
-bash
 
 ```text
 opensre update
