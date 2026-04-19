@@ -79,7 +79,7 @@ def test_resolve_effective_integrations_includes_honeycomb_and_coralogix_env(
 def test_resolve_effective_integrations_skips_snowflake_without_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("app.integrations.verify.load_integrations", lambda: [])
+    monkeypatch.setattr("app.integrations.catalog.load_integrations", lambda: [])
     monkeypatch.setenv("SNOWFLAKE_ACCOUNT_IDENTIFIER", "env-account")
     monkeypatch.delenv("SNOWFLAKE_TOKEN", raising=False)
     monkeypatch.setenv("SNOWFLAKE_USER", "service-user")

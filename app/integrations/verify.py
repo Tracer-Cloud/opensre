@@ -32,9 +32,6 @@ from app.integrations.mysql import build_mysql_config, validate_mysql_config
 from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
 from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
-from app.integrations.store import (
-    load_integrations,  # noqa: F401  re-exported for tests/monkeypatch
-)
 from app.services.alertmanager import AlertmanagerClient, AlertmanagerConfig
 from app.services.coralogix import CoralogixClient
 from app.services.datadog.client import DatadogClient, DatadogConfig
