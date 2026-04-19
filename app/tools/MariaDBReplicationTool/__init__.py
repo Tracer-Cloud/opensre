@@ -21,8 +21,8 @@ from app.tools.tool_decorator import tool
 )
 def get_mariadb_replication_status(
     host: str,
-    database: str = "mysql",
     username: str,
+    database: str = "mysql",
     password: str = "",
     port: int = 3306,
     ssl: bool = True,
