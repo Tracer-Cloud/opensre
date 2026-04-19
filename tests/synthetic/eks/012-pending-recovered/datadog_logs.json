@@ -1,0 +1,28 @@
+{
+  "logs": [
+    {
+      "timestamp": "2026-04-18T10:26:00Z",
+      "message": "[cluster-autoscaler] Triggered scale-up of node group eks-payments-prod-nodegroup-default from 2 to 3 (resolving Pending pod payments-api-7f9dd8b6c4-late1)",
+      "status": "info",
+      "service": "cluster-autoscaler",
+      "host": "payments-prod-eks-control-plane",
+      "tags": ["kube_cluster:payments-prod-eks"]
+    },
+    {
+      "timestamp": "2026-04-18T10:28:25Z",
+      "message": "[scheduler] Successfully assigned payments/payments-api-7f9dd8b6c4-late1 to ip-10-0-1-99.us-east-1.compute.internal (Pending state resolved)",
+      "status": "info",
+      "service": "scheduler",
+      "host": "payments-prod-eks-control-plane",
+      "tags": ["kube_pod:payments-api-7f9dd8b6c4-late1"]
+    },
+    {
+      "timestamp": "2026-04-18T10:30:00Z",
+      "message": "[payments-api] startup complete, listening on :8080 — handled by payments-api-7f9dd8b6c4-late1",
+      "status": "info",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-late1",
+      "tags": ["env:prod", "service:payments-api"]
+    }
+  ]
+}

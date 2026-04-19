@@ -1,0 +1,26 @@
+{
+  "title": "[synthetic-k8s] Multiple warning events — payments-prod-eks",
+  "state": "alerting",
+  "alert_source": "datadog",
+  "commonLabels": {
+    "alertname": "KubernetesWarningEventBurst",
+    "severity": "critical",
+    "pipeline_name": "k8s-eks-synthetic",
+    "service": "payments-api",
+    "cluster_name": "payments-prod-eks",
+    "namespace": "payments",
+    "workload_type": "deployment",
+    "workload_name": "payments-api"
+  },
+  "commonAnnotations": {
+    "summary": "Multiple Kubernetes warning events fired in the last 30 minutes (NodeNotReady, BackOff, Unhealthy).",
+    "description": "Datadog burst detector flagged a sudden cluster of warning events in the payments namespace.",
+    "error": "",
+    "suspected_symptom": "Possible major cluster incident.",
+    "cluster_name": "payments-prod-eks",
+    "kube_namespace": "payments",
+    "kube_deployment": "payments-api",
+    "k8s_failure_mode": "node_not_ready",
+    "context_sources": "eks,datadog"
+  }
+}

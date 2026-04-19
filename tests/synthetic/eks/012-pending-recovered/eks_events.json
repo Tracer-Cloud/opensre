@@ -1,0 +1,34 @@
+{
+  "warning_events": [
+    {
+      "namespace": "payments",
+      "reason": "FailedScheduling",
+      "message": "0/2 nodes are available: 2 Insufficient cpu",
+      "type": "Warning",
+      "count": 1,
+      "involved_object": "Pod/payments-api-7f9dd8b6c4-late1",
+      "first_time": "2026-04-18T10:25:10Z",
+      "last_time": "2026-04-18T10:25:10Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "TriggeredScaleUp",
+      "message": "pod triggered cluster-autoscaler scale-up: [{eks-payments-prod-nodegroup-default 2->3 (max: 5)}]",
+      "type": "Normal",
+      "count": 1,
+      "involved_object": "Pod/payments-api-7f9dd8b6c4-late1",
+      "first_time": "2026-04-18T10:26:00Z",
+      "last_time": "2026-04-18T10:26:00Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "Scheduled",
+      "message": "Successfully assigned payments/payments-api-7f9dd8b6c4-late1 to ip-10-0-1-99.us-east-1.compute.internal",
+      "type": "Normal",
+      "count": 1,
+      "involved_object": "Pod/payments-api-7f9dd8b6c4-late1",
+      "first_time": "2026-04-18T10:28:25Z",
+      "last_time": "2026-04-18T10:28:25Z"
+    }
+  ]
+}

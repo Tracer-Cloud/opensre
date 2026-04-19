@@ -1,0 +1,34 @@
+{
+  "warning_events": [
+    {
+      "namespace": "payments",
+      "reason": "ProgressDeadlineExceeded",
+      "message": "Deployment payments-api ReplicaSet payments-api-newrs-7c exceeded its progress deadline",
+      "type": "Warning",
+      "count": 1,
+      "involved_object": "Deployment/payments-api",
+      "first_time": "2026-04-18T10:40:00Z",
+      "last_time": "2026-04-18T10:40:00Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "DeploymentRollback",
+      "message": "Rolled back deployment payments-api to revision N-1 (payments-api-7f9dd8b6c4) after progress deadline exceeded",
+      "type": "Normal",
+      "count": 1,
+      "involved_object": "Deployment/payments-api",
+      "first_time": "2026-04-18T10:42:00Z",
+      "last_time": "2026-04-18T10:42:00Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "ScalingReplicaSet",
+      "message": "Scaled down replica set payments-api-newrs-7c to 0 from 3 (rollback complete)",
+      "type": "Normal",
+      "count": 1,
+      "involved_object": "Deployment/payments-api",
+      "first_time": "2026-04-18T10:43:00Z",
+      "last_time": "2026-04-18T10:43:00Z"
+    }
+  ]
+}
