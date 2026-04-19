@@ -24,9 +24,11 @@ EvidenceSource = Literal[
     "mariadb",
     "kafka",
     "clickhouse",
+    "azure_sql",
     "google_docs",
     "vercel",
     "opsgenie",
+    "jira",
     "elasticsearch",
     "prefect",
     "gitlab",
@@ -34,4 +36,5 @@ EvidenceSource = Literal[
     "openclaw",
     "mysql",
     "rabbitmq",
+    "alertmanager",
 ]

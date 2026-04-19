@@ -1,0 +1,28 @@
+{
+  "monitors": [
+    {
+      "name": "[payments] API Latency p95",
+      "type": "metric alert",
+      "query": "avg(last_5m):p95:trace.http.request.duration{service:payments-api} > 0.5",
+      "message": "payments-api p95 latency is elevated. Investigate downstream database and cache.",
+      "overall_state": "OK",
+      "tags": [
+        "env:prod",
+        "service:payments-api",
+        "managed_by:platform"
+      ]
+    },
+    {
+      "name": "[payments] API Error Rate",
+      "type": "metric alert",
+      "query": "sum(last_5m):sum:trace.http.request.errors{service:payments-api}.as_count() / sum:trace.http.request.hits{service:payments-api}.as_count() > 0.02",
+      "message": "payments-api error rate exceeded 2%. Check recent deploys and error logs.",
+      "overall_state": "OK",
+      "tags": [
+        "env:prod",
+        "service:payments-api",
+        "managed_by:platform"
+      ]
+    }
+  ]
+}

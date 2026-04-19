@@ -229,6 +229,30 @@ class PostgreSQLIntegrationConfig(StrictConfigModel):
         return normalized or "prefer"
 
 
+class AzureSQLIntegrationConfig(StrictConfigModel):
+    """Normalized Azure SQL Database credentials used by resolution and verification flows."""
+
+    server: str
+    port: int = 1433
+    database: str
+    username: str = ""
+    password: str = ""
+    driver: str = "ODBC Driver 18 for SQL Server"
+    encrypt: bool = True
+    integration_id: str = ""
+
+    @field_validator("server", "database", "username", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("driver", mode="before")
+    @classmethod
+    def _normalize_driver(cls, value: object) -> str:
+        normalized = str(value or "ODBC Driver 18 for SQL Server").strip()
+        return normalized or "ODBC Driver 18 for SQL Server"
+
+
 class MySQLIntegrationConfig(StrictConfigModel):
     """Normalized MySQL credentials used by resolution and verification flows."""
 
@@ -405,36 +429,110 @@ class PrefectIntegrationConfig(StrictConfigModel):
     def _normalize_str(cls, value: object) -> str:
         return str(value or "").strip()
 
+
 class DiscordBotConfig(StrictConfigModel):
     """Discord runtime config."""
 
-    bot_token: str          # Bot token for API calls
+    bot_token: str  # Bot token for API calls
     application_id: str = ""  # For slash command registration (required for inbound only)
-    public_key: str = ""      # For signature verification (required for inbound only)
+    public_key: str = ""  # For signature verification (required for inbound only)
     default_channel_id: str | None = None  # Fallback for CLI-triggered findings
 
-    @field_validator("bot_token")
+    @field_validator("bot_token", mode="before")
     @classmethod
-    def _validate_bot_token(cls, v: str) -> str:
-        if not v.strip():
+    def _validate_bot_token(cls, v: object) -> str:
+        stripped = str(v or "").strip()
+        if not stripped:
             raise ValueError("bot_token cannot be empty or just whitespace")
-        return v
+        return stripped
 
-    @field_validator("public_key")
+    @field_validator("public_key", mode="before")
     @classmethod
-    def _validate_public_key(cls, v: str) -> str:
-        if not v.strip():
-            return v  # optional — only needed for inbound interactions endpoint
-        if not re.fullmatch(r"[0-9a-fA-F]+", v):
+    def _validate_public_key(cls, v: object) -> str:
+        stripped = str(v or "").strip()
+        if not stripped:
+            return stripped  # optional — only needed for inbound interactions endpoint
+        if not re.fullmatch(r"[0-9a-fA-F]+", stripped):
             raise ValueError("public_key must be a valid hexadecimal string")
-        return v
+        return stripped
+
+
+class AlertmanagerIntegrationConfig(StrictConfigModel):
+    """Normalized Alertmanager credentials used by resolution and verification flows."""
+
+    base_url: str
+    bearer_token: str = ""
+    username: str = ""
+    password: str = ""
+    integration_id: str = ""
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: object) -> str:
+        return str(value or "").strip().rstrip("/")
+
+    @field_validator("bearer_token", "username", "password", mode="before")
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @model_validator(mode="after")
+    def _no_dual_auth(self) -> AlertmanagerIntegrationConfig:
+        if self.bearer_token and self.username:
+            raise ValueError(
+                "Alertmanager config has both bearer_token and username set; "
+                "use one auth method only."
+            )
+        return self
+
+
+class IntegrationInstance(StrictConfigModel):
+    """One named instance of a provider.
+
+    A single integration record (e.g. a ``grafana`` entry in the store) can
+    carry multiple named instances — for example, a ``prod`` and a
+    ``staging`` Grafana cluster. The name is normalized to lowercase and
+    tag keys are constrained to ``^[a-z][a-z0-9_-]*$``.
+    """
+
+    name: str = "default"
+    tags: dict[str, str] = Field(default_factory=dict)
+    credentials: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _normalize_name(cls, value: object) -> str:
+        text = str(value or "default").strip().lower()
+        return text or "default"
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _normalize_tags(cls, value: object) -> dict[str, str]:
+        if not isinstance(value, dict):
+            return {}
+        normalized: dict[str, str] = {}
+        for k, v in value.items():
+            key = str(k).strip().lower()
+            val = str(v).strip().lower()
+            if key and val and re.match(r"^[a-z][a-z0-9_-]*$", key):
+                normalized[key] = val
+        return normalized
 
 
 class EffectiveIntegrationEntry(StrictConfigModel):
-    """Resolved integration entry with source metadata."""
+    """Resolved integration entry with source metadata.
+
+    ``config`` is the flat default-instance view (backward compat). When
+    multiple instances are configured for the service, ``instances`` carries
+    them as ``[{name, tags, config, integration_id}, ...]`` — a pass-through
+    JSON shape (not the strict ``IntegrationInstance`` model) so the
+    catalog layer can enrich each with the already-classified flat config
+    without re-validating through Pydantic's forbidding config.
+    """
 
     source: str
     config: dict[str, Any]
+    instances: list[dict[str, Any]] | None = None
 
 
 class EffectiveIntegrations(StrictConfigModel):
@@ -464,8 +562,10 @@ class EffectiveIntegrations(StrictConfigModel):
     kafka: EffectiveIntegrationEntry | None = None
     clickhouse: EffectiveIntegrationEntry | None = None
     postgresql: EffectiveIntegrationEntry | None = None
+    azure_sql: EffectiveIntegrationEntry | None = None
     bitbucket: EffectiveIntegrationEntry | None = None
     trello: EffectiveIntegrationEntry | None = None
     discord: EffectiveIntegrationEntry | None = None
     openclaw: EffectiveIntegrationEntry | None = None
     mysql: EffectiveIntegrationEntry | None = None
+    alertmanager: EffectiveIntegrationEntry | None = None

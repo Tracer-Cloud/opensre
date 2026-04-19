@@ -1,0 +1,126 @@
+---
+title: "Alertmanager"
+description: "Connect Alertmanager so OpenSRE can surface firing alerts and active silences during investigations"
+---
+
+OpenSRE queries Alertmanager to retrieve firing, silenced, and inhibited alerts — correlating the triggering alert with concurrent signals to narrow root-cause hypotheses faster.
+
+## Prerequisites
+
+- Alertmanager v0.20+ reachable from the machine running OpenSRE
+- The Alertmanager URL (e.g. `http://alertmanager.monitoring.svc:9093`)
+- Credentials if your instance sits behind authentication (bearer token or basic auth)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup alertmanager
+```
+
+The wizard will ask for:
+
+1. **Alertmanager URL** — the base URL of your Alertmanager instance
+2. **Authentication method** — choose one of:
+   - **None** — for unauthenticated instances on an internal network
+   - **Bearer token** — for instances behind a reverse proxy that accepts a token
+   - **Basic auth** — username and password
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+ALERTMANAGER_URL=http://alertmanager.monitoring.svc:9093
+
+# Bearer token auth (optional)
+ALERTMANAGER_BEARER_TOKEN=your-token
+
+# Basic auth (optional — use instead of bearer token)
+ALERTMANAGER_USERNAME=admin
+ALERTMANAGER_PASSWORD=secret
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ALERTMANAGER_URL` | — | **Required.** Base URL of your Alertmanager instance |
+| `ALERTMANAGER_BEARER_TOKEN` | — | Bearer token for reverse-proxy auth |
+| `ALERTMANAGER_USERNAME` | — | Basic auth username |
+| `ALERTMANAGER_PASSWORD` | — | Basic auth password |
+
+Only one auth method is used at a time. If `ALERTMANAGER_BEARER_TOKEN` is set it takes precedence over basic auth.
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "alertmanager-prod",
+      "service": "alertmanager",
+      "status": "active",
+      "credentials": {
+        "base_url": "http://alertmanager.monitoring.svc:9093",
+        "bearer_token": "",
+        "username": "",
+        "password": ""
+      }
+    }
+  ]
+}
+```
+
+## Verify
+
+```bash
+opensre integrations verify alertmanager
+```
+
+Expected output:
+
+```
+Service: alertmanager
+Status:  passed
+Detail:  Connected to Alertmanager at http://alertmanager.monitoring.svc:9093; cluster status: ready.
+```
+
+## How it works in investigations
+
+When an Alertmanager integration is configured, OpenSRE automatically includes it as an evidence source during every investigation. Two tools become available to the investigation agent:
+
+### `alertmanager_alerts`
+
+Queries `/api/v2/alerts` for firing, silenced, and inhibited alerts. The agent uses this to:
+
+- Discover other alerts firing at the same time as the triggering alert
+- Check whether the triggering alert is already silenced or inhibited
+- Understand the blast radius of an infrastructure change by inspecting active alert labels
+- Correlate Prometheus alerts (OOM, latency spikes, error-rate increases) into a single timeline
+
+The `alertname` label from the incoming alert is automatically used as a filter so results are scoped to the incident under investigation by default.
+
+### `alertmanager_silences`
+
+Queries `/api/v2/silences` for active silences. The agent uses this to:
+
+- Determine whether a known noisy alert has been silenced intentionally
+- Surface maintenance windows that overlap with the incident timeline
+- Avoid false root-cause conclusions caused by suppressed alerts
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Status: missing** | Set `ALERTMANAGER_URL` or run `opensre integrations setup alertmanager` |
+| **Connection refused** | Verify the URL is reachable from this host; check firewall rules |
+| **401 Unauthorized** | Supply a bearer token or basic auth credentials |
+| **SSL error** | Ensure the CA cert is trusted, or use an `http://` URL for internal instances |
+| **Empty alert list** | Normal when no alerts are firing — check Alertmanager UI directly to confirm |
+
+## Security best practices
+
+- Use a **read-only** reverse-proxy token when possible — OpenSRE only reads alerts and silences and never writes to Alertmanager during investigations.
+- Store credentials in `.env`, not in source code.
+- For internal Kubernetes deployments, prefer no auth over exposing credentials — restrict access at the network level instead.

@@ -1,0 +1,24 @@
+{
+  "warning_events": [
+    {
+      "namespace": "payments",
+      "reason": "BackOff",
+      "message": "Back-off restarting failed container payments-api in pod payments-api-7f9dd8b6c4-x7gr9_payments (reason: OOMKilled, exit code: 137)",
+      "type": "Warning",
+      "count": 8,
+      "involved_object": "Pod/payments-api-7f9dd8b6c4-x7gr9",
+      "first_time": "2026-04-18T10:05:00Z",
+      "last_time": "2026-04-18T10:45:00Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "FailedMount",
+      "message": "MountVolume.SetUp failed for volume \"kube-api-access-xxxx\" : transient issue, retried successfully",
+      "type": "Warning",
+      "count": 1,
+      "involved_object": "Pod/payments-api-7f9dd8b6c4-x7gr9",
+      "first_time": "2026-04-13T14:01:30Z",
+      "last_time": "2026-04-13T14:01:35Z"
+    }
+  ]
+}

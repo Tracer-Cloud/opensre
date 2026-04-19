@@ -98,6 +98,9 @@ clickhouse = [
 postgresql = [
     "psycopg2-binary>=2.9.0,<3.0.0",
 ]
+azure_sql = [
+    "pyodbc>=5.1.0,<6.0.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*", "tests*"]

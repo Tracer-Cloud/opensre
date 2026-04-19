@@ -104,6 +104,10 @@ test-synthetic:
 test-rds-synthetic:
 	$(PYTHON) -m tests.synthetic.rds_postgres.run_suite $(if $(SCENARIO),--scenario $(SCENARIO),)
 
+# Run synthetic Kubernetes RCA benchmark suite via the CLI runner (supports --json, --scenario, --mock-backends)
+test-k8s-synthetic:
+	$(PYTHON) -m tests.synthetic.eks.run_suite $(if $(SCENARIO),--scenario $(SCENARIO),)
+
 # Boot local Grafana+Loki, seed deterministic test logs, then run the RCA pipeline
 # Requires GRAFANA_INSTANCE_URL + GRAFANA_READ_TOKEN in .env (see .env.example for local defaults)
 test-rca-grafana: grafana-local-up grafana-local-seed

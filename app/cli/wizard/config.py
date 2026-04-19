@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app.config import (
     ANTHROPIC_REASONING_MODEL,
+    DEFAULT_OLLAMA_HOST,
     DEFAULT_OLLAMA_MODEL,
     GEMINI_REASONING_MODEL,
     NVIDIA_REASONING_MODEL,
@@ -40,6 +41,16 @@ class ProviderOption:
     models: tuple[ModelOption, ...]
     #: If set, ``sync_provider_env`` also writes this key (same value) for legacy .env files.
     legacy_model_env: str | None = None
+    #: Human-readable name for the credential requested during onboarding. Most
+    #: providers want an API key; Ollama wants a host URL. Used as the wizard
+    #: prompt label, e.g. ``{label} {credential_label} ({api_key_env})``.
+    credential_label: str = "API key"
+    #: Whether the credential should be prompted as a secret (hidden input).
+    #: API keys are secrets; a local Ollama host URL is not.
+    credential_secret: bool = True
+    #: Optional hint shown as the default value in the prompt (e.g. the
+    #: default Ollama host URL). Empty string means no default.
+    credential_default: str = ""
 
 
 ANTHROPIC_MODELS = (
@@ -156,6 +167,9 @@ SUPPORTED_PROVIDERS = (
         model_env="OLLAMA_MODEL",
         default_model=DEFAULT_OLLAMA_MODEL,
         models=OLLAMA_MODELS,
+        credential_label="host URL",
+        credential_secret=False,
+        credential_default=DEFAULT_OLLAMA_HOST,
     ),
 )
 

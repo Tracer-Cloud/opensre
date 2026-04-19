@@ -16,6 +16,7 @@ class TestGrafanaTracesToolContract(BaseToolContract):
 def test_is_available_requires_grafana_creds() -> None:
     rt = query_grafana_traces.__opensre_registered_tool__
     assert rt.is_available({"grafana": {"connection_verified": True}}) is True
+    assert rt.is_available({"grafana": {"_backend": MagicMock()}}) is True
     assert rt.is_available({"grafana": {}}) is False
     assert rt.is_available({}) is False
 
@@ -63,6 +64,30 @@ def test_run_happy_path() -> None:
     assert result["available"] is True
     assert result["total_traces"] == 1
     assert len(result["pipeline_spans"]) == 1
+
+
+def test_run_with_injected_backend() -> None:
+    backend = MagicMock()
+    backend.query_traces.return_value = {
+        "traces": [
+            {"traceId": "t1", "spans": [{"name": "extract_data", "attributes": {}}]},
+        ],
+    }
+    result = query_grafana_traces(service_name="svc", grafana_backend=backend)
+    assert result["available"] is True
+    assert result["source"] == "grafana_tempo"
+    assert result["total_traces"] == 1
+    assert len(result["pipeline_spans"]) == 1
+    backend.query_traces.assert_called_once_with(service_name="svc")
+
+
+def test_run_with_injected_backend_empty_traces() -> None:
+    backend = MagicMock()
+    backend.query_traces.return_value = {"traces": [], "metrics": {}}
+    result = query_grafana_traces(service_name="svc", grafana_backend=backend)
+    assert result["available"] is True
+    assert result["traces"] == []
+    assert result["total_traces"] == 0
 
 
 def test_run_filters_by_execution_run_id() -> None:
