@@ -1,0 +1,8 @@
+base: 000-healthy
+scenario_id: 005-resource-quota-exceeded
+failure_mode: resource_quota_exceeded
+severity: warning
+scenario_difficulty: 2
+adversarial_signals:
+  - no_pod_level_errors
+  - scaling_blocked_at_replicaset_level

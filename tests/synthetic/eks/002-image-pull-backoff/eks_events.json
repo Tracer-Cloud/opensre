@@ -1,0 +1,34 @@
+{
+  "warning_events": [
+    {
+      "namespace": "payments",
+      "reason": "Failed",
+      "message": "Failed to pull image \"payments:v2.1.0-bad\": rpc error: code = NotFound desc = failed to pull and unpack image \"docker.io/payments/payments:v2.1.0-bad\": failed to resolve reference \"docker.io/payments/payments:v2.1.0-bad\": docker.io/payments/payments:v2.1.0-bad: not found: manifest unknown",
+      "type": "Warning",
+      "count": 7,
+      "involved_object": "Pod/payments-api-9c1d2e3f4-2hk8w",
+      "first_time": "2026-04-18T10:30:30Z",
+      "last_time": "2026-04-18T10:45:00Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "Failed",
+      "message": "Failed to pull image \"payments:v2.1.0-bad\": manifest unknown",
+      "type": "Warning",
+      "count": 7,
+      "involved_object": "Pod/payments-api-9c1d2e3f4-pm44r",
+      "first_time": "2026-04-18T10:30:35Z",
+      "last_time": "2026-04-18T10:45:00Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "BackOff",
+      "message": "Back-off pulling image \"payments:v2.1.0-bad\"",
+      "type": "Warning",
+      "count": 14,
+      "involved_object": "Pod/payments-api-9c1d2e3f4-2hk8w",
+      "first_time": "2026-04-18T10:31:00Z",
+      "last_time": "2026-04-18T10:45:00Z"
+    }
+  ]
+}

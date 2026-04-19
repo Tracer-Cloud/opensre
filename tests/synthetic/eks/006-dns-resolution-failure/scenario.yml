@@ -1,0 +1,10 @@
+base: 000-healthy
+scenario_id: 006-dns-resolution-failure
+failure_mode: dns_resolution_failure
+severity: critical
+scenario_difficulty: 3
+adversarial_signals:
+  - pods_fully_healthy
+  - restart_count_zero
+  - node_state_normal
+  - application_level_symptom_only

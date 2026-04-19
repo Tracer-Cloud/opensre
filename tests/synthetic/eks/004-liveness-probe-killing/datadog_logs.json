@@ -1,0 +1,36 @@
+{
+  "logs": [
+    {
+      "timestamp": "2026-04-18T10:44:25Z",
+      "message": "POST /api/v1/charge 200 74ms — handled by payments-api-7f9dd8b6c4-liv1k",
+      "status": "info",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-liv1k",
+      "tags": ["env:prod", "service:payments-api"]
+    },
+    {
+      "timestamp": "2026-04-18T10:44:32Z",
+      "message": "POST /api/v1/charge 200 68ms — handled by payments-api-7f9dd8b6c4-liv1k",
+      "status": "info",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-liv1k",
+      "tags": ["env:prod", "service:payments-api"]
+    },
+    {
+      "timestamp": "2026-04-18T10:44:55Z",
+      "message": "GET /metrics 200 4ms",
+      "status": "info",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-liv1k",
+      "tags": ["env:prod", "service:payments-api"]
+    },
+    {
+      "timestamp": "2026-04-18T10:45:00Z",
+      "message": "received SIGTERM, initiating graceful shutdown — process exiting cleanly with code 0",
+      "status": "warn",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-liv1k",
+      "tags": ["env:prod", "service:payments-api"]
+    }
+  ]
+}

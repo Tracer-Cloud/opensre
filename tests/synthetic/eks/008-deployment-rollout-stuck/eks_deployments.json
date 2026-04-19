@@ -1,0 +1,12 @@
+{
+  "deployments": [
+    {
+      "name": "payments-api",
+      "namespace": "payments",
+      "desired": 3,
+      "ready": 0,
+      "available": 0,
+      "unavailable": 3
+    }
+  ]
+}
