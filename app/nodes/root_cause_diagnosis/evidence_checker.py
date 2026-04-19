@@ -84,6 +84,11 @@ def check_evidence_availability(
         or evidence.get("eks_deployments") is not None
         or evidence.get("eks_pod_logs") is not None
         or evidence.get("eks_deployment_status") is not None
+        or evidence.get("alertmanager_alerts") is not None
+        or evidence.get("alertmanager_silences") is not None
+        or evidence.get("coralogix_logs") is not None
+        or evidence.get("coralogix_error_logs") is not None
+        or evidence.get("honeycomb_traces") is not None
     )
 
     # Check for evidence in alert annotations or raw text
