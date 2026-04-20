@@ -227,8 +227,55 @@ Available Investigation Actions:
 
 Executed Actions: {", ".join(executed_actions) if executed_actions else "None"}
 
+Previously executed actions should be treated as already explored evidence paths unless there is a clear reason they may now yield new discriminating evidence.
+
 Task: Select the most relevant actions to execute now based on the problem context.
-Consider what information would help diagnose the root cause.
+
+Plan for discrimination, not coverage.
+
+Your goal is to choose the smallest set of actions that will best distinguish between competing root-cause hypotheses and improve final RCA quality.
+Prefer the minimum number of actions needed to make the next diagnosis materially more reliable.
+
+Planning rules:
+1. Form 2-4 plausible root-cause hypotheses from the current evidence.
+2. Prioritize actions that can confirm one hypothesis while ruling out alternatives.
+3. Prefer discriminating evidence over redundant background context.
+4. Avoid actions that are unlikely to change the hypothesis ranking.
+5. Do not repeat the same investigative direction unless it is likely to produce new, decision-changing evidence.
+6. If a source or integration appears unavailable or an action has already failed, treat it as exhausted and do not retry it.
+   Only retry if you can explicitly justify why it would now succeed or produce different evidence.
+7. Prefer actions with high information gain: evidence that can eliminate multiple alternatives at once.
+8. Use the currently available sources and action metadata to choose concrete next steps, while staying compatible with the listed actions only.
+9. For connection and CPU incidents, prioritize evidence that distinguishes between:
+   - idle connections (must be explicitly considered if connection counts are high)
+   - slow or expensive queries
+   - genuine traffic spikes
+   - secondary symptoms caused by another bottleneck
+   Do not stop at identifying resource pressure alone; prefer actions that clarify the mechanism creating that pressure.
+10. For database resource incidents, explicitly consider:
+   - idle or long-lived connections
+   - slow or blocking queries
+   - background processes (e.g. WAL, vacuum, audit_log (audit logging))
+   - storage growth sources such as audit_log or excessive logging
+   Prefer actions that reveal these mechanisms when relevant signals (CPU, connections, storage) are elevated.
+
+When selecting actions, optimize for:
+- ruling out competing explanations
+- resolving ambiguous or mixed signals
+- reducing uncertainty efficiently under limited tool budget
+- improving the quality and evidence-grounding of the final RCA
+- identifying the mechanism behind the leading symptom, not just the symptom itself
+
+Additionally:
+- When connection counts are high, explicitly evaluate whether idle connections are contributing to the issue and include this explicitly in your reasoning if relevant.
+- When storage pressure is observed, explicitly consider audit_log as a potential contributing factor and include it explicitly if relevant.
+
+Avoid:
+- collecting general context that does not help separate hypotheses
+- repeating already-covered evidence categories without a clear reason
+- chasing red herrings when another action would more directly test the leading alternatives
+
+Return a tight investigation plan with only the most useful next actions.
 """
     return prompt
 
