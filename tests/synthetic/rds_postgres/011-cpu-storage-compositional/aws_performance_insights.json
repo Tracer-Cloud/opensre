@@ -27,13 +27,22 @@
       "calls_per_sec": 2.4
     },
     {
-      "statement": "INSERT INTO audit_log (event_type, payload, created_at) VALUES ($1, $2, NOW())",
+      "statement": "INSERT INTO public.audit_log (event_type, payload, created_at) VALUES ($1, $2, NOW()) -- audit_log table bulk writer dominating storage growth",
       "db_load_avg": 5.1,
       "wait_events": [
         {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 3.8},
         {"name": "Lock:relation", "type": "Lock", "db_load_avg": 1.3}
       ],
       "calls_per_sec": 847.3
+    },
+    {
+      "statement": "COPY public.audit_log (event_type, payload, created_at) FROM STDIN -- bulk audit_log ingestion batch (7.4 GB/min)",
+      "db_load_avg": 1.6,
+      "wait_events": [
+        {"name": "IO:DataFileWrite", "type": "IO", "db_load_avg": 1.2},
+        {"name": "IO:WALSync", "type": "IO", "db_load_avg": 0.3}
+      ],
+      "calls_per_sec": 2.1
     },
     {
       "statement": "SELECT * FROM orders WHERE created_at > $1 AND status = $2",
