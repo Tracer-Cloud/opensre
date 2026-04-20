@@ -30,8 +30,12 @@ def get_mariadb_slow_queries(
 ) -> dict[str, Any]:
     """Fetch slow queries from performance_schema."""
     config = MariaDBConfig(
-        host=host, port=port, database=database,
-        username=username, password=password, ssl=ssl,
+        host=host,
+        port=port,
+        database=database,
+        username=username,
+        password=password,
+        ssl=ssl,
         max_results=max_results,
     )
     return get_slow_queries(config)

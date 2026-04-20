@@ -246,18 +246,31 @@ def _map_coralogix_logs(data: dict) -> dict:
     }
 
 
+def _map_betterstack_logs(data: dict) -> dict:
+    return {
+        "betterstack_logs": data.get("rows", []),
+        "betterstack_source": data.get("betterstack_source", ""),
+        "betterstack_logs_count": data.get("row_count", 0),
+        "betterstack_logs_limit": data.get("limit", 0),
+    }
+
+
 def _map_diagnostic_code_result(data: dict, current_evidence: dict) -> dict:
     executions = list(current_evidence.get("diagnostic_executions", []))
-    executions.append({
-        "code": data.get("code", ""),
-        "inputs": data.get("inputs", {}),
-        "stdout": data.get("stdout", ""),
-        "stderr": data.get("stderr", ""),
-        "exit_code": data.get("exit_code"),
-        "timed_out": data.get("timed_out", False),
-        "success": data.get("success", False),
-    })
+    executions.append(
+        {
+            "code": data.get("code", ""),
+            "inputs": data.get("inputs", {}),
+            "stdout": data.get("stdout", ""),
+            "stderr": data.get("stderr", ""),
+            "exit_code": data.get("exit_code"),
+            "timed_out": data.get("timed_out", False),
+            "success": data.get("success", False),
+        }
+    )
     return {"diagnostic_executions": executions}
+
+
 def _map_vercel_deployment_status(data: dict) -> dict:
     return {
         "vercel_deployments": data.get("deployments", []),
@@ -298,6 +311,14 @@ def _map_github_commits(data: dict) -> dict:
     return {
         "github_commits": data.get("commits", []) or [],
         "github_commits_text": data.get("text", ""),
+    }
+
+
+def _map_git_deploy_timeline(data: dict) -> dict:
+    return {
+        "git_deploy_timeline": data.get("commits", []) or [],
+        "git_deploy_timeline_count": data.get("commits_count", 0),
+        "git_deploy_timeline_window": data.get("window", {}),
     }
 
 
@@ -394,11 +415,13 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "query_datadog_all": _map_datadog_investigate,
     "query_honeycomb_traces": _map_honeycomb_traces,
     "query_coralogix_logs": _map_coralogix_logs,
+    "query_betterstack_logs": _map_betterstack_logs,
     "vercel_deployment_status": _map_vercel_deployment_status,
     "vercel_deployment_logs": _map_vercel_deployment_logs,
     "search_github_code": _map_github_code_search,
     "get_github_file_contents": _map_github_file_contents,
     "list_github_commits": _map_github_commits,
+    "get_git_deploy_timeline": _map_git_deploy_timeline,
     "alertmanager_alerts": _map_alertmanager_alerts,
     "alertmanager_silences": _map_alertmanager_silences,
     "list_eks_pods": _map_eks_pods,
@@ -525,9 +548,7 @@ def build_evidence_summary(execution_results: dict[str, ActionExecutionResult]) 
                 failing = len(data.get("failing_pods", []))
                 summary_parts.append(f"eks:{data.get('total_pods', 0)} pods ({failing} failing)")
             elif action_name == "get_eks_events" and data.get("warning_events") is not None:
-                summary_parts.append(
-                    f"eks:{data.get('total_warning_count', 0)} warning events"
-                )
+                summary_parts.append(f"eks:{data.get('total_warning_count', 0)} warning events")
             elif action_name == "list_eks_deployments" and data.get("deployments") is not None:
                 degraded = len(data.get("degraded_deployments", []))
                 summary_parts.append(
@@ -565,6 +586,11 @@ def build_evidence_summary(execution_results: dict[str, ActionExecutionResult]) 
             elif action_name == "query_coralogix_logs" and data.get("logs"):
                 error_count = len(data.get("error_logs", []))
                 summary_parts.append(f"coralogix:{len(data['logs'])} logs ({error_count} errors)")
+            elif action_name == "query_betterstack_logs" and data.get("rows"):
+                bs_source = str(data.get("betterstack_source", "")).strip() or "?"
+                summary_parts.append(
+                    f"betterstack:{data.get('row_count', len(data['rows']))} rows from {bs_source}"
+                )
             elif action_name == "run_diagnostic_code":
                 if data.get("success"):
                     stdout_lines = len(data.get("stdout", "").splitlines())
@@ -590,6 +616,10 @@ def build_evidence_summary(execution_results: dict[str, ActionExecutionResult]) 
                 summary_parts.append("github:file contents retrieved")
             elif action_name == "list_github_commits" and data.get("commits"):
                 summary_parts.append(f"github:{len(data['commits'])} commits")
+            elif action_name == "get_git_deploy_timeline":
+                count = data.get("commits_count") or len(data.get("commits") or [])
+                if count:
+                    summary_parts.append(f"github:{count} commits in deploy window")
             elif action_name == "alertmanager_alerts":
                 firing_count = len(data.get("firing_alerts") or [])
                 total = data.get("total", 0)
@@ -639,9 +669,7 @@ def summarize_execution_results(
 
     # Only successes go into executed_hypotheses: planning filters out any name seen there,
     # so recording failures would block retries for transient errors on any tool.
-    successful_actions = [
-        name for name, result in execution_results.items() if result.success
-    ]
+    successful_actions = [name for name, result in execution_results.items() if result.success]
     if successful_actions:
         executed_hypotheses = track_hypothesis(
             executed_hypotheses,

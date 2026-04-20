@@ -32,16 +32,18 @@ def test_is_available_false_without_connection_verified(tool: PrefectWorkerHealt
 
 
 def test_extract_params_maps_source_fields(tool: PrefectWorkerHealthTool) -> None:
-    params = tool.extract_params({
-        "prefect": {
-            "api_url": "http://localhost:4200/api",
-            "api_key": "",
-            "account_id": "",
-            "workspace_id": "",
-            "work_pool_name": "my-pool",
-            "connection_verified": True,
+    params = tool.extract_params(
+        {
+            "prefect": {
+                "api_url": "http://localhost:4200/api",
+                "api_key": "",
+                "account_id": "",
+                "workspace_id": "",
+                "work_pool_name": "my-pool",
+                "connection_verified": True,
+            }
         }
-    })
+    )
     assert params["api_url"] == "http://localhost:4200/api"
     assert params["work_pool_name"] == "my-pool"
     assert params["pool_limit"] == 20

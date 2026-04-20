@@ -60,7 +60,12 @@ def get_sentry_issue_details(
     """Fetch full details for a Sentry issue."""
     config = _resolve_config(sentry_url, organization_slug, sentry_token, project_slug)
     if config is None:
-        return {"source": "sentry", "available": False, "error": "Sentry integration is not configured.", "issue": {}}
+        return {
+            "source": "sentry",
+            "available": False,
+            "error": "Sentry integration is not configured.",
+            "issue": {},
+        }
 
     issue = get_sentry_issue(config=config, issue_id=issue_id)
     return {"source": "sentry", "available": True, "issue": issue}

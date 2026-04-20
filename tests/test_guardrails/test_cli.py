@@ -11,7 +11,10 @@ from app.guardrails.cli import cmd_audit, cmd_init, cmd_rules, cmd_test
 
 class TestCmdInit:
     def test_creates_starter_config(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         rules_path = tmp_path / "guardrails.yml"
         monkeypatch.setattr("app.guardrails.cli.get_default_rules_path", lambda: rules_path)
@@ -27,7 +30,10 @@ class TestCmdInit:
         assert "private_key" in content
 
     def test_does_not_overwrite_existing(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         rules_path = tmp_path / "guardrails.yml"
         rules_path.write_text("existing content", encoding="utf-8")
@@ -41,7 +47,10 @@ class TestCmdInit:
 
 class TestCmdTest:
     def test_no_config_shows_message(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         monkeypatch.setattr(
             "app.guardrails.cli.get_default_rules_path",
@@ -51,12 +60,22 @@ class TestCmdTest:
         assert "No guardrails config" in capsys.readouterr().out
 
     def test_shows_matches(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         config = tmp_path / "guardrails.yml"
-        config.write_text(yaml.dump({"rules": [
-            {"name": "aws_key", "action": "redact", "patterns": ["AKIA[0-9A-Z]{16}"]},
-        ]}), encoding="utf-8")
+        config.write_text(
+            yaml.dump(
+                {
+                    "rules": [
+                        {"name": "aws_key", "action": "redact", "patterns": ["AKIA[0-9A-Z]{16}"]},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
         monkeypatch.setattr("app.guardrails.cli.get_default_rules_path", lambda: config)
 
         cmd_test("key=AKIAIOSFODNN7EXAMPLE")
@@ -66,12 +85,22 @@ class TestCmdTest:
         assert "Redacted output" in out
 
     def test_shows_block_warning(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         config = tmp_path / "guardrails.yml"
-        config.write_text(yaml.dump({"rules": [
-            {"name": "danger", "action": "block", "keywords": ["forbidden"]},
-        ]}), encoding="utf-8")
+        config.write_text(
+            yaml.dump(
+                {
+                    "rules": [
+                        {"name": "danger", "action": "block", "keywords": ["forbidden"]},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
         monkeypatch.setattr("app.guardrails.cli.get_default_rules_path", lambda: config)
 
         cmd_test("this is forbidden data")
@@ -80,12 +109,22 @@ class TestCmdTest:
         assert "danger" in out
 
     def test_no_matches_shows_clean(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         config = tmp_path / "guardrails.yml"
-        config.write_text(yaml.dump({"rules": [
-            {"name": "r1", "action": "redact", "patterns": ["AKIA[A-Z0-9]{16}"]},
-        ]}), encoding="utf-8")
+        config.write_text(
+            yaml.dump(
+                {
+                    "rules": [
+                        {"name": "r1", "action": "redact", "patterns": ["AKIA[A-Z0-9]{16}"]},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
         monkeypatch.setattr("app.guardrails.cli.get_default_rules_path", lambda: config)
 
         cmd_test("nothing sensitive")
@@ -94,13 +133,28 @@ class TestCmdTest:
 
 class TestCmdRules:
     def test_lists_configured_rules(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         config = tmp_path / "guardrails.yml"
-        config.write_text(yaml.dump({"rules": [
-            {"name": "aws_key", "action": "redact", "patterns": ["AKIA"], "description": "AWS keys"},
-            {"name": "cc", "action": "block", "patterns": ["\\d{16}"]},
-        ]}), encoding="utf-8")
+        config.write_text(
+            yaml.dump(
+                {
+                    "rules": [
+                        {
+                            "name": "aws_key",
+                            "action": "redact",
+                            "patterns": ["AKIA"],
+                            "description": "AWS keys",
+                        },
+                        {"name": "cc", "action": "block", "patterns": ["\\d{16}"]},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
         monkeypatch.setattr("app.guardrails.cli.get_default_rules_path", lambda: config)
 
         cmd_rules()
@@ -112,7 +166,10 @@ class TestCmdRules:
         assert "block" in out
 
     def test_no_config_shows_message(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         monkeypatch.setattr(
             "app.guardrails.cli.get_default_rules_path",
@@ -124,7 +181,10 @@ class TestCmdRules:
 
 class TestCmdAudit:
     def test_shows_entries(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         audit = AuditLogger(path=tmp_path / "audit.jsonl")
         audit.log(rule_name="r1", action="redact", matched_text_preview="secret")
@@ -136,7 +196,10 @@ class TestCmdAudit:
         assert "redact" in out
 
     def test_empty_shows_message(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         audit = AuditLogger(path=tmp_path / "empty.jsonl")
         monkeypatch.setattr("app.guardrails.cli.AuditLogger", lambda: audit)

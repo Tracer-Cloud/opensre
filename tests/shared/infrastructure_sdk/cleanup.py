@@ -104,7 +104,11 @@ def destroy_stack(stack_name: str, region: str = "us-east-1") -> dict[str, Any]:
                 _delete_resource(arn, resource_type, region)
                 results["deleted"].append(arn)
             except ClientError as e:
-                if e.response["Error"]["Code"] in ["NoSuchEntity", "ResourceNotFoundException", "404"]:
+                if e.response["Error"]["Code"] in [
+                    "NoSuchEntity",
+                    "ResourceNotFoundException",
+                    "404",
+                ]:
                     results["not_found"].append(arn)
                 else:
                     results["failed"].append({"arn": arn, "error": str(e)})
@@ -116,7 +120,9 @@ def destroy_stack(stack_name: str, region: str = "us-east-1") -> dict[str, Any]:
         if resource_type in RESOURCE_DELETION_ORDER:
             continue
         for arn in arns:
-            if arn not in results["deleted"] and arn not in [r["arn"] for r in results["failed"] if isinstance(r, dict)]:
+            if arn not in results["deleted"] and arn not in [
+                r["arn"] for r in results["failed"] if isinstance(r, dict)
+            ]:
                 try:
                     _delete_resource(arn, resource_type, region)
                     results["deleted"].append(arn)

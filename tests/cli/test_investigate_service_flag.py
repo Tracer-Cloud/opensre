@@ -47,9 +47,7 @@ def test_service_flag_invokes_runtime_investigation(monkeypatch) -> None:
         result = runner.invoke(investigate_command, ["--service", "my-svc"])
 
     assert result.exit_code == 0
-    mock_build.assert_called_once_with(
-        "my-svc", slack_thread_ref=None, slack_bot_token=None
-    )
+    mock_build.assert_called_once_with("my-svc", slack_thread_ref=None, slack_bot_token=None)
     mock_run.assert_called_once()
     kwargs = mock_run.call_args.kwargs
     assert kwargs["alert_name"] == "Remote runtime investigation: my-svc"

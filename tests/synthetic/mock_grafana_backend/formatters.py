@@ -85,10 +85,7 @@ def format_mimir_query_range(cw_fixture: dict[str, Any]) -> dict[str, Any]:
         timestamps: list[str] = entry.get("timestamps", [])
         values: list[float] = entry.get("values", [])
 
-        prom_values = [
-            [_iso_to_unix(ts), str(v)]
-            for ts, v in zip(timestamps, values)
-        ]
+        prom_values = [[_iso_to_unix(ts), str(v)] for ts, v in zip(timestamps, values)]
 
         result_series.append({"metric": labels, "values": prom_values})
 
@@ -133,13 +130,15 @@ def format_loki_query_range(rds_events_fixture: dict[str, Any]) -> dict[str, Any
     loki_result: list[dict[str, Any]] = []
     for (source_type, source_identifier), log_lines in stream_map.items():
         log_lines.sort(key=lambda x: x[0])
-        loki_result.append({
-            "stream": {
-                "source_type": source_type,
-                "source_identifier": source_identifier,
-            },
-            "values": log_lines,
-        })
+        loki_result.append(
+            {
+                "stream": {
+                    "source_type": source_type,
+                    "source_identifier": source_identifier,
+                },
+                "values": log_lines,
+            }
+        )
 
     return {
         "status": "success",

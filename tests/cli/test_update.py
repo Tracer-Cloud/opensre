@@ -5,7 +5,9 @@ import pytest
 from app.cli.update import _is_update_available, _upgrade_via_install_script, run_update
 
 
-def test_already_up_to_date(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_already_up_to_date(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     monkeypatch.setattr("app.cli.update.get_version", lambda: "1.2.3")
     monkeypatch.setattr("app.cli.update._fetch_latest_version", lambda: "1.2.3")
 
@@ -73,7 +75,9 @@ def test_update_install_script_failure_shows_retry_hint(
     assert "retry manually" in err
 
 
-def test_fetch_error_returns_1(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_fetch_error_returns_1(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     monkeypatch.setattr("app.cli.update.get_version", lambda: "1.0.0")
 
     def _raise() -> str:
@@ -87,7 +91,9 @@ def test_fetch_error_returns_1(monkeypatch: pytest.MonkeyPatch, capsys: pytest.C
     assert "could not fetch" in capsys.readouterr().err
 
 
-def test_rate_limit_error_message(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_rate_limit_error_message(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     monkeypatch.setattr("app.cli.update.get_version", lambda: "1.0.0")
 
     def _raise() -> str:
@@ -101,11 +107,15 @@ def test_rate_limit_error_message(monkeypatch: pytest.MonkeyPatch, capsys: pytes
     assert "rate limit" in capsys.readouterr().err
 
 
-def test_proxy_hint_in_connect_error(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_proxy_hint_in_connect_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     monkeypatch.setattr("app.cli.update.get_version", lambda: "1.0.0")
 
     def _raise() -> str:
-        raise RuntimeError("could not connect to GitHub — check your network or HTTPS_PROXY settings")
+        raise RuntimeError(
+            "could not connect to GitHub — check your network or HTTPS_PROXY settings"
+        )
 
     monkeypatch.setattr("app.cli.update._fetch_latest_version", _raise)
 

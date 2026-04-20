@@ -710,8 +710,7 @@ def detect_sources(
             or raw_alert.get("repo_url", "")
         )
         workspace = str(
-            annotations.get("bitbucket_workspace")
-            or bitbucket_int.get("workspace", "")
+            annotations.get("bitbucket_workspace") or bitbucket_int.get("workspace", "")
         ).strip()
         repo_slug = str(
             annotations.get("bitbucket_repo_slug")
@@ -750,7 +749,8 @@ def detect_sources(
                 "app_password": str(bitbucket_int.get("app_password", "")).strip(),
                 "base_url": str(
                     bitbucket_int.get("base_url", "https://api.bitbucket.org/2.0")
-                ).strip() or "https://api.bitbucket.org/2.0",
+                ).strip()
+                or "https://api.bitbucket.org/2.0",
                 "max_results": _safe_int(bitbucket_int.get("max_results", 25), 25),
                 "integration_id": str(bitbucket_int.get("integration_id", "")).strip(),
                 "connection_verified": True,
@@ -788,9 +788,8 @@ def detect_sources(
             sources["azure"] = {
                 "workspace_id": workspace_id,
                 "access_token": access_token,
-                "endpoint": str(
-                    azure_int.get("endpoint", "https://api.loganalytics.io")
-                ).strip() or "https://api.loganalytics.io",
+                "endpoint": str(azure_int.get("endpoint", "https://api.loganalytics.io")).strip()
+                or "https://api.loganalytics.io",
                 "query": str(
                     annotations.get("azure_query")
                     or annotations.get("kql_query")
@@ -814,8 +813,7 @@ def detect_sources(
                 "base_url": base_url.rstrip("/"),
                 "org": str(openobserve_int.get("org", "default")).strip() or "default",
                 "stream": str(
-                    annotations.get("openobserve_stream")
-                    or openobserve_int.get("stream", "")
+                    annotations.get("openobserve_stream") or openobserve_int.get("stream", "")
                 ).strip(),
                 "query": str(
                     annotations.get("openobserve_query")
@@ -848,7 +846,8 @@ def detect_sources(
                 "index_pattern": str(
                     annotations.get("opensearch_index_pattern")
                     or opensearch_int.get("index_pattern", "*")
-                ).strip() or "*",
+                ).strip()
+                or "*",
                 "default_query": default_query or "*",
                 "time_range_minutes": alert_time_range_minutes,
                 "max_results": _safe_int(opensearch_int.get("max_results", 100), 100),
@@ -945,9 +944,7 @@ def detect_sources(
             ).strip()
             sources["openclaw"] = {
                 "openclaw_url": openclaw_url,
-                "openclaw_mode": str(
-                    openclaw_int.get("mode", "streamable-http")
-                ).strip()
+                "openclaw_mode": str(openclaw_int.get("mode", "streamable-http")).strip()
                 or "streamable-http",
                 "openclaw_token": str(openclaw_int.get("auth_token", "")).strip(),
                 "openclaw_command": openclaw_command,
@@ -1145,7 +1142,11 @@ def detect_sources(
         }
 
     mariadb_int = (resolved_integrations or {}).get("mariadb")
-    if mariadb_int and str(mariadb_int.get("host", "")).strip() and str(mariadb_int.get("database", "")).strip():
+    if (
+        mariadb_int
+        and str(mariadb_int.get("host", "")).strip()
+        and str(mariadb_int.get("database", "")).strip()
+    ):
         sources["mariadb"] = {
             "host": str(mariadb_int.get("host", "")).strip(),
             "port": mariadb_int.get("port", 3306),
@@ -1170,6 +1171,27 @@ def detect_sources(
             "vhost": str(rabbitmq_int.get("vhost", "/")).strip() or "/",
             "ssl": rabbitmq_int.get("ssl", False),
             "verify_ssl": rabbitmq_int.get("verify_ssl", True),
+            "connection_verified": True,
+        }
+
+    betterstack_int = (resolved_integrations or {}).get("betterstack")
+    if (
+        betterstack_int
+        and str(betterstack_int.get("query_endpoint", "")).strip()
+        and str(betterstack_int.get("username", "")).strip()
+    ):
+        # Alerts can carry an explicit ``betterstack_source`` annotation (the base
+        # identifier of the source to query). We surface it as ``source_hint`` so
+        # ``betterstack_extract_params`` can pass it into the tool as the runtime
+        # ``source`` kwarg — otherwise the executor has no path to propagate
+        # alert-derived source targeting into the tool.
+        source_hint = str(annotations.get("betterstack_source") or "").strip()
+        sources["betterstack"] = {
+            "query_endpoint": str(betterstack_int.get("query_endpoint", "")).strip(),
+            "username": str(betterstack_int.get("username", "")).strip(),
+            "password": str(betterstack_int.get("password") or ""),
+            "sources": list(betterstack_int.get("sources", []) or []),
+            "source_hint": source_hint,
             "connection_verified": True,
         }
 
@@ -1224,17 +1246,17 @@ def detect_sources(
         }
 
     mysql_int = (resolved_integrations or {}).get("mysql")
-    if mysql_int and str(mysql_int.get("host", "")).strip() and str(mysql_int.get("database", "")).strip():
+    if (
+        mysql_int
+        and str(mysql_int.get("host", "")).strip()
+        and str(mysql_int.get("database", "")).strip()
+    ):
         mysql_host = str(mysql_int.get("host", "")).strip()
         mysql_database = str(mysql_int.get("database", "")).strip()
         mysql_database = str(
-            annotations.get("mysql_database")
-            or annotations.get("database")
-            or mysql_database
+            annotations.get("mysql_database") or annotations.get("database") or mysql_database
         ).strip()
-        mysql_table = str(
-            annotations.get("mysql_table") or annotations.get("table") or ""
-        ).strip()
+        mysql_table = str(annotations.get("mysql_table") or annotations.get("table") or "").strip()
         sources["mysql"] = {
             "host": mysql_host,
             "port": mysql_int.get("port", 3306),

@@ -118,7 +118,9 @@ def run_update(*, check_only: bool = False, yes: bool = False) -> int:
         return 1
 
     if _is_editable_install():
-        print("  warning: this is an editable install — upgrading will replace it with a release build.")
+        print(
+            "  warning: this is an editable install — upgrading will replace it with a release build."
+        )
 
     if not yes:
         try:

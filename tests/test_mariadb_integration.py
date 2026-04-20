@@ -90,14 +90,17 @@ class TestMariaDBBuild:
         assert config.username == "admin"
         assert config.ssl is False
 
-    @patch.dict(os.environ, {
-        "MARIADB_HOST": "env-host",
-        "MARIADB_PORT": "3307",
-        "MARIADB_DATABASE": "env-db",
-        "MARIADB_USERNAME": "env-user",
-        "MARIADB_PASSWORD": "env-pass",
-        "MARIADB_SSL": "false",
-    })
+    @patch.dict(
+        os.environ,
+        {
+            "MARIADB_HOST": "env-host",
+            "MARIADB_PORT": "3307",
+            "MARIADB_DATABASE": "env-db",
+            "MARIADB_USERNAME": "env-user",
+            "MARIADB_PASSWORD": "env-pass",
+            "MARIADB_SSL": "false",
+        },
+    )
     def test_mariadb_config_from_env(self):
         config = mariadb_config_from_env()
         assert config is not None
@@ -163,7 +166,7 @@ class TestResolveIntegrations:
                     "database": "prod",
                     "username": "admin",
                     "password": "secret",
-                }
+                },
             }
         ]
         resolved = _classify_integrations(integrations)
@@ -182,7 +185,7 @@ class TestResolveIntegrations:
                     "host": "",
                     "database": "prod",
                     "username": "admin",
-                }
+                },
             }
         ]
         resolved = _classify_integrations(integrations)
@@ -198,7 +201,7 @@ class TestResolveIntegrations:
                     "host": "db.example.com",
                     "database": "",
                     "username": "admin",
-                }
+                },
             }
         ]
         resolved = _classify_integrations(integrations)
@@ -242,7 +245,10 @@ class TestTruncate:
 
 class TestMariaDBIsAvailable:
     def test_true_with_host_and_database(self) -> None:
-        assert mariadb_is_available({"mariadb": {"host": "db.example.com", "database": "prod"}}) is True
+        assert (
+            mariadb_is_available({"mariadb": {"host": "db.example.com", "database": "prod"}})
+            is True
+        )
 
     def test_false_when_missing_host(self) -> None:
         assert mariadb_is_available({"mariadb": {"host": "", "database": "prod"}}) is False
@@ -262,8 +268,16 @@ class TestMariaDBIsAvailable:
 
 class TestMariaDBExtractParams:
     def test_all_fields_returned(self) -> None:
-        sources = {"mariadb": {"host": "h", "database": "d", "username": "u",
-                               "password": "p", "port": 3307, "ssl": False}}
+        sources = {
+            "mariadb": {
+                "host": "h",
+                "database": "d",
+                "username": "u",
+                "password": "p",
+                "port": 3307,
+                "ssl": False,
+            }
+        }
         params = mariadb_extract_params(sources)
         assert params["host"] == "h"
         assert params["database"] == "d"
@@ -513,9 +527,19 @@ class TestGetReplicationStatus:
 
     @patch("app.integrations.mariadb._get_connection")
     def test_returns_channels_on_success(self, mock_get_conn: MagicMock) -> None:
-        columns = ["Slave_IO_Running", "Slave_SQL_Running", "Seconds_Behind_Master",
-                   "Last_Error", "Last_Errno", "Master_Host", "Master_Port",
-                   "Master_Log_File", "Relay_Log_Space", "Exec_Master_Log_Pos", "Connection_name"]
+        columns = [
+            "Slave_IO_Running",
+            "Slave_SQL_Running",
+            "Seconds_Behind_Master",
+            "Last_Error",
+            "Last_Errno",
+            "Master_Host",
+            "Master_Port",
+            "Master_Log_File",
+            "Relay_Log_Space",
+            "Exec_Master_Log_Pos",
+            "Connection_name",
+        ]
         row = ("Yes", "Yes", 0, "", 0, "primary.db", 3306, "binlog.000001", 1024, 512, "")
         mock_conn, _ = _make_mock_conn(
             fetchall_rows=[row],

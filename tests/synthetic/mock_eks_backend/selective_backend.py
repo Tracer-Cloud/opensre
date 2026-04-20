@@ -39,12 +39,16 @@ class SelectiveEKSBackend(FixtureEKSBackend):
         self.queried_pod_names: list[str] = []
         self.queried_tools: list[str] = []
 
-    def list_pods(self, cluster_name: str = "", namespace: str = "", **kwargs: Any) -> dict[str, Any]:
+    def list_pods(
+        self, cluster_name: str = "", namespace: str = "", **kwargs: Any
+    ) -> dict[str, Any]:
         self.queried_tools.append("list_pods")
         self.queried_namespaces.append(self._namespace(namespace))
         return super().list_pods(cluster_name=cluster_name, namespace=namespace, **kwargs)
 
-    def get_events(self, cluster_name: str = "", namespace: str = "", **kwargs: Any) -> dict[str, Any]:
+    def get_events(
+        self, cluster_name: str = "", namespace: str = "", **kwargs: Any
+    ) -> dict[str, Any]:
         self.queried_tools.append("get_events")
         self.queried_namespaces.append(self._namespace(namespace))
         return super().get_events(cluster_name=cluster_name, namespace=namespace, **kwargs)

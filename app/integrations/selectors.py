@@ -21,9 +21,7 @@ def _instances_key(service: str) -> str:
     return f"_all_{service}_instances"
 
 
-def get_instances(
-    resolved: dict[str, Any] | None, service: str
-) -> list[dict[str, Any]]:
+def get_instances(resolved: dict[str, Any] | None, service: str) -> list[dict[str, Any]]:
     """Return all instance entries for ``service``.
 
     When a service has only one instance and that instance has the default
@@ -49,9 +47,7 @@ def get_instances(
     return []
 
 
-def get_default_instance(
-    resolved: dict[str, Any] | None, service: str
-) -> dict[str, Any] | None:
+def get_default_instance(resolved: dict[str, Any] | None, service: str) -> dict[str, Any] | None:
     """Return the flat config dict for the default (first) instance, or None."""
     if not resolved:
         return None

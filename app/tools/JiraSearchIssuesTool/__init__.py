@@ -27,7 +27,10 @@ class JiraSearchIssuesTool(BaseTool):
     input_schema = {
         "type": "object",
         "properties": {
-            "base_url": {"type": "string", "description": "Jira instance URL (e.g. https://myorg.atlassian.net)"},
+            "base_url": {
+                "type": "string",
+                "description": "Jira instance URL (e.g. https://myorg.atlassian.net)",
+            },
             "email": {"type": "string", "description": "Jira account email for authentication"},
             "api_token": {"type": "string", "description": "Jira API token"},
             "project_key": {

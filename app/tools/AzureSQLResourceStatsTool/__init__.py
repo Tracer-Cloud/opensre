@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.azure_sql import get_resource_stats, resolve_azure_sql_config
+from app.integrations.azure_sql import (
+    azure_sql_extract_params,
+    azure_sql_is_available,
+    get_resource_stats,
+    resolve_azure_sql_config,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -16,6 +21,8 @@ from app.tools.tool_decorator import tool
         "Identifying resource saturation causing query timeouts",
         "Reviewing historical resource trends to determine if tier upgrade is needed",
     ],
+    is_available=azure_sql_is_available,
+    extract_params=azure_sql_extract_params,
 )
 def get_azure_sql_resource_stats(
     server: str,

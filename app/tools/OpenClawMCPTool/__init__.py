@@ -74,7 +74,9 @@ def _resolve_config(
 
 
 def _openclaw_available(sources: dict[str, dict]) -> bool:
-    return bool(sources.get("openclaw", {}).get("connection_verified") or openclaw_config_from_env())
+    return bool(
+        sources.get("openclaw", {}).get("connection_verified") or openclaw_config_from_env()
+    )
 
 
 def _openclaw_extract_params(sources: dict[str, dict]) -> OpenClawParams:

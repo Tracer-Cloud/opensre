@@ -150,8 +150,6 @@ class TestRunDiagnosticCodeSandboxRestrictions:
         assert "PermissionError" in result["stderr"] or "PermissionError" in result["stdout"]
 
     def test_filesystem_write_outside_tmp_blocked(self) -> None:
-        result = run_diagnostic_code(
-            code="open('/etc/sandbox_diag_test', 'w').write('x')"
-        )
+        result = run_diagnostic_code(code="open('/etc/sandbox_diag_test', 'w').write('x')")
         assert result["success"] is False
         assert "PermissionError" in result["stderr"] or "PermissionError" in result["stdout"]

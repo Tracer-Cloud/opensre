@@ -112,9 +112,7 @@ def posthog_config_from_env() -> PostHogConfig | None:
             "bounce_rate_threshold": os.getenv(
                 "POSTHOG_BOUNCE_THRESHOLD", str(DEFAULT_POSTHOG_BOUNCE_THRESHOLD)
             ),
-            "bounce_rate_window": os.getenv(
-                "POSTHOG_BOUNCE_WINDOW", DEFAULT_POSTHOG_BOUNCE_WINDOW
-            ),
+            "bounce_rate_window": os.getenv("POSTHOG_BOUNCE_WINDOW", DEFAULT_POSTHOG_BOUNCE_WINDOW),
         }
     )
 

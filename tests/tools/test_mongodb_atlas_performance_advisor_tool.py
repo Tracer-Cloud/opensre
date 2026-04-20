@@ -29,19 +29,29 @@ def test_run_happy_path() -> None:
         "total_slow_queries": 0,
         "slow_queries": [],
     }
-    with patch("app.tools.MongoDBAtlasPerformanceAdvisorTool.get_performance_advisor", return_value=fake_result):
+    with patch(
+        "app.tools.MongoDBAtlasPerformanceAdvisorTool.get_performance_advisor",
+        return_value=fake_result,
+    ):
         result = get_mongodb_atlas_performance_advisor(
-            api_public_key="pub", api_private_key="priv",
-            project_id="proj", cluster_name="prod",
+            api_public_key="pub",
+            api_private_key="priv",
+            project_id="proj",
+            cluster_name="prod",
         )
     assert result["available"] is True
     assert result["total_suggested_indexes"] == 1
 
 
 def test_run_error_propagated() -> None:
-    with patch("app.tools.MongoDBAtlasPerformanceAdvisorTool.get_performance_advisor", return_value={"source": "mongodb_atlas", "available": False, "error": "auth failed"}):
+    with patch(
+        "app.tools.MongoDBAtlasPerformanceAdvisorTool.get_performance_advisor",
+        return_value={"source": "mongodb_atlas", "available": False, "error": "auth failed"},
+    ):
         result = get_mongodb_atlas_performance_advisor(
-            api_public_key="bad", api_private_key="bad",
-            project_id="proj", cluster_name="prod",
+            api_public_key="bad",
+            api_private_key="bad",
+            project_id="proj",
+            cluster_name="prod",
         )
     assert "error" in result

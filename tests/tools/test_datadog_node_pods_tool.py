@@ -15,7 +15,9 @@ class TestDataDogNodePodsToolContract(BaseToolContract):
 
 def test_is_available_requires_connection_and_node_ip() -> None:
     rt = get_pods_on_node.__opensre_registered_tool__
-    assert rt.is_available({"datadog": {"connection_verified": True, "node_ip": "10.0.1.1"}}) is True
+    assert (
+        rt.is_available({"datadog": {"connection_verified": True, "node_ip": "10.0.1.1"}}) is True
+    )
     assert rt.is_available({"datadog": {"connection_verified": True}}) is False
     assert rt.is_available({}) is False
 

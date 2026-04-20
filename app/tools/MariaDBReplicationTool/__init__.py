@@ -29,7 +29,11 @@ def get_mariadb_replication_status(
 ) -> dict[str, Any]:
     """Fetch replication status from SHOW ALL SLAVES STATUS."""
     config = MariaDBConfig(
-        host=host, port=port, database=database,
-        username=username, password=password, ssl=ssl,
+        host=host,
+        port=port,
+        database=database,
+        username=username,
+        password=password,
+        ssl=ssl,
     )
     return get_replication_status(config)

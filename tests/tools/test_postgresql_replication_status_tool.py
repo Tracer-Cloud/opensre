@@ -61,7 +61,9 @@ def test_run_happy_path_with_replicas() -> None:
             },
         ],
     }
-    with patch("app.tools.PostgreSQLReplicationStatusTool.get_replication_status", return_value=fake_result):
+    with patch(
+        "app.tools.PostgreSQLReplicationStatusTool.get_replication_status", return_value=fake_result
+    ):
         result = get_postgresql_replication_status(host="localhost", database="testdb")
     assert result["is_primary"] is True
     assert result["replica_count"] == 2
@@ -79,7 +81,9 @@ def test_run_happy_path_no_replicas() -> None:
         "replicas": [],
         "note": "Server is a primary but has no active replicas.",
     }
-    with patch("app.tools.PostgreSQLReplicationStatusTool.get_replication_status", return_value=fake_result):
+    with patch(
+        "app.tools.PostgreSQLReplicationStatusTool.get_replication_status", return_value=fake_result
+    ):
         result = get_postgresql_replication_status(host="localhost", database="testdb")
     assert result["is_primary"] is True
     assert len(result["replicas"]) == 0
@@ -87,7 +91,10 @@ def test_run_happy_path_no_replicas() -> None:
 
 
 def test_run_error_propagated() -> None:
-    with patch("app.tools.PostgreSQLReplicationStatusTool.get_replication_status", return_value={"source": "postgresql", "available": False, "error": "access denied"}):
+    with patch(
+        "app.tools.PostgreSQLReplicationStatusTool.get_replication_status",
+        return_value={"source": "postgresql", "available": False, "error": "access denied"},
+    ):
         result = get_postgresql_replication_status(host="invalid", database="testdb")
     assert "error" in result
     assert result["available"] is False

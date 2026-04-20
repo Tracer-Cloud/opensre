@@ -79,9 +79,5 @@ def test_experiment_summary_line_pod_failure() -> None:
 
 def test_experiments_dir_matches_list() -> None:
     """Every subdirectory with YAML is listed."""
-    disk = sorted(
-        p.name
-        for p in EXPERIMENTS_DIR.iterdir()
-        if p.is_dir() and any(p.glob("*.yaml"))
-    )
+    disk = sorted(p.name for p in EXPERIMENTS_DIR.iterdir() if p.is_dir() and any(p.glob("*.yaml")))
     assert list_experiment_names() == disk

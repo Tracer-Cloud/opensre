@@ -101,9 +101,7 @@ def _resolve_base_dir(suite_dir: Path, base_id: str) -> Path:
     return base_dir
 
 
-def _merge_scenario_yaml(
-    base_raw: dict[str, Any], scenario_raw: dict[str, Any]
-) -> dict[str, Any]:
+def _merge_scenario_yaml(base_raw: dict[str, Any], scenario_raw: dict[str, Any]) -> dict[str, Any]:
     """Shallow-merge scenario overrides on top of base metadata.
 
     scenario_raw values win. The ``base`` directive is consumed and removed.
@@ -113,9 +111,7 @@ def _merge_scenario_yaml(
     return merged
 
 
-def _resolve_evidence_path(
-    scenario_dir: Path, base_dir: Path | None, filename: str
-) -> Path:
+def _resolve_evidence_path(scenario_dir: Path, base_dir: Path | None, filename: str) -> Path:
     """Return the scenario's own evidence file if it exists, otherwise the base's."""
     for search_dir in (scenario_dir, base_dir):
         if search_dir is None:

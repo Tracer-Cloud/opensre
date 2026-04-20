@@ -36,7 +36,7 @@ TRIGGER_LAMBDA_NAME = "tracer-prefect-ecs-trigger"
 
 def print_step(step: str) -> None:
     """Print destruction step."""
-    print(f"\n{'='*60}\n{step}\n{'='*60}")
+    print(f"\n{'=' * 60}\n{step}\n{'=' * 60}")
 
 
 def delete_ecs_service() -> None:
@@ -62,7 +62,9 @@ def stop_running_tasks() -> None:
 
         for task_arn in task_arns:
             try:
-                ecs_client.stop_task(cluster=CLUSTER_NAME, task=task_arn, reason="Stack destruction")
+                ecs_client.stop_task(
+                    cluster=CLUSTER_NAME, task=task_arn, reason="Stack destruction"
+                )
                 print(f"  [OK] Stopped task: {task_arn.split('/')[-1]}")
             except ClientError:
                 # Task may have already stopped between list and stop calls
@@ -183,7 +185,9 @@ def _delete_buckets_by_prefix() -> None:
         response = s3_client.list_buckets()
         for bucket in response.get("Buckets", []):
             name = bucket["Name"]
-            if name.startswith(f"{STACK_NAME}-landing-") or name.startswith(f"{STACK_NAME}-processed-"):
+            if name.startswith(f"{STACK_NAME}-landing-") or name.startswith(
+                f"{STACK_NAME}-processed-"
+            ):
                 try:
                     s3.delete_bucket(name, REGION)
                     print(f"  [OK] Deleted S3 bucket: {name}")

@@ -56,10 +56,10 @@ def parse_sse_stream(response: httpx.Response) -> Iterator[StreamEvent]:
 
     for line in response.iter_lines():
         if line.startswith("event:"):
-            current_event_type = line[len("event:"):].strip()
+            current_event_type = line[len("event:") :].strip()
             data_lines = []
         elif line.startswith("data:"):
-            data_lines.append(line[len("data:"):].strip())
+            data_lines.append(line[len("data:") :].strip())
         elif line == "":
             if current_event_type and data_lines:
                 raw = "\n".join(data_lines)
@@ -112,9 +112,7 @@ def _extract_node_name(event_type: str, data: dict[str, Any]) -> str:
     return ""
 
 
-def _extract_event_details(
-    event_type: str, data: dict[str, Any]
-) -> tuple[str, str, list[str]]:
+def _extract_event_details(event_type: str, data: dict[str, Any]) -> tuple[str, str, list[str]]:
     """Extract ``kind``, ``run_id`` and ``tags`` from an events-mode payload.
 
     Returns ("", "", []) for non-events SSE types.

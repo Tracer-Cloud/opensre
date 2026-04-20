@@ -55,7 +55,9 @@ def test_v1_aws_record_with_top_level_role_arn_migrates_correctly() -> None:
     assert creds["external_id"] == "ext-token"
     assert creds["region"] == "us-east-1"
     # Top-level fields should NOT leak through
-    assert "role_arn" not in {k for k in migrated if k not in ("id", "service", "status", "instances")}
+    assert "role_arn" not in {
+        k for k in migrated if k not in ("id", "service", "status", "instances")
+    }
 
 
 def test_v2_record_passes_through_unchanged() -> None:
@@ -64,7 +66,11 @@ def test_v2_record_passes_through_unchanged() -> None:
         "service": "grafana",
         "status": "active",
         "instances": [
-            {"name": "prod", "tags": {"env": "prod"}, "credentials": {"endpoint": "x", "api_key": "k"}}
+            {
+                "name": "prod",
+                "tags": {"env": "prod"},
+                "credentials": {"endpoint": "x", "api_key": "k"},
+            }
         ],
     }
     migrated = _migrate_record_v1_to_v2(v2)
@@ -128,7 +134,12 @@ def test_permissions_preserved_after_migration(tmp_path: Path) -> None:
         {
             "version": 1,
             "integrations": [
-                {"id": "g", "service": "grafana", "status": "active", "credentials": {"endpoint": "e", "api_key": "k"}}
+                {
+                    "id": "g",
+                    "service": "grafana",
+                    "status": "active",
+                    "credentials": {"endpoint": "e", "api_key": "k"},
+                }
             ],
         },
     )

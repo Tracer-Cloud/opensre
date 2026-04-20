@@ -34,6 +34,9 @@ def test_run_happy_path() -> None:
 
 
 def test_run_error_propagated() -> None:
-    with patch("app.tools.MariaDBReplicationTool.get_replication_status", return_value={"source": "mariadb", "available": False, "error": "connection timeout"}):
+    with patch(
+        "app.tools.MariaDBReplicationTool.get_replication_status",
+        return_value={"source": "mariadb", "available": False, "error": "connection timeout"},
+    ):
         result = get_mariadb_replication_status(host="invalid", database="test", username="user")
     assert "error" in result

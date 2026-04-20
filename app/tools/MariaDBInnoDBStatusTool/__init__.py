@@ -29,7 +29,11 @@ def get_mariadb_innodb_status(
 ) -> dict[str, Any]:
     """Fetch InnoDB engine status."""
     config = MariaDBConfig(
-        host=host, port=port, database=database,
-        username=username, password=password, ssl=ssl,
+        host=host,
+        port=port,
+        database=database,
+        username=username,
+        password=password,
+        ssl=ssl,
     )
     return get_innodb_status(config)

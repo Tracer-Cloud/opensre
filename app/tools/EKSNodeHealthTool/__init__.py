@@ -76,18 +76,32 @@ def get_eks_node_health(
             capacity = node.status.capacity or {}
             allocatable = node.status.allocatable or {}
             addresses = {a.type: a.address for a in (node.status.addresses or [])}
-            node_health.append({
-                "name": node.metadata.name, "internal_ip": addresses.get("InternalIP"),
-                "ready": conditions.get("Ready"), "memory_pressure": conditions.get("MemoryPressure"),
-                "disk_pressure": conditions.get("DiskPressure"), "pid_pressure": conditions.get("PIDPressure"),
-                "capacity_cpu": capacity.get("cpu"), "capacity_memory": capacity.get("memory"),
-                "allocatable_cpu": allocatable.get("cpu"), "allocatable_memory": allocatable.get("memory"),
-                "instance_type": node.metadata.labels.get("node.kubernetes.io/instance-type") if node.metadata.labels else None,
-            })
+            node_health.append(
+                {
+                    "name": node.metadata.name,
+                    "internal_ip": addresses.get("InternalIP"),
+                    "ready": conditions.get("Ready"),
+                    "memory_pressure": conditions.get("MemoryPressure"),
+                    "disk_pressure": conditions.get("DiskPressure"),
+                    "pid_pressure": conditions.get("PIDPressure"),
+                    "capacity_cpu": capacity.get("cpu"),
+                    "capacity_memory": capacity.get("memory"),
+                    "allocatable_cpu": allocatable.get("cpu"),
+                    "allocatable_memory": allocatable.get("memory"),
+                    "instance_type": node.metadata.labels.get("node.kubernetes.io/instance-type")
+                    if node.metadata.labels
+                    else None,
+                }
+            )
         not_ready = sum(1 for n in node_health if n["ready"] != "True")
         return {
-            "source": "eks", "available": True, "cluster_name": cluster_name,
-            "nodes": node_health, "total_nodes": len(node_health), "not_ready_count": not_ready, "error": None,
+            "source": "eks",
+            "available": True,
+            "cluster_name": cluster_name,
+            "nodes": node_health,
+            "total_nodes": len(node_health),
+            "not_ready_count": not_ready,
+            "error": None,
         }
     except Exception as e:
         logger.error("[eks] get_eks_node_health FAILED: %s", e, exc_info=True)

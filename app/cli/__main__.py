@@ -28,7 +28,9 @@ from app.version import get_version
     invoke_without_command=True,
 )
 @click.version_option(version=get_version(), prog_name="opensre")
-@click.option("--json", "-j", "json_output", is_flag=True, help="Emit machine-readable JSON output.")
+@click.option(
+    "--json", "-j", "json_output", is_flag=True, help="Emit machine-readable JSON output."
+)
 @click.option("--verbose", is_flag=True, help="Print extra diagnostic information.")
 @click.option("--debug", is_flag=True, help="Print debug-level logs and traces.")
 @click.option("--yes", "-y", is_flag=True, help="Auto-confirm all interactive prompts.")
@@ -55,6 +57,7 @@ def cli(
         click.echo("🚧 OpenSRE is in Public Beta — features may change.", err=True)
         render_landing()
         raise SystemExit(0)
+
 
 register_commands(cli)
 

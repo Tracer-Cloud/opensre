@@ -112,7 +112,9 @@ BEDROCK_TOOLCALL_MODEL = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 DEFAULT_OLLAMA_MODEL = "llama3.2"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
-LLMProvider = Literal["anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock", "minimax"]
+LLMProvider = Literal[
+    "anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock", "minimax"
+]
 
 
 class LLMSettings(StrictConfigModel):
@@ -147,12 +149,23 @@ class LLMSettings(StrictConfigModel):
     @classmethod
     def _normalize_provider(cls, value: object) -> str:
         provider = str(value or "anthropic").strip().lower() or "anthropic"
-        valid_providers = ("anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock", "minimax")
+        valid_providers = (
+            "anthropic",
+            "openai",
+            "openrouter",
+            "gemini",
+            "nvidia",
+            "ollama",
+            "bedrock",
+            "minimax",
+        )
         if provider in valid_providers:
             return provider
         suggestion = get_close_matches(provider, valid_providers, n=1)
         if suggestion:
-            raise ValueError(f"Unsupported LLM provider '{provider}'. Did you mean '{suggestion[0]}'?")
+            raise ValueError(
+                f"Unsupported LLM provider '{provider}'. Did you mean '{suggestion[0]}'?"
+            )
         raise ValueError(
             f"Unsupported LLM provider '{provider}'. Expected one of: {', '.join(valid_providers)}."
         )
@@ -185,74 +198,88 @@ class LLMSettings(StrictConfigModel):
     @classmethod
     def from_env(cls) -> "LLMSettings":
         """Build validated LLM settings from environment variables."""
-        return cls.model_validate({
-            "provider": os.getenv("LLM_PROVIDER", "anthropic").strip().lower() or "anthropic",
-            "anthropic_api_key": resolve_llm_api_key("ANTHROPIC_API_KEY"),
-            "openai_api_key": resolve_llm_api_key("OPENAI_API_KEY"),
-            "openrouter_api_key": resolve_llm_api_key("OPENROUTER_API_KEY"),
-            "gemini_api_key": resolve_llm_api_key("GEMINI_API_KEY"),
-            "nvidia_api_key": resolve_llm_api_key("NVIDIA_API_KEY"),
-            "minimax_api_key": resolve_llm_api_key("MINIMAX_API_KEY"),
-            "anthropic_reasoning_model": os.getenv("ANTHROPIC_REASONING_MODEL", ANTHROPIC_REASONING_MODEL).strip()
-            or ANTHROPIC_REASONING_MODEL,
-            "anthropic_toolcall_model": os.getenv("ANTHROPIC_TOOLCALL_MODEL", ANTHROPIC_TOOLCALL_MODEL).strip()
-            or ANTHROPIC_TOOLCALL_MODEL,
-            "openai_reasoning_model": os.getenv("OPENAI_REASONING_MODEL", OPENAI_REASONING_MODEL).strip()
-            or OPENAI_REASONING_MODEL,
-            "openai_toolcall_model": os.getenv("OPENAI_TOOLCALL_MODEL", OPENAI_TOOLCALL_MODEL).strip()
-            or OPENAI_TOOLCALL_MODEL,
-            "openrouter_reasoning_model": os.getenv(
-                "OPENROUTER_REASONING_MODEL",
-                os.getenv("OPENROUTER_MODEL", OPENROUTER_REASONING_MODEL),
-            ).strip()
-            or OPENROUTER_REASONING_MODEL,
-            "openrouter_toolcall_model": os.getenv(
-                "OPENROUTER_TOOLCALL_MODEL",
-                os.getenv("OPENROUTER_MODEL", OPENROUTER_TOOLCALL_MODEL),
-            ).strip()
-            or OPENROUTER_TOOLCALL_MODEL,
-            "gemini_reasoning_model": os.getenv(
-                "GEMINI_REASONING_MODEL",
-                os.getenv("GEMINI_MODEL", GEMINI_REASONING_MODEL),
-            ).strip()
-            or GEMINI_REASONING_MODEL,
-            "gemini_toolcall_model": os.getenv(
-                "GEMINI_TOOLCALL_MODEL",
-                os.getenv("GEMINI_MODEL", GEMINI_TOOLCALL_MODEL),
-            ).strip()
-            or GEMINI_TOOLCALL_MODEL,
-            "nvidia_reasoning_model": os.getenv(
-                "NVIDIA_REASONING_MODEL",
-                os.getenv("NVIDIA_MODEL", NVIDIA_REASONING_MODEL),
-            ).strip()
-            or NVIDIA_REASONING_MODEL,
-            "nvidia_toolcall_model": os.getenv(
-                "NVIDIA_TOOLCALL_MODEL",
-                os.getenv("NVIDIA_MODEL", NVIDIA_TOOLCALL_MODEL),
-            ).strip()
-            or NVIDIA_TOOLCALL_MODEL,
-            "minimax_reasoning_model": os.getenv(
-                "MINIMAX_REASONING_MODEL",
-                os.getenv("MINIMAX_MODEL", MINIMAX_REASONING_MODEL),
-            ).strip()
-            or MINIMAX_REASONING_MODEL,
-            "minimax_toolcall_model": os.getenv(
-                "MINIMAX_TOOLCALL_MODEL",
-                os.getenv("MINIMAX_MODEL", MINIMAX_TOOLCALL_MODEL),
-            ).strip()
-            or MINIMAX_TOOLCALL_MODEL,
-            "bedrock_reasoning_model": os.getenv(
-                "BEDROCK_REASONING_MODEL", BEDROCK_REASONING_MODEL
-            ).strip()
-            or BEDROCK_REASONING_MODEL,
-            "bedrock_toolcall_model": os.getenv(
-                "BEDROCK_TOOLCALL_MODEL", BEDROCK_TOOLCALL_MODEL
-            ).strip()
-            or BEDROCK_TOOLCALL_MODEL,
-            "ollama_model": os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL).strip() or DEFAULT_OLLAMA_MODEL,
-            "ollama_host": os.getenv("OLLAMA_HOST", DEFAULT_OLLAMA_HOST).strip() or DEFAULT_OLLAMA_HOST,
-            "max_tokens": DEFAULT_MAX_TOKENS,
-        })
+        return cls.model_validate(
+            {
+                "provider": os.getenv("LLM_PROVIDER", "anthropic").strip().lower() or "anthropic",
+                "anthropic_api_key": resolve_llm_api_key("ANTHROPIC_API_KEY"),
+                "openai_api_key": resolve_llm_api_key("OPENAI_API_KEY"),
+                "openrouter_api_key": resolve_llm_api_key("OPENROUTER_API_KEY"),
+                "gemini_api_key": resolve_llm_api_key("GEMINI_API_KEY"),
+                "nvidia_api_key": resolve_llm_api_key("NVIDIA_API_KEY"),
+                "minimax_api_key": resolve_llm_api_key("MINIMAX_API_KEY"),
+                "anthropic_reasoning_model": os.getenv(
+                    "ANTHROPIC_REASONING_MODEL", ANTHROPIC_REASONING_MODEL
+                ).strip()
+                or ANTHROPIC_REASONING_MODEL,
+                "anthropic_toolcall_model": os.getenv(
+                    "ANTHROPIC_TOOLCALL_MODEL", ANTHROPIC_TOOLCALL_MODEL
+                ).strip()
+                or ANTHROPIC_TOOLCALL_MODEL,
+                "openai_reasoning_model": os.getenv(
+                    "OPENAI_REASONING_MODEL", OPENAI_REASONING_MODEL
+                ).strip()
+                or OPENAI_REASONING_MODEL,
+                "openai_toolcall_model": os.getenv(
+                    "OPENAI_TOOLCALL_MODEL", OPENAI_TOOLCALL_MODEL
+                ).strip()
+                or OPENAI_TOOLCALL_MODEL,
+                "openrouter_reasoning_model": os.getenv(
+                    "OPENROUTER_REASONING_MODEL",
+                    os.getenv("OPENROUTER_MODEL", OPENROUTER_REASONING_MODEL),
+                ).strip()
+                or OPENROUTER_REASONING_MODEL,
+                "openrouter_toolcall_model": os.getenv(
+                    "OPENROUTER_TOOLCALL_MODEL",
+                    os.getenv("OPENROUTER_MODEL", OPENROUTER_TOOLCALL_MODEL),
+                ).strip()
+                or OPENROUTER_TOOLCALL_MODEL,
+                "gemini_reasoning_model": os.getenv(
+                    "GEMINI_REASONING_MODEL",
+                    os.getenv("GEMINI_MODEL", GEMINI_REASONING_MODEL),
+                ).strip()
+                or GEMINI_REASONING_MODEL,
+                "gemini_toolcall_model": os.getenv(
+                    "GEMINI_TOOLCALL_MODEL",
+                    os.getenv("GEMINI_MODEL", GEMINI_TOOLCALL_MODEL),
+                ).strip()
+                or GEMINI_TOOLCALL_MODEL,
+                "nvidia_reasoning_model": os.getenv(
+                    "NVIDIA_REASONING_MODEL",
+                    os.getenv("NVIDIA_MODEL", NVIDIA_REASONING_MODEL),
+                ).strip()
+                or NVIDIA_REASONING_MODEL,
+                "nvidia_toolcall_model": os.getenv(
+                    "NVIDIA_TOOLCALL_MODEL",
+                    os.getenv("NVIDIA_MODEL", NVIDIA_TOOLCALL_MODEL),
+                ).strip()
+                or NVIDIA_TOOLCALL_MODEL,
+                "minimax_reasoning_model": os.getenv(
+                    "MINIMAX_REASONING_MODEL",
+                    os.getenv("MINIMAX_MODEL", MINIMAX_REASONING_MODEL),
+                ).strip()
+                or MINIMAX_REASONING_MODEL,
+                "minimax_toolcall_model": os.getenv(
+                    "MINIMAX_TOOLCALL_MODEL",
+                    os.getenv("MINIMAX_MODEL", MINIMAX_TOOLCALL_MODEL),
+                ).strip()
+                or MINIMAX_TOOLCALL_MODEL,
+                "bedrock_reasoning_model": os.getenv(
+                    "BEDROCK_REASONING_MODEL", BEDROCK_REASONING_MODEL
+                ).strip()
+                or BEDROCK_REASONING_MODEL,
+                "bedrock_toolcall_model": os.getenv(
+                    "BEDROCK_TOOLCALL_MODEL", BEDROCK_TOOLCALL_MODEL
+                ).strip()
+                or BEDROCK_TOOLCALL_MODEL,
+                "ollama_model": os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL).strip()
+                or DEFAULT_OLLAMA_MODEL,
+                "ollama_host": os.getenv("OLLAMA_HOST", DEFAULT_OLLAMA_HOST).strip()
+                or DEFAULT_OLLAMA_HOST,
+                "max_tokens": DEFAULT_MAX_TOKENS,
+            }
+        )
+
+
 # LLM Provider Configs
 ANTHROPIC_LLM_CONFIG = LLMModelConfig(
     reasoning_model=ANTHROPIC_REASONING_MODEL,
@@ -310,4 +337,6 @@ SLACK_CHANNEL = "tracer-rca-report-alerts"
 
 def get_tracer_base_url() -> str:
     """Get Tracer base URL for current environment."""
-    return TRACER_BASE_URL_PROD if get_environment() == Environment.PRODUCTION else TRACER_BASE_URL_DEV
+    return (
+        TRACER_BASE_URL_PROD if get_environment() == Environment.PRODUCTION else TRACER_BASE_URL_DEV
+    )

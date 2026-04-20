@@ -15,9 +15,7 @@ class TestEKSNodeHealthToolContract(BaseToolContract):
 
 def test_is_available_requires_cluster_name() -> None:
     rt = get_eks_node_health.__opensre_registered_tool__
-    assert rt.is_available({
-        "eks": {"connection_verified": True, "cluster_name": "c1"}
-    }) is True
+    assert rt.is_available({"eks": {"connection_verified": True, "cluster_name": "c1"}}) is True
     assert rt.is_available({"eks": {"connection_verified": True}}) is False
     assert rt.is_available({}) is False
 
@@ -48,8 +46,12 @@ def _make_node(name: str, ready: str = "True") -> MagicMock:
 
 def test_run_happy_path() -> None:
     mock_core_v1 = MagicMock()
-    mock_core_v1.list_node.return_value = MagicMock(items=[_make_node("node-1"), _make_node("node-2")])
-    with patch("app.tools.EKSNodeHealthTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())):
+    mock_core_v1.list_node.return_value = MagicMock(
+        items=[_make_node("node-1"), _make_node("node-2")]
+    )
+    with patch(
+        "app.tools.EKSNodeHealthTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())
+    ):
         result = get_eks_node_health(cluster_name="c1", role_arn="arn:aws:iam::123:role/r")
     assert result["available"] is True
     assert result["total_nodes"] == 2
@@ -61,13 +63,17 @@ def test_run_detects_not_ready_nodes() -> None:
     mock_core_v1.list_node.return_value = MagicMock(
         items=[_make_node("node-1", "True"), _make_node("node-2", "False")]
     )
-    with patch("app.tools.EKSNodeHealthTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())):
+    with patch(
+        "app.tools.EKSNodeHealthTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())
+    ):
         result = get_eks_node_health(cluster_name="c1", role_arn="arn:aws:iam::123:role/r")
     assert result["not_ready_count"] == 1
 
 
 def test_run_handles_exception() -> None:
-    with patch("app.tools.EKSNodeHealthTool.build_k8s_clients", side_effect=Exception("auth error")):
+    with patch(
+        "app.tools.EKSNodeHealthTool.build_k8s_clients", side_effect=Exception("auth error")
+    ):
         result = get_eks_node_health(cluster_name="c1", role_arn="arn:aws:iam::123:role/r")
     assert result["available"] is False
     assert "auth error" in result["error"]

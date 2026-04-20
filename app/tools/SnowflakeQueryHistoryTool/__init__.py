@@ -82,9 +82,9 @@ def _normalize_rows(response_payload: dict[str, Any]) -> list[dict[str, Any]]:
         for row in data:
             if not isinstance(row, list):
                 continue
-            rows.append({
-                columns[idx]: row[idx] if idx < len(row) else None for idx in range(len(columns))
-            })
+            rows.append(
+                {columns[idx]: row[idx] if idx < len(row) else None for idx in range(len(columns))}
+            )
         return rows
 
     return []
@@ -140,9 +140,19 @@ def query_snowflake_history(
     account = account_identifier.strip()
     bearer = token.strip()
     if not account:
-        return {"source": "snowflake", "available": False, "error": "Missing account identifier.", "rows": []}
+        return {
+            "source": "snowflake",
+            "available": False,
+            "error": "Missing account identifier.",
+            "rows": [],
+        }
     if not bearer:
-        return {"source": "snowflake", "available": False, "error": "Missing Snowflake token.", "rows": []}
+        return {
+            "source": "snowflake",
+            "available": False,
+            "error": "Missing Snowflake token.",
+            "rows": [],
+        }
 
     statement = _ensure_sql_limit(query, effective_limit)
     endpoint = f"https://{account}.snowflakecomputing.com/api/v2/statements"
@@ -163,7 +173,9 @@ def query_snowflake_history(
         payload["schema"] = db_schema
 
     try:
-        response = httpx.post(endpoint, headers=headers, json=payload, timeout=max(1.0, timeout_seconds))
+        response = httpx.post(
+            endpoint, headers=headers, json=payload, timeout=max(1.0, timeout_seconds)
+        )
         response.raise_for_status()
         body = response.json()
     except Exception as err:  # noqa: BLE001

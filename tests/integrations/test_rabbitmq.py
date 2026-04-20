@@ -150,15 +150,11 @@ class TestBuildRabbitMQConfig:
 
 
 class TestRabbitMQConfigFromEnv:
-    def test_returns_none_when_host_missing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_returns_none_when_host_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("RABBITMQ_HOST", raising=False)
         assert rabbitmq_config_from_env() is None
 
-    def test_returns_none_when_username_missing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_returns_none_when_username_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("RABBITMQ_HOST", "rmq.internal")
         monkeypatch.delenv("RABBITMQ_USERNAME", raising=False)
         assert rabbitmq_config_from_env() is None
@@ -181,9 +177,7 @@ class TestRabbitMQConfigFromEnv:
         assert config.ssl is True
         assert config.verify_ssl is False
 
-    def test_ssl_env_is_case_insensitive(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_ssl_env_is_case_insensitive(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("RABBITMQ_HOST", "rmq")
         monkeypatch.setenv("RABBITMQ_USERNAME", "admin")
         monkeypatch.setenv("RABBITMQ_SSL", "TRUE")
@@ -272,25 +266,19 @@ class TestValidateRabbitMQConfig:
         assert "rmq@node1" in result.detail
 
     def test_404_surfaces_management_plugin_message(self, patched_client: Any) -> None:
-        patched_client(
-            {"/api/overview": httpx.Response(404, text="Not Found")}
-        )
+        patched_client({"/api/overview": httpx.Response(404, text="Not Found")})
         result = validate_rabbitmq_config(CONFIGURED)
         assert result.ok is False
         assert "rabbitmq_management" in result.detail
 
     def test_401_surfaces_auth_message(self, patched_client: Any) -> None:
-        patched_client(
-            {"/api/overview": httpx.Response(401, text="Unauthorized")}
-        )
+        patched_client({"/api/overview": httpx.Response(401, text="Unauthorized")})
         result = validate_rabbitmq_config(CONFIGURED)
         assert result.ok is False
         assert "authentication" in result.detail.lower()
 
     def test_500_surfaces_http_status(self, patched_client: Any) -> None:
-        patched_client(
-            {"/api/overview": httpx.Response(500, text="boom")}
-        )
+        patched_client({"/api/overview": httpx.Response(500, text="boom")})
         result = validate_rabbitmq_config(CONFIGURED)
         assert result.ok is False
         assert "500" in result.detail

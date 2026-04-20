@@ -22,8 +22,12 @@ def _bounded_limit(limit: int, max_results: int) -> int:
 def _openobserve_available(sources: dict[str, dict[str, Any]]) -> bool:
     oo = sources.get("openobserve", {})
     has_token = bool(str(oo.get("api_token", "")).strip())
-    has_user_password = bool(str(oo.get("username", "")).strip() and str(oo.get("password", "")).strip())
-    return bool(oo.get("connection_verified") and oo.get("base_url") and (has_token or has_user_password))
+    has_user_password = bool(
+        str(oo.get("username", "")).strip() and str(oo.get("password", "")).strip()
+    )
+    return bool(
+        oo.get("connection_verified") and oo.get("base_url") and (has_token or has_user_password)
+    )
 
 
 def _openobserve_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -118,12 +122,22 @@ def query_openobserve_logs(
     """Fetch bounded evidence from OpenObserve."""
     base = base_url.strip().rstrip("/")
     if not base:
-        return {"source": "openobserve", "available": False, "error": "Missing OpenObserve URL.", "records": []}
+        return {
+            "source": "openobserve",
+            "available": False,
+            "error": "Missing OpenObserve URL.",
+            "records": [],
+        }
     auth_token = api_token.strip()
     user = username.strip()
     secret = password.strip()
     if not auth_token and not (user and secret):
-        return {"source": "openobserve", "available": False, "error": "Missing OpenObserve credentials.", "records": []}
+        return {
+            "source": "openobserve",
+            "available": False,
+            "error": "Missing OpenObserve credentials.",
+            "records": [],
+        }
 
     effective_limit = _bounded_limit(limit, max_results)
     now = datetime.now(UTC)
@@ -148,7 +162,9 @@ def query_openobserve_logs(
     headers.update(_auth_headers(auth_token, user, secret))
 
     try:
-        response = httpx.post(endpoint, headers=headers, json=payload, timeout=max(1.0, timeout_seconds))
+        response = httpx.post(
+            endpoint, headers=headers, json=payload, timeout=max(1.0, timeout_seconds)
+        )
         response.raise_for_status()
         body = response.json()
     except Exception as err:  # noqa: BLE001

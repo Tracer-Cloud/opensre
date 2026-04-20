@@ -209,7 +209,7 @@ OpenSRE connects to 60+ tools and services across the modern cloud stack, from L
 | Category | Integrations | Roadmap |
 | --- | --- | --- |
 | **AI / LLM Providers** | Anthropic · OpenAI · Ollama · Google Gemini · OpenRouter · NVIDIA NIM · Bedrock | |
-| **Observability** | <img src="docs/assets/icons/grafana.webp" width="16"> Grafana (Loki · Mimir · Tempo) · <img src="docs/assets/icons/datadog.svg" width="16"> Datadog · Honeycomb · Coralogix · <img src="docs/assets/icons/cloudwatch.png" width="16"> CloudWatch · <img src="docs/assets/icons/sentry.png" width="16"> Sentry · Elasticsearch | [Splunk](https://github.com/Tracer-Cloud/opensre/issues/319) · [New Relic](https://github.com/Tracer-Cloud/opensre/issues/139) · [Victoria Logs](https://github.com/Tracer-Cloud/opensre/issues/126) |
+| **Observability** | <img src="docs/assets/icons/grafana.webp" width="16"> Grafana (Loki · Mimir · Tempo) · <img src="docs/assets/icons/datadog.svg" width="16"> Datadog · Honeycomb · Coralogix · <img src="docs/assets/icons/cloudwatch.png" width="16"> CloudWatch · <img src="docs/assets/icons/sentry.png" width="16"> Sentry · Elasticsearch · Better Stack Telemetry | [Splunk](https://github.com/Tracer-Cloud/opensre/issues/319) · [New Relic](https://github.com/Tracer-Cloud/opensre/issues/139) · [Victoria Logs](https://github.com/Tracer-Cloud/opensre/issues/126) |
 | **Infrastructure** | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS (S3 · Lambda · EKS · EC2 · Bedrock) · <img src="docs/assets/icons/gcp.jpg" width="16"> GCP · <img src="docs/assets/icons/azure.png" width="16"> Azure | [Helm](https://github.com/Tracer-Cloud/opensre/issues/321) · [ArgoCD](https://github.com/Tracer-Cloud/opensre/issues/320) |
 | **Database** | MongoDB · ClickHouse | [PostgreSQL · MySQL](https://github.com/Tracer-Cloud/opensre/issues/322) · [MariaDB](https://github.com/Tracer-Cloud/opensre/issues/331) · [MongoDB Atlas](https://github.com/Tracer-Cloud/opensre/issues/332) · [Azure SQL](https://github.com/Tracer-Cloud/opensre/issues/333) · [RDS](https://github.com/Tracer-Cloud/opensre/issues/125) · [Snowflake](https://github.com/Tracer-Cloud/opensre/issues/364) |
 | **Data Platform** | Apache Airflow · Apache Kafka · Apache Spark · Prefect · RabbitMQ | |
@@ -624,6 +624,13 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/126781073?v=4" width="100" alt="alexanderkreidich"/>
             <br />
             <sub><b>alexanderkreidich</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/afif1400">
+            <img src="https://avatars.githubusercontent.com/u/51887071?v=4" width="100" alt="afif1400"/>
+            <br />
+            <sub><b>afif1400</b></sub>
         </a>
     </td>
 		</tr>

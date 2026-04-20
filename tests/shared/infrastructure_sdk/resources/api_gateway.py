@@ -134,7 +134,9 @@ def create_lambda_integration(
             raise
 
     # Create integration
-    lambda_uri = f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambda_arn}/invocations"
+    lambda_uri = (
+        f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambda_arn}/invocations"
+    )
 
     api_client.put_integration(
         restApiId=api_id,

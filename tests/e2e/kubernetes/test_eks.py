@@ -74,15 +74,23 @@ def check_eks_prerequisites() -> list[str]:
     return missing
 
 
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="EKS + Datadog integration test")
-    parser.add_argument("--skip-deploy", action="store_true", help="Skip EKS stack deployment (reuse existing)")
-    parser.add_argument("--skip-destroy", action="store_true", help="Don't tear down EKS stack after test")
-    parser.add_argument("--skip-verify", action="store_true", help="Skip Datadog API log verification")
-    parser.add_argument("--skip-monitors", action="store_true", help="Skip monitor deployment and verification")
-    parser.add_argument("--cleanup-monitors", action="store_true", help="Delete test monitors on exit")
+    parser.add_argument(
+        "--skip-deploy", action="store_true", help="Skip EKS stack deployment (reuse existing)"
+    )
+    parser.add_argument(
+        "--skip-destroy", action="store_true", help="Don't tear down EKS stack after test"
+    )
+    parser.add_argument(
+        "--skip-verify", action="store_true", help="Skip Datadog API log verification"
+    )
+    parser.add_argument(
+        "--skip-monitors", action="store_true", help="Skip monitor deployment and verification"
+    )
+    parser.add_argument(
+        "--cleanup-monitors", action="store_true", help="Delete test monitors on exit"
+    )
     args = parser.parse_args()
 
     missing = check_eks_prerequisites()
@@ -165,6 +173,7 @@ def main() -> int:
 
         if not args.skip_verify and passed:
             import time
+
             print("\nWaiting 30s for Datadog Agent to flush logs...")
             time.sleep(30)
 

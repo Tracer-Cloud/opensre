@@ -206,7 +206,12 @@ def test_get_deployment_normalizes_git_metadata(monkeypatch: pytest.MonkeyPatch)
 def test_get_deployment_events_list_response(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = [
         {"id": "evt_1", "type": "stdout", "created": 1704067200000, "text": "Building..."},
-        {"id": "evt_2", "type": "stderr", "created": 1704067201000, "text": "Error: module not found"},
+        {
+            "id": "evt_2",
+            "type": "stderr",
+            "created": 1704067201000,
+            "text": "Error: module not found",
+        },
     ]
     monkeypatch.setattr(
         "app.services.vercel.client.httpx.Client.get",
@@ -326,10 +331,14 @@ def test_get_deployment_events_dict_response(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_get_runtime_logs_dict_wrapped_response(monkeypatch: pytest.MonkeyPatch) -> None:
-    payload = {"logs": [{"id": "l1", "createdAt": 1, "payload": {}, "type": "stdout", "source": "lambda"}]}
+    payload = {
+        "logs": [{"id": "l1", "createdAt": 1, "payload": {}, "type": "stdout", "source": "lambda"}]
+    }
     monkeypatch.setattr(
         "app.services.vercel.client.httpx.Client.stream",
-        lambda _self, *_a, **_kw: _FakeStreamResponse(lines=_runtime_stream_lines_from_payload(payload)),
+        lambda _self, *_a, **_kw: _FakeStreamResponse(
+            lines=_runtime_stream_lines_from_payload(payload)
+        ),
     )
     result = _client().get_runtime_logs("dpl_xyz")
     assert result["success"] is True

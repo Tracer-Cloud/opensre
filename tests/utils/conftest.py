@@ -41,6 +41,7 @@ LANGGRAPH_REMOTE_ENDPOINT = (
     "https://tracer-agent-2026-e09h3n0zulnlz1-lwyjk39e.us-central1.run.app/agent/runs/stream"
 )
 
+
 # Upstream/Downstream Pipeline test case - AWS resources
 def _load_upstream_downstream_config() -> dict:
     """Load config from SDK outputs or use CDK fallback."""

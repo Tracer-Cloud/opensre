@@ -108,7 +108,11 @@ _CHECKS = [
     ("network", _check_network),
 ]
 
-_STATUS_SYMBOLS = {"ok": "\033[1;32m✓\033[0m", "warn": "\033[1;33m!\033[0m", "error": "\033[1;31m✗\033[0m"}
+_STATUS_SYMBOLS = {
+    "ok": "\033[1;32m✓\033[0m",
+    "warn": "\033[1;33m!\033[0m",
+    "error": "\033[1;31m✗\033[0m",
+}
 
 
 @click.command(name="doctor")

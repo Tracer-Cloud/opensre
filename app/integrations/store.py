@@ -73,9 +73,7 @@ def _migrate_record_v1_to_v2(record: dict[str, Any]) -> dict[str, Any]:
         "id": record.get("id", ""),
         "service": record.get("service", ""),
         "status": record.get("status", "active"),
-        "instances": [
-            {"name": "default", "tags": {}, "credentials": credentials}
-        ],
+        "instances": [{"name": "default", "tags": {}, "credentials": credentials}],
     }
 
 
@@ -86,9 +84,7 @@ def _migrate_if_needed(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     records = data.get("integrations", [])
     if not isinstance(records, list):
         records = []
-    migrated_records = [
-        _migrate_record_v1_to_v2(r) if isinstance(r, dict) else r for r in records
-    ]
+    migrated_records = [_migrate_record_v1_to_v2(r) if isinstance(r, dict) else r for r in records]
     return {"version": _VERSION, "integrations": migrated_records}, True
 
 
@@ -207,9 +203,7 @@ def remove_integration(service: str) -> bool:
     """Remove integration for a service. Returns True if something was removed."""
     data = _load_raw()
     before = len(data.get("integrations", []))
-    data["integrations"] = [
-        i for i in data.get("integrations", []) if i.get("service") != service
-    ]
+    data["integrations"] = [i for i in data.get("integrations", []) if i.get("service") != service]
     removed = len(data["integrations"]) < before
     if removed:
         _save(data)
@@ -377,8 +371,7 @@ def remove_instance(service: str, name: str) -> bool:
         kept = [
             inst
             for inst in instances
-            if isinstance(inst, dict)
-            and inst.get("name", "").lower() != normalized_name
+            if isinstance(inst, dict) and inst.get("name", "").lower() != normalized_name
         ]
         if len(kept) == len(instances):
             remaining.append(record)

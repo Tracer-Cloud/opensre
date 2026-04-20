@@ -153,17 +153,19 @@ class AlertmanagerClient:
 
             alerts = []
             for a in data[:limit]:
-                alerts.append({
-                    "fingerprint": a.get("fingerprint", ""),
-                    "status": a.get("status", {}).get("state", "unknown"),
-                    "inhibited_by": a.get("status", {}).get("inhibitedBy", []),
-                    "silenced_by": a.get("status", {}).get("silencedBy", []),
-                    "labels": a.get("labels", {}),
-                    "annotations": a.get("annotations", {}),
-                    "starts_at": a.get("startsAt", ""),
-                    "ends_at": a.get("endsAt", ""),
-                    "generator_url": a.get("generatorURL", ""),
-                })
+                alerts.append(
+                    {
+                        "fingerprint": a.get("fingerprint", ""),
+                        "status": a.get("status", {}).get("state", "unknown"),
+                        "inhibited_by": a.get("status", {}).get("inhibitedBy", []),
+                        "silenced_by": a.get("status", {}).get("silencedBy", []),
+                        "labels": a.get("labels", {}),
+                        "annotations": a.get("annotations", {}),
+                        "starts_at": a.get("startsAt", ""),
+                        "ends_at": a.get("endsAt", ""),
+                        "generator_url": a.get("generatorURL", ""),
+                    }
+                )
 
             return {"success": True, "alerts": alerts, "total": len(alerts)}
         except httpx.HTTPStatusError as e:
@@ -187,19 +189,24 @@ class AlertmanagerClient:
             data = resp.json()
 
             if not isinstance(data, list):
-                return {"success": False, "error": "Unexpected response format from /api/v2/silences"}
+                return {
+                    "success": False,
+                    "error": "Unexpected response format from /api/v2/silences",
+                }
 
             silences = []
             for s in data[:limit]:
-                silences.append({
-                    "id": s.get("id", ""),
-                    "status": s.get("status", {}).get("state", "unknown"),
-                    "matchers": s.get("matchers", []),
-                    "comment": s.get("comment", ""),
-                    "created_by": s.get("createdBy", ""),
-                    "starts_at": s.get("startsAt", ""),
-                    "ends_at": s.get("endsAt", ""),
-                })
+                silences.append(
+                    {
+                        "id": s.get("id", ""),
+                        "status": s.get("status", {}).get("state", "unknown"),
+                        "matchers": s.get("matchers", []),
+                        "comment": s.get("comment", ""),
+                        "created_by": s.get("createdBy", ""),
+                        "starts_at": s.get("startsAt", ""),
+                        "ends_at": s.get("endsAt", ""),
+                    }
+                )
 
             active = [s for s in silences if s["status"] == "active"]
             return {
@@ -220,7 +227,6 @@ class AlertmanagerClient:
         except Exception as e:
             logger.warning("[alertmanager] List silences error: %s", e)
             return {"success": False, "error": str(e)}
-
 
 
 def make_alertmanager_client(

@@ -74,12 +74,15 @@ def test_run_happy_path_with_code() -> None:
         "layers": [],
     }
     fake_code = {"file_count": 2, "files": {"handler.py": "def main(): pass"}}
-    with patch(
-        "app.tools.LambdaInspectTool.get_function_configuration",
-        return_value={"success": True, "data": fake_config},
-    ), patch(
-        "app.tools.LambdaInspectTool.get_function_code",
-        return_value={"success": True, "data": fake_code},
+    with (
+        patch(
+            "app.tools.LambdaInspectTool.get_function_configuration",
+            return_value={"success": True, "data": fake_config},
+        ),
+        patch(
+            "app.tools.LambdaInspectTool.get_function_code",
+            return_value={"success": True, "data": fake_code},
+        ),
     ):
         result = inspect_lambda_function(function_name="my-fn", include_code=True)
     assert result["found"] is True

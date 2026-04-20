@@ -23,15 +23,17 @@ def _resolve_config(
 ) -> GitHubMCPConfig | None:
     env_config = github_mcp_config_from_env()
     if any([github_url, github_mode, github_token, github_command, github_args]):
-        return build_github_mcp_config({
-            "url": github_url or (env_config.url if env_config else ""),
-            "mode": github_mode or (env_config.mode if env_config else ""),
-            "auth_token": github_token or (env_config.auth_token if env_config else ""),
-            "command": github_command or (env_config.command if env_config else ""),
-            "args": github_args or (list(env_config.args) if env_config else []),
-            "headers": env_config.headers if env_config else {},
-            "toolsets": env_config.toolsets if env_config else (),
-        })
+        return build_github_mcp_config(
+            {
+                "url": github_url or (env_config.url if env_config else ""),
+                "mode": github_mode or (env_config.mode if env_config else ""),
+                "auth_token": github_token or (env_config.auth_token if env_config else ""),
+                "command": github_command or (env_config.command if env_config else ""),
+                "args": github_args or (list(env_config.args) if env_config else []),
+                "headers": env_config.headers if env_config else {},
+                "toolsets": env_config.toolsets if env_config else (),
+            }
+        )
     return env_config
 
 
@@ -124,7 +126,12 @@ def search_github_code(
     """Search GitHub repository code through the configured GitHub MCP server."""
     config = _resolve_config(github_url, github_mode, github_token, github_command, github_args)
     if config is None:
-        return {"source": "github", "available": False, "error": "GitHub MCP integration is not configured.", "matches": []}
+        return {
+            "source": "github",
+            "available": False,
+            "error": "GitHub MCP integration is not configured.",
+            "matches": [],
+        }
 
     final_query = build_github_code_search_query(owner, repo, query)
     result = call_github_mcp_tool(config, "search_code", {"query": final_query})

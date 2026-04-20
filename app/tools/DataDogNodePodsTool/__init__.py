@@ -36,7 +36,10 @@ def _node_pods_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     input_schema={
         "type": "object",
         "properties": {
-            "node_ip": {"type": "string", "description": "The IP address of the node (e.g. '10.0.1.42')"},
+            "node_ip": {
+                "type": "string",
+                "description": "The IP address of the node (e.g. '10.0.1.42')",
+            },
             "time_range_minutes": {"type": "integer", "default": 60},
             "limit": {"type": "integer", "default": 200},
             "api_key": {"type": "string"},
@@ -65,7 +68,9 @@ def get_pods_on_node(
     if not client:
         return unavailable("datadog_node_ip_to_pods", "pods", "Datadog integration not configured")
 
-    result = client.get_pods_on_node(node_ip=node_ip, time_range_minutes=time_range_minutes, limit=limit)
+    result = client.get_pods_on_node(
+        node_ip=node_ip, time_range_minutes=time_range_minutes, limit=limit
+    )
     if not result.get("success"):
         return unavailable(
             "datadog_node_ip_to_pods", "pods", result.get("error", "Unknown error"), node_ip=node_ip

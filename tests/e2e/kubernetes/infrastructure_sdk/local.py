@@ -11,7 +11,9 @@ import urllib.parse
 import urllib.request
 
 
-def _run(cmd: list[str], *, check: bool = True, capture: bool = True) -> subprocess.CompletedProcess[str]:
+def _run(
+    cmd: list[str], *, check: bool = True, capture: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=check, capture_output=capture, text=True)
 
 
@@ -78,9 +80,14 @@ def wait_for_job(namespace: str, job_name: str, timeout: int = 120) -> str:
     while time.monotonic() < deadline:
         result = _run(
             [
-                "kubectl", "get", "job", job_name,
-                "-n", namespace,
-                "-o", "jsonpath={.status.conditions[*].type}",
+                "kubectl",
+                "get",
+                "job",
+                job_name,
+                "-n",
+                namespace,
+                "-o",
+                "jsonpath={.status.conditions[*].type}",
             ],
             check=False,
         )
@@ -136,11 +143,20 @@ def deploy_datadog_helm(
     _run(ns_cmd, check=False)
 
     cmd: list[str] = [
-        "helm", "upgrade", "--install", DATADOG_HELM_RELEASE, DATADOG_HELM_CHART,
-        "-n", namespace,
-        "-f", values_file,
-        "--set", f"datadog.apiKey={api_key}",
-        "--wait", "--timeout", "3m",
+        "helm",
+        "upgrade",
+        "--install",
+        DATADOG_HELM_RELEASE,
+        DATADOG_HELM_CHART,
+        "-n",
+        namespace,
+        "-f",
+        values_file,
+        "--set",
+        f"datadog.apiKey={api_key}",
+        "--wait",
+        "--timeout",
+        "3m",
     ]
 
     site = os.environ.get("DD_SITE", "")
@@ -173,10 +189,15 @@ def wait_for_datadog_agent(
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         ds_cmd: list[str] = [
-            "kubectl", "get", "daemonset",
-            "-n", namespace,
-            "-l", "app.kubernetes.io/component=agent",
-            "-o", "jsonpath={.items[0].status.numberReady}",
+            "kubectl",
+            "get",
+            "daemonset",
+            "-n",
+            namespace,
+            "-l",
+            "app.kubernetes.io/component=agent",
+            "-o",
+            "jsonpath={.items[0].status.numberReady}",
         ]
         if kube_context:
             ds_cmd[1:1] = ["--context", kube_context]
@@ -198,6 +219,7 @@ def wait_for_datadog_agent(
 # Datadog Monitor API helpers
 # ---------------------------------------------------------------------------
 
+
 def _dd_api_headers() -> dict[str, str]:
     api_key = os.environ.get("DD_API_KEY", "")
     app_key = os.environ.get("DD_APP_KEY", "")
@@ -211,7 +233,10 @@ def _dd_api_headers() -> dict[str, str]:
 
 
 def _dd_api_request(
-    method: str, path: str, *, body: dict | None = None,
+    method: str,
+    path: str,
+    *,
+    body: dict | None = None,
 ) -> dict:
     """Make a request to the Datadog API. Returns parsed JSON response."""
     site = os.environ.get("DD_SITE", "datadoghq.com")

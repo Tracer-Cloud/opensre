@@ -70,12 +70,14 @@ def mongodb_config_from_env() -> MongoDBConfig | None:
     connection_string = os.getenv("MONGODB_CONNECTION_STRING", "").strip()
     if not connection_string:
         return None
-    return build_mongodb_config({
-        "connection_string": connection_string,
-        "database": os.getenv("MONGODB_DATABASE", "").strip(),
-        "auth_source": os.getenv("MONGODB_AUTH_SOURCE", DEFAULT_MONGODB_AUTH_SOURCE).strip(),
-        "tls": os.getenv("MONGODB_TLS", "true").strip().lower() in ("true", "1", "yes"),
-    })
+    return build_mongodb_config(
+        {
+            "connection_string": connection_string,
+            "database": os.getenv("MONGODB_DATABASE", "").strip(),
+            "auth_source": os.getenv("MONGODB_AUTH_SOURCE", DEFAULT_MONGODB_AUTH_SOURCE).strip(),
+            "tls": os.getenv("MONGODB_TLS", "true").strip().lower() in ("true", "1", "yes"),
+        }
+    )
 
 
 def _get_client(config: MongoDBConfig) -> Any:
@@ -112,10 +114,7 @@ def validate_mongodb_config(config: MongoDBConfig) -> MongoDBValidationResult:
             db_name = config.database or "(default)"
             return MongoDBValidationResult(
                 ok=True,
-                detail=(
-                    f"Connected to MongoDB {version}; "
-                    f"target database: {db_name}."
-                ),
+                detail=(f"Connected to MongoDB {version}; target database: {db_name}."),
             )
         finally:
             client.close()
@@ -174,21 +173,25 @@ def get_current_ops(
     try:
         client = _get_client(config)
         try:
-            result = client.admin.command("currentOp", {"microsecs_running": {"$gte": threshold_microsecs}})
+            result = client.admin.command(
+                "currentOp", {"microsecs_running": {"$gte": threshold_microsecs}}
+            )
             ops = result.get("inprog", [])
             # Cap results and strip potentially sensitive fields
             capped_ops = []
             for op in ops[: config.max_results]:
-                capped_ops.append({
-                    "opid": op.get("opid"),
-                    "op": op.get("op"),
-                    "ns": op.get("ns", ""),
-                    "secs_running": op.get("secs_running", 0),
-                    "microsecs_running": op.get("microsecs_running", 0),
-                    "desc": op.get("desc", ""),
-                    "wait_for_lock": op.get("waitingForLock", False),
-                    "plan_summary": op.get("planSummary", ""),
-                })
+                capped_ops.append(
+                    {
+                        "opid": op.get("opid"),
+                        "op": op.get("op"),
+                        "ns": op.get("ns", ""),
+                        "secs_running": op.get("secs_running", 0),
+                        "microsecs_running": op.get("microsecs_running", 0),
+                        "desc": op.get("desc", ""),
+                        "wait_for_lock": op.get("waitingForLock", False),
+                        "plan_summary": op.get("planSummary", ""),
+                    }
+                )
             return {
                 "source": "mongodb",
                 "available": True,
@@ -218,15 +221,17 @@ def get_rs_status(config: MongoDBConfig) -> dict[str, Any]:
             rs = client.admin.command("replSetGetStatus")
             members = []
             for member in rs.get("members", []):
-                members.append({
-                    "name": member.get("name", ""),
-                    "state": member.get("stateStr", ""),
-                    "health": member.get("health", 0),
-                    "uptime_seconds": member.get("uptime", 0),
-                    "optime": str(member.get("optimeDate", "")),
-                    "last_heartbeat": str(member.get("lastHeartbeat", "")),
-                    "ping_ms": member.get("pingMs", None),
-                })
+                members.append(
+                    {
+                        "name": member.get("name", ""),
+                        "state": member.get("stateStr", ""),
+                        "health": member.get("health", 0),
+                        "uptime_seconds": member.get("uptime", 0),
+                        "optime": str(member.get("optimeDate", "")),
+                        "last_heartbeat": str(member.get("lastHeartbeat", "")),
+                        "ping_ms": member.get("pingMs", None),
+                    }
+                )
             return {
                 "source": "mongodb",
                 "available": True,
@@ -300,17 +305,19 @@ def get_profiler_data(
             )
             entries = []
             for doc in cursor:
-                entries.append({
-                    "op": doc.get("op", ""),
-                    "ns": doc.get("ns", ""),
-                    "millis": doc.get("millis", 0),
-                    "ts": str(doc.get("ts", "")),
-                    "plan_summary": doc.get("planSummary", ""),
-                    "docs_examined": doc.get("docsExamined", 0),
-                    "keys_examined": doc.get("keysExamined", 0),
-                    "n_returned": doc.get("nreturned", 0),
-                    "response_length": doc.get("responseLength", 0),
-                })
+                entries.append(
+                    {
+                        "op": doc.get("op", ""),
+                        "ns": doc.get("ns", ""),
+                        "millis": doc.get("millis", 0),
+                        "ts": str(doc.get("ts", "")),
+                        "plan_summary": doc.get("planSummary", ""),
+                        "docs_examined": doc.get("docsExamined", 0),
+                        "keys_examined": doc.get("keysExamined", 0),
+                        "n_returned": doc.get("nreturned", 0),
+                        "response_length": doc.get("responseLength", 0),
+                    }
+                )
             return {
                 "source": "mongodb",
                 "available": True,

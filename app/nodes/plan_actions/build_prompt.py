@@ -145,7 +145,8 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Commit SHA: {github.get("sha") or "unknown"}
 - Ref: {github.get("ref") or "unknown"}
 - Code Query: {github.get("query") or "exception OR error"}
-- Use list_github_commits to correlate the deployment window with recent code changes
+- Prefer get_git_deploy_timeline for deploy correlation (commits in a time window around the alert)
+- Use list_github_commits for the N most recent commits regardless of time window
 - Use search_github_code and get_github_file_contents to trace the failure into code"""
         )
 
@@ -188,6 +189,21 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Subsystem: {coralogix.get("subsystem_name") or "unknown"}
 - Default Query: {coralogix.get("default_query")}
 - Use query_coralogix_logs to search Coralogix DataPrime logs for the failing service or error signature"""
+        )
+
+    if "betterstack" in available_sources:
+        betterstack = available_sources["betterstack"]
+        bs_sources = betterstack.get("sources") or []
+        sources_line = (
+            ", ".join(bs_sources)
+            if bs_sources
+            else "none pre-configured (planner must supply 'source' from alert metadata)"
+        )
+        hints.append(
+            f"""Better Stack Telemetry Available:
+- Query endpoint: {betterstack.get("query_endpoint") or "unknown"}
+- Configured sources: {sources_line}
+- Use query_betterstack_logs with a 'source' identifier (base name like t123456_myapp; _logs / _s3 suffixes are appended internally) to UNION recent and historical logs via ClickHouse SQL"""
         )
 
     if "bitbucket" in available_sources:

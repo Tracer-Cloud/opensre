@@ -49,7 +49,9 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     evidence = state.get("evidence", {})
     raw_alert = state.get("raw_alert", {})
 
-    has_tracer, has_cloudwatch, has_alert = check_evidence_availability(context, evidence, raw_alert)
+    has_tracer, has_cloudwatch, has_alert = check_evidence_availability(
+        context, evidence, raw_alert
+    )
 
     if _short_circuit_enabled() and is_clearly_healthy(raw_alert, evidence):
         debug_print("Short-circuit: alert is clearly healthy, skipping LLM")
@@ -101,17 +103,13 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
         "validated_claims": masking_ctx.unmask_value(validated_claims_list),
         "non_validated_claims": masking_ctx.unmask_value(non_validated_claims_list),
         "validity_score": validity_score,
-        "investigation_recommendations": [
-            masking_ctx.unmask(rec) for rec in recommendations
-        ],
+        "investigation_recommendations": [masking_ctx.unmask(rec) for rec in recommendations],
         "remediation_steps": [],
         "investigation_loop_count": next_loop_count,
     }
 
 
-def _handle_healthy_finding(
-    state: InvestigationState, tracker, evidence: dict
-) -> dict:
+def _handle_healthy_finding(state: InvestigationState, tracker, evidence: dict) -> dict:
     """Return a deterministic healthy finding, bypassing the LLM.
 
     Called when is_clearly_healthy() confirms the alert is informational and all
@@ -122,7 +120,10 @@ def _handle_healthy_finding(
     loop_count = state.get("investigation_loop_count", 0)
 
     validated_claims = [
-        {"claim": f"{k} data confirmed within normal operating bounds", "validation_status": "validated"}
+        {
+            "claim": f"{k} data confirmed within normal operating bounds",
+            "validation_status": "validated",
+        }
         for k in evidence
         if evidence[k]
     ]
@@ -164,7 +165,11 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
     # If Grafana service names were just discovered but logs haven't been fetched yet,
     # loop back so node_plan_actions can query logs with the correct service name.
     recommendations: list[str] = []
-    if evidence.get("grafana_service_names") and not evidence.get("grafana_logs") and loop_count < MAX_INVESTIGATION_LOOPS:
+    if (
+        evidence.get("grafana_service_names")
+        and not evidence.get("grafana_logs")
+        and loop_count < MAX_INVESTIGATION_LOOPS
+    ):
         recommendations.append("Query Grafana logs using discovered service names")
 
     next_loop_count = loop_count + 1
@@ -172,7 +177,8 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
     tracker.complete(
         "diagnose_root_cause",
         fields_updated=["root_cause"],
-        message="Insufficient evidence" + (f" — retrying ({next_loop_count})" if recommendations else ""),
+        message="Insufficient evidence"
+        + (f" — retrying ({next_loop_count})" if recommendations else ""),
     )
 
     return {

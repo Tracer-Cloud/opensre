@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.azure_sql import get_current_queries, resolve_azure_sql_config
+from app.integrations.azure_sql import (
+    azure_sql_extract_params,
+    azure_sql_is_available,
+    get_current_queries,
+    resolve_azure_sql_config,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -16,6 +21,8 @@ from app.tools.tool_decorator import tool
         "Diagnosing blocking chains during an Azure SQL incident",
         "Finding queries consuming excessive CPU or IO",
     ],
+    is_available=azure_sql_is_available,
+    extract_params=azure_sql_extract_params,
 )
 def get_azure_sql_current_queries(
     server: str,

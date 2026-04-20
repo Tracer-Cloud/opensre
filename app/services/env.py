@@ -6,7 +6,9 @@ import os
 from typing import Any
 
 
-def _missing_env_error(missing: list[str], *, context: str, hint: str | None = None) -> dict[str, Any]:
+def _missing_env_error(
+    missing: list[str], *, context: str, hint: str | None = None
+) -> dict[str, Any]:
     error = f"Missing required environment variables for {context}: {', '.join(missing)}"
     payload: dict[str, Any] = {
         "success": False,

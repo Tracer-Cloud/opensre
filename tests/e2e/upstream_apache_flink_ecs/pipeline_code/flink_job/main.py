@@ -131,5 +131,6 @@ def main():
         print(f"[FLINK][ERROR] Failed to write output: {e}")
         sys.exit(1)
 
+
 if __name__ == "__main__":
     main()

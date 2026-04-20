@@ -19,9 +19,18 @@ from typing_extensions import TypedDict
 
 VALID_ENGINES = frozenset({"postgres", "mysql", "aurora-postgres", "aurora-mysql", "mariadb"})
 VALID_FAILURE_MODES = frozenset(
-    {"replication_lag", "connection_exhaustion", "storage_full", "cpu_saturation", "failover", "healthy"}
+    {
+        "replication_lag",
+        "connection_exhaustion",
+        "storage_full",
+        "cpu_saturation",
+        "failover",
+        "healthy",
+    }
 )
-VALID_EVIDENCE_SOURCES = frozenset({"aws_cloudwatch_metrics", "aws_rds_events", "aws_performance_insights"})
+VALID_EVIDENCE_SOURCES = frozenset(
+    {"aws_cloudwatch_metrics", "aws_rds_events", "aws_performance_insights"}
+)
 
 # ---------------------------------------------------------------------------
 # Alert fixture  (alert.json)
@@ -175,15 +184,21 @@ class AnswerKeySchema(TypedDict):
     required_keywords: list[str]
     model_response: str
     # Optional adversarial constraints (level 2+ scenarios)
-    forbidden_categories: NotRequired[list[str]]      # root_cause_category must NOT be any of these
-    forbidden_keywords: NotRequired[list[str]]         # none of these may appear in evidence_text
-    required_evidence_sources: NotRequired[list[str]]  # these keys must be non-empty in final_state["evidence"]
+    forbidden_categories: NotRequired[list[str]]  # root_cause_category must NOT be any of these
+    forbidden_keywords: NotRequired[list[str]]  # none of these may appear in evidence_text
+    required_evidence_sources: NotRequired[
+        list[str]
+    ]  # these keys must be non-empty in final_state["evidence"]
     # Trajectory efficiency (Axis 1)
-    optimal_trajectory: NotRequired[list[str]]        # ordered action names the agent should call
-    max_investigation_loops: NotRequired[int]          # how many investigation loops is acceptable
+    optimal_trajectory: NotRequired[list[str]]  # ordered action names the agent should call
+    max_investigation_loops: NotRequired[int]  # how many investigation loops is acceptable
     # Adversarial reasoning (Axis 2)
-    ruling_out_keywords: NotRequired[list[str]]       # agent output must contain these tokens (proof it dismissed alternatives)
-    required_queries: NotRequired[list[str]]           # metric names agent must have specifically requested via query_timeseries
+    ruling_out_keywords: NotRequired[
+        list[str]
+    ]  # agent output must contain these tokens (proof it dismissed alternatives)
+    required_queries: NotRequired[
+        list[str]
+    ]  # metric names agent must have specifically requested via query_timeseries
 
 
 # ---------------------------------------------------------------------------
@@ -203,9 +218,9 @@ class ScenarioMetadataSchema(TypedDict):
     severity: str
     available_evidence: list[str]
     db_cluster: NotRequired[str]
-    scenario_difficulty: NotRequired[int]        # 1–4 curriculum level
+    scenario_difficulty: NotRequired[int]  # 1–4 curriculum level
     adversarial_signals: NotRequired[list[str]]  # metrics that are intentional confounders
-    depends_on: NotRequired[str]                 # e.g. "healthy_rca_state" — CI skip flag
+    depends_on: NotRequired[str]  # e.g. "healthy_rca_state" — CI skip flag
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +326,9 @@ def validate_performance_insights(data: dict[str, Any]) -> PerformanceInsightsFi
     if not isinstance(db_load.get("values"), list):
         raise ValueError(f"{ctx}: 'db_load.values' must be a list")
     if len(db_load["timestamps"]) != len(db_load["values"]):
-        raise ValueError(f"{ctx}: 'db_load.timestamps' and 'db_load.values' must have the same length")
+        raise ValueError(
+            f"{ctx}: 'db_load.timestamps' and 'db_load.values' must have the same length"
+        )
     if not isinstance(data.get("top_sql"), list):
         raise ValueError(f"{ctx}: 'top_sql' must be a list")
     if not isinstance(data.get("top_wait_events"), list):
@@ -327,14 +344,20 @@ def validate_answer_key(data: dict[str, Any]) -> AnswerKeySchema:
     _require_str(data, "root_cause_category", ctx="answer.yml")
     _require_non_empty_str_list(data, "required_keywords", "answer.yml", required=True)
     _require_str(data, "model_response", ctx="answer.yml")
-    for opt_list_field in ("forbidden_categories", "forbidden_keywords", "required_evidence_sources"):
+    for opt_list_field in (
+        "forbidden_categories",
+        "forbidden_keywords",
+        "required_evidence_sources",
+    ):
         val = data.get(opt_list_field)
         if val is not None and not isinstance(val, list):
             raise ValueError(f"answer.yml: '{opt_list_field}' must be a list when present")
     trajectory = data.get("optimal_trajectory")
     if trajectory is not None:
         if not isinstance(trajectory, list) or not trajectory:
-            raise ValueError("answer.yml: 'optimal_trajectory' must be a non-empty list when present")
+            raise ValueError(
+                "answer.yml: 'optimal_trajectory' must be a non-empty list when present"
+            )
         unknown_actions = [a for a in trajectory if a not in VALID_TRAJECTORY_ACTIONS]
         if unknown_actions:
             raise ValueError(
@@ -343,7 +366,9 @@ def validate_answer_key(data: dict[str, Any]) -> AnswerKeySchema:
             )
     max_loops = data.get("max_investigation_loops")
     if max_loops is not None and (not isinstance(max_loops, int) or max_loops < 1):
-        raise ValueError("answer.yml: 'max_investigation_loops' must be a positive integer when present")
+        raise ValueError(
+            "answer.yml: 'max_investigation_loops' must be a positive integer when present"
+        )
     for axis2_list_field in ("ruling_out_keywords", "required_queries"):
         _require_non_empty_str_list(data, axis2_list_field, "answer.yml")
     return data  # type: ignore[return-value]
@@ -351,23 +376,39 @@ def validate_answer_key(data: dict[str, Any]) -> AnswerKeySchema:
 
 def validate_scenario_metadata(data: dict[str, Any]) -> ScenarioMetadataSchema:
     ctx = "scenario.yml"
-    for field in ("schema_version", "scenario_id", "engine", "engine_version", "instance_class", "region", "db_instance_identifier", "failure_mode", "severity"):
+    for field in (
+        "schema_version",
+        "scenario_id",
+        "engine",
+        "engine_version",
+        "instance_class",
+        "region",
+        "db_instance_identifier",
+        "failure_mode",
+        "severity",
+    ):
         _require_str(data, field, ctx=ctx)
 
     engine = data["engine"]
     if engine not in VALID_ENGINES:
-        raise ValueError(f"{ctx}: unknown engine {engine!r}; expected one of {sorted(VALID_ENGINES)}")
+        raise ValueError(
+            f"{ctx}: unknown engine {engine!r}; expected one of {sorted(VALID_ENGINES)}"
+        )
 
     failure_mode = data["failure_mode"]
     if failure_mode not in VALID_FAILURE_MODES:
-        raise ValueError(f"{ctx}: unknown failure_mode {failure_mode!r}; expected one of {sorted(VALID_FAILURE_MODES)}")
+        raise ValueError(
+            f"{ctx}: unknown failure_mode {failure_mode!r}; expected one of {sorted(VALID_FAILURE_MODES)}"
+        )
 
     sources = data.get("available_evidence")
     if not isinstance(sources, list) or not sources:
         raise ValueError(f"{ctx}: 'available_evidence' must be a non-empty list")
     unknown = [s for s in sources if s not in VALID_EVIDENCE_SOURCES]
     if unknown:
-        raise ValueError(f"{ctx}: unknown evidence source(s) {unknown}; expected subset of {sorted(VALID_EVIDENCE_SOURCES)}")
+        raise ValueError(
+            f"{ctx}: unknown evidence source(s) {unknown}; expected subset of {sorted(VALID_EVIDENCE_SOURCES)}"
+        )
 
     return data  # type: ignore[return-value]
 
@@ -376,11 +417,13 @@ def validate_scenario_metadata(data: dict[str, Any]) -> ScenarioMetadataSchema:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _require_str(obj: dict[str, Any], key: str, ctx: str = "") -> None:
     value = obj.get(key)
     prefix = f"{ctx}: " if ctx else ""
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{prefix}missing or empty required string field '{key}'")
+
 
 def _require_non_empty_str_list(
     obj: dict[str, Any],

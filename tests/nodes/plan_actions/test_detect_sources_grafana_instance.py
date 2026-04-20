@@ -45,27 +45,21 @@ def _multi_instance_resolved() -> dict:
 
 def test_grafana_instance_hint_selects_named_instance() -> None:
     raw_alert = {"alert_source": "grafana", "grafana_instance": "staging"}
-    sources = detect_sources(
-        raw_alert, {}, resolved_integrations=_multi_instance_resolved()
-    )
+    sources = detect_sources(raw_alert, {}, resolved_integrations=_multi_instance_resolved())
     assert sources["grafana"]["grafana_endpoint"] == "https://staging.grafana.net"
     assert sources["grafana"]["grafana_api_key"] == "ks"
 
 
 def test_no_hint_falls_back_to_default_instance() -> None:
     raw_alert = {"alert_source": "grafana"}
-    sources = detect_sources(
-        raw_alert, {}, resolved_integrations=_multi_instance_resolved()
-    )
+    sources = detect_sources(raw_alert, {}, resolved_integrations=_multi_instance_resolved())
     assert sources["grafana"]["grafana_endpoint"] == "https://prod.grafana.net"
     assert sources["grafana"]["grafana_api_key"] == "kp"
 
 
 def test_unknown_hint_falls_back_to_default_instance() -> None:
     raw_alert = {"alert_source": "grafana", "grafana_instance": "qa-east"}
-    sources = detect_sources(
-        raw_alert, {}, resolved_integrations=_multi_instance_resolved()
-    )
+    sources = detect_sources(raw_alert, {}, resolved_integrations=_multi_instance_resolved())
     assert sources["grafana"]["grafana_endpoint"] == "https://prod.grafana.net"
 
 
@@ -76,12 +70,8 @@ def test_unknown_hint_logs_warning(caplog) -> None:
 
     raw_alert = {"alert_source": "grafana", "grafana_instance": "qa-east"}
     with caplog.at_level(logging.WARNING, logger="app.nodes.plan_actions.detect_sources"):
-        detect_sources(
-            raw_alert, {}, resolved_integrations=_multi_instance_resolved()
-        )
-    assert any(
-        "grafana_instance hint 'qa-east' not found" in r.message for r in caplog.records
-    )
+        detect_sources(raw_alert, {}, resolved_integrations=_multi_instance_resolved())
+    assert any("grafana_instance hint 'qa-east' not found" in r.message for r in caplog.records)
 
 
 def test_hint_in_annotations_is_respected() -> None:
@@ -89,17 +79,13 @@ def test_hint_in_annotations_is_respected() -> None:
         "alert_source": "grafana",
         "annotations": {"grafana_instance": "staging"},
     }
-    sources = detect_sources(
-        raw_alert, {}, resolved_integrations=_multi_instance_resolved()
-    )
+    sources = detect_sources(raw_alert, {}, resolved_integrations=_multi_instance_resolved())
     assert sources["grafana"]["grafana_endpoint"] == "https://staging.grafana.net"
 
 
 def test_hint_normalized_to_lowercase() -> None:
     raw_alert = {"alert_source": "grafana", "grafana_instance": "STAGING"}
-    sources = detect_sources(
-        raw_alert, {}, resolved_integrations=_multi_instance_resolved()
-    )
+    sources = detect_sources(raw_alert, {}, resolved_integrations=_multi_instance_resolved())
     assert sources["grafana"]["grafana_endpoint"] == "https://staging.grafana.net"
 
 

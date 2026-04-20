@@ -1,4 +1,5 @@
 """Tests for shared gitlab integration helpers."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -498,7 +499,6 @@ def test_get_gitlab_file_returns_empty_dict_for_non_dict_response(
 # ---------------------------------------------------------------------------
 
 
-
 def test_post_gitlab_mr_note_uses_post_method(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
@@ -508,7 +508,9 @@ def test_post_gitlab_mr_note_uses_post_method(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setattr("app.integrations.gitlab.httpx.request", _fake_request)
 
-    post_gitlab_mr_note(config=_make_config(), project_id="my-org/my-repo", mr_iid="42", body="RCA Finding")
+    post_gitlab_mr_note(
+        config=_make_config(), project_id="my-org/my-repo", mr_iid="42", body="RCA Finding"
+    )
 
     assert captured["method"] == "POST"
 
@@ -537,7 +539,9 @@ def test_post_gitlab_mr_note_sends_body_in_json(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr("app.integrations.gitlab.httpx.request", _fake_request)
 
-    post_gitlab_mr_note(config=_make_config(), project_id="proj", mr_iid="3", body="root cause is X")
+    post_gitlab_mr_note(
+        config=_make_config(), project_id="proj", mr_iid="3", body="root cause is X"
+    )
 
     assert captured["json"] == {"body": "root cause is X"}
 
@@ -562,7 +566,12 @@ def test_post_gitlab_mr_note_returns_created_note_dict(monkeypatch: pytest.Monke
         lambda *_, **__: _FakeResponse(note),
     )
 
-    result = post_gitlab_mr_note(config=_make_config(), project_id="proj", mr_iid="5", body="RCA: deployment caused the spike")
+    result = post_gitlab_mr_note(
+        config=_make_config(),
+        project_id="proj",
+        mr_iid="5",
+        body="RCA: deployment caused the spike",
+    )
 
     assert result == note
     assert result["id"] == 42

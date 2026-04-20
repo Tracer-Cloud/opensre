@@ -65,7 +65,12 @@ def list_gitlab_mrs(
     """List recent merge requests for a GitLab project."""
     config = _resolve_config(gitlab_url, gitlab_token)
     if config is None:
-        return {"source": "gitlab", "available": False, "error": "gitlab integration is not configured.", "mrs": []}
+        return {
+            "source": "gitlab",
+            "available": False,
+            "error": "gitlab integration is not configured.",
+            "mrs": [],
+        }
 
     result = get_gitlab_mrs(
         config=config,

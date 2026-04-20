@@ -80,9 +80,7 @@ def fetch_slack_thread(
                 "text": msg.get("text", ""),
                 "ts": msg.get("ts", ""),
                 "reactions": [
-                    r.get("name", "")
-                    for r in msg.get("reactions", [])
-                    if isinstance(r, dict)
+                    r.get("name", "") for r in msg.get("reactions", []) if isinstance(r, dict)
                 ],
             }
         )

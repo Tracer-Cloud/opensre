@@ -26,7 +26,9 @@ def save_remote_outputs(
     """Persist managed EC2 deployment outputs to local user state."""
     output_path = get_remote_outputs_path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(dict(outputs), indent=2, default=str) + "\n", encoding="utf-8")
+    output_path.write_text(
+        json.dumps(dict(outputs), indent=2, default=str) + "\n", encoding="utf-8"
+    )
     return output_path
 
 

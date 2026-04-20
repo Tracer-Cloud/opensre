@@ -30,7 +30,7 @@ _EVIDENCE_KEY_MAP: dict[str, str] = {
 
 @dataclass(frozen=True)
 class TrajectoryScore:
-    actual_sequence: list[str]    # flattened actions from executed_hypotheses
+    actual_sequence: list[str]  # flattened actions from executed_hypotheses
     expected_sequence: list[str]  # from answer_key.optimal_trajectory
     loops_used: int
     max_loops: int
@@ -38,8 +38,8 @@ class TrajectoryScore:
     # Ordering is intentionally not enforced — actions execute in parallel and
     # completion order is non-deterministic.
     sequencing_ok: bool
-    calibration_ok: bool           # loops_used <= max_loops
-    efficiency_score: float        # mean(sequencing_ok, calibration_ok)
+    calibration_ok: bool  # loops_used <= max_loops
+    efficiency_score: float  # mean(sequencing_ok, calibration_ok)
 
 
 @dataclass(frozen=True)
@@ -178,9 +178,7 @@ def score_trajectory(
         for action in hyp.get("actions", []):
             actual_sequence.append(action)
 
-    loops_used: int = int(
-        final_state.get("investigation_loop_count") or len(executed_hypotheses)
-    )
+    loops_used: int = int(final_state.get("investigation_loop_count") or len(executed_hypotheses))
 
     # Every expected action must appear somewhere in actual_sequence.  The check
     # is set-membership, not positional: when a real LLM skips a required action
@@ -227,9 +225,7 @@ def score_reasoning(
     evidence_text = " ".join(
         [
             str(final_state.get("root_cause") or ""),
-            " ".join(
-                claim.get("claim", "") for claim in final_state.get("validated_claims", [])
-            ),
+            " ".join(claim.get("claim", "") for claim in final_state.get("validated_claims", [])),
             " ".join(
                 claim.get("claim", "") for claim in final_state.get("non_validated_claims", [])
             ),
@@ -272,16 +268,12 @@ def score_result(
 ) -> ScenarioScore:
     root_cause = str(final_state.get("root_cause") or "").strip()
     actual_category = str(final_state.get("root_cause_category") or "unknown").strip()
-    root_cause_present = bool(
-        root_cause and root_cause.lower() != "unable to determine root cause"
-    )
+    root_cause_present = bool(root_cause and root_cause.lower() != "unable to determine root cause")
 
     evidence_text = " ".join(
         [
             root_cause,
-            " ".join(
-                claim.get("claim", "") for claim in final_state.get("validated_claims", [])
-            ),
+            " ".join(claim.get("claim", "") for claim in final_state.get("validated_claims", [])),
             " ".join(
                 claim.get("claim", "") for claim in final_state.get("non_validated_claims", [])
             ),
@@ -308,8 +300,7 @@ def score_result(
         failure_reason = "no root cause in output"
     elif actual_category != answer_key.root_cause_category:
         failure_reason = (
-            f"wrong category: got {actual_category!r}, "
-            f"expected {answer_key.root_cause_category!r}"
+            f"wrong category: got {actual_category!r}, expected {answer_key.root_cause_category!r}"
         )
     elif missing_keywords:
         failure_reason = f"missing required keywords: {missing_keywords}"
@@ -317,9 +308,7 @@ def score_result(
         failure_reason = f"forbidden category in output: {actual_category!r}"
     elif answer_key.forbidden_keywords:
         forbidden_hits = [
-            kw
-            for kw in answer_key.forbidden_keywords
-            if _normalize_text(kw) in normalized_output
+            kw for kw in answer_key.forbidden_keywords if _normalize_text(kw) in normalized_output
         ]
         if forbidden_hits:
             failure_reason = f"forbidden keywords in output: {forbidden_hits}"

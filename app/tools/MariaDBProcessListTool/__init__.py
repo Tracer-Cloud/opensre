@@ -30,8 +30,12 @@ def get_mariadb_process_list(
 ) -> dict[str, Any]:
     """Fetch active threads from information_schema.PROCESSLIST."""
     config = MariaDBConfig(
-        host=host, port=port, database=database,
-        username=username, password=password, ssl=ssl,
+        host=host,
+        port=port,
+        database=database,
+        username=username,
+        password=password,
+        ssl=ssl,
         max_results=max_results,
     )
     return get_process_list(config)

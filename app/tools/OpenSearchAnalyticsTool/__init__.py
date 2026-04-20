@@ -72,11 +72,18 @@ def query_opensearch_analytics(
     """Fetch bounded logs from OpenSearch-compatible analytics endpoints."""
     endpoint = url.strip().rstrip("/")
     if not endpoint:
-        return {"source": "opensearch", "available": False, "error": "Missing OpenSearch URL.", "logs": []}
+        return {
+            "source": "opensearch",
+            "available": False,
+            "error": "Missing OpenSearch URL.",
+            "logs": [],
+        }
 
     effective_limit = _bounded_limit(limit, max_results)
     client = ElasticsearchClient(
-        ElasticsearchConfig(url=endpoint, api_key=api_key.strip() or None, index_pattern=index_pattern or "*")
+        ElasticsearchConfig(
+            url=endpoint, api_key=api_key.strip() or None, index_pattern=index_pattern or "*"
+        )
     )
     result = client.search_logs(
         query=query or "*",

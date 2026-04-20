@@ -29,7 +29,11 @@ def get_mariadb_global_status(
 ) -> dict[str, Any]:
     """Fetch curated server metrics from SHOW GLOBAL STATUS."""
     config = MariaDBConfig(
-        host=host, port=port, database=database,
-        username=username, password=password, ssl=ssl,
+        host=host,
+        port=port,
+        database=database,
+        username=username,
+        password=password,
+        ssl=ssl,
     )
     return get_global_status(config)

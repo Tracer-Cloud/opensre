@@ -333,7 +333,9 @@ class TestDescribeOpenClawError:
     def test_legacy_command_receives_bridge_hint(self) -> None:
         config = OpenClawConfig(mode="stdio", command="openclaw-mcp")
 
-        detail = describe_openclaw_error(FileNotFoundError(2, "No such file", "openclaw-mcp"), config)
+        detail = describe_openclaw_error(
+            FileNotFoundError(2, "No such file", "openclaw-mcp"), config
+        )
 
         assert "Command not found" in detail
         assert "openclaw mcp serve" in detail
