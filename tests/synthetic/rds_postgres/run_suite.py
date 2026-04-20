@@ -324,7 +324,7 @@ def score_result(
 
         if not failure_reason and not sequence_present:
             failure_reason = "RDS event sequence not explicitly listed in required form"
-        
+
     passed = not failure_reason
     trajectory = score_trajectory(fixture, final_state)
     reasoning = score_reasoning(fixture, final_state, queried_metrics)
