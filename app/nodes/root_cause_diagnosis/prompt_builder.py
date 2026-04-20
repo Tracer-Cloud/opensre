@@ -149,19 +149,17 @@ Audit evidence shows external API interactions. For upstream-triggered failures:
 def _build_database_directive(state: InvestigationState, evidence: dict[str, Any]) -> str:
     """Build RDS / Database root cause disambiguation directive."""
     pipeline = str(state.get("pipeline", "")).lower()
-    alert_text = (
-        str(state.get("alert_name", "")) + " " + str(state.get("raw_alert", ""))
-    ).lower()
-    is_database_incident = (
-        any(k in pipeline for k in ["rds", "postgres", "mysql"])
-        or any(k in alert_text for k in ["rds", "postgres", "mysql", "database", "db instance"])
+    alert_text = (str(state.get("alert_name", "")) + " " + str(state.get("raw_alert", ""))).lower()
+    is_database_incident = any(k in pipeline for k in ["rds", "postgres", "mysql"]) or any(
+        k in alert_text for k in ["rds", "postgres", "mysql", "database", "db instance"]
     )
 
     has_db_evidence = bool(
         evidence.get("aws_rds_events")
         or evidence.get("aws_performance_insights")
         or bool(
-            isinstance(evidence.get("aws_cloudwatch_metrics"), dict) and (
+            isinstance(evidence.get("aws_cloudwatch_metrics"), dict)
+            and (
                 evidence.get("aws_cloudwatch_metrics", {}).get("DBInstanceIdentifier")
                 or evidence.get("aws_cloudwatch_metrics", {}).get("db_instance_identifier")
             )
@@ -223,9 +221,7 @@ def _detect_k8s_from_monitors(evidence: dict[str, Any]) -> bool:
     return False
 
 
-def _build_kubernetes_directive(
-    state: InvestigationState, evidence: dict[str, Any]
-) -> str:
+def _build_kubernetes_directive(state: InvestigationState, evidence: dict[str, Any]) -> str:
     """Build K8s diagnostic directive when Kubernetes context is detected.
 
     Detection cascade (strict priority):
@@ -276,9 +272,7 @@ Use these patterns to recognize similar failure modes and accelerate diagnosis.
 """
 
 
-def _build_evidence_sections(
-    state: InvestigationState, evidence: dict[str, Any]
-) -> str:
+def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]) -> str:
     """Build all evidence sections for the prompt."""
     sections: list[str] = []
 
@@ -314,14 +308,10 @@ def _build_evidence_sections(
     if isinstance(raw_alert, str):
         raw_alert_text = raw_alert
     elif isinstance(raw_alert, dict):
-        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get(
-            "cloudwatch_url"
-        )
+        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
         vercel_url = raw_alert.get("vercel_log_url") or raw_alert.get("vercel_url")
         alert_annotations = (
-            raw_alert.get("annotations", {})
-            or raw_alert.get("commonAnnotations", {})
-            or {}
+            raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
         )
     else:
         vercel_url = None
@@ -466,12 +456,8 @@ def _build_evidence_sections(
     if grafana_alert_rules:
         section = f"\nGrafana Alert Rules ({len(grafana_alert_rules)}):\n"
         for rule in grafana_alert_rules[:5]:
-            section += (
-                f"- {rule.get('rule_name', 'unknown')} [{rule.get('state', '')}]\n"
-            )
-            section += (
-                f"  Folder: {rule.get('folder', '')}, Group: {rule.get('group', '')}\n"
-            )
+            section += f"- {rule.get('rule_name', 'unknown')} [{rule.get('state', '')}]\n"
+            section += f"  Folder: {rule.get('folder', '')}, Group: {rule.get('group', '')}\n"
             for query in rule.get("queries", [])[:2]:
                 section += f"  Query ({query.get('ref_id', '')}): {query.get('expr', '')[:200]}\n"
             if rule.get("no_data_state"):
@@ -602,9 +588,7 @@ def _build_lambda_function_section(lambda_function: dict[str, Any]) -> str:
                 file_content = code_files.get(handler_file, "")
                 if isinstance(file_content, str):
                     code_snippet = file_content[:1000]
-                    section += (
-                        f"\nHandler Code Snippet ({handler_file}):\n{code_snippet}\n"
-                    )
+                    section += f"\nHandler Code Snippet ({handler_file}):\n{code_snippet}\n"
 
     return section
 
@@ -702,12 +686,8 @@ def _extract_vercel_git_metadata(meta: dict[str, Any]) -> dict[str, str]:
     """Normalize git metadata from Vercel deployment evidence."""
     return {
         "repo": str(meta.get("github_repo") or meta.get("githubRepo") or "").strip(),
-        "sha": str(
-            meta.get("github_commit_sha") or meta.get("githubCommitSha") or ""
-        ).strip(),
-        "ref": str(
-            meta.get("github_commit_ref") or meta.get("githubCommitRef") or ""
-        ).strip(),
+        "sha": str(meta.get("github_commit_sha") or meta.get("githubCommitSha") or "").strip(),
+        "ref": str(meta.get("github_commit_ref") or meta.get("githubCommitRef") or "").strip(),
     }
 
 
@@ -720,12 +700,7 @@ def _format_vercel_runtime_log(log: Any) -> str:
     if not message:
         payload = log.get("payload")
         if isinstance(payload, dict):
-            message = (
-                payload.get("text")
-                or payload.get("message")
-                or payload.get("body")
-                or ""
-            )
+            message = payload.get("text") or payload.get("message") or payload.get("body") or ""
         elif payload:
             message = str(payload)
 
@@ -812,14 +787,8 @@ def _build_github_evidence_section(
             if not isinstance(commit, dict):
                 section += f"- {str(commit)[:220]}\n"
                 continue
-            commit_info = (
-                commit.get("commit", {})
-                if isinstance(commit.get("commit"), dict)
-                else {}
-            )
-            sha = str(
-                commit.get("sha") or commit.get("oid") or commit_info.get("oid") or ""
-            )[:12]
+            commit_info = commit.get("commit", {}) if isinstance(commit.get("commit"), dict) else {}
+            sha = str(commit.get("sha") or commit.get("oid") or commit_info.get("oid") or "")[:12]
             message = str(
                 commit.get("message")
                 or commit.get("messageHeadline")
@@ -841,12 +810,7 @@ def _build_github_evidence_section(
                 or match.get("filename")
                 or "unknown"
             )[:180]
-            snippets = (
-                match.get("matches")
-                or match.get("fragments")
-                or match.get("lines")
-                or []
-            )
+            snippets = match.get("matches") or match.get("fragments") or match.get("lines") or []
             if isinstance(snippets, list) and snippets:
                 snippet_text = "; ".join(str(item)[:140] for item in snippets[:2])
             else:
@@ -922,10 +886,7 @@ def _format_datadog_log_entry(log: Any) -> str:
         if not isinstance(t, str) or ":" not in t:
             continue
         k, _, v = t.partition(":")
-        if (
-            any(k.startswith(p) for p in _STRUCTURED_TAG_PREFIXES)
-            or k in _STRUCTURED_TAG_NAMES
-        ):
+        if any(k.startswith(p) for p in _STRUCTURED_TAG_PREFIXES) or k in _STRUCTURED_TAG_NAMES:
             tag_parts[k] = v
 
     if tag_parts:
@@ -967,9 +928,7 @@ def _build_s3_audit_section(s3_audit_payload: dict[str, Any]) -> str:
     if audit_content:
         try:
             audit_data = (
-                json.loads(audit_content)
-                if isinstance(audit_content, str)
-                else audit_content
+                json.loads(audit_content) if isinstance(audit_content, str) else audit_content
             )
             section += f"- Content: {json.dumps(audit_data, indent=2)[:1500]}\n"
         except (json.JSONDecodeError, TypeError):
@@ -996,14 +955,10 @@ def _build_alert_annotations_section(alert_annotations: dict[str, Any]) -> str:
     sections = []
 
     if alert_annotations.get("log_excerpt"):
-        sections.append(
-            f"\nLog Excerpt from Alert:\n{alert_annotations['log_excerpt'][:1000]}\n"
-        )
+        sections.append(f"\nLog Excerpt from Alert:\n{alert_annotations['log_excerpt'][:1000]}\n")
 
     if alert_annotations.get("failed_steps"):
-        sections.append(
-            f"\nFailed Steps Summary:\n{alert_annotations['failed_steps']}\n"
-        )
+        sections.append(f"\nFailed Steps Summary:\n{alert_annotations['failed_steps']}\n")
 
     if alert_annotations.get("error"):
         sections.append(f"\nError Message:\n{alert_annotations['error']}\n")

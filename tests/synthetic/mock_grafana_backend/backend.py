@@ -79,27 +79,38 @@ class FixtureGrafanaBackend:
         events = list(self._fixture.evidence.aws_rds_events or [])
         pi = self._fixture.evidence.aws_performance_insights
         if pi:
-            start_ts = pi.get("start_time", self._fixture.alert.get("startsAt", "1970-01-01T00:00:00Z"))
+            start_ts = pi.get(
+                "start_time", self._fixture.alert.get("startsAt", "1970-01-01T00:00:00Z")
+            )
             for sql in pi.get("top_sql", []):
-                wait_events_str = ", ".join([f"{w.get('name', 'unknown')}({w.get('db_load_avg', 0)})" for w in sql.get("wait_events", [])])
+                wait_events_str = ", ".join(
+                    [
+                        f"{w.get('name', 'unknown')}({w.get('db_load_avg', 0)})"
+                        for w in sql.get("wait_events", [])
+                    ]
+                )
                 blurb = f"Top SQL Activity: {sql.get('statement')} | Avg Load: {sql.get('db_load_avg')} AAS | Waits: {wait_events_str}"
-                events.append({
-                    "date": start_ts,
-                    "message": blurb,
-                    "source_type": "aws_performance_insights",
-                    "source_identifier": pi.get("db_instance_identifier", "db"),
-                    "event_categories": ["performance"]
-                })
+                events.append(
+                    {
+                        "date": start_ts,
+                        "message": blurb,
+                        "source_type": "aws_performance_insights",
+                        "source_identifier": pi.get("db_instance_identifier", "db"),
+                        "event_categories": ["performance"],
+                    }
+                )
 
             for we in pi.get("top_wait_events", []):
                 blurb = f"Top Wait Event: {we.get('name', 'unknown')} | db_load_avg: {we.get('db_load_avg', 0)} AAS"
-                events.append({
-                    "date": start_ts,
-                    "message": blurb,
-                    "source_type": "aws_performance_insights",
-                    "source_identifier": pi.get("db_instance_identifier", "db"),
-                    "event_categories": ["performance"],
-                })
+                events.append(
+                    {
+                        "date": start_ts,
+                        "message": blurb,
+                        "source_type": "aws_performance_insights",
+                        "source_identifier": pi.get("db_instance_identifier", "db"),
+                        "event_categories": ["performance"],
+                    }
+                )
 
         if not events:
             raise ValueError(

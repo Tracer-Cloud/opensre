@@ -655,7 +655,11 @@ def parse_root_cause(response: str) -> RootCauseResult:
 
                 for line in non_validated_text.strip().split("\n"):
                     line = line.strip().lstrip("*-• ").strip()
-                    if line and not line.startswith("CAUSAL_CHAIN") and not line.startswith("ALTERNATIVE"):
+                    if (
+                        line
+                        and not line.startswith("CAUSAL_CHAIN")
+                        and not line.startswith("ALTERNATIVE")
+                    ):
                         non_validated_claims.append(line)
 
             # Extract causal chain

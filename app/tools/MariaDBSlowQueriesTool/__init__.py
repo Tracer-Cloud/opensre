@@ -43,5 +43,7 @@ def get_mariadb_slow_queries(
     )
     result = get_slow_queries(config)
     if _db_defaulted:
-        result["default_db_warning"] = "WARNING: No database was specified; defaulted to 'mysql'. Results may not reflect application data."
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'mysql'. Results may not reflect application data."
+        )
     return result

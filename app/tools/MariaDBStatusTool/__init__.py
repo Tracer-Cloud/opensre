@@ -41,5 +41,7 @@ def get_mariadb_global_status(
     )
     result = get_global_status(config)
     if _db_defaulted:
-        result["default_db_warning"] = "WARNING: No database was specified; defaulted to 'mysql'. Results may not reflect application data."
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'mysql'. Results may not reflect application data."
+        )
     return result

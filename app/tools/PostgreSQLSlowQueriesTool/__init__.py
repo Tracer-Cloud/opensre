@@ -37,5 +37,7 @@ def get_postgresql_slow_queries(
     config = resolve_postgresql_config(host=host, database=database, port=port)
     result = get_slow_queries(config, threshold_ms=threshold_ms)
     if _db_defaulted:
-        result["default_db_warning"] = "WARNING: No database was specified; defaulted to 'postgres'. Results may not reflect application data."
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'postgres'. Results may not reflect application data."
+        )
     return result

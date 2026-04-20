@@ -36,5 +36,7 @@ def get_azure_sql_server_status(
     config = resolve_azure_sql_config(server=server, database=database, port=port)
     result = get_server_status(config)
     if _db_defaulted:
-        result["default_db_warning"] = "WARNING: No database was specified; defaulted to 'master'. Results may not reflect application data."
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'master'. Results may not reflect application data."
+        )
     return result

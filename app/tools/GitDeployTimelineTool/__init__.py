@@ -146,7 +146,7 @@ def _is_available(sources: dict[str, dict]) -> bool:
     description=(
         "List commits on a GitHub branch within a time window (defaults to the last "
         "120 minutes). Used to correlate an alert with recent deploys by asking "
-        "\"what changed right before this fired?\""
+        '"what changed right before this fired?"'
     ),
     use_cases=[
         "Correlating an incident with recent code changes on the default branch",
