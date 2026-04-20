@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.mysql import get_current_processes, resolve_mysql_config
+from app.integrations.mysql import (
+    get_current_processes,
+    mysql_extract_params,
+    mysql_is_available,
+    resolve_mysql_config,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -16,6 +21,8 @@ from app.tools.tool_decorator import tool
         "Investigating lock contention or deadlock situations",
         "Spotting runaway queries during an incident",
     ],
+    is_available=mysql_is_available,
+    extract_params=mysql_extract_params,
 )
 def get_mysql_current_processes(
     host: str,

@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.mysql import get_server_status, resolve_mysql_config
+from app.integrations.mysql import (
+    get_server_status,
+    mysql_extract_params,
+    mysql_is_available,
+    resolve_mysql_config,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -16,6 +21,8 @@ from app.tools.tool_decorator import tool
         "Identifying connection saturation or exhaustion issues",
         "Reviewing InnoDB buffer pool hit ratio and deadlock counts",
     ],
+    is_available=mysql_is_available,
+    extract_params=mysql_extract_params,
 )
 def get_mysql_server_status(
     host: str,
