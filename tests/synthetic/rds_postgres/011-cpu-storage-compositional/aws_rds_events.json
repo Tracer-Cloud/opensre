@@ -23,7 +23,7 @@
     },
     {
       "date": "2026-03-28T09:11:45Z",
-      "message": "DB instance analytics-prod storage space is critically low (23.3 GB free of 200 GB). Consider expanding storage.",
+      "message": "DB instance analytics-prod storage space is critically low (23.3 GB free of 200 GB). Consider expanding storage. Excessive writes detected from audit_log inserts.",
       "source_identifier": "analytics-prod",
       "source_type": "db-instance",
       "event_categories": ["low storage"]
