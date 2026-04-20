@@ -110,23 +110,6 @@ include = ["app*", "tests*"]
 [tool.coverage.run]
 data_file = ".pytest_cache/.coverage"
 
-[tool.ruff.lint]
-select = ["E", "F", "I", "S"]
-
-[tool.ruff.lint.per-file-ignores]
-# assert is idiomatic in pytest
-"*_test.py" = ["S101"]
-"tests/**/*_test.py" = ["S101"]
-"tests/**/test_*.py" = ["S101"]
-# vendored third-party pipeline code — not ours to fix
-"tests/e2e/upstream_lambda/pipeline_code/**" = ["S"]
-"tests/e2e/upstream_apache_flink_ecs/pipeline_code/**" = ["S"]
-"tests/e2e/upstream_prefect_ecs_fargate/pipeline_code/**" = ["S"]
-# subprocess / url-open / temp-file usage in infra helpers is intentional
-"tests/shared/**" = ["S108", "S310", "S603", "S607"]
-"tests/**/infrastructure_sdk/**" = ["S108", "S603", "S607"]
-"tests/**/trigger_lambda/**" = ["S108", "S603", "S607"]
-
 [tool.vulture]
 paths = ["app"]
 exclude = [
