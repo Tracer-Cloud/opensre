@@ -216,7 +216,7 @@ def mysql_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     return {
         "host": str(my.get("host", "")).strip(),
         "database": str(my.get("database", "")).strip(),
-        "port": int(my.get("port", DEFAULT_MYSQL_PORT)),
+        "port": int(my.get("port") or DEFAULT_MYSQL_PORT),
     }
 
 
