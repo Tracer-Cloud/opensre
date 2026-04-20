@@ -91,6 +91,16 @@ class FixtureGrafanaBackend:
                     "event_categories": ["performance"]
                 })
 
+            for we in pi.get("top_wait_events", []):
+                blurb = f"Top Wait Event: {we.get('name', 'unknown')} | db_load_avg: {we.get('db_load_avg', 0)} AAS"
+                events.append({
+                    "date": start_ts,
+                    "message": blurb,
+                    "source_type": "aws_performance_insights",
+                    "source_identifier": pi.get("db_instance_identifier", "db"),
+                    "event_categories": ["performance"],
+                })
+
         if not events:
             raise ValueError(
                 f"{self._fixture.scenario_id}: query_logs called but "

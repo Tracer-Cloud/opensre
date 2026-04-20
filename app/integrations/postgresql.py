@@ -92,7 +92,7 @@ def postgresql_config_from_env() -> PostgreSQLConfig | None:
 
 
 def resolve_postgresql_config(
-    host: str, database: str = "postgres", port: int = DEFAULT_POSTGRESQL_PORT
+    host: str, database: str, port: int = DEFAULT_POSTGRESQL_PORT
 ) -> PostgreSQLConfig:
     """Build a config for the given host/database, resolving credentials from store or env.
 
