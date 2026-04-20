@@ -1,0 +1,20 @@
+# DNSChaos random: poisoned A records for matched names (clients may connect to wrong IPs).
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: DNSChaos
+metadata:
+  name: dns-random-demo
+  namespace: default
+spec:
+  action: random
+  mode: all
+  duration: "3m"
+  patterns:
+    - google.com
+    - github.com
+    - example.com
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: dns-random-demo

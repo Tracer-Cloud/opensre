@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for DNSChaos error demo",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/dns-error/dns-error-alert.json"
+  },
+  "title": "[Triggered] DNS resolution failures - dns-error-demo",
+  "alert_name": "Datadog monitor: DNS errors from dns-error-demo",
+  "pipeline_name": "dns-error-demo",
+  "severity": "warning",
+  "alert_source": "datadog",
+  "message": "Outbound DNS lookups failing from dns-error-demo",
+  "text": "DNSChaos error action; external name resolution may fail for matched domains.",
+  "commonLabels": {
+    "pipeline_name": "dns-error-demo",
+    "severity": "warning",
+    "kube_deployment": "dns-error-demo"
+  },
+  "commonAnnotations": {
+    "summary": "DNS faults affecting dns-error-demo pods",
+    "query": "kube_namespace:default kube_deployment:dns-error-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "dns-error-demo",
+    "correlation_id": "dns-error-local-001"
+  }
+}

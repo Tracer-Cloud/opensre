@@ -1,0 +1,21 @@
+# HTTPChaos: slow responses and synthetic 503s (target: Response). More subtle than abort.
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: HTTPChaos
+metadata:
+  name: http-response-fault-demo
+  namespace: default
+spec:
+  mode: all
+  duration: "3m"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: http-response-fault-demo
+  target: Response
+  port: 80
+  path: "*"
+  delay: "1200ms"
+  replace:
+    code: 503

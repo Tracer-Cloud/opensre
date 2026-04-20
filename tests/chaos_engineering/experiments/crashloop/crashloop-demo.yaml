@@ -1,0 +1,43 @@
+# Intentional CrashLoopBackOff for observability / alert testing.
+#
+# Plain Kubernetes Deployment (not a Chaos Mesh CR). Use the same kube context as
+# chaos-demo.yaml / pod-kill-demo.yaml and `make chaos-mesh-up` (default kind-tracer-k8s-test).
+# Apply everything at once: `make chaos-engineering-apply`.
+# To also pod-kill these pods via Chaos Mesh (not nginx), apply:
+#   tests/chaos_engineering/experiments/crashloop/pod-kill-crashloop-chaos.yaml
+#
+# From repo root:
+#   kubectl apply -f tests/chaos_engineering/experiments/crashloop/crashloop-demo.yaml \
+#     --context=kind-tracer-k8s-test
+#
+# Watch until STATUS shows CrashLoopBackOff:
+#   kubectl get pods -l app=crashloop-demo -w
+#
+# Logs (repeating crash reason):
+#   kubectl logs -l app=crashloop-demo --tail=20
+#
+# Remove:
+#   kubectl delete -f tests/chaos_engineering/experiments/crashloop/crashloop-demo.yaml \
+#     --context=kind-tracer-k8s-test
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crashloop-demo
+  namespace: default
+  labels:
+    app: crashloop-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crashloop-demo
+  template:
+    metadata:
+      labels:
+        app: crashloop-demo
+    spec:
+      containers:
+        - name: crash
+          image: busybox:1.36
+          command: ["/bin/sh", "-c", "echo 'crashloop-demo: exiting with error' && exit 1"]

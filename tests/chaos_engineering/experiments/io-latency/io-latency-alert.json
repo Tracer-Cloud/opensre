@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for IOChaos latency",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/io-latency/io-latency-alert.json"
+  },
+  "title": "[Triggered] Disk latency - io-latency-demo",
+  "alert_name": "Datadog monitor: slow I/O workload",
+  "pipeline_name": "io-latency-demo",
+  "severity": "high",
+  "alert_source": "datadog",
+  "message": "io-latency-demo backlog or stalls",
+  "text": "IOChaos injects latency into filesystem operations on the mounted volume; throughput collapses.",
+  "commonLabels": {
+    "pipeline_name": "io-latency-demo",
+    "severity": "high",
+    "kube_deployment": "io-latency-demo"
+  },
+  "commonAnnotations": {
+    "summary": "IO latency chaos on io-latency-demo",
+    "query": "kube_namespace:default kube_deployment:io-latency-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "io-latency-demo",
+    "correlation_id": "io-latency-local-001"
+  }
+}

@@ -1,0 +1,39 @@
+# Single-container nginx for PodChaos (action: container-kill). Kills the nginx container;
+# kubelet restarts it (unlike whole-pod pod-kill semantics).
+#
+# Prereq: `make chaos-mesh-up`.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: container-kill-demo
+  namespace: default
+  labels:
+    app: container-kill-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: container-kill-demo
+  template:
+    metadata:
+      labels:
+        app: container-kill-demo
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10

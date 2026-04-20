@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for TimeChaos clock skew",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/time-skew/time-skew-alert.json"
+  },
+  "title": "[Triggered] Clock skew - time-skew-demo",
+  "alert_name": "Datadog monitor: time drift / auth anomalies",
+  "pipeline_name": "time-skew-demo",
+  "severity": "medium",
+  "alert_source": "datadog",
+  "message": "Observed skew or odd timestamps for time-skew-demo",
+  "text": "TimeChaos offsets container clock; log correlation and token TTL checks may diverge from wall clock.",
+  "commonLabels": {
+    "pipeline_name": "time-skew-demo",
+    "severity": "medium",
+    "kube_deployment": "time-skew-demo"
+  },
+  "commonAnnotations": {
+    "summary": "Time skew chaos on time-skew-demo",
+    "query": "kube_namespace:default kube_deployment:time-skew-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "time-skew-demo",
+    "correlation_id": "time-skew-local-001"
+  }
+}
