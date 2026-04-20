@@ -1,11 +1,11 @@
 """Investigation prompt construction with available actions."""
 
-from typing import Any
-
 from pydantic import BaseModel, ValidationError
 
+from app.nodes.investigate.types import ExecutedHypothesis
 
-def _get_executed_sources(executed_hypotheses: list[dict[str, Any]]) -> set[str]:
+
+def _get_executed_sources(executed_hypotheses: list[ExecutedHypothesis]) -> set[str]:
     """Extract executed sources from hypotheses history."""
     executed_sources_set = set()
     for h in executed_hypotheses:
@@ -97,12 +97,14 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
         grafana = available_sources["grafana"]
         loki_only = grafana.get("loki_only", False)
         grafana_label = "Grafana Local (Loki only)" if loki_only else "Grafana Cloud"
-        traces_hint = "" if loki_only else "\n- Use query_grafana_traces to find distributed traces in Tempo"
+        traces_hint = (
+            "" if loki_only else "\n- Use query_grafana_traces to find distributed traces in Tempo"
+        )
         hints.append(
             f"""{grafana_label} Available:
 - Service Name: {grafana.get("service_name")}
 - Pipeline: {grafana.get("pipeline_name")}
-- Use query_grafana_logs to search Loki for pipeline errors{traces_hint}
+- Use query_grafana_logs to search Loki for pipeline errors, or to fetch AWS Performance Insights and RDS events for database diagnostics{traces_hint}
 - Use query_grafana_alert_rules to inspect alert configuration"""
         )
 
@@ -121,6 +123,133 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Use query_datadog_logs to search for pipeline errors, PIPELINE_ERROR patterns, and application logs
 - Use query_datadog_monitors to check monitor states and alerting configuration
 - Use query_datadog_events to find deployments and infrastructure changes"""
+        )
+
+    if "vercel" in available_sources:
+        vercel = available_sources["vercel"]
+        hints.append(
+            f"""Vercel Deployment Context Available:
+- Project: {vercel.get("project_name") or vercel.get("project_slug") or vercel.get("project_id")}
+- Deployment ID: {vercel.get("deployment_id") or "unknown"}
+- Selected Log ID: {vercel.get("selected_log_id") or "not provided"}
+- Log URL: {vercel.get("log_url") or "not provided"}
+- Use vercel_deployment_status to inspect recent failed deployments and their git metadata
+- Use vercel_deployment_logs to inspect build output and runtime logs for the deployment"""
+        )
+
+    if "github" in available_sources:
+        github = available_sources["github"]
+        hints.append(
+            f"""GitHub Repository Context Available:
+- Repository: {github.get("owner")}/{github.get("repo")}
+- Commit SHA: {github.get("sha") or "unknown"}
+- Ref: {github.get("ref") or "unknown"}
+- Code Query: {github.get("query") or "exception OR error"}
+- Prefer get_git_deploy_timeline for deploy correlation (commits in a time window around the alert)
+- Use list_github_commits for the N most recent commits regardless of time window
+- Use search_github_code and get_github_file_contents to trace the failure into code"""
+        )
+
+    if "openclaw" in available_sources:
+        openclaw = available_sources["openclaw"]
+        endpoint = openclaw.get("openclaw_command") or openclaw.get("openclaw_url") or "unknown"
+        hints.append(
+            f"""OpenClaw MCP Available:
+- Transport: {openclaw.get("openclaw_mode") or "unknown"}
+- Endpoint: {endpoint}
+- Search hint: {openclaw.get("openclaw_search_query") or "recent conversations"}
+- Start with search_openclaw_conversations to inspect recent OpenClaw context before generic tool calls
+- Use list_openclaw_tools only if you need to inspect the raw bridge surface"""
+        )
+
+    if "vercel" in available_sources and "github" in available_sources:
+        hints.append(
+            """Vercel And GitHub Correlation Available:
+- Prioritise a deployment-to-code workflow
+- First inspect Vercel deployment status and logs
+- Then correlate the deployment commit SHA or ref with GitHub commits and code search results
+- Prefer git evidence that matches the failing Vercel deployment over unrelated repository history"""
+        )
+
+    if "honeycomb" in available_sources:
+        honeycomb = available_sources["honeycomb"]
+        hints.append(
+            f"""Honeycomb Available:
+- Dataset: {honeycomb.get("dataset")}
+- Service Name: {honeycomb.get("service_name") or "unknown"}
+- Trace ID: {honeycomb.get("trace_id") or "unknown"}
+- Use query_honeycomb_traces to inspect trace/span groups and identify slow or failing traces"""
+        )
+
+    if "coralogix" in available_sources:
+        coralogix = available_sources["coralogix"]
+        hints.append(
+            f"""Coralogix Available:
+- Application: {coralogix.get("application_name") or "unknown"}
+- Subsystem: {coralogix.get("subsystem_name") or "unknown"}
+- Default Query: {coralogix.get("default_query")}
+- Use query_coralogix_logs to search Coralogix DataPrime logs for the failing service or error signature"""
+        )
+
+    if "betterstack" in available_sources:
+        betterstack = available_sources["betterstack"]
+        bs_sources = betterstack.get("sources") or []
+        sources_line = (
+            ", ".join(bs_sources)
+            if bs_sources
+            else "none pre-configured (planner must supply 'source' from alert metadata)"
+        )
+        hints.append(
+            f"""Better Stack Telemetry Available:
+- Query endpoint: {betterstack.get("query_endpoint") or "unknown"}
+- Configured sources: {sources_line}
+- Use query_betterstack_logs with a 'source' identifier (base name like t123456_myapp; _logs / _s3 suffixes are appended internally) to UNION recent and historical logs via ClickHouse SQL"""
+        )
+
+    if "bitbucket" in available_sources:
+        bitbucket = available_sources["bitbucket"]
+        hints.append(
+            f"""Bitbucket Available:
+- Workspace: {bitbucket.get("workspace")}
+- Repository: {bitbucket.get("repo_slug")}
+- Ref: {bitbucket.get("ref") or "default"}
+- Use search_bitbucket_code, list_bitbucket_commits, and get_bitbucket_file_contents for targeted repository evidence"""
+        )
+
+    if "snowflake" in available_sources:
+        snowflake = available_sources["snowflake"]
+        hints.append(
+            f"""Snowflake Available:
+- Account: {snowflake.get("account_identifier")}
+- Warehouse: {snowflake.get("warehouse") or "default"}
+- Use query_snowflake_history to inspect bounded query-history evidence around the incident window"""
+        )
+
+    if "azure" in available_sources:
+        azure = available_sources["azure"]
+        hints.append(
+            f"""Azure Monitor Available:
+- Workspace ID: {azure.get("workspace_id")}
+- Query: {azure.get("query") or "default diagnostics query"}
+- Use query_azure_monitor_logs for bounded KQL evidence from Log Analytics"""
+        )
+
+    if "openobserve" in available_sources:
+        openobserve = available_sources["openobserve"]
+        hints.append(
+            f"""OpenObserve Available:
+- Organization: {openobserve.get("org")}
+- Stream: {openobserve.get("stream") or "auto"}
+- Use query_openobserve_logs for bounded log retrieval"""
+        )
+
+    if "opensearch" in available_sources:
+        opensearch = available_sources["opensearch"]
+        hints.append(
+            f"""OpenSearch Analytics Available:
+- Index Pattern: {opensearch.get("index_pattern") or "*"}
+- Query: {opensearch.get("default_query") or "*"}
+- Use query_opensearch_analytics for bounded OpenSearch-compatible evidence"""
         )
 
     if "eks" in available_sources:
@@ -157,7 +286,7 @@ IMPORTANT: Always start with discovery actions before fetching specific resource
 
 def build_investigation_prompt(
     problem_md: str,
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
     available_actions: list,
     available_sources: dict[str, dict],
     memory_context: str = "",
@@ -215,7 +344,7 @@ This upstream trace reveals root causes outside the failed service (external API
 Use these proven investigation sequences as guidance for action selection.
 """
 
-    prompt = f"""You are investigating a data pipeline incident.
+    prompt = f"""You are investigating an alert or incident.
 
 Problem Context:
 {problem_context}
@@ -280,10 +409,27 @@ Return a tight investigation plan with only the most useful next actions.
     return prompt
 
 
+def apply_tool_budget(actions: list, budget: int) -> list:
+    """
+    Apply a tool budget to cap the number of actions selected.
+
+    Args:
+        actions: List of available actions
+        budget: Maximum number of actions to allow
+
+    Returns:
+        Budget-capped list of actions
+    """
+    if len(actions) <= budget:
+        return actions
+    return actions[:budget]
+
+
 def select_actions(
     actions: list,
     available_sources: dict[str, dict],
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
+    tool_budget: int = 10,
 ) -> tuple[list, list[str]]:
     """
     Select available actions based on sources and execution history.
@@ -292,25 +438,25 @@ def select_actions(
         actions: Candidate actions to filter
         available_sources: Dictionary mapping source type to parameters
         executed_hypotheses: History of executed hypotheses
+        tool_budget: Maximum number of tools to select (default: 10)
 
     Returns:
         Tuple of (available_actions, available_action_names)
     """
-    available_actions = [
-        action
-        for action in actions
-        if action.is_available(available_sources)
-    ]
+    available_actions = [action for action in actions if action.is_available(available_sources)]
 
     executed_actions_flat = set()
     for hyp in executed_hypotheses:
-        actions = hyp.get("actions", [])
-        if isinstance(actions, list):
-            executed_actions_flat.update(actions)
+        actions_list = hyp.get("actions", [])
+        if isinstance(actions_list, list):
+            executed_actions_flat.update(actions_list)
 
     available_actions = [
         action for action in available_actions if action.name not in executed_actions_flat
     ]
+
+    # Apply tool budget to cap the selected tool set
+    available_actions = apply_tool_budget(available_actions, tool_budget)
     available_action_names = [action.name for action in available_actions]
 
     return available_actions, available_action_names
@@ -320,7 +466,7 @@ def plan_actions_with_llm(
     llm,
     plan_model: type[BaseModel],
     problem_md: str,
-    executed_hypotheses: list[dict[str, Any]],
+    executed_hypotheses: list[ExecutedHypothesis],
     available_actions: list,
     available_sources: dict[str, dict],
     memory_context: str = "",

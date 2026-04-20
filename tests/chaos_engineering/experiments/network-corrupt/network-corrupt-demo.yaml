@@ -1,0 +1,39 @@
+# Nginx target for NetworkChaos (action: corrupt).
+#
+# Prereq: `make chaos-mesh-up`. Apply workload, then chaos CR.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-corrupt-demo
+  namespace: default
+  labels:
+    app: network-corrupt-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: network-corrupt-demo
+  template:
+    metadata:
+      labels:
+        app: network-corrupt-demo
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 3
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10

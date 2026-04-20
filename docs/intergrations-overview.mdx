@@ -1,0 +1,74 @@
+---
+title: "Integrations overview"
+---
+
+OpenSRE investigates alerts by querying the same tools your engineers use. Connect your stack so OpenSRE can pull logs, check recent deploys, map dependencies, and deliver findings where your team already works.
+
+## Before you begin
+
+Make sure you have:
+
+- A OpenSRE account — you can create one at [app.tracer.cloud/sign-up](http://app.tracer.cloud/sign-up)
+- Access credentials for the tools you want to connect
+- Permissions to create API keys
+
+## Enterprise integrations
+
+Enterprise integrations are configured through the OpenSRE web app at [app.tracer.cloud](https://app.tracer.cloud). Once connected, they are available to all users in your organization.
+
+**Observability.** OpenSRE reads your logs, metrics, traces, and alerts to build investigation hypotheses. Connect [Grafana](/grafana) and [Datadog](/datadog).
+
+**Infrastructure.** OpenSRE maps your environment and dependencies across clouds and clusters. Connect [AWS](/aws).
+
+**Communication.** OpenSRE delivers investigation reports where your team already works. Connect [Slack](/slack).
+
+<Frame>
+  ![Integrations](/images/integrations.png)
+</Frame>
+
+### Configure enterprise integrations
+
+Each integration follows a simple, guided flow. Let's look at Datadog as an example.
+
+1. Name - Helps distinguish between different instances
+2. API Key - in Datadog, create a new API key and copy and paste into OpenSRE.
+3. Application Key - In Datadog, create a new Application Key and copy and paste into OpenSRE.
+
+<Frame>
+  ![Connect Datadog](/images/connect_datadog.png)
+</Frame>
+
+## Local integrations
+
+Local integrations are configured on the machine running OpenSRE — via the CLI setup wizard or environment variables. They give OpenSRE access to your databases, source control, error trackers, and workflow tools.
+
+```bash
+opensre integrations setup
+```
+
+Or set environment variables and OpenSRE picks them up automatically.
+
+| Category | Integrations |
+| --- | --- |
+| **Observability** | [Better Stack](/betterstack), [Honeycomb](/honeycomb), [Coralogix](/coralogix), [Sentry](/sentry) |
+| **Databases** | [MongoDB](/mongodb), [MariaDB](/mariadb), [ClickHouse](/clickhouse), [Kafka](/kafka) |
+| **Source control** | [GitHub](/github), [GitLab](/gitlab), [Bitbucket](/bitbucket) |
+| **Deployments** | [Vercel](/vercel) |
+| **Orchestration** | [Prefect](/prefect) |
+| **Incident management** | [OpsGenie](/opsgenie), [Jira](/jira) |
+| **Reporting** | [Google Docs](/google-docs) |
+| **AI coding assistants** | [OpenClaw](/openclaw) |
+
+### Verify local integrations
+
+After setup, confirm everything is working:
+
+```bash
+opensre integrations verify
+```
+
+To check a specific integration:
+
+```bash
+opensre integrations verify mongodb
+```

@@ -13,7 +13,13 @@ def get_failed_pods(ctx: ReportContext) -> list[dict]:
     if not pods:
         name = ctx.get("kube_pod_name")
         if name:
-            pods = [{"pod_name": name, "namespace": ctx.get("kube_namespace"), "container": ctx.get("kube_container_name")}]
+            pods = [
+                {
+                    "pod_name": name,
+                    "namespace": ctx.get("kube_namespace"),
+                    "container": ctx.get("kube_container_name"),
+                }
+            ]
     return pods
 
 

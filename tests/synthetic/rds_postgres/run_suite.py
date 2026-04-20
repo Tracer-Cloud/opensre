@@ -5,7 +5,7 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from app.runners import run_investigation
+from app.pipeline.runners import run_investigation
 from tests.synthetic.mock_grafana_backend.backend import FixtureGrafanaBackend
 from tests.synthetic.rds_postgres.scenario_loader import (
     SUITE_DIR,
@@ -23,13 +23,13 @@ _EVIDENCE_KEY_MAP: dict[str, str] = {
 
 @dataclass(frozen=True)
 class TrajectoryScore:
-    actual_sequence: list[str]    # flattened actions from executed_hypotheses
+    actual_sequence: list[str]  # flattened actions from executed_hypotheses
     expected_sequence: list[str]  # from answer_key.optimal_trajectory
     loops_used: int
     max_loops: int
-    sequencing_ok: bool           # all expected actions appear in actual (set membership)
-    calibration_ok: bool          # loops_used <= max_loops
-    efficiency_score: float       # mean(sequencing_ok, calibration_ok)
+    sequencing_ok: bool  # all expected actions appear in actual (set membership)
+    calibration_ok: bool  # loops_used <= max_loops
+    efficiency_score: float  # mean(sequencing_ok, calibration_ok)
 
 
 @dataclass(frozen=True)
@@ -40,6 +40,7 @@ class ReasoningScore:
     queries_ok: every required_queries metric name was requested via query_timeseries.
     reasoning_score: mean(ruling_out_ok, queries_ok); 1.0 = full pass.
     """
+
     ruling_out_ok: bool
     queries_ok: bool
     missing_ruling_out: list[str]
@@ -184,9 +185,7 @@ def score_reasoning(
     evidence_text = " ".join(
         [
             str(final_state.get("root_cause") or ""),
-            " ".join(
-                claim.get("claim", "") for claim in final_state.get("validated_claims", [])
-            ),
+            " ".join(claim.get("claim", "") for claim in final_state.get("validated_claims", [])),
             " ".join(
                 claim.get("claim", "") for claim in final_state.get("non_validated_claims", [])
             ),
@@ -235,9 +234,7 @@ def score_result(
     evidence_text = " ".join(
         [
             root_cause,
-            " ".join(
-                claim.get("claim", "") for claim in final_state.get("validated_claims", [])
-            ),
+            " ".join(claim.get("claim", "") for claim in final_state.get("validated_claims", [])),
             " ".join(
                 claim.get("claim", "") for claim in final_state.get("non_validated_claims", [])
             ),
@@ -264,7 +261,9 @@ def score_result(
     if not root_cause_present:
         failure_reason = "no root cause in output"
     elif actual_category != answer_key.root_cause_category:
-        failure_reason = f"wrong category: got {actual_category!r}, expected {answer_key.root_cause_category!r}"
+        failure_reason = (
+            f"wrong category: got {actual_category!r}, expected {answer_key.root_cause_category!r}"
+        )
     elif missing_keywords:
         failure_reason = f"missing required keywords: {missing_keywords}"
     # 2. Forbidden category check (level 2+ adversarial)
@@ -273,8 +272,7 @@ def score_result(
     # 3. Forbidden keyword check — none of these may appear in evidence_text
     elif answer_key.forbidden_keywords:
         forbidden_hits = [
-            kw for kw in answer_key.forbidden_keywords
-            if _normalize_text(kw) in normalized_output
+            kw for kw in answer_key.forbidden_keywords if _normalize_text(kw) in normalized_output
         ]
         if forbidden_hits:
             failure_reason = f"forbidden keywords in output: {forbidden_hits}"
@@ -288,6 +286,24 @@ def score_result(
             if not evidence.get(state_key):
                 failure_reason = f"required evidence not gathered: {source_key!r}"
                 break
+
+    # 5. Primary evidence check — for failover scenarios, RDS events must be
+    # explicitly reflected in the reasoning, not just gathered in state.
+    if not failure_reason and "aws_rds_events" in answer_key.required_evidence_sources:
+        root_cause_text = _normalize_text(root_cause)
+        validated_text = _normalize_text(
+            " ".join(claim.get("claim", "") for claim in final_state.get("validated_claims", []))
+        )
+        causal_chain_text = _normalize_text(" ".join(final_state.get("causal_chain", [])))
+
+        reasoning_text = " ".join([root_cause_text, validated_text, causal_chain_text])
+
+        mentions_event_reasoning = "rds" in reasoning_text and (
+            "event" in reasoning_text or "timeline" in reasoning_text
+        )
+
+        if not mentions_event_reasoning:
+            failure_reason = "RDS events gathered but not used as primary reasoning signal"
 
     passed = not failure_reason
     trajectory = score_trajectory(fixture, final_state)
@@ -356,12 +372,18 @@ def _print_gap_report(
     gap = ax1_pct - ax2_pct
 
     print("\n=== Axis 1 vs Axis 2 Gap Report ===")
-    print(f"  Axis 1 (all scenarios, full data):  {ax1_pct:.0f}%  ({sum(r.passed for r in axis1_results)}/{len(axis1_results)})")
-    print(f"  Axis 2 (adversarial, selective):    {ax2_pct:.0f}%  ({sum(r.passed for r in axis2_results)}/{len(axis2_results)})")
+    print(
+        f"  Axis 1 (all scenarios, full data):  {ax1_pct:.0f}%  ({sum(r.passed for r in axis1_results)}/{len(axis1_results)})"
+    )
+    print(
+        f"  Axis 2 (adversarial, selective):    {ax2_pct:.0f}%  ({sum(r.passed for r in axis2_results)}/{len(axis2_results)})"
+    )
     print(f"  Gap:                                {gap:+.0f}pp")
 
     print("\n  Per difficulty level:")
-    for level in sorted({difficulty_map.get(r.scenario_id, 0) for r in axis1_results + axis2_results}):
+    for level in sorted(
+        {difficulty_map.get(r.scenario_id, 0) for r in axis1_results + axis2_results}
+    ):
         ax1_level = [r for r in axis1_results if difficulty_map.get(r.scenario_id, 0) == level]
         ax2_level = [r for r in axis2_results if difficulty_map.get(r.scenario_id, 0) == level]
         ax1_pct_l = _pass_rate(ax1_level)
@@ -391,7 +413,11 @@ def run_suite(argv: list[str] | None = None) -> list[ScenarioScore]:
     else:
         for result in results:
             status = "PASS" if result.passed else "FAIL"
-            detail = f"reason={result.failure_reason!r}" if result.failure_reason else f"category={result.actual_category}"
+            detail = (
+                f"reason={result.failure_reason!r}"
+                if result.failure_reason
+                else f"category={result.actual_category}"
+            )
             print(f"{status} {result.scenario_id} {detail}")
 
         passed_count = sum(1 for result in results if result.passed)

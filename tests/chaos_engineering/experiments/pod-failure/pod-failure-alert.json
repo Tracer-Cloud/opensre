@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Local pod-failure chaos demo; pair with pod-failure-demo + pod-failure-chaos on kind",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/pod-failure/pod-failure-alert.json"
+  },
+  "title": "[Triggered] Pod failing - pod-failure-demo",
+  "alert_name": "Datadog monitor: Pod pod-failure-demo not ready",
+  "pipeline_name": "pod-failure-demo",
+  "severity": "high",
+  "alert_source": "datadog",
+  "message": "Pod for deployment pod-failure-demo is not ready in namespace default",
+  "text": "Chaos Mesh pod-failure (pause image) or workload degradation; readiness may fail while HTTP probes cannot succeed.",
+  "commonLabels": {
+    "pipeline_name": "pod-failure-demo",
+    "severity": "high",
+    "kube_deployment": "pod-failure-demo"
+  },
+  "commonAnnotations": {
+    "summary": "Deployment pod-failure-demo pods not passing readiness",
+    "query": "kube_namespace:default pod_name:pod-failure-demo*",
+    "kube_namespace": "default",
+    "kube_deployment": "pod-failure-demo",
+    "correlation_id": "pod-failure-demo-local-001"
+  }
+}

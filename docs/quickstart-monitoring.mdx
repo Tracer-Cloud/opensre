@@ -1,0 +1,347 @@
+---
+title: "Quickstart"
+slug: "quickstart-monitoring"
+description: "Start monitoring your first pipelines in minutes"
+---
+
+import { CodePreview } from '/snippets/code-preview.mdx';
+
+## 2 minutes walkthrough
+
+OpenSRE runs anywhere from the OS, just follow the steps below:
+
+<Note>Coming from Tracer? Welcome. The installer, dashboard, and CLI commands below may still use the Tracer name while the OpenSRE docs transition is underway.</Note>
+
+<Steps>
+  <Step icon="/images/logo/tracer/Tracer-Head-Black.png" title="Step 1: Install OpenSRE - Only One Line of Code">
+    ```bash
+    curl -sSL https://install.tracer.cloud | sh -s
+    ```
+  </Step>
+
+  <Step icon="key" title="Step 2: Authenticate with OpenSRE">
+
+```bash
+sudo tracer login
+```
+
+<Info>This will open up a browser window to log in to your OpenSRE account.</Info>
+
+  </Step>
+
+  <Step icon="rocket" title="Step 3: Initialize Pipeline Tracking">
+
+```bash
+sudo tracer init
+```
+
+You will be prompted to configure the pipeline name. Filling this out ensures that each pipeline is uniquely identifiable, customizable, and easy to search later on.
+
+<div style={{
+  backgroundColor: 'rgba(96, 165, 250, 0.15)',
+  border: '1px solid rgba(96, 165, 250, 0.4)',
+  borderRadius: '8px',
+  padding: '18px 20px',
+  marginTop: '16px'
+}}>
+  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+    <div style={{
+      flexShrink: 0,
+      paddingTop: '2px'
+    }}>
+      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/>
+        <path d="M9 18h6"/>
+        <path d="M10 22h4"/>
+      </svg>
+    </div>
+    <div style={{ flex: 1 }}>
+      <div style={{
+        fontWeight: '700',
+        fontSize: '1.15em',
+        marginBottom: '10px'
+      }} className="dark:text-white text-black">
+        OpenSRE is now tracking your pipeline.
+      </div>
+      <div style={{ marginBottom: '10px' }}>
+        Every run you launch for this pipeline will be automatically monitored.
+      </div>
+      <div>
+        <strong>Note:</strong> You will only need to run <code className="dark:!text-blue-300 !text-blue-600" style={{
+          backgroundColor: 'rgba(96, 165, 250, 0.2)',
+          padding: '2px 6px',
+          borderRadius: '4px',
+          fontSize: '0.9em'
+        }}>tracer init</code> again for a new pipeline, not per pipeline run.
+      </div>
+    </div>
+  </div>
+</div>
+
+  </Step>
+
+  <Step icon="radar" title="Step 4: Launch (y)our pipeline">
+    ```bash
+    sudo tracer demo
+    ```
+
+    Alternatively: Run your usual command (Nextflow, Snakemake, WDL, etc.)<br/>OpenSRE works automatically once the agent is active.
+
+    Watch your pipeline run in the [OpenSRE dashboard](https://app.tracer.cloud/).
+
+    <CodePreview
+      filename="fastquorum.nf"
+      language="groovy"
+      totalLines={240}
+      githubUrl="https://github.com/nf-core/fastquorum/blob/master/workflows/fastquorum.nf"
+      code={`/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    IMPORT MODULES / SUBWORKFLOWS / FUNCTIONS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+
+include { paramsSummaryMap } from 'plugin/nf-schema'
+include { paramsSummaryMultiqc } from '../subworkflows/nf-core/utils_nfcore_pipeline'
+include { softwareVersionsToYAML } from '../subworkflows/nf-core/utils_nfcore_pipeline'
+include { methodsDescriptionText } from '../subworkflows/local/utils_nfcore_fastquorum_pipeline'
+
+include { ALIGN_BAM as ALIGN_RAW_BAM } from '../modules/local/align_bam/main'
+include { ALIGN_BAM as ALIGN_CONSENSUS_BAM } from '../modules/local/align_bam/main'
+include { FASTQC } from '../modules/nf-core/fastqc/main'
+include { FGBIO_FASTQTOBAM as FASTQTOBAM } from '../modules/local/fgbio/fastqtobam/main'
+include { FGBIO_GROUPREADSBYUMI as GROUPREADSBYUMI } from '../modules/local/fgbio/groupreadsbyumi/main'
+include { FGBIO_CALLMOLECULARCONSENSUSREADS as CALLMOLECULARCONSENSUSREADS } from '../modules/local/fgbio/callmolecularconsensusreads/main'
+include { FGBIO_CALLDDUPLEXCONSENSUSREADS as CALLDDUPLEXCONSENSUSREADS } from '../modules/local/fgbio/callduplexconsensusreads/main'
+include { FGBIO_FILTERCONSENSUSREADS as FILTERCONSENSUSREADS } from '../modules/local/fgbio/filterconsensusreads/main'
+include { FGBIO_COLLECTDUPLEXSEQMETRICS as COLLECTDUPLEXSEQMETRICS } from '../modules/local/fgbio/collectduplexseqmetrics/main'
+include { FGBIO_CALLANDFILTERMOLECULARCONSENSUSREADS as CALLANDFILTERMOLECULARCONSENSUSREADS } from '../modules/local/fgbio/callandfiltermolecularconsensusreads/main'
+include { FGBIO_CALLANDFILTERDUPLEXCONSENSUSREADS as CALLANDFILTERDUPLEXCONSENSUSREADS } from '../modules/local/fgbio/callandfilterduplexconsensusreads/main'
+include { SAMTOOLS_MERGE as MERGE_BAM } from '../modules/nf-core/samtools/merge/main'
+
+include { MULTIQC } from '../modules/nf-core/multiqc/main'
+
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    RUN MAIN WORKFLOW
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+
+workflow FASTQUORUM {
+    take:
+    params // NB: must pass params; see https://github.com/nextflow-io/nextflow/issues/4982
+    ch_samplesheet
+    ch_bwa
+    ch_dict
+    ch_fasta
+    ch_fasta_fai
+
+    main:
+
+    // To gather all QC reports for MultiQC
+    ch_versions = Channel.empty()
+    ch_multiqc_files = Channel.empty()
+    //
+    // MODULE: Run FastQC
+    //
+    FASTQC(
+        ch_samplesheet
+    )
+    ch_versions = ch_versions.mix(FASTQC.out.versions.first())
+    ch_multiqc_files = ch_multiqc_files.mix(FASTQC.out.zip.collect { it[1] })
+
+    //
+    // MODULE: Run fgbio FastqToBam
+    //
+    FASTQTOBAM(ch_samplesheet)
+    ch_versions = ch_versions.mix(FASTQTOBAM.out.versions.first())
+
+    //
+    // MODULE: Align with bwa mem
+    //
+    ALIGN_RAW_BAM(FASTQTOBAM.out.bam, ch_fasta, ch_fasta_fai, ch_dict, ch_bwa, "template-coordinate")
+    ch_versions = ch_versions.mix(ALIGN_RAW_BAM.out.versions.first())
+
+    //
+    // Create a channel that:
+    // 1. Groups the aligned BAMs by sample identifier.  We use \`groupKey\` here since we know how many BAMs each
+    //    sample expects to have.  Typically a sample has more than one BAM if it had multiple runs or lanes.
+    // 2. Splits the samples into those that have more than one BAM, and those that have exactly one BAM.  The former
+    //    samples will have their BAMs merged.
+    //
+    // The \`n_samples\` is added by \`validateInputSamplesheet\` method in \`PIPELINE_INITIALISATION\` workflow
+    // NB: bam is a list (of one BAM) so return just the one BAM
+    bam_to_merge = ALIGN_RAW_BAM.out.bam
+        .map { meta, bam ->
+            [groupKey(meta, meta.n_samples), bam]
+        }
+        .groupTuple()
+        .branch { meta, bam ->
+            single: meta.n_samples <= 1
+            return [meta, bam[0]]
+            multiple: meta.n_samples > 1
+        }
+
+    //
+    // MODULE: Run samtools merge to merge across runs/lanes for the same sample
+    //
+    MERGE_BAM(bam_to_merge.multiple, [[], []], [[], []])
+    ch_versions = ch_versions.mix(MERGE_BAM.out.versions.first())
+
+    //
+    // Create a channel that contains the merged BAMs and those that did not need to be merged.
+    //
+    bam_all = MERGE_BAM.out.bam.mix(bam_to_merge.single)
+
+    //
+    // MODULE: Run fgbio GroupReadsByUmi
+    //
+    GROUPREADSBYUMI(bam_all, params.groupreadsbyumi_strategy, params.groupreadsbyumi_edits)
+    ch_multiqc_files = ch_multiqc_files.mix(GROUPREADSBYUMI.out.histogram.map { it[1] }.collect())
+    ch_versions = ch_versions.mix(GROUPREADSBYUMI.out.versions.first())
+
+    if (params.duplex_seq) {
+        //
+        // MODULE: Run fgbio CollectDuplexSeqMetrics
+        //
+        COLLECTDUPLEXSEQMETRICS(GROUPREADSBYUMI.out.bam)
+        ch_versions = ch_versions.mix(COLLECTDUPLEXSEQMETRICS.out.versions.first())
+    }
+
+    // TODO: duplex_seq can be inferred from the read structure, but that's out of scope for now
+    if (params.mode == 'rd') {
+        if (params.duplex_seq) {
+            //
+            // MODULE: Run fgbio CallDuplexConsensusReads
+            //
+            CALLDDUPLEXCONSENSUSREADS(GROUPREADSBYUMI.out.bam, params.call_min_reads, params.call_min_baseq)
+            ch_versions = ch_versions.mix(CALLDDUPLEXCONSENSUSREADS.out.versions.first())
+
+            // Add the consensus BAM to the channel for downstream processing
+            CALLDDUPLEXCONSENSUSREADS.out.bam.set { ch_consensus_bam }
+        }
+        else {
+            //
+            // MODULE: Run fgbio CallMolecularConsensusReads
+            //
+            CALLMOLECULARCONSENSUSREADS(GROUPREADSBYUMI.out.bam, params.call_min_reads, params.call_min_baseq)
+            ch_versions = ch_versions.mix(CALLMOLECULARCONSENSUSREADS.out.versions.first())
+
+            // Add the consensus BAM to the channel for downstream processing
+            CALLMOLECULARCONSENSUSREADS.out.bam.set { ch_consensus_bam }
+        }
+
+        //
+        // MODULE: Align with bwa mem
+        //
+        ALIGN_CONSENSUS_BAM(ch_consensus_bam, ch_fasta, ch_fasta_fai, ch_dict, ch_bwa, "none")
+        ch_versions = ch_versions.mix(ALIGN_CONSENSUS_BAM.out.versions.first())
+
+        //
+        // MODULE: Run fgbio FilterConsensusReads
+        //
+        FILTERCONSENSUSREADS(ALIGN_CONSENSUS_BAM.out.bam, ch_fasta, params.filter_min_reads, params.filter_min_baseq, params.filter_max_base_error_rate)
+        ch_versions = ch_versions.mix(FILTERCONSENSUSREADS.out.versions.first())
+    }
+    else {
+        if (params.duplex_seq) {
+            //
+            // MODULE: Run fgbio CallDuplexConsensusReads and fgbio FilterConsensusReads
+            //
+            CALLANDFILTERDUPLEXCONSENSUSREADS(GROUPREADSBYUMI.out.bam, ch_fasta, ch_fasta_fai, params.call_min_reads, params.call_min_baseq, params.filter_max_base_error_rate)
+            ch_versions = ch_versions.mix(CALLANDFILTERDUPLEXCONSENSUSREADS.out.versions.first())
+
+            // Add the consensus BAM to the channel for downstream processing
+            CALLANDFILTERDUPLEXCONSENSUSREADS.out.bam.set { ch_consensus_bam }
+        }
+        else {
+            //
+            // MODULE: Run fgbio CallMolecularConsensusReads and fgbio FilterConsensusReads
+            //
+            CALLANDFILTERMOLECULARCONSENSUSREADS(GROUPREADSBYUMI.out.bam, ch_fasta, ch_fasta_fai, params.call_min_reads, params.call_min_baseq, params.filter_max_base_error_rate)
+            ch_versions = ch_versions.mix(CALLANDFILTERMOLECULARCONSENSUSREADS.out.versions.first())
+
+            // Add the consensus BAM to the channel for downstream processing
+            CALLANDFILTERMOLECULARCONSENSUSREADS.out.bam.set { ch_consensus_bam }
+        }
+
+        //
+        // MODULE: Align with bwa mem
+        //
+        ALIGN_CONSENSUS_BAM(ch_consensus_bam, ch_fasta, ch_fasta_fai, ch_dict, ch_bwa, "coordinate")
+        ch_versions = ch_versions.mix(ALIGN_CONSENSUS_BAM.out.versions.first())
+    }
+
+    //
+    // Collate and save software versions
+    //
+    softwareVersionsToYAML(ch_versions)
+        .collectFile(
+            storeDir: "\${params.outdir}/pipeline_info",
+            name: 'nf_core_' + 'fastquorum_software_' + 'mqc_' + 'versions.yml',
+            sort: true,
+            newLine: true,
+        )
+        .set { ch_collated_versions }
+
+
+    //
+    // MODULE: MultiQC
+    //
+    ch_multiqc_config = Channel.fromPath(
+        "\${projectDir}/assets/multiqc_config.yml",
+        checkIfExists: true
+    )
+    ch_multiqc_custom_config = params.multiqc_config
+        ? Channel.fromPath(params.multiqc_config, checkIfExists: true)
+        : Channel.empty()
+    ch_multiqc_logo = params.multiqc_logo
+        ? Channel.fromPath(params.multiqc_logo, checkIfExists: true)
+        : Channel.empty()
+
+    summary_params = paramsSummaryMap(
+        workflow,
+        parameters_schema: "nextflow_schema.json"
+    )
+    ch_workflow_summary = Channel.value(paramsSummaryMultiqc(summary_params))
+    ch_multiqc_files = ch_multiqc_files.mix(
+        ch_workflow_summary.collectFile(name: 'workflow_summary_mqc.yaml')
+    )
+    ch_multiqc_custom_methods_description = params.multiqc_methods_description
+        ? file(params.multiqc_methods_description, checkIfExists: true)
+        : file("\${projectDir}/assets/methods_description_template.yml", checkIfExists: true)
+    ch_methods_description = Channel.value(
+        methodsDescriptionText(ch_multiqc_custom_methods_description)
+    )
+
+    ch_multiqc_files = ch_multiqc_files.mix(ch_collated_versions)
+    ch_multiqc_files = ch_multiqc_files.mix(
+        ch_methods_description.collectFile(
+            name: 'methods_description_mqc.yaml',
+            sort: true,
+        )
+    )
+
+    MULTIQC(
+        ch_multiqc_files.collect(),
+        ch_multiqc_config.toList(),
+        ch_multiqc_custom_config.toList(),
+        ch_multiqc_logo.toList(),
+        [],
+        [],
+    )
+
+    emit:
+    multiqc_report = MULTIQC.out.report.toList() // channel: /path/to/multiqc_report.html
+    versions = ch_versions // channel: [ path(versions.yml) ]
+}`}
+    />
+
+  </Step>
+</Steps>
+
+See all our environment specific guides below:
+
+| [Linux (Cloud)](/environments/linux-cloud) | [macOS](/environments/macos) | [AWS Batch](/environments/aws-batch) | [Linux (Local)](/environments/linux-local) | [Docker](/environments/docker) | [Windows](/environments/windows-local) |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+
+Let's start monitoring!

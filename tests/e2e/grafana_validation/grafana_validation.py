@@ -75,8 +75,7 @@ def validate_grafana_telemetry(
         result["total_logs"] = logs_result.get("total_logs", 0)
         result["logs_found"] = result["total_logs"] > 0
         result["error_logs"] = [
-            log.get("message", "")[:200]
-            for log in logs_result.get("error_logs", [])[:5]
+            log.get("message", "")[:200] for log in logs_result.get("error_logs", [])[:5]
         ]
 
     # Query traces
@@ -90,8 +89,7 @@ def validate_grafana_telemetry(
         result["total_traces"] = traces_result.get("total_traces", 0)
         result["traces_found"] = result["total_traces"] > 0
         result["pipeline_spans"] = [
-            span.get("span_name")
-            for span in traces_result.get("pipeline_spans", [])
+            span.get("span_name") for span in traces_result.get("pipeline_spans", [])
         ]
 
     # Check expected spans if provided
@@ -170,7 +168,7 @@ def validate_and_report(
 if __name__ == "__main__":
     from pathlib import Path
 
-    from app.outbound_telemetry.config import load_env
+    from app.utils.config import load_env
 
     load_env(Path(__file__).resolve().parent.parent.parent / ".env")
 

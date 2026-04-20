@@ -9,6 +9,7 @@ Endpoints modelled:
     Mimir  /api/v1/query_range          ← aws_cloudwatch_metrics.json
     Loki   /loki/api/v1/query_range     ← aws_rds_events.json
     Ruler  /api/v1/rules                ← alert.json
+    Tempo  /api/search                  ← (empty — RDS scenarios have no traces)
 """
 
 from __future__ import annotations
@@ -84,10 +85,7 @@ def format_mimir_query_range(cw_fixture: dict[str, Any]) -> dict[str, Any]:
         timestamps: list[str] = entry.get("timestamps", [])
         values: list[float] = entry.get("values", [])
 
-        prom_values = [
-            [_iso_to_unix(ts), str(v)]
-            for ts, v in zip(timestamps, values)
-        ]
+        prom_values = [[_iso_to_unix(ts), str(v)] for ts, v in zip(timestamps, values)]
 
         result_series.append({"metric": labels, "values": prom_values})
 
@@ -132,13 +130,15 @@ def format_loki_query_range(rds_events_fixture: dict[str, Any]) -> dict[str, Any
     loki_result: list[dict[str, Any]] = []
     for (source_type, source_identifier), log_lines in stream_map.items():
         log_lines.sort(key=lambda x: x[0])
-        loki_result.append({
-            "stream": {
-                "source_type": source_type,
-                "source_identifier": source_identifier,
-            },
-            "values": log_lines,
-        })
+        loki_result.append(
+            {
+                "stream": {
+                    "source_type": source_type,
+                    "source_identifier": source_identifier,
+                },
+                "values": log_lines,
+            }
+        )
 
     return {
         "status": "success",
@@ -152,6 +152,20 @@ def format_loki_query_range(rds_events_fixture: dict[str, Any]) -> dict[str, Any
 # ---------------------------------------------------------------------------
 # Ruler / Alertmanager
 # ---------------------------------------------------------------------------
+
+
+def format_tempo_search() -> dict[str, Any]:
+    """Return an empty Tempo /api/search response.
+
+    RDS synthetic scenarios do not include trace fixture data, so the mock
+    returns a structurally valid but empty response.  This allows the traces
+    tool to report ``available=True`` with zero traces instead of failing
+    with "Grafana integration not configured".
+    """
+    return {
+        "traces": [],
+        "metrics": {},
+    }
 
 
 def format_ruler_rules(alert_fixture: dict[str, Any]) -> dict[str, Any]:

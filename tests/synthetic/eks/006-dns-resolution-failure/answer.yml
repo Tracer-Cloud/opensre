@@ -1,0 +1,36 @@
+root_cause_category: configuration_error
+required_keywords:
+  - DNS
+  - postgres
+forbidden_categories:
+  - healthy
+  - unknown
+  - resource_exhaustion
+  - code_defect
+  - data_quality
+optimal_trajectory:
+  - list_eks_pods
+  - query_datadog_logs
+  - query_datadog_monitors
+max_investigation_loops: 3
+ruling_out_keywords:
+  - Ready
+  - restart
+required_queries:
+  - list_eks_pods
+  - query_datadog_logs
+model_response: |
+  ROOT_CAUSE: payments-api pods are Running and Ready with zero restarts and Kubernetes has no warning events on the workload — but the application cannot resolve its downstream dependency 'postgres.production.svc.cluster.local'. Datadog application logs show a burst of 'getaddrinfo ENOTFOUND' errors, indicating a cluster DNS failure (CoreDNS outage, renamed Service, or NetworkPolicy blocking kube-dns) rather than any pod-, node-, or image-level problem.
+  ROOT_CAUSE_CATEGORY: configuration_error
+
+  VALIDATED_CLAIMS:
+  - All 3 pods of payments-api are Running and Ready with restart_count=0. [evidence: eks_pods]
+  - Datadog logs show 'Error: getaddrinfo ENOTFOUND postgres.production.svc.cluster.local' coincident with the alert window. [evidence: datadog_logs]
+  - Datadog monitor 'payments-api error rate' is in ALERT while the latency monitor is OK — an error-rate problem, not a performance regression. [evidence: datadog_monitors]
+
+  NON_VALIDATED_CLAIMS:
+  - Either CoreDNS is unhealthy, the downstream Service has been renamed/deleted, or a NetworkPolicy now blocks egress to kube-dns.
+  - No OOM, probe, image-pull, scheduling, or node-level failures are present — the outage is at the application / DNS layer.
+
+  CAUSAL_CHAIN:
+  - Application code resolves the downstream service name at request time, the DNS lookup fails with ENOTFOUND, outbound calls fail immediately, the application returns 5xx to users, the Datadog error-rate monitor fires — all while pods remain Running and Ready because kubelet probes hit localhost and are unaffected by external DNS failures.

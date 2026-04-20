@@ -1,0 +1,26 @@
+{
+  "title": "[synthetic-k8s] Deployment replicas mismatch — payments-api",
+  "state": "alerting",
+  "alert_source": "datadog",
+  "commonLabels": {
+    "alertname": "KubernetesDeploymentReplicasMismatch",
+    "severity": "warning",
+    "pipeline_name": "k8s-eks-synthetic",
+    "service": "payments-api",
+    "cluster_name": "payments-prod-eks",
+    "namespace": "payments",
+    "workload_type": "deployment",
+    "workload_name": "payments-api"
+  },
+  "commonAnnotations": {
+    "summary": "Deployment payments-api: 3 of 5 desired replicas ready for 15 minutes.",
+    "description": "An HPA-driven scale-up from 3 to 5 replicas has stalled. Running pods are healthy; no new pod has appeared.",
+    "error": "ReplicaSet shows FailedCreate events; no per-pod warnings.",
+    "suspected_symptom": "Deployment cannot reach desired replica count without any individual pod failing.",
+    "cluster_name": "payments-prod-eks",
+    "kube_namespace": "payments",
+    "kube_deployment": "payments-api",
+    "k8s_failure_mode": "deployment_rollout_stuck",
+    "context_sources": "eks"
+  }
+}

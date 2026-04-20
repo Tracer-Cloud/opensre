@@ -1,6 +1,7 @@
 """ECS cluster, task definition, service creation."""
 
 import time
+from contextlib import suppress
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -26,7 +27,7 @@ def create_cluster(name: str, stack_name: str, region: str = DEFAULT_REGION) -> 
     ecs_client = get_boto3_client("ecs", region)
 
     # First, check if cluster already exists and is ACTIVE
-    try:
+    with suppress(ClientError):
         response = ecs_client.describe_clusters(clusters=[name])
         if response.get("clusters"):
             cluster = response["clusters"][0]
@@ -38,9 +39,6 @@ def create_cluster(name: str, stack_name: str, region: str = DEFAULT_REGION) -> 
             # If INACTIVE, wait for it to be fully deleted
             if cluster.get("status") == "INACTIVE":
                 time.sleep(5)  # Give time for cleanup
-    except ClientError:
-        # Cluster doesn't exist yet; proceed to create
-        pass
 
     # Create new cluster
     try:
@@ -194,7 +192,10 @@ def create_service(
         response = ecs_client.create_service(**config)
         service_arn = response["service"]["serviceArn"]
     except ClientError as e:
-        if "ServiceAlreadyExists" in str(e) or e.response["Error"]["Code"] == "InvalidParameterException":
+        if (
+            "ServiceAlreadyExists" in str(e)
+            or e.response["Error"]["Code"] == "InvalidParameterException"
+        ):
             # Update existing service
             ecs_client.update_service(
                 cluster=cluster,
@@ -350,13 +351,10 @@ def delete_service(cluster: str, service: str, region: str = DEFAULT_REGION) -> 
     """
     ecs_client = get_boto3_client("ecs", region)
 
-    try:
+    with suppress(ClientError):
         # Scale to 0 first
         ecs_client.update_service(cluster=cluster, service=service, desiredCount=0)
         time.sleep(5)
-    except ClientError:
-        # Service may already be at 0 or not found; proceed with deletion
-        pass
 
     try:
         ecs_client.delete_service(cluster=cluster, service=service, force=True)

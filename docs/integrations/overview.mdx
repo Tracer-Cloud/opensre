@@ -1,0 +1,40 @@
+---
+title: "Integrations / Frameworks"
+sidebarTitle: "Overview"
+description: "Choose the right framework integration for your workflow"
+---
+
+OpenSRE seamlessly integrates with a wide array of workflow managers, schedulers, and scripting environments.<br/> Choose the integration that best matches your pipeline infrastructure.
+
+## Common Integration Steps
+
+Regardless of your framework, OpenSRE integration follows these simple steps:
+
+<Steps>
+  
+  <Step title="Initialize the Trace Agent">
+    Start the OpenSRE agent with your organization token
+    <br/>`sudo tracer init --token <your-token>`
+    <Info> Go to our [onboarding](https://app.tracer.cloud/dashboard) to get your own personal token</Info>
+  </Step>
+  
+  <Step title="Run your workflow">
+    Execute your pipeline as usual, OpenSRE automatically monitors all processes.
+    <br/>-> Monitor your pipeline run in [the OpenSRE dashboard](https://app.tracer.cloud/tracer-bioinformatics)
+  </Step>
+</Steps>
+
+## Verify Delivery
+
+Check the [OpenSRE dashboard](https://app.tracer.cloud/) for real-time insights
+
+![OpenSRE Dashboard](/images/Verify-Onboarding.png)
+
+## Key Features Across All Integrations
+
+- **Zero Code Changes** - No instrumentation required, works at the system level
+- **Real-Time Monitoring** - See your pipeline execution as it happens
+- **Resource Tracking** - CPU, memory, I/O, and network metrics per process
+- **Cost Attribution** - Understand the cost of each pipeline step
+- **Execution Graphs** - Visualize dependencies and execution flow
+- **Performance Insights** - Identify bottlenecks and optimization opportunities

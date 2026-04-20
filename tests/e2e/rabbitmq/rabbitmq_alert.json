@@ -1,0 +1,38 @@
+{
+  "receiver": "sre-pager",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "RabbitMQQueueBacklog",
+        "service": "orders-api",
+        "queue": "orders.process",
+        "severity": "critical"
+      },
+      "annotations": {
+        "summary": "Queue backlog on orders.process has exceeded 50k messages",
+        "description": "Queue orders.process on rmq@prod-01 has 52,400 unacked messages and publish rate is outpacing consumer throughput.",
+        "rabbitmq_cluster": "rmq@prod-01",
+        "queue_name": "orders.process",
+        "vhost": "/orders"
+      },
+      "startsAt": "2026-04-16T09:12:03Z",
+      "generatorURL": "https://grafana.internal/d/rabbitmq/overview"
+    }
+  ],
+  "groupLabels": {"alertname": "RabbitMQQueueBacklog"},
+  "commonLabels": {"alertname": "RabbitMQQueueBacklog", "severity": "critical"},
+  "commonAnnotations": {
+    "rabbitmq_cluster": "rmq@prod-01",
+    "queue_name": "orders.process",
+    "vhost": "/orders"
+  },
+  "externalURL": "https://alertmanager.internal",
+  "version": "4",
+  "groupKey": "rabbitmq:orders.process",
+  "truncatedAlerts": 0,
+  "alert_name": "RabbitMQQueueBacklog",
+  "pipeline_name": "orders-processing",
+  "severity": "critical"
+}

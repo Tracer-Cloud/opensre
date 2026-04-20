@@ -1,0 +1,125 @@
+---
+title: "How to use OpenSRE with Seqera"
+sidebarTitle: "Seqera"
+description: 'Execution behavior inside Nextflow pipelines'
+---
+
+Seqera orchestrates scientific workflows built with Nextflow, defining pipeline structure, dependencies, and execution across compute environments. It determines what runs and when, but it does not observe how tasks behave at runtime inside containers or at the operating system level.
+
+OpenSRE complements Seqera by exposing execution behavior: CPU, memory, disk, and network usage, and more during pipeline runs. It collects this telemetry without modifying workflows or task definitions.
+
+## What Seqera does well
+
+Seqera and Nextflow provide orchestration-level capabilities, including:
+
+- Pipeline structure and task dependencies
+- Scheduling across cloud, HPC, and hybrid environments
+- Retries, caching, and execution state tracking
+- Task logs and exit statuses
+
+These capabilities enable reproducible, scalable scientific workflows. They focus on defining what should run and when it should run.
+
+## What Seqera does not see at runtime
+
+Workflow orchestration tools do not observe low-level execution behavior. In practice, they do not show:
+
+- CPU utilization versus requested allocation
+- Whether tasks are CPU-bound, memory-bound, or I/O-bound
+- Disk and network contention inside containers
+- Short-lived subprocesses and nested tools
+- Idle time during task execution
+
+This information exists below the workflow engine, inside the container and operating system. Some logs are available, but if a pipeline fails, logs are lost and your only option with Seqera is to add more compute.
+
+## Why this gap matters in practice
+
+Pipeline resources are often over-allocated to reduce the risk of failure, especially when workloads vary by dataset. Without execution-level visibility, teams often struggle to answer:
+
+- Why a pipeline failed
+- Why a task runs slower than expected
+- Whether allocated CPUs are actively used
+- Whether performance is limited by storage or networking
+- Whether different instance types would perform better
+
+As a result, pipelines may succeed reliably but consume more time and cost than necessary.
+
+## What OpenSRE adds
+
+OpenSRE observes execution directly from the host and container runtime and adds:
+
+- Observed CPU, memory, disk, and network usage per task
+- Visibility into subprocesses and nested execution
+- Detection of stalls, idle time, and contention
+- Attribution of resource usage by pipeline, run, task, and step
+
+This visibility is based on observed behavior, not metadata, configuration, or heuristics.
+
+<iframe
+  src="https://vakisr.github.io/tracer-radar-chart/quadrant-chart.html"
+  width="100%"
+  height="1300"
+  style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
+  title="OpenSRE/collect execution panel"
+/>
+
+## Example: identifying I/O-bound tasks
+
+A pipeline task requests many CPUs and a large memory allocation. During execution, OpenSRE shows:
+
+- Low CPU utilization
+- Memory usage well below allocation
+- Sustained disk I/O saturation
+
+This pattern indicates an I/O-bound task rather than a compute-bound one. Adding CPUs or memory will not improve performance.
+
+OpenSRE makes this distinction explicit by observing runtime behavior rather than inferring it from configuration.
+
+## Using execution insight to tune resources
+
+Once execution characteristics are clear, teams can make informed decisions, such as:
+
+- Lowering CPU or memory requests for specific tasks
+- Selecting instance types suited to I/O-heavy workloads
+- Using instances faster local or NVMe-backed storage where appropriate
+- Separating compute-heavy and I/O-heavy pipeline steps
+
+These adjustments can reduce cost, improve runtime performance, or both.
+
+## Observability comparison
+
+<iframe
+  src="https://vakisr.github.io/tracer-radar-chart/"
+  width="100%"
+  height="700"
+  style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
+  title="Observability comparison chart"
+/>
+
+This comparison highlights the difference between orchestration-level visibility and execution-level observation.
+
+## What OpenSRE does not replace
+
+OpenSRE is not a workflow engine.
+
+- It does not replace Seqera or Nextflow
+- It does not schedule, retry, or cache tasks
+- It does not modify pipeline definitions or execution logic
+
+Seqera remains responsible for orchestration. OpenSRE makes runtime behavior visible.
+
+## When to use OpenSRE with Seqera
+
+OpenSRE is most useful when teams need to:
+
+- Explain slow or inconsistent task runtimes
+- Identify unused or underutilized resources
+- Diagnose performance issues beyond application logs
+- Choose infrastructure based on observed workload behavior
+
+OpenSRE operates independently of the workflow engine and supports pipelines across multiple frameworks and languages.
+
+## Summary
+
+Seqera and Nextflow define and orchestrate scientific workflows. OpenSRE adds execution-level visibility that shows how resources are actually used at runtime. Together, they support reliable execution and informed optimization decisions, without changes to existing workflows.
+
+<div style={{ height: '50vh' }}></div>

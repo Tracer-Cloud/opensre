@@ -1,0 +1,17 @@
+{
+  "alert_source": "opsgenie",
+  "alert_name": "High CPU usage on prod-api-server-01",
+  "status": "firing",
+  "severity": "critical",
+  "startsAt": "2026-04-05T10:00:00Z",
+  "annotations": {
+    "opsgenie_alert_id": "d5b86a5d-d010-4672-bd19-76f11d583628-1775348880850",
+    "opsgenie_query": "status=open",
+    "summary": "CPU utilization exceeded 95% on prod-api-server-01"
+  },
+  "labels": {
+    "service": "payment-gateway",
+    "environment": "production",
+    "region": "us-east-1"
+  }
+}

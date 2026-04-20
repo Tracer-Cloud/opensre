@@ -1,0 +1,27 @@
+{
+  "title": "[synthetic-k8s] Pod was Pending — payments-api-7f9dd8b6c4-late1",
+  "state": "alerting",
+  "alert_source": "datadog",
+  "commonLabels": {
+    "alertname": "KubernetesPodPending",
+    "severity": "warning",
+    "pipeline_name": "k8s-eks-synthetic",
+    "service": "payments-api",
+    "cluster_name": "payments-prod-eks",
+    "namespace": "payments",
+    "workload_type": "deployment",
+    "workload_name": "payments-api"
+  },
+  "commonAnnotations": {
+    "summary": "Pod payments-api-7f9dd8b6c4-late1 was Pending for over 5 minutes earlier today.",
+    "description": "Datadog flagged the historical Pending state. Current pod state has not been re-checked since.",
+    "error": "",
+    "suspected_symptom": "Possible scheduling failure.",
+    "cluster_name": "payments-prod-eks",
+    "kube_namespace": "payments",
+    "kube_deployment": "payments-api",
+    "kube_pod": "payments-api-7f9dd8b6c4-late1",
+    "k8s_failure_mode": "pending_pod",
+    "context_sources": "eks,datadog"
+  }
+}

@@ -1,0 +1,16 @@
+---
+title: "macOS"
+description: "Using OpenSRE on macOS"
+---
+
+OpenSRE can be installed on macOS for local pipeline debugging and development. The installation process is similar to Linux: run the one-line installer and then initialize the agent with your OpenSRE token. Note that because macOS lacks Linux eBPF support, some low-level features are limited: eBPF metrics are disabled and process visibility may be reduced. Nevertheless, OpenSRE will still capture userland metrics and correlate processes. After installation, launch the agent (`sudo tracer init --token <token>`) and then run your pipeline or script on macOS. You can even use `sudo tracer demo` on macOS to execute an example Nextflow pipeline (FastQuorum). Once running, the OpenSRE dashboard will display the pipeline run, showing available performance and cost insights.
+
+## Steps to get started:
+
+1. **Install OpenSRE on macOS**: Execute `curl -sSL https://install.tracer.cloud | sh` as shown on the macOS docs.
+
+2. **Initialize OpenSRE**: Run `sudo tracer init --token <your-token>`. You will be prompted to name the pipeline, which ensures each run is tracked.
+
+3. **Run your pipeline or demo**: Start your workflow (e.g. via your usual command or `tracer demo` to launch a sample pipeline). The agent will trace the processes started on your Mac.
+
+4. **Monitor in Dashboard**: Open the OpenSRE dashboard to observe the pipeline. Even on macOS you can see the execution steps and resource usage (with the caveat that kernel-level metrics may be unavailable).

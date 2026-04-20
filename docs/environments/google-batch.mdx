@@ -1,0 +1,86 @@
+---
+title: "Google Batch"
+description: "Install OpenSRE on Google Cloud Batch under two minutes"
+---
+
+## Overview
+
+Google Cloud Batch is a fully managed batch processing service that enables you to run large-scale batch jobs on Google Cloud. OpenSRE integrates with Google Cloud Batch to provide real-time observability for your batch workloads.
+
+## Prerequisites
+
+- Google Cloud account with Batch API enabled
+- `gcloud` CLI installed and configured
+- OpenSRE account and API token
+
+## Getting Started
+
+#### 1. Create a Machine Image With OpenSRE Installed
+
+<Steps>
+  <Step title="Create a new VM instance in Google Cloud." />
+  <Step title="Install OpenSRE on the instance." />
+  <Step title="Configure OpenSRE to run as a service so it automatically starts when the system boots." />
+</Steps>
+
+Once everything is correctly installed and running, create a Machine Image from this VM.
+This Machine Image will serve as the base template for future instances.
+
+#### 2. Set the Machine Image as the Default for New Instances
+
+<Steps>
+  <Step title="In your Google Batch configuration, set the Machine Image created above to be the default boot image." />
+  <Step title="This makes sure that every time a new Batch machine is spawned, it loads the image with OpenSRE pre-installed and running." />
+</Steps>
+
+In this way, all new instances will automatically have OpenSRE active without any manual setup.
+
+#### 3. Update Your nextflow.config to Work With OpenSRE
+
+<Steps>
+  <Step title="Improve your nextflow.config so that it integrates correctly with OpenSRE in Google Batch environments." />
+  <Step title="You can base the necessary configuration changes on the example below:" />
+</Steps>
+
+```groovy
+params {
+    customUUID = java.util.UUID.randomUUID().toString()
+    // GCP bucket for work directory - make configurable
+    gcpWorkBucket = 'tracer-nextflow-work'
+}
+
+workDir = "gs://${params.gcpWorkBucket}/work"
+
+process {
+    executor = 'google-batch'
+    machineType = 'template://my-instance-template'
+
+    // Set env vars for the containers
+    containerOptions = [
+        environment: [
+            'TRACER_TRACE_ID': "${params.customUUID}"
+        ]
+    ]
+
+    env.TRACER_TRACE_ID = params.customUUID
+
+    errorStrategy = 'retry'
+    maxRetries = 2
+
+    // Resource labels for Google Batch
+    resourceLabels = [
+        'launch-time': new java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date()),
+        'custom-session-uuid': "${params.customUUID}",
+        'project': 'tracer-467514'
+    ]
+}
+
+// GCP Batch/credentials configuration (optional)
+google {
+  project = 'tracer-467514'
+  location = 'us-central1'
+  serviceAccountEmail = 'nextflow-batch@tracer-467514.iam.gserviceaccount.com'
+}
+```
+
+Link: https://github.com/Tracer-Cloud/nextflow-test-pipelines/pull/84/files

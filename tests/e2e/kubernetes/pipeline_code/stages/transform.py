@@ -28,11 +28,15 @@ def main() -> None:
         source_key=input_key,
     )
 
-    print(json.dumps({
-        "stage": "transform",
-        "status": "success",
-        "input_count": len(raw_records),
-        "output_count": len(processed),
-        "correlation_id": correlation_id,
-        "output": f"s3://{LANDING_BUCKET}/{output_key}",
-    }))
+    print(
+        json.dumps(
+            {
+                "stage": "transform",
+                "status": "success",
+                "input_count": len(raw_records),
+                "output_count": len(processed),
+                "correlation_id": correlation_id,
+                "output": f"s3://{LANDING_BUCKET}/{output_key}",
+            }
+        )
+    )

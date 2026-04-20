@@ -1,0 +1,20 @@
+# TimeChaos: shifts CLOCK_REALTIME for processes in the container (nginx master/workers as children of PID 1).
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: TimeChaos
+metadata:
+  name: time-skew-demo
+  namespace: default
+spec:
+  mode: all
+  duration: "2m"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: time-skew-demo
+  containerNames:
+    - nginx
+  timeOffset: "+19m15s"
+  clockIds:
+    - CLOCK_REALTIME

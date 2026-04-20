@@ -6,7 +6,7 @@ This document describes how to set up your environment, propose changes, report 
 
 ## Quick Links
 
-- **Docs:** https://www.tracer.cloud/docs
+- **Docs:** https://tracer.mintlify.app
 - **Support / Contact:** hello@tracer.cloud
 - **Security Issues:** See `SECURITY.md` (do not open public issues)
 
@@ -14,15 +14,33 @@ This document describes how to set up your environment, propose changes, report 
 
 ### How to Contribute
 
-- **Bugs & small fixes:** Open a GitHub Issue using the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md) and/or submit a PR
-- **New features / behavioral changes:** Open a GitHub Issue using the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md) first to discuss the approach
-- **Improvements / refactoring:** Open a GitHub Issue using the [improvement template](.github/ISSUE_TEMPLATE/improvement.md)
-- **Questions / “how do I”:** Use the docs or email hello@tracer.cloud (Issues are for actionable work)
+There are two ways to get started:
+
+#### Path A: Pick an Existing Issue
+
+1. Browse the [open issues](../../issues) on GitHub
+2. Find one that interests you and comment to **request assignment**
+3. Once assigned, fork the repo, create a branch, and start working
+4. Open a PR when ready
+
+#### Path B: Find Something Yourself
+
+1. Explore the codebase or use the product — find a bug, improvement, or missing feature
+2. Open a new GitHub Issue describing what you found (use the appropriate template below)
+3. Comment that you're working on it and open a **draft PR** early so others can see progress
+4. Mark the PR as ready for review when it's complete
+
+#### Issue Templates
+
+- **Bugs & small fixes:** [Bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
+- **New features / behavioral changes:** [Feature request template](.github/ISSUE_TEMPLATE/feature_request.md) — discuss the approach before coding
+- **Improvements / refactoring:** [Improvement template](.github/ISSUE_TEMPLATE/improvement.md)
+- **Questions / "how do I":** Use the docs or email hello@tracer.cloud (Issues are for actionable work)
 - **Security issues:** Follow `SECURITY.md` — do not open a public issue
 
 ### Environment Setup
 
-See **[SETUP.md](docs/SETUP.md)** for detailed setup instructions including Windows-specific guidance.
+See **[SETUP.md](SETUP.md)** for detailed setup instructions including Windows-specific guidance.
 
 **Quick start:**
 
@@ -31,19 +49,22 @@ See **[SETUP.md](docs/SETUP.md)** for detailed setup instructions including Wind
 3. Run checks: `make lint && make typecheck && make test-cov`
 4. Build release artifacts when needed: `make build`
 
+If you prefer VS Code, you can use the repo's devcontainer at [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) instead of setting up Python manually.
+
 ---
 
-**The basic flow:**
+**The full flow:**
 
-1. **Find or create an issue** — Bug? Feature? Improvement? Create or comment on an issue first
-2. **Discuss (if needed)** — For features/changes, discuss approach in the issue before coding
-3. **Fork and branch** — Create a branch for your work: `git checkout -b issue/123-description`
-4. **Code and test** — Make changes, add tests, ensure all checks pass
-5. **Submit a PR** — Open a pull request linked to the issue; use the PR template
-6. **Review & iterate** — Respond to feedback, make changes as needed
-7. **Merge** — Maintainer merges once approved
+1. **Find or create an issue** — Pick an existing one (Path A) or raise a new one (Path B)
+2. **Request assignment** — Comment on the issue so maintainers know you're working on it
+3. **Discuss (if needed)** — For features/changes, discuss approach in the issue before coding
+4. **Fork and branch** — Create a branch for your work: `git checkout -b issue/123-description`
+5. **Code and test** — Make changes, add tests, ensure all checks pass
+6. **Submit a PR** — Open a pull request (or draft PR) linked to the issue; use the PR template
+7. **Review & iterate** — Respond to feedback, make changes as needed
+8. **Merge** — Maintainer merges once approved
 
-**Detailed steps:** See “Development Workflow” section below.
+**Detailed steps:** See "Development Workflow" section below.
 
 ---
 
@@ -62,6 +83,32 @@ Use `issue/` or `fix/` prefix. Branch names should be lowercase with hyphens.
 - Keep commits focused and logical
 - Write clear commit messages: `"Fix: CLI returns error on incomplete commands"`
 - One concern per commit when possible
+
+### 2.1 Add a Tool (Fast Path: Single File)
+
+For simple tools, you do not need a class or `ClassVar` metadata. Add one file under `app/tools/` and register a function with `@tool`.
+
+Example (`app/tools/example_status_tool.py`):
+
+```python
+from app.tools.tool_decorator import tool
+
+
+@tool(source="knowledge")
+def get_example_status(run_id: str, include_history: bool = False) -> dict[str, object]:
+    """Return a lightweight status summary for a run."""
+    return {
+        "run_id": run_id,
+        "include_history": include_history,
+    }
+```
+
+Notes:
+
+- `source` is required for function tools.
+- `name`, `description`, and `input_schema` are inferred by default.
+- `surfaces` defaults to `("investigation",)`. Pass `surfaces=("investigation", "chat")` to expose the tool in both investigation and chat contexts.
+- Use the existing package/class style when a tool has complex helper logic, multiple exports, or substantial integration-specific code.
 
 ### 3. Add or Update Tests
 
@@ -222,4 +269,4 @@ Use the **[improvement template](.github/ISSUE_TEMPLATE/improvement.md)** to pro
 
 ## Licensing
 
-By contributing, you agree that your contributions will be licensed under the project’s license (see `LICENSE`).
+By contributing, you agree that your contributions will be licensed under the project's license (see `LICENSE`).

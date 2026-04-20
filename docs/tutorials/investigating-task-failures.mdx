@@ -1,0 +1,92 @@
+---
+title: 'Investigating Task Failures'
+description: 'Debug and resolve failures with OpenSRE powerful diagnostic tools'
+---
+
+## Overview
+
+OpenSRE automatically captures logs, resource metrics, and system call data for every task, even those that fail. 
+Therefore, when tasks fail, OpenSRE provides detailed information to help you understand what went wrong and how to fix it.
+
+Find out how to do this easily below.
+
+<video
+  autoPlay
+  loop
+  muted
+  playsInline
+  style={{ width: '100%', maxWidth: '100%' }}
+>
+  <source src="/images/tutorials/failure-investigation/Investigating-failures.mp4" type="video/mp4" />
+  Your browser does not support the video tag.
+</video>
+
+## Previous Knowledge
+
+Before diving in how we can investigate task failures, it is recommended to have a basic understanding of the following concepts:
+
+<CardGroup cols={2}>
+  <Card title="Navigate to Run Overview" href="/tutorials/viewing-task-status">
+    See the run details
+  </Card>
+  <Card title="Viewing Task Status" href="/tutorials/viewing-task-status">
+    Monitoring your tasks
+  </Card>
+</CardGroup>
+
+
+
+## Identifying Failed Tasks
+
+<Steps>
+  <Step title="Run Overview">
+    When you see the run overview and notice a failed tool, you can click on the "Logs" tab to see the error summary and exit code.<br/>
+    ![Run Overview](/images/tutorials/failure-investigation/1.png)
+    <Info> As you can see in the image above, multiple tasks failed and therefore need to be investigated. </Info>
+  </Step>
+  <Step title="Choose the Log to Investigate">
+    Here, all logs of the failed run are shown. Select the log you want to investigate deeper.
+    ![Log Overview](/images/tutorials/failure-investigation/2.png)
+  </Step>
+  <Step title="Logs & Insights">
+    This page displays your log and its insights. It includes an error summary, plus automatic logs with warning and failure indicators.<br/>
+    Based on this data, our AI identifies likely root causes and tells you what happened, so you know exactly what needs attention. It also provides recommended solutions to resolve the issue.
+    ![Log Details](/images/tutorials/failure-investigation/3.png)
+  </Step>
+  <Step title="AI Log Analysis">
+    Our AI Log Analysis is divide up into three main sections:
+    1. **Critical Issue Section** - What exactly went wrong
+    2. **Next steps/Solution Suggestions** - How to resolve the issue and refrain from making the same mistake again
+    3. **Error Entries** - The specific lines in the log that caused the error
+
+
+  ![AI Insights](/images/tutorials/failure-investigation/4.png)
+  </Step>
+  <Step title="Log Details">
+    If you want to dig deeper into the logs, in this section you can see the full log with highlighted error lines.<br/>
+    On the right side, you can see the specific error entries that caused the task to fail together with the warning indicators. This also gives you the opportunity to download the full report.
+    ![Log Details](/images/tutorials/failure-investigation/5.png)
+    <Info> As logs can be very extensive, there are multiple ways of searching through the logs. You can use the search bar to search for specific keywords, or you can use the filter bar to filter for specific error types and you can filter on time as well. </Info>
+  </Step>
+</Steps>
+
+## Common Failure Patterns
+
+### Resource Exhaustion
+
+Tasks may fail due to insufficient resources:
+
+- **Out of Memory (OOM)** - Task exceeded available RAM
+- **Disk Space** - Insufficient storage for outputs
+- **CPU Timeout** - Task exceeded maximum execution time
+
+<Info>
+OpenSRE's eBPF monitoring captures resource usage leading up to failures, helping you identify resource constraints.
+</Info>
+
+## Next Steps
+
+<Card title="Viewing Task Status" href="/tutorials/viewing-task-status">
+  Learn how to monitor task execution
+</Card>
+

@@ -3,66 +3,36 @@
 from __future__ import annotations
 
 import json
-import os
-from collections.abc import Callable
-from typing import Any
+from importlib import import_module
+from typing import Any, TypeAlias, cast
 
-from langchain_anthropic import ChatAnthropic
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import SystemMessage, ToolMessage
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.tools import StructuredTool
 
-from app.integrations.clients import get_llm_for_tools
-from app.prompts import GENERAL_SYSTEM_PROMPT, ROUTER_PROMPT, SYSTEM_PROMPT
+from app.config import ANTHROPIC_LLM_CONFIG, DEFAULT_MAX_TOKENS, OPENAI_LLM_CONFIG
+from app.constants.prompts import GENERAL_SYSTEM_PROMPT, ROUTER_PROMPT, SYSTEM_PROMPT
+from app.services import get_llm_for_tools
 from app.state import AgentState, ChatMessage
-from app.tools.base import BaseTool
-from app.tools.GitHubCommitsTool import list_github_commits
-from app.tools.GitHubFileContentsTool import get_github_file_contents
-from app.tools.GitHubRepositoryTreeTool import get_github_repository_tree
-from app.tools.GitHubSearchCodeTool import search_github_code
-from app.tools.SentryIssueDetailsTool import get_sentry_issue_details
-from app.tools.SentryIssueEventsTool import list_sentry_issue_events
-from app.tools.SentrySearchIssuesTool import search_sentry_issues
-from app.tools.TracerBatchStatisticsTool import get_batch_statistics
-from app.tools.TracerErrorLogsTool import get_error_logs
-from app.tools.TracerFailedJobsTool import get_failed_jobs
-from app.tools.TracerFailedRunTool import fetch_failed_run
-from app.tools.TracerFailedToolsTool import get_failed_tools
-from app.tools.TracerHostMetricsTool import get_host_metrics
-from app.tools.TracerRunTool import get_tracer_run
-from app.tools.TracerTasksTool import get_tracer_tasks
-
-_CHAT_FUNCTIONS: list[Callable[..., Any]] = [
-    fetch_failed_run,
-    get_tracer_run,
-    get_tracer_tasks,
-    get_failed_jobs,
-    get_failed_tools,
-    get_error_logs,
-    get_batch_statistics,
-    get_host_metrics,
-    search_github_code,
-    get_github_file_contents,
-    get_github_repository_tree,
-    list_github_commits,
-    search_sentry_issues,
-    get_sentry_issue_details,
-    list_sentry_issue_events,
-]
-
-def _to_structured_tool(fn: Callable[..., Any] | BaseTool) -> StructuredTool:
-    """Build a StructuredTool from a plain callable or a BaseTool instance."""
-    if isinstance(fn, BaseTool):
-        return StructuredTool.from_function(
-            func=fn.run,  # type: ignore[attr-defined]
-            name=fn.name,
-            description=fn.description,
-            return_direct=False,
-        )
-    return StructuredTool.from_function(fn, return_direct=False)
+from app.tools.registered_tool import RegisteredTool
+from app.tools.registry import get_registered_tools
+from app.utils.cfg_helpers import CfgHelpers
 
 
-CHAT_TOOLS: list[StructuredTool] = [_to_structured_tool(fn) for fn in _CHAT_FUNCTIONS]
+def _to_structured_tool(tool: RegisteredTool) -> StructuredTool:
+    """Build a StructuredTool from the canonical registered tool runtime."""
+    return StructuredTool.from_function(
+        func=tool.run,
+        name=tool.name,
+        description=tool.description,
+        return_direct=False,
+    )
+
+
+def get_chat_tools() -> list[StructuredTool]:
+    return [_to_structured_tool(tool) for tool in get_registered_tools("chat")]
+
 
 # LangChain type -> ChatMessage role mapping
 _TYPE_TO_ROLE: dict[str, str] = {
@@ -94,48 +64,94 @@ def _normalize_messages(msgs: list[Any]) -> list[ChatMessage]:
     return result
 
 
-# ── Chat LLM (LangChain ChatAnthropic for real-time streaming) ──────────
+# ── Chat LLM ─────────────────────────────────────────────────────────────
 
-_chat_llm: ChatAnthropic | None = None
-_chat_llm_with_tools: ChatAnthropic | None = None
+ToolEnabledChatModel: TypeAlias = Runnable[object, object]  # noqa: UP040
+
+_chat_llm_cache: dict[str, BaseChatModel] = {}
+_chat_llm_with_tools_cache: dict[str, ToolEnabledChatModel] = {}
 
 
-def _get_chat_llm(*, with_tools: bool = False) -> ChatAnthropic:
-    """Get a LangChain ChatAnthropic for chat nodes (supports streaming)."""
-    global _chat_llm, _chat_llm_with_tools
+def _resolve_models(provider: str) -> tuple[str, str]:
+    """Resolve tool and reasoning model names for the active provider."""
+    if provider == "openai":
+        return (
+            CfgHelpers.first_env_or_default(
+                env_keys=(
+                    "OPENAI_TOOLCALL_MODEL",
+                    "OPENAI_REASONING_MODEL",
+                    "OPENAI_MODEL",
+                ),
+                default=OPENAI_LLM_CONFIG.toolcall_model,
+            ),
+            CfgHelpers.first_env_or_default(
+                env_keys=("OPENAI_REASONING_MODEL", "OPENAI_MODEL"),
+                default=OPENAI_LLM_CONFIG.reasoning_model,
+            ),
+        )
+    if provider == "anthropic":
+        return (
+            CfgHelpers.first_env_or_default(
+                env_keys=(
+                    "ANTHROPIC_TOOLCALL_MODEL",
+                    "ANTHROPIC_REASONING_MODEL",
+                    "ANTHROPIC_MODEL",
+                ),
+                default=ANTHROPIC_LLM_CONFIG.toolcall_model,
+            ),
+            CfgHelpers.first_env_or_default(
+                env_keys=("ANTHROPIC_REASONING_MODEL", "ANTHROPIC_MODEL"),
+                default=ANTHROPIC_LLM_CONFIG.reasoning_model,
+            ),
+        )
+    raise ValueError(f"Unsupported chat model provider: {provider}")
 
-    if with_tools:
-        if _chat_llm_with_tools is None:
-            from app.config import ANTHROPIC_TOOLCALL_MODEL, DEFAULT_MAX_TOKENS
 
-            tool_model = (
-                (os.getenv("ANTHROPIC_TOOLCALL_MODEL") or "").strip()
-                or (os.getenv("ANTHROPIC_REASONING_MODEL") or "").strip()
-                or (os.getenv("ANTHROPIC_MODEL") or "").strip()
-                or ANTHROPIC_TOOLCALL_MODEL
-            )
-            base = ChatAnthropic(  # type: ignore[call-arg]
-                model=tool_model,
+def _build_chat_model(*, provider: str, model_name: str) -> BaseChatModel:
+    """Lazy-build a provider-specific chat model for the chat nodes."""
+    if provider == "openai":
+        openai_module = import_module("langchain_openai")
+        chat_openai_cls: Any = openai_module.ChatOpenAI
+        return cast(
+            BaseChatModel,
+            chat_openai_cls(
+                model=model_name,
                 max_tokens=DEFAULT_MAX_TOKENS,
                 streaming=True,
-            )
-            _chat_llm_with_tools = base.bind_tools(CHAT_TOOLS)  # type: ignore[assignment]
-        return _chat_llm_with_tools  # type: ignore[return-value]
-
-    if _chat_llm is None:
-        from app.config import ANTHROPIC_REASONING_MODEL, DEFAULT_MAX_TOKENS
-
-        reasoning_model = (
-            (os.getenv("ANTHROPIC_REASONING_MODEL") or "").strip()
-            or (os.getenv("ANTHROPIC_MODEL") or "").strip()
-            or ANTHROPIC_REASONING_MODEL
+            ),
         )
-        _chat_llm = ChatAnthropic(  # type: ignore[call-arg]
-            model=reasoning_model,
-            max_tokens=DEFAULT_MAX_TOKENS,
-            streaming=True,
+    if provider == "anthropic":
+        anthropic_module = import_module("langchain_anthropic")
+        chat_anthropic_cls: Any = anthropic_module.ChatAnthropic
+        return cast(
+            BaseChatModel,
+            chat_anthropic_cls(
+                model=model_name,
+                max_tokens=DEFAULT_MAX_TOKENS,
+                streaming=True,
+            ),
         )
-    return _chat_llm
+    raise ValueError(f"Unsupported chat model provider: {provider}")
+
+
+def _get_chat_llm(*, with_tools: bool = False) -> BaseChatModel | ToolEnabledChatModel:
+    """Get the provider-aware chat model used by chat nodes."""
+    provider = CfgHelpers.resolve_llm_provider()
+    tool_model, reasoning_model = _resolve_models(provider)
+
+    if with_tools:
+        cached_tool_model = _chat_llm_with_tools_cache.get(provider)
+        if cached_tool_model is None:
+            base = _build_chat_model(provider=provider, model_name=tool_model)
+            cached_tool_model = cast(ToolEnabledChatModel, base.bind_tools(get_chat_tools()))
+            _chat_llm_with_tools_cache[provider] = cached_tool_model
+        return cached_tool_model
+
+    cached_reasoning_model = _chat_llm_cache.get(provider)
+    if cached_reasoning_model is None:
+        cached_reasoning_model = _build_chat_model(provider=provider, model_name=reasoning_model)
+        _chat_llm_cache[provider] = cached_reasoning_model
+    return cached_reasoning_model
 
 
 # ── Node functions ───────────────────────────────────────────────────────
@@ -147,18 +163,44 @@ def router_node(state: AgentState) -> dict[str, Any]:
     if not msgs or msgs[-1].get("role") != "user":
         return {"route": "general"}
 
-    response = get_llm_for_tools().invoke([
-        {"role": "system", "content": ROUTER_PROMPT},
-        {"role": "user", "content": str(msgs[-1].get("content", ""))},
-    ])
+    response = get_llm_for_tools().invoke(
+        [
+            {"role": "system", "content": ROUTER_PROMPT},
+            {"role": "user", "content": str(msgs[-1].get("content", ""))},
+        ]
+    )
     route = str(response.content).strip().lower()
     return {"route": route if route in ("tracer_data", "general") else "general"}
 
 
-def chat_agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
+def _apply_guardrails_to_messages(msgs: list[Any]) -> list[Any]:
+    """Return a copy of *msgs* with redacted content, leaving originals untouched.
+
+    Operates on copies to avoid mutating shared LangGraph state objects.
+    """
+    import copy
+
+    from app.guardrails.engine import get_guardrail_engine
+
+    engine = get_guardrail_engine()
+    if not engine.is_active:
+        return msgs
+    result = []
+    for msg in msgs:
+        content = getattr(msg, "content", None)
+        if isinstance(content, str) and content:
+            redacted = engine.apply(content)
+            if redacted != content:
+                msg = copy.copy(msg)
+                msg.content = redacted
+        result.append(msg)
+    return result
+
+
+def chat_agent_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any]:
     """Chat agent with tools for Tracer data queries.
 
-    Uses ChatAnthropic with bound tools. The LLM can make tool_calls
+    Uses the configured provider with bound tools. The LLM can make tool calls
     which will be executed by the tool_executor node.
     """
     msgs = list(state.get("messages", []))
@@ -171,12 +213,13 @@ def chat_agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]
     if not has_system:
         msgs = [SystemMessage(content=SYSTEM_PROMPT), *msgs]
 
+    msgs = _apply_guardrails_to_messages(msgs)
     llm = _get_chat_llm(with_tools=True)
     response = llm.invoke(msgs)
     return {"messages": [response]}
 
 
-def general_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
+def general_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any]:
     """Direct LLM response without tools for general questions."""
     msgs = list(state.get("messages", []))
 
@@ -188,6 +231,7 @@ def general_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:  
     if not has_system:
         msgs = [SystemMessage(content=GENERAL_SYSTEM_PROMPT), *msgs]
 
+    msgs = _apply_guardrails_to_messages(msgs)
     llm = _get_chat_llm(with_tools=False)
     response = llm.invoke(msgs)
     return {"messages": [response]}
@@ -208,7 +252,7 @@ def tool_executor_node(state: AgentState) -> dict[str, Any]:
     if not last_ai or not last_ai.tool_calls:
         return {"messages": []}
 
-    tool_map = {t.name: t for t in CHAT_TOOLS}
+    tool_map = {tool.name: tool for tool in get_chat_tools()}
 
     tool_messages = []
     for tc in last_ai.tool_calls:
@@ -224,11 +268,9 @@ def tool_executor_node(state: AgentState) -> dict[str, Any]:
                 result = tool_fn.invoke(tool_args)
                 if not isinstance(result, str):
                     result = json.dumps(result, default=str)
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError, KeyError) as e:
             result = json.dumps({"error": str(e)})
 
-        tool_messages.append(
-            ToolMessage(content=result, tool_call_id=tool_id, name=tool_name)
-        )
+        tool_messages.append(ToolMessage(content=result, tool_call_id=tool_id, name=tool_name))
 
     return {"messages": tool_messages}

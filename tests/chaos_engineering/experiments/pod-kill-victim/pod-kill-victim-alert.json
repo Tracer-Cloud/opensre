@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for pod-kill victim demo",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/pod-kill-victim/pod-kill-victim-alert.json"
+  },
+  "title": "[Triggered] Pod restarted - pod-kill-victim-demo",
+  "alert_name": "Datadog monitor: pod churn pod-kill-victim-demo",
+  "pipeline_name": "pod-kill-victim-demo",
+  "severity": "warning",
+  "alert_source": "datadog",
+  "message": "Pod for pod-kill-victim-demo was deleted and recreated",
+  "text": "PodChaos pod-kill removes the pod; ReplicaSet creates a new one.",
+  "commonLabels": {
+    "pipeline_name": "pod-kill-victim-demo",
+    "severity": "warning",
+    "kube_deployment": "pod-kill-victim-demo"
+  },
+  "commonAnnotations": {
+    "summary": "Pod lifecycle event on deployment pod-kill-victim-demo",
+    "query": "kube_namespace:default kube_deployment:pod-kill-victim-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "pod-kill-victim-demo",
+    "correlation_id": "pod-kill-victim-local-001"
+  }
+}

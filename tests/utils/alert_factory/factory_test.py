@@ -10,12 +10,13 @@ from datetime import UTC, datetime
 import pytest
 import requests
 
-from app.outbound_telemetry.config import load_env
+from app.utils.config import load_env
 from tests.utils.alert_factory.factory import create_alert, from_pipeline_run
 from tests.utils.alert_factory.formatters.grafana import format_as_grafana
 from tests.utils.alert_factory.intent import AlertIntent
 
 load_env()
+
 
 def test_alert_intent_creation():
     """Test that AlertIntent captures core information correctly."""
@@ -70,6 +71,7 @@ def test_factory_from_pipeline_run():
 
     assert payload["alerts"][0]["labels"]["severity"] == "high"
     assert payload["alerts"][0]["labels"]["alertname"] == "FailureEvent"
+
 
 def test_create_alert_backwards_compatibility():
     """Test that create_alert still works as expected."""
@@ -128,6 +130,7 @@ def test_fire_alert_to_remote_platform():
     assert response.status_code == 200, f"Failed to fire alert: {response.text}"
     print(f"✓ Alert fired to remote platform: {endpoint}")
     print(f"  Status: {response.status_code}")
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

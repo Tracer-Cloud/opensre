@@ -16,7 +16,7 @@ import sys
 
 import requests
 
-from app.integrations.clients.grafana import get_grafana_client
+from app.services.grafana import get_grafana_client
 from tests.shared.stack_config import get_prefect_config
 from tests.utils.s3_upload_validate import (
     INVALID_PAYLOAD,
@@ -94,6 +94,7 @@ def run_test(
 
         print(f"✗ Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         return False, correlation_id
 

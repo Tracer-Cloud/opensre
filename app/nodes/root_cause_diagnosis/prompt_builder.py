@@ -28,6 +28,9 @@ ALLOWED_EVIDENCE_SOURCES = [
     "datadog_logs",
     "datadog_monitors",
     "datadog_events",
+    "betterstack_logs",
+    "vercel",
+    "github",
 ]
 
 
@@ -50,6 +53,7 @@ def build_diagnosis_prompt(
 
     # Build directive sections
     upstream_directive = _build_upstream_directive(evidence)
+    database_directive = _build_database_directive(state, evidence)
     kubernetes_directive = _build_kubernetes_directive(state, evidence)
     memory_section = _build_memory_section(memory_context)
 
@@ -57,20 +61,20 @@ def build_diagnosis_prompt(
     evidence_text = _build_evidence_sections(state, evidence)
 
     # Construct final prompt
-    prompt = f"""You are an experienced SRE writing a short RCA (root cause analysis) for a data pipeline incident.
+    prompt = f"""You are an experienced SRE writing a short, evidence-grounded RCA (root cause analysis) for a system incident.
 
 Goal: Be helpful and accurate. Prefer evidence-backed explanations over speculation.
 If the exact root cause cannot be proven, provide the most likely explanation based on observed evidence,
 and clearly state what is unknown.
-{upstream_directive}{kubernetes_directive}{memory_section}
+{upstream_directive}{database_directive}{kubernetes_directive}{memory_section}
 DEFINITIONS:
 - VALIDATED_CLAIMS: Directly supported by the evidence shown below (observed facts).
 - NON_VALIDATED_CLAIMS: Plausible hypotheses or contributing factors that are NOT directly proven by the evidence.
 
 RULES:
-- Do NOT introduce external domain knowledge that is not visible in the evidence (e.g., what a tool usually does).
-- Do NOT reference source code files or line numbers unless they appear explicitly in the log evidence below.
-- You can ONLY use information present in the evidence logs shown below. If a traceback shows file names and line numbers, you may reference them.
+- Ground your analysis in the telemetry and logs shown below. You may use your broad domain knowledge to interpret the evidence, but do NOT hallucinate facts, metrics, or log entries that do not explicitly appear in the evidence.
+- Do NOT reference source code files or line numbers unless they appear explicitly in the evidence below.
+- You MUST explicitly state what is missing if you lack telemetry to make a definitive ruling. If GitHub evidence includes file paths, snippets, commits, or content, you may reference them.
 - VALIDATED_CLAIMS should be factual and specific (no "maybe", "likely", "appears").
 - NON_VALIDATED_CLAIMS may include "likely/maybe", but must stay consistent with evidence.
 - Keep each claim to one sentence.
@@ -86,13 +90,13 @@ HYPOTHESES TO CONSIDER (may be incomplete):
 EVIDENCE:
 {evidence_text}
 
-OUTPUT FORMAT (follow exactly):
+OUTPUT FORMAT (follow exactly with NO markdown code blocks around the response, start immediately with ROOT_CAUSE:):
 
 ROOT_CAUSE:
 <1–2 sentences. If not proven, say "Most likely ..." and state what's missing. Do not say only "Unable to determine".>
 
 ROOT_CAUSE_CATEGORY:
-<one of: configuration_error, code_defect, data_quality, resource_exhaustion, dependency_failure, infrastructure, healthy, unknown>
+<exactly one of: configuration_error, code_defect, data_quality, resource_exhaustion, dependency_failure, infrastructure, healthy, unknown>
 (Use "healthy" when all monitored metrics are within normal bounds, no errors are detected, and the alert is informational or has resolved. When evidence is mixed — alert resolved but some metrics are elevated — use your judgment; you may still choose healthy or another category.)
 
 VALIDATED_CLAIMS:
@@ -122,13 +126,51 @@ def _build_upstream_directive(evidence: dict[str, Any]) -> str:
     if s3_audit_payload.get("found") or vendor_audit_from_logs:
         return """
 **CRITICAL: Upstream Root Cause Tracing**
-Audit evidence shows external API interactions. For data pipeline failures:
+Audit evidence shows external API interactions. For upstream-triggered failures:
 - The root cause is often upstream (external API schema changes, missing fields, breaking changes)
 - S3 audit payload and vendor audit logs contain the source of truth
 - Validated claims should reference the external API request/response details
 - Explain how the external change propagated downstream to cause the pipeline failure
 """
     return ""
+
+
+def _build_database_directive(state: InvestigationState, evidence: dict[str, Any]) -> str:
+    """Build RDS / Database root cause disambiguation directive."""
+    pipeline = str(state.get("pipeline", "")).lower()
+    alert_text = (
+        str(state.get("alert_name", "")) + " " + str(state.get("raw_alert", ""))
+    ).lower()
+    is_database_incident = (
+        any(k in pipeline for k in ["rds", "postgres", "mysql"])
+        or any(k in alert_text for k in ["rds", "postgres", "mysql", "database", "db instance"])
+    )
+
+    has_db_evidence = bool(
+        evidence.get("aws_rds_events")
+        or evidence.get("aws_performance_insights")
+        or bool(
+            isinstance(evidence.get("aws_cloudwatch_metrics"), dict) and (
+                evidence.get("aws_cloudwatch_metrics", {}).get("DBInstanceIdentifier")
+                or evidence.get("aws_cloudwatch_metrics", {}).get("db_instance_identifier")
+            )
+        )
+    )
+    if not (has_db_evidence or is_database_incident):
+        return ""
+    return """
+**CRITICAL: Database Resource Exhaustion vs CPU Saturation**
+When evaluating database health metrics (especially RDS/Postgres):
+- Connection pool leaks (exhausting `max_connections`) are a `resource_exhaustion` root cause. High CPU is often just a secondary symptom of accumulated idle sessions. If connections are near 100%, the root cause is connection exhaustion, not CPU saturation. If connections are near 100% AND CPU is near 100%, look for a single shared root cause: a connection pool leak holding open scan-heavy queries, causing both (do not treat them as two independent problems).
+- Storage exhaustion (when `FreeStorageSpace` approaches 0) blocks all writes and causes Write IOPS to collapse to 0. The root cause is `resource_exhaustion` due to storage limits. If the `FreeStorageSpace` metric is completely missing, you MUST infer storage exhaustion from indirect signals: WriteIOPS dropping to 0, WriteLatency spiking, and RDS events indicating 'ran out of storage space'.
+- A single bad query driving CPU near 100% while connections and storage are healthy is `resource_exhaustion` due to CPU saturation (e.g. missing index, full table scans at high ReadIOPS). Pay close attention to Performance Insights to identify the exact query.
+- Checkpoint Storms / VACUUM FREEZE: If CPU is high but the dominant wait event is `LWLock:BufferMapping` with massive WriteIOPS, the root cause is an I/O storm from checkpointing (e.g., `VACUUM FREEZE`) and should be classified as `resource_exhaustion`, NOT `code_defect`. The high CPU is a downstream symptom of I/O contention.
+- Replication lag: If a massive write-heavy workload on the primary generates WAL faster than the read replica can replay it, resulting in ReplicaLag spikes, the root cause is `resource_exhaustion` driven by the write workload on the primary. Watch out for red herrings: if concurrent analytics queries cause high CPU, do NOT classify the root cause as CPU-driven if the actual failing metric (like ReplicaLag) is driven by the write-heavy workload. The CPU spike is an independent issue. If the `ReplicaLag` metric is missing, infer lag from RDS events (e.g., 'exceeded 900s') and high `TransactionLogsGeneration`.
+- Compositional Faults: If two completely independent workloads cause two separate faults simultaneously (e.g., CPU saturation from an analytics SELECT AND storage exhaustion from an audit_log INSERT), explicitly identify BOTH as independent root causes (do not merge them into a single IOPS fault). You MUST explicitly state they are two independent, coincidental faults. Provide evidence for both the analytics query and the audit_log query. Use `resource_exhaustion` as ROOT_CAUSE_CATEGORY and describe both causes clearly in ROOT_CAUSE (e.g., "Two independent root causes: ..."). Trace each causal chain separately in CAUSAL_CHAIN. You MUST explicitly state that connection growth is a symptom of blocked writers, not connection exhaustion. You MUST explicitly state that ReplicaLag growth is a downstream symptom of the write burst (not an independent fault). NEVER diagnose `connection_exhaustion` as a root cause when connections spike due to a blocked write queue.
+- Misleading Context: Check RDS event timestamps carefully! Ignore historical events (maintenance, failovers, replica promotions) that completed hours before the current incident started.
+- Healthy Systems / Stale Alerts: If metrics are oscillating but remain within normal operating bounds (e.g. connections at 55-65%, CPU at 40-70%, no error logs), the system is `healthy`. If a threshold was briefly crossed (e.g. low FreeStorageSpace) but autoscaling successfully expanded the volume and fully recovered the system before the investigation, the system is `healthy` and the alert is stale.
+- ALWAYS trace the causal chain properly (e.g., connection leak -> idle sessions -> connections maxed out, OR missing index -> full table scans -> ReadIOPS -> CPU saturated, OR VACUUM FREEZE -> massive WAL -> checkpoint flush -> I/O saturation -> CPU as symptom).
+"""
 
 
 def _extract_k8s_tags_from_evidence(evidence: dict[str, Any]) -> dict[str, str]:
@@ -155,7 +197,9 @@ def _extract_k8s_tags_from_evidence(evidence: dict[str, Any]) -> dict[str, str]:
                 if not isinstance(tag, str) or ":" not in tag:
                     continue
                 key, _, val = tag.partition(":")
-                if (key.startswith("kube_") or key in ("pod_name", "container_name")) and key not in k8s:
+                if (
+                    key.startswith("kube_") or key in ("pod_name", "container_name")
+                ) and key not in k8s:
                     k8s[key] = val
     return k8s
 
@@ -168,7 +212,9 @@ def _detect_k8s_from_monitors(evidence: dict[str, Any]) -> bool:
     return False
 
 
-def _build_kubernetes_directive(state: InvestigationState, evidence: dict[str, Any]) -> str:
+def _build_kubernetes_directive(
+    state: InvestigationState, evidence: dict[str, Any]
+) -> str:
     """Build K8s diagnostic directive when Kubernetes context is detected.
 
     Detection cascade (strict priority):
@@ -219,7 +265,9 @@ Use these patterns to recognize similar failure modes and accelerate diagnosis.
 """
 
 
-def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]) -> str:
+def _build_evidence_sections(
+    state: InvestigationState, evidence: dict[str, Any]
+) -> str:
     """Build all evidence sections for the prompt."""
     sections: list[str] = []
 
@@ -238,19 +286,34 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     s3_object = evidence.get("s3_object", {})
     s3_audit_payload = evidence.get("s3_audit_payload", {})
     vendor_audit_from_logs = evidence.get("vendor_audit_from_logs", {})
+    vercel_deployment = evidence.get("vercel_deployment", {})
+    vercel_failed_deployments = evidence.get("vercel_failed_deployments", [])
+    vercel_error_events = evidence.get("vercel_error_events", [])
+    vercel_runtime_logs = evidence.get("vercel_runtime_logs", [])
+    github_code_matches = evidence.get("github_code_matches", [])
+    github_file = evidence.get("github_file", {})
+    github_commits = evidence.get("github_commits", [])
 
     # Extract alert annotations
     raw_alert = state.get("raw_alert", {})
     cloudwatch_url = None
+    vercel_url: str | None = None
     alert_annotations: dict[str, Any] = {}
     raw_alert_text: str = ""
     if isinstance(raw_alert, str):
         raw_alert_text = raw_alert
     elif isinstance(raw_alert, dict):
-        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
-        alert_annotations = (
-            raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
+        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get(
+            "cloudwatch_url"
         )
+        vercel_url = raw_alert.get("vercel_log_url") or raw_alert.get("vercel_url")
+        alert_annotations = (
+            raw_alert.get("annotations", {})
+            or raw_alert.get("commonAnnotations", {})
+            or {}
+        )
+    else:
+        vercel_url = None
 
     # CloudWatch logs
     if cloudwatch_logs:
@@ -266,7 +329,9 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     if failed_jobs:
         section = f"\nAWS Batch Failed Jobs ({len(failed_jobs)}):\n"
         for job in failed_jobs[:5]:
-            section += f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
+            section += (
+                f"- {job.get('job_name', 'Unknown')}: {job.get('status_reason', 'No reason')}\n"
+            )
         sections.append(section)
 
     # Failed tools (only show if data exists)
@@ -345,6 +410,22 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
             section += f"- {message[:300]}\n"
         sections.append(section)
 
+    # Better Stack Telemetry logs (ClickHouse JSONEachRow rows with dt + raw)
+    betterstack_logs = evidence.get("betterstack_logs", [])
+    if betterstack_logs:
+        bs_source = evidence.get("betterstack_source", "") or "(unknown source)"
+        section = f"\nBetter Stack Logs ({len(betterstack_logs)} rows from {bs_source}):\n"
+        for row in betterstack_logs[:15]:
+            if not isinstance(row, dict):
+                continue
+            dt = str(row.get("dt", "")).strip()
+            raw = str(row.get("raw", "")).strip()
+            if dt:
+                section += f"- [{dt}] {raw[:300]}\n"
+            elif raw:
+                section += f"- {raw[:300]}\n"
+        sections.append(section)
+
     # Grafana traces
     grafana_spans = evidence.get("grafana_pipeline_spans", [])
     if grafana_spans:
@@ -374,8 +455,12 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     if grafana_alert_rules:
         section = f"\nGrafana Alert Rules ({len(grafana_alert_rules)}):\n"
         for rule in grafana_alert_rules[:5]:
-            section += f"- {rule.get('rule_name', 'unknown')} [{rule.get('state', '')}]\n"
-            section += f"  Folder: {rule.get('folder', '')}, Group: {rule.get('group', '')}\n"
+            section += (
+                f"- {rule.get('rule_name', 'unknown')} [{rule.get('state', '')}]\n"
+            )
+            section += (
+                f"  Folder: {rule.get('folder', '')}, Group: {rule.get('group', '')}\n"
+            )
             for query in rule.get("queries", [])[:2]:
                 section += f"  Query ({query.get('ref_id', '')}): {query.get('expr', '')[:200]}\n"
             if rule.get("no_data_state"):
@@ -437,7 +522,9 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
         section = f"\nDatadog Monitors ({len(datadog_monitors)}):\n"
         for monitor in datadog_monitors[:5]:
             section += f"- {monitor.get('name', 'unknown')} [{monitor.get('overall_state', '')}]\n"
-            section += f"  Type: {monitor.get('type', '')}, Query: {monitor.get('query', '')[:200]}\n"
+            section += (
+                f"  Type: {monitor.get('type', '')}, Query: {monitor.get('query', '')[:200]}\n"
+            )
         sections.append(section)
 
     # Datadog events
@@ -449,6 +536,26 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
             if event.get("message"):
                 section += f"  {event['message'][:200]}\n"
         sections.append(section)
+
+    if vercel_deployment or vercel_failed_deployments:
+        sections.append(
+            _build_vercel_evidence_section(
+                vercel_deployment=vercel_deployment,
+                vercel_failed_deployments=vercel_failed_deployments,
+                vercel_error_events=vercel_error_events,
+                vercel_runtime_logs=vercel_runtime_logs,
+                vercel_url=str(vercel_url or ""),
+            )
+        )
+
+    if github_commits or github_code_matches or github_file:
+        sections.append(
+            _build_github_evidence_section(
+                github_commits=github_commits,
+                github_code_matches=github_code_matches,
+                github_file=github_file,
+            )
+        )
 
     # Alert annotations
     if alert_annotations:
@@ -484,7 +591,9 @@ def _build_lambda_function_section(lambda_function: dict[str, Any]) -> str:
                 file_content = code_files.get(handler_file, "")
                 if isinstance(file_content, str):
                     code_snippet = file_content[:1000]
-                    section += f"\nHandler Code Snippet ({handler_file}):\n{code_snippet}\n"
+                    section += (
+                        f"\nHandler Code Snippet ({handler_file}):\n{code_snippet}\n"
+                    )
 
     return section
 
@@ -578,6 +687,186 @@ def _build_performance_insights_section(performance_insights: dict[str, Any]) ->
     return section
 
 
+def _extract_vercel_git_metadata(meta: dict[str, Any]) -> dict[str, str]:
+    """Normalize git metadata from Vercel deployment evidence."""
+    return {
+        "repo": str(meta.get("github_repo") or meta.get("githubRepo") or "").strip(),
+        "sha": str(
+            meta.get("github_commit_sha") or meta.get("githubCommitSha") or ""
+        ).strip(),
+        "ref": str(
+            meta.get("github_commit_ref") or meta.get("githubCommitRef") or ""
+        ).strip(),
+    }
+
+
+def _format_vercel_runtime_log(log: Any) -> str:
+    """Format a runtime log entry into a compact single-line excerpt."""
+    if not isinstance(log, dict):
+        return str(log)[:300]
+
+    message = log.get("message")
+    if not message:
+        payload = log.get("payload")
+        if isinstance(payload, dict):
+            message = (
+                payload.get("text")
+                or payload.get("message")
+                or payload.get("body")
+                or ""
+            )
+        elif payload:
+            message = str(payload)
+
+    prefix_parts = [
+        str(log.get("type", "")).strip(),
+        str(log.get("source", "")).strip(),
+    ]
+    prefix = " ".join(part for part in prefix_parts if part)
+    text = str(message or "")[:260]
+    return f"{prefix}: {text}" if prefix else text
+
+
+def _build_vercel_evidence_section(
+    *,
+    vercel_deployment: dict[str, Any],
+    vercel_failed_deployments: list[dict[str, Any]],
+    vercel_error_events: list[dict[str, Any]],
+    vercel_runtime_logs: list[dict[str, Any]],
+    vercel_url: str,
+) -> str:
+    """Build a Vercel deployment evidence section."""
+    section = "\nVercel Deployment Evidence:\n"
+
+    if vercel_deployment:
+        git_meta = _extract_vercel_git_metadata(vercel_deployment.get("meta", {}))
+        section += f"- Deployment ID: {vercel_deployment.get('id', 'unknown')}\n"
+        section += f"- State: {vercel_deployment.get('state', 'unknown')}\n"
+        if vercel_deployment.get("error"):
+            section += f"- Deployment Error: {vercel_deployment.get('error')}\n"
+        if git_meta["repo"]:
+            section += f"- GitHub Repo: {git_meta['repo']}\n"
+        if git_meta["sha"]:
+            section += f"- Commit SHA: {git_meta['sha']}\n"
+        if git_meta["ref"]:
+            section += f"- Commit Ref: {git_meta['ref']}\n"
+
+    if vercel_failed_deployments:
+        section += f"Failed Deployments ({len(vercel_failed_deployments)}):\n"
+        for deployment in vercel_failed_deployments[:5]:
+            if not isinstance(deployment, dict):
+                continue
+            git_meta = _extract_vercel_git_metadata(deployment.get("meta", {}))
+            line = f"- {deployment.get('id', 'unknown')} [{deployment.get('state', 'unknown')}]"
+            if deployment.get("error"):
+                line += f" error={str(deployment.get('error'))[:140]}"
+            if git_meta["sha"]:
+                line += f" sha={git_meta['sha'][:12]}"
+            if git_meta["ref"]:
+                line += f" ref={git_meta['ref']}"
+            section += f"{line}\n"
+
+    if vercel_error_events:
+        section += f"Vercel Error Events ({len(vercel_error_events)}):\n"
+        for event in vercel_error_events[:8]:
+            if not isinstance(event, dict):
+                continue
+            section += f"- {str(event.get('text', ''))[:280]}\n"
+
+    if vercel_runtime_logs:
+        section += f"Vercel Runtime Logs ({len(vercel_runtime_logs)}):\n"
+        for log in vercel_runtime_logs[:8]:
+            formatted = _format_vercel_runtime_log(log)
+            if formatted:
+                section += f"- {formatted}\n"
+
+    if vercel_url:
+        section += f"\n[Citation: View full logs at {vercel_url}]\n"
+
+    return section
+
+
+def _build_github_evidence_section(
+    *,
+    github_commits: list[Any],
+    github_code_matches: list[Any],
+    github_file: Any,
+) -> str:
+    """Build a GitHub evidence section from MCP-backed code data."""
+    section = "\nGitHub Code Evidence:\n"
+
+    if github_commits:
+        section += f"Recent Commits ({len(github_commits)}):\n"
+        for commit in github_commits[:5]:
+            if not isinstance(commit, dict):
+                section += f"- {str(commit)[:220]}\n"
+                continue
+            commit_info = (
+                commit.get("commit", {})
+                if isinstance(commit.get("commit"), dict)
+                else {}
+            )
+            sha = str(
+                commit.get("sha") or commit.get("oid") or commit_info.get("oid") or ""
+            )[:12]
+            message = str(
+                commit.get("message")
+                or commit.get("messageHeadline")
+                or commit_info.get("message")
+                or "unknown"
+            )[:220]
+            section += f"- {sha or 'unknown'}: {message}\n"
+
+    if github_code_matches:
+        section += f"Code Search Matches ({len(github_code_matches)}):\n"
+        for match in github_code_matches[:5]:
+            if not isinstance(match, dict):
+                section += f"- {str(match)[:220]}\n"
+                continue
+            path = str(
+                match.get("path")
+                or match.get("file")
+                or match.get("name")
+                or match.get("filename")
+                or "unknown"
+            )[:180]
+            snippets = (
+                match.get("matches")
+                or match.get("fragments")
+                or match.get("lines")
+                or []
+            )
+            if isinstance(snippets, list) and snippets:
+                snippet_text = "; ".join(str(item)[:140] for item in snippets[:2])
+            else:
+                snippet_text = str(match.get("text", ""))[:220]
+            section += f"- {path}: {snippet_text}\n"
+
+    if github_file:
+        section += "GitHub File Contents:\n"
+        if isinstance(github_file, dict):
+            path = str(
+                github_file.get("path")
+                or github_file.get("name")
+                or github_file.get("filename")
+                or ""
+            ).strip()
+            if path:
+                section += f"- Path: {path}\n"
+            content = github_file.get("content")
+            if isinstance(content, str) and content:
+                section += f"{content[:1000]}\n"
+            else:
+                section += f"- Details: {json.dumps(github_file, default=str)[:1000]}\n"
+        elif isinstance(github_file, list):
+            for item in github_file[:5]:
+                section += f"- {json.dumps(item, default=str)[:220]}\n"
+        else:
+            section += f"- {str(github_file)[:1000]}\n"
+
+    return section
+
+
 def _build_lambda_config_section(lambda_config: dict[str, Any]) -> str:
     """Build Lambda configuration evidence section."""
     section = "\nLambda Configuration:\n"
@@ -612,8 +901,9 @@ def _format_datadog_log_entry(log: Any) -> str:
     if isinstance(raw_ts, str) and "T" in raw_ts:
         time_part = raw_ts.split("T", 1)[1][:8]  # "HH:MM:SS"
         ts_prefix = f"[{time_part}] "
-    elif isinstance(raw_ts, (int, float)):
+    elif isinstance(raw_ts, int | float):
         import datetime
+
         ts_prefix = f"[{datetime.datetime.utcfromtimestamp(raw_ts / 1000 if raw_ts > 1e10 else raw_ts).strftime('%H:%M:%S')}] "
 
     tag_parts: dict[str, str] = {}
@@ -621,7 +911,10 @@ def _format_datadog_log_entry(log: Any) -> str:
         if not isinstance(t, str) or ":" not in t:
             continue
         k, _, v = t.partition(":")
-        if any(k.startswith(p) for p in _STRUCTURED_TAG_PREFIXES) or k in _STRUCTURED_TAG_NAMES:
+        if (
+            any(k.startswith(p) for p in _STRUCTURED_TAG_PREFIXES)
+            or k in _STRUCTURED_TAG_NAMES
+        ):
             tag_parts[k] = v
 
     if tag_parts:
@@ -663,7 +956,9 @@ def _build_s3_audit_section(s3_audit_payload: dict[str, Any]) -> str:
     if audit_content:
         try:
             audit_data = (
-                json.loads(audit_content) if isinstance(audit_content, str) else audit_content
+                json.loads(audit_content)
+                if isinstance(audit_content, str)
+                else audit_content
             )
             section += f"- Content: {json.dumps(audit_data, indent=2)[:1500]}\n"
         except (json.JSONDecodeError, TypeError):
@@ -690,10 +985,14 @@ def _build_alert_annotations_section(alert_annotations: dict[str, Any]) -> str:
     sections = []
 
     if alert_annotations.get("log_excerpt"):
-        sections.append(f"\nLog Excerpt from Alert:\n{alert_annotations['log_excerpt'][:1000]}\n")
+        sections.append(
+            f"\nLog Excerpt from Alert:\n{alert_annotations['log_excerpt'][:1000]}\n"
+        )
 
     if alert_annotations.get("failed_steps"):
-        sections.append(f"\nFailed Steps Summary:\n{alert_annotations['failed_steps']}\n")
+        sections.append(
+            f"\nFailed Steps Summary:\n{alert_annotations['failed_steps']}\n"
+        )
 
     if alert_annotations.get("error"):
         sections.append(f"\nError Message:\n{alert_annotations['error']}\n")

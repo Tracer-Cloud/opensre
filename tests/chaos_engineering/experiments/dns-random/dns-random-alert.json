@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for DNSChaos random responses",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/dns-random/dns-random-alert.json"
+  },
+  "title": "[Triggered] DNS poisoning - dns-random-demo",
+  "alert_name": "Datadog monitor: bad upstream resolution",
+  "pipeline_name": "dns-random-demo",
+  "severity": "high",
+  "alert_source": "datadog",
+  "message": "dns-random-demo sidecar sees failed or wrong resolutions",
+  "text": "DNSChaos random returns incorrect addresses for matched patterns; egress calls may hang or hit blackholes.",
+  "commonLabels": {
+    "pipeline_name": "dns-random-demo",
+    "severity": "high",
+    "kube_deployment": "dns-random-demo"
+  },
+  "commonAnnotations": {
+    "summary": "DNS random chaos on dns-random-demo",
+    "query": "kube_namespace:default kube_deployment:dns-random-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "dns-random-demo",
+    "correlation_id": "dns-random-local-001"
+  }
+}

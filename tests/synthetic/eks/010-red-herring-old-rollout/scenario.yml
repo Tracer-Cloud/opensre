@@ -1,0 +1,16 @@
+base: 000-healthy
+scenario_id: 010-red-herring-old-rollout
+failure_mode: healthy
+severity: warning
+scenario_difficulty: 3
+adversarial_signals:
+  - old_replicaset_terminating_visible
+  - alert_targets_terminating_pod
+  - new_replicaset_fully_healthy
+available_evidence:
+  - eks_pods
+  - eks_events
+  - eks_deployments
+  - eks_node_health
+  - datadog_logs
+  - datadog_monitors

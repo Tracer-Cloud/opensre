@@ -2,6 +2,7 @@
 
 import json
 import time
+from contextlib import suppress
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -40,7 +41,9 @@ LAMBDA_BASIC_EXECUTION_POLICY = "arn:aws:iam::aws:policy/service-role/AWSLambdaB
 ECS_TASK_EXECUTION_POLICY = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 
 
-def create_lambda_execution_role(name: str, stack_name: str, region: str = DEFAULT_REGION) -> dict[str, Any]:
+def create_lambda_execution_role(
+    name: str, stack_name: str, region: str = DEFAULT_REGION
+) -> dict[str, Any]:
     """Create basic Lambda execution role with CloudWatch logs policy.
 
     Args:
@@ -67,7 +70,9 @@ def create_lambda_execution_role(name: str, stack_name: str, region: str = DEFAU
     return role
 
 
-def create_ecs_task_role(name: str, stack_name: str, region: str = DEFAULT_REGION) -> dict[str, Any]:
+def create_ecs_task_role(
+    name: str, stack_name: str, region: str = DEFAULT_REGION
+) -> dict[str, Any]:
     """Create ECS task role.
 
     Args:
@@ -89,7 +94,9 @@ def create_ecs_task_role(name: str, stack_name: str, region: str = DEFAULT_REGIO
     )
 
 
-def create_ecs_execution_role(name: str, stack_name: str, region: str = DEFAULT_REGION) -> dict[str, Any]:
+def create_ecs_execution_role(
+    name: str, stack_name: str, region: str = DEFAULT_REGION
+) -> dict[str, Any]:
     """Create ECS execution role with ECR and logs permissions.
 
     Args:
@@ -244,22 +251,16 @@ def delete_role(name: str, region: str = DEFAULT_REGION) -> None:
     iam_client = get_boto3_client("iam", region)
 
     # Detach managed policies
-    try:
+    with suppress(ClientError):
         attached = iam_client.list_attached_role_policies(RoleName=name)
         for policy in attached.get("AttachedPolicies", []):
             iam_client.detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
-    except ClientError:
-        # Role may not exist or policies already detached
-        pass
 
     # Delete inline policies
-    try:
+    with suppress(ClientError):
         inline = iam_client.list_role_policies(RoleName=name)
         for policy_name in inline.get("PolicyNames", []):
             iam_client.delete_role_policy(RoleName=name, PolicyName=policy_name)
-    except ClientError:
-        # Role may not exist or inline policies already deleted
-        pass
 
     # Delete role
     try:
@@ -303,4 +304,4 @@ def get_account_id(region: str = DEFAULT_REGION) -> str:
         Account ID string.
     """
     sts_client = get_boto3_client("sts", region)
-    return sts_client.get_caller_identity()["Account"]
+    return str(sts_client.get_caller_identity()["Account"])

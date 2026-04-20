@@ -1,0 +1,73 @@
+---
+description: Tool development patterns for investigation and chat tools
+globs:
+  - app/tools/**
+---
+
+# Tool Development
+
+## Two Registration Patterns
+
+### 1. Function + `@tool` decorator (preferred for simple tools)
+
+Single file under `app/tools/` with a decorated function. The registry auto-discovers it.
+
+```python
+from app.tools.tool_decorator import tool
+
+@tool(
+    name="my_tool_name",
+    source="grafana",            # Required: EvidenceSource literal
+    description="What this tool does.",
+    use_cases=["When to use it"],
+    requires=["api_key"],
+    input_schema={...},          # Optional: inferred from signature if omitted
+    is_available=my_check_fn,    # (sources: dict) -> bool
+    extract_params=my_extract,   # (sources: dict) -> dict
+    surfaces=("investigation",), # Default; add "chat" to expose in chat mode
+)
+def my_tool_name(param: str) -> dict:
+    ...
+```
+
+### 2. `BaseTool` subclass (for complex tools with helpers)
+
+PascalCase directory: `app/tools/MyToolName/__init__.py`. Instantiate at module level.
+
+```python
+from app.tools.base import BaseTool
+
+class MyToolName(BaseTool):
+    name = "my_tool_name"
+    source = "grafana"
+    description = "..."
+    input_schema = {
+        "type": "object",
+        "properties": {...},
+        "required": [...],
+    }
+    use_cases = [...]
+    requires = [...]
+    outputs = {"field": "description"}
+
+    def is_available(self, sources: dict) -> bool: ...
+    def extract_params(self, sources: dict) -> dict: ...
+    def run(self, param: str, **_kwargs) -> dict: ...
+
+my_tool_name = MyToolName()
+```
+
+## Rules
+
+- `source` is **required** — must be a valid `EvidenceSource` literal from `app/state.py`
+- Tool directories use **PascalCase + `Tool`** suffix (`GrafanaLogsTool/`, `S3ListTool/`)
+- The registry in `app/tools/registry.py` auto-discovers via `pkgutil.iter_modules`
+- Do NOT add your module to `_SKIP_MODULE_NAMES` in `registry.py`
+- Module names ending in `_test` are auto-skipped by the registry
+- `surfaces` defaults to `("investigation",)` — add `"chat"` explicitly if needed
+- For `BaseTool`: instantiate the class at module level so the registry can find it
+- Return `dict` from `run()` with an `"error"` key on failure, structured data on success
+
+## Valid `EvidenceSource` Values
+
+`storage`, `batch`, `tracer_web`, `cloudwatch`, `aws_sdk`, `knowledge`, `grafana`, `datadog`, `honeycomb`, `coralogix`, `eks`, `github`, `sentry`, `google_docs`, `vercel`, `opsgenie`, `elasticsearch`

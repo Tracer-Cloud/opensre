@@ -2,9 +2,10 @@
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
+
+from app.cli.constants import ALERT_TEMPLATE_CHOICES
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -31,7 +32,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     input_group.add_argument(
         "--print-template",
-        choices=["generic", "datadog", "grafana"],
+        choices=ALERT_TEMPLATE_CHOICES,
         default=None,
         help="Print a starter alert JSON template and exit.",
     )
@@ -44,5 +45,4 @@ def write_json(data: Any, path: str | None) -> None:
     if path:
         Path(path).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     else:
-        json.dump(data, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        print(json.dumps(data, indent=2))

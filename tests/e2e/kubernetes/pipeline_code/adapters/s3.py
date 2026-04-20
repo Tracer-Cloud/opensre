@@ -19,9 +19,7 @@ def read_json(bucket: str, key: str) -> tuple[dict, str]:
         raise SystemError(f"Failed to read from S3: {e}") from e
 
 
-def write_json(
-    bucket: str, key: str, data: dict, correlation_id: str, source_key: str
-) -> None:
+def write_json(bucket: str, key: str, data: dict, correlation_id: str, source_key: str) -> None:
     """Write JSON to S3 with metadata."""
     try:
         body = json.dumps(data, indent=2)

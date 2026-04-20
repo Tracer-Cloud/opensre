@@ -73,7 +73,7 @@ def _extract_k8s_tags(logs: list[dict]) -> dict[str, str]:
 
 
 def capture(time_range_minutes: int = 60) -> dict:
-    from app.integrations.clients.datadog import DatadogClient, DatadogConfig
+    from app.services.datadog import DatadogClient, DatadogConfig
 
     api_key = os.environ.get("DD_API_KEY", "")
     app_key = os.environ.get("DD_APP_KEY", "")
@@ -103,8 +103,7 @@ def capture(time_range_minutes: int = 60) -> dict:
 
     error_keywords = ("error", "fail", "exception", "traceback", "pipeline_error")
     error_logs = [
-        log for log in logs
-        if any(kw in log.get("message", "").lower() for kw in error_keywords)
+        log for log in logs if any(kw in log.get("message", "").lower() for kw in error_keywords)
     ]
     print(f"  {len(error_logs)} error logs")
 
@@ -166,7 +165,9 @@ def capture(time_range_minutes: int = 60) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Capture Datadog K8s fixture")
     parser.add_argument(
-        "--time-range", type=int, default=60,
+        "--time-range",
+        type=int,
+        default=60,
         help="How far back to search logs (minutes, default 60)",
     )
     args = parser.parse_args()

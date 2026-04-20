@@ -1,0 +1,18 @@
+# PodChaos container-kill: kills container `nginx` in matching pods once per apply.
+# Re-apply the CR or use Chaos Dashboard schedules to repeat.
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: container-kill-demo
+  namespace: default
+spec:
+  action: container-kill
+  mode: all
+  containerNames:
+    - nginx
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: container-kill-demo

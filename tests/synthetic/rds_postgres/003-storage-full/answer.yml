@@ -8,7 +8,7 @@ optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs
   - query_grafana_alert_rules
-max_investigation_loops: 3
+max_investigation_loops: 4
 model_response: |
   ROOT_CAUSE: The RDS instance ran out of storage space during a bulk INSERT archival job. FreeStorageSpace collapsed from 15 GB to 0 in 15 minutes driven by elevated WriteIOPS. The RDS control plane confirmed the outage with a "DB instance ran out of storage space" event.
   ROOT_CAUSE_CATEGORY: resource_exhaustion

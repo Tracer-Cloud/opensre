@@ -1,0 +1,44 @@
+# Nginx target for NetworkChaos (action: delay). HTTP probes surface slow readiness under latency.
+#
+# Prereq: `make chaos-mesh-up`. Apply workload, then chaos CR.
+#
+#   kubectl apply -f .../network-delay-demo.yaml --context=kind-tracer-k8s-test
+#   kubectl apply -f .../network-delay-chaos.yaml --context=kind-tracer-k8s-test
+#
+# Teardown: delete chaos CR, then deployment.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-delay-demo
+  namespace: default
+  labels:
+    app: network-delay-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: network-delay-demo
+  template:
+    metadata:
+      labels:
+        app: network-delay-demo
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 3
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10

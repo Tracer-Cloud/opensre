@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for StressChaos memory pressure",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/stress-memory/stress-memory-alert.json"
+  },
+  "title": "[Triggered] Memory pressure - stress-memory-demo",
+  "alert_name": "Datadog monitor: OOM / restarts",
+  "pipeline_name": "stress-memory-demo",
+  "severity": "high",
+  "alert_source": "datadog",
+  "message": "stress-memory-demo instability or restarts",
+  "text": "StressChaos memory allocation competes with nginx inside the same cgroup; may hit limit and evict.",
+  "commonLabels": {
+    "pipeline_name": "stress-memory-demo",
+    "severity": "high",
+    "kube_deployment": "stress-memory-demo"
+  },
+  "commonAnnotations": {
+    "summary": "Memory stress chaos on stress-memory-demo",
+    "query": "kube_namespace:default kube_deployment:stress-memory-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "stress-memory-demo",
+    "correlation_id": "stress-memory-local-001"
+  }
+}

@@ -80,7 +80,7 @@ def _format_tool_calls_line(ctx: ReportContext) -> str:
             parts.append(f"{len(events)} events")
         fetch_ms = e.get("datadog_fetch_ms", {})
         if fetch_ms:
-            max_ms = max(v for v in fetch_ms.values() if isinstance(v, (int, float)))
+            max_ms = max(v for v in fetch_ms.values() if isinstance(v, int | float))
             if max_ms > 0:
                 parts.append(f"fetched in {max_ms / 1000:.1f}s")
         return ", ".join(parts)
@@ -89,7 +89,9 @@ def _format_tool_calls_line(ctx: ReportContext) -> str:
     ACTION_DEFS: dict[str, tuple[str, Any, Any]] = {
         "get_cloudwatch_logs": (
             "cloudwatch logs",
-            lambda e: f"{len(e.get('cloudwatch_logs', []))} events" if e.get("cloudwatch_logs") else None,
+            lambda e: f"{len(e.get('cloudwatch_logs', []))} events"
+            if e.get("cloudwatch_logs")
+            else None,
             None,
         ),
         "get_error_logs": (
@@ -114,7 +116,9 @@ def _format_tool_calls_line(ctx: ReportContext) -> str:
         ),
         "get_lambda_errors": (
             "lambda errors",
-            lambda e: f"{len(e.get('lambda_errors', []))} errors" if e.get("lambda_errors") else None,
+            lambda e: f"{len(e.get('lambda_errors', []))} errors"
+            if e.get("lambda_errors")
+            else None,
             None,
         ),
         "inspect_s3_object": (
@@ -138,21 +142,29 @@ def _format_tool_calls_line(ctx: ReportContext) -> str:
             lambda e: build_grafana_explore_url(
                 grafana_endpoint,
                 e.get("grafana_logs_query", ""),
-            ) if grafana_endpoint and e.get("grafana_logs_query") else None,
+            )
+            if grafana_endpoint and e.get("grafana_logs_query")
+            else None,
         ),
         "query_grafana_traces": (
             "Grafana Tempo",
-            lambda e: f"{len(e.get('grafana_traces', []))} traces" if e.get("grafana_traces") else None,
+            lambda e: f"{len(e.get('grafana_traces', []))} traces"
+            if e.get("grafana_traces")
+            else None,
             lambda _: f"{grafana_endpoint.rstrip('/')}/explore" if grafana_endpoint else None,
         ),
         "query_grafana_metrics": (
             "Grafana Mimir",
-            lambda e: f"{len(e.get('grafana_metrics', []))} metrics" if e.get("grafana_metrics") else None,
+            lambda e: f"{len(e.get('grafana_metrics', []))} metrics"
+            if e.get("grafana_metrics")
+            else None,
             lambda _: f"{grafana_endpoint.rstrip('/')}/explore" if grafana_endpoint else None,
         ),
         "query_grafana_alert_rules": (
             "Grafana alerts",
-            lambda e: f"{len(e.get('grafana_alert_rules', []))} rules" if e.get("grafana_alert_rules") else None,
+            lambda e: f"{len(e.get('grafana_alert_rules', []))} rules"
+            if e.get("grafana_alert_rules")
+            else None,
             lambda _: f"{grafana_endpoint.rstrip('/')}/alerting/list" if grafana_endpoint else None,
         ),
         "query_datadog_all": (
@@ -161,7 +173,9 @@ def _format_tool_calls_line(ctx: ReportContext) -> str:
             lambda e: build_datadog_logs_url(
                 e.get("datadog_logs_query", ""),
                 datadog_site,
-            ) if e.get("datadog_logs_query") else f"https://app.{datadog_site}/logs",
+            )
+            if e.get("datadog_logs_query")
+            else f"https://app.{datadog_site}/logs",
         ),
         "query_datadog_logs": (
             "Datadog Logs",
@@ -169,17 +183,30 @@ def _format_tool_calls_line(ctx: ReportContext) -> str:
             lambda e: build_datadog_logs_url(
                 e.get("datadog_logs_query", ""),
                 datadog_site,
-            ) if e.get("datadog_logs_query") else f"https://app.{datadog_site}/logs",
+            )
+            if e.get("datadog_logs_query")
+            else f"https://app.{datadog_site}/logs",
         ),
         "query_datadog_monitors": (
             "Datadog Monitors",
-            lambda e: f"{len(e.get('datadog_monitors', []))} monitors" if e.get("datadog_monitors") else None,
+            lambda e: f"{len(e.get('datadog_monitors', []))} monitors"
+            if e.get("datadog_monitors")
+            else None,
             lambda _: f"https://app.{datadog_site}/monitors/manage",
         ),
         "query_datadog_events": (
             "Datadog Events",
-            lambda e: f"{len(e.get('datadog_events', []))} events" if e.get("datadog_events") else None,
+            lambda e: f"{len(e.get('datadog_events', []))} events"
+            if e.get("datadog_events")
+            else None,
             lambda _: f"https://app.{datadog_site}/event/explorer",
+        ),
+        "query_betterstack_logs": (
+            "Better Stack Logs",
+            lambda e: f"{len(e.get('betterstack_logs', []))} rows"
+            if e.get("betterstack_logs")
+            else None,
+            None,  # Better Stack SQL endpoint has no user-facing deep-link URL
         ),
     }
 
@@ -213,6 +240,7 @@ def format_cited_evidence_section(ctx: ReportContext) -> str:
     lines: list[str] = []
 
     if catalog:
+
         def _sort_key(eid: str) -> str:
             return str(catalog[eid].get("display_id", eid))
 
@@ -226,10 +254,13 @@ def format_cited_evidence_section(ctx: ReportContext) -> str:
             url = entry.get("url")
             summary = entry.get("summary")
             snippet = entry.get("snippet")
+            provenance = entry.get("provenance")
             link = format_slack_link(label, url) if url else label
             line = f"- {display_id} — {link}"
             if summary:
                 line += f" — {summary}"
+            if provenance:
+                line += f" — provenance: {provenance}"
             if snippet:
                 line += f" — {shorten_text(snippet, max_chars=100)}"
             lines.append(line)

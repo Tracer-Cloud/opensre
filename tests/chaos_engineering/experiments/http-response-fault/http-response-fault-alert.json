@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for HTTPChaos response delay +503 replace",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/http-response-fault/http-response-fault-alert.json"
+  },
+  "title": "[Triggered] HTTP 503 / SLA breach - http-response-fault-demo",
+  "alert_name": "Datadog monitor: 5xx spike on demo service",
+  "pipeline_name": "http-response-fault-demo",
+  "severity": "high",
+  "alert_source": "datadog",
+  "message": "http-response-fault-demo returning errors or high latency",
+  "text": "HTTPChaos modifies outbound HTTP responses: added delay and replaced status with 503.",
+  "commonLabels": {
+    "pipeline_name": "http-response-fault-demo",
+    "severity": "high",
+    "kube_deployment": "http-response-fault-demo"
+  },
+  "commonAnnotations": {
+    "summary": "HTTP response fault chaos on http-response-fault-demo",
+    "query": "kube_namespace:default kube_deployment:http-response-fault-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "http-response-fault-demo",
+    "correlation_id": "http-response-fault-local-001"
+  }
+}

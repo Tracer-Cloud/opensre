@@ -1,0 +1,56 @@
+---
+title: "Quickstart"
+slug: "quickstart"
+---
+
+### Install
+
+Choose your platform:
+
+**macOS (Homebrew)**
+
+```bash
+brew install Tracer-Cloud/opensre/opensre
+```
+
+**Linux / macOS (curl)**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.sh | bash
+```
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.ps1 | iex
+```
+
+---
+
+### Onboard
+
+Run the onboarding wizard to configure your LLM provider and connect your integrations (Grafana, Datadog, Honeycomb, Coralogix, Slack, AWS, GitHub MCP, Sentry):
+
+```bash
+opensre onboard
+```
+
+---
+
+### Run Your First Investigation
+
+Trigger an investigation by passing in an alert file:
+
+```bash
+opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
+```
+
+OpenSRE will automatically fetch alert context, reason across your connected systems, and generate a structured root-cause report — optionally posting a summary to Slack or PagerDuty.
+
+---
+
+### Keep Up to Date
+
+```bash
+opensre update
+```

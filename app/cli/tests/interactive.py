@@ -7,7 +7,7 @@ from typing import Any
 from rich.console import Console
 
 from app.cli.tests.catalog import TestCatalog, TestCatalogItem
-from app.cli.tests.runner import format_command, run_catalog_item
+from app.cli.tests.runner import format_command, run_catalog_item, run_catalog_items
 
 _questionary_module: Any
 _questionary_choice: Any
@@ -33,6 +33,7 @@ _select_prompt: Any = _select_prompt_impl
 _console = Console()
 _BACK = object()
 _EXIT = object()
+_RUN_ALL = object()
 
 
 class _GoBack(Exception):
@@ -67,16 +68,16 @@ _CATEGORY_OPTIONS: list[tuple[str, str]] = [
 
 
 def _require_interactive_dependencies() -> None:
-    if _questionary is None or _QuestionaryChoice is None or _select_prompt is None or _STYLE is None:
+    if (
+        _questionary is None
+        or _QuestionaryChoice is None
+        or _select_prompt is None
+        or _STYLE is None
+    ):
         raise RuntimeError(
             "Interactive test browsing requires optional terminal dependencies. "
             "Use `opensre tests list` or `opensre tests run <id>` in this environment."
         )
-
-
-def _questionary_api() -> Any:
-    _require_interactive_dependencies()
-    return _questionary
 
 
 def _choose_category() -> str:
@@ -101,7 +102,9 @@ def _item_title(item: TestCatalogItem) -> str:
     return f"{item.display_name}{suffix}"
 
 
-def _select_item(items: list[TestCatalogItem], *, prompt: str, allow_back: bool = False) -> TestCatalogItem:
+def _select_item(
+    items: list[TestCatalogItem], *, prompt: str, allow_back: bool = False
+) -> TestCatalogItem:
     _require_interactive_dependencies()
     choices = [_QuestionaryChoice(title=_item_title(item), value=item.id) for item in items]
     result = _select_prompt(
@@ -122,14 +125,9 @@ def _select_item(items: list[TestCatalogItem], *, prompt: str, allow_back: bool 
     raise ValueError(f"Unknown selected item: {selected_id}")
 
 
-def _select_child(item: TestCatalogItem) -> TestCatalogItem:
-    if not item.children:
-        return item
-    child_items = list(item.children)
-    return _select_item(child_items, prompt=f"Select a scenario from {item.display_name}:")
-
-
-def _matching_children(item: TestCatalogItem, *, category: str, search: str) -> list[TestCatalogItem]:
+def _matching_children(
+    item: TestCatalogItem, *, category: str, search: str
+) -> list[TestCatalogItem]:
     return [child for child in item.children if child.matches(category=category, search=search)]
 
 
@@ -142,7 +140,9 @@ def _resolve_suite_selection(
     if not item.children:
         return item
 
-    matching_children = _matching_children(item, category=category, search=search) or list(item.children)
+    matching_children = _matching_children(item, category=category, search=search) or list(
+        item.children
+    )
     if len(matching_children) == 1:
         return matching_children[0]
     return _select_item(
@@ -150,6 +150,29 @@ def _resolve_suite_selection(
         prompt=f"Select a scenario from {item.display_name}:",
         allow_back=True,
     )
+
+
+def _expand_runnable_items(
+    items: list[TestCatalogItem],
+    *,
+    category: str,
+    search: str,
+) -> list[TestCatalogItem]:
+    runnable: list[TestCatalogItem] = []
+    for item in items:
+        if item.children:
+            matching_children = _matching_children(item, category=category, search=search)
+            runnable.extend(
+                _expand_runnable_items(
+                    matching_children or list(item.children),
+                    category=category,
+                    search=search,
+                )
+            )
+            continue
+        if item.is_runnable:
+            runnable.append(item)
+    return runnable
 
 
 def _confirm_run(item: TestCatalogItem) -> bool:
@@ -184,8 +207,40 @@ def _confirm_run(item: TestCatalogItem) -> bool:
     return bool(result)
 
 
-def choose_interactive_item(catalog: TestCatalog) -> tuple[TestCatalogItem, bool]:
-    """Return (item, auto_selected) where auto_selected=True means only one item matched."""
+def _select_item_or_all(
+    items: list[TestCatalogItem],
+    *,
+    prompt: str,
+    allow_back: bool = False,
+) -> TestCatalogItem | list[TestCatalogItem]:
+    """Like ``_select_item`` but prepends a *Run All* choice."""
+    _require_interactive_dependencies()
+    run_all_choice = _QuestionaryChoice(title="Run All", value=_RUN_ALL)
+    item_choices = [_QuestionaryChoice(title=_item_title(item), value=item.id) for item in items]
+    result = _select_prompt(
+        prompt,
+        choices=[run_all_choice, *item_choices],
+        style=_STYLE,
+        instruction="(Tab, arrows, Enter, Esc back)" if allow_back else "(Tab, arrows, Enter)",
+        escape_result=_BACK if allow_back else None,
+    ).ask()
+    if result is None:
+        raise KeyboardInterrupt
+    if result is _BACK:
+        raise _GoBack
+    if result is _RUN_ALL:
+        return items
+    selected_id = str(result)
+    for item in items:
+        if item.id == selected_id:
+            return item
+    raise ValueError(f"Unknown selected item: {selected_id}")
+
+
+def choose_interactive_item(
+    catalog: TestCatalog,
+) -> tuple[TestCatalogItem | list[TestCatalogItem], bool]:
+    """Return (item_or_items, auto_selected) where auto_selected=True means only one item matched."""
     while True:
         category = _choose_category()
         search = ""
@@ -196,30 +251,82 @@ def choose_interactive_item(catalog: TestCatalog) -> tuple[TestCatalogItem, bool
         while True:
             try:
                 if len(filtered) == 1:
-                    return _resolve_suite_selection(filtered[0], category=category, search=search), True
+                    return (
+                        _resolve_suite_selection(filtered[0], category=category, search=search),
+                        True,
+                    )
 
-                selected = _select_item(filtered, prompt="Choose a test or suite:", allow_back=True)
-                return _resolve_suite_selection(selected, category=category, search=search), False
+                selection = _select_item_or_all(
+                    filtered,
+                    prompt="Choose a test or suite:",
+                    allow_back=True,
+                )
+                if isinstance(selection, list):
+                    return _expand_runnable_items(
+                        selection,
+                        category=category,
+                        search=search,
+                    ), False
+                return (
+                    _resolve_suite_selection(selection, category=category, search=search),
+                    False,
+                )
             except _GoBack:
                 break
+
+
+def _confirm_run_all(items: list[TestCatalogItem]) -> bool:
+    _console.print(f"\n[bold]Run All — {len(items)} test(s)[/]")
+    for item in items:
+        _console.print(f"  • {item.display_name}")
+
+    result = _select_prompt(
+        "Run all tests?",
+        choices=[
+            _QuestionaryChoice(title="Yes", value=True),
+            _QuestionaryChoice(title="No", value=False),
+        ],
+        default=True,
+        style=_STYLE,
+        instruction="(Tab, arrows, Enter, Esc back)",
+        escape_result=_BACK,
+    ).ask()
+    if result is None:
+        raise KeyboardInterrupt
+    if result is _BACK:
+        raise _GoBack
+    return bool(result)
 
 
 def run_interactive_picker(catalog: TestCatalog) -> int:
     _require_interactive_dependencies()
     if not sys.stdin.isatty() or not sys.stdout.isatty():
-        raise RuntimeError("Interactive terminal required. Use `opensre tests list` or `opensre tests run <id>`.")
+        raise RuntimeError(
+            "Interactive terminal required. Use `opensre tests list` or `opensre tests run <id>`."
+        )
 
     try:
         while True:
-            item, auto_selected = choose_interactive_item(catalog)
+            selection, auto_selected = choose_interactive_item(catalog)
+
+            if isinstance(selection, list):
+                if not selection:
+                    _console.print("[yellow]No runnable tests in this selection.[/]")
+                    continue
+                try:
+                    if not _confirm_run_all(selection):
+                        return 0
+                except _GoBack:
+                    continue
+                return run_catalog_items(selection)
+
             if auto_selected:
-                # Single item in category — skip confirmation and run immediately.
-                return run_catalog_item(item)
+                return run_catalog_item(selection)
             try:
-                if not _confirm_run(item):
+                if not _confirm_run(selection):
                     return 0
             except _GoBack:
                 continue
-            return run_catalog_item(item)
+            return run_catalog_item(selection)
     except KeyboardInterrupt:
         return 0

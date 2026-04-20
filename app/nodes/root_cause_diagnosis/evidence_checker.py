@@ -13,17 +13,30 @@ _ERROR_ANNOTATION_KEYS = ("error", "error_message", "log_excerpt", "failed_steps
 
 # Evidence keys whose presence (even with empty values) confirms investigation was attempted.
 # An empty grafana_logs list is itself a healthy signal: no errors found during investigation.
-_INVESTIGATED_EVIDENCE_KEYS = frozenset({
-    "grafana_logs",
-    "grafana_metrics",
-    "grafana_alert_rules",
-    "aws_cloudwatch_metrics",
-    "aws_rds_events",
-    "aws_performance_insights",
-    "cloudwatch_logs",
-    "datadog_logs",
-    "datadog_monitors",
-})
+_INVESTIGATED_EVIDENCE_KEYS = frozenset(
+    {
+        "grafana_logs",
+        "grafana_metrics",
+        "grafana_alert_rules",
+        "aws_cloudwatch_metrics",
+        "aws_rds_events",
+        "aws_performance_insights",
+        "cloudwatch_logs",
+        "datadog_logs",
+        "datadog_monitors",
+        "betterstack_logs",
+        # Kubernetes / EKS evidence keys — written by the _map_eks_* mappers in
+        # app/nodes/investigate/processing/post_process.py.  Without these, a pure
+        # Kubernetes healthy investigation never satisfies the evidence gate below
+        # and the reasoning LLM is invoked on a clean state for no reason.
+        "eks_pods",
+        "eks_events",
+        "eks_deployments",
+        "eks_node_health",
+        "eks_pod_logs",
+        "eks_deployment_status",
+    }
+)
 
 
 def check_evidence_availability(
@@ -43,23 +56,31 @@ def check_evidence_availability(
     web_run = context.get("tracer_web_run", {})
     has_tracer_evidence = web_run.get("found")
     has_cloudwatch_evidence = bool(
-        evidence.get("error_logs")
-        or evidence.get("cloudwatch_logs")
-        or evidence.get("grafana_logs")
-        or evidence.get("grafana_error_logs")
-        or evidence.get("grafana_traces")
-        or evidence.get("grafana_metrics")
-        or evidence.get("datadog_logs")
-        or evidence.get("datadog_monitors")
-        or evidence.get("datadog_events")
+        evidence.get("error_logs") is not None
+        or evidence.get("cloudwatch_logs") is not None
+        or evidence.get("grafana_logs") is not None
+        or evidence.get("grafana_error_logs") is not None
+        or evidence.get("grafana_traces") is not None
+        or evidence.get("grafana_metrics") is not None
+        or evidence.get("grafana_alert_rules") is not None
+        or evidence.get("datadog_logs") is not None
+        or evidence.get("datadog_monitors") is not None
+        or evidence.get("datadog_events") is not None
+        or evidence.get("betterstack_logs") is not None
         or evidence.get("s3_object", {}).get("found")
         or evidence.get("s3_audit_payload", {}).get("found")
-        or evidence.get("s3_marker")
-        or evidence.get("lambda_function")
-        or evidence.get("lambda_logs")
-        or evidence.get("aws_cloudwatch_metrics")
-        or evidence.get("aws_rds_events")
-        or evidence.get("aws_performance_insights")
+        or evidence.get("s3_marker") is not None
+        or evidence.get("lambda_function") is not None
+        or evidence.get("lambda_logs") is not None
+        or evidence.get("aws_cloudwatch_metrics") is not None
+        or evidence.get("aws_rds_events") is not None
+        or evidence.get("aws_performance_insights") is not None
+        or evidence.get("eks_pods") is not None
+        or evidence.get("eks_events") is not None
+        or evidence.get("eks_node_health") is not None
+        or evidence.get("eks_deployments") is not None
+        or evidence.get("eks_pod_logs") is not None
+        or evidence.get("eks_deployment_status") is not None
     )
 
     # Check for evidence in alert annotations or raw text
@@ -68,13 +89,24 @@ def check_evidence_availability(
         has_alert_evidence = True
     elif isinstance(raw_alert, dict):
         annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
-        body = raw_alert.get("body", "") or raw_alert.get("text", "") or raw_alert.get("message", "")
+        body = (
+            raw_alert.get("body", "") or raw_alert.get("text", "") or raw_alert.get("message", "")
+        )
         has_alert_evidence = bool(
             body
-            or (annotations and any(
-                annotations.get(k)
-                for k in ("log_excerpt", "failed_steps", "error", "error_message", "cloudwatch_logs_url")
-            ))
+            or (
+                annotations
+                and any(
+                    annotations.get(k)
+                    for k in (
+                        "log_excerpt",
+                        "failed_steps",
+                        "error",
+                        "error_message",
+                        "cloudwatch_logs_url",
+                    )
+                )
+            )
         )
 
     return has_tracer_evidence, has_cloudwatch_evidence, has_alert_evidence
@@ -115,9 +147,7 @@ def is_clearly_healthy(raw_alert: dict[str, Any] | str, evidence: dict[str, Any]
         return False
 
     # Condition 3: no error-signal annotations.
-    annotations = (
-        raw_alert.get("commonAnnotations", raw_alert.get("annotations", {})) or {}
-    )
+    annotations = raw_alert.get("commonAnnotations", raw_alert.get("annotations", {})) or {}
     if any(annotations.get(key) for key in _ERROR_ANNOTATION_KEYS):
         return False
 

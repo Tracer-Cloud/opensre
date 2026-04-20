@@ -1,0 +1,39 @@
+---
+description: Testing conventions and patterns
+globs:
+  - tests/**
+  - app/**/*_test.py
+  - app/**/test_*.py
+---
+
+# Testing Conventions
+
+## Running Tests
+
+- `make test-cov` — standard test suite with coverage (excludes synthetic + k8s simulation)
+- `make test-rca` — real alert end-to-end tests
+- `make test-full` — full pytest run
+- `make test-synthetic` — synthetic LLM-based RCA tests (separate CI workflow)
+
+## File Placement
+
+Both patterns are valid and auto-discovered by pytest:
+- `app/tools/registry_test.py` — co-located next to source
+- `tests/app/tools/test_registry.py` — under `tests/` directory
+
+## Markers
+
+Apply markers to categorize tests:
+- `@pytest.mark.integration` — requires external services
+- `@pytest.mark.synthetic` — LLM-based RCA tests (excluded from `make test-cov`)
+- `@pytest.mark.e2e` — end-to-end scenarios
+- `@pytest.mark.axis2` — axis2 tests
+
+## Conventions
+
+- Bug fixes must include a test that would have caught the bug
+- New features must have corresponding tests
+- Aim for >80% code coverage
+- Root `conftest.py` loads `.env` and disables keyring for isolation
+- `tests/e2e/` contains scenario-specific folders (Prefect, Lambda, Kubernetes, etc.)
+- Tests calling `get_registered_tools()` should call `clear_tool_registry_cache()` in fixtures

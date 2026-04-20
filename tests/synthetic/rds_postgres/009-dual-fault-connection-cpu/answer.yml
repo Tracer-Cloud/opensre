@@ -10,7 +10,7 @@ optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs
   - query_grafana_alert_rules
-max_investigation_loops: 3
+max_investigation_loops: 4
 model_response: |
   ROOT_CAUSE: A connection pool leak is causing both the connection exhaustion and CPU saturation simultaneously — they share a single causal root. Leaked connections are holding open long-running search queries that never return results to their callers (Client:ClientRead wait). These idle-but-open connections accumulate, exhausting the connection ceiling while also consuming CPU due to the scan-heavy queries they hold.
   ROOT_CAUSE_CATEGORY: resource_exhaustion

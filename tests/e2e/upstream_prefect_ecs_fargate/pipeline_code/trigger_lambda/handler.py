@@ -149,21 +149,15 @@ def get_prefect_api_url() -> str:
         if not tasks.get("taskArns"):
             return ""
 
-        task_details = ecs_client.describe_tasks(
-            cluster=ECS_CLUSTER, tasks=tasks["taskArns"]
-        )
+        task_details = ecs_client.describe_tasks(cluster=ECS_CLUSTER, tasks=tasks["taskArns"])
         for task in task_details.get("tasks", []):
             for attachment in task.get("attachments", []):
                 for detail in attachment.get("details", []):
                     if detail.get("name") == "networkInterfaceId":
                         eni_id = detail.get("value")
-                        eni = ec2_client.describe_network_interfaces(
-                            NetworkInterfaceIds=[eni_id]
-                        )
+                        eni = ec2_client.describe_network_interfaces(NetworkInterfaceIds=[eni_id])
                         public_ip = (
-                            eni["NetworkInterfaces"][0]
-                            .get("Association", {})
-                            .get("PublicIp")
+                            eni["NetworkInterfaces"][0].get("Association", {}).get("PublicIp")
                         )
                         if public_ip:
                             return f"http://{public_ip}:4200/api"
@@ -276,11 +270,13 @@ def lambda_handler(event, context):
             return {
                 "statusCode": 500,
                 "headers": {"Content-Type": "application/json"},
-                "body": json.dumps({
-                    "error": str(e),
-                    "correlation_id": correlation_id,
-                    "s3_key": s3_key,
-                }),
+                "body": json.dumps(
+                    {
+                        "error": str(e),
+                        "correlation_id": correlation_id,
+                        "s3_key": s3_key,
+                    }
+                ),
             }
     else:
         print("ECS_CLUSTER or TASK_DEFINITION not configured, skipping task launch")

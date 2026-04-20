@@ -16,8 +16,8 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
-import app.graph_pipeline as graph_pipeline
-import app.integrations.clients.llm_client as llm_mod
+from app.pipeline import graph as graph_pipeline
+from app.services import llm_client as llm_mod
 from app.state import AgentState, make_initial_state
 from tests.benchmarks.toolcall_model_benchmark.pricing import estimate_run_cost_usd
 from tests.synthetic.rds_postgres.run_suite import _build_resolved_integrations
@@ -272,4 +272,6 @@ def get_fixture_by_id(scenario_id: str) -> ScenarioFixture:
     for f in fixtures:
         if f.scenario_id == scenario_id:
             return f
-    raise ValueError(f"Unknown scenario_id: {scenario_id!r}. Loaded {len(fixtures)} scenarios from {SUITE_DIR}.")
+    raise ValueError(
+        f"Unknown scenario_id: {scenario_id!r}. Loaded {len(fixtures)} scenarios from {SUITE_DIR}."
+    )

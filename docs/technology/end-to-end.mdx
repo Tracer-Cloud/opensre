@@ -1,0 +1,166 @@
+---
+title: 'How OpenSRE works, end to end'
+sidebarTitle: 'How OpenSRE works'
+description: 'A shared execution signal for analysis and optimization'
+---
+
+OpenSRE is built to make execution behavior visible in compute-intensive environments, without changing workloads or relying on what applications choose to report.
+
+At a high level, OpenSRE works in three layers:
+
+- **OpenSRE/collect**: an open-source eBPF agent that gathers execution signals from the host-layer
+- **OpenSRE/datalake**: a shared execution view across pipelines and environments
+- **OpenSRE/tune and OpenSRE/sweep**: use that signal to solve different problems
+
+<Frame>
+  <img src="/images/tracersimplified.webp" alt="OpenSRE simplified architecture: collect, datalake, tune and sweep" />
+</Frame>
+
+This page explains the architecture. Each product page goes deeper on its specific behavior.
+
+## What OpenSRE is made of
+
+OpenSRE consists of three components with distinct responsibilities:
+
+- **OpenSRE/collect** gathers execution signals directly from the operating system
+- **OpenSRE/tune** uses those signals to analyze and optimize pipeline performance
+- **OpenSRE/sweep** uses the same signals to uncover systemwide cloud waste
+
+OpenSRE/collect is the foundation. OpenSRE/tune and OpenSRE/sweep are built on top of the execution signal it produces.
+
+<Frame>
+  <img src="/images/howTracerWorks.webp" alt="How OpenSRE works end to end: from kernel-level signals to analysis and optimization" />
+</Frame>
+
+## Architecture at a glance
+
+OpenSRE's data flow can be understood in four stages:
+
+<Steps>
+  <Step title="Attach" titleSize="h3">
+    OpenSRE/collect attaches non-intrusively to running processes and containers on a Linux host using eBPF, a Linux kernel technology for safe, low-overhead instrumentation. No code changes, container restarts, or application modifications are required.
+  </Step>
+  <Step title="Collect" titleSize="h3">
+    Execution events are captured at the kernel boundary, including CPU scheduling, memory activity, disk and network I/O, and process lifecycle events. Only relevant signals are selected through intelligent filtering rules.
+  </Step>
+  <Step title="Correlate" titleSize="h3">
+    Low-level events are mapped to higher-level execution context such as containers, tools, tasks, runs, and pipelines. This mapping uses kernel-native identifiers like PIDs, namespaces, and cgroups.
+  </Step>
+  <Step title="Stream" titleSize="h3">
+    Structured telemetry is batched and sent securely to OpenSRE's backend, where it becomes available for analysis, visualization, and downstream products. Data is buffered locally and retried until successfully delivered.
+  </Step>
+</Steps>
+
+This pipeline is continuous and designed to operate safely in production cloud compute environments.
+
+## The execution signal (single source of truth)
+
+OpenSRE's execution signal is a structured representation of what actually ran on the system.
+
+It includes:
+
+- CPU usage and scheduling behavior
+- Memory allocation and pressure
+- Disk and network I/O activity
+- Process lifecycles and relationships
+- Container and host context
+
+<Note>
+**It explicitly does not include:**
+- Application payloads or scientific input/output data
+- Source code, function calls, or language-level execution traces
+- Application- or domain-specific interpretation of what a command does
+</Note>
+
+The execution signal is derived from kernel-level observation via eBPF, without application instrumentation or code changes. It serves as the shared input for both OpenSRE/tune and OpenSRE/sweep.
+
+## How correlation works
+
+Raw kernel events are not useful on their own. OpenSRE/collect correlates them into meaningful execution context.
+
+At a high level:
+
+- Kernel events are associated with processes
+- Processes are grouped by containers and cgroups
+- Containers and processes are mapped to tools, tasks, runs, and pipelines
+
+This correlation allows OpenSRE to answer questions such as:
+
+- Which tool generated this I/O?
+- Which task was idle during this period?
+- Which pipeline run consumed these resources?
+
+All correlation is derived from operating system identifiers and execution context, not from workflow-specific integrations.
+
+## Where OpenSRE/tune fits
+
+OpenSRE/tune focuses on pipelines that already work, but are slow or inefficient.
+
+Using the execution signal, OpenSRE/tune:
+
+- Visualizes actual resource usage at the task and process level
+- Identifies underutilization, contention, and bottlenecks
+- Distinguishes compute-bound, memory-bound, and I/O-bound stages
+- Produces evidence-based recommendations for right-sizing and optimization
+
+OpenSRE/tune answers: **"How do we make this pipeline faster and cheaper?"**
+
+<Card href="/technology/tracer-tune">
+  <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+    <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
+  </span>
+  <br />
+  Learn more about pipeline performance optimization
+</Card>
+
+## Where OpenSRE/sweep fits
+
+OpenSRE/sweep focuses on systemwide cloud efficiency.
+
+Using the same execution signal, OpenSRE/sweep:
+
+- Scans cloud compute based on real execution activity
+- Identifies idle time, unused capacity, and hidden inefficiencies
+- Surfaces waste that does not appear in billing reports or dashboards
+- Avoids predictive shutdown heuristics by relying on observed behavior
+
+OpenSRE/sweep answers: **"Where are we wasting cloud spend right now?"**
+
+<Card href="/technology/tracer-sweep">
+  <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+    <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #4436BD, #5646E2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
+  </span>
+  <br />
+  Learn more about cloud waste detection
+</Card>
+
+## Choose your path
+
+Depending on your goal, you can go deeper in different directions:
+
+<CardGroup cols={3}>
+  <Card href="/technology/tracer-collect">
+    <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
+    </span>
+    <br />
+    Learn how execution signals are captured safely and efficiently at the kernel level.
+  </Card>
+  <Card href="/technology/tracer-tune">
+    <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
+    </span>
+    <br />
+    Learn how OpenSRE turns execution data into pipeline performance insights and recommendations.
+  </Card>
+  <Card href="/technology/tracer-sweep">
+    <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #4436BD, #5646E2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
+    </span>
+    <br />
+    Learn how OpenSRE uncovers cloud waste using real activity patterns.
+  </Card>
+</CardGroup>
+
+<div style={{ height: '50vh' }}></div>
+

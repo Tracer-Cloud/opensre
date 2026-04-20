@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for StressChaos CPU saturation",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/stress-cpu/stress-cpu-alert.json"
+  },
+  "title": "[Triggered] CPU saturation - stress-cpu-demo",
+  "alert_name": "Datadog monitor: CPU throttle / probe failures",
+  "pipeline_name": "stress-cpu-demo",
+  "severity": "high",
+  "alert_source": "datadog",
+  "message": "stress-cpu-demo not meeting SLO under CPU pressure",
+  "text": "StressChaos CPU load inside the nginx container; cgroup CPU limits can delay HTTP probes.",
+  "commonLabels": {
+    "pipeline_name": "stress-cpu-demo",
+    "severity": "high",
+    "kube_deployment": "stress-cpu-demo"
+  },
+  "commonAnnotations": {
+    "summary": "CPU stress chaos on stress-cpu-demo",
+    "query": "kube_namespace:default kube_deployment:stress-cpu-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "stress-cpu-demo",
+    "correlation_id": "stress-cpu-local-001"
+  }
+}

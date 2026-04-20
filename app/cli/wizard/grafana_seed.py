@@ -157,3 +157,12 @@ def seed_logs() -> None:
         timeout=5,
     )
     response.raise_for_status()
+
+
+def main() -> int:
+    seed_logs()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,15 @@
+# Mintlify
+.mintlify/
+
+# Node
+node_modules/
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+

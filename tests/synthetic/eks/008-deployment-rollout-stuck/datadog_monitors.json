@@ -1,0 +1,31 @@
+{
+  "monitors": [
+    {
+      "id": 8001,
+      "name": "payments-api deployment progress",
+      "type": "query alert",
+      "query": "max(last_10m):avg:kubernetes_state.deployment.replicas_unavailable{kube_deployment:payments-api} > 0",
+      "message": "Deployment has unavailable replicas; rollout may be stalled.",
+      "overall_state": "Alert",
+      "tags": ["kube_deployment:payments-api"]
+    },
+    {
+      "id": 8002,
+      "name": "payments-api new ReplicaSet container exit codes",
+      "type": "query alert",
+      "query": "sum(last_10m):sum:kubernetes.containers.last_state.terminated{kube_replicaset:payments-api-newrs-7c,reason:Error}.as_count() > 0",
+      "message": "New ReplicaSet pods are exiting with non-zero codes.",
+      "overall_state": "Alert",
+      "tags": ["kube_replicaset:payments-api-newrs-7c"]
+    },
+    {
+      "id": 8003,
+      "name": "payments-api error rate (user-facing)",
+      "type": "query alert",
+      "query": "avg(last_5m):sum:trace.http.errors{service:payments-api}.as_rate() > 0.05",
+      "message": "User error rate.",
+      "overall_state": "OK",
+      "tags": ["service:payments-api"]
+    }
+  ]
+}

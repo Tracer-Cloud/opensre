@@ -204,7 +204,3 @@ def request(
     )
 
 
-if sys.platform == "emscripten":
-    from .contrib.emscripten import inject_into_urllib3  # noqa: 401
-
-    inject_into_urllib3()

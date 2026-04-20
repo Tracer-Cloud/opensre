@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from app.outbound_telemetry.config import load_env
+from app.utils.config import load_env
 
 # Environment loading
 _PROJECT_ROOT = Path(__file__).parent.parent
@@ -40,6 +40,7 @@ LANGGRAPH_LOCAL_ENDPOINT = "http://127.0.0.1:2024/runs/stream"
 LANGGRAPH_REMOTE_ENDPOINT = (
     "https://tracer-agent-2026-e09h3n0zulnlz1-lwyjk39e.us-central1.run.app/agent/runs/stream"
 )
+
 
 # Upstream/Downstream Pipeline test case - AWS resources
 def _load_upstream_downstream_config() -> dict:

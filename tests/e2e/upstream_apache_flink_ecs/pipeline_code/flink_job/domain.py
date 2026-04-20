@@ -40,8 +40,8 @@ def compute_ml_features(raw_features: dict[str, Any], event_type: str) -> dict[s
             features[f"event_{et}"] = 1.0 if event_type == et else 0.0
 
         # Interaction features (typical in ML pipelines)
-        features["value_per_second"] = (
-            features["value_normalized"] / max(features["duration_seconds"], 1.0)
+        features["value_per_second"] = features["value_normalized"] / max(
+            features["duration_seconds"], 1.0
         )
         features["avg_value_per_count"] = features["value_normalized"] / max(features["count"], 1.0)
 

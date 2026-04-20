@@ -1,0 +1,44 @@
+---
+title: "Welcome to OpenSRE"
+---
+
+OpenSRE is agentic alert investigation for production systems. It connects to your tools, systems and knowledge bases to investigate incidents before your team gets pages. OpenSRE delivers automated root cause analysis and recommended fixes directly to Slack, PagerDuty, or wherever your team communicates, so engineers of all skill-levels and seniority can resolve incidents fast.
+
+<Note>Coming from Tracer? Welcome. OpenSRE is the open-source home for these docs, while some live URLs, installers, assets, and Slack app labels still use the Tracer name during the transition.</Note>
+
+## What it does
+
+OpenSRE enables teams to resolve incidents quickly without sacrificing fix quality or team capacity. With OpenSRE, you can:
+
+- **Stop investigating, start fixing.** When an alert fires, OpenSRE immediately pulls context from your observability tools, infrastructure, and knowledge bases. It checks recent deploys, queries logs and metrics, builds multiple root cause hypotheses, and tests them in parallel. By the time you open your laptop, you already know what broke and why.
+- **Ship the right fix, not the fast one.** When you're on-call and the pressure's on, you ship the patch that makes the alert go away. OpenSRE takes investigation off your plate so you have the time and context to fix the actual problem instead of papering over it.
+- **Give everyone the context that's usually stuck in one person's head.** Complex systems often need the engineer who built them to debug them. OpenSRE surfaces the same depth of analysis – what failed, what changed, what caused the cascade – so whoever's on-call can understand root cause without needing to page the one person who just knows.
+
+## How it works
+
+When an alert fires, OpenSRE autonomously:
+
+1. **Ingests the alert.** Picks up alerts from your metrics, logs, traces, or incident systems and normalizes them into a single investigation.
+2. **Assembles context.** Pulls in service ownership, dependencies, recent deploys, config changes, and baselines.
+3. **Frames the problem.** Identifies impacted components, plausible failure modes, and investigation objectives.
+4. **Investigates in a loop.** Plans queries, executes them against your observability and production tooling, and synthesizes evidence into evolving hypotheses.
+5. **Decides when to stop.** Evaluates hypothesis confidence, remaining uncertainty, and whether further investigation is likely to change the outcome.
+6. **Delivers a report.** Sends likely root causes, supporting evidence, and recommended next actions to Slack, PagerDuty, or wherever your team communicates.
+
+<Frame>
+  <div style={{ position: 'relative', width: '100%' }}>
+    <img
+      src="/images/how-it-works-bg-v2.webp"
+      alt=""
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0 }}
+    />
+    <div
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', backgroundImage: 'url(/images/pattern/bg-grid.svg)', backgroundRepeat: 'repeat', backgroundSize: 'auto', zIndex: 1, opacity: 0.5 }}
+    />
+    <img
+      src="/images/how_tracer_works.png"
+      alt="How OpenSRE Works"
+      style={{ position: 'relative', zIndex: 2, width: '100%', height: 'auto', display: 'block', margin: '0 auto', padding: '1.5rem' }}
+    />
+  </div>
+</Frame>

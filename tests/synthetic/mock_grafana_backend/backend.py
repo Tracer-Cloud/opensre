@@ -20,6 +20,7 @@ from tests.synthetic.mock_grafana_backend.formatters import (
     format_loki_query_range,
     format_mimir_query_range,
     format_ruler_rules,
+    format_tempo_search,
 )
 
 if TYPE_CHECKING:
@@ -30,10 +31,11 @@ if TYPE_CHECKING:
 class GrafanaBackend(Protocol):
     """Minimal observability interface used by the RDS investigation agent.
 
-    Three methods — one per evidence pillar:
+    Four methods — one per evidence pillar:
         query_timeseries  → Mimir/Prometheus matrix response
         query_logs        → Loki streams response
         query_alert_rules → Grafana Ruler rules response
+        query_traces      → Tempo search response
     """
 
     def query_timeseries(self, query: str = "", **kwargs: Any) -> dict[str, Any]:
@@ -48,11 +50,15 @@ class GrafanaBackend(Protocol):
         """Return a Grafana Ruler /api/v1/rules response."""
         pass
 
+    def query_traces(self, **kwargs: Any) -> dict[str, Any]:
+        """Return a Tempo-compatible search response."""
+        pass
+
 
 class FixtureGrafanaBackend:
     """GrafanaBackend implementation backed by a ScenarioFixture.
 
-    All three methods delegate to the pure formatter functions, converting
+    All four methods delegate to the pure formatter functions, converting
     AWS-faithful fixture data into the Grafana wire format the agent expects.
     No HTTP calls, no external dependencies.
     """
@@ -70,12 +76,40 @@ class FixtureGrafanaBackend:
         return format_mimir_query_range(metrics)
 
     def query_logs(self, **_: Any) -> dict[str, Any]:
-        if self._fixture.evidence.aws_rds_events is None:
+        events = list(self._fixture.evidence.aws_rds_events or [])
+        pi = self._fixture.evidence.aws_performance_insights
+        if pi:
+            start_ts = pi.get("start_time", self._fixture.alert.get("startsAt", "1970-01-01T00:00:00Z"))
+            for sql in pi.get("top_sql", []):
+                wait_events_str = ", ".join([f"{w.get('name', 'unknown')}({w.get('db_load_avg', 0)})" for w in sql.get("wait_events", [])])
+                blurb = f"Top SQL Activity: {sql.get('statement')} | Avg Load: {sql.get('db_load_avg')} AAS | Waits: {wait_events_str}"
+                events.append({
+                    "date": start_ts,
+                    "message": blurb,
+                    "source_type": "aws_performance_insights",
+                    "source_identifier": pi.get("db_instance_identifier", "db"),
+                    "event_categories": ["performance"]
+                })
+
+            for we in pi.get("top_wait_events", []):
+                blurb = f"Top Wait Event: {we.get('name', 'unknown')} | db_load_avg: {we.get('db_load_avg', 0)} AAS"
+                events.append({
+                    "date": start_ts,
+                    "message": blurb,
+                    "source_type": "aws_performance_insights",
+                    "source_identifier": pi.get("db_instance_identifier", "db"),
+                    "event_categories": ["performance"],
+                })
+
+        if not events:
             raise ValueError(
                 f"{self._fixture.scenario_id}: query_logs called but "
-                "'aws_rds_events' is not declared in available_evidence"
+                "'aws_rds_events' and 'aws_performance_insights' are empty or missing"
             )
-        return format_loki_query_range({"events": self._fixture.evidence.aws_rds_events})
+        return format_loki_query_range({"events": events})
 
     def query_alert_rules(self, **_: Any) -> dict[str, Any]:
         return format_ruler_rules(self._fixture.alert)
+
+    def query_traces(self, **_: Any) -> dict[str, Any]:
+        return format_tempo_search()

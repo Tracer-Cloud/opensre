@@ -14,7 +14,6 @@ from typing import Any
 
 import httpx
 import jwt
-from jwt import PyJWK
 
 from app.config import (
     CLERK_CONFIG_DEV,
@@ -131,6 +130,7 @@ class AsyncJWKSCache:
             # Cache the result
             self._cache[jwks_url] = CachedJWKS(keys=jwks_data, fetched_at=now)
             from typing import cast
+
             return cast(dict[str, Any], jwks_data)
 
     def clear(self) -> None:
@@ -199,7 +199,7 @@ def get_signing_key_from_jwks(jwks_data: dict[str, Any], token: str) -> Any:
     for key_data in keys:
         if key_data.get("kid") == kid:
             try:
-                jwk = PyJWK.from_dict(key_data)
+                jwk = jwt.PyJWK.from_dict(key_data)
                 return jwk.key
             except Exception as e:
                 raise JWTVerificationError(f"Failed to parse JWK: {e}") from e
@@ -292,6 +292,7 @@ def verify_jwt(token: str) -> JWTClaims:
         if loop.is_running():
             # Already inside an async context (e.g. LangGraph thread) — run in a new loop
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(asyncio.run, verify_jwt_async(token))
                 return future.result()

@@ -9,10 +9,24 @@ from config import PIPELINE_NAME, PIPELINE_RUN_ID
 _STAGING_PATH = "/tmp/staging"
 
 _DEFAULT_RECORDS = [
-    {"sample_id": "S001", "gene": "BRCA1", "chromosome": "17", "position": 43044295,
-     "ref_allele": "A", "alt_allele": "G", "quality_score": 99.2},
-    {"sample_id": "S002", "gene": "TP53", "chromosome": "17", "position": 7674220,
-     "ref_allele": "C", "alt_allele": "T", "quality_score": 87.5},
+    {
+        "sample_id": "S001",
+        "gene": "BRCA1",
+        "chromosome": "17",
+        "position": 43044295,
+        "ref_allele": "A",
+        "alt_allele": "G",
+        "quality_score": 99.2,
+    },
+    {
+        "sample_id": "S002",
+        "gene": "TP53",
+        "chromosome": "17",
+        "position": 7674220,
+        "ref_allele": "C",
+        "alt_allele": "T",
+        "quality_score": 87.5,
+    },
 ]
 
 
@@ -33,11 +47,15 @@ def main() -> None:
     with open(output, "w") as f:
         json.dump({"pipeline": PIPELINE_NAME, "run_id": PIPELINE_RUN_ID, "records": records}, f)
 
-    print(json.dumps({
-        "stage": "ingest",
-        "status": "success",
-        "pipeline": PIPELINE_NAME,
-        "run_id": PIPELINE_RUN_ID,
-        "record_count": len(records),
-        "output": output,
-    }))
+    print(
+        json.dumps(
+            {
+                "stage": "ingest",
+                "status": "success",
+                "pipeline": PIPELINE_NAME,
+                "run_id": PIPELINE_RUN_ID,
+                "record_count": len(records),
+                "output": output,
+            }
+        )
+    )
