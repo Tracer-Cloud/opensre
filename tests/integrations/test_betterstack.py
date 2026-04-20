@@ -192,9 +192,30 @@ class TestBetterStackConfigFromEnv:
 
 
 class TestBetterStackHelpers:
-    def test_is_available_true(self) -> None:
+    def test_is_available_true_with_configured_sources(self) -> None:
         assert betterstack_is_available(
-            {"betterstack": {"query_endpoint": "https://x", "username": "u"}}
+            {
+                "betterstack": {
+                    "query_endpoint": "https://x",
+                    "username": "u",
+                    "sources": ["t1_myapp"],
+                }
+            }
+        ) is True
+
+    def test_is_available_true_with_source_hint(self) -> None:
+        # Alert-derived source_hint (from betterstack_source annotation) is
+        # sufficient to make the tool callable even without a configured
+        # sources list.
+        assert betterstack_is_available(
+            {
+                "betterstack": {
+                    "query_endpoint": "https://x",
+                    "username": "u",
+                    "sources": [],
+                    "source_hint": "t1_alert_inferred",
+                }
+            }
         ) is True
 
     def test_is_available_false_without_endpoint(self) -> None:
@@ -208,11 +229,20 @@ class TestBetterStackHelpers:
     def test_is_available_false_when_source_missing(self) -> None:
         assert betterstack_is_available({}) is False
 
-    def test_is_available_does_not_require_sources(self) -> None:
-        # sources is an optional planner hint; its absence must NOT block availability
+    def test_is_available_false_when_no_way_to_derive_source(self) -> None:
+        # Credentials present but neither a configured sources list nor an
+        # alert-derived source_hint — the executor has no path to propagate
+        # a source to the tool, so availability must be False to prevent a
+        # deterministic empty-source failure at call time.
         assert betterstack_is_available(
-            {"betterstack": {"query_endpoint": "https://x", "username": "u", "sources": []}}
-        ) is True
+            {
+                "betterstack": {
+                    "query_endpoint": "https://x",
+                    "username": "u",
+                    "sources": [],
+                }
+            }
+        ) is False
 
     def test_extract_params_full(self) -> None:
         params = betterstack_extract_params(

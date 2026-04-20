@@ -20,6 +20,7 @@ def _has_any_logs(evidence: dict[str, Any]) -> bool:
         or evidence.get("datadog_logs")
         or evidence.get("datadog_error_logs")
         or evidence.get("cloudwatch_logs")
+        or evidence.get("betterstack_logs")
     )
 
 

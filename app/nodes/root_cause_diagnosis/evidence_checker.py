@@ -63,6 +63,7 @@ def check_evidence_availability(
         or evidence.get("datadog_logs") is not None
         or evidence.get("datadog_monitors") is not None
         or evidence.get("datadog_events") is not None
+        or evidence.get("betterstack_logs") is not None
         or evidence.get("s3_object", {}).get("found")
         or evidence.get("s3_audit_payload", {}).get("found")
         or evidence.get("s3_marker") is not None

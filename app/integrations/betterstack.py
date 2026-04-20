@@ -116,13 +116,23 @@ def betterstack_config_from_env() -> BetterStackConfig | None:
 
 
 def betterstack_is_available(sources: dict[str, dict]) -> bool:
-    """Check if Better Stack integration credentials are present.
+    """Check if Better Stack credentials are present AND a source is derivable.
 
-    Only the three auth fields gate availability. ``sources`` is an optional
-    planner hint and does not block the tool from being offered.
+    The investigation executor invokes tools purely via
+    ``action.run(**extract_params(...))``; there is no other path to inject a
+    source identifier at call time. A betterstack integration with credentials
+    but no way to derive ``source`` would always run with ``source=""`` and
+    deterministically fail. So availability requires, beyond credentials,
+    either (a) a configured ``sources`` hint list or (b) an alert-derived
+    ``source_hint`` surfaced by
+    :mod:`app.nodes.plan_actions.detect_sources` from the alert annotation.
     """
     bs = sources.get("betterstack", {})
-    return bool(bs.get("query_endpoint") and bs.get("username"))
+    if not (bs.get("query_endpoint") and bs.get("username")):
+        return False
+    has_sources = bool(bs.get("sources"))
+    has_hint = bool(str(bs.get("source_hint") or "").strip())
+    return has_sources or has_hint
 
 
 def betterstack_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
