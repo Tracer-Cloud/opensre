@@ -61,58 +61,69 @@ def build_diagnosis_prompt(
     evidence_text = _build_evidence_sections(state, evidence)
 
     # Construct final prompt
-    prompt = f"""You are an experienced SRE writing a short, evidence-grounded RCA (root cause analysis) for a system incident.
+    prompt = f"""You are an experienced SRE performing a root cause analysis (RCA) for a production incident.
 
-Goal: Be helpful and accurate. Prefer evidence-backed explanations over speculation.
-If the exact root cause cannot be proven, provide the most likely explanation based on observed evidence,
-and clearly state what is unknown.
+OBJECTIVE:
+Produce an evidence-grounded RCA. Separate what you can prove from what you infer.
+Follow this reasoning sequence:
+1. Identify OBSERVED FACTS from the evidence below.
+2. Generate candidate hypotheses that could explain those facts.
+3. For each hypothesis, check whether the evidence confirms, contradicts, or is silent.
+4. Eliminate hypotheses that contradict the evidence.
+5. Select the best-supported hypothesis as the root cause. If multiple survive, pick the most parsimonious one and note alternatives.
+6. If no hypothesis can be confirmed, state "Most likely ..." with the strongest candidate and explicitly list what evidence is missing.
 {upstream_directive}{database_directive}{kubernetes_directive}{memory_section}
 DEFINITIONS:
 - VALIDATED_CLAIMS: Directly supported by the evidence shown below (observed facts).
 - NON_VALIDATED_CLAIMS: Plausible hypotheses or contributing factors that are NOT directly proven by the evidence.
 
-RULES:
-- Ground your analysis in the telemetry and logs shown below. You may use your broad domain knowledge to interpret the evidence, but do NOT hallucinate facts, metrics, or log entries that do not explicitly appear in the evidence.
-- Do NOT reference source code files or line numbers unless they appear explicitly in the evidence below.
-- You MUST explicitly state what is missing if you lack telemetry to make a definitive ruling. If GitHub evidence includes file paths, snippets, commits, or content, you may reference them.
-- VALIDATED_CLAIMS should be factual and specific (no "maybe", "likely", "appears").
-- NON_VALIDATED_CLAIMS may include "likely/maybe", but must stay consistent with evidence.
-- Keep each claim to one sentence.
-- When possible, mention which evidence source supports a validated claim using one of:
-  {", ".join(ALLOWED_EVIDENCE_SOURCES)}.
+EVIDENCE RULES:
+- Ground every claim in the telemetry, logs, and metrics provided below. You may use domain knowledge to INTERPRET evidence, but do NOT fabricate facts, metrics, or log entries that are not present.
+- Do NOT reference source code files or line numbers unless they appear explicitly in the evidence.
+- If you lack telemetry to make a definitive ruling, you MUST state what specific evidence is missing (e.g., "No memory metrics available to confirm OOM").
+- If GitHub evidence includes file paths, snippets, commits, or content, you may reference them.
+- When a validated claim is supported by a specific evidence source, cite it using one of: {", ".join(ALLOWED_EVIDENCE_SOURCES)}.
+
+ANTI-BIAS RULES:
+- Do NOT assume an incident category before examining the evidence. Let the evidence determine the category.
+- If the provided hypotheses do not match the evidence, discard them and form new ones.
+- Consider at least two alternative explanations before settling on a root cause.
+- Do NOT anchor on the first plausible explanation. Check for contradicting evidence before committing.
 
 PROBLEM:
 {problem}
 
-HYPOTHESES TO CONSIDER (may be incomplete):
-{chr(10).join(f"- {h}" for h in hypotheses[:5]) if hypotheses else "- None"}
+HYPOTHESES TO CONSIDER (treat as suggestions, not conclusions — discard any that contradict the evidence):
+{chr(10).join(f"- {h}" for h in hypotheses[:5]) if hypotheses else "- None provided"}
 
 EVIDENCE:
 {evidence_text}
 
-OUTPUT FORMAT (follow exactly with NO markdown code blocks around the response, start immediately with ROOT_CAUSE:):
+OUTPUT FORMAT (follow exactly — no markdown code blocks, start immediately with ROOT_CAUSE:):
 
 ROOT_CAUSE:
-<1–2 sentences. If not proven, say "Most likely ..." and state what's missing. Do not say only "Unable to determine".>
+<1–2 sentences stating the root cause. If not provable, say "Most likely: ..." and state what evidence is missing. Never say only "Unable to determine".>
 
 ROOT_CAUSE_CATEGORY:
-<exactly one of: configuration_error, code_defect, data_quality, resource_exhaustion, dependency_failure, infrastructure, healthy, unknown>
-(Use "healthy" when all monitored metrics are within normal bounds, no errors are detected, and the alert is informational or has resolved. When evidence is mixed — alert resolved but some metrics are elevated — use your judgment; you may still choose healthy or another category.)
+<exactly one of: configuration_error | code_defect | data_quality | resource_exhaustion | dependency_failure | infrastructure | healthy | unknown>
+(Use "healthy" only when all metrics are within normal bounds, no errors are detected, and the alert is informational or resolved. For mixed signals, use your judgment.)
 
 VALIDATED_CLAIMS:
-- <one factual claim> [evidence: <one of {", ".join(ALLOWED_EVIDENCE_SOURCES)}>]
-- <another factual claim> [evidence: <one of {", ".join(ALLOWED_EVIDENCE_SOURCES)}>]
+- <factual claim> [evidence: <source>]
+- <factual claim> [evidence: <source>]
 
 NON_VALIDATED_CLAIMS:
-- <one plausible hypothesis consistent with evidence>
-- <another plausible hypothesis>
-(If you include hypotheses, focus on explaining the failure mechanism and what data is missing to confirm it.)
+- <plausible inference — state what data would confirm or refute it>
+- <plausible inference — state what data would confirm or refute it>
+
+ALTERNATIVE_HYPOTHESES_CONSIDERED:
+- <hypothesis considered and why it was eliminated or deprioritized>
 
 CAUSAL_CHAIN:
-- <step 1: the trigger or misconfiguration>
-- <step 2: how it propagated>
+- <step 1: the trigger or initial fault>
+- <step 2: how the fault propagated>
 - <step N: the observable symptom or alert>
-(Trace the error from root cause through to the alert that triggered this investigation. Each step should be one sentence.)
+(Trace from root cause to the alert. Each step should be one sentence backed by evidence where possible.)
 """
 
     return prompt
