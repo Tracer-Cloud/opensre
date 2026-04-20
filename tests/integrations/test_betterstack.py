@@ -361,7 +361,7 @@ class TestValidateBetterStackConfig:
         req = captured["req"]
         assert req.method == "POST"
         assert req.url.params.get("output_format_pretty_row_numbers") == "0"
-        assert req.headers.get("content-type") == "plain/text"
+        assert req.headers.get("content-type") == "text/plain"
         assert req.content == b"SELECT 1 FORMAT JSONEachRow"
         # Basic auth header is populated by httpx from the client's ``auth`` tuple.
         assert req.headers.get("authorization", "").lower().startswith("basic ")
