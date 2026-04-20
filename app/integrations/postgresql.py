@@ -194,7 +194,7 @@ def postgresql_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     return {
         "host": str(pg.get("host", "")).strip(),
         "database": str(pg.get("database", "")).strip(),
-        "port": int(pg.get("port", DEFAULT_POSTGRESQL_PORT)),
+        "port": int(pg.get("port") or DEFAULT_POSTGRESQL_PORT),
     }
 
 
