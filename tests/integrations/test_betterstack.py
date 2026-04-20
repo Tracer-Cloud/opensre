@@ -393,6 +393,24 @@ class TestQueryLogs:
         assert result["available"] is False
         assert "invalid" in result["error"].lower()
 
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "t1; DROP TABLE users;--",
+            "'; DROP TABLE logs--",
+            "source OR 1=1",
+            "../../../etc/passwd",
+            "t1_logs UNION SELECT password FROM users",
+            "t1_logs/*comment*/",
+            "t1_logs -- trailing comment",
+            "t1_logs`",
+            "t1_logs\nDROP TABLE secrets",
+            "t1_logs'",
+        ],
+    )
+    def test_source_name_rejects_sql_injection_patterns(self, payload: str) -> None:
+        assert bs_module._validate_source_name(payload) is None
+
     def test_invalid_since_rejected(self, patched_sql_client) -> None:
         patched_sql_client(lambda _r: httpx.Response(200, text=""))
         result = query_logs(

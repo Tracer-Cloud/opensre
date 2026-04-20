@@ -313,7 +313,7 @@ def _setup_betterstack() -> None:
     )
     if not query_endpoint or not username:
         _die("query_endpoint and username are required.")
-    sources = [part.strip() for part in sources_raw.split(",") if part.strip()]
+    sources = [part.strip() for part in (sources_raw or "").split(",") if part.strip()]
     upsert_integration(
         "betterstack",
         {
