@@ -136,24 +136,30 @@ def _build_failover_directive(evidence: dict[str, Any]) -> str:
         if isinstance(log, dict)
     )
 
-    combined = f"{event_messages} {log_messages}"
-
-    is_failover_scenario = (
-        "failover" in combined
+    has_rds_failover = (
+        "failover" in event_messages
         and (
-            "multi-az" in combined
-            or "health check failure" in combined
-            or "primary host" in combined
+            "multi-az" in event_messages
+            or "health check failure" in event_messages
+            or "primary host" in event_messages
         )
     )
 
-    if not is_failover_scenario:
+    has_log_failover = (
+        "failover" in log_messages
+        and (
+            "multi-az" in log_messages
+            or "health check failure" in log_messages
+            or "primary host" in log_messages
+        )
+    )
+
+    if not (has_rds_failover or has_log_failover):
         return ""
 
     return """
 FAILOVER-SPECIFIC RULES:
-- This incident is an RDS failover scenario.
-- You MUST treat the failover event timeline as the primary evidence source.
+- This incident is a failover scenario.
 - You MUST use the exact phrase: "primary evidence source".
 - You MUST include the exact phrases:
   - "failover initiated"
@@ -162,8 +168,6 @@ FAILOVER-SPECIFIC RULES:
   - "instance available"
   - "workload resumed normally"
 - Do not paraphrase or omit any of these phrases.
-- Do not refer to Grafana logs or metrics as the primary evidence source.
-- Metrics/logs may be used only as supporting context.
 
 REQUIRED FAILOVER OUTPUT:
 - ROOT_CAUSE MUST include:
@@ -174,20 +178,6 @@ REQUIRED FAILOVER OUTPUT:
   "health check failure -> failover -> standby promotion -> DNS update -> brief outage -> recovery"
 - ROOT_CAUSE or VALIDATED_CLAIMS MUST explicitly say:
   "the system recovered and workload resumed normally"
-
-If any of these exact phrases are missing, the answer is incomplete even if the diagnosis is otherwise correct.
-
-ADDITIONAL OUTPUT ENFORCEMENT (FAILOVER ONLY):
-- ROOT_CAUSE MUST start with:
-  "Based on the RDS event timeline (primary evidence source)"
-- ROOT_CAUSE MUST include ALL of:
-  "failover initiated"
-  "failover in progress"
-  "failover completed"
-  "instance available"
-  "workload resumed normally"
-- VALIDATED_CLAIMS MUST include EXACTLY:
-  "failover initiated -> failover in progress -> failover completed -> instance available"
 """
 
 
