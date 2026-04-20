@@ -18,7 +18,8 @@ from collections.abc import AsyncIterator, Coroutine, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, TypedDict, cast
+from typing import Literal, cast
+from typing_extensions import TypedDict
 from urllib.parse import urlparse
 
 import httpx

@@ -8,7 +8,8 @@ the same set of keys and will fail if they diverge.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any
+from typing_extensions import TypedDict
 
 from langgraph.graph import add_messages
 from pydantic import ConfigDict, Field

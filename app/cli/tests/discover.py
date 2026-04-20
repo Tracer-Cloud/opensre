@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import cast
+from typing_extensions import TypedDict
 
 from app.cli.tests.catalog import TestCatalog, TestCatalogItem, TestRequirement
 
