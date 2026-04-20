@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.postgresql import get_current_queries, resolve_postgresql_config
+from app.integrations.postgresql import (
+    get_current_queries,
+    postgresql_extract_params,
+    postgresql_is_available,
+    resolve_postgresql_config,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -16,6 +21,8 @@ from app.tools.tool_decorator import tool
         "Investigating database locks and blocking queries during incidents",
         "Finding resource-intensive queries correlating with alert timeframes",
     ],
+    is_available=postgresql_is_available,
+    extract_params=postgresql_extract_params,
 )
 def get_postgresql_current_queries(
     host: str,
