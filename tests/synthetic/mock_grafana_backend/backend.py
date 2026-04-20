@@ -79,7 +79,7 @@ class FixtureGrafanaBackend:
         events = list(self._fixture.evidence.aws_rds_events or [])
         pi = self._fixture.evidence.aws_performance_insights
         if pi:
-            start_ts = pi.get("start_time", self._fixture.alert.get("startsAt", "2026-03-29T22:00:00Z"))
+            start_ts = pi.get("start_time", self._fixture.alert.get("startsAt", "1970-01-01T00:00:00Z"))
             for sql in pi.get("top_sql", []):
                 wait_events_str = ", ".join([f"{w.get('name', 'unknown')}({w.get('db_load_avg', 0)})" for w in sql.get("wait_events", [])])
                 blurb = f"Top SQL Activity: {sql.get('statement')} | Avg Load: {sql.get('db_load_avg')} AAS | Waits: {wait_events_str}"

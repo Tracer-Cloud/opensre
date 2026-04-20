@@ -137,7 +137,9 @@ Audit evidence shows external API interactions. For upstream-triggered failures:
 def _build_database_directive(state: InvestigationState, evidence: dict[str, Any]) -> str:
     """Build RDS / Database root cause disambiguation directive."""
     pipeline = str(state.get("pipeline", "")).lower()
-    alert_text = str(state.get("alert", "")).lower()
+    alert_text = (
+        str(state.get("alert_name", "")) + " " + str(state.get("raw_alert", ""))
+    ).lower()
     is_database_incident = (
         any(k in pipeline for k in ["rds", "postgres", "mysql"])
         or any(k in alert_text for k in ["rds", "postgres", "mysql", "database", "db instance"])
