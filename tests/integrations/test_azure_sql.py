@@ -271,3 +271,14 @@ class TestAzureSQLExtractParams:
     def test_port_as_numeric_string(self) -> None:
         sources = {"azure_sql": {"server": "s", "database": "d", "port": "1434"}}
         assert azure_sql_extract_params(sources)["port"] == 1434
+
+    def test_server_none_returns_empty_string(self) -> None:
+        # A stored integration persisting {"server": null} must not yield the
+        # literal string "None" through str(None). The `or ""` fallback keeps
+        # the result empty, matching the AzureSQLConfig._normalize_server validator.
+        sources = {"azure_sql": {"server": None, "database": "d"}}
+        assert azure_sql_extract_params(sources)["server"] == ""
+
+    def test_database_none_returns_empty_string(self) -> None:
+        sources = {"azure_sql": {"server": "s", "database": None}}
+        assert azure_sql_extract_params(sources)["database"] == ""

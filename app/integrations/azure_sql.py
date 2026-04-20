@@ -224,8 +224,8 @@ def azure_sql_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     """
     az = sources.get("azure_sql", {})
     return {
-        "server": str(az.get("server", "")).strip(),
-        "database": str(az.get("database", "")).strip(),
+        "server": str(az.get("server") or "").strip(),
+        "database": str(az.get("database") or "").strip(),
         "port": int(az.get("port") or DEFAULT_AZURE_SQL_PORT),
     }
 
