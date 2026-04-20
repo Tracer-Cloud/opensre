@@ -92,8 +92,9 @@ FAILOVER-SPECIFIC RULES:
   - health check failure
   - RDS event timeline as the primary evidence source
 
-- For RDS failover incidents, VALIDATED_CLAIMS MUST explicitly include the full event sequence:
+- For RDS failover incidents, VALIDATED_CLAIMS MUST explicitly include the exact full event sequence using this wording:
   failover initiated -> failover in progress -> failover completed -> instance available
+- Do not replace "instance available" with synonyms such as "instance running", "instance resumed", or "instance active".
 
 - The event sequence MUST be explicitly listed in this exact ordered form (initiated -> in progress -> completed -> available), not just described implicitly.
 
@@ -118,7 +119,7 @@ EVIDENCE:
 OUTPUT FORMAT (follow exactly):
 
 ROOT_CAUSE:
-<1–2 sentences. If not proven, say "Most likely ..." and state what's missing. Do not say only "Unable to determine". For failover incidents, you MUST explicitly state the primary evidence source and confirm that the system recovered and workload resumed normally.>
+<1–2 sentences. If not proven, say "Most likely ..." and state what's missing. Do not say only "Unable to determine". For failover incidents, you MUST explicitly state the primary evidence source, confirm that the system recovered and workload resumed normally, and preserve the exact wording "instance available" when summarizing the event sequence.>
 
 ROOT_CAUSE_CATEGORY:
 <one of: configuration_error, code_defect, data_quality, resource_exhaustion, dependency_failure, infrastructure, healthy, unknown>
