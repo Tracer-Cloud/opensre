@@ -37,7 +37,7 @@ BETTERSTACK_SOURCES=t123456_myapp,t123456_gateway
 | --- | --- | --- |
 | `BETTERSTACK_QUERY_ENDPOINT` | — | **Required.** Region-specific SQL API host (e.g. `https://eu-nbg-2-connect.betterstackdata.com`) |
 | `BETTERSTACK_USERNAME` | — | **Required.** Username from **Connect ClickHouse HTTP client** |
-| `BETTERSTACK_PASSWORD` | _(empty)_ | **Required.** Password from the same dashboard flow |
+| `BETTERSTACK_PASSWORD` | — | **Required.** Password from the same dashboard flow |
 | `BETTERSTACK_SOURCES` | _(empty)_ | Optional comma-separated list of **base source IDs** (e.g. `t123456_myapp`). The integration appends `_logs` / `_s3` internally. If omitted, the planner must derive the source from alert metadata (via a `betterstack_source` annotation) |
 
 ### Option 3: Persistent store
@@ -137,5 +137,5 @@ The verify step issues a cheap probe (`SELECT 1 FORMAT JSONEachRow`) against the
 - Use a **dedicated ClickHouse HTTP client credential** for OpenSRE — not your personal dashboard login.
 - Keep the credential pair out of source control — use `.env` or the persistent store (`~/.tracer/integrations.json`).
 - The integration is **read-only**: OpenSRE only issues `SELECT` statements against `remote(...)` and `s3Cluster(...)` table functions.
-- Source identifiers are whitelisted against `^[A-Za-z0-9_]+$` before being interpolated into SQL, preventing identifier-injection attacks from the alert payload.
+- Source identifiers are allowlisted against `^[A-Za-z0-9_]+$` before being interpolated into SQL, preventing identifier-injection attacks from the alert payload.
 - Rotate credentials periodically via the Better Stack dashboard.
