@@ -63,7 +63,7 @@ def validate_experiment(name: str) -> None:
     """Raise ExperimentNotFoundError if directory or YAML is missing."""
     demos = experiment_demo_yaml_paths(name)
     chaos = experiment_chaos_yaml_paths(name)
-    if not demos and not chaos:
+    if not demos or not chaos:
         raise ExperimentNotFoundError(f"No *-demo.yaml or *-chaos.yaml in experiment: {name!r}")
 
 
