@@ -52,7 +52,7 @@ def build_diagnosis_prompt(
 
     # Build directive sections
     upstream_directive = _build_upstream_directive(evidence)
-    database_directive = _build_database_directive(evidence)
+    database_directive = _build_database_directive(state, evidence)
     kubernetes_directive = _build_kubernetes_directive(state, evidence)
     memory_section = _build_memory_section(memory_context)
 
@@ -134,17 +134,26 @@ Audit evidence shows external API interactions. For upstream-triggered failures:
     return ""
 
 
-def _build_database_directive(evidence: dict[str, Any]) -> str:
+def _build_database_directive(state: InvestigationState, evidence: dict[str, Any]) -> str:
     """Build RDS / Database root cause disambiguation directive."""
+    pipeline = str(state.get("pipeline", "")).lower()
+    alert_text = str(state.get("alert", "")).lower()
+    is_database_incident = (
+        any(k in pipeline for k in ["rds", "postgres", "mysql"])
+        or any(k in alert_text for k in ["rds", "postgres", "mysql", "database", "db instance"])
+    )
+
     has_db_evidence = bool(
         evidence.get("aws_rds_events")
         or evidence.get("aws_performance_insights")
         or bool(
-            evidence.get("aws_cloudwatch_metrics", {}).get("DBInstanceIdentifier")
-            or evidence.get("aws_cloudwatch_metrics", {}).get("db_instance_identifier")
+            isinstance(evidence.get("aws_cloudwatch_metrics"), dict) and (
+                evidence.get("aws_cloudwatch_metrics", {}).get("DBInstanceIdentifier")
+                or evidence.get("aws_cloudwatch_metrics", {}).get("db_instance_identifier")
+            )
         )
     )
-    if not has_db_evidence:
+    if not (has_db_evidence or is_database_incident):
         return ""
     return """
 **CRITICAL: Database Resource Exhaustion vs CPU Saturation**
