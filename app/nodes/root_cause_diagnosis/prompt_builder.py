@@ -79,6 +79,33 @@ RULES:
 - When possible, mention which evidence source supports a validated claim using one of:
   {", ".join(ALLOWED_EVIDENCE_SOURCES)}.
 
+FAILOVER-SPECIFIC RULES:
+- If aws_rds_events contain an RDS failover sequence, you MUST treat aws_rds_events as the primary evidence source.
+- You MUST explicitly state: "Based on the RDS event timeline (primary evidence source)".
+
+- You MUST NOT refer to Grafana logs, metrics, or any data-plane signals as the source of the RDS event timeline.
+- Do NOT use phrases like "in grafana_logs", "from logs", or "based on metrics" when describing RDS events.
+- RDS events must always be described as control-plane evidence, not log-derived signals.
+
+- For RDS failover incidents, ROOT_CAUSE must explicitly mention:
+  - Multi-AZ failover
+  - health check failure
+  - RDS event timeline as the primary evidence source
+
+- For RDS failover incidents, VALIDATED_CLAIMS MUST explicitly include the full event sequence:
+  failover initiated -> failover in progress -> failover completed -> instance available
+
+- The event sequence MUST be explicitly listed in this exact ordered form (initiated -> in progress -> completed -> available), not just described implicitly.
+
+- For RDS failover incidents, CAUSAL_CHAIN MUST explicitly connect:
+  health check failure -> failover -> standby promotion -> DNS update -> brief outage -> recovery
+
+- If evidence shows the instance became available again after failover, you MUST explicitly state:
+  "the system recovered and workload resumed normally"
+
+- In failover scenarios, metrics/logs may only be used as supporting context (e.g., connection drop), never as the root cause.
+- Do not describe connection drops, CPU drops, IOPS drops, or throughput drops as the root cause when they are downstream effects of failover.
+
 PROBLEM:
 {problem}
 
@@ -91,7 +118,7 @@ EVIDENCE:
 OUTPUT FORMAT (follow exactly):
 
 ROOT_CAUSE:
-<1–2 sentences. If not proven, say "Most likely ..." and state what's missing. Do not say only "Unable to determine".>
+<1–2 sentences. If not proven, say "Most likely ..." and state what's missing. Do not say only "Unable to determine". For failover incidents, you MUST explicitly state the primary evidence source and confirm that the system recovered and workload resumed normally.>
 
 ROOT_CAUSE_CATEGORY:
 <one of: configuration_error, code_defect, data_quality, resource_exhaustion, dependency_failure, infrastructure, healthy, unknown>
@@ -110,7 +137,7 @@ CAUSAL_CHAIN:
 - <step 1: the trigger or misconfiguration>
 - <step 2: how it propagated>
 - <step N: the observable symptom or alert>
-(Trace the error from root cause through to the alert that triggered this investigation. Each step should be one sentence.)
+(Trace the error from root cause through to the alert that triggered this investigation. Each step should be one sentence. For failover incidents, you MUST include the full chain ending with recovery.)
 """
 
     return prompt
