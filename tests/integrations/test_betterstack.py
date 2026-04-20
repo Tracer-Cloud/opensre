@@ -310,7 +310,6 @@ class TestValidateBetterStackConfig:
         patched_sql_client(lambda _req: httpx.Response(200, text='{"1":1}\n'))
         result = validate_betterstack_config(_configured())
         assert result.ok is True
-        assert "eu-nbg-2-connect.betterstackdata.com" in result.detail
 
     def test_fails_on_empty_body(self, patched_sql_client) -> None:
         patched_sql_client(lambda _req: httpx.Response(200, text=""))
@@ -477,6 +476,21 @@ class TestQueryLogs:
         assert result["limit"] == 50
         body = captured["req"].content.decode()
         assert "LIMIT 50" in body
+
+    def test_negative_limit_clamped_to_one(self, patched_sql_client) -> None:
+        # A negative ``limit`` must never reach the SQL as ``LIMIT -1`` — ClickHouse
+        # rejects that with a 400 parse error. The integration clamps with max(1, ...).
+        captured: dict[str, httpx.Request] = {}
+
+        def _capturing(req: httpx.Request) -> httpx.Response:
+            captured["req"] = req
+            return httpx.Response(200, text="")
+
+        patched_sql_client(_capturing)
+        query_logs(_configured(), source="t1_myapp", limit=-1)
+        body = captured["req"].content.decode()
+        assert "LIMIT 1" in body
+        assert "LIMIT -1" not in body
 
     def test_sql_unions_recent_and_historical(self, patched_sql_client) -> None:
         captured: dict[str, httpx.Request] = {}

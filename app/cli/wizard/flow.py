@@ -1230,14 +1230,7 @@ def _configure_betterstack() -> tuple[str, str]:
                     }
                 },
             )
-            env_path = sync_env_values(
-                {
-                    "BETTERSTACK_QUERY_ENDPOINT": query_endpoint,
-                    "BETTERSTACK_USERNAME": username,
-                    "BETTERSTACK_PASSWORD": password,
-                    "BETTERSTACK_SOURCES": ",".join(sources),
-                }
-            )
+            env_path = sync_env_values({})
             return "Better Stack", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 

@@ -391,7 +391,7 @@ def query_logs(
             source=safe_source,
         )
 
-    effective_limit = min(int(limit or config.max_rows), config.max_rows)
+    effective_limit = min(max(1, int(limit or config.max_rows)), config.max_rows)
     sql = _build_logs_query(safe_source, since_sql, until_sql, effective_limit)
 
     try:
