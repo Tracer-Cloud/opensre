@@ -301,6 +301,14 @@ def _map_github_commits(data: dict) -> dict:
     }
 
 
+def _map_git_deploy_timeline(data: dict) -> dict:
+    return {
+        "git_deploy_timeline": data.get("commits", []) or [],
+        "git_deploy_timeline_count": data.get("commits_count", 0),
+        "git_deploy_timeline_window": data.get("window", {}),
+    }
+
+
 def _map_alertmanager_alerts(data: dict) -> dict:
     return {
         "alertmanager_alerts": data.get("alerts") or [],
@@ -399,6 +407,7 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "search_github_code": _map_github_code_search,
     "get_github_file_contents": _map_github_file_contents,
     "list_github_commits": _map_github_commits,
+    "get_git_deploy_timeline": _map_git_deploy_timeline,
     "alertmanager_alerts": _map_alertmanager_alerts,
     "alertmanager_silences": _map_alertmanager_silences,
     "list_eks_pods": _map_eks_pods,
@@ -590,6 +599,10 @@ def build_evidence_summary(execution_results: dict[str, ActionExecutionResult]) 
                 summary_parts.append("github:file contents retrieved")
             elif action_name == "list_github_commits" and data.get("commits"):
                 summary_parts.append(f"github:{len(data['commits'])} commits")
+            elif action_name == "get_git_deploy_timeline":
+                count = data.get("commits_count") or len(data.get("commits") or [])
+                if count:
+                    summary_parts.append(f"github:{count} commits in deploy window")
             elif action_name == "alertmanager_alerts":
                 firing_count = len(data.get("firing_alerts") or [])
                 total = data.get("total", 0)

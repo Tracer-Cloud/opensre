@@ -145,7 +145,8 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Commit SHA: {github.get("sha") or "unknown"}
 - Ref: {github.get("ref") or "unknown"}
 - Code Query: {github.get("query") or "exception OR error"}
-- Use list_github_commits to correlate the deployment window with recent code changes
+- Prefer get_git_deploy_timeline for deploy correlation (commits in a time window around the alert)
+- Use list_github_commits for the N most recent commits regardless of time window
 - Use search_github_code and get_github_file_contents to trace the failure into code"""
         )
 
