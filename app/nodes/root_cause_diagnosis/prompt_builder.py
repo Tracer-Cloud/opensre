@@ -79,6 +79,7 @@ RULES:
 - Keep each claim to one sentence.
 - When possible, mention which evidence source supports a validated claim using one of:
   {", ".join(ALLOWED_EVIDENCE_SOURCES)}.
+- When choosing a ROOT_CAUSE_CATEGORY, use "healthy" when all monitored metrics are within normal bounds, no errors are detected, and the alert is informational or has resolved. When evidence is mixed — alert resolved but some metrics are elevated — use your judgment; you may still choose "healthy" or another category.
 
 PROBLEM:
 {problem}
@@ -96,7 +97,6 @@ ROOT_CAUSE:
 
 ROOT_CAUSE_CATEGORY:
 <exactly one of: configuration_error, code_defect, data_quality, resource_exhaustion, dependency_failure, infrastructure, healthy, unknown>
-(Use "healthy" when all monitored metrics are within normal bounds, no errors are detected, and the alert is informational or has resolved. When evidence is mixed — alert resolved but some metrics are elevated — use your judgment; you may still choose healthy or another category.)
 
 VALIDATED_CLAIMS:
 - <one factual claim> [evidence: <one of {", ".join(ALLOWED_EVIDENCE_SOURCES)}>]
