@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from app.tools.GitDeployTimelineTool import (
     DEFAULT_WINDOW_MINUTES,
+    MAX_PER_PAGE,
     MAX_WINDOW_MINUTES,
     _resolve_window,
     _summarize_commit,
@@ -226,6 +227,116 @@ def test_run_passes_per_page_to_mcp() -> None:
 
     # MCP / GitHub REST API spells this camelCase; the tool must translate.
     assert captured["arguments"]["perPage"] == 50
+
+
+def test_run_clamps_per_page_to_api_maximum() -> None:
+    # GitHub REST list_commits caps per_page at 100. If a caller asks for more
+    # the request silently truncates upstream, and our commits_count would be
+    # wrong. We enforce the ceiling explicitly.
+    mock_config = MagicMock()
+    captured: dict[str, object] = {}
+
+    def _fake_call(config, name, arguments):  # noqa: ARG001
+        captured["arguments"] = arguments
+        return {"is_error": False, "text": "", "structured_content": [], "content": []}
+
+    with patch(
+        "app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None
+    ), patch(
+        "app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config
+    ), patch("app.tools.GitDeployTimelineTool.call_github_mcp_tool", side_effect=_fake_call):
+        result = get_git_deploy_timeline(
+            owner="org",
+            repo="repo",
+            per_page=500,
+            github_url="http://mcp",
+            github_mode="streamable-http",
+            github_token="tok",
+        )
+
+    assert captured["arguments"]["perPage"] == MAX_PER_PAGE
+    assert result["window"]["per_page"] == MAX_PER_PAGE
+
+
+def test_run_flags_window_truncated_when_page_is_full() -> None:
+    # When the MCP returns exactly per_page commits, we don't know whether
+    # more exist in the window. The window.truncated flag warns the agent
+    # it may be looking at partial data.
+    full_page = [
+        {
+            "sha": f"{i:040x}",
+            "html_url": "",
+            "commit": {
+                "author": {"name": "A", "date": "2026-04-20T09:00:00Z"},
+                "committer": {"date": "2026-04-20T09:00:01Z"},
+                "message": f"commit {i}",
+            },
+        }
+        for i in range(5)
+    ]
+    fake_result = {
+        "is_error": False,
+        "text": "5 commits",
+        "structured_content": full_page,
+        "content": [],
+    }
+    mock_config = MagicMock()
+    with patch(
+        "app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None
+    ), patch(
+        "app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config
+    ), patch(
+        "app.tools.GitDeployTimelineTool.call_github_mcp_tool", return_value=fake_result
+    ):
+        result = get_git_deploy_timeline(
+            owner="org",
+            repo="repo",
+            per_page=5,
+            github_url="http://mcp",
+            github_mode="streamable-http",
+            github_token="tok",
+        )
+
+    assert result["commits_count"] == 5
+    assert result["window"]["truncated"] is True
+
+
+def test_run_flags_window_not_truncated_when_fewer_than_page() -> None:
+    fake_result = {
+        "is_error": False,
+        "text": "",
+        "structured_content": [
+            {
+                "sha": "abc",
+                "html_url": "",
+                "commit": {
+                    "author": {"name": "A", "date": "2026-04-20T09:00:00Z"},
+                    "committer": {"date": "2026-04-20T09:00:01Z"},
+                    "message": "one commit",
+                },
+            }
+        ],
+        "content": [],
+    }
+    mock_config = MagicMock()
+    with patch(
+        "app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None
+    ), patch(
+        "app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config
+    ), patch(
+        "app.tools.GitDeployTimelineTool.call_github_mcp_tool", return_value=fake_result
+    ):
+        result = get_git_deploy_timeline(
+            owner="org",
+            repo="repo",
+            per_page=30,
+            github_url="http://mcp",
+            github_mode="streamable-http",
+            github_token="tok",
+        )
+
+    assert result["commits_count"] == 1
+    assert result["window"]["truncated"] is False
 
 
 # ---------------------------------------------------------------------------

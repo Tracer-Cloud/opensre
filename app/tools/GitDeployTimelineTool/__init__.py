@@ -34,6 +34,7 @@ from app.tools.tool_decorator import tool
 DEFAULT_WINDOW_MINUTES = 120
 MAX_WINDOW_MINUTES = 7 * 24 * 60  # 7 days
 DEFAULT_PER_PAGE = 30
+MAX_PER_PAGE = 100  # GitHub REST API hard cap for list_commits
 
 
 def _parse_iso8601(value: str) -> datetime | None:
@@ -65,12 +66,17 @@ def _resolve_window(
     """Resolve the [since, until] ISO-8601 window.
 
     Precedence:
-      1. Explicit ``since`` + ``until`` (both must parse; else falls through).
-      2. ``window_minutes_before_alert`` with until=now.
-      3. Default: DEFAULT_WINDOW_MINUTES before now.
+      1. ``until`` is set to the parsed value if present; falls back to "now"
+         on empty or malformed input (a malformed ``until`` does NOT invalidate
+         ``since`` — the ``until`` anchor simply becomes "now").
+      2. ``since`` is set to the parsed value if present; an inverted range
+         (``since > until``) is treated as invalid and falls through to (3).
+      3. If ``since`` is unset/invalid, compute it as ``until -
+         window_minutes_before_alert`` (or ``DEFAULT_WINDOW_MINUTES`` if that
+         arg is also unset/non-positive).
 
-    The window is always clamped to ``MAX_WINDOW_MINUTES`` to keep the MCP
-    call bounded and avoid paging through months of history by accident.
+    The final span is always clamped to ``MAX_WINDOW_MINUTES`` to keep the
+    MCP call bounded and avoid paging through months of history by accident.
     """
     now = datetime.now(UTC)
 
@@ -171,7 +177,12 @@ def _is_available(sources: dict[str, dict]) -> bool:
                 ),
                 "default": DEFAULT_WINDOW_MINUTES,
             },
-            "per_page": {"type": "integer", "default": DEFAULT_PER_PAGE},
+            "per_page": {
+                "type": "integer",
+                "default": DEFAULT_PER_PAGE,
+                "minimum": 1,
+                "maximum": MAX_PER_PAGE,
+            },
             "github_url": {"type": "string"},
             "github_mode": {"type": "string"},
             "github_token": {"type": "string"},
@@ -208,6 +219,10 @@ def get_git_deploy_timeline(
         }
 
     resolved_since, resolved_until = _resolve_window(since, until, window_minutes_before_alert)
+    # Clamp per_page to the GitHub REST API maximum of 100. Values above this
+    # are silently truncated upstream; we enforce the ceiling explicitly so
+    # ``truncated`` below is meaningful.
+    effective_per_page = max(1, min(per_page, MAX_PER_PAGE))
 
     arguments: dict[str, Any] = {
         "owner": owner,
@@ -215,7 +230,7 @@ def get_git_deploy_timeline(
         "sha": branch,
         "since": resolved_since,
         "until": resolved_until,
-        "perPage": per_page,
+        "perPage": effective_per_page,
     }
 
     result = call_github_mcp_tool(config, "list_commits", arguments)
@@ -225,11 +240,22 @@ def get_git_deploy_timeline(
         raw_commits = []
 
     commits = [_summarize_commit(item) for item in raw_commits if isinstance(item, dict)]
+    # When the page is full we cannot tell from the API whether more commits
+    # exist in the window — surface the uncertainty so the agent can choose to
+    # narrow the window or raise per_page rather than concluding "nothing
+    # else shipped".
+    truncated = len(commits) >= effective_per_page
     payload.update(
         {
             "commits": commits,
             "commits_count": len(commits),
-            "window": {"since": resolved_since, "until": resolved_until, "branch": branch},
+            "window": {
+                "since": resolved_since,
+                "until": resolved_until,
+                "branch": branch,
+                "per_page": effective_per_page,
+                "truncated": truncated,
+            },
         }
     )
     return payload
