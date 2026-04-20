@@ -156,6 +156,8 @@ opensre onboard
 opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 ```
 
+If you use VS Code, the repo now includes a ready-to-use devcontainer under [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json). Open the repo in VS Code and run `Dev Containers: Reopen in Container` to get the project on Python 3.13 with the contributor toolchain preinstalled. Keep Docker Desktop, OrbStack, Colima, or another Docker-compatible runtime running on the host, since VS Code devcontainers rely on your local Docker engine.
+
 ---
 
 ## How OpenSRE Works
