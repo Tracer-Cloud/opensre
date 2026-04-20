@@ -1,0 +1,21 @@
+# StressChaos memory: approaches pod memory limit; risk of OOMKill depending on node pressure.
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: stress-memory-demo
+  namespace: default
+spec:
+  mode: all
+  duration: "2m30s"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: stress-memory-demo
+  containerNames:
+    - nginx
+  stressors:
+    memory:
+      workers: 3
+      size: "180MB"

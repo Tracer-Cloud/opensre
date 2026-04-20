@@ -1,0 +1,19 @@
+# NetworkChaos packet corruption on pods labeled app=network-corrupt-demo.
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-corrupt-demo
+  namespace: default
+spec:
+  action: corrupt
+  mode: all
+  duration: "3m"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: network-corrupt-demo
+  corrupt:
+    corrupt: "25"
+    correlation: "0"

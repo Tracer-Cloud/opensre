@@ -1,0 +1,27 @@
+# Optional PodChaos on crashloop-demo pods (app=crashloop-demo).
+# Prereq: Chaos Mesh (`make chaos-mesh-up` or `make chaos-lab-up`).
+#
+# Apply workload + chaos together:
+#   make chaos-experiment-up EXPERIMENT=crashloop
+#
+# Manual kubectl (repo root):
+#   kubectl apply -f tests/chaos_engineering/experiments/crashloop/crashloop-demo.yaml --context=kind-tracer-k8s-test
+#   kubectl apply -f tests/chaos_engineering/experiments/crashloop/pod-kill-crashloop-chaos.yaml --context=kind-tracer-k8s-test
+#
+# Teardown (chaos CR first):
+#   kubectl delete -f tests/chaos_engineering/experiments/crashloop/pod-kill-crashloop-chaos.yaml --context=kind-tracer-k8s-test
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: kill-crashloop-demo
+  namespace: default
+spec:
+  action: pod-kill
+  mode: one
+  duration: "15s"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: crashloop-demo

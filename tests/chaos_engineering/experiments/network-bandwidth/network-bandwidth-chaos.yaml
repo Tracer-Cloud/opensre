@@ -1,0 +1,20 @@
+# NetworkChaos bandwidth cap on pods labeled app=network-bandwidth-demo.
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-bandwidth-demo
+  namespace: default
+spec:
+  action: bandwidth
+  mode: all
+  duration: "3m"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: network-bandwidth-demo
+  bandwidth:
+    rate: 1mbps
+    limit: 20971520
+    buffer: 10000

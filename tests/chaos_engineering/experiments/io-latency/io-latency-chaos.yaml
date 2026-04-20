@@ -1,0 +1,22 @@
+# IOChaos latency on /data mount (FUSE/toda injection into filesystem calls).
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: IOChaos
+metadata:
+  name: io-latency-demo
+  namespace: default
+spec:
+  action: latency
+  mode: all
+  duration: "3m"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: io-latency-demo
+  containerNames:
+    - workload
+  volumePath: /data
+  path: "/data/**/*"
+  delay: "350ms"
+  percent: 55

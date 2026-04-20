@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator, Coroutine, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, TypedDict, cast
+from typing import Literal, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -26,6 +26,7 @@ from mcp import ClientSession, StdioServerParameters, types  # type: ignore[impo
 from mcp.client.sse import sse_client  # type: ignore[import-not-found]
 from mcp.client.stdio import stdio_client  # type: ignore[import-not-found]
 from pydantic import Field, field_validator, model_validator
+from typing_extensions import TypedDict
 
 from app.integrations.mcp_streamable_http_compat import streamable_http_client
 from app.strict_config import StrictConfigModel

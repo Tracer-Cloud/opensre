@@ -13,8 +13,10 @@ build_report_context runs four phases:
 from __future__ import annotations
 
 import time
-from typing import Any, TypedDict
+from typing import Any
 from urllib.parse import urlparse
+
+from typing_extensions import TypedDict
 
 from app.nodes.publish_findings.urls.aws import (
     build_datadog_logs_url,

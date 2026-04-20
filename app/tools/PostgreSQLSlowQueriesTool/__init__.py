@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.postgresql import get_slow_queries, resolve_postgresql_config
+from app.integrations.postgresql import (
+    get_slow_queries,
+    postgresql_extract_params,
+    postgresql_is_available,
+    resolve_postgresql_config,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -16,6 +21,8 @@ from app.tools.tool_decorator import tool
         "Analyzing query execution patterns during incident timeframes",
         "Finding poorly optimized queries with high execution times or low cache hit rates",
     ],
+    is_available=postgresql_is_available,
+    extract_params=postgresql_extract_params,
 )
 def get_postgresql_slow_queries(
     host: str,

@@ -289,7 +289,7 @@ def score_result(
                 failure_reason = f"required evidence not gathered: {source_key!r}"
                 break
 
-        # 5. Primary evidence + explicit sequence check — for failover scenarios,
+    # 5. Primary evidence + explicit sequence check — for failover scenarios,
     # RDS events must be explicitly reflected in the reasoning, and the failover
     # sequence must be listed in the required ordered form.
     if not failure_reason and "aws_rds_events" in answer_key.required_evidence_sources:
@@ -324,7 +324,7 @@ def score_result(
 
         if not failure_reason and not sequence_present:
             failure_reason = "RDS event sequence not explicitly listed in required form"
-
+        
     passed = not failure_reason
     trajectory = score_trajectory(fixture, final_state)
     reasoning = score_reasoning(fixture, final_state, queried_metrics)

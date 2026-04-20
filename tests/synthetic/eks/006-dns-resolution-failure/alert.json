@@ -1,0 +1,25 @@
+{
+  "title": "[synthetic-k8s] Elevated error rate — payments-api",
+  "state": "alerting",
+  "alert_source": "datadog",
+  "commonLabels": {
+    "alertname": "HighErrorRate",
+    "severity": "critical",
+    "pipeline_name": "k8s-eks-synthetic",
+    "service": "payments-api",
+    "cluster_name": "payments-prod-eks",
+    "namespace": "payments",
+    "workload_type": "deployment",
+    "workload_name": "payments-api"
+  },
+  "commonAnnotations": {
+    "summary": "payments-api 5xx rate 42% over the last 5 minutes, well above the 2% baseline.",
+    "description": "All three pods are Running and Ready with zero restarts; yet user-facing requests are failing. No pod-level Kubernetes warnings.",
+    "error": "Elevated downstream errors visible only at the application layer.",
+    "suspected_symptom": "Healthy pods but elevated application errors.",
+    "cluster_name": "payments-prod-eks",
+    "kube_namespace": "payments",
+    "kube_deployment": "payments-api",
+    "context_sources": "datadog,eks"
+  }
+}

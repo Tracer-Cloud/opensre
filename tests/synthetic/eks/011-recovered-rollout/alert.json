@@ -1,0 +1,26 @@
+{
+  "title": "[synthetic-k8s] Rollout progress deadline exceeded — payments-api",
+  "state": "alerting",
+  "alert_source": "datadog",
+  "commonLabels": {
+    "alertname": "KubernetesDeploymentRolloutStuck",
+    "severity": "warning",
+    "pipeline_name": "k8s-eks-synthetic",
+    "service": "payments-api",
+    "cluster_name": "payments-prod-eks",
+    "namespace": "payments",
+    "workload_type": "deployment",
+    "workload_name": "payments-api"
+  },
+  "commonAnnotations": {
+    "summary": "Deployment payments-api emitted ProgressDeadlineExceeded for ReplicaSet payments-api-newrs-7c.",
+    "description": "Datadog flagged the historical ProgressDeadlineExceeded condition. Deployment status has not been re-checked since.",
+    "error": "",
+    "suspected_symptom": "Stuck deployment rollout.",
+    "cluster_name": "payments-prod-eks",
+    "kube_namespace": "payments",
+    "kube_deployment": "payments-api",
+    "k8s_failure_mode": "deployment_rollout_stuck",
+    "context_sources": "eks,datadog"
+  }
+}

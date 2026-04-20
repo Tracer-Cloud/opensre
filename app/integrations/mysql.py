@@ -199,6 +199,27 @@ def _truncate(text: str, max_len: int = _QUERY_TRUNCATE_LEN) -> str:
     return text[:max_len] + "..."
 
 
+def mysql_is_available(sources: dict[str, dict]) -> bool:
+    """Check if MySQL integration identifying params are present."""
+    my = sources.get("mysql", {})
+    return bool(my.get("host") and my.get("database"))
+
+
+def mysql_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
+    """Extract MySQL identifying params (host, database, port) from resolved integrations.
+
+    Credentials (username, password, ssl_mode) are resolved internally by
+    ``resolve_mysql_config`` from the integration store or environment, so
+    they never appear in tool signatures and are never seen by the LLM.
+    """
+    my = sources.get("mysql", {})
+    return {
+        "host": str(my.get("host", "")).strip(),
+        "database": str(my.get("database", "")).strip(),
+        "port": int(my.get("port") or DEFAULT_MYSQL_PORT),
+    }
+
+
 def get_server_status(config: MySQLConfig) -> dict[str, Any]:
     """Retrieve server status (connections, uptime, InnoDB buffer pool metrics).
 

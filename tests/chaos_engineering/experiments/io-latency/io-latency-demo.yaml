@@ -1,0 +1,45 @@
+# Busybox churning disk I/O on emptyDir; IOChaos injects latency on that mount.
+#
+# kubectl apply -f .../io-latency-demo.yaml --context=kind-tracer-k8s-test
+# kubectl apply -f .../io-latency-chaos.yaml --context=kind-tracer-k8s-test
+#
+# IOChaos can be destructive; use only on disposable test clusters.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: io-latency-demo
+  namespace: default
+  labels:
+    app: io-latency-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: io-latency-demo
+  template:
+    metadata:
+      labels:
+        app: io-latency-demo
+    spec:
+      containers:
+        - name: workload
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -c
+            - |
+              mkdir -p /data/churn
+              while true; do
+                for i in $(seq 1 30); do
+                  echo "line-$i-$(date +%s%N)" >> /data/churn/log.txt
+                  sync
+                done
+                sleep 0.1
+              done
+          volumeMounts:
+            - name: chaos-vol
+              mountPath: /data
+      volumes:
+        - name: chaos-vol
+          emptyDir: {}

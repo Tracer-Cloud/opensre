@@ -67,7 +67,6 @@ def _collect_cpu() -> dict[str, Any] | None:
     getloadavg = getattr(os, "getloadavg", None)
     if getloadavg is None:
         return None
-
     try:
         load1, load5, load15 = getloadavg()
         return {

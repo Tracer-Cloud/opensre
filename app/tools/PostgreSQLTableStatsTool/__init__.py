@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.postgresql import get_table_stats, resolve_postgresql_config
+from app.integrations.postgresql import (
+    get_table_stats,
+    postgresql_extract_params,
+    postgresql_is_available,
+    resolve_postgresql_config,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -16,6 +21,8 @@ from app.tools.tool_decorator import tool
         "Analyzing table scan patterns and index usage efficiency",
         "Checking table maintenance status like vacuum and analyze operations",
     ],
+    is_available=postgresql_is_available,
+    extract_params=postgresql_extract_params,
 )
 def get_postgresql_table_stats(
     host: str,

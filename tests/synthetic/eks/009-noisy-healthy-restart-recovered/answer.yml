@@ -1,0 +1,36 @@
+root_cause_category: healthy
+required_keywords:
+  - restart
+forbidden_categories:
+  - unknown
+  - resource_exhaustion
+  - configuration_error
+  - infrastructure
+optimal_trajectory:
+  - list_eks_pods
+  - get_eks_events
+  - query_datadog_monitors
+max_investigation_loops: 3
+ruling_out_keywords:
+  - not OOMKilled
+  - not currently restarting
+  - monitors are OK
+required_queries:
+  - list_eks_pods
+  - get_eks_events
+model_response: |
+  ROOT_CAUSE: No active failure detected. Pod payments-api-7f9dd8b6c4-x7gr9 had a single container restart over an hour ago, after which the container has been Running and Ready continuously. The remaining two replicas have restart_count=0. The Datadog restart-rate alert fired on a 1-restart threshold but the situation has self-resolved.
+  ROOT_CAUSE_CATEGORY: healthy
+
+  VALIDATED_CLAIMS:
+  - All 3 pods of payments-api are currently Running and Ready. [evidence: eks_pods]
+  - Pod payments-api-7f9dd8b6c4-x7gr9 has restart_count=1 with state.running=true and started_at over 60 minutes ago — no further restarts. [evidence: eks_pods]
+  - Only one historical Warning event (BackOff) exists for that pod, with last_time ~60 minutes ago. No new events. [evidence: eks_events]
+  - Datadog monitors for error rate, latency, and restart rate are all in OK state. [evidence: datadog_monitors]
+
+  NON_VALIDATED_CLAIMS:
+  - The transient restart may have been caused by a brief network or resource hiccup; without per-restart context it cannot be conclusively attributed.
+  - The alert threshold of 1 restart in an hour is sensitive enough to surface this transient event without distinguishing a CrashLoopBackOff.
+
+  CAUSAL_CHAIN:
+  - No active causal chain — system is healthy. A single transient restart over an hour ago triggered a low-threshold alert that has not re-armed.

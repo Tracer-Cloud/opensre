@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: install onboard benchmark benchmark-update-readme test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke deploy-langsmith destroy-langsmith test-langsmith deploy-vercel destroy-vercel test-vercel deploy-ec2 destroy-ec2 test-ec2 deploy-ec2-hello destroy-ec2-hello deploy-remote destroy-remote deploy-bedrock destroy-bedrock test-bedrock
+.PHONY: install onboard benchmark benchmark-update-readme test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog chaos-mesh-up chaos-mesh-down chaos-engineering-apply chaos-engineering-delete chaos-lab-up chaos-lab-down chaos-experiment-list chaos-experiment-up chaos-experiment-down deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke deploy-langsmith destroy-langsmith test-langsmith deploy-vercel destroy-vercel test-vercel deploy-ec2 destroy-ec2 test-ec2 deploy-ec2-hello destroy-ec2-hello deploy-remote destroy-remote deploy-bedrock destroy-bedrock test-bedrock
 
 ifneq ($(wildcard .venv/bin/python),)
 PYTHON = .venv/bin/python
@@ -104,6 +104,10 @@ test-synthetic:
 test-rds-synthetic:
 	$(PYTHON) -m tests.synthetic.rds_postgres.run_suite $(if $(SCENARIO),--scenario $(SCENARIO),)
 
+# Run synthetic Kubernetes RCA benchmark suite via the CLI runner (supports --json, --scenario, --mock-backends)
+test-k8s-synthetic:
+	$(PYTHON) -m tests.synthetic.eks.run_suite $(if $(SCENARIO),--scenario $(SCENARIO),)
+
 # Boot local Grafana+Loki, seed deterministic test logs, then run the RCA pipeline
 # Requires GRAFANA_INSTANCE_URL + GRAFANA_READ_TOKEN in .env (see .env.example for local defaults)
 test-rca-grafana: grafana-local-up grafana-local-seed
@@ -128,6 +132,59 @@ test-k8s:
 # Run Kubernetes + Datadog test (kind + DD Agent)
 test-k8s-datadog:
 	$(PYTHON) -m tests.e2e.kubernetes.test_datadog
+
+# Chaos Mesh on the kube context (default: kind-tracer-k8s-test). Override: make chaos-mesh-up KUBECTL_CONTEXT=...
+# CHAOS_MESH_RUNTIME=containerd matches kind; use docker only on older clusters.
+CHAOS_MESH_NS ?= chaos-mesh
+KUBECTL_CONTEXT ?= kind-tracer-k8s-test
+CHAOS_MESH_RUNTIME ?= containerd
+HELM_KUBE := $(if $(KUBECTL_CONTEXT),--kube-context $(KUBECTL_CONTEXT),)
+KUBECTL_FLAGS := $(if $(KUBECTL_CONTEXT),--context=$(KUBECTL_CONTEXT),)
+
+chaos-mesh-up:
+	@helm repo list 2>/dev/null | grep -q '^chaos-mesh' || helm repo add chaos-mesh https://charts.chaos-mesh.org
+	helm repo update
+	kubectl create namespace $(CHAOS_MESH_NS) --dry-run=client -o yaml | kubectl apply -f - $(KUBECTL_FLAGS)
+	helm upgrade --install chaos-mesh chaos-mesh/chaos-mesh -n $(CHAOS_MESH_NS) \
+		--set chaosDaemon.runtime=$(CHAOS_MESH_RUNTIME) \
+		$(HELM_KUBE)
+
+chaos-mesh-down:
+	-helm uninstall chaos-mesh -n $(CHAOS_MESH_NS) $(HELM_KUBE)
+	-kubectl delete namespace $(CHAOS_MESH_NS) $(KUBECTL_FLAGS)
+
+# Apply chaos-engineering manifests on KUBECTL_CONTEXT (nginx target, CrashLoop deployment, PodChaos).
+# Requires Chaos Mesh CRDs for pod-kill-demo.yaml (run make chaos-mesh-up first).
+chaos-engineering-apply:
+	kubectl apply -f tests/chaos_engineering/chaos-demo.yaml $(KUBECTL_FLAGS)
+	kubectl apply -f tests/chaos_engineering/experiments/crashloop/crashloop-demo.yaml $(KUBECTL_FLAGS)
+	kubectl apply -f tests/chaos_engineering/pod-kill-demo.yaml $(KUBECTL_FLAGS)
+
+chaos-engineering-delete:
+	-kubectl delete -f tests/chaos_engineering/pod-kill-demo.yaml $(KUBECTL_FLAGS)
+	-kubectl delete -f tests/chaos_engineering/experiments/crashloop/crashloop-demo.yaml $(KUBECTL_FLAGS)
+	-kubectl delete -f tests/chaos_engineering/chaos-demo.yaml $(KUBECTL_FLAGS)
+
+# Full chaos lab: kind + Datadog + Chaos Mesh + baseline workloads (same defaults as README).
+# Optional flags: CHAOS_LAB_FLAGS='--skip-kind' '--skip-datadog' '--no-wait-datadog' etc.
+chaos-lab-up:
+	$(PYTHON) -m tests.chaos_engineering lab up $(CHAOS_LAB_FLAGS)
+
+# Tear down lab (baseline, Chaos Mesh, Datadog namespace, kind cluster). Optional: CHAOS_LAB_DOWN_FLAGS='--keep-kind' '--keep-datadog'
+chaos-lab-down:
+	$(PYTHON) -m tests.chaos_engineering lab down $(CHAOS_LAB_DOWN_FLAGS)
+
+chaos-experiment-list:
+	$(PYTHON) -m tests.chaos_engineering experiment list
+
+# Apply experiments/<EXPERIMENT>/ (*-demo.yaml then *-chaos.yaml). Example: make chaos-experiment-up EXPERIMENT=pod-failure
+chaos-experiment-up:
+	@test -n "$(EXPERIMENT)" || (echo "Set EXPERIMENT=name (see: make chaos-experiment-list)" && false)
+	$(PYTHON) -m tests.chaos_engineering experiment apply $(EXPERIMENT)
+
+chaos-experiment-down:
+	@test -n "$(EXPERIMENT)" || (echo "Set EXPERIMENT=name (see: make chaos-experiment-list)" && false)
+	$(PYTHON) -m tests.chaos_engineering experiment delete $(EXPERIMENT)
 
 # Deploy Datadog monitors (requires DD_API_KEY + DD_APP_KEY)
 deploy-dd-monitors:
@@ -268,6 +325,38 @@ test-grafana:
 	@echo "Running Grafana integration tests..."
 	$(PYTHON) -m pytest tests/e2e/grafana_validation/test_grafana_cloud_queries.py -v
 
+# Spin up the local RabbitMQ stack (broker + publisher + slow consumer), wait
+# for a backlog to accumulate, then exercise the read-only diagnostic tools
+# against the real broker.  Used for the screen-video demo; NOT part of CI.
+rabbitmq-local-up:
+	@echo "Starting local RabbitMQ stack (broker + publisher + slow consumer)..."
+	docker compose -f docker-compose.rabbitmq.yml up -d
+	@echo "Waiting for broker to become healthy..."
+	@until docker compose -f docker-compose.rabbitmq.yml ps rabbitmq | grep -q "(healthy)"; do sleep 2; done
+	@echo "Broker healthy.  Letting backlog build for 20s..."
+	@sleep 20
+	@echo "Ready."
+
+rabbitmq-local-down:
+	docker compose -f docker-compose.rabbitmq.yml down -v
+
+# Run the RabbitMQ integration + tool tests, then invoke the verify command
+# against the live broker.  Requires the rabbitmq-local-up stack to be running.
+test-rabbitmq-real:
+	@echo "Running mocked RabbitMQ unit + e2e tests..."
+	$(PYTHON) -m pytest tests/integrations/test_rabbitmq.py tests/tools/test_rabbitmq_*.py tests/e2e/rabbitmq/ -v
+	@echo ""
+	@echo "Verifying against the live broker (requires \`make rabbitmq-local-up\`)..."
+	RABBITMQ_HOST=127.0.0.1 \
+	RABBITMQ_USERNAME=sre_admin \
+	RABBITMQ_PASSWORD=sre_password \
+	RABBITMQ_VHOST=/orders \
+	$(PYTHON) -c "from app.integrations.rabbitmq import rabbitmq_config_from_env, validate_rabbitmq_config, get_queue_backlog, get_broker_overview; \
+cfg = rabbitmq_config_from_env(); \
+print('validate:', validate_rabbitmq_config(cfg)); \
+print('overview:', get_broker_overview(cfg)); \
+print('backlog:', get_queue_backlog(cfg, max_results=5))"
+
 # Clean up
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -388,6 +477,12 @@ help:
 	@echo "  make test-k8s-local  - Run Kubernetes local test (kind)"
 	@echo "  make test-k8s        - Run Kubernetes test (matches CI)"
 	@echo "  make test-k8s-datadog - Run Kubernetes + Datadog test"
+	@echo "  make chaos-mesh-up - Install Chaos Mesh (Helm; default context kind-tracer-k8s-test)"
+	@echo "  make chaos-mesh-down - Uninstall Chaos Mesh + namespace"
+	@echo "  make chaos-engineering-apply - Apply chaos-demo + crashloop + PodChaos (same context)"
+	@echo "  make chaos-engineering-delete - Remove those workloads (PodChaos first)"
+	@echo "  make chaos-lab-up / chaos-lab-down - Full lab (kind+DD+mesh+baseline; runs python -m tests.chaos_engineering)"
+	@echo "  make chaos-experiment-list / chaos-experiment-up EXPERIMENT=... - Per-experiment apply"
 	@echo "  make deploy-dd-monitors - Deploy Datadog monitors (DD_API_KEY + DD_APP_KEY)"
 	@echo "  make cleanup-dd-monitors - Remove Datadog test monitors"
 	@echo "  make deploy-eks      - Deploy EKS cluster + ECR image"

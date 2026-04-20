@@ -177,6 +177,27 @@ def validate_postgresql_config(config: PostgreSQLConfig) -> PostgreSQLValidation
         return PostgreSQLValidationResult(ok=False, detail=f"PostgreSQL connection failed: {err}")
 
 
+def postgresql_is_available(sources: dict[str, dict]) -> bool:
+    """Check if PostgreSQL integration identifying params are present."""
+    pg = sources.get("postgresql", {})
+    return bool(pg.get("host") and pg.get("database"))
+
+
+def postgresql_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
+    """Extract PostgreSQL identifying params (host, database, port) from resolved integrations.
+
+    Credentials (username, password, ssl_mode) are resolved internally by
+    ``resolve_postgresql_config`` from the integration store or environment, so
+    they never appear in tool signatures and are never seen by the LLM.
+    """
+    pg = sources.get("postgresql", {})
+    return {
+        "host": str(pg.get("host", "")).strip(),
+        "database": str(pg.get("database", "")).strip(),
+        "port": int(pg.get("port") or DEFAULT_POSTGRESQL_PORT),
+    }
+
+
 def get_server_status(config: PostgreSQLConfig) -> dict[str, Any]:
     """Retrieve server status (connections, databases, uptime, cache hit ratio).
 

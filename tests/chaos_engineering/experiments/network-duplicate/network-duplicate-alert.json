@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for NetworkChaos duplicate",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/network-duplicate/network-duplicate-alert.json"
+  },
+  "title": "[Triggered] Erratic HTTP - network-duplicate-demo",
+  "alert_name": "Datadog monitor: duplicate / flaky traffic",
+  "pipeline_name": "network-duplicate-demo",
+  "severity": "medium",
+  "alert_source": "datadog",
+  "message": "Unusual latency or errors for deployment network-duplicate-demo",
+  "text": "NetworkChaos duplicate injects duplicated packets; clients may observe retries or unstable connections.",
+  "commonLabels": {
+    "pipeline_name": "network-duplicate-demo",
+    "severity": "medium",
+    "kube_deployment": "network-duplicate-demo"
+  },
+  "commonAnnotations": {
+    "summary": "Packet duplication chaos on network-duplicate-demo",
+    "query": "kube_namespace:default kube_deployment:network-duplicate-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "network-duplicate-demo",
+    "correlation_id": "network-duplicate-local-001"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "title": "[synthetic-k8s] Pod restarted — payments-api-7f9dd8b6c4-x7gr9",
+  "state": "alerting",
+  "alert_source": "datadog",
+  "commonLabels": {
+    "alertname": "KubernetesPodRestarting",
+    "severity": "warning",
+    "pipeline_name": "k8s-eks-synthetic",
+    "service": "payments-api",
+    "cluster_name": "payments-prod-eks",
+    "namespace": "payments",
+    "workload_type": "deployment",
+    "workload_name": "payments-api"
+  },
+  "commonAnnotations": {
+    "summary": "Pod payments-api-7f9dd8b6c4-x7gr9 reported a single container restart in the last hour.",
+    "description": "Datadog restart-count alert fired on a 1-restart threshold. No further restarts since.",
+    "error": "",
+    "suspected_symptom": "Possible CrashLoopBackOff.",
+    "cluster_name": "payments-prod-eks",
+    "kube_namespace": "payments",
+    "kube_deployment": "payments-api",
+    "kube_pod": "payments-api-7f9dd8b6c4-x7gr9",
+    "k8s_failure_mode": "crashloop_backoff",
+    "context_sources": "eks,datadog"
+  }
+}

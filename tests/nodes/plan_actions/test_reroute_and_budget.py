@@ -17,6 +17,7 @@ from app.nodes.plan_actions.plan_actions import (
     detect_reroute_trigger,
     plan_actions,
 )
+from app.tools.investigation_registry.prioritization import DETERMINISTIC_FALLBACK_REASON
 
 plan_actions_module = importlib.import_module("app.nodes.plan_actions.plan_actions")
 
@@ -218,9 +219,9 @@ def test_plan_actions_keeps_openclaw_seeded_when_budget_is_full(monkeypatch):
     def _mock_get_available_actions():
         return actions
 
-    def _mock_get_prioritized_actions(sources=None, keywords=None):
+    def _mock_get_prioritized_actions_with_reasons(sources=None, keywords=None):
         _ = (sources, keywords)
-        return actions
+        return actions, []
 
     def _mock_plan_actions_with_llm(**kwargs):
         return kwargs["plan_model"](
@@ -231,8 +232,8 @@ def test_plan_actions_keeps_openclaw_seeded_when_budget_is_full(monkeypatch):
     monkeypatch.setattr(plan_actions_module, "get_available_actions", _mock_get_available_actions)
     monkeypatch.setattr(
         plan_actions_module,
-        "get_prioritized_actions",
-        _mock_get_prioritized_actions,
+        "get_prioritized_actions_with_reasons",
+        _mock_get_prioritized_actions_with_reasons,
     )
     monkeypatch.setattr(plan_actions_module, "get_llm_for_tools", object)
     monkeypatch.setattr(
@@ -249,18 +250,24 @@ def test_plan_actions_keeps_openclaw_seeded_when_budget_is_full(monkeypatch):
         tool_budget=10,
     )
 
-    plan, available_sources, available_action_names, available_actions, rerouted, reroute_reason = (
-        plan_actions(
-            input_data=input_data,
-            plan_model=MockPlan,
-            resolved_integrations={
-                "openclaw": {
-                    "mode": "stdio",
-                    "command": "openclaw",
-                    "args": ["mcp", "serve"],
-                }
-            },
-        )
+    (
+        plan,
+        available_sources,
+        available_action_names,
+        available_actions,
+        rerouted,
+        reroute_reason,
+        inclusion_reasons,
+    ) = plan_actions(
+        input_data=input_data,
+        plan_model=MockPlan,
+        resolved_integrations={
+            "openclaw": {
+                "mode": "stdio",
+                "command": "openclaw",
+                "args": ["mcp", "serve"],
+            }
+        },
     )
 
     assert plan is not None
@@ -271,6 +278,75 @@ def test_plan_actions_keeps_openclaw_seeded_when_budget_is_full(monkeypatch):
     assert plan.actions[0] == "search_openclaw_conversations"
     assert rerouted is False
     assert reroute_reason == ""
+    assert inclusion_reasons == []
+
+
+def test_plan_actions_keeps_deterministic_fallback_when_budget_is_full(monkeypatch):
+    actions = [MockAction(f"action_{i}", "datadog") for i in range(10)]
+    actions.append(MockAction("get_sre_guidance", "knowledge"))
+
+    def _mock_get_available_actions():
+        return actions
+
+    def _mock_get_prioritized_actions_with_reasons(sources=None, keywords=None):
+        _ = (sources, keywords)
+        return actions, [
+            {
+                "name": action.name,
+                "score": 0,
+                "reasons": [DETERMINISTIC_FALLBACK_REASON]
+                if action.name == "get_sre_guidance"
+                else ["no source or keyword match"],
+                "source": action.source,
+                "tags": [],
+            }
+            for action in actions
+        ]
+
+    def _mock_plan_actions_with_llm(**kwargs):
+        return kwargs["plan_model"](
+            actions=["action_0", "action_1"],
+            rationale="Mocked planner output",
+        )
+
+    monkeypatch.setattr(plan_actions_module, "get_available_actions", _mock_get_available_actions)
+    monkeypatch.setattr(
+        plan_actions_module,
+        "get_prioritized_actions_with_reasons",
+        _mock_get_prioritized_actions_with_reasons,
+    )
+    monkeypatch.setattr(plan_actions_module, "get_llm_for_tools", object)
+    monkeypatch.setattr(
+        plan_actions_module,
+        "plan_actions_with_llm",
+        _mock_plan_actions_with_llm,
+    )
+
+    input_data = InvestigateInput(
+        raw_alert={"alert_name": "Checkout API error rate spike", "service": "checkout-api"},
+        context={},
+        problem_md="# Checkout API error rate spike",
+        alert_name="Checkout API error rate spike",
+        tool_budget=10,
+    )
+
+    (
+        plan,
+        _available_sources,
+        available_action_names,
+        available_actions,
+        _rerouted,
+        _reroute_reason,
+        _inclusion_reasons,
+    ) = plan_actions(
+        input_data=input_data,
+        plan_model=MockPlan,
+        resolved_integrations={"datadog": {"api_key": "test"}},
+    )
+
+    assert plan is not None
+    assert available_action_names[0] == "get_sre_guidance"
+    assert available_actions[0].name == "get_sre_guidance"
 
 
 def test_summarize_execution_results_does_not_record_failed_actions_in_hypotheses():

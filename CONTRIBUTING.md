@@ -49,6 +49,8 @@ See **[SETUP.md](SETUP.md)** for detailed setup instructions including Windows-s
 3. Run checks: `make lint && make typecheck && make test-cov`
 4. Build release artifacts when needed: `make build`
 
+If you prefer VS Code, you can use the repo's devcontainer at [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) instead of setting up Python manually.
+
 ---
 
 **The full flow:**

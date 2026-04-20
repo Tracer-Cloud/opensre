@@ -1,0 +1,19 @@
+# NetworkChaos packet loss on pods labeled app=network-loss-demo.
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-loss-demo
+  namespace: default
+spec:
+  action: loss
+  mode: all
+  duration: "3m"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: network-loss-demo
+  loss:
+    loss: "40"
+    correlation: "0"

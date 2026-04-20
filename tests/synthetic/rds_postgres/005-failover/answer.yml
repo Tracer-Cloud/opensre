@@ -3,18 +3,21 @@ required_keywords:
   - failover
   - Multi-AZ
   - health check failure
+<<<<<<< synthetic-005-failover
   - primary evidence source
   - workload resumed normally
   - failover initiated
   - failover completed
   - instance available
+=======
+>>>>>>> main
 required_evidence_sources:
   - aws_rds_events
 optimal_trajectory:
   - query_grafana_logs
   - query_grafana_metrics
   - query_grafana_alert_rules
-max_investigation_loops: 3
+max_investigation_loops: 4
 model_response: |
   ROOT_CAUSE: Based on the RDS event timeline (primary evidence source), a Multi-AZ automatic failover occurred on payments-prod, triggered by a health check failure on the primary host. This was an infrastructure event rather than resource exhaustion, and the system recovered and workload resumed normally after failover completion.
   ROOT_CAUSE_CATEGORY: infrastructure

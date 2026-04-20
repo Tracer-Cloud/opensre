@@ -11,7 +11,7 @@ optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs
   - query_grafana_alert_rules
-max_investigation_loops: 3
+max_investigation_loops: 4
 model_response: |
   ROOT_CAUSE: CPU saturation on catalog-prod caused by a full table scan query (SELECT * FROM orders WHERE status = ?) running at 7.2 out of 8 available vCPUs. The query lacks a selective index on the status column, forcing sequential scans at 16,000–18,000 ReadIOPS.
   ROOT_CAUSE_CATEGORY: resource_exhaustion
