@@ -303,9 +303,14 @@ def build_investigation_prompt(
     Returns:
         Formatted prompt string for LLM
     """
-    executed_sources_set = _get_executed_sources(executed_hypotheses)
+    executed_actions_flat = set()
+    for hyp in executed_hypotheses:
+        actions_list = hyp.get("actions", [])
+        if isinstance(actions_list, list):
+            executed_actions_flat.update(actions_list)
+
     executed_actions = [
-        action.name for action in available_actions if action.source in executed_sources_set
+        action.name for action in available_actions if action.name in executed_actions_flat
     ]
 
     available_actions_filtered = [
@@ -384,8 +389,8 @@ Planning rules:
 10. For database resource incidents, explicitly consider:
    - idle or long-lived connections
    - slow or blocking queries
-   - background processes (e.g. WAL, vacuum, audit_log (audit logging))
-   - storage growth sources such as audit_log or excessive logging
+   - background processes (e.g. WAL, vacuum, or audit logging systems depending on the database engine)
+   - storage growth sources such as audit logs (for PostgreSQL/Aurora) or other logging mechanisms
    Prefer actions that reveal these mechanisms when relevant signals (CPU, connections, storage) are elevated.
 
 When selecting actions, optimize for:
@@ -397,7 +402,7 @@ When selecting actions, optimize for:
 
 Additionally:
 - When connection counts are high, explicitly evaluate whether idle connections are contributing to the issue and include this explicitly in your reasoning if relevant.
-- When storage pressure is observed, explicitly consider audit_log as a potential contributing factor and include it explicitly if relevant.
+- When storage pressure is observed, explicitly consider audit logs or database-specific logging mechanisms (e.g. audit_log for PostgreSQL/Aurora)
 
 Avoid:
 - collecting general context that does not help separate hypotheses
