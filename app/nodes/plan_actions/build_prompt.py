@@ -309,9 +309,7 @@ def build_investigation_prompt(
         if isinstance(actions_list, list):
             executed_actions_flat.update(actions_list)
 
-    executed_actions = [
-        action.name for action in available_actions if action.name in executed_actions_flat
-    ]
+    executed_actions = sorted(executed_actions_flat)
 
     available_actions_filtered = [
         action for action in available_actions if action.name not in executed_actions
