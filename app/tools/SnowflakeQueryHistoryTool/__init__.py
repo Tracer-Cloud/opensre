@@ -33,7 +33,7 @@ def _snowflake_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, A
         "warehouse": str(sf.get("warehouse", "")).strip(),
         "role": str(sf.get("role", "")).strip(),
         "database": str(sf.get("database", "")).strip(),
-        "schema": str(sf.get("schema", "")).strip(),
+        "db_schema": str(sf.get("schema", "")).strip(),
         "query": str(sf.get("query", "")).strip(),
         "limit": 50,
         "max_results": int(sf.get("max_results", _DEFAULT_MAX_RESULTS) or _DEFAULT_MAX_RESULTS),
@@ -109,7 +109,7 @@ def _normalize_rows(response_payload: dict[str, Any]) -> list[dict[str, Any]]:
             "warehouse": {"type": "string"},
             "role": {"type": "string"},
             "database": {"type": "string"},
-            "schema": {"type": "string"},
+            "db_schema": {"type": "string"},
             "integration_id": {"type": "string"},
             "timeout_seconds": {"type": "number", "default": 20.0},
         },
@@ -129,7 +129,7 @@ def query_snowflake_history(
     warehouse: str = "",
     role: str = "",
     database: str = "",
-    schema: str = "",
+    db_schema: str = "",
     integration_id: str = "",
     timeout_seconds: float = 20.0,
     **_kwargs: Any,
@@ -159,8 +159,8 @@ def query_snowflake_history(
         payload["role"] = role
     if database:
         payload["database"] = database
-    if schema:
-        payload["schema"] = schema
+    if db_schema:
+        payload["schema"] = db_schema
 
     try:
         response = httpx.post(endpoint, headers=headers, json=payload, timeout=max(1.0, timeout_seconds))
