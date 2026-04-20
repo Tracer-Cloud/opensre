@@ -300,6 +300,31 @@ def _setup_vercel() -> None:
     upsert_integration("vercel", {"credentials": {"api_token": api_token, "team_id": team_id}})
 
 
+def _setup_betterstack() -> None:
+    query_endpoint = _p(
+        "Better Stack SQL query endpoint (e.g. https://eu-nbg-2-connect.betterstackdata.com)"
+    )
+    username = _p(
+        "Better Stack username (Integrations > Connect ClickHouse HTTP client)"
+    )
+    password = _p("Better Stack password", secret=True)
+    tables_raw = _p("Source tables, comma-separated (optional hint for the planner)")
+    if not query_endpoint or not username:
+        _die("query_endpoint and username are required.")
+    tables = [part.strip() for part in tables_raw.split(",") if part.strip()]
+    upsert_integration(
+        "betterstack",
+        {
+            "credentials": {
+                "query_endpoint": query_endpoint,
+                "username": username,
+                "password": password,
+                "tables": tables,
+            }
+        },
+    )
+
+
 def _setup_github() -> None:
     print("  1) SSE  2) Streamable HTTP  3) stdio")
     choice = _p("Choice", default="2")
@@ -637,6 +662,7 @@ def _setup_alertmanager() -> None:
 _HANDLERS: dict[str, Any] = {
     "alertmanager": _setup_alertmanager,
     "aws": _setup_aws,
+    "betterstack": _setup_betterstack,
     "coralogix": _setup_coralogix,
     "datadog": _setup_datadog,
     "grafana": _setup_grafana,
