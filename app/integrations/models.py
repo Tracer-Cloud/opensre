@@ -582,6 +582,7 @@ class EffectiveIntegrations(StrictConfigModel):
     mongodb_atlas: EffectiveIntegrationEntry | None = None
     mariadb: EffectiveIntegrationEntry | None = None
     rabbitmq: EffectiveIntegrationEntry | None = None
+    betterstack: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
     gitlab: EffectiveIntegrationEntry | None = None
     vercel: EffectiveIntegrationEntry | None = None
