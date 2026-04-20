@@ -105,11 +105,6 @@ azure_sql = [
 [tool.setuptools.packages.find]
 include = ["app*", "tests*"]
 
-[tool.pytest.ini_options]
-markers = [
-    "synthetic: LLM-based synthetic RCA scenario tests (non-deterministic)",
-]
-
 # With pytest-xdist (-n auto), each worker writes a fragment; put them under
 # .pytest_cache/ (already gitignored) instead of .coverage.<hostname>.* at repo root.
 [tool.coverage.run]
