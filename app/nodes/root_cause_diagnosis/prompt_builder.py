@@ -55,6 +55,7 @@ def build_diagnosis_prompt(
     upstream_directive = _build_upstream_directive(evidence)
     database_directive = _build_database_directive(evidence)
     kubernetes_directive = _build_kubernetes_directive(state, evidence)
+    failover_directive = _build_failover_directive(evidence)
     memory_section = _build_memory_section(memory_context)
 
     # Build evidence sections
@@ -66,7 +67,7 @@ def build_diagnosis_prompt(
 Goal: Be helpful and accurate. Prefer evidence-backed explanations over speculation.
 If the exact root cause cannot be proven, provide the most likely explanation based on observed evidence,
 and clearly state what is unknown.
-{upstream_directive}{database_directive}{kubernetes_directive}{memory_section}
+{upstream_directive}{database_directive}{kubernetes_directive}{failover_directive}{memory_section}
 DEFINITIONS:
 - VALIDATED_CLAIMS: Directly supported by the evidence shown below (observed facts).
 - NON_VALIDATED_CLAIMS: Plausible hypotheses or contributing factors that are NOT directly proven by the evidence.
@@ -80,34 +81,6 @@ RULES:
 - Keep each claim to one sentence.
 - When possible, mention which evidence source supports a validated claim using one of:
   {", ".join(ALLOWED_EVIDENCE_SOURCES)}.
-
-FAILOVER-SPECIFIC RULES:
-- If aws_rds_events contain an RDS failover sequence, you MUST treat aws_rds_events as the primary evidence source.
-- You MUST explicitly state: "Based on the RDS event timeline (primary evidence source)".
-
-- You MUST NOT refer to Grafana logs, metrics, or any data-plane signals as the source of the RDS event timeline.
-- Do NOT use phrases like "in grafana_logs", "from logs", or "based on metrics" when describing RDS events.
-- RDS events must always be described as control-plane evidence, not log-derived signals.
-
-- For RDS failover incidents, ROOT_CAUSE must explicitly mention:
-  - Multi-AZ failover
-  - health check failure
-  - RDS event timeline as the primary evidence source
-
-- For RDS failover incidents, VALIDATED_CLAIMS MUST explicitly include the exact full event sequence using this wording:
-  failover initiated -> failover in progress -> failover completed -> instance available
-- Do not replace "instance available" with synonyms such as "instance running", "instance resumed", or "instance active".
-
-- The event sequence MUST be explicitly listed in this exact ordered form (initiated -> in progress -> completed -> available), not just described implicitly.
-
-- For RDS failover incidents, CAUSAL_CHAIN MUST explicitly connect:
-  health check failure -> failover -> standby promotion -> DNS update -> brief outage -> recovery
-
-- If evidence shows the instance became available again after failover, you MUST explicitly state:
-  "the system recovered and workload resumed normally"
-
-- In failover scenarios, metrics/logs may only be used as supporting context (e.g., connection drop), never as the root cause.
-- Do not describe connection drops, CPU drops, IOPS drops, or throughput drops as the root cause when they are downstream effects of failover.
 
 PROBLEM:
 {problem}
@@ -144,6 +117,78 @@ CAUSAL_CHAIN:
 """
 
     return prompt
+
+
+def _build_failover_directive(evidence: dict[str, Any]) -> str:
+    rds_events = evidence.get("aws_rds_events", [])
+    grafana_logs = evidence.get("grafana_logs", [])
+    grafana_error_logs = evidence.get("grafana_error_logs", [])
+
+    event_messages = " ".join(
+        str(event.get("message", "")).lower()
+        for event in rds_events
+        if isinstance(event, dict)
+    )
+
+    log_messages = " ".join(
+        str(log.get("message", "")).lower()
+        for log in [*grafana_logs, *grafana_error_logs]
+        if isinstance(log, dict)
+    )
+
+    combined = f"{event_messages} {log_messages}"
+
+    is_failover_scenario = (
+        "failover" in combined
+        and (
+            "multi-az" in combined
+            or "health check failure" in combined
+            or "primary host" in combined
+        )
+    )
+
+    if not is_failover_scenario:
+        return ""
+
+    return """
+FAILOVER-SPECIFIC RULES:
+- This incident is an RDS failover scenario.
+- You MUST treat the failover event timeline as the primary evidence source.
+- You MUST use the exact phrase: "primary evidence source".
+- You MUST include the exact phrases:
+  - "failover initiated"
+  - "failover in progress"
+  - "failover completed"
+  - "instance available"
+  - "workload resumed normally"
+- Do not paraphrase or omit any of these phrases.
+- Do not refer to Grafana logs or metrics as the primary evidence source.
+- Metrics/logs may be used only as supporting context.
+
+REQUIRED FAILOVER OUTPUT:
+- ROOT_CAUSE MUST include:
+  "Based on the RDS event timeline (primary evidence source)"
+- VALIDATED_CLAIMS MUST include one claim with this exact sequence:
+  "failover initiated -> failover in progress -> failover completed -> instance available"
+- CAUSAL_CHAIN MUST include:
+  "health check failure -> failover -> standby promotion -> DNS update -> brief outage -> recovery"
+- ROOT_CAUSE or VALIDATED_CLAIMS MUST explicitly say:
+  "the system recovered and workload resumed normally"
+
+If any of these exact phrases are missing, the answer is incomplete even if the diagnosis is otherwise correct.
+
+ADDITIONAL OUTPUT ENFORCEMENT (FAILOVER ONLY):
+- ROOT_CAUSE MUST start with:
+  "Based on the RDS event timeline (primary evidence source)"
+- ROOT_CAUSE MUST include ALL of:
+  "failover initiated"
+  "failover in progress"
+  "failover completed"
+  "instance available"
+  "workload resumed normally"
+- VALIDATED_CLAIMS MUST include EXACTLY:
+  "failover initiated -> failover in progress -> failover completed -> instance available"
+"""
 
 
 def _build_upstream_directive(evidence: dict[str, Any]) -> str:
