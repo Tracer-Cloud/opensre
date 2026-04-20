@@ -1184,11 +1184,7 @@ def detect_sources(
         # ``betterstack_extract_params`` can pass it into the tool as the runtime
         # ``source`` kwarg — otherwise the executor has no path to propagate
         # alert-derived source targeting into the tool.
-        source_hint = str(
-            annotations.get("betterstack_source")
-            or annotations.get("source")
-            or ""
-        ).strip()
+        source_hint = str(annotations.get("betterstack_source") or "").strip()
         sources["betterstack"] = {
             "query_endpoint": str(betterstack_int.get("query_endpoint", "")).strip(),
             "username": str(betterstack_int.get("username", "")).strip(),
