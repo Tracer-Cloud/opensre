@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_BETTERSTACK_TIMEOUT_S = 15
 DEFAULT_BETTERSTACK_MAX_ROWS = 500
 _MAX_ALLOWED_ROWS = 10_000
-_REQUIRED_CONTENT_TYPE = "plain/text"
+_REQUIRED_CONTENT_TYPE = "text/plain"
 _REQUIRED_QUERY_PARAMS = {"output_format_pretty_row_numbers": "0"}
 _VALIDATION_PROBE_SQL = "SELECT 1 FORMAT JSONEachRow"
 # Source identifiers are ClickHouse bare identifiers (``t{team_id}_{source}``).
