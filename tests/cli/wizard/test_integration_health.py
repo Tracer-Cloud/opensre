@@ -421,7 +421,7 @@ def test_validate_betterstack_integration_succeeds(monkeypatch) -> None:
         query_endpoint="https://eu-nbg-2-connect.betterstackdata.com",
         username="u",
         password="p",
-        tables=["t1_myapp_logs"],
+        sources=["t1_myapp"],
     )
     assert result.ok is True
     assert result.detail == "Connected."

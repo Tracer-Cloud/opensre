@@ -1173,6 +1173,31 @@ def detect_sources(
             "connection_verified": True,
         }
 
+    betterstack_int = (resolved_integrations or {}).get("betterstack")
+    if (
+        betterstack_int
+        and str(betterstack_int.get("query_endpoint", "")).strip()
+        and str(betterstack_int.get("username", "")).strip()
+    ):
+        # Alerts can carry an explicit ``betterstack_source`` annotation (the base
+        # identifier of the source to query). We surface it as ``source_hint`` so
+        # ``betterstack_extract_params`` can pass it into the tool as the runtime
+        # ``source`` kwarg — otherwise the executor has no path to propagate
+        # alert-derived source targeting into the tool.
+        source_hint = str(
+            annotations.get("betterstack_source")
+            or annotations.get("source")
+            or ""
+        ).strip()
+        sources["betterstack"] = {
+            "query_endpoint": str(betterstack_int.get("query_endpoint", "")).strip(),
+            "username": str(betterstack_int.get("username", "")).strip(),
+            "password": str(betterstack_int.get("password") or ""),
+            "sources": list(betterstack_int.get("sources", []) or []),
+            "source_hint": source_hint,
+            "connection_verified": True,
+        }
+
     alertmanager_int = (resolved_integrations or {}).get("alertmanager")
     if alertmanager_int and str(alertmanager_int.get("base_url", "")).strip():
         # Carry label filters from the alert when present so tools can pre-scope the query

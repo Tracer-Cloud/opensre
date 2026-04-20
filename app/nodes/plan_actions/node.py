@@ -79,6 +79,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
             "query_datadog_logs",
             "query_honeycomb_traces",
             "query_coralogix_logs",
+            "query_betterstack_logs",
             "get_cloudwatch_logs",
             "get_host_metrics",
             "list_eks_pods",

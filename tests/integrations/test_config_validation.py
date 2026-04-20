@@ -37,13 +37,13 @@ def test_betterstack_config_strips_trailing_slash_and_whitespace() -> None:
     assert cfg.username == "user"
 
 
-def test_betterstack_config_tables_from_comma_string() -> None:
+def test_betterstack_config_sources_from_comma_string() -> None:
     cfg = BetterStackIntegrationConfig(
         query_endpoint="https://x",
         username="u",
-        tables="t1_myapp_logs, t2_gateway_logs",  # type: ignore[arg-type]
+        sources="t1_myapp, t2_gateway",  # type: ignore[arg-type]
     )
-    assert cfg.tables == ["t1_myapp_logs", "t2_gateway_logs"]
+    assert cfg.sources == ["t1_myapp", "t2_gateway"]
 
 
 def test_sentry_config_rejects_unknown_fields_with_suggestion() -> None:

@@ -568,7 +568,7 @@ def _classify_service_instance(
                     "query_endpoint": credentials.get("query_endpoint", ""),
                     "username": credentials.get("username", ""),
                     "password": credentials.get("password", ""),
-                    "tables": credentials.get("tables", []),
+                    "sources": credentials.get("sources", []),
                 }
             )
         except Exception:
@@ -578,7 +578,7 @@ def _classify_service_instance(
                 "query_endpoint": bs_config.query_endpoint,
                 "username": bs_config.username,
                 "password": bs_config.password,
-                "tables": list(bs_config.tables),
+                "sources": list(bs_config.sources),
                 "integration_id": record_id,
             }, "betterstack"
         return None, None
@@ -1231,7 +1231,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "query_endpoint": bs_endpoint,
                     "username": bs_username,
                     "password": os.getenv("BETTERSTACK_PASSWORD", ""),
-                    "tables": os.getenv("BETTERSTACK_TABLES", ""),
+                    "sources": os.getenv("BETTERSTACK_SOURCES", ""),
                 }
             )
             integrations.append(

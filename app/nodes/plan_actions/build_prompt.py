@@ -190,6 +190,21 @@ def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
 - Use query_coralogix_logs to search Coralogix DataPrime logs for the failing service or error signature"""
         )
 
+    if "betterstack" in available_sources:
+        betterstack = available_sources["betterstack"]
+        bs_sources = betterstack.get("sources") or []
+        sources_line = (
+            ", ".join(bs_sources)
+            if bs_sources
+            else "none pre-configured (planner must supply 'source' from alert metadata)"
+        )
+        hints.append(
+            f"""Better Stack Telemetry Available:
+- Query endpoint: {betterstack.get("query_endpoint") or "unknown"}
+- Configured sources: {sources_line}
+- Use query_betterstack_logs with a 'source' identifier (base name like t123456_myapp; _logs / _s3 suffixes are appended internally) to UNION recent and historical logs via ClickHouse SQL"""
+        )
+
     if "bitbucket" in available_sources:
         bitbucket = available_sources["bitbucket"]
         hints.append(

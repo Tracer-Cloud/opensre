@@ -90,6 +90,7 @@ _ACTION_DISPLAY: dict[str, str] = {
     "query_grafana_traces":       "Grafana Tempo",
     "query_grafana_metrics":      "Grafana Mimir",
     "query_grafana_alert_rules":  "Grafana alerts",
+    "query_betterstack_logs":     "Better Stack logs",
     "get_cloudwatch_logs":        "CloudWatch",
     "get_error_logs":             "error logs",
     "get_failed_jobs":            "batch jobs",

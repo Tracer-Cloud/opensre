@@ -28,6 +28,7 @@ ALLOWED_EVIDENCE_SOURCES = [
     "datadog_logs",
     "datadog_monitors",
     "datadog_events",
+    "betterstack_logs",
     "vercel",
     "github",
 ]
@@ -384,6 +385,24 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
         for log in grafana_logs[:10]:
             message = log.get("message", "") if isinstance(log, dict) else str(log)
             section += f"- {message[:300]}\n"
+        sections.append(section)
+
+    # Better Stack Telemetry logs (ClickHouse JSONEachRow rows with dt + raw)
+    betterstack_logs = evidence.get("betterstack_logs", [])
+    if betterstack_logs:
+        bs_source = evidence.get("betterstack_source", "") or "(unknown source)"
+        section = (
+            f"\nBetter Stack Logs ({len(betterstack_logs)} rows from {bs_source}):\n"
+        )
+        for row in betterstack_logs[:15]:
+            if not isinstance(row, dict):
+                continue
+            dt = str(row.get("dt", "")).strip()
+            raw = str(row.get("raw", "")).strip()
+            if dt:
+                section += f"- [{dt}] {raw[:300]}\n"
+            elif raw:
+                section += f"- {raw[:300]}\n"
         sections.append(section)
 
     # Grafana traces

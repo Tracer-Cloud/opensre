@@ -451,7 +451,7 @@ def validate_betterstack_integration(
     query_endpoint: str,
     username: str,
     password: str,
-    tables: list[str] | None = None,
+    sources: list[str] | None = None,
 ) -> IntegrationHealthResult:
     """Validate Better Stack Telemetry credentials via a ``SELECT 1`` probe."""
     try:
@@ -460,7 +460,7 @@ def validate_betterstack_integration(
                 "query_endpoint": query_endpoint,
                 "username": username,
                 "password": password,
-                "tables": list(tables or []),
+                "sources": list(sources or []),
             }
         )
     except Exception as err:  # noqa: BLE001 — config errors should surface to the user verbatim

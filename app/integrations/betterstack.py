@@ -1,18 +1,17 @@
 """Shared Better Stack Telemetry integration helpers.
 
-Better Stack's Telemetry query API is a ClickHouse HTTP interface with Basic
-auth. Credentials are generated in the dashboard's ``Integrations → Connect
-ClickHouse HTTP client`` panel. SQL is sent as the request body; the endpoint
-is region-specific (e.g. ``https://eu-nbg-2-connect.betterstackdata.com``)
-and the user supplies it along with the generated username/password.
+Provides configuration, connectivity validation, and read-only log queries
+against Better Stack's ClickHouse SQL over HTTP endpoint (Basic auth). Recent
+and historical log rows are UNIONed across ``remote(<source>_logs)`` and
+``s3Cluster(primary, <source>_s3) WHERE _row_type = 1`` per Better Stack's
+own sample query, so a single call returns both live-stream and archived data.
 
-All operations are production-safe: read-only SQL, timeouts enforced, result
-sizes capped. Source tables are named ``t{team_id}_{source}_logs`` and must be
-referenced via ClickHouse table functions (``remote(...)`` for recent logs,
-``s3Cluster(primary, ...)`` for historical). The SQL API does not expose a
-``system.tables`` / ``SHOW TABLES`` endpoint, so source-table discovery is
-handled via the optional ``BETTERSTACK_TABLES`` env hint that this module
-surfaces to the planner through ``extract_params``.
+Credentials are generated in the dashboard under ``Integrations → Connect
+ClickHouse HTTP client`` (username + password + a region-specific endpoint
+like ``https://eu-nbg-2-connect.betterstackdata.com``). The SQL endpoint does
+not expose a documented source-listing query, so the optional
+``BETTERSTACK_SOURCES`` env var surfaces user-supplied source IDs to the
+planner via ``extract_params``.
 """
 
 from __future__ import annotations
@@ -38,10 +37,10 @@ _MAX_ALLOWED_ROWS = 10_000
 _REQUIRED_CONTENT_TYPE = "plain/text"
 _REQUIRED_QUERY_PARAMS = {"output_format_pretty_row_numbers": "0"}
 _VALIDATION_PROBE_SQL = "SELECT 1 FORMAT JSONEachRow"
-# Better Stack source tables are ``t{team_id}_{source_name}_logs`` — always a
-# ClickHouse-safe bare identifier. Anything else in the FROM position would be
-# SQL injection, so we reject unless it matches this whitelist.
-_TABLE_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
+# Source identifiers are ClickHouse bare identifiers (``t{team_id}_{source}``).
+# Anything else would land in the FROM clause as SQL injection, so reject
+# anything not matching this whitelist.
+_SOURCE_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 
 class BetterStackConfig(StrictConfigModel):
@@ -50,7 +49,7 @@ class BetterStackConfig(StrictConfigModel):
     query_endpoint: str = ""
     username: str = ""
     password: str = ""
-    tables: list[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
     timeout_seconds: int = Field(default=DEFAULT_BETTERSTACK_TIMEOUT_S, gt=0)
     max_rows: int = Field(default=DEFAULT_BETTERSTACK_MAX_ROWS, gt=0, le=_MAX_ALLOWED_ROWS)
     integration_id: str = ""
@@ -72,9 +71,9 @@ class BetterStackConfig(StrictConfigModel):
         # this step only coerces ``None`` / non-string inputs into ``""``.
         return str(value or "")
 
-    @field_validator("tables", mode="before")
+    @field_validator("sources", mode="before")
     @classmethod
-    def _normalize_tables(cls, value: Any) -> list[str]:
+    def _normalize_sources(cls, value: Any) -> list[str]:
         if value in (None, ""):
             return []
         if isinstance(value, str):
@@ -98,7 +97,7 @@ def betterstack_config_from_env() -> BetterStackConfig | None:
     """Load a Better Stack config from ``BETTERSTACK_*`` env vars.
 
     Returns ``None`` when either the endpoint or username is missing. The
-    ``BETTERSTACK_TABLES`` env var is an optional comma-separated hint list
+    ``BETTERSTACK_SOURCES`` env var is an optional comma-separated hint list
     surfaced to the planner via :func:`betterstack_extract_params`; it is
     not required for availability.
     """
@@ -111,7 +110,7 @@ def betterstack_config_from_env() -> BetterStackConfig | None:
             "query_endpoint": endpoint,
             "username": username,
             "password": os.getenv("BETTERSTACK_PASSWORD", ""),
-            "tables": os.getenv("BETTERSTACK_TABLES", ""),
+            "sources": os.getenv("BETTERSTACK_SOURCES", ""),
         }
     )
 
@@ -119,7 +118,7 @@ def betterstack_config_from_env() -> BetterStackConfig | None:
 def betterstack_is_available(sources: dict[str, dict]) -> bool:
     """Check if Better Stack integration credentials are present.
 
-    Only the three auth fields gate availability. ``tables`` is an optional
+    Only the three auth fields gate availability. ``sources`` is an optional
     planner hint and does not block the tool from being offered.
     """
     bs = sources.get("betterstack", {})
@@ -127,13 +126,23 @@ def betterstack_is_available(sources: dict[str, dict]) -> bool:
 
 
 def betterstack_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    """Extract Better Stack credentials and optional table hints for tool calls."""
+    """Extract Better Stack credentials and optional source hints for tool calls.
+
+    Returns both the full ``sources`` hint list and a scalar ``source`` (derived
+    from the alert annotation, when the planner has populated ``source_hint``
+    via :mod:`app.nodes.plan_actions.detect_sources`). The executor invokes tools
+    purely via ``action.run(**action.extract_params(...))``; we therefore have
+    to surface the alert-derived target as a concrete kwarg here — the planner
+    can't inject it at call time.
+    """
     bs = sources.get("betterstack", {})
+    source_hint = str(bs.get("source_hint", "") or "").strip()
     return {
         "query_endpoint": bs.get("query_endpoint", ""),
         "username": bs.get("username", ""),
         "password": bs.get("password", ""),
-        "tables": list(bs.get("tables", []) or []),
+        "sources": list(bs.get("sources", []) or []),
+        "source": source_hint,
     }
 
 
@@ -238,22 +247,22 @@ def validate_betterstack_config(
 # ---------------------------------------------------------------------------
 
 
-def _error_evidence(error: str, *, table: str = "") -> dict[str, Any]:
+def _error_evidence(error: str, *, source: str = "") -> dict[str, Any]:
     """Standard error-shape dict returned by query functions on failure."""
     return {
         "source": "betterstack",
         "available": False,
         "error": error,
-        "table": table,
+        "betterstack_source": source,
         "rows": [],
         "row_count": 0,
     }
 
 
-def _validate_table_name(table: str) -> str | None:
-    """Return the table name if it is a safe bare identifier, else ``None``."""
-    cleaned = (table or "").strip()
-    if not cleaned or not _TABLE_NAME_RE.fullmatch(cleaned):
+def _validate_source_name(source: str) -> str | None:
+    """Return the source identifier if it is a safe bare identifier, else ``None``."""
+    cleaned = (source or "").strip()
+    if not cleaned or not _SOURCE_NAME_RE.fullmatch(cleaned):
         return None
     return cleaned
 
@@ -272,26 +281,41 @@ def _validate_iso_timestamp(value: str | None) -> str | None:
     return value
 
 
+def _time_predicate(since: str | None, until: str | None) -> str:
+    """Build the shared ``dt >= … AND dt <= …`` WHERE fragment (or empty)."""
+    parts: list[str] = []
+    if since:
+        parts.append(f"dt >= parseDateTime64BestEffort('{since}', 3, 'UTC')")
+    if until:
+        parts.append(f"dt <= parseDateTime64BestEffort('{until}', 3, 'UTC')")
+    return " AND ".join(parts)
+
+
 def _build_logs_query(
-    table: str,
+    source: str,
     since: str | None,
     until: str | None,
     limit: int,
 ) -> str:
-    """Build a ClickHouse ``remote(...)`` query for recent log rows."""
-    where_parts: list[str] = []
-    if since:
-        where_parts.append(
-            f"dt >= parseDateTime64BestEffort('{since}', 3, 'UTC')"
-        )
-    if until:
-        where_parts.append(
-            f"dt <= parseDateTime64BestEffort('{until}', 3, 'UTC')"
-        )
-    where_sql = f"\nWHERE {' AND '.join(where_parts)}" if where_parts else ""
+    """Build a UNION query over ``remote(<source>_logs)`` and ``s3Cluster(primary, <source>_s3)``.
+
+    Matches the sample query Better Stack's dashboard generates on connection
+    creation: recent logs come from the ``remote(...)`` table function; historical
+    (archived) log rows live in S3 and are filtered by ``_row_type = 1`` to
+    exclude spans and metrics that share the same ``_s3`` collection.
+    """
+    time_pred = _time_predicate(since, until)
+    recent_where = f"\n  WHERE {time_pred}" if time_pred else ""
+    hist_conds = ["_row_type = 1"]
+    if time_pred:
+        hist_conds.append(time_pred)
+    hist_where = f"\n  WHERE {' AND '.join(hist_conds)}"
     return (
-        "SELECT dt, raw\n"
-        f"FROM remote({table}){where_sql}\n"
+        "SELECT dt, raw FROM (\n"
+        f"  SELECT dt, raw FROM remote({source}_logs){recent_where}\n"
+        "  UNION ALL\n"
+        f"  SELECT dt, raw FROM s3Cluster(primary, {source}_s3){hist_where}\n"
+        ")\n"
         "ORDER BY dt DESC\n"
         f"LIMIT {limit}\n"
         "FORMAT JSONEachRow"
@@ -316,47 +340,49 @@ def _parse_json_each_row(body: str) -> list[dict[str, Any]]:
 
 def query_logs(
     config: BetterStackConfig,
-    table: str,
+    source: str,
     since: str | None = None,
     until: str | None = None,
     limit: int | None = None,
 ) -> dict[str, Any]:
-    """Fetch recent log rows for a Better Stack source table.
+    """Fetch log rows for a Better Stack source (recent + historical).
 
     Parameters:
         config: authenticated ``BetterStackConfig``.
-        table: source table name (e.g. ``t123456_myapp_logs``); must match
-            ``[A-Za-z0-9_]+``.
+        source: Better Stack source identifier (e.g. ``t123456_myapp_logs``);
+            must match ``[A-Za-z0-9_]+``. Do NOT include the ``_logs`` or
+            ``_s3`` suffix — this function appends them to build the
+            ``remote(...)`` and ``s3Cluster(primary, ...)`` table functions.
         since: optional ISO-8601 lower-bound timestamp.
         until: optional ISO-8601 upper-bound timestamp.
         limit: optional row cap; clamped to ``config.max_rows``.
     """
     if not config.is_configured:
-        return _error_evidence("Not configured.", table=table)
+        return _error_evidence("Not configured.", source=source)
 
-    safe_table = _validate_table_name(table)
-    if safe_table is None:
+    safe_source = _validate_source_name(source)
+    if safe_source is None:
         return _error_evidence(
-            f"Invalid Better Stack table name: {table!r}. "
-            "Expected a ClickHouse bare identifier (e.g. t123456_myapp_logs).",
-            table=table,
+            f"Invalid Better Stack source identifier: {source!r}. "
+            "Expected a ClickHouse bare identifier (e.g. t123456_myapp).",
+            source=source,
         )
 
     since_sql = _validate_iso_timestamp(since)
     if since and since_sql is None:
         return _error_evidence(
             f"Invalid 'since' timestamp: {since!r}. Expected ISO-8601.",
-            table=safe_table,
+            source=safe_source,
         )
     until_sql = _validate_iso_timestamp(until)
     if until and until_sql is None:
         return _error_evidence(
             f"Invalid 'until' timestamp: {until!r}. Expected ISO-8601.",
-            table=safe_table,
+            source=safe_source,
         )
 
     effective_limit = min(int(limit or config.max_rows), config.max_rows)
-    sql = _build_logs_query(safe_table, since_sql, until_sql, effective_limit)
+    sql = _build_logs_query(safe_source, since_sql, until_sql, effective_limit)
 
     try:
         with _sql_client(config) as client:
@@ -364,32 +390,32 @@ def query_logs(
     except Exception as err:  # noqa: BLE001 — final-resort guard around transport setup
         logger.debug("Better Stack query_logs failed", exc_info=True)
         return _error_evidence(
-            f"Better Stack connection failed: {err}", table=safe_table
+            f"Better Stack connection failed: {err}", source=safe_source
         )
 
     if err is not None or response is None:
         return _error_evidence(
             err or "Better Stack request returned no response.",
-            table=safe_table,
+            source=safe_source,
         )
 
     if response.status_code == 401:
         return _error_evidence(
             "Better Stack authentication failed (check credentials).",
-            table=safe_table,
+            source=safe_source,
         )
     if response.status_code != 200:
         return _error_evidence(
             f"Better Stack query returned HTTP {response.status_code}: "
             f"{response.text[:200]}",
-            table=safe_table,
+            source=safe_source,
         )
 
     rows = _parse_json_each_row(response.text)
     return {
         "source": "betterstack",
         "available": True,
-        "table": safe_table,
+        "betterstack_source": safe_source,
         "rows": rows,
         "row_count": len(rows),
         "limit": effective_limit,

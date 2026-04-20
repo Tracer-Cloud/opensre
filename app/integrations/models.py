@@ -334,7 +334,7 @@ class BetterStackIntegrationConfig(StrictConfigModel):
     query_endpoint: str
     username: str
     password: str = ""
-    tables: list[str] = []
+    sources: list[str] = []
     integration_id: str = ""
 
     @field_validator("query_endpoint", mode="before")
@@ -347,9 +347,9 @@ class BetterStackIntegrationConfig(StrictConfigModel):
     def _normalize_username(cls, value: object) -> str:
         return str(value or "").strip()
 
-    @field_validator("tables", mode="before")
+    @field_validator("sources", mode="before")
     @classmethod
-    def _normalize_tables(cls, value: object) -> list[str]:
+    def _normalize_sources(cls, value: object) -> list[str]:
         if value in (None, ""):
             return []
         if isinstance(value, str):

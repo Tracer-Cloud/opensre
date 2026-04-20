@@ -308,10 +308,12 @@ def _setup_betterstack() -> None:
         "Better Stack username (Integrations > Connect ClickHouse HTTP client)"
     )
     password = _p("Better Stack password", secret=True)
-    tables_raw = _p("Source tables, comma-separated (optional hint for the planner)")
+    sources_raw = _p(
+        "Better Stack sources, comma-separated base IDs from dashboard (optional hint for the planner)"
+    )
     if not query_endpoint or not username:
         _die("query_endpoint and username are required.")
-    tables = [part.strip() for part in tables_raw.split(",") if part.strip()]
+    sources = [part.strip() for part in sources_raw.split(",") if part.strip()]
     upsert_integration(
         "betterstack",
         {
@@ -319,7 +321,7 @@ def _setup_betterstack() -> None:
                 "query_endpoint": query_endpoint,
                 "username": username,
                 "password": password,
-                "tables": tables,
+                "sources": sources,
             }
         },
     )

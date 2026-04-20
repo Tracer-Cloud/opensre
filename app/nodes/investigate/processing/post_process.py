@@ -246,6 +246,15 @@ def _map_coralogix_logs(data: dict) -> dict:
     }
 
 
+def _map_betterstack_logs(data: dict) -> dict:
+    return {
+        "betterstack_logs": data.get("rows", []),
+        "betterstack_source": data.get("betterstack_source", ""),
+        "betterstack_logs_count": data.get("row_count", 0),
+        "betterstack_logs_limit": data.get("limit", 0),
+    }
+
+
 def _map_diagnostic_code_result(data: dict, current_evidence: dict) -> dict:
     executions = list(current_evidence.get("diagnostic_executions", []))
     executions.append({
@@ -394,6 +403,7 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "query_datadog_all": _map_datadog_investigate,
     "query_honeycomb_traces": _map_honeycomb_traces,
     "query_coralogix_logs": _map_coralogix_logs,
+    "query_betterstack_logs": _map_betterstack_logs,
     "vercel_deployment_status": _map_vercel_deployment_status,
     "vercel_deployment_logs": _map_vercel_deployment_logs,
     "search_github_code": _map_github_code_search,
@@ -565,6 +575,12 @@ def build_evidence_summary(execution_results: dict[str, ActionExecutionResult]) 
             elif action_name == "query_coralogix_logs" and data.get("logs"):
                 error_count = len(data.get("error_logs", []))
                 summary_parts.append(f"coralogix:{len(data['logs'])} logs ({error_count} errors)")
+            elif action_name == "query_betterstack_logs" and data.get("rows"):
+                bs_source = str(data.get("betterstack_source", "")).strip() or "?"
+                summary_parts.append(
+                    f"betterstack:{data.get('row_count', len(data['rows']))} rows "
+                    f"from {bs_source}"
+                )
             elif action_name == "run_diagnostic_code":
                 if data.get("success"):
                     stdout_lines = len(data.get("stdout", "").splitlines())

@@ -16,16 +16,18 @@ from app.tools.tool_decorator import tool
 @tool(
     name="query_betterstack_logs",
     description=(
-        "Query a Better Stack Telemetry source table for recent log rows "
-        "using ClickHouse SQL over HTTP. Returns (dt, raw) pairs from "
-        "remote(table), optionally bounded by ISO-8601 since/until timestamps."
+        "Query a Better Stack Telemetry source for log rows using ClickHouse "
+        "SQL over HTTP. Returns (dt, raw) pairs by UNIONing recent logs from "
+        "remote(<source>_logs) with historical logs from s3Cluster(primary, "
+        "<source>_s3) WHERE _row_type = 1, optionally bounded by since/until "
+        "timestamps (ISO 8601)."
     ),
     source="betterstack",
     surfaces=("investigation", "chat"),
     use_cases=[
-        "Fetching recent application log lines from a Better Stack source during RCA",
+        "Fetching application log lines from a Better Stack source during RCA",
         "Correlating timestamped log events with an alert window",
-        "Scanning a specific source table (e.g. t123456_myapp_logs) for recent activity",
+        "Scanning a specific source (e.g. t123456_myapp) for recent and archived activity",
     ],
     is_available=betterstack_is_available,
     extract_params=betterstack_extract_params,
@@ -34,33 +36,37 @@ def query_betterstack_logs(
     query_endpoint: str,
     username: str,
     password: str = "",
-    tables: list[str] | None = None,
-    table: str = "",
+    sources: list[str] | None = None,
+    source: str = "",
     since: str | None = None,
     until: str | None = None,
     limit: int | None = None,
 ) -> dict[str, Any]:
-    """Query recent log rows from a Better Stack source table.
+    """Query log rows from a Better Stack source (recent + historical).
 
-    ``query_endpoint`` / ``username`` / ``password`` / ``tables`` are sourced
+    ``query_endpoint`` / ``username`` / ``password`` / ``sources`` are sourced
     automatically from the Better Stack integration via ``extract_params``.
-    The planner supplies ``table`` (a single table to query); when it omits
-    ``table`` we fall back to the first entry in the configured ``tables``
-    hint list, or return a structured error if nothing is configured.
+    The planner supplies ``source`` (a single source identifier to query);
+    when it omits ``source`` we fall back to the first entry in the configured
+    ``sources`` hint list, or return a structured error if nothing is configured.
+
+    The ``source`` argument is the base identifier (e.g. ``t123456_myapp``);
+    the integration appends ``_logs`` and ``_s3`` internally to build the
+    ``remote(...)`` and ``s3Cluster(primary, ...)`` table functions.
     """
-    effective_table = (table or "").strip()
-    if not effective_table and tables:
-        effective_table = next((t for t in tables if t), "")
+    effective_source = (source or "").strip()
+    if not effective_source and sources:
+        effective_source = next((s for s in sources if s), "")
 
     config = BetterStackConfig(
         query_endpoint=query_endpoint,
         username=username,
         password=password,
-        tables=list(tables or []),
+        sources=list(sources or []),
     )
     return query_logs(
         config,
-        effective_table,
+        effective_source,
         since=since,
         until=until,
         limit=limit,

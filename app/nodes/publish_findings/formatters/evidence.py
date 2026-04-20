@@ -181,6 +181,11 @@ def _format_tool_calls_line(ctx: ReportContext) -> str:
             lambda e: f"{len(e.get('datadog_events', []))} events" if e.get("datadog_events") else None,
             lambda _: f"https://app.{datadog_site}/event/explorer",
         ),
+        "query_betterstack_logs": (
+            "Better Stack Logs",
+            lambda e: f"{len(e.get('betterstack_logs', []))} rows" if e.get("betterstack_logs") else None,
+            None,  # Better Stack SQL endpoint has no user-facing deep-link URL
+        ),
     }
 
     parts: list[str] = []

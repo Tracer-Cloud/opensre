@@ -1203,19 +1203,19 @@ def _configure_betterstack() -> tuple[str, str]:
             default=_string_value(credentials.get("password")),
             secret=True,
         )
-        tables_raw = _prompt_value(
-            "Better Stack source tables (comma-separated, optional hint for the planner)",
-            default=_joined_values(credentials.get("tables"), separator=",", fallback=""),
+        sources_raw = _prompt_value(
+            "Better Stack sources (comma-separated base IDs from dashboard, e.g. t123456_myapp; optional planner hint)",
+            default=_joined_values(credentials.get("sources"), separator=",", fallback=""),
             allow_empty=True,
         )
-        tables = [part.strip() for part in tables_raw.split(",") if part.strip()]
+        sources = [part.strip() for part in sources_raw.split(",") if part.strip()]
 
         with _console.status("Validating Better Stack integration...", spinner="dots"):
             result = validate_betterstack_integration(
                 query_endpoint=query_endpoint,
                 username=username,
                 password=password,
-                tables=tables,
+                sources=sources,
             )
         _render_integration_result("Better Stack", result)
         if result.ok:
@@ -1226,7 +1226,7 @@ def _configure_betterstack() -> tuple[str, str]:
                         "query_endpoint": query_endpoint,
                         "username": username,
                         "password": password,
-                        "tables": tables,
+                        "sources": sources,
                     }
                 },
             )
@@ -1235,7 +1235,7 @@ def _configure_betterstack() -> tuple[str, str]:
                     "BETTERSTACK_QUERY_ENDPOINT": query_endpoint,
                     "BETTERSTACK_USERNAME": username,
                     "BETTERSTACK_PASSWORD": password,
-                    "BETTERSTACK_TABLES": ",".join(tables),
+                    "BETTERSTACK_SOURCES": ",".join(sources),
                 }
             )
             return "Better Stack", str(env_path)
