@@ -36,6 +36,6 @@ def test_local_grafana_compose_uses_workspace_override_for_devcontainers() -> No
     compose = (REPO_ROOT / "app/cli/wizard/local_grafana_stack/docker-compose.yml").read_text()
 
     assert (
-        "${LOCAL_WORKSPACE_FOLDER:-.}/app/cli/wizard/local_grafana_stack/provisioning"
+        "${LOCAL_WORKSPACE_FOLDER:-}/app/cli/wizard/local_grafana_stack/provisioning"
         in compose
     )
