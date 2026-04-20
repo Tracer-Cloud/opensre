@@ -61,18 +61,6 @@ def get_environment() -> Environment:
     return Environment.DEVELOPMENT
 
 
-def get_clerk_config() -> ClerkConfig:
-    """Get Clerk configuration for current environment.
-
-    Returns:
-        ClerkConfig for the current environment.
-    """
-    env = get_environment()
-    if env == Environment.PRODUCTION:
-        return CLERK_CONFIG_PROD
-    return CLERK_CONFIG_DEV
-
-
 # JWT Configuration
 JWT_ALGORITHM = "RS256"
 JWKS_CACHE_TTL_SECONDS = 3600

@@ -18,6 +18,8 @@ from app.tools.utils.compaction import truncate_list
         "Understanding batch job performance",
         "Identifying AWS infrastructure issues",
     ],
+    tags=("metrics", "aws"),
+    cost_tier="moderate",
     requires=["job_queue"],
     input_schema={
         "type": "object",

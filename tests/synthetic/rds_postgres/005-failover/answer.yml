@@ -9,7 +9,7 @@ optimal_trajectory:
   - query_grafana_logs
   - query_grafana_metrics
   - query_grafana_alert_rules
-max_investigation_loops: 3
+max_investigation_loops: 4
 model_response: |
   ROOT_CAUSE: A Multi-AZ automatic failover occurred on payments-prod, triggered by a health check failure on the primary host. The connection drop lasted approximately 45 seconds — the expected duration for a Multi-AZ promotion. The RDS control-plane event sequence is the decisive signal.
   ROOT_CAUSE_CATEGORY: infrastructure

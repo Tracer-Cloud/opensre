@@ -10,7 +10,7 @@ optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs
   - query_grafana_alert_rules
-max_investigation_loops: 3
+max_investigation_loops: 4
 model_response: |
   ROOT_CAUSE: The database hit connection exhaustion because leaked client sessions consumed nearly all available max_connections. The outage came from session pressure, not a compute bottleneck. CPUUtilization showed mild elevation (~35-50%) from minute 4 onward, but this is a symptom of accumulated idle client sessions making periodic lightweight queries — not an independent CPU saturation event.
   ROOT_CAUSE_CATEGORY: resource_exhaustion

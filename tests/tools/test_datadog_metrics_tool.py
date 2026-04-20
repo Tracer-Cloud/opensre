@@ -11,9 +11,13 @@ class TestDataDogMetricsToolContract(BaseToolContract):
         return query_datadog_metrics.__opensre_registered_tool__
 
 
-def test_is_available_requires_connection_verified() -> None:
+def test_is_available_returns_false_until_implemented() -> None:
+    # Stub is hidden from the planner (see issue #669) so that the LLM never
+    # burns a tool-call budget slot on a tool that always returns a "not yet
+    # implemented" error.  Flip this expectation back to the connection_verified
+    # gate once the Metrics API v2 body is in place.
     rt = query_datadog_metrics.__opensre_registered_tool__
-    assert rt.is_available({"datadog": {"connection_verified": True}}) is True
+    assert rt.is_available({"datadog": {"connection_verified": True}}) is False
     assert rt.is_available({"datadog": {}}) is False
     assert rt.is_available({}) is False
 

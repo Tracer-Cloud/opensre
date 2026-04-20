@@ -19,7 +19,7 @@ optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs
   - query_grafana_alert_rules
-max_investigation_loops: 3
+max_investigation_loops: 4
 model_response: |
   ROOT_CAUSE: Two independent resource limits are being hit simultaneously on analytics-prod, forming a compositional fault. (1) CPU saturation: an analytics aggregation query (SELECT ... FROM analytics_events GROUP BY) is consuming 6.8 avg active sessions and 5.9 CPU AAS — nearly exhausting all 8 vCPUs. (2) Storage exhaustion: an audit_log INSERT job is writing ~847 rows/sec, generating 7.4 GB of data per minute, and FreeStorageSpace has dropped from 50 GB to 8 GB in 20 minutes. These are causally independent — the analytics query and the audit_log write burst started at the same time by coincidence.
   ROOT_CAUSE_CATEGORY: resource_exhaustion

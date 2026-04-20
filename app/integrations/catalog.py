@@ -30,6 +30,7 @@ from app.integrations.mongodb_atlas import build_mongodb_atlas_config
 from app.integrations.mysql import build_mysql_config
 from app.integrations.openclaw import build_openclaw_config
 from app.integrations.postgresql import build_postgresql_config
+from app.integrations.rabbitmq import build_rabbitmq_config
 from app.integrations.sentry import build_sentry_config
 from app.integrations.store import _STRUCTURAL_RECORD_FIELDS, load_integrations
 from app.services.vercel import VercelConfig
@@ -59,6 +60,8 @@ _SERVICE_KEY_MAP = {
     "mongodb_atlas": "mongodb_atlas",
     "atlas": "mongodb_atlas",
     "mariadb": "mariadb",
+    "rabbitmq": "rabbitmq",
+    "amqp": "rabbitmq",
     "vercel": "vercel",
     "opsgenie": "opsgenie",
     "jira": "jira",
@@ -66,6 +69,15 @@ _SERVICE_KEY_MAP = {
     "openclaw": "openclaw",
     "mysql": "mysql",
     "azure_sql": "azure_sql",
+    "bitbucket": "bitbucket",
+    "snowflake": "snowflake",
+    "azure": "azure",
+    "azure monitor": "azure",
+    "azure_monitor": "azure",
+    "openobserve": "openobserve",
+    "open observe": "openobserve",
+    "opensearch": "opensearch",
+    "open search": "opensearch",
     "alertmanager": "alertmanager",
 }
 
@@ -83,6 +95,18 @@ _SERVICE_FAMILY = {
 
 def _family_key(flat_key: str) -> str:
     return _SERVICE_FAMILY.get(flat_key, flat_key)
+
+
+def _safe_int(value: Any, default: int) -> int:
+    """Coerce ``value`` to int, falling back to ``default`` on bad input.
+
+    Mirrors the helper in ``app.nodes.plan_actions.detect_sources``; duplicated
+    here to avoid pulling node-layer code into the shared catalog module.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _record_instances(record: dict[str, Any]) -> list[dict[str, Any]]:
@@ -506,6 +530,34 @@ def _classify_service_instance(
             }, "mysql"
         return None, None
 
+    if key == "rabbitmq":
+        try:
+            rabbitmq_config = build_rabbitmq_config(
+                {
+                    "host": credentials.get("host", ""),
+                    "management_port": credentials.get("management_port", 15672),
+                    "username": credentials.get("username", ""),
+                    "password": credentials.get("password", ""),
+                    "vhost": credentials.get("vhost", "/"),
+                    "ssl": credentials.get("ssl", False),
+                    "verify_ssl": credentials.get("verify_ssl", True),
+                }
+            )
+        except Exception:
+            return None, None
+        if rabbitmq_config.host and rabbitmq_config.username:
+            return {
+                "host": rabbitmq_config.host,
+                "management_port": rabbitmq_config.management_port,
+                "username": rabbitmq_config.username,
+                "password": rabbitmq_config.password,
+                "vhost": rabbitmq_config.vhost,
+                "ssl": rabbitmq_config.ssl,
+                "verify_ssl": rabbitmq_config.verify_ssl,
+                "integration_id": record_id,
+            }, "rabbitmq"
+        return None, None
+
     if key == "azure_sql":
         try:
             azure_sql_config = build_azure_sql_config(
@@ -541,6 +593,90 @@ def _classify_service_instance(
         if alertmanager_config.base_url:
             return alertmanager_config.model_dump(), "alertmanager"
         return None, None
+
+    if key == "bitbucket":
+        workspace = str(credentials.get("workspace", "")).strip()
+        if not workspace:
+            return None, None
+        base_url = str(
+            credentials.get("base_url", "https://api.bitbucket.org/2.0")
+        ).strip() or "https://api.bitbucket.org/2.0"
+        return {
+            "workspace": workspace,
+            "username": str(credentials.get("username", "")).strip(),
+            "app_password": str(credentials.get("app_password", "")).strip(),
+            "base_url": base_url,
+            "max_results": max(1, min(_safe_int(credentials.get("max_results", 25), 25), 100)),
+            "integration_id": record_id,
+        }, "bitbucket"
+
+    if key == "snowflake":
+        account_identifier = str(
+            credentials.get("account_identifier", credentials.get("account", ""))
+        ).strip()
+        token = str(credentials.get("token", "")).strip()
+        if not (account_identifier and token):
+            return None, None
+        return {
+            "account_identifier": account_identifier,
+            "user": str(credentials.get("user", "")).strip(),
+            "password": str(credentials.get("password", "")).strip(),
+            "token": token,
+            "warehouse": str(credentials.get("warehouse", "")).strip(),
+            "role": str(credentials.get("role", "")).strip(),
+            "database": str(credentials.get("database", "")).strip(),
+            "schema": str(credentials.get("schema", "")).strip(),
+            "max_results": max(1, min(_safe_int(credentials.get("max_results", 50), 50), 200)),
+            "integration_id": record_id,
+        }, "snowflake"
+
+    if key == "azure":
+        workspace_id = str(credentials.get("workspace_id", "")).strip()
+        access_token = str(credentials.get("access_token", "")).strip()
+        if not (workspace_id and access_token):
+            return None, None
+        endpoint = str(
+            credentials.get("endpoint", "https://api.loganalytics.io")
+        ).strip() or "https://api.loganalytics.io"
+        return {
+            "workspace_id": workspace_id,
+            "access_token": access_token,
+            "endpoint": endpoint,
+            "tenant_id": str(credentials.get("tenant_id", "")).strip(),
+            "subscription_id": str(credentials.get("subscription_id", "")).strip(),
+            "max_results": max(1, min(_safe_int(credentials.get("max_results", 100), 100), 500)),
+            "integration_id": record_id,
+        }, "azure"
+
+    if key == "openobserve":
+        base_url = str(credentials.get("base_url", "")).strip()
+        api_token = str(credentials.get("api_token", "")).strip()
+        username = str(credentials.get("username", "")).strip()
+        password = str(credentials.get("password", "")).strip()
+        if not (base_url and (api_token or (username and password))):
+            return None, None
+        return {
+            "base_url": base_url.rstrip("/"),
+            "org": str(credentials.get("org", "default")).strip() or "default",
+            "api_token": api_token,
+            "username": username,
+            "password": password,
+            "stream": str(credentials.get("stream", "")).strip(),
+            "max_results": max(1, min(_safe_int(credentials.get("max_results", 100), 100), 500)),
+            "integration_id": record_id,
+        }, "openobserve"
+
+    if key == "opensearch":
+        url = str(credentials.get("url", "")).strip()
+        if not url:
+            return None, None
+        return {
+            "url": url.rstrip("/"),
+            "api_key": str(credentials.get("api_key", "")).strip(),
+            "index_pattern": str(credentials.get("index_pattern", "*")).strip() or "*",
+            "max_results": max(1, min(_safe_int(credentials.get("max_results", 100), 100), 500)),
+            "integration_id": record_id,
+        }, "opensearch"
 
     # Fallback for unknown services: pass through credentials + record id.
     return {"credentials": credentials, "integration_id": record_id}, key
@@ -1029,6 +1165,38 @@ def load_env_integrations() -> list[dict[str, Any]]:
         except Exception:
             logger.debug("Failed to load MariaDB config from env", exc_info=True)
 
+    rabbitmq_host = os.getenv("RABBITMQ_HOST", "").strip()
+    rabbitmq_username = os.getenv("RABBITMQ_USERNAME", "").strip()
+    if rabbitmq_host and rabbitmq_username:
+        try:
+            rabbitmq_config = build_rabbitmq_config(
+                {
+                    "host": rabbitmq_host,
+                    "management_port": os.getenv(
+                        "RABBITMQ_MANAGEMENT_PORT", "15672"
+                    ).strip(),
+                    "username": rabbitmq_username,
+                    "password": os.getenv("RABBITMQ_PASSWORD", ""),
+                    "vhost": os.getenv("RABBITMQ_VHOST", "/").strip(),
+                    "ssl": os.getenv("RABBITMQ_SSL", "false").strip().lower()
+                    in ("true", "1", "yes"),
+                    "verify_ssl": os.getenv("RABBITMQ_VERIFY_SSL", "true")
+                    .strip()
+                    .lower()
+                    in ("true", "1", "yes"),
+                }
+            )
+            integrations.append(
+                {
+                    "id": "env-rabbitmq",
+                    "service": "rabbitmq",
+                    "status": "active",
+                    "credentials": rabbitmq_config.model_dump(exclude={"integration_id"}),
+                }
+            )
+        except Exception:
+            logger.debug("Failed to load RabbitMQ config from env", exc_info=True)
+
     mysql_host = os.getenv("MYSQL_HOST", "").strip()
     mysql_database = os.getenv("MYSQL_DATABASE", "").strip()
     if mysql_host and mysql_database:
@@ -1075,6 +1243,113 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 "service": "azure_sql",
                 "status": "active",
                 "credentials": azure_sql_config.model_dump(exclude={"integration_id"}),
+            }
+        )
+
+    bitbucket_workspace = os.getenv("BITBUCKET_WORKSPACE", "").strip()
+    if bitbucket_workspace:
+        integrations.append(
+            {
+                "id": "env-bitbucket",
+                "service": "bitbucket",
+                "status": "active",
+                "credentials": {
+                    "workspace": bitbucket_workspace,
+                    "username": os.getenv("BITBUCKET_USERNAME", "").strip(),
+                    "app_password": os.getenv("BITBUCKET_APP_PASSWORD", "").strip(),
+                    "base_url": os.getenv(
+                        "BITBUCKET_BASE_URL", "https://api.bitbucket.org/2.0"
+                    ).strip()
+                    or "https://api.bitbucket.org/2.0",
+                    "max_results": _safe_int(os.getenv("BITBUCKET_MAX_RESULTS", "25"), 25),
+                },
+            }
+        )
+
+    snowflake_account = (
+        os.getenv("SNOWFLAKE_ACCOUNT_IDENTIFIER", "").strip()
+        or os.getenv("SNOWFLAKE_ACCOUNT", "").strip()
+    )
+    snowflake_token = os.getenv("SNOWFLAKE_TOKEN", "").strip()
+    if snowflake_account and snowflake_token:
+        integrations.append(
+            {
+                "id": "env-snowflake",
+                "service": "snowflake",
+                "status": "active",
+                "credentials": {
+                    "account_identifier": snowflake_account,
+                    "user": os.getenv("SNOWFLAKE_USER", "").strip(),
+                    "password": os.getenv("SNOWFLAKE_PASSWORD", "").strip(),
+                    "token": snowflake_token,
+                    "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE", "").strip(),
+                    "role": os.getenv("SNOWFLAKE_ROLE", "").strip(),
+                    "database": os.getenv("SNOWFLAKE_DATABASE", "").strip(),
+                    "schema": os.getenv("SNOWFLAKE_SCHEMA", "").strip(),
+                    "max_results": _safe_int(os.getenv("SNOWFLAKE_MAX_RESULTS", "50"), 50),
+                },
+            }
+        )
+
+    azure_workspace_id = os.getenv("AZURE_LOG_ANALYTICS_WORKSPACE_ID", "").strip()
+    azure_access_token = os.getenv("AZURE_LOG_ANALYTICS_TOKEN", "").strip()
+    if azure_workspace_id and azure_access_token:
+        integrations.append(
+            {
+                "id": "env-azure",
+                "service": "azure",
+                "status": "active",
+                "credentials": {
+                    "workspace_id": azure_workspace_id,
+                    "access_token": azure_access_token,
+                    "endpoint": (
+                        os.getenv(
+                            "AZURE_LOG_ANALYTICS_ENDPOINT", "https://api.loganalytics.io"
+                        ).strip()
+                        or "https://api.loganalytics.io"
+                    ),
+                    "tenant_id": os.getenv("AZURE_TENANT_ID", "").strip(),
+                    "subscription_id": os.getenv("AZURE_SUBSCRIPTION_ID", "").strip(),
+                    "max_results": _safe_int(os.getenv("AZURE_MAX_RESULTS", "100"), 100),
+                },
+            }
+        )
+
+    openobserve_url = os.getenv("OPENOBSERVE_URL", "").strip()
+    openobserve_token = os.getenv("OPENOBSERVE_TOKEN", "").strip()
+    openobserve_username = os.getenv("OPENOBSERVE_USERNAME", "").strip()
+    openobserve_password = os.getenv("OPENOBSERVE_PASSWORD", "").strip()
+    if openobserve_url and (openobserve_token or (openobserve_username and openobserve_password)):
+        integrations.append(
+            {
+                "id": "env-openobserve",
+                "service": "openobserve",
+                "status": "active",
+                "credentials": {
+                    "base_url": openobserve_url.rstrip("/"),
+                    "org": os.getenv("OPENOBSERVE_ORG", "default").strip() or "default",
+                    "api_token": openobserve_token,
+                    "username": openobserve_username,
+                    "password": openobserve_password,
+                    "stream": os.getenv("OPENOBSERVE_STREAM", "").strip(),
+                    "max_results": _safe_int(os.getenv("OPENOBSERVE_MAX_RESULTS", "100"), 100),
+                },
+            }
+        )
+
+    opensearch_url = os.getenv("OPENSEARCH_URL", "").strip()
+    if opensearch_url:
+        integrations.append(
+            {
+                "id": "env-opensearch",
+                "service": "opensearch",
+                "status": "active",
+                "credentials": {
+                    "url": opensearch_url.rstrip("/"),
+                    "api_key": os.getenv("OPENSEARCH_API_KEY", "").strip(),
+                    "index_pattern": os.getenv("OPENSEARCH_INDEX_PATTERN", "*").strip() or "*",
+                    "max_results": _safe_int(os.getenv("OPENSEARCH_MAX_RESULTS", "100"), 100),
+                },
             }
         )
 
@@ -1185,6 +1460,7 @@ def resolve_effective_integrations(
         "postgresql",
         "mongodb_atlas",
         "mariadb",
+        "rabbitmq",
         "vercel",
         "opsgenie",
         "jira",
@@ -1192,6 +1468,10 @@ def resolve_effective_integrations(
         "openclaw",
         "mysql",
         "azure_sql",
+        "snowflake",
+        "azure",
+        "openobserve",
+        "opensearch",
         "alertmanager",
     )
     for service in direct_services:
@@ -1339,29 +1619,6 @@ def resolve_effective_integrations(
                     "password": os.getenv("CLICKHOUSE_PASSWORD", "").strip(),
                     "secure": os.getenv("CLICKHOUSE_SECURE", "false").strip().lower()
                     in ("true", "1", "yes"),
-                },
-            )
-
-    bitbucket_integration = classified_integrations.get("bitbucket")
-    if isinstance(bitbucket_integration, dict):
-        bitbucket_credentials = _raw_credentials(bitbucket_integration)
-        effective["bitbucket"] = _effective_entry(
-            source_by_service.get("bitbucket", "local env"),
-            {
-                "workspace": str(bitbucket_credentials.get("workspace", "")).strip(),
-                "username": str(bitbucket_credentials.get("username", "")).strip(),
-                "app_password": str(bitbucket_credentials.get("app_password", "")).strip(),
-            },
-        )
-    else:
-        bitbucket_workspace = os.getenv("BITBUCKET_WORKSPACE", "").strip()
-        if bitbucket_workspace:
-            effective["bitbucket"] = _effective_entry(
-                "local env",
-                {
-                    "workspace": bitbucket_workspace,
-                    "username": os.getenv("BITBUCKET_USERNAME", "").strip(),
-                    "app_password": os.getenv("BITBUCKET_APP_PASSWORD", "").strip(),
                 },
             )
 

@@ -6,16 +6,19 @@ import inspect
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from types import NoneType
-from typing import Any, cast, get_args, get_origin, get_type_hints
+from typing import Any, Literal, cast, get_args, get_origin, get_type_hints
 
 from app.tools.base import BaseTool, ToolMetadata
 from app.types.evidence import EvidenceSource
+from app.types.retrieval import RetrievalControls
 from app.types.tools import ToolSurface
 
 REGISTERED_TOOL_ATTR = "__opensre_registered_tool__"
 
 _DEFAULT_SURFACES: tuple[ToolSurface, ...] = ("investigation",)
 _VALID_SURFACES = set(get_args(ToolSurface))
+CostTier = Literal["cheap", "moderate", "expensive"]
+_VALID_COST_TIERS = set(get_args(CostTier))
 
 
 def _always_available(_sources: dict[str, dict]) -> bool:
@@ -128,6 +131,9 @@ class RegisteredTool:
     use_cases: list[str] = field(default_factory=list)
     requires: list[str] = field(default_factory=list)
     outputs: dict[str, str] = field(default_factory=dict)
+    retrieval_controls: RetrievalControls = field(
+        default_factory=RetrievalControls,
+    )
     is_available: Callable[[dict[str, dict]], bool] = field(
         default=_always_available,
         repr=False,
@@ -136,19 +142,24 @@ class RegisteredTool:
         default=_extract_no_params,
         repr=False,
     )
+    tags: tuple[str, ...] = ()
+    cost_tier: CostTier | None = None
     origin_module: str = ""
     origin_name: str = ""
 
     def __post_init__(self) -> None:
-        metadata = ToolMetadata.model_validate({
-            "name": self.name,
-            "description": self.description,
-            "input_schema": self.input_schema,
-            "source": self.source,
-            "use_cases": self.use_cases,
-            "requires": self.requires,
-            "outputs": self.outputs,
-        })
+        metadata = ToolMetadata.model_validate(
+            {
+                "name": self.name,
+                "description": self.description,
+                "input_schema": self.input_schema,
+                "source": self.source,
+                "use_cases": self.use_cases,
+                "requires": self.requires,
+                "outputs": self.outputs,
+                "retrieval_controls": self.retrieval_controls,
+            }
+        )
         self.name = metadata.name
         self.description = metadata.description
         self.input_schema = metadata.input_schema
@@ -156,7 +167,16 @@ class RegisteredTool:
         self.use_cases = metadata.use_cases
         self.requires = metadata.requires
         self.outputs = metadata.outputs
+        self.retrieval_controls = metadata.retrieval_controls
         self.surfaces = _normalize_surfaces(self.surfaces)
+        if self.cost_tier is not None:
+            normalized_cost_tier = self.cost_tier.strip().lower()
+            if normalized_cost_tier not in _VALID_COST_TIERS:
+                valid = ", ".join(sorted(_VALID_COST_TIERS))
+                raise ValueError(
+                    f"Unsupported cost tier '{self.cost_tier}'. Expected one of: {valid}."
+                )
+            self.cost_tier = cast(CostTier, normalized_cost_tier)
 
         if not callable(self.run):
             raise TypeError("run must be callable")
@@ -182,10 +202,25 @@ class RegisteredTool:
         tool: BaseTool,
         *,
         surfaces: Iterable[str] | None = None,
+        retrieval_controls: RetrievalControls | None = None,
+        tags: tuple[str, ...] | None = None,
+        cost_tier: CostTier | None = None,
     ) -> RegisteredTool:
         metadata = tool.metadata()
-        resolved_surfaces = surfaces or getattr(tool, "surfaces", None) or getattr(
-            tool.__class__, "surfaces", None
+        resolved_surfaces = (
+            surfaces or getattr(tool, "surfaces", None) or getattr(tool.__class__, "surfaces", None)
+        )
+        resolved_tags = tuple(
+            cast(
+                Iterable[str],
+                tags or getattr(tool, "tags", None) or getattr(tool.__class__, "tags", ()),
+            )
+        )
+        resolved_cost_tier = cast(
+            CostTier | None,
+            cost_tier
+            or getattr(tool, "cost_tier", None)
+            or getattr(tool.__class__, "cost_tier", None)
         )
         return cls(
             name=metadata.name,
@@ -195,10 +230,13 @@ class RegisteredTool:
             use_cases=metadata.use_cases,
             requires=metadata.requires,
             outputs=metadata.outputs,
+            retrieval_controls=retrieval_controls or metadata.retrieval_controls,
             surfaces=_normalize_surfaces(resolved_surfaces),
             run=tool.run,  # type: ignore[attr-defined]
             is_available=tool.is_available,
             extract_params=tool.extract_params,
+            tags=resolved_tags,
+            cost_tier=resolved_cost_tier,
             origin_module=tool.__class__.__module__,
             origin_name=tool.__class__.__name__,
         )
@@ -216,8 +254,11 @@ class RegisteredTool:
         use_cases: list[str] | None = None,
         requires: list[str] | None = None,
         outputs: dict[str, str] | None = None,
+        retrieval_controls: RetrievalControls | None = None,
         is_available: Callable[[dict[str, dict]], bool] | None = None,
         extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
+        tags: tuple[str, ...] | None = None,
+        cost_tier: CostTier | None = None,
     ) -> RegisteredTool:
         if source is None:
             raise ValueError("Function tools must declare a source.")
@@ -232,10 +273,12 @@ class RegisteredTool:
             use_cases=list(use_cases or []),
             requires=list(requires or []),
             outputs=dict(outputs or {}),
+            retrieval_controls=retrieval_controls or RetrievalControls(),
             run=func,
             is_available=is_available or _always_available,
             extract_params=extract_params or _extract_no_params,
+            tags=tags or (),
+            cost_tier=cost_tier,
             origin_module=func.__module__,
             origin_name=func.__name__,
         )
-

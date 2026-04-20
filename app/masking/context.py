@@ -104,11 +104,14 @@ class MaskingContext:
         return result
 
     def unmask(self, text: str) -> str:
-        """Restore any known placeholders in ``text`` to their original values."""
+        """"Restore any known placeholders in ``text`` to their original values."""
         if not text or not self._placeholder_map:
             return text
         result = text
-        for placeholder, original in self._placeholder_map.items():
+        # Sort longest-first to avoid prefix collisions (e.g. <NS_10> before <NS_1>)
+        for placeholder, original in sorted(
+            self._placeholder_map.items(), key=lambda x: len(x[0]), reverse=True
+        ):
             if placeholder in result:
                 result = result.replace(placeholder, original)
         return result

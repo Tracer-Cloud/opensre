@@ -564,3 +564,11 @@ def test_tests_interactive_launcher_smoke(cli_sandbox: CliSandbox) -> None:
 
     assert result.exit_code == 0
     assert "Choose a test category:" in result.stdout
+
+
+def test_deploy_help_smoke(cli_sandbox: CliSandbox) -> None:
+    result = _run_cli(cli_sandbox, "deploy", "-h")
+
+    assert result.exit_code == 0
+    assert "ec2" in result.stdout
+    assert "langsmith" in result.stdout

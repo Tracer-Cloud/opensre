@@ -19,13 +19,6 @@ def _missing_env_error(missing: list[str], *, context: str, hint: str | None = N
     return payload
 
 
-def require_env(keys: list[str], *, context: str, hint: str | None = None) -> dict[str, Any] | None:
-    missing = [key for key in keys if not os.getenv(key)]
-    if not missing:
-        return None
-    return _missing_env_error(missing, context=context, hint=hint)
-
-
 def make_boto3_client(service: str):
     """Return a boto3 client for the given service using the configured AWS region."""
     try:

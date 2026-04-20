@@ -23,8 +23,6 @@ _SKIP_MODULE_NAMES = {
     "tool_decorator",
     "investigation_registry",
     "utils",
-    "simple_tools",
-    "simple_tools_test",
 }
 
 # Preserve the current chat surface while the repo migrates toward explicit
