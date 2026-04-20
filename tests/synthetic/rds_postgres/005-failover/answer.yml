@@ -3,14 +3,12 @@ required_keywords:
   - failover
   - Multi-AZ
   - health check failure
-<<<<<<< synthetic-005-failover
   - primary evidence source
   - workload resumed normally
   - failover initiated
+  - failover in progress
   - failover completed
   - instance available
-=======
->>>>>>> main
 required_evidence_sources:
   - aws_rds_events
 optimal_trajectory:
