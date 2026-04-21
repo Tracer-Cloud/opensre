@@ -36,7 +36,12 @@ def test_run_happy_path() -> None:
     mock_client = MagicMock()
     mock_client.get_batch_jobs.return_value = {
         "data": [
-            {"jobName": "job-1", "status": "FAILED", "statusReason": "OOMKilled", "container": {"reason": "OOM", "exitCode": 137}},
+            {
+                "jobName": "job-1",
+                "status": "FAILED",
+                "statusReason": "OOMKilled",
+                "container": {"reason": "OOM", "exitCode": 137},
+            },
             {"jobName": "job-2", "status": "SUCCEEDED", "statusReason": "", "container": {}},
         ]
     }

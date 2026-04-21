@@ -67,6 +67,8 @@ def test_run_happy_path() -> None:
         "total_series": 1,
     }
     with patch("app.tools.GrafanaMetricsTool._resolve_grafana_client", return_value=mock_client):
-        result = query_grafana_metrics(metric_name="pipeline_runs_total", grafana_endpoint="http://grafana")
+        result = query_grafana_metrics(
+            metric_name="pipeline_runs_total", grafana_endpoint="http://grafana"
+        )
     assert result["available"] is True
     assert result["total_series"] == 1

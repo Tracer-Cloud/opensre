@@ -114,7 +114,9 @@ def format_data_lineage_flow(ctx: ReportContext) -> str:
             return cw
         return ""
 
-    def _add_step(steps: list[tuple[str, str, str]], title: str, outcome: str, ev_line: str | None) -> None:
+    def _add_step(
+        steps: list[tuple[str, str, str]], title: str, outcome: str, ev_line: str | None
+    ) -> None:
         """Append a step only if evidence exists."""
         if not ev_line:
             return

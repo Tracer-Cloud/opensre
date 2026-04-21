@@ -74,15 +74,17 @@ def query_datadog_logs(query: str, from_seconds_ago: int = 300) -> list[dict]:
         print("DD_API_KEY and DD_APP_KEY required for log verification")
         return []
 
-    payload = json.dumps({
-        "filter": {
-            "query": query,
-            "from": f"now-{from_seconds_ago}s",
-            "to": "now",
-        },
-        "sort": "-timestamp",
-        "page": {"limit": 10},
-    }).encode()
+    payload = json.dumps(
+        {
+            "filter": {
+                "query": query,
+                "from": f"now-{from_seconds_ago}s",
+                "to": "now",
+            },
+            "sort": "-timestamp",
+            "page": {"limit": 10},
+        }
+    ).encode()
 
     url = f"https://api.{site}/api/v2/logs/events/search"
     req = urllib.request.Request(
@@ -141,10 +143,13 @@ def verify_monitor_triggered(monitor_name: str, max_wait: int = 300) -> bool:
         try:
             encoded = urllib.parse.quote(monitor_name)
             url = f"https://api.{site}/api/v1/monitor?name={encoded}"
-            req = urllib.request.Request(url, headers={
-                "DD-API-KEY": api_key,
-                "DD-APPLICATION-KEY": app_key,
-            })
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "DD-API-KEY": api_key,
+                    "DD-APPLICATION-KEY": app_key,
+                },
+            )
             with urllib.request.urlopen(req, timeout=15) as resp:
                 monitors = json.loads(resp.read())
             for m in monitors:
@@ -188,10 +193,18 @@ def verify_logs_in_datadog(max_wait: int = 180) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Kubernetes + Datadog integration test")
-    parser.add_argument("--keep-cluster", action="store_true", help="Don't delete kind cluster after test")
-    parser.add_argument("--skip-verify", action="store_true", help="Skip Datadog API log verification")
-    parser.add_argument("--skip-monitors", action="store_true", help="Skip monitor deployment and verification")
-    parser.add_argument("--cleanup-monitors", action="store_true", help="Delete test monitors on exit")
+    parser.add_argument(
+        "--keep-cluster", action="store_true", help="Don't delete kind cluster after test"
+    )
+    parser.add_argument(
+        "--skip-verify", action="store_true", help="Skip Datadog API log verification"
+    )
+    parser.add_argument(
+        "--skip-monitors", action="store_true", help="Skip monitor deployment and verification"
+    )
+    parser.add_argument(
+        "--cleanup-monitors", action="store_true", help="Delete test monitors on exit"
+    )
     args = parser.parse_args()
 
     missing = check_prerequisites()

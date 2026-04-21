@@ -19,17 +19,19 @@ def _active_discord(
     public_key: str = "deadbeef1234",
     default_channel_id: str | None = "chan-99",
 ) -> list[dict[str, Any]]:
-    return [{
-        "id": "store-discord",
-        "service": "discord",
-        "status": "active",
-        "credentials": {
-            "bot_token": bot_token,
-            "application_id": application_id,
-            "public_key": public_key,
-            "default_channel_id": default_channel_id,
-        },
-    }]
+    return [
+        {
+            "id": "store-discord",
+            "service": "discord",
+            "status": "active",
+            "credentials": {
+                "bot_token": bot_token,
+                "application_id": application_id,
+                "public_key": public_key,
+                "default_channel_id": default_channel_id,
+            },
+        }
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -47,11 +49,13 @@ def test_classify_discord_from_store() -> None:
 
 
 def test_classify_discord_without_optional_fields() -> None:
-    resolved = _classify_integrations(_active_discord(
-        application_id="",
-        public_key="",
-        default_channel_id=None,
-    ))
+    resolved = _classify_integrations(
+        _active_discord(
+            application_id="",
+            public_key="",
+            default_channel_id=None,
+        )
+    )
     assert "discord" in resolved
     assert resolved["discord"]["bot_token"] == "Bot.token.abc"
     assert resolved["discord"]["default_channel_id"] is None
@@ -63,12 +67,14 @@ def test_classify_discord_skipped_without_bot_token() -> None:
 
 
 def test_classify_discord_skipped_when_inactive() -> None:
-    integrations = [{
-        "id": "store-discord",
-        "service": "discord",
-        "status": "inactive",
-        "credentials": {"bot_token": "Bot.token.abc"},
-    }]
+    integrations = [
+        {
+            "id": "store-discord",
+            "service": "discord",
+            "status": "inactive",
+            "credentials": {"bot_token": "Bot.token.abc"},
+        }
+    ]
     resolved = _classify_integrations(integrations)
     assert "discord" not in resolved
 

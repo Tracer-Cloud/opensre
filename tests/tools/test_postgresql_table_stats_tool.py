@@ -119,7 +119,9 @@ def test_run_happy_path() -> None:
         ],
     }
     with patch("app.tools.PostgreSQLTableStatsTool.get_table_stats", return_value=fake_result):
-        result = get_postgresql_table_stats(host="localhost", database="testdb", schema_name="public")
+        result = get_postgresql_table_stats(
+            host="localhost", database="testdb", schema_name="public"
+        )
     assert result["schema"] == "public"
     assert result["total_tables"] == 3
     assert len(result["tables"]) == 3
@@ -170,14 +172,23 @@ def test_run_custom_schema() -> None:
         ],
     }
     with patch("app.tools.PostgreSQLTableStatsTool.get_table_stats", return_value=fake_result):
-        result = get_postgresql_table_stats(host="localhost", database="testdb", schema_name="analytics")
+        result = get_postgresql_table_stats(
+            host="localhost", database="testdb", schema_name="analytics"
+        )
     assert result["schema"] == "analytics"
     assert result["total_tables"] == 1
     assert result["tables"][0]["table_name"] == "reports"
 
 
 def test_run_error_propagated() -> None:
-    with patch("app.tools.PostgreSQLTableStatsTool.get_table_stats", return_value={"source": "postgresql", "available": False, "error": "relation 'public.nonexistent' does not exist"}):
+    with patch(
+        "app.tools.PostgreSQLTableStatsTool.get_table_stats",
+        return_value={
+            "source": "postgresql",
+            "available": False,
+            "error": "relation 'public.nonexistent' does not exist",
+        },
+    ):
         result = get_postgresql_table_stats(host="localhost", database="testdb")
     assert "error" in result
     assert result["available"] is False

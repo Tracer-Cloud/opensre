@@ -25,11 +25,7 @@ def _get_bitbucket_file_contents_extract_params(sources: dict[str, dict]) -> dic
 
 def _get_bitbucket_file_contents_available(sources: dict[str, dict]) -> bool:
     bb = sources.get("bitbucket", {})
-    return bool(
-        _bb_available(sources)
-        and bb.get("repo_slug", bb.get("repo"))
-        and bb.get("path")
-    )
+    return bool(_bb_available(sources) and bb.get("repo_slug", bb.get("repo")) and bb.get("path"))
 
 
 @tool(
@@ -82,5 +78,10 @@ def get_bitbucket_file_contents(
         integration_id,
     )
     if config is None:
-        return {"source": "bitbucket", "available": False, "error": "Bitbucket integration is not configured.", "file": {}}
+        return {
+            "source": "bitbucket",
+            "available": False,
+            "error": "Bitbucket integration is not configured.",
+            "file": {},
+        }
     return get_file_contents(config, repo_slug=repo_slug, path=path, ref=ref)

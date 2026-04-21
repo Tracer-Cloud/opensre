@@ -58,8 +58,6 @@ def test_run_error_propagated() -> None:
         "app.tools.AzureSQLServerStatusTool.get_server_status",
         return_value={"source": "azure_sql", "available": False, "error": "connection timeout"},
     ):
-        result = get_azure_sql_server_status(
-            server="invalid", database="testdb"
-        )
+        result = get_azure_sql_server_status(server="invalid", database="testdb")
     assert "error" in result
     assert result["available"] is False

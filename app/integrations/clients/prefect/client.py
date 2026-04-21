@@ -311,9 +311,7 @@ class PrefectClient:
                 "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
             }
         except Exception as e:
-            logger.warning(
-                "[prefect] get_deployments error type=%s detail=%s", type(e).__name__, e
-            )
+            logger.warning("[prefect] get_deployments error type=%s detail=%s", type(e).__name__, e)
             return {"success": False, "error": str(e)}
 
 

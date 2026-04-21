@@ -81,14 +81,18 @@ def postgresql_config_from_env() -> PostgreSQLConfig | None:
     database = os.getenv("POSTGRESQL_DATABASE", "").strip()
     if not host or not database:
         return None
-    return build_postgresql_config({
-        "host": host,
-        "port": int(_pg_port) if (_pg_port := os.getenv("POSTGRESQL_PORT", "").strip()).isdigit() else DEFAULT_POSTGRESQL_PORT,
-        "database": database,
-        "username": os.getenv("POSTGRESQL_USERNAME", DEFAULT_POSTGRESQL_USER).strip(),
-        "password": os.getenv("POSTGRESQL_PASSWORD", ""),
-        "ssl_mode": os.getenv("POSTGRESQL_SSL_MODE", DEFAULT_POSTGRESQL_SSL_MODE).strip(),
-    })
+    return build_postgresql_config(
+        {
+            "host": host,
+            "port": int(_pg_port)
+            if (_pg_port := os.getenv("POSTGRESQL_PORT", "").strip()).isdigit()
+            else DEFAULT_POSTGRESQL_PORT,
+            "database": database,
+            "username": os.getenv("POSTGRESQL_USERNAME", DEFAULT_POSTGRESQL_USER).strip(),
+            "password": os.getenv("POSTGRESQL_PASSWORD", ""),
+            "ssl_mode": os.getenv("POSTGRESQL_SSL_MODE", DEFAULT_POSTGRESQL_SSL_MODE).strip(),
+        }
+    )
 
 
 def resolve_postgresql_config(
@@ -175,6 +179,27 @@ def validate_postgresql_config(config: PostgreSQLConfig) -> PostgreSQLValidation
             conn.close()
     except Exception as err:  # noqa: BLE001
         return PostgreSQLValidationResult(ok=False, detail=f"PostgreSQL connection failed: {err}")
+
+
+def postgresql_is_available(sources: dict[str, dict]) -> bool:
+    """Check if PostgreSQL integration identifying params are present."""
+    pg = sources.get("postgresql", {})
+    return bool(pg.get("host") and pg.get("database"))
+
+
+def postgresql_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
+    """Extract PostgreSQL identifying params (host, database, port) from resolved integrations.
+
+    Credentials (username, password, ssl_mode) are resolved internally by
+    ``resolve_postgresql_config`` from the integration store or environment, so
+    they never appear in tool signatures and are never seen by the LLM.
+    """
+    pg = sources.get("postgresql", {})
+    return {
+        "host": str(pg.get("host", "")).strip(),
+        "database": str(pg.get("database", "")).strip(),
+        "port": int(pg.get("port") or DEFAULT_POSTGRESQL_PORT),
+    }
 
 
 def get_server_status(config: PostgreSQLConfig) -> dict[str, Any]:

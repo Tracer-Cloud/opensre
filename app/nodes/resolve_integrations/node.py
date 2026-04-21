@@ -5,8 +5,6 @@ integration credentials available for all downstream nodes. This replaces
 per-node credential fetching with a single upfront resolution.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 from typing import Any

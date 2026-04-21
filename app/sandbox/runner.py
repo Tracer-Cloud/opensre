@@ -123,17 +123,14 @@ def run_python_sandbox(
     if effective_inputs:
         inputs_json = json.dumps(effective_inputs)
         inputs_injection = (
-            f"import json as _json_module; "
-            f"inputs = _json_module.loads({inputs_json!r})\n"
+            f"import json as _json_module; inputs = _json_module.loads({inputs_json!r})\n"
         )
 
     full_code = _SANDBOX_PREAMBLE + inputs_injection + code
 
     tmp_path: str | None = None
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp:
             tmp.write(full_code)
             tmp_path = tmp.name
 

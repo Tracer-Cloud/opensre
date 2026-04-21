@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for network-corrupt chaos demo",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/network-corrupt/network-corrupt-alert.json"
+  },
+  "title": "[Triggered] Corrupt responses - network-corrupt-demo",
+  "alert_name": "Datadog monitor: HTTP errors network-corrupt-demo",
+  "pipeline_name": "network-corrupt-demo",
+  "severity": "warning",
+  "alert_source": "datadog",
+  "message": "Malformed or failed responses from network-corrupt-demo",
+  "text": "NetworkChaos corrupt injected; payloads may be invalid.",
+  "commonLabels": {
+    "pipeline_name": "network-corrupt-demo",
+    "severity": "warning",
+    "kube_deployment": "network-corrupt-demo"
+  },
+  "commonAnnotations": {
+    "summary": "Possible data corruption path to network-corrupt-demo",
+    "query": "kube_namespace:default kube_deployment:network-corrupt-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "network-corrupt-demo",
+    "correlation_id": "network-corrupt-local-001"
+  }
+}

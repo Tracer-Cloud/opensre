@@ -27,7 +27,9 @@ def test_extract_params_maps_fields() -> None:
     assert params["cluster_name"] == "my-cluster"
 
 
-def _make_deployment(name: str, desired: int = 3, ready: int = 3, unavailable: int = 0) -> MagicMock:
+def _make_deployment(
+    name: str, desired: int = 3, ready: int = 3, unavailable: int = 0
+) -> MagicMock:
     dep = MagicMock()
     dep.metadata.name = name
     dep.metadata.namespace = "default"
@@ -43,7 +45,10 @@ def test_run_happy_path() -> None:
     mock_apps_v1.list_namespaced_deployment.return_value = MagicMock(
         items=[_make_deployment("dep-1"), _make_deployment("dep-2")]
     )
-    with patch("app.tools.EKSListDeploymentsTool.build_k8s_clients", return_value=(MagicMock(), mock_apps_v1)):
+    with patch(
+        "app.tools.EKSListDeploymentsTool.build_k8s_clients",
+        return_value=(MagicMock(), mock_apps_v1),
+    ):
         result = list_eks_deployments(
             cluster_name="c1", namespace="default", role_arn="arn:aws:iam::123:role/r"
         )
@@ -57,7 +62,10 @@ def test_run_detects_degraded() -> None:
     mock_apps_v1.list_namespaced_deployment.return_value = MagicMock(
         items=[_make_deployment("dep-1", desired=3, ready=2, unavailable=1)]
     )
-    with patch("app.tools.EKSListDeploymentsTool.build_k8s_clients", return_value=(MagicMock(), mock_apps_v1)):
+    with patch(
+        "app.tools.EKSListDeploymentsTool.build_k8s_clients",
+        return_value=(MagicMock(), mock_apps_v1),
+    ):
         result = list_eks_deployments(
             cluster_name="c1", namespace="default", role_arn="arn:aws:iam::123:role/r"
         )
@@ -67,7 +75,10 @@ def test_run_detects_degraded() -> None:
 def test_run_all_namespaces() -> None:
     mock_apps_v1 = MagicMock()
     mock_apps_v1.list_deployment_for_all_namespaces.return_value = MagicMock(items=[])
-    with patch("app.tools.EKSListDeploymentsTool.build_k8s_clients", return_value=(MagicMock(), mock_apps_v1)):
+    with patch(
+        "app.tools.EKSListDeploymentsTool.build_k8s_clients",
+        return_value=(MagicMock(), mock_apps_v1),
+    ):
         result = list_eks_deployments(
             cluster_name="c1", namespace="all", role_arn="arn:aws:iam::123:role/r"
         )
@@ -76,7 +87,9 @@ def test_run_all_namespaces() -> None:
 
 
 def test_run_handles_exception() -> None:
-    with patch("app.tools.EKSListDeploymentsTool.build_k8s_clients", side_effect=Exception("forbidden")):
+    with patch(
+        "app.tools.EKSListDeploymentsTool.build_k8s_clients", side_effect=Exception("forbidden")
+    ):
         result = list_eks_deployments(
             cluster_name="c1", namespace="default", role_arn="arn:aws:iam::123:role/r"
         )

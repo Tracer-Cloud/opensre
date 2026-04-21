@@ -1,0 +1,20 @@
+# NetworkChaos reorder: shuffles delivery order (stress for TCP stack and app assumptions).
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-reorder-demo
+  namespace: default
+spec:
+  action: reorder
+  mode: all
+  duration: "3m"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: network-reorder-demo
+  reorder:
+    reorder: "0.35"
+    correlation: "40"
+    gap: 6

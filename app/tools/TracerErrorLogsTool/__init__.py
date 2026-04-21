@@ -78,7 +78,8 @@ def get_error_logs(trace_id: str, size: int = 500, error_only: bool = True) -> d
 
     if error_only:
         filtered = [
-            log for log in normalised
+            log
+            for log in normalised
             if "error" in str(log.get("log_level", "")).lower()
             or "fail" in str(log.get("message", "")).lower()
         ]

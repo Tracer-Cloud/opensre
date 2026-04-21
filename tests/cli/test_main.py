@@ -10,9 +10,10 @@ def test_main_runs_health_command(monkeypatch) -> None:
     monkeypatch.setattr("app.cli.__main__.shutdown_analytics", lambda **_kw: None)
     monkeypatch.setattr("app.cli.__main__.capture_cli_invoked", lambda: None)
 
-    with patch("app.integrations.verify.verify_integrations") as mock_verify, patch(
-        "app.integrations.verify.format_verification_results"
-    ) as mock_format:
+    with (
+        patch("app.integrations.verify.verify_integrations") as mock_verify,
+        patch("app.integrations.verify.format_verification_results") as mock_format,
+    ):
         mock_verify.return_value = [
             {
                 "service": "aws",

@@ -15,9 +15,7 @@ class TestEKSEventsToolContract(BaseToolContract):
 
 def test_is_available_requires_cluster_name() -> None:
     rt = get_eks_events.__opensre_registered_tool__
-    assert rt.is_available({
-        "eks": {"connection_verified": True, "cluster_name": "c1"}
-    }) is True
+    assert rt.is_available({"eks": {"connection_verified": True, "cluster_name": "c1"}}) is True
     assert rt.is_available({"eks": {"connection_verified": True}}) is False
     assert rt.is_available({}) is False
 
@@ -46,11 +44,15 @@ def _make_event(reason: str, message: str, event_type: str = "Warning") -> Magic
 
 def test_run_happy_path() -> None:
     mock_core_v1 = MagicMock()
-    mock_core_v1.list_namespaced_event.return_value = MagicMock(items=[
-        _make_event("OOMKilled", "Container was OOM killed"),
-        _make_event("Pulled", "Image pulled", event_type="Normal"),
-    ])
-    with patch("app.tools.EKSEventsTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())):
+    mock_core_v1.list_namespaced_event.return_value = MagicMock(
+        items=[
+            _make_event("OOMKilled", "Container was OOM killed"),
+            _make_event("Pulled", "Image pulled", event_type="Normal"),
+        ]
+    )
+    with patch(
+        "app.tools.EKSEventsTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())
+    ):
         result = get_eks_events(
             cluster_name="c1", namespace="default", role_arn="arn:aws:iam::123:role/r"
         )
@@ -63,7 +65,9 @@ def test_run_happy_path() -> None:
 def test_run_all_namespaces() -> None:
     mock_core_v1 = MagicMock()
     mock_core_v1.list_event_for_all_namespaces.return_value = MagicMock(items=[])
-    with patch("app.tools.EKSEventsTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())):
+    with patch(
+        "app.tools.EKSEventsTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())
+    ):
         result = get_eks_events(
             cluster_name="c1", namespace="all", role_arn="arn:aws:iam::123:role/r"
         )

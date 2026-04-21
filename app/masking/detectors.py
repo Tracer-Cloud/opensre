@@ -28,9 +28,7 @@ class DetectedIdentifier:
 # regex. Contextual detectors capture the VALUE in group(1) so we only mask
 # the identifier itself (not the preceding label like "kube_namespace:").
 
-_POD_RE = re.compile(
-    r"\b([a-z0-9](?:[-a-z0-9]*[a-z0-9])?-[a-f0-9]{5,10}(?:-[a-z0-9]{3,10})?)\b"
-)
+_POD_RE = re.compile(r"\b([a-z0-9](?:[-a-z0-9]*[a-z0-9])?-[a-f0-9]{5,10}(?:-[a-z0-9]{3,10})?)\b")
 _NAMESPACE_RE = re.compile(
     r"\b(?:kube_namespace|namespace|ns)[=:\s]+([a-z0-9][-a-z0-9]*)\b", re.IGNORECASE
 )
@@ -141,9 +139,7 @@ def _resolve_overlaps(matches: list[DetectedIdentifier]) -> list[DetectedIdentif
     for m in by_start:
         # Partial-overlap check: kept.start < m.end AND kept.end > m.start
         # means [kept.start, kept.end) and [m.start, m.end) share characters.
-        if any(
-            kept.start < m.end and kept.end > m.start and kept is not m for kept in result
-        ):
+        if any(kept.start < m.end and kept.end > m.start and kept is not m for kept in result):
             continue
         result.append(m)
     return sorted(result, key=lambda m: m.start)

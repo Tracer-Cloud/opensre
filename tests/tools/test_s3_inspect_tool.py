@@ -34,7 +34,10 @@ def test_run_returns_error_when_no_bucket_or_key() -> None:
 
 
 def test_run_not_found() -> None:
-    with patch("app.tools.S3InspectTool.get_object_metadata", return_value={"success": True, "exists": False}):
+    with patch(
+        "app.tools.S3InspectTool.get_object_metadata",
+        return_value={"success": True, "exists": False},
+    ):
         result = inspect_s3_object(bucket="b", key="k")
     assert result["found"] is False
 
@@ -49,8 +52,16 @@ def test_run_happy_path() -> None:
         "metadata": {},
     }
     fake_sample = {"is_text": True, "sample": "hello world", "sample_bytes": 11}
-    with patch("app.tools.S3InspectTool.get_object_metadata", return_value={"success": True, "exists": True, "data": fake_meta}), \
-         patch("app.tools.S3InspectTool.get_object_sample", return_value={"success": True, "data": fake_sample}):
+    with (
+        patch(
+            "app.tools.S3InspectTool.get_object_metadata",
+            return_value={"success": True, "exists": True, "data": fake_meta},
+        ),
+        patch(
+            "app.tools.S3InspectTool.get_object_sample",
+            return_value={"success": True, "data": fake_sample},
+        ),
+    ):
         result = inspect_s3_object(bucket="b", key="k")
     assert result["found"] is True
     assert result["size"] == 2048
@@ -58,6 +69,9 @@ def test_run_happy_path() -> None:
 
 
 def test_run_metadata_error() -> None:
-    with patch("app.tools.S3InspectTool.get_object_metadata", return_value={"success": False, "error": "Forbidden"}):
+    with patch(
+        "app.tools.S3InspectTool.get_object_metadata",
+        return_value={"success": False, "error": "Forbidden"},
+    ):
         result = inspect_s3_object(bucket="b", key="k")
     assert "error" in result

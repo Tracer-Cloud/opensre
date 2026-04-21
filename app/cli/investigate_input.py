@@ -57,9 +57,7 @@ def prompt_for_input() -> dict[str, Any]:
 def _pick_sample_alert() -> dict[str, Any]:
     choice = questionary.select(
         "Pick a sample alert:",
-        choices=[
-            questionary.Choice(title=label, value=key) for key, label in SAMPLE_ALERT_OPTIONS
-        ],
+        choices=[questionary.Choice(title=label, value=key) for key, label in SAMPLE_ALERT_OPTIONS],
         style=_STYLE,
     ).ask()
 

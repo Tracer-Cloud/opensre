@@ -28,17 +28,24 @@ def test_run_happy_path() -> None:
     }
     with patch("app.tools.MongoDBAtlasMetricsTool.get_cluster_metrics", return_value=fake_result):
         result = get_mongodb_atlas_cluster_metrics(
-            api_public_key="pub", api_private_key="priv",
-            project_id="proj", cluster_name="prod",
+            api_public_key="pub",
+            api_private_key="priv",
+            project_id="proj",
+            cluster_name="prod",
         )
     assert result["available"] is True
     assert "CONNECTIONS" in result["measurements"]
 
 
 def test_run_error_propagated() -> None:
-    with patch("app.tools.MongoDBAtlasMetricsTool.get_cluster_metrics", return_value={"source": "mongodb_atlas", "available": False, "error": "auth failed"}):
+    with patch(
+        "app.tools.MongoDBAtlasMetricsTool.get_cluster_metrics",
+        return_value={"source": "mongodb_atlas", "available": False, "error": "auth failed"},
+    ):
         result = get_mongodb_atlas_cluster_metrics(
-            api_public_key="bad", api_private_key="bad",
-            project_id="proj", cluster_name="prod",
+            api_public_key="bad",
+            api_private_key="bad",
+            project_id="proj",
+            cluster_name="prod",
         )
     assert "error" in result

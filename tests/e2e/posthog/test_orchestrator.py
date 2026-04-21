@@ -28,4 +28,3 @@ def test_posthog_bounce_rate_e2e() -> None:
         assert isinstance(alert, BounceRateAlert)
         assert 0.0 <= alert.bounce_rate <= 1.0
         assert isinstance(alert.message, str)
-

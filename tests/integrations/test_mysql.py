@@ -151,11 +151,15 @@ class TestMySQLValidationResult:
     """Tests for MySQLValidationResult dataclass."""
 
     def test_ok_result(self) -> None:
-        result = MySQLValidationResult(ok=True, detail="Connected to MySQL 8.0.32; target database: mydb.")
+        result = MySQLValidationResult(
+            ok=True, detail="Connected to MySQL 8.0.32; target database: mydb."
+        )
         assert result.ok is True
         assert result.detail == "Connected to MySQL 8.0.32; target database: mydb."
 
     def test_error_result(self) -> None:
-        result = MySQLValidationResult(ok=False, detail="MySQL connection failed: connection refused")
+        result = MySQLValidationResult(
+            ok=False, detail="MySQL connection failed: connection refused"
+        )
         assert result.ok is False
         assert result.detail == "MySQL connection failed: connection refused"

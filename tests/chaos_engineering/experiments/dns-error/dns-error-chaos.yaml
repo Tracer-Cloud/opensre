@@ -1,0 +1,19 @@
+# DNSChaos: return DNS errors for matching patterns from selected pods.
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: DNSChaos
+metadata:
+  name: dns-error-demo
+  namespace: default
+spec:
+  action: error
+  mode: all
+  duration: "3m"
+  patterns:
+    - google.com
+    - github.com
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: dns-error-demo

@@ -209,6 +209,27 @@ def validate_azure_sql_config(config: AzureSQLConfig) -> AzureSQLValidationResul
         return AzureSQLValidationResult(ok=False, detail=f"Azure SQL connection failed: {err}")
 
 
+def azure_sql_is_available(sources: dict[str, dict]) -> bool:
+    """Check if Azure SQL integration identifying params are present."""
+    az = sources.get("azure_sql", {})
+    return bool(az.get("server") and az.get("database"))
+
+
+def azure_sql_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
+    """Extract Azure SQL identifying params (server, database, port) from resolved integrations.
+
+    Credentials (username, password, driver, encrypt) are resolved internally by
+    ``resolve_azure_sql_config`` from the integration store or environment, so
+    they never appear in tool signatures and are never seen by the LLM.
+    """
+    az = sources.get("azure_sql", {})
+    return {
+        "server": str(az.get("server") or "").strip(),
+        "database": str(az.get("database") or "").strip(),
+        "port": int(az.get("port") or DEFAULT_AZURE_SQL_PORT),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Read-only diagnostic queries (Azure SQL DMVs)
 # ---------------------------------------------------------------------------

@@ -75,7 +75,12 @@ def get_github_repository_tree(
     """Browse a GitHub repository tree through the MCP server."""
     config = _resolve_config(github_url, github_mode, github_token, github_command, github_args)
     if config is None:
-        return {"source": "github", "available": False, "error": "GitHub MCP integration is not configured.", "tree": {}}
+        return {
+            "source": "github",
+            "available": False,
+            "error": "GitHub MCP integration is not configured.",
+            "tree": {},
+        }
 
     arguments: dict[str, Any] = {"owner": owner, "repo": repo, "recursive": recursive}
     if path_filter:

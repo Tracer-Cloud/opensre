@@ -1,0 +1,31 @@
+{
+  "monitors": [
+    {
+      "id": 9001,
+      "name": "payments-api error rate",
+      "type": "query alert",
+      "query": "avg(last_5m):sum:trace.http.errors{service:payments-api}.as_rate() > 0.05",
+      "message": "User-facing error rate.",
+      "overall_state": "OK",
+      "tags": ["service:payments-api"]
+    },
+    {
+      "id": 9002,
+      "name": "payments-api p95 latency",
+      "type": "query alert",
+      "query": "avg(last_5m):avg:trace.http.duration.p95{service:payments-api} > 2",
+      "message": "p95 latency above 2s.",
+      "overall_state": "OK",
+      "tags": ["service:payments-api"]
+    },
+    {
+      "id": 9003,
+      "name": "payments-api pod restart rate",
+      "type": "query alert",
+      "query": "sum(last_30m):sum:kubernetes.containers.restarts{kube_deployment:payments-api}.as_count() > 0",
+      "message": "Any restart in the last 30 minutes — fired on a single historical restart that has since recovered.",
+      "overall_state": "OK",
+      "tags": ["kube_deployment:payments-api"]
+    }
+  ]
+}

@@ -21,15 +21,27 @@ from app.tools.tool_decorator import tool
 )
 def get_mariadb_innodb_status(
     host: str,
-    database: str,
     username: str,
+    database: str | None = None,
     password: str = "",
     port: int = 3306,
     ssl: bool = True,
 ) -> dict[str, Any]:
     """Fetch InnoDB engine status."""
+    _db_defaulted = database is None
+    if database is None:
+        database = "mysql"
     config = MariaDBConfig(
-        host=host, port=port, database=database,
-        username=username, password=password, ssl=ssl,
+        host=host,
+        port=port,
+        database=database,
+        username=username,
+        password=password,
+        ssl=ssl,
     )
-    return get_innodb_status(config)
+    result = get_innodb_status(config)
+    if _db_defaulted:
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'mysql'. Results may not reflect application data."
+        )
+    return result

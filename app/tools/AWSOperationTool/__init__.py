@@ -33,8 +33,14 @@ def _aws_operation_never_auto_available(_sources: dict[str, dict]) -> bool:
     input_schema={
         "type": "object",
         "properties": {
-            "service": {"type": "string", "description": "AWS service name (e.g., 'ecs', 'rds', 'ec2', 'lambda')"},
-            "operation": {"type": "string", "description": "Operation name (e.g., 'describe_tasks', 'get_role')"},
+            "service": {
+                "type": "string",
+                "description": "AWS service name (e.g., 'ecs', 'rds', 'ec2', 'lambda')",
+            },
+            "operation": {
+                "type": "string",
+                "description": "Operation name (e.g., 'describe_tasks', 'get_role')",
+            },
             "parameters": {"type": "object", "description": "Operation parameters as dict"},
         },
         "required": ["service", "operation"],

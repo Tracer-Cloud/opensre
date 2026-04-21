@@ -169,7 +169,9 @@ async def test_investigate_stream_persists_state_on_disconnect(
         fake_persist_streamed_result,
     )
 
-    response = await investigate_stream(InvestigateRequest(raw_alert={"alert_name": "PayloadAlert"}))
+    response = await investigate_stream(
+        InvestigateRequest(raw_alert={"alert_name": "PayloadAlert"})
+    )
     iterator = response.body_iterator
 
     first_chunk = await anext(iterator)

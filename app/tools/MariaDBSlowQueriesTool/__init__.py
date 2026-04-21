@@ -21,17 +21,29 @@ from app.tools.tool_decorator import tool
 )
 def get_mariadb_slow_queries(
     host: str,
-    database: str,
     username: str,
+    database: str | None = None,
     password: str = "",
     port: int = 3306,
     ssl: bool = True,
     max_results: int = 50,
 ) -> dict[str, Any]:
     """Fetch slow queries from performance_schema."""
+    _db_defaulted = database is None
+    if database is None:
+        database = "mysql"
     config = MariaDBConfig(
-        host=host, port=port, database=database,
-        username=username, password=password, ssl=ssl,
+        host=host,
+        port=port,
+        database=database,
+        username=username,
+        password=password,
+        ssl=ssl,
         max_results=max_results,
     )
-    return get_slow_queries(config)
+    result = get_slow_queries(config)
+    if _db_defaulted:
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'mysql'. Results may not reflect application data."
+        )
+    return result

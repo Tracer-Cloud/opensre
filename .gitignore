@@ -36,6 +36,7 @@ ENV/
 env.bak/
 venv.bak/
 .venv/
+.venv-devcontainer/
 virtualenv/
 
 # Testing

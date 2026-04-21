@@ -28,15 +28,17 @@ class TestOpenClawConversationSearchToolContract(BaseToolContract):
 
 
 def test_openclaw_tools_are_available_from_agent_state() -> None:
-    sources = mock_agent_state({
-        "openclaw": {
-            "connection_verified": True,
-            "openclaw_mode": "stdio",
-            "openclaw_command": "openclaw",
-            "openclaw_args": ["mcp", "serve"],
-            "openclaw_search_query": "checkout-api",
+    sources = mock_agent_state(
+        {
+            "openclaw": {
+                "connection_verified": True,
+                "openclaw_mode": "stdio",
+                "openclaw_command": "openclaw",
+                "openclaw_args": ["mcp", "serve"],
+                "openclaw_search_query": "checkout-api",
+            }
         }
-    })
+    )
 
     assert list_openclaw_bridge_tools.__opensre_registered_tool__.is_available(sources) is True
     assert call_openclaw_bridge_tool.__opensre_registered_tool__.is_available(sources) is True
@@ -46,16 +48,18 @@ def test_openclaw_tools_are_available_from_agent_state() -> None:
 def test_extract_params_maps_openclaw_source_fields() -> None:
     rt = call_openclaw_bridge_tool.__opensre_registered_tool__
     params = rt.extract_params(
-        mock_agent_state({
-            "openclaw": {
-                "connection_verified": True,
-                "openclaw_mode": "stdio",
-                "openclaw_command": "openclaw",
-                "openclaw_args": ["mcp", "serve"],
-                "openclaw_token": "",
-                "openclaw_search_query": "checkout-api",
+        mock_agent_state(
+            {
+                "openclaw": {
+                    "connection_verified": True,
+                    "openclaw_mode": "stdio",
+                    "openclaw_command": "openclaw",
+                    "openclaw_args": ["mcp", "serve"],
+                    "openclaw_token": "",
+                    "openclaw_search_query": "checkout-api",
+                }
             }
-        })
+        )
     )
 
     assert params["openclaw_mode"] == "stdio"
@@ -66,15 +70,17 @@ def test_extract_params_maps_openclaw_source_fields() -> None:
 def test_search_extract_params_maps_query() -> None:
     rt = search_openclaw_conversations.__opensre_registered_tool__
     params = rt.extract_params(
-        mock_agent_state({
-            "openclaw": {
-                "connection_verified": True,
-                "openclaw_mode": "stdio",
-                "openclaw_command": "openclaw",
-                "openclaw_args": ["mcp", "serve"],
-                "openclaw_search_query": "checkout-api",
+        mock_agent_state(
+            {
+                "openclaw": {
+                    "connection_verified": True,
+                    "openclaw_mode": "stdio",
+                    "openclaw_command": "openclaw",
+                    "openclaw_args": ["mcp", "serve"],
+                    "openclaw_search_query": "checkout-api",
+                }
             }
-        })
+        )
     )
 
     assert params["search"] == "checkout-api"
@@ -95,12 +101,14 @@ def test_list_openclaw_tools_happy_path() -> None:
     mock_config.command = "openclaw"
     mock_config.url = ""
 
-    with patch("app.tools.OpenClawMCPTool.openclaw_config_from_env", return_value=None), \
-         patch("app.tools.OpenClawMCPTool.build_openclaw_config", return_value=mock_config), \
-         patch(
-             "app.tools.OpenClawMCPTool.list_openclaw_mcp_tools",
-             return_value=[{"name": "messages_read", "description": "", "input_schema": {}}],
-         ):
+    with (
+        patch("app.tools.OpenClawMCPTool.openclaw_config_from_env", return_value=None),
+        patch("app.tools.OpenClawMCPTool.build_openclaw_config", return_value=mock_config),
+        patch(
+            "app.tools.OpenClawMCPTool.list_openclaw_mcp_tools",
+            return_value=[{"name": "messages_read", "description": "", "input_schema": {}}],
+        ),
+    ):
         result = list_openclaw_bridge_tools(
             openclaw_mode="stdio",
             openclaw_command="openclaw",
@@ -115,19 +123,21 @@ def test_list_openclaw_tools_happy_path() -> None:
 def test_call_openclaw_tool_happy_path() -> None:
     mock_config = MagicMock()
 
-    with patch("app.tools.OpenClawMCPTool.openclaw_config_from_env", return_value=None), \
-         patch("app.tools.OpenClawMCPTool.build_openclaw_config", return_value=mock_config), \
-         patch(
-             "app.tools.OpenClawMCPTool.invoke_openclaw_mcp_tool",
-             return_value={
-                 "is_error": False,
-                 "tool": "messages_read",
-                 "arguments": {"session_key": "abc"},
-                 "text": "ok",
-                 "structured_content": [{"id": "msg-1"}],
-                 "content": [],
-             },
-         ):
+    with (
+        patch("app.tools.OpenClawMCPTool.openclaw_config_from_env", return_value=None),
+        patch("app.tools.OpenClawMCPTool.build_openclaw_config", return_value=mock_config),
+        patch(
+            "app.tools.OpenClawMCPTool.invoke_openclaw_mcp_tool",
+            return_value={
+                "is_error": False,
+                "tool": "messages_read",
+                "arguments": {"session_key": "abc"},
+                "text": "ok",
+                "structured_content": [{"id": "msg-1"}],
+                "content": [],
+            },
+        ),
+    ):
         result = call_openclaw_bridge_tool(
             tool_name="messages_read",
             arguments={"session_key": "abc"},
@@ -144,17 +154,19 @@ def test_call_openclaw_tool_happy_path() -> None:
 def test_call_openclaw_tool_returns_error_payload() -> None:
     mock_config = MagicMock()
 
-    with patch("app.tools.OpenClawMCPTool.openclaw_config_from_env", return_value=None), \
-         patch("app.tools.OpenClawMCPTool.build_openclaw_config", return_value=mock_config), \
-         patch(
-             "app.tools.OpenClawMCPTool.invoke_openclaw_mcp_tool",
-             return_value={
-                 "is_error": True,
-                 "tool": "messages_send",
-                 "arguments": {"session_key": "abc"},
-                 "text": "route missing",
-             },
-         ):
+    with (
+        patch("app.tools.OpenClawMCPTool.openclaw_config_from_env", return_value=None),
+        patch("app.tools.OpenClawMCPTool.build_openclaw_config", return_value=mock_config),
+        patch(
+            "app.tools.OpenClawMCPTool.invoke_openclaw_mcp_tool",
+            return_value={
+                "is_error": True,
+                "tool": "messages_send",
+                "arguments": {"session_key": "abc"},
+                "text": "route missing",
+            },
+        ),
+    ):
         result = call_openclaw_bridge_tool(
             tool_name="messages_send",
             arguments={"session_key": "abc"},
@@ -170,19 +182,21 @@ def test_call_openclaw_tool_returns_error_payload() -> None:
 def test_search_openclaw_conversations_happy_path() -> None:
     mock_config = MagicMock()
 
-    with patch("app.tools.OpenClawMCPTool.openclaw_config_from_env", return_value=None), \
-         patch("app.tools.OpenClawMCPTool.build_openclaw_config", return_value=mock_config), \
-         patch(
-             "app.tools.OpenClawMCPTool.invoke_openclaw_mcp_tool",
-             return_value={
-                 "is_error": False,
-                 "tool": "conversations_list",
-                 "arguments": {"search": "checkout-api", "limit": 10},
-                 "text": "1 conversation",
-                 "structured_content": [{"session_key": "sess-1", "title": "Checkout debugging"}],
-                 "content": [],
-             },
-         ):
+    with (
+        patch("app.tools.OpenClawMCPTool.openclaw_config_from_env", return_value=None),
+        patch("app.tools.OpenClawMCPTool.build_openclaw_config", return_value=mock_config),
+        patch(
+            "app.tools.OpenClawMCPTool.invoke_openclaw_mcp_tool",
+            return_value={
+                "is_error": False,
+                "tool": "conversations_list",
+                "arguments": {"search": "checkout-api", "limit": 10},
+                "text": "1 conversation",
+                "structured_content": [{"session_key": "sess-1", "title": "Checkout debugging"}],
+                "content": [],
+            },
+        ),
+    ):
         result = search_openclaw_conversations(
             search="checkout-api",
             openclaw_mode="stdio",

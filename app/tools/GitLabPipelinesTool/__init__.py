@@ -68,7 +68,12 @@ def list_gitlab_pipelines(
     """List recent CI/CD pipelines for a GitLab project."""
     config = _resolve_config(gitlab_url, gitlab_token)
     if config is None:
-        return {"source": "gitlab", "available": False, "error": "gitlab integration is not configured.", "pipelines": []}
+        return {
+            "source": "gitlab",
+            "available": False,
+            "error": "gitlab integration is not configured.",
+            "pipelines": [],
+        }
 
     result = get_gitlab_pipelines(
         config=config,

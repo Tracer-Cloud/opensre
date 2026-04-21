@@ -59,15 +59,26 @@ def get_eks_nodegroup_health(
         results = []
         for ng in nodegroups:
             ng_data = client.describe_nodegroup(cluster_name, ng)
-            results.append({
-                "name": ng, "status": ng_data.get("status"),
-                "instance_types": ng_data.get("instanceTypes", []),
-                "scaling_config": ng_data.get("scalingConfig", {}),
-                "release_version": ng_data.get("releaseVersion"),
-                "health": ng_data.get("health", {}), "node_role": ng_data.get("nodeRole"),
-                "labels": ng_data.get("labels", {}), "taints": ng_data.get("taints", []),
-            })
-        return {"source": "eks", "available": True, "cluster_name": cluster_name, "nodegroups": results, "error": None}
+            results.append(
+                {
+                    "name": ng,
+                    "status": ng_data.get("status"),
+                    "instance_types": ng_data.get("instanceTypes", []),
+                    "scaling_config": ng_data.get("scalingConfig", {}),
+                    "release_version": ng_data.get("releaseVersion"),
+                    "health": ng_data.get("health", {}),
+                    "node_role": ng_data.get("nodeRole"),
+                    "labels": ng_data.get("labels", {}),
+                    "taints": ng_data.get("taints", []),
+                }
+            )
+        return {
+            "source": "eks",
+            "available": True,
+            "cluster_name": cluster_name,
+            "nodegroups": results,
+            "error": None,
+        }
     except ClientError as e:
         return {"source": "eks", "available": False, "cluster_name": cluster_name, "error": str(e)}
     except Exception as e:

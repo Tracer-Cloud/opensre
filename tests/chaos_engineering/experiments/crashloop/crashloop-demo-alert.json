@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Local CrashLoopBackOff demo; pair with crashloop-demo.yaml on kind",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/crashloop/crashloop-demo-alert.json"
+  },
+  "title": "[Triggered] Pod CrashLoopBackOff - crashloop-demo",
+  "alert_name": "Datadog monitor: Pod crashloop-demo CrashLoopBackOff",
+  "pipeline_name": "crashloop-demo",
+  "severity": "critical",
+  "alert_source": "datadog",
+  "message": "Pod crashloop-demo is in CrashLoopBackOff in namespace default",
+  "text": "Container exits with code 1 immediately on every start; kubelet keeps restarting the pod.",
+  "commonLabels": {
+    "pipeline_name": "crashloop-demo",
+    "severity": "critical",
+    "kube_deployment": "crashloop-demo"
+  },
+  "commonAnnotations": {
+    "summary": "Deployment crashloop-demo pod failing: CrashLoopBackOff",
+    "query": "kube_namespace:default pod_name:crashloop-demo*",
+    "kube_namespace": "default",
+    "kube_deployment": "crashloop-demo",
+    "correlation_id": "crashloop-demo-local-001"
+  }
+}

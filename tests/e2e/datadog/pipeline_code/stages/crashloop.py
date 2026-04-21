@@ -30,13 +30,15 @@ def main() -> None:
         file=sys.stderr,
     )
     print(
-        json.dumps({
-            "stage": "crashloop",
-            "status": "oomkilled",
-            "pipeline": PIPELINE_NAME,
-            "run_id": PIPELINE_RUN_ID,
-            "exit_code": 137,
-            "reason": "OOMKilled: alignment worker exceeded memory limit (24Gi requested, 8Gi limit)",
-        })
+        json.dumps(
+            {
+                "stage": "crashloop",
+                "status": "oomkilled",
+                "pipeline": PIPELINE_NAME,
+                "run_id": PIPELINE_RUN_ID,
+                "exit_code": 137,
+                "reason": "OOMKilled: alignment worker exceeded memory limit (24Gi requested, 8Gi limit)",
+            }
+        )
     )
     sys.exit(137)

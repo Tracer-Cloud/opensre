@@ -31,6 +31,9 @@ def test_run_happy_path() -> None:
 
 
 def test_run_error_propagated() -> None:
-    with patch("app.tools.MongoDBProfilerTool.get_profiler_data", return_value={"error": "profiling not enabled"}):
+    with patch(
+        "app.tools.MongoDBProfilerTool.get_profiler_data",
+        return_value={"error": "profiling not enabled"},
+    ):
         result = get_mongodb_profiler_data(connection_string="mongodb://localhost", database="mydb")
     assert "error" in result

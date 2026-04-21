@@ -95,9 +95,7 @@ class TestSandboxNetworkRestrictions:
 
 class TestSandboxFilesystemRestrictions:
     def test_read_allowed(self) -> None:
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write("data")
             path = f.name
         try:

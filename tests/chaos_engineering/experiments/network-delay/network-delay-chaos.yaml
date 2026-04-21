@@ -1,0 +1,22 @@
+# NetworkChaos delay on pods labeled app=network-delay-demo.
+#
+#   kubectl apply -f .../network-delay-chaos.yaml --context=kind-tracer-k8s-test
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-delay-demo
+  namespace: default
+spec:
+  action: delay
+  mode: all
+  duration: "3m"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: network-delay-demo
+  delay:
+    latency: "800ms"
+    correlation: "100"
+    jitter: "100ms"

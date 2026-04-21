@@ -49,8 +49,12 @@ def test_run_happy_path() -> None:
             },
         ],
     }
-    with patch("app.tools.MySQLCurrentProcessesTool.get_current_processes", return_value=fake_result):
-        result = get_mysql_current_processes(host="localhost", database="testdb", threshold_seconds=2)
+    with patch(
+        "app.tools.MySQLCurrentProcessesTool.get_current_processes", return_value=fake_result
+    ):
+        result = get_mysql_current_processes(
+            host="localhost", database="testdb", threshold_seconds=2
+        )
     assert result["threshold_seconds"] == 2
     assert result["total_processes"] == 2
     assert len(result["processes"]) == 2

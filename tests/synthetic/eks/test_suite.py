@@ -111,7 +111,15 @@ class TestMockBackendShapes:
         assert "degraded_deployments" in result
         assert "total_deployments" in result
         for deployment in result["deployments"]:
-            for field in ("name", "namespace", "desired", "ready", "available", "unavailable", "degraded"):
+            for field in (
+                "name",
+                "namespace",
+                "desired",
+                "ready",
+                "available",
+                "unavailable",
+                "degraded",
+            ):
                 assert field in deployment, f"missing field {field}"
 
     def test_eks_node_health_shape(self, placeholder) -> None:
@@ -393,12 +401,14 @@ def test_level4_scenario(fixture) -> None:
 
 
 def _write_minimal_answer_yml(scenario_dir: Path) -> None:
-    (scenario_dir / "answer.yml").write_text(textwrap.dedent("""\
+    (scenario_dir / "answer.yml").write_text(
+        textwrap.dedent("""\
         root_cause_category: test_category
         required_keywords:
           - test_keyword
         model_response: "Test model response."
-    """))
+    """)
+    )
 
 
 class TestScenarioInheritance:
@@ -409,12 +419,14 @@ class TestScenarioInheritance:
         real_dir = SUITE_DIR / "999-test-inherit"
         real_dir.mkdir(exist_ok=True)
         try:
-            (real_dir / "scenario.yml").write_text(textwrap.dedent("""\
+            (real_dir / "scenario.yml").write_text(
+                textwrap.dedent("""\
                 base: 000-healthy
                 scenario_id: 999-test-inherit
                 failure_mode: crashloop_backoff
                 severity: critical
-            """))
+            """)
+            )
             _write_minimal_answer_yml(real_dir)
 
             fixture = load_scenario(real_dir)
@@ -440,12 +452,14 @@ class TestScenarioInheritance:
         real_dir = SUITE_DIR / "999-test-fallback"
         real_dir.mkdir(exist_ok=True)
         try:
-            (real_dir / "scenario.yml").write_text(textwrap.dedent("""\
+            (real_dir / "scenario.yml").write_text(
+                textwrap.dedent("""\
                 base: 000-healthy
                 scenario_id: 999-test-fallback
                 failure_mode: healthy
                 severity: info
-            """))
+            """)
+            )
             _write_minimal_answer_yml(real_dir)
 
             fixture = load_scenario(real_dir)
@@ -466,12 +480,14 @@ class TestScenarioInheritance:
         real_dir = SUITE_DIR / "999-test-override"
         real_dir.mkdir(exist_ok=True)
         try:
-            (real_dir / "scenario.yml").write_text(textwrap.dedent("""\
+            (real_dir / "scenario.yml").write_text(
+                textwrap.dedent("""\
                 base: 000-healthy
                 scenario_id: 999-test-override
                 failure_mode: healthy
                 severity: info
-            """))
+            """)
+            )
             _write_minimal_answer_yml(real_dir)
 
             custom_events = {
@@ -494,7 +510,9 @@ class TestScenarioInheritance:
 
             assert fixture.evidence.eks_events is not None
             assert len(fixture.evidence.eks_events["warning_events"]) == 1
-            assert fixture.evidence.eks_events["warning_events"][0]["message"] == "Custom test event"
+            assert (
+                fixture.evidence.eks_events["warning_events"][0]["message"] == "Custom test event"
+            )
         finally:
             for f in real_dir.iterdir():
                 f.unlink()
@@ -507,18 +525,22 @@ class TestScenarioInheritance:
         real_dir_a.mkdir(exist_ok=True)
         real_dir_b.mkdir(exist_ok=True)
         try:
-            (real_dir_a / "scenario.yml").write_text(textwrap.dedent("""\
+            (real_dir_a / "scenario.yml").write_text(
+                textwrap.dedent("""\
                 base: 000-healthy
                 scenario_id: 999-test-chain-a
                 failure_mode: healthy
                 severity: info
-            """))
-            (real_dir_b / "scenario.yml").write_text(textwrap.dedent("""\
+            """)
+            )
+            (real_dir_b / "scenario.yml").write_text(
+                textwrap.dedent("""\
                 base: 999-test-chain-a
                 scenario_id: 999-test-chain-b
                 failure_mode: healthy
                 severity: info
-            """))
+            """)
+            )
             _write_minimal_answer_yml(real_dir_b)
 
             with pytest.raises(ValueError, match="Chained inheritance is not supported"):
@@ -534,12 +556,14 @@ class TestScenarioInheritance:
         real_dir = SUITE_DIR / "999-test-missing-base"
         real_dir.mkdir(exist_ok=True)
         try:
-            (real_dir / "scenario.yml").write_text(textwrap.dedent("""\
+            (real_dir / "scenario.yml").write_text(
+                textwrap.dedent("""\
                 base: 999-nonexistent
                 scenario_id: 999-test-missing-base
                 failure_mode: healthy
                 severity: info
-            """))
+            """)
+            )
             _write_minimal_answer_yml(real_dir)
 
             with pytest.raises(ValueError, match="Base scenario '999-nonexistent' not found"):

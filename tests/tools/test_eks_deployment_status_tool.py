@@ -15,12 +15,13 @@ class TestEKSDeploymentStatusToolContract(BaseToolContract):
 
 def test_is_available_requires_deployment() -> None:
     rt = get_eks_deployment_status.__opensre_registered_tool__
-    assert rt.is_available({
-        "eks": {"connection_verified": True, "cluster_name": "c1", "deployment": "my-dep"}
-    }) is True
-    assert rt.is_available({
-        "eks": {"connection_verified": True, "cluster_name": "c1"}
-    }) is False
+    assert (
+        rt.is_available(
+            {"eks": {"connection_verified": True, "cluster_name": "c1", "deployment": "my-dep"}}
+        )
+        is True
+    )
+    assert rt.is_available({"eks": {"connection_verified": True, "cluster_name": "c1"}}) is False
     assert rt.is_available({}) is False
 
 
@@ -41,7 +42,10 @@ def test_run_happy_path() -> None:
     mock_dep.status.conditions = []
     mock_apps_v1 = MagicMock()
     mock_apps_v1.read_namespaced_deployment.return_value = mock_dep
-    with patch("app.tools.EKSDeploymentStatusTool.build_k8s_clients", return_value=(MagicMock(), mock_apps_v1)):
+    with patch(
+        "app.tools.EKSDeploymentStatusTool.build_k8s_clients",
+        return_value=(MagicMock(), mock_apps_v1),
+    ):
         result = get_eks_deployment_status(
             cluster_name="c1",
             namespace="default",
@@ -54,7 +58,9 @@ def test_run_happy_path() -> None:
 
 
 def test_run_handles_exception() -> None:
-    with patch("app.tools.EKSDeploymentStatusTool.build_k8s_clients", side_effect=Exception("forbidden")):
+    with patch(
+        "app.tools.EKSDeploymentStatusTool.build_k8s_clients", side_effect=Exception("forbidden")
+    ):
         result = get_eks_deployment_status(
             cluster_name="c1",
             namespace="default",

@@ -1,0 +1,28 @@
+{
+  "logs": [
+    {
+      "timestamp": "2026-04-18T09:25:00Z",
+      "message": "[payments-api] container started cleanly after a single restart event; service operational on :8080",
+      "status": "info",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-x7gr9",
+      "tags": ["env:prod", "service:payments-api"]
+    },
+    {
+      "timestamp": "2026-04-18T10:00:00Z",
+      "message": "[payments-api] POST /api/v1/charge 200 71ms — sustained normal traffic with zero errors",
+      "status": "info",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-x7gr9",
+      "tags": ["env:prod", "service:payments-api"]
+    },
+    {
+      "timestamp": "2026-04-18T10:30:00Z",
+      "message": "[payments-api] no further restarts observed since 09:25:00Z; container_uptime > 60 minutes; healthy",
+      "status": "info",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-x7gr9",
+      "tags": ["env:prod", "service:payments-api"]
+    }
+  ]
+}

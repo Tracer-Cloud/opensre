@@ -33,6 +33,9 @@ def test_run_happy_path() -> None:
 
 
 def test_run_error_propagated() -> None:
-    with patch("app.tools.MariaDBProcessListTool.get_process_list", return_value={"source": "mariadb", "available": False, "error": "connection timeout"}):
+    with patch(
+        "app.tools.MariaDBProcessListTool.get_process_list",
+        return_value={"source": "mariadb", "available": False, "error": "connection timeout"},
+    ):
         result = get_mariadb_process_list(host="invalid", database="test", username="user")
     assert "error" in result

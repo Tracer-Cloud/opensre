@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for network-loss chaos demo",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/network-loss/network-loss-alert.json"
+  },
+  "title": "[Triggered] Packet loss / flaky probes - network-loss-demo",
+  "alert_name": "Datadog monitor: flaky network-loss-demo",
+  "pipeline_name": "network-loss-demo",
+  "severity": "warning",
+  "alert_source": "datadog",
+  "message": "Intermittent failures reaching network-loss-demo",
+  "text": "NetworkChaos loss injected; TCP/HTTP may reset or retry.",
+  "commonLabels": {
+    "pipeline_name": "network-loss-demo",
+    "severity": "warning",
+    "kube_deployment": "network-loss-demo"
+  },
+  "commonAnnotations": {
+    "summary": "Intermittent errors for deployment network-loss-demo",
+    "query": "kube_namespace:default kube_deployment:network-loss-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "network-loss-demo",
+    "correlation_id": "network-loss-local-001"
+  }
+}

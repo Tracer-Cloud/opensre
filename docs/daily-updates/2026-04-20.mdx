@@ -1,0 +1,58 @@
+---
+title: "Daily Update — 2026-04-20"
+description: "OpenSRE engineering daily update for 2026-04-20 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+Afif Ahmed, ANIRUDDHA ADAK, chaosreload, Ebrahim Sameh, Gaurav, gbsierra, kaushal-bakrania, Malik Amir Hamza, paulovitorcl, Rohit Rajan, Rohit Rajan, skredik, Tan Wee Joe, vincenthus, weichao, and Yash Kumar Saini 🙏🚀
+
+## Main updates shipped (April 20, 2026)
+
+- feat: Better Stack Telemetry (logs) integration (#692) — Afif Ahmed
+- fix(postgresql): wire is_available + extract_params into PostgreSQL @tool decorators (#703) — Ebrahim Sameh
+- fix(mysql): wire is_available + extract_params into MySQL @tool decorators (#704) — Ebrahim Sameh
+- fix(azure-sql): wire is_available + extract_params into Azure SQL @tool decorators (#706) — Ebrahim Sameh
+- feat: add GitDeployTimelineTool for incident-window deploy correlation (#708) — Malik Amir Hamza
+- feat(tests): Chaos Mesh lab via Make and tests/chaos_engineering (#691) — Tan Wee Joe
+- feat: add VS Code devcontainer support (#682) — skredik
+- fix: improve RCA prompt for evidence-grounded diagnosis (Fixes #653) (#714) — Gaurav
+- fix: surface checkpoint and audit_log keywords in synthetic test fixtures (#607, #610) — Rohit Rajan
+- test(synthetic): add 5 EKS noise scenarios (#709) — Malik Amir Hamza
+- fix: use typing_extensions.TypedDict in remaining app modules (follow-up #668) (#693) — chaosreload
+- fix: restore RunnableConfig annotation fix regressed by #594 (#695) — Ebrahim Sameh
+- fix: consolidate pytest config into pytest.ini, stop silently ignoring pyproject (#700) — Ebrahim Sameh
+- fix(snowflake): rename tool param schema to db_schema to silence Pydantic warning (#697) — Ebrahim Sameh
+- chore: consolidate ruff config into ruff.toml, stop silently ignoring pyproject (#701) — Ebrahim Sameh
+- docs: Better Stack Telemetry integration page (#715) — Afif Ahmed
+- fix: recognise grafana_alert_rules in check_evidence_availability (#684) — kaushal-bakrania
+- docs: sort integrations in alphabetical order in local and enterprise group (#680) — paulovitorcl
+- docs: scope sign-up button CSS to intended nav/sidebar areas (#679) — gbsierra
+
+## Source pull requests
+
+- [#685](https://github.com/Tracer-Cloud/opensre/pull/685) fix: recognise grafana_alert_rules in check_evidence_availability (#684) (author: kaushal-bakrania; contributors: kaushal-bakrania; labels: _none_; files: `app/nodes/root_cause_diagnosis/evidence_checker.py`)
+- [#686](https://github.com/Tracer-Cloud/opensre/pull/686) docs: scope sign-up button CSS to intended nav/sidebar areas (author: gbsierra; contributors: gbsierra; labels: _none_; files: `docs/custom.css`)
+- [#688](https://github.com/Tracer-Cloud/opensre/pull/688) docs: sort integrations in alphabetical order in local and enterprise group (author: paulovitorcl; contributors: paulovitorcl; labels: _none_; files: `docs/docs.json`)
+- [#696](https://github.com/Tracer-Cloud/opensre/pull/696) fix: restore RunnableConfig annotation fix regressed by #594 (author: Ebrahim Sameh; contributors: Ebrahim Sameh; labels: _none_; files: `app/nodes/resolve_integrations/node.py`)
+- [#700](https://github.com/Tracer-Cloud/opensre/pull/700) fix: consolidate pytest config into pytest.ini, stop silently ignoring pyproject (author: Ebrahim Sameh; contributors: Ebrahim Sameh; labels: _none_; files: `pyproject.toml`, `pytest.ini`)
+- [#698](https://github.com/Tracer-Cloud/opensre/pull/698) fix(snowflake): rename tool param schema to db_schema to silence Pydantic warning (author: Ebrahim Sameh; contributors: Ebrahim Sameh; labels: _none_; files: `app/tools/SnowflakeQueryHistoryTool/__init__.py`)
+- [#703](https://github.com/Tracer-Cloud/opensre/pull/703) fix(postgresql): wire is_available + extract_params into PostgreSQL @tool decorators (author: Ebrahim Sameh; contributors: Ebrahim Sameh; labels: _none_; files: `app/integrations/postgresql.py`, `app/tools/PostgreSQLCurrentQueriesTool/__init__.py`, `app/tools/PostgreSQLReplicationStatusTool/__init__.py`, `app/tools/PostgreSQLServerStatusTool/__init__.py`, `app/tools/PostgreSQLSlowQueriesTool/__init__.py`, `app/tools/PostgreSQLTableStatsTool/__init__.py`)
+- [#704](https://github.com/Tracer-Cloud/opensre/pull/704) fix(mysql): wire is_available + extract_params into MySQL @tool decorators (author: Ebrahim Sameh; contributors: Ebrahim Sameh; labels: _none_; files: `app/integrations/mysql.py`, `app/tools/MySQLCurrentProcessesTool/__init__.py`, `app/tools/MySQLReplicationStatusTool/__init__.py`, `app/tools/MySQLServerStatusTool/__init__.py`, `app/tools/MySQLSlowQueriesTool/__init__.py`, `app/tools/MySQLTableStatsTool/__init__.py`)
+- [#694](https://github.com/Tracer-Cloud/opensre/pull/694) fix: use typing_extensions.TypedDict in remaining app modules (follow-up #668) (author: chaosreload; contributors: chaosreload and weichao; labels: _none_; files: `app/cli/deploy.py`, `app/cli/tests/discover.py`, `app/integrations/openclaw.py`, `app/nodes/publish_findings/report_context.py`, `app/state/agent_state.py`, `app/state/types.py`)
+- [#666](https://github.com/Tracer-Cloud/opensre/pull/666) test(synthetic): add 5 EKS noise scenarios (author: Malik Amir Hamza; contributors: Malik Amir Hamza; labels: _none_; files: `tests/synthetic/eks/009-noisy-healthy-restart-recovered/alert.json`, `tests/synthetic/eks/009-noisy-healthy-restart-recovered/answer.yml`, `tests/synthetic/eks/009-noisy-healthy-restart-recovered/datadog_logs.json`, `tests/synthetic/eks/009-noisy-healthy-restart-recovered/datadog_monitors.json`, `tests/synthetic/eks/009-noisy-healthy-restart-recovered/eks_events.json`, `tests/synthetic/eks/009-noisy-healthy-restart-recovered/eks_pods.json`, `tests/synthetic/eks/009-noisy-healthy-restart-recovered/scenario.yml`, `tests/synthetic/eks/010-red-herring-old-rollout/alert.json`, `tests/synthetic/eks/010-red-herring-old-rollout/answer.yml`, `tests/synthetic/eks/010-red-herring-old-rollout/datadog_logs.json`, and 23 more)
+- [#691](https://github.com/Tracer-Cloud/opensre/pull/691) feat(tests): Chaos Mesh lab via Make and tests/chaos_engineering (author: Tan Wee Joe; contributors: Tan Wee Joe; labels: _none_; files: `Makefile`, `tests/chaos_engineering/README.md`, `tests/chaos_engineering/__init__.py`, `tests/chaos_engineering/__main__.py`, `tests/chaos_engineering/chaos-demo.yaml`, `tests/chaos_engineering/cli.py`, `tests/chaos_engineering/experiment_ops.py`, `tests/chaos_engineering/experiments/container-kill/container-kill-alert.json`, `tests/chaos_engineering/experiments/container-kill/container-kill-chaos.yaml`, `tests/chaos_engineering/experiments/container-kill/container-kill-demo.yaml`, and 63 more)
+- [#693](https://github.com/Tracer-Cloud/opensre/pull/693) feat: add VS Code devcontainer support (author: skredik; contributors: skredik and Yash Kumar Saini; labels: _none_; files: `.devcontainer/Dockerfile`, `.devcontainer/devcontainer.json`, `.dockerignore`, `.gitignore`, `CONTRIBUTING.md`, `README.md`, `SETUP.md`, `app/cli/wizard/local_grafana_stack/docker-compose.yml`, `tests/test_devcontainer.py`)
+- [#708](https://github.com/Tracer-Cloud/opensre/pull/708) chore: consolidate ruff config into ruff.toml, stop silently ignoring pyproject (author: Ebrahim Sameh; contributors: Ebrahim Sameh; labels: _none_; files: `pyproject.toml`)
+- [#692](https://github.com/Tracer-Cloud/opensre/pull/692) feat: Better Stack Telemetry (logs) integration (author: Afif Ahmed; contributors: Afif Ahmed and Yash Kumar Saini; labels: _none_; files: `.env.example`, `README.md`, `app/cli/constants.py`, `app/cli/wizard/flow.py`, `app/cli/wizard/integration_health.py`, `app/integrations/betterstack.py`, `app/integrations/catalog.py`, `app/integrations/cli.py`, `app/integrations/models.py`, `app/integrations/verify.py`, and 17 more)
+- [#707](https://github.com/Tracer-Cloud/opensre/pull/707) fix(azure-sql): wire is_available + extract_params into Azure SQL @tool decorators (author: Ebrahim Sameh; contributors: Ebrahim Sameh; labels: _none_; files: `app/integrations/azure_sql.py`, `app/tools/AzureSQLCurrentQueriesTool/__init__.py`, `app/tools/AzureSQLResourceStatsTool/__init__.py`, `app/tools/AzureSQLServerStatusTool/__init__.py`, `app/tools/AzureSQLSlowQueriesTool/__init__.py`, `app/tools/AzureSQLWaitStatsTool/__init__.py`, `tests/integrations/test_azure_sql.py`)
+- [#709](https://github.com/Tracer-Cloud/opensre/pull/709) feat: add GitDeployTimelineTool for incident-window deploy correlation (author: Malik Amir Hamza; contributors: Malik Amir Hamza; labels: _none_; files: `app/nodes/investigate/processing/post_process.py`, `app/nodes/plan_actions/build_prompt.py`, `app/tools/GitDeployTimelineTool/__init__.py`, `tests/tools/test_git_deploy_timeline_tool.py`)
+- [#713](https://github.com/Tracer-Cloud/opensre/pull/713) docs: Better Stack Telemetry integration page (author: Afif Ahmed; contributors: Afif Ahmed; labels: _none_; files: `docs/betterstack.mdx`, `docs/docs.json`, `docs/intergrations-overview.mdx`)
+- [#712](https://github.com/Tracer-Cloud/opensre/pull/712) fix: surface checkpoint and audit_log keywords in synthetic test fixtures (#607, #610) (author: Rohit Rajan; contributors: ANIRUDDHA ADAK, Rohit Rajan, Rohit Rajan, and vincenthus; labels: _none_; files: `app/nodes/plan_actions/build_prompt.py`, `app/nodes/root_cause_diagnosis/prompt_builder.py`, `app/tools/AzureSQLCurrentQueriesTool/__init__.py`, `app/tools/AzureSQLResourceStatsTool/__init__.py`, `app/tools/AzureSQLServerStatusTool/__init__.py`, `app/tools/AzureSQLSlowQueriesTool/__init__.py`, `app/tools/AzureSQLWaitStatsTool/__init__.py`, `app/tools/MariaDBInnoDBStatusTool/__init__.py`, `app/tools/MariaDBProcessListTool/__init__.py`, `app/tools/MariaDBReplicationTool/__init__.py`, and 17 more)
+- [#716](https://github.com/Tracer-Cloud/opensre/pull/716) fix: improve RCA prompt for evidence-grounded diagnosis (Fixes #653) (author: Gaurav; contributors: Gaurav; labels: _none_; files: `app/nodes/root_cause_diagnosis/prompt_builder.py`, `app/services/llm_client.py`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-19T23:00:00+00:00` to `2026-04-20T23:00:00+00:00`

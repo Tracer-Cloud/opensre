@@ -75,9 +75,7 @@ def test_dockerfile_copies_app_code(dockerfile_path: Path) -> None:
 def test_dockerfile_copies_langgraph_config(dockerfile_path: Path) -> None:
     """The Dockerfile must point the API server at the application graph."""
     content = dockerfile_path.read_text()
-    assert "app/graph_pipeline.py:build_graph" in content, (
-        "Should configure the graph entrypoint"
-    )
+    assert "app/graph_pipeline.py:build_graph" in content, "Should configure the graph entrypoint"
 
 
 def test_dockerfile_keeps_base_runtime_intact(dockerfile_path: Path) -> None:

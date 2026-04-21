@@ -474,7 +474,7 @@ def test_tests_inventory_commands_smoke(cli_sandbox: CliSandbox) -> None:
 def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
     # One `j` per keypress (burst writes are not separate keys). The select list wraps;
     # from the first option, len(choices)-1 steps reach "Skip for now" without wrapping past it.
-    # 18 integrations + "Skip for now" = 19 choices → 18 j's from the top.
+    # 19 integrations + "Skip for now" = 20 choices → 19 j's from the top.
     result = _run_cli_pty(
         cli_sandbox,
         "onboard",
@@ -482,7 +482,7 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
             PtyAction(expect="How do you want to get started?", send=b"\r"),
             PtyAction(expect="Choose your LLM provider", send=b"\r"),
             PtyAction(expect="Anthropic API key", send=b"smoke-test-key\r"),
-            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjjjjjj\r"),
+            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjjjjjjj\r"),
         ],
         timeout=30.0,
     )

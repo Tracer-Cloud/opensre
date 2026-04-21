@@ -22,14 +22,16 @@ def test_is_available_false_without_connection_verified(tool: VercelDeploymentSt
 
 
 def test_extract_params_maps_source_fields(tool: VercelDeploymentStatusTool) -> None:
-    params = tool.extract_params({
-        "vercel": {
-            "api_token": "tok_abc",
-            "team_id": "team_1",
-            "project_id": "proj_frontend",
-            "connection_verified": True,
+    params = tool.extract_params(
+        {
+            "vercel": {
+                "api_token": "tok_abc",
+                "team_id": "team_1",
+                "project_id": "proj_frontend",
+                "connection_verified": True,
+            }
         }
-    })
+    )
     assert params["api_token"] == "tok_abc"
     assert params["team_id"] == "team_1"
     assert params["project_id"] == "proj_frontend"
@@ -44,7 +46,9 @@ def test_run_returns_failed_deployments_for_error_state(tool: VercelDeploymentSt
     ]
     mock_client = MagicMock()
     mock_client.list_deployments.return_value = {
-        "success": True, "deployments": deployments, "total": 3
+        "success": True,
+        "deployments": deployments,
+        "total": 3,
     }
     with patch("app.tools.VercelDeploymentStatusTool.make_vercel_client", return_value=mock_client):
         result = tool.run(api_token="tok_test")
@@ -60,9 +64,7 @@ def test_run_returns_failed_deployments_for_error_state(tool: VercelDeploymentSt
 
 def test_run_empty_deployments_list(tool: VercelDeploymentStatusTool) -> None:
     mock_client = MagicMock()
-    mock_client.list_deployments.return_value = {
-        "success": True, "deployments": [], "total": 0
-    }
+    mock_client.list_deployments.return_value = {"success": True, "deployments": [], "total": 0}
     with patch("app.tools.VercelDeploymentStatusTool.make_vercel_client", return_value=mock_client):
         result = tool.run(api_token="tok_test")
 
@@ -74,7 +76,8 @@ def test_run_empty_deployments_list(tool: VercelDeploymentStatusTool) -> None:
 def test_run_returns_unavailable_on_api_failure(tool: VercelDeploymentStatusTool) -> None:
     mock_client = MagicMock()
     mock_client.list_deployments.return_value = {
-        "success": False, "error": "HTTP 401: unauthorized"
+        "success": False,
+        "error": "HTTP 401: unauthorized",
     }
     with patch("app.tools.VercelDeploymentStatusTool.make_vercel_client", return_value=mock_client):
         result = tool.run(api_token="tok_test")
@@ -91,7 +94,9 @@ def test_run_returns_unavailable_without_token(tool: VercelDeploymentStatusTool)
     assert result["failed_deployments"] == []
 
 
-def test_run_returns_unavailable_for_whitespace_only_token(tool: VercelDeploymentStatusTool) -> None:
+def test_run_returns_unavailable_for_whitespace_only_token(
+    tool: VercelDeploymentStatusTool,
+) -> None:
     result = tool.run(api_token="   ")
     assert result["available"] is False
     assert result["deployments"] == []
@@ -99,9 +104,7 @@ def test_run_returns_unavailable_for_whitespace_only_token(tool: VercelDeploymen
 
 def test_run_passes_project_id_and_state_to_client(tool: VercelDeploymentStatusTool) -> None:
     mock_client = MagicMock()
-    mock_client.list_deployments.return_value = {
-        "success": True, "deployments": [], "total": 0
-    }
+    mock_client.list_deployments.return_value = {"success": True, "deployments": [], "total": 0}
     with patch("app.tools.VercelDeploymentStatusTool.make_vercel_client", return_value=mock_client):
         tool.run(api_token="tok_test", project_id="proj_1", state="ERROR", limit=5)
 

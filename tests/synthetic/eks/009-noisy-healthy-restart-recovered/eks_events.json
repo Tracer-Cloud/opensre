@@ -1,0 +1,14 @@
+{
+  "warning_events": [
+    {
+      "namespace": "payments",
+      "reason": "BackOff",
+      "message": "Back-off restarting failed container payments-api in pod payments-api-7f9dd8b6c4-x7gr9 (single transient restart, container has since been Running for 60+ minutes)",
+      "type": "Warning",
+      "count": 1,
+      "involved_object": "Pod/payments-api-7f9dd8b6c4-x7gr9",
+      "first_time": "2026-04-18T09:24:30Z",
+      "last_time": "2026-04-18T09:24:50Z"
+    }
+  ]
+}

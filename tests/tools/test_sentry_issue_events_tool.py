@@ -15,9 +15,7 @@ class TestSentryIssueEventsToolContract(BaseToolContract):
 
 def test_is_available_requires_issue_id() -> None:
     rt = list_sentry_issue_events.__opensre_registered_tool__
-    assert rt.is_available({
-        "sentry": {"connection_verified": True, "issue_id": "123"}
-    }) is True
+    assert rt.is_available({"sentry": {"connection_verified": True, "issue_id": "123"}}) is True
     assert rt.is_available({"sentry": {"connection_verified": True}}) is False
     assert rt.is_available({}) is False
 
@@ -31,17 +29,17 @@ def test_extract_params_maps_fields() -> None:
 
 
 def test_run_returns_unavailable_when_no_config() -> None:
-    result = list_sentry_issue_events(
-        organization_slug="", sentry_token="", issue_id="123"
-    )
+    result = list_sentry_issue_events(organization_slug="", sentry_token="", issue_id="123")
     assert result["available"] is False
     assert result["events"] == []
 
 
 def test_run_happy_path() -> None:
     fake_events = [{"eventID": "e1", "dateCreated": "2024-01-01"}]
-    with patch("app.tools.SentryIssueEventsTool.sentry_list_issue_events", return_value=fake_events), \
-         patch("app.tools.SentrySearchIssuesTool.sentry_config_from_env", return_value=None):
+    with (
+        patch("app.tools.SentryIssueEventsTool.sentry_list_issue_events", return_value=fake_events),
+        patch("app.tools.SentrySearchIssuesTool.sentry_config_from_env", return_value=None),
+    ):
         result = list_sentry_issue_events(
             organization_slug="my-org", sentry_token="tok_test", issue_id="123"
         )

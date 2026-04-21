@@ -45,7 +45,9 @@ def load_outputs(stack_name: str) -> dict[str, Any]:
     """
     output_path = _get_output_path(stack_name)
     if not output_path.exists():
-        raise FileNotFoundError(f"No outputs found for stack '{stack_name}'. Deploy the stack first.")
+        raise FileNotFoundError(
+            f"No outputs found for stack '{stack_name}'. Deploy the stack first."
+        )
     with open(output_path) as f:
         result: dict[str, Any] = json.load(f)
         return result
@@ -66,7 +68,9 @@ def get_output(stack_name: str, key: str) -> str:
     """
     outputs = load_outputs(stack_name)
     if key not in outputs:
-        raise KeyError(f"Output '{key}' not found in stack '{stack_name}'. Available: {list(outputs.keys())}")
+        raise KeyError(
+            f"Output '{key}' not found in stack '{stack_name}'. Available: {list(outputs.keys())}"
+        )
     return str(outputs[key])
 
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import requests
 
+from app.integrations.betterstack import build_betterstack_config, validate_betterstack_config
 from app.integrations.github_mcp import (
     GitHubMCPValidationResult,
     build_github_mcp_config,
@@ -443,6 +444,29 @@ def validate_google_docs_integration(
         ok=True,
         detail=f"Connected to Drive folder {config.folder_id} ({result.get('file_count', 0)} items).",
     )
+
+
+def validate_betterstack_integration(
+    *,
+    query_endpoint: str,
+    username: str,
+    password: str,
+    sources: list[str] | None = None,
+) -> IntegrationHealthResult:
+    """Validate Better Stack Telemetry credentials via a ``SELECT 1`` probe."""
+    try:
+        config = build_betterstack_config(
+            {
+                "query_endpoint": query_endpoint,
+                "username": username,
+                "password": password,
+                "sources": list(sources or []),
+            }
+        )
+    except Exception as err:  # noqa: BLE001 — config errors should surface to the user verbatim
+        return IntegrationHealthResult(ok=False, detail=f"Better Stack config invalid: {err}")
+    result = validate_betterstack_config(config)
+    return IntegrationHealthResult(ok=result.ok, detail=result.detail)
 
 
 def validate_vercel_integration(*, api_token: str, team_id: str = "") -> IntegrationHealthResult:

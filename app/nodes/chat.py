@@ -33,6 +33,7 @@ def _to_structured_tool(tool: RegisteredTool) -> StructuredTool:
 def get_chat_tools() -> list[StructuredTool]:
     return [_to_structured_tool(tool) for tool in get_registered_tools("chat")]
 
+
 # LangChain type -> ChatMessage role mapping
 _TYPE_TO_ROLE: dict[str, str] = {
     "human": "user",
@@ -148,9 +149,7 @@ def _get_chat_llm(*, with_tools: bool = False) -> BaseChatModel | ToolEnabledCha
 
     cached_reasoning_model = _chat_llm_cache.get(provider)
     if cached_reasoning_model is None:
-        cached_reasoning_model = _build_chat_model(
-            provider=provider, model_name=reasoning_model
-        )
+        cached_reasoning_model = _build_chat_model(provider=provider, model_name=reasoning_model)
         _chat_llm_cache[provider] = cached_reasoning_model
     return cached_reasoning_model
 
@@ -272,8 +271,6 @@ def tool_executor_node(state: AgentState) -> dict[str, Any]:
         except (RuntimeError, ValueError, TypeError, KeyError) as e:
             result = json.dumps({"error": str(e)})
 
-        tool_messages.append(
-            ToolMessage(content=result, tool_call_id=tool_id, name=tool_name)
-        )
+        tool_messages.append(ToolMessage(content=result, tool_call_id=tool_id, name=tool_name))
 
     return {"messages": tool_messages}

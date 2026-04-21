@@ -26,22 +26,33 @@ def test_run_happy_path() -> None:
         "total_events": 2,
         "events": [
             {"id": "evt-1", "event_type": "CLUSTER_READY", "cluster_name": "prod"},
-            {"id": "evt-2", "event_type": "REPLICATION_OPLOG_WINDOW_RUNNING_OUT", "cluster_name": "prod"},
+            {
+                "id": "evt-2",
+                "event_type": "REPLICATION_OPLOG_WINDOW_RUNNING_OUT",
+                "cluster_name": "prod",
+            },
         ],
     }
     with patch("app.tools.MongoDBAtlasEventsTool.get_cluster_events", return_value=fake_result):
         result = get_mongodb_atlas_cluster_events(
-            api_public_key="pub", api_private_key="priv",
-            project_id="proj", cluster_name="prod",
+            api_public_key="pub",
+            api_private_key="priv",
+            project_id="proj",
+            cluster_name="prod",
         )
     assert result["available"] is True
     assert result["total_events"] == 2
 
 
 def test_run_error_propagated() -> None:
-    with patch("app.tools.MongoDBAtlasEventsTool.get_cluster_events", return_value={"source": "mongodb_atlas", "available": False, "error": "auth failed"}):
+    with patch(
+        "app.tools.MongoDBAtlasEventsTool.get_cluster_events",
+        return_value={"source": "mongodb_atlas", "available": False, "error": "auth failed"},
+    ):
         result = get_mongodb_atlas_cluster_events(
-            api_public_key="bad", api_private_key="bad",
-            project_id="proj", cluster_name="prod",
+            api_public_key="bad",
+            api_private_key="bad",
+            project_id="proj",
+            cluster_name="prod",
         )
     assert "error" in result

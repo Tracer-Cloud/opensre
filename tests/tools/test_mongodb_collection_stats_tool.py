@@ -26,7 +26,9 @@ def test_run_happy_path() -> None:
         "size": 2048,
         "indexes": [],
     }
-    with patch("app.tools.MongoDBCollectionStatsTool.get_collection_stats", return_value=fake_result):
+    with patch(
+        "app.tools.MongoDBCollectionStatsTool.get_collection_stats", return_value=fake_result
+    ):
         result = get_mongodb_collection_stats(
             connection_string="mongodb://localhost:27017",
             database="my-db",
@@ -37,7 +39,9 @@ def test_run_happy_path() -> None:
 
 def test_run_error_propagated() -> None:
     fake_result = {"error": "Connection refused"}
-    with patch("app.tools.MongoDBCollectionStatsTool.get_collection_stats", return_value=fake_result):
+    with patch(
+        "app.tools.MongoDBCollectionStatsTool.get_collection_stats", return_value=fake_result
+    ):
         result = get_mongodb_collection_stats(
             connection_string="mongodb://invalid",
             database="my-db",

@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import subprocess
 import time
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any
+
+from typing_extensions import TypedDict
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

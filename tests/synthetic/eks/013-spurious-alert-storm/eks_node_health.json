@@ -1,0 +1,30 @@
+{
+  "nodes": [
+    {
+      "name": "ip-10-0-1-42.us-east-1.compute.internal",
+      "internal_ip": "10.0.1.42",
+      "ready": "True",
+      "memory_pressure": "False",
+      "disk_pressure": "False",
+      "pid_pressure": "False",
+      "capacity_cpu": "4",
+      "capacity_memory": "16Gi",
+      "allocatable_cpu": "3500m",
+      "allocatable_memory": "14Gi",
+      "instance_type": "m5.xlarge"
+    },
+    {
+      "name": "ip-10-0-1-73.us-east-1.compute.internal",
+      "internal_ip": "10.0.1.73",
+      "ready": "True",
+      "memory_pressure": "False",
+      "disk_pressure": "False",
+      "pid_pressure": "False",
+      "capacity_cpu": "4",
+      "capacity_memory": "16Gi",
+      "allocatable_cpu": "3500m",
+      "allocatable_memory": "14Gi",
+      "instance_type": "m5.xlarge"
+    }
+  ]
+}

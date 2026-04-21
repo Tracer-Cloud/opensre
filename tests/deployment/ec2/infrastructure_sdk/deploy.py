@@ -83,6 +83,7 @@ def deploy() -> dict[str, str]:
 
     # 5. User data — pass required LLM env vars from local environment
     import os
+
     env_vars: dict[str, str] = {}
     for key in (
         "OPENAI_API_KEY",

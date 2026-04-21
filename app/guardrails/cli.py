@@ -85,8 +85,7 @@ def cmd_test(text: str) -> None:
 
     for match in result.matches:
         click.echo(
-            f"  [{match.action.value.upper()}] {match.rule_name}: "
-            f"matched '{match.matched_text}'"
+            f"  [{match.action.value.upper()}] {match.rule_name}: matched '{match.matched_text}'"
         )
 
     if result.blocked:
@@ -99,7 +98,9 @@ def cmd_test(text: str) -> None:
         )
         redacted = text
         for match in redact_matches:
-            redacted = redacted[:match.start] + f"[REDACTED:{match.rule_name}]" + redacted[match.end:]
+            redacted = (
+                redacted[: match.start] + f"[REDACTED:{match.rule_name}]" + redacted[match.end :]
+            )
         click.echo(f"\n  Redacted output: {redacted}")
 
 

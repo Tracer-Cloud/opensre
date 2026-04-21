@@ -77,9 +77,7 @@ def _configured_auth_key() -> str | None:
     return auth_key or None
 
 
-def _check_api_key(
-    request: Request, x_api_key: str | None = Header(default=None)
-) -> None:
+def _check_api_key(request: Request, x_api_key: str | None = Header(default=None)) -> None:
     """Reject protected remote API requests unless a valid API key is configured."""
     if request.url.path in _AUTH_EXEMPT_PATHS:
         return
@@ -162,6 +160,7 @@ class DeepHealthCheck(BaseModel):
     name: str
     status: str
     detail: str
+
 
 # ---------------------------------------------------------------------------
 # Discord helpers
@@ -268,9 +267,7 @@ async def _run_discord_investigation(interaction: DiscordInteraction) -> None:
     # Post via interaction followup webhook (the deferred response requires this)
     app_id = interaction.application_id or _DISCORD_APPLICATION_ID
     if app_id and interaction.token:
-        await asyncio.to_thread(
-            _discord_post_followup, app_id, interaction.token, embeds=[embed]
-        )
+        await asyncio.to_thread(_discord_post_followup, app_id, interaction.token, embeds=[embed])
 
 
 # ---------------------------------------------------------------------------
@@ -279,9 +276,7 @@ async def _run_discord_investigation(interaction: DiscordInteraction) -> None:
 
 
 @discord_router.post("/discord/interactions")
-async def discord_interactions(
-    request: Request, background_tasks: BackgroundTasks
-) -> Response:
+async def discord_interactions(request: Request, background_tasks: BackgroundTasks) -> Response:
     body = await request.body()
     sig = request.headers.get("X-Signature-Ed25519", "")
     ts = request.headers.get("X-Signature-Timestamp", "")

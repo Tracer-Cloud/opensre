@@ -15,6 +15,7 @@ from app.tools.utils.log_compaction import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_log(message: str, level: str = "ERROR", ts: str = "") -> dict:
     return {"message": message, "log_level": level, "timestamp": ts}
 
@@ -54,8 +55,12 @@ class TestDeduplicateLogs:
     def test_near_duplicates_with_variable_tokens(self):
         """Messages differing only by UUID / timestamp / IP should be grouped."""
         logs = [
-            _make_log("Request abc12345-1234-1234-1234-123456789abc failed after 30s", "ERROR", "t1"),
-            _make_log("Request def12345-1234-1234-1234-123456789def failed after 45s", "ERROR", "t2"),
+            _make_log(
+                "Request abc12345-1234-1234-1234-123456789abc failed after 30s", "ERROR", "t1"
+            ),
+            _make_log(
+                "Request def12345-1234-1234-1234-123456789def failed after 45s", "ERROR", "t2"
+            ),
         ]
         result = deduplicate_logs(logs)
         assert len(result) == 1
@@ -87,9 +92,26 @@ class TestDeduplicateLogs:
     def test_burst_scenario_from_issue(self):
         """The exact scenario from issue #226: 48 identical timeouts + 2 distinct errors."""
         logs = (
-            [_make_log("Connection timeout to upstream service", "ERROR", f"2024-01-15T10:00:{i:02d}Z") for i in range(48)]
-            + [_make_log("Schema validation failed: missing field 'user_id'", "ERROR", "2024-01-15T10:01:00Z")]
-            + [_make_log("NullPointerException in DataProcessor.transform", "ERROR", "2024-01-15T10:01:30Z")]
+            [
+                _make_log(
+                    "Connection timeout to upstream service", "ERROR", f"2024-01-15T10:00:{i:02d}Z"
+                )
+                for i in range(48)
+            ]
+            + [
+                _make_log(
+                    "Schema validation failed: missing field 'user_id'",
+                    "ERROR",
+                    "2024-01-15T10:01:00Z",
+                )
+            ]
+            + [
+                _make_log(
+                    "NullPointerException in DataProcessor.transform",
+                    "ERROR",
+                    "2024-01-15T10:01:30Z",
+                )
+            ]
         )
         assert len(logs) == 50
 

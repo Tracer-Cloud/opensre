@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for container-kill chaos demo",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/container-kill/container-kill-alert.json"
+  },
+  "title": "[Triggered] Container restart storm - container-kill-demo",
+  "alert_name": "Datadog monitor: restarts container-kill-demo",
+  "pipeline_name": "container-kill-demo",
+  "severity": "warning",
+  "alert_source": "datadog",
+  "message": "Container restarts on container-kill-demo",
+  "text": "PodChaos container-kill causes kubelet to restart the nginx container.",
+  "commonLabels": {
+    "pipeline_name": "container-kill-demo",
+    "severity": "warning",
+    "kube_deployment": "container-kill-demo"
+  },
+  "commonAnnotations": {
+    "summary": "Elevated restarts on deployment container-kill-demo",
+    "query": "kube_namespace:default kube_deployment:container-kill-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "container-kill-demo",
+    "correlation_id": "container-kill-local-001"
+  }
+}

@@ -14,6 +14,7 @@ For 000-healthy, writes per-metric files to aws_cloudwatch_metrics/ directory.
 For other scenarios, writes to aws_cloudwatch_metrics.json (single file).
 Idempotent: safe to re-run.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,6 +27,7 @@ SUITE_DIR = Path(__file__).parent.parent
 # ---------------------------------------------------------------------------
 # Deterministic noise helpers (no external deps)
 # ---------------------------------------------------------------------------
+
 
 def _lcg(seed: int) -> int:
     """Linear congruential generator step."""
@@ -65,7 +67,7 @@ def jittered_series(
     v = mean
     for _ in range(n):
         delta, seed = _gauss(seed, 0.0, sigma * 0.7)
-        revert = (mean - v) * 0.3   # mean-reversion force
+        revert = (mean - v) * 0.3  # mean-reversion force
         v = v + delta + revert
         if floor is not None:
             v = max(v, floor)
@@ -172,8 +174,7 @@ def blip_series(
 def timestamps(start_iso: str, n: int, period_sec: int = 60) -> list[str]:
     dt = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
     return [
-        (dt + timedelta(seconds=i * period_sec)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        for i in range(n)
+        (dt + timedelta(seconds=i * period_sec)).strftime("%Y-%m-%dT%H:%M:%SZ") for i in range(n)
     ]
 
 
@@ -184,29 +185,203 @@ def timestamps(start_iso: str, n: int, period_sec: int = 60) -> list[str]:
 # special: "sawtooth" | "flat" | None (random walk)
 
 BASELINE_DEFS: list[dict] = [
-    {"metric_name": "ReadIOPS",               "id": "m_read_iops",      "dim": "payments-prod",         "stat": "Average", "unit": "Count/Second",    "mean": 1870.0, "noise": 0.08},
-    {"metric_name": "NetworkReceiveThroughput","id": "m_net_rx",         "dim": "payments-prod",         "stat": "Average", "unit": "Bytes/Second",     "mean": 4194304.0, "noise": 0.10},  # ~4 MB/s
-    {"metric_name": "DiskQueueDepth",          "id": "m_disk_queue",     "dim": "payments-prod",         "stat": "Average", "unit": "Count",            "mean": 0.10,   "noise": 0.20, "floor": 0.01},
-    {"metric_name": "CommitThroughput",        "id": "m_commit_tput",    "dim": "payments-prod",         "stat": "Average", "unit": "Count/Second",     "mean": 120.0,  "noise": 0.09},
-    {"metric_name": "CommitLatency",           "id": "m_commit_lat",     "dim": "payments-prod",         "stat": "Average", "unit": "Milliseconds",     "mean": 2.0,    "noise": 0.12, "floor": 0.5},
-    {"metric_name": "ReadLatency",             "id": "m_read_lat",       "dim": "payments-prod",         "stat": "Average", "unit": "Milliseconds",     "mean": 1.0,    "noise": 0.15, "floor": 0.2},
-    {"metric_name": "WriteLatency",            "id": "m_write_lat",      "dim": "payments-prod",         "stat": "Average", "unit": "Milliseconds",     "mean": 1.2,    "noise": 0.13, "floor": 0.2},
-    {"metric_name": "NetworkTransmitThroughput","id": "m_net_tx",        "dim": "payments-prod",         "stat": "Average", "unit": "Bytes/Second",     "mean": 8388608.0, "noise": 0.10},  # ~8 MB/s
-    {"metric_name": "TransactionLogsGeneration","id": "m_txn_logs_base", "dim": "payments-prod",         "stat": "Average", "unit": "Bytes/Second",     "mean": 4194304.0, "noise": 0.08},  # ~4 MB/s
-    {"metric_name": "FreeableMemory",          "id": "m_freeable_mem",   "dim": "payments-prod",         "stat": "Minimum", "unit": "Bytes",            "mean": 39728447488.0, "noise": 0.0, "special": "sawtooth"},  # ~37 GB
-    {"metric_name": "WriteIOPS",               "id": "m_write_iops_base","dim": "payments-prod",         "stat": "Average", "unit": "Count/Second",     "mean": 980.0,  "noise": 0.12},
-    {"metric_name": "CPUUtilization",          "id": "m_cpu_base",       "dim": "payments-prod",         "stat": "Average", "unit": "Percent",          "mean": 18.0,   "noise": 0.15, "floor": 5.0, "ceil": 35.0},
-    {"metric_name": "DatabaseConnections",     "id": "m_db_conn_base",   "dim": "payments-prod",         "stat": "Average", "unit": "Count",            "mean": 93.0,   "noise": 0.10, "floor": 60.0, "ceil": 130.0},
-    {"metric_name": "FreeStorageSpace",        "id": "m_free_storage",   "dim": "payments-prod",         "stat": "Minimum", "unit": "Bytes",            "mean": 214748364800.0, "noise": 0.0, "special": "flat"},  # 200 GB
-    {"metric_name": "ReplicaLag",              "id": "m_replica_lag_base","dim": "payments-prod-replica-1","stat": "Maximum","unit": "Seconds",          "mean": 1.2,    "noise": 0.20, "floor": 0.4, "ceil": 3.0},
+    {
+        "metric_name": "ReadIOPS",
+        "id": "m_read_iops",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Count/Second",
+        "mean": 1870.0,
+        "noise": 0.08,
+    },
+    {
+        "metric_name": "NetworkReceiveThroughput",
+        "id": "m_net_rx",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Bytes/Second",
+        "mean": 4194304.0,
+        "noise": 0.10,
+    },  # ~4 MB/s
+    {
+        "metric_name": "DiskQueueDepth",
+        "id": "m_disk_queue",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Count",
+        "mean": 0.10,
+        "noise": 0.20,
+        "floor": 0.01,
+    },
+    {
+        "metric_name": "CommitThroughput",
+        "id": "m_commit_tput",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Count/Second",
+        "mean": 120.0,
+        "noise": 0.09,
+    },
+    {
+        "metric_name": "CommitLatency",
+        "id": "m_commit_lat",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Milliseconds",
+        "mean": 2.0,
+        "noise": 0.12,
+        "floor": 0.5,
+    },
+    {
+        "metric_name": "ReadLatency",
+        "id": "m_read_lat",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Milliseconds",
+        "mean": 1.0,
+        "noise": 0.15,
+        "floor": 0.2,
+    },
+    {
+        "metric_name": "WriteLatency",
+        "id": "m_write_lat",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Milliseconds",
+        "mean": 1.2,
+        "noise": 0.13,
+        "floor": 0.2,
+    },
+    {
+        "metric_name": "NetworkTransmitThroughput",
+        "id": "m_net_tx",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Bytes/Second",
+        "mean": 8388608.0,
+        "noise": 0.10,
+    },  # ~8 MB/s
+    {
+        "metric_name": "TransactionLogsGeneration",
+        "id": "m_txn_logs_base",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Bytes/Second",
+        "mean": 4194304.0,
+        "noise": 0.08,
+    },  # ~4 MB/s
+    {
+        "metric_name": "FreeableMemory",
+        "id": "m_freeable_mem",
+        "dim": "payments-prod",
+        "stat": "Minimum",
+        "unit": "Bytes",
+        "mean": 39728447488.0,
+        "noise": 0.0,
+        "special": "sawtooth",
+    },  # ~37 GB
+    {
+        "metric_name": "WriteIOPS",
+        "id": "m_write_iops_base",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Count/Second",
+        "mean": 980.0,
+        "noise": 0.12,
+    },
+    {
+        "metric_name": "CPUUtilization",
+        "id": "m_cpu_base",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Percent",
+        "mean": 18.0,
+        "noise": 0.15,
+        "floor": 5.0,
+        "ceil": 35.0,
+    },
+    {
+        "metric_name": "DatabaseConnections",
+        "id": "m_db_conn_base",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Count",
+        "mean": 93.0,
+        "noise": 0.10,
+        "floor": 60.0,
+        "ceil": 130.0,
+    },
+    {
+        "metric_name": "FreeStorageSpace",
+        "id": "m_free_storage",
+        "dim": "payments-prod",
+        "stat": "Minimum",
+        "unit": "Bytes",
+        "mean": 214748364800.0,
+        "noise": 0.0,
+        "special": "flat",
+    },  # 200 GB
+    {
+        "metric_name": "ReplicaLag",
+        "id": "m_replica_lag_base",
+        "dim": "payments-prod-replica-1",
+        "stat": "Maximum",
+        "unit": "Seconds",
+        "mean": 1.2,
+        "noise": 0.20,
+        "floor": 0.4,
+        "ceil": 3.0,
+    },
     # --- Decoy metrics (adversarial noise layer) ---
     # Each is real and observable but not the root cause in any current scenario.
     # They create plausible-looking false leads the agent must consider and dismiss.
-    {"metric_name": "SwapUsage",               "id": "m_swap",           "dim": "payments-prod",         "stat": "Maximum", "unit": "Bytes",            "mean": 83886080.0, "noise": 0.08, "floor": 0.0},          # ~80 MB — visible but not alarming
-    {"metric_name": "BinLogDiskUsage",         "id": "m_binlog",         "dim": "payments-prod",         "stat": "Average", "unit": "Bytes",            "mean": 524288000.0,"noise": 0.07},                         # ~500 MB binlog accumulation
-    {"metric_name": "MaximumUsedTransactionIDs","id": "m_max_xid",       "dim": "payments-prod",         "stat": "Maximum", "unit": "Count",            "mean": 198000000.0, "noise": 0.002, "floor": 190000000.0}, # ~198M XID — healthy but drifting upward
-    {"metric_name": "ReadThroughput",          "id": "m_read_tput",      "dim": "payments-prod",         "stat": "Average", "unit": "Bytes/Second",     "mean": 52428800.0, "noise": 0.09},                         # ~50 MB/s read activity
-    {"metric_name": "WriteThroughput",         "id": "m_write_tput",     "dim": "payments-prod",         "stat": "Average", "unit": "Bytes/Second",     "mean": 20971520.0, "noise": 0.11},                         # ~20 MB/s write activity
+    {
+        "metric_name": "SwapUsage",
+        "id": "m_swap",
+        "dim": "payments-prod",
+        "stat": "Maximum",
+        "unit": "Bytes",
+        "mean": 83886080.0,
+        "noise": 0.08,
+        "floor": 0.0,
+    },  # ~80 MB — visible but not alarming
+    {
+        "metric_name": "BinLogDiskUsage",
+        "id": "m_binlog",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Bytes",
+        "mean": 524288000.0,
+        "noise": 0.07,
+    },  # ~500 MB binlog accumulation
+    {
+        "metric_name": "MaximumUsedTransactionIDs",
+        "id": "m_max_xid",
+        "dim": "payments-prod",
+        "stat": "Maximum",
+        "unit": "Count",
+        "mean": 198000000.0,
+        "noise": 0.002,
+        "floor": 190000000.0,
+    },  # ~198M XID — healthy but drifting upward
+    {
+        "metric_name": "ReadThroughput",
+        "id": "m_read_tput",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Bytes/Second",
+        "mean": 52428800.0,
+        "noise": 0.09,
+    },  # ~50 MB/s read activity
+    {
+        "metric_name": "WriteThroughput",
+        "id": "m_write_tput",
+        "dim": "payments-prod",
+        "stat": "Average",
+        "unit": "Bytes/Second",
+        "mean": 20971520.0,
+        "noise": 0.11,
+    },  # ~20 MB/s write activity
 ]
 
 # ---------------------------------------------------------------------------
@@ -219,11 +394,17 @@ BASELINE_DEFS: list[dict] = [
 
 SCENARIOS: dict[str, dict] = {
     "001-replication-lag": {
-        "start": "2026-03-26T11:20:00Z", "n": 15,
+        "start": "2026-03-26T11:20:00Z",
+        "n": 15,
         "existing": {
-            "ReplicaLag", "WriteIOPS", "TransactionLogsGeneration",
-            "DatabaseConnections", "CPUUtilization", "FreeStorageSpace",
-            "FreeableMemory", "NetworkTransmitThroughput",
+            "ReplicaLag",
+            "WriteIOPS",
+            "TransactionLogsGeneration",
+            "DatabaseConnections",
+            "CPUUtilization",
+            "FreeStorageSpace",
+            "FreeableMemory",
+            "NetworkTransmitThroughput",
         },
         # Stagger: WriteIOPS+TransactionLogs spike first (min 0), ReplicaLag climbs from min 2
         "onset_patches": {
@@ -236,10 +417,15 @@ SCENARIOS: dict[str, dict] = {
         },
     },
     "002-connection-exhaustion": {
-        "start": "2026-03-26T11:50:00Z", "n": 15,
+        "start": "2026-03-26T11:50:00Z",
+        "n": 15,
         "existing": {
-            "DatabaseConnections", "CPUUtilization", "ReplicaLag",
-            "FreeStorageSpace", "WriteLatency", "ReadIOPS",
+            "DatabaseConnections",
+            "CPUUtilization",
+            "ReplicaLag",
+            "FreeStorageSpace",
+            "WriteLatency",
+            "ReadIOPS",
         },
         # Need: WriteIOPS (baseline), NetworkTx, DiskQueue, CommitTput, CommitLat,
         #        ReadLat, NetRx, TxnLogs, FreeableMemory, NetworkTransmitThroughput
@@ -254,9 +440,13 @@ SCENARIOS: dict[str, dict] = {
         },
     },
     "003-storage-full": {
-        "start": "2026-03-27T02:00:00Z", "n": 15,
+        "start": "2026-03-27T02:00:00Z",
+        "n": 15,
         "existing": {
-            "FreeStorageSpace", "WriteIOPS", "CPUUtilization", "WriteLatency",
+            "FreeStorageSpace",
+            "WriteIOPS",
+            "CPUUtilization",
+            "WriteLatency",
         },
         # Need: DatabaseConnections, ReplicaLag, ReadIOPS, FreeableMemory,
         #        NetworkTx, NetRx, DiskQueue, CommitTput, CommitLat, ReadLat, TxnLogs
@@ -275,9 +465,12 @@ SCENARIOS: dict[str, dict] = {
         },
     },
     "004-cpu-saturation-bad-query": {
-        "start": "2026-03-27T14:00:00Z", "n": 20,
+        "start": "2026-03-27T14:00:00Z",
+        "n": 20,
         "existing": {
-            "CPUUtilization", "ReadIOPS", "DatabaseConnections",
+            "CPUUtilization",
+            "ReadIOPS",
+            "DatabaseConnections",
         },
         # Need: WriteIOPS, ReplicaLag, FreeStorageSpace, FreeableMemory,
         #        NetworkTx, NetRx, DiskQueue, CommitTput, CommitLat, ReadLat,
@@ -293,9 +486,12 @@ SCENARIOS: dict[str, dict] = {
         },
     },
     "005-failover": {
-        "start": "2026-03-27T08:00:00Z", "n": 15,
+        "start": "2026-03-27T08:00:00Z",
+        "n": 15,
         "existing": {
-            "DatabaseConnections", "CPUUtilization", "WriteIOPS",
+            "DatabaseConnections",
+            "CPUUtilization",
+            "WriteIOPS",
         },
         # Need: ReplicaLag (pre-failover blip confounder), ReadIOPS,
         #        FreeStorageSpace, FreeableMemory, NetworkTx, NetRx,
@@ -309,20 +505,29 @@ SCENARIOS: dict[str, dict] = {
                 "id": "m_replica_lag_confounder",
                 "label": "ReplicaLag",
                 "metric_name": "ReplicaLag",
-                "dimensions": [{"Name": "DBInstanceIdentifier", "Value": "payments-prod-replica-1"}],
-                "stat": "Maximum", "unit": "Seconds",
+                "dimensions": [
+                    {"Name": "DBInstanceIdentifier", "Value": "payments-prod-replica-1"}
+                ],
+                "stat": "Maximum",
+                "unit": "Seconds",
                 "type": "blip",
-                "baseline": 1.2, "peak": 28.0,
-                "blip_start": 3, "blip_end": 6,
+                "baseline": 1.2,
+                "peak": 28.0,
+                "blip_start": 3,
+                "blip_end": 6,
                 "noise_frac": 0.10,
                 "seed_offset": 9901,
             },
         ],
     },
     "006-replication-lag-cpu-redherring": {
-        "start": "2026-03-27T10:00:00Z", "n": 20,
+        "start": "2026-03-27T10:00:00Z",
+        "n": 20,
         "existing": {
-            "ReplicaLag", "WriteIOPS", "CPUUtilization", "TransactionLogsGeneration",
+            "ReplicaLag",
+            "WriteIOPS",
+            "CPUUtilization",
+            "TransactionLogsGeneration",
         },
         # CPU confounder already present (analytics SELECT). No changes to existing.
         # Need: DatabaseConnections, ReadIOPS, FreeStorageSpace, FreeableMemory,
@@ -330,9 +535,12 @@ SCENARIOS: dict[str, dict] = {
         #        WriteLatency, NetworkReceiveThroughput
     },
     "007-connection-pressure-noisy-healthy": {
-        "start": "2026-03-27T16:00:00Z", "n": 20,
+        "start": "2026-03-27T16:00:00Z",
+        "n": 20,
         "existing": {
-            "DatabaseConnections", "CPUUtilization", "ReadLatency",
+            "DatabaseConnections",
+            "CPUUtilization",
+            "ReadLatency",
         },
         # All existing metrics are the "confounders" (they look worrying but aren't faults).
         # Need: WriteIOPS, ReplicaLag, FreeStorageSpace, FreeableMemory,
@@ -340,9 +548,12 @@ SCENARIOS: dict[str, dict] = {
         #        TxnLogs, ReadIOPS
     },
     "008-storage-full-missing-metric": {
-        "start": "2026-03-27T03:00:00Z", "n": 15,
+        "start": "2026-03-27T03:00:00Z",
+        "n": 15,
         "existing": {
-            "WriteIOPS", "WriteLatency", "CPUUtilization",
+            "WriteIOPS",
+            "WriteLatency",
+            "CPUUtilization",
         },
         # FreeStorageSpace intentionally ABSENT (the missing-metric scenario).
         # Need: DatabaseConnections, ReplicaLag, ReadIOPS, FreeableMemory,
@@ -360,9 +571,12 @@ SCENARIOS: dict[str, dict] = {
         "skip_baseline": {"FreeStorageSpace"},
     },
     "009-dual-fault-connection-cpu": {
-        "start": "2026-03-27T20:00:00Z", "n": 20,
+        "start": "2026-03-27T20:00:00Z",
+        "n": 20,
         "existing": {
-            "DatabaseConnections", "CPUUtilization", "ReadIOPS",
+            "DatabaseConnections",
+            "CPUUtilization",
+            "ReadIOPS",
         },
         # Both root causes are already in existing metrics (no artificial confounders).
         # Need: WriteIOPS, ReplicaLag, FreeStorageSpace, FreeableMemory,
@@ -370,9 +584,12 @@ SCENARIOS: dict[str, dict] = {
         #        WriteLatency, TxnLogs
     },
     "010-replication-lag-missing-metric": {
-        "start": "2026-03-28T07:00:00Z", "n": 20,
+        "start": "2026-03-28T07:00:00Z",
+        "n": 20,
         "existing": {
-            "WriteIOPS", "TransactionLogsGeneration", "CPUUtilization",
+            "WriteIOPS",
+            "TransactionLogsGeneration",
+            "CPUUtilization",
         },
         # ReplicaLag intentionally ABSENT (the missing-metric scenario).
         # Need: DatabaseConnections, ReadIOPS, FreeStorageSpace, FreeableMemory,
@@ -394,14 +611,12 @@ SCENARIOS: dict[str, dict] = {
 def _make_seed(scenario_id: str, metric_name: str) -> int:
     """Deterministic seed from scenario + metric name."""
     h = 0
-    for c in (scenario_id + ":" + metric_name):
+    for c in scenario_id + ":" + metric_name:
         h = (h * 31 + ord(c)) & 0xFFFFFFFF
     return h or 1
 
 
-def _gen_baseline_series(
-    defn: dict, scenario_id: str, n: int, start_iso: str
-) -> dict:
+def _gen_baseline_series(defn: dict, scenario_id: str, n: int, start_iso: str) -> dict:
     seed = _make_seed(scenario_id, defn["metric_name"])
     ts = timestamps(start_iso, n)
     special = defn.get("special")
@@ -529,17 +744,24 @@ def process_scenario(scenario_id: str, config: dict) -> None:
         else:
             raise ValueError(f"Unknown extra_series type: {spec['type']}")
 
-        new_series.append({
-            "id": spec["id"],
-            "label": spec["metric_name"],
-            "metric_name": spec["metric_name"],
-            "dimensions": [{"Name": "DBInstanceIdentifier", "Value": spec.get("dim", "payments-prod-replica-1")}],
-            "stat": spec["stat"],
-            "unit": spec["unit"],
-            "status_code": "Complete",
-            "timestamps": ts,
-            "values": values,
-        })
+        new_series.append(
+            {
+                "id": spec["id"],
+                "label": spec["metric_name"],
+                "metric_name": spec["metric_name"],
+                "dimensions": [
+                    {
+                        "Name": "DBInstanceIdentifier",
+                        "Value": spec.get("dim", "payments-prod-replica-1"),
+                    }
+                ],
+                "stat": spec["stat"],
+                "unit": spec["unit"],
+                "status_code": "Complete",
+                "timestamps": ts,
+                "values": values,
+            }
+        )
 
     data["metric_data_results"] = existing_results + new_series
     metrics_path.write_text(json.dumps(data, indent=2))
@@ -558,7 +780,9 @@ def generate_shared_baseline() -> None:
         out.append(series)
 
     shared_dir = Path(__file__).parent
-    (shared_dir / "baseline_metrics.json").write_text(json.dumps({"metric_data_results": out}, indent=2))
+    (shared_dir / "baseline_metrics.json").write_text(
+        json.dumps({"metric_data_results": out}, indent=2)
+    )
     print(f"  shared/baseline_metrics.json: {len(out)} series written")
 
 
@@ -597,7 +821,9 @@ def main() -> None:
     for scenario_id, config in SCENARIOS.items():
         process_scenario(scenario_id, config)
 
-    print("\nDone. Run: python -m pytest tests/synthetic/rds_postgres/test_suite.py -m synthetic -q")
+    print(
+        "\nDone. Run: python -m pytest tests/synthetic/rds_postgres/test_suite.py -m synthetic -q"
+    )
 
 
 if __name__ == "__main__":

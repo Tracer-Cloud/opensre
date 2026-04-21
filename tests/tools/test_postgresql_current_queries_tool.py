@@ -52,8 +52,12 @@ def test_run_happy_path() -> None:
             },
         ],
     }
-    with patch("app.tools.PostgreSQLCurrentQueriesTool.get_current_queries", return_value=fake_result):
-        result = get_postgresql_current_queries(host="localhost", database="testdb", threshold_seconds=2)
+    with patch(
+        "app.tools.PostgreSQLCurrentQueriesTool.get_current_queries", return_value=fake_result
+    ):
+        result = get_postgresql_current_queries(
+            host="localhost", database="testdb", threshold_seconds=2
+        )
     assert result["threshold_seconds"] == 2
     assert result["total_queries"] == 3
     assert len(result["queries"]) == 2
@@ -61,7 +65,10 @@ def test_run_happy_path() -> None:
 
 
 def test_run_error_propagated() -> None:
-    with patch("app.tools.PostgreSQLCurrentQueriesTool.get_current_queries", return_value={"source": "postgresql", "available": False, "error": "permission denied"}):
+    with patch(
+        "app.tools.PostgreSQLCurrentQueriesTool.get_current_queries",
+        return_value={"source": "postgresql", "available": False, "error": "permission denied"},
+    ):
         result = get_postgresql_current_queries(host="invalid", database="testdb")
     assert "error" in result
     assert result["available"] is False
