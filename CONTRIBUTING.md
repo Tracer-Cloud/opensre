@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in contributing to Tracer.
+Thanks for your interest in contributing to OpenSRE.
 
 This document describes how to set up your environment, propose changes, report bugs, and submit pull requests in a way that keeps review fast and the project reliable.
 
