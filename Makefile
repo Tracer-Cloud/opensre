@@ -6,15 +6,12 @@ export
 ifneq ($(wildcard .venv/bin/python),)
 PYTHON = .venv/bin/python
 PIP = .venv/bin/python -m pip
-else ifneq ($(wildcard .venv/Scripts/python.exe),)
-ifeq ($(OS),Windows_NT)
+else ifeq ($(OS),Windows_NT)
+ifneq ($(wildcard .venv/Scripts/python.exe),)
 PYTHON = .venv\\Scripts\\python.exe
 PIP = .venv\\Scripts\\python.exe -m pip
-else
-PYTHON = .venv/Scripts/python.exe
-PIP = .venv/Scripts/python.exe -m pip
 endif
-else ifneq ($(shell python3 -c "import sys" 2>/dev/null),)
+else ifneq ($(shell python3 -c "import sys" 2>$(if $(filter Windows_NT,$(OS)),NUL,/dev/null)),)
 PYTHON = python3
 PIP = python3 -m pip
 else
@@ -24,7 +21,7 @@ endif
 # PIP_INSTALL_FLAGS = --user --break-system-packages
 USER_BASE := $(shell $(PYTHON) -m site --user-base)
 USER_BIN := $(USER_BASE)/bin
-export PATH := $(if $(wildcard .venv/bin),$(CURDIR)/.venv/bin:,)$(USER_BIN):$(PATH)
+export PATH := $(if $(wildcard .venv/bin),$(CURDIR)/.venv/bin:,$(if $(wildcard .venv/Scripts),$(CURDIR)/.venv/Scripts:))$(USER_BIN):$(PATH)
 
 # Create venv and install dependencies
 install:
