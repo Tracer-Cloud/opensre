@@ -488,6 +488,21 @@ class DiscordBotConfig(StrictConfigModel):
         return stripped
 
 
+class TelegramBotConfig(StrictConfigModel):
+    """Telegram Bot runtime config."""
+
+    bot_token: str
+    default_chat_id: str | None = None
+
+    @field_validator("bot_token", mode="before")
+    @classmethod
+    def _validate_bot_token(cls, v: object) -> str:
+        stripped = str(v or "").strip()
+        if not stripped:
+            raise ValueError("bot_token cannot be empty or just whitespace")
+        return stripped
+
+
 class AlertmanagerIntegrationConfig(StrictConfigModel):
     """Normalized Alertmanager credentials used by resolution and verification flows."""
 

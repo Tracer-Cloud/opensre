@@ -25,6 +25,7 @@ from app.integrations.models import (
     JiraIntegrationConfig,
     OpsGenieIntegrationConfig,
     SlackWebhookConfig,
+    TelegramBotConfig,
 )
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config
@@ -69,6 +70,7 @@ _SERVICE_KEY_MAP = {
     "opsgenie": "opsgenie",
     "jira": "jira",
     "discord": "discord",
+    "telegram": "telegram",
     "openclaw": "openclaw",
     "mysql": "mysql",
     "azure_sql": "azure_sql",
@@ -479,6 +481,20 @@ def _classify_service_instance(
             return None, None
         if discord_config.bot_token:
             return discord_config.model_dump(), "discord"
+        return None, None
+
+    if key == "telegram":
+        try:
+            tg_config = TelegramBotConfig.model_validate(
+                {
+                    "bot_token": credentials.get("bot_token", ""),
+                    "default_chat_id": credentials.get("default_chat_id"),
+                }
+            )
+        except Exception:
+            return None, None
+        if tg_config.bot_token:
+            return tg_config.model_dump(), "telegram"
         return None, None
 
     if key == "openclaw":
@@ -1105,6 +1121,23 @@ def load_env_integrations() -> list[dict[str, Any]]:
             }
         )
 
+    telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if telegram_bot_token:
+        tg_config = TelegramBotConfig.model_validate(
+            {
+                "bot_token": telegram_bot_token,
+                "default_chat_id": os.getenv("TELEGRAM_DEFAULT_CHAT_ID", "").strip() or None,
+            }
+        )
+        integrations.append(
+            {
+                "id": "env-telegram",
+                "service": "telegram",
+                "status": "active",
+                "credentials": tg_config.model_dump(),
+            }
+        )
+
     atlas_pub = os.getenv("MONGODB_ATLAS_PUBLIC_KEY", "").strip()
     atlas_priv = os.getenv("MONGODB_ATLAS_PRIVATE_KEY", "").strip()
     atlas_project = os.getenv("MONGODB_ATLAS_PROJECT_ID", "").strip()
@@ -1503,6 +1536,7 @@ def resolve_effective_integrations(
         "opsgenie",
         "jira",
         "discord",
+        "telegram",
         "openclaw",
         "mysql",
         "azure_sql",

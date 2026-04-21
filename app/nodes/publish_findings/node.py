@@ -156,6 +156,44 @@ def generate_report(state: InvestigationState) -> dict:
     else:
         logger.debug("[publish] discord delivery: no discord integration configured")
 
+    # Telegram delivery — uses integration credentials if configured
+    telegram_creds = resolved.get("telegram", {})
+    if telegram_creds:
+        from app.utils.telegram_delivery import send_telegram_report
+
+        telegram_ctx = state.get("telegram_context") or {}
+        bot_token = telegram_ctx.get("bot_token") or telegram_creds.get("bot_token", "")
+        chat_id = telegram_ctx.get("chat_id") or telegram_creds.get("default_chat_id", "")
+        reply_to = str(telegram_ctx.get("reply_to_message_id") or "")
+        logger.debug(
+            "[publish] telegram delivery: chat_id=%s reply_to=%s bot_token_present=%s",
+            chat_id,
+            reply_to,
+            bool(bot_token),
+        )
+        if bot_token and chat_id:
+            tg_posted, tg_error = send_telegram_report(
+                slack_message,
+                {"bot_token": bot_token, "chat_id": chat_id, "reply_to_message_id": reply_to},
+            )
+            logger.debug(
+                "[publish] telegram delivery: posted=%s error=%s", tg_posted, tg_error
+            )
+            if not tg_posted:
+                logger.warning(
+                    "[publish] Telegram delivery failed: chat_id=%s error=%s",
+                    chat_id,
+                    tg_error,
+                )
+        else:
+            logger.debug(
+                "[publish] telegram delivery: skipped — bot_token_present=%s chat_id=%s",
+                bool(bot_token),
+                chat_id,
+            )
+    else:
+        logger.debug("[publish] telegram delivery: no telegram integration configured")
+
     # GitLab MR write-back (opt-in via GITLAB_MR_WRITEBACK env var)
     if os.getenv("GITLAB_MR_WRITEBACK", "").lower() in ("true", "1", "yes"):
         _gl = (state.get("available_sources") or {}).get("gitlab", {})
