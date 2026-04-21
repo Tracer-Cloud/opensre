@@ -32,3 +32,12 @@ def datadog_available_or_backend(sources: dict[str, dict]) -> bool:
     """
     dd = sources.get("datadog", {})
     return bool(dd.get("connection_verified") or dd.get("_backend"))
+
+
+def cloudwatch_is_available(sources: dict[str, dict]) -> bool:
+    """Available when a CloudWatch integration is configured.
+
+    CloudWatch uses IAM-based auth — no connection string to extract.
+    Tool params like ``job_queue`` are alert-specific and provided by the LLM.
+    """
+    return bool(sources.get("cloudwatch", {}).get("connection_verified"))

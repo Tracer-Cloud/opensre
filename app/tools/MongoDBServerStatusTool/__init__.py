@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.mongodb import MongoDBConfig, get_server_status
+from app.integrations.mongodb import (
+    MongoDBConfig,
+    get_server_status,
+    mongodb_extract_params,
+    mongodb_is_available,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -11,6 +16,8 @@ from app.tools.tool_decorator import tool
     description="Retrieve high-level MongoDB server status including connections, memory usage, and operation counters.",
     source="mongodb",
     surfaces=("investigation", "chat"),
+    is_available=mongodb_is_available,
+    extract_params=mongodb_extract_params,
 )
 def get_mongodb_server_status(
     connection_string: str,

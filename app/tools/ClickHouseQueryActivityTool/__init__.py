@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.clickhouse import ClickHouseConfig, get_query_activity
+from app.integrations.clickhouse import (
+    ClickHouseConfig,
+    clickhouse_extract_params,
+    clickhouse_is_available,
+    get_query_activity,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -16,6 +21,8 @@ from app.tools.tool_decorator import tool
         "Checking recent query patterns that may correlate with performance issues",
         "Reviewing query activity after an alert fires",
     ],
+    is_available=clickhouse_is_available,
+    extract_params=clickhouse_extract_params,
 )
 def get_clickhouse_query_activity(
     host: str,

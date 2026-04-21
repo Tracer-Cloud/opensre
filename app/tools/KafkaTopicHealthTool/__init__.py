@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.kafka import KafkaConfig, get_topic_health
+from app.integrations.kafka import (
+    KafkaConfig,
+    get_topic_health,
+    kafka_extract_params,
+    kafka_is_available,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -16,6 +21,8 @@ from app.tools.tool_decorator import tool
         "Identifying under-replicated partitions after a broker failure",
         "Reviewing topic metadata for capacity planning",
     ],
+    is_available=kafka_is_available,
+    extract_params=kafka_extract_params,
 )
 def get_kafka_topic_health(
     bootstrap_servers: str,
