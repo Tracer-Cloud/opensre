@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.mongodb import MongoDBConfig, get_profiler_data
+from app.integrations.mongodb import (
+    MongoDBConfig,
+    get_profiler_data,
+    mongodb_database_is_available,
+    mongodb_extract_params,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -11,6 +16,8 @@ from app.tools.tool_decorator import tool
     description="Retrieve slow queries from the MongoDB database system.profile collection (requires profiling enabled).",
     source="mongodb",
     surfaces=("investigation", "chat"),
+    is_available=mongodb_database_is_available,
+    extract_params=mongodb_extract_params,
 )
 def get_mongodb_profiler_data(
     connection_string: str,
