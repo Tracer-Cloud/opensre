@@ -29,12 +29,14 @@ def test_sync_provider_env_updates_provider_specific_keys(tmp_path) -> None:
     assert "OPENAI_REASONING_MODEL=gpt-5-mini\n" in content
     assert "OPENAI_MODEL=gpt-5-mini\n" in content
 
+
 def test_sync_provider_env_appends_to_file_without_final_newline(tmp_path) -> None:
     env_path = tmp_path / ".env"
     env_path.write_text(
         "ENV=development\n"
         "LLM_PROVIDER=anthropic\n"
-        "ANTHROPIC_API_KEY=legacy-anthropic",
+        "ANTHROPIC_API_KEY=legacy-anthropic\n"
+        "TEST_ENV=no-new-line",
         encoding="utf-8",
     )
 
