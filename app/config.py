@@ -273,10 +273,10 @@ class LLMSettings(StrictConfigModel):
                 or BEDROCK_TOOLCALL_MODEL,
                 "ollama_model": os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL).strip()
                 or DEFAULT_OLLAMA_MODEL,
-                "ollama_host": os.getenv("OLLAMA_HOST", DEFAULT_OLLAMA_HOST).strip()
-                or DEFAULT_OLLAMA_HOST,
-                "max_tokens": DEFAULT_MAX_TOKENS,
-            }
+        "ollama_host": os.getenv("OLLAMA_HOST", DEFAULT_OLLAMA_HOST).strip()
+        or DEFAULT_OLLAMA_HOST,
+        "max_tokens": _parse_max_tokens(),
+    }
         )
 
 
@@ -333,6 +333,25 @@ OLLAMA_LLM_CONFIG = LLMModelConfig(
 TRACER_BASE_URL_DEV = "https://staging.tracer.cloud"
 TRACER_BASE_URL_PROD = "https://app.tracer.cloud"
 SLACK_CHANNEL = "tracer-rca-report-alerts"
+
+
+def _parse_max_tokens() -> int:
+    """Parse LLM_MAX_TOKENS from environment variable.
+    
+    Returns:
+        int: The max_tokens value from LLM_MAX_TOKENS env var, or DEFAULT_MAX_TOKENS if not set or invalid.
+    """
+    max_tokens_str = os.getenv("LLM_MAX_TOKENS")
+    if max_tokens_str is None:
+        return DEFAULT_MAX_TOKENS
+    
+    try:
+        max_tokens = int(max_tokens_str)
+        if max_tokens <= 0:
+            return DEFAULT_MAX_TOKENS
+        return max_tokens
+    except (ValueError, TypeError):
+        return DEFAULT_MAX_TOKENS
 
 
 def get_tracer_base_url() -> str:

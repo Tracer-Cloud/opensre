@@ -65,3 +65,73 @@ def test_llm_settings_from_env_minimax(monkeypatch) -> None:
 
     assert settings.provider == "minimax"
     assert settings.minimax_api_key == "mm-stored-key"
+
+
+def test_llm_settings_from_env_max_tokens_default(monkeypatch) -> None:
+    """Test that max_tokens defaults to DEFAULT_MAX_TOKENS when LLM_MAX_TOKENS is not set."""
+    monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setattr(
+        "app.config.resolve_llm_api_key",
+        lambda env_var: "test-key" if env_var == "OPENAI_API_KEY" else "",
+    )
+
+    settings = LLMSettings.from_env()
+
+    assert settings.max_tokens == 4096  # DEFAULT_MAX_TOKENS
+
+
+def test_llm_settings_from_env_max_tokens_custom(monkeypatch) -> None:
+    """Test that LLM_MAX_TOKENS env var is respected."""
+    monkeypatch.setenv("LLM_MAX_TOKENS", "8192")
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setattr(
+        "app.config.resolve_llm_api_key",
+        lambda env_var: "test-key" if env_var == "OPENAI_API_KEY" else "",
+    )
+
+    settings = LLMSettings.from_env()
+
+    assert settings.max_tokens == 8192
+
+
+def test_llm_settings_from_env_max_tokens_invalid_fallback(monkeypatch) -> None:
+    """Test that invalid LLM_MAX_TOKENS falls back to DEFAULT_MAX_TOKENS."""
+    monkeypatch.setenv("LLM_MAX_TOKENS", "invalid")
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setattr(
+        "app.config.resolve_llm_api_key",
+        lambda env_var: "test-key" if env_var == "OPENAI_API_KEY" else "",
+    )
+
+    settings = LLMSettings.from_env()
+
+    assert settings.max_tokens == 4096  # DEFAULT_MAX_TOKENS
+
+
+def test_llm_settings_from_env_max_tokens_negative_fallback(monkeypatch) -> None:
+    """Test that negative LLM_MAX_TOKENS falls back to DEFAULT_MAX_TOKENS."""
+    monkeypatch.setenv("LLM_MAX_TOKENS", "-100")
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setattr(
+        "app.config.resolve_llm_api_key",
+        lambda env_var: "test-key" if env_var == "OPENAI_API_KEY" else "",
+    )
+
+    settings = LLMSettings.from_env()
+
+    assert settings.max_tokens == 4096  # DEFAULT_MAX_TOKENS
+
+
+def test_llm_settings_from_env_max_tokens_zero_fallback(monkeypatch) -> None:
+    """Test that zero LLM_MAX_TOKENS falls back to DEFAULT_MAX_TOKENS."""
+    monkeypatch.setenv("LLM_MAX_TOKENS", "0")
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setattr(
+        "app.config.resolve_llm_api_key",
+        lambda env_var: "test-key" if env_var == "OPENAI_API_KEY" else "",
+    )
+
+    settings = LLMSettings.from_env()
+
+    assert settings.max_tokens == 4096  # DEFAULT_MAX_TOKENS
