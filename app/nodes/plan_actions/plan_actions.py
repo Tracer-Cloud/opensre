@@ -56,6 +56,11 @@ def _seed_action_names_for_sources(
         seeded.append("search_openclaw_conversations")
         seeded.append("list_openclaw_tools")
 
+    if "airflow" in available_sources:
+        seeded.append("get_recent_airflow_failures")
+        seeded.append("get_airflow_dag_runs")
+        seeded.append("get_airflow_task_instances")
+
     return seeded
 
 

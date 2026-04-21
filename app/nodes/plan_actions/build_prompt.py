@@ -320,6 +320,21 @@ def build_investigation_prompt(
 
     sources_hint = _build_available_sources_hint(available_sources)
 
+    airflow_priority_hint = ""
+    if "airflow" in available_sources:
+        airflow_priority_hint = """
+**Airflow Investigation Priority:**
+This incident explicitly involves Airflow and an Airflow integration is available.
+Prioritize Airflow-specific investigation actions before generic infrastructure tools.
+
+Use Airflow tools FIRST:
+- get_recent_airflow_failures
+- get_airflow_dag_runs
+- get_airflow_task_instances
+
+Do not start with unrelated generic platform tools unless Airflow evidence is exhausted.
+"""
+
     # Build lineage investigation directive if S3 data is available
     lineage_directive = ""
     if available_sources.get("s3") or available_sources.get("s3_audit"):
@@ -351,6 +366,7 @@ Problem Context:
 {lineage_directive}
 {memory_section}
 {sources_hint}
+{airflow_priority_hint}
 Available Investigation Actions:
 {actions_description if actions_description else "No actions available"}
 
