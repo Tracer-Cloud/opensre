@@ -46,8 +46,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 def _require_env() -> tuple[str, str, str, str, str]:
     """Return (base_url, dag_id, auth_token, username, password) or skip."""
     base_url = (
-        os.getenv("AIRFLOW_BASE_URL", DEFAULT_AIRFLOW_BASE_URL).strip()
-        or DEFAULT_AIRFLOW_BASE_URL
+        os.getenv("AIRFLOW_BASE_URL", DEFAULT_AIRFLOW_BASE_URL).strip() or DEFAULT_AIRFLOW_BASE_URL
     )
     dag_id = os.getenv("AIRFLOW_DAG_ID", "").strip()
     auth_token = os.getenv("AIRFLOW_AUTH_TOKEN", "").strip()
@@ -192,7 +191,6 @@ def test_airflow_investigation_e2e():
     )
 
     root_cause = investigation_result.get("root_cause", "")
-
 
     assert root_cause, (
         "Investigation produced no root cause. "
