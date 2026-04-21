@@ -5,8 +5,8 @@ from typing import Any
 from app.integrations.mongodb import (
     MongoDBConfig,
     get_collection_stats,
+    mongodb_database_is_available,
     mongodb_extract_params,
-    mongodb_is_available,
 )
 from app.tools.tool_decorator import tool
 
@@ -16,7 +16,7 @@ from app.tools.tool_decorator import tool
     description="Retrieve document counts, size metrics, and index information for a specific MongoDB collection.",
     source="mongodb",
     surfaces=("investigation", "chat"),
-    is_available=mongodb_is_available,
+    is_available=mongodb_database_is_available,
     extract_params=mongodb_extract_params,
 )
 def get_mongodb_collection_stats(

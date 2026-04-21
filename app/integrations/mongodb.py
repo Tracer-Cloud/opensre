@@ -124,7 +124,16 @@ def validate_mongodb_config(config: MongoDBConfig) -> MongoDBValidationResult:
 
 def mongodb_is_available(sources: dict[str, dict]) -> bool:
     """Check if MongoDB integration params are present in available sources."""
-    return bool(sources.get("mongodb", {}).get("connection_string"))
+    return bool(sources.get("mongodb", {}).get("connection_verified"))
+
+
+def mongodb_database_is_available(sources: dict[str, dict]) -> bool:
+    """Check if MongoDB integration params including a database name are present.
+
+    Required for tools that operate on a specific database (profiler, collection stats).
+    """
+    mg = sources.get("mongodb", {})
+    return bool(mg.get("connection_verified") and mg.get("database"))
 
 
 def mongodb_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
