@@ -42,6 +42,9 @@ def sync_env_values(
     )
 
     lines = existing
+    # Ensure file ends with newline before appending new content
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] = f"{lines[-1]}\n"
     for key, value in values.items():
         lines = _set_env_value(lines, key, value)
 
@@ -121,6 +124,10 @@ def sync_provider_env(
         keys_to_remove.discard(provider.api_key_env)
 
     lines = _remove_keys(existing, keys_to_remove)
+
+    # Ensure file ends with newline before appending new content
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] = f"{lines[-1]}\n"
 
     values: dict[str, str] = {"LLM_PROVIDER": provider.value, provider.model_env: model}
     if provider.legacy_model_env:
