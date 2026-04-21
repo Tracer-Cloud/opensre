@@ -24,6 +24,8 @@ def _set_env_value(lines: list[str], key: str, value: str) -> list[str]:
             replaced = True
 
     if not replaced:
+        if updated and not updated[-1].endswith("\n"):
+            updated[-1] = updated[-1] + "\n"
         updated.append(f"{key}={value}\n")
     return updated
 
