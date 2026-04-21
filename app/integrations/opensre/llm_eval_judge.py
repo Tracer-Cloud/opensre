@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, cast
 
 
 def _truncate(text: str, max_chars: int) -> str:
@@ -55,7 +55,11 @@ def extract_judge_json_from_response(text: str) -> dict[str, Any]:
     if start == -1 or end == -1 or end <= start:
         msg = "Judge response did not contain a JSON object"
         raise ValueError(msg)
-    return json.loads(text[start : end + 1])
+    raw = json.loads(text[start : end + 1])
+    if not isinstance(raw, dict):
+        msg = "Judge response JSON must be an object"
+        raise ValueError(msg)
+    return cast(dict[str, Any], raw)
 
 
 def build_opensre_judge_prompt(*, rubric: str, state: dict[str, Any]) -> str:
@@ -68,7 +72,8 @@ def build_opensre_judge_prompt(*, rubric: str, state: dict[str, Any]) -> str:
         val_claims = []
     if not isinstance(non_val, list):
         non_val = []
-    evidence = state.get("evidence") if isinstance(state.get("evidence"), dict) else {}
+    _raw_evidence = state.get("evidence")
+    evidence: dict[str, Any] = _raw_evidence if isinstance(_raw_evidence, dict) else {}
 
     return f"""You are an expert evaluator for incident root-cause reports.
 
