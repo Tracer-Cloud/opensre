@@ -41,8 +41,14 @@ def _cloudwatch_logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
         "type": "object",
         "properties": {
             "log_group": {"type": "string", "description": "CloudWatch log group name (required)"},
-            "log_stream": {"type": "string", "description": "Log stream name (optional — auto-discovered if absent)"},
-            "filter_pattern": {"type": "string", "description": "Pattern to filter logs (e.g., correlation_id, error text)"},
+            "log_stream": {
+                "type": "string",
+                "description": "Log stream name (optional — auto-discovered if absent)",
+            },
+            "filter_pattern": {
+                "type": "string",
+                "description": "Pattern to filter logs (e.g., correlation_id, error text)",
+            },
             "limit": {"type": "integer", "default": 100},
         },
         "required": ["log_group"],
@@ -84,7 +90,11 @@ def get_cloudwatch_logs(
                     logGroupName=log_group, orderBy="LastEventTime", descending=True, limit=1
                 )
                 if not streams_response.get("logStreams"):
-                    return {"found": False, "log_group": log_group, "message": "No log streams found in log group"}
+                    return {
+                        "found": False,
+                        "log_group": log_group,
+                        "message": "No log streams found in log group",
+                    }
                 log_stream = streams_response["logStreams"][0]["logStreamName"]
 
             response = client.get_log_events(

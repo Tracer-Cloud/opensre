@@ -21,15 +21,27 @@ from app.tools.tool_decorator import tool
 )
 def get_mariadb_global_status(
     host: str,
-    database: str,
     username: str,
+    database: str | None = None,
     password: str = "",
     port: int = 3306,
     ssl: bool = True,
 ) -> dict[str, Any]:
     """Fetch curated server metrics from SHOW GLOBAL STATUS."""
+    _db_defaulted = database is None
+    if database is None:
+        database = "mysql"
     config = MariaDBConfig(
-        host=host, port=port, database=database,
-        username=username, password=password, ssl=ssl,
+        host=host,
+        port=port,
+        database=database,
+        username=username,
+        password=password,
+        ssl=ssl,
     )
-    return get_global_status(config)
+    result = get_global_status(config)
+    if _db_defaulted:
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'mysql'. Results may not reflect application data."
+        )
+    return result

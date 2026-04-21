@@ -49,6 +49,8 @@ See **[SETUP.md](SETUP.md)** for detailed setup instructions including Windows-s
 3. Run checks: `make lint && make typecheck && make test-cov`
 4. Build release artifacts when needed: `make build`
 
+If you prefer VS Code, you can use the repo's devcontainer at [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) instead of setting up Python manually.
+
 ---
 
 **The full flow:**
@@ -117,12 +119,13 @@ Notes:
 ### 4. Run Local Checks (Required Before PR)
 
 ```bash
-make lint        # ruff: check code style
-make typecheck   # mypy: check type annotations
-make test-cov    # pytest: run tests with coverage report
+make lint          # ruff: check code style
+make format-check  # ruff: check formatting (read-only)
+make typecheck     # mypy: check type annotations
+make test-cov      # pytest: run tests with coverage report
 ```
 
-All three must pass. **CI will block merging if any fail.**
+All four must pass. **CI will block merging if any fail.**
 
 ### 5. Open a Pull Request
 
@@ -191,9 +194,10 @@ We use:
 Run these before every commit:
 
 ```bash
-make lint        # Auto-fixes many style issues
-make typecheck   # Catches type errors
-make test-cov    # Ensures tests pass and coverage is tracked
+make lint          # Auto-fixes many style issues
+make format-check  # Checks formatting without modifying files
+make typecheck     # Catches type errors
+make test-cov      # Ensures tests pass and coverage is tracked
 ```
 
 To verify the package can be shipped, run:

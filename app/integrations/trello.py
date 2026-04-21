@@ -49,14 +49,16 @@ def trello_config_from_env() -> TrelloConfig | None:
     if not api_key or not token:
         return None
 
-    return build_trello_config({
-        "base_url": os.getenv("TRELLO_BASE_URL", DEFAULT_TRELLO_BASE_URL).strip()
-        or DEFAULT_TRELLO_BASE_URL,
-        "api_key": api_key,
-        "token": token,
-        "board_id": os.getenv("TRELLO_BOARD_ID", "").strip(),
-        "list_id": os.getenv("TRELLO_LIST_ID", "").strip(),
-    })
+    return build_trello_config(
+        {
+            "base_url": os.getenv("TRELLO_BASE_URL", DEFAULT_TRELLO_BASE_URL).strip()
+            or DEFAULT_TRELLO_BASE_URL,
+            "api_key": api_key,
+            "token": token,
+            "board_id": os.getenv("TRELLO_BOARD_ID", "").strip(),
+            "list_id": os.getenv("TRELLO_LIST_ID", "").strip(),
+        }
+    )
 
 
 def _request_json(

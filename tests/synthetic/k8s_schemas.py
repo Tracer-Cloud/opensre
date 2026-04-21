@@ -410,7 +410,15 @@ def validate_eks_events(data: dict[str, Any]) -> EKSEventsFixture:
         raise ValueError(f"{ctx}: 'warning_events' must be a list")
     for i, event in enumerate(events):
         ectx = f"{ctx}:warning_events[{i}]"
-        for field in ("namespace", "reason", "message", "type", "involved_object", "first_time", "last_time"):
+        for field in (
+            "namespace",
+            "reason",
+            "message",
+            "type",
+            "involved_object",
+            "first_time",
+            "last_time",
+        ):
             _require_str(event, field, ctx=ectx)
         if not isinstance(event.get("count"), int):
             raise ValueError(f"{ectx}: 'count' must be an integer")
@@ -488,14 +496,20 @@ def validate_k8s_answer_key(data: dict[str, Any]) -> K8sAnswerKeySchema:
     _require_str(data, "root_cause_category", ctx="answer.yml")
     _require_non_empty_str_list(data, "required_keywords", "answer.yml", required=True)
     _require_str(data, "model_response", ctx="answer.yml")
-    for opt_list_field in ("forbidden_categories", "forbidden_keywords", "required_evidence_sources"):
+    for opt_list_field in (
+        "forbidden_categories",
+        "forbidden_keywords",
+        "required_evidence_sources",
+    ):
         val = data.get(opt_list_field)
         if val is not None and not isinstance(val, list):
             raise ValueError(f"answer.yml: '{opt_list_field}' must be a list when present")
     trajectory = data.get("optimal_trajectory")
     if trajectory is not None:
         if not isinstance(trajectory, list) or not trajectory:
-            raise ValueError("answer.yml: 'optimal_trajectory' must be a non-empty list when present")
+            raise ValueError(
+                "answer.yml: 'optimal_trajectory' must be a non-empty list when present"
+            )
         unknown_actions = [a for a in trajectory if a not in VALID_K8S_TRAJECTORY_ACTIONS]
         if unknown_actions:
             raise ValueError(
@@ -504,7 +518,9 @@ def validate_k8s_answer_key(data: dict[str, Any]) -> K8sAnswerKeySchema:
             )
     max_loops = data.get("max_investigation_loops")
     if max_loops is not None and (not isinstance(max_loops, int) or max_loops < 1):
-        raise ValueError("answer.yml: 'max_investigation_loops' must be a positive integer when present")
+        raise ValueError(
+            "answer.yml: 'max_investigation_loops' must be a positive integer when present"
+        )
     for axis2_list_field in ("ruling_out_keywords", "required_queries"):
         _require_non_empty_str_list(data, axis2_list_field, "answer.yml")
     return data  # type: ignore[return-value]
@@ -528,7 +544,9 @@ def validate_k8s_scenario_metadata(data: dict[str, Any]) -> K8sScenarioMetadataS
 
     engine = data["engine"]
     if engine not in VALID_K8S_ENGINES:
-        raise ValueError(f"{ctx}: unknown engine {engine!r}; expected one of {sorted(VALID_K8S_ENGINES)}")
+        raise ValueError(
+            f"{ctx}: unknown engine {engine!r}; expected one of {sorted(VALID_K8S_ENGINES)}"
+        )
 
     workload_type = data["workload_type"]
     if workload_type not in VALID_K8S_WORKLOAD_TYPES:

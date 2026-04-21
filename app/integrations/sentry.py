@@ -63,12 +63,14 @@ def sentry_config_from_env() -> SentryConfig | None:
     auth_token = os.getenv("SENTRY_AUTH_TOKEN", "").strip()
     if not organization_slug or not auth_token:
         return None
-    return build_sentry_config({
-        "base_url": os.getenv("SENTRY_URL", DEFAULT_SENTRY_URL).strip() or DEFAULT_SENTRY_URL,
-        "organization_slug": organization_slug,
-        "auth_token": auth_token,
-        "project_slug": os.getenv("SENTRY_PROJECT_SLUG", "").strip(),
-    })
+    return build_sentry_config(
+        {
+            "base_url": os.getenv("SENTRY_URL", DEFAULT_SENTRY_URL).strip() or DEFAULT_SENTRY_URL,
+            "organization_slug": organization_slug,
+            "auth_token": auth_token,
+            "project_slug": os.getenv("SENTRY_PROJECT_SLUG", "").strip(),
+        }
+    )
 
 
 def get_sentry_auth_recommendations() -> dict[str, str]:

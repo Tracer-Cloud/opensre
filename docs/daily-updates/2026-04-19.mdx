@@ -1,0 +1,56 @@
+---
+title: "Daily Update — 2026-04-19"
+description: "OpenSRE engineering daily update for 2026-04-19 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+ANIRUDDHA ADAK, Ceren Camkiran, chaosreload, Ebrahim Sameh, fuleinist, kaushal-bakrania, Malik Amir Hamza, mayankbharati-ops, paulovitorcl, Shoaib, Shoaib Ansari, vincenthus, weichao, Yash Kapure, and Yash Kumar Saini 🙏🚀
+
+## Main updates shipped (April 19, 2026)
+
+- feat: support multiple accounts, regions, and clusters per provider (#475) — Malik Amir Hamza
+- feat: RabbitMQ integration for queue and broker RCA (#324) — Yash Kumar Saini
+- feat: route Bitbucket and add bounded integration-wave slices (#484) — Shoaib
+- Bugfix: GitHub MPC Configuration #419 — Yash Kapure
+- fix: overlapping keyword redaction and hardcoded investigation loop limit — mayankbharati-ops
+- feat: structured retrieval intent in planning with tool controls contract (#480) — Shoaib Ansari
+- test(synthetic): add 8 Kubernetes RCA scenarios — Malik Amir Hamza
+- feat(#473): add routing metadata and explainable tool selection — mayankbharati-ops
+- feat(cli): add LangSmith deploy support to opensre deploy (#264) — Ceren Camkiran
+- fix: recognise EKS evidence keys in is_clearly_healthy short-circuit (#582) — Ebrahim Sameh
+- Fix MaskingContext.unmask() prefix collision (#639) — Chris Chen
+- chore: remove dead code identified by vulture analysis — vincenthus
+- ci: skip Windows runners on PR builds, run them only on push to main — vincenthus
+- fix: use typing_extensions.TypedDict for Python 3.11 / Pydantic 2 compatibility — chaosreload
+- fix: hide unimplemented DataDogMetricsTool stub from planner (#669) — kaushal-bakrania
+- synthetic: enforce primary reliance on RDS events in 005-failover (#601) — Ceren Camkiran
+- fix: Database logic expansion for QA Edge Cases (Batch 3) — ANIRUDDHA ADAK
+- docs: remove Bash/PowerShell labels from command blocks (#681) — paulovitorcl
+
+## Source pull requests
+
+- [#627](https://github.com/Tracer-Cloud/opensre/pull/627) fix: Database logic expansion for QA Edge Cases (Batch 3) (author: ANIRUDDHA ADAK; contributors: ANIRUDDHA ADAK; labels: _none_; files: `app/nodes/root_cause_diagnosis/prompt_builder.py`)
+- [#649](https://github.com/Tracer-Cloud/opensre/pull/649) synthetic: enforce primary reliance on RDS events in 005-failover (author: Ceren Camkiran; contributors: Ceren Camkiran; labels: _none_; files: `tests/synthetic/rds_postgres/005-failover/QA_VALIDATION.md`, `tests/synthetic/rds_postgres/005-failover/answer.yml`, `tests/synthetic/rds_postgres/run_suite.py`)
+- [#643](https://github.com/Tracer-Cloud/opensre/pull/643) feat: support multiple accounts, regions, and clusters per provider (author: Malik Amir Hamza; contributors: Malik Amir Hamza; labels: _none_; files: `.env.example`, `app/integrations/catalog.py`, `app/integrations/models.py`, `app/integrations/selectors.py`, `app/integrations/store.py`, `app/nodes/plan_actions/detect_sources.py`, `docs/docs.json`, `docs/multi-instance-integrations.mdx`, `tests/cli_smoke_test.py`, `tests/integrations/test_catalog_multi_instance.py`, and 5 more)
+- [#661](https://github.com/Tracer-Cloud/opensre/pull/661) test(synthetic): add 8 Kubernetes RCA scenarios (author: Malik Amir Hamza; contributors: Malik Amir Hamza; labels: _none_; files: `tests/synthetic/eks/001-oomkilled-crashloop/alert.json`, `tests/synthetic/eks/001-oomkilled-crashloop/answer.yml`, `tests/synthetic/eks/001-oomkilled-crashloop/eks_events.json`, `tests/synthetic/eks/001-oomkilled-crashloop/eks_pod_logs.json`, `tests/synthetic/eks/001-oomkilled-crashloop/eks_pods.json`, `tests/synthetic/eks/001-oomkilled-crashloop/scenario.yml`, `tests/synthetic/eks/002-image-pull-backoff/alert.json`, `tests/synthetic/eks/002-image-pull-backoff/answer.yml`, `tests/synthetic/eks/002-image-pull-backoff/eks_deployments.json`, `tests/synthetic/eks/002-image-pull-backoff/eks_events.json`, and 43 more)
+- [#520](https://github.com/Tracer-Cloud/opensre/pull/520) fix: overlapping keyword redaction and hardcoded investigation loop limit (author: mayankbharati-ops; contributors: mayankbharati-ops and vincenthus; labels: _none_; files: `app/guardrails/engine.py`, `app/investigation_constants.py`, `app/nodes/root_cause_diagnosis/node.py`, `app/pipeline/routing.py`, `tests/synthetic/rds_postgres/001-replication-lag/answer.yml`, `tests/synthetic/rds_postgres/002-connection-exhaustion/answer.yml`, `tests/synthetic/rds_postgres/003-storage-full/answer.yml`, `tests/synthetic/rds_postgres/004-cpu-saturation-bad-query/answer.yml`, `tests/synthetic/rds_postgres/005-failover/answer.yml`, `tests/synthetic/rds_postgres/006-replication-lag-cpu-redherring/answer.yml`, and 10 more)
+- [#585](https://github.com/Tracer-Cloud/opensre/pull/585) fix: recognise EKS evidence keys in is_clearly_healthy short-circuit (author: Ebrahim Sameh; contributors: Ebrahim Sameh and vincenthus; labels: _none_; files: `app/nodes/root_cause_diagnosis/evidence_checker.py`, `tests/nodes/root_cause_diagnosis/__init__.py`, `tests/nodes/root_cause_diagnosis/test_evidence_checker.py`)
+- [#645](https://github.com/Tracer-Cloud/opensre/pull/645) Fix MaskingContext.unmask() prefix collision (author: Chris Chen; contributors: Chris Chen and fuleinist; labels: _none_; files: `app/masking/context.py`)
+- [#501](https://github.com/Tracer-Cloud/opensre/pull/501) feat: route Bitbucket and add bounded integration-wave slices (author: Shoaib; contributors: Shoaib, Shoaib Ansari, and vincenthus; labels: _none_; files: `app/integrations/catalog.py`, `app/integrations/models.py`, `app/integrations/verify.py`, `app/nodes/plan_actions/build_prompt.py`, `app/nodes/plan_actions/detect_sources.py`, `app/tools/AzureMonitorLogsTool/__init__.py`, `app/tools/BitbucketCommitsTool/__init__.py`, `app/tools/BitbucketFileContentsTool/__init__.py`, `app/tools/BitbucketSearchCodeTool/__init__.py`, `app/tools/OpenObserveLogsTool/__init__.py`, and 7 more)
+- [#517](https://github.com/Tracer-Cloud/opensre/pull/517) Bugfix: GitHub MPC Configuration #419 (author: Yash Kapure; contributors: vincenthus and Yash Kapure; labels: _none_; files: `.env.example`, `app/cli/wizard/env_sync.py`, `app/cli/wizard/flow.py`, `app/cli/wizard/integration_health.py`, `app/cli/wizard/prompts.py`, `app/integrations/cli.py`, `app/integrations/github_mcp.py`, `app/integrations/mcp_streamable_http_compat.py`, `app/nodes/publish_findings/renderers/terminal.py`, `app/remote/server.py`, and 11 more)
+- [#523](https://github.com/Tracer-Cloud/opensre/pull/523) feat(#473): add routing metadata and explainable tool selection (author: mayankbharati-ops; contributors: mayankbharati-ops and vincenthus; labels: _none_; files: `app/nodes/investigate/types.py`, `app/nodes/plan_actions/node.py`, `app/nodes/plan_actions/plan_actions.py`, `app/tools/CloudWatchBatchMetricsTool/__init__.py`, `app/tools/DataDogLogsTool/__init__.py`, `app/tools/SREGuidanceTool/__init__.py`, `app/tools/investigation_registry/__init__.py`, `app/tools/investigation_registry/prioritization.py`, `app/tools/registered_tool.py`, `app/tools/tool_decorator.py`, and 2 more)
+- [#615](https://github.com/Tracer-Cloud/opensre/pull/615) feat: RabbitMQ integration for queue and broker RCA (author: Yash Kumar Saini; contributors: vincenthus and Yash Kumar Saini; labels: _none_; files: `.env.example`, `Makefile`, `README.md`, `app/cli/constants.py`, `app/integrations/catalog.py`, `app/integrations/models.py`, `app/integrations/rabbitmq.py`, `app/integrations/verify.py`, `app/nodes/plan_actions/detect_sources.py`, `app/tools/RabbitMQBrokerOverviewTool/__init__.py`, and 17 more)
+- [#664](https://github.com/Tracer-Cloud/opensre/pull/664) ci: skip Windows runners on PR builds, run them only on push to main (author: vincenthus; contributors: vincenthus; labels: _none_; files: `.github/workflows/ci.yml`)
+- [#593](https://github.com/Tracer-Cloud/opensre/pull/593) feat(cli): add LangSmith deploy support to opensre deploy (author: Ceren Camkiran; contributors: Ceren Camkiran; labels: _none_; files: `app/cli/commands/deploy.py`, `app/cli/langsmith_deploy.py`, `tests/cli/test_deploy.py`, `tests/cli_smoke_test.py`)
+- [#497](https://github.com/Tracer-Cloud/opensre/pull/497) feat: structured retrieval intent in planning with tool controls contract (author: Shoaib; contributors: Shoaib, Shoaib Ansari, and vincenthus; labels: _none_; files: `app/nodes/plan_actions/node.py`, `app/state/agent_state.py`, `app/tools/base.py`, `app/tools/registered_tool.py`, `app/tools/tool_decorator.py`, `app/types/__init__.py`, `app/types/retrieval.py`, `tests/nodes/plan_actions/test_node_plan_actions.py`, `tests/tools/test_registry.py`, `tests/types/test_retrieval.py`, and 1 more)
+- [#665](https://github.com/Tracer-Cloud/opensre/pull/665) chore: remove dead code identified by vulture analysis (author: vincenthus; contributors: vincenthus; labels: _none_; files: `app/analytics/cli.py`, `app/cli/wizard/store.py`, `app/config.py`, `app/entrypoints/cli.py`, `app/integrations/azure_sql.py`, `app/integrations/mongodb.py`, `app/nodes/publish_findings/formatters/base.py`, `app/services/env.py`, `app/services/vercel/client.py`, `app/tools/registry.py`, and 4 more)
+- [#671](https://github.com/Tracer-Cloud/opensre/pull/671) fix: hide unimplemented DataDogMetricsTool stub from planner (author: kaushal-bakrania; contributors: kaushal-bakrania; labels: _none_; files: `app/tools/DataDogMetricsTool/__init__.py`, `tests/tools/test_datadog_metrics_tool.py`)
+- [#668](https://github.com/Tracer-Cloud/opensre/pull/668) fix: use typing_extensions.TypedDict for Python 3.11 / Pydantic 2 compatibility (author: chaosreload; contributors: chaosreload and weichao; labels: _none_; files: `app/nodes/investigate/types.py`)
+- [#683](https://github.com/Tracer-Cloud/opensre/pull/683) docs: remove Bash/PowerShell labels from command blocks (author: paulovitorcl; contributors: paulovitorcl; labels: _none_; files: `docs/quickstart.mdx`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-18T23:00:00+00:00` to `2026-04-19T23:00:00+00:00`

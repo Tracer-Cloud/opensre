@@ -433,9 +433,7 @@ def _fetch_deployment_bundle(
         limit=log_limit,
         project_id=project_id,
     )
-    runtime_logs = (
-        runtime_logs_result.get("logs", []) if runtime_logs_result.get("success") else []
-    )
+    runtime_logs = runtime_logs_result.get("logs", []) if runtime_logs_result.get("success") else []
     return deployment, events, runtime_logs
 
 
@@ -485,8 +483,7 @@ def _select_latest_actionable_deployment(
     deployments_result = client.list_deployments(project_id=project_id, limit=deployment_limit)
     if not deployments_result.get("success"):
         raise VercelResolutionError(
-            "Failed to list Vercel deployments: "
-            f"{deployments_result.get('error', 'unknown error')}"
+            f"Failed to list Vercel deployments: {deployments_result.get('error', 'unknown error')}"
         )
 
     for deployment in deployments_result.get("deployments", []):
@@ -502,7 +499,9 @@ def _select_latest_actionable_deployment(
         if _deployment_is_actionable(deployment_details, events, runtime_logs):
             return deployment_details, events, runtime_logs
 
-    raise VercelResolutionError("No actionable Vercel deployments were found for the target project.")
+    raise VercelResolutionError(
+        "No actionable Vercel deployments were found for the target project."
+    )
 
 
 def _deployment_is_actionable(
@@ -875,7 +874,9 @@ def collect_vercel_candidates(
     if config is None:
         if fail_on_error:
             raise VercelResolutionError("Vercel integration is not configured.")
-        logger.warning("Skipping Vercel incident collection because the integration is not configured.")
+        logger.warning(
+            "Skipping Vercel incident collection because the integration is not configured."
+        )
         return []
 
     allowlist = {item.lower() for item in project_allowlist}

@@ -128,9 +128,7 @@ def test_counters_stable_when_map_iterated_out_of_order() -> None:
     ctx = MaskingContext(policy=policy, placeholder_map=seeded)
     # Allocate a fresh namespace; its index must be exactly 3 (one past the max).
     masked = ctx.mask("kube_namespace:delta fresh")
-    fresh_placeholder = next(
-        p for p, v in ctx.placeholder_map.items() if v == "delta"
-    )
+    fresh_placeholder = next(p for p, v in ctx.placeholder_map.items() if v == "delta")
     assert fresh_placeholder == "<NAMESPACE_3>"
     assert "<NAMESPACE_3>" in masked
 

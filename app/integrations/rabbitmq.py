@@ -119,8 +119,7 @@ def rabbitmq_config_from_env() -> RabbitMQConfig | None:
             "username": username,
             "password": os.getenv("RABBITMQ_PASSWORD", ""),
             "vhost": os.getenv("RABBITMQ_VHOST", DEFAULT_RABBITMQ_VHOST).strip(),
-            "ssl": os.getenv("RABBITMQ_SSL", "false").strip().lower()
-            in ("true", "1", "yes"),
+            "ssl": os.getenv("RABBITMQ_SSL", "false").strip().lower() in ("true", "1", "yes"),
             "verify_ssl": os.getenv("RABBITMQ_VERIFY_SSL", "true").strip().lower()
             in ("true", "1", "yes"),
         }
@@ -166,8 +165,7 @@ def _http_get(client: httpx.Client, path: str) -> tuple[Any | None, str | None]:
         return None, f"RabbitMQ endpoint not found: {path}"
     if response.status_code >= 400:
         return None, (
-            f"RabbitMQ management API returned HTTP {response.status_code}: "
-            f"{response.text[:200]}"
+            f"RabbitMQ management API returned HTTP {response.status_code}: {response.text[:200]}"
         )
     try:
         return response.json(), None
@@ -178,9 +176,7 @@ def _http_get(client: httpx.Client, path: str) -> tuple[Any | None, str | None]:
 def validate_rabbitmq_config(config: RabbitMQConfig) -> RabbitMQValidationResult:
     """Validate RabbitMQ management API reachability with a lightweight call."""
     if not config.host or not config.username:
-        return RabbitMQValidationResult(
-            ok=False, detail="RabbitMQ host and username are required."
-        )
+        return RabbitMQValidationResult(ok=False, detail="RabbitMQ host and username are required.")
 
     try:
         with _get_client(config) as client:
@@ -197,15 +193,12 @@ def validate_rabbitmq_config(config: RabbitMQConfig) -> RabbitMQValidationResult
             return RabbitMQValidationResult(
                 ok=True,
                 detail=(
-                    f"Connected to RabbitMQ {version} "
-                    f"(cluster: {cluster}, vhost: {config.vhost})."
+                    f"Connected to RabbitMQ {version} (cluster: {cluster}, vhost: {config.vhost})."
                 ),
             )
     except Exception as err:  # noqa: BLE001
         logger.debug("RabbitMQ validate_config failed", exc_info=True)
-        return RabbitMQValidationResult(
-            ok=False, detail=f"RabbitMQ connection failed: {err}"
-        )
+        return RabbitMQValidationResult(ok=False, detail=f"RabbitMQ connection failed: {err}")
 
 
 def rabbitmq_is_available(sources: dict[str, dict]) -> bool:
@@ -378,9 +371,7 @@ def get_broker_overview(config: RabbitMQConfig) -> dict[str, Any]:
                         alarm_body = alarm_resp.json()
                         alarm_payload = {
                             "ok": False,
-                            "detail": str(
-                                alarm_body.get("reason", alarm_resp.text[:200])
-                            ),
+                            "detail": str(alarm_body.get("reason", alarm_resp.text[:200])),
                         }
                     except ValueError:
                         alarm_payload = {
@@ -398,9 +389,7 @@ def get_broker_overview(config: RabbitMQConfig) -> dict[str, Any]:
                 "messages_unacknowledged": totals.get("messages_unacknowledged", 0),
                 "messages_total": totals.get("messages", 0),
                 "publish_rate": (msg_stats.get("publish_details") or {}).get("rate", 0.0),
-                "deliver_rate": (msg_stats.get("deliver_get_details") or {}).get(
-                    "rate", 0.0
-                ),
+                "deliver_rate": (msg_stats.get("deliver_get_details") or {}).get("rate", 0.0),
                 "queues": object_totals.get("queues", 0),
                 "consumers": object_totals.get("consumers", 0),
                 "connections": object_totals.get("connections", 0),

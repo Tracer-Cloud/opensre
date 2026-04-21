@@ -80,9 +80,7 @@ def test_run_returns_error_without_body() -> None:
 @patch("app.tools.JiraAddCommentTool.make_jira_client")
 def test_run_returns_unavailable_without_credentials(mock_make: MagicMock) -> None:
     mock_make.return_value = None
-    result = _tool().run(
-        base_url="", email="", api_token="", issue_key="OPS-1", body="test"
-    )
+    result = _tool().run(base_url="", email="", api_token="", issue_key="OPS-1", body="test")
     assert result["available"] is False
 
 

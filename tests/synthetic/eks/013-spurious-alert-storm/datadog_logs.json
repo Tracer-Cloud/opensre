@@ -1,0 +1,28 @@
+{
+  "logs": [
+    {
+      "timestamp": "2026-04-18T10:25:30Z",
+      "message": "[node-controller] Node ip-10-0-1-73.us-east-1.compute.internal recovered: status now Ready after 30s NotReady flap; kubelet heartbeat restored",
+      "status": "info",
+      "service": "node-controller",
+      "host": "payments-prod-eks-control-plane",
+      "tags": ["kube_node:ip-10-0-1-73.us-east-1.compute.internal"]
+    },
+    {
+      "timestamp": "2026-04-18T10:26:00Z",
+      "message": "[kubelet] All payments-api pods on ip-10-0-1-73 returned to Ready state (post-flap reconciliation)",
+      "status": "info",
+      "service": "kubelet",
+      "host": "ip-10-0-1-73.us-east-1.compute.internal",
+      "tags": ["kube_namespace:payments"]
+    },
+    {
+      "timestamp": "2026-04-18T10:40:00Z",
+      "message": "[payments-api] POST /api/v1/charge 200 68ms — sustained normal traffic, no errors observed since flap recovery",
+      "status": "info",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-k2m4p",
+      "tags": ["env:prod", "service:payments-api"]
+    }
+  ]
+}

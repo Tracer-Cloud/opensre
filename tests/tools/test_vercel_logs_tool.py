@@ -14,7 +14,10 @@ def tool() -> VercelLogsTool:
 
 def test_is_available_requires_only_connection_verified(tool: VercelLogsTool) -> None:
     # deployment_id is no longer required for is_available; it's checked inside run()
-    assert tool.is_available({"vercel": {"connection_verified": True, "deployment_id": "dpl_1"}}) is True
+    assert (
+        tool.is_available({"vercel": {"connection_verified": True, "deployment_id": "dpl_1"}})
+        is True
+    )
     assert tool.is_available({"vercel": {"connection_verified": True}}) is True
     assert tool.is_available({"vercel": {"deployment_id": "dpl_1"}}) is False
     assert tool.is_available({"vercel": {}}) is False
@@ -22,15 +25,17 @@ def test_is_available_requires_only_connection_verified(tool: VercelLogsTool) ->
 
 
 def test_extract_params_maps_source_fields(tool: VercelLogsTool) -> None:
-    params = tool.extract_params({
-        "vercel": {
-            "api_token": "tok_abc",
-            "team_id": "team_1",
-            "project_id": "prj_1",
-            "deployment_id": "dpl_xyz",
-            "connection_verified": True,
+    params = tool.extract_params(
+        {
+            "vercel": {
+                "api_token": "tok_abc",
+                "team_id": "team_1",
+                "project_id": "prj_1",
+                "deployment_id": "dpl_xyz",
+                "connection_verified": True,
+            }
         }
-    })
+    )
     assert params["api_token"] == "tok_abc"
     assert params["project_id"] == "prj_1"
     assert params["deployment_id"] == "dpl_xyz"
@@ -45,7 +50,10 @@ def test_run_returns_events_and_filters_error_events(tool: VercelLogsTool) -> No
         {"type": "stderr", "text": "exception in handler", "created": 4},
     ]
     mock_client = MagicMock()
-    mock_client.get_deployment.return_value = {"success": True, "deployment": {"id": "dpl_xyz", "state": "ERROR"}}
+    mock_client.get_deployment.return_value = {
+        "success": True,
+        "deployment": {"id": "dpl_xyz", "state": "ERROR"},
+    }
     mock_client.get_deployment_events.return_value = {"success": True, "events": events}
     mock_client.get_runtime_logs.return_value = {"success": True, "logs": []}
 

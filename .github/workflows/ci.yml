@@ -55,6 +55,9 @@ jobs:
       - name: Lint with ruff
         run: python -m ruff check app/ tests/
 
+      - name: Format check with ruff
+        run: python -m ruff format --check app/ tests/
+
   typecheck:
     name: typecheck (${{ matrix.os }})
     strategy:

@@ -1,0 +1,39 @@
+# Workload targeted by DNSChaos (action: error). Fault applies to DNS lookups from this pod
+# (e.g. patterns in the chaos CR). Requires Chaos DNS Server (default in Chaos Mesh >= 2.6).
+#
+# Prereq: `make chaos-mesh-up`. Verify: kubectl get pods -n chaos-mesh -l app.kubernetes.io/component=chaos-dns-server
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dns-error-demo
+  namespace: default
+  labels:
+    app: dns-error-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dns-error-demo
+  template:
+    metadata:
+      labels:
+        app: dns-error-demo
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10

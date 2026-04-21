@@ -149,12 +149,14 @@ def _apply_rendered(content: str) -> str:
         f.write(content)
         path = f.name
     from tests.e2e.kubernetes.infrastructure_sdk.local import _run
+
     _run(["kubectl", "apply", "-f", path], capture=False)
     return path
 
 
 def _delete_job(job_name: str) -> None:
     from tests.e2e.kubernetes.infrastructure_sdk.local import _run
+
     _run(["kubectl", "delete", "job", job_name, "-n", NAMESPACE, "--ignore-not-found"], check=False)
 
 
@@ -202,6 +204,7 @@ def setup_cluster() -> None:
     apply_manifest(NAMESPACE_MANIFEST)
     # Create the service account used by job manifests (on EKS this is created with IRSA)
     from tests.e2e.kubernetes.infrastructure_sdk.local import _run
+
     _run(
         ["kubectl", "create", "serviceaccount", "etl-pipeline-sa", "-n", NAMESPACE],
         check=False,
@@ -270,7 +273,9 @@ def main() -> int:
     parser.add_argument("--success", action="store_true", help="Run success path only")
     parser.add_argument("--fail", action="store_true", help="Run failure path only")
     parser.add_argument("--both", action="store_true", help="Run both paths (default)")
-    parser.add_argument("--keep-cluster", action="store_true", help="Don't delete kind cluster after test")
+    parser.add_argument(
+        "--keep-cluster", action="store_true", help="Don't delete kind cluster after test"
+    )
     args = parser.parse_args()
 
     run_both = not args.success and not args.fail

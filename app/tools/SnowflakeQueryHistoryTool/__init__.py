@@ -33,7 +33,7 @@ def _snowflake_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, A
         "warehouse": str(sf.get("warehouse", "")).strip(),
         "role": str(sf.get("role", "")).strip(),
         "database": str(sf.get("database", "")).strip(),
-        "schema": str(sf.get("schema", "")).strip(),
+        "db_schema": str(sf.get("schema", "")).strip(),
         "query": str(sf.get("query", "")).strip(),
         "limit": 50,
         "max_results": int(sf.get("max_results", _DEFAULT_MAX_RESULTS) or _DEFAULT_MAX_RESULTS),
@@ -82,9 +82,9 @@ def _normalize_rows(response_payload: dict[str, Any]) -> list[dict[str, Any]]:
         for row in data:
             if not isinstance(row, list):
                 continue
-            rows.append({
-                columns[idx]: row[idx] if idx < len(row) else None for idx in range(len(columns))
-            })
+            rows.append(
+                {columns[idx]: row[idx] if idx < len(row) else None for idx in range(len(columns))}
+            )
         return rows
 
     return []
@@ -109,7 +109,7 @@ def _normalize_rows(response_payload: dict[str, Any]) -> list[dict[str, Any]]:
             "warehouse": {"type": "string"},
             "role": {"type": "string"},
             "database": {"type": "string"},
-            "schema": {"type": "string"},
+            "db_schema": {"type": "string"},
             "integration_id": {"type": "string"},
             "timeout_seconds": {"type": "number", "default": 20.0},
         },
@@ -129,7 +129,7 @@ def query_snowflake_history(
     warehouse: str = "",
     role: str = "",
     database: str = "",
-    schema: str = "",
+    db_schema: str = "",
     integration_id: str = "",
     timeout_seconds: float = 20.0,
     **_kwargs: Any,
@@ -140,9 +140,19 @@ def query_snowflake_history(
     account = account_identifier.strip()
     bearer = token.strip()
     if not account:
-        return {"source": "snowflake", "available": False, "error": "Missing account identifier.", "rows": []}
+        return {
+            "source": "snowflake",
+            "available": False,
+            "error": "Missing account identifier.",
+            "rows": [],
+        }
     if not bearer:
-        return {"source": "snowflake", "available": False, "error": "Missing Snowflake token.", "rows": []}
+        return {
+            "source": "snowflake",
+            "available": False,
+            "error": "Missing Snowflake token.",
+            "rows": [],
+        }
 
     statement = _ensure_sql_limit(query, effective_limit)
     endpoint = f"https://{account}.snowflakecomputing.com/api/v2/statements"
@@ -159,11 +169,13 @@ def query_snowflake_history(
         payload["role"] = role
     if database:
         payload["database"] = database
-    if schema:
-        payload["schema"] = schema
+    if db_schema:
+        payload["schema"] = db_schema
 
     try:
-        response = httpx.post(endpoint, headers=headers, json=payload, timeout=max(1.0, timeout_seconds))
+        response = httpx.post(
+            endpoint, headers=headers, json=payload, timeout=max(1.0, timeout_seconds)
+        )
         response.raise_for_status()
         body = response.json()
     except Exception as err:  # noqa: BLE001

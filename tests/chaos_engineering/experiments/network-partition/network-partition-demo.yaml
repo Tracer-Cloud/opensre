@@ -1,0 +1,77 @@
+# Client + server for NetworkChaos partition: blocks client -> server pods (direction: to).
+# Apply this file first, then network-partition-chaos.yaml.
+#
+# kubectl apply -f .../network-partition-demo.yaml --context=kind-tracer-k8s-test
+#
+# Teardown: delete chaos CR, then this manifest.
+#
+apiVersion: v1
+kind: Service
+metadata:
+  name: network-partition-server
+  namespace: default
+  labels:
+    app: network-partition-server
+spec:
+  selector:
+    app: network-partition-server
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-partition-server
+  namespace: default
+  labels:
+    app: network-partition-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: network-partition-server
+  template:
+    metadata:
+      labels:
+        app: network-partition-server
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-partition-client
+  namespace: default
+  labels:
+    app: network-partition-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: network-partition-client
+  template:
+    metadata:
+      labels:
+        app: network-partition-client
+    spec:
+      containers:
+        - name: probe
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -c
+            - |
+              URL="http://network-partition-server.default.svc.cluster.local"
+              while true; do
+                if wget -q -O- -T 3 --tries=1 "$URL" >/dev/null 2>&1; then
+                  echo "partition-client: ok $(date -Iseconds)"
+                else
+                  echo "partition-client: FAIL $(date -Iseconds)" >&2
+                fi
+                sleep 2
+              done

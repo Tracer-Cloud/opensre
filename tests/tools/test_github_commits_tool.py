@@ -15,9 +15,10 @@ class TestGitHubCommitsToolContract(BaseToolContract):
 
 def test_is_available_requires_connection_owner_repo() -> None:
     rt = list_github_commits.__opensre_registered_tool__
-    assert rt.is_available({
-        "github": {"connection_verified": True, "owner": "org", "repo": "repo"}
-    }) is True
+    assert (
+        rt.is_available({"github": {"connection_verified": True, "owner": "org", "repo": "repo"}})
+        is True
+    )
     assert rt.is_available({"github": {"connection_verified": True}}) is False
     assert rt.is_available({}) is False
 
@@ -42,16 +43,24 @@ def test_run_happy_path() -> None:
         "tool": "list_commits",
         "arguments": {},
         "text": "2 commits",
-        "structured_content": [{"sha": "abc", "message": "fix bug"}, {"sha": "def", "message": "add feature"}],
+        "structured_content": [
+            {"sha": "abc", "message": "fix bug"},
+            {"sha": "def", "message": "add feature"},
+        ],
         "content": [],
     }
     mock_config = MagicMock()
-    with patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None), \
-         patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config), \
-         patch("app.tools.GitHubCommitsTool.call_github_mcp_tool", return_value=fake_result):
+    with (
+        patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None),
+        patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config),
+        patch("app.tools.GitHubCommitsTool.call_github_mcp_tool", return_value=fake_result),
+    ):
         result = list_github_commits(
-            owner="org", repo="repo",
-            github_url="http://mcp", github_mode="streamable-http", github_token="tok",
+            owner="org",
+            repo="repo",
+            github_url="http://mcp",
+            github_mode="streamable-http",
+            github_token="tok",
         )
     assert result["available"] is True
     assert len(result["commits"]) == 2

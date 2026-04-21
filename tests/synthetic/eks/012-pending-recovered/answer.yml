@@ -1,0 +1,38 @@
+root_cause_category: healthy
+required_keywords:
+  - autoscaler
+forbidden_categories:
+  - unknown
+  - resource_exhaustion
+  - infrastructure
+  - configuration_error
+optimal_trajectory:
+  - list_eks_pods
+  - get_eks_events
+  - get_eks_node_health
+max_investigation_loops: 3
+ruling_out_keywords:
+  - not insufficient
+  - now Running
+  - no active failure
+required_queries:
+  - list_eks_pods
+  - get_eks_events
+  - get_eks_node_health
+model_response: |
+  ROOT_CAUSE: No active failure. Pod payments-api-7f9dd8b6c4-late1 was briefly Pending due to insufficient CPU on the existing nodes. The cluster autoscaler triggered a node scale-up, the pod was Scheduled onto the new node, and it has been Running and Ready for over 15 minutes. The Datadog alert fired on the historical Pending event without re-checking current state.
+  ROOT_CAUSE_CATEGORY: healthy
+
+  VALIDATED_CLAIMS:
+  - Pod payments-api-7f9dd8b6c4-late1 currently has phase=Running with container.ready=true, restart_count=0. [evidence: eks_pods]
+  - The only Warning event present is the historical FailedScheduling at 10:25Z on the late1 pod. [evidence: eks_events]
+  - Control-plane logs show the cluster autoscaler triggered a node scale-up at 10:26Z and the pod was successfully Scheduled onto ip-10-0-1-99 at 10:28Z. [evidence: datadog_logs]
+  - Three nodes are now Ready, including the freshly-added ip-10-0-1-99 with ample allocatable CPU. [evidence: eks_node_health]
+  - Datadog monitors for error rate and latency are OK. [evidence: datadog_monitors]
+
+  NON_VALIDATED_CLAIMS:
+  - The transient scheduling pressure may recur if traffic spikes regularly without pre-warmed capacity; rightsizing or PDB review could be considered.
+  - The Datadog alert rule could re-evaluate against current pod phase to suppress this class of stale alert.
+
+  CAUSAL_CHAIN:
+  - No active causal chain. A pod was briefly Pending; the cluster autoscaler resolved it; the pod has been healthy since. The alert reflects a historical state that has already been resolved.

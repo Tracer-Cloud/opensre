@@ -29,17 +29,17 @@ def test_extract_params_maps_fields() -> None:
 
 
 def test_run_returns_unavailable_when_no_config() -> None:
-    result = search_sentry_issues(
-        organization_slug="", sentry_token=""
-    )
+    result = search_sentry_issues(organization_slug="", sentry_token="")
     assert result["available"] is False
     assert result["issues"] == []
 
 
 def test_run_happy_path() -> None:
     fake_issues = [{"id": "1", "title": "TypeError", "status": "unresolved"}]
-    with patch("app.tools.SentrySearchIssuesTool.list_sentry_issues", return_value=fake_issues), \
-         patch("app.tools.SentrySearchIssuesTool.sentry_config_from_env", return_value=None):
+    with (
+        patch("app.tools.SentrySearchIssuesTool.list_sentry_issues", return_value=fake_issues),
+        patch("app.tools.SentrySearchIssuesTool.sentry_config_from_env", return_value=None),
+    ):
         result = search_sentry_issues(
             organization_slug="my-org",
             sentry_token="tok_test",
@@ -51,10 +51,10 @@ def test_run_happy_path() -> None:
 
 
 def test_run_empty_issues() -> None:
-    with patch("app.tools.SentrySearchIssuesTool.list_sentry_issues", return_value=[]), \
-         patch("app.tools.SentrySearchIssuesTool.sentry_config_from_env", return_value=None):
-        result = search_sentry_issues(
-            organization_slug="my-org", sentry_token="tok_test"
-        )
+    with (
+        patch("app.tools.SentrySearchIssuesTool.list_sentry_issues", return_value=[]),
+        patch("app.tools.SentrySearchIssuesTool.sentry_config_from_env", return_value=None),
+    ):
+        result = search_sentry_issues(organization_slug="my-org", sentry_token="tok_test")
     assert result["available"] is True
     assert result["issues"] == []

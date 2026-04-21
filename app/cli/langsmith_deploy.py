@@ -230,7 +230,10 @@ def validate_langsmith_api_key(api_key: str) -> tuple[bool, str]:
         return False, "Invalid LangSmith API key."
 
     if response.status_code == 403:
-        return True, "LangSmith API key appears valid, but the validation endpoint is permission-limited."
+        return (
+            True,
+            "LangSmith API key appears valid, but the validation endpoint is permission-limited.",
+        )
 
     if response.is_success:
         return True, f"LangSmith API key validated with status {response.status_code}."
@@ -297,7 +300,9 @@ def run_langsmith_deploy(
     cmd = ["langgraph", "build"] if build_only else ["langgraph", "deploy"]
     result = _run_command(cmd, env=env, timeout=1800.0)
 
-    output_parts = [part.strip() for part in [result.stdout, result.stderr] if part and part.strip()]
+    output_parts = [
+        part.strip() for part in [result.stdout, result.stderr] if part and part.strip()
+    ]
     output = "\n".join(output_parts)
     return int(result.returncode), output
 

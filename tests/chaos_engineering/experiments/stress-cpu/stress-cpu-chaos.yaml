@@ -1,0 +1,21 @@
+# StressChaos CPU: competes with nginx worker; readiness may flake under throttle.
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: stress-cpu-demo
+  namespace: default
+spec:
+  mode: all
+  duration: "3m"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: stress-cpu-demo
+  containerNames:
+    - nginx
+  stressors:
+    cpu:
+      workers: 2
+      load: 90

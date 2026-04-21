@@ -206,8 +206,20 @@ def test_get_alert_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_get_alert_logs_success(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = {
         "data": [
-            {"log": "Alert created", "type": "system", "owner": "system", "createdAt": "2024-01-01T00:00:00Z", "offset": "0"},
-            {"log": "Acknowledged by oncall", "type": "alertRecipient", "owner": "user@team.com", "createdAt": "2024-01-01T00:05:00Z", "offset": "1"},
+            {
+                "log": "Alert created",
+                "type": "system",
+                "owner": "system",
+                "createdAt": "2024-01-01T00:00:00Z",
+                "offset": "0",
+            },
+            {
+                "log": "Acknowledged by oncall",
+                "type": "alertRecipient",
+                "owner": "user@team.com",
+                "createdAt": "2024-01-01T00:05:00Z",
+                "offset": "1",
+            },
         ]
     }
     monkeypatch.setattr(
@@ -226,7 +238,9 @@ def test_get_alert_logs_success(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_add_note_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.services.opsgenie.client.httpx.Client.post",
-        lambda _self, _path, **_kw: _FakeResponse({"result": "Request will be processed", "requestId": "r1"}),
+        lambda _self, _path, **_kw: _FakeResponse(
+            {"result": "Request will be processed", "requestId": "r1"}
+        ),
     )
     result = _client().add_note("a1", "Investigation complete")
     assert result["success"] is True

@@ -120,11 +120,32 @@ class TestListEKSDeploymentsMapper:
         data = {
             "source": "eks",
             "deployments": [
-                {"name": "payments-api", "desired": 3, "ready": 3, "available": 3, "unavailable": 0, "degraded": False},
-                {"name": "payments-worker", "desired": 2, "ready": 0, "available": 0, "unavailable": 2, "degraded": True},
+                {
+                    "name": "payments-api",
+                    "desired": 3,
+                    "ready": 3,
+                    "available": 3,
+                    "unavailable": 0,
+                    "degraded": False,
+                },
+                {
+                    "name": "payments-worker",
+                    "desired": 2,
+                    "ready": 0,
+                    "available": 0,
+                    "unavailable": 2,
+                    "degraded": True,
+                },
             ],
             "degraded_deployments": [
-                {"name": "payments-worker", "desired": 2, "ready": 0, "available": 0, "unavailable": 2, "degraded": True}
+                {
+                    "name": "payments-worker",
+                    "desired": 2,
+                    "ready": 0,
+                    "available": 0,
+                    "unavailable": 2,
+                    "degraded": True,
+                }
             ],
             "total_deployments": 2,
         }
@@ -150,9 +171,7 @@ class TestGetEKSNodeHealthMapper:
             "total_nodes": 2,
             "not_ready_count": 1,
         }
-        evidence = merge_evidence(
-            {}, {"get_eks_node_health": _result("get_eks_node_health", data)}
-        )
+        evidence = merge_evidence({}, {"get_eks_node_health": _result("get_eks_node_health", data)})
         assert evidence["eks_total_nodes"] == 2
         assert evidence["eks_not_ready_count"] == 1
         assert len(evidence["eks_node_health"]) == 2
@@ -169,9 +188,7 @@ class TestGetEKSPodLogsMapper:
             "pod_name": "payments-api-7f9-x7g",
             "logs": "line 1\nline 2\nfatal: out of memory",
         }
-        evidence = merge_evidence(
-            {}, {"get_eks_pod_logs": _result("get_eks_pod_logs", data)}
-        )
+        evidence = merge_evidence({}, {"get_eks_pod_logs": _result("get_eks_pod_logs", data)})
         assert "fatal: out of memory" in evidence["eks_pod_logs"]
         assert evidence["eks_pod_logs_pod_name"] == "payments-api-7f9-x7g"
         assert evidence["eks_pod_logs_namespace"] == "payments"
@@ -198,25 +215,19 @@ class TestBuildEvidenceSummaryEKS:
 
     def test_list_eks_pods_summary_with_failing(self) -> None:
         data = {"pods": [{}, {}, {}], "failing_pods": [{}], "total_pods": 3}
-        summary = build_evidence_summary(
-            {"list_eks_pods": _result("list_eks_pods", data)}
-        )
+        summary = build_evidence_summary({"list_eks_pods": _result("list_eks_pods", data)})
         assert "eks:3 pods" in summary
         assert "(1 failing)" in summary
 
     def test_list_eks_pods_summary_with_no_failing(self) -> None:
         data = {"pods": [{}], "failing_pods": [], "total_pods": 1}
-        summary = build_evidence_summary(
-            {"list_eks_pods": _result("list_eks_pods", data)}
-        )
+        summary = build_evidence_summary({"list_eks_pods": _result("list_eks_pods", data)})
         assert "eks:1 pods" in summary
         assert "(0 failing)" in summary
 
     def test_get_eks_events_summary(self) -> None:
         data = {"warning_events": [{}, {}], "total_warning_count": 2}
-        summary = build_evidence_summary(
-            {"get_eks_events": _result("get_eks_events", data)}
-        )
+        summary = build_evidence_summary({"get_eks_events": _result("get_eks_events", data)})
         assert "eks:2 warning events" in summary
 
     def test_list_eks_deployments_summary(self) -> None:
@@ -244,8 +255,6 @@ class TestBuildEvidenceSummaryEKS:
             "pod_name": "payments-api-7f9",
             "logs": "line 1\nline 2\nline 3",
         }
-        summary = build_evidence_summary(
-            {"get_eks_pod_logs": _result("get_eks_pod_logs", data)}
-        )
+        summary = build_evidence_summary({"get_eks_pod_logs": _result("get_eks_pod_logs", data)})
         assert "eks:3 log lines" in summary
         assert "payments-api-7f9" in summary

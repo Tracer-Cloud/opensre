@@ -1,0 +1,28 @@
+{
+  "logs": [
+    {
+      "timestamp": "2026-04-18T10:42:00Z",
+      "message": "[kube-controller-manager] DeploymentRollback successful: payments-api restored to revision N-1 (ReplicaSet payments-api-7f9dd8b6c4); rollout marked Available",
+      "status": "info",
+      "service": "kube-controller-manager",
+      "host": "payments-prod-eks-control-plane",
+      "tags": ["kube_namespace:payments", "kube_deployment:payments-api"]
+    },
+    {
+      "timestamp": "2026-04-18T10:43:00Z",
+      "message": "[kube-controller-manager] Deployment payments-api status: desired=3 ready=3 available=3 unavailable=0 (stable on prior revision)",
+      "status": "info",
+      "service": "kube-controller-manager",
+      "host": "payments-prod-eks-control-plane",
+      "tags": ["kube_namespace:payments", "kube_deployment:payments-api"]
+    },
+    {
+      "timestamp": "2026-04-18T10:55:00Z",
+      "message": "[payments-api] POST /api/v1/charge 200 71ms — handled by payments-api-7f9dd8b6c4-x7gr9 (revision N-1)",
+      "status": "info",
+      "service": "payments-api",
+      "host": "payments-api-7f9dd8b6c4-x7gr9",
+      "tags": ["env:prod", "service:payments-api"]
+    }
+  ]
+}

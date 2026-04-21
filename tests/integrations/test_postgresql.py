@@ -89,7 +89,9 @@ class TestBuildPostgreSQLConfig:
     """Tests for build_postgresql_config helper."""
 
     def test_from_dict(self) -> None:
-        config = build_postgresql_config({"host": "pg.example.com", "database": "mydb", "port": 5433})
+        config = build_postgresql_config(
+            {"host": "pg.example.com", "database": "mydb", "port": 5433}
+        )
         assert config.host == "pg.example.com"
         assert config.database == "mydb"
         assert config.port == 5433
@@ -178,11 +180,15 @@ class TestPostgreSQLValidationResult:
     """Tests for PostgreSQLValidationResult dataclass."""
 
     def test_ok_result(self) -> None:
-        result = PostgreSQLValidationResult(ok=True, detail="Connected to PostgreSQL 16.1; target database: mydb.")
+        result = PostgreSQLValidationResult(
+            ok=True, detail="Connected to PostgreSQL 16.1; target database: mydb."
+        )
         assert result.ok is True
         assert result.detail == "Connected to PostgreSQL 16.1; target database: mydb."
 
     def test_error_result(self) -> None:
-        result = PostgreSQLValidationResult(ok=False, detail="PostgreSQL connection failed: connection refused")
+        result = PostgreSQLValidationResult(
+            ok=False, detail="PostgreSQL connection failed: connection refused"
+        )
         assert result.ok is False
         assert result.detail == "PostgreSQL connection failed: connection refused"

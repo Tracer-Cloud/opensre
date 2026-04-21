@@ -39,10 +39,14 @@ class EKSBackend(Protocol):
         get_pod_logs     → EKSPodLogsTool response shape
     """
 
-    def list_pods(self, cluster_name: str = "", namespace: str = "", **kwargs: Any) -> dict[str, Any]:
+    def list_pods(
+        self, cluster_name: str = "", namespace: str = "", **kwargs: Any
+    ) -> dict[str, Any]:
         """Return a response matching ``list_eks_pods``."""
 
-    def get_events(self, cluster_name: str = "", namespace: str = "", **kwargs: Any) -> dict[str, Any]:
+    def get_events(
+        self, cluster_name: str = "", namespace: str = "", **kwargs: Any
+    ) -> dict[str, Any]:
         """Return a response matching ``get_eks_events``."""
 
     def list_deployments(
@@ -86,9 +90,7 @@ class FixtureEKSBackend:
         pods = list(pods_fixture.get("pods", []))
         failing_pods = [p for p in pods if p.get("phase") not in ("Running", "Succeeded")]
         high_restart_pods = [
-            p
-            for p in pods
-            if any(c.get("restart_count", 0) > 3 for c in p.get("containers", []))
+            p for p in pods if any(c.get("restart_count", 0) > 3 for c in p.get("containers", []))
         ]
         return {
             "source": "eks",

@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator, Coroutine, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, TypedDict, cast
+from typing import Literal, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -26,6 +26,7 @@ from mcp import ClientSession, StdioServerParameters, types  # type: ignore[impo
 from mcp.client.sse import sse_client  # type: ignore[import-not-found]
 from mcp.client.stdio import stdio_client  # type: ignore[import-not-found]
 from pydantic import Field, field_validator, model_validator
+from typing_extensions import TypedDict
 
 from app.integrations.mcp_streamable_http_compat import streamable_http_client
 from app.strict_config import StrictConfigModel
@@ -35,6 +36,8 @@ _OPENCLAW_CONTROL_UI_HOSTS = frozenset({"127.0.0.1", "localhost", "0.0.0.0"})
 _OPENCLAW_CONTROL_UI_PORT = 18789
 _OPENCLAW_STDIO_COMMAND = "openclaw"
 _OPENCLAW_STDIO_ARGS = ("mcp", "serve")
+
+
 class OpenClawToolDescriptor(TypedDict):
     """A tool exposed by the OpenClaw MCP bridge."""
 
@@ -120,9 +123,7 @@ class OpenClawConfig(StrictConfigModel):
         if self.mode == "stdio" and not self.command:
             raise ValueError("OpenClaw MCP mode 'stdio' requires a non-empty command.")
         if self.mode != "stdio" and not self.url:
-            raise ValueError(
-                f"OpenClaw MCP mode '{self.mode}' requires a non-empty url."
-            )
+            raise ValueError(f"OpenClaw MCP mode '{self.mode}' requires a non-empty url.")
         return self
 
     @property
@@ -206,9 +207,7 @@ def _describe_exception(err: BaseException) -> list[str]:
         return [f"Command not found: {command or 'unknown command'}"]
 
     if isinstance(err, httpx.HTTPStatusError):
-        return [
-            f"HTTP {err.response.status_code} from {err.request.method} {err.request.url}"
-        ]
+        return [f"HTTP {err.response.status_code} from {err.request.method} {err.request.url}"]
 
     if isinstance(err, httpx.ConnectError):
         request = getattr(err, "request", None)
@@ -236,14 +235,14 @@ def describe_openclaw_error(
 
     if config.mode == "stdio" and config.command == "openclaw-mcp":
         hints.append(
-            "OpenClaw's current MCP bridge is exposed via `openclaw mcp serve`, not "
-            "`openclaw-mcp`."
+            "OpenClaw's current MCP bridge is exposed via `openclaw mcp serve`, not `openclaw-mcp`."
         )
 
-    if config.mode == "stdio" and any(message.startswith("Command not found:") for message in messages):
+    if config.mode == "stdio" and any(
+        message.startswith("Command not found:") for message in messages
+    ):
         hints.append(
-            "Install the OpenClaw CLI or set `OPENCLAW_MCP_COMMAND` to the full executable "
-            "path."
+            "Install the OpenClaw CLI or set `OPENCLAW_MCP_COMMAND` to the full executable path."
         )
 
     if _uses_openclaw_cli_mcp_bridge(config) and _looks_like_openclaw_gateway_unavailable(messages):
@@ -304,16 +303,10 @@ async def _open_openclaw_session(config: OpenClawConfig) -> AsyncIterator[Client
                 args=list(config.args),
                 env={
                     **os.environ,
-                    **(
-                        {"OPENCLAW_AUTH_TOKEN": config.auth_token}
-                        if config.auth_token
-                        else {}
-                    ),
+                    **({"OPENCLAW_AUTH_TOKEN": config.auth_token} if config.auth_token else {}),
                 },
             )
-            read_stream, write_stream = await stack.enter_async_context(
-                stdio_client(server_params)
-            )
+            read_stream, write_stream = await stack.enter_async_context(stdio_client(server_params))
 
         elif config.mode == "sse":
             if not config.url:

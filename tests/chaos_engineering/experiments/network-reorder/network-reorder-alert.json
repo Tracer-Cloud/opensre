@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for NetworkChaos reorder",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/network-reorder/network-reorder-alert.json"
+  },
+  "title": "[Triggered] Unstable TCP - network-reorder-demo",
+  "alert_name": "Datadog monitor: reorder / tail latency",
+  "pipeline_name": "network-reorder-demo",
+  "severity": "medium",
+  "alert_source": "datadog",
+  "message": "Elevated errors or latency for deployment network-reorder-demo",
+  "text": "NetworkChaos reorder injects out-of-order delivery; long-tail latency and connection churn are common.",
+  "commonLabels": {
+    "pipeline_name": "network-reorder-demo",
+    "severity": "medium",
+    "kube_deployment": "network-reorder-demo"
+  },
+  "commonAnnotations": {
+    "summary": "Packet reorder chaos on network-reorder-demo",
+    "query": "kube_namespace:default kube_deployment:network-reorder-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "network-reorder-demo",
+    "correlation_id": "network-reorder-local-001"
+  }
+}

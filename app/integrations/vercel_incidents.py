@@ -190,7 +190,13 @@ def _execute_rca(candidate: VercelInvestigationCandidate) -> None:
     )
     report_path = _save_report(candidate, result)
     if is_json_output():
-        _json_echo({"incident": _incident_payload(candidate), "result": result, "saved_to": str(report_path)})
+        _json_echo(
+            {
+                "incident": _incident_payload(candidate),
+                "result": result,
+                "saved_to": str(report_path),
+            }
+        )
         return
 
     print()
@@ -243,8 +249,7 @@ def _load_projects() -> list[dict[str, Any]]:
         projects_result = client.list_projects(limit=100)
     if not projects_result.get("success"):
         raise VercelResolutionError(
-            "Failed to list Vercel projects: "
-            f"{projects_result.get('error', 'unknown error')}"
+            f"Failed to list Vercel projects: {projects_result.get('error', 'unknown error')}"
         )
 
     raw_projects = projects_result.get("projects", [])

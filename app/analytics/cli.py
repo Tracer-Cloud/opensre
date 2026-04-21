@@ -55,7 +55,9 @@ def _investigation_started_properties(
         "interactive": interactive,
     }
     llm_provider = _string_value(os.getenv("LLM_PROVIDER"))
-    llm_model = _string_value(os.getenv("ANTHROPIC_MODEL")) or _string_value(os.getenv("OPENAI_MODEL"))
+    llm_model = _string_value(os.getenv("ANTHROPIC_MODEL")) or _string_value(
+        os.getenv("OPENAI_MODEL")
+    )
     if llm_provider is not None:
         properties["llm_provider"] = llm_provider
     if llm_model is not None:

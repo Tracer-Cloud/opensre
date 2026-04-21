@@ -34,11 +34,13 @@ def _extract_rule_queries(rule: dict) -> list[dict]:
         model = datum.get("model", {})
         expr = model.get("expr", "")
         if expr:
-            queries.append({
-                "ref_id": datum.get("refId", ""),
-                "expr": expr,
-                "datasource_uid": model.get("datasource", {}).get("uid", ""),
-            })
+            queries.append(
+                {
+                    "ref_id": datum.get("refId", ""),
+                    "expr": expr,
+                    "datasource_uid": model.get("datasource", {}).get("uid", ""),
+                }
+            )
     return queries
 
 
@@ -164,9 +166,7 @@ class GrafanaClientBase:
             datasources = response.json()
 
             # Collect all candidates per type, then pick the best one.
-            candidates: dict[str, list[dict]] = {
-                key: [] for key in self._TYPE_MAP.values()
-            }
+            candidates: dict[str, list[dict]] = {key: [] for key in self._TYPE_MAP.values()}
 
             for ds in datasources:
                 ds_type = ds.get("type", "").lower()
@@ -178,11 +178,13 @@ class GrafanaClientBase:
 
                 for type_keyword, result_key in self._TYPE_MAP.items():
                     if type_keyword in ds_type:
-                        candidates[result_key].append({
-                            "uid": uid,
-                            "name": name,
-                            "is_default": is_default,
-                        })
+                        candidates[result_key].append(
+                            {
+                                "uid": uid,
+                                "name": name,
+                                "is_default": is_default,
+                            }
+                        )
                         break
 
             result: dict[str, str] = {}
@@ -215,11 +217,9 @@ class GrafanaClientBase:
                 hints = self._PRIMARY_HINTS.get(result_key, [])
                 if hints and non_deprioritized:
                     hinted = [
-                        d for d in non_deprioritized
-                        if any(
-                            h in d["uid"].lower() or h in d["name"].lower()
-                            for h in hints
-                        )
+                        d
+                        for d in non_deprioritized
+                        if any(h in d["uid"].lower() or h in d["name"].lower() for h in hints)
                     ]
                     if hinted:
                         result[result_key] = hinted[0]["uid"]
@@ -273,16 +273,20 @@ class GrafanaClientBase:
                     continue
                 for group in groups:
                     for rule in group.get("rules", []):
-                        rules.append({
-                            "folder": folder_name,
-                            "group": group.get("name", ""),
-                            "rule_name": rule.get("grafana_alert", {}).get("title", ""),
-                            "condition": rule.get("grafana_alert", {}).get("condition", ""),
-                            "datasource_uid": _extract_datasource_uid(rule),
-                            "queries": _extract_rule_queries(rule),
-                            "state": rule.get("grafana_alert", {}).get("current_state", ""),
-                            "no_data_state": rule.get("grafana_alert", {}).get("no_data_state", ""),
-                        })
+                        rules.append(
+                            {
+                                "folder": folder_name,
+                                "group": group.get("name", ""),
+                                "rule_name": rule.get("grafana_alert", {}).get("title", ""),
+                                "condition": rule.get("grafana_alert", {}).get("condition", ""),
+                                "datasource_uid": _extract_datasource_uid(rule),
+                                "queries": _extract_rule_queries(rule),
+                                "state": rule.get("grafana_alert", {}).get("current_state", ""),
+                                "no_data_state": rule.get("grafana_alert", {}).get(
+                                    "no_data_state", ""
+                                ),
+                            }
+                        )
             return rules
         except Exception as e:
             logger.warning("[grafana] Failed to query alert rules: %s", e)

@@ -336,7 +336,9 @@ class TestAlertmanagerToolsAvailability:
 
         assert not alertmanager_alerts.is_available({})
         assert not alertmanager_alerts.is_available({"alertmanager": {}})
-        assert not alertmanager_alerts.is_available({"alertmanager": {"connection_verified": False}})
+        assert not alertmanager_alerts.is_available(
+            {"alertmanager": {"connection_verified": False}}
+        )
 
     def test_alertmanager_alerts_tool_available_with_verified_source(self):
         """AlertmanagerAlertsTool is available when alertmanager source is connection_verified."""

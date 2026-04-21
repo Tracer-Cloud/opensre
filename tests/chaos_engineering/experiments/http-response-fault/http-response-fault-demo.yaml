@@ -1,0 +1,41 @@
+# Nginx for HTTPChaos on Responses (delay + status rewrite). HTTP only, port 80.
+#
+# kubectl apply -f .../http-response-fault-demo.yaml --context=kind-tracer-k8s-test
+# kubectl apply -f .../http-response-fault-chaos.yaml --context=kind-tracer-k8s-test
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: http-response-fault-demo
+  namespace: default
+  labels:
+    app: http-response-fault-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: http-response-fault-demo
+  template:
+    metadata:
+      labels:
+        app: http-response-fault-demo
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 4
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5

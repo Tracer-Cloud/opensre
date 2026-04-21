@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.azure_sql import get_wait_stats, resolve_azure_sql_config
+from app.integrations.azure_sql import (
+    azure_sql_extract_params,
+    azure_sql_is_available,
+    get_wait_stats,
+    resolve_azure_sql_config,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -16,12 +21,22 @@ from app.tools.tool_decorator import tool
         "Diagnosing lock contention or IO bottlenecks",
         "Understanding resource governance limits on Azure SQL",
     ],
+    is_available=azure_sql_is_available,
+    extract_params=azure_sql_extract_params,
 )
 def get_azure_sql_wait_stats(
     server: str,
-    database: str,
+    database: str | None = None,
     port: int = 1433,
 ) -> dict[str, Any]:
     """Fetch wait statistics from an Azure SQL Database instance."""
+    _db_defaulted = database is None
+    if database is None:
+        database = "master"
     config = resolve_azure_sql_config(server=server, database=database, port=port)
-    return get_wait_stats(config)
+    result = get_wait_stats(config)
+    if _db_defaulted:
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'master'. Results may not reflect application data."
+        )
+    return result

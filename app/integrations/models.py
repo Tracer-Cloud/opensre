@@ -328,6 +328,37 @@ class RabbitMQIntegrationConfig(StrictConfigModel):
         return raw or "/"
 
 
+class BetterStackIntegrationConfig(StrictConfigModel):
+    """Normalized Better Stack Telemetry SQL Query API credentials used by resolution and verification flows."""
+
+    query_endpoint: str
+    username: str
+    password: str = ""
+    sources: list[str] = []
+    integration_id: str = ""
+
+    @field_validator("query_endpoint", mode="before")
+    @classmethod
+    def _normalize_endpoint(cls, value: object) -> str:
+        return str(value or "").strip().rstrip("/")
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _normalize_username(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("sources", mode="before")
+    @classmethod
+    def _normalize_sources(cls, value: object) -> list[str]:
+        if value in (None, ""):
+            return []
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if str(v).strip()]
+        return []
+
+
 class MongoDBAtlasIntegrationConfig(StrictConfigModel):
     """Normalized MongoDB Atlas API credentials used by resolution and verification flows."""
 
@@ -551,6 +582,7 @@ class EffectiveIntegrations(StrictConfigModel):
     mongodb_atlas: EffectiveIntegrationEntry | None = None
     mariadb: EffectiveIntegrationEntry | None = None
     rabbitmq: EffectiveIntegrationEntry | None = None
+    betterstack: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
     gitlab: EffectiveIntegrationEntry | None = None
     vercel: EffectiveIntegrationEntry | None = None

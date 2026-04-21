@@ -46,7 +46,11 @@ def inspect_s3_object(bucket: str, key: str) -> dict:
 
     metadata_result = get_object_metadata(bucket, key)
     if not metadata_result.get("success"):
-        return {"error": metadata_result.get("error", "Unknown error"), "bucket": bucket, "key": key}
+        return {
+            "error": metadata_result.get("error", "Unknown error"),
+            "bucket": bucket,
+            "key": key,
+        }
     if not metadata_result.get("exists"):
         return {"found": False, "bucket": bucket, "key": key, "message": "Object does not exist"}
 

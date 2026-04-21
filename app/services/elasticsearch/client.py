@@ -75,7 +75,10 @@ class ElasticsearchClient:
             elif resp.status_code == 401:
                 security_enabled = True
             else:
-                return {"success": False, "error": f"Unexpected status {resp.status_code} from /_cluster/health"}
+                return {
+                    "success": False,
+                    "error": f"Unexpected status {resp.status_code} from /_cluster/health",
+                }
             return {"success": True, "security_enabled": security_enabled}
         except Exception as e:
             logger.warning(
@@ -107,9 +110,14 @@ class ElasticsearchClient:
                 "[elasticsearch] list_indices HTTP failure status=%s",
                 e.response.status_code,
             )
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
-            logger.warning("[elasticsearch] list_indices error type=%s detail=%s", type(e).__name__, e)
+            logger.warning(
+                "[elasticsearch] list_indices error type=%s detail=%s", type(e).__name__, e
+            )
             return {"success": False, "error": str(e)}
 
     def list_data_streams(self) -> dict[str, Any]:
@@ -133,9 +141,14 @@ class ElasticsearchClient:
                 "[elasticsearch] list_data_streams HTTP failure status=%s",
                 e.response.status_code,
             )
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
-            logger.warning("[elasticsearch] list_data_streams error type=%s detail=%s", type(e).__name__, e)
+            logger.warning(
+                "[elasticsearch] list_data_streams error type=%s detail=%s", type(e).__name__, e
+            )
             return {"success": False, "error": str(e)}
 
     def search_logs(
@@ -166,7 +179,14 @@ class ElasticsearchClient:
                 "bool": {
                     "must": [
                         {"query_string": {"query": query, "default_field": "*"}},
-                        {"range": {timestamp_field: {"gte": from_ts.isoformat(), "lte": now.isoformat()}}},
+                        {
+                            "range": {
+                                timestamp_field: {
+                                    "gte": from_ts.isoformat(),
+                                    "lte": now.isoformat(),
+                                }
+                            }
+                        },
                     ]
                 }
             },
@@ -184,7 +204,11 @@ class ElasticsearchClient:
                     "level": src.get("level", src.get("log.level", "")),
                     "service": src.get("service", src.get("service.name", "")),
                     "index": hit.get("_index", ""),
-                    **{k: v for k, v in src.items() if k not in {timestamp_field, "message", "level", "service"}},
+                    **{
+                        k: v
+                        for k, v in src.items()
+                        if k not in {timestamp_field, "message", "level", "service"}
+                    },
                 }
                 for hit in hits
                 for src in [hit.get("_source", {})]
@@ -197,9 +221,14 @@ class ElasticsearchClient:
                 query,
                 time_range_minutes,
             )
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
-            logger.warning("[elasticsearch] search_logs error type=%s detail=%s", type(e).__name__, e)
+            logger.warning(
+                "[elasticsearch] search_logs error type=%s detail=%s", type(e).__name__, e
+            )
             return {"success": False, "error": str(e)}
 
     def get_cluster_health(self) -> dict[str, Any]:
@@ -223,7 +252,12 @@ class ElasticsearchClient:
                 "[elasticsearch] get_cluster_health HTTP failure status=%s",
                 e.response.status_code,
             )
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
-            logger.warning("[elasticsearch] get_cluster_health error type=%s detail=%s", type(e).__name__, e)
+            logger.warning(
+                "[elasticsearch] get_cluster_health error type=%s detail=%s", type(e).__name__, e
+            )
             return {"success": False, "error": str(e)}

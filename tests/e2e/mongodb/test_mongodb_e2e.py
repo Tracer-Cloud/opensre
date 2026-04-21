@@ -41,7 +41,10 @@ class TestMongoDBIntegrationResolution:
         resolved = _classify_integrations(integrations)
 
         assert "mongodb" in resolved
-        assert resolved["mongodb"]["connection_string"] == "mongodb+srv://user:pass@cluster.example.net"
+        assert (
+            resolved["mongodb"]["connection_string"]
+            == "mongodb+srv://user:pass@cluster.example.net"
+        )
         assert resolved["mongodb"]["database"] == "production"
         assert resolved["mongodb"]["auth_source"] == "admin"
         assert resolved["mongodb"]["tls"] is True

@@ -28,7 +28,11 @@ class OpsGenieAlertDetailTool(BaseTool):
         "type": "object",
         "properties": {
             "api_key": {"type": "string", "description": "OpsGenie API key (GenieKey)"},
-            "region": {"type": "string", "default": "us", "description": "OpsGenie region: us or eu"},
+            "region": {
+                "type": "string",
+                "default": "us",
+                "description": "OpsGenie region: us or eu",
+            },
             "alert_id": {
                 "type": "string",
                 "description": "OpsGenie alert ID to fetch details for",

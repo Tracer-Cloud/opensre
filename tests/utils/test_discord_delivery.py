@@ -54,7 +54,9 @@ def test_post_discord_message_201_also_succeeds(monkeypatch: pytest.MonkeyPatch)
 def test_post_discord_message_sends_correct_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_post(url: str, *, json: dict[str, Any], headers: dict[str, str], **_kw: Any) -> MagicMock:
+    def _fake_post(
+        url: str, *, json: dict[str, Any], headers: dict[str, str], **_kw: Any
+    ) -> MagicMock:
         captured["url"] = url
         captured["json"] = json
         captured["headers"] = headers
@@ -81,7 +83,9 @@ def test_post_discord_message_failure_returns_api_error(monkeypatch: pytest.Monk
     assert message_id == ""
 
 
-def test_post_discord_message_failure_falls_back_to_error_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_post_discord_message_failure_falls_back_to_error_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         "app.utils.discord_delivery.httpx.post",
         lambda *_a, **_kw: _mock_response(400, {"error": "Bad Request"}),
@@ -211,7 +215,10 @@ def test_send_discord_report_truncates_description_to_4096(monkeypatch: pytest.M
 
     monkeypatch.setattr(
         "app.utils.discord_delivery.httpx.post",
-        lambda *_a, **kw: (captured.update({"embeds": kw["json"].get("embeds", [])}) or _mock_response(200, {"id": "m-1"})),  # type: ignore[misc]
+        lambda *_a, **kw: (
+            captured.update({"embeds": kw["json"].get("embeds", [])})
+            or _mock_response(200, {"id": "m-1"})
+        ),  # type: ignore[misc]
     )
     long_report = "x" * 5000
     send_discord_report(long_report, {"channel_id": "chan-1", "bot_token": "tok"})

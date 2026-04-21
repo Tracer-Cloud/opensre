@@ -1,0 +1,25 @@
+# Combined poor-network profile: latency + loss + throughput cap (single netem experiment).
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-netem-combo-demo
+  namespace: default
+spec:
+  action: netem
+  mode: all
+  duration: "3m"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: network-netem-combo-demo
+  delay:
+    latency: "90ms"
+    correlation: "100"
+    jitter: "35ms"
+  loss:
+    loss: "8"
+    correlation: "35"
+  rate:
+    rate: 8mbps

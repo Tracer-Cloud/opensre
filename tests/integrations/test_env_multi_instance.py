@@ -42,7 +42,12 @@ def test_grafana_instances_json_produces_single_record_with_multiple_instances(
         json.dumps(
             [
                 {"name": "prod", "tags": {"env": "prod"}, "endpoint": "https://p", "api_key": "kp"},
-                {"name": "staging", "tags": {"env": "staging"}, "endpoint": "https://s", "api_key": "ks"},
+                {
+                    "name": "staging",
+                    "tags": {"env": "staging"},
+                    "endpoint": "https://s",
+                    "api_key": "ks",
+                },
             ]
         ),
     )
@@ -105,9 +110,7 @@ def test_instances_env_var_suppresses_legacy_single_var(
     _clear_env(monkeypatch)
     monkeypatch.setenv(
         "GRAFANA_INSTANCES",
-        json.dumps(
-            [{"name": "prod", "endpoint": "https://p", "api_key": "kp"}]
-        ),
+        json.dumps([{"name": "prod", "endpoint": "https://p", "api_key": "kp"}]),
     )
     # Also set legacy vars — they must be ignored
     monkeypatch.setenv("GRAFANA_INSTANCE_URL", "https://legacy")

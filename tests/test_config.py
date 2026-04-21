@@ -8,10 +8,12 @@ from app.config import LLMSettings
 
 def test_llm_settings_reject_provider_typos_with_suggestion() -> None:
     with pytest.raises(ValidationError, match="Did you mean 'openai'"):
-        LLMSettings.model_validate({
-            "provider": "opneai",
-            "openai_api_key": "sk-test",
-        })
+        LLMSettings.model_validate(
+            {
+                "provider": "opneai",
+                "openai_api_key": "sk-test",
+            }
+        )
 
 
 def test_llm_settings_require_api_key_for_selected_provider() -> None:
@@ -39,10 +41,12 @@ def test_llm_settings_require_minimax_api_key() -> None:
 
 
 def test_llm_settings_minimax_provider_accepted() -> None:
-    settings = LLMSettings.model_validate({
-        "provider": "minimax",
-        "minimax_api_key": "mm-test-key",
-    })
+    settings = LLMSettings.model_validate(
+        {
+            "provider": "minimax",
+            "minimax_api_key": "mm-test-key",
+        }
+    )
     assert settings.provider == "minimax"
     assert settings.minimax_api_key == "mm-test-key"
     assert settings.minimax_reasoning_model == "MiniMax-M2.7"
@@ -61,4 +65,3 @@ def test_llm_settings_from_env_minimax(monkeypatch) -> None:
 
     assert settings.provider == "minimax"
     assert settings.minimax_api_key == "mm-stored-key"
-

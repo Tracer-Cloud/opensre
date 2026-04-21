@@ -1,0 +1,14 @@
+{
+  "warning_events": [
+    {
+      "namespace": "payments",
+      "reason": "BackOff",
+      "message": "Back-off restarting failed container payments-api in pod payments-api-6c4ab5d9c-old1 (pod is terminating during rollout)",
+      "type": "Warning",
+      "count": 2,
+      "involved_object": "Pod/payments-api-6c4ab5d9c-old1",
+      "first_time": "2026-04-18T09:35:00Z",
+      "last_time": "2026-04-18T09:38:00Z"
+    }
+  ]
+}

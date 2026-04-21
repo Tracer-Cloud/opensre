@@ -11,7 +11,9 @@ import urllib.parse
 import urllib.request
 
 
-def _run(cmd: list[str], *, check: bool = True, capture: bool = True) -> subprocess.CompletedProcess[str]:
+def _run(
+    cmd: list[str], *, check: bool = True, capture: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=check, capture_output=capture, text=True)
 
 
@@ -78,9 +80,14 @@ def wait_for_job(namespace: str, job_name: str, timeout: int = 120) -> str:
     while time.monotonic() < deadline:
         result = _run(
             [
-                "kubectl", "get", "job", job_name,
-                "-n", namespace,
-                "-o", "jsonpath={.status.conditions[*].type}",
+                "kubectl",
+                "get",
+                "job",
+                job_name,
+                "-n",
+                namespace,
+                "-o",
+                "jsonpath={.status.conditions[*].type}",
             ],
             check=False,
         )
@@ -117,7 +124,12 @@ def add_datadog_helm_repo() -> None:
     _run(["helm", "repo", "update", "datadog"], capture=False)
 
 
-def deploy_datadog_helm(values_file: str, namespace: str) -> None:
+def deploy_datadog_helm(
+    values_file: str,
+    namespace: str,
+    *,
+    kube_context: str | None = None,
+) -> None:
     """Install Datadog via official Helm chart."""
     api_key = os.environ.get("DD_API_KEY", "")
     if not api_key:
@@ -125,19 +137,34 @@ def deploy_datadog_helm(values_file: str, namespace: str) -> None:
 
     add_datadog_helm_repo()
 
-    _run(["kubectl", "create", "namespace", namespace], check=False)
+    ns_cmd: list[str] = ["kubectl", "create", "namespace", namespace]
+    if kube_context:
+        ns_cmd[1:1] = ["--context", kube_context]
+    _run(ns_cmd, check=False)
 
-    cmd = [
-        "helm", "upgrade", "--install", DATADOG_HELM_RELEASE, DATADOG_HELM_CHART,
-        "-n", namespace,
-        "-f", values_file,
-        "--set", f"datadog.apiKey={api_key}",
-        "--wait", "--timeout", "3m",
+    cmd: list[str] = [
+        "helm",
+        "upgrade",
+        "--install",
+        DATADOG_HELM_RELEASE,
+        DATADOG_HELM_CHART,
+        "-n",
+        namespace,
+        "-f",
+        values_file,
+        "--set",
+        f"datadog.apiKey={api_key}",
+        "--wait",
+        "--timeout",
+        "3m",
     ]
 
     site = os.environ.get("DD_SITE", "")
     if site:
         cmd.extend(["--set", f"datadog.site={site}"])
+
+    if kube_context:
+        cmd.extend(["--kube-context", kube_context])
 
     print("Installing Datadog Helm chart...")
     try:
@@ -151,18 +178,31 @@ def deploy_datadog_helm(values_file: str, namespace: str) -> None:
     print("Datadog Helm chart installed")
 
 
-def wait_for_datadog_agent(namespace: str, timeout: int = 180) -> bool:
+def wait_for_datadog_agent(
+    namespace: str,
+    timeout: int = 180,
+    *,
+    kube_context: str | None = None,
+) -> bool:
     """Wait for Datadog Agent DaemonSet to have at least one ready pod."""
     print("Waiting for Datadog Agent to be ready...")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        ds_cmd: list[str] = [
+            "kubectl",
+            "get",
+            "daemonset",
+            "-n",
+            namespace,
+            "-l",
+            "app.kubernetes.io/component=agent",
+            "-o",
+            "jsonpath={.items[0].status.numberReady}",
+        ]
+        if kube_context:
+            ds_cmd[1:1] = ["--context", kube_context]
         result = _run(
-            [
-                "kubectl", "get", "daemonset",
-                "-n", namespace,
-                "-l", "app.kubernetes.io/component=agent",
-                "-o", "jsonpath={.items[0].status.numberReady}",
-            ],
+            ds_cmd,
             check=False,
         )
         ready = result.stdout.strip()
@@ -179,6 +219,7 @@ def wait_for_datadog_agent(namespace: str, timeout: int = 180) -> bool:
 # Datadog Monitor API helpers
 # ---------------------------------------------------------------------------
 
+
 def _dd_api_headers() -> dict[str, str]:
     api_key = os.environ.get("DD_API_KEY", "")
     app_key = os.environ.get("DD_APP_KEY", "")
@@ -192,7 +233,10 @@ def _dd_api_headers() -> dict[str, str]:
 
 
 def _dd_api_request(
-    method: str, path: str, *, body: dict | None = None,
+    method: str,
+    path: str,
+    *,
+    body: dict | None = None,
 ) -> dict:
     """Make a request to the Datadog API. Returns parsed JSON response."""
     site = os.environ.get("DD_SITE", "datadoghq.com")

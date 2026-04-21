@@ -1,0 +1,23 @@
+# Prereq: chaos-demo workload (same cluster as experiments/crashloop/crashloop-demo):
+#   kubectl apply -f tests/chaos_engineering/chaos-demo.yaml --context=kind-tracer-k8s-test
+# Or: make chaos-engineering-apply (applies chaos-demo + crashloop + this PodChaos).
+#
+# From repo root (optional context for kind):
+#   kubectl apply -f tests/chaos_engineering/pod-kill-demo.yaml --context=kind-tracer-k8s-test
+# Remove:
+#   kubectl delete -f tests/chaos_engineering/pod-kill-demo.yaml --context=kind-tracer-k8s-test
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: kill-chaos-demo
+  namespace: default
+spec:
+  action: pod-kill
+  mode: one
+  duration: "15s"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: chaos-demo

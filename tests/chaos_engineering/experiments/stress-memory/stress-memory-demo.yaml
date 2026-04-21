@@ -1,0 +1,48 @@
+# Nginx with a tight memory limit; StressChaos allocates heap inside the same container.
+#
+# kubectl apply -f .../stress-memory-demo.yaml --context=kind-tracer-k8s-test
+# kubectl apply -f .../stress-memory-chaos.yaml --context=kind-tracer-k8s-test
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stress-memory-demo
+  namespace: default
+  labels:
+    app: stress-memory-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stress-memory-demo
+  template:
+    metadata:
+      labels:
+        app: stress-memory-demo
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 25
+            periodSeconds: 15
+            timeoutSeconds: 4

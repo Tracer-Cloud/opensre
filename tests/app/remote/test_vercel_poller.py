@@ -173,12 +173,14 @@ def test_enrich_remote_alert_from_vercel_resolves_selected_log_id(
         lambda _config: _fake_client("54w4s-1775494460431-b04b1df81301"),
     )
 
-    enriched = enrich_remote_alert_from_vercel({
-        "vercel_url": (
-            "https://vercel.com/vincenthus-projects/tracer-marketing-website-v3/logs"
-            "?page=3&selectedLogId=54w4s-1775494460431-b04b1df81301&panelState=opened"
-        )
-    })
+    enriched = enrich_remote_alert_from_vercel(
+        {
+            "vercel_url": (
+                "https://vercel.com/vincenthus-projects/tracer-marketing-website-v3/logs"
+                "?page=3&selectedLogId=54w4s-1775494460431-b04b1df81301&panelState=opened"
+            )
+        }
+    )
 
     assert enriched["alert_source"] == "vercel"
     assert enriched["vercel_deployment_id"] == "dpl_123"
@@ -186,7 +188,9 @@ def test_enrich_remote_alert_from_vercel_resolves_selected_log_id(
     assert enriched["github_repo"] == "tracer-marketing-website-v3"
     assert enriched["sha"] == "abc123"
     assert enriched["branch"] == "main"
-    assert "selectedLogId=54w4s-1775494460431-b04b1df81301" in enriched["annotations"]["log_excerpt"]
+    assert (
+        "selectedLogId=54w4s-1775494460431-b04b1df81301" in enriched["annotations"]["log_excerpt"]
+    )
 
 
 def test_collect_candidates_skips_processed_signatures(

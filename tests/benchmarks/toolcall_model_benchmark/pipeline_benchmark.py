@@ -272,4 +272,6 @@ def get_fixture_by_id(scenario_id: str) -> ScenarioFixture:
     for f in fixtures:
         if f.scenario_id == scenario_id:
             return f
-    raise ValueError(f"Unknown scenario_id: {scenario_id!r}. Loaded {len(fixtures)} scenarios from {SUITE_DIR}.")
+    raise ValueError(
+        f"Unknown scenario_id: {scenario_id!r}. Loaded {len(fixtures)} scenarios from {SUITE_DIR}."
+    )

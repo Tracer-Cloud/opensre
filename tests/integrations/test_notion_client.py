@@ -53,10 +53,16 @@ def test_create_investigation_page_http_error(client: NotionClient) -> None:
     mock_resp.status_code = 401
     mock_resp.text = "Unauthorized"
 
-    with patch("httpx.Client.post", side_effect=httpx.HTTPStatusError("err", request=MagicMock(), response=mock_resp)):
+    with patch(
+        "httpx.Client.post",
+        side_effect=httpx.HTTPStatusError("err", request=MagicMock(), response=mock_resp),
+    ):
         result = client.create_investigation_page(
-            title="test", root_cause="x", evidence="x",
-            timeline="x", suggested_actions="x",
+            title="test",
+            root_cause="x",
+            evidence="x",
+            timeline="x",
+            suggested_actions="x",
         )
 
     assert result["success"] is False

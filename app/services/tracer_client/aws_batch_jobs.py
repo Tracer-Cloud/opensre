@@ -41,7 +41,11 @@ class AWSBatchJobsMixin(TracerClientBase):
             AWSBatchJobResult if return_dict=False, dict if return_dict=True.
         """
         if not trace_id:
-            return AWSBatchJobResult(found=False) if not return_dict else {"success": False, "data": []}
+            return (
+                AWSBatchJobResult(found=False)
+                if not return_dict
+                else {"success": False, "data": []}
+            )
 
         params: dict[str, Any] = {
             "traceId": trace_id,

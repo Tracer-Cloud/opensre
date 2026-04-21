@@ -28,7 +28,9 @@ class AuditLogger:
         context: str = "",
     ) -> None:
         """Append one audit entry. Never raises on write failure."""
-        preview = matched_text_preview[:40] if len(matched_text_preview) > 40 else matched_text_preview
+        preview = (
+            matched_text_preview[:40] if len(matched_text_preview) > 40 else matched_text_preview
+        )
         entry = {
             "timestamp": datetime.now(UTC).isoformat(),
             "rule_name": rule_name,

@@ -89,9 +89,7 @@ class TestVercelRemoteConnection:
         with httpx.Client(timeout=30) as client:
             resp = client.get(url)
 
-        assert resp.status_code == 200, (
-            f"/api/ok returned {resp.status_code}: {resp.text[:300]}"
-        )
+        assert resp.status_code == 200, f"/api/ok returned {resp.status_code}: {resp.text[:300]}"
         body = resp.json()
         assert body.get("ok") is True, f"Expected ok=true, got: {body}"
         logger.info("/api/ok reachable: %s", body)
@@ -125,13 +123,8 @@ class TestVercelRemoteConnection:
         client = RemoteAgentClient(base)
         result: PreflightResult = client.preflight()
 
-        assert result.ok, (
-            f"Preflight failed: error={result.error!r}, "
-            f"status={result.status_label}"
-        )
-        assert result.latency_ms >= 0, (
-            f"Unexpected negative latency: {result.latency_ms}"
-        )
+        assert result.ok, f"Preflight failed: error={result.error!r}, status={result.status_label}"
+        assert result.latency_ms >= 0, f"Unexpected negative latency: {result.latency_ms}"
         logger.info(
             "Preflight OK: status=%s server_type=%s latency=%dms endpoints=%s",
             result.status_label,
@@ -142,9 +135,7 @@ class TestVercelRemoteConnection:
 
     # -- 4. Connection latency / reliability -----------------------------------
 
-    def test_connection_latency_reasonable(
-        self, vercel_deployment: dict[str, Any]
-    ) -> None:
+    def test_connection_latency_reasonable(self, vercel_deployment: dict[str, Any]) -> None:
         """The round-trip latency to Vercel should be under 10 s.
 
         This is a generous upper bound; real latency should be well
@@ -158,14 +149,10 @@ class TestVercelRemoteConnection:
         elapsed_ms = int((time.monotonic() - start) * 1000)
 
         assert data.get("ok") is True
-        assert elapsed_ms < 10_000, (
-            f"Health check took {elapsed_ms}ms — expected < 10 000 ms"
-        )
+        assert elapsed_ms < 10_000, f"Health check took {elapsed_ms}ms — expected < 10 000 ms"
         logger.info("Connection latency: %d ms", elapsed_ms)
 
-    def test_multiple_requests_succeed(
-        self, vercel_deployment: dict[str, Any]
-    ) -> None:
+    def test_multiple_requests_succeed(self, vercel_deployment: dict[str, Any]) -> None:
         """Three consecutive health requests all succeed (no flakiness)."""
         base = vercel_deployment["DeploymentUrl"]
         client = RemoteAgentClient(base)
@@ -244,9 +231,7 @@ class TestVercelRemoteConnection:
         with httpx.Client(timeout=30) as client:
             resp = client.get(url)
 
-        assert resp.status_code == 200, (
-            f"/api/ok returned {resp.status_code}: {resp.text[:300]}"
-        )
+        assert resp.status_code == 200, f"/api/ok returned {resp.status_code}: {resp.text[:300]}"
         body = resp.json()
         assert "ok" in body, f"Missing 'ok' key: {body}"
         assert body["ok"] is True

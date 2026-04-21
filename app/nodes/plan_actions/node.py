@@ -79,6 +79,7 @@ def node_plan_actions(state: InvestigationState) -> dict:
             "query_datadog_logs",
             "query_honeycomb_traces",
             "query_coralogix_logs",
+            "query_betterstack_logs",
             "get_cloudwatch_logs",
             "get_host_metrics",
             "list_eks_pods",
@@ -87,7 +88,9 @@ def node_plan_actions(state: InvestigationState) -> dict:
         for candidate in fallback_candidates:
             if candidate in available_action_names:
                 planned_actions = [candidate]
-                plan_rationale = "Controller fallback: LLM returned empty plan. Forcing verification action."
+                plan_rationale = (
+                    "Controller fallback: LLM returned empty plan. Forcing verification action."
+                )
                 break
         if not planned_actions:
             planned_actions = [available_action_names[0]]

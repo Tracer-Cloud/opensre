@@ -27,12 +27,19 @@ def test_run_happy_path() -> None:
         "clusters": [{"name": "prod-cluster", "state": "IDLE", "mongo_db_version": "7.0.12"}],
     }
     with patch("app.tools.MongoDBAtlasClustersTool.get_clusters", return_value=fake_result):
-        result = get_mongodb_atlas_clusters(api_public_key="pub", api_private_key="priv", project_id="proj")
+        result = get_mongodb_atlas_clusters(
+            api_public_key="pub", api_private_key="priv", project_id="proj"
+        )
     assert result["available"] is True
     assert result["total_clusters"] == 1
 
 
 def test_run_error_propagated() -> None:
-    with patch("app.tools.MongoDBAtlasClustersTool.get_clusters", return_value={"source": "mongodb_atlas", "available": False, "error": "auth failed"}):
-        result = get_mongodb_atlas_clusters(api_public_key="bad", api_private_key="bad", project_id="proj")
+    with patch(
+        "app.tools.MongoDBAtlasClustersTool.get_clusters",
+        return_value={"source": "mongodb_atlas", "available": False, "error": "auth failed"},
+    ):
+        result = get_mongodb_atlas_clusters(
+            api_public_key="bad", api_private_key="bad", project_id="proj"
+        )
     assert "error" in result

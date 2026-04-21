@@ -83,14 +83,20 @@ def mysql_config_from_env() -> MySQLConfig | None:
     database = os.getenv("MYSQL_DATABASE", "").strip()
     if not host or not database:
         return None
-    return build_mysql_config({
-        "host": host,
-        "port": int(_mysql_port) if (_mysql_port := os.getenv("MYSQL_PORT", "").strip()).isdigit() else DEFAULT_MYSQL_PORT,
-        "database": database,
-        "username": os.getenv("MYSQL_USERNAME", DEFAULT_MYSQL_USER).strip() or DEFAULT_MYSQL_USER,
-        "password": os.getenv("MYSQL_PASSWORD", ""),
-        "ssl_mode": os.getenv("MYSQL_SSL_MODE", DEFAULT_MYSQL_SSL_MODE).strip() or DEFAULT_MYSQL_SSL_MODE,
-    })
+    return build_mysql_config(
+        {
+            "host": host,
+            "port": int(_mysql_port)
+            if (_mysql_port := os.getenv("MYSQL_PORT", "").strip()).isdigit()
+            else DEFAULT_MYSQL_PORT,
+            "database": database,
+            "username": os.getenv("MYSQL_USERNAME", DEFAULT_MYSQL_USER).strip()
+            or DEFAULT_MYSQL_USER,
+            "password": os.getenv("MYSQL_PASSWORD", ""),
+            "ssl_mode": os.getenv("MYSQL_SSL_MODE", DEFAULT_MYSQL_SSL_MODE).strip()
+            or DEFAULT_MYSQL_SSL_MODE,
+        }
+    )
 
 
 def resolve_mysql_config(host: str, database: str, port: int = DEFAULT_MYSQL_PORT) -> MySQLConfig:
@@ -105,25 +111,29 @@ def resolve_mysql_config(host: str, database: str, port: int = DEFAULT_MYSQL_POR
     stored = get_integration("mysql")
     if stored:
         creds = stored.get("credentials", {})
-        return build_mysql_config({
-            "host": host,
-            "port": creds.get("port", port),
-            "database": database,
-            "username": creds.get("username", DEFAULT_MYSQL_USER),
-            "password": creds.get("password", ""),
-            "ssl_mode": creds.get("ssl_mode", DEFAULT_MYSQL_SSL_MODE),
-        })
+        return build_mysql_config(
+            {
+                "host": host,
+                "port": creds.get("port", port),
+                "database": database,
+                "username": creds.get("username", DEFAULT_MYSQL_USER),
+                "password": creds.get("password", ""),
+                "ssl_mode": creds.get("ssl_mode", DEFAULT_MYSQL_SSL_MODE),
+            }
+        )
 
     env_cfg = mysql_config_from_env()
     if env_cfg:
-        return build_mysql_config({
-            "host": host,
-            "port": port,
-            "database": database,
-            "username": env_cfg.username,
-            "password": env_cfg.password,
-            "ssl_mode": env_cfg.ssl_mode,
-        })
+        return build_mysql_config(
+            {
+                "host": host,
+                "port": port,
+                "database": database,
+                "username": env_cfg.username,
+                "password": env_cfg.password,
+                "ssl_mode": env_cfg.ssl_mode,
+            }
+        )
 
     return build_mysql_config({"host": host, "port": port, "database": database})
 
@@ -182,10 +192,7 @@ def validate_mysql_config(config: MySQLConfig) -> MySQLValidationResult:
                 version = row["VERSION()"] if row else "unknown"
                 return MySQLValidationResult(
                     ok=True,
-                    detail=(
-                        f"Connected to MySQL {version}; "
-                        f"target database: {config.database}."
-                    ),
+                    detail=(f"Connected to MySQL {version}; target database: {config.database}."),
                 )
         finally:
             conn.close()
@@ -199,6 +206,27 @@ def _truncate(text: str, max_len: int = _QUERY_TRUNCATE_LEN) -> str:
     return text[:max_len] + "..."
 
 
+def mysql_is_available(sources: dict[str, dict]) -> bool:
+    """Check if MySQL integration identifying params are present."""
+    my = sources.get("mysql", {})
+    return bool(my.get("host") and my.get("database"))
+
+
+def mysql_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
+    """Extract MySQL identifying params (host, database, port) from resolved integrations.
+
+    Credentials (username, password, ssl_mode) are resolved internally by
+    ``resolve_mysql_config`` from the integration store or environment, so
+    they never appear in tool signatures and are never seen by the LLM.
+    """
+    my = sources.get("mysql", {})
+    return {
+        "host": str(my.get("host", "")).strip(),
+        "database": str(my.get("database", "")).strip(),
+        "port": int(my.get("port") or DEFAULT_MYSQL_PORT),
+    }
+
+
 def get_server_status(config: MySQLConfig) -> dict[str, Any]:
     """Retrieve server status (connections, uptime, InnoDB buffer pool metrics).
 
@@ -207,32 +235,36 @@ def get_server_status(config: MySQLConfig) -> dict[str, Any]:
     if not config.is_configured:
         return {"source": "mysql", "available": False, "error": "Not configured."}
 
-    _STATUS_KEYS = frozenset({
-        "Threads_connected",
-        "Threads_running",
-        "Threads_created",
-        "Connections",
-        "Max_used_connections",
-        "Slow_queries",
-        "Questions",
-        "Queries",
-        "Aborted_clients",
-        "Aborted_connects",
-        "Bytes_received",
-        "Bytes_sent",
-        "Innodb_buffer_pool_reads",
-        "Innodb_buffer_pool_read_requests",
-        "Innodb_row_lock_waits",
-        "Innodb_row_lock_time",
-        "Innodb_deadlocks",
-        "Uptime",
-    })
-    _VARIABLE_KEYS = frozenset({
-        "max_connections",
-        "innodb_buffer_pool_size",
-        "version",
-        "version_comment",
-    })
+    _STATUS_KEYS = frozenset(
+        {
+            "Threads_connected",
+            "Threads_running",
+            "Threads_created",
+            "Connections",
+            "Max_used_connections",
+            "Slow_queries",
+            "Questions",
+            "Queries",
+            "Aborted_clients",
+            "Aborted_connects",
+            "Bytes_received",
+            "Bytes_sent",
+            "Innodb_buffer_pool_reads",
+            "Innodb_buffer_pool_read_requests",
+            "Innodb_row_lock_waits",
+            "Innodb_row_lock_time",
+            "Innodb_deadlocks",
+            "Uptime",
+        }
+    )
+    _VARIABLE_KEYS = frozenset(
+        {
+            "max_connections",
+            "innodb_buffer_pool_size",
+            "version",
+            "version_comment",
+        }
+    )
 
     try:
         conn = _get_connection(config)
@@ -318,16 +350,18 @@ def get_current_processes(
                 )
                 processes = []
                 for row in cur.fetchall():
-                    processes.append({
-                        "id": row["ID"],
-                        "user": row["USER"],
-                        "host": row["HOST"] or "",
-                        "database": row["DB"] or "",
-                        "command": row["COMMAND"],
-                        "time_seconds": row["TIME"] or 0,
-                        "state": row["STATE"] or "",
-                        "query": _truncate(row["INFO"] or ""),
-                    })
+                    processes.append(
+                        {
+                            "id": row["ID"],
+                            "user": row["USER"],
+                            "host": row["HOST"] or "",
+                            "database": row["DB"] or "",
+                            "command": row["COMMAND"],
+                            "time_seconds": row["TIME"] or 0,
+                            "state": row["STATE"] or "",
+                            "query": _truncate(row["INFO"] or ""),
+                        }
+                    )
 
                 return {
                     "source": "mysql",
@@ -475,19 +509,29 @@ def get_slow_queries(
 
                 queries = []
                 for row in cur.fetchall():
-                    queries.append({
-                        "digest_text": _truncate(row["DIGEST_TEXT"] or ""),
-                        "schema_name": row["SCHEMA_NAME"] or "",
-                        "count": row["COUNT_STAR"] or 0,
-                        "avg_time_ms": float(row["avg_time_ms"]) if row["avg_time_ms"] is not None else 0.0,
-                        "total_time_ms": float(row["total_time_ms"]) if row["total_time_ms"] is not None else 0.0,
-                        "min_time_ms": float(row["min_time_ms"]) if row["min_time_ms"] is not None else 0.0,
-                        "max_time_ms": float(row["max_time_ms"]) if row["max_time_ms"] is not None else 0.0,
-                        "rows_examined": row["SUM_ROWS_EXAMINED"] or 0,
-                        "rows_sent": row["SUM_ROWS_SENT"] or 0,
-                        "no_index_used": row["SUM_NO_INDEX_USED"] or 0,
-                        "no_good_index_used": row["SUM_NO_GOOD_INDEX_USED"] or 0,
-                    })
+                    queries.append(
+                        {
+                            "digest_text": _truncate(row["DIGEST_TEXT"] or ""),
+                            "schema_name": row["SCHEMA_NAME"] or "",
+                            "count": row["COUNT_STAR"] or 0,
+                            "avg_time_ms": float(row["avg_time_ms"])
+                            if row["avg_time_ms"] is not None
+                            else 0.0,
+                            "total_time_ms": float(row["total_time_ms"])
+                            if row["total_time_ms"] is not None
+                            else 0.0,
+                            "min_time_ms": float(row["min_time_ms"])
+                            if row["min_time_ms"] is not None
+                            else 0.0,
+                            "max_time_ms": float(row["max_time_ms"])
+                            if row["max_time_ms"] is not None
+                            else 0.0,
+                            "rows_examined": row["SUM_ROWS_EXAMINED"] or 0,
+                            "rows_sent": row["SUM_ROWS_SENT"] or 0,
+                            "no_index_used": row["SUM_NO_INDEX_USED"] or 0,
+                            "no_good_index_used": row["SUM_NO_GOOD_INDEX_USED"] or 0,
+                        }
+                    )
 
                 return {
                     "source": "mysql",
@@ -542,20 +586,28 @@ def get_table_stats(
 
                 tables = []
                 for row in cur.fetchall():
-                    tables.append({
-                        "table_name": row["TABLE_NAME"],
-                        "engine": row["ENGINE"] or "",
-                        "row_count_estimate": row["TABLE_ROWS"] or 0,
-                        "size": {
-                            "data_mb": float(row["data_mb"]) if row["data_mb"] is not None else 0.0,
-                            "index_mb": float(row["index_mb"]) if row["index_mb"] is not None else 0.0,
-                            "total_mb": float(row["total_mb"]) if row["total_mb"] is not None else 0.0,
-                        },
-                        "auto_increment": row["AUTO_INCREMENT"],
-                        "collation": row["TABLE_COLLATION"] or "",
-                        "created_at": str(row["CREATE_TIME"]) if row["CREATE_TIME"] else None,
-                        "updated_at": str(row["UPDATE_TIME"]) if row["UPDATE_TIME"] else None,
-                    })
+                    tables.append(
+                        {
+                            "table_name": row["TABLE_NAME"],
+                            "engine": row["ENGINE"] or "",
+                            "row_count_estimate": row["TABLE_ROWS"] or 0,
+                            "size": {
+                                "data_mb": float(row["data_mb"])
+                                if row["data_mb"] is not None
+                                else 0.0,
+                                "index_mb": float(row["index_mb"])
+                                if row["index_mb"] is not None
+                                else 0.0,
+                                "total_mb": float(row["total_mb"])
+                                if row["total_mb"] is not None
+                                else 0.0,
+                            },
+                            "auto_increment": row["AUTO_INCREMENT"],
+                            "collation": row["TABLE_COLLATION"] or "",
+                            "created_at": str(row["CREATE_TIME"]) if row["CREATE_TIME"] else None,
+                            "updated_at": str(row["UPDATE_TIME"]) if row["UPDATE_TIME"] else None,
+                        }
+                    )
 
                 return {
                     "source": "mysql",

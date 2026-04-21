@@ -25,9 +25,7 @@ def tmp_store(tmp_path: Path):
 
 def _seed(store_file: Path, records: list[dict]) -> None:
     store_file.parent.mkdir(parents=True, exist_ok=True)
-    store_file.write_text(
-        json.dumps({"version": 2, "integrations": records}) + "\n"
-    )
+    store_file.write_text(json.dumps({"version": 2, "integrations": records}) + "\n")
 
 
 def test_upsert_instance_appends_to_existing_record(tmp_store: Path) -> None:
@@ -38,9 +36,7 @@ def test_upsert_instance_appends_to_existing_record(tmp_store: Path) -> None:
                 "id": "g1",
                 "service": "grafana",
                 "status": "active",
-                "instances": [
-                    {"name": "prod", "tags": {}, "credentials": {"endpoint": "a"}}
-                ],
+                "instances": [{"name": "prod", "tags": {}, "credentials": {"endpoint": "a"}}],
             }
         ],
     )
@@ -130,7 +126,11 @@ def test_get_instance_by_tag(tmp_store: Path) -> None:
                 "status": "active",
                 "instances": [
                     {"name": "prod", "tags": {"env": "prod"}, "credentials": {"endpoint": "p"}},
-                    {"name": "staging", "tags": {"env": "staging"}, "credentials": {"endpoint": "s"}},
+                    {
+                        "name": "staging",
+                        "tags": {"env": "staging"},
+                        "credentials": {"endpoint": "s"},
+                    },
                 ],
             }
         ],
@@ -162,9 +162,7 @@ def test_remove_instance_persists_when_record_retains_others(tmp_store: Path) ->
 
     # Reload from disk to confirm persistence.
     data = json.loads(tmp_store.read_text())
-    remaining_names = [
-        i["name"] for i in data["integrations"][0]["instances"]
-    ]
+    remaining_names = [i["name"] for i in data["integrations"][0]["instances"]]
     assert remaining_names == ["staging"]
 
 

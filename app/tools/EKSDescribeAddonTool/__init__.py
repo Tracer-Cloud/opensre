@@ -57,12 +57,29 @@ def describe_eks_addon(
         client = EKSClient(role_arn=role_arn, external_id=external_id, region=region)
         addon = client.describe_addon(cluster_name, addon_name)
         return {
-            "source": "eks", "available": True, "cluster_name": cluster_name,
-            "addon_name": addon_name, "status": addon.get("status"),
-            "addon_version": addon.get("addonVersion"), "health": addon.get("health", {}),
-            "marketplace_version": addon.get("marketplaceVersion"), "error": None,
+            "source": "eks",
+            "available": True,
+            "cluster_name": cluster_name,
+            "addon_name": addon_name,
+            "status": addon.get("status"),
+            "addon_version": addon.get("addonVersion"),
+            "health": addon.get("health", {}),
+            "marketplace_version": addon.get("marketplaceVersion"),
+            "error": None,
         }
     except ClientError as e:
-        return {"source": "eks", "available": False, "cluster_name": cluster_name, "addon_name": addon_name, "error": str(e)}
+        return {
+            "source": "eks",
+            "available": False,
+            "cluster_name": cluster_name,
+            "addon_name": addon_name,
+            "error": str(e),
+        }
     except Exception as e:
-        return {"source": "eks", "available": False, "cluster_name": cluster_name, "addon_name": addon_name, "error": str(e)}
+        return {
+            "source": "eks",
+            "available": False,
+            "cluster_name": cluster_name,
+            "addon_name": addon_name,
+            "error": str(e),
+        }

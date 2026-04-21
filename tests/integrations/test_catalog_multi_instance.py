@@ -205,9 +205,7 @@ def test_resolve_effective_integrations_propagates_single_non_default_instance()
             }
         ],
     }
-    resolved = resolve_effective_integrations(
-        store_integrations=[], env_integrations=[single_prod]
-    )
+    resolved = resolve_effective_integrations(store_integrations=[], env_integrations=[single_prod])
     assert "instances" in resolved["grafana"]
     assert resolved["grafana"]["instances"][0]["name"] == "prod"
 
@@ -220,9 +218,7 @@ def test_resolve_effective_integrations_carries_instances_through_pydantic() -> 
     from app.integrations.catalog import resolve_effective_integrations
 
     env_records = [_v2_grafana_multi()]
-    resolved = resolve_effective_integrations(
-        store_integrations=[], env_integrations=env_records
-    )
+    resolved = resolve_effective_integrations(store_integrations=[], env_integrations=env_records)
     assert "grafana" in resolved
     assert "instances" in resolved["grafana"]
     all_inst = resolved["grafana"]["instances"]

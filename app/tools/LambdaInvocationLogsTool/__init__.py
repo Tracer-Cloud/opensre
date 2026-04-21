@@ -59,7 +59,11 @@ def get_lambda_invocation_logs(
     if request_id:
         result = get_invocation_logs_by_request_id(function_name, request_id, limit)
         if not result.get("success"):
-            return {"error": result.get("error", "Unknown error"), "function_name": function_name, "request_id": request_id}
+            return {
+                "error": result.get("error", "Unknown error"),
+                "function_name": function_name,
+                "request_id": request_id,
+            }
         data = result.get("data", {})
         logs = data.get("logs", [])
         # Compact logs to stay within prompt limits
@@ -91,7 +95,9 @@ def get_lambda_invocation_logs(
     ]
 
     # Compact invocations and logs to stay within prompt limits
-    compacted_invocations = compact_invocations(invocations, limit=limit, max_logs_per_invocation=10)
+    compacted_invocations = compact_invocations(
+        invocations, limit=limit, max_logs_per_invocation=10
+    )
     compacted_recent_logs = compact_logs(all_logs, limit=20)
 
     # Build invocation summaries with limited log counts

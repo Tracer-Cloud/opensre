@@ -1,0 +1,39 @@
+root_cause_category: healthy
+required_keywords:
+  - ReplicaSet
+  - rollout
+forbidden_categories:
+  - unknown
+  - resource_exhaustion
+  - configuration_error
+  - infrastructure
+optimal_trajectory:
+  - list_eks_pods
+  - list_eks_deployments
+  - get_eks_events
+max_investigation_loops: 3
+ruling_out_keywords:
+  - not OOM
+  - not a current failure
+  - terminating
+required_queries:
+  - list_eks_pods
+  - list_eks_deployments
+model_response: |
+  ROOT_CAUSE: No active workload failure. The pod payments-api-6c4ab5d9c-old1 belongs to the OLD ReplicaSet (payments-api-6c4ab5d9c) which is being terminated as part of a completed rollout. The NEW ReplicaSet (payments-api-7f9dd8b6c4) has 3/3 pods Running and Ready, the deployment reports desired=3 ready=3 available=3, and Datadog monitors are all OK. The CrashLoopBackOff signal is a transient state of an old pod being torn down.
+  ROOT_CAUSE_CATEGORY: healthy
+
+  VALIDATED_CLAIMS:
+  - Deployment payments-api reports desired=3, ready=3, available=3, unavailable=0. [evidence: eks_deployments]
+  - All 3 pods of the new ReplicaSet (payments-api-7f9dd8b6c4-*) are Running and Ready with restart_count=0. [evidence: eks_pods]
+  - The pod cited in the alert (payments-api-6c4ab5d9c-old1) belongs to the older ReplicaSet 6c4ab5d9c and shows phase=Running with deletion_timestamp set, indicating kubelet is tearing it down. [evidence: eks_pods]
+  - The only Warning event present is BackOff on the terminating old-RS pod; no FailedCreate or BackOff on the new-RS pods. [evidence: eks_events]
+  - Control-plane logs confirm the rollout completed at 09:33Z and the old pod is in graceful shutdown. [evidence: datadog_logs]
+  - Datadog monitors for error rate and latency are OK. [evidence: datadog_monitors]
+
+  NON_VALIDATED_CLAIMS:
+  - The Datadog rule that flagged the old pod likely matches by deployment label without filtering on ReplicaSet generation, producing a false-positive alert during the brief termination window.
+  - Tightening the alert query to exclude pods with a deletion_timestamp would suppress this class of noise.
+
+  CAUSAL_CHAIN:
+  - No active failure causal chain — workload is healthy. A terminating old-ReplicaSet pod briefly entered a CrashLoopBackOff-shaped state during graceful shutdown, triggering a label-matched alert that does not reflect the deployment's actual health.

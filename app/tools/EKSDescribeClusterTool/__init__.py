@@ -59,11 +59,17 @@ def describe_eks_cluster(
         client = EKSClient(role_arn=role_arn, external_id=external_id, region=region)
         cluster = client.describe_cluster(cluster_name)
         return {
-            "source": "eks", "available": True, "cluster_name": cluster_name,
-            "status": cluster.get("status"), "kubernetes_version": cluster.get("version"),
-            "endpoint": cluster.get("endpoint"), "cluster_role_arn": cluster.get("roleArn"),
-            "logging": cluster.get("logging", {}), "resources_vpc_config": cluster.get("resourcesVpcConfig", {}),
-            "tags": cluster.get("tags", {}), "error": None,
+            "source": "eks",
+            "available": True,
+            "cluster_name": cluster_name,
+            "status": cluster.get("status"),
+            "kubernetes_version": cluster.get("version"),
+            "endpoint": cluster.get("endpoint"),
+            "cluster_role_arn": cluster.get("roleArn"),
+            "logging": cluster.get("logging", {}),
+            "resources_vpc_config": cluster.get("resourcesVpcConfig", {}),
+            "tags": cluster.get("tags", {}),
+            "error": None,
         }
     except ClientError as e:
         return {"source": "eks", "available": False, "cluster_name": cluster_name, "error": str(e)}

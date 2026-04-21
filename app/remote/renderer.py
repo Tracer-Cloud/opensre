@@ -27,13 +27,17 @@ _BOLD = "\033[1m"
 _WHITE = "\033[37m"
 _CYAN = "\033[1;36m"
 
-_NODE_START_KINDS = frozenset({
-    "on_chain_start",
-})
+_NODE_START_KINDS = frozenset(
+    {
+        "on_chain_start",
+    }
+)
 
-_NODE_END_KINDS = frozenset({
-    "on_chain_end",
-})
+_NODE_END_KINDS = frozenset(
+    {
+        "on_chain_end",
+    }
+)
 
 
 class StreamRenderer:

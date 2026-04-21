@@ -50,7 +50,7 @@ class ScenarioAnswerKey:
     optimal_trajectory: list[str] = ()  # type: ignore[assignment]
     max_investigation_loops: int = 1
     ruling_out_keywords: list[str] = ()  # type: ignore[assignment]
-    required_queries: list[str] = ()     # type: ignore[assignment]
+    required_queries: list[str] = ()  # type: ignore[assignment]
 
 
 @dataclass(frozen=True)
@@ -87,9 +87,7 @@ def _resolve_base_dir(suite_dir: Path, base_id: str) -> Path:
     """Find the base scenario directory by its directory name (e.g. '000-healthy')."""
     base_dir = suite_dir / base_id
     if not base_dir.is_dir():
-        raise ValueError(
-            f"Base scenario '{base_id}' not found at {base_dir}"
-        )
+        raise ValueError(f"Base scenario '{base_id}' not found at {base_dir}")
     base_raw = _read_yaml(base_dir / "scenario.yml")
     if "base" in base_raw:
         raise ValueError(
@@ -100,7 +98,8 @@ def _resolve_base_dir(suite_dir: Path, base_id: str) -> Path:
 
 
 def _merge_scenario_yaml(
-    base_raw: dict[str, Any], scenario_raw: dict[str, Any],
+    base_raw: dict[str, Any],
+    scenario_raw: dict[str, Any],
 ) -> dict[str, Any]:
     """Shallow-merge scenario overrides on top of base metadata.
 
@@ -112,7 +111,9 @@ def _merge_scenario_yaml(
 
 
 def _resolve_evidence_path(
-    scenario_dir: Path, base_dir: Path | None, filename: str,
+    scenario_dir: Path,
+    base_dir: Path | None,
+    filename: str,
 ) -> Path:
     """Return the scenario's own evidence file if it exists, otherwise the base's."""
     for search_dir in (scenario_dir, base_dir):
@@ -150,7 +151,8 @@ def _load_cloudwatch_metrics_split(scenario_dir: Path) -> dict[str, Any]:
 
 
 def _load_cloudwatch_metrics(
-    scenario_dir: Path, base_dir: Path | None,
+    scenario_dir: Path,
+    base_dir: Path | None,
 ) -> dict[str, Any]:
     """Load CloudWatch metrics — consolidated file or per-metric split."""
     # 1. Scenario has a consolidated file

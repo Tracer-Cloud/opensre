@@ -254,11 +254,13 @@ def lambda_handler(event, context):
             return {
                 "statusCode": 500,
                 "headers": {"Content-Type": "application/json"},
-                "body": json.dumps({
-                    "error": str(e),
-                    "correlation_id": correlation_id,
-                    "s3_key": s3_key,
-                }),
+                "body": json.dumps(
+                    {
+                        "error": str(e),
+                        "correlation_id": correlation_id,
+                        "s3_key": s3_key,
+                    }
+                ),
             }
     else:
         print("ECS_CLUSTER or TASK_DEFINITION not configured, skipping task launch")

@@ -26,10 +26,26 @@ class AlertDetails(BaseModel):
     environment: str | None = Field(default=None, description="Environment, if present")
     summary: str | None = Field(default=None, description="Short alert summary, if present")
     # Structured routing fields extracted from alert text
-    kube_namespace: str | None = Field(default=None, description="Kubernetes namespace if mentioned (e.g. tracer-test)")
-    cloudwatch_log_group: str | None = Field(default=None, description="CloudWatch log group if mentioned")
-    error_message: str | None = Field(default=None, description="The actual error message or PIPELINE_ERROR content from the alert")
-    log_query: str | None = Field(default=None, description="Datadog/log search query from the alert body (e.g. 'OOMKilled kube_namespace:tracer-cl' or 'PIPELINE_ERROR kube_namespace:tracer-test')")
-    eks_cluster: str | None = Field(default=None, description="EKS cluster name if mentioned (e.g. tracer-eks-test)")
-    pod_name: str | None = Field(default=None, description="Kubernetes pod name if mentioned (e.g. etl-worker-7d9f8b-xkp2q)")
-    deployment: str | None = Field(default=None, description="Kubernetes deployment name if mentioned (e.g. etl-worker)")
+    kube_namespace: str | None = Field(
+        default=None, description="Kubernetes namespace if mentioned (e.g. tracer-test)"
+    )
+    cloudwatch_log_group: str | None = Field(
+        default=None, description="CloudWatch log group if mentioned"
+    )
+    error_message: str | None = Field(
+        default=None,
+        description="The actual error message or PIPELINE_ERROR content from the alert",
+    )
+    log_query: str | None = Field(
+        default=None,
+        description="Datadog/log search query from the alert body (e.g. 'OOMKilled kube_namespace:tracer-cl' or 'PIPELINE_ERROR kube_namespace:tracer-test')",
+    )
+    eks_cluster: str | None = Field(
+        default=None, description="EKS cluster name if mentioned (e.g. tracer-eks-test)"
+    )
+    pod_name: str | None = Field(
+        default=None, description="Kubernetes pod name if mentioned (e.g. etl-worker-7d9f8b-xkp2q)"
+    )
+    deployment: str | None = Field(
+        default=None, description="Kubernetes deployment name if mentioned (e.g. etl-worker)"
+    )
