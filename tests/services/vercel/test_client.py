@@ -638,7 +638,7 @@ def test_ingest_runtime_log_stream_line_handles_empty_lines() -> None:
 def test_ingest_runtime_log_stream_line_handles_invalid_json_gracefully() -> None:
     """Test that invalid JSON is safely ignored without crashing."""
     bucket: list[dict[str, Any]] = []
-    line = 'data:not valid json'
+    line = "data:not valid json"
     result = _ingest_runtime_log_stream_line(line, bucket, limit=10)
     assert result is False
     assert len(bucket) == 0
