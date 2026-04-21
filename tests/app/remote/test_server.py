@@ -206,7 +206,7 @@ async def test_lifespan_starts_and_cancels_vercel_poller(
     monkeypatch.setenv("VERCEL_POLL_ENABLED", "true")
     monkeypatch.setenv("VERCEL_POLL_PROJECT_IDS", "proj_123")
     monkeypatch.setattr("app.remote.server.INVESTIGATIONS_DIR", tmp_path)
-    monkeypatch.setattr("app.remote.server.VercelPoller.run_forever", _run_forever)
+    monkeypatch.setattr("app.remote.vercel_poller.VercelPoller.run_forever", _run_forever)
 
     async with _lifespan(object()):
         await asyncio.wait_for(started.wait(), timeout=1)

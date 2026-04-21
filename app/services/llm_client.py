@@ -542,6 +542,17 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
             else settings.bedrock_toolcall_model
         )
         return BedrockLLMClient(model=model, max_tokens=config.max_tokens)
+    elif provider == "groq":
+        from app.config import GROQ_BASE_URL, GROQ_LLM_CONFIG
+
+        config = GROQ_LLM_CONFIG
+        model = settings.groq_reasoning_model if model_type == "reasoning" else settings.groq_toolcall_model
+        return OpenAILLMClient(
+            model=model,
+            max_tokens=config.max_tokens,
+            base_url=GROQ_BASE_URL,
+            api_key_env="GROQ_API_KEY",
+        )
     else:
         config = ANTHROPIC_LLM_CONFIG
         model = (
