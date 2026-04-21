@@ -23,7 +23,7 @@ def _vercel_available() -> bool:
 
 
 @pytest.fixture(scope="session")
-def vercel_deployment() -> Generator[dict[str, Any], None, None]:
+def vercel_deployment() -> Generator[dict[str, Any]]:
     """Deploy to Vercel, yield outputs, then tear down.
 
     Skips when running in CI, when SKIP_INFRA_TESTS is set, or when

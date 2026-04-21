@@ -32,7 +32,7 @@ async def streamable_http_client(
     timeout: float = 30.0,
     sse_read_timeout: float = 300.0,
     terminate_on_close: bool = True,
-) -> AsyncGenerator[tuple[Any, Any, Any], None]:
+) -> AsyncGenerator[tuple[Any, Any, Any]]:
     del headers, timeout, sse_read_timeout
     async with _mcp_streamable_http_client(
         url,

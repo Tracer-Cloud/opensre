@@ -1,7 +1,7 @@
 # Ruff configuration
 # https://docs.astral.sh/ruff/configuration/
 
-target-version = "py312"
+target-version = "py313"
 line-length = 100
 
 # Exclude vendored dependencies in Lambda code and build artifacts
