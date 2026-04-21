@@ -1125,7 +1125,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 "id": "env-airflow",
                 "service": "airflow",
                 "status": "active",
-                "credentials": airflow_config.model_dump(exclude={"integration_id"}),
+                "credentials": airflow_config.model_dump(),
             }
         )
 

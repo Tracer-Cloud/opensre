@@ -29,6 +29,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.e2e
+
 from app.integrations.airflow import (
     DEFAULT_AIRFLOW_BASE_URL,
     build_airflow_config,

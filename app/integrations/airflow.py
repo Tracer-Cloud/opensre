@@ -317,11 +317,14 @@ def get_recent_airflow_failures(
         if not dag_run_id:
             continue
 
-        task_instances = get_airflow_task_instances(
-            config=config,
-            dag_id=dag_id,
-            dag_run_id=dag_run_id,
-        )
+        try:
+            task_instances = get_airflow_task_instances(
+                config=config,
+                dag_id=dag_id,
+                dag_run_id=dag_run_id,
+            )
+        except Exception:
+            continue
 
         for task_instance in task_instances:
             state = str(task_instance.get("state", "")).strip().lower()
