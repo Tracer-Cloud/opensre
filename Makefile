@@ -6,9 +6,20 @@ export
 ifneq ($(wildcard .venv/bin/python),)
 PYTHON = .venv/bin/python
 PIP = .venv/bin/python -m pip
+else ifneq ($(wildcard .venv/Scripts/python.exe),)
+ifeq ($(OS),Windows_NT)
+PYTHON = .venv\\Scripts\\python.exe
+PIP = .venv\\Scripts\\python.exe -m pip
 else
+PYTHON = .venv/Scripts/python.exe
+PIP = .venv/Scripts/python.exe -m pip
+endif
+else ifneq ($(shell python3 -c "import sys" 2>/dev/null),)
 PYTHON = python3
 PIP = python3 -m pip
+else
+PYTHON = python
+PIP = python -m pip
 endif
 # PIP_INSTALL_FLAGS = --user --break-system-packages
 USER_BASE := $(shell $(PYTHON) -m site --user-base)
@@ -17,7 +28,7 @@ export PATH := $(if $(wildcard .venv/bin),$(CURDIR)/.venv/bin:,)$(USER_BIN):$(PA
 
 # Create venv and install dependencies
 install:
-	python3 -m venv .venv
+	$(PYTHON) -m venv .venv
 	$(PIP) install --upgrade pip
 	$(PIP) install $(PIP_INSTALL_FLAGS) -e ".[dev]"
 	$(PYTHON) -m app.analytics.install
