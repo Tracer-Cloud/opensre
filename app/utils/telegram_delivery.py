@@ -46,9 +46,7 @@ def post_telegram_message(
         if resp.status_code not in (200, 201):
             logger.warning("[telegram] post message failed: %s", resp.status_code)
             logger.warning("[telegram] api response %s", data)
-            error_message = str(
-                data.get("description", data.get("error", "unknown"))
-            )
+            error_message = str(data.get("description", data.get("error", "unknown")))
             logger.warning("[telegram] post message failed: %s", error_message)
             return False, error_message, ""
         result = data.get("result", {})

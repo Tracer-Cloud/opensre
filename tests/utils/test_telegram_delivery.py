@@ -107,9 +107,7 @@ def test_send_telegram_report_posts_to_chat(monkeypatch: pytest.MonkeyPatch) -> 
         return _mock_response(200, {"ok": True, "result": {"message_id": 5}})
 
     monkeypatch.setattr("app.utils.telegram_delivery.httpx.post", _fake_post)
-    ok, error = send_telegram_report(
-        "Report text", {"bot_token": "tok", "chat_id": "chat-1"}
-    )
+    ok, error = send_telegram_report("Report text", {"bot_token": "tok", "chat_id": "chat-1"})
 
     assert ok is True
     assert error == ""

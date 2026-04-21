@@ -176,9 +176,7 @@ def generate_report(state: InvestigationState) -> dict:
                 slack_message,
                 {"bot_token": bot_token, "chat_id": chat_id, "reply_to_message_id": reply_to},
             )
-            logger.debug(
-                "[publish] telegram delivery: posted=%s error=%s", tg_posted, tg_error
-            )
+            logger.debug("[publish] telegram delivery: posted=%s error=%s", tg_posted, tg_error)
             if not tg_posted:
                 logger.warning(
                     "[publish] Telegram delivery failed: chat_id=%s error=%s",
