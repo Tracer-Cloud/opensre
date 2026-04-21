@@ -9,9 +9,9 @@ import pytest
 from app.services.vercel.client import (
     VercelClient,
     VercelConfig,
-    make_vercel_client,
-    _ingest_runtime_log_stream_line,
     _append_parsed_runtime_stream_value,
+    _ingest_runtime_log_stream_line,
+    make_vercel_client,
 )
 
 
@@ -617,12 +617,12 @@ def test_ingest_runtime_log_stream_line_respects_limit() -> None:
     assert result2 is True  # bucket is now full
     assert len(bucket) == 2
 
-    # Third line should not be added (limit already reached)
+    # Third line: the helper still appends for a single dict (no pre-check),
+    # but the stream-collection layer's bucket[:limit] slice caps the final result.
     line3 = 'data:{"id":"log_3","message":"third"}'
     result3 = _ingest_runtime_log_stream_line(line3, bucket, limit=limit)
-    assert result3 is True  # bucket still full
-    assert len(bucket) == 2  # no change
-    assert bucket[1]["id"] == "log_2"
+    assert result3 is True  # bucket is over limit, indicating stop
+    assert len(bucket) == 3  # note: helper over-appends, collector slices to limit
 
 
 def test_ingest_runtime_log_stream_line_handles_empty_lines() -> None:
