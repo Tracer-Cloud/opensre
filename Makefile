@@ -20,7 +20,7 @@ PIP = python -m pip
 endif
 # PIP_INSTALL_FLAGS = --user --break-system-packages
 USER_BASE := $(shell $(PYTHON) -m site --user-base)
-USER_BIN := $(USER_BASE)/bin
+USER_BIN := $(if $(wildcard .venv/Scripts),$(USER_BASE)/Scripts,$(USER_BASE)/bin)
 export PATH := $(if $(wildcard .venv/bin),$(CURDIR)/.venv/bin:,$(if $(wildcard .venv/Scripts),$(CURDIR)/.venv/Scripts:))$(USER_BIN):$(PATH)
 
 # Create venv and install dependencies
