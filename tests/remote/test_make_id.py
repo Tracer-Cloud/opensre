@@ -1,7 +1,5 @@
 """Tests for _make_id() and _slugify() functions."""
 
-import pytest
-
 from app.remote.server import _make_id, _slugify
 
 
