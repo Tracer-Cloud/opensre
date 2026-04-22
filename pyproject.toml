@@ -101,6 +101,9 @@ postgresql = [
 azure_sql = [
     "pyodbc>=5.1.0,<6.0.0",
 ]
+enigmagent = [
+    "enigmagent>=1.0.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*", "tests*"]

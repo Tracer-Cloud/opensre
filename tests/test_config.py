@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 from pydantic import ValidationError
 
@@ -23,7 +26,12 @@ def test_llm_settings_require_api_key_for_selected_provider() -> None:
 
 def test_llm_settings_from_env_uses_secure_local_api_key(monkeypatch) -> None:
     monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.delenv("ENIGM_AGENT_URL", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "app.config._resolve_enigmagent_api_key_overrides",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not be called")),
+    )
     monkeypatch.setattr(
         "app.config.resolve_llm_api_key",
         lambda env_var: "stored-secret" if env_var == "OPENAI_API_KEY" else "",
@@ -33,6 +41,49 @@ def test_llm_settings_from_env_uses_secure_local_api_key(monkeypatch) -> None:
 
     assert settings.provider == "openai"
     assert settings.openai_api_key == "stored-secret"
+
+
+def test_llm_settings_from_env_uses_enigmagent_override(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+
+    class FakeVaultClient:
+        def __init__(self, host: str, port: int, timeout: float, origin: str) -> None:
+            seen["init"] = {
+                "host": host,
+                "port": port,
+                "timeout": timeout,
+                "origin": origin,
+            }
+
+        def resolve(self, placeholder: str, origin: str | None = None) -> str:
+            seen["resolve"] = {
+                "placeholder": placeholder,
+                "origin": origin,
+            }
+            return "vault-openai-key"
+
+    monkeypatch.setitem(sys.modules, "enigmagent", types.SimpleNamespace(VaultClient=FakeVaultClient))
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("ENIGM_AGENT_URL", "http://127.0.0.1:3737")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "app.config.resolve_llm_api_key",
+        lambda env_var: "stored-secret" if env_var == "OPENAI_API_KEY" else "",
+    )
+
+    settings = LLMSettings.from_env()
+
+    assert settings.openai_api_key == "vault-openai-key"
+    assert seen["init"] == {
+        "host": "127.0.0.1",
+        "port": 3737,
+        "timeout": 5.0,
+        "origin": "http://localhost",
+    }
+    assert seen["resolve"] == {
+        "placeholder": "OPENAI_API_KEY",
+        "origin": "http://localhost",
+    }
 
 
 def test_llm_settings_require_minimax_api_key() -> None:

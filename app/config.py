@@ -8,6 +8,7 @@ import os
 from difflib import get_close_matches
 from enum import Enum
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import Field, field_validator, model_validator
 
@@ -124,6 +125,53 @@ LLMProvider = Literal[
     "codex",
 ]
 
+_ENIGMAGENT_IGNORED_ERROR_CODES = frozenset({"not_found", "no_domain_binding", "domain_mismatch"})
+_PROVIDER_API_KEY_ENV_VARS = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "nvidia": "NVIDIA_API_KEY",
+    "minimax": "MINIMAX_API_KEY",
+}
+
+
+def _resolve_enigmagent_api_key_overrides(provider: str, enigm_agent_url: str) -> dict[str, str]:
+    """Resolve provider-scoped LLM API key overrides from EnigmAgent when configured."""
+    env_var = _PROVIDER_API_KEY_ENV_VARS.get(provider)
+    if not env_var:
+        return {}
+
+    parsed = urlparse(enigm_agent_url)
+    if parsed.scheme != "http" or not parsed.hostname:
+        raise ValueError("ENIGM_AGENT_URL must be a valid http://host[:port] URL.")
+
+    try:
+        from enigmagent import VaultClient  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise RuntimeError(
+            "ENIGM_AGENT_URL is set but the optional dependency 'enigmagent' is not installed. "
+            "Install OpenSRE with the 'enigmagent' extra."
+        ) from exc
+
+    client = VaultClient(
+        host=parsed.hostname,
+        port=parsed.port or 3737,
+        timeout=5.0,
+        origin="http://localhost",
+    )
+
+    try:
+        value = client.resolve(env_var, origin="http://localhost").strip()
+    except Exception as exc:
+        if getattr(exc, "code", None) in _ENIGMAGENT_IGNORED_ERROR_CODES:
+            return {}
+        raise RuntimeError(f"Failed to resolve {env_var} from ENIGM_AGENT_URL: {exc}") from exc
+
+    if not value:
+        return {}
+    return {env_var: value}
+
 
 class LLMSettings(StrictConfigModel):
     """Strict runtime configuration for selecting and authenticating an LLM provider."""
@@ -207,15 +255,24 @@ class LLMSettings(StrictConfigModel):
     @classmethod
     def from_env(cls) -> "LLMSettings":
         """Build validated LLM settings from environment variables."""
+        provider = os.getenv("LLM_PROVIDER", "anthropic").strip().lower() or "anthropic"
+        enigm_agent_url = os.getenv("ENIGM_AGENT_URL", "").strip()
+        enigm_overrides = (
+            _resolve_enigmagent_api_key_overrides(provider, enigm_agent_url) if enigm_agent_url else {}
+        )
+
+        def resolve_api_key(env_var: str) -> str:
+            return enigm_overrides.get(env_var) or resolve_llm_api_key(env_var)
+
         return cls.model_validate(
             {
-                "provider": os.getenv("LLM_PROVIDER", "anthropic").strip().lower() or "anthropic",
-                "anthropic_api_key": resolve_llm_api_key("ANTHROPIC_API_KEY"),
-                "openai_api_key": resolve_llm_api_key("OPENAI_API_KEY"),
-                "openrouter_api_key": resolve_llm_api_key("OPENROUTER_API_KEY"),
-                "gemini_api_key": resolve_llm_api_key("GEMINI_API_KEY"),
-                "nvidia_api_key": resolve_llm_api_key("NVIDIA_API_KEY"),
-                "minimax_api_key": resolve_llm_api_key("MINIMAX_API_KEY"),
+                "provider": provider,
+                "anthropic_api_key": resolve_api_key("ANTHROPIC_API_KEY"),
+                "openai_api_key": resolve_api_key("OPENAI_API_KEY"),
+                "openrouter_api_key": resolve_api_key("OPENROUTER_API_KEY"),
+                "gemini_api_key": resolve_api_key("GEMINI_API_KEY"),
+                "nvidia_api_key": resolve_api_key("NVIDIA_API_KEY"),
+                "minimax_api_key": resolve_api_key("MINIMAX_API_KEY"),
                 "anthropic_reasoning_model": os.getenv(
                     "ANTHROPIC_REASONING_MODEL", ANTHROPIC_REASONING_MODEL
                 ).strip()
