@@ -7,9 +7,9 @@ import httpx
 import pytest
 
 from app.services.vercel.client import (
+    _MAX_VERCEL_PATH_SEGMENT_LEN,
     VercelClient,
     VercelConfig,
-    _MAX_VERCEL_PATH_SEGMENT_LEN,
     _append_parsed_runtime_stream_value,
     _ingest_runtime_log_stream_line,
     _safe_vercel_path_segment,
