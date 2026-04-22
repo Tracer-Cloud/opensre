@@ -102,7 +102,9 @@ def test_validate_posthog_config_forbidden(monkeypatch: pytest.MonkeyPatch) -> N
     )
 
     request = httpx.Request("GET", "https://us.i.posthog.com/api/projects/123/")
-    response = httpx.Response(403, text='{"detail": "You do not have permission."}', request=request)
+    response = httpx.Response(
+        403, text='{"detail": "You do not have permission."}', request=request
+    )
 
     def fake_request_json(*args, **kwargs):
         raise httpx.HTTPStatusError(
