@@ -14,6 +14,7 @@ from app.state import InvestigationState
 
 from .claim_validator import calculate_validity_score, validate_and_categorize_claims
 from .evidence_checker import (
+    _INVESTIGATED_EVIDENCE_KEYS,
     check_evidence_availability,
     check_vendor_evidence_missing,
     is_clearly_healthy,
@@ -121,13 +122,18 @@ def _handle_healthy_finding(state: InvestigationState, tracker, evidence: dict) 
     alert_name = state.get("alert_name", "Health check")
     loop_count = state.get("investigation_loop_count", 0)
 
+    # Mirror is_clearly_healthy's gating: a present investigation key (even with an
+    # empty list) is itself the healthy signal. Iterating evidence.keys() filtered
+    # by truthiness instead emits claims for query-string metadata like
+    # grafana_logs_query and drops the empty-list evidence keys that actually
+    # triggered the short-circuit.
     validated_claims = [
         {
             "claim": f"{k} data confirmed within normal operating bounds",
             "validation_status": "validated",
         }
-        for k in evidence
-        if evidence[k]
+        for k in sorted(_INVESTIGATED_EVIDENCE_KEYS)
+        if k in evidence
     ]
 
     tracker.complete(
