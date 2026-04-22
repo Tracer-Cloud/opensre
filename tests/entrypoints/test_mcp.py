@@ -100,7 +100,7 @@ def test_run_rca_error_type_reflects_actual_exception_class(monkeypatch: MonkeyP
 
 def test_run_rca_output_shape_on_success(monkeypatch: MonkeyPatch) -> None:
     """Success response always has ok, result, error, and error_type keys."""
-    monkeypatch.setattr("app.entrypoints.mcp._run_cli", lambda *a, **kw: {"report": "done"})
+    monkeypatch.setattr("app.entrypoints.mcp._run_cli", lambda *_a, **_kw: {"report": "done"})
 
     payload: dict[str, Any] = {"title": "test", "state": "firing", "alert_source": "grafana"}
     result = run_rca(alert_payload=payload)
