@@ -93,6 +93,19 @@ def test_post_telegram_message_exception_returns_false(monkeypatch: pytest.Monke
     assert message_id == ""
 
 
+def test_post_telegram_message_exception_redacts_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    secret = "secret-bot-token-123"
+
+    def _raise(*_a: Any, **_kw: Any) -> None:
+        raise ConnectionError(f"failed to connect to api.telegram.org/bot{secret}/sendMessage")
+
+    monkeypatch.setattr("app.utils.telegram_delivery.httpx.post", _raise)
+    ok, error, _ = post_telegram_message("chat-1", "text", secret)
+    assert ok is False
+    assert secret not in error
+    assert "<redacted>" in error
+
+
 # ---------------------------------------------------------------------------
 # send_telegram_report
 # ---------------------------------------------------------------------------

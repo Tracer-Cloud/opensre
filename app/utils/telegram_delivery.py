@@ -17,6 +17,13 @@ def _truncate(text: str, limit: int) -> str:
     return (text[: limit - 1] + "…") if len(text) > limit else text
 
 
+def _redact_token(text: str, bot_token: str) -> str:
+    """Replace bot token with <redacted> to prevent accidental log/error leakage."""
+    if bot_token and bot_token in text:
+        return text.replace(bot_token, "<redacted>")
+    return text
+
+
 def post_telegram_message(
     chat_id: str,
     text: str,
@@ -53,8 +60,9 @@ def post_telegram_message(
         message_id: str = str(result.get("message_id") or "")
         return True, error_message, message_id
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[telegram] post message exception: %s", exc)
-        return False, str(exc), ""
+        error = _redact_token(str(exc), bot_token)
+        logger.warning("[telegram] post message exception: %s", error)
+        return False, error, ""
 
 
 def send_telegram_report(report: str, telegram_ctx: dict[str, Any]) -> tuple[bool, str]:

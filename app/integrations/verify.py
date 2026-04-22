@@ -695,7 +695,8 @@ def _verify_telegram(source: str, config: dict[str, Any]) -> dict[str, str]:
             timeout=10.0,
         )
     except Exception as exc:  # noqa: BLE001
-        return _result("telegram", source, "failed", f"Bot token validation failed: {exc}")
+        safe_exc = str(exc).replace(bot_token, "<redacted>") if bot_token else str(exc)
+        return _result("telegram", source, "failed", f"Bot token validation failed: {safe_exc}")
 
     if not response.is_success:
         return _result(
