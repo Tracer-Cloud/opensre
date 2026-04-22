@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.utils.telegram_delivery import (
+    _TelegramTokenFilter,
     post_telegram_message,
     send_telegram_report,
 )
@@ -152,6 +154,128 @@ def test_send_telegram_report_returns_false_on_api_error(monkeypatch: pytest.Mon
     ok, error = send_telegram_report("Report", {"bot_token": "tok", "chat_id": "chat-1"})
     assert ok is False
     assert "Forbidden" in error
+
+
+# ---------------------------------------------------------------------------
+# fix 1 – httpx log token filter
+# ---------------------------------------------------------------------------
+
+
+def test_telegram_token_filter_scrubs_url_from_msg() -> None:
+    f = _TelegramTokenFilter()
+    record = logging.LogRecord(
+        name="httpx",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg="HTTP Request: POST https://api.telegram.org/botSECRET123/sendMessage",
+        args=(),
+        exc_info=None,
+    )
+    f.filter(record)
+    assert "SECRET123" not in record.msg
+    assert "bot<redacted>/sendMessage" in record.msg
+
+
+def test_telegram_token_filter_scrubs_token_in_args() -> None:
+    f = _TelegramTokenFilter()
+    record = logging.LogRecord(
+        name="httpcore",
+        level=logging.DEBUG,
+        pathname="",
+        lineno=0,
+        msg="send %s",
+        args=("https://api.telegram.org/botSECRET123/sendMessage",),
+        exc_info=None,
+    )
+    f.filter(record)
+    assert isinstance(record.args, tuple)
+    assert "SECRET123" not in record.args[0]
+    assert "bot<redacted>/sendMessage" in record.args[0]
+
+
+def test_telegram_token_filter_scrubs_non_string_url_arg() -> None:
+    """httpx passes request.url as an httpx.URL object, not a plain str."""
+
+    class FakeURL:
+        def __str__(self) -> str:
+            return "https://api.telegram.org/botSECRET123/sendMessage"
+
+    f = _TelegramTokenFilter()
+    record = logging.LogRecord(
+        name="httpx",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg='HTTP Request: %s %s "%s %d %s"',
+        args=("POST", FakeURL(), "HTTP/1.1", 200, "OK"),
+        exc_info=None,
+    )
+    f.filter(record)
+    assert isinstance(record.args, tuple)
+    assert "SECRET123" not in str(record.args[1])
+    assert "bot<redacted>/sendMessage" in str(record.args[1])
+
+
+# ---------------------------------------------------------------------------
+# fix 2 – send_telegram_report guards missing creds
+# ---------------------------------------------------------------------------
+
+
+def test_send_telegram_report_missing_bot_token() -> None:
+    ok, error = send_telegram_report("report", {"bot_token": "", "chat_id": "chat-1"})
+    assert ok is False
+    assert "Missing" in error
+
+
+def test_send_telegram_report_missing_chat_id() -> None:
+    ok, error = send_telegram_report("report", {"bot_token": "tok", "chat_id": ""})
+    assert ok is False
+    assert "Missing" in error
+
+
+def test_send_telegram_report_missing_both_creds() -> None:
+    ok, error = send_telegram_report("report", {})
+    assert ok is False
+    assert "Missing" in error
+
+
+# ---------------------------------------------------------------------------
+# fix 3 – resp.json() only called after status check (non-JSON error body)
+# ---------------------------------------------------------------------------
+
+
+def test_post_telegram_message_non_json_error_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    resp = MagicMock()
+    resp.status_code = 502
+    resp.json.side_effect = ValueError("not JSON")
+    resp.text = "Bad Gateway"
+
+    monkeypatch.setattr("app.utils.telegram_delivery.httpx.post", lambda *_a, **_kw: resp)
+    ok, error, message_id = post_telegram_message("chat-1", "text", "tok")
+
+    assert ok is False
+    assert "Bad Gateway" in error
+    assert message_id == ""
+
+
+# ---------------------------------------------------------------------------
+# fix 4 – reply_to_message_id="0" must not be sent to the API
+# ---------------------------------------------------------------------------
+
+
+def test_post_telegram_message_reply_to_zero_string_not_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def _fake_post(url: str, *, json: dict[str, Any], **_kw: Any) -> MagicMock:
+        captured["json"] = json
+        return _mock_response(200, {"ok": True, "result": {"message_id": 1}})
+
+    monkeypatch.setattr("app.utils.telegram_delivery.httpx.post", _fake_post)
+    post_telegram_message("chat-1", "text", "tok", reply_to_message_id="0")
+    assert "reply_to_message_id" not in captured["json"]
 
 
 def test_send_telegram_report_truncates_to_4096(monkeypatch: pytest.MonkeyPatch) -> None:
