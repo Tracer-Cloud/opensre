@@ -11,6 +11,7 @@ from app.remote import server as remote_server
 from app.remote.server import (
     InvestigateRequest,
     _lifespan,
+    _safe_investigation_path,
     investigate,
     investigate_stream,
 )
@@ -212,3 +213,98 @@ async def test_lifespan_starts_and_cancels_vercel_poller(
         await asyncio.wait_for(started.wait(), timeout=1)
 
     assert cancelled.is_set()
+
+
+# ---------------------------------------------------------------------------
+# _safe_investigation_path — invalid ID tests (issue #743)
+# ---------------------------------------------------------------------------
+
+
+class TestSafeInvestigationPath:
+    """Invalid IDs must raise HTTP 400; valid IDs must not raise."""
+
+    # -- invalid IDs --
+
+    def test_path_traversal_dotdot_slash(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(remote_server, "INVESTIGATIONS_DIR", tmp_path)
+        with pytest.raises(HTTPException) as exc_info:
+            _safe_investigation_path("../x")
+        assert exc_info.value.status_code == 400
+
+    def test_path_traversal_slash_dotdot(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(remote_server, "INVESTIGATIONS_DIR", tmp_path)
+        with pytest.raises(HTTPException) as exc_info:
+            _safe_investigation_path("x/..")
+        assert exc_info.value.status_code == 400
+
+    def test_id_with_md_extension(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(remote_server, "INVESTIGATIONS_DIR", tmp_path)
+        with pytest.raises(HTTPException) as exc_info:
+            _safe_investigation_path("x.md")
+        assert exc_info.value.status_code == 400
+
+    def test_id_with_newline(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(remote_server, "INVESTIGATIONS_DIR", tmp_path)
+        with pytest.raises(HTTPException) as exc_info:
+            _safe_investigation_path("x\ny")
+        assert exc_info.value.status_code == 400
+
+    def test_id_with_space(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(remote_server, "INVESTIGATIONS_DIR", tmp_path)
+        with pytest.raises(HTTPException) as exc_info:
+            _safe_investigation_path("x y")
+        assert exc_info.value.status_code == 400
+
+    def test_id_with_slash(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(remote_server, "INVESTIGATIONS_DIR", tmp_path)
+        with pytest.raises(HTTPException) as exc_info:
+            _safe_investigation_path("x/y")
+        assert exc_info.value.status_code == 400
+
+    def test_id_with_null_byte(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(remote_server, "INVESTIGATIONS_DIR", tmp_path)
+        with pytest.raises(HTTPException) as exc_info:
+            _safe_investigation_path("x\x00y")
+        assert exc_info.value.status_code == 400
+
+    def test_empty_id(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(remote_server, "INVESTIGATIONS_DIR", tmp_path)
+        with pytest.raises(HTTPException) as exc_info:
+            _safe_investigation_path("")
+        assert exc_info.value.status_code == 400
+
+    def test_id_with_special_chars(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(remote_server, "INVESTIGATIONS_DIR", tmp_path)
+        with pytest.raises(HTTPException) as exc_info:
+            _safe_investigation_path("x@y!z")
+        assert exc_info.value.status_code == 400
+
+    def test_id_with_double_dot(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(remote_server, "INVESTIGATIONS_DIR", tmp_path)
+        with pytest.raises(HTTPException) as exc_info:
+            _safe_investigation_path("x..y")
+        assert exc_info.value.status_code == 400
+
+    # -- valid IDs (must not raise) --
+
+    def test_valid_alphanumeric_id(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(remote_server, "INVESTIGATIONS_DIR", tmp_path)
+        # Should not raise — file simply won't exist yet
+        try:
+            _safe_investigation_path("20260421_163054_investigation")
+        except HTTPException:
+            pytest.fail("Valid ID raised HTTPException unexpectedly")
+
+    def test_valid_id_with_hyphens(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(remote_server, "INVESTIGATIONS_DIR", tmp_path)
+        try:
+            _safe_investigation_path("abc-123-def")
+        except HTTPException:
+            pytest.fail("Valid ID raised HTTPException unexpectedly")
+
+    def test_valid_id_with_underscores(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(remote_server, "INVESTIGATIONS_DIR", tmp_path)
+        try:
+            _safe_investigation_path("abc_123_def")
+        except HTTPException:
+            pytest.fail("Valid ID raised HTTPException unexpectedly")

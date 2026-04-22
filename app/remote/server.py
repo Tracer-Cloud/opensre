@@ -527,7 +527,7 @@ def get_investigation(inv_id: str) -> Response:
 # ---------------------------------------------------------------------------
 
 
-_SAFE_INV_ID = re.compile(r"[\w\-]+")
+_SAFE_INV_ID = re.compile(r"^[\w\-]+$")
 
 
 def _safe_investigation_path(inv_id: str) -> Path:
