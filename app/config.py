@@ -89,10 +89,10 @@ GEMINI_REASONING_MODEL = "gemini-3.1-pro-preview"
 GEMINI_TOOLCALL_MODEL = "gemini-3.1-flash-lite-preview"
 
 # NVIDIA NIM model constants
-# UNVERIFIED PLACEHOLDER — nemotron-3-super-120b-a12b / nemotron-3-nano-30b-a3b are
-# speculative IDs that may not yet be available on NVIDIA NIM. Override via NVIDIA_REASONING_MODEL env var.
-NVIDIA_REASONING_MODEL = "nvidia/nemotron-3-super-120b-a12b"
-NVIDIA_TOOLCALL_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
+# Verified safe defaults from the NVIDIA API Catalog (build.nvidia.com).
+# Override via NVIDIA_REASONING_MODEL, NVIDIA_TOOLCALL_MODEL, or NVIDIA_MODEL env vars.
+NVIDIA_REASONING_MODEL = "meta/llama-3.1-405b-instruct"
+NVIDIA_TOOLCALL_MODEL = "meta/llama-3.1-8b-instruct"
 
 # MiniMax model constants
 MINIMAX_REASONING_MODEL = "MiniMax-M2.7"
@@ -275,7 +275,7 @@ class LLMSettings(StrictConfigModel):
                 or DEFAULT_OLLAMA_MODEL,
                 "ollama_host": os.getenv("OLLAMA_HOST", DEFAULT_OLLAMA_HOST).strip()
                 or DEFAULT_OLLAMA_HOST,
-                "max_tokens": DEFAULT_MAX_TOKENS,
+                "max_tokens": os.getenv("LLM_MAX_TOKENS", str(DEFAULT_MAX_TOKENS)),
             }
         )
 
