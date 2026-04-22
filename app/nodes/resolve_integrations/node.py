@@ -55,7 +55,7 @@ def _strip_bearer(token: str) -> str:
 @traceable(name="node_resolve_integrations")
 def node_resolve_integrations(
     state: InvestigationState,
-    config: Optional[RunnableConfig] = None,  # noqa: UP045
+    config: Optional[RunnableConfig] = None,  # noqa: UP007,UP045
 ) -> dict:
     """Fetch all org integrations and classify them by service.
 

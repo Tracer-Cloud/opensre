@@ -17,7 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 def _make_problem_md(details: AlertDetails) -> str:
-    parts = [f"# {details.alert_name}", f"Pipeline: {details.pipeline_name} | Severity: {details.severity}"]
+    parts = [
+        f"# {details.alert_name}",
+        f"Pipeline: {details.pipeline_name} | Severity: {details.severity}",
+    ]
     if details.kube_namespace:
         parts.append(f"Namespace: {details.kube_namespace}")
     if details.error_message:
@@ -51,14 +54,18 @@ def _enrich_raw_alert(raw_alert: Any, details: AlertDetails) -> Any:
 
 
 @traceable(name="node_extract_alert")
-def node_extract_alert(state: InvestigationState, config: Optional[RunnableConfig] = None) -> dict:  # noqa: ARG001,UP045
+def node_extract_alert(state: InvestigationState, config: Optional[RunnableConfig] = None) -> dict:  # noqa: ARG001,UP007,UP045
     """Classify and extract alert details from raw input (single LLM call)."""
     tracker = get_tracker()
     tracker.start("extract_alert", "Classifying and extracting alert details")
 
     raw_input = state.get("raw_alert")
     if raw_input is not None:
-        formatted = json.dumps(raw_input, indent=2, default=str) if isinstance(raw_input, dict) else str(raw_input)
+        formatted = (
+            json.dumps(raw_input, indent=2, default=str)
+            if isinstance(raw_input, dict)
+            else str(raw_input)
+        )
         logger.info("[extract_alert] Raw alert input:\n%s", formatted)
         debug_print(f"Raw alert input:\n{formatted}")
 
@@ -73,6 +80,7 @@ def node_extract_alert(state: InvestigationState, config: Optional[RunnableConfi
         _token = slack_ctx.get("access_token")
         if _token and _channel and _ts:
             from app.utils.slack_delivery import swap_reaction
+
             swap_reaction("eyes", "white_check_mark", _channel, _ts, _token)
         return {"is_noise": True}
 
@@ -85,6 +93,7 @@ def node_extract_alert(state: InvestigationState, config: Optional[RunnableConfi
     _token = slack_ctx.get("access_token")
     if _token and _channel and _ts:
         from app.utils.slack_delivery import add_reaction
+
         add_reaction("eyes", _channel, _ts, _token)
 
     debug_print(
@@ -92,11 +101,24 @@ def node_extract_alert(state: InvestigationState, config: Optional[RunnableConfi
         f"Severity: {details.severity} | namespace={details.kube_namespace} | Alert ID: {alert_id}"
     )
 
-    render_investigation_header(details.alert_name, details.pipeline_name, details.severity, alert_id=alert_id)
+    render_investigation_header(
+        details.alert_name, details.pipeline_name, details.severity, alert_id=alert_id
+    )
 
     enriched_alert = _enrich_raw_alert(raw_alert, details)
 
-    tracker.complete("extract_alert", fields_updated=["alert_name", "pipeline_name", "severity", "alert_source", "alert_json", "problem_md", "raw_alert"])
+    tracker.complete(
+        "extract_alert",
+        fields_updated=[
+            "alert_name",
+            "pipeline_name",
+            "severity",
+            "alert_source",
+            "alert_json",
+            "problem_md",
+            "raw_alert",
+        ],
+    )
 
     result: dict = {
         "is_noise": False,
