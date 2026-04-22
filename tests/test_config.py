@@ -62,7 +62,9 @@ def test_llm_settings_from_env_uses_enigmagent_override(monkeypatch) -> None:
             }
             return "vault-openai-key"
 
-    monkeypatch.setitem(sys.modules, "enigmagent", types.SimpleNamespace(VaultClient=FakeVaultClient))
+    monkeypatch.setitem(
+        sys.modules, "enigmagent", types.SimpleNamespace(VaultClient=FakeVaultClient)
+    )
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("ENIGM_AGENT_URL", "http://127.0.0.1:3737")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)

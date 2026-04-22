@@ -258,7 +258,9 @@ class LLMSettings(StrictConfigModel):
         provider = os.getenv("LLM_PROVIDER", "anthropic").strip().lower() or "anthropic"
         enigm_agent_url = os.getenv("ENIGM_AGENT_URL", "").strip()
         enigm_overrides = (
-            _resolve_enigmagent_api_key_overrides(provider, enigm_agent_url) if enigm_agent_url else {}
+            _resolve_enigmagent_api_key_overrides(provider, enigm_agent_url)
+            if enigm_agent_url
+            else {}
         )
 
         def resolve_api_key(env_var: str) -> str:
