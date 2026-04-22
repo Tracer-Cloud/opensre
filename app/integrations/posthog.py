@@ -153,7 +153,11 @@ def validate_posthog_config(config: PostHogConfig) -> PostHogValidationResult:
         return PostHogValidationResult(ok=True, detail="PostHog validated.")
     except httpx.HTTPStatusError as err:
         snippet = err.response.text[:200].strip()
-        detail = f"HTTP {err.response.status_code}: {snippet}" if snippet else f"HTTP {err.response.status_code}"
+        detail = (
+            f"HTTP {err.response.status_code}: {snippet}"
+            if snippet
+            else f"HTTP {err.response.status_code}"
+        )
         return PostHogValidationResult(ok=False, detail=detail)
     except Exception as err:  # noqa: BLE001
         return PostHogValidationResult(ok=False, detail=str(err))
