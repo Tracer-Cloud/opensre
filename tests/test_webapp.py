@@ -69,3 +69,39 @@ def test_health_payload_has_stable_keys(
         "ok",
         "version",
     ]
+
+
+@pytest.mark.parametrize(
+    "unexpected_error",
+    [
+        RuntimeError("Database connection lost!"),
+        KeyError("missing_env_key"),
+        TypeError("NoneType object is not subscriptable"),
+    ],
+)
+def test_health_unexpected_exceptions_not_swallowed(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, unexpected_error: Exception
+) -> None:
+    def mock_from_env(*args, **kwargs):
+        raise unexpected_error
+
+    monkeypatch.setattr("app.webapp.LLMSettings.from_env", mock_from_env)
+
+    with pytest.raises(type(unexpected_error)):
+        client.get("/health")
+
+
+def test_health_expected_exception_caught(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def mock_from_env(*args, **kwargs):
+        from app.config import LLMSettings
+
+        LLMSettings.model_validate({"provider": "invalid_provider"})
+
+    monkeypatch.setattr("app.webapp.LLMSettings.from_env", mock_from_env)
+
+    response = client.get("/health")
+
+    assert response.status_code == 503
+    assert response.json()["llm_configured"] is False
