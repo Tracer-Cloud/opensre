@@ -90,7 +90,7 @@ GEMINI_TOOLCALL_MODEL = "gemini-3.1-flash-lite-preview"
 
 # NVIDIA NIM model constants
 # Verified safe defaults from the NVIDIA API Catalog (build.nvidia.com).
-# Override via NVIDIA_REASONING_MODEL or NVIDIA_MODEL env vars.
+# Override via NVIDIA_REASONING_MODEL, NVIDIA_TOOLCALL_MODEL, or NVIDIA_MODEL env vars.
 NVIDIA_REASONING_MODEL = "meta/llama-3.1-405b-instruct"
 NVIDIA_TOOLCALL_MODEL = "meta/llama-3.1-8b-instruct"
 
