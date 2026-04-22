@@ -13,6 +13,20 @@ def test_run_rca_malformed_input() -> None:
     assert result["ok"] is False
     assert result["result"] is None
     assert result["error"]
+    assert result["error_type"] == "ValidationError"
+
+
+def test_run_rca_unexpected_error_includes_error_type(monkeypatch: MonkeyPatch) -> None:
+    def exploding_cli(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("something broke")
+
+    monkeypatch.setattr("app.entrypoints.mcp._run_cli", exploding_cli)
+
+    result = run_rca(alert_payload={"commonLabels": {}, "commonAnnotations": {}})
+
+    assert result["ok"] is False
+    assert result["error"] == "something broke"
+    assert result["error_type"] == "RuntimeError"
 
 
 def test_run_rca_happy_path(monkeypatch: MonkeyPatch) -> None:
@@ -54,6 +68,7 @@ def test_run_rca_happy_path(monkeypatch: MonkeyPatch) -> None:
 
     assert result["ok"] is True
     assert result["error"] is None
+    assert result["error_type"] is None
     assert result["result"] is not None
 
     response = result["result"]
