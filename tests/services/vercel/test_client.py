@@ -800,7 +800,10 @@ class TestSafeVercelPathSegment:
         assert _safe_vercel_path_segment("dpl123   ") == "dpl123"
 
     def test_realistic_vercel_deployment_id(self) -> None:
-        assert _safe_vercel_path_segment("dpl_7JtoAHRqD4xSGBDT6MrFxXZH") == "dpl_7JtoAHRqD4xSGBDT6MrFxXZH"
+        assert (
+            _safe_vercel_path_segment("dpl_7JtoAHRqD4xSGBDT6MrFxXZH")
+            == "dpl_7JtoAHRqD4xSGBDT6MrFxXZH"
+        )
 
     def test_realistic_vercel_project_id(self) -> None:
         assert _safe_vercel_path_segment("prj_AbCdEfGh12345678") == "prj_AbCdEfGh12345678"

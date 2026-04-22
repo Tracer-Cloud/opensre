@@ -68,9 +68,9 @@ def test_llm_settings_from_env_minimax(monkeypatch) -> None:
 
 
 def test_llm_settings_from_env_max_tokens_override(monkeypatch) -> None:
-    monkeypatch.setenv('LLM_PROVIDER', 'ollama')
-    monkeypatch.setenv('LLM_MAX_TOKENS', '8192')
-    monkeypatch.setattr('app.config.resolve_llm_api_key', lambda _: '')
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("LLM_MAX_TOKENS", "8192")
+    monkeypatch.setattr("app.config.resolve_llm_api_key", lambda _: "")
 
     settings = LLMSettings.from_env()
 
@@ -78,20 +78,21 @@ def test_llm_settings_from_env_max_tokens_override(monkeypatch) -> None:
 
 
 def test_llm_settings_from_env_max_tokens_invalid_raises(monkeypatch) -> None:
-    monkeypatch.setenv('LLM_PROVIDER', 'ollama')
-    monkeypatch.setenv('LLM_MAX_TOKENS', 'not-a-number')
-    monkeypatch.setattr('app.config.resolve_llm_api_key', lambda _: '')
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("LLM_MAX_TOKENS", "not-a-number")
+    monkeypatch.setattr("app.config.resolve_llm_api_key", lambda _: "")
 
     with pytest.raises((ValueError, ValidationError)):
         LLMSettings.from_env()
 
 
 def test_llm_settings_from_env_max_tokens_default(monkeypatch) -> None:
-    monkeypatch.setenv('LLM_PROVIDER', 'ollama')
-    monkeypatch.delenv('LLM_MAX_TOKENS', raising=False)
-    monkeypatch.setattr('app.config.resolve_llm_api_key', lambda _: '')
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
+    monkeypatch.setattr("app.config.resolve_llm_api_key", lambda _: "")
 
     from app.config import DEFAULT_MAX_TOKENS
+
     settings = LLMSettings.from_env()
 
     assert settings.max_tokens == DEFAULT_MAX_TOKENS
