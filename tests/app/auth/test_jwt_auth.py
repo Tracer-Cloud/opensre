@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import jwt as pyjwt
 import pytest
 
-from app.auth.jwt_auth import AsyncJWKSCache
+from app.auth.jwt_auth import AsyncJWKSCache, JWTVerificationError, get_signing_key_from_jwks
 
 
 @pytest.mark.asyncio
@@ -40,3 +41,17 @@ async def test_get_jwks_fetches_once_and_uses_cache_within_ttl() -> None:
     assert second == jwks_payload
     assert mock_client.get.await_count == 1
     response.raise_for_status.assert_called_once()
+
+
+def test_get_signing_key_from_jwks_raises_on_invalid_jwk() -> None:
+    """Bad JWK data should raise JWTVerificationError, not a bare Exception."""
+    token = pyjwt.encode(
+        {"sub": "1"},
+        "secret",
+        algorithm="HS256",
+        headers={"kid": "bad-kid"},
+    )
+    jwks = {"keys": [{"kid": "bad-kid", "kty": "UNSUPPORTED"}]}
+
+    with pytest.raises(JWTVerificationError, match="Failed to parse JWK"):
+        get_signing_key_from_jwks(jwks, token)

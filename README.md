@@ -700,6 +700,34 @@ Thanks goes to these amazing people:
             <sub><b>MestreY0d4-Uninter</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/qorexdevs">
+            <img src="https://avatars.githubusercontent.com/u/277760369?v=4" width="100" alt="qorexdevs"/>
+            <br />
+            <sub><b>qorexdevs</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Agnuxo1">
+            <img src="https://avatars.githubusercontent.com/u/166046035?v=4" width="100" alt="Agnuxo1"/>
+            <br />
+            <sub><b>Agnuxo1</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Ryjen1">
+            <img src="https://avatars.githubusercontent.com/u/114498519?v=4" width="100" alt="Ryjen1"/>
+            <br />
+            <sub><b>Ryjen1</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/nandanadileep">
+            <img src="https://avatars.githubusercontent.com/u/110280757?v=4" width="100" alt="nandanadileep"/>
+            <br />
+            <sub><b>nandanadileep</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
