@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
 from _pytest.monkeypatch import MonkeyPatch
-from pydantic import ValidationError
 
 from app.entrypoints.mcp import RunRCAOutput, run_rca
 
