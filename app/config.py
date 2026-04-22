@@ -275,7 +275,7 @@ class LLMSettings(StrictConfigModel):
                 or DEFAULT_OLLAMA_MODEL,
                 "ollama_host": os.getenv("OLLAMA_HOST", DEFAULT_OLLAMA_HOST).strip()
                 or DEFAULT_OLLAMA_HOST,
-                "max_tokens": int(os.getenv("LLM_MAX_TOKENS", str(DEFAULT_MAX_TOKENS))),
+                "max_tokens": os.getenv("LLM_MAX_TOKENS", str(DEFAULT_MAX_TOKENS)),
             }
         )
 
