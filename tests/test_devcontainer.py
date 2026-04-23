@@ -39,7 +39,7 @@ def test_devcontainer_config_matches_local_dev_workflow() -> None:
     )
 
 
-def test_local_grafana_compose_uses_workspace_override_for_devcontainers() -> None:
+def test_local_grafana_compose_binds_provisioning_relative_to_compose_file() -> None:
     compose = (REPO_ROOT / "app/cli/wizard/local_grafana_stack/docker-compose.yml").read_text()
 
-    assert "${LOCAL_WORKSPACE_FOLDER:-}/app/cli/wizard/local_grafana_stack/provisioning" in compose
+    assert "./provisioning:/etc/grafana/provisioning" in compose

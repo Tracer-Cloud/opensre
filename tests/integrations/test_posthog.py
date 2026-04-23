@@ -156,7 +156,7 @@ def test_validate_posthog_config_http_error_detail_starts_with_http(
 
     monkeypatch.setattr(
         "app.integrations.posthog._request_json",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        lambda *_a, **_kw: (_ for _ in ()).throw(
             httpx.HTTPStatusError("401", request=request, response=response)
         ),
     )

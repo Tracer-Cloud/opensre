@@ -38,6 +38,7 @@ STATE_DEFAULTS: dict[str, Any] = {
     "masking_map": {},
     "slack_context": {},
     "discord_context": {},
+    "telegram_context": {},
     "thread_id": "",
     "run_id": "",
     "_auth_token": "",

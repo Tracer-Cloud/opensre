@@ -162,11 +162,7 @@ If you use VS Code, the repo now includes a ready-to-use devcontainer under [`.d
 
 ## How OpenSRE Works
 
-<img
-  alt="tracer-how-it-works-illustration"
-  src="https://github.com/user-attachments/assets/8b50fe5c-470c-4982-866f-4f90c3e251d1"
-  style="width: 100%; height: auto;"
-/>
+<img src="https://github.com/user-attachments/assets/04234934-c603-491e-a08f-b145d1158d7a" width="1064" alt="opensre-how-it-works" style="border-radius: 0" />
 
 ### Investigation Workflow
 
@@ -726,6 +722,36 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/110280757?v=4" width="100" alt="nandanadileep"/>
             <br />
             <sub><b>nandanadileep</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/Maharshi-Project">
+            <img src="https://avatars.githubusercontent.com/u/156591746?v=4" width="100" alt="Maharshi-Project"/>
+            <br />
+            <sub><b>Maharshi-Project</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/udit-rawat">
+            <img src="https://avatars.githubusercontent.com/u/84604012?v=4" width="100" alt="udit-rawat"/>
+            <br />
+            <sub><b>udit-rawat</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/muddlebee">
+            <img src="https://avatars.githubusercontent.com/u/8139783?v=4" width="100" alt="muddlebee"/>
+            <br />
+            <sub><b>muddlebee</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Jah-yee">
+            <img src="https://avatars.githubusercontent.com/u/166608075?v=4" width="100" alt="Jah-yee"/>
+            <br />
+            <sub><b>Jah-yee</b></sub>
         </a>
     </td>
 		</tr>

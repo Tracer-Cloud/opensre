@@ -7,10 +7,12 @@ import httpx
 import pytest
 
 from app.services.vercel.client import (
+    _MAX_VERCEL_PATH_SEGMENT_LEN,
     VercelClient,
     VercelConfig,
     _append_parsed_runtime_stream_value,
     _ingest_runtime_log_stream_line,
+    _safe_vercel_path_segment,
     make_vercel_client,
 )
 
@@ -704,3 +706,108 @@ def test_append_parsed_runtime_stream_value_respects_limit_with_list() -> None:
     assert len(bucket) == 2
     assert bucket[0]["id"] == "log_0"
     assert bucket[1]["id"] == "log_1"
+
+
+# ---------------------------------------------------------------------------
+# _safe_vercel_path_segment
+# ---------------------------------------------------------------------------
+
+
+class TestSafeVercelPathSegment:
+    """Unit tests for _safe_vercel_path_segment()."""
+
+    # -- invalid inputs that must return None --
+
+    def test_empty_string_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("") is None
+
+    def test_whitespace_only_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("   ") is None
+
+    def test_tab_only_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("\t") is None
+
+    def test_too_long_string_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("a" * (_MAX_VERCEL_PATH_SEGMENT_LEN + 1)) is None
+
+    def test_exactly_max_length_is_valid(self) -> None:
+        segment = "a" * _MAX_VERCEL_PATH_SEGMENT_LEN
+        assert _safe_vercel_path_segment(segment) == segment
+
+    def test_contains_double_dot_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl_abc..def") is None
+
+    def test_path_traversal_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("../secret") is None
+
+    def test_double_dot_at_end_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl_abc..") is None
+
+    def test_double_slash_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl_abc//def") is None
+
+    def test_single_slash_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl/abc") is None
+
+    def test_starts_with_dot_returns_none(self) -> None:
+        assert _safe_vercel_path_segment(".hidden") is None
+
+    def test_starts_with_hyphen_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("-abc") is None
+
+    def test_starts_with_underscore_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("_abc") is None
+
+    def test_space_in_middle_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl abc") is None
+
+    def test_null_byte_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl\x00abc") is None
+
+    def test_newline_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl\nabc") is None
+
+    def test_special_chars_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl@abc!") is None
+
+    def test_colon_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl:abc") is None
+
+    # -- valid inputs that must return the cleaned string --
+
+    def test_simple_alphanumeric_id(self) -> None:
+        assert _safe_vercel_path_segment("dpl123") == "dpl123"
+
+    def test_id_with_underscores_and_hyphens(self) -> None:
+        assert _safe_vercel_path_segment("dpl_abc-123") == "dpl_abc-123"
+
+    def test_id_with_dots(self) -> None:
+        assert _safe_vercel_path_segment("dpl.abc.1") == "dpl.abc.1"
+
+    def test_single_character_id(self) -> None:
+        assert _safe_vercel_path_segment("a") == "a"
+
+    def test_mixed_case_id(self) -> None:
+        assert _safe_vercel_path_segment("DplAbc123") == "DplAbc123"
+
+    def test_strips_surrounding_whitespace(self) -> None:
+        assert _safe_vercel_path_segment("  dpl_abc  ") == "dpl_abc"
+
+    def test_strips_leading_whitespace(self) -> None:
+        assert _safe_vercel_path_segment("   dpl123") == "dpl123"
+
+    def test_strips_trailing_whitespace(self) -> None:
+        assert _safe_vercel_path_segment("dpl123   ") == "dpl123"
+
+    def test_realistic_vercel_deployment_id(self) -> None:
+        assert (
+            _safe_vercel_path_segment("dpl_7JtoAHRqD4xSGBDT6MrFxXZH")
+            == "dpl_7JtoAHRqD4xSGBDT6MrFxXZH"
+        )
+
+    def test_realistic_vercel_project_id(self) -> None:
+        assert _safe_vercel_path_segment("prj_AbCdEfGh12345678") == "prj_AbCdEfGh12345678"
+
+    def test_single_dot_is_valid(self) -> None:
+        """A single dot between characters is allowed; only '..' triggers the guard."""
+        assert _safe_vercel_path_segment("a.b") == "a.b"

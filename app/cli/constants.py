@@ -60,6 +60,7 @@ VERIFY_SERVICES: tuple[str, ...] = (
     "coralogix",
     "datadog",
     "discord",
+    "telegram",
     "github",
     "google_docs",
     "grafana",

@@ -93,6 +93,9 @@ class AgentState(TypedDict, total=False):
     # Discord context (when triggered from Discord interaction)
     discord_context: dict[str, Any]
 
+    # Telegram context (when triggered from Telegram message)
+    telegram_context: dict[str, Any]
+
     # LangGraph context (injected from config by inject_auth_node)
     thread_id: str
     run_id: str
@@ -157,6 +160,7 @@ class AgentStateModel(StrictConfigModel):
     masking_map: dict[str, str] = Field(default_factory=dict)
     slack_context: dict[str, Any] = Field(default_factory=dict)
     discord_context: dict[str, Any] = Field(default_factory=dict)
+    telegram_context: dict[str, Any] = Field(default_factory=dict)
     thread_id: str = ""
     run_id: str = ""
     auth_token: str = Field(default="", alias="_auth_token", exclude=True)

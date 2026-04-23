@@ -30,6 +30,13 @@ There are two ways to get started:
 3. Comment that you're working on it and open a **draft PR** early so others can see progress
 4. Mark the PR as ready for review when it's complete
 
+#### Issue Assignment & Contribution Flow (Path A)
+
+- Only work on issues assigned to you
+- Or comment with an approach and wait for confirmation before starting
+- Avoid picking up already assigned issues
+- The first contributor to comment with a clear approach will be assigned the issue
+
 #### Issue Templates
 
 - **Bugs & small fixes:** [Bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
