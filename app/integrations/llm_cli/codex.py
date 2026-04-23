@@ -13,7 +13,6 @@ from app.integrations.llm_cli.base import CLIInvocation, CLIProbe, PromptDeliver
 
 _CODEX_VERSION_RE = re.compile(r"(\d+\.\d+\.\d+)")
 _PROBE_TIMEOUT_SEC = 3.0
-_DEFAULT_MODEL = "codex"
 _READ_ONLY_SANDBOX = "read-only"
 
 
@@ -219,8 +218,8 @@ class CodexAdapter:
         if skip_git:
             argv.append("--skip-git-repo-check")
 
-        resolved_model = (model or _DEFAULT_MODEL).strip() or _DEFAULT_MODEL
-        if resolved_model != _DEFAULT_MODEL:
+        resolved_model = (model or "").strip()
+        if resolved_model:
             argv.extend(["-m", resolved_model])
 
         argv.append("-")

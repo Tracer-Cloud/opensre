@@ -643,7 +643,7 @@ def test_run_wizard_codex_skips_api_key_and_runs_cli_onboarding(monkeypatch, tmp
     assert payload["targets"]["local"]["api_key_env"] == ""
     assert payload["targets"]["local"]["model_env"] == "CODEX_MODEL"
     assert "LLM_PROVIDER=codex\n" in env_values
-    assert "CODEX_MODEL=codex\n" in env_values
+    assert "CODEX_MODEL=\n" in env_values
 
 
 def test_run_cli_llm_onboarding_ok_when_logged_in(monkeypatch) -> None:

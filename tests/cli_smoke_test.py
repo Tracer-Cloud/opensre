@@ -72,6 +72,9 @@ class PtyAction:
     expect: str
     send: bytes
     timeout: float = 10.0
+    #: If > 0, send this many ``j`` keypresses one at a time (prompt_toolkit may
+    #: coalesce a single burst), then send ``send`` (usually ``\\r``).
+    stagger_j: int = 0
 
 
 @dataclass
@@ -279,6 +282,10 @@ def _run_cli_pty(
     try:
         for action in actions:
             _wait_for_output(process, master_fd, buffer, action.expect, timeout=action.timeout)
+            if action.stagger_j:
+                for _ in range(action.stagger_j):
+                    os.write(master_fd, b"j")
+                    time.sleep(0.05)
             os.write(master_fd, action.send)
 
         deadline = time.monotonic() + timeout
@@ -482,7 +489,11 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
             PtyAction(expect="How do you want to get started?", send=b"\r"),
             PtyAction(expect="Choose your LLM provider", send=b"\r"),
             PtyAction(expect="Anthropic API key", send=b"smoke-test-key\r"),
-            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjjjjjjj\r"),
+            PtyAction(
+                expect="Choose an integration to configure",
+                send=b"\r",
+                stagger_j=19,
+            ),
         ],
         timeout=30.0,
     )
@@ -516,7 +527,11 @@ def test_onboard_interactive_smoke_codex(cli_sandbox: CliSandbox) -> None:
             PtyAction(expect="Choose your LLM provider", send=b"jjjjj\r"),
             # Fresh HOME in CliSandbox has no Codex auth; wizard offers to continue without login.
             PtyAction(expect="Continue anyway?", send=b"y\r"),
-            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjjjjjjj\r"),
+            PtyAction(
+                expect="Choose an integration to configure",
+                send=b"\r",
+                stagger_j=19,
+            ),
         ],
         timeout=60.0,
     )
@@ -530,7 +545,7 @@ def test_onboard_interactive_smoke_codex(cli_sandbox: CliSandbox) -> None:
     assert "api_key" not in store["targets"]["local"]
     env_body = cli_sandbox.read_project_env()
     assert "LLM_PROVIDER=codex\n" in env_body
-    assert "CODEX_MODEL=codex\n" in env_body
+    assert "CODEX_MODEL=\n" in env_body
 
 
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")

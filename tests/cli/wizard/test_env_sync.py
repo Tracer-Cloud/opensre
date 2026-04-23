@@ -57,9 +57,9 @@ def test_sync_provider_env_codex_writes_codex_model(tmp_path) -> None:
     env_path.write_text("LLM_PROVIDER=anthropic\n", encoding="utf-8")
     sync_provider_env(
         provider=PROVIDER_BY_VALUE["codex"],
-        model="codex",
+        model="",
         env_path=env_path,
     )
     content = env_path.read_text(encoding="utf-8")
     assert "LLM_PROVIDER=codex\n" in content
-    assert "CODEX_MODEL=codex\n" in content
+    assert "CODEX_MODEL=\n" in content

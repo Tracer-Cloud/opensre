@@ -338,12 +338,6 @@ OLLAMA_LLM_CONFIG = LLMModelConfig(
     max_tokens=DEFAULT_MAX_TOKENS,
 )
 
-CODEX_LLM_CONFIG = LLMModelConfig(
-    reasoning_model="codex",
-    toolcall_model="codex",
-    max_tokens=DEFAULT_MAX_TOKENS,
-)
-
 # Tracer API Configuration
 TRACER_BASE_URL_DEV = "https://staging.tracer.cloud"
 TRACER_BASE_URL_PROD = "https://app.tracer.cloud"

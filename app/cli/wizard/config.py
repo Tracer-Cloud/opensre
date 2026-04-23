@@ -132,7 +132,23 @@ OLLAMA_MODELS = (
     ModelOption(value="qwen2.5:7b", label="Qwen 2.5 (7B)"),
 )
 
-CODEX_MODELS = (ModelOption(value="codex", label="Codex (default)"),)
+# Empty value means "no -m" so the Codex CLI uses its configured default/current model.
+CODEX_MODELS = (
+    ModelOption(
+        value="",
+        label="CLI default (no -m; use Codex configured model)",
+    ),
+    ModelOption(value="gpt-5.4", label="gpt-5.4 — strong default for everyday coding"),
+    ModelOption(value="gpt-5.2-codex", label="gpt-5.2-codex — frontier agentic coding"),
+    ModelOption(
+        value="gpt-5.1-codex-max",
+        label="gpt-5.1-codex-max — deep / fast reasoning",
+    ),
+    ModelOption(value="gpt-5.4-mini", label="gpt-5.4-mini — fast, cost-efficient"),
+    ModelOption(value="gpt-5.3-codex", label="gpt-5.3-codex — coding-optimized"),
+    ModelOption(value="gpt-5.2", label="gpt-5.2 — long-running agents"),
+    ModelOption(value="gpt-5.1-codex-mini", label="gpt-5.1-codex-mini"),
+)
 
 
 def _codex_adapter_factory() -> LLMCLIAdapter:
@@ -198,7 +214,7 @@ SUPPORTED_PROVIDERS = (
         group="Local CLI providers",
         api_key_env="",
         model_env="CODEX_MODEL",
-        default_model="codex",
+        default_model="",
         models=CODEX_MODELS,
         credential_kind="cli",
         credential_secret=False,

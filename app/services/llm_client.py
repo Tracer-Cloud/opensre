@@ -544,16 +544,16 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
         )
         return BedrockLLMClient(model=model, max_tokens=config.max_tokens)
     elif provider == "codex":
-        from app.config import CODEX_LLM_CONFIG
+        from app.config import DEFAULT_MAX_TOKENS
         from app.integrations.llm_cli.codex import CodexAdapter
         from app.integrations.llm_cli.runner import CLIBackedLLMClient
 
-        config = CODEX_LLM_CONFIG
-        model_name = os.getenv("CODEX_MODEL", "").strip() or "codex"
+        # Empty CODEX_MODEL means "use Codex CLI's configured default/current model" (omit -m).
+        model_name = os.getenv("CODEX_MODEL", "").strip() or None
         return CLIBackedLLMClient(
             CodexAdapter(),
             model=model_name,
-            max_tokens=config.max_tokens,
+            max_tokens=DEFAULT_MAX_TOKENS,
             model_type=model_type,
         )
     else:
