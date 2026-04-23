@@ -268,6 +268,20 @@ Its evolution direction is toward a hypothesis-driven SRE agent with an explicit
 
 ---
 
+## Key Design Gaps (Current vs Ideal)
+
+| Gap | Current (Tracer) | Ideal |
+|---|---|---|
+| **Feedback loop** | Tool failures surface as warnings but do not meaningfully influence subsequent reasoning | Failures route agent toward alternative evidence sources |
+| **Context & memory** | Raw logs/metrics, single investigation scope | Structured context (alerts → metrics → logs → traces) + persistent memory |
+| **Tool surface** | Static, predefined integrations | Unified, extensible tool ecosystem with dynamic discovery |
+| **Harness separation** | Reasoning and execution partially mixed | Model explores hypotheses; system enforces safety and execution |
+| **Reasoning style** | Linear (plan → gather → diagnose) | Hypothesis-driven RCA loop with iterative refinement |
+
+Overall, Tracer is currently execution-driven, whereas the ideal direction is a feedback-driven, hypothesis-based agent architecture.
+
+---
+
 ## Tracer Roadmap
 
 - Make the agent loop explicit (plan → act → observe → evaluate)
