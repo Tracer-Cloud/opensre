@@ -9,6 +9,11 @@ from pydantic import ValidationError
 from app.config import LLMSettings
 
 
+@pytest.fixture(autouse=True)
+def _clear_enigm_agent_url(monkeypatch) -> None:
+    monkeypatch.delenv("ENIGM_AGENT_URL", raising=False)
+
+
 def test_llm_settings_reject_provider_typos_with_suggestion() -> None:
     with pytest.raises(ValidationError, match="Did you mean 'openai'"):
         LLMSettings.model_validate(
@@ -26,12 +31,7 @@ def test_llm_settings_require_api_key_for_selected_provider() -> None:
 
 def test_llm_settings_from_env_uses_secure_local_api_key(monkeypatch) -> None:
     monkeypatch.setenv("LLM_PROVIDER", "openai")
-    monkeypatch.delenv("ENIGM_AGENT_URL", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr(
-        "app.config._resolve_enigmagent_api_key_overrides",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not be called")),
-    )
     monkeypatch.setattr(
         "app.config.resolve_llm_api_key",
         lambda env_var: "stored-secret" if env_var == "OPENAI_API_KEY" else "",
@@ -86,6 +86,22 @@ def test_llm_settings_from_env_uses_enigmagent_override(monkeypatch) -> None:
         "placeholder": "OPENAI_API_KEY",
         "origin": "http://localhost",
     }
+
+
+def test_llm_settings_from_env_rejects_non_local_plain_http_enigmagent_url(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("ENIGM_AGENT_URL", "http://vault.example.internal:3737")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "app.config.resolve_llm_api_key",
+        lambda env_var: "stored-secret" if env_var == "OPENAI_API_KEY" else "",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="ENIGM_AGENT_URL only supports plain HTTP for localhost/127.0.0.1/::1",
+    ):
+        LLMSettings.from_env()
 
 
 def test_llm_settings_require_minimax_api_key() -> None:

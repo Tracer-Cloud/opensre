@@ -145,6 +145,8 @@ def _resolve_enigmagent_api_key_overrides(provider: str, enigm_agent_url: str) -
     parsed = urlparse(enigm_agent_url)
     if parsed.scheme != "http" or not parsed.hostname:
         raise ValueError("ENIGM_AGENT_URL must be a valid http://host[:port] URL.")
+    if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        raise ValueError("ENIGM_AGENT_URL only supports plain HTTP for localhost/127.0.0.1/::1.")
 
     try:
         from enigmagent import VaultClient  # type: ignore[import-not-found]
