@@ -19,7 +19,6 @@ from app.integrations.llm_cli.binary_resolver import (
     is_runnable_binary as _is_runnable_binary,
 )
 from app.integrations.llm_cli.binary_resolver import (
-    npm_prefix_bin_dirs,
     resolve_cli_binary,
 )
 
@@ -86,9 +85,6 @@ def _fallback_codex_paths() -> list[str]:
     # Keep module-level `sys` usage for tests that monkeypatch `codex.sys.platform`.
     _ = sys.platform
     return _default_cli_fallback_paths("codex")
-
-
-_npm_prefix_bin_dirs = npm_prefix_bin_dirs
 
 
 class CodexAdapter:
