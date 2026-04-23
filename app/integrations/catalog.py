@@ -1160,7 +1160,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 "credentials": airflow_config.model_dump(),
              }
         )
-        
+
     telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if telegram_bot_token:
         tg_config = TelegramBotConfig.model_validate(
