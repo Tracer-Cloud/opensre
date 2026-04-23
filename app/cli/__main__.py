@@ -36,11 +36,8 @@ from app.version import get_version
 @click.option("--debug", is_flag=True, help="Print debug-level logs and traces.")
 @click.option("--yes", "-y", is_flag=True, help="Auto-confirm all interactive prompts.")
 @click.option(
-    "--no-interactive",
-    "interactive",
-    is_flag=True,
+    "--interactive/--no-interactive",
     default=True,
-    flag_value=False,
     help="Disable the interactive REPL and print the landing page instead.",
 )
 @click.option(
