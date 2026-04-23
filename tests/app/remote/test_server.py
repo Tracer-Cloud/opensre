@@ -163,10 +163,15 @@ async def test_investigate_stream_returns_error_event_for_missing_integration(
         yield  # make this function an async generator
 
     monkeypatch.setattr("app.pipeline.runners.astream_investigation", fake_astream_investigation)
-    monkeypatch.setattr("app.cli.investigate.resolve_investigation_context", lambda **_kwargs: ("test-alert", "events_fact", "warning"))
+    monkeypatch.setattr(
+        "app.cli.investigate.resolve_investigation_context",
+        lambda **_kwargs: ("test-alert", "events_fact", "warning"),
+    )
     monkeypatch.setattr("app.config.LLMSettings.from_env", object)
 
-    response = await investigate_stream(InvestigateRequest(raw_alert={"alert_name": "PayloadAlert"}))
+    response = await investigate_stream(
+        InvestigateRequest(raw_alert={"alert_name": "PayloadAlert"})
+    )
     body = "".join([chunk async for chunk in response.body_iterator])
     assert "event: error" in body
     assert "datadog integration" in body

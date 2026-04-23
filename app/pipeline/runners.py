@@ -64,8 +64,7 @@ def run_investigation(
 
 def _has_injected_backend(resolved_integrations: dict[str, Any]) -> bool:
     return any(
-        isinstance(value, dict) and "_backend" in value
-        for value in resolved_integrations.values()
+        isinstance(value, dict) and "_backend" in value for value in resolved_integrations.values()
     )
 
 

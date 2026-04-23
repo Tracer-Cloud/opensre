@@ -16,23 +16,27 @@ def test_required_integration_for_source_with_explicit_source_alias() -> None:
 
 
 def test_required_integration_for_source_detects_grafana_from_generator_url() -> None:
-    assert required_integration_for_source(
-        {
-            "generatorURL": "https://grafana.example.com/d/abcd1234/alert",
-        }
-    ) == "grafana"
+    assert (
+        required_integration_for_source(
+            {
+                "generatorURL": "https://grafana.example.com/d/abcd1234/alert",
+            }
+        )
+        == "grafana"
+    )
 
 
 def test_required_integration_for_source_detects_aws_from_cloudwatch_metadata() -> None:
-    assert required_integration_for_source(
-        {"cloudwatch_log_group": "/aws/lambda/my-func"}
-    ) == "aws"
+    assert required_integration_for_source({"cloudwatch_log_group": "/aws/lambda/my-func"}) == "aws"
 
 
 def test_required_integration_for_source_does_not_infer_aws_from_generic_aws_metadata() -> None:
-    assert required_integration_for_source(
-        {"db_instance_identifier": "my-db", "aws_account_id": "123456789012"}
-    ) is None
+    assert (
+        required_integration_for_source(
+            {"db_instance_identifier": "my-db", "aws_account_id": "123456789012"}
+        )
+        is None
+    )
 
 
 def test_validate_required_integrations_raises_when_required_integration_missing() -> None:
