@@ -77,7 +77,9 @@ def _candidate_binary_names() -> tuple[str, ...]:
     return ("codex",)
 
 
-def _append_candidate_paths(candidates: list[str], directory: Path | str, names: tuple[str, ...]) -> None:
+def _append_candidate_paths(
+    candidates: list[str], directory: Path | str, names: tuple[str, ...]
+) -> None:
     base = str(directory).strip()
     if not base:
         return

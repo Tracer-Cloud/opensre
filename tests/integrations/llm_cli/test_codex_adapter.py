@@ -238,7 +238,9 @@ def test_detect_falls_back_when_codex_bin_invalid(
 
 @patch("app.integrations.llm_cli.codex.subprocess.run")
 @patch("app.integrations.llm_cli.codex.shutil.which", return_value=None)
-@patch("app.integrations.llm_cli.codex._fallback_codex_paths", return_value=["/x/codex", "/y/codex"])
+@patch(
+    "app.integrations.llm_cli.codex._fallback_codex_paths", return_value=["/x/codex", "/y/codex"]
+)
 @patch("app.integrations.llm_cli.codex._is_runnable_binary")
 def test_detect_uses_first_runnable_fallback_path(
     mock_is_runnable: MagicMock,
@@ -307,7 +309,10 @@ def test_fallback_paths_include_windows_defaults() -> None:
         patch("app.integrations.llm_cli.codex.sys.platform", "win32"),
         patch.dict(
             os.environ,
-            {"APPDATA": r"C:\Users\me\AppData\Roaming", "LOCALAPPDATA": r"C:\Users\me\AppData\Local"},
+            {
+                "APPDATA": r"C:\Users\me\AppData\Roaming",
+                "LOCALAPPDATA": r"C:\Users\me\AppData\Local",
+            },
             clear=False,
         ),
     ):
