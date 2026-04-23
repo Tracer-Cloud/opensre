@@ -42,4 +42,5 @@ EvidenceSource = Literal[
     "openobserve",
     "opensearch",
     "alertmanager",
+    "splunk",
 ]

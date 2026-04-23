@@ -545,12 +545,12 @@ class SplunkIntegrationConfig(StrictConfigModel):
     @classmethod
     def _normalize_base_url(cls, value: object) -> str:
         return str(value or "").strip().rstrip("/")
-    
+
     @field_validator("token", mode="before")
     @classmethod
     def _normalize_token(cls, value: object) -> str:
         return str(value or "").strip()
-    
+
     @field_validator("index", mode="before")
     @classmethod
     def _normalize_index(cls, value: object) -> str:

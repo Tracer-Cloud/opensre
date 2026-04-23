@@ -39,9 +39,9 @@ from app.services.coralogix import CoralogixClient
 from app.services.datadog.client import DatadogClient, DatadogConfig
 from app.services.honeycomb import HoneycombClient
 from app.services.opsgenie import OpsGenieClient, OpsGenieConfig
+from app.services.splunk import SplunkClient, SplunkConfig
 from app.services.tracer_client.client import TracerClient
 from app.services.vercel.client import VercelClient, VercelConfig
-from app.services.splunk import SplunkClient, SplunkConfig
 
 SUPPORTED_VERIFY_SERVICES = (
     "alertmanager",
@@ -805,7 +805,7 @@ def _verify_opensearch(source: str, config: dict[str, Any]) -> dict[str, str]:
     return _result("opensearch", source, "passed", f"OpenSearch endpoint configured: {url}.")
 
 
-def _verify_splunk(config: dict) -> dict[str, Any]:
+def _verify_splunk(source: str, config: dict[str, Any]) -> dict[str, str]:
     """Verify Splunk connectivity by calling /services/server/info."""
     base_url = config.get("base_url", "")
     token = config.get("token", "")
@@ -813,21 +813,19 @@ def _verify_splunk(config: dict) -> dict[str, Any]:
     verify_ssl = config.get("verify_ssl", True)
 
     if not base_url or not token:
-        return {
-            "service": "splunk",
-            "success": False,
-            "error": "base_url and token are required",
-        }
+        return _result("splunk", source, "missing", "Missing base_url or token.")
 
     client = SplunkClient(SplunkConfig(base_url=base_url, token=token,
-                                        index=index, verify_ssl=verify_ssl))
+                                       index=index, verify_ssl=verify_ssl))
     result = client.validate_access()
-    return {
-        "service": "splunk",
-        "success": result.get("success", False),
-        "detail": result.get("detail", ""),
-        "error": result.get("error", ""),
-    }
+    if not result.get("success"):
+        return _result(
+            "splunk",
+            source,
+            "failed",
+            f"Splunk check failed: {result.get('error', 'unknown error')}",
+        )
+    return _result("splunk", source, "passed", result.get("detail", "Connected."))
 
 def verify_integrations(
     service: str | None = None,

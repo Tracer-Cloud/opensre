@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.splunk import SplunkClient, SplunkConfig, build_splunk_spl_query
+from app.services.splunk import SplunkClient, SplunkConfig
 from app.tools.base import BaseTool
 from app.tools.utils.compaction import compact_logs, summarize_counts
 
@@ -37,7 +37,10 @@ class SplunkSearchTool(BaseTool):
         "Correlating trace IDs with Splunk log entries",
     ]
     requires = []   # connection_verified check is in is_available()
-    outputs = ["splunk_logs", "splunk_error_logs"]
+    outputs = {
+        "splunk_logs": "All log events returned from Splunk search",
+        "splunk_error_logs": "Subset of logs matching error/exception keywords",
+    }
     input_schema = {
         "type": "object",
         "properties": {

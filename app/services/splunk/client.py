@@ -8,8 +8,6 @@ from typing import Any
 
 import httpx
 
-from app.integrations.models import SplunkIntegrationConfig
-
 _DEFAULT_TIMEOUT_SECONDS = 30.0
 _ERROR_KEYWORDS = ("error", "fail", "exception", "traceback", "critical", "panic", "timeout")
 

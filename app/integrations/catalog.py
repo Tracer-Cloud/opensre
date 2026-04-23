@@ -25,8 +25,8 @@ from app.integrations.models import (
     JiraIntegrationConfig,
     OpsGenieIntegrationConfig,
     SlackWebhookConfig,
+    SplunkIntegrationConfig,
     TelegramBotConfig,
-    SplunkIntegrationConfig
 )
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config

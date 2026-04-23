@@ -98,7 +98,7 @@ def build_alert_template(template_name: str) -> dict[str, Any]:
                 "log_query": "source logs | filter $l.applicationname == 'payments' | limit 50",
             },
         }
-    
+
     if template == "splunk":
         return {
             "alert_name": "Splunk alert: payments service error spike",

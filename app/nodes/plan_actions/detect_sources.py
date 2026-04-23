@@ -1291,7 +1291,7 @@ def detect_sources(
             "database": azure_sql_database,
             "connection_verified": True,
         }
-        
+
     splunk_int = (resolved_integrations or {}).get("splunk")
     if splunk_int:
         splunk_base_url = str(splunk_int.get("base_url", "")).strip()
