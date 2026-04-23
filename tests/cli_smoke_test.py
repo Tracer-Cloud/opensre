@@ -500,6 +500,40 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
+@pytest.mark.skipif(shutil.which("codex") is None, reason="OpenAI Codex CLI not on PATH")
+def test_onboard_interactive_smoke_codex(cli_sandbox: CliSandbox) -> None:
+    """End-to-end PTY: quickstart → Codex (no API key) → skip integrations.
+
+    Mirrors ``test_onboard_interactive_smoke`` but moves the provider cursor down
+    to ``OpenAI Codex CLI`` (five ``j`` presses from the default Anthropic row).
+    Requires a working ``codex`` on PATH; skips automatically when absent (e.g. CI).
+    """
+    result = _run_cli_pty(
+        cli_sandbox,
+        "onboard",
+        actions=[
+            PtyAction(expect="How do you want to get started?", send=b"\r"),
+            PtyAction(expect="Choose your LLM provider", send=b"jjjjj\r"),
+            # Fresh HOME in CliSandbox has no Codex auth; wizard offers to continue without login.
+            PtyAction(expect="Continue anyway?", send=b"y\r"),
+            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjjjjjjj\r"),
+        ],
+        timeout=60.0,
+    )
+
+    assert result.exit_code == 0
+    assert "Done." in result.stdout
+    assert "summary" in result.stdout
+
+    store = cli_sandbox.read_wizard_store()
+    assert store["targets"]["local"]["provider"] == "codex"
+    assert "api_key" not in store["targets"]["local"]
+    env_body = cli_sandbox.read_project_env()
+    assert "LLM_PROVIDER=codex\n" in env_body
+    assert "CODEX_MODEL=codex\n" in env_body
+
+
+@pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
 def test_integrations_setup_datadog_interactive_smoke(cli_sandbox: CliSandbox) -> None:
     result = _run_cli_pty(
         cli_sandbox,

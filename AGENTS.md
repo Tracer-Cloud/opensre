@@ -30,17 +30,19 @@
 
 ## 1. Repo Map
 
-| Path | What it does |
-| --- | --- |
-| `app/` | Core agent logic, CLI, tools, integrations, services, graph pipeline, and runtime state. |
-| `tests/` | Unit, integration, synthetic, deployment, e2e, chaos engineering, and support tests. |
-| `docs/` | User-facing documentation, integration guides, and docs-site assets. |
-| `.github/` | CI workflows, issue templates, pull request template, and repository automation. |
-| `langgraph.json` | LangGraph deployment configuration for the hosted agent runtime. |
-| `pyproject.toml` | Python project metadata, dependency configuration, tooling, and package settings. |
-| `Makefile` | Canonical local automation for install, test, verify, deploy, and cleanup targets. |
-| `README.md` | Product overview, quick start, capabilities, integrations, and common workflows. |
-| `CONTRIBUTING.md` | Contribution workflow, branch/PR guidance, and quality expectations. |
+
+| Path              | What it does                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------- |
+| `app/`            | Core agent logic, CLI, tools, integrations, services, graph pipeline, and runtime state. |
+| `tests/`          | Unit, integration, synthetic, deployment, e2e, chaos engineering, and support tests.     |
+| `docs/`           | User-facing documentation, integration guides, and docs-site assets.                     |
+| `.github/`        | CI workflows, issue templates, pull request template, and repository automation.         |
+| `langgraph.json`  | LangGraph deployment configuration for the hosted agent runtime.                         |
+| `pyproject.toml`  | Python project metadata, dependency configuration, tooling, and package settings.        |
+| `Makefile`        | Canonical local automation for install, test, verify, deploy, and cleanup targets.       |
+| `README.md`       | Product overview, quick start, capabilities, integrations, and common workflows.         |
+| `CONTRIBUTING.md` | Contribution workflow, branch/PR guidance, and quality expectations.                     |
+
 
 `app/` one level deeper:
 
@@ -52,6 +54,7 @@
 - `app/entrypoints/` — SDK and MCP entrypoints exposed to external runtimes.
 - `app/guardrails/` — Guardrail rules, evaluation engine, audit helpers, and CLI bindings.
 - `app/integrations/` — Integration config normalization, verification, selectors, store, and catalog logic.
+- `app/integrations/llm_cli/` — Subprocess-backed LLM CLIs (e.g. Codex). Extension guide: `app/integrations/llm_cli/AGENTS.md`.
 - `app/masking/` — Masking utilities for redacting or normalizing sensitive content.
 - `app/nodes/` — LangGraph nodes for alert extraction, investigation, diagnosis, and publishing.
 - `app/pipeline/` — Graph assembly, routing, and runner helpers; `app/graph_pipeline.py` is the compatibility shim.
@@ -184,11 +187,12 @@ The fastest local loop is `make test-cov`, which exercises the non-live unit sui
 
 When adding a new integration, a PR is only ready when:
 
-- [ ] Integration code added under `app/integrations/<name>/`
-- [ ] Tool(s) added under `app/tools/` with proper typing
-- [ ] Unit/mock tests added under `tests/integrations/`
-- [ ] Docs added under `docs/`
-- [ ] Screenshot or demo GIF showing the integration working
-- [ ] E2E or synthetic test added
-- [ ] `make verify-integrations` passes
-- [ ] `make lint` and `make typecheck` pass
+- Integration code added under `app/integrations/<name>/`
+- Tool(s) added under `app/tools/` with proper typing
+- Unit/mock tests added under `tests/integrations/`
+- Docs added under `docs/`
+- Screenshot or demo GIF showing the integration working
+- E2E or synthetic test added
+- `make verify-integrations` passes
+- `make lint` and `make typecheck` pass
+

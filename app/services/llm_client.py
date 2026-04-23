@@ -326,9 +326,9 @@ class OpenAILLMClient:
 
 
 class StructuredOutputClient:
-    def __init__(
-        self, base: LLMClient | OpenAILLMClient | BedrockLLMClient, model: type[BaseModel]
-    ) -> None:
+    """Wraps any LLM client with `.invoke` (API or CLI subprocess) for Pydantic JSON parsing."""
+
+    def __init__(self, base: Any, model: type[BaseModel]) -> None:
         self._base = base
         self._model = model
 
@@ -436,7 +436,8 @@ def _extract_json_payload(text: str) -> Any:
 # LLM Client
 # ─────────────────────────────────────────────────────────────────────────────
 
-_LLMClientType = LLMClient | OpenAILLMClient | BedrockLLMClient
+# CLIBackedLLMClient is included but omitted from the union to avoid import cycles.
+_LLMClientType = LLMClient | OpenAILLMClient | BedrockLLMClient | Any
 _llm: _LLMClientType | None = None
 _llm_for_tools: _LLMClientType | None = None
 
@@ -542,6 +543,19 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
             else settings.bedrock_toolcall_model
         )
         return BedrockLLMClient(model=model, max_tokens=config.max_tokens)
+    elif provider == "codex":
+        from app.config import CODEX_LLM_CONFIG
+        from app.integrations.llm_cli.codex import CodexAdapter
+        from app.integrations.llm_cli.runner import CLIBackedLLMClient
+
+        config = CODEX_LLM_CONFIG
+        model_name = os.getenv("CODEX_MODEL", "").strip() or "codex"
+        return CLIBackedLLMClient(
+            CodexAdapter(),
+            model=model_name,
+            max_tokens=config.max_tokens,
+            model_type=model_type,
+        )
     else:
         config = ANTHROPIC_LLM_CONFIG
         model = (

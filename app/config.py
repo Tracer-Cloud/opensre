@@ -113,7 +113,15 @@ DEFAULT_OLLAMA_MODEL = "llama3.2"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
 LLMProvider = Literal[
-    "anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock", "minimax"
+    "anthropic",
+    "openai",
+    "openrouter",
+    "gemini",
+    "nvidia",
+    "ollama",
+    "bedrock",
+    "minimax",
+    "codex",
 ]
 
 
@@ -158,6 +166,7 @@ class LLMSettings(StrictConfigModel):
             "ollama",
             "bedrock",
             "minimax",
+            "codex",
         )
         if provider in valid_providers:
             return provider
@@ -172,8 +181,8 @@ class LLMSettings(StrictConfigModel):
 
     @model_validator(mode="after")
     def _require_api_key_for_selected_provider(self) -> "LLMSettings":
-        if self.provider in ("ollama", "bedrock"):
-            return self  # ollama: local server; bedrock: IAM-based auth
+        if self.provider in ("ollama", "bedrock", "codex"):
+            return self  # ollama: local; bedrock: IAM; codex: `codex login` (CLI)
         provider_to_key = {
             "anthropic": self.anthropic_api_key,
             "openai": self.openai_api_key,
@@ -326,6 +335,12 @@ BEDROCK_LLM_CONFIG = LLMModelConfig(
 OLLAMA_LLM_CONFIG = LLMModelConfig(
     reasoning_model=DEFAULT_OLLAMA_MODEL,
     toolcall_model=DEFAULT_OLLAMA_MODEL,
+    max_tokens=DEFAULT_MAX_TOKENS,
+)
+
+CODEX_LLM_CONFIG = LLMModelConfig(
+    reasoning_model="codex",
+    toolcall_model="codex",
     max_tokens=DEFAULT_MAX_TOKENS,
 )
 

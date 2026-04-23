@@ -74,6 +74,11 @@ _chat_llm_with_tools_cache: dict[str, ToolEnabledChatModel] = {}
 
 def _resolve_models(provider: str) -> tuple[str, str]:
     """Resolve tool and reasoning model names for the active provider."""
+    if provider == "codex":
+        raise ValueError(
+            "Interactive chat requires LLM_PROVIDER=anthropic or openai. "
+            "LLM_PROVIDER=codex only supports `opensre investigate` (OpenAI Codex CLI)."
+        )
     if provider == "openai":
         return (
             CfgHelpers.first_env_or_default(
