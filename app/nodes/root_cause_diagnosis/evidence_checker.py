@@ -13,7 +13,7 @@ _ERROR_ANNOTATION_KEYS = ("error", "error_message", "log_excerpt", "failed_steps
 
 # Evidence keys whose presence (even with empty values) confirms investigation was attempted.
 # An empty grafana_logs list is itself a healthy signal: no errors found during investigation.
-_INVESTIGATED_EVIDENCE_KEYS = frozenset(
+INVESTIGATED_EVIDENCE_KEYS = frozenset(
     {
         "grafana_logs",
         "grafana_metrics",
@@ -155,7 +155,7 @@ def is_clearly_healthy(raw_alert: dict[str, Any] | str, evidence: dict[str, Any]
     # An empty grafana_logs / grafana_metrics / etc. after a completed investigation is itself
     # a health signal — it means no errors were found. We only require that the key is present
     # (investigation was attempted), not that it contains data.
-    return any(k in evidence for k in _INVESTIGATED_EVIDENCE_KEYS)
+    return any(k in evidence for k in INVESTIGATED_EVIDENCE_KEYS)
 
 
 def check_vendor_evidence_missing(evidence: dict[str, Any]) -> bool:

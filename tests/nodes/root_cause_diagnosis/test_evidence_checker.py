@@ -2,7 +2,7 @@
 
 Focuses on the ``is_clearly_healthy`` helper that gates the healthy
 short-circuit in ``diagnose_root_cause``.  In particular, these tests verify
-that the recently-added ``eks_*`` entries in ``_INVESTIGATED_EVIDENCE_KEYS``
+that the recently-added ``eks_*`` entries in ``INVESTIGATED_EVIDENCE_KEYS``
 make pure-Kubernetes healthy investigations fast-path out of the reasoning
 LLM the same way Grafana-only and Datadog-only healthy states already do.
 """
@@ -128,7 +128,7 @@ class TestIsClearlyHealthyRejectsUnhealthyStates:
         assert is_clearly_healthy(alert, evidence) is False
 
     def test_unknown_evidence_key_does_not_trigger_short_circuit(self) -> None:
-        """A key outside _INVESTIGATED_EVIDENCE_KEYS alone is not enough."""
+        """A key outside INVESTIGATED_EVIDENCE_KEYS alone is not enough."""
         evidence = {"random_custom_key": "some value"}
         assert is_clearly_healthy(_healthy_alert(), evidence) is False
 

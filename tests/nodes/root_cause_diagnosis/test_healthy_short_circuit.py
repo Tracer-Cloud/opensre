@@ -1,10 +1,12 @@
 """Tests for the healthy-short-circuit claim generation in diagnose_root_cause.
 
 Covers the ``_handle_healthy_finding`` path: when ``is_clearly_healthy`` trips,
-we must emit one validated claim per investigated evidence key that is present
-in evidence — empty list values included, since an empty ``grafana_logs`` after
-a completed investigation is itself a healthy signal. Non-investigation keys
-like ``grafana_logs_query`` (a query string, not data) must not produce claims.
+we must emit one validated claim per evidence source that was either
+investigated (present in ``INVESTIGATED_EVIDENCE_KEYS`` — empty list counts,
+since an empty ``grafana_logs`` after a completed investigation is itself a
+healthy signal) or carries non-metadata data content. Metadata entries such
+as ``grafana_logs_query`` (a query string), ``eks_total_pods`` (a count), or
+``datadog_fetch_ms`` (a timing) must not produce claims.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.nodes.root_cause_diagnosis import node as diag_node
-from app.nodes.root_cause_diagnosis.evidence_checker import _INVESTIGATED_EVIDENCE_KEYS
+from app.nodes.root_cause_diagnosis.evidence_checker import INVESTIGATED_EVIDENCE_KEYS
 
 
 def _run_handle_healthy_finding(evidence: dict) -> dict:
@@ -30,12 +32,12 @@ def _claim_keys(result: dict) -> list[str]:
     return [c["claim"].split(" ", 1)[0] for c in claims]
 
 
-class TestHealthyClaimsCoverage:
-    """The healthy short-circuit output must cover the investigation keys that
-    triggered it — no more, no less."""
+class TestInvestigationKeyClaims:
+    """Investigation keys must always produce a claim when present — empty
+    values included, because an empty list is the healthy signal that
+    triggered the short-circuit."""
 
-    def test_empty_list_evidence_produces_a_claim(self) -> None:
-        """An empty ``grafana_logs`` list is the healthy signal, not a reason to drop the claim."""
+    def test_empty_list_investigation_key_produces_a_claim(self) -> None:
         result = _run_handle_healthy_finding({"grafana_logs": []})
         assert _claim_keys(result) == ["grafana_logs"]
 
@@ -51,28 +53,114 @@ class TestHealthyClaimsCoverage:
             "datadog_logs",
         }
 
-    def test_non_investigation_keys_do_not_produce_claims(self) -> None:
-        """Query-string metadata like ``grafana_logs_query`` must not be reported as 'data'."""
-        evidence = {
-            "grafana_logs": [],
-            "grafana_logs_query": 'severity:"error"',
-            "datadog_logs_query": "status:error",
-            "total_logs": 0,
-        }
-        assert _claim_keys(_run_handle_healthy_finding(evidence)) == ["grafana_logs"]
-
-    def test_claim_order_is_deterministic(self) -> None:
-        """Claim order must not depend on dict insertion order of ``evidence``."""
-        e1 = {"eks_pods": [], "grafana_logs": []}
-        e2 = {"grafana_logs": [], "eks_pods": []}
-        assert _claim_keys(_run_handle_healthy_finding(e1)) == _claim_keys(
-            _run_handle_healthy_finding(e2)
-        )
-
-    @pytest.mark.parametrize("key", sorted(_INVESTIGATED_EVIDENCE_KEYS))
+    @pytest.mark.parametrize("key", sorted(INVESTIGATED_EVIDENCE_KEYS))
     def test_every_investigation_key_is_recognised(self, key: str) -> None:
         """No investigation key should be silently dropped when empty."""
         assert _claim_keys(_run_handle_healthy_finding({key: []})) == [key]
+
+
+class TestMetadataKeyFiltering:
+    """Query strings, counts, totals, timings, and resource-name metadata keys
+    produce incoherent findings (\"X query data confirmed\") and must never
+    appear in the claim list — even when the adjacent investigation key is
+    also present."""
+
+    @pytest.mark.parametrize(
+        "metadata_key, value",
+        [
+            ("grafana_logs_query", 'severity:"error"'),
+            ("datadog_logs_query", "status:error"),
+            ("datadog_monitors_count", 2),
+            ("datadog_events_count", 5),
+            ("eks_total_pods", 3),
+            ("eks_total_deployments", 1),
+            ("eks_total_warning_count", 0),
+            ("eks_total_nodes", 2),
+            ("eks_not_ready_count", 0),
+            ("datadog_fetch_ms", {"logs": 42}),
+            ("datadog_pod_name", "payments-api-xkp2q"),
+            ("datadog_container_name", "payments-api"),
+            ("datadog_kube_namespace", "payments"),
+            ("betterstack_source", "heroku"),
+            ("grafana_log_count", 11),
+            ("grafana_trace_count", 20),
+            ("honeycomb_trace_count", 5),
+            ("alertmanager_alerts_total", 3),
+            ("alertmanager_silences_total", 1),
+            ("total_logs", 100),
+            ("total_failed_jobs_count", 0),
+            ("cloudwatch_logs_count", 5),
+        ],
+    )
+    def test_metadata_key_in_isolation_produces_no_claim(
+        self, metadata_key: str, value: object
+    ) -> None:
+        assert _claim_keys(_run_handle_healthy_finding({metadata_key: value})) == []
+
+    def test_metadata_keys_alongside_investigation_keys_are_filtered(self) -> None:
+        evidence = {
+            "grafana_logs": [],
+            "grafana_logs_query": 'severity:"error"',
+            "grafana_log_count": 0,
+            "datadog_logs": [],
+            "datadog_logs_query": "status:error",
+            "datadog_monitors_count": 2,
+            "datadog_fetch_ms": {"logs": 42},
+            "eks_pods": [{"name": "x"}],
+            "eks_total_pods": 3,
+            "eks_total_deployments": 1,
+        }
+        assert _claim_keys(_run_handle_healthy_finding(evidence)) == [
+            "datadog_logs",
+            "eks_pods",
+            "grafana_logs",
+        ]
+
+
+class TestTruthyNonInvestigationDataClaims:
+    """Truthy evidence keys that are not investigation-keys but also not
+    metadata represent real gathered data (e.g. ``datadog_events``,
+    ``datadog_error_logs``, ``grafana_traces``, ``honeycomb_traces``,
+    ``eks_failing_pods``) and should still produce a claim — matching the
+    pre-fix observable behavior on those keys."""
+
+    @pytest.mark.parametrize(
+        "key, value",
+        [
+            ("datadog_events", [{"id": "e1"}]),
+            ("datadog_error_logs", [{"message": "err"}]),
+            ("grafana_traces", [{"trace_id": "t1"}]),
+            ("grafana_error_logs", [{"line": "err"}]),
+            ("grafana_service_names", ["api", "db"]),
+            ("honeycomb_traces", [{"trace_id": "h1"}]),
+            ("coralogix_logs", [{"text": "info"}]),
+            ("coralogix_error_logs", [{"text": "err"}]),
+            ("alertmanager_alerts", [{"status": "resolved"}]),
+            ("alertmanager_silences", [{"id": "s1"}]),
+            ("eks_failing_pods", [{"name": "p"}]),
+            ("eks_high_restart_pods", [{"name": "p", "restarts": 3}]),
+            ("eks_degraded_deployments", [{"name": "d"}]),
+            ("failed_tools", [{"name": "query_x"}]),
+            ("error_logs", [{"message": "err"}]),
+            ("host_metrics", {"data": {"cpu": 42}}),
+            ("s3_object", {"found": True}),
+            ("lambda_logs", [{"line": "info"}]),
+            ("lambda_function", {"name": "fn"}),
+        ],
+    )
+    def test_truthy_non_metadata_key_produces_claim(self, key: str, value: object) -> None:
+        assert _claim_keys(_run_handle_healthy_finding({key: value})) == [key]
+
+    def test_empty_non_investigation_key_does_not_produce_claim(self) -> None:
+        """Unlike investigation keys, empty non-investigation keys don't count."""
+        assert _claim_keys(_run_handle_healthy_finding({"datadog_events": []})) == []
+
+    def test_random_custom_truthy_key_is_claimed(self) -> None:
+        """Forward-compat: new data keys from future mappers produce claims
+        without a code change, as long as they aren't metadata-shaped."""
+        assert _claim_keys(_run_handle_healthy_finding({"my_new_source_data": [1]})) == [
+            "my_new_source_data"
+        ]
 
 
 class TestHealthyFindingShape:
@@ -100,6 +188,14 @@ class TestHealthyFindingShape:
         tracker.complete.assert_called_once()
         assert tracker.complete.call_args.kwargs["message"] == "healthy_short_circuit=true"
 
+    def test_claim_order_is_deterministic(self) -> None:
+        """Claim order must not depend on dict insertion order of ``evidence``."""
+        e1 = {"eks_pods": [], "grafana_logs": [], "datadog_events": [{"id": "e1"}]}
+        e2 = {"datadog_events": [{"id": "e1"}], "grafana_logs": [], "eks_pods": []}
+        assert _claim_keys(_run_handle_healthy_finding(e1)) == _claim_keys(
+            _run_handle_healthy_finding(e2)
+        )
+
 
 def test_diagnose_root_cause_short_circuits_through_healthy_finding(monkeypatch) -> None:
     """End-to-end: the diagnose entry point routes a clearly-healthy state through
@@ -117,6 +213,7 @@ def test_diagnose_root_cause_short_circuits_through_healthy_finding(monkeypatch)
         "evidence": {
             "grafana_logs": [],
             "grafana_logs_query": 'severity:"error"',
+            "grafana_log_count": 0,
         },
         "context": {},
         "investigation_loop_count": 0,

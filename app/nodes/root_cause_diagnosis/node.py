@@ -14,12 +14,47 @@ from app.state import InvestigationState
 
 from .claim_validator import calculate_validity_score, validate_and_categorize_claims
 from .evidence_checker import (
-    _INVESTIGATED_EVIDENCE_KEYS,
+    INVESTIGATED_EVIDENCE_KEYS,
     check_evidence_availability,
     check_vendor_evidence_missing,
     is_clearly_healthy,
 )
 from .prompt_builder import build_diagnosis_prompt
+
+# Evidence-dict entries whose key matches one of these patterns are metadata —
+# query strings, counts, timings, resource names, totals — not data. Surfacing
+# them as "X data confirmed within normal operating bounds" produces incoherent
+# findings, so they are excluded from healthy-short-circuit claims. Suffixes
+# are matched with ``str.endswith`` (not substring) so e.g. ``grafana_service_names``
+# (plural, a list of names — real data) is not mistaken for metadata.
+_METADATA_KEY_SUFFIXES = (
+    "_query",
+    "_count",
+    "_ms",
+    "_source",
+    "_name",
+    "_namespace",
+    "_total",
+    "_by_pipeline",
+)
+
+
+def _is_healthy_claim_key(key: str, value: object) -> bool:
+    """Return True iff a key should produce a healthy-short-circuit claim.
+
+    - Investigation keys (``INVESTIGATED_EVIDENCE_KEYS``) always qualify, even
+      with an empty value — an empty list after a completed investigation is
+      itself the healthy signal (mirrors ``is_clearly_healthy`` condition 4).
+    - Other keys qualify only when they carry data (truthy) and are not
+      obvious metadata (counts, queries, timing, resource names, totals).
+    """
+    if key in INVESTIGATED_EVIDENCE_KEYS:
+        return True
+    if not value:
+        return False
+    if key.startswith("total_") or "_total_" in key:
+        return False
+    return not key.endswith(_METADATA_KEY_SUFFIXES)
 
 
 def _short_circuit_enabled() -> bool:
@@ -122,18 +157,19 @@ def _handle_healthy_finding(state: InvestigationState, tracker, evidence: dict) 
     alert_name = state.get("alert_name", "Health check")
     loop_count = state.get("investigation_loop_count", 0)
 
-    # Mirror is_clearly_healthy's gating: a present investigation key (even with an
-    # empty list) is itself the healthy signal. Iterating evidence.keys() filtered
-    # by truthiness instead emits claims for query-string metadata like
-    # grafana_logs_query and drops the empty-list evidence keys that actually
-    # triggered the short-circuit.
+    # Emit one validated claim per evidence source that either was investigated
+    # (present in INVESTIGATED_EVIDENCE_KEYS — even empty lists count, per
+    # is_clearly_healthy's condition 4) or carries non-metadata data content.
+    # The previous ``for k in evidence if evidence[k]`` pattern dropped
+    # empty-list investigation keys (the real healthy signal) and leaked
+    # metadata entries like grafana_logs_query / eks_total_pods as findings.
     validated_claims = [
         {
             "claim": f"{k} data confirmed within normal operating bounds",
             "validation_status": "validated",
         }
-        for k in sorted(_INVESTIGATED_EVIDENCE_KEYS)
-        if k in evidence
+        for k in sorted(evidence)
+        if _is_healthy_claim_key(k, evidence[k])
     ]
 
     tracker.complete(
