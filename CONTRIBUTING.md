@@ -30,6 +30,13 @@ There are two ways to get started:
 3. Comment that you're working on it and open a **draft PR** early so others can see progress
 4. Mark the PR as ready for review when it's complete
 
+#### Issue Assignment & Contribution Flow (Path A)
+
+- Only work on issues assigned to you
+- Or comment with an approach and wait for confirmation before starting
+- Avoid picking up already assigned issues
+- The first contributor to comment with a clear approach will be assigned the issue
+
 #### Issue Templates
 
 - **Bugs & small fixes:** [Bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
@@ -46,7 +53,7 @@ See **[SETUP.md](SETUP.md)** for detailed setup instructions including Windows-s
 
 1. Clone the repo and create a virtual environment
 2. Install dependencies: `pip install -e ".[dev]"`
-3. Run checks: `make lint && make typecheck && make test-cov`
+3. Run checks: `make lint && make format-check && make typecheck && make test-cov`
 4. Build release artifacts when needed: `make build`
 
 If you prefer VS Code, you can use the repo's devcontainer at [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) instead of setting up Python manually.
@@ -146,7 +153,7 @@ Use the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** (automatically provi
 ### PR Checklist Before Submitting
 
 - [ ] Linked to the relevant issue
-- [ ] All local checks pass: `make lint && make typecheck && make test-cov`
+- [ ] All local checks pass: `make lint && make format-check && make typecheck && make test-cov`
 - [ ] Added tests for bug fixes or new features
 - [ ] Updated documentation if behavior changed
 - [ ] Code follows project style (see **Code Quality** section below)

@@ -3,6 +3,12 @@ required_keywords:
   - failover
   - Multi-AZ
   - health check failure
+  - primary evidence source
+  - workload resumed normally
+  - failover initiated
+  - failover in progress
+  - failover completed
+  - instance available
 required_evidence_sources:
   - aws_rds_events
 optimal_trajectory:
@@ -11,14 +17,14 @@ optimal_trajectory:
   - query_grafana_alert_rules
 max_investigation_loops: 4
 model_response: |
-  ROOT_CAUSE: A Multi-AZ automatic failover occurred on payments-prod, triggered by a health check failure on the primary host. The connection drop lasted approximately 45 seconds — the expected duration for a Multi-AZ promotion. The RDS control-plane event sequence is the decisive signal.
+  ROOT_CAUSE: Based on the RDS event timeline (primary evidence source), a Multi-AZ automatic failover occurred on payments-prod, triggered by a health check failure on the primary host. This was an infrastructure event rather than resource exhaustion, and the system recovered and workload resumed normally after failover completion.
   ROOT_CAUSE_CATEGORY: infrastructure
 
   VALIDATED_CLAIMS:
   - DatabaseConnections dropped to 0 at 08:05Z and recovered fully by 08:07Z. [evidence: aws_cloudwatch_metrics]
-  - CPUUtilization and WriteIOPS both dropped to near-zero during the same window, confirming the instance was unavailable (not a connection pool issue). [evidence: aws_cloudwatch_metrics]
-  - RDS events show: failover initiated (08:04:18Z) → in progress (08:04:21Z) → completed (08:04:58Z) → available (08:05:04Z). [evidence: aws_rds_events]
-  - Performance Insights shows no anomalous queries before or after the failover window. Workload resumed normally afterward. [evidence: aws_performance_insights]
+  - CPUUtilization and WriteIOPS both dropped to near-zero during the same window, confirming the instance was unavailable during failover rather than suffering a connection pool issue. [evidence: aws_cloudwatch_metrics]
+  - RDS events show the full failover sequence: failover initiated (08:04:18Z) -> failover in progress (08:04:21Z) -> failover completed (08:04:58Z) -> instance available (08:05:04Z). [evidence: aws_rds_events]
+  - Performance Insights shows no anomalous queries before or after the failover window, and the system recovered and workload resumed normally afterward. [evidence: aws_performance_insights]
 
   NON_VALIDATED_CLAIMS:
   - Application connection retry logic should be reviewed to minimize reconnection time after future failovers.
@@ -26,5 +32,6 @@ model_response: |
   CAUSAL_CHAIN:
   - AWS RDS detected a health check failure on the primary instance in us-east-1a.
   - Multi-AZ automatic failover was initiated, promoting the standby in us-east-1b to primary.
-  - The DNS endpoint was updated, causing a ~45-second connection interruption.
-  - The instance became available in us-east-1b and workload resumed normally.
+  - The DNS endpoint was updated to point clients to the promoted standby host.
+  - A brief outage occurred during the failover window while existing database connections dropped and clients reconnected.
+  - The instance became available again, and the system recovered and workload resumed normally.

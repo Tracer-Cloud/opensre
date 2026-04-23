@@ -1,0 +1,1 @@
+{"source":"airflow","message":"Failure in Airflow DAG test_fail_dag task fail_task","metadata":{"dag_id":"test_fail_dag","task_id":"fail_task"}}

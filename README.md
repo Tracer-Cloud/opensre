@@ -725,6 +725,43 @@ Thanks goes to these amazing people:
         </a>
     </td>
 		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/Maharshi-Project">
+            <img src="https://avatars.githubusercontent.com/u/156591746?v=4" width="100" alt="Maharshi-Project"/>
+            <br />
+            <sub><b>Maharshi-Project</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/udit-rawat">
+            <img src="https://avatars.githubusercontent.com/u/84604012?v=4" width="100" alt="udit-rawat"/>
+            <br />
+            <sub><b>udit-rawat</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/muddlebee">
+            <img src="https://avatars.githubusercontent.com/u/8139783?v=4" width="100" alt="muddlebee"/>
+            <br />
+            <sub><b>muddlebee</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Jah-yee">
+            <img src="https://avatars.githubusercontent.com/u/166608075?v=4" width="100" alt="Jah-yee"/>
+            <br />
+            <sub><b>Jah-yee</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Sarah-Salah">
+            <img src="https://avatars.githubusercontent.com/u/11881117?v=4" width="100" alt="Sarah-Salah"/>
+            <br />
+            <sub><b>Sarah-Salah</b></sub>
+        </a>
+    </td>
+		</tr>
 	</tbody>
 </table>
 <!-- readme: contributors -end -->

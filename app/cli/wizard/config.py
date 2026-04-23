@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from app.config import (
     ANTHROPIC_REASONING_MODEL,
@@ -15,9 +17,12 @@ from app.config import (
     OPENAI_REASONING_MODEL,
     OPENROUTER_REASONING_MODEL,
 )
+from app.integrations.llm_cli.base import LLMCLIAdapter
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PROJECT_ENV_PATH = Path(os.getenv("OPENSRE_PROJECT_ENV_PATH", PROJECT_ROOT / ".env"))
+
+CredentialKind = Literal["api_key", "host", "cli"]
 
 
 @dataclass(frozen=True)
@@ -51,6 +56,9 @@ class ProviderOption:
     #: Optional hint shown as the default value in the prompt (e.g. the
     #: default Ollama host URL). Empty string means no default.
     credential_default: str = ""
+    #: ``cli`` providers use `adapter_factory` + `codex login` instead of API keys.
+    credential_kind: CredentialKind = "api_key"
+    adapter_factory: Callable[[], LLMCLIAdapter] | None = None
 
 
 ANTHROPIC_MODELS = (
@@ -124,6 +132,31 @@ OLLAMA_MODELS = (
     ModelOption(value="qwen2.5:7b", label="Qwen 2.5 (7B)"),
 )
 
+# Empty value means "no -m" so the Codex CLI uses its configured default/current model.
+CODEX_MODELS = (
+    ModelOption(
+        value="",
+        label="CLI default (no -m; use Codex configured model)",
+    ),
+    ModelOption(value="gpt-5.4", label="gpt-5.4 — strong default for everyday coding"),
+    ModelOption(value="gpt-5.2-codex", label="gpt-5.2-codex — frontier agentic coding"),
+    ModelOption(
+        value="gpt-5.1-codex-max",
+        label="gpt-5.1-codex-max — deep / fast reasoning",
+    ),
+    ModelOption(value="gpt-5.4-mini", label="gpt-5.4-mini — fast, cost-efficient"),
+    ModelOption(value="gpt-5.3-codex", label="gpt-5.3-codex — coding-optimized"),
+    ModelOption(value="gpt-5.2", label="gpt-5.2 — long-running agents"),
+    ModelOption(value="gpt-5.1-codex-mini", label="gpt-5.1-codex-mini"),
+)
+
+
+def _codex_adapter_factory() -> LLMCLIAdapter:
+    from app.integrations.llm_cli.codex import CodexAdapter
+
+    return CodexAdapter()
+
+
 SUPPORTED_PROVIDERS = (
     ProviderOption(
         value="anthropic",
@@ -174,6 +207,18 @@ SUPPORTED_PROVIDERS = (
         default_model=NVIDIA_REASONING_MODEL,
         models=NVIDIA_MODELS,
         legacy_model_env="NVIDIA_MODEL",
+    ),
+    ProviderOption(
+        value="codex",
+        label="OpenAI Codex CLI",
+        group="Local CLI providers",
+        api_key_env="",
+        model_env="CODEX_MODEL",
+        default_model="",
+        models=CODEX_MODELS,
+        credential_kind="cli",
+        credential_secret=False,
+        adapter_factory=_codex_adapter_factory,
     ),
     ProviderOption(
         value="ollama",

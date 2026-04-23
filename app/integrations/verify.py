@@ -67,6 +67,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "clickhouse",
     "bitbucket",
     "discord",
+    "telegram",
     "mysql",
     "openclaw",
     "snowflake",
@@ -683,6 +684,39 @@ def _verify_discord(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_telegram(source: str, config: dict[str, Any]) -> dict[str, str]:
+    bot_token = str(config.get("bot_token", "")).strip()
+    if not bot_token:
+        return _result("telegram", source, "missing", "Missing bot token.")
+
+    try:
+        response = httpx.get(
+            f"https://api.telegram.org/bot{bot_token}/getMe",
+            timeout=10.0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        safe_exc = str(exc).replace(bot_token, "<redacted>") if bot_token else str(exc)
+        return _result("telegram", source, "failed", f"Bot token validation failed: {safe_exc}")
+
+    if not response.is_success:
+        return _result(
+            "telegram",
+            source,
+            "failed",
+            f"Telegram API returned {response.status_code}: {response.text[:200]}",
+        )
+
+    data = response.json().get("result", {})
+    username = str(data.get("username", "")).strip()
+    bot_id = str(data.get("id", "")).strip()
+    return _result(
+        "telegram",
+        source,
+        "passed",
+        f"Connected to Telegram API as bot @{username} (id {bot_id}).",
+    )
+
+
 def _verify_openclaw(source: str, config: dict[str, Any]) -> dict[str, str]:
     try:
         openclaw_config = build_openclaw_config(config)
@@ -849,6 +883,8 @@ def verify_integrations(
             results.append(_verify_bitbucket(source, config))
         elif current_service == "discord":
             results.append(_verify_discord(source, config))
+        elif current_service == "telegram":
+            results.append(_verify_telegram(source, config))
         elif current_service == "openclaw":
             results.append(_verify_openclaw(source, config))
         elif current_service == "mysql":
