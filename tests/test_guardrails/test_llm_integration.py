@@ -266,3 +266,224 @@ class TestChatNodeGuardrails:
         msgs: list[Any] = [_FakeMessage("AKIAIOSFODNN7EXAMPLE")]
         result = _apply_guardrails_to_messages(msgs)
         assert result[0].content == "AKIAIOSFODNN7EXAMPLE"
+
+
+# Production-grade configs exercising every reachable overlap shape the fix
+# must handle. ``aws_access_key`` is a strict substring of
+# ``generic_api_token`` when the token value is itself an AWS key, so a
+# real investigation that quotes ``api_key=AKIA...`` from a source file
+# triggers the contained-span path that main corrupts.
+_OVERLAPPING_RULES: list[dict] = [
+    {
+        "name": "aws_access_key",
+        "action": "redact",
+        "patterns": [r"(?:AKIA|ASIA)[A-Z0-9]{16}"],
+    },
+    {
+        "name": "generic_api_token",
+        "action": "redact",
+        "patterns": [
+            r"(?i)(?:api_key|api_token|auth_token|access_token|secret_key)"
+            r"[\s=:]+[A-Za-z0-9_\-]{20,}"
+        ],
+    },
+]
+
+
+class TestOverlappingRedactionReachesDownstream:
+    """End-to-end: every LLM client and the chat node must dispatch
+    fully-redacted content downstream when the shipped-style overlapping
+    rules fire. These tests close the gap between the unit-level engine
+    tests and the real call sites; a regression in the merge algorithm
+    would be caught here even if engine tests were skipped."""
+
+    def _install_rules(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        config = _write_rules(tmp_path, _OVERLAPPING_RULES)
+        monkeypatch.setattr("app.guardrails.engine.get_default_rules_path", lambda: config)
+        monkeypatch.setattr("app.guardrails.rules.get_default_rules_path", lambda: config)
+
+    def test_anthropic_client_sends_merged_redaction(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``AnthropicLLMClient.invoke`` must redact the full overlapping
+        span before the payload reaches ``Anthropic.messages.create``."""
+        self._install_rules(tmp_path, monkeypatch)
+
+        captured: dict = {}
+
+        class _FakeMessages:
+            @staticmethod
+            def create(**kwargs: object) -> object:
+                captured.update(kwargs)
+                return type(
+                    "R", (), {"content": [type("B", (), {"type": "text", "text": "ok"})()]}
+                )()
+
+        class _FakeClient:
+            messages = _FakeMessages()
+
+        from app.services.llm_client import LLMClient
+
+        client = LLMClient(model="test", max_tokens=10)
+        monkeypatch.setattr(client, "_client", _FakeClient())
+        monkeypatch.setattr(client, "_ensure_client", lambda: None)
+
+        client.invoke("Debug dump: api_key=AKIAIOSFODNN7EXAMPLE from config.yml")
+
+        content = captured["messages"][0]["content"]
+        # Full span merged — neither the label nor the key value leaks.
+        assert "api_key=" not in content
+        assert "AKIA" not in content
+        assert "IOSFODNN7EXAMPLE" not in content
+        # Representative rule is the wider one (generic_api_token).
+        assert "[REDACTED:generic_api_token]" in content
+        assert "[REDACTED:aws_access_key]" not in content
+
+    def test_anthropic_system_prompt_also_redacted(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """System prompt path (distinct from messages) must also get the
+        merged-redaction treatment."""
+        self._install_rules(tmp_path, monkeypatch)
+
+        captured: dict = {}
+
+        class _FakeMessages:
+            @staticmethod
+            def create(**kwargs: object) -> object:
+                captured.update(kwargs)
+                return type(
+                    "R", (), {"content": [type("B", (), {"type": "text", "text": "ok"})()]}
+                )()
+
+        class _FakeClient:
+            messages = _FakeMessages()
+
+        from app.services.llm_client import LLMClient
+
+        client = LLMClient(model="test", max_tokens=10)
+        monkeypatch.setattr(client, "_client", _FakeClient())
+        monkeypatch.setattr(client, "_ensure_client", lambda: None)
+
+        system = "Operator note: api_key=AKIAIOSFODNN7EXAMPLE must remain private."
+        messages = [{"role": "user", "content": "ok"}]
+        # ``_normalize_messages`` accepts list-of-dicts with a system string
+        # embedded by passing a tuple-style structure; easier to pass a
+        # pre-normalized mapping via system+messages by invoking with a
+        # dict.  Emulate the `invoke(prompt_or_messages)` contract here by
+        # passing the raw messages list and setting system through a
+        # small prompt object.
+        client.invoke([{"role": "system", "content": system}, *messages])
+
+        assert captured.get("system") is not None
+        assert "api_key=" not in captured["system"]
+        assert "AKIA" not in captured["system"]
+        assert "[REDACTED:generic_api_token]" in captured["system"]
+
+    def test_openai_client_sends_merged_redaction(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``OpenAILLMClient.invoke`` must redact the full overlapping span
+        before dispatching to ``chat.completions.create``."""
+        self._install_rules(tmp_path, monkeypatch)
+
+        captured: dict = {}
+
+        class _FakeCompletions:
+            @staticmethod
+            def create(**kwargs: object) -> object:
+                captured.update(kwargs)
+                return type(
+                    "R",
+                    (),
+                    {
+                        "choices": [
+                            type(
+                                "C",
+                                (),
+                                {"message": type("M", (), {"content": "ok"})()},
+                            )()
+                        ]
+                    },
+                )()
+
+        class _FakeChat:
+            completions = _FakeCompletions()
+
+        class _FakeClient:
+            chat = _FakeChat()
+
+        from app.services.llm_client import OpenAILLMClient
+
+        monkeypatch.setenv("TEST_KEY", "fake-key")
+        client = OpenAILLMClient(model="test", max_tokens=10, api_key_env="TEST_KEY")
+        monkeypatch.setattr(client, "_client", _FakeClient())
+        monkeypatch.setattr(client, "_ensure_client", lambda: None)
+
+        client.invoke("Investigation: api_key=AKIAIOSFODNN7EXAMPLE surfaced in logs")
+
+        content = captured["messages"][0]["content"]
+        assert "api_key=" not in content
+        assert "AKIA" not in content
+        assert "[REDACTED:generic_api_token]" in content
+
+    def test_chat_node_emits_merged_redaction(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The LangGraph chat node must mirror the LLM-client behavior on
+        overlapping rules, leaving originals untouched (it copies)."""
+        self._install_rules(tmp_path, monkeypatch)
+
+        from app.nodes.chat import _apply_guardrails_to_messages
+
+        original = "Investigation: api_key=AKIAIOSFODNN7EXAMPLE surfaced in logs"
+        msgs: list[Any] = [_FakeMessage(original)]
+        result = _apply_guardrails_to_messages(msgs)
+
+        redacted = str(result[0].content)
+        assert "api_key=" not in redacted
+        assert "AKIA" not in redacted
+        assert "[REDACTED:generic_api_token]" in redacted
+        # Source message untouched — confirms the defensive copy.
+        assert msgs[0].content == original
+
+    def test_contained_real_secret_fully_redacted_in_pipeline(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The core regression: the pre-fix output leaked sensitive
+        bookends (``api_key=`` and the key value's suffix). An end-to-end
+        assertion that the final payload contains *no* fragment of either
+        the label prefix or the key value."""
+        self._install_rules(tmp_path, monkeypatch)
+
+        captured: dict = {}
+
+        class _FakeMessages:
+            @staticmethod
+            def create(**kwargs: object) -> object:
+                captured.update(kwargs)
+                return type(
+                    "R", (), {"content": [type("B", (), {"type": "text", "text": "ok"})()]}
+                )()
+
+        class _FakeClient:
+            messages = _FakeMessages()
+
+        from app.services.llm_client import LLMClient
+
+        client = LLMClient(model="test", max_tokens=10)
+        monkeypatch.setattr(client, "_client", _FakeClient())
+        monkeypatch.setattr(client, "_ensure_client", lambda: None)
+
+        client.invoke("Leak test: api_key=AKIAIOSFODNN7EXAMPLE tail goes here")
+
+        content = captured["messages"][0]["content"]
+        for fragment in (
+            "api_key=",  # ← pre-fix leaked this
+            "AKIA",  # sensitive marker
+            "IOSFODNN",  # sensitive tail
+            "7EXAMPLE",  # sensitive suffix
+        ):
+            assert fragment not in content, (
+                f"fragment {fragment!r} leaked into downstream payload: {content!r}"
+            )
