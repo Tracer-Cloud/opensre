@@ -6,7 +6,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 
 from app.integrations.llm_cli.base import CLIInvocation, CLIProbe, PromptDelivery
 from app.integrations.llm_cli.binary_resolver import (
@@ -82,8 +81,6 @@ def _codex_workspace_and_skip_git() -> tuple[str, bool]:
 
 
 def _fallback_codex_paths() -> list[str]:
-    # Keep module-level `sys` usage for tests that monkeypatch `codex.sys.platform`.
-    _ = sys.platform
     return _default_cli_fallback_paths("codex")
 
 

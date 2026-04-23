@@ -283,7 +283,7 @@ def test_detect_uses_first_runnable_fallback_path(
 def test_fallback_paths_include_env_and_npm_prefix() -> None:
     npm_prefix_bin_dirs.cache_clear()
     with (
-        patch("app.integrations.llm_cli.codex.sys.platform", "linux"),
+        patch("app.integrations.llm_cli.binary_resolver.sys.platform", "linux"),
         patch.dict(
             os.environ,
             {
@@ -304,7 +304,7 @@ def test_fallback_paths_include_env_and_npm_prefix() -> None:
 def test_fallback_paths_include_macos_defaults() -> None:
     npm_prefix_bin_dirs.cache_clear()
     with (
-        patch("app.integrations.llm_cli.codex.sys.platform", "darwin"),
+        patch("app.integrations.llm_cli.binary_resolver.sys.platform", "darwin"),
         patch.dict(os.environ, {}, clear=False),
     ):
         paths = _fallback_codex_paths()
@@ -319,7 +319,7 @@ def test_fallback_paths_include_macos_defaults() -> None:
 def test_fallback_paths_include_windows_defaults() -> None:
     npm_prefix_bin_dirs.cache_clear()
     with (
-        patch("app.integrations.llm_cli.codex.sys.platform", "win32"),
+        patch("app.integrations.llm_cli.binary_resolver.sys.platform", "win32"),
         patch.dict(
             os.environ,
             {
@@ -342,7 +342,7 @@ def test_fallback_paths_include_windows_defaults() -> None:
 def test_npm_prefix_bin_dirs_windows_uses_prefix_root() -> None:
     npm_prefix_bin_dirs.cache_clear()
     with (
-        patch("app.integrations.llm_cli.codex.sys.platform", "win32"),
+        patch("app.integrations.llm_cli.binary_resolver.sys.platform", "win32"),
         patch.dict(os.environ, {"NPM_CONFIG_PREFIX": r"C:\npm\prefix"}, clear=False),
     ):
         dirs = npm_prefix_bin_dirs()
@@ -352,7 +352,7 @@ def test_npm_prefix_bin_dirs_windows_uses_prefix_root() -> None:
 def test_npm_prefix_bin_dirs_unix_uses_prefix_bin() -> None:
     npm_prefix_bin_dirs.cache_clear()
     with (
-        patch("app.integrations.llm_cli.codex.sys.platform", "linux"),
+        patch("app.integrations.llm_cli.binary_resolver.sys.platform", "linux"),
         patch.dict(os.environ, {"NPM_CONFIG_PREFIX": "/opt/npm"}, clear=False),
     ):
         dirs = npm_prefix_bin_dirs()
