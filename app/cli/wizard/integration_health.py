@@ -630,3 +630,18 @@ def validate_discord_bot(*, bot_token: str) -> IntegrationHealthResult:
     return IntegrationHealthResult(
         ok=False, detail=f"Discord API returned unexpected HTTP {resp.status_code}."
     )
+
+def validate_splunk_integration(
+    *, base_url: str, token: str, index: str = "main"
+) -> IntegrationHealthResult:
+    """Validate Splunk credentials by calling the server info endpoint."""
+    from app.services.splunk import SplunkClient, SplunkConfig
+
+    client = SplunkClient(SplunkConfig(base_url=base_url, token=token, index=index))
+    result = client.validate_access()
+    if result.get("success"):
+        return IntegrationHealthResult(ok=True, detail=result.get("detail", "Splunk connected."))
+    return IntegrationHealthResult(
+        ok=False,
+        detail=f"Splunk validation failed: {result.get('error', 'unknown error')}",
+    )

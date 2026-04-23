@@ -26,6 +26,7 @@ from app.integrations.models import (
     OpsGenieIntegrationConfig,
     SlackWebhookConfig,
     TelegramBotConfig,
+    SplunkIntegrationConfig
 )
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config
@@ -84,6 +85,7 @@ _SERVICE_KEY_MAP = {
     "opensearch": "opensearch",
     "open search": "opensearch",
     "alertmanager": "alertmanager",
+    "splunk": "splunk"
 }
 
 
@@ -712,6 +714,23 @@ def _classify_service_instance(
             "max_results": max(1, min(_safe_int(credentials.get("max_results", 100), 100), 500)),
             "integration_id": record_id,
         }, "opensearch"
+
+    if key == "splunk":
+        try:
+            splunk_config = SplunkIntegrationConfig.model_validate(
+                {
+                    "base_url": credentials.get("base_url", ""),
+                    "token": credentials.get("token", ""),
+                    "index": credentials.get("index", "main"),
+                    "verify_ssl": credentials.get("verify_ssl", True),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if splunk_config.base_url and splunk_config.token:
+            return splunk_config.model_dump(), "splunk"
+        return None, None
 
     # Fallback for unknown services: pass through credentials + record id.
     return {"credentials": credentials, "integration_id": record_id}, key
@@ -1444,6 +1463,32 @@ def load_env_integrations() -> list[dict[str, Any]]:
             )
         except Exception:
             logger.debug("Failed to load Alertmanager config from env", exc_info=True)
+
+    splunk_multi = _parse_instances_env("SPLUNK_INSTANCES", "splunk")
+    if splunk_multi is not None:
+        integrations.append(splunk_multi)
+        splunk_url = ""
+        splunk_token = ""
+    else:
+        splunk_url = os.getenv("SPLUNK_URL", "").strip()
+        splunk_token = os.getenv("SPLUNK_TOKEN", "").strip()
+    if splunk_url and splunk_token:
+        splunk_config = SplunkIntegrationConfig.model_validate(
+            {
+                "base_url": splunk_url,
+                "token": splunk_token,
+                "index": os.getenv("SPLUNK_INDEX", "main").strip(),
+                "verify_ssl": os.getenv("SPLUNK_VERIFY_SSL", "true").strip().lower() != "false",
+            }
+        )
+        integrations.append(
+            {
+                "id": "env-splunk",
+                "service": "splunk",
+                "status": "active",
+                "credentials": splunk_config.model_dump(exclude={"integration_id"}),
+            }
+        )
 
     return integrations
 

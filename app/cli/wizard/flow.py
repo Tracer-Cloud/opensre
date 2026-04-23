@@ -164,6 +164,11 @@ def validate_openclaw_integration(**kwargs):
 
     return _validate(**kwargs)
 
+def validate_splunk_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_splunk_integration as _validate
+
+    return _validate(**kwargs)
+
 
 def get_sentry_auth_recommendations():
     from app.integrations.sentry import get_sentry_auth_recommendations as _get
@@ -1368,6 +1373,43 @@ def _configure_discord() -> tuple[str, str]:
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
+def _configure_splunk() -> tuple[str, str]:
+    _, credentials = _integration_defaults("splunk")
+    while True:
+        base_url = _prompt_value(
+            "Splunk REST API base URL (e.g. https://splunk.corp.com:8089)",
+            default=_string_value(credentials.get("base_url")),
+        )
+        token = _prompt_value(
+            "Splunk API bearer token",
+            default=_string_value(credentials.get("token")),
+            secret=True,
+        )
+        index = _prompt_value(
+            "Default Splunk index to search",
+            default=_string_value(credentials.get("index"), "main"),
+        )
+        with _console.status("Validating Splunk integration...", spinner="dots"):
+            result = validate_splunk_integration(
+                base_url=base_url, token=token, index=index
+            )
+        _render_integration_result("Splunk", result)
+        if result.ok:
+            upsert_integration(
+                "splunk",
+                {"credentials": {"base_url": base_url, "token": token, "index": index}},
+            )
+            env_path = sync_env_values(
+                {
+                    "SPLUNK_URL": base_url,
+                    "SPLUNK_INDEX": index,
+                    # Do NOT write SPLUNK_TOKEN to .env — it goes to the credential store only
+                }
+            )
+            return "Splunk", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
 def _configure_selected_integrations() -> tuple[list[str], str | None]:
     configured: list[str] = []
     last_env_path: str | None = None
@@ -1479,6 +1521,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "opsgenie": _configure_opsgenie,
         "notion": _configure_notion,
         "openclaw": _configure_openclaw,
+        "splunk": _configure_splunk,
     }
     _SERVICE_LABELS = {
         "grafana_local": "grafana local",

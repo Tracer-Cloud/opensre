@@ -98,7 +98,20 @@ def build_alert_template(template_name: str) -> dict[str, Any]:
                 "log_query": "source logs | filter $l.applicationname == 'payments' | limit 50",
             },
         }
+    
+    if template == "splunk":
+        return {
+            "alert_name": "Splunk alert: payments service error spike",
+            "pipeline_name": "payments_service",
+            "severity": "critical",
+            "alert_source": "splunk",
+            "message": "Splunk detected repeated NullPointerExceptions in payments_service",
+            "commonAnnotations": {
+                "summary": "payments_service is logging repeated NullPointerExceptions",
+                "splunk_query": 'index=main source="/var/log/payments*" "NullPointerException" | head 50',
+            },
+        }
 
     raise ValueError(
-        "Unknown alert template. Supported templates: generic, datadog, grafana, honeycomb, coralogix."
+        "Unknown alert template. Supported templates: generic, datadog, grafana, honeycomb, coralogix, splunk."
     )

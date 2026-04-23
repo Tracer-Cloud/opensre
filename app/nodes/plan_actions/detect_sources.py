@@ -1291,5 +1291,50 @@ def detect_sources(
             "database": azure_sql_database,
             "connection_verified": True,
         }
+        
+    splunk_int = (resolved_integrations or {}).get("splunk")
+    if splunk_int:
+        splunk_base_url = str(splunk_int.get("base_url", "")).strip()
+        splunk_token = str(splunk_int.get("token", "")).strip()
+        splunk_index = str(splunk_int.get("index", "main")).strip() or "main"
+        splunk_verify_ssl = splunk_int.get("verify_ssl", True)
+
+        if splunk_base_url and splunk_token:
+            # 1. Check if operator supplied a verbatim SPL in alert annotations
+            raw_query = str(
+                annotations.get("splunk_query", "")
+                or annotations.get("query", "")
+                or annotations.get("log_query", "")
+                or raw_alert.get("splunk_query", "")
+                or raw_alert.get("log_query", "")
+            ).strip()
+
+            # 2. If no raw SPL, build a keyword search from alert signals
+            error_message = str(
+                raw_alert.get("error_message", "")
+                or annotations.get("summary", "")
+                or raw_alert.get("alert_name", "")
+            ).strip()
+
+            from app.services.splunk import build_splunk_spl_query
+
+            default_query = build_splunk_spl_query(
+                raw_query=raw_query,
+                index=splunk_index,
+                error_message=error_message,
+                alert_name=str(raw_alert.get("alert_name", "")).strip(),
+                trace_id=trace_id,
+                limit=50,
+            )
+
+            sources["splunk"] = {
+                "base_url": splunk_base_url,
+                "token": splunk_token,
+                "index": splunk_index,
+                "verify_ssl": splunk_verify_ssl,
+                "default_query": default_query,
+                "time_range_minutes": alert_time_range_minutes,
+                "connection_verified": True,
+            }
 
     return sources

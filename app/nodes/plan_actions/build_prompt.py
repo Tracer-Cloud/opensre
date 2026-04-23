@@ -279,6 +279,16 @@ IMPORTANT: Always start with discovery actions before fetching specific resource
 - Check S3 input data timestamps and content for evidence of upstream data issues"""
         )
 
+    if "splunk" in available_sources:
+        splunk = available_sources["splunk"]
+        hints.append(
+            f"""Splunk Available:
+- Base URL: {splunk.get("base_url")}
+- Index: {splunk.get("index", "main")}
+- Default SPL: {splunk.get("default_query")}
+- Use query_splunk_logs to search Splunk for error patterns, exceptions, and application events"""
+        )
+
     if hints:
         return "\n\n" + "\n\n".join(hints) + "\n"
     return ""
