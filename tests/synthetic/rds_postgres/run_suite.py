@@ -301,10 +301,7 @@ def score_result(
 
         mentions_event_reasoning = (
             "rds" in reasoning_text
-            and (
-                "event" in reasoning_text
-                or "timeline" in reasoning_text
-            )
+            and ("event" in reasoning_text or "timeline" in reasoning_text)
             and "primary evidence source" in reasoning_text
         )
 

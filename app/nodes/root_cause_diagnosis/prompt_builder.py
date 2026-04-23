@@ -136,9 +136,7 @@ def _build_failover_directive(evidence: dict[str, Any]) -> str:
     grafana_error_logs = evidence.get("grafana_error_logs", [])
 
     event_messages = " ".join(
-        str(event.get("message", "")).lower()
-        for event in rds_events
-        if isinstance(event, dict)
+        str(event.get("message", "")).lower() for event in rds_events if isinstance(event, dict)
     )
 
     log_messages = " ".join(
@@ -147,22 +145,16 @@ def _build_failover_directive(evidence: dict[str, Any]) -> str:
         if isinstance(log, dict)
     )
 
-    has_rds_failover = (
-        "failover" in event_messages
-        and (
-            "multi-az" in event_messages
-            or "health check failure" in event_messages
-            or "primary host" in event_messages
-        )
+    has_rds_failover = "failover" in event_messages and (
+        "multi-az" in event_messages
+        or "health check failure" in event_messages
+        or "primary host" in event_messages
     )
 
-    has_log_failover = (
-        "failover" in log_messages
-        and (
-            "multi-az" in log_messages
-            or "health check failure" in log_messages
-            or "primary host" in log_messages
-        )
+    has_log_failover = "failover" in log_messages and (
+        "multi-az" in log_messages
+        or "health check failure" in log_messages
+        or "primary host" in log_messages
     )
 
     if not (has_rds_failover or has_log_failover):
