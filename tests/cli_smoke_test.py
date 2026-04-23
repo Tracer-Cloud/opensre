@@ -513,11 +513,11 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
 @pytest.mark.skipif(shutil.which("codex") is None, reason="OpenAI Codex CLI not on PATH")
 def test_onboard_interactive_smoke_codex(cli_sandbox: CliSandbox) -> None:
-    """End-to-end PTY: quickstart → Codex (no API key) → skip integrations.
+    """End-to-end PTY: quickstart → Codex CLI path → repick when unauthenticated.
 
-    Mirrors ``test_onboard_interactive_smoke`` but moves the provider cursor down
-    to ``OpenAI Codex CLI`` (five ``j`` presses from the default Anthropic row).
-    Requires a working ``codex`` on PATH; skips automatically when absent (e.g. CI).
+    Selects ``OpenAI Codex CLI`` (five ``j`` presses). With a fresh HOME the CLI
+    is not logged in, so the wizard repicks the default provider (Anthropic) and
+    uses a placeholder API key. Requires ``codex`` on PATH; skips when absent.
     """
     result = _run_cli_pty(
         cli_sandbox,
@@ -525,8 +525,13 @@ def test_onboard_interactive_smoke_codex(cli_sandbox: CliSandbox) -> None:
         actions=[
             PtyAction(expect="How do you want to get started?", send=b"\r"),
             PtyAction(expect="Choose your LLM provider", send=b"jjjjj\r"),
-            # Fresh HOME in CliSandbox has no Codex auth; wizard offers to continue without login.
-            PtyAction(expect="Continue anyway?", send=b"y\r"),
+            # Fresh HOME in CliSandbox has no Codex auth: repick to Anthropic to finish onboarding.
+            PtyAction(
+                expect="OpenAI Codex CLI requires login. What next?",
+                send=b"j\r",
+            ),
+            PtyAction(expect="Choose your LLM provider", send=b"\r"),
+            PtyAction(expect="Anthropic API key", send=b"smoke-test-key\r"),
             PtyAction(
                 expect="Choose an integration to configure",
                 send=b"\r",
@@ -541,11 +546,12 @@ def test_onboard_interactive_smoke_codex(cli_sandbox: CliSandbox) -> None:
     assert "summary" in result.stdout
 
     store = cli_sandbox.read_wizard_store()
-    assert store["targets"]["local"]["provider"] == "codex"
+    assert store["targets"]["local"]["provider"] == "anthropic"
     assert "api_key" not in store["targets"]["local"]
     env_body = cli_sandbox.read_project_env()
-    assert "LLM_PROVIDER=codex\n" in env_body
-    assert "CODEX_MODEL=\n" in env_body
+    assert "LLM_PROVIDER=anthropic\n" in env_body
+    assert "ANTHROPIC_API_KEY=" not in env_body
+    assert "ANTHROPIC_REASONING_MODEL=" in env_body
 
 
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")

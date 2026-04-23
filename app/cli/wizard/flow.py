@@ -1558,22 +1558,39 @@ def _run_cli_llm_onboarding(provider: ProviderOption) -> Literal["ok", "abort", 
     adapter = factory()
     env_key = adapter.binary_env_key
     install_hint = adapter.install_hint
+    auth_hint = adapter.auth_hint
     name = adapter.name
     for _attempt in range(10):
         probe = adapter.detect()
         if probe.installed and probe.logged_in is True:
             _console.print(f"[dim]{probe.detail}[/]")
             return "ok"
-        if probe.installed and probe.logged_in is False:
+        if probe.installed and probe.logged_in is not True:
             _console.print(f"[yellow]{probe.detail}[/]")
-            if not _confirm("Continue anyway?", default=False):
-                return "abort"
-            return "ok"
-        if probe.installed and probe.logged_in is None:
-            _console.print(f"[yellow]{probe.detail}[/]")
-            if not _confirm("Continue setup?", default=True):
-                return "abort"
-            return "ok"
+            status_prompt = (
+                f"{provider.label} requires login. What next?"
+                if probe.logged_in is False
+                else f"Could not verify {provider.label} login. What next?"
+            )
+            action = _choose(
+                status_prompt,
+                [
+                    Choice(
+                        value="retry",
+                        label="Re-detect after logging in",
+                        hint=auth_hint,
+                    ),
+                    Choice(
+                        value="repick",
+                        label="Pick a different LLM provider",
+                        hint=None,
+                    ),
+                ],
+                default="retry",
+            )
+            if action == "repick":
+                return "repick"
+            continue
         action = _choose(
             f"{provider.label} not found. What next?",
             [
