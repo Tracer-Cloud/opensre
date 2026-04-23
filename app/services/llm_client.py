@@ -12,12 +12,9 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Union
+from typing import Any
 
 from anthropic import Anthropic, AnthropicBedrock, AuthenticationError
-
-if TYPE_CHECKING:
-    from app.integrations.llm_cli.runner import CLIBackedLLMClient
 from openai import AuthenticationError as OpenAIAuthError
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
@@ -439,9 +436,8 @@ def _extract_json_payload(text: str) -> Any:
 # LLM Client
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Use Union with a string forward reference so the alias is valid at runtime
-# without importing CLIBackedLLMClient (runner already imports from this module).
-_LLMClientType = Union[LLMClient, OpenAILLMClient, BedrockLLMClient, "CLIBackedLLMClient"]
+# CLIBackedLLMClient is included but omitted from the union to avoid import cycles.
+_LLMClientType = LLMClient | OpenAILLMClient | BedrockLLMClient | Any
 _llm: _LLMClientType | None = None
 _llm_for_tools: _LLMClientType | None = None
 
