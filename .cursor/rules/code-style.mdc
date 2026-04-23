@@ -30,10 +30,12 @@ alwaysApply: true
 ## Quality Commands
 
 ```bash
-make lint        # ruff check app/ tests/
-make typecheck   # mypy app/
-make test-cov    # pytest with coverage
-make format      # ruff format
+make lint            # ruff check app/ tests/
+make format-check    # ruff format --check app/ tests/ (read-only; CI enforces this)
+make format          # ruff format app/ tests/ (write fixes locally)
+make typecheck       # mypy app/
+make test-cov        # pytest with coverage
+make check           # lint + format-check + typecheck + test-full
 ```
 
-All three checks (lint, typecheck, test-cov) must pass before submitting a PR.
+Before opening a PR, run `make format-check` (or `make check`) in addition to `make lint`.

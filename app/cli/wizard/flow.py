@@ -5,14 +5,14 @@ from __future__ import annotations
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import Literal, cast
 from urllib.parse import urlparse
 
 import questionary
 from rich.console import Console
 from rich.text import Text
 
-from app.cli.wizard.config import PROVIDER_BY_VALUE, SUPPORTED_PROVIDERS
+from app.cli.wizard.config import PROVIDER_BY_VALUE, SUPPORTED_PROVIDERS, ProviderOption
 from app.cli.wizard.env_sync import sync_env_values, sync_provider_env
 from app.cli.wizard.integration_health import IntegrationHealthResult
 from app.cli.wizard.probes import ProbeResult, probe_local_target, probe_remote_target
@@ -221,12 +221,13 @@ def _local_defaults() -> dict[str, str | bool | None]:
     raw_provider = local.get("provider")
     provider = PROVIDER_BY_VALUE.get(_string_value(raw_provider)) if raw_provider else None
     api_key_env = _string_value(local.get("api_key_env"), provider.api_key_env if provider else "")
+    is_cli = bool(provider and provider.credential_kind == "cli")
     return {
         "wizard_mode": _string_value(wizard.get("mode"), "quickstart"),
         "provider": _string_value(raw_provider) if raw_provider else None,
         "model": _string_value(local.get("model")),
         "api_key_env": api_key_env,
-        "has_api_key": bool(api_key_env and has_llm_api_key(api_key_env)),
+        "has_api_key": True if is_cli else bool(api_key_env and has_llm_api_key(api_key_env)),
         "legacy_api_key": _string_value(local.get("api_key")),
     }
 
@@ -387,6 +388,7 @@ def _render_saved_summary(
     saved_path: str,
     env_path: str,
     configured_integrations: list[str],
+    credential_line: str = "system keychain",
 ) -> None:
     from app.integrations.store import STORE_PATH
 
@@ -397,7 +399,7 @@ def _render_saved_summary(
     _console.print(f"[dim]services      {integrations}[/]")
     _console.print(f"[dim]config        {saved_path}[/]")
     _console.print(f"[dim]env           {env_path}[/]")
-    _console.print("[dim]llm secret    system keychain[/]")
+    _console.print(f"[dim]llm creds     {credential_line}[/]")
     _console.print(f"[dim]integrations  {STORE_PATH}[/]")
 
 
@@ -1545,6 +1547,80 @@ def _render_next_steps() -> None:
     )
 
 
+def _run_cli_llm_onboarding(provider: ProviderOption) -> Literal["ok", "abort", "repick"]:
+    """Probe CLI binary + auth; recovery menu when missing. ``repick`` = choose another LLM."""
+    factory = provider.adapter_factory
+    if factory is None:
+        _console.print("[red]Internal error: CLI provider missing adapter factory.[/]")
+        return "abort"
+    adapter = factory()
+    env_key = adapter.binary_env_key
+    install_hint = adapter.install_hint
+    auth_hint = adapter.auth_hint
+    name = adapter.name
+    for _attempt in range(10):
+        probe = adapter.detect()
+        if probe.installed and probe.logged_in is True:
+            _console.print(f"[dim]{probe.detail}[/]")
+            return "ok"
+        if probe.installed and probe.logged_in is not True:
+            _console.print(f"[yellow]{probe.detail}[/]")
+            status_prompt = (
+                f"{provider.label} requires login. What next?"
+                if probe.logged_in is False
+                else f"Could not verify {provider.label} login. What next?"
+            )
+            action = _choose(
+                status_prompt,
+                [
+                    Choice(
+                        value="retry",
+                        label="Re-detect after logging in",
+                        hint=auth_hint,
+                    ),
+                    Choice(
+                        value="repick",
+                        label="Pick a different LLM provider",
+                        hint=None,
+                    ),
+                ],
+                default="retry",
+            )
+            if action == "repick":
+                return "repick"
+            continue
+        action = _choose(
+            f"{provider.label} not found. What next?",
+            [
+                Choice(
+                    value="retry",
+                    label="Re-detect after install",
+                    hint=install_hint,
+                ),
+                Choice(
+                    value="path",
+                    label="Enter full path to the binary",
+                    hint=f"Writes {env_key} to .env",
+                ),
+                Choice(
+                    value="repick",
+                    label="Pick a different LLM provider",
+                    hint=None,
+                ),
+            ],
+            default="retry",
+        )
+        if action == "repick":
+            return "repick"
+        if action == "path":
+            path = _prompt_value(f"Full path to {name} binary")
+            sync_env_values({env_key: path})
+            continue
+        _console.print(f"[dim]Hint: {install_hint}[/]")
+    _console.print("[yellow]Too many retry attempts. Aborting setup.[/]")
+    return "abort"
+
+
 def run_wizard(_argv: list[str] | None = None) -> int:
     """Run the interactive wizard."""
     _render_header()
@@ -1596,66 +1672,84 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         print("Only local configuration is supported today.", file=sys.stderr)
         return 1
 
-    _step("LLM Provider")
-    saved_provider = PROVIDER_BY_VALUE.get(saved_provider_value) if saved_provider_value else None
-    if saved_provider is not None:
-        current_model = saved_model_value or saved_provider.default_model
-        _console.print(f"[dim]current provider  {saved_provider.label}  ·  {current_model}[/]")
-        change_provider = _confirm("Change provider?", default=False)
-    else:
-        change_provider = True
+    force_repick = False
+    provider: ProviderOption
+    model: str
+    while True:
+        _step("LLM Provider")
+        saved_provider = (
+            PROVIDER_BY_VALUE.get(saved_provider_value) if saved_provider_value else None
+        )
+        if saved_provider is not None and not force_repick:
+            current_model = saved_model_value or saved_provider.default_model
+            _console.print(f"[dim]current provider  {saved_provider.label}  ·  {current_model}[/]")
+            change_provider = _confirm("Change provider?", default=False)
+        else:
+            change_provider = True
+        force_repick = False
 
-    if change_provider:
-        provider = PROVIDER_BY_VALUE[
-            _choose(
-                "Choose your LLM provider",
-                [
-                    Choice(
-                        value=p.value,
-                        label=p.label,
-                        hint=p.group,
-                    )
-                    for p in SUPPORTED_PROVIDERS
-                ],
-                default=default_provider_value,
-            )
-        ]
-        model = provider.default_model
-        _step(provider.credential_label.title())
-        try:
-            api_key = _prompt_value(
-                f"{provider.label} {provider.credential_label} ({provider.api_key_env})",
-                default=provider.credential_default,
-                secret=provider.credential_secret,
-            )
-        except KeyboardInterrupt:
-            _console.print("\n[yellow]Setup cancelled.[/]")
-            return 1
-        if not _persist_llm_api_key(provider.api_key_env, api_key):
-            return 1
-    else:
-        assert saved_provider is not None
-        provider = saved_provider
-        model = saved_model_value or provider.default_model
-        has_api_key = bool(defaults["has_api_key"])
-        legacy_api_key = str(defaults["legacy_api_key"] or "").strip()
-        if not has_api_key and legacy_api_key:
-            if not _persist_llm_api_key(provider.api_key_env, legacy_api_key):
-                return 1
-            has_api_key = True
-        if not has_api_key:
-            _step(provider.credential_label.title())
-            try:
-                api_key = _prompt_value(
-                    f"{provider.label} {provider.credential_label} ({provider.api_key_env})",
-                    default=provider.credential_default,
-                    secret=provider.credential_secret,
+        if change_provider:
+            provider = PROVIDER_BY_VALUE[
+                _choose(
+                    "Choose your LLM provider",
+                    [
+                        Choice(
+                            value=p.value,
+                            label=p.label,
+                            hint=p.group,
+                        )
+                        for p in SUPPORTED_PROVIDERS
+                    ],
+                    default=default_provider_value,
                 )
-            except KeyboardInterrupt:
-                _console.print("\n[yellow]Setup cancelled.[/]")
+            ]
+            model = provider.default_model
+            if provider.credential_kind != "cli":
+                _step(provider.credential_label.title())
+                try:
+                    api_key = _prompt_value(
+                        f"{provider.label} {provider.credential_label} ({provider.api_key_env})",
+                        default=provider.credential_default,
+                        secret=provider.credential_secret,
+                    )
+                except KeyboardInterrupt:
+                    _console.print("\n[yellow]Setup cancelled.[/]")
+                    return 1
+                if not _persist_llm_api_key(provider.api_key_env, api_key):
+                    return 1
+        else:
+            assert saved_provider is not None
+            provider = saved_provider
+            model = saved_model_value or provider.default_model
+            if provider.credential_kind != "cli":
+                has_api_key = bool(defaults["has_api_key"])
+                legacy_api_key = str(defaults["legacy_api_key"] or "").strip()
+                if not has_api_key and legacy_api_key:
+                    if not _persist_llm_api_key(provider.api_key_env, legacy_api_key):
+                        return 1
+                    has_api_key = True
+                if not has_api_key:
+                    _step(provider.credential_label.title())
+                    try:
+                        api_key = _prompt_value(
+                            f"{provider.label} {provider.credential_label} ({provider.api_key_env})",
+                            default=provider.credential_default,
+                            secret=provider.credential_secret,
+                        )
+                    except KeyboardInterrupt:
+                        _console.print("\n[yellow]Setup cancelled.[/]")
+                        return 1
+                    if not _persist_llm_api_key(provider.api_key_env, api_key):
+                        return 1
+
+        if provider.credential_kind == "cli":
+            cli_out = _run_cli_llm_onboarding(provider)
+            if cli_out == "abort":
                 return 1
-            if not _persist_llm_api_key(provider.api_key_env, api_key):
-                return 1
+            if cli_out == "repick":
+                force_repick = True
+                continue
+        break
 
     probes = {
         "local": local_probe.as_dict(),
@@ -1687,6 +1781,11 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         saved_path=str(saved_path),
         env_path=summary_env_path,
         configured_integrations=configured_integrations,
+        credential_line=(
+            "OpenAI Codex CLI (`codex login`)"
+            if provider.credential_kind == "cli"
+            else "system keychain"
+        ),
     )
     demo_response = build_demo_action_response()
     _render_demo_response(demo_response)
