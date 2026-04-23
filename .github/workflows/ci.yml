@@ -93,6 +93,8 @@ jobs:
     permissions:
       contents: read
     continue-on-error: true
+    env:
+      PYTHONUTF8: "1"   # add this
 
     steps:
       - uses: actions/checkout@v5
@@ -111,6 +113,14 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
 
+      - name: Run Kubernetes tests (kind cluster + real S3)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          
+        run: python -m tests.e2e.kubernetes.test_local
+        timeout-minutes: 10
       - name: Run tests on Windows
         run: python -m pytest -v -m "not synthetic"
         timeout-minutes: 10
@@ -211,8 +221,8 @@ jobs:
           GCLOUD_HOSTED_LOGS_ID: ${{ secrets.GCLOUD_HOSTED_LOGS_ID }}
           GCLOUD_HOSTED_LOGS_URL: ${{ secrets.GCLOUD_HOSTED_LOGS_URL }}
           GCLOUD_RW_API_KEY: ${{ secrets.GCLOUD_RW_API_KEY }}
-          GCLOUD_OTLP_ENDPOINT: ${{ secrets.GCLOUD_OTLP_ENDPOINT }}
           GCLOUD_OTLP_AUTH_HEADER: ${{ secrets.GCLOUD_OTLP_AUTH_HEADER }}
+          GCLOUD_OTLP_ENDPOINT: ${{ secrets.GCLOUD_OTLP_ENDPOINT }}   # ← now non-empty
           OTEL_EXPORTER_OTLP_ENDPOINT: ""
           PYTHONUTF8: "1"
         run: ${{ matrix.command }}
