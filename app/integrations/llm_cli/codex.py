@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 from app.integrations.llm_cli.base import CLIInvocation, CLIProbe, PromptDelivery
@@ -70,34 +71,101 @@ def _codex_workspace_and_skip_git() -> tuple[str, bool]:
     return os.getcwd(), True
 
 
+def _candidate_binary_names() -> tuple[str, ...]:
+    if sys.platform == "win32":
+        return ("codex.cmd", "codex.exe", "codex.ps1", "codex.bat")
+    return ("codex",)
+
+
+def _append_candidate_paths(candidates: list[str], directory: Path | str, names: tuple[str, ...]) -> None:
+    base = str(directory).strip()
+    if not base:
+        return
+    root = Path(base).expanduser()
+    for name in names:
+        candidates.append(str(root / name))
+
+
+@lru_cache(maxsize=1)
+def _npm_prefix_bin_dirs() -> tuple[str, ...]:
+    env_prefix = os.getenv("NPM_CONFIG_PREFIX", "").strip()
+    if not env_prefix:
+        # npm often exports lowercase `npm_config_prefix`; accept any casing.
+        for key, value in os.environ.items():
+            if key.lower() == "npm_config_prefix":
+                env_prefix = value.strip()
+                if env_prefix:
+                    break
+    if env_prefix:
+        if sys.platform == "win32":
+            return (str(Path(env_prefix).expanduser()),)
+        return (str(Path(env_prefix).expanduser() / "bin"),)
+
+    try:
+        proc = subprocess.run(
+            ["npm", "config", "get", "prefix"],
+            capture_output=True,
+            text=True,
+            timeout=0.3,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ()
+
+    prefix = (proc.stdout or "").strip()
+    if proc.returncode != 0 or not prefix:
+        return ()
+
+    if sys.platform == "win32":
+        return (str(Path(prefix).expanduser()),)
+    return (str(Path(prefix).expanduser() / "bin"),)
+
+
 def _fallback_codex_paths() -> list[str]:
     home = Path.home()
-    if sys.platform == "darwin":
-        return [
-            "/opt/homebrew/bin/codex",
-            "/usr/local/bin/codex",
-            str(home / ".npm-global/bin/codex"),
-            str(home / ".local/bin/codex"),
-            str(home / ".volta/bin/codex"),
-        ]
+    names = _candidate_binary_names()
+    candidates: list[str] = []
+
     if sys.platform == "win32":
-        appdata = os.getenv("APPDATA", "")
-        local_appdata = os.getenv("LOCALAPPDATA", "")
-        return [
-            str(Path(appdata) / "npm" / "codex.cmd"),
-            str(Path(local_appdata) / "Programs" / "codex" / "codex.exe"),
-        ]
-    return [
-        str(home / ".npm-global/bin/codex"),
-        str(home / ".local/bin/codex"),
-        str(home / ".volta/bin/codex"),
-        "/usr/local/bin/codex",
-    ]
+        _append_candidate_paths(candidates, Path(os.getenv("APPDATA", "")) / "npm", names)
+        _append_candidate_paths(
+            candidates,
+            Path(os.getenv("LOCALAPPDATA", "")) / "Programs" / "codex",
+            names,
+        )
+    else:
+        if sys.platform == "darwin":
+            _append_candidate_paths(candidates, "/opt/homebrew/bin", names)
+        _append_candidate_paths(candidates, "/usr/local/bin", names)
+        _append_candidate_paths(candidates, home / ".local/bin", names)
+        _append_candidate_paths(candidates, home / ".npm-global/bin", names)
+        _append_candidate_paths(candidates, home / ".volta/bin", names)
+        _append_candidate_paths(candidates, os.getenv("PNPM_HOME", ""), names)
+        xdg_data_home = os.getenv("XDG_DATA_HOME", "").strip()
+        if xdg_data_home:
+            _append_candidate_paths(candidates, Path(xdg_data_home) / "pnpm", names)
+
+    for npm_dir in _npm_prefix_bin_dirs():
+        _append_candidate_paths(candidates, npm_dir, names)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = str(Path(candidate).expanduser())
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
 
 
-def _is_executable_file(path: str) -> bool:
+def _is_runnable_binary(path: str) -> bool:
     p = Path(path)
-    return p.is_file() and os.access(p, os.X_OK)
+    if not p.is_file():
+        return False
+    if sys.platform == "win32":
+        return p.suffix.lower() in {".cmd", ".exe", ".ps1", ".bat"} or os.access(p, os.X_OK)
+    return os.access(p, os.X_OK)
 
 
 class CodexAdapter:
@@ -113,13 +181,19 @@ class CodexAdapter:
 
     def _resolve_binary(self) -> str | None:
         explicit = os.getenv("CODEX_BIN", "").strip()
-        if explicit and Path(explicit).is_file():
+        if explicit and _is_runnable_binary(explicit):
             return explicit
-        found = shutil.which("codex") or shutil.which("codex.cmd") or shutil.which("codex.ps1")
+        found = (
+            shutil.which("codex")
+            or shutil.which("codex.cmd")
+            or shutil.which("codex.ps1")
+            or shutil.which("codex.exe")
+            or shutil.which("codex.bat")
+        )
         if found:
             return found
         for candidate in _fallback_codex_paths():
-            if _is_executable_file(candidate):
+            if _is_runnable_binary(candidate):
                 return candidate
         return None
 

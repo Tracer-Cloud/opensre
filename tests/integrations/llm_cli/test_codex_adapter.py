@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
+import app.integrations.llm_cli.codex as codex_mod
 from app.integrations.llm_cli.codex import CodexAdapter
 from app.integrations.llm_cli.text import flatten_messages_to_prompt
 
@@ -229,3 +230,53 @@ def test_detect_falls_back_when_codex_bin_invalid(
     assert probe.bin_path == "/usr/bin/codex"
     assert probe.installed is True
     mock_which.assert_called()
+
+
+@patch("app.integrations.llm_cli.codex.subprocess.run")
+@patch("app.integrations.llm_cli.codex.shutil.which", return_value=None)
+@patch("app.integrations.llm_cli.codex._fallback_codex_paths", return_value=["/x/codex", "/y/codex"])
+@patch("app.integrations.llm_cli.codex._is_runnable_binary")
+def test_detect_uses_first_runnable_fallback_path(
+    mock_is_runnable: MagicMock,
+    mock_fallback: MagicMock,
+    mock_which: MagicMock,
+    mock_run: MagicMock,
+) -> None:
+    mock_is_runnable.side_effect = lambda p: p == "/y/codex"
+
+    def side_effect(args: list[str], **kwargs: object) -> MagicMock:
+        assert args[0] == "/y/codex"
+        if args[1] == "--version":
+            return _version_proc()
+        if args[1] == "login":
+            return _login_ok_proc()
+        raise AssertionError(args)
+
+    mock_run.side_effect = side_effect
+    probe = CodexAdapter().detect()
+
+    assert probe.bin_path == "/y/codex"
+    assert probe.installed is True
+    mock_fallback.assert_called_once()
+    mock_which.assert_called()
+
+
+def test_fallback_paths_include_env_and_npm_prefix() -> None:
+    codex_mod._npm_prefix_bin_dirs.cache_clear()
+    with (
+        patch("app.integrations.llm_cli.codex.sys.platform", "linux"),
+        patch.dict(
+            os.environ,
+            {
+                "PNPM_HOME": "/pnpm/home",
+                "XDG_DATA_HOME": "/xdg/data",
+                "npm_config_prefix": "/custom/npm",
+            },
+            clear=False,
+        ),
+    ):
+        paths = codex_mod._fallback_codex_paths()
+
+    assert "/pnpm/home/codex" in paths
+    assert "/xdg/data/pnpm/codex" in paths
+    assert "/custom/npm/bin/codex" in paths
