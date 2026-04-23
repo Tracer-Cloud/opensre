@@ -165,7 +165,7 @@ async def test_investigate_stream_returns_error_event_for_missing_integration(
     )
     monkeypatch.setattr("app.config.LLMSettings.from_env", object)
 
-    message = 'This alert requires the datadog integration\nalert_source: grafana\"injected\"'
+    message = 'This alert requires the datadog integration\nalert_source: grafana"injected"'
 
     async def fake_astream_investigation(*args: object, **kwargs: object):
         raise MissingIntegrationError(message)
@@ -179,9 +179,7 @@ async def test_investigate_stream_returns_error_event_for_missing_integration(
     body = "".join([chunk async for chunk in response.body_iterator])
 
     assert "event: error" in body
-    error_data_line = next(
-        line for line in body.splitlines() if line.startswith("data: ")
-    )
+    error_data_line = next(line for line in body.splitlines() if line.startswith("data: "))
     payload = json.loads(error_data_line.removeprefix("data: "))
     assert payload["detail"] == message
 
