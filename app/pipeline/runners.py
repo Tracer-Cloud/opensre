@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
 
+from app.integrations.required_integrations import validate_required_integrations
 from app.nodes.chat import chat_agent_node, general_node, router_node
 from app.remote.stream import StreamEvent
 from app.state import AgentState, make_initial_state
@@ -56,7 +57,16 @@ def run_investigation(
     initial = make_initial_state(alert_name, pipeline_name, severity, raw_alert=raw_alert)
     if resolved_integrations is not None:
         cast(dict[str, Any], initial)["resolved_integrations"] = resolved_integrations
+        if not _has_injected_backend(resolved_integrations):
+            validate_required_integrations(raw_alert or {}, resolved_integrations)
     return cast(AgentState, compiled_graph.invoke(initial))
+
+
+def _has_injected_backend(resolved_integrations: dict[str, Any]) -> bool:
+    return any(
+        isinstance(value, dict) and "_backend" in value
+        for value in resolved_integrations.values()
+    )
 
 
 async def astream_investigation(

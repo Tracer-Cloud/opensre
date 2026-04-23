@@ -263,6 +263,9 @@ def _run_service_investigation(
             suggestion="Export SLACK_BOT_TOKEN=xoxb-... in your environment and retry.",
         )
 
+    from app.cli.errors import OpenSREError
+    from app.integrations.required_integrations import MissingIntegrationError
+
     capture_investigation_started(input_path=None, input_json=None, interactive=False)
     try:
         raw_alert = build_runtime_alert_payload(
@@ -276,6 +279,9 @@ def _run_service_investigation(
             pipeline_name=raw_alert.get("pipeline_name"),
             severity=raw_alert.get("severity"),
         )
+    except MissingIntegrationError as exc:
+        capture_investigation_failed()
+        raise OpenSREError(str(exc)) from exc
     except Exception:
         capture_investigation_failed()
         raise

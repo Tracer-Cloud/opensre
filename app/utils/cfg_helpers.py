@@ -2,6 +2,8 @@
 
 import os
 
+from app.config import resolve_llm_provider as _resolve_llm_provider
+
 
 class CfgHelpers:
     """Static class for config helper methods."""
@@ -25,11 +27,8 @@ class CfgHelpers:
 
     @staticmethod
     def resolve_llm_provider() -> str:
-        """Resolve the LLM provider from env var.
-        Returns:
-            str: The provider string.
-        """
-        return (os.getenv("LLM_PROVIDER") or "anthropic").strip().lower()
+        """Resolve the active LLM provider using the configured env var or available credentials."""
+        return _resolve_llm_provider()
 
     @staticmethod
     def get_clean_env_value(env_key: str) -> str:

@@ -269,6 +269,7 @@ class TestHarnessEndToEnd:
         # environment.  A dummy value is enough here because every LLM call in
         # the pipeline is either mocked (plan_actions) or bypassed entirely by
         # the healthy short-circuit (diagnose_root_cause).
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-dummy")
         monkeypatch.setenv("HEALTHY_SHORT_CIRCUIT", "true")
 
@@ -356,6 +357,7 @@ _LEVEL4_SCENARIOS = _by_difficulty(4)
 
 
 @pytest.mark.synthetic
+@pytest.mark.requires_llm
 @pytest.mark.skipif(not _LEVEL1_SCENARIOS, reason="no Level 1 K8s scenarios yet")
 @pytest.mark.parametrize(
     "fixture", _LEVEL1_SCENARIOS or [None], ids=lambda f: f.scenario_id if f else "none"
@@ -366,6 +368,7 @@ def test_level1_scenario(fixture) -> None:
 
 
 @pytest.mark.synthetic
+@pytest.mark.requires_llm
 @pytest.mark.skipif(not _LEVEL2_SCENARIOS, reason="no Level 2 K8s scenarios yet")
 @pytest.mark.parametrize(
     "fixture", _LEVEL2_SCENARIOS or [None], ids=lambda f: f.scenario_id if f else "none"
@@ -376,6 +379,7 @@ def test_level2_scenario(fixture) -> None:
 
 
 @pytest.mark.synthetic
+@pytest.mark.requires_llm
 @pytest.mark.skipif(not _LEVEL3_SCENARIOS, reason="no Level 3 K8s scenarios yet")
 @pytest.mark.parametrize(
     "fixture", _LEVEL3_SCENARIOS or [None], ids=lambda f: f.scenario_id if f else "none"
@@ -386,6 +390,7 @@ def test_level3_scenario(fixture) -> None:
 
 
 @pytest.mark.synthetic
+@pytest.mark.requires_llm
 @pytest.mark.skipif(not _LEVEL4_SCENARIOS, reason="no Level 4 K8s scenarios yet")
 @pytest.mark.parametrize(
     "fixture", _LEVEL4_SCENARIOS or [None], ids=lambda f: f.scenario_id if f else "none"

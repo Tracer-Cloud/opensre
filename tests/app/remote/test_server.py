@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app.integrations.required_integrations import MissingIntegrationError
 from app.remote import server as remote_server
 from app.remote.server import (
     InvestigateRequest,
@@ -135,6 +136,40 @@ def test_investigate_returns_bad_request_for_invalid_vercel_url(
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "invalid vercel url"
+
+
+def test_investigate_returns_bad_request_for_missing_integration(monkeypatch) -> None:
+    def fake_execute_investigation(**_kwargs: Any) -> tuple[dict[str, Any], str, str, str]:
+        raise MissingIntegrationError("This alert requires the datadog integration.")
+
+    monkeypatch.setattr(
+        "app.remote.server._execute_investigation",
+        fake_execute_investigation,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        investigate(InvestigateRequest(raw_alert={"alert_name": "PayloadAlert"}))
+
+    assert exc_info.value.status_code == 400
+    assert "datadog integration" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_investigate_stream_returns_error_event_for_missing_integration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_astream_investigation(*args: object, **kwargs: object):
+        raise MissingIntegrationError("This alert requires the datadog integration.")
+        yield  # make this function an async generator
+
+    monkeypatch.setattr("app.pipeline.runners.astream_investigation", fake_astream_investigation)
+    monkeypatch.setattr("app.cli.investigate.resolve_investigation_context", lambda **_kwargs: ("test-alert", "events_fact", "warning"))
+    monkeypatch.setattr("app.config.LLMSettings.from_env", object)
+
+    response = await investigate_stream(InvestigateRequest(raw_alert={"alert_name": "PayloadAlert"}))
+    body = "".join([chunk async for chunk in response.body_iterator])
+    assert "event: error" in body
+    assert "datadog integration" in body
 
 
 @pytest.mark.asyncio

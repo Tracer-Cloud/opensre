@@ -24,6 +24,7 @@ from app.integrations.catalog import (
 from app.integrations.catalog import (
     merge_local_integrations as _merge_local_integrations,
 )
+from app.integrations.required_integrations import validate_required_integrations
 from app.output import get_tracker
 from app.state import InvestigationState
 
@@ -104,7 +105,7 @@ def node_resolve_integrations(
             if not org_id:
                 org_id = _decode_org_id_from_token(env_token)
             if not org_id:
-                return _resolve_from_local_sources(tracker)
+                return _resolve_from_local_sources(tracker, state)
             try:
                 from app.services.tracer_client import get_tracer_client_for_org
 
@@ -117,11 +118,12 @@ def node_resolve_integrations(
                     org_id,
                     exc_info=True,
                 )
-                return _resolve_from_local_sources(tracker)
-            return _resolve_remote_with_local_fallback(all_integrations, tracker)
-        return _resolve_from_local_sources(tracker)
+                return _resolve_from_local_sources(tracker, state)
+            return _resolve_remote_with_local_fallback(all_integrations, tracker, state)
+        return _resolve_from_local_sources(tracker, state)
 
     resolved = _classify_integrations(all_integrations)
+    validate_required_integrations(state.get("raw_alert", {}) or {}, resolved)
     services = [service for service in resolved if service != "_all"]
 
     tracker.complete(
@@ -135,13 +137,15 @@ def node_resolve_integrations(
     return {"resolved_integrations": resolved}
 
 
-def _resolve_from_local_sources(tracker: Any) -> dict:
+def _resolve_from_local_sources(tracker: Any, state: InvestigationState) -> dict:
     from app.integrations.store import STORE_PATH, load_integrations
 
     store_integrations = load_integrations()
     env_integrations = _load_env_integrations() if not store_integrations else []
     integrations = _merge_local_integrations(store_integrations, env_integrations)
     if not integrations:
+        resolved: dict[str, Any] = {}
+        validate_required_integrations(state.get("raw_alert", {}) or {}, resolved)
         tracker.complete(
             "resolve_integrations",
             fields_updated=["resolved_integrations"],
@@ -153,6 +157,7 @@ def _resolve_from_local_sources(tracker: Any) -> dict:
         return {"resolved_integrations": {}}
 
     resolved = _classify_integrations(integrations)
+    validate_required_integrations(state.get("raw_alert", {}) or {}, resolved)
     services = [service for service in resolved if service != "_all"]
     source_labels: list[str] = []
     if store_integrations:
@@ -174,6 +179,7 @@ def _resolve_from_local_sources(tracker: Any) -> dict:
 def _resolve_remote_with_local_fallback(
     remote_integrations: list[dict[str, Any]],
     tracker: Any,
+    state: InvestigationState,
 ) -> dict:
     from app.integrations.store import load_integrations
 
@@ -185,6 +191,7 @@ def _resolve_remote_with_local_fallback(
         remote_integrations,
     )
     resolved = _classify_integrations(integrations)
+    validate_required_integrations(state.get("raw_alert", {}) or {}, resolved)
     services = [service for service in resolved if service != "_all"]
 
     source_labels = ["remote"]

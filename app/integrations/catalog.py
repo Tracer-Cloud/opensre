@@ -100,6 +100,16 @@ def _family_key(flat_key: str) -> str:
     return _SERVICE_FAMILY.get(flat_key, flat_key)
 
 
+def normalize_service_name(service: str) -> str:
+    """Map service aliases into the canonical service key."""
+    return _SERVICE_KEY_MAP.get(str(service).strip().lower(), str(service).strip().lower())
+
+
+def get_service_family(service: str) -> str:
+    """Return the family key for a normalized service name."""
+    return _SERVICE_FAMILY.get(service, service)
+
+
 def _safe_int(value: Any, default: int) -> int:
     """Coerce ``value`` to int, falling back to ``default`` on bad input.
 

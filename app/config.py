@@ -116,6 +116,52 @@ LLMProvider = Literal[
     "anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock", "minimax"
 ]
 
+LLM_PROVIDER_API_KEY_ENV_MAP: dict[str, str] = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "nvidia": "NVIDIA_API_KEY",
+    "minimax": "MINIMAX_API_KEY",
+}
+
+DEFAULT_LLM_PROVIDER = "anthropic"
+
+
+def _provider_from_env() -> str | None:
+    provider = os.getenv("LLM_PROVIDER", "").strip().lower()
+    return provider or None
+
+
+def _provider_from_api_key_envs() -> str | None:
+    # resolve_llm_api_key looks for a provider key in the environment first,
+    # then falls back to the secure local keychain.
+    for provider, env_var in LLM_PROVIDER_API_KEY_ENV_MAP.items():
+        if resolve_llm_api_key(env_var):
+            return provider
+    return None
+
+
+def resolve_llm_provider() -> str:
+    """Resolve the active LLM provider from env and available credentials.
+
+    `opensre onboard` typically stores credentials in the local keychain, not in
+    `.env`. The env vars are still supported as a direct override or fallback,
+    but the actual key lookup also includes the secure keyring.
+    """
+    provider = _provider_from_env()
+    if provider:
+        if provider in ("ollama", "bedrock"):
+            return provider
+        if provider in LLM_PROVIDER_API_KEY_ENV_MAP and resolve_llm_api_key(
+            LLM_PROVIDER_API_KEY_ENV_MAP[provider]
+        ):
+            return provider
+        candidate = _provider_from_api_key_envs()
+        return candidate or provider
+
+    return _provider_from_api_key_envs() or DEFAULT_LLM_PROVIDER
+
 
 class LLMSettings(StrictConfigModel):
     """Strict runtime configuration for selecting and authenticating an LLM provider."""
@@ -185,14 +231,7 @@ class LLMSettings(StrictConfigModel):
         if provider_to_key[self.provider]:
             return self
 
-        env_var = {
-            "anthropic": "ANTHROPIC_API_KEY",
-            "openai": "OPENAI_API_KEY",
-            "openrouter": "OPENROUTER_API_KEY",
-            "gemini": "GEMINI_API_KEY",
-            "nvidia": "NVIDIA_API_KEY",
-            "minimax": "MINIMAX_API_KEY",
-        }[self.provider]
+        env_var = LLM_PROVIDER_API_KEY_ENV_MAP[self.provider]
         raise ValueError(f"LLM provider '{self.provider}' requires {env_var} to be set.")
 
     @classmethod
@@ -200,7 +239,7 @@ class LLMSettings(StrictConfigModel):
         """Build validated LLM settings from environment variables."""
         return cls.model_validate(
             {
-                "provider": os.getenv("LLM_PROVIDER", "anthropic").strip().lower() or "anthropic",
+                "provider": resolve_llm_provider(),
                 "anthropic_api_key": resolve_llm_api_key("ANTHROPIC_API_KEY"),
                 "openai_api_key": resolve_llm_api_key("OPENAI_API_KEY"),
                 "openrouter_api_key": resolve_llm_api_key("OPENROUTER_API_KEY"),

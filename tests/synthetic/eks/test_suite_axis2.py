@@ -120,6 +120,7 @@ _AXIS2_PARAMS = _axis2_scenarios()
 
 
 @pytest.mark.axis2
+@pytest.mark.requires_llm
 @pytest.mark.skipif(not _AXIS2_PARAMS, reason="no Axis 2 K8s scenarios yet")
 @pytest.mark.parametrize("fixture", _AXIS2_PARAMS or [None])
 def test_axis2_scenario(fixture) -> None:

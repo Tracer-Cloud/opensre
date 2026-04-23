@@ -80,6 +80,7 @@ def _run_scenario_test(fixture) -> None:
 
 
 @pytest.mark.synthetic
+@pytest.mark.requires_llm
 @pytest.mark.parametrize("fixture", _by_difficulty(1), ids=lambda f: f.scenario_id)
 def test_level1_scenario(fixture) -> None:
     """Level 1 — single dominant signal, all evidence consistent."""
@@ -87,6 +88,7 @@ def test_level1_scenario(fixture) -> None:
 
 
 @pytest.mark.synthetic
+@pytest.mark.requires_llm
 @pytest.mark.parametrize("fixture", _by_difficulty(2), ids=lambda f: f.scenario_id)
 def test_level2_scenario(fixture) -> None:
     """Level 2 — one confounder present, second evidence source needed to rule it out."""
@@ -94,6 +96,7 @@ def test_level2_scenario(fixture) -> None:
 
 
 @pytest.mark.synthetic
+@pytest.mark.requires_llm
 @pytest.mark.parametrize("fixture", _by_difficulty(3), ids=lambda f: f.scenario_id)
 def test_level3_scenario(fixture) -> None:
     """Level 3 — absent or indirect evidence, key metric missing."""
@@ -101,6 +104,7 @@ def test_level3_scenario(fixture) -> None:
 
 
 @pytest.mark.synthetic
+@pytest.mark.requires_llm
 @pytest.mark.parametrize("fixture", _by_difficulty(4), ids=lambda f: f.scenario_id)
 def test_level4_scenario(fixture) -> None:
     """Level 4 — compositional fault, two failure modes causally linked."""
