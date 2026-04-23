@@ -80,4 +80,6 @@ def test_general_node_returns_user_facing_message_for_codex_provider(
     out = chat_mod.general_node(state, {"configurable": {}})
 
     assert out["messages"]
-    assert "Interactive chat requires LLM_PROVIDER=anthropic or openai." in out["messages"][0].content
+    assert (
+        "Interactive chat requires LLM_PROVIDER=anthropic or openai." in out["messages"][0].content
+    )

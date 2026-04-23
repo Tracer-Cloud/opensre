@@ -100,9 +100,10 @@ class CLIBackedLLMClient:
             return self._cached_probe
         with self._probe_lock:
             locked_now = time.monotonic()
-            if self._cached_probe is not None and (
-                locked_now - self._probe_cached_at
-            ) < _PROBE_CACHE_TTL_SEC:
+            if (
+                self._cached_probe is not None
+                and (locked_now - self._probe_cached_at) < _PROBE_CACHE_TTL_SEC
+            ):
                 return self._cached_probe
             probe = self._adapter.detect()
             self._cached_probe = probe
