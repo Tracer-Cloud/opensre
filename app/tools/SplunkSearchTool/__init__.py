@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.splunk import SplunkClient, SplunkConfig
 from app.tools.base import BaseTool
+from app.tools.SplunkSearchTool._client import make_client, unavailable
 from app.tools.utils.compaction import compact_logs, summarize_counts
 
 _ERROR_KEYWORDS = (
@@ -95,16 +95,13 @@ class SplunkSearchTool(BaseTool):
         verify_ssl: bool = True,
         **_kwargs: Any,
     ) -> dict:
-        if not base_url or not token:
-            return {
-                "source": "splunk_logs",
-                "available": False,
-                "error": "Splunk integration not configured (missing base_url or token)",
-                "logs": [],
-            }
-
-        config = SplunkConfig(base_url=base_url, token=token, index=index, verify_ssl=verify_ssl)
-        client = SplunkClient(config)
+        client = make_client(base_url, token, index, verify_ssl)
+        if client is None:
+            return unavailable(
+                "splunk_logs",
+                "logs",
+                "Splunk integration not configured (missing base_url or token)",
+            )
 
         result = client.search_logs(
             query=query,
@@ -113,12 +110,7 @@ class SplunkSearchTool(BaseTool):
         )
 
         if not result.get("success"):
-            return {
-                "source": "splunk_logs",
-                "available": False,
-                "error": result.get("error", "Unknown error"),
-                "logs": [],
-            }
+            return unavailable("splunk_logs", "logs", result.get("error", "Unknown error"))
 
         logs = result.get("logs", [])
         error_logs = [

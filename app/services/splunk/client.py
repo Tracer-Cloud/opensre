@@ -9,7 +9,6 @@ from typing import Any
 import httpx
 
 _DEFAULT_TIMEOUT_SECONDS = 30.0
-_ERROR_KEYWORDS = ("error", "fail", "exception", "traceback", "critical", "panic", "timeout")
 
 
 def build_splunk_spl_query(
