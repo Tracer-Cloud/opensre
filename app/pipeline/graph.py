@@ -19,6 +19,7 @@ from app.nodes.chat import (
     router_node,
     tool_executor_node,
 )
+from app.nodes.evaluate_opensre import node_opensre_llm_eval
 from app.nodes.investigate.node import node_investigate
 from app.pipeline.routing import (
     route_after_extract,
@@ -47,6 +48,7 @@ def build_graph(config: None = None) -> CompiledStateGraph:
     graph.add_node("plan_actions", node_plan_actions)
     graph.add_node("investigate", node_investigate)
     graph.add_node("diagnose", node_diagnose_root_cause)
+    graph.add_node("opensre_eval", node_opensre_llm_eval)
     graph.add_node("publish", node_publish_findings)
 
     graph.set_entry_point("inject_auth")
@@ -71,8 +73,11 @@ def build_graph(config: None = None) -> CompiledStateGraph:
     graph.add_edge("plan_actions", "investigate")
     graph.add_edge("investigate", "diagnose")
     graph.add_conditional_edges(
-        "diagnose", route_investigation_loop, {"investigate": "plan_actions", "publish": "publish"}
+        "diagnose",
+        route_investigation_loop,
+        {"investigate": "plan_actions", "opensre_eval": "opensre_eval", "publish": "publish"},
     )
+    graph.add_edge("opensre_eval", "publish")
     graph.add_edge("publish", END)
 
     return graph.compile()

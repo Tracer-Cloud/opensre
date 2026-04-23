@@ -53,7 +53,9 @@ def sync_env_values(
 
 def _provider_specific_keys(p: ProviderOption) -> set[str]:
     """Return all env keys owned by a provider (api key + model keys)."""
-    keys = {p.api_key_env, p.model_env}
+    keys: set[str] = {p.model_env}
+    if p.api_key_env:
+        keys.add(p.api_key_env)
     if p.legacy_model_env:
         keys.add(p.legacy_model_env)
     return keys
@@ -116,7 +118,8 @@ def sync_provider_env(
 
     prior_provider = _llm_provider_value_from_lines(existing)
     if (
-        prior_provider is not None
+        provider.api_key_env
+        and prior_provider is not None
         and prior_provider.lower() == provider.value.lower()
         and not has_llm_api_key(provider.api_key_env)
     ):

@@ -7,7 +7,7 @@ from importlib import import_module
 from typing import Any, TypeAlias, cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.tools import StructuredTool
 
@@ -72,8 +72,17 @@ _chat_llm_cache: dict[str, BaseChatModel] = {}
 _chat_llm_with_tools_cache: dict[str, ToolEnabledChatModel] = {}
 
 
+class UnsupportedChatProviderError(ValueError):
+    """Raised when chat mode is used with an unsupported provider."""
+
+
 def _resolve_models(provider: str) -> tuple[str, str]:
     """Resolve tool and reasoning model names for the active provider."""
+    if provider == "codex":
+        raise UnsupportedChatProviderError(
+            "Interactive chat requires LLM_PROVIDER=anthropic or openai. "
+            "LLM_PROVIDER=codex only supports `opensre investigate` (OpenAI Codex CLI)."
+        )
     if provider == "openai":
         return (
             CfgHelpers.first_env_or_default(
@@ -214,7 +223,10 @@ def chat_agent_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any
         msgs = [SystemMessage(content=SYSTEM_PROMPT), *msgs]
 
     msgs = _apply_guardrails_to_messages(msgs)
-    llm = _get_chat_llm(with_tools=True)
+    try:
+        llm = _get_chat_llm(with_tools=True)
+    except UnsupportedChatProviderError as exc:
+        return {"messages": [AIMessage(content=str(exc))]}
     response = llm.invoke(msgs)
     return {"messages": [response]}
 
@@ -232,7 +244,10 @@ def general_node(state: AgentState, _config: RunnableConfig) -> dict[str, Any]:
         msgs = [SystemMessage(content=GENERAL_SYSTEM_PROMPT), *msgs]
 
     msgs = _apply_guardrails_to_messages(msgs)
-    llm = _get_chat_llm(with_tools=False)
+    try:
+        llm = _get_chat_llm(with_tools=False)
+    except UnsupportedChatProviderError as exc:
+        return {"messages": [AIMessage(content=str(exc))]}
     response = llm.invoke(msgs)
     return {"messages": [response]}
 

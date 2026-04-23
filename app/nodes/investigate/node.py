@@ -1,7 +1,7 @@
 """Investigate node - execute planned actions and post-process evidence."""
 
 import logging
-from typing import cast
+from typing import Any, cast
 
 from langsmith import traceable
 
@@ -19,18 +19,43 @@ from app.tools.investigation_registry import get_available_actions
 logger = logging.getLogger(__name__)
 
 
+def _load_opensre_telemetry_into_evidence(
+    state: InvestigationState,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Merge OpenRCA / HF CSV telemetry into evidence; return (evidence, resolved_integrations or None)."""
+    raw_alert = state.get("raw_alert")
+    prior = dict(state.get("evidence") or {})
+    if not isinstance(raw_alert, dict):
+        return prior, None
+    try:
+        from app.integrations.opensre.seed_evidence import merge_opensre_seed_into_state
+
+        seed = merge_opensre_seed_into_state(
+            raw_alert,
+            state.get("resolved_integrations"),
+            prior,
+        )
+    except Exception:
+        logger.exception("OpenSRE telemetry load failed during evidence gathering")
+        return prior, None
+    ev = seed.get("evidence") or prior
+    if ev.get("opensre_telemetry_seed"):
+        debug_print(f"OpenSRE telemetry loaded from {ev.get('opensre_telemetry_dir', '')}")
+    return ev, seed.get("resolved_integrations")
+
+
 @traceable(name="node_investigate")
 def node_investigate(state: InvestigationState) -> dict:
     """
     Execute node:
-    1) Reads planned actions and sources from state
-    2) Executes actions and post-processes evidence
+    1) Loads OpenSRE/OpenRCA CSV telemetry into evidence when applicable
+    2) Executes planned actions and post-processes evidence
     """
-    # Extract only needed attributes from state
-    input_data = InvestigateInput.from_state(state)
-
     tracker = get_tracker()
-    tracker.start("investigate", "Executing planned actions")
+    tracker.start("investigate", "Gathering evidence")
+
+    base_evidence, resolved_from_opensre = _load_opensre_telemetry_into_evidence(state)
+    input_data = InvestigateInput.from_state(state).model_copy(update={"evidence": base_evidence})
 
     planned_actions = state.get("planned_actions", [])
     plan_rationale = state.get("plan_rationale", "")
@@ -40,7 +65,10 @@ def node_investigate(state: InvestigationState) -> dict:
     if not available_action_names or not planned_actions:
         debug_print("No planned actions to execute. Using existing evidence.")
         tracker.complete("investigate", fields_updated=["evidence"], message="No new actions")
-        return {"evidence": input_data.evidence}
+        out: dict[str, Any] = {"evidence": input_data.evidence}
+        if resolved_from_opensre is not None:
+            out["resolved_integrations"] = resolved_from_opensre
+        return out
 
     all_actions = get_available_actions()
     actions_by_name = {action.name: action for action in all_actions}
@@ -110,6 +138,8 @@ def node_investigate(state: InvestigationState) -> dict:
         **output.to_dict(),
         "available_sources": available_sources,
     }
+    if resolved_from_opensre is not None:
+        result["resolved_integrations"] = resolved_from_opensre
     if masking_map:
         result["masking_map"] = masking_map
     return result

@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
         alert_name=getattr(args, "alert_name", None),
         pipeline_name=getattr(args, "pipeline_name", None),
         severity=getattr(args, "severity", None),
+        opensre_evaluate=bool(getattr(args, "evaluate", False)),
     )
     write_json(result, args.output)
     return 0
