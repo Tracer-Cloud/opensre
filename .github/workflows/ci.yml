@@ -23,17 +23,20 @@ on:
 permissions:
   contents: read
 
+# Cancel in-progress runs for the same branch/PR
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ---------------------------------------------------------------
-  #  Fast CI (PR + main) → Ubuntu only, everything in one job
-  # ---------------------------------------------------------------
+  # ===============================================================
+  # Fast CI for PRs and main — Ubuntu only (lint + typecheck + tests)
+  # ===============================================================
   ci-fast:
     name: ci-fast (ubuntu)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       PYTHONUTF8: "1"
 
@@ -42,6 +45,9 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true          # Built-in uv cache (major speed boost)
+          cache-dependency-glob: "pyproject.toml"   # Invalidate when deps change
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -51,13 +57,13 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
 
-      - name: Lint (ruff)
+      - name: Lint with ruff
         run: python -m ruff check app/ tests/
 
-      - name: Format check
+      - name: Format check with ruff
         run: python -m ruff format --check app/ tests/
 
-      - name: Typecheck (mypy)
+      - name: Type check with mypy
         run: python -m mypy app/
 
       - name: Run tests
@@ -75,14 +81,17 @@ jobs:
           --ignore=tests/e2e/kubernetes_local_alert_simulation
           --ignore=tests/synthetic
           -m "not synthetic"
+        timeout-minutes: 15
 
-  # ---------------------------------------------------------------
-  #  Windows CI (non-blocking, push only, test only)
-  # ---------------------------------------------------------------
+  # ===============================================================
+  # Windows tests — non-blocking, only on push to main
+  # ===============================================================
   ci-windows:
     name: ci-windows (test only)
     if: github.event_name == 'push'
     runs-on: windows-latest
+    permissions:
+      contents: read
     continue-on-error: true
 
     steps:
@@ -90,6 +99,9 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -99,15 +111,18 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
 
-      - name: Run tests (Windows)
+      - name: Run tests on Windows
         run: python -m pytest -v -m "not synthetic"
+        timeout-minutes: 10
 
-  # ---------------------------------------------------------------
-  # Kubernetes tests (unchanged)
-  # ---------------------------------------------------------------
+  # ===============================================================
+  # Kubernetes E2E tests
+  # ===============================================================
   test-kubernetes:
     runs-on: ubuntu-latest
     needs: [ci-fast]
+    permissions:
+      contents: read
     continue-on-error: true
     if: >-
       github.event_name == 'push' ||
@@ -119,6 +134,9 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -128,16 +146,19 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
 
-      - name: Run Kubernetes tests
+      - name: Run Kubernetes tests (kind cluster + real S3)
         run: python -m tests.e2e.kubernetes.test_local
+        timeout-minutes: 10
 
-  # ---------------------------------------------------------------
-  # Thorough tests (unchanged, gated)
-  # ---------------------------------------------------------------
+  # ===============================================================
+  # Thorough E2E tests — only on push to main
+  # ===============================================================
   test-thorough:
     runs-on: ubuntu-latest
     needs: [ci-fast]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
 
     strategy:
       fail-fast: false
@@ -155,6 +176,9 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -165,4 +189,31 @@ jobs:
         run: uv pip install --system -e ".[dev]"
 
       - name: Run thorough test
+        env:
+          AWS_REGION: us-east-1
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          JWT_TOKEN: ${{ secrets.JWT_TOKEN }}
+          TRACER_ORG_ID: ${{ secrets.TRACER_ORG_ID }}
+          TRACER_WEB_APP_URL: ${{ secrets.TRACER_WEB_APP_URL }}
+          TRACER_INGEST_TOKEN: ${{ secrets.TRACER_INGEST_TOKEN }}
+          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+          LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
+          LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
+          LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
+          CLOUDWATCH_VERIFY_LOGS: ${{ matrix.name == 'cloudwatch-demo' && '0' || '1' }}
+          # Grafana read token for querying (instance URL via GRAFANA_INSTANCE_URL if needed)
+          GRAFANA_READ_TOKEN: ${{ secrets.GRAFANA_READ_TOKEN }}
+          GCLOUD_HOSTED_METRICS_ID: ${{ secrets.GCLOUD_HOSTED_METRICS_ID }}
+          GCLOUD_HOSTED_METRICS_URL: ${{ secrets.GCLOUD_HOSTED_METRICS_URL }}
+          GCLOUD_HOSTED_LOGS_ID: ${{ secrets.GCLOUD_HOSTED_LOGS_ID }}
+          GCLOUD_HOSTED_LOGS_URL: ${{ secrets.GCLOUD_HOSTED_LOGS_URL }}
+          GCLOUD_RW_API_KEY: ${{ secrets.GCLOUD_RW_API_KEY }}
+          GCLOUD_OTLP_ENDPOINT: ${{ secrets.GCLOUD_OTLP_ENDPOINT }}
+          GCLOUD_OTLP_AUTH_HEADER: ${{ secrets.GCLOUD_OTLP_AUTH_HEADER }}
+          OTEL_EXPORTER_OTLP_ENDPOINT: ""
+          PYTHONUTF8: "1"
         run: ${{ matrix.command }}
+        timeout-minutes: 15
