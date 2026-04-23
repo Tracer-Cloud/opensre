@@ -10,7 +10,6 @@ import pytest
 from app.integrations.models import SplunkIntegrationConfig
 from app.services.splunk.client import SplunkClient, SplunkConfig, build_splunk_spl_query
 
-
 # ── SplunkIntegrationConfig ───────────────────────────────────────────────────
 
 def test_config_normalizes_trailing_slash() -> None:
