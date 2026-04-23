@@ -80,6 +80,29 @@ def test_detect_not_logged_in(mock_which: MagicMock, mock_run: MagicMock) -> Non
     assert probe.logged_in is False
 
 
+@patch("app.integrations.llm_cli.codex.subprocess.run")
+@patch("app.integrations.llm_cli.codex.shutil.which")
+def test_detect_not_logged_in_exit_zero(mock_which: MagicMock, mock_run: MagicMock) -> None:
+    """Some Codex versions may exit 0 while printing 'Not logged in' — must not match 'logged in'."""
+    mock_which.return_value = "/usr/bin/codex"
+
+    def side_effect(args: list[str], **kwargs: object) -> MagicMock:
+        if len(args) >= 2 and args[1] == "--version":
+            return _version_proc()
+        if len(args) >= 3 and args[1] == "login":
+            m = MagicMock()
+            m.returncode = 0
+            m.stdout = "Not logged in\n"
+            m.stderr = ""
+            return m
+        raise AssertionError(args)
+
+    mock_run.side_effect = side_effect
+    probe = CodexAdapter().detect()
+    assert probe.installed is True
+    assert probe.logged_in is False
+
+
 @patch("app.integrations.llm_cli.codex.shutil.which", return_value="/usr/bin/codex")
 def test_build_adds_model_flag_when_not_default(mock_which: MagicMock) -> None:
     inv = CodexAdapter().build(prompt="p", model="o3", workspace="")
@@ -125,10 +148,45 @@ def test_cli_backed_client_invoke(mock_run: MagicMock) -> None:
     mock_run.assert_called_once()
 
 
+@patch("app.integrations.llm_cli.runner.subprocess.run")
+def test_cli_backed_client_caches_probe_between_invokes(mock_run: MagicMock) -> None:
+    from app.integrations.llm_cli.runner import CLIBackedLLMClient
+
+    mock_adapter = MagicMock()
+    mock_adapter.name = "codex"
+    mock_adapter.detect.return_value = MagicMock(
+        installed=True,
+        bin_path="/usr/bin/codex",
+        logged_in=True,
+        detail="ok",
+    )
+    mock_adapter.build.return_value = MagicMock(
+        argv=["/usr/bin/codex", "exec", "-"],
+        stdin="hello",
+        cwd="/tmp",
+        env=None,
+        timeout_sec=30.0,
+    )
+    mock_adapter.parse.return_value = "answer"
+    mock_adapter.explain_failure.return_value = "fail"
+
+    mock_run.return_value = MagicMock(returncode=0, stdout="answer\n", stderr="")
+
+    with patch("app.guardrails.engine.get_guardrail_engine") as gr:
+        gr.return_value.is_active = False
+        client = CLIBackedLLMClient(mock_adapter, model="codex", max_tokens=256)
+        client.invoke("a")
+        client.invoke("b")
+
+    assert mock_adapter.detect.call_count == 1
+    assert mock_adapter.build.call_count == 2
+    assert mock_run.call_count == 2
+
+
 def test_detect_uses_codex_bin_env_file(tmp_path) -> None:
     fake_bin = tmp_path / "my-codex"
     fake_bin.write_bytes(b"")
-    os.chmod(fake_bin, 0o755)
+    os.chmod(fake_bin, 0o700)
 
     with (
         patch.dict(os.environ, {"CODEX_BIN": str(fake_bin)}, clear=False),

@@ -33,10 +33,11 @@ def _classify_codex_auth(
     returncode: int, stdout: str, stderr: str
 ) -> tuple[bool | None, str]:
     text = (stdout + "\n" + stderr).lower()
-    if returncode == 0 and "logged in" in text:
-        return True, (stdout.strip() or stderr.strip() or "Logged in.").splitlines()[0]
+    # Negative phrases first: "logged in" is a substring of "not logged in".
     if "not logged in" in text or "no credentials" in text:
         return False, "Not logged in. Run: codex login"
+    if returncode == 0 and "logged in" in text:
+        return True, (stdout.strip() or stderr.strip() or "Logged in.").splitlines()[0]
     if "expired" in text or ("invalid" in text and "token" in text):
         return False, "Session expired. Re-authenticate: codex login"
     if "rate limit" in text or "quota" in text:
@@ -62,6 +63,7 @@ def _codex_workspace_and_skip_git() -> tuple[str, bool]:
         if proc.returncode == 0 and root:
             return root, False
     except (OSError, subprocess.TimeoutExpired):
+        # git missing, not a repo, or timed out — use cwd and let codex skip repo checks.
         pass
     return os.getcwd(), True
 

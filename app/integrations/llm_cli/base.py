@@ -45,16 +45,16 @@ class LLMCLIAdapter(Protocol):
 
     def detect(self) -> CLIProbe:
         """Resolve binary, version, and auth. Never raises; returns a structured probe."""
-        ...
+        pass
 
     def build(self, *, prompt: str, model: str | None, workspace: str) -> CLIInvocation:
         """Build argv for a non-interactive run (no approval prompts, no TTY)."""
-        ...
+        pass
 
     def parse(self, *, stdout: str, stderr: str, returncode: int) -> str:
         """Extract the model answer from a successful run."""
-        ...
+        pass
 
     def explain_failure(self, *, stdout: str, stderr: str, returncode: int) -> str:
         """Human-readable failure when returncode != 0 or output is unusable."""
-        ...
+        pass

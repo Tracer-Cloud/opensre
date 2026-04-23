@@ -6,17 +6,20 @@ import logging
 import os
 import re
 import subprocess
+import time
 from typing import Any
 
 from pydantic import BaseModel
 
-from app.integrations.llm_cli.base import LLMCLIAdapter
+from app.integrations.llm_cli.base import CLIProbe, LLMCLIAdapter
 from app.integrations.llm_cli.text import flatten_messages_to_prompt
 from app.services.llm_client import LLMResponse
 
 logger = logging.getLogger(__name__)
 
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+# Avoid re-running `detect()` (two subprocess probes) on every invoke during long investigations.
+_PROBE_CACHE_TTL_SEC = 45.0
 
 
 def _strip_ansi(text: str) -> str:
@@ -38,6 +41,20 @@ class CLIBackedLLMClient:
         self._model = model
         self._max_tokens = max_tokens
         self._model_type = model_type
+        self._cached_probe: CLIProbe | None = None
+        self._probe_cached_at: float = 0.0
+
+    def _probe(self) -> CLIProbe:
+        now = time.monotonic()
+        if (
+            self._cached_probe is not None
+            and (now - self._probe_cached_at) < _PROBE_CACHE_TTL_SEC
+        ):
+            return self._cached_probe
+        probe = self._adapter.detect()
+        self._cached_probe = probe
+        self._probe_cached_at = now
+        return probe
 
     def with_config(self, **_kwargs: Any) -> CLIBackedLLMClient:
         return self
@@ -61,10 +78,13 @@ class CLIBackedLLMClient:
 
         flat = flatten_messages_to_prompt(prompt_or_messages)
         engine = get_guardrail_engine()
-        if engine.is_active:
-            flat = engine.apply(flat)
+        try:
+            if engine.is_active:
+                flat = engine.apply(flat)
+        except GuardrailBlockedError:
+            raise
 
-        probe = self._adapter.detect()
+        probe = self._probe()
         if not probe.installed or not probe.bin_path:
             raise RuntimeError(
                 f"{self._adapter.name} CLI not found. {self._adapter.install_hint} "
@@ -97,8 +117,6 @@ class CLIBackedLLMClient:
             raise RuntimeError(
                 f"{self._adapter.name} CLI timed out after {invocation.timeout_sec:.0f}s."
             ) from exc
-        except GuardrailBlockedError:
-            raise
         except OSError as exc:
             raise RuntimeError(f"Failed to spawn {self._adapter.name} CLI: {exc}") from exc
 
