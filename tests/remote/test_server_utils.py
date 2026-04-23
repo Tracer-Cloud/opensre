@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from app.remote.server import _make_id, _slugify
+import pytest
+from fastapi import HTTPException
+
+from app.remote.server import _make_id, _safe_investigation_path, _slugify
 
 
 def test_slugify_converts_text_to_url_safe_format() -> None:
@@ -90,3 +93,59 @@ def test_make_id_truncates_long_slugs() -> None:
     slug = parts[2]
     # Slug should be truncated to 60 chars
     assert len(slug) <= 60
+
+
+def test_safe_investigation_path_accepts_valid_id() -> None:
+    """Test that valid IDs are accepted and return a Path."""
+    result = _safe_investigation_path("abc-123")
+    assert result.name == "abc-123.md"
+
+
+def test_safe_investigation_path_rejects_path_traversal_dotdot() -> None:
+    """Test that ../x returns 400 Invalid investigation ID."""
+    with pytest.raises(HTTPException) as exc_info:
+        _safe_investigation_path("../x")
+    assert exc_info.value.status_code == 400
+    assert "Invalid investigation ID" in exc_info.value.detail
+
+
+def test_safe_investigation_path_rejects_x_dotdot() -> None:
+    """Test that x/.. returns 400 Invalid investigation ID."""
+    with pytest.raises(HTTPException) as exc_info:
+        _safe_investigation_path("x/..")
+    assert exc_info.value.status_code == 400
+
+
+def test_safe_investigation_path_rejects_x_md() -> None:
+    """Test that x.md returns 400 Invalid investigation ID."""
+    with pytest.raises(HTTPException) as exc_info:
+        _safe_investigation_path("x.md")
+    assert exc_info.value.status_code == 400
+
+
+def test_safe_investigation_path_rejects_x_newline() -> None:
+    """Test that x\\n returns 400 Invalid investigation ID."""
+    with pytest.raises(HTTPException) as exc_info:
+        _safe_investigation_path("x\n")
+    assert exc_info.value.status_code == 400
+
+
+def test_safe_investigation_path_rejects_empty() -> None:
+    """Test that empty ID returns 400 Invalid investigation ID."""
+    with pytest.raises(HTTPException) as exc_info:
+        _safe_investigation_path("")
+    assert exc_info.value.status_code == 400
+
+
+def test_safe_investigation_path_rejects_special_chars() -> None:
+    """Test that IDs with special characters return 400."""
+    with pytest.raises(HTTPException) as exc_info:
+        _safe_investigation_path("x$y")
+    assert exc_info.value.status_code == 400
+
+
+def test_safe_investigation_path_rejects_single_dot() -> None:
+    """Test that single dot in ID returns 400."""
+    with pytest.raises(HTTPException) as exc_info:
+        _safe_investigation_path(".")
+    assert exc_info.value.status_code == 400
