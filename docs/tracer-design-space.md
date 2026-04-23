@@ -1,4 +1,4 @@
-# Dive into Claude Code
+# Tracer in the Agent Design Space
 
 Claude Code is an agentic coding tool that can run shell commands, edit files, and call external services on behalf of the user. This analysis identifies five human values/philosophies and thirteen design principles that motivate the architecture, and organizes the findings in three parts:
 
