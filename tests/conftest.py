@@ -64,11 +64,6 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_marker)
 
 
-def pytest_runtest_setup(item):
-    if item.get_closest_marker("requires_llm") and not _llm_settings_available():
-        pytest.skip("Skipping real LLM test: no valid LLM provider credentials are configured.")
-
-
 def pytest_configure(config):  # noqa: ARG001
     """Pytest hook — keep env available for collection and execution."""
     _load_env()
