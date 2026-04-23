@@ -7,15 +7,13 @@ import os
 import re
 import subprocess
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import BaseModel
 
 from app.integrations.llm_cli.base import CLIProbe, LLMCLIAdapter
 from app.integrations.llm_cli.text import flatten_messages_to_prompt
-
-if TYPE_CHECKING:
-    from app.services.llm_client import LLMResponse
+from app.services.llm_client import LLMResponse
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +128,4 @@ class CLIBackedLLMClient:
             "cli_llm_invoke",
             extra={"provider": self._adapter.name, "cli_cost_unknown": True},
         )
-        from app.services.llm_client import LLMResponse
-
         return LLMResponse(content=content)
