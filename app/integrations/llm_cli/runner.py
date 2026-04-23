@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import subprocess
+import threading
 import time
 from typing import Any
 
@@ -20,10 +21,58 @@ logger = logging.getLogger(__name__)
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 # Avoid re-running `detect()` (two subprocess probes) on every invoke during long investigations.
 _PROBE_CACHE_TTL_SEC = 45.0
+_SAFE_SUBPROCESS_ENV_KEYS = frozenset(
+    {
+        "HOME",
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "PATH",
+        "PATHEXT",
+        "SYSTEMROOT",
+        "WINDIR",
+        "COMSPEC",
+        "SHELL",
+        "TMP",
+        "TEMP",
+        "TMPDIR",
+        "LANG",
+        "TERM",
+        "TZ",
+        "NO_PROXY",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "REQUESTS_CA_BUNDLE",
+        "CURL_CA_BUNDLE",
+        "NO_COLOR",
+        "FORCE_COLOR",
+        "COLORTERM",
+        "XDG_CONFIG_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+    }
+)
+_SAFE_SUBPROCESS_ENV_PREFIXES = ("LC_", "CODEX_")
 
 
 def _strip_ansi(text: str) -> str:
     return _ANSI_ESCAPE.sub("", text)
+
+
+def _build_subprocess_env(overrides: dict[str, str] | None) -> dict[str, str]:
+    env: dict[str, str] = {}
+    for key, value in os.environ.items():
+        if key in _SAFE_SUBPROCESS_ENV_KEYS or any(
+            key.startswith(prefix) for prefix in _SAFE_SUBPROCESS_ENV_PREFIXES
+        ):
+            env[key] = value
+    if overrides:
+        env.update(overrides)
+    return env
 
 
 class CLIBackedLLMClient:
@@ -43,15 +92,22 @@ class CLIBackedLLMClient:
         self._model_type = model_type
         self._cached_probe: CLIProbe | None = None
         self._probe_cached_at: float = 0.0
+        self._probe_lock = threading.Lock()
 
     def _probe(self) -> CLIProbe:
         now = time.monotonic()
         if self._cached_probe is not None and (now - self._probe_cached_at) < _PROBE_CACHE_TTL_SEC:
             return self._cached_probe
-        probe = self._adapter.detect()
-        self._cached_probe = probe
-        self._probe_cached_at = now
-        return probe
+        with self._probe_lock:
+            locked_now = time.monotonic()
+            if self._cached_probe is not None and (
+                locked_now - self._probe_cached_at
+            ) < _PROBE_CACHE_TTL_SEC:
+                return self._cached_probe
+            probe = self._adapter.detect()
+            self._cached_probe = probe
+            self._probe_cached_at = locked_now
+            return probe
 
     def with_config(self, **_kwargs: Any) -> CLIBackedLLMClient:
         return self
@@ -92,9 +148,7 @@ class CLIBackedLLMClient:
             )
 
         invocation = self._adapter.build(prompt=flat, model=self._model, workspace="")
-        merged_env = os.environ.copy()
-        if invocation.env:
-            merged_env.update(invocation.env)
+        merged_env = _build_subprocess_env(invocation.env)
 
         try:
             proc = subprocess.run(

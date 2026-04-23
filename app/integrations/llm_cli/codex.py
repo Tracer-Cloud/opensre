@@ -178,7 +178,7 @@ class CodexAdapter:
     install_hint = "npm i -g @openai/codex"
     auth_hint = "Run: codex login"
     min_version: str | None = None
-    default_exec_timeout_sec = 900.0
+    default_exec_timeout_sec = 120.0
     prompt_delivery: PromptDelivery = "stdin"
 
     def _resolve_binary(self) -> str | None:

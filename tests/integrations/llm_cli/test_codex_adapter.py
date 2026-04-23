@@ -135,7 +135,7 @@ def test_cli_backed_client_invoke(mock_run: MagicMock) -> None:
         argv=["/usr/bin/codex", "exec", "-"],
         stdin="hello",
         cwd="/tmp",
-        env=None,
+        env={"CODEX_BIN": "/custom/codex"},
         timeout_sec=30.0,
     )
     mock_adapter.parse.return_value = "answer"
@@ -143,7 +143,18 @@ def test_cli_backed_client_invoke(mock_run: MagicMock) -> None:
 
     mock_run.return_value = MagicMock(returncode=0, stdout="answer\n", stderr="")
 
-    with patch("app.guardrails.engine.get_guardrail_engine") as gr:
+    with (
+        patch("app.guardrails.engine.get_guardrail_engine") as gr,
+        patch.dict(
+            os.environ,
+            {
+                "ANTHROPIC_API_KEY": "anthropic-secret",
+                "OPENAI_API_KEY": "openai-secret",
+                "PATH": "/usr/bin",
+            },
+            clear=False,
+        ),
+    ):
         gr.return_value.is_active = False
         client = CLIBackedLLMClient(mock_adapter, model="codex", max_tokens=256)
         resp = client.invoke("hello")
@@ -151,6 +162,11 @@ def test_cli_backed_client_invoke(mock_run: MagicMock) -> None:
     assert resp.content == "answer"
     mock_adapter.build.assert_called_once()
     mock_run.assert_called_once()
+    env = mock_run.call_args.kwargs["env"]
+    assert env["PATH"] == "/usr/bin"
+    assert env["CODEX_BIN"] == "/custom/codex"
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "OPENAI_API_KEY" not in env
 
 
 @patch("app.integrations.llm_cli.runner.subprocess.run")
@@ -344,3 +360,8 @@ def test_npm_prefix_bin_dirs_unix_uses_prefix_bin() -> None:
     ):
         dirs = _npm_prefix_bin_dirs()
     assert dirs == ("/opt/npm/bin",)
+
+
+def test_codex_default_exec_timeout_is_shorter() -> None:
+    inv = CodexAdapter().build(prompt="p", model=None, workspace="")
+    assert inv.timeout_sec == 120.0

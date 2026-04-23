@@ -12,7 +12,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from anthropic import Anthropic, AnthropicBedrock, AuthenticationError
 from openai import AuthenticationError as OpenAIAuthError
@@ -352,6 +352,20 @@ class StructuredOutputClient:
             raise
 
 
+class SupportsLLMInvoke(Protocol):
+    def with_config(self, **_kwargs: Any) -> SupportsLLMInvoke:
+        pass
+
+    def with_structured_output(self, model: type[BaseModel]) -> Any:
+        pass
+
+    def bind_tools(self, _tools: list[Any]) -> SupportsLLMInvoke:
+        pass
+
+    def invoke(self, prompt_or_messages: Any) -> LLMResponse:
+        pass
+
+
 def _normalize_messages_openai(prompt_or_messages: Any) -> list[dict[str, str]]:
     if isinstance(prompt_or_messages, list):
         messages: list[dict[str, str]] = []
@@ -436,8 +450,8 @@ def _extract_json_payload(text: str) -> Any:
 # LLM Client
 # ─────────────────────────────────────────────────────────────────────────────
 
-# CLIBackedLLMClient is included but omitted from the union to avoid import cycles.
-_LLMClientType = LLMClient | OpenAILLMClient | BedrockLLMClient | Any
+# Protocol keeps static type safety for CLI-backed clients without runtime import cycles.
+_LLMClientType = LLMClient | OpenAILLMClient | BedrockLLMClient | SupportsLLMInvoke
 _llm: _LLMClientType | None = None
 _llm_for_tools: _LLMClientType | None = None
 
