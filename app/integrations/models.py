@@ -557,6 +557,7 @@ class SplunkIntegrationConfig(StrictConfigModel):
         normalized = str(value or "main").strip()
         return normalized or "main"
 
+
 class IntegrationInstance(StrictConfigModel):
     """One named instance of a provider.
 

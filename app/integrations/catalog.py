@@ -85,7 +85,7 @@ _SERVICE_KEY_MAP = {
     "opensearch": "opensearch",
     "open search": "opensearch",
     "alertmanager": "alertmanager",
-    "splunk": "splunk"
+    "splunk": "splunk",
 }
 
 

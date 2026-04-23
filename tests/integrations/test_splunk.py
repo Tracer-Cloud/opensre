@@ -12,6 +12,7 @@ from app.services.splunk.client import SplunkClient, SplunkConfig, build_splunk_
 
 # ── SplunkIntegrationConfig ───────────────────────────────────────────────────
 
+
 def test_config_normalizes_trailing_slash() -> None:
     config = SplunkIntegrationConfig(base_url="https://splunk.corp.com/", token="tok")
     assert not config.base_url.endswith("/")
@@ -48,6 +49,7 @@ def test_config_verify_ssl_defaults_to_true() -> None:
 
 def test_config_rejects_unknown_fields() -> None:
     from pydantic import ValidationError
+
     with pytest.raises(ValidationError):
         SplunkIntegrationConfig(
             base_url="https://splunk:8089",
@@ -57,6 +59,7 @@ def test_config_rejects_unknown_fields() -> None:
 
 
 # ── SplunkConfig ──────────────────────────────────────────────────────────────
+
 
 def test_splunk_config_strips_trailing_slash() -> None:
     cfg = SplunkConfig(base_url="https://splunk:8089/", token="tok")
@@ -70,6 +73,7 @@ def test_splunk_config_is_configured() -> None:
 
 
 # ── build_splunk_spl_query ────────────────────────────────────────────────────
+
 
 def test_build_query_returns_raw_query_verbatim_when_supplied() -> None:
     spl = build_splunk_spl_query(
@@ -140,14 +144,13 @@ def test_build_query_escapes_double_quotes_in_keyword() -> None:
 
 # ── SplunkClient.validate_access ─────────────────────────────────────────────
 
+
 def test_validate_access_success() -> None:
     config = SplunkConfig(base_url="https://splunk:8089", token="tok")
     client = SplunkClient(config)
     mock_response = MagicMock()
     mock_response.raise_for_status.return_value = None
-    mock_response.json.return_value = {
-        "entry": [{"content": {"version": "9.1.0"}}]
-    }
+    mock_response.json.return_value = {"entry": [{"content": {"version": "9.1.0"}}]}
     with patch("app.services.splunk.client.httpx.get", return_value=mock_response):
         result = client.validate_access()
     assert result["success"] is True
@@ -182,6 +185,7 @@ def test_validate_access_connection_error() -> None:
 
 
 # ── SplunkClient.search_logs ──────────────────────────────────────────────────
+
 
 def test_search_logs_prepends_search_keyword_if_missing() -> None:
     config = SplunkConfig(base_url="https://splunk:8089", token="tok")
@@ -258,6 +262,7 @@ def test_search_logs_http_error_returns_failure() -> None:
 
 # ── _normalize_row ────────────────────────────────────────────────────────────
 
+
 def test_normalize_row_extracts_standard_fields() -> None:
     config = SplunkConfig(base_url="https://splunk:8089", token="tok")
     client = SplunkClient(config)
@@ -287,6 +292,7 @@ def test_normalize_row_falls_back_message_field() -> None:
 
 
 # ── catalog classification ────────────────────────────────────────────────────
+
 
 def test_catalog_classifies_splunk_from_store() -> None:
     from app.integrations.catalog import classify_integrations
@@ -372,6 +378,7 @@ def test_catalog_ignores_splunk_without_token() -> None:
 
 
 # ── env var loading ───────────────────────────────────────────────────────────
+
 
 def test_env_loader_picks_up_splunk_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.integrations.catalog import load_env_integrations

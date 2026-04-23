@@ -15,8 +15,9 @@ def make_client(
 ) -> SplunkClient | None:
     if not base_url or not token:
         return None
-    return SplunkClient(SplunkConfig(base_url=base_url, token=token,
-                                      index=index, verify_ssl=verify_ssl))
+    return SplunkClient(
+        SplunkConfig(base_url=base_url, token=token, index=index, verify_ssl=verify_ssl)
+    )
 
 
 def unavailable(source: str, empty_key: str, error: str, **extra: Any) -> dict[str, Any]:

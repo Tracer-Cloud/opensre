@@ -815,8 +815,9 @@ def _verify_splunk(source: str, config: dict[str, Any]) -> dict[str, str]:
     if not base_url or not token:
         return _result("splunk", source, "missing", "Missing base_url or token.")
 
-    client = SplunkClient(SplunkConfig(base_url=base_url, token=token,
-                                       index=index, verify_ssl=verify_ssl))
+    client = SplunkClient(
+        SplunkConfig(base_url=base_url, token=token, index=index, verify_ssl=verify_ssl)
+    )
     result = client.validate_access()
     if not result.get("success"):
         return _result(
@@ -826,6 +827,7 @@ def _verify_splunk(source: str, config: dict[str, Any]) -> dict[str, str]:
             f"Splunk check failed: {result.get('error', 'unknown error')}",
         )
     return _result("splunk", source, "passed", result.get("detail", "Connected."))
+
 
 def verify_integrations(
     service: str | None = None,

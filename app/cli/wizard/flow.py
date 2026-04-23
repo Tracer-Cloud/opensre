@@ -164,6 +164,7 @@ def validate_openclaw_integration(**kwargs):
 
     return _validate(**kwargs)
 
+
 def validate_splunk_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_splunk_integration as _validate
 
@@ -1390,9 +1391,7 @@ def _configure_splunk() -> tuple[str, str]:
             default=_string_value(credentials.get("index"), "main"),
         )
         with _console.status("Validating Splunk integration...", spinner="dots"):
-            result = validate_splunk_integration(
-                base_url=base_url, token=token, index=index
-            )
+            result = validate_splunk_integration(base_url=base_url, token=token, index=index)
         _render_integration_result("Splunk", result)
         if result.ok:
             upsert_integration(

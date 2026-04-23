@@ -26,6 +26,7 @@ class TestSplunkSearchToolContract(BaseToolContract):
 
 # ── metadata ──────────────────────────────────────────────────────────────────
 
+
 def test_metadata() -> None:
     tool = SplunkSearchTool()
     assert tool.name == "query_splunk_logs"
@@ -36,6 +37,7 @@ def test_metadata() -> None:
 
 # ── is_available ──────────────────────────────────────────────────────────────
 
+
 def test_is_available_requires_connection_verified() -> None:
     tool = SplunkSearchTool()
     assert tool.is_available({"splunk": {"connection_verified": True}}) is True
@@ -45,6 +47,7 @@ def test_is_available_requires_connection_verified() -> None:
 
 
 # ── extract_params ────────────────────────────────────────────────────────────
+
 
 def test_extract_params_maps_all_fields() -> None:
     tool = SplunkSearchTool()
@@ -61,9 +64,9 @@ def test_extract_params_maps_all_fields() -> None:
 
 def test_extract_params_uses_default_query_from_sources() -> None:
     tool = SplunkSearchTool()
-    sources = mock_agent_state({
-        "splunk": {"default_query": 'index=prod "PaymentTimeout" | head 50'}
-    })
+    sources = mock_agent_state(
+        {"splunk": {"default_query": 'index=prod "PaymentTimeout" | head 50'}}
+    )
     params = tool.extract_params(sources)
     assert "PaymentTimeout" in params["query"]
 
@@ -84,6 +87,7 @@ def test_extract_params_falls_back_to_index_query_when_no_default() -> None:
 
 
 # ── run: unavailable paths ────────────────────────────────────────────────────
+
 
 def test_run_returns_unavailable_when_no_base_url() -> None:
     tool = SplunkSearchTool()
@@ -122,13 +126,17 @@ def test_run_source_field_is_splunk_logs() -> None:
 
 # ── run: happy path ───────────────────────────────────────────────────────────
 
+
 def test_run_happy_path_separates_error_logs() -> None:
     tool = SplunkSearchTool()
     mock_client = MagicMock()
     mock_client.search_logs.return_value = {
         "success": True,
         "logs": [
-            {"message": "NullPointerException in PaymentProcessor", "timestamp": "2024-01-01T00:00:00Z"},
+            {
+                "message": "NullPointerException in PaymentProcessor",
+                "timestamp": "2024-01-01T00:00:00Z",
+            },
             {"message": "Job started successfully", "timestamp": "2024-01-01T00:00:01Z"},
             {"message": "Connection timeout to database", "timestamp": "2024-01-01T00:00:02Z"},
         ],
@@ -173,7 +181,9 @@ def test_run_happy_path_no_error_logs_when_clean() -> None:
 
 def test_run_includes_truncation_note_when_results_exceed_limit() -> None:
     tool = SplunkSearchTool()
-    many_logs = [{"message": f"log entry {i}", "timestamp": "2024-01-01T00:00:00Z"} for i in range(100)]
+    many_logs = [
+        {"message": f"log entry {i}", "timestamp": "2024-01-01T00:00:00Z"} for i in range(100)
+    ]
     mock_client = MagicMock()
     mock_client.search_logs.return_value = {
         "success": True,

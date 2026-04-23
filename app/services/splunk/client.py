@@ -173,11 +173,7 @@ class SplunkClient:
             )
             response.raise_for_status()
             data = response.json()
-            version = (
-                data.get("entry", [{}])[0]
-                .get("content", {})
-                .get("version", "unknown")
-            )
+            version = data.get("entry", [{}])[0].get("content", {}).get("version", "unknown")
             return {
                 "success": True,
                 "detail": f"Connected to Splunk {version}",

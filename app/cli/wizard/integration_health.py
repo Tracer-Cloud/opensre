@@ -631,6 +631,7 @@ def validate_discord_bot(*, bot_token: str) -> IntegrationHealthResult:
         ok=False, detail=f"Discord API returned unexpected HTTP {resp.status_code}."
     )
 
+
 def validate_splunk_integration(
     *, base_url: str, token: str, index: str = "main"
 ) -> IntegrationHealthResult:
