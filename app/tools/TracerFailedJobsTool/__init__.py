@@ -57,12 +57,16 @@ def get_failed_jobs(trace_id: str) -> dict[str, Any]:
     for job in job_list:
         if job.get("status") == "FAILED":
             container = job.get("container", {})
-            failed_jobs.append({
-                "job_name": job.get("jobName"),
-                "status_reason": job.get("statusReason"),
-                "container_reason": container.get("reason") if isinstance(container, dict) else None,
-                "exit_code": container.get("exitCode") if isinstance(container, dict) else None,
-            })
+            failed_jobs.append(
+                {
+                    "job_name": job.get("jobName"),
+                    "status_reason": job.get("statusReason"),
+                    "container_reason": container.get("reason")
+                    if isinstance(container, dict)
+                    else None,
+                    "exit_code": container.get("exitCode") if isinstance(container, dict) else None,
+                }
+            )
 
     return {
         "failed_jobs": failed_jobs,

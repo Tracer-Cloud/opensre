@@ -105,6 +105,7 @@ def test_get_issue_success(client: JiraClient) -> None:
     assert result["issue_key"] == "OPS-42"
     assert result["status"] == "Open"
 
+
 def test_update_issue_success(client: JiraClient) -> None:
     mock_resp = MagicMock()
     mock_resp.raise_for_status = MagicMock()

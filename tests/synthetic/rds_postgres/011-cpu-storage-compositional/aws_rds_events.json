@@ -9,10 +9,17 @@
     },
     {
       "date": "2026-03-28T09:04:31Z",
-      "message": "DB instance analytics-prod storage space is at 80% utilization (42.6 GB free of 200 GB). Monitor storage consumption.",
+      "message": "DB instance analytics-prod storage space is at 80% utilization (42.6 GB free of 200 GB). Top write source: INSERT INTO public.audit_log accounts for ~94% of write throughput.",
       "source_identifier": "analytics-prod",
       "source_type": "db-instance",
       "event_categories": ["notification"]
+    },
+    {
+      "date": "2026-03-28T09:06:50Z",
+      "message": "PostgreSQL log: Table public.audit_log has grown to 142 GB in the last 20 minutes, now consuming 71% of total storage. Write rate 847 rows/sec, generating 7.4 GB/min of new data.",
+      "source_identifier": "analytics-prod",
+      "source_type": "db-instance",
+      "event_categories": ["database", "storage"]
     },
     {
       "date": "2026-03-28T09:08:02Z",
@@ -23,14 +30,21 @@
     },
     {
       "date": "2026-03-28T09:11:45Z",
-      "message": "DB instance analytics-prod storage space is critically low (23.3 GB free of 200 GB). Consider expanding storage.",
+      "message": "DB instance analytics-prod storage space is critically low (23.3 GB free of 200 GB). Consider expanding storage. Excessive writes detected from public.audit_log INSERT burst — audit_log table is the dominant storage consumer.",
       "source_identifier": "analytics-prod",
       "source_type": "db-instance",
       "event_categories": ["low storage"]
     },
     {
+      "date": "2026-03-28T09:14:20Z",
+      "message": "PostgreSQL log warning: relation public.audit_log has grown by 148 GB since window start. Bulk INSERT pattern from app_writer user is the primary driver of FreeStorageSpace exhaustion.",
+      "source_identifier": "analytics-prod",
+      "source_type": "db-instance",
+      "event_categories": ["warning", "database"]
+    },
+    {
       "date": "2026-03-28T09:18:52Z",
-      "message": "DB instance analytics-prod storage space is critically low (8.3 GB free of 200 GB). Writes may fail imminently.",
+      "message": "DB instance analytics-prod storage space is critically low (8.3 GB free of 200 GB). Writes may fail imminently. Root cause: sustained audit_log insert workload.",
       "source_identifier": "analytics-prod",
       "source_type": "db-instance",
       "event_categories": ["low storage"]

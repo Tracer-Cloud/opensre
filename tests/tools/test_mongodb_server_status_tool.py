@@ -32,6 +32,9 @@ def test_run_happy_path() -> None:
 
 
 def test_run_error_propagated() -> None:
-    with patch("app.tools.MongoDBServerStatusTool.get_server_status", return_value={"error": "connection timeout"}):
+    with patch(
+        "app.tools.MongoDBServerStatusTool.get_server_status",
+        return_value={"error": "connection timeout"},
+    ):
         result = get_mongodb_server_status(connection_string="mongodb://invalid")
     assert "error" in result

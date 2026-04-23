@@ -133,7 +133,7 @@ opensre remote ops --provider railway --project <project> --service <service> lo
 opensre remote ops --provider railway --project <project> --service <service> restart --yes
 ```
 
-OpenSRE saves your last used `provider`/`project`/`service`, so you can run:
+OpenSRE saves your last used `provider`, so you can run:
 
 ```bash
 opensre remote ops status
@@ -156,15 +156,13 @@ opensre onboard
 opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 ```
 
+If you use VS Code, the repo now includes a ready-to-use devcontainer under [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json). Open the repo in VS Code and run `Dev Containers: Reopen in Container` to get the project on Python 3.13 with the contributor toolchain preinstalled. Keep Docker Desktop, OrbStack, Colima, or another Docker-compatible runtime running on the host, since VS Code devcontainers rely on your local Docker engine.
+
 ---
 
 ## How OpenSRE Works
 
-<img
-  alt="tracer-how-it-works-illustration"
-  src="https://github.com/user-attachments/assets/8b50fe5c-470c-4982-866f-4f90c3e251d1"
-  style="width: 100%; height: auto;"
-/>
+<img src="https://github.com/user-attachments/assets/04234934-c603-491e-a08f-b145d1158d7a" width="1064" alt="opensre-how-it-works" style="border-radius: 0" />
 
 ### Investigation Workflow
 
@@ -207,7 +205,7 @@ OpenSRE connects to 60+ tools and services across the modern cloud stack, from L
 | Category | Integrations | Roadmap |
 | --- | --- | --- |
 | **AI / LLM Providers** | Anthropic · OpenAI · Ollama · Google Gemini · OpenRouter · NVIDIA NIM · Bedrock | |
-| **Observability** | <img src="docs/assets/icons/grafana.webp" width="16"> Grafana (Loki · Mimir · Tempo) · <img src="docs/assets/icons/datadog.svg" width="16"> Datadog · Honeycomb · Coralogix · <img src="docs/assets/icons/cloudwatch.png" width="16"> CloudWatch · <img src="docs/assets/icons/sentry.png" width="16"> Sentry · Elasticsearch | [Splunk](https://github.com/Tracer-Cloud/opensre/issues/319) · [New Relic](https://github.com/Tracer-Cloud/opensre/issues/139) · [Victoria Logs](https://github.com/Tracer-Cloud/opensre/issues/126) |
+| **Observability** | <img src="docs/assets/icons/grafana.webp" width="16"> Grafana (Loki · Mimir · Tempo) · <img src="docs/assets/icons/datadog.svg" width="16"> Datadog · Honeycomb · Coralogix · <img src="docs/assets/icons/cloudwatch.png" width="16"> CloudWatch · <img src="docs/assets/icons/sentry.png" width="16"> Sentry · Elasticsearch · Better Stack Telemetry | [Splunk](https://github.com/Tracer-Cloud/opensre/issues/319) · [New Relic](https://github.com/Tracer-Cloud/opensre/issues/139) · [Victoria Logs](https://github.com/Tracer-Cloud/opensre/issues/126) |
 | **Infrastructure** | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS (S3 · Lambda · EKS · EC2 · Bedrock) · <img src="docs/assets/icons/gcp.jpg" width="16"> GCP · <img src="docs/assets/icons/azure.png" width="16"> Azure | [Helm](https://github.com/Tracer-Cloud/opensre/issues/321) · [ArgoCD](https://github.com/Tracer-Cloud/opensre/issues/320) |
 | **Database** | MongoDB · ClickHouse | [PostgreSQL · MySQL](https://github.com/Tracer-Cloud/opensre/issues/322) · [MariaDB](https://github.com/Tracer-Cloud/opensre/issues/331) · [MongoDB Atlas](https://github.com/Tracer-Cloud/opensre/issues/332) · [Azure SQL](https://github.com/Tracer-Cloud/opensre/issues/333) · [RDS](https://github.com/Tracer-Cloud/opensre/issues/125) · [Snowflake](https://github.com/Tracer-Cloud/opensre/issues/364) |
 | **Data Platform** | Apache Airflow · Apache Kafka · Apache Spark · Prefect · RabbitMQ | |
@@ -592,6 +590,161 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/127435065?v=4" width="100" alt="aniruddhaadak80"/>
             <br />
             <sub><b>aniruddhaadak80</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/chaosreload">
+            <img src="https://avatars.githubusercontent.com/u/6723037?v=4" width="100" alt="chaosreload"/>
+            <br />
+            <sub><b>chaosreload</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/paulovitorcl">
+            <img src="https://avatars.githubusercontent.com/u/47778440?v=4" width="100" alt="paulovitorcl"/>
+            <br />
+            <sub><b>paulovitorcl</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/gbsierra">
+            <img src="https://avatars.githubusercontent.com/u/182822327?v=4" width="100" alt="gbsierra"/>
+            <br />
+            <sub><b>gbsierra</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/alexanderkreidich">
+            <img src="https://avatars.githubusercontent.com/u/126781073?v=4" width="100" alt="alexanderkreidich"/>
+            <br />
+            <sub><b>alexanderkreidich</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/afif1400">
+            <img src="https://avatars.githubusercontent.com/u/51887071?v=4" width="100" alt="afif1400"/>
+            <br />
+            <sub><b>afif1400</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/gauravch-code">
+            <img src="https://avatars.githubusercontent.com/u/180489802?v=4" width="100" alt="gauravch-code"/>
+            <br />
+            <sub><b>gauravch-code</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/divijgera">
+            <img src="https://avatars.githubusercontent.com/u/46404484?v=4" width="100" alt="divijgera"/>
+            <br />
+            <sub><b>divijgera</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/daxp472">
+            <img src="https://avatars.githubusercontent.com/u/177292922?v=4" width="100" alt="daxp472"/>
+            <br />
+            <sub><b>daxp472</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Som-0619">
+            <img src="https://avatars.githubusercontent.com/u/143019791?v=4" width="100" alt="Som-0619"/>
+            <br />
+            <sub><b>Som-0619</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Gust-svg">
+            <img src="https://avatars.githubusercontent.com/u/265007695?v=4" width="100" alt="Gust-svg"/>
+            <br />
+            <sub><b>Gust-svg</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Sayeem3051">
+            <img src="https://avatars.githubusercontent.com/u/169171880?v=4" width="100" alt="Sayeem3051"/>
+            <br />
+            <sub><b>Sayeem3051</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/MachineLearning-Nerd">
+            <img src="https://avatars.githubusercontent.com/u/37579156?v=4" width="100" alt="MachineLearning-Nerd"/>
+            <br />
+            <sub><b>MachineLearning-Nerd</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/F4tal1t">
+            <img src="https://avatars.githubusercontent.com/u/109851148?v=4" width="100" alt="F4tal1t"/>
+            <br />
+            <sub><b>F4tal1t</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/MestreY0d4-Uninter">
+            <img src="https://avatars.githubusercontent.com/u/241404605?v=4" width="100" alt="MestreY0d4-Uninter"/>
+            <br />
+            <sub><b>MestreY0d4-Uninter</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/qorexdevs">
+            <img src="https://avatars.githubusercontent.com/u/277760369?v=4" width="100" alt="qorexdevs"/>
+            <br />
+            <sub><b>qorexdevs</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Agnuxo1">
+            <img src="https://avatars.githubusercontent.com/u/166046035?v=4" width="100" alt="Agnuxo1"/>
+            <br />
+            <sub><b>Agnuxo1</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Ryjen1">
+            <img src="https://avatars.githubusercontent.com/u/114498519?v=4" width="100" alt="Ryjen1"/>
+            <br />
+            <sub><b>Ryjen1</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/nandanadileep">
+            <img src="https://avatars.githubusercontent.com/u/110280757?v=4" width="100" alt="nandanadileep"/>
+            <br />
+            <sub><b>nandanadileep</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/Maharshi-Project">
+            <img src="https://avatars.githubusercontent.com/u/156591746?v=4" width="100" alt="Maharshi-Project"/>
+            <br />
+            <sub><b>Maharshi-Project</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/udit-rawat">
+            <img src="https://avatars.githubusercontent.com/u/84604012?v=4" width="100" alt="udit-rawat"/>
+            <br />
+            <sub><b>udit-rawat</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/muddlebee">
+            <img src="https://avatars.githubusercontent.com/u/8139783?v=4" width="100" alt="muddlebee"/>
+            <br />
+            <sub><b>muddlebee</b></sub>
         </a>
     </td>
 		</tr>

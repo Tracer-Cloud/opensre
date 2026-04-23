@@ -55,10 +55,20 @@ def list_eks_namespaces(
     try:
         core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
         ns_list = core_v1.list_namespace()
-        namespaces = [{"name": ns.metadata.name, "status": ns.status.phase, "labels": ns.metadata.labels or {}} for ns in ns_list.items]
+        namespaces = [
+            {
+                "name": ns.metadata.name,
+                "status": ns.status.phase,
+                "labels": ns.metadata.labels or {},
+            }
+            for ns in ns_list.items
+        ]
         return {
-            "source": "eks", "available": True, "cluster_name": cluster_name,
-            "namespaces": namespaces, "error": None,
+            "source": "eks",
+            "available": True,
+            "cluster_name": cluster_name,
+            "namespaces": namespaces,
+            "error": None,
         }
     except Exception as e:
         logger.error("[eks] list_eks_namespaces FAILED: %s", e, exc_info=True)

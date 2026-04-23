@@ -82,9 +82,7 @@ def notification_from_issue_comment_event(
 def build_slack_payload(notification: IssueCommentNotification) -> dict[str, Any]:
     """Render a compact Slack incoming webhook payload."""
     comment_preview = _truncate_comment(notification.comment_body)
-    issue_link = (
-        f"<{notification.issue_url}|{notification.repository}#{notification.issue_number}>"
-    )
+    issue_link = f"<{notification.issue_url}|{notification.repository}#{notification.issue_number}>"
     comment_link = f"<{notification.comment_url}|View comment>"
 
     preview_text = comment_preview or "_No comment body provided._"
@@ -103,8 +101,7 @@ def build_slack_payload(notification: IssueCommentNotification) -> dict[str, Any
                 "text": {
                     "type": "mrkdwn",
                     "text": (
-                        f"*New GitHub issue comment*\n"
-                        f"{issue_link}: *{notification.issue_title}*"
+                        f"*New GitHub issue comment*\n{issue_link}: *{notification.issue_title}*"
                     ),
                 },
             },
@@ -177,9 +174,7 @@ def main() -> int:
 
     payload = build_slack_payload(notification)
     send_slack_webhook(payload, webhook_url)
-    print(
-        f"Posted Slack notification for {notification.repository}#{notification.issue_number}."
-    )
+    print(f"Posted Slack notification for {notification.repository}#{notification.issue_number}.")
     return 0
 
 

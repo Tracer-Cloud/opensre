@@ -58,7 +58,9 @@ def get_ecs_task_public_ip(cluster_name: str, region: str = "us-east-1") -> str 
                     if detail.get("name") == "networkInterfaceId":
                         eni_id = detail.get("value")
                         eni = ec2.describe_network_interfaces(NetworkInterfaceIds=[eni_id])
-                        public_ip = eni["NetworkInterfaces"][0].get("Association", {}).get("PublicIp")
+                        public_ip = (
+                            eni["NetworkInterfaces"][0].get("Association", {}).get("PublicIp")
+                        )
                         if public_ip:
                             return public_ip
         return None
@@ -78,6 +80,7 @@ SDK_STACKS = {
     "flink": "tracer-flink-ecs",
     "prefect": "tracer-prefect-ecs",
 }
+
 
 def get_flink_config() -> dict:
     """Get Flink test configuration from stack outputs.
@@ -104,6 +107,7 @@ def get_flink_config() -> dict:
         "security_group_id": outputs.get("SecurityGroupId"),
         "subnet_ids": outputs.get("SubnetIds"),
     }
+
 
 def get_prefect_config() -> dict:
     """Get Prefect test configuration from stack outputs.

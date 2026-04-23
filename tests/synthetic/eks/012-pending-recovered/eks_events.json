@@ -1,0 +1,14 @@
+{
+  "warning_events": [
+    {
+      "namespace": "payments",
+      "reason": "FailedScheduling",
+      "message": "0/2 nodes are available: 2 Insufficient cpu (cluster autoscaler subsequently added a node; pod is now Running — see datadog_logs)",
+      "type": "Warning",
+      "count": 1,
+      "involved_object": "Pod/payments-api-7f9dd8b6c4-late1",
+      "first_time": "2026-04-18T10:25:10Z",
+      "last_time": "2026-04-18T10:25:10Z"
+    }
+  ]
+}

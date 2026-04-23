@@ -69,32 +69,68 @@ def list_eks_pods(
         )
     try:
         core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
-        pod_list = core_v1.list_pod_for_all_namespaces() if namespace == "all" else core_v1.list_namespaced_pod(namespace=namespace)
+        pod_list = (
+            core_v1.list_pod_for_all_namespaces()
+            if namespace == "all"
+            else core_v1.list_namespaced_pod(namespace=namespace)
+        )
 
         pods = []
         for pod in pod_list.items:
             containers = []
-            for cs in (pod.status.container_statuses or []):
+            for cs in pod.status.container_statuses or []:
                 state = {}
                 if cs.state.running:
                     state = {"running": True, "started_at": str(cs.state.running.started_at)}
                 elif cs.state.waiting:
-                    state = {"waiting": True, "reason": cs.state.waiting.reason, "message": cs.state.waiting.message}
+                    state = {
+                        "waiting": True,
+                        "reason": cs.state.waiting.reason,
+                        "message": cs.state.waiting.message,
+                    }
                 elif cs.state.terminated:
-                    state = {"terminated": True, "exit_code": cs.state.terminated.exit_code, "reason": cs.state.terminated.reason, "message": cs.state.terminated.message}
-                containers.append({"name": cs.name, "ready": cs.ready, "restart_count": cs.restart_count, "state": state})
-            conditions = [{"type": c.type, "status": c.status, "reason": c.reason, "message": c.message} for c in (pod.status.conditions or [])]
-            pods.append({
-                "name": pod.metadata.name, "namespace": pod.metadata.namespace,
-                "phase": pod.status.phase, "node_name": pod.spec.node_name,
-                "containers": containers, "conditions": conditions, "start_time": str(pod.status.start_time),
-            })
+                    state = {
+                        "terminated": True,
+                        "exit_code": cs.state.terminated.exit_code,
+                        "reason": cs.state.terminated.reason,
+                        "message": cs.state.terminated.message,
+                    }
+                containers.append(
+                    {
+                        "name": cs.name,
+                        "ready": cs.ready,
+                        "restart_count": cs.restart_count,
+                        "state": state,
+                    }
+                )
+            conditions = [
+                {"type": c.type, "status": c.status, "reason": c.reason, "message": c.message}
+                for c in (pod.status.conditions or [])
+            ]
+            pods.append(
+                {
+                    "name": pod.metadata.name,
+                    "namespace": pod.metadata.namespace,
+                    "phase": pod.status.phase,
+                    "node_name": pod.spec.node_name,
+                    "containers": containers,
+                    "conditions": conditions,
+                    "start_time": str(pod.status.start_time),
+                }
+            )
 
         failing = [p for p in pods if p["phase"] not in ("Running", "Succeeded")]
         crashing = [p for p in pods if any(c["restart_count"] > 3 for c in p["containers"])]
         return {
-            "source": "eks", "available": True, "cluster_name": cluster_name, "namespace": namespace,
-            "total_pods": len(pods), "pods": pods, "failing_pods": failing, "high_restart_pods": crashing, "error": None,
+            "source": "eks",
+            "available": True,
+            "cluster_name": cluster_name,
+            "namespace": namespace,
+            "total_pods": len(pods),
+            "pods": pods,
+            "failing_pods": failing,
+            "high_restart_pods": crashing,
+            "error": None,
         }
     except Exception as e:
         logger.error("[eks] list_eks_pods FAILED: %s", e, exc_info=True)

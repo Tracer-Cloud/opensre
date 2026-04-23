@@ -41,6 +41,23 @@ All three must pass before you're ready to develop.
 
 ---
 
+## VS Code Dev Container Setup
+
+If you use VS Code, you can skip the manual Python setup and use the repo's devcontainer instead:
+
+1. Install the **Dev Containers** extension in VS Code.
+2. Start Docker Desktop, OrbStack, Colima, or another Docker-compatible runtime on your host machine.
+3. Open the repository in VS Code and run `Dev Containers: Reopen in Container`.
+4. Wait for the container's `postCreateCommand` to install `.[dev]`.
+5. Run the usual checks:
+   ```bash
+   make lint && make typecheck && make test-cov
+   ```
+
+The devcontainer uses Python 3.13 to match CI and `.tool-versions`. Manual host-based setup continues to work with any supported Python version (`>=3.11`).
+
+---
+
 ## Windows-Specific Setup
 
 Windows does not include `make` by default. Install it to use our development task runner.

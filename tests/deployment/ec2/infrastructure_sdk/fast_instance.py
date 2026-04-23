@@ -27,7 +27,9 @@ HEALTH_MAX_ATTEMPTS = 30  # 60 s total
 ECR_REGION = "us-east-1"
 ECR_ACCOUNT_ID = "395261708130"
 ECR_REPO = "opensre"
-HELLO_IMAGE_URI = f"{ECR_ACCOUNT_ID}.dkr.ecr.{ECR_REGION}.amazonaws.com/{ECR_REPO}:{HELLO_IMAGE_TAG}"
+HELLO_IMAGE_URI = (
+    f"{ECR_ACCOUNT_ID}.dkr.ecr.{ECR_REGION}.amazonaws.com/{ECR_REPO}:{HELLO_IMAGE_TAG}"
+)
 
 
 def get_ecs_optimized_ami(region: str = DEFAULT_REGION) -> str:

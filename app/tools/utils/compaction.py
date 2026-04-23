@@ -54,7 +54,9 @@ def truncate_message(message: str, max_chars: int = DEFAULT_MESSAGE_CHARS) -> st
     return message[: max_chars - 3] + "..."
 
 
-def truncate_log_entry(log: dict[str, Any], max_chars: int = DEFAULT_MESSAGE_CHARS) -> dict[str, Any]:
+def truncate_log_entry(
+    log: dict[str, Any], max_chars: int = DEFAULT_MESSAGE_CHARS
+) -> dict[str, Any]:
     """Truncate message fields in a log entry.
 
     Args:
@@ -147,7 +149,11 @@ def compact_metrics(
         compacted = dict(metric)
         # Truncate datapoints if present
         for key in ("datapoints", "values", "points", "data"):
-            if key in compacted and isinstance(compacted[key], list) and len(compacted[key]) > max_datapoints:
+            if (
+                key in compacted
+                and isinstance(compacted[key], list)
+                and len(compacted[key]) > max_datapoints
+            ):
                 compacted[key] = compacted[key][:max_datapoints]
                 compacted[f"{key}_total"] = len(metric.get(key, []))
         result.append(compacted)

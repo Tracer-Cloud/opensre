@@ -53,8 +53,12 @@ def test_run_happy_path() -> None:
     mock_core_v1.list_namespaced_pod.return_value = MagicMock(
         items=[_make_pod("pod-1"), _make_pod("pod-2")]
     )
-    with patch("app.tools.EKSListPodsTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())):
-        result = list_eks_pods(cluster_name="c1", namespace="default", role_arn="arn:aws:iam::123:role/r")
+    with patch(
+        "app.tools.EKSListPodsTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())
+    ):
+        result = list_eks_pods(
+            cluster_name="c1", namespace="default", role_arn="arn:aws:iam::123:role/r"
+        )
     assert result["available"] is True
     assert result["total_pods"] == 2
     assert result["failing_pods"] == []
@@ -65,21 +69,31 @@ def test_run_detects_crashing_pods() -> None:
     mock_core_v1.list_namespaced_pod.return_value = MagicMock(
         items=[_make_pod("pod-1", restart_count=10)]
     )
-    with patch("app.tools.EKSListPodsTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())):
-        result = list_eks_pods(cluster_name="c1", namespace="default", role_arn="arn:aws:iam::123:role/r")
+    with patch(
+        "app.tools.EKSListPodsTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())
+    ):
+        result = list_eks_pods(
+            cluster_name="c1", namespace="default", role_arn="arn:aws:iam::123:role/r"
+        )
     assert len(result["high_restart_pods"]) == 1
 
 
 def test_run_all_namespaces() -> None:
     mock_core_v1 = MagicMock()
     mock_core_v1.list_pod_for_all_namespaces.return_value = MagicMock(items=[])
-    with patch("app.tools.EKSListPodsTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())):
-        result = list_eks_pods(cluster_name="c1", namespace="all", role_arn="arn:aws:iam::123:role/r")
+    with patch(
+        "app.tools.EKSListPodsTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())
+    ):
+        result = list_eks_pods(
+            cluster_name="c1", namespace="all", role_arn="arn:aws:iam::123:role/r"
+        )
     mock_core_v1.list_pod_for_all_namespaces.assert_called_once()
     assert result["available"] is True
 
 
 def test_run_handles_exception() -> None:
     with patch("app.tools.EKSListPodsTool.build_k8s_clients", side_effect=Exception("auth error")):
-        result = list_eks_pods(cluster_name="c1", namespace="default", role_arn="arn:aws:iam::123:role/r")
+        result = list_eks_pods(
+            cluster_name="c1", namespace="default", role_arn="arn:aws:iam::123:role/r"
+        )
     assert result["available"] is False

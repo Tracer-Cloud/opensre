@@ -15,9 +15,10 @@ class TestGitHubRepositoryTreeToolContract(BaseToolContract):
 
 def test_is_available_requires_owner_repo() -> None:
     rt = get_github_repository_tree.__opensre_registered_tool__
-    assert rt.is_available({
-        "github": {"connection_verified": True, "owner": "org", "repo": "repo"}
-    }) is True
+    assert (
+        rt.is_available({"github": {"connection_verified": True, "owner": "org", "repo": "repo"}})
+        is True
+    )
     assert rt.is_available({"github": {"connection_verified": True}}) is False
     assert rt.is_available({}) is False
 
@@ -46,12 +47,17 @@ def test_run_happy_path() -> None:
         "content": [],
     }
     mock_config = MagicMock()
-    with patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None), \
-         patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config), \
-         patch("app.tools.GitHubRepositoryTreeTool.call_github_mcp_tool", return_value=fake_result):
+    with (
+        patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None),
+        patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config),
+        patch("app.tools.GitHubRepositoryTreeTool.call_github_mcp_tool", return_value=fake_result),
+    ):
         result = get_github_repository_tree(
-            owner="org", repo="repo",
-            github_url="http://mcp", github_mode="streamable-http", github_token="tok",
+            owner="org",
+            repo="repo",
+            github_url="http://mcp",
+            github_mode="streamable-http",
+            github_token="tok",
         )
     assert result["available"] is True
     assert result["tree"] is not None

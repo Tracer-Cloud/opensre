@@ -84,9 +84,7 @@ class MaskingPolicy(StrictConfigModel):
             try:
                 re.compile(pattern)
             except re.error as exc:
-                raise ValueError(
-                    f"extra_patterns[{label!r}] is not a valid regex: {exc}"
-                ) from exc
+                raise ValueError(f"extra_patterns[{label!r}] is not a valid regex: {exc}") from exc
         return value
 
     @classmethod
@@ -145,9 +143,7 @@ def compile_extra_patterns(policy: MaskingPolicy) -> dict[str, re.Pattern[str]]:
         try:
             compiled[label] = re.compile(pattern)
         except re.error as exc:
-            logger.warning(
-                "[masking] skipping extra pattern %r (invalid regex): %s", label, exc
-            )
+            logger.warning("[masking] skipping extra pattern %r (invalid regex): %s", label, exc)
     return compiled
 
 

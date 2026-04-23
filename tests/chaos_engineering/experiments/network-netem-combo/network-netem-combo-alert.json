@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for NetworkChaos netem combo",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/network-netem-combo/network-netem-combo-alert.json"
+  },
+  "title": "[Triggered] Severe network degradation - network-netem-combo-demo",
+  "alert_name": "Datadog monitor: SLO burn on netem combo",
+  "pipeline_name": "network-netem-combo-demo",
+  "severity": "high",
+  "alert_source": "datadog",
+  "message": "High latency and errors for deployment network-netem-combo-demo",
+  "text": "NetworkChaos netem combines delay, loss, and rate limiting; probes and user traffic may time out together.",
+  "commonLabels": {
+    "pipeline_name": "network-netem-combo-demo",
+    "severity": "high",
+    "kube_deployment": "network-netem-combo-demo"
+  },
+  "commonAnnotations": {
+    "summary": "Combined netem chaos on network-netem-combo-demo",
+    "query": "kube_namespace:default kube_deployment:network-netem-combo-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "network-netem-combo-demo",
+    "correlation_id": "network-netem-combo-local-001"
+  }
+}

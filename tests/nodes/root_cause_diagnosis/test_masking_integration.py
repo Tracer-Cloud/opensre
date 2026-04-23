@@ -59,9 +59,7 @@ def test_diagnose_unmasks_root_cause_and_claims() -> None:
     from app.nodes.root_cause_diagnosis import node as diag_node
 
     state = _state_with_masking()
-    llm_response = _mock_llm_response(
-        "ROOT_CAUSE: <POD_0> in <NAMESPACE_0> OOMKilled"
-    )
+    llm_response = _mock_llm_response("ROOT_CAUSE: <POD_0> in <NAMESPACE_0> OOMKilled")
     parsed = _mock_parse_result("<POD_0> in <NAMESPACE_0> OOMKilled")
 
     with (
@@ -73,9 +71,14 @@ def test_diagnose_unmasks_root_cause_and_claims() -> None:
             "check_evidence_availability",
             return_value=(False, False, True),
         ),
-        patch.object(diag_node, "validate_and_categorize_claims", return_value=([
-            {"claim": "<POD_0> entered CrashLoopBackOff", "validation_status": "validated"}
-        ], [])),
+        patch.object(
+            diag_node,
+            "validate_and_categorize_claims",
+            return_value=(
+                [{"claim": "<POD_0> entered CrashLoopBackOff", "validation_status": "validated"}],
+                [],
+            ),
+        ),
         patch.object(diag_node, "calculate_validity_score", return_value=0.9),
         patch.object(diag_node, "check_vendor_evidence_missing", return_value=False),
         patch.object(diag_node, "build_diagnosis_prompt", return_value="masked prompt"),

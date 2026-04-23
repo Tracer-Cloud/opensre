@@ -12,7 +12,9 @@ def client() -> TestClient:
     return TestClient(app)
 
 
-def test_health_ok_returns_200_and_payload(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_health_ok_returns_200_and_payload(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr("app.webapp._graph_loaded", lambda: True)
     monkeypatch.setattr("app.webapp._llm_configured", lambda: True)
     monkeypatch.setattr("app.webapp.get_version", lambda: "0.1.0")
@@ -30,7 +32,9 @@ def test_health_ok_returns_200_and_payload(client: TestClient, monkeypatch: pyte
     }
 
 
-def test_health_unhealthy_returns_503_and_payload(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_health_unhealthy_returns_503_and_payload(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr("app.webapp._graph_loaded", lambda: False)
     monkeypatch.setattr("app.webapp._llm_configured", lambda: True)
     monkeypatch.setattr("app.webapp.get_version", lambda: "0.1.0")
@@ -48,7 +52,9 @@ def test_health_unhealthy_returns_503_and_payload(client: TestClient, monkeypatc
     }
 
 
-def test_health_payload_has_stable_keys(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_health_payload_has_stable_keys(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr("app.webapp._graph_loaded", lambda: True)
     monkeypatch.setattr("app.webapp._llm_configured", lambda: False)
     monkeypatch.setattr("app.webapp.get_version", lambda: "0.1.0")
@@ -56,4 +62,46 @@ def test_health_payload_has_stable_keys(client: TestClient, monkeypatch: pytest.
 
     response = client.get("/health")
 
-    assert sorted(response.json().keys()) == ["env", "graph_loaded", "llm_configured", "ok", "version"]
+    assert sorted(response.json().keys()) == [
+        "env",
+        "graph_loaded",
+        "llm_configured",
+        "ok",
+        "version",
+    ]
+
+
+@pytest.mark.parametrize(
+    "unexpected_error",
+    [
+        RuntimeError("Database connection lost!"),
+        KeyError("missing_env_key"),
+        TypeError("NoneType object is not subscriptable"),
+    ],
+)
+def test_health_unexpected_exceptions_not_swallowed(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, unexpected_error: Exception
+) -> None:
+    def mock_from_env(*args, **kwargs):
+        raise unexpected_error
+
+    monkeypatch.setattr("app.webapp.LLMSettings.from_env", mock_from_env)
+
+    with pytest.raises(type(unexpected_error)):
+        client.get("/health")
+
+
+def test_health_expected_exception_caught(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def mock_from_env(*args, **kwargs):
+        from app.config import LLMSettings
+
+        LLMSettings.model_validate({"provider": "invalid_provider"})
+
+    monkeypatch.setattr("app.webapp.LLMSettings.from_env", mock_from_env)
+
+    response = client.get("/health")
+
+    assert response.status_code == 503
+    assert response.json()["llm_configured"] is False

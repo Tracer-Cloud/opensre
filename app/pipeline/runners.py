@@ -106,9 +106,7 @@ def _map_langgraph_event(event: dict[str, Any]) -> StreamEvent:
 
 @dataclass
 class SimpleAgent:
-    def invoke(
-        self, state: AgentState, config: RunnableConfig | None = None
-    ) -> AgentState:
+    def invoke(self, state: AgentState, config: RunnableConfig | None = None) -> AgentState:
         from app.pipeline.graph import graph as compiled_graph  # lazy to avoid circular import
 
         cfg = config or {"configurable": {}}

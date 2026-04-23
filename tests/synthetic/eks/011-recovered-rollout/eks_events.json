@@ -1,0 +1,14 @@
+{
+  "warning_events": [
+    {
+      "namespace": "payments",
+      "reason": "ProgressDeadlineExceeded",
+      "message": "Deployment payments-api ReplicaSet payments-api-newrs-7c exceeded its progress deadline (deployment has since auto-rolled back; see datadog_logs)",
+      "type": "Warning",
+      "count": 1,
+      "involved_object": "Deployment/payments-api",
+      "first_time": "2026-04-18T10:40:00Z",
+      "last_time": "2026-04-18T10:40:00Z"
+    }
+  ]
+}

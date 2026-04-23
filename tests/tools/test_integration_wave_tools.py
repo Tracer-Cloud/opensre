@@ -42,7 +42,9 @@ def test_bitbucket_resolve_config_accepts_routed_instance_metadata() -> None:
 def test_snowflake_tool_enforces_bounded_limit(monkeypatch: Any) -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_post(url: str, headers: dict[str, str], json: dict[str, Any], timeout: float) -> _MockResponse:
+    def _fake_post(
+        url: str, headers: dict[str, str], json: dict[str, Any], timeout: float
+    ) -> _MockResponse:
         captured["url"] = url
         captured["statement"] = json["statement"]
         captured["timeout"] = timeout
@@ -77,15 +79,21 @@ def test_snowflake_tool_requires_token() -> None:
 def test_azure_tool_enforces_bounded_take_clause(monkeypatch: Any) -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_post(url: str, headers: dict[str, str], json: dict[str, Any], timeout: float) -> _MockResponse:
+    def _fake_post(
+        url: str, headers: dict[str, str], json: dict[str, Any], timeout: float
+    ) -> _MockResponse:
         captured["url"] = url
         captured["query"] = json["query"]
-        return _MockResponse({
-            "tables": [{
-                "columns": [{"name": "TimeGenerated"}, {"name": "Message"}],
-                "rows": [[f"t{idx}", f"message-{idx}"] for idx in range(10)],
-            }]
-        })
+        return _MockResponse(
+            {
+                "tables": [
+                    {
+                        "columns": [{"name": "TimeGenerated"}, {"name": "Message"}],
+                        "rows": [[f"t{idx}", f"message-{idx}"] for idx in range(10)],
+                    }
+                ]
+            }
+        )
 
     monkeypatch.setattr("app.tools.AzureMonitorLogsTool.httpx.post", _fake_post)
 
@@ -105,7 +113,9 @@ def test_azure_tool_enforces_bounded_take_clause(monkeypatch: Any) -> None:
 def test_openobserve_tool_caps_size_and_output(monkeypatch: Any) -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_post(url: str, headers: dict[str, str], json: dict[str, Any], timeout: float) -> _MockResponse:
+    def _fake_post(
+        url: str, headers: dict[str, str], json: dict[str, Any], timeout: float
+    ) -> _MockResponse:
         captured["url"] = url
         captured["size"] = json["size"]
         captured["sql"] = json["query"]["sql"]
@@ -122,7 +132,10 @@ def test_openobserve_tool_caps_size_and_output(monkeypatch: Any) -> None:
     )
 
     assert captured["size"] == 4
-    assert captured["sql"] == "SELECT * FROM \"default\" WHERE level = 'error' ORDER BY _timestamp DESC"
+    assert (
+        captured["sql"]
+        == "SELECT * FROM \"default\" WHERE level = 'error' ORDER BY _timestamp DESC"
+    )
     assert result["available"] is True
     assert len(result["records"]) == 4
 

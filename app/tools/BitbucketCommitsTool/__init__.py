@@ -78,5 +78,10 @@ def list_bitbucket_commits(
         integration_id,
     )
     if config is None:
-        return {"source": "bitbucket", "available": False, "error": "Bitbucket integration is not configured.", "commits": []}
+        return {
+            "source": "bitbucket",
+            "available": False,
+            "error": "Bitbucket integration is not configured.",
+            "commits": [],
+        }
     return list_commits(config, repo_slug=repo_slug, path=path, limit=limit)

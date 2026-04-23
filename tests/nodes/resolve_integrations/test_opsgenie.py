@@ -10,12 +10,14 @@ from app.nodes.resolve_integrations.node import _classify_integrations, _load_en
 
 
 def _active_opsgenie(api_key: str = "og-key", region: str = "us") -> list[dict[str, Any]]:
-    return [{
-        "id": "store-opsgenie",
-        "service": "opsgenie",
-        "status": "active",
-        "credentials": {"api_key": api_key, "region": region},
-    }]
+    return [
+        {
+            "id": "store-opsgenie",
+            "service": "opsgenie",
+            "status": "active",
+            "credentials": {"api_key": api_key, "region": region},
+        }
+    ]
 
 
 def test_classify_opsgenie_from_store() -> None:
@@ -36,12 +38,14 @@ def test_classify_opsgenie_skipped_without_api_key() -> None:
 
 
 def test_classify_opsgenie_skipped_when_inactive() -> None:
-    integrations = [{
-        "id": "x",
-        "service": "opsgenie",
-        "status": "inactive",
-        "credentials": {"api_key": "og-key"},
-    }]
+    integrations = [
+        {
+            "id": "x",
+            "service": "opsgenie",
+            "status": "inactive",
+            "credentials": {"api_key": "og-key"},
+        }
+    ]
     resolved = _classify_integrations(integrations)
     assert "opsgenie" not in resolved
 

@@ -8,6 +8,7 @@
 **/.mypy_cache
 **/.ruff_cache
 **/.venv
+**/.venv-devcontainer
 **/node_modules
 **/cdk.out
 tests/test_case_upstream_lambda/pipeline_code/api_ingester/certifi

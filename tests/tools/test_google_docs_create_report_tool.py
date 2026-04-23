@@ -90,7 +90,9 @@ def test_run_with_sharing() -> None:
 
 
 def test_run_handles_exception() -> None:
-    with patch("app.tools.GoogleDocsCreateReportTool.GoogleDocsClient", side_effect=Exception("Auth error")):
+    with patch(
+        "app.tools.GoogleDocsCreateReportTool.GoogleDocsClient", side_effect=Exception("Auth error")
+    ):
         result = create_google_docs_incident_report(
             title="Report",
             summary="Summary",

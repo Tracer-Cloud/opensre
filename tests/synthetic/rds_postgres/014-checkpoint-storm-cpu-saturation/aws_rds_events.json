@@ -15,6 +15,34 @@
       "event_categories": ["notification"]
     },
     {
+      "date": "2026-03-29T22:03:12Z",
+      "message": "PostgreSQL log: LOG: checkpoint starting: wal (triggered by max_wal_size threshold). Previous checkpoint completed 9 seconds ago.",
+      "source_identifier": "billing-prod",
+      "source_type": "db-instance",
+      "event_categories": ["database"]
+    },
+    {
+      "date": "2026-03-29T22:04:50Z",
+      "message": "PostgreSQL log: LOG: checkpoint complete: wrote 128542 buffers (39.2%); 0 WAL file(s) added, 48 removed, 0 recycled; write=41.8 s, sync=2.4 s, total=44.3 s; sync files=312, longest=1.1 s, average=0.3 s; distance=2097152 kB, estimate=2097152 kB.",
+      "source_identifier": "billing-prod",
+      "source_type": "db-instance",
+      "event_categories": ["database"]
+    },
+    {
+      "date": "2026-03-29T22:06:50Z",
+      "message": "PostgreSQL log warning: checkpoints are occurring too frequently (8 seconds apart). Consider increasing max_wal_size. This checkpoint storm indicates excessive WAL flushes from autovacuum VACUUM FREEZE activity on public.billing_events.",
+      "source_identifier": "billing-prod",
+      "source_type": "db-instance",
+      "event_categories": ["warning", "database"]
+    },
+    {
+      "date": "2026-03-29T22:07:22Z",
+      "message": "PostgreSQL log: LOG: checkpoint starting: wal. Checkpointer process is pinned; buffer flush queue saturated at 44.6 DiskQueueDepth driving LWLock:BufferMapping contention.",
+      "source_identifier": "billing-prod",
+      "source_type": "db-instance",
+      "event_categories": ["database"]
+    },
+    {
       "date": "2026-03-29T22:08:31Z",
       "message": "DB instance billing-prod CPU utilization has been above 85% for 5 consecutive minutes.",
       "source_identifier": "billing-prod",
@@ -23,10 +51,17 @@
     },
     {
       "date": "2026-03-29T22:09:02Z",
-      "message": "DB instance billing-prod low storage space: 99.0 GB remaining of 200 GB.",
+      "message": "DB instance billing-prod low storage space: 99.0 GB remaining of 200 GB. Rapid WAL growth from continuous checkpoint activity.",
       "source_identifier": "billing-prod",
       "source_type": "db-instance",
       "event_categories": ["low storage"]
+    },
+    {
+      "date": "2026-03-29T22:12:18Z",
+      "message": "PostgreSQL log warning: 38 checkpoints completed in the last 5 minutes (normal baseline: 1 per 5 minutes). Checkpoint storm is the dominant I/O driver on this instance.",
+      "source_identifier": "billing-prod",
+      "source_type": "db-instance",
+      "event_categories": ["warning", "database"]
     },
     {
       "date": "2026-03-29T22:18:44Z",

@@ -102,4 +102,3 @@ def test_minimax_llm_client_temperature_is_set(monkeypatch) -> None:
         temperature=1.0,
     )
     assert client._temperature == 1.0
-

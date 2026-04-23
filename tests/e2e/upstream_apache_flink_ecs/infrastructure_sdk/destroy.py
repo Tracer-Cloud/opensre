@@ -212,7 +212,12 @@ def _explicit_delete(outputs: dict, results: dict) -> None:
                 results["not_found"].append(f"ec2:security-group/{sg_id}")
             elif "DependencyViolation" in str(e):
                 print("    Warning: Security group has dependencies, may need manual cleanup")
-                results["failed"].append({"arn": f"ec2:security-group/{sg_id}", "error": "DependencyViolation - ENIs still attached"})
+                results["failed"].append(
+                    {
+                        "arn": f"ec2:security-group/{sg_id}",
+                        "error": "DependencyViolation - ENIs still attached",
+                    }
+                )
             else:
                 results["failed"].append({"arn": f"ec2:security-group/{sg_id}", "error": str(e)})
 

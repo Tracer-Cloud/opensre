@@ -5,11 +5,9 @@ integration credentials available for all downstream nodes. This replaces
 per-node credential fetching with a single upfront resolution.
 """
 
-from __future__ import annotations
-
 import logging
 import os
-from typing import Any
+from typing import Any, Optional
 
 from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
@@ -54,7 +52,8 @@ def _strip_bearer(token: str) -> str:
 
 @traceable(name="node_resolve_integrations")
 def node_resolve_integrations(
-    state: InvestigationState, config: RunnableConfig | None = None
+    state: InvestigationState,
+    config: Optional[RunnableConfig] = None,  # noqa: UP007,UP045
 ) -> dict:
     """Fetch all org integrations and classify them by service.
 

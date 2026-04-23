@@ -8,10 +8,12 @@ from app.config import LLMSettings
 
 def test_llm_settings_reject_provider_typos_with_suggestion() -> None:
     with pytest.raises(ValidationError, match="Did you mean 'openai'"):
-        LLMSettings.model_validate({
-            "provider": "opneai",
-            "openai_api_key": "sk-test",
-        })
+        LLMSettings.model_validate(
+            {
+                "provider": "opneai",
+                "openai_api_key": "sk-test",
+            }
+        )
 
 
 def test_llm_settings_require_api_key_for_selected_provider() -> None:
@@ -39,10 +41,12 @@ def test_llm_settings_require_minimax_api_key() -> None:
 
 
 def test_llm_settings_minimax_provider_accepted() -> None:
-    settings = LLMSettings.model_validate({
-        "provider": "minimax",
-        "minimax_api_key": "mm-test-key",
-    })
+    settings = LLMSettings.model_validate(
+        {
+            "provider": "minimax",
+            "minimax_api_key": "mm-test-key",
+        }
+    )
     assert settings.provider == "minimax"
     assert settings.minimax_api_key == "mm-test-key"
     assert settings.minimax_reasoning_model == "MiniMax-M2.7"
@@ -62,3 +66,33 @@ def test_llm_settings_from_env_minimax(monkeypatch) -> None:
     assert settings.provider == "minimax"
     assert settings.minimax_api_key == "mm-stored-key"
 
+
+def test_llm_settings_from_env_max_tokens_override(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("LLM_MAX_TOKENS", "8192")
+    monkeypatch.setattr("app.config.resolve_llm_api_key", lambda _: "")
+
+    settings = LLMSettings.from_env()
+
+    assert settings.max_tokens == 8192
+
+
+def test_llm_settings_from_env_max_tokens_invalid_raises(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("LLM_MAX_TOKENS", "not-a-number")
+    monkeypatch.setattr("app.config.resolve_llm_api_key", lambda _: "")
+
+    with pytest.raises((ValueError, ValidationError)):
+        LLMSettings.from_env()
+
+
+def test_llm_settings_from_env_max_tokens_default(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
+    monkeypatch.setattr("app.config.resolve_llm_api_key", lambda _: "")
+
+    from app.config import DEFAULT_MAX_TOKENS
+
+    settings = LLMSettings.from_env()
+
+    assert settings.max_tokens == DEFAULT_MAX_TOKENS

@@ -115,7 +115,10 @@ class DatadogClient:
                 query,
                 time_range_minutes,
             )
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
             logger.warning(
                 "[datadog] Log search request error type=%s detail=%s "
@@ -141,15 +144,17 @@ class DatadogClient:
 
             results = []
             for m in monitors if isinstance(monitors, list) else []:
-                results.append({
-                    "id": m.get("id"),
-                    "name": m.get("name", ""),
-                    "type": m.get("type", ""),
-                    "query": m.get("query", ""),
-                    "message": m.get("message", ""),
-                    "overall_state": m.get("overall_state", ""),
-                    "tags": m.get("tags", []),
-                })
+                results.append(
+                    {
+                        "id": m.get("id"),
+                        "name": m.get("name", ""),
+                        "type": m.get("type", ""),
+                        "query": m.get("query", ""),
+                        "message": m.get("message", ""),
+                        "overall_state": m.get("overall_state", ""),
+                        "tags": m.get("tags", []),
+                    }
+                )
 
             return {"success": True, "monitors": results, "total": len(results)}
         except httpx.HTTPStatusError as e:
@@ -159,7 +164,10 @@ class DatadogClient:
                 e.response.status_code,
                 query,
             )
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
             logger.warning(
                 "[datadog] List monitors request error type=%s detail=%s",
@@ -197,7 +205,9 @@ class DatadogClient:
         seen: set[str] = set()
         pods: list[dict[str, Any]] = []
         for log in result.get("logs", []):
-            pod_name = container_name = kube_namespace = exit_code = node_name = found_node_ip = None
+            pod_name = container_name = kube_namespace = exit_code = node_name = found_node_ip = (
+                None
+            )
             for tag in log.get("tags", []):
                 if not isinstance(tag, str) or ":" not in tag:
                     continue
@@ -225,15 +235,17 @@ class DatadogClient:
 
             if pod_name and pod_name not in seen:
                 seen.add(pod_name)
-                pods.append({
-                    "pod_name": pod_name,
-                    "namespace": kube_namespace,
-                    "container": container_name,
-                    "node_ip": found_node_ip or node_ip,
-                    "node_name": node_name,
-                    "exit_code": exit_code,
-                    "status": "failed" if exit_code and exit_code != "0" else "running",
-                })
+                pods.append(
+                    {
+                        "pod_name": pod_name,
+                        "namespace": kube_namespace,
+                        "container": container_name,
+                        "node_ip": found_node_ip or node_ip,
+                        "node_name": node_name,
+                        "exit_code": exit_code,
+                        "status": "failed" if exit_code and exit_code != "0" else "running",
+                    }
+                )
 
         return {"success": True, "pods": pods, "total": len(pods), "node_ip": node_ip}
 
@@ -265,18 +277,23 @@ class DatadogClient:
             events = []
             for event in data.get("data", []):
                 attrs = event.get("attributes", {})
-                events.append({
-                    "timestamp": attrs.get("timestamp", ""),
-                    "title": attrs.get("title", ""),
-                    "message": attrs.get("message", attrs.get("text", "")),
-                    "tags": attrs.get("tags", []),
-                    "source": attrs.get("source", ""),
-                })
+                events.append(
+                    {
+                        "timestamp": attrs.get("timestamp", ""),
+                        "title": attrs.get("title", ""),
+                        "message": attrs.get("message", attrs.get("text", "")),
+                        "tags": attrs.get("tags", []),
+                        "source": attrs.get("source", ""),
+                    }
+                )
 
             return {"success": True, "events": events, "total": len(events)}
         except httpx.HTTPStatusError as e:
             logger.warning("[datadog] Events query failed: %s", e.response.status_code)
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
             logger.warning("[datadog] Events query error: %s", e)
             return {"success": False, "error": str(e)}
@@ -334,7 +351,11 @@ class DatadogAsyncClient:
         except httpx.HTTPStatusError as e:
             duration_ms = int((time.monotonic() - t0) * 1000)
             logger.warning("[datadog] Async log search failed: %s", e.response.status_code)
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}", "duration_ms": duration_ms}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+                "duration_ms": duration_ms,
+            }
         except Exception as e:
             duration_ms = int((time.monotonic() - t0) * 1000)
             logger.warning("[datadog] Async log search error: %s", e)
@@ -356,20 +377,31 @@ class DatadogAsyncClient:
             duration_ms = int((time.monotonic() - t0) * 1000)
             results = []
             for m in monitors if isinstance(monitors, list) else []:
-                results.append({
-                    "id": m.get("id"),
-                    "name": m.get("name", ""),
-                    "type": m.get("type", ""),
-                    "query": m.get("query", ""),
-                    "message": m.get("message", ""),
-                    "overall_state": m.get("overall_state", ""),
-                    "tags": m.get("tags", []),
-                })
-            return {"success": True, "monitors": results, "total": len(results), "duration_ms": duration_ms}
+                results.append(
+                    {
+                        "id": m.get("id"),
+                        "name": m.get("name", ""),
+                        "type": m.get("type", ""),
+                        "query": m.get("query", ""),
+                        "message": m.get("message", ""),
+                        "overall_state": m.get("overall_state", ""),
+                        "tags": m.get("tags", []),
+                    }
+                )
+            return {
+                "success": True,
+                "monitors": results,
+                "total": len(results),
+                "duration_ms": duration_ms,
+            }
         except httpx.HTTPStatusError as e:
             duration_ms = int((time.monotonic() - t0) * 1000)
             logger.warning("[datadog] Async list monitors failed: %s", e.response.status_code)
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}", "duration_ms": duration_ms}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+                "duration_ms": duration_ms,
+            }
         except Exception as e:
             duration_ms = int((time.monotonic() - t0) * 1000)
             logger.warning("[datadog] Async list monitors error: %s", e)
@@ -402,18 +434,29 @@ class DatadogAsyncClient:
             events = []
             for event in data.get("data", []):
                 attrs = event.get("attributes", {})
-                events.append({
-                    "timestamp": attrs.get("timestamp", ""),
-                    "title": attrs.get("title", ""),
-                    "message": attrs.get("message", attrs.get("text", "")),
-                    "tags": attrs.get("tags", []),
-                    "source": attrs.get("source", ""),
-                })
-            return {"success": True, "events": events, "total": len(events), "duration_ms": duration_ms}
+                events.append(
+                    {
+                        "timestamp": attrs.get("timestamp", ""),
+                        "title": attrs.get("title", ""),
+                        "message": attrs.get("message", attrs.get("text", "")),
+                        "tags": attrs.get("tags", []),
+                        "source": attrs.get("source", ""),
+                    }
+                )
+            return {
+                "success": True,
+                "events": events,
+                "total": len(events),
+                "duration_ms": duration_ms,
+            }
         except httpx.HTTPStatusError as e:
             duration_ms = int((time.monotonic() - t0) * 1000)
             logger.warning("[datadog] Async events query failed: %s", e.response.status_code)
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}", "duration_ms": duration_ms}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+                "duration_ms": duration_ms,
+            }
         except Exception as e:
             duration_ms = int((time.monotonic() - t0) * 1000)
             logger.warning("[datadog] Async events query error: %s", e)

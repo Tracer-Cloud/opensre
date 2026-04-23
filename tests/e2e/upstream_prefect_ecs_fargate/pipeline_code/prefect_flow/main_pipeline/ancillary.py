@@ -11,6 +11,7 @@ from collections.abc import Callable
 CONNECTIVITY_TIMEOUT_SECONDS = 5
 CONNECTIVITY_SAMPLE_BYTES = 512
 
+
 def _format_response_sample(payload: bytes) -> str:
     text = payload.decode("utf-8", errors="replace").strip()
     return " ".join(text.split())
@@ -76,9 +77,7 @@ def run_connectivity_checks(logger, log_stdout: Callable[[str], None]) -> None:
         url=external_url,
     )
 
-    grafana_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv(
-        "GCLOUD_OTLP_ENDPOINT"
-    )
+    grafana_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv("GCLOUD_OTLP_ENDPOINT")
     if not grafana_endpoint:
         logger.info("Grafana connectivity check skipped: no OTLP endpoint configured")
         return

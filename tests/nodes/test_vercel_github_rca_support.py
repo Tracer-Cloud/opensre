@@ -82,9 +82,7 @@ def test_build_diagnosis_prompt_includes_vercel_and_github_sections() -> None:
             },
             "vercel_error_events": [{"text": "Build failed: cannot resolve import"}],
             "vercel_runtime_logs": [{"message": "Error: cannot resolve import"}],
-            "github_code_matches": [
-                {"path": "src/app.ts", "matches": ["throw new Error('boom')"]}
-            ],
+            "github_code_matches": [{"path": "src/app.ts", "matches": ["throw new Error('boom')"]}],
             "github_commits": [{"sha": "abc123", "message": "fix: update import path"}],
         },
     )

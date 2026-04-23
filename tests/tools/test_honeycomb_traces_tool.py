@@ -15,12 +15,16 @@ class TestHoneycombTracesToolContract(BaseToolContract):
 
 def test_is_available_requires_connection_and_service_or_trace() -> None:
     tool = HoneycombTracesTool()
-    assert tool.is_available({
-        "honeycomb": {"connection_verified": True, "service_name": "my-service"}
-    }) is True
-    assert tool.is_available({
-        "honeycomb": {"connection_verified": True, "trace_id": "abc123"}
-    }) is True
+    assert (
+        tool.is_available(
+            {"honeycomb": {"connection_verified": True, "service_name": "my-service"}}
+        )
+        is True
+    )
+    assert (
+        tool.is_available({"honeycomb": {"connection_verified": True, "trace_id": "abc123"}})
+        is True
+    )
     assert tool.is_available({"honeycomb": {"connection_verified": True}}) is False
     assert tool.is_available({}) is False
 

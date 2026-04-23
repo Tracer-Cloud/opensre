@@ -150,7 +150,8 @@ class PrefectWorkerHealthTool(BaseTool):
 
             work_pools: list[dict[str, Any]] = pools_result.get("work_pools", [])
             unhealthy_pools = [
-                p for p in work_pools
+                p
+                for p in work_pools
                 if p.get("status", "").upper() in _UNHEALTHY_POOL_STATUSES
                 or p.get("is_paused", False)
             ]
@@ -165,7 +166,8 @@ class PrefectWorkerHealthTool(BaseTool):
                 if workers_result.get("success"):
                     workers = workers_result.get("workers", [])
                     unhealthy_workers = [
-                        w for w in workers
+                        w
+                        for w in workers
                         if w.get("status", "").upper() in _UNHEALTHY_WORKER_STATUSES
                     ]
 

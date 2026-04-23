@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 
 from fastapi import FastAPI, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.config import LLMSettings, get_environment
 from app.version import get_version
@@ -27,7 +27,7 @@ def _graph_loaded() -> bool:
 def _llm_configured() -> bool:
     try:
         LLMSettings.from_env()
-    except Exception:
+    except ValidationError:
         return False
     return True
 
@@ -48,5 +48,7 @@ def get_health_response() -> HealthResponse:
 @app.get("/health", response_model=HealthResponse)
 def health(response: Response) -> HealthResponse:
     health_response = get_health_response()
-    response.status_code = status.HTTP_200_OK if health_response.ok else status.HTTP_503_SERVICE_UNAVAILABLE
+    response.status_code = (
+        status.HTTP_200_OK if health_response.ok else status.HTTP_503_SERVICE_UNAVAILABLE
+    )
     return health_response

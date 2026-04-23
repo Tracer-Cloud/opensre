@@ -1,0 +1,37 @@
+root_cause_category: healthy
+required_keywords:
+  - rolled back
+forbidden_categories:
+  - unknown
+  - configuration_error
+  - resource_exhaustion
+  - infrastructure
+optimal_trajectory:
+  - list_eks_deployments
+  - get_eks_events
+  - list_eks_pods
+max_investigation_loops: 3
+ruling_out_keywords:
+  - rolled back
+  - not currently stuck
+  - no active failure
+required_queries:
+  - list_eks_deployments
+  - get_eks_events
+model_response: |
+  ROOT_CAUSE: No active failure. The deployment payments-api attempted a rollout to revision v3.2.0 which failed and emitted ProgressDeadlineExceeded ~25 minutes ago. The bad ReplicaSet was automatically rolled back to the previous revision and the deployment now reports desired=3, ready=3, available=3 with the prior-version pods serving traffic. The Datadog alert fired on the historical event without re-checking current state.
+  ROOT_CAUSE_CATEGORY: healthy
+
+  VALIDATED_CLAIMS:
+  - Deployment payments-api reports desired=3, ready=3, available=3, unavailable=0. [evidence: eks_deployments]
+  - All 3 pods are from the prior-revision ReplicaSet (payments-api-7f9dd8b6c4-*) and are Running and Ready. [evidence: eks_pods]
+  - The Warning event ProgressDeadlineExceeded at 10:40Z is the only K8s event present. [evidence: eks_events]
+  - Control-plane log timeline shows DeploymentRollback to revision N-1 at 10:42Z and the deployment subsequently marked Available. [evidence: datadog_logs]
+  - Datadog monitors for error rate and latency are OK. [evidence: datadog_monitors]
+
+  NON_VALIDATED_CLAIMS:
+  - The bad revision likely had a regression that should be investigated separately, but the production deployment is no longer affected.
+  - The Datadog alert rule could re-evaluate against current deployment status to suppress this class of stale alert.
+
+  CAUSAL_CHAIN:
+  - No active failure causal chain. A bad rollout was attempted, ProgressDeadlineExceeded fired, the deployment auto-rolled back to the previous revision, and the workload is now stable. The alert reflects a historical event that has already been resolved.

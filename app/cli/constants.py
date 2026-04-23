@@ -29,6 +29,7 @@ SAMPLE_ALERT_OPTIONS: tuple[tuple[str, str], ...] = (
 SETUP_SERVICES: tuple[str, ...] = (
     "alertmanager",
     "aws",
+    "betterstack",
     "coralogix",
     "datadog",
     "discord",
@@ -53,11 +54,13 @@ SETUP_SERVICES: tuple[str, ...] = (
 VERIFY_SERVICES: tuple[str, ...] = (
     "alertmanager",
     "aws",
+    "betterstack",
     "bitbucket",
     "clickhouse",
     "coralogix",
     "datadog",
     "discord",
+    "telegram",
     "github",
     "google_docs",
     "grafana",

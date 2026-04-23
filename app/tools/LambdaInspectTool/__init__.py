@@ -40,7 +40,10 @@ def inspect_lambda_function(function_name: str, include_code: bool = True) -> di
 
     config_result = get_function_configuration(function_name)
     if not config_result.get("success"):
-        return {"error": config_result.get("error", "Unknown error"), "function_name": function_name}
+        return {
+            "error": config_result.get("error", "Unknown error"),
+            "function_name": function_name,
+        }
 
     config = config_result.get("data", {})
     result = {

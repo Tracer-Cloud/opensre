@@ -1,7 +1,9 @@
 """Root cause diagnosis node - orchestration and entry point."""
 
 import os
+from typing import Optional
 
+from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from app.investigation_constants import MAX_INVESTIGATION_LOOPS
@@ -12,11 +14,30 @@ from app.state import InvestigationState
 
 from .claim_validator import calculate_validity_score, validate_and_categorize_claims
 from .evidence_checker import (
+    CLAIM_EVIDENCE_KEYS,
+    INVESTIGATED_EVIDENCE_KEYS,
     check_evidence_availability,
     check_vendor_evidence_missing,
     is_clearly_healthy,
 )
 from .prompt_builder import build_diagnosis_prompt
+
+
+def _is_healthy_claim_key(key: str, value: object) -> bool:
+    """Return True iff a key should produce a healthy-short-circuit claim.
+
+    - Investigation keys (``INVESTIGATED_EVIDENCE_KEYS``) always qualify, even
+      with an empty value — an empty list after a completed investigation is
+      itself the healthy signal (mirrors ``is_clearly_healthy`` condition 4).
+    - Other entries in ``CLAIM_EVIDENCE_KEYS`` qualify only when truthy.
+    - Every other evidence entry (query strings, counts, timings, resource
+      names, trace IDs, etc.) is ignored — the whitelist is authoritative.
+    """
+    if key in INVESTIGATED_EVIDENCE_KEYS:
+        return True
+    if key in CLAIM_EVIDENCE_KEYS:
+        return bool(value)
+    return False
 
 
 def _short_circuit_enabled() -> bool:
@@ -49,7 +70,9 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
     evidence = state.get("evidence", {})
     raw_alert = state.get("raw_alert", {})
 
-    has_tracer, has_cloudwatch, has_alert = check_evidence_availability(context, evidence, raw_alert)
+    has_tracer, has_cloudwatch, has_alert = check_evidence_availability(
+        context, evidence, raw_alert
+    )
 
     if _short_circuit_enabled() and is_clearly_healthy(raw_alert, evidence):
         debug_print("Short-circuit: alert is clearly healthy, skipping LLM")
@@ -101,17 +124,13 @@ def diagnose_root_cause(state: InvestigationState) -> dict:
         "validated_claims": masking_ctx.unmask_value(validated_claims_list),
         "non_validated_claims": masking_ctx.unmask_value(non_validated_claims_list),
         "validity_score": validity_score,
-        "investigation_recommendations": [
-            masking_ctx.unmask(rec) for rec in recommendations
-        ],
+        "investigation_recommendations": [masking_ctx.unmask(rec) for rec in recommendations],
         "remediation_steps": [],
         "investigation_loop_count": next_loop_count,
     }
 
 
-def _handle_healthy_finding(
-    state: InvestigationState, tracker, evidence: dict
-) -> dict:
+def _handle_healthy_finding(state: InvestigationState, tracker, evidence: dict) -> dict:
     """Return a deterministic healthy finding, bypassing the LLM.
 
     Called when is_clearly_healthy() confirms the alert is informational and all
@@ -121,10 +140,20 @@ def _handle_healthy_finding(
     alert_name = state.get("alert_name", "Health check")
     loop_count = state.get("investigation_loop_count", 0)
 
+    # Emit one claim per evidence source drawn from the CLAIM_EVIDENCE_KEYS
+    # whitelist. Investigation keys produce a claim even when empty (per
+    # is_clearly_healthy's condition 4: an empty grafana_logs after a completed
+    # investigation is the healthy signal). Other whitelisted data keys produce
+    # a claim only when non-empty. The previous ``for k in evidence if evidence[k]``
+    # pattern dropped empty investigation keys and leaked metadata entries
+    # (grafana_logs_query, eks_total_pods, datadog_fetch_ms, ...) as findings.
     validated_claims = [
-        {"claim": f"{k} data confirmed within normal operating bounds", "validation_status": "validated"}
-        for k in evidence
-        if evidence[k]
+        {
+            "claim": f"{k} data confirmed within normal operating bounds",
+            "validation_status": "validated",
+        }
+        for k in sorted(evidence)
+        if _is_healthy_claim_key(k, evidence[k])
     ]
 
     tracker.complete(
@@ -164,7 +193,11 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
     # If Grafana service names were just discovered but logs haven't been fetched yet,
     # loop back so node_plan_actions can query logs with the correct service name.
     recommendations: list[str] = []
-    if evidence.get("grafana_service_names") and not evidence.get("grafana_logs") and loop_count < MAX_INVESTIGATION_LOOPS:
+    if (
+        evidence.get("grafana_service_names")
+        and not evidence.get("grafana_logs")
+        and loop_count < MAX_INVESTIGATION_LOOPS
+    ):
         recommendations.append("Query Grafana logs using discovered service names")
 
     next_loop_count = loop_count + 1
@@ -172,7 +205,8 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
     tracker.complete(
         "diagnose_root_cause",
         fields_updated=["root_cause"],
-        message="Insufficient evidence" + (f" — retrying ({next_loop_count})" if recommendations else ""),
+        message="Insufficient evidence"
+        + (f" — retrying ({next_loop_count})" if recommendations else ""),
     )
 
     return {
@@ -193,6 +227,9 @@ def _handle_insufficient_evidence(state: InvestigationState, tracker) -> dict:
 
 
 @traceable(name="node_diagnose_root_cause")
-def node_diagnose_root_cause(state: InvestigationState) -> dict:
+def node_diagnose_root_cause(
+    state: InvestigationState,
+    config: Optional[RunnableConfig] = None,  # noqa: ARG001,UP007,UP045
+) -> dict:
     """LangGraph node wrapper with LangSmith tracking."""
     return diagnose_root_cause(state)

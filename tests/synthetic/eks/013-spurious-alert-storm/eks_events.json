@@ -1,0 +1,34 @@
+{
+  "warning_events": [
+    {
+      "namespace": "default",
+      "reason": "NodeNotReady",
+      "message": "Node ip-10-0-1-73.us-east-1.compute.internal status is now: NodeNotReady (recovered after 30s — see datadog_logs)",
+      "type": "Warning",
+      "count": 1,
+      "involved_object": "Node/ip-10-0-1-73.us-east-1.compute.internal",
+      "first_time": "2026-04-18T10:25:00Z",
+      "last_time": "2026-04-18T10:25:00Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "BackOff",
+      "message": "Back-off restarting failed container payments-api in pod payments-api-7f9dd8b6c4-k2m4p (transient kubelet flap during 30s node NotReady window)",
+      "type": "Warning",
+      "count": 2,
+      "involved_object": "Pod/payments-api-7f9dd8b6c4-k2m4p",
+      "first_time": "2026-04-18T10:25:05Z",
+      "last_time": "2026-04-18T10:25:25Z"
+    },
+    {
+      "namespace": "payments",
+      "reason": "Unhealthy",
+      "message": "Liveness probe failed: dial tcp 10.0.1.73:8080: connect: connection refused (during node flap window; recovered)",
+      "type": "Warning",
+      "count": 3,
+      "involved_object": "Pod/payments-api-7f9dd8b6c4-k2m4p",
+      "first_time": "2026-04-18T10:25:08Z",
+      "last_time": "2026-04-18T10:25:28Z"
+    }
+  ]
+}

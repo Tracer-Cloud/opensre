@@ -95,21 +95,23 @@ class OpsGenieClient:
 
             alerts = []
             for a in data.get("data", []):
-                alerts.append({
-                    "id": a.get("id", ""),
-                    "tiny_id": a.get("tinyId", ""),
-                    "message": a.get("message", ""),
-                    "status": a.get("status", ""),
-                    "acknowledged": a.get("acknowledged", False),
-                    "is_seen": a.get("isSeen", False),
-                    "priority": a.get("priority", ""),
-                    "source": a.get("source", ""),
-                    "tags": a.get("tags", []),
-                    "created_at": a.get("createdAt", ""),
-                    "updated_at": a.get("updatedAt", ""),
-                    "owner": a.get("owner", ""),
-                    "integration_type": a.get("integration", {}).get("type", ""),
-                })
+                alerts.append(
+                    {
+                        "id": a.get("id", ""),
+                        "tiny_id": a.get("tinyId", ""),
+                        "message": a.get("message", ""),
+                        "status": a.get("status", ""),
+                        "acknowledged": a.get("acknowledged", False),
+                        "is_seen": a.get("isSeen", False),
+                        "priority": a.get("priority", ""),
+                        "source": a.get("source", ""),
+                        "tags": a.get("tags", []),
+                        "created_at": a.get("createdAt", ""),
+                        "updated_at": a.get("updatedAt", ""),
+                        "owner": a.get("owner", ""),
+                        "integration_type": a.get("integration", {}).get("type", ""),
+                    }
+                )
 
             return {"success": True, "alerts": alerts, "total": len(alerts)}
         except httpx.HTTPStatusError as e:
@@ -118,7 +120,10 @@ class OpsGenieClient:
                 e.response.status_code,
                 query,
             )
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
             logger.warning("[opsgenie] List alerts error: %s", e)
             return {"success": False, "error": str(e)}
@@ -159,8 +164,15 @@ class OpsGenieClient:
 
             return {"success": True, "alert": alert}
         except httpx.HTTPStatusError as e:
-            logger.warning("[opsgenie] Get alert HTTP failure status=%s id=%r", e.response.status_code, alert_id)
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            logger.warning(
+                "[opsgenie] Get alert HTTP failure status=%s id=%r",
+                e.response.status_code,
+                alert_id,
+            )
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
             logger.warning("[opsgenie] Get alert error: %s", e)
             return {"success": False, "error": str(e)}
@@ -176,18 +188,27 @@ class OpsGenieClient:
 
             logs = []
             for entry in data.get("data", []):
-                logs.append({
-                    "log": entry.get("log", ""),
-                    "type": entry.get("type", ""),
-                    "owner": entry.get("owner", ""),
-                    "created_at": entry.get("createdAt", ""),
-                    "offset": entry.get("offset", ""),
-                })
+                logs.append(
+                    {
+                        "log": entry.get("log", ""),
+                        "type": entry.get("type", ""),
+                        "owner": entry.get("owner", ""),
+                        "created_at": entry.get("createdAt", ""),
+                        "offset": entry.get("offset", ""),
+                    }
+                )
 
             return {"success": True, "logs": logs, "total": len(logs)}
         except httpx.HTTPStatusError as e:
-            logger.warning("[opsgenie] Get alert logs HTTP failure status=%s id=%r", e.response.status_code, alert_id)
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            logger.warning(
+                "[opsgenie] Get alert logs HTTP failure status=%s id=%r",
+                e.response.status_code,
+                alert_id,
+            )
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
             logger.warning("[opsgenie] Get alert logs error: %s", e)
             return {"success": False, "error": str(e)}
@@ -202,8 +223,13 @@ class OpsGenieClient:
             resp.raise_for_status()
             return {"success": True}
         except httpx.HTTPStatusError as e:
-            logger.warning("[opsgenie] Add note HTTP failure status=%s id=%r", e.response.status_code, alert_id)
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            logger.warning(
+                "[opsgenie] Add note HTTP failure status=%s id=%r", e.response.status_code, alert_id
+            )
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
             logger.warning("[opsgenie] Add note error: %s", e)
             return {"success": False, "error": str(e)}

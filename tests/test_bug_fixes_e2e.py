@@ -19,6 +19,7 @@ from app.pipeline.routing import should_continue_investigation
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_rule(
     name: str = "test",
     action: str = "redact",
@@ -41,16 +42,19 @@ def _make_rule(
 # 1. Guardrails overlapping keyword redaction — full pipeline
 # ---------------------------------------------------------------------------
 
+
 class TestOverlappingRedactionE2E:
     """Prove that overlapping keywords are fully redacted through the complete
     scan → audit → redact pipeline, not just in isolation."""
 
     def test_secret_and_secret_key_across_rules(self) -> None:
         """Two rules, shorter keyword is a prefix of the longer one."""
-        engine = GuardrailEngine([
-            _make_rule(name="generic", keywords=["secret"]),
-            _make_rule(name="specific", keywords=["secret_key"]),
-        ])
+        engine = GuardrailEngine(
+            [
+                _make_rule(name="generic", keywords=["secret"]),
+                _make_rule(name="specific", keywords=["secret_key"]),
+            ]
+        )
         result = engine.apply("export secret_key=hunter2")
         # The longer match must win — no leftover "_key"
         assert "_key" not in result
@@ -59,19 +63,23 @@ class TestOverlappingRedactionE2E:
 
     def test_api_and_api_key_single_rule(self) -> None:
         """Both keywords in the same rule."""
-        engine = GuardrailEngine([
-            _make_rule(name="creds", keywords=["api", "api_key"]),
-        ])
+        engine = GuardrailEngine(
+            [
+                _make_rule(name="creds", keywords=["api", "api_key"]),
+            ]
+        )
         result = engine.apply("set api_key=abc123")
         assert "_key" not in result
         assert "=abc123" in result
 
     def test_multiple_overlapping_occurrences(self) -> None:
         """Multiple overlapping pairs in one string."""
-        engine = GuardrailEngine([
-            _make_rule(name="r1", keywords=["pass"]),
-            _make_rule(name="r2", keywords=["password"]),
-        ])
+        engine = GuardrailEngine(
+            [
+                _make_rule(name="r1", keywords=["pass"]),
+                _make_rule(name="r2", keywords=["password"]),
+            ]
+        )
         text = "password=foo and pass=bar"
         result = engine.apply(text)
         # "password" should be fully redacted (not "word" leftover)
@@ -81,10 +89,12 @@ class TestOverlappingRedactionE2E:
 
     def test_pattern_and_keyword_overlap(self) -> None:
         """A regex pattern and a keyword overlap on the same span."""
-        engine = GuardrailEngine([
-            _make_rule(name="pat", patterns=[r"AKIA[A-Z0-9]{16}"]),
-            _make_rule(name="kw", keywords=["akia"]),
-        ])
+        engine = GuardrailEngine(
+            [
+                _make_rule(name="pat", patterns=[r"AKIA[A-Z0-9]{16}"]),
+                _make_rule(name="kw", keywords=["akia"]),
+            ]
+        )
         text = "key=AKIAIOSFODNN7EXAMPLE"
         result = engine.apply(text)
         # The longer regex match should win
@@ -93,9 +103,11 @@ class TestOverlappingRedactionE2E:
 
     def test_full_scan_apply_audit_cycle(self) -> None:
         """Scan, check matches, then apply — the real engine flow."""
-        engine = GuardrailEngine([
-            _make_rule(name="tokens", keywords=["token", "token_secret"]),
-        ])
+        engine = GuardrailEngine(
+            [
+                _make_rule(name="tokens", keywords=["token", "token_secret"]),
+            ]
+        )
         text = "auth token_secret=xyz and token=abc"
 
         # Apply correctly redacts overlapping matches without leftovers.
@@ -108,6 +120,7 @@ class TestOverlappingRedactionE2E:
 # ---------------------------------------------------------------------------
 # 2. Investigation loop — diagnosis node + routing integration
 # ---------------------------------------------------------------------------
+
 
 class TestInvestigationLoopE2E:
     """Prove that the diagnosis node generates recommendations at all valid
@@ -129,9 +142,7 @@ class TestInvestigationLoopE2E:
                 "available_action_names": ["some_action"],
             }
             result = should_continue_investigation(state)
-            assert result == "investigate", (
-                f"Loop {loop} should continue but got '{result}'"
-            )
+            assert result == "investigate", f"Loop {loop} should continue but got '{result}'"
 
     def test_routing_publishes_when_over_limit(self) -> None:
         """Loop count > MAX_INVESTIGATION_LOOPS triggers publish."""

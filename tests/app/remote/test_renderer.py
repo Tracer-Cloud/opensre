@@ -31,27 +31,39 @@ def _investigation_events() -> Iterator[StreamEvent]:
     """Simulate a minimal investigation stream (updates mode)."""
     yield _make_event("metadata", data={"run_id": "r-1"})
     yield _make_event(
-        "updates", "extract_alert",
-        {"extract_alert": {"alert_name": "test-alert", "pipeline_name": "etl", "severity": "critical"}},
+        "updates",
+        "extract_alert",
+        {
+            "extract_alert": {
+                "alert_name": "test-alert",
+                "pipeline_name": "etl",
+                "severity": "critical",
+            }
+        },
     )
     yield _make_event(
-        "updates", "resolve_integrations",
+        "updates",
+        "resolve_integrations",
         {"resolve_integrations": {"resolved_integrations": {"grafana": {}}}},
     )
     yield _make_event(
-        "updates", "plan_actions",
+        "updates",
+        "plan_actions",
         {"plan_actions": {"planned_actions": ["query_grafana_logs"]}},
     )
     yield _make_event(
-        "updates", "investigate",
+        "updates",
+        "investigate",
         {"investigate": {"evidence": {"logs": "error found"}}},
     )
     yield _make_event(
-        "updates", "diagnose",
+        "updates",
+        "diagnose",
         {"diagnose": {"root_cause": "Schema mismatch", "validity_score": 0.85}},
     )
     yield _make_event(
-        "updates", "publish",
+        "updates",
+        "publish",
         {"publish": {"report": "Investigation complete."}},
     )
     yield _make_event("end")
@@ -62,39 +74,63 @@ def _events_mode_stream() -> Iterator[StreamEvent]:
     yield _make_event("metadata", data={"run_id": "r-3"})
 
     yield _make_event(
-        "events", "extract_alert",
+        "events",
+        "extract_alert",
         {"name": "extract_alert", "data": {}, "metadata": {"langgraph_node": "extract_alert"}},
-        kind="on_chain_start", tags=["graph:step:1"],
+        kind="on_chain_start",
+        tags=["graph:step:1"],
     )
     yield _make_event(
-        "events", "extract_alert",
-        {"name": "extract_alert", "data": {"output": {"alert_name": "test", "severity": "high"}},
-         "metadata": {"langgraph_node": "extract_alert"}},
-        kind="on_chain_end", tags=["graph:step:1"],
+        "events",
+        "extract_alert",
+        {
+            "name": "extract_alert",
+            "data": {"output": {"alert_name": "test", "severity": "high"}},
+            "metadata": {"langgraph_node": "extract_alert"},
+        },
+        kind="on_chain_end",
+        tags=["graph:step:1"],
     )
 
     yield _make_event(
-        "events", "investigate",
+        "events",
+        "investigate",
         {"name": "investigate", "data": {}, "metadata": {"langgraph_node": "investigate"}},
-        kind="on_chain_start", tags=["graph:step:3"],
+        kind="on_chain_start",
+        tags=["graph:step:3"],
     )
     yield _make_event(
-        "events", "investigate",
-        {"name": "query_datadog_logs", "data": {"input": {"query": "error"}},
-         "metadata": {"langgraph_node": "investigate"}},
-        kind="on_tool_start", tags=[],
+        "events",
+        "investigate",
+        {
+            "name": "query_datadog_logs",
+            "data": {"input": {"query": "error"}},
+            "metadata": {"langgraph_node": "investigate"},
+        },
+        kind="on_tool_start",
+        tags=[],
     )
     yield _make_event(
-        "events", "investigate",
-        {"name": "query_datadog_logs", "data": {"output": "42 entries"},
-         "metadata": {"langgraph_node": "investigate"}},
-        kind="on_tool_end", tags=[],
+        "events",
+        "investigate",
+        {
+            "name": "query_datadog_logs",
+            "data": {"output": "42 entries"},
+            "metadata": {"langgraph_node": "investigate"},
+        },
+        kind="on_tool_end",
+        tags=[],
     )
     yield _make_event(
-        "events", "investigate",
-        {"name": "investigate", "data": {"output": {"root_cause": "Schema error"}},
-         "metadata": {"langgraph_node": "investigate"}},
-        kind="on_chain_end", tags=["graph:step:3"],
+        "events",
+        "investigate",
+        {
+            "name": "investigate",
+            "data": {"output": {"root_cause": "Schema error"}},
+            "metadata": {"langgraph_node": "investigate"},
+        },
+        kind="on_chain_end",
+        tags=["graph:step:3"],
     )
 
     yield _make_event("end")
@@ -154,7 +190,8 @@ class TestStreamRendererUpdatesMode:
         def noise_events() -> Iterator[StreamEvent]:
             yield _make_event("metadata", data={"run_id": "r-2"})
             yield _make_event(
-                "updates", "extract_alert",
+                "updates",
+                "extract_alert",
                 {"extract_alert": {"is_noise": True, "alert_name": "noise"}},
             )
             yield _make_event("end")
@@ -213,7 +250,8 @@ class TestStreamRendererEventsMode:
     def test_ignores_events_without_node(self) -> None:
         def nodeless_events() -> Iterator[StreamEvent]:
             yield _make_event(
-                "events", "",
+                "events",
+                "",
                 {"event": "on_chain_start", "name": "RunnableSequence"},
                 kind="on_chain_start",
             )
@@ -226,8 +264,10 @@ class TestStreamRendererEventsMode:
     @patch.dict(os.environ, {"TRACER_OUTPUT_FORMAT": "text"})
     def test_is_graph_node_event_with_step_tag(self) -> None:
         evt = _make_event(
-            "events", "investigate",
-            {"name": "investigate"}, kind="on_chain_start",
+            "events",
+            "investigate",
+            {"name": "investigate"},
+            kind="on_chain_start",
             tags=["graph:step:3"],
         )
         assert StreamRenderer._is_graph_node_event(evt) is True
@@ -235,16 +275,20 @@ class TestStreamRendererEventsMode:
     @patch.dict(os.environ, {"TRACER_OUTPUT_FORMAT": "text"})
     def test_is_graph_node_event_name_match(self) -> None:
         evt = _make_event(
-            "events", "investigate",
-            {"name": "investigate"}, kind="on_chain_start",
+            "events",
+            "investigate",
+            {"name": "investigate"},
+            kind="on_chain_start",
         )
         assert StreamRenderer._is_graph_node_event(evt) is True
 
     @patch.dict(os.environ, {"TRACER_OUTPUT_FORMAT": "text"})
     def test_sub_chain_not_graph_node(self) -> None:
         evt = _make_event(
-            "events", "investigate",
-            {"name": "RunnableSequence"}, kind="on_chain_start",
+            "events",
+            "investigate",
+            {"name": "RunnableSequence"},
+            kind="on_chain_start",
             tags=["langsmith:hidden"],
         )
         assert StreamRenderer._is_graph_node_event(evt) is False

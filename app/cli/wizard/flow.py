@@ -135,6 +135,12 @@ def validate_vercel_integration(**kwargs):
     return _validate(**kwargs)
 
 
+def validate_betterstack_integration(**kwargs):
+    from app.cli.wizard.integration_health import validate_betterstack_integration as _validate
+
+    return _validate(**kwargs)
+
+
 def validate_alertmanager_integration(**kwargs):
     from app.cli.wizard.integration_health import validate_alertmanager_integration as _validate
 
@@ -875,7 +881,8 @@ def _configure_openclaw() -> tuple[str, str]:
     stored_command = _string_value(credentials.get("command"))
     stored_args = credentials.get("args")
     use_stdio_defaults = _looks_like_openclaw_control_ui_url(credentials.get("url")) or (
-        stored_command == "openclaw-mcp" and not _joined_values(stored_args, separator=" ", fallback="")
+        stored_command == "openclaw-mcp"
+        and not _joined_values(stored_args, separator=" ", fallback="")
     )
     default_mode = (
         DEFAULT_OPENCLAW_MCP_MODE
@@ -1059,6 +1066,7 @@ def _configure_sentry() -> tuple[str, str]:
             return "Sentry", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
+
 def _configure_notion() -> tuple[str, str]:
     _, credentials = _integration_defaults("notion")
     _console.print("\n[bold]Notion Integration[/bold]")
@@ -1074,10 +1082,13 @@ def _configure_notion() -> tuple[str, str]:
         _render_integration_result("Notion", result)
 
         if result.ok:
-            upsert_integration("notion", {"credentials": {"api_key": api_key, "database_id": database_id}})
+            upsert_integration(
+                "notion", {"credentials": {"api_key": api_key, "database_id": database_id}}
+            )
             env_path = sync_env_values({"NOTION_DATABASE_ID": database_id})
             return "Notion", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
 
 def _configure_jira() -> tuple[str, str]:
     _, credentials = _integration_defaults("jira")
@@ -1178,6 +1189,54 @@ def _configure_vercel() -> tuple[str, str]:
             )
             env_path = sync_env_values({})
             return "Vercel", str(env_path)
+        _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
+
+
+def _configure_betterstack() -> tuple[str, str]:
+    _, credentials = _integration_defaults("betterstack")
+    while True:
+        query_endpoint = _prompt_value(
+            "Better Stack SQL query endpoint (e.g. https://eu-nbg-2-connect.betterstackdata.com)",
+            default=_string_value(credentials.get("query_endpoint")),
+        )
+        username = _prompt_value(
+            "Better Stack username (Integrations > Connect ClickHouse HTTP client)",
+            default=_string_value(credentials.get("username")),
+        )
+        password = _prompt_value(
+            "Better Stack password",
+            default=_string_value(credentials.get("password")),
+            secret=True,
+        )
+        sources_raw = _prompt_value(
+            "Better Stack sources (comma-separated base IDs from dashboard, e.g. t123456_myapp; optional planner hint)",
+            default=_joined_values(credentials.get("sources"), separator=",", fallback=""),
+            allow_empty=True,
+        )
+        sources = [part.strip() for part in sources_raw.split(",") if part.strip()]
+
+        with _console.status("Validating Better Stack integration...", spinner="dots"):
+            result = validate_betterstack_integration(
+                query_endpoint=query_endpoint,
+                username=username,
+                password=password,
+                sources=sources,
+            )
+        _render_integration_result("Better Stack", result)
+        if result.ok:
+            upsert_integration(
+                "betterstack",
+                {
+                    "credentials": {
+                        "query_endpoint": query_endpoint,
+                        "username": username,
+                        "password": password,
+                        "sources": sources,
+                    }
+                },
+            )
+            env_path = sync_env_values({})
+            return "Better Stack", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
 
@@ -1297,12 +1356,14 @@ def _configure_discord() -> tuple[str, str]:
             from app.integrations.cli import _register_discord_slash_command
 
             _register_discord_slash_command(application_id, bot_token)
-            env_path = sync_env_values({
-                "DISCORD_BOT_TOKEN": bot_token,
-                "DISCORD_APPLICATION_ID": application_id,
-                "DISCORD_PUBLIC_KEY": public_key,
-                "DISCORD_DEFAULT_CHANNEL_ID": default_channel_id,
-            })
+            env_path = sync_env_values(
+                {
+                    "DISCORD_BOT_TOKEN": bot_token,
+                    "DISCORD_APPLICATION_ID": application_id,
+                    "DISCORD_PUBLIC_KEY": public_key,
+                    "DISCORD_DEFAULT_CHANNEL_ID": default_channel_id,
+                }
+            )
             return "Discord", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
@@ -1329,7 +1390,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         Choice(value="honeycomb", label="Honeycomb", hint="Query traces and spans from Honeycomb"),
         Choice(value="coralogix", label="Coralogix", hint="Query logs from Coralogix DataPrime"),
         Choice(value="slack", label="Slack", hint="Send findings to a webhook or channel"),
-        Choice(value="discord", label="Discord", hint="Trigger investigations via slash commands and post findings to threads"),
+        Choice(
+            value="discord",
+            label="Discord",
+            hint="Trigger investigations via slash commands and post findings to threads",
+        ),
         Choice(value="aws", label="AWS", hint="Inspect CloudWatch, EKS, and account resources"),
         Choice(
             value="github", label="GitHub MCP", hint="Let the agent inspect repos, PRs, and issues"
@@ -1349,6 +1414,11 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             hint=(
                 "Deployments, build output, and logs tools; runtime-log API can lag the dashboard"
             ),
+        ),
+        Choice(
+            value="betterstack",
+            label="Better Stack Telemetry",
+            hint="Query logs from Better Stack (ClickHouse SQL over HTTP)",
         ),
         Choice(
             value="jira",
@@ -1403,6 +1473,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "gitlab": _configure_gitlab,
         "google_docs": _configure_google_docs,
         "vercel": _configure_vercel,
+        "betterstack": _configure_betterstack,
         "jira": _configure_jira,
         "alertmanager": _configure_alertmanager,
         "opsgenie": _configure_opsgenie,

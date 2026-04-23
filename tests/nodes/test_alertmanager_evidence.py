@@ -115,7 +115,11 @@ def test_build_evidence_summary_alertmanager_alerts_with_firing() -> None:
     execution_results = {
         "alertmanager_alerts": SimpleNamespace(
             success=True,
-            data={"alerts": [{"fingerprint": "abc"}], "firing_alerts": [{"fingerprint": "abc"}], "total": 1},
+            data={
+                "alerts": [{"fingerprint": "abc"}],
+                "firing_alerts": [{"fingerprint": "abc"}],
+                "total": 1,
+            },
         )
     }
     summary = build_evidence_summary(execution_results)

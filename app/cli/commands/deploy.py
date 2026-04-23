@@ -167,7 +167,6 @@ def _run_deploy_interactive(ctx: click.Context) -> None:
         return
 
     if action == "langsmith":
-
         # 2. LangGraph CLI check
         ok, msg = is_langgraph_cli_installed()
         if not ok:
@@ -411,4 +410,3 @@ def deploy_langsmith(api_key: str | None, build_only: bool, deployment_name: str
     url = extract_deployment_url(output)
     if url:
         click.echo(f"Deployment URL: {url}")
-

@@ -38,9 +38,7 @@ def test_run_happy_path() -> None:
         "app.tools.AzureSQLWaitStatsTool.get_wait_stats",
         return_value=fake_result,
     ):
-        result = get_azure_sql_wait_stats(
-            server="myserver.database.windows.net", database="testdb"
-        )
+        result = get_azure_sql_wait_stats(server="myserver.database.windows.net", database="testdb")
     assert result["total_wait_types"] == 1
     assert result["waits"][0]["wait_type"] == "PAGEIOLATCH_SH"
 

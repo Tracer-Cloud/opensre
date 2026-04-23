@@ -15,7 +15,7 @@ from tests.shared.infra import infrastructure_available
 
 
 @pytest.fixture(scope="session")
-def ec2_deployment() -> Generator[dict[str, Any], None, None]:
+def ec2_deployment() -> Generator[dict[str, Any]]:
     """Deploy OpenSRE on EC2, yield outputs, then terminate.
 
     Skips when running in CI or when SKIP_INFRA_TESTS is set.

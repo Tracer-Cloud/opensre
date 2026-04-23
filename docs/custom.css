@@ -938,7 +938,6 @@ html.dark svg g[fill="currentColor"] {
 
 /* Sign up - blue background */
 nav a[href*="sign-up"],
-a[href*="sign-up"],
 header a[href*="sign-up"],
 #sidebar a[href*="sign-up"],
 #navigation-items a[href*="sign-up"],
@@ -955,17 +954,18 @@ nav a[href*="sign-up"]:active {
 
 nav a[href*="sign-up"]::after,
 header a[href*="sign-up"]::after,
-a[href*="sign-up"]::after,
+#sidebar a[href*="sign-up"]::after,
+#navigation-items a[href*="sign-up"]::after,
 nav a[href*="sign-up"] svg,
 header a[href*="sign-up"] svg,
-a[href*="sign-up"] svg {
+#sidebar a[href*="sign-up"] svg,
+#navigation-items a[href*="sign-up"] svg {
   color: #ffffff !important;
   fill: none !important;
   stroke: #ffffff !important;
 }
 
 html.dark nav a[href*="sign-up"],
-html.dark a[href*="sign-up"],
 html.dark header a[href*="sign-up"],
 html.dark #sidebar a[href*="sign-up"],
 html.dark #navigation-items a[href*="sign-up"] {
@@ -976,12 +976,10 @@ html.dark #navigation-items a[href*="sign-up"] {
 
 html.dark nav a[href*="sign-up"]::after,
 html.dark header a[href*="sign-up"]::after,
-html.dark a[href*="sign-up"]::after,
 html.dark #sidebar a[href*="sign-up"]::after,
 html.dark #navigation-items a[href*="sign-up"]::after,
 html.dark nav a[href*="sign-up"] svg,
 html.dark header a[href*="sign-up"] svg,
-html.dark a[href*="sign-up"] svg,
 html.dark #sidebar a[href*="sign-up"] svg,
 html.dark #navigation-items a[href*="sign-up"] svg {
   color: #171717 !important;
@@ -991,7 +989,6 @@ html.dark #navigation-items a[href*="sign-up"] svg {
 
 /* Sign up hover - text color matches page mode */
 nav a[href*="sign-up"]:hover,
-a[href*="sign-up"]:hover,
 header a[href*="sign-up"]:hover {
   background-color: transparent !important;
   background: transparent !important;
@@ -1000,10 +997,8 @@ header a[href*="sign-up"]:hover {
 }
 
 nav a[href*="sign-up"]:hover::after,
-a[href*="sign-up"]:hover::after,
 header a[href*="sign-up"]:hover::after,
 nav a[href*="sign-up"]:hover svg,
-a[href*="sign-up"]:hover svg,
 header a[href*="sign-up"]:hover svg {
   color: #000000 !important;
   fill: #000000 !important;
@@ -1011,7 +1006,6 @@ header a[href*="sign-up"]:hover svg {
 }
 
 html.dark nav a[href*="sign-up"]:hover,
-html.dark a[href*="sign-up"]:hover,
 html.dark header a[href*="sign-up"]:hover {
   background-color: transparent !important;
   background: transparent !important;
@@ -1020,10 +1014,8 @@ html.dark header a[href*="sign-up"]:hover {
 }
 
 html.dark nav a[href*="sign-up"]:hover::after,
-html.dark a[href*="sign-up"]:hover::after,
 html.dark header a[href*="sign-up"]:hover::after,
 html.dark nav a[href*="sign-up"]:hover svg,
-html.dark a[href*="sign-up"]:hover svg,
 html.dark header a[href*="sign-up"]:hover svg {
   color: #ffffff !important;
   fill: #ffffff !important;
@@ -1181,8 +1173,10 @@ html.dark .index-page [class*="Card" i] [class*="icon"] {
 
 
 /* Sign-up button override — must be last to win specificity wars */
-html.dark a[href*="sign-up"],
-html.dark a[href*="sign-up"] *,
+html.dark nav a[href*="sign-up"],
+html.dark nav a[href*="sign-up"] *,
+html.dark header a[href*="sign-up"],
+html.dark header a[href*="sign-up"] *,
 html.dark #sidebar a[href*="sign-up"],
 html.dark #sidebar a[href*="sign-up"] *,
 html.dark #sidebar-content a[href*="sign-up"],
@@ -1194,8 +1188,10 @@ html.dark #navigation-items a[href*="sign-up"] * {
   background: #FFFFFF !important;
 }
 
-html.dark a[href*="sign-up"] svg,
-html.dark a[href*="sign-up"] svg *,
+html.dark nav a[href*="sign-up"] svg,
+html.dark nav a[href*="sign-up"] svg *,
+html.dark header a[href*="sign-up"] svg,
+html.dark header a[href*="sign-up"] svg *,
 html.dark #sidebar a[href*="sign-up"] svg,
 html.dark #sidebar a[href*="sign-up"] svg *,
 html.dark #navigation-items a[href*="sign-up"] svg,

@@ -30,6 +30,8 @@ def test_run_happy_path() -> None:
 
 
 def test_run_error_propagated() -> None:
-    with patch("app.tools.MongoDBCurrentOpsTool.get_current_ops", return_value={"error": "auth failed"}):
+    with patch(
+        "app.tools.MongoDBCurrentOpsTool.get_current_ops", return_value={"error": "auth failed"}
+    ):
         result = get_mongodb_current_ops(connection_string="mongodb://invalid")
     assert "error" in result

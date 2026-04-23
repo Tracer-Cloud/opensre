@@ -130,9 +130,7 @@ class TestRabbitMQSourceDetection:
         assert sources["rabbitmq"]["connection_verified"] is True
 
     def test_missing_resolved_integration_no_source(self) -> None:
-        raw_alert = {
-            "commonAnnotations": {"rabbitmq_cluster": "rmq@prod-01"}
-        }
+        raw_alert = {"commonAnnotations": {"rabbitmq_cluster": "rmq@prod-01"}}
         sources = detect_sources(raw_alert, {}, {})
         assert "rabbitmq" not in sources
 
@@ -144,11 +142,7 @@ class TestRabbitMQSourceDetection:
 
 class TestRabbitMQToolRegistration:
     def test_all_five_tools_registered(self) -> None:
-        tool_names = {
-            t.name
-            for t in get_registered_tools()
-            if t.source == "rabbitmq"
-        }
+        tool_names = {t.name for t in get_registered_tools() if t.source == "rabbitmq"}
         assert tool_names == {
             "get_rabbitmq_queue_backlog",
             "get_rabbitmq_consumer_health",
@@ -158,12 +152,8 @@ class TestRabbitMQToolRegistration:
         }
 
     def test_tools_report_available_when_credentials_present(self) -> None:
-        sources = {
-            "rabbitmq": {"host": "rmq.prod.internal", "username": "admin"}
-        }
-        rmq_tools = [
-            t for t in get_registered_tools() if t.source == "rabbitmq"
-        ]
+        sources = {"rabbitmq": {"host": "rmq.prod.internal", "username": "admin"}}
+        rmq_tools = [t for t in get_registered_tools() if t.source == "rabbitmq"]
         for tool in rmq_tools:
             if tool.is_available is not None:
                 assert tool.is_available(sources) is True, tool.name
@@ -195,9 +185,7 @@ class TestRabbitMQPipelineFlow:
         assert "rabbitmq" in sources
         assert sources["rabbitmq"]["vhost"] == "/orders"
 
-    def test_tool_invocation_with_mocked_http(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_tool_invocation_with_mocked_http(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Call the queue-backlog tool end-to-end with a mocked Management
         API response and verify the evidence dict shape the pipeline expects."""
 

@@ -43,37 +43,38 @@
             "group": "Enterprise",
             "defaultOpen": true,
             "pages": [
+              "aws",
               "datadog",
               "grafana",
-              "slack",
-              "aws"
+              "slack"
             ]
           },
           {
             "group": "Local",
             "defaultOpen": true,
             "pages": [
-              "mongodb",
-              "mariadb",
-              "honeycomb",
+              "alertmanager",
+              "betterstack",
+              "bitbucket",
+              "clickhouse",
               "coralogix",
-              "sentry",
+              "discord",
               "github",
               "gitlab",
-              "bitbucket",
-              "vercel",
-              "kafka",
-              "rabbitmq",
-              "clickhouse",
-              "alertmanager",
-              "opsgenie",
-              "jira",
-              "prefect",
               "google-docs",
-              "discord",
+              "honeycomb",
+              "jira",
+              "kafka",
+              "mariadb",
+              "mongodb",
               "mysql",
               "openclaw",
-              "postgresql"
+              "opsgenie",
+              "postgresql",
+              "prefect",
+              "rabbitmq",
+              "sentry",
+              "vercel"
             ]
           }
         ]

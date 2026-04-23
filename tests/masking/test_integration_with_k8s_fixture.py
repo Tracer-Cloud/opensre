@@ -14,11 +14,7 @@ from app.masking.context import MaskingContext
 from app.masking.policy import ALL_KINDS, MaskingPolicy
 
 FIXTURE = (
-    Path(__file__).parent.parent
-    / "e2e"
-    / "kubernetes"
-    / "fixtures"
-    / "datadog_k8s_alert.json"
+    Path(__file__).parent.parent / "e2e" / "kubernetes" / "fixtures" / "datadog_k8s_alert.json"
 )
 
 

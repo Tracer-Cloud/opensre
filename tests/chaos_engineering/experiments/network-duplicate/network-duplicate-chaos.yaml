@@ -1,0 +1,19 @@
+# NetworkChaos duplicate: probabilistic packet duplication (TCP may see retransmits / weirdness).
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-duplicate-demo
+  namespace: default
+spec:
+  action: duplicate
+  mode: all
+  duration: "3m"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: network-duplicate-demo
+  duplicate:
+    duplicate: "45"
+    correlation: "30"

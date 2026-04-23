@@ -20,12 +20,15 @@ def _resolve_config(
     project_slug: str | None = None,
 ) -> SentryConfig | None:
     env_config = sentry_config_from_env()
-    config = build_sentry_config({
-        "base_url": sentry_url or (env_config.base_url if env_config else ""),
-        "organization_slug": organization_slug or (env_config.organization_slug if env_config else ""),
-        "auth_token": sentry_token or (env_config.auth_token if env_config else ""),
-        "project_slug": project_slug or (env_config.project_slug if env_config else ""),
-    })
+    config = build_sentry_config(
+        {
+            "base_url": sentry_url or (env_config.base_url if env_config else ""),
+            "organization_slug": organization_slug
+            or (env_config.organization_slug if env_config else ""),
+            "auth_token": sentry_token or (env_config.auth_token if env_config else ""),
+            "project_slug": project_slug or (env_config.project_slug if env_config else ""),
+        }
+    )
     if not config.organization_slug or not config.auth_token:
         return None
     return config
@@ -90,7 +93,12 @@ def search_sentry_issues(
     """Search Sentry issues related to an incident or failure signature."""
     config = _resolve_config(sentry_url, organization_slug, sentry_token, project_slug)
     if config is None:
-        return {"source": "sentry", "available": False, "error": "Sentry integration is not configured.", "issues": []}
+        return {
+            "source": "sentry",
+            "available": False,
+            "error": "Sentry integration is not configured.",
+            "issues": [],
+        }
 
     issues = list_sentry_issues(config=config, query=query, limit=limit)
     return {"source": "sentry", "available": True, "issues": issues, "query": query}

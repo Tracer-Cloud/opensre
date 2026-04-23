@@ -13,27 +13,105 @@ _ERROR_ANNOTATION_KEYS = ("error", "error_message", "log_excerpt", "failed_steps
 
 # Evidence keys whose presence (even with empty values) confirms investigation was attempted.
 # An empty grafana_logs list is itself a healthy signal: no errors found during investigation.
-_INVESTIGATED_EVIDENCE_KEYS = frozenset({
-    "grafana_logs",
-    "grafana_metrics",
-    "grafana_alert_rules",
-    "aws_cloudwatch_metrics",
-    "aws_rds_events",
-    "aws_performance_insights",
-    "cloudwatch_logs",
-    "datadog_logs",
-    "datadog_monitors",
-    # Kubernetes / EKS evidence keys — written by the _map_eks_* mappers in
-    # app/nodes/investigate/processing/post_process.py.  Without these, a pure
-    # Kubernetes healthy investigation never satisfies the evidence gate below
-    # and the reasoning LLM is invoked on a clean state for no reason.
-    "eks_pods",
-    "eks_events",
-    "eks_deployments",
-    "eks_node_health",
-    "eks_pod_logs",
-    "eks_deployment_status",
-})
+INVESTIGATED_EVIDENCE_KEYS = frozenset(
+    {
+        "grafana_logs",
+        "grafana_metrics",
+        "grafana_alert_rules",
+        "aws_cloudwatch_metrics",
+        "aws_rds_events",
+        "aws_performance_insights",
+        "cloudwatch_logs",
+        "datadog_logs",
+        "datadog_monitors",
+        "betterstack_logs",
+        # Kubernetes / EKS evidence keys — written by the _map_eks_* mappers in
+        # app/nodes/investigate/processing/post_process.py.  Without these, a pure
+        # Kubernetes healthy investigation never satisfies the evidence gate below
+        # and the reasoning LLM is invoked on a clean state for no reason.
+        "eks_pods",
+        "eks_events",
+        "eks_deployments",
+        "eks_node_health",
+        "eks_pod_logs",
+        "eks_deployment_status",
+    }
+)
+
+# All evidence keys that represent gathered *data* (lists, dicts with content,
+# compound records) written by the EVIDENCE_MAPPERS in
+# ``app/nodes/investigate/processing/post_process.py``.  Used by the healthy
+# short-circuit to decide which keys should produce a
+# "X data confirmed within normal operating bounds" claim.
+#
+# Maintained as an explicit enumeration so metadata keys — query strings,
+# counts, timings, resource names, trace IDs, source URLs — cannot leak into
+# findings, and so adding a new mapper is a deliberate, reviewable decision
+# (either extend this set, or accept that the new key will not appear in
+# healthy-short-circuit output).
+#
+# A key listed here but not in ``INVESTIGATED_EVIDENCE_KEYS`` produces a claim
+# only when truthy; keys in ``INVESTIGATED_EVIDENCE_KEYS`` produce claims even
+# when empty, since an empty list after a completed investigation is itself
+# the healthy signal.
+CLAIM_EVIDENCE_KEYS = INVESTIGATED_EVIDENCE_KEYS | frozenset(
+    {
+        # Generic telemetry
+        "failed_jobs",
+        "failed_tools",
+        "error_logs",
+        "host_metrics",
+        # CloudWatch extras
+        "cloudwatch_latest_error",
+        # S3 / audit
+        "s3_object",
+        "s3_objects",
+        "s3_marker",
+        "s3_audit_payload",
+        # Lambda
+        "lambda_logs",
+        "lambda_invocations",
+        "lambda_errors",
+        "lambda_function",
+        "lambda_config",
+        # Grafana adjacent
+        "grafana_error_logs",
+        "grafana_traces",
+        "grafana_pipeline_spans",
+        "grafana_service_names",
+        # Datadog adjacent
+        "datadog_error_logs",
+        "datadog_events",
+        "datadog_failed_pods",
+        # Other observability stacks
+        "honeycomb_traces",
+        "coralogix_logs",
+        "coralogix_error_logs",
+        # Diagnostic code sandbox
+        "diagnostic_executions",
+        # Vercel
+        "vercel_deployments",
+        "vercel_failed_deployments",
+        "vercel_deployment",
+        "vercel_events",
+        "vercel_error_events",
+        "vercel_runtime_logs",
+        # GitHub / Git
+        "github_code_matches",
+        "github_file",
+        "github_commits",
+        "git_deploy_timeline",
+        # Alertmanager
+        "alertmanager_alerts",
+        "alertmanager_firing_alerts",
+        "alertmanager_silences",
+        "alertmanager_active_silences",
+        # EKS adjacent
+        "eks_failing_pods",
+        "eks_high_restart_pods",
+        "eks_degraded_deployments",
+    }
+)
 
 
 def check_evidence_availability(
@@ -59,9 +137,11 @@ def check_evidence_availability(
         or evidence.get("grafana_error_logs") is not None
         or evidence.get("grafana_traces") is not None
         or evidence.get("grafana_metrics") is not None
+        or evidence.get("grafana_alert_rules") is not None
         or evidence.get("datadog_logs") is not None
         or evidence.get("datadog_monitors") is not None
         or evidence.get("datadog_events") is not None
+        or evidence.get("betterstack_logs") is not None
         or evidence.get("s3_object", {}).get("found")
         or evidence.get("s3_audit_payload", {}).get("found")
         or evidence.get("s3_marker") is not None
@@ -84,13 +164,24 @@ def check_evidence_availability(
         has_alert_evidence = True
     elif isinstance(raw_alert, dict):
         annotations = raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {})
-        body = raw_alert.get("body", "") or raw_alert.get("text", "") or raw_alert.get("message", "")
+        body = (
+            raw_alert.get("body", "") or raw_alert.get("text", "") or raw_alert.get("message", "")
+        )
         has_alert_evidence = bool(
             body
-            or (annotations and any(
-                annotations.get(k)
-                for k in ("log_excerpt", "failed_steps", "error", "error_message", "cloudwatch_logs_url")
-            ))
+            or (
+                annotations
+                and any(
+                    annotations.get(k)
+                    for k in (
+                        "log_excerpt",
+                        "failed_steps",
+                        "error",
+                        "error_message",
+                        "cloudwatch_logs_url",
+                    )
+                )
+            )
         )
 
     return has_tracer_evidence, has_cloudwatch_evidence, has_alert_evidence
@@ -131,9 +222,7 @@ def is_clearly_healthy(raw_alert: dict[str, Any] | str, evidence: dict[str, Any]
         return False
 
     # Condition 3: no error-signal annotations.
-    annotations = (
-        raw_alert.get("commonAnnotations", raw_alert.get("annotations", {})) or {}
-    )
+    annotations = raw_alert.get("commonAnnotations", raw_alert.get("annotations", {})) or {}
     if any(annotations.get(key) for key in _ERROR_ANNOTATION_KEYS):
         return False
 
@@ -141,7 +230,7 @@ def is_clearly_healthy(raw_alert: dict[str, Any] | str, evidence: dict[str, Any]
     # An empty grafana_logs / grafana_metrics / etc. after a completed investigation is itself
     # a health signal — it means no errors were found. We only require that the key is present
     # (investigation was attempted), not that it contains data.
-    return any(k in evidence for k in _INVESTIGATED_EVIDENCE_KEYS)
+    return any(k in evidence for k in INVESTIGATED_EVIDENCE_KEYS)
 
 
 def check_vendor_evidence_missing(evidence: dict[str, Any]) -> bool:

@@ -646,14 +646,20 @@ def parse_root_cause(response: str) -> RootCauseResult:
             # Extract non-validated claims
             if "NON_VALIDATED_CLAIMS:" in after:
                 non_validated_section = after.split("NON_VALIDATED_CLAIMS:", 1)[1]
-                if "CAUSAL_CHAIN:" in non_validated_section:
-                    non_validated_text = non_validated_section.split("CAUSAL_CHAIN:", 1)[0]
+                for delimiter in ("ALTERNATIVE_HYPOTHESES_CONSIDERED:", "CAUSAL_CHAIN:"):
+                    if delimiter in non_validated_section:
+                        non_validated_text = non_validated_section.split(delimiter, 1)[0]
+                        break
                 else:
                     non_validated_text = non_validated_section
 
                 for line in non_validated_text.strip().split("\n"):
                     line = line.strip().lstrip("*-• ").strip()
-                    if line and not line.startswith("CAUSAL_CHAIN"):
+                    if (
+                        line
+                        and not line.startswith("CAUSAL_CHAIN")
+                        and not line.startswith("ALTERNATIVE")
+                    ):
                         non_validated_claims.append(line)
 
             # Extract causal chain
@@ -663,7 +669,7 @@ def parse_root_cause(response: str) -> RootCauseResult:
 
                 for line in causal_text.strip().split("\n"):
                     line = line.strip().lstrip("*-• ").strip()
-                    if line:
+                    if line and not line.startswith("ALTERNATIVE"):
                         causal_chain.append(line)
 
     return RootCauseResult(

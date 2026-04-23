@@ -1,0 +1,40 @@
+---
+title: "Daily Update — 2026-04-21"
+description: "OpenSRE engineering daily update for 2026-04-21 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+Abkari Mohammed Sayeem, Ankit Juneja, Ankit Juneja, Dax Patel, Dibyendu Sahoo, Dinesh Jinjala, Dinesh Jinjala, Divij Gera, gbsierra, Matt Van Horn, Som-0619, and Yash Kumar Saini 🙏🚀
+
+## Main updates shipped (April 21, 2026)
+
+- fix: add is_available and extract_params to MongoDB, ClickHouse, Kafka, and CloudWatch tools (#730) — Ankit Juneja
+- fix(detect-sources): populate sources["azure_sql"] from resolved integrations (#711) — Yash Kumar Saini
+- CI: add ruff format --check step to quality job — Divij Gera
+- chore: align Python baseline on 3.13 across mypy and ruff (#727) — Matt Van Horn
+- Fix onboarding .env bug when file lacks final newline — gbsierra
+- fix(sentry): safely parse tracing sample rate fallback — Som-0619
+- docs: expand AGENTS.md with repo map, entry points, rules, and new integration checklist (#714) — Dax Patel
+- test(vercel): add runtime log stream parsing unit tests — Dinesh Jinjala
+- test(auth): add AsyncJWKSCache TTL unit test to prevent redundant JWKS fetches within cache window — Dibyendu Sahoo
+- docs: rename DEPLOYEMENT.md to DEPLOYMENT.md — Abkari Mohammed Sayeem
+
+## Source pull requests
+
+- [#717](https://github.com/Tracer-Cloud/opensre/pull/717) CI: add ruff format --check step to quality job (author: Divij Gera; contributors: Divij Gera; labels: _none_; files: `.github/workflows/ci.yml`, `CONTRIBUTING.md`, `Makefile`, `app/nodes/publish_findings/formatters/evidence.py`, `app/nodes/root_cause_diagnosis/prompt_builder.py`, `app/services/llm_client.py`, `app/tools/AzureSQLCurrentQueriesTool/__init__.py`, `app/tools/AzureSQLResourceStatsTool/__init__.py`, `app/tools/AzureSQLServerStatusTool/__init__.py`, `app/tools/AzureSQLSlowQueriesTool/__init__.py`, and 19 more)
+- [#725](https://github.com/Tracer-Cloud/opensre/pull/725) docs: expand AGENTS.md with repo map, entry points, rules, and new integration checklist (#714) (author: Dax Patel; contributors: Dax Patel; labels: _none_; files: `AGENTS.md`)
+- [#719](https://github.com/Tracer-Cloud/opensre/pull/719) Fix onboarding .env bug when file lacks final newline (author: gbsierra; contributors: gbsierra; labels: _none_; files: `app/cli/wizard/env_sync.py`, `tests/cli/wizard/test_env_sync.py`)
+- [#728](https://github.com/Tracer-Cloud/opensre/pull/728) chore: align Python baseline on 3.13 across mypy and ruff (#727) (author: Matt Van Horn; contributors: Matt Van Horn; labels: _none_; files: `app/integrations/mcp_streamable_http_compat.py`, `mypy.ini`, `ruff.toml`, `tests/deployment/bedrock/conftest.py`, `tests/deployment/ec2/conftest.py`, `tests/deployment/langsmith/conftest.py`, `tests/deployment/vercel/conftest.py`, `tests/tools/test_registry.py`)
+- [#733](https://github.com/Tracer-Cloud/opensre/pull/733) fix(sentry): safely parse tracing sample rate fallback (author: Som-0619; contributors: Som-0619; labels: _none_; files: `app/utils/sentry_sdk.py`, `tests/test_sentry_init.py`)
+- [#732](https://github.com/Tracer-Cloud/opensre/pull/732) fix: add is_available and extract_params to MongoDB, ClickHouse, Kafka, and CloudWatch tools (author: Ankit Juneja; contributors: Ankit Juneja and Ankit Juneja; labels: _none_; files: `app/integrations/clickhouse.py`, `app/integrations/kafka.py`, `app/integrations/mongodb.py`, `app/tools/ClickHouseQueryActivityTool/__init__.py`, `app/tools/ClickHouseSystemHealthTool/__init__.py`, `app/tools/CloudWatchBatchMetricsTool/__init__.py`, `app/tools/KafkaConsumerGroupTool/__init__.py`, `app/tools/KafkaTopicHealthTool/__init__.py`, `app/tools/MongoDBCollectionStatsTool/__init__.py`, `app/tools/MongoDBCurrentOpsTool/__init__.py`, and 4 more)
+- [#722](https://github.com/Tracer-Cloud/opensre/pull/722) fix(detect-sources): populate sources["azure_sql"] from resolved integrations (author: Yash Kumar Saini; contributors: Yash Kumar Saini; labels: _none_; files: `app/nodes/plan_actions/detect_sources.py`, `tests/nodes/plan_actions/test_detect_sources_azure_sql.py`)
+- [#750](https://github.com/Tracer-Cloud/opensre/pull/750) docs: rename DEPLOYEMENT.md to DEPLOYMENT.md (author: Abkari Mohammed Sayeem; contributors: Abkari Mohammed Sayeem; labels: _none_; files: `DEPLOYMENT.md`)
+- [#749](https://github.com/Tracer-Cloud/opensre/pull/749) test(vercel): add runtime log stream parsing unit tests (author: Dinesh Jinjala; contributors: Dinesh Jinjala and Dinesh Jinjala; labels: _none_; files: `tests/services/vercel/test_client.py`)
+- [#754](https://github.com/Tracer-Cloud/opensre/pull/754) test(auth): add AsyncJWKSCache TTL unit test to prevent redundant JWKS fetches within cache window (author: Dibyendu Sahoo; contributors: Dibyendu Sahoo; labels: _none_; files: `tests/app/auth/test_jwt_auth.py`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-20T23:00:00+00:00` to `2026-04-21T23:00:00+00:00`

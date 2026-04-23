@@ -34,7 +34,9 @@ def _project(
     }
 
 
-def _candidate(*, deployment_id: str = "dpl_123", created_at: str = "200") -> VercelInvestigationCandidate:
+def _candidate(
+    *, deployment_id: str = "dpl_123", created_at: str = "200"
+) -> VercelInvestigationCandidate:
     return VercelInvestigationCandidate(
         dedupe_key=deployment_id,
         signature=f"sig-{deployment_id}",
@@ -118,12 +120,14 @@ def test_select_incident_returns_selected_candidate(monkeypatch) -> None:
 
 
 def test_project_label_formats_epoch_milliseconds() -> None:
-    label = vercel_incidents._project_label({
-        "id": "proj_123",
-        "name": "tracer-marketing-website-v3",
-        "framework": "nextjs",
-        "updated_at": "1774890235837",
-    })
+    label = vercel_incidents._project_label(
+        {
+            "id": "proj_123",
+            "name": "tracer-marketing-website-v3",
+            "framework": "nextjs",
+            "updated_at": "1774890235837",
+        }
+    )
 
     assert "1774890235837" not in label
     assert "updated " in label
@@ -136,7 +140,10 @@ def test_cmd_vercel_incidents_scopes_to_selected_project(monkeypatch) -> None:
     monkeypatch.setattr(
         vercel_incidents,
         "_load_projects",
-        lambda: [_project(project_id="proj_123", name="tracer-web"), _project(project_id="proj_999", name="other-web")],
+        lambda: [
+            _project(project_id="proj_123", name="tracer-web"),
+            _project(project_id="proj_999", name="other-web"),
+        ],
     )
 
     def _fake_collect(**kwargs: Any) -> list[VercelInvestigationCandidate]:

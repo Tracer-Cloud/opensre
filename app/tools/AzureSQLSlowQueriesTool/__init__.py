@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.azure_sql import get_slow_queries, resolve_azure_sql_config
+from app.integrations.azure_sql import (
+    azure_sql_extract_params,
+    azure_sql_is_available,
+    get_slow_queries,
+    resolve_azure_sql_config,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -16,13 +21,23 @@ from app.tools.tool_decorator import tool
         "Finding resource-intensive queries causing DTU throttling",
         "Reviewing query performance trends for capacity planning",
     ],
+    is_available=azure_sql_is_available,
+    extract_params=azure_sql_extract_params,
 )
 def get_azure_sql_slow_queries(
     server: str,
-    database: str,
+    database: str | None = None,
     port: int = 1433,
     threshold_ms: int = 1000,
 ) -> dict[str, Any]:
     """Fetch slow query statistics from an Azure SQL Database instance."""
+    _db_defaulted = database is None
+    if database is None:
+        database = "master"
     config = resolve_azure_sql_config(server=server, database=database, port=port)
-    return get_slow_queries(config, threshold_ms=threshold_ms)
+    result = get_slow_queries(config, threshold_ms=threshold_ms)
+    if _db_defaulted:
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'master'. Results may not reflect application data."
+        )
+    return result

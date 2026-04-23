@@ -1,0 +1,15 @@
+# PodChaos pod-kill: deletes matching pods once; Deployment replaces them.
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-kill-victim-demo
+  namespace: default
+spec:
+  action: pod-kill
+  mode: all
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: pod-kill-victim-demo

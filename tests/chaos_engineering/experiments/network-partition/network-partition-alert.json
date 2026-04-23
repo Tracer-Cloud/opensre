@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for NetworkChaos partition (client cannot reach server)",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/network-partition/network-partition-alert.json"
+  },
+  "title": "[Triggered] Network partition - client to server",
+  "alert_name": "Datadog monitor: partition client connectivity",
+  "pipeline_name": "network-partition-demo",
+  "severity": "high",
+  "alert_source": "datadog",
+  "message": "Client workload cannot reach network-partition-server in namespace default",
+  "text": "NetworkChaos partition injected between app=network-partition-client and app=network-partition-server; in-cluster HTTP may fail while chaos is active.",
+  "commonLabels": {
+    "pipeline_name": "network-partition-demo",
+    "severity": "high",
+    "kube_deployment": "network-partition-client"
+  },
+  "commonAnnotations": {
+    "summary": "Partition between client and server deployments",
+    "query": "kube_namespace:default kube_deployment:network-partition-*",
+    "kube_namespace": "default",
+    "kube_deployment": "network-partition-client",
+    "correlation_id": "network-partition-local-001"
+  }
+}

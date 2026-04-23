@@ -19,7 +19,9 @@ def _bounded_limit(limit: int, max_results: int) -> int:
 
 def _azure_available(sources: dict[str, dict[str, Any]]) -> bool:
     azure = sources.get("azure", {})
-    return bool(azure.get("connection_verified") and azure.get("workspace_id") and azure.get("access_token"))
+    return bool(
+        azure.get("connection_verified") and azure.get("workspace_id") and azure.get("access_token")
+    )
 
 
 def _azure_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -86,7 +88,12 @@ def query_azure_monitor_logs(
     workspace = workspace_id.strip()
     token = access_token.strip()
     if not workspace or not token:
-        return {"source": "azure", "available": False, "error": "Missing Azure credentials.", "rows": []}
+        return {
+            "source": "azure",
+            "available": False,
+            "error": "Missing Azure credentials.",
+            "rows": [],
+        }
 
     effective_limit = _bounded_limit(limit, max_results)
     bounded_query = _ensure_take_clause(query, effective_limit)
@@ -120,9 +127,12 @@ def query_azure_monitor_logs(
         for raw_row in first_table.get("rows", []):
             if not isinstance(raw_row, list):
                 continue
-            rows.append({
-                columns[idx]: raw_row[idx] if idx < len(raw_row) else None for idx in range(len(columns))
-            })
+            rows.append(
+                {
+                    columns[idx]: raw_row[idx] if idx < len(raw_row) else None
+                    for idx in range(len(columns))
+                }
+            )
 
     rows = rows[:effective_limit]
     return {

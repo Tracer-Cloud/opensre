@@ -43,19 +43,27 @@ def main() -> None:
         _validate(records)
     except ValidationError as e:
         print(str(e), file=sys.stderr)
-        print(json.dumps({
-            "stage": "validate",
-            "status": "failed",
-            "pipeline": PIPELINE_NAME,
-            "run_id": PIPELINE_RUN_ID,
-            "error": str(e),
-        }))
+        print(
+            json.dumps(
+                {
+                    "stage": "validate",
+                    "status": "failed",
+                    "pipeline": PIPELINE_NAME,
+                    "run_id": PIPELINE_RUN_ID,
+                    "error": str(e),
+                }
+            )
+        )
         sys.exit(1)
 
-    print(json.dumps({
-        "stage": "validate",
-        "status": "success",
-        "pipeline": PIPELINE_NAME,
-        "run_id": PIPELINE_RUN_ID,
-        "record_count": len(records),
-    }))
+    print(
+        json.dumps(
+            {
+                "stage": "validate",
+                "status": "success",
+                "pipeline": PIPELINE_NAME,
+                "run_id": PIPELINE_RUN_ID,
+                "record_count": len(records),
+            }
+        )
+    )

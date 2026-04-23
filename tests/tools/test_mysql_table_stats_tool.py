@@ -65,7 +65,11 @@ def test_run_happy_path() -> None:
 def test_run_error_propagated() -> None:
     with patch(
         "app.tools.MySQLTableStatsTool.get_table_stats",
-        return_value={"source": "mysql", "available": False, "error": "unknown database 'invalid_db'"},
+        return_value={
+            "source": "mysql",
+            "available": False,
+            "error": "unknown database 'invalid_db'",
+        },
     ):
         result = get_mysql_table_stats(host="localhost", database="invalid_db")
     assert "error" in result

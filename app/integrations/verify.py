@@ -11,6 +11,7 @@ import requests
 from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.config import get_tracer_base_url
 from app.integrations.azure_sql import build_azure_sql_config, validate_azure_sql_config
+from app.integrations.betterstack import build_betterstack_config, validate_betterstack_config
 from app.integrations.catalog import (
     resolve_effective_integrations as _resolve_effective_integrations,
 )
@@ -58,6 +59,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "mongodb_atlas",
     "mariadb",
     "rabbitmq",
+    "betterstack",
     "google_docs",
     "vercel",
     "opsgenie",
@@ -65,6 +67,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "clickhouse",
     "bitbucket",
     "discord",
+    "telegram",
     "mysql",
     "openclaw",
     "snowflake",
@@ -457,6 +460,17 @@ def _verify_rabbitmq(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_betterstack(source: str, config: dict[str, Any]) -> dict[str, str]:
+    bs_config = build_betterstack_config(config)
+    result = validate_betterstack_config(bs_config)
+    return _result(
+        "betterstack",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def _verify_google_docs(source: str, config: dict[str, Any]) -> dict[str, str]:
     """Validate Google Docs credentials and folder access."""
     from app.services.google_docs import GoogleDocsClient
@@ -551,7 +565,11 @@ def _verify_alertmanager(source: str, config: dict[str, Any]) -> dict[str, str]:
         )
 
     status_data = result.get("status", {})
-    cluster_status = status_data.get("cluster", {}).get("status", "unknown") if isinstance(status_data, dict) else "ok"
+    cluster_status = (
+        status_data.get("cluster", {}).get("status", "unknown")
+        if isinstance(status_data, dict)
+        else "ok"
+    )
     return _result(
         "alertmanager",
         source,
@@ -663,6 +681,39 @@ def _verify_discord(source: str, config: dict[str, Any]) -> dict[str, str]:
         source,
         "passed",
         f"Connected to Discord API as bot {username} (id {bot_id}).",
+    )
+
+
+def _verify_telegram(source: str, config: dict[str, Any]) -> dict[str, str]:
+    bot_token = str(config.get("bot_token", "")).strip()
+    if not bot_token:
+        return _result("telegram", source, "missing", "Missing bot token.")
+
+    try:
+        response = httpx.get(
+            f"https://api.telegram.org/bot{bot_token}/getMe",
+            timeout=10.0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        safe_exc = str(exc).replace(bot_token, "<redacted>") if bot_token else str(exc)
+        return _result("telegram", source, "failed", f"Bot token validation failed: {safe_exc}")
+
+    if not response.is_success:
+        return _result(
+            "telegram",
+            source,
+            "failed",
+            f"Telegram API returned {response.status_code}: {response.text[:200]}",
+        )
+
+    data = response.json().get("result", {})
+    username = str(data.get("username", "")).strip()
+    bot_id = str(data.get("id", "")).strip()
+    return _result(
+        "telegram",
+        source,
+        "passed",
+        f"Connected to Telegram API as bot @{username} (id {bot_id}).",
     )
 
 
@@ -816,6 +867,8 @@ def verify_integrations(
             results.append(_verify_mariadb(source, config))
         elif current_service == "rabbitmq":
             results.append(_verify_rabbitmq(source, config))
+        elif current_service == "betterstack":
+            results.append(_verify_betterstack(source, config))
         elif current_service == "google_docs":
             results.append(_verify_google_docs(source, config))
         elif current_service == "vercel":
@@ -830,6 +883,8 @@ def verify_integrations(
             results.append(_verify_bitbucket(source, config))
         elif current_service == "discord":
             results.append(_verify_discord(source, config))
+        elif current_service == "telegram":
+            results.append(_verify_telegram(source, config))
         elif current_service == "openclaw":
             results.append(_verify_openclaw(source, config))
         elif current_service == "mysql":

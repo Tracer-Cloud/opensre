@@ -1,0 +1,26 @@
+# PodChaos with action pod-failure: swaps target containers to Chaos Mesh pause image
+# (see pod-failure-demo.yaml HTTP probes so READY reflects unavailability).
+# Prereq: pod-failure-demo.yaml applied + Chaos Mesh (`make chaos-mesh-up`).
+#
+# From repo root:
+#   kubectl apply -f tests/chaos_engineering/experiments/pod-failure/pod-failure-chaos.yaml \
+#     --context=kind-tracer-k8s-test
+#
+# Remove:
+#   kubectl delete -f tests/chaos_engineering/experiments/pod-failure/pod-failure-chaos.yaml \
+#     --context=kind-tracer-k8s-test
+#
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: inject-pod-failure-demo
+  namespace: default
+spec:
+  action: pod-failure
+  mode: all
+  duration: "5m"
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: pod-failure-demo

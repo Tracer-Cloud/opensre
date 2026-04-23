@@ -75,11 +75,13 @@ class HoneycombTracesTool(BaseTool):
         honeycomb_base_url: str = "https://api.honeycomb.io",
         **_kwargs: Any,
     ) -> dict[str, Any]:
-        config = HoneycombIntegrationConfig.model_validate({
-            "api_key": honeycomb_api_key or "",
-            "dataset": dataset,
-            "base_url": honeycomb_base_url,
-        })
+        config = HoneycombIntegrationConfig.model_validate(
+            {
+                "api_key": honeycomb_api_key or "",
+                "dataset": dataset,
+                "base_url": honeycomb_base_url,
+            }
+        )
         client = HoneycombClient(config)
         if not client.is_configured:
             return {

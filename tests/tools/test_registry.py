@@ -15,7 +15,7 @@ from app.types.retrieval import RetrievalControls
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry_cache() -> Generator[None, None, None]:
+def _reset_registry_cache() -> Generator[None]:
     registry_module.clear_tool_registry_cache()
     yield
     registry_module.clear_tool_registry_cache()
@@ -235,18 +235,20 @@ def test_auto_discovery_populates_investigation_and_chat_surfaces(
     get_incident_metadata.__module__ = module.__name__
     module.get_incident_metadata = get_incident_metadata
 
-    monkeypatch.setattr(registry_module, "_iter_tool_module_names", lambda: ["fake_discovered_tool"])
+    monkeypatch.setattr(
+        registry_module, "_iter_tool_module_names", lambda: ["fake_discovered_tool"]
+    )
     monkeypatch.setattr(registry_module, "_import_tool_module", lambda _name: module)
 
-    assert [tool_def.name for tool_def in registry_module.get_registered_tools("investigation")] == [
-        "get_incident_metadata"
-    ]
+    assert [
+        tool_def.name for tool_def in registry_module.get_registered_tools("investigation")
+    ] == ["get_incident_metadata"]
     assert [tool_def.name for tool_def in registry_module.get_registered_tools("chat")] == [
         "get_incident_metadata"
     ]
-    assert registry_module.get_registered_tool_map("chat")["get_incident_metadata"].run("inc-1") == {
-        "incident_id": "inc-1"
-    }
+    assert registry_module.get_registered_tool_map("chat")["get_incident_metadata"].run(
+        "inc-1"
+    ) == {"incident_id": "inc-1"}
 
 
 def test_real_registry_discovers_migrated_sre_guidance_tool() -> None:

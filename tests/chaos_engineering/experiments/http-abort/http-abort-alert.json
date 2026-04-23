@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for HTTPChaos abort demo",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/http-abort/http-abort-alert.json"
+  },
+  "title": "[Triggered] HTTP resets - http-abort-demo",
+  "alert_name": "Datadog monitor: HTTP failures http-abort-demo",
+  "pipeline_name": "http-abort-demo",
+  "severity": "high",
+  "alert_source": "datadog",
+  "message": "Clients see connection errors to http-abort-demo",
+  "text": "HTTPChaos abort; GETs to port 80 may be cut mid-flight.",
+  "commonLabels": {
+    "pipeline_name": "http-abort-demo",
+    "severity": "high",
+    "kube_deployment": "http-abort-demo"
+  },
+  "commonAnnotations": {
+    "summary": "HTTP errors for deployment http-abort-demo",
+    "query": "kube_namespace:default kube_deployment:http-abort-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "http-abort-demo",
+    "correlation_id": "http-abort-local-001"
+  }
+}

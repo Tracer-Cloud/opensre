@@ -32,7 +32,9 @@ class _FakeResponse:
         return self._payload
 
 
-def test_resolve_effective_integrations_prefers_local_store(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_effective_integrations_prefers_local_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         "app.integrations.catalog.load_integrations",
         lambda: [
@@ -300,7 +302,11 @@ def test_verify_github_uses_shared_validator(monkeypatch: pytest.MonkeyPatch) ->
 
     result = _verify_github(
         "local env",
-        {"url": "https://api.githubcopilot.com/mcp/", "mode": "streamable-http", "auth_token": "ghp"},
+        {
+            "url": "https://api.githubcopilot.com/mcp/",
+            "mode": "streamable-http",
+            "auth_token": "ghp",
+        },
     )
 
     assert result["status"] == "passed"
@@ -328,62 +334,74 @@ def test_verify_sentry_uses_shared_validator(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_verification_exit_code_requires_core_success() -> None:
-    assert verification_exit_code(
-        [
-            {
-                "service": "slack",
-                "source": "local env",
-                "status": "configured",
-                "detail": "Incoming webhook configured.",
-            }
-        ]
-    ) == 1
+    assert (
+        verification_exit_code(
+            [
+                {
+                    "service": "slack",
+                    "source": "local env",
+                    "status": "configured",
+                    "detail": "Incoming webhook configured.",
+                }
+            ]
+        )
+        == 1
+    )
 
-    assert verification_exit_code(
-        [
-            {
-                "service": "grafana",
-                "source": "local env",
-                "status": "passed",
-                "detail": "Connected.",
-            },
-            {
-                "service": "slack",
-                "source": "local env",
-                "status": "configured",
-                "detail": "Incoming webhook configured.",
-            },
-        ]
-    ) == 0
+    assert (
+        verification_exit_code(
+            [
+                {
+                    "service": "grafana",
+                    "source": "local env",
+                    "status": "passed",
+                    "detail": "Connected.",
+                },
+                {
+                    "service": "slack",
+                    "source": "local env",
+                    "status": "configured",
+                    "detail": "Incoming webhook configured.",
+                },
+            ]
+        )
+        == 0
+    )
 
-    assert verification_exit_code(
-        [
-            {
-                "service": "grafana",
-                "source": "local env",
-                "status": "passed",
-                "detail": "Connected.",
-            },
-            {
-                "service": "slack",
-                "source": "local env",
-                "status": "failed",
-                "detail": "Webhook post failed.",
-            },
-        ]
-    ) == 1
+    assert (
+        verification_exit_code(
+            [
+                {
+                    "service": "grafana",
+                    "source": "local env",
+                    "status": "passed",
+                    "detail": "Connected.",
+                },
+                {
+                    "service": "slack",
+                    "source": "local env",
+                    "status": "failed",
+                    "detail": "Webhook post failed.",
+                },
+            ]
+        )
+        == 1
+    )
 
-    assert verification_exit_code(
-        [
-            {
-                "service": "slack",
-                "source": "local env",
-                "status": "configured",
-                "detail": "Incoming webhook configured.",
-            }
-        ],
-        requested_service="slack",
-    ) == 0
+    assert (
+        verification_exit_code(
+            [
+                {
+                    "service": "slack",
+                    "source": "local env",
+                    "status": "configured",
+                    "detail": "Incoming webhook configured.",
+                }
+            ],
+            requested_service="slack",
+        )
+        == 0
+    )
 
 
 def test_verify_vercel_passes_with_valid_token(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -469,7 +487,9 @@ def test_verify_integrations_dispatches_to_vercel(monkeypatch: pytest.MonkeyPatc
     assert results[0]["status"] == "passed"
 
 
-def test_resolve_effective_integrations_includes_vercel_from_store(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_effective_integrations_includes_vercel_from_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         "app.integrations.catalog.load_integrations",
         lambda: [
@@ -491,7 +511,9 @@ def test_resolve_effective_integrations_includes_vercel_from_store(monkeypatch: 
     assert vercel["source"] == "local store"
 
 
-def test_resolve_effective_integrations_includes_vercel_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_effective_integrations_includes_vercel_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr("app.integrations.catalog.load_integrations", lambda: [])
     monkeypatch.setenv("VERCEL_API_TOKEN", "tok_env")
     monkeypatch.setenv("VERCEL_TEAM_ID", "team_env")

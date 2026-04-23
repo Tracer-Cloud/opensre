@@ -42,8 +42,7 @@ class _Envelope:
 
 def _is_opted_out() -> bool:
     return (
-        os.getenv("OPENSRE_ANALYTICS_DISABLED", "0") == "1"
-        or os.getenv("DO_NOT_TRACK", "0") == "1"
+        os.getenv("OPENSRE_ANALYTICS_DISABLED", "0") == "1" or os.getenv("DO_NOT_TRACK", "0") == "1"
     )
 
 

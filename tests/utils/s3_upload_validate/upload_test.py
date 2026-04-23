@@ -74,9 +74,7 @@ class TestVerifyOutput:
     def test_uses_injected_s3_client(self):
         """Function uses provided S3 client, not global state."""
         mock_s3 = MagicMock()
-        mock_s3.get_object.return_value = {
-            "Body": MagicMock(read=lambda: b'{"data": []}')
-        }
+        mock_s3.get_object.return_value = {"Body": MagicMock(read=lambda: b'{"data": []}')}
 
         verify_output("test-bucket", "ingested/key", s3_client=mock_s3)
 
@@ -86,9 +84,7 @@ class TestVerifyOutput:
     def test_transforms_key_correctly(self):
         """Replaces ingested/ with processed/ in key."""
         mock_s3 = MagicMock()
-        mock_s3.get_object.return_value = {
-            "Body": MagicMock(read=lambda: b'{"data": []}')
-        }
+        mock_s3.get_object.return_value = {"Body": MagicMock(read=lambda: b'{"data": []}')}
 
         verify_output("bucket", "ingested/2026/data.json", s3_client=mock_s3)
 
@@ -98,8 +94,6 @@ class TestVerifyOutput:
     def test_returns_true_on_success(self):
         """Returns True when object exists."""
         mock_s3 = MagicMock()
-        mock_s3.get_object.return_value = {
-            "Body": MagicMock(read=lambda: b'{"data": [{"id": 1}]}')
-        }
+        mock_s3.get_object.return_value = {"Body": MagicMock(read=lambda: b'{"data": [{"id": 1}]}')}
 
         assert verify_output("bucket", "ingested/key", s3_client=mock_s3) is True

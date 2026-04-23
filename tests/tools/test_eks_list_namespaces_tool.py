@@ -15,9 +15,7 @@ class TestEKSListNamespacesToolContract(BaseToolContract):
 
 def test_is_available_requires_cluster_name() -> None:
     rt = list_eks_namespaces.__opensre_registered_tool__
-    assert rt.is_available({
-        "eks": {"connection_verified": True, "cluster_name": "c1"}
-    }) is True
+    assert rt.is_available({"eks": {"connection_verified": True, "cluster_name": "c1"}}) is True
     assert rt.is_available({"eks": {"connection_verified": True}}) is False
     assert rt.is_available({}) is False
 
@@ -42,7 +40,10 @@ def test_run_happy_path() -> None:
     mock_core_v1.list_namespace.return_value = MagicMock(
         items=[_make_ns("default"), _make_ns("kube-system")]
     )
-    with patch("app.tools.EKSListNamespacesTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())):
+    with patch(
+        "app.tools.EKSListNamespacesTool.build_k8s_clients",
+        return_value=(mock_core_v1, MagicMock()),
+    ):
         result = list_eks_namespaces(cluster_name="c1", role_arn="arn:aws:iam::123:role/r")
     assert result["available"] is True
     assert len(result["namespaces"]) == 2
@@ -50,6 +51,8 @@ def test_run_happy_path() -> None:
 
 
 def test_run_handles_exception() -> None:
-    with patch("app.tools.EKSListNamespacesTool.build_k8s_clients", side_effect=Exception("api error")):
+    with patch(
+        "app.tools.EKSListNamespacesTool.build_k8s_clients", side_effect=Exception("api error")
+    ):
         result = list_eks_namespaces(cluster_name="c1", role_arn="arn:aws:iam::123:role/r")
     assert result["available"] is False

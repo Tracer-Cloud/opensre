@@ -1,0 +1,39 @@
+root_cause_category: healthy
+required_keywords:
+  - flap
+  - recovered
+forbidden_categories:
+  - unknown
+  - infrastructure
+  - resource_exhaustion
+  - configuration_error
+optimal_trajectory:
+  - get_eks_node_health
+  - get_eks_events
+  - list_eks_pods
+max_investigation_loops: 3
+ruling_out_keywords:
+  - transient
+  - not a real failure
+  - currently Ready
+required_queries:
+  - get_eks_node_health
+  - get_eks_events
+  - list_eks_pods
+model_response: |
+  ROOT_CAUSE: No active failure. Node ip-10-0-1-73 experienced a brief NotReady flap (~30 seconds) about 25 minutes ago. During the flap window kubelet emitted a burst of secondary warning events (BackOff and Unhealthy on pods running on that node) which Datadog's burst detector aggregated into a single alert. The node has been Ready continuously since recovery, all pods are Running and Ready, and Datadog monitors are OK.
+  ROOT_CAUSE_CATEGORY: healthy
+
+  VALIDATED_CLAIMS:
+  - Both nodes are currently Ready=True with no pressure conditions. [evidence: eks_node_health]
+  - All 3 pods of payments-api are Running and Ready with restart_count=0. [evidence: eks_pods]
+  - Warning events present: NodeNotReady on ip-10-0-1-73 at 10:25:00Z plus a cluster of BackOff and Unhealthy events on pods scheduled to that node, all timestamped within the 30-second flap window (10:25:05Z–10:25:28Z). No Warning events since. [evidence: eks_events]
+  - Node-controller logs confirm the node recovered to Ready at 10:25:30Z and pods returned to Ready post-flap. [evidence: datadog_logs]
+  - Datadog monitors for error rate, latency, and pod restarts are all OK. [evidence: datadog_monitors]
+
+  NON_VALIDATED_CLAIMS:
+  - The flap was likely caused by a transient kubelet-to-control-plane network blip; underlying infrastructure metrics would need to be checked to confirm.
+  - The Datadog burst detector could be tuned to require sustained event activity rather than a single short window to suppress this class of false alert.
+
+  CAUSAL_CHAIN:
+  - No active failure causal chain. A 30-second node flap caused kubelet to emit a burst of secondary warnings during the unreachable window; the node and all pods recovered automatically; the burst detector aggregated those secondary events into one alert that does not reflect any current failure.

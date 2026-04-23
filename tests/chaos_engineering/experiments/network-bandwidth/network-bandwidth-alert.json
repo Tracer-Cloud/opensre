@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "purpose": "Synthetic alert for network-bandwidth chaos demo",
+    "run": "opensre investigate -i tests/chaos_engineering/experiments/network-bandwidth/network-bandwidth-alert.json"
+  },
+  "title": "[Triggered] Throughput collapse - network-bandwidth-demo",
+  "alert_name": "Datadog monitor: low throughput network-bandwidth-demo",
+  "pipeline_name": "network-bandwidth-demo",
+  "severity": "warning",
+  "alert_source": "datadog",
+  "message": "Sustained low throughput to network-bandwidth-demo",
+  "text": "NetworkChaos bandwidth limit injected; connections may be slow.",
+  "commonLabels": {
+    "pipeline_name": "network-bandwidth-demo",
+    "severity": "warning",
+    "kube_deployment": "network-bandwidth-demo"
+  },
+  "commonAnnotations": {
+    "summary": "Bandwidth saturation for deployment network-bandwidth-demo",
+    "query": "kube_namespace:default kube_deployment:network-bandwidth-demo",
+    "kube_namespace": "default",
+    "kube_deployment": "network-bandwidth-demo",
+    "correlation_id": "network-bandwidth-local-001"
+  }
+}

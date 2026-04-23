@@ -156,10 +156,7 @@ class CoralogixClient:
             log_obj = {}
 
         message = str(
-            log_obj.get("message")
-            or user_data.get("message")
-            or metadata.get("message")
-            or ""
+            log_obj.get("message") or user_data.get("message") or metadata.get("message") or ""
         ).strip()
         timestamp = str(
             log_obj.get("timestamp")
@@ -168,16 +165,10 @@ class CoralogixClient:
             or ""
         ).strip()
         level = str(
-            log_obj.get("level")
-            or user_data.get("level")
-            or metadata.get("severity")
-            or ""
+            log_obj.get("level") or user_data.get("level") or metadata.get("severity") or ""
         ).strip()
         trace_id = str(
-            user_data.get("trace_id")
-            or log_obj.get("trace_id")
-            or metadata.get("trace_id")
-            or ""
+            user_data.get("trace_id") or log_obj.get("trace_id") or metadata.get("trace_id") or ""
         ).strip()
 
         return {

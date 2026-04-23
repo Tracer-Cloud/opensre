@@ -13,8 +13,10 @@ build_report_context runs four phases:
 from __future__ import annotations
 
 import time
-from typing import Any, TypedDict
+from typing import Any
 from urllib.parse import urlparse
+
+from typing_extensions import TypedDict
 
 from app.nodes.publish_findings.urls.aws import (
     build_datadog_logs_url,
@@ -109,6 +111,7 @@ _SOURCE_ALIASES: dict[str, str] = {
     "datadog": "datadog_logs",
     "honeycomb": "honeycomb_traces",
     "coralogix": "coralogix_logs",
+    "betterstack": "betterstack_logs",
 }
 
 
@@ -502,6 +505,41 @@ def _add_honeycomb_traces(
     source_to_id["honeycomb_traces"] = eid
 
 
+def _add_betterstack_logs(
+    evidence: dict[str, Any],
+    catalog: dict[str, dict],
+    source_to_id: dict[str, str],
+) -> None:
+    betterstack_logs = evidence.get("betterstack_logs") or []
+    if not betterstack_logs:
+        return
+    bs_source = str(evidence.get("betterstack_source") or "").strip()
+    summary_parts = [
+        part
+        for part in [
+            bs_source or None,
+            f"{len(betterstack_logs)} rows" if betterstack_logs else None,
+        ]
+        if part
+    ]
+    # Better Stack stores the full log payload under the 'raw' column.
+    top_raw = next(
+        (
+            str(entry.get("raw", "")).strip()
+            for entry in betterstack_logs
+            if isinstance(entry, dict) and entry.get("raw")
+        ),
+        None,
+    )
+    eid = "evidence/betterstack/logs"
+    catalog[eid] = {
+        "label": "Better Stack Logs",
+        "summary": ", ".join(summary_parts) or None,
+        "snippet": _as_snippet(top_raw) if top_raw else None,
+    }
+    source_to_id["betterstack_logs"] = eid
+
+
 def _add_coralogix_logs(
     evidence: dict[str, Any],
     catalog: dict[str, dict],
@@ -769,6 +807,7 @@ _PROVENANCE_SOURCE_ALIASES: dict[str, str] = {
     "datadog_events": "datadog",
     "honeycomb_traces": "honeycomb",
     "coralogix_logs": "coralogix",
+    "betterstack_logs": "betterstack",
     "s3_metadata": "s3",
     "s3_audit": "s3",
     # vendor_audit intentionally omitted: it is not always S3-backed
@@ -797,6 +836,7 @@ def _build_evidence_catalog(
     _add_datadog_failed_pods(ns.evidence, ns.datadog_site, catalog, source_to_id)
     _add_honeycomb_traces(ns.evidence, catalog, source_to_id)
     _add_coralogix_logs(ns.evidence, catalog, source_to_id)
+    _add_betterstack_logs(ns.evidence, catalog, source_to_id)
 
     for i, entry in enumerate(catalog.values()):
         entry["display_id"] = f"E{i + 1}"

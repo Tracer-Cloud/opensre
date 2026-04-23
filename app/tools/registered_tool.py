@@ -220,7 +220,7 @@ class RegisteredTool:
             CostTier | None,
             cost_tier
             or getattr(tool, "cost_tier", None)
-            or getattr(tool.__class__, "cost_tier", None)
+            or getattr(tool.__class__, "cost_tier", None),
         )
         return cls(
             name=metadata.name,

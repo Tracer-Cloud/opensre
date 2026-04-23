@@ -65,12 +65,8 @@ class NotionClient:
         payload = {
             "parent": {"database_id": self.config.database_id},
             "properties": {
-                "Title": {
-                    "title": [{"text": {"content": title}}]
-                },
-                "Severity": {
-                    "rich_text": [{"text": {"content": severity}}]
-                },
+                "Title": {"title": [{"text": {"content": title}}]},
+                "Severity": {"rich_text": [{"text": {"content": severity}}]},
             },
             "children": [
                 _heading("Root Cause"),
@@ -99,7 +95,10 @@ class NotionClient:
                 "[notion] Failed to create page status=%s",
                 e.response.status_code,
             )
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
             logger.warning("[notion] Request error type=%s detail=%s", type(e).__name__, e)
             return {"success": False, "error": str(e)}
@@ -120,7 +119,10 @@ class NotionClient:
                 return {"success": True, "page_id": page_id}
         except httpx.HTTPStatusError as e:
             logger.warning("[notion] Failed to update page status=%s", e.response.status_code)
-            return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            return {
+                "success": False,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
         except Exception as e:
             logger.warning("[notion] Update error: %s", e)
             return {"success": False, "error": str(e)}
@@ -130,9 +132,7 @@ def _heading(text: str) -> dict:
     return {
         "object": "block",
         "type": "heading_2",
-        "heading_2": {
-            "rich_text": [{"type": "text", "text": {"content": text}}]
-        },
+        "heading_2": {"rich_text": [{"type": "text", "text": {"content": text}}]},
     }
 
 
@@ -140,7 +140,5 @@ def _paragraph(text: str) -> dict:
     return {
         "object": "block",
         "type": "paragraph",
-        "paragraph": {
-            "rich_text": [{"type": "text", "text": {"content": text[:2000]}}]
-        },
+        "paragraph": {"rich_text": [{"type": "text", "text": {"content": text[:2000]}}]},
     }

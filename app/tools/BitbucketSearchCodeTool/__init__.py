@@ -23,14 +23,17 @@ def _resolve_config(
 ) -> BitbucketConfig | None:
     env_config = bitbucket_config_from_env()
     if any([workspace, username, app_password, base_url, max_results, integration_id]):
-        return build_bitbucket_config({
-            "workspace": workspace or (env_config.workspace if env_config else ""),
-            "username": username or (env_config.username if env_config else ""),
-            "app_password": app_password or (env_config.app_password if env_config else ""),
-            "base_url": base_url or (env_config.base_url if env_config else ""),
-            "max_results": max_results or (env_config.max_results if env_config else 25),
-            "integration_id": integration_id or (env_config.integration_id if env_config else ""),
-        })
+        return build_bitbucket_config(
+            {
+                "workspace": workspace or (env_config.workspace if env_config else ""),
+                "username": username or (env_config.username if env_config else ""),
+                "app_password": app_password or (env_config.app_password if env_config else ""),
+                "base_url": base_url or (env_config.base_url if env_config else ""),
+                "max_results": max_results or (env_config.max_results if env_config else 25),
+                "integration_id": integration_id
+                or (env_config.integration_id if env_config else ""),
+            }
+        )
     return env_config
 
 
@@ -113,5 +116,10 @@ def search_bitbucket_code(
         integration_id,
     )
     if config is None:
-        return {"source": "bitbucket", "available": False, "error": "Bitbucket integration is not configured.", "results": []}
+        return {
+            "source": "bitbucket",
+            "available": False,
+            "error": "Bitbucket integration is not configured.",
+            "results": [],
+        }
     return search_code(config, query=query, repo_slug=repo_slug, limit=limit)
