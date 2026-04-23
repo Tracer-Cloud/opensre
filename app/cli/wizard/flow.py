@@ -227,9 +227,7 @@ def _local_defaults() -> dict[str, str | bool | None]:
         "provider": _string_value(raw_provider) if raw_provider else None,
         "model": _string_value(local.get("model")),
         "api_key_env": api_key_env,
-        "has_api_key": True
-        if is_cli
-        else bool(api_key_env and has_llm_api_key(api_key_env)),
+        "has_api_key": True if is_cli else bool(api_key_env and has_llm_api_key(api_key_env)),
         "legacy_api_key": _string_value(local.get("api_key")),
     }
 

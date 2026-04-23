@@ -28,9 +28,7 @@ def _parse_semver(text: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _classify_codex_auth(
-    returncode: int, stdout: str, stderr: str
-) -> tuple[bool | None, str]:
+def _classify_codex_auth(returncode: int, stdout: str, stderr: str) -> tuple[bool | None, str]:
     text = (stdout + "\n" + stderr).lower()
     # Negative phrases first: "logged in" is a substring of "not logged in".
     if "not logged in" in text or "no credentials" in text:
@@ -45,7 +43,12 @@ def _classify_codex_auth(
         return None, "Network error while checking auth; will retry at invocation."
     if returncode != 0:
         tail = (stderr or stdout).strip()[:200]
-        return None, f"Auth status unclear (exit {returncode}): {tail}" if tail else f"Auth status unclear (exit {returncode})."
+        return (
+            None,
+            f"Auth status unclear (exit {returncode}): {tail}"
+            if tail
+            else f"Auth status unclear (exit {returncode}).",
+        )
     return None, "Auth status unknown."
 
 
