@@ -44,9 +44,14 @@ def init_sentry() -> None:
     from app.config import get_environment
     from app.version import get_version
 
+    try:
+        sample_rate = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.2"))
+    except ValueError:
+        sample_rate = 0.2
+
     _init_sentry_once(
         dsn=dsn,
         environment=get_environment().value,
         release=f"opensre@{get_version()}",
-        traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.2")),
+        traces_sample_rate=sample_rate,
     )

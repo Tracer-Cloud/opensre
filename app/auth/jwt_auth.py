@@ -201,7 +201,7 @@ def get_signing_key_from_jwks(jwks_data: dict[str, Any], token: str) -> Any:
             try:
                 jwk = jwt.PyJWK.from_dict(key_data)
                 return jwk.key
-            except Exception as e:
+            except (jwt.exceptions.InvalidKeyError, jwt.exceptions.PyJWKError) as e:
                 raise JWTVerificationError(f"Failed to parse JWK: {e}") from e
 
     raise JWTVerificationError(f"No matching key found for kid: {kid}")

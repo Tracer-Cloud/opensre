@@ -26,10 +26,18 @@ from app.tools.tool_decorator import tool
 )
 def get_azure_sql_current_queries(
     server: str,
-    database: str,
+    database: str | None = None,
     port: int = 1433,
     threshold_seconds: int = 1,
 ) -> dict[str, Any]:
     """Fetch currently running queries from an Azure SQL Database instance."""
+    _db_defaulted = database is None
+    if database is None:
+        database = "master"
     config = resolve_azure_sql_config(server=server, database=database, port=port)
-    return get_current_queries(config, threshold_seconds=threshold_seconds)
+    result = get_current_queries(config, threshold_seconds=threshold_seconds)
+    if _db_defaulted:
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'master'. Results may not reflect application data."
+        )
+    return result

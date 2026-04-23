@@ -56,6 +56,29 @@ class KafkaValidationResult:
     detail: str
 
 
+def kafka_is_available(sources: dict[str, dict]) -> bool:
+    """Check if Kafka integration params are present in available sources."""
+    return bool(sources.get("kafka", {}).get("connection_verified"))
+
+
+def kafka_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
+    """Extract Kafka connection params from resolved integrations.
+
+    Credentials are resolved by detect_sources from the integration store,
+    so the LLM never needs to supply bootstrap_servers or SASL credentials directly.
+    """
+    kf = sources.get("kafka", {})
+    return {
+        "bootstrap_servers": str(kf.get("bootstrap_servers", "")).strip(),
+        "security_protocol": str(
+            kf.get("security_protocol") or DEFAULT_KAFKA_SECURITY_PROTOCOL
+        ).strip(),
+        "sasl_mechanism": str(kf.get("sasl_mechanism", "")).strip(),
+        "sasl_username": str(kf.get("sasl_username", "")).strip(),
+        "sasl_password": str(kf.get("sasl_password", "")).strip(),
+    }
+
+
 def build_kafka_config(raw: dict[str, Any] | None) -> KafkaConfig:
     """Build a normalized Kafka config object from env/store data."""
     return KafkaConfig.model_validate(raw or {})

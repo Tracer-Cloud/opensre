@@ -26,9 +26,17 @@ from app.tools.tool_decorator import tool
 )
 def get_postgresql_server_status(
     host: str,
-    database: str,
+    database: str | None = None,
     port: int = 5432,
 ) -> dict[str, Any]:
     """Fetch server status metrics from a PostgreSQL instance."""
+    _db_defaulted = database is None
+    if database is None:
+        database = "postgres"
     config = resolve_postgresql_config(host=host, database=database, port=port)
-    return get_server_status(config)
+    result = get_server_status(config)
+    if _db_defaulted:
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'postgres'. Results may not reflect application data."
+        )
+    return result

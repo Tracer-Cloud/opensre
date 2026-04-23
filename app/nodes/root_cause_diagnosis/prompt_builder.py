@@ -53,7 +53,7 @@ def build_diagnosis_prompt(
 
     # Build directive sections
     upstream_directive = _build_upstream_directive(evidence)
-    database_directive = _build_database_directive(evidence)
+    database_directive = _build_database_directive(state, evidence)
     kubernetes_directive = _build_kubernetes_directive(state, evidence)
     failover_directive = _build_failover_directive(evidence)
     memory_section = _build_memory_section(memory_context)
@@ -62,58 +62,69 @@ def build_diagnosis_prompt(
     evidence_text = _build_evidence_sections(state, evidence)
 
     # Construct final prompt
-    prompt = f"""You are an experienced SRE writing a short RCA (root cause analysis) for a data pipeline incident.
+    prompt = f"""You are an experienced SRE performing a root cause analysis (RCA) for a production incident.
 
-Goal: Be helpful and accurate. Prefer evidence-backed explanations over speculation.
-If the exact root cause cannot be proven, provide the most likely explanation based on observed evidence,
-and clearly state what is unknown.
+OBJECTIVE:
+Produce an evidence-grounded RCA. Separate what you can prove from what you infer.
+Follow this reasoning sequence:
+1. Identify OBSERVED FACTS from the evidence below.
+2. Generate candidate hypotheses that could explain those facts.
+3. For each hypothesis, check whether the evidence confirms, contradicts, or is silent.
+4. Eliminate hypotheses that contradict the evidence.
+5. Select the best-supported hypothesis as the root cause. If multiple survive, pick the most parsimonious one and note alternatives.
+6. If no hypothesis can be confirmed, state "Most likely ..." with the strongest candidate and explicitly list what evidence is missing.
 {upstream_directive}{database_directive}{kubernetes_directive}{failover_directive}{memory_section}
 DEFINITIONS:
 - VALIDATED_CLAIMS: Directly supported by the evidence shown below (observed facts).
 - NON_VALIDATED_CLAIMS: Plausible hypotheses or contributing factors that are NOT directly proven by the evidence.
 
-RULES:
-- Do NOT introduce external domain knowledge that is not visible in the evidence (e.g., what a tool usually does).
-- Do NOT reference source code files or line numbers unless they appear explicitly in the evidence below.
-- You can ONLY use information present in the evidence sections shown below. If GitHub evidence includes file paths, snippets, commits, or content, you may reference them.
-- VALIDATED_CLAIMS should be factual and specific (no "maybe", "likely", "appears").
-- NON_VALIDATED_CLAIMS may include "likely/maybe", but must stay consistent with evidence.
-- Keep each claim to one sentence.
-- When possible, mention which evidence source supports a validated claim using one of:
-  {", ".join(ALLOWED_EVIDENCE_SOURCES)}.
+EVIDENCE RULES:
+- Ground every claim in the telemetry, logs, and metrics provided below. You may use domain knowledge to INTERPRET evidence, but do NOT fabricate facts, metrics, or log entries that are not present.
+- Do NOT reference source code files or line numbers unless they appear explicitly in the evidence.
+- If you lack telemetry to make a definitive ruling, you MUST state what specific evidence is missing (e.g., "No memory metrics available to confirm OOM").
+- If GitHub evidence includes file paths, snippets, commits, or content, you may reference them.
+- When a validated claim is supported by a specific evidence source, cite it using one of: {", ".join(ALLOWED_EVIDENCE_SOURCES)}.
+
+ANTI-BIAS RULES:
+- Do NOT assume an incident category before examining the evidence. Let the evidence determine the category.
+- If the provided hypotheses do not match the evidence, discard them and form new ones.
+- Consider at least two alternative explanations before settling on a root cause.
+- Do NOT anchor on the first plausible explanation. Check for contradicting evidence before committing.
 
 PROBLEM:
 {problem}
 
-HYPOTHESES TO CONSIDER (may be incomplete):
-{chr(10).join(f"- {h}" for h in hypotheses[:5]) if hypotheses else "- None"}
+HYPOTHESES TO CONSIDER (treat as suggestions, not conclusions — discard any that contradict the evidence):
+{chr(10).join(f"- {h}" for h in hypotheses[:5]) if hypotheses else "- None provided"}
 
 EVIDENCE:
 {evidence_text}
 
-OUTPUT FORMAT (follow exactly):
+OUTPUT FORMAT (follow exactly — no markdown code blocks, start immediately with ROOT_CAUSE:):
 
 ROOT_CAUSE:
-<1–2 sentences. If not proven, say "Most likely ..." and state what's missing. Do not say only "Unable to determine". For failover incidents, you MUST explicitly state the primary evidence source, confirm that the system recovered and workload resumed normally, and preserve the exact wording "instance available" when summarizing the event sequence.>
+<1–2 sentences stating the root cause. If not provable, say "Most likely: ..." and state what evidence is missing. Never say only "Unable to determine".>
 
 ROOT_CAUSE_CATEGORY:
-<one of: configuration_error, code_defect, data_quality, resource_exhaustion, dependency_failure, infrastructure, healthy, unknown>
-(Use "healthy" when all monitored metrics are within normal bounds, no errors are detected, and the alert is informational or has resolved. When evidence is mixed — alert resolved but some metrics are elevated — use your judgment; you may still choose healthy or another category.)
+<exactly one of: configuration_error | code_defect | data_quality | resource_exhaustion | dependency_failure | infrastructure | healthy | unknown>
+(Use "healthy" only when all metrics are within normal bounds, no errors are detected, and the alert is informational or resolved. For mixed signals, use your judgment.)
 
 VALIDATED_CLAIMS:
-- <one factual claim> [evidence: <one of {", ".join(ALLOWED_EVIDENCE_SOURCES)}>]
-- <another factual claim> [evidence: <one of {", ".join(ALLOWED_EVIDENCE_SOURCES)}>]
+- <factual claim> [evidence: <source>]
+- <factual claim> [evidence: <source>]
 
 NON_VALIDATED_CLAIMS:
-- <one plausible hypothesis consistent with evidence>
-- <another plausible hypothesis>
-(If you include hypotheses, focus on explaining the failure mechanism and what data is missing to confirm it.)
+- <plausible inference — state what data would confirm or refute it>
+- <plausible inference — state what data would confirm or refute it>
+
+ALTERNATIVE_HYPOTHESES_CONSIDERED:
+- <hypothesis considered and why it was eliminated or deprioritized>
 
 CAUSAL_CHAIN:
-- <step 1: the trigger or misconfiguration>
-- <step 2: how it propagated>
+- <step 1: the trigger or initial fault>
+- <step 2: how the fault propagated>
 - <step N: the observable symptom or alert>
-(Trace the error from root cause through to the alert that triggered this investigation. Each step should be one sentence. For failover incidents, you MUST include the full chain ending with recovery.)
+(Trace from root cause to the alert. Each step should be one sentence backed by evidence where possible.)
 """
 
     return prompt
@@ -189,7 +200,7 @@ def _build_upstream_directive(evidence: dict[str, Any]) -> str:
     if s3_audit_payload.get("found") or vendor_audit_from_logs:
         return """
 **CRITICAL: Upstream Root Cause Tracing**
-Audit evidence shows external API interactions. For data pipeline failures:
+Audit evidence shows external API interactions. For upstream-triggered failures:
 - The root cause is often upstream (external API schema changes, missing fields, breaking changes)
 - S3 audit payload and vendor audit logs contain the source of truth
 - Validated claims should reference the external API request/response details
@@ -198,17 +209,26 @@ Audit evidence shows external API interactions. For data pipeline failures:
     return ""
 
 
-def _build_database_directive(evidence: dict[str, Any]) -> str:
+def _build_database_directive(state: InvestigationState, evidence: dict[str, Any]) -> str:
     """Build RDS / Database root cause disambiguation directive."""
+    pipeline = str(state.get("pipeline", "")).lower()
+    alert_text = (str(state.get("alert_name", "")) + " " + str(state.get("raw_alert", ""))).lower()
+    is_database_incident = any(k in pipeline for k in ["rds", "postgres", "mysql"]) or any(
+        k in alert_text for k in ["rds", "postgres", "mysql", "database", "db instance"]
+    )
+
     has_db_evidence = bool(
         evidence.get("aws_rds_events")
         or evidence.get("aws_performance_insights")
         or bool(
-            evidence.get("aws_cloudwatch_metrics", {}).get("DBInstanceIdentifier")
-            or evidence.get("aws_cloudwatch_metrics", {}).get("db_instance_identifier")
+            isinstance(evidence.get("aws_cloudwatch_metrics"), dict)
+            and (
+                evidence.get("aws_cloudwatch_metrics", {}).get("DBInstanceIdentifier")
+                or evidence.get("aws_cloudwatch_metrics", {}).get("db_instance_identifier")
+            )
         )
     )
-    if not has_db_evidence:
+    if not (has_db_evidence or is_database_incident):
         return ""
     return """
 **CRITICAL: Database Resource Exhaustion vs CPU Saturation**
@@ -217,8 +237,8 @@ When evaluating database health metrics (especially RDS/Postgres):
 - Storage exhaustion (when `FreeStorageSpace` approaches 0) blocks all writes and causes Write IOPS to collapse to 0. The root cause is `resource_exhaustion` due to storage limits. If the `FreeStorageSpace` metric is completely missing, you MUST infer storage exhaustion from indirect signals: WriteIOPS dropping to 0, WriteLatency spiking, and RDS events indicating 'ran out of storage space'.
 - A single bad query driving CPU near 100% while connections and storage are healthy is `resource_exhaustion` due to CPU saturation (e.g. missing index, full table scans at high ReadIOPS). Pay close attention to Performance Insights to identify the exact query.
 - Checkpoint Storms / VACUUM FREEZE: If CPU is high but the dominant wait event is `LWLock:BufferMapping` with massive WriteIOPS, the root cause is an I/O storm from checkpointing (e.g., `VACUUM FREEZE`) and should be classified as `resource_exhaustion`, NOT `code_defect`. The high CPU is a downstream symptom of I/O contention.
-- Replication lag: If a massive write-heavy workload on the primary generates WAL faster than the read replica can replay it, resulting in ReplicaLag spikes, the root cause is `resource_exhaustion` driven by the write workload on the primary. Watch out for red herrings: if concurrent analytics queries cause high CPU, do NOT label it as `code_defect` if the actual failing metric (like ReplicaLag) is driven by the write-heavy workload. If the `ReplicaLag` metric is missing, infer lag from RDS events (e.g., 'exceeded 900s') and high `TransactionLogsGeneration`.
-- Compositional Faults: If two completely independent workloads cause two separate faults simultaneously (e.g., CPU saturation from an analytics SELECT AND storage exhaustion from an audit_log INSERT), explicitly identify BOTH as independent root causes. Use `resource_exhaustion` as ROOT_CAUSE_CATEGORY and describe both causes clearly in ROOT_CAUSE (e.g., "Two independent root causes: ..."). Trace each causal chain separately in CAUSAL_CHAIN. Connection spikes and ReplicaLag are often just downstream symptoms of the blocked writers.
+- Replication lag: If a massive write-heavy workload on the primary generates WAL faster than the read replica can replay it, resulting in ReplicaLag spikes, the root cause is `resource_exhaustion` driven by the write workload on the primary. Watch out for red herrings: if concurrent analytics queries cause high CPU, do NOT classify the root cause as CPU-driven if the actual failing metric (like ReplicaLag) is driven by the write-heavy workload. The CPU spike is an independent issue. If the `ReplicaLag` metric is missing, infer lag from RDS events (e.g., 'exceeded 900s') and high `TransactionLogsGeneration`.
+- Compositional Faults: If two completely independent workloads cause two separate faults simultaneously (e.g., CPU saturation from an analytics SELECT AND storage exhaustion from an audit_log INSERT), explicitly identify BOTH as independent root causes (do not merge them into a single IOPS fault). You MUST explicitly state they are two independent, coincidental faults. Provide evidence for both the analytics query and the audit_log query. Use `resource_exhaustion` as ROOT_CAUSE_CATEGORY and describe both causes clearly in ROOT_CAUSE (e.g., "Two independent root causes: ..."). Trace each causal chain separately in CAUSAL_CHAIN. You MUST explicitly state that connection growth is a symptom of blocked writers, not connection exhaustion. You MUST explicitly state that ReplicaLag growth is a downstream symptom of the write burst (not an independent fault). NEVER diagnose `connection_exhaustion` as a root cause when connections spike due to a blocked write queue.
 - Misleading Context: Check RDS event timestamps carefully! Ignore historical events (maintenance, failovers, replica promotions) that completed hours before the current incident started.
 - Healthy Systems / Stale Alerts: If metrics are oscillating but remain within normal operating bounds (e.g. connections at 55-65%, CPU at 40-70%, no error logs), the system is `healthy`. If a threshold was briefly crossed (e.g. low FreeStorageSpace) but autoscaling successfully expanded the volume and fully recovered the system before the investigation, the system is `healthy` and the alert is stale.
 - ALWAYS trace the causal chain properly (e.g., connection leak -> idle sessions -> connections maxed out, OR missing index -> full table scans -> ReadIOPS -> CPU saturated, OR VACUUM FREEZE -> massive WAL -> checkpoint flush -> I/O saturation -> CPU as symptom).
@@ -747,7 +767,10 @@ def _format_vercel_runtime_log(log: Any) -> str:
         elif payload:
             message = str(payload)
 
-    prefix_parts = [str(log.get("type", "")).strip(), str(log.get("source", "")).strip()]
+    prefix_parts = [
+        str(log.get("type", "")).strip(),
+        str(log.get("source", "")).strip(),
+    ]
     prefix = " ".join(part for part in prefix_parts if part)
     text = str(message or "")[:260]
     return f"{prefix}: {text}" if prefix else text

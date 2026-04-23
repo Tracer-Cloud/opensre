@@ -15,7 +15,7 @@ from app.types.retrieval import RetrievalControls
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry_cache() -> Generator[None, None, None]:
+def _reset_registry_cache() -> Generator[None]:
     registry_module.clear_tool_registry_cache()
     yield
     registry_module.clear_tool_registry_cache()

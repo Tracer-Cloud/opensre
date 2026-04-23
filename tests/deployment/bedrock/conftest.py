@@ -15,7 +15,7 @@ from tests.shared.infra import infrastructure_available
 
 
 @pytest.fixture(scope="session")
-def bedrock_agent() -> Generator[dict[str, Any], None, None]:
+def bedrock_agent() -> Generator[dict[str, Any]]:
     """Deploy a Bedrock Agent, yield outputs, then tear down.
 
     Skips when running in CI or when SKIP_INFRA_TESTS is set.

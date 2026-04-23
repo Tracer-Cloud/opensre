@@ -46,15 +46,26 @@
         {"name": "CPU:user",        "type": "CPU", "db_load_avg": 0.1}
       ],
       "calls_per_sec": 8.2
+    },
+    {
+      "statement": "postgres: checkpointer process: checkpoint storm flushing dirty buffers from VACUUM FREEZE WAL",
+      "db_load_avg": 0.5,
+      "wait_events": [
+        {"name": "IO:WALSync",            "type": "IO",     "db_load_avg": 0.2},
+        {"name": "IO:BufferSync",         "type": "IO",     "db_load_avg": 0.2},
+        {"name": "LWLock:CheckpointerComm","type": "LWLock", "db_load_avg": 0.1}
+      ],
+      "calls_per_sec": 0.33
     }
   ],
   "top_wait_events": [
-    {"name": "LWLock:BufferMapping", "type": "LWLock", "db_load_avg": 3.9},
-    {"name": "IO:WALWrite",          "type": "IO",     "db_load_avg": 2.4},
-    {"name": "IO:DataFileWrite",     "type": "IO",     "db_load_avg": 1.4},
-    {"name": "Lock:relation",        "type": "Lock",   "db_load_avg": 0.8},
-    {"name": "IO:DataFileRead",      "type": "IO",     "db_load_avg": 0.7},
-    {"name": "CPU:user",             "type": "CPU",    "db_load_avg": 0.2}
+    {"name": "LWLock:BufferMapping",   "type": "LWLock", "db_load_avg": 3.9},
+    {"name": "IO:WALWrite",            "type": "IO",     "db_load_avg": 2.4},
+    {"name": "IO:DataFileWrite",       "type": "IO",     "db_load_avg": 1.4},
+    {"name": "Lock:relation",          "type": "Lock",   "db_load_avg": 0.8},
+    {"name": "IO:DataFileRead",        "type": "IO",     "db_load_avg": 0.7},
+    {"name": "LWLock:CheckpointerComm","type": "LWLock", "db_load_avg": 0.3},
+    {"name": "CPU:user",               "type": "CPU",    "db_load_avg": 0.2}
   ],
   "top_users": [
     {"name": "rdsadmin",      "db_load_avg": 7.9},

@@ -54,6 +54,7 @@
             "defaultOpen": true,
             "pages": [
               "alertmanager",
+              "betterstack",
               "bitbucket",
               "clickhouse",
               "coralogix",

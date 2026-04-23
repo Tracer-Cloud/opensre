@@ -1,0 +1,141 @@
+---
+title: "Better Stack Telemetry"
+description: "Connect Better Stack so OpenSRE can pull log evidence from your Telemetry sources during investigations"
+---
+
+OpenSRE uses Better Stack's ClickHouse SQL Query API to read log evidence during investigations. It queries the configured source via `remote(<source>_logs)` for recent rows and `s3Cluster(primary, <source>_s3)` for historical rows, bounded by the alert window.
+
+## Prerequisites
+
+- A Better Stack account with at least one **Telemetry source** collecting logs
+- A **ClickHouse HTTP client** credential pair (username + password) generated from the dashboard
+- The **region-specific query endpoint** for your workspace (e.g. `https://eu-nbg-2-connect.betterstackdata.com`)
+- Network access from the OpenSRE environment to that endpoint over HTTPS
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup betterstack
+```
+
+You will be prompted for the query endpoint, username, password, and an optional comma-separated list of source IDs (planner hint).
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+BETTERSTACK_QUERY_ENDPOINT=https://eu-nbg-2-connect.betterstackdata.com
+BETTERSTACK_USERNAME=<clickhouse-http-username>
+BETTERSTACK_PASSWORD=<clickhouse-http-password>
+BETTERSTACK_SOURCES=t123456_myapp,t123456_gateway
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `BETTERSTACK_QUERY_ENDPOINT` | — | **Required.** Region-specific SQL API host (e.g. `https://eu-nbg-2-connect.betterstackdata.com`) |
+| `BETTERSTACK_USERNAME` | — | **Required.** Username from **Connect ClickHouse HTTP client** |
+| `BETTERSTACK_PASSWORD` | — | **Required.** Password from the same dashboard flow |
+| `BETTERSTACK_SOURCES` | _(empty)_ | Optional comma-separated list of **base source IDs** (e.g. `t123456_myapp`). The integration appends `_logs` / `_s3` internally. If omitted, the planner must derive the source from alert metadata (via a `betterstack_source` annotation) |
+
+### Option 3: Persistent store
+
+Credentials are persisted to `~/.tracer/integrations.json` with `0o600` permissions:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "betterstack-prod",
+      "service": "betterstack",
+      "status": "active",
+      "credentials": {
+        "query_endpoint": "https://eu-nbg-2-connect.betterstackdata.com",
+        "username": "<clickhouse-http-username>",
+        "password": "<clickhouse-http-password>",
+        "sources": ["t123456_myapp"]
+      }
+    }
+  ]
+}
+```
+
+## Generating credentials
+
+From the Better Stack dashboard:
+
+1. Open **Telemetry** and pick the source you want OpenSRE to query.
+2. In the source sidebar, open **Integrations** → **Connect ClickHouse HTTP client**.
+3. Copy the generated **username**, **password**, and **query endpoint**. The endpoint's subdomain encodes the region (e.g. `eu-nbg-2-connect`, `us-connect`).
+4. The **base source ID** (e.g. `t123456_myapp`) is shown above the integration panel and is the value to supply for `BETTERSTACK_SOURCES`. Use the base name only — OpenSRE appends `_logs` and `_s3` internally.
+
+## Investigation tool
+
+OpenSRE exposes one tool against a Better Stack source:
+
+### `query_betterstack_logs`
+
+Returns `(dt, raw)` pairs by UNIONing:
+
+- Recent rows from `remote(<source>_logs)`
+- Historical rows from `s3Cluster(primary, <source>_s3) WHERE _row_type = 1`
+
+Arguments the planner supplies:
+
+- **`source`** — the base identifier (e.g. `t123456_myapp`). Falls back to the first configured `sources` entry when omitted.
+- **`since` / `until`** — ISO-8601 timestamps that bound the `dt` column. Optional, typically derived from the alert window.
+- **`limit`** — row cap; defaults to `500`.
+
+All queries run with `FORMAT JSONEachRow` and `output_format_pretty_row_numbers=0`. Source names are validated against `^[A-Za-z0-9_]+$` to prevent identifier injection.
+
+## Triggering investigation from an alert
+
+When an alert carries a `betterstack_source` annotation, the planner wires it through to `query_betterstack_logs` automatically:
+
+```json
+{
+  "title": "[betterstack] Agent silent (no info logs in 5min)",
+  "state": "alerting",
+  "alert_source": "betterstack",
+  "commonAnnotations": {
+    "summary": "Agent silent (no info logs in 5min): info < 1",
+    "betterstack_source": "t123456_myapp"
+  }
+}
+```
+
+## Verify
+
+```bash
+opensre integrations verify betterstack
+```
+
+Expected output:
+
+```
+SERVICE       SOURCE    STATUS    DETAIL
+betterstack   store     passed    Connected to Better Stack SQL API at https://eu-nbg-2-connect.betterstackdata.com
+```
+
+The verify step issues a cheap probe (`SELECT 1 FORMAT JSONEachRow`) against the configured endpoint using the stored credentials.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Authentication failed (401)** | Regenerate credentials via the dashboard's **Connect ClickHouse HTTP client** flow; confirm `BETTERSTACK_USERNAME` / `BETTERSTACK_PASSWORD` match exactly. |
+| **Endpoint not found / DNS error** | The region subdomain is wrong. Copy the endpoint directly from the dashboard (e.g. `eu-nbg-2-connect`, `us-connect`, `eu-fsn-3-connect`). |
+| **`invalid source name` error on query** | The `source` argument contains characters outside `[A-Za-z0-9_]`. Use the base ID shown in the dashboard — no dashes, no quotes, no whitespace. |
+| **Empty result set for a known-busy source** | Check that the alert window (`since` / `until`) actually overlaps with the source's `dt` range; historical rows older than recent retention live in `s3Cluster(primary, <source>_s3)`. |
+| **`planner did not configure a source` error** | Either set `BETTERSTACK_SOURCES`, or ensure the alert payload includes a `betterstack_source` annotation. |
+
+## Security best practices
+
+- Use a **dedicated ClickHouse HTTP client credential** for OpenSRE — not your personal dashboard login.
+- Keep the credential pair out of source control — use `.env` or the persistent store (`~/.tracer/integrations.json`).
+- The integration is **read-only**: OpenSRE only issues `SELECT` statements against `remote(...)` and `s3Cluster(...)` table functions.
+- Source identifiers are allowlisted against `^[A-Za-z0-9_]+$` before being interpolated into SQL, preventing identifier-injection attacks from the alert payload.
+- Rotate credentials periodically via the Better Stack dashboard.

@@ -92,7 +92,96 @@ def test_validate_posthog_config_unauthorized(monkeypatch: pytest.MonkeyPatch) -
     result = validate_posthog_config(config)
 
     assert result.ok is False
-    assert "401 Unauthorized" in result.detail
+    assert "HTTP 401" in result.detail
+
+
+def test_validate_posthog_config_forbidden(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = PostHogConfig(
+        project_id="123",
+        personal_api_key="restricted_key",
+    )
+
+    request = httpx.Request("GET", "https://us.i.posthog.com/api/projects/123/")
+    response = httpx.Response(
+        403, text='{"detail": "You do not have permission."}', request=request
+    )
+
+    def fake_request_json(*args, **kwargs):
+        raise httpx.HTTPStatusError(
+            "Client error '403 Forbidden'",
+            request=request,
+            response=response,
+        )
+
+    monkeypatch.setattr("app.integrations.posthog._request_json", fake_request_json)
+
+    result = validate_posthog_config(config)
+
+    assert result.ok is False
+    assert "HTTP 403" in result.detail
+    assert "permission" in result.detail.lower()
+
+
+def test_validate_posthog_config_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = PostHogConfig(
+        project_id="999",
+        personal_api_key="phx_test",
+    )
+
+    request = httpx.Request("GET", "https://us.i.posthog.com/api/projects/999/")
+    response = httpx.Response(404, text='{"detail": "Not found."}', request=request)
+
+    def fake_request_json(*args, **kwargs):
+        raise httpx.HTTPStatusError(
+            "Client error '404 Not Found'",
+            request=request,
+            response=response,
+        )
+
+    monkeypatch.setattr("app.integrations.posthog._request_json", fake_request_json)
+
+    result = validate_posthog_config(config)
+
+    assert result.ok is False
+    assert "HTTP 404" in result.detail
+
+
+def test_validate_posthog_config_http_error_detail_starts_with_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """detail always starts with 'HTTP <status_code>' for HTTPStatusError."""
+    config = PostHogConfig(project_id="123", personal_api_key="phx_test")
+    request = httpx.Request("GET", "https://us.i.posthog.com/api/projects/123/")
+    response = httpx.Response(401, request=request)
+
+    monkeypatch.setattr(
+        "app.integrations.posthog._request_json",
+        lambda *_a, **_kw: (_ for _ in ()).throw(
+            httpx.HTTPStatusError("401", request=request, response=response)
+        ),
+    )
+
+    result = validate_posthog_config(config)
+
+    assert result.ok is False
+    assert result.detail.startswith("HTTP ")
+
+
+def test_validate_posthog_config_generic_error_still_handled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-HTTP exceptions are still caught and returned as plain error detail."""
+    config = PostHogConfig(project_id="123", personal_api_key="phx_test")
+
+    def fake_request_json(*args, **kwargs):
+        raise ConnectionError("network unreachable")
+
+    monkeypatch.setattr("app.integrations.posthog._request_json", fake_request_json)
+
+    result = validate_posthog_config(config)
+
+    assert result.ok is False
+    assert "network unreachable" in result.detail
 
 
 def test_query_bounce_rate_success(monkeypatch: pytest.MonkeyPatch) -> None:

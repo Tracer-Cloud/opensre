@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.mongodb import MongoDBConfig, get_current_ops
+from app.integrations.mongodb import (
+    MongoDBConfig,
+    get_current_ops,
+    mongodb_extract_params,
+    mongodb_is_available,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -11,6 +16,8 @@ from app.tools.tool_decorator import tool
     description="Retrieve currently executing MongoDB operations above a specific duration threshold.",
     source="mongodb",
     surfaces=("investigation", "chat"),
+    is_available=mongodb_is_available,
+    extract_params=mongodb_extract_params,
 )
 def get_mongodb_current_ops(
     connection_string: str,

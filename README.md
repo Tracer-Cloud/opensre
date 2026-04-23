@@ -133,7 +133,7 @@ opensre remote ops --provider railway --project <project> --service <service> lo
 opensre remote ops --provider railway --project <project> --service <service> restart --yes
 ```
 
-OpenSRE saves your last used `provider`/`project`/`service`, so you can run:
+OpenSRE saves your last used `provider`, so you can run:
 
 ```bash
 opensre remote ops status
@@ -162,11 +162,7 @@ If you use VS Code, the repo now includes a ready-to-use devcontainer under [`.d
 
 ## How OpenSRE Works
 
-<img
-  alt="tracer-how-it-works-illustration"
-  src="https://github.com/user-attachments/assets/8b50fe5c-470c-4982-866f-4f90c3e251d1"
-  style="width: 100%; height: auto;"
-/>
+<img src="https://github.com/user-attachments/assets/04234934-c603-491e-a08f-b145d1158d7a" width="1064" alt="opensre-how-it-works" style="border-radius: 0" />
 
 ### Investigation Workflow
 
@@ -631,6 +627,124 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/51887071?v=4" width="100" alt="afif1400"/>
             <br />
             <sub><b>afif1400</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/gauravch-code">
+            <img src="https://avatars.githubusercontent.com/u/180489802?v=4" width="100" alt="gauravch-code"/>
+            <br />
+            <sub><b>gauravch-code</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/divijgera">
+            <img src="https://avatars.githubusercontent.com/u/46404484?v=4" width="100" alt="divijgera"/>
+            <br />
+            <sub><b>divijgera</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/daxp472">
+            <img src="https://avatars.githubusercontent.com/u/177292922?v=4" width="100" alt="daxp472"/>
+            <br />
+            <sub><b>daxp472</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Som-0619">
+            <img src="https://avatars.githubusercontent.com/u/143019791?v=4" width="100" alt="Som-0619"/>
+            <br />
+            <sub><b>Som-0619</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Gust-svg">
+            <img src="https://avatars.githubusercontent.com/u/265007695?v=4" width="100" alt="Gust-svg"/>
+            <br />
+            <sub><b>Gust-svg</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Sayeem3051">
+            <img src="https://avatars.githubusercontent.com/u/169171880?v=4" width="100" alt="Sayeem3051"/>
+            <br />
+            <sub><b>Sayeem3051</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/MachineLearning-Nerd">
+            <img src="https://avatars.githubusercontent.com/u/37579156?v=4" width="100" alt="MachineLearning-Nerd"/>
+            <br />
+            <sub><b>MachineLearning-Nerd</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/F4tal1t">
+            <img src="https://avatars.githubusercontent.com/u/109851148?v=4" width="100" alt="F4tal1t"/>
+            <br />
+            <sub><b>F4tal1t</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/MestreY0d4-Uninter">
+            <img src="https://avatars.githubusercontent.com/u/241404605?v=4" width="100" alt="MestreY0d4-Uninter"/>
+            <br />
+            <sub><b>MestreY0d4-Uninter</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/qorexdevs">
+            <img src="https://avatars.githubusercontent.com/u/277760369?v=4" width="100" alt="qorexdevs"/>
+            <br />
+            <sub><b>qorexdevs</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Agnuxo1">
+            <img src="https://avatars.githubusercontent.com/u/166046035?v=4" width="100" alt="Agnuxo1"/>
+            <br />
+            <sub><b>Agnuxo1</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Ryjen1">
+            <img src="https://avatars.githubusercontent.com/u/114498519?v=4" width="100" alt="Ryjen1"/>
+            <br />
+            <sub><b>Ryjen1</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/nandanadileep">
+            <img src="https://avatars.githubusercontent.com/u/110280757?v=4" width="100" alt="nandanadileep"/>
+            <br />
+            <sub><b>nandanadileep</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/Maharshi-Project">
+            <img src="https://avatars.githubusercontent.com/u/156591746?v=4" width="100" alt="Maharshi-Project"/>
+            <br />
+            <sub><b>Maharshi-Project</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/udit-rawat">
+            <img src="https://avatars.githubusercontent.com/u/84604012?v=4" width="100" alt="udit-rawat"/>
+            <br />
+            <sub><b>udit-rawat</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/muddlebee">
+            <img src="https://avatars.githubusercontent.com/u/8139783?v=4" width="100" alt="muddlebee"/>
+            <br />
+            <sub><b>muddlebee</b></sub>
         </a>
     </td>
 		</tr>

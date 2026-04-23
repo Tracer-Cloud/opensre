@@ -26,10 +26,18 @@ from app.tools.tool_decorator import tool
 )
 def get_mysql_current_processes(
     host: str,
-    database: str,
+    database: str | None = None,
     threshold_seconds: int = 1,
     port: int = 3306,
 ) -> dict[str, Any]:
     """Fetch active processes running longer than threshold_seconds (default 1s)."""
+    _db_defaulted = database is None
+    if database is None:
+        database = "mysql"
     config = resolve_mysql_config(host=host, database=database, port=port)
-    return get_current_processes(config, threshold_seconds=threshold_seconds)
+    result = get_current_processes(config, threshold_seconds=threshold_seconds)
+    if _db_defaulted:
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'mysql'. Results may not reflect application data."
+        )
+    return result

@@ -26,10 +26,18 @@ from app.tools.tool_decorator import tool
 )
 def get_postgresql_slow_queries(
     host: str,
-    database: str,
+    database: str | None = None,
     threshold_ms: int = 1000,
     port: int = 5432,
 ) -> dict[str, Any]:
     """Fetch slow query statistics above the threshold (default 1000ms mean time)."""
+    _db_defaulted = database is None
+    if database is None:
+        database = "postgres"
     config = resolve_postgresql_config(host=host, database=database, port=port)
-    return get_slow_queries(config, threshold_ms=threshold_ms)
+    result = get_slow_queries(config, threshold_ms=threshold_ms)
+    if _db_defaulted:
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'postgres'. Results may not reflect application data."
+        )
+    return result

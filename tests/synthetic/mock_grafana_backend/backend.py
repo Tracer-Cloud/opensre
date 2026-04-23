@@ -76,12 +76,48 @@ class FixtureGrafanaBackend:
         return format_mimir_query_range(metrics)
 
     def query_logs(self, **_: Any) -> dict[str, Any]:
-        if self._fixture.evidence.aws_rds_events is None:
+        events = list(self._fixture.evidence.aws_rds_events or [])
+        pi = self._fixture.evidence.aws_performance_insights
+        if pi:
+            start_ts = pi.get(
+                "start_time", self._fixture.alert.get("startsAt", "1970-01-01T00:00:00Z")
+            )
+            for sql in pi.get("top_sql", []):
+                wait_events_str = ", ".join(
+                    [
+                        f"{w.get('name', 'unknown')}({w.get('db_load_avg', 0)})"
+                        for w in sql.get("wait_events", [])
+                    ]
+                )
+                blurb = f"Top SQL Activity: {sql.get('statement')} | Avg Load: {sql.get('db_load_avg')} AAS | Waits: {wait_events_str}"
+                events.append(
+                    {
+                        "date": start_ts,
+                        "message": blurb,
+                        "source_type": "aws_performance_insights",
+                        "source_identifier": pi.get("db_instance_identifier", "db"),
+                        "event_categories": ["performance"],
+                    }
+                )
+
+            for we in pi.get("top_wait_events", []):
+                blurb = f"Top Wait Event: {we.get('name', 'unknown')} | db_load_avg: {we.get('db_load_avg', 0)} AAS"
+                events.append(
+                    {
+                        "date": start_ts,
+                        "message": blurb,
+                        "source_type": "aws_performance_insights",
+                        "source_identifier": pi.get("db_instance_identifier", "db"),
+                        "event_categories": ["performance"],
+                    }
+                )
+
+        if not events:
             raise ValueError(
                 f"{self._fixture.scenario_id}: query_logs called but "
-                "'aws_rds_events' is not declared in available_evidence"
+                "'aws_rds_events' and 'aws_performance_insights' are empty or missing"
             )
-        return format_loki_query_range({"events": self._fixture.evidence.aws_rds_events})
+        return format_loki_query_range({"events": events})
 
     def query_alert_rules(self, **_: Any) -> dict[str, Any]:
         return format_ruler_rules(self._fixture.alert)

@@ -65,6 +65,28 @@ class ClickHouseValidationResult:
     detail: str
 
 
+def clickhouse_is_available(sources: dict[str, dict]) -> bool:
+    """Check if ClickHouse integration params are present in available sources."""
+    return bool(sources.get("clickhouse", {}).get("connection_verified"))
+
+
+def clickhouse_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
+    """Extract ClickHouse connection params from resolved integrations.
+
+    Credentials are resolved by detect_sources from the integration store,
+    so the LLM never needs to supply host or password directly.
+    """
+    ch = sources.get("clickhouse", {})
+    return {
+        "host": str(ch.get("host", "")).strip(),
+        "port": int(ch.get("port") or DEFAULT_CLICKHOUSE_PORT),
+        "database": str(ch.get("database") or DEFAULT_CLICKHOUSE_DATABASE).strip(),
+        "username": str(ch.get("username") or DEFAULT_CLICKHOUSE_USER).strip(),
+        "password": str(ch.get("password", "")).strip(),
+        "secure": bool(ch.get("secure", False)),
+    }
+
+
 def build_clickhouse_config(raw: dict[str, Any] | None) -> ClickHouseConfig:
     """Build a normalized ClickHouse config object from env/store data."""
     return ClickHouseConfig.model_validate(raw or {})

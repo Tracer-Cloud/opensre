@@ -2,7 +2,13 @@
 
 from typing import Any
 
-from app.integrations.clickhouse import ClickHouseConfig, get_system_health, get_table_stats
+from app.integrations.clickhouse import (
+    ClickHouseConfig,
+    clickhouse_extract_params,
+    clickhouse_is_available,
+    get_system_health,
+    get_table_stats,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -16,6 +22,8 @@ from app.tools.tool_decorator import tool
         "Identifying large or rapidly growing tables",
         "Reviewing connection and query counts for capacity issues",
     ],
+    is_available=clickhouse_is_available,
+    extract_params=clickhouse_extract_params,
 )
 def get_clickhouse_system_health(
     host: str,

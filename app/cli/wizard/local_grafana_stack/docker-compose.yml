@@ -19,4 +19,4 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
     volumes:
-      - ${LOCAL_WORKSPACE_FOLDER:-}/app/cli/wizard/local_grafana_stack/provisioning:/etc/grafana/provisioning
+      - ./provisioning:/etc/grafana/provisioning

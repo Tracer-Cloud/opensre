@@ -369,6 +369,10 @@ clean:
 lint:
 	ruff check app/ tests/
 
+# Check formatting (read-only; CI uses this)
+format-check:
+	ruff format --check app/ tests/
+
 # Format code
 format:
 	ruff format app/ tests/
@@ -510,6 +514,7 @@ help:
 	@echo "  make test-rds-synthetic - Run the synthetic RDS PostgreSQL RCA suite"
 	@echo "  make clean           - Clean up cache files"
 	@echo "  make lint            - Lint code with ruff"
+	@echo "  make format-check    - Check formatting with ruff (read-only)"
 	@echo "  make format          - Format code with ruff"
 	@echo "  make typecheck       - Type check with mypy"
 	@echo "  make check           - Run all checks"

@@ -33,3 +33,17 @@ def test_init_sentry_is_idempotent_for_same_config(monkeypatch) -> None:
     assert init_mock.call_args.kwargs["dsn"] == "https://example@sentry.invalid/1"
     assert init_mock.call_args.kwargs["environment"] == "production"
     assert init_mock.call_args.kwargs["traces_sample_rate"] == 0.5
+
+
+def test_init_sentry_invalid_traces_sample_rate_fallback(monkeypatch) -> None:
+    sentry_mod._init_sentry_once.cache_clear()
+    monkeypatch.setenv("SENTRY_DSN", "https://example@sentry.invalid/1")
+    monkeypatch.setenv("SENTRY_TRACES_SAMPLE_RATE", "invalid_value")
+    monkeypatch.setenv("ENV", "production")
+    init_mock = MagicMock()
+    monkeypatch.setitem(sys.modules, "sentry_sdk", SimpleNamespace(init=init_mock))
+
+    sentry_mod.init_sentry()
+
+    init_mock.assert_called_once()
+    assert init_mock.call_args.kwargs["traces_sample_rate"] == 0.2

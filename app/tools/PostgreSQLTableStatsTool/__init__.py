@@ -26,10 +26,18 @@ from app.tools.tool_decorator import tool
 )
 def get_postgresql_table_stats(
     host: str,
-    database: str,
+    database: str | None = None,
     schema_name: str = "public",
     port: int = 5432,
 ) -> dict[str, Any]:
     """Fetch table statistics for a specific schema (default 'public')."""
+    _db_defaulted = database is None
+    if database is None:
+        database = "postgres"
     config = resolve_postgresql_config(host=host, database=database, port=port)
-    return get_table_stats(config, schema_name=schema_name)
+    result = get_table_stats(config, schema_name=schema_name)
+    if _db_defaulted:
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'postgres'. Results may not reflect application data."
+        )
+    return result

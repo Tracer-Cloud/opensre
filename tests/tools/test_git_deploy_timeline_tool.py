@@ -23,9 +23,10 @@ class TestGitDeployTimelineToolContract(BaseToolContract):
 
 def test_is_available_requires_connection_owner_repo() -> None:
     rt = get_git_deploy_timeline.__opensre_registered_tool__
-    assert rt.is_available({
-        "github": {"connection_verified": True, "owner": "org", "repo": "repo"}
-    }) is True
+    assert (
+        rt.is_available({"github": {"connection_verified": True, "owner": "org", "repo": "repo"}})
+        is True
+    )
     assert rt.is_available({"github": {"connection_verified": True}}) is False
     assert rt.is_available({}) is False
 
@@ -75,12 +76,10 @@ def test_run_happy_path_summarizes_commits() -> None:
         "content": [],
     }
     mock_config = MagicMock()
-    with patch(
-        "app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None
-    ), patch(
-        "app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config
-    ), patch(
-        "app.tools.GitDeployTimelineTool.call_github_mcp_tool", return_value=fake_result
+    with (
+        patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None),
+        patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config),
+        patch("app.tools.GitDeployTimelineTool.call_github_mcp_tool", return_value=fake_result),
     ):
         result = get_git_deploy_timeline(
             owner="org",
@@ -116,11 +115,11 @@ def test_run_passes_time_window_and_branch_to_mcp() -> None:
         captured["arguments"] = arguments
         return {"is_error": False, "text": "", "structured_content": [], "content": []}
 
-    with patch(
-        "app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None
-    ), patch(
-        "app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config
-    ), patch("app.tools.GitDeployTimelineTool.call_github_mcp_tool", side_effect=_fake_call):
+    with (
+        patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None),
+        patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config),
+        patch("app.tools.GitDeployTimelineTool.call_github_mcp_tool", side_effect=_fake_call),
+    ):
         get_git_deploy_timeline(
             owner="org",
             repo="repo",
@@ -151,12 +150,10 @@ def test_run_empty_result_returns_zero_commits() -> None:
         "content": [],
     }
     mock_config = MagicMock()
-    with patch(
-        "app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None
-    ), patch(
-        "app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config
-    ), patch(
-        "app.tools.GitDeployTimelineTool.call_github_mcp_tool", return_value=fake_result
+    with (
+        patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None),
+        patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config),
+        patch("app.tools.GitDeployTimelineTool.call_github_mcp_tool", return_value=fake_result),
     ):
         result = get_git_deploy_timeline(
             owner="org",
@@ -185,12 +182,10 @@ def test_run_defensive_against_non_list_structured_content() -> None:
         "content": [],
     }
     mock_config = MagicMock()
-    with patch(
-        "app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None
-    ), patch(
-        "app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config
-    ), patch(
-        "app.tools.GitDeployTimelineTool.call_github_mcp_tool", return_value=fake_result
+    with (
+        patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None),
+        patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config),
+        patch("app.tools.GitDeployTimelineTool.call_github_mcp_tool", return_value=fake_result),
     ):
         result = get_git_deploy_timeline(
             owner="org",
@@ -211,11 +206,11 @@ def test_run_passes_per_page_to_mcp() -> None:
         captured["arguments"] = arguments
         return {"is_error": False, "text": "", "structured_content": [], "content": []}
 
-    with patch(
-        "app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None
-    ), patch(
-        "app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config
-    ), patch("app.tools.GitDeployTimelineTool.call_github_mcp_tool", side_effect=_fake_call):
+    with (
+        patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None),
+        patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config),
+        patch("app.tools.GitDeployTimelineTool.call_github_mcp_tool", side_effect=_fake_call),
+    ):
         get_git_deploy_timeline(
             owner="org",
             repo="repo",
@@ -240,11 +235,11 @@ def test_run_clamps_per_page_to_api_maximum() -> None:
         captured["arguments"] = arguments
         return {"is_error": False, "text": "", "structured_content": [], "content": []}
 
-    with patch(
-        "app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None
-    ), patch(
-        "app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config
-    ), patch("app.tools.GitDeployTimelineTool.call_github_mcp_tool", side_effect=_fake_call):
+    with (
+        patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None),
+        patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config),
+        patch("app.tools.GitDeployTimelineTool.call_github_mcp_tool", side_effect=_fake_call),
+    ):
         result = get_git_deploy_timeline(
             owner="org",
             repo="repo",
@@ -281,12 +276,10 @@ def test_run_flags_window_truncated_when_page_is_full() -> None:
         "content": [],
     }
     mock_config = MagicMock()
-    with patch(
-        "app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None
-    ), patch(
-        "app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config
-    ), patch(
-        "app.tools.GitDeployTimelineTool.call_github_mcp_tool", return_value=fake_result
+    with (
+        patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None),
+        patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config),
+        patch("app.tools.GitDeployTimelineTool.call_github_mcp_tool", return_value=fake_result),
     ):
         result = get_git_deploy_timeline(
             owner="org",
@@ -319,12 +312,10 @@ def test_run_flags_window_not_truncated_when_fewer_than_page() -> None:
         "content": [],
     }
     mock_config = MagicMock()
-    with patch(
-        "app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None
-    ), patch(
-        "app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config
-    ), patch(
-        "app.tools.GitDeployTimelineTool.call_github_mcp_tool", return_value=fake_result
+    with (
+        patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None),
+        patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config),
+        patch("app.tools.GitDeployTimelineTool.call_github_mcp_tool", return_value=fake_result),
     ):
         result = get_git_deploy_timeline(
             owner="org",
@@ -353,9 +344,7 @@ def test_resolve_window_defaults_to_default_minutes() -> None:
 
 
 def test_resolve_window_honours_explicit_since_and_until() -> None:
-    since, until = _resolve_window(
-        "2026-04-20T08:00:00Z", "2026-04-20T09:30:00Z", None
-    )
+    since, until = _resolve_window("2026-04-20T08:00:00Z", "2026-04-20T09:30:00Z", None)
     assert since == "2026-04-20T08:00:00Z"
     assert until == "2026-04-20T09:30:00Z"
 
@@ -386,9 +375,7 @@ def test_resolve_window_rejects_inverted_range() -> None:
     # since > until is a caller mistake. Rather than pass an impossible range to
     # MCP, the helper discards the bad 'since' and falls back to the window
     # minutes branch anchored at the (still-valid) until.
-    since, until = _resolve_window(
-        "2026-04-20T12:00:00Z", "2026-04-20T10:00:00Z", 30
-    )
+    since, until = _resolve_window("2026-04-20T12:00:00Z", "2026-04-20T10:00:00Z", 30)
     assert until == "2026-04-20T10:00:00Z"
     assert since == "2026-04-20T09:30:00Z"  # until - 30 min
 
@@ -406,9 +393,7 @@ def test_resolve_window_normalises_naive_timestamps_to_utc() -> None:
     # Naive input (no timezone) must be treated as UTC. Without this, the
     # subsequent astimezone(UTC) or > comparison against 'now' would raise
     # on one input but not the other.
-    since, until = _resolve_window(
-        "2026-04-20T08:00:00", "2026-04-20T09:00:00", None
-    )
+    since, until = _resolve_window("2026-04-20T08:00:00", "2026-04-20T09:00:00", None)
     assert since == "2026-04-20T08:00:00Z"
     assert until == "2026-04-20T09:00:00Z"
 
@@ -416,9 +401,7 @@ def test_resolve_window_normalises_naive_timestamps_to_utc() -> None:
 def test_resolve_window_handles_mixed_aware_and_naive() -> None:
     # since has offset, until is naive — must not raise a TypeError on
     # the inverted-range comparison.
-    since, until = _resolve_window(
-        "2026-04-20T08:00:00+00:00", "2026-04-20T09:00:00", None
-    )
+    since, until = _resolve_window("2026-04-20T08:00:00+00:00", "2026-04-20T09:00:00", None)
     assert since == "2026-04-20T08:00:00Z"
     assert until == "2026-04-20T09:00:00Z"
 
@@ -451,5 +434,3 @@ def test_summarize_commit_handles_missing_fields() -> None:
     assert summarised["message_subject"] == ""
     assert summarised["author_name"] == ""
     assert summarised["short_sha"] == ""
-
-

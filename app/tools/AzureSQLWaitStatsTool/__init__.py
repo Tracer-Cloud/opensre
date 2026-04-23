@@ -26,9 +26,17 @@ from app.tools.tool_decorator import tool
 )
 def get_azure_sql_wait_stats(
     server: str,
-    database: str,
+    database: str | None = None,
     port: int = 1433,
 ) -> dict[str, Any]:
     """Fetch wait statistics from an Azure SQL Database instance."""
+    _db_defaulted = database is None
+    if database is None:
+        database = "master"
     config = resolve_azure_sql_config(server=server, database=database, port=port)
-    return get_wait_stats(config)
+    result = get_wait_stats(config)
+    if _db_defaulted:
+        result["default_db_warning"] = (
+            "WARNING: No database was specified; defaulted to 'master'. Results may not reflect application data."
+        )
+    return result

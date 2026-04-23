@@ -1,0 +1,43 @@
+---
+title: "Daily Update — 2026-04-22"
+description: "OpenSRE engineering daily update for 2026-04-22 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+Abkari Mohammed Sayeem, Devesh, Dinesh Jinjala, Dinesh Jinjala, Francisco Angulo de Lafuente, Maharshi Patel, Mateus Scheuer Macedo, Nandana Dileep, qorex#dev, Ryjen1, and Udit 🙏🚀
+
+## Main updates shipped (April 22, 2026)
+
+- fix: use Optional[RunnableConfig] on all pipeline nodes to silence LangGraph warning (#773) — Udit
+- feat(mcp): return stable error shape with error_type in run_rca (#746) — Nandana Dileep
+- fix(auth): narrow Exception catch in JWK parsing (#740) — qorex#dev
+- feat: add LLM_MAX_TOKENS env var override to LLMSettings.from_env() (#739) — Francisco Angulo de Lafuente
+- fix: replace placeholder NVIDIA NIM model IDs in config.py (#738) — Maryjane Okafor
+- fix(posthog): include HTTP status code in validate_posthog_config error detail (#745) — Nandana Dileep
+- fix: handle empty alert_name in _make_id() to avoid trailing underscores (#744) — Dinesh Jinjala
+- fix: health endpoint exceptions (#742) — Maharshi Patel
+- test(vercel): add unit tests for _safe_vercel_path_segment (#747) — Nandana Dileep
+- Revert "docs: update CONTRIBUTING.md to say OpenSRE" — Devesh
+- docs: update CONTRIBUTING.md to say OpenSRE (not Tracer) — Mateus Scheuer Macedo
+
+## Source pull requests
+
+- [#756](https://github.com/Tracer-Cloud/opensre/pull/756) docs: update CONTRIBUTING.md to say OpenSRE (not Tracer) (author: Mateus Scheuer Macedo; contributors: Mateus Scheuer Macedo; labels: _none_; files: `CONTRIBUTING.md`)
+- [#762](https://github.com/Tracer-Cloud/opensre/pull/762) fix(auth): narrow Exception catch in JWK parsing (author: qorex#dev; contributors: qorex#dev; labels: _none_; files: `app/auth/jwt_auth.py`, `tests/app/auth/test_jwt_auth.py`)
+- [#767](https://github.com/Tracer-Cloud/opensre/pull/767) feat: add LLM_MAX_TOKENS env var override to LLMSettings.from_env() (author: Francisco Angulo de Lafuente; contributors: Francisco Angulo de Lafuente; labels: _none_; files: `app/config.py`, `tests/test_config.py`)
+- [#764](https://github.com/Tracer-Cloud/opensre/pull/764) fix: replace placeholder NVIDIA NIM model IDs in config.py (#738) (author: Maryjane Okafor; contributors: Maryjane Okafor and Ryjen1; labels: _none_; files: `app/config.py`)
+- [#761](https://github.com/Tracer-Cloud/opensre/pull/761) fix(posthog): include HTTP status code in validate_posthog_config error detail (author: Nandana Dileep; contributors: Nandana Dileep; labels: _none_; files: `app/integrations/posthog.py`, `tests/integrations/test_posthog.py`)
+- [#759](https://github.com/Tracer-Cloud/opensre/pull/759) test(vercel): add unit tests for _safe_vercel_path_segment (author: Nandana Dileep; contributors: Nandana Dileep; labels: _none_; files: `app/integrations/posthog.py`, `tests/integrations/test_posthog.py`, `tests/services/vercel/test_client.py`, `tests/test_config.py`)
+- [#760](https://github.com/Tracer-Cloud/opensre/pull/760) feat(mcp): return stable error shape with error_type in run_rca (author: Nandana Dileep; contributors: Nandana Dileep; labels: _none_; files: `app/entrypoints/mcp.py`, `app/integrations/posthog.py`, `tests/entrypoints/test_mcp.py`, `tests/integrations/test_posthog.py`, `tests/test_config.py`)
+- [#753](https://github.com/Tracer-Cloud/opensre/pull/753) fix: handle empty alert_name in _make_id() to avoid trailing underscores (author: Dinesh Jinjala; contributors: Dinesh Jinjala and Dinesh Jinjala; labels: _none_; files: `app/remote/server.py`, `tests/remote/test_server_utils.py`)
+- [#751](https://github.com/Tracer-Cloud/opensre/pull/751) docs: update CONTRIBUTING.md to say OpenSRE (author: Abkari Mohammed Sayeem; contributors: Abkari Mohammed Sayeem; labels: _none_; files: `CONTRIBUTING.md`)
+- [#775](https://github.com/Tracer-Cloud/opensre/pull/775) Revert "docs: update CONTRIBUTING.md to say OpenSRE" (author: Devesh; contributors: Devesh; labels: _none_; files: _No file list returned._)
+- [#774](https://github.com/Tracer-Cloud/opensre/pull/774) fix: health endpoint exceptions (author: Maharshi Patel; contributors: Maharshi Patel; labels: _none_; files: `app/webapp.py`, `tests/test_webapp.py`)
+- [#776](https://github.com/Tracer-Cloud/opensre/pull/776) fix: use Optional[RunnableConfig] on all pipeline nodes to silence LangGraph warning (author: Udit; contributors: Udit; labels: _none_; files: `app/nodes/extract_alert/extract_node.py`, `app/nodes/plan_actions/node.py`, `app/nodes/publish_findings/node.py`, `app/nodes/resolve_integrations/node.py`, `app/nodes/root_cause_diagnosis/node.py`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-21T23:00:00+00:00` to `2026-04-22T23:00:00+00:00`
