@@ -524,11 +524,12 @@ def test_onboard_interactive_smoke_codex(cli_sandbox: CliSandbox) -> None:
         "onboard",
         actions=[
             PtyAction(expect="How do you want to get started?", send=b"\r"),
-            PtyAction(expect="Choose your LLM provider", send=b"jjjjj\r"),
+            PtyAction(expect="Choose your LLM provider", send=b"\r", stagger_j=5),
             # Fresh HOME in CliSandbox has no Codex auth: repick to Anthropic to finish onboarding.
             PtyAction(
                 expect="OpenAI Codex CLI requires login. What next?",
-                send=b"j\r",
+                send=b"\r",
+                stagger_j=1,
             ),
             PtyAction(expect="Choose your LLM provider", send=b"\r"),
             PtyAction(expect="Anthropic API key", send=b"smoke-test-key\r"),

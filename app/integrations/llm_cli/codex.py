@@ -304,7 +304,7 @@ class CodexAdapter:
         argv.append("-")
 
         return CLIInvocation(
-            argv=argv,
+            argv=tuple(argv),
             stdin=prompt,
             cwd=ws,
             env=None,

@@ -23,7 +23,7 @@ class CLIProbe:
 class CLIInvocation:
     """A single non-interactive subprocess call (no TTY)."""
 
-    argv: list[str]
+    argv: tuple[str, ...]
     stdin: str | None
     cwd: str
     env: dict[str, str] | None
