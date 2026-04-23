@@ -157,9 +157,7 @@ def resolve_llm_provider() -> str:
         if provider in ("ollama", "bedrock"):
             return provider
         if provider in LLM_PROVIDER_API_KEY_ENV_MAP:
-            if resolve_llm_api_key(LLM_PROVIDER_API_KEY_ENV_MAP[provider]):
-                return provider
-            return _provider_from_api_key_envs() or DEFAULT_LLM_PROVIDER
+            return provider
 
         logger.warning(
             "Unrecognized LLM_PROVIDER %r, falling back to %s",

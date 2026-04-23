@@ -47,6 +47,10 @@ def test_validate_required_integrations_raises_when_required_integration_missing
         )
 
 
+def test_required_integration_for_source_returns_none_for_unrecognized_source() -> None:
+    assert required_integration_for_source({"alert_source": "prometheus"}) is None
+
+
 def test_run_investigation_validates_pre_injected_resolved_integrations(monkeypatch) -> None:
     called: dict[str, bool] = {}
 

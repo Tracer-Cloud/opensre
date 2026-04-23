@@ -121,15 +121,15 @@ def _clean_terminal_output(text: str) -> str:
 
 def _opensre_executable() -> Path:
     candidates: list[Path] = []
+    candidates.extend(
+        [
+            Path(sys.executable).with_name(_SCRIPT_NAME),
+            Path(sysconfig.get_path("scripts")) / _SCRIPT_NAME,
+        ]
+    )
     resolved = shutil.which(_SCRIPT_NAME)
     if resolved:
         candidates.append(Path(resolved))
-    candidates.extend(
-        [
-            Path(sysconfig.get_path("scripts")) / _SCRIPT_NAME,
-            Path(sys.executable).with_name(_SCRIPT_NAME),
-        ]
-    )
     for candidate in candidates:
         if candidate.exists():
             return candidate
@@ -150,6 +150,12 @@ def _cli_env(home: Path, project_env_path: Path) -> dict[str, str]:
     if existing_pythonpath:
         pythonpath_parts.append(existing_pythonpath)
     env["PYTHONPATH"] = os.pathsep.join(pythonpath_parts)
+
+    # Ensure the repository virtualenv scripts directory is visible to subprocesses
+    venv_scripts = REPO_ROOT / ".venv" / "Scripts"
+    if venv_scripts.exists():
+        env_path = env.get("PATH", "")
+        env["PATH"] = str(venv_scripts) + os.pathsep + env_path
     env["HOME"] = str(home)
     env["USERPROFILE"] = str(home)
     env["OPENSRE_NO_TELEMETRY"] = "1"

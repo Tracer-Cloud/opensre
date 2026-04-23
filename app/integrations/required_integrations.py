@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.integrations.catalog import get_service_family, normalize_service_name
+from app.integrations.catalog import (
+    _SERVICE_KEY_MAP,
+    get_service_family,
+    normalize_service_name,
+)
 
 
 class MissingIntegrationError(RuntimeError):
@@ -18,7 +22,10 @@ def required_integration_for_source(raw_alert: dict[str, Any] | str | None) -> s
 
     alert_source = str(raw_alert.get("alert_source", "") or "").strip().lower()
     if alert_source:
-        return get_service_family(normalize_service_name(alert_source))
+        normalized_source = normalize_service_name(alert_source)
+        if alert_source not in _SERVICE_KEY_MAP and normalized_source == alert_source:
+            return None
+        return get_service_family(normalized_source)
 
     if _has_grafana_hint(raw_alert):
         return "grafana"
