@@ -89,10 +89,10 @@ GEMINI_REASONING_MODEL = "gemini-3.1-pro-preview"
 GEMINI_TOOLCALL_MODEL = "gemini-3.1-flash-lite-preview"
 
 # NVIDIA NIM model constants
-# Verified safe defaults from the NVIDIA API Catalog (build.nvidia.com).
+# Verified model IDs available on https://integrate.api.nvidia.com/v1 as of 2026-04.
 # Override via NVIDIA_REASONING_MODEL, NVIDIA_TOOLCALL_MODEL, or NVIDIA_MODEL env vars.
-NVIDIA_REASONING_MODEL = "meta/llama-3.1-405b-instruct"
-NVIDIA_TOOLCALL_MODEL = "meta/llama-3.1-8b-instruct"
+NVIDIA_REASONING_MODEL = "nvidia/llama-3.1-nemotron-70b-instruct"  # NVIDIA reasoning model
+NVIDIA_TOOLCALL_MODEL = "nvidia/llama-3.1-nemotron-nano-8b-v1"  # NVIDIA 8B agentic model
 
 # MiniMax model constants
 MINIMAX_REASONING_MODEL = "MiniMax-M2.7"
