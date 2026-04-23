@@ -203,6 +203,112 @@ class TestEdgeCases:
         assert "_key" not in result
         assert "=123" in result
 
+    def test_contained_span_redacts_union_no_leak(self) -> None:
+        """A shorter match fully contained in a longer match must not leave the
+        longer match's prefix/suffix unredacted.
+
+        Regression: the prior seen_end walk processed matches right-to-left
+        and skipped any match whose end exceeded the cursor, so with rules
+        matching ``super_secret_token_value`` (wide) and ``secret_token``
+        (contained), the ``super_`` and ``_value`` bookends survived.
+        """
+        engine = GuardrailEngine(
+            [
+                _rule(name="long", action="redact", keywords=["super_secret_token_value"]),
+                _rule(name="short", action="redact", keywords=["secret_token"]),
+            ]
+        )
+        result = engine.apply("data super_secret_token_value end")
+        assert "super_" not in result
+        assert "_value" not in result
+        assert "secret" not in result.lower()
+        assert result == "data [REDACTED:long] end"
+
+    def test_contained_span_uses_longest_rule_name(self) -> None:
+        """When one match fully contains another, the union redaction carries
+        the wider rule's name, not the inner one's."""
+        engine = GuardrailEngine(
+            [
+                _rule(name="wide", action="redact", keywords=["aaa_bbb_ccc_ddd_eee"]),
+                _rule(name="inner", action="redact", keywords=["ccc"]),
+            ]
+        )
+        result = engine.apply("xx aaa_bbb_ccc_ddd_eee yy")
+        assert "[REDACTED:wide]" in result
+        assert "[REDACTED:inner]" not in result
+
+    def test_partial_overlap_redacts_union(self) -> None:
+        """Two partially-overlapping matches neither contained in the other
+        must produce one redaction covering the full union span."""
+        engine = GuardrailEngine(
+            [
+                _rule(name="a", action="redact", keywords=["abcdefghij"]),  # [0:10]
+                _rule(name="b", action="redact", keywords=["fghijklmno"]),  # [5:15]
+            ]
+        )
+        result = engine.apply("abcdefghijklmno tail")
+        # Neither raw keyword nor its tail survives; a single redaction
+        # covers the union [0:15].
+        for frag in ("abcde", "fghij", "klmno"):
+            assert frag not in result
+        assert result.count("[REDACTED:") == 1
+        assert result.endswith("tail")
+
+    def test_disjoint_matches_stay_separate(self) -> None:
+        """Non-overlapping matches produce independent redactions with the
+        unaffected text between them preserved verbatim."""
+        engine = GuardrailEngine(
+            [
+                _rule(name="a", action="redact", keywords=["foo"]),
+                _rule(name="b", action="redact", keywords=["bar"]),
+            ]
+        )
+        result = engine.apply("foo middle bar")
+        assert result == "[REDACTED:a] middle [REDACTED:b]"
+
+    def test_adjacent_matches_not_merged(self) -> None:
+        """Matches that touch at exactly one offset (end of A == start of B)
+        must remain separate redactions — they do not actually overlap."""
+        engine = GuardrailEngine(
+            [
+                _rule(name="a", action="redact", keywords=["foo"]),
+                _rule(name="b", action="redact", keywords=["bar"]),
+            ]
+        )
+        result = engine.apply("foobar rest")
+        assert result == "[REDACTED:a][REDACTED:b] rest"
+
+    def test_three_way_chain_of_overlaps_redacts_single_union(self) -> None:
+        """Transitive overlap A∩B, B∩C but A⊥C still collapses to one span."""
+        engine = GuardrailEngine(
+            [
+                _rule(name="a", action="redact", keywords=["abcdefg"]),  # [0:7]
+                _rule(name="b", action="redact", keywords=["efghijk"]),  # [4:11]
+                _rule(name="c", action="redact", keywords=["ijklmno"]),  # [8:15]
+            ]
+        )
+        result = engine.apply("abcdefghijklmno tail")
+        assert result.count("[REDACTED:") == 1
+        assert result.endswith("tail")
+        # No keyword fragments leak out either end.
+        for frag in ("abcd", "hijk", "lmno"):
+            assert frag not in result
+
+    def test_contained_pattern_with_wider_keyword_preserves_wider_name(self) -> None:
+        """Mixing a regex pattern and a keyword on the same span behaves the
+        same as two keywords — the wider match wins."""
+        engine = GuardrailEngine(
+            [
+                _rule(name="pat_short", action="redact", patterns=[r"\d{4}"]),
+                _rule(name="kw_wide", action="redact", keywords=["cc_1234_xyz"]),
+            ]
+        )
+        result = engine.apply("pay cc_1234_xyz now")
+        assert "[REDACTED:kw_wide]" in result
+        assert "[REDACTED:pat_short]" not in result
+        assert "1234" not in result
+        assert "cc_" not in result and "_xyz" not in result
+
     def test_multiple_rules_on_same_span(self) -> None:
         engine = GuardrailEngine(
             [

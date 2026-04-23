@@ -124,20 +124,51 @@ class GuardrailEngine:
         if result.blocked:
             raise GuardrailBlockedError(result.blocking_rules)
 
-        redact_matches = sorted(
-            [m for m in result.matches if m.action == GuardrailAction.REDACT],
-            key=lambda m: (m.start, m.end),
-            reverse=True,
-        )
-        seen_end = len(text)
-        redacted = text
-        for match in redact_matches:
-            if match.end > seen_end:
-                continue
-            replacement = self._get_replacement(match.rule_name)
-            redacted = redacted[: match.start] + replacement + redacted[match.end :]
-            seen_end = match.start
+        return self._redact(text, result.matches)
 
+    def _redact(self, text: str, matches: tuple[ScanMatch, ...]) -> str:
+        """Apply redactions to ``text`` by merging overlapping match intervals.
+
+        The previous single-pass ``seen_end`` walk processed matches right-to-left
+        and skipped any match whose end exceeded the cursor, so a wider match
+        overlapping (or containing) an already-redacted narrower match would
+        leave its prefix/suffix unredacted — e.g. with rules matching
+        ``super_secret_token_value`` and ``secret_token`` on the same text, the
+        ``super_`` and ``_value`` bookends survived in the output.
+
+        Algorithm:
+        1. Sort redact matches by ``(start ASC, -end)`` so ties at the same
+           starting offset put the widest match first.
+        2. Sweep left-to-right, merging any match whose ``start`` falls before
+           the current interval's ``end``. The representative rule for the
+           merged interval is whichever contributing match had the largest
+           original width — keeps the existing "longest-keyword-wins"
+           behavior of same-start overlaps while correctly handling contained
+           and partially-overlapping spans.
+        3. Apply replacements right-to-left over the merged intervals so string
+           indices remain valid as each redaction resizes the output.
+        """
+        redact_matches = sorted(
+            [m for m in matches if m.action == GuardrailAction.REDACT],
+            key=lambda m: (m.start, -m.end),
+        )
+        merged: list[tuple[int, int, str, int]] = []
+        for match in redact_matches:
+            width = match.end - match.start
+            if merged and match.start < merged[-1][1]:
+                prev_start, prev_end, prev_rule, prev_width = merged[-1]
+                new_end = max(prev_end, match.end)
+                if width > prev_width:
+                    merged[-1] = (prev_start, new_end, match.rule_name, width)
+                else:
+                    merged[-1] = (prev_start, new_end, prev_rule, prev_width)
+            else:
+                merged.append((match.start, match.end, match.rule_name, width))
+
+        redacted = text
+        for start, end, rule_name, _ in reversed(merged):
+            replacement = self._get_replacement(rule_name)
+            redacted = redacted[:start] + replacement + redacted[end:]
         return redacted
 
     def should_block(self, text: str) -> bool:
