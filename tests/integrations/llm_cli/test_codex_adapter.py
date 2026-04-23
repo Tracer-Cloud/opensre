@@ -362,6 +362,9 @@ def test_npm_prefix_bin_dirs_unix_uses_prefix_bin() -> None:
     assert dirs == ("/opt/npm/bin",)
 
 
-def test_codex_default_exec_timeout_is_shorter() -> None:
+@patch("app.integrations.llm_cli.codex.shutil.which", return_value="/usr/bin/codex")
+def test_codex_default_exec_timeout_is_shorter(mock_which) -> None:
+    """Default timeout is asserted without requiring a real codex binary on CI PATH."""
     inv = CodexAdapter().build(prompt="p", model=None, workspace="")
     assert inv.timeout_sec == 120.0
+    mock_which.assert_called()
