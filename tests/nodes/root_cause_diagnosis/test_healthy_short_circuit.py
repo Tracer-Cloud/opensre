@@ -1,12 +1,13 @@
 """Tests for the healthy-short-circuit claim generation in diagnose_root_cause.
 
-Covers the ``_handle_healthy_finding`` path: when ``is_clearly_healthy`` trips,
-we must emit one validated claim per evidence source that was either
-investigated (present in ``INVESTIGATED_EVIDENCE_KEYS`` — empty list counts,
-since an empty ``grafana_logs`` after a completed investigation is itself a
-healthy signal) or carries non-metadata data content. Metadata entries such
-as ``grafana_logs_query`` (a query string), ``eks_total_pods`` (a count), or
-``datadog_fetch_ms`` (a timing) must not produce claims.
+Covers ``_handle_healthy_finding``: when ``is_clearly_healthy`` trips, we
+must emit one validated claim per evidence source present in the explicit
+``CLAIM_EVIDENCE_KEYS`` whitelist. Investigation keys from
+``INVESTIGATED_EVIDENCE_KEYS`` always qualify (empty lists included — an
+empty ``grafana_logs`` after a completed investigation is the healthy
+signal). Other whitelisted data keys qualify only when non-empty. Everything
+else — query strings, counts, timings, resource names, trace IDs — is
+ignored even when truthy.
 """
 
 from __future__ import annotations
@@ -16,7 +17,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.nodes.root_cause_diagnosis import node as diag_node
-from app.nodes.root_cause_diagnosis.evidence_checker import INVESTIGATED_EVIDENCE_KEYS
+from app.nodes.root_cause_diagnosis.evidence_checker import (
+    CLAIM_EVIDENCE_KEYS,
+    INVESTIGATED_EVIDENCE_KEYS,
+)
 
 
 def _run_handle_healthy_finding(evidence: dict) -> dict:
@@ -59,38 +63,102 @@ class TestInvestigationKeyClaims:
         assert _claim_keys(_run_handle_healthy_finding({key: []})) == [key]
 
 
-class TestMetadataKeyFiltering:
-    """Query strings, counts, totals, timings, and resource-name metadata keys
-    produce incoherent findings (\"X query data confirmed\") and must never
-    appear in the claim list — even when the adjacent investigation key is
-    also present."""
+class TestAdjacentDataKeys:
+    """Non-investigation whitelist entries produce claims only when non-empty."""
+
+    _ADJACENT = sorted(CLAIM_EVIDENCE_KEYS - INVESTIGATED_EVIDENCE_KEYS)
+
+    @pytest.mark.parametrize("key", _ADJACENT)
+    def test_truthy_adjacent_key_produces_claim(self, key: str) -> None:
+        # A non-empty list value is enough to trigger the truthiness gate.
+        assert _claim_keys(_run_handle_healthy_finding({key: [{"stub": 1}]})) == [key]
+
+    @pytest.mark.parametrize("key", _ADJACENT)
+    def test_empty_adjacent_key_produces_no_claim(self, key: str) -> None:
+        # Unlike investigation keys, empty adjacent keys are not claimed —
+        # they signal the tool did not return data, not that the system is healthy.
+        assert _claim_keys(_run_handle_healthy_finding({key: []})) == []
+
+
+class TestNonWhitelistedKeysFiltered:
+    """Every metadata shape that the mappers emit alongside primary data keys
+    must be filtered out — query strings, counts, totals, timings, resource
+    names, trace IDs, source URLs, limits, service names, windows, etc."""
+
+    # Exhaustive set of metadata / non-data keys enumerated by auditing every
+    # mapper in app/nodes/investigate/processing/post_process.py.
+    _METADATA_KEYS: tuple[tuple[str, object], ...] = (
+        # Counts
+        ("total_jobs", 3),
+        ("total_tools", 5),
+        ("total_logs", 42),
+        ("cloudwatch_event_count", 12),
+        ("lambda_invocation_count", 7),
+        ("lambda_error_count", 2),
+        ("grafana_alert_rules_count", 4),
+        ("datadog_monitors_count", 8),
+        ("datadog_events_count", 11),
+        ("honeycomb_trace_count", 6),
+        ("coralogix_logs_count", 15),
+        ("betterstack_logs_count", 22),
+        ("git_deploy_timeline_count", 9),
+        ("eks_total_warning_count", 0),
+        ("eks_not_ready_count", 0),
+        ("s3_object_count", 14),
+        # Totals / aggregates
+        ("alertmanager_alerts_total", 4),
+        ("alertmanager_silences_total", 1),
+        ("vercel_deployments_total", 5),
+        ("vercel_total_events", 20),
+        ("vercel_total_runtime_logs", 33),
+        ("eks_total_pods", 3),
+        ("eks_total_deployments", 1),
+        ("eks_total_nodes", 2),
+        # Query strings
+        ("grafana_logs_query", 'severity:"error"'),
+        ("datadog_logs_query", "status:error"),
+        ("coralogix_logs_query", 'service:"api"'),
+        ("github_code_query", "repo:x query:y"),
+        # Timings
+        ("datadog_fetch_ms", {"logs": 42}),
+        # Service names / identifiers / URLs / text summaries / misc
+        ("grafana_logs_service", "api"),
+        ("grafana_traces_service", "api"),
+        ("grafana_metric_name", "CPUUtilization"),
+        ("grafana_metrics_service", "api"),
+        ("datadog_pod_name", "payments-api-x"),
+        ("datadog_container_name", "payments-api"),
+        ("datadog_kube_namespace", "payments"),
+        ("honeycomb_dataset", "api"),
+        ("honeycomb_service_name", "api"),
+        ("honeycomb_trace_id", "abc123"),
+        ("honeycomb_query_url", "https://ui.honeycomb.io/..."),
+        ("coralogix_application_name", "payments"),
+        ("coralogix_subsystem_name", "api"),
+        ("coralogix_trace_id", "xyz789"),
+        ("betterstack_source", "heroku"),
+        ("betterstack_logs_limit", 1000),
+        ("vercel_project_id", "prj_123"),
+        ("vercel_deployment_id", "dep_456"),
+        ("github_code_text", "summary text"),
+        ("github_file_text", "file text"),
+        ("github_commits_text", "commits text"),
+        ("git_deploy_timeline_window", {"from": "t0", "to": "t1"}),
+        ("eks_pod_logs_pod_name", "payments-api-x"),
+        ("eks_pod_logs_namespace", "payments"),
+        # Summary-of-sample fields
+        (
+            "cloudwatch_latest_error",
+            "OutOfMemory",
+        ),  # intentionally: claimed via the whitelist entry above, not here
+    )
 
     @pytest.mark.parametrize(
         "metadata_key, value",
-        [
-            ("grafana_logs_query", 'severity:"error"'),
-            ("datadog_logs_query", "status:error"),
-            ("datadog_monitors_count", 2),
-            ("datadog_events_count", 5),
-            ("eks_total_pods", 3),
-            ("eks_total_deployments", 1),
-            ("eks_total_warning_count", 0),
-            ("eks_total_nodes", 2),
-            ("eks_not_ready_count", 0),
-            ("datadog_fetch_ms", {"logs": 42}),
-            ("datadog_pod_name", "payments-api-xkp2q"),
-            ("datadog_container_name", "payments-api"),
-            ("datadog_kube_namespace", "payments"),
-            ("betterstack_source", "heroku"),
-            ("grafana_log_count", 11),
-            ("grafana_trace_count", 20),
-            ("honeycomb_trace_count", 5),
-            ("alertmanager_alerts_total", 3),
-            ("alertmanager_silences_total", 1),
-            ("total_logs", 100),
-            ("total_failed_jobs_count", 0),
-            ("cloudwatch_logs_count", 5),
-        ],
+        # Filter out any key that is actually claim-worthy so the test stays
+        # honest — cloudwatch_latest_error is both listed above (as a
+        # reminder) and in the whitelist; drop it from the metadata sweep.
+        [(k, v) for (k, v) in _METADATA_KEYS if k not in CLAIM_EVIDENCE_KEYS],
     )
     def test_metadata_key_in_isolation_produces_no_claim(
         self, metadata_key: str, value: object
@@ -101,14 +169,17 @@ class TestMetadataKeyFiltering:
         evidence = {
             "grafana_logs": [],
             "grafana_logs_query": 'severity:"error"',
-            "grafana_log_count": 0,
+            "grafana_logs_service": "api",
             "datadog_logs": [],
             "datadog_logs_query": "status:error",
             "datadog_monitors_count": 2,
             "datadog_fetch_ms": {"logs": 42},
+            "datadog_pod_name": "payments-api-x",
             "eks_pods": [{"name": "x"}],
             "eks_total_pods": 3,
             "eks_total_deployments": 1,
+            "honeycomb_trace_id": "abc",
+            "honeycomb_query_url": "https://...",
         }
         assert _claim_keys(_run_handle_healthy_finding(evidence)) == [
             "datadog_logs",
@@ -116,51 +187,9 @@ class TestMetadataKeyFiltering:
             "grafana_logs",
         ]
 
-
-class TestTruthyNonInvestigationDataClaims:
-    """Truthy evidence keys that are not investigation-keys but also not
-    metadata represent real gathered data (e.g. ``datadog_events``,
-    ``datadog_error_logs``, ``grafana_traces``, ``honeycomb_traces``,
-    ``eks_failing_pods``) and should still produce a claim — matching the
-    pre-fix observable behavior on those keys."""
-
-    @pytest.mark.parametrize(
-        "key, value",
-        [
-            ("datadog_events", [{"id": "e1"}]),
-            ("datadog_error_logs", [{"message": "err"}]),
-            ("grafana_traces", [{"trace_id": "t1"}]),
-            ("grafana_error_logs", [{"line": "err"}]),
-            ("grafana_service_names", ["api", "db"]),
-            ("honeycomb_traces", [{"trace_id": "h1"}]),
-            ("coralogix_logs", [{"text": "info"}]),
-            ("coralogix_error_logs", [{"text": "err"}]),
-            ("alertmanager_alerts", [{"status": "resolved"}]),
-            ("alertmanager_silences", [{"id": "s1"}]),
-            ("eks_failing_pods", [{"name": "p"}]),
-            ("eks_high_restart_pods", [{"name": "p", "restarts": 3}]),
-            ("eks_degraded_deployments", [{"name": "d"}]),
-            ("failed_tools", [{"name": "query_x"}]),
-            ("error_logs", [{"message": "err"}]),
-            ("host_metrics", {"data": {"cpu": 42}}),
-            ("s3_object", {"found": True}),
-            ("lambda_logs", [{"line": "info"}]),
-            ("lambda_function", {"name": "fn"}),
-        ],
-    )
-    def test_truthy_non_metadata_key_produces_claim(self, key: str, value: object) -> None:
-        assert _claim_keys(_run_handle_healthy_finding({key: value})) == [key]
-
-    def test_empty_non_investigation_key_does_not_produce_claim(self) -> None:
-        """Unlike investigation keys, empty non-investigation keys don't count."""
-        assert _claim_keys(_run_handle_healthy_finding({"datadog_events": []})) == []
-
-    def test_random_custom_truthy_key_is_claimed(self) -> None:
-        """Forward-compat: new data keys from future mappers produce claims
-        without a code change, as long as they aren't metadata-shaped."""
-        assert _claim_keys(_run_handle_healthy_finding({"my_new_source_data": [1]})) == [
-            "my_new_source_data"
-        ]
+    def test_random_custom_key_is_not_claimed(self) -> None:
+        """Whitelist is authoritative: a truthy key not in the set stays out."""
+        assert _claim_keys(_run_handle_healthy_finding({"my_new_custom_thing": [1]})) == []
 
 
 class TestHealthyFindingShape:
@@ -197,10 +226,36 @@ class TestHealthyFindingShape:
         )
 
 
+class TestWhitelistIntegrity:
+    """Guardrails on the ``CLAIM_EVIDENCE_KEYS`` whitelist itself."""
+
+    def test_investigated_is_subset_of_claim_set(self) -> None:
+        assert INVESTIGATED_EVIDENCE_KEYS <= CLAIM_EVIDENCE_KEYS
+
+    def test_no_obvious_metadata_shapes_in_whitelist(self) -> None:
+        """Sanity check: no whitelist entry looks like metadata."""
+        obvious_metadata_suffixes = (
+            "_query",
+            "_count",
+            "_ms",
+            "_total",
+            "_id",
+            "_url",
+            "_text",
+            "_limit",
+            "_window",
+            "_by_pipeline",
+        )
+        offenders = [k for k in CLAIM_EVIDENCE_KEYS if k.endswith(obvious_metadata_suffixes)] + [
+            k for k in CLAIM_EVIDENCE_KEYS if k.startswith("total_")
+        ]
+        assert not offenders, f"metadata-looking keys in whitelist: {offenders}"
+
+
 def test_diagnose_root_cause_short_circuits_through_healthy_finding(monkeypatch) -> None:
     """End-to-end: the diagnose entry point routes a clearly-healthy state through
     ``_handle_healthy_finding`` without invoking the LLM, and the resulting
-    validated claims come from investigation keys, not query metadata."""
+    validated claims come only from whitelisted evidence keys."""
     monkeypatch.setenv("HEALTHY_SHORT_CIRCUIT", "true")
 
     state = {
@@ -213,7 +268,8 @@ def test_diagnose_root_cause_short_circuits_through_healthy_finding(monkeypatch)
         "evidence": {
             "grafana_logs": [],
             "grafana_logs_query": 'severity:"error"',
-            "grafana_log_count": 0,
+            "grafana_logs_service": "api",
+            "grafana_alert_rules_count": 0,
         },
         "context": {},
         "investigation_loop_count": 0,
