@@ -7,10 +7,21 @@ import re
 import shutil
 import subprocess
 import sys
-from functools import lru_cache
-from pathlib import Path
 
 from app.integrations.llm_cli.base import CLIInvocation, CLIProbe, PromptDelivery
+from app.integrations.llm_cli.binary_resolver import (
+    candidate_binary_names as _candidate_binary_names,
+)
+from app.integrations.llm_cli.binary_resolver import (
+    default_cli_fallback_paths as _default_cli_fallback_paths,
+)
+from app.integrations.llm_cli.binary_resolver import (
+    is_runnable_binary as _is_runnable_binary,
+)
+from app.integrations.llm_cli.binary_resolver import (
+    npm_prefix_bin_dirs,
+    resolve_cli_binary,
+)
 
 _CODEX_VERSION_RE = re.compile(r"(\d+\.\d+\.\d+)")
 _PROBE_TIMEOUT_SEC = 3.0
@@ -71,103 +82,13 @@ def _codex_workspace_and_skip_git() -> tuple[str, bool]:
     return os.getcwd(), True
 
 
-def _candidate_binary_names() -> tuple[str, ...]:
-    if sys.platform == "win32":
-        return ("codex.cmd", "codex.exe", "codex.ps1", "codex.bat")
-    return ("codex",)
-
-
-def _append_candidate_paths(
-    candidates: list[str], directory: Path | str, names: tuple[str, ...]
-) -> None:
-    base = str(directory).strip()
-    if not base:
-        return
-    root = Path(base).expanduser()
-    for name in names:
-        candidates.append(str(root / name))
-
-
-@lru_cache(maxsize=1)
-def _npm_prefix_bin_dirs() -> tuple[str, ...]:
-    env_prefix = os.getenv("NPM_CONFIG_PREFIX", "").strip()
-    if not env_prefix:
-        # npm often exports lowercase `npm_config_prefix`; accept any casing.
-        for key, value in os.environ.items():
-            if key.lower() == "npm_config_prefix":
-                env_prefix = value.strip()
-                if env_prefix:
-                    break
-    if env_prefix:
-        if sys.platform == "win32":
-            return (str(Path(env_prefix).expanduser()),)
-        return (str(Path(env_prefix).expanduser() / "bin"),)
-
-    try:
-        proc = subprocess.run(
-            ["npm", "config", "get", "prefix"],
-            capture_output=True,
-            text=True,
-            timeout=0.3,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return ()
-
-    prefix = (proc.stdout or "").strip()
-    if proc.returncode != 0 or not prefix:
-        return ()
-
-    if sys.platform == "win32":
-        return (str(Path(prefix).expanduser()),)
-    return (str(Path(prefix).expanduser() / "bin"),)
-
-
 def _fallback_codex_paths() -> list[str]:
-    home = Path.home()
-    names = _candidate_binary_names()
-    candidates: list[str] = []
-
-    if sys.platform == "win32":
-        _append_candidate_paths(candidates, Path(os.getenv("APPDATA", "")) / "npm", names)
-        _append_candidate_paths(
-            candidates,
-            Path(os.getenv("LOCALAPPDATA", "")) / "Programs" / "codex",
-            names,
-        )
-    else:
-        if sys.platform == "darwin":
-            _append_candidate_paths(candidates, "/opt/homebrew/bin", names)
-        _append_candidate_paths(candidates, "/usr/local/bin", names)
-        _append_candidate_paths(candidates, home / ".local/bin", names)
-        _append_candidate_paths(candidates, home / ".npm-global/bin", names)
-        _append_candidate_paths(candidates, home / ".volta/bin", names)
-        _append_candidate_paths(candidates, os.getenv("PNPM_HOME", ""), names)
-        xdg_data_home = os.getenv("XDG_DATA_HOME", "").strip()
-        if xdg_data_home:
-            _append_candidate_paths(candidates, Path(xdg_data_home) / "pnpm", names)
-
-    for npm_dir in _npm_prefix_bin_dirs():
-        _append_candidate_paths(candidates, npm_dir, names)
-
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        normalized = str(Path(candidate).expanduser())
-        if normalized in seen:
-            continue
-        seen.add(normalized)
-        deduped.append(normalized)
-    return deduped
+    # Keep module-level `sys` usage for tests that monkeypatch `codex.sys.platform`.
+    _ = sys.platform
+    return _default_cli_fallback_paths("codex")
 
 
-def _is_runnable_binary(path: str) -> bool:
-    p = Path(path)
-    if not p.is_file():
-        return False
-    if sys.platform == "win32":
-        return p.suffix.lower() in {".cmd", ".exe", ".ps1", ".bat"} or os.access(p, os.X_OK)
-    return os.access(p, os.X_OK)
+_npm_prefix_bin_dirs = npm_prefix_bin_dirs
 
 
 class CodexAdapter:
@@ -182,22 +103,13 @@ class CodexAdapter:
     prompt_delivery: PromptDelivery = "stdin"
 
     def _resolve_binary(self) -> str | None:
-        explicit = os.getenv("CODEX_BIN", "").strip()
-        if explicit and _is_runnable_binary(explicit):
-            return explicit
-        found = (
-            shutil.which("codex")
-            or shutil.which("codex.cmd")
-            or shutil.which("codex.ps1")
-            or shutil.which("codex.exe")
-            or shutil.which("codex.bat")
+        return resolve_cli_binary(
+            explicit_env_key="CODEX_BIN",
+            binary_names=_candidate_binary_names("codex"),
+            fallback_paths=_fallback_codex_paths,
+            which_resolver=shutil.which,
+            runnable_check=_is_runnable_binary,
         )
-        if found:
-            return found
-        for candidate in _fallback_codex_paths():
-            if _is_runnable_binary(candidate):
-                return candidate
-        return None
 
     def _probe_binary(self, binary_path: str) -> CLIProbe:
         try:
