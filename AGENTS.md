@@ -7,13 +7,11 @@
 
 ## Lint & Format
 
-CI runs **both** ruff lint and ruff format in read-only mode (see `.github/workflows/ci.yml`). `make lint` is only the lint step—run formatting separately.
-
 - Lint: `make lint` (or fix: `ruff check app/ tests/ --fix`)
-- **Format (matches CI):** `make format-check` — must pass before opening a PR
-- Auto-format locally: `make format` (then re-run `make format-check` to confirm)
+- Format check: `make format-check`
+- Auto-format locally: `make format`
 - Type check: `make typecheck`
-- One-shot quality gate (lint + format check + typecheck + full tests): `make check`
+- One-shot quality gate: `make check`
 
 ## Testing
 
@@ -28,9 +26,9 @@ CI runs **both** ruff lint and ruff format in read-only mode (see `.github/workf
 ### Before Push
 
 1. Clean working tree
-2. `make test-cov` (or `make test-full` for the widest run)
+2. `make test-cov` (or `make test-full`)
 3. `make lint`
-4. `make format-check` (same as CI; use `make format` first if it fails)
+4. `make format-check` (run `make format` if it fails)
 5. `make typecheck`
 
 ## 1. Repo Map

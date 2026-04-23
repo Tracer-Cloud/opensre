@@ -38,4 +38,4 @@ make test-cov        # pytest with coverage
 make check           # lint + format-check + typecheck + test-full
 ```
 
-CI runs `ruff check` and `ruff format --check` (see `.github/workflows/ci.yml`). `make lint` alone is not enough—run `make format-check` (or `make check`) before submitting a PR. Lint, format-check, and typecheck must pass; `test-cov` (or the test suite you use) must pass before merge.
+Before opening a PR, run `make format-check` (or `make check`) in addition to `make lint`.
