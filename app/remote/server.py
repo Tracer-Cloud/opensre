@@ -419,7 +419,7 @@ async def investigate_stream(req: InvestigateRequest) -> Response:
             yield "event: end\ndata: {}\n\n"
         except MissingIntegrationError as exc:
             logger.warning("Streaming investigation failed: %s", exc)
-            yield f'event: error\ndata: {{"detail": "{str(exc).replace('"', '\\"')}"}}\n\n'
+            yield f"event: error\ndata: {_json.dumps({'detail': str(exc)})}\n\n"
         except Exception:
             logger.exception("Streaming investigation failed")
             yield 'event: error\ndata: {"detail": "internal error"}\n\n'

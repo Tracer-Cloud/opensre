@@ -123,16 +123,17 @@ def node_resolve_integrations(
         return _resolve_from_local_sources(tracker, state)
 
     resolved = _classify_integrations(all_integrations)
-    validate_required_integrations(state.get("raw_alert", {}) or {}, resolved)
-    services = [service for service in resolved if service != "_all"]
-
-    tracker.complete(
-        "resolve_integrations",
-        fields_updated=["resolved_integrations"],
-        message=f"Resolved integrations: {services}"
-        if services
-        else "No active integrations found",
-    )
+    try:
+        validate_required_integrations(state.get("raw_alert", {}) or {}, resolved)
+    finally:
+        services = [service for service in resolved if service != "_all"]
+        tracker.complete(
+            "resolve_integrations",
+            fields_updated=["resolved_integrations"],
+            message=f"Resolved integrations: {services}"
+            if services
+            else "No active integrations found",
+        )
 
     return {"resolved_integrations": resolved}
 
@@ -145,34 +146,38 @@ def _resolve_from_local_sources(tracker: Any, state: InvestigationState) -> dict
     integrations = _merge_local_integrations(store_integrations, env_integrations)
     if not integrations:
         resolved: dict[str, Any] = {}
+        try:
+            validate_required_integrations(state.get("raw_alert", {}) or {}, resolved)
+        finally:
+            tracker.complete(
+                "resolve_integrations",
+                fields_updated=["resolved_integrations"],
+                message=(
+                    "No auth context and no local integrations found "
+                    f"(store: {STORE_PATH}, env fallback checked)"
+                ),
+            )
+        return {"resolved_integrations": {}}
+
+    resolved = _classify_integrations(integrations)
+    try:
         validate_required_integrations(state.get("raw_alert", {}) or {}, resolved)
+    finally:
+        services = [service for service in resolved if service != "_all"]
+        source_labels: list[str] = []
+        if store_integrations:
+            source_labels.append("store")
+        if env_integrations:
+            source_labels.append("env")
         tracker.complete(
             "resolve_integrations",
             fields_updated=["resolved_integrations"],
             message=(
-                "No auth context and no local integrations found "
-                f"(store: {STORE_PATH}, env fallback checked)"
+                f"Resolved local integrations from {', '.join(source_labels)}: {services}"
+                if source_labels
+                else f"Resolved local integrations: {services}"
             ),
         )
-        return {"resolved_integrations": {}}
-
-    resolved = _classify_integrations(integrations)
-    validate_required_integrations(state.get("raw_alert", {}) or {}, resolved)
-    services = [service for service in resolved if service != "_all"]
-    source_labels: list[str] = []
-    if store_integrations:
-        source_labels.append("store")
-    if env_integrations:
-        source_labels.append("env")
-    tracker.complete(
-        "resolve_integrations",
-        fields_updated=["resolved_integrations"],
-        message=(
-            f"Resolved local integrations from {', '.join(source_labels)}: {services}"
-            if source_labels
-            else f"Resolved local integrations: {services}"
-        ),
-    )
     return {"resolved_integrations": resolved}
 
 
@@ -191,22 +196,24 @@ def _resolve_remote_with_local_fallback(
         remote_integrations,
     )
     resolved = _classify_integrations(integrations)
-    validate_required_integrations(state.get("raw_alert", {}) or {}, resolved)
-    services = [service for service in resolved if service != "_all"]
+    try:
+        validate_required_integrations(state.get("raw_alert", {}) or {}, resolved)
+    finally:
+        services = [service for service in resolved if service != "_all"]
 
-    source_labels = ["remote"]
-    if store_integrations:
-        source_labels.append("store")
-    if env_integrations:
-        source_labels.append("env")
+        source_labels = ["remote"]
+        if store_integrations:
+            source_labels.append("store")
+        if env_integrations:
+            source_labels.append("env")
 
-    tracker.complete(
-        "resolve_integrations",
-        fields_updated=["resolved_integrations"],
-        message=(
-            f"Resolved integrations from {', '.join(source_labels)}: {services}"
-            if services
-            else "No active integrations found"
-        ),
-    )
+        tracker.complete(
+            "resolve_integrations",
+            fields_updated=["resolved_integrations"],
+            message=(
+                f"Resolved integrations from {', '.join(source_labels)}: {services}"
+                if services
+                else "No active integrations found"
+            ),
+        )
     return {"resolved_integrations": resolved}

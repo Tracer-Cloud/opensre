@@ -96,3 +96,14 @@ def test_llm_settings_from_env_max_tokens_default(monkeypatch) -> None:
     settings = LLMSettings.from_env()
 
     assert settings.max_tokens == DEFAULT_MAX_TOKENS
+
+
+def test_resolve_llm_provider_falls_back_on_unrecognized_env_provider(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "anthropi")
+    monkeypatch.setattr("app.config.resolve_llm_api_key", lambda _: "")
+
+    from app.config import DEFAULT_LLM_PROVIDER, resolve_llm_provider
+
+    assert resolve_llm_provider() == DEFAULT_LLM_PROVIDER

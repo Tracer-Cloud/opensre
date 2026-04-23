@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import pytest
@@ -158,23 +159,31 @@ def test_investigate_returns_bad_request_for_missing_integration(monkeypatch) ->
 async def test_investigate_stream_returns_error_event_for_missing_integration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_astream_investigation(*args: object, **kwargs: object):
-        raise MissingIntegrationError("This alert requires the datadog integration.")
-        yield  # make this function an async generator
-
-    monkeypatch.setattr("app.pipeline.runners.astream_investigation", fake_astream_investigation)
     monkeypatch.setattr(
         "app.cli.investigate.resolve_investigation_context",
         lambda **_kwargs: ("test-alert", "events_fact", "warning"),
     )
     monkeypatch.setattr("app.config.LLMSettings.from_env", object)
 
+    message = 'This alert requires the datadog integration\nalert_source: grafana\"injected\"'
+
+    async def fake_astream_investigation(*args: object, **kwargs: object):
+        raise MissingIntegrationError(message)
+        yield  # make this function an async generator
+
+    monkeypatch.setattr("app.pipeline.runners.astream_investigation", fake_astream_investigation)
+
     response = await investigate_stream(
         InvestigateRequest(raw_alert={"alert_name": "PayloadAlert"})
     )
     body = "".join([chunk async for chunk in response.body_iterator])
+
     assert "event: error" in body
-    assert "datadog integration" in body
+    error_data_line = next(
+        line for line in body.splitlines() if line.startswith("data: ")
+    )
+    payload = json.loads(error_data_line.removeprefix("data: "))
+    assert payload["detail"] == message
 
 
 @pytest.mark.asyncio

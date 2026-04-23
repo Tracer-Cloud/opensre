@@ -107,15 +107,21 @@ def test_run_investigation_allows_mock_backend_injection(monkeypatch) -> None:
 
 def test_node_resolve_integrations_fails_when_required_integration_missing(monkeypatch) -> None:
     class DummyTracker:
-        def start(self, *args: object, **kwargs: object) -> None:
+        def __init__(self) -> None:
+            self.complete_called = False
+
+        def start(self, *_args: object, **_kwargs: object) -> None:
             pass
 
-        def complete(self, *args: object, **kwargs: object) -> None:
-            pass
+        def complete(self, *_args: object, **_kwargs: object) -> None:
+            self.complete_called = True
 
-    monkeypatch.setattr("app.nodes.resolve_integrations.node.get_tracker", lambda: DummyTracker())
+    tracker = DummyTracker()
+    monkeypatch.setattr("app.nodes.resolve_integrations.node.get_tracker", lambda: tracker)
     monkeypatch.setattr("app.integrations.store.load_integrations", lambda: [])
     monkeypatch.setattr("app.nodes.resolve_integrations.node._load_env_integrations", lambda: [])
 
     with pytest.raises(MissingIntegrationError, match="datadog integration"):
         node_resolve_integrations({"raw_alert": {"alert_source": "datadog"}})
+
+    assert tracker.complete_called is True

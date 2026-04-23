@@ -4,6 +4,7 @@ Clerk JWT configuration for both development and production environments.
 These are public endpoints and issuer URLs, not secrets.
 """
 
+import logging
 import os
 from difflib import get_close_matches
 from enum import Enum
@@ -13,6 +14,8 @@ from pydantic import Field, field_validator, model_validator
 
 from app.llm_credentials import resolve_llm_api_key
 from app.strict_config import StrictConfigModel
+
+logger = logging.getLogger(__name__)
 
 
 class LLMModelConfig(StrictConfigModel):
@@ -153,12 +156,17 @@ def resolve_llm_provider() -> str:
     if provider:
         if provider in ("ollama", "bedrock"):
             return provider
-        if provider in LLM_PROVIDER_API_KEY_ENV_MAP and resolve_llm_api_key(
-            LLM_PROVIDER_API_KEY_ENV_MAP[provider]
-        ):
-            return provider
-        candidate = _provider_from_api_key_envs()
-        return candidate or provider
+        if provider in LLM_PROVIDER_API_KEY_ENV_MAP:
+            if resolve_llm_api_key(LLM_PROVIDER_API_KEY_ENV_MAP[provider]):
+                return provider
+            return _provider_from_api_key_envs() or DEFAULT_LLM_PROVIDER
+
+        logger.warning(
+            "Unrecognized LLM_PROVIDER %r, falling back to %s",
+            provider,
+            DEFAULT_LLM_PROVIDER,
+        )
+        return DEFAULT_LLM_PROVIDER
 
     return _provider_from_api_key_envs() or DEFAULT_LLM_PROVIDER
 
