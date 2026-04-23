@@ -201,9 +201,7 @@ def investigate_command(
         # and hasn't asked for machine-readable JSON. Otherwise the spinner and
         # ANSI control codes corrupt the JSON payload that consumers expect on
         # stdout (pipes, redirection, --json, CI logs).
-        stream_to_stdout = (
-            sys.stdout.isatty() and not is_json_output() and output is None
-        )
+        stream_to_stdout = sys.stdout.isatty() and not is_json_output() and output is None
         if stream_to_stdout:
             result = run_investigation_cli_streaming(raw_alert=payload)
         else:

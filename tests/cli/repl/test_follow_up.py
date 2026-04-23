@@ -33,9 +33,7 @@ class TestSummarizeEvidence:
         assert "ev-4" not in joined
 
     def test_list_evidence_slices_first_three(self) -> None:
-        evidence = [
-            {"id": i, "kind": "log", "text": f"line {i}"} for i in range(10)
-        ]
+        evidence = [{"id": i, "kind": "log", "text": f"line {i}"} for i in range(10)]
         parts = _summarize_evidence(evidence)
         joined = "\n".join(parts)
         assert "Evidence items: 10" in joined
@@ -116,9 +114,7 @@ class TestAnswerFollowUpMarkupSafety:
         assert "orders-api" in output
         assert "2026-04-15 14:00:00 UTC" in output
 
-    def test_exception_message_with_brackets_not_dropped(
-        self, monkeypatch: object
-    ) -> None:
+    def test_exception_message_with_brackets_not_dropped(self, monkeypatch: object) -> None:
         def _boom() -> None:
             raise RuntimeError("config error: missing [api_key] in [datadog] section")
 

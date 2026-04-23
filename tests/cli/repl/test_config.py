@@ -93,6 +93,7 @@ class TestFileResolution:
         monkeypatch.delenv("OPENSRE_LAYOUT", raising=False)
 
         import app.constants as const_module
+
         monkeypatch.setattr(const_module, "OPENSRE_HOME_DIR", tmp_path)
 
         cfg = ReplConfig.load()
@@ -114,6 +115,7 @@ class TestFileResolution:
         monkeypatch.delenv("OPENSRE_LAYOUT", raising=False)
 
         import app.constants as const_module
+
         monkeypatch.setattr(const_module, "OPENSRE_HOME_DIR", tmp_path)
 
         cfg = ReplConfig.load()
@@ -135,6 +137,7 @@ class TestFileResolution:
         monkeypatch.setenv("OPENSRE_LAYOUT", "classic")
 
         import app.constants as const_module
+
         monkeypatch.setattr(const_module, "OPENSRE_HOME_DIR", tmp_path)
 
         cfg = ReplConfig.load()
@@ -157,6 +160,7 @@ class TestFileResolution:
         monkeypatch.setenv("OPENSRE_LAYOUT", "pinned")
 
         import app.constants as const_module
+
         monkeypatch.setattr(const_module, "OPENSRE_HOME_DIR", tmp_path)
 
         cfg = ReplConfig.load(cli_enabled=True, cli_layout="classic")
@@ -170,6 +174,7 @@ class TestFileResolution:
         monkeypatch.delenv("OPENSRE_LAYOUT", raising=False)
 
         import app.constants as const_module
+
         monkeypatch.setattr(const_module, "OPENSRE_HOME_DIR", tmp_path)
 
         cfg = ReplConfig.load()
@@ -185,6 +190,7 @@ class TestFileResolution:
         monkeypatch.delenv("OPENSRE_LAYOUT", raising=False)
 
         import app.constants as const_module
+
         monkeypatch.setattr(const_module, "OPENSRE_HOME_DIR", tmp_path)
 
         cfg = ReplConfig.load()
@@ -193,8 +199,6 @@ class TestFileResolution:
 
 
 class TestFromEnvAlias:
-    def test_from_env_is_same_as_load_with_no_cli(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_from_env_is_same_as_load_with_no_cli(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OPENSRE_LAYOUT", "pinned")
         assert ReplConfig.from_env() == ReplConfig.load()
