@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
+from app.integrations.azure_sql import DEFAULT_AZURE_SQL_PORT
 from app.services.coralogix import build_coralogix_logs_query
 from app.tools.GrafanaLogsTool import _map_pipeline_to_service_name
 
@@ -1262,6 +1263,32 @@ def detect_sources(
             "port": mysql_int.get("port", 3306),
             "database": mysql_database,
             "table": mysql_table,
+            "connection_verified": True,
+        }
+
+    azure_sql_int = (resolved_integrations or {}).get("azure_sql")
+    if (
+        azure_sql_int
+        and str(azure_sql_int.get("server", "")).strip()
+        and str(azure_sql_int.get("database", "")).strip()
+    ):
+        azure_sql_server = str(azure_sql_int.get("server", "")).strip()
+        # Prefer the alert-specified database (multi-tenant Azure SQL pools often
+        # name the affected database in annotations), fall back to the configured
+        # database from the integration store.  Credentials stay in
+        # resolve_azure_sql_config — do not leak them here.
+        azure_sql_database = (
+            str(annotations.get("azure_sql_database") or "").strip()
+            or str(annotations.get("database") or "").strip()
+            or str(azure_sql_int.get("database", "")).strip()
+        )
+        # `or DEFAULT_AZURE_SQL_PORT` rather than `get("port", ...)` so an
+        # explicit-None stored port collapses to the default (matches
+        # azure_sql_extract_params in app/integrations/azure_sql.py).
+        sources["azure_sql"] = {
+            "server": azure_sql_server,
+            "port": azure_sql_int.get("port") or DEFAULT_AZURE_SQL_PORT,
+            "database": azure_sql_database,
             "connection_verified": True,
         }
 

@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from app.integrations.kafka import KafkaConfig, get_consumer_group_lag
+from app.integrations.kafka import (
+    KafkaConfig,
+    get_consumer_group_lag,
+    kafka_extract_params,
+    kafka_is_available,
+)
 from app.tools.tool_decorator import tool
 
 
@@ -16,6 +21,8 @@ from app.tools.tool_decorator import tool
         "Identifying stuck or slow consumers during an incident",
         "Checking consumer group health after a deployment",
     ],
+    is_available=kafka_is_available,
+    extract_params=kafka_extract_params,
 )
 def get_kafka_consumer_group_lag(
     bootstrap_servers: str,

@@ -25,7 +25,7 @@ def _langsmith_available() -> bool:
 
 
 @pytest.fixture(scope="session")
-def langsmith_deployment() -> Generator[dict[str, Any], None, None]:
+def langsmith_deployment() -> Generator[dict[str, Any]]:
     """Deploy to LangSmith, yield outputs, then clean up.
 
     Skips when running in CI, when SKIP_INFRA_TESTS is set, or when

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in contributing to Tracer.
+Thanks for your interest in contributing to OpenSRE.
 
 This document describes how to set up your environment, propose changes, report bugs, and submit pull requests in a way that keeps review fast and the project reliable.
 
@@ -29,6 +29,13 @@ There are two ways to get started:
 2. Open a new GitHub Issue describing what you found (use the appropriate template below)
 3. Comment that you're working on it and open a **draft PR** early so others can see progress
 4. Mark the PR as ready for review when it's complete
+
+#### Issue Assignment & Contribution Flow (Path A)
+
+- Only work on issues assigned to you
+- Or comment with an approach and wait for confirmation before starting
+- Avoid picking up already assigned issues
+- The first contributor to comment with a clear approach will be assigned the issue
 
 #### Issue Templates
 

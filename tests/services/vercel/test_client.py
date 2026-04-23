@@ -6,7 +6,15 @@ from typing import Any
 import httpx
 import pytest
 
-from app.services.vercel.client import VercelClient, VercelConfig, make_vercel_client
+from app.services.vercel.client import (
+    _MAX_VERCEL_PATH_SEGMENT_LEN,
+    VercelClient,
+    VercelConfig,
+    _append_parsed_runtime_stream_value,
+    _ingest_runtime_log_stream_line,
+    _safe_vercel_path_segment,
+    make_vercel_client,
+)
 
 
 class _FakeResponse:
@@ -556,3 +564,250 @@ def test_context_manager_closes_on_exception() -> None:
     with pytest.raises(ValueError), c:
         _raise_value_error()
     assert c._client is None
+
+
+def test_ingest_runtime_log_stream_line_parses_data_prefixed_json() -> None:
+    """Test that lines prefixed with 'data:' are correctly parsed and added to the bucket."""
+    bucket: list[dict[str, Any]] = []
+    line = 'data:{"id":"log_1","message":"test log","level":"info"}'
+    result = _ingest_runtime_log_stream_line(line, bucket, limit=10)
+    assert result is False  # bucket not full yet
+    assert len(bucket) == 1
+    assert bucket[0]["id"] == "log_1"
+    assert bucket[0]["message"] == "test log"
+    assert bucket[0]["level"] == "info"
+
+
+def test_ingest_runtime_log_stream_line_parses_json_without_data_prefix() -> None:
+    """Test that lines without 'data:' prefix are also correctly parsed."""
+    bucket: list[dict[str, Any]] = []
+    line = '{"id":"log_2","message":"another log","level":"error"}'
+    result = _ingest_runtime_log_stream_line(line, bucket, limit=10)
+    assert result is False
+    assert len(bucket) == 1
+    assert bucket[0]["id"] == "log_2"
+    assert bucket[0]["message"] == "another log"
+    assert bucket[0]["level"] == "error"
+
+
+def test_ingest_runtime_log_stream_line_handles_data_prefix_with_whitespace() -> None:
+    """Test that 'data:' prefix followed by whitespace is correctly handled."""
+    bucket: list[dict[str, Any]] = []
+    line = 'data:  {"id":"log_3","message":"spaced log","level":"warn"}'
+    result = _ingest_runtime_log_stream_line(line, bucket, limit=10)
+    assert result is False
+    assert len(bucket) == 1
+    assert bucket[0]["id"] == "log_3"
+    assert bucket[0]["message"] == "spaced log"
+    assert bucket[0]["level"] == "warn"
+
+
+def test_ingest_runtime_log_stream_line_respects_limit() -> None:
+    """Test that the limit is respected and parsing stops when bucket is full."""
+    bucket: list[dict[str, Any]] = []
+    limit = 2
+
+    # First line should be added
+    line1 = 'data:{"id":"log_1","message":"first"}'
+    result1 = _ingest_runtime_log_stream_line(line1, bucket, limit=limit)
+    assert result1 is False
+    assert len(bucket) == 1
+
+    # Second line should be added, reaching limit
+    line2 = 'data:{"id":"log_2","message":"second"}'
+    result2 = _ingest_runtime_log_stream_line(line2, bucket, limit=limit)
+    assert result2 is True  # bucket is now full
+    assert len(bucket) == 2
+
+    # Third line: the helper still appends for a single dict (no pre-check),
+    # but the stream-collection layer's bucket[:limit] slice caps the final result.
+    line3 = 'data:{"id":"log_3","message":"third"}'
+    result3 = _ingest_runtime_log_stream_line(line3, bucket, limit=limit)
+    assert result3 is True  # bucket is over limit, indicating stop
+    assert len(bucket) == 3  # note: helper over-appends, collector slices to limit
+
+
+def test_ingest_runtime_log_stream_line_handles_empty_lines() -> None:
+    """Test that empty lines are safely ignored without affecting the bucket."""
+    bucket: list[dict[str, Any]] = [{"id": "existing"}]
+    line = ""
+    result = _ingest_runtime_log_stream_line(line, bucket, limit=10)
+    assert result is False  # bucket not full
+    assert len(bucket) == 1
+    assert bucket[0]["id"] == "existing"
+
+
+def test_ingest_runtime_log_stream_line_handles_invalid_json_gracefully() -> None:
+    """Test that invalid JSON is safely ignored without crashing."""
+    bucket: list[dict[str, Any]] = []
+    line = "data:not valid json"
+    result = _ingest_runtime_log_stream_line(line, bucket, limit=10)
+    assert result is False
+    assert len(bucket) == 0
+
+
+def test_ingest_runtime_log_stream_line_handles_whitespace_only_lines() -> None:
+    """Test that whitespace-only lines are safely ignored."""
+    bucket: list[dict[str, Any]] = [{"id": "existing"}]
+    line = "   \n\t  "
+    result = _ingest_runtime_log_stream_line(line, bucket, limit=10)
+    assert result is False
+    assert len(bucket) == 1
+    assert bucket[0]["id"] == "existing"
+
+
+def test_append_parsed_runtime_stream_value_expands_nested_logs_list() -> None:
+    """Test that a dict with a 'logs' key is expanded into individual items."""
+    bucket: list[dict[str, Any]] = []
+    parsed = {"logs": [{"id": "log_1"}, {"id": "log_2"}, {"id": "log_3"}]}
+    _append_parsed_runtime_stream_value(parsed, bucket, limit=10)
+    assert len(bucket) == 3
+    assert bucket[0]["id"] == "log_1"
+    assert bucket[1]["id"] == "log_2"
+    assert bucket[2]["id"] == "log_3"
+
+
+def test_append_parsed_runtime_stream_value_respects_limit_with_nested_logs() -> None:
+    """Test that limit is respected when expanding nested logs list."""
+    bucket: list[dict[str, Any]] = []
+    parsed = {"logs": [{"id": f"log_{i}"} for i in range(10)]}
+    _append_parsed_runtime_stream_value(parsed, bucket, limit=3)
+    assert len(bucket) == 3
+    assert bucket[0]["id"] == "log_0"
+    assert bucket[2]["id"] == "log_2"
+
+
+def test_append_parsed_runtime_stream_value_appends_single_dict() -> None:
+    """Test that a single dict without 'logs' key is appended directly."""
+    bucket: list[dict[str, Any]] = []
+    parsed = {"id": "single_log", "message": "test"}
+    _append_parsed_runtime_stream_value(parsed, bucket, limit=10)
+    assert len(bucket) == 1
+    assert bucket[0]["id"] == "single_log"
+    assert bucket[0]["message"] == "test"
+
+
+def test_append_parsed_runtime_stream_value_expands_list_of_dicts() -> None:
+    """Test that a list of dicts is expanded into individual items."""
+    bucket: list[dict[str, Any]] = []
+    parsed = [{"id": "log_1"}, {"id": "log_2"}, {"id": "log_3"}]
+    _append_parsed_runtime_stream_value(parsed, bucket, limit=10)
+    assert len(bucket) == 3
+    assert bucket[0]["id"] == "log_1"
+    assert bucket[1]["id"] == "log_2"
+    assert bucket[2]["id"] == "log_3"
+
+
+def test_append_parsed_runtime_stream_value_respects_limit_with_list() -> None:
+    """Test that limit is respected when expanding a list of dicts."""
+    bucket: list[dict[str, Any]] = []
+    parsed = [{"id": f"log_{i}"} for i in range(10)]
+    _append_parsed_runtime_stream_value(parsed, bucket, limit=2)
+    assert len(bucket) == 2
+    assert bucket[0]["id"] == "log_0"
+    assert bucket[1]["id"] == "log_1"
+
+
+# ---------------------------------------------------------------------------
+# _safe_vercel_path_segment
+# ---------------------------------------------------------------------------
+
+
+class TestSafeVercelPathSegment:
+    """Unit tests for _safe_vercel_path_segment()."""
+
+    # -- invalid inputs that must return None --
+
+    def test_empty_string_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("") is None
+
+    def test_whitespace_only_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("   ") is None
+
+    def test_tab_only_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("\t") is None
+
+    def test_too_long_string_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("a" * (_MAX_VERCEL_PATH_SEGMENT_LEN + 1)) is None
+
+    def test_exactly_max_length_is_valid(self) -> None:
+        segment = "a" * _MAX_VERCEL_PATH_SEGMENT_LEN
+        assert _safe_vercel_path_segment(segment) == segment
+
+    def test_contains_double_dot_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl_abc..def") is None
+
+    def test_path_traversal_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("../secret") is None
+
+    def test_double_dot_at_end_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl_abc..") is None
+
+    def test_double_slash_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl_abc//def") is None
+
+    def test_single_slash_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl/abc") is None
+
+    def test_starts_with_dot_returns_none(self) -> None:
+        assert _safe_vercel_path_segment(".hidden") is None
+
+    def test_starts_with_hyphen_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("-abc") is None
+
+    def test_starts_with_underscore_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("_abc") is None
+
+    def test_space_in_middle_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl abc") is None
+
+    def test_null_byte_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl\x00abc") is None
+
+    def test_newline_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl\nabc") is None
+
+    def test_special_chars_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl@abc!") is None
+
+    def test_colon_returns_none(self) -> None:
+        assert _safe_vercel_path_segment("dpl:abc") is None
+
+    # -- valid inputs that must return the cleaned string --
+
+    def test_simple_alphanumeric_id(self) -> None:
+        assert _safe_vercel_path_segment("dpl123") == "dpl123"
+
+    def test_id_with_underscores_and_hyphens(self) -> None:
+        assert _safe_vercel_path_segment("dpl_abc-123") == "dpl_abc-123"
+
+    def test_id_with_dots(self) -> None:
+        assert _safe_vercel_path_segment("dpl.abc.1") == "dpl.abc.1"
+
+    def test_single_character_id(self) -> None:
+        assert _safe_vercel_path_segment("a") == "a"
+
+    def test_mixed_case_id(self) -> None:
+        assert _safe_vercel_path_segment("DplAbc123") == "DplAbc123"
+
+    def test_strips_surrounding_whitespace(self) -> None:
+        assert _safe_vercel_path_segment("  dpl_abc  ") == "dpl_abc"
+
+    def test_strips_leading_whitespace(self) -> None:
+        assert _safe_vercel_path_segment("   dpl123") == "dpl123"
+
+    def test_strips_trailing_whitespace(self) -> None:
+        assert _safe_vercel_path_segment("dpl123   ") == "dpl123"
+
+    def test_realistic_vercel_deployment_id(self) -> None:
+        assert (
+            _safe_vercel_path_segment("dpl_7JtoAHRqD4xSGBDT6MrFxXZH")
+            == "dpl_7JtoAHRqD4xSGBDT6MrFxXZH"
+        )
+
+    def test_realistic_vercel_project_id(self) -> None:
+        assert _safe_vercel_path_segment("prj_AbCdEfGh12345678") == "prj_AbCdEfGh12345678"
+
+    def test_single_dot_is_valid(self) -> None:
+        """A single dot between characters is allowed; only '..' triggers the guard."""
+        assert _safe_vercel_path_segment("a.b") == "a.b"

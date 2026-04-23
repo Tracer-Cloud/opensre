@@ -19,6 +19,7 @@ class RunRCAOutput(BaseModel):
     ok: bool
     result: dict[str, Any] | None = None
     error: str | None = None
+    error_type: str | None = None
 
 
 mcp = FastMCP("opensre")
@@ -84,9 +85,9 @@ def run_rca(
 
         return RunRCAOutput(ok=True, result=result).model_dump()
     except ValidationError as err:
-        return RunRCAOutput(ok=False, error=str(err)).model_dump()
+        return RunRCAOutput(ok=False, error=str(err), error_type=type(err).__name__).model_dump()
     except Exception as err:  # noqa: BLE001
-        return RunRCAOutput(ok=False, error=str(err)).model_dump()
+        return RunRCAOutput(ok=False, error=str(err), error_type=type(err).__name__).model_dump()
 
 
 def main() -> None:

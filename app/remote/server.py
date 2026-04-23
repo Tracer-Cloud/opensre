@@ -658,7 +658,8 @@ def _check_memory_health() -> DeepHealthCheck:
 
 def _make_id(alert_name: str) -> str:
     ts = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
-    return f"{ts}_{_slugify(alert_name)}"
+    slug = _slugify(alert_name) or "investigation"
+    return f"{ts}_{slug}"
 
 
 def _id_to_iso(inv_id: str) -> str:

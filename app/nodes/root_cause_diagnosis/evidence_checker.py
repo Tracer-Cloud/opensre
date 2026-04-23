@@ -13,7 +13,7 @@ _ERROR_ANNOTATION_KEYS = ("error", "error_message", "log_excerpt", "failed_steps
 
 # Evidence keys whose presence (even with empty values) confirms investigation was attempted.
 # An empty grafana_logs list is itself a healthy signal: no errors found during investigation.
-_INVESTIGATED_EVIDENCE_KEYS = frozenset(
+INVESTIGATED_EVIDENCE_KEYS = frozenset(
     {
         "grafana_logs",
         "grafana_metrics",
@@ -35,6 +35,81 @@ _INVESTIGATED_EVIDENCE_KEYS = frozenset(
         "eks_node_health",
         "eks_pod_logs",
         "eks_deployment_status",
+    }
+)
+
+# All evidence keys that represent gathered *data* (lists, dicts with content,
+# compound records) written by the EVIDENCE_MAPPERS in
+# ``app/nodes/investigate/processing/post_process.py``.  Used by the healthy
+# short-circuit to decide which keys should produce a
+# "X data confirmed within normal operating bounds" claim.
+#
+# Maintained as an explicit enumeration so metadata keys — query strings,
+# counts, timings, resource names, trace IDs, source URLs — cannot leak into
+# findings, and so adding a new mapper is a deliberate, reviewable decision
+# (either extend this set, or accept that the new key will not appear in
+# healthy-short-circuit output).
+#
+# A key listed here but not in ``INVESTIGATED_EVIDENCE_KEYS`` produces a claim
+# only when truthy; keys in ``INVESTIGATED_EVIDENCE_KEYS`` produce claims even
+# when empty, since an empty list after a completed investigation is itself
+# the healthy signal.
+CLAIM_EVIDENCE_KEYS = INVESTIGATED_EVIDENCE_KEYS | frozenset(
+    {
+        # Generic telemetry
+        "failed_jobs",
+        "failed_tools",
+        "error_logs",
+        "host_metrics",
+        # CloudWatch extras
+        "cloudwatch_latest_error",
+        # S3 / audit
+        "s3_object",
+        "s3_objects",
+        "s3_marker",
+        "s3_audit_payload",
+        # Lambda
+        "lambda_logs",
+        "lambda_invocations",
+        "lambda_errors",
+        "lambda_function",
+        "lambda_config",
+        # Grafana adjacent
+        "grafana_error_logs",
+        "grafana_traces",
+        "grafana_pipeline_spans",
+        "grafana_service_names",
+        # Datadog adjacent
+        "datadog_error_logs",
+        "datadog_events",
+        "datadog_failed_pods",
+        # Other observability stacks
+        "honeycomb_traces",
+        "coralogix_logs",
+        "coralogix_error_logs",
+        # Diagnostic code sandbox
+        "diagnostic_executions",
+        # Vercel
+        "vercel_deployments",
+        "vercel_failed_deployments",
+        "vercel_deployment",
+        "vercel_events",
+        "vercel_error_events",
+        "vercel_runtime_logs",
+        # GitHub / Git
+        "github_code_matches",
+        "github_file",
+        "github_commits",
+        "git_deploy_timeline",
+        # Alertmanager
+        "alertmanager_alerts",
+        "alertmanager_firing_alerts",
+        "alertmanager_silences",
+        "alertmanager_active_silences",
+        # EKS adjacent
+        "eks_failing_pods",
+        "eks_high_restart_pods",
+        "eks_degraded_deployments",
     }
 )
 
@@ -155,7 +230,7 @@ def is_clearly_healthy(raw_alert: dict[str, Any] | str, evidence: dict[str, Any]
     # An empty grafana_logs / grafana_metrics / etc. after a completed investigation is itself
     # a health signal — it means no errors were found. We only require that the key is present
     # (investigation was attempted), not that it contains data.
-    return any(k in evidence for k in _INVESTIGATED_EVIDENCE_KEYS)
+    return any(k in evidence for k in INVESTIGATED_EVIDENCE_KEYS)
 
 
 def check_vendor_evidence_missing(evidence: dict[str, Any]) -> bool:

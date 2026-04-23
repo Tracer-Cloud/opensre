@@ -3,8 +3,9 @@
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, Optional
 
+from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from app.nodes.extract_alert.extract import extract_alert_details
@@ -53,7 +54,7 @@ def _enrich_raw_alert(raw_alert: Any, details: AlertDetails) -> Any:
 
 
 @traceable(name="node_extract_alert")
-def node_extract_alert(state: InvestigationState) -> dict:
+def node_extract_alert(state: InvestigationState, config: Optional[RunnableConfig] = None) -> dict:  # noqa: ARG001,UP007,UP045
     """Classify and extract alert details from raw input (single LLM call)."""
     tracker = get_tracker()
     tracker.start("extract_alert", "Classifying and extracting alert details")
