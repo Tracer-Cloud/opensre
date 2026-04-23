@@ -39,7 +39,11 @@ def test_devcontainer_config_matches_local_dev_workflow() -> None:
     )
 
 
-def test_local_grafana_compose_uses_workspace_override_for_devcontainers() -> None:
+def test_local_grafana_compose_uses_relative_provisioning_path() -> None:
+    # Relative path resolves from the compose file's own directory, so it works
+    # on the host (opensre onboard), via make grafana-local-up, and in devcontainer —
+    # without requiring LOCAL_WORKSPACE_FOLDER to be set.
     compose = (REPO_ROOT / "app/cli/wizard/local_grafana_stack/docker-compose.yml").read_text()
 
-    assert "${LOCAL_WORKSPACE_FOLDER:-}/app/cli/wizard/local_grafana_stack/provisioning" in compose
+    assert "./provisioning:/etc/grafana/provisioning" in compose
+    assert "${LOCAL_WORKSPACE_FOLDER" not in compose
