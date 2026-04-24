@@ -113,7 +113,6 @@ jobs:
         os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
 
     runs-on: ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
 
     env:
