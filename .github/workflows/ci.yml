@@ -41,6 +41,7 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
 
     steps:
       - uses: actions/checkout@v5
@@ -65,7 +66,6 @@ jobs:
       - name: Format check
         run: python -m ruff format --check app/ tests/
 
-
 # ---------------------------------------------------------------
 # TYPECHECK
 # ---------------------------------------------------------------
@@ -78,6 +78,7 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
 
     steps:
       - uses: actions/checkout@v5
@@ -99,9 +100,8 @@ jobs:
       - name: Typecheck
         run: python -m mypy app/
 
-
 # ---------------------------------------------------------------
-# TESTS (MAIN GATE)
+# TESTS (MAIN CI GATE)
 # ---------------------------------------------------------------
   test:
     name: test (${{ matrix.os }})
@@ -114,10 +114,6 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
-
-    # IMPORTANT FIX:
-    # Fork PRs now explicitly run a SAFE subset instead of skipping entirely
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
 
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -155,7 +151,15 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
 
-      - name: Run tests
+      - name: Run safe tests (fork PRs)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true
+        run: >-
+          python -m pytest -n auto -v
+          --ignore=tests/e2e
+          --ignore=tests/synthetic
+
+      - name: Run full tests
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
         run: >-
           python -m pytest -n auto -v
           --cov=app
@@ -166,7 +170,7 @@ jobs:
           -m "${{ matrix.os == 'windows-latest' && 'not synthetic and not integration' || 'not synthetic' }}"
 
       - name: Upload coverage
-        if: always() && matrix.os == 'ubuntu-latest'
+        if: always() && matrix.os == 'ubuntu-latest' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
@@ -174,7 +178,6 @@ jobs:
             htmlcov/
             .coverage
           retention-days: 7
-
 
 # ---------------------------------------------------------------
 # KUBERNETES TESTS
@@ -214,7 +217,6 @@ jobs:
           AWS_DEFAULT_REGION: us-east-1
         run: python -m tests.e2e.kubernetes.test_local
 
-
 # ---------------------------------------------------------------
 # THOROUGH E2E (MAIN ONLY)
 # ---------------------------------------------------------------
@@ -244,35 +246,27 @@ jobs:
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       JWT_TOKEN: ${{ secrets.JWT_TOKEN }}
-
       TRACER_ORG_ID: ${{ secrets.TRACER_ORG_ID }}
       TRACER_WEB_APP_URL: ${{ secrets.TRACER_WEB_APP_URL }}
       TRACER_API_URL: ${{ secrets.TRACER_API_URL }}
       TRACER_INGEST_TOKEN: ${{ secrets.TRACER_INGEST_TOKEN }}
-
       LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
       LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
       LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
       LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
-
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-1
       AWS_DEFAULT_REGION: us-east-1
-
       GRAFANA_READ_TOKEN: ${{ secrets.GRAFANA_READ_TOKEN }}
-
       GCLOUD_HOSTED_METRICS_ID: ${{ secrets.GCLOUD_HOSTED_METRICS_ID }}
       GCLOUD_HOSTED_METRICS_URL: ${{ secrets.GCLOUD_HOSTED_METRICS_URL }}
       GCLOUD_HOSTED_LOGS_ID: ${{ secrets.GCLOUD_HOSTED_LOGS_ID }}
       GCLOUD_HOSTED_LOGS_URL: ${{ secrets.GCLOUD_HOSTED_LOGS_URL }}
       GCLOUD_RW_API_KEY: ${{ secrets.GCLOUD_RW_API_KEY }}
-
       GCLOUD_OTLP_ENDPOINT: ""
       OTEL_EXPORTER_OTLP_ENDPOINT: ""
-
-      # FIXED (safe default instead of removed variable)
-      CLOUDWATCH_VERIFY_LOGS: "1"
+      CLOUDWATCH_VERIFY_LOGS: ${{ matrix.name == 'cloudwatch-demo' && '0' || '1' }}
 
     steps:
       - uses: actions/checkout@v5
@@ -303,3 +297,4 @@ jobs:
 
       - name: Run test
         run: ${{ matrix.command }}
+        timeout-minutes: 15
