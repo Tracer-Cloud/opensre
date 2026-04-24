@@ -24,6 +24,7 @@ def test_impossible_percentages():
     assert issues[0]["issue"] == "impossible_percentage"
     assert issues[0]["severity"] == "error"
 
+
 def test_cpu_suspicious_percentage():
     """Test that CPU > 1000% is flagged as suspicious but not strictly impossible."""
     validator = MetricsValidator()
@@ -33,6 +34,7 @@ def test_cpu_suspicious_percentage():
     assert result["cpu"]["percent_raw"] == 1500
     assert result["data_quality_issues"][0]["issue"] == "suspicious_value"
     assert result["data_quality_issues"][0]["severity"] == "warning"
+
 
 def test_byte_to_gb_and_mb_inference():
     """Test memory unit inference for bytes masquerading as percentages."""
@@ -56,6 +58,7 @@ def test_byte_to_gb_and_mb_inference():
     assert interpretation_mb["likely_unit"] == "bytes"
     assert interpretation_mb["likely_value_mb"] == 500.0
 
+
 def test_class_flat_metric_payload():
     """Test class validation on flat API response structures."""
     payload = {"cpu": 95, "ram": 8589934592, "disk": 50}
@@ -71,6 +74,7 @@ def test_class_flat_metric_payload():
     assert "data_quality_issues" in result
     assert result["data_quality_issues"][0]["field"] == "ram"
 
+
 def test_wrapper_flat_metric_payload():
     """Test wrapper validation on flat API response structures."""
     payload = {"cpu": 95, "ram": 8589934592, "disk": 50}
@@ -85,12 +89,10 @@ def test_wrapper_flat_metric_payload():
     assert "data_quality_issues" in result
     assert result["data_quality_issues"][0]["field"] == "ram"
 
+
 def test_nested_metric_payload():
     """Test validation on deeply nested API response structures."""
-    payload = {
-        "memory": {"percent": 8589934592},
-        "cpu": {"percent": 95}
-    }
+    payload = {"memory": {"percent": 8589934592}, "cpu": {"percent": 95}}
     validator = MetricsValidator()
     result = validator.validate_metrics(payload)
 
@@ -98,14 +100,15 @@ def test_nested_metric_payload():
     assert "percent_interpretation" in result["memory"]
     assert result["data_quality_issues"][0]["field"] == "memory.percent"
 
+
 def test_class_list_structure_payload():
     """Test class validation on list-based API response structures."""
     payload = {
         "success": True,
         "data": [
             {"cpu": 95, "ram": 8589934592, "disk": 50},
-            {"cpu": 10, "ram": 45, "disk": 20} # Valid payload
-        ]
+            {"cpu": 10, "ram": 45, "disk": 20},  # Valid payload
+        ],
     }
     validator = MetricsValidator()
     result = validator.validate_metrics(payload)
@@ -122,20 +125,19 @@ def test_class_list_structure_payload():
     assert len(result["data_quality_issues"]) == 1
     assert result["data_quality_issues"][0]["field"] == "ram"
 
+
 @pytest.mark.xfail(reason="Known bug: wrapper fails to attach data_quality_issues for lists")
 def test_wrapper_list_structure_payload():
     """Test wrapper validation on lists (Currently expected to fail due to bug)."""
     payload = {
         "success": True,
-        "data": [
-            {"cpu": 95, "ram": 8589934592, "disk": 50},
-            {"cpu": 10, "ram": 45, "disk": 20}
-        ]
+        "data": [{"cpu": 95, "ram": 8589934592, "disk": 50}, {"cpu": 10, "ram": 45, "disk": 20}],
     }
     result = validate_host_metrics(payload)
 
     # This assertion WILL fail because of the bug, but xfail tells pytest we expect it to!
     assert "data_quality_issues" in result
+
 
 def test_invalid_format():
     """Test fallback when metrics is not a dictionary."""
