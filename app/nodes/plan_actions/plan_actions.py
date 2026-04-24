@@ -89,9 +89,12 @@ def _seed_plan_actions(
         if action_name in available_action_names
     ]
 
+    allowed_action_names = set[str](available_action_names)
     result: list[str] = []
     seen: set[str] = set()
     for action_name in [*allowed_seeds, *planned_actions]:
+        if action_name not in allowed_action_names:
+            continue
         if action_name in seen:
             continue
         seen.add(action_name)
@@ -315,6 +318,12 @@ def plan_actions(
         available_action_names=available_action_names,
         available_sources=available_sources,
     )
+    if not plan.actions and available_action_names:
+        plan.actions = [available_action_names[0]]
+        plan.rationale = (
+            "Controller fallback: planner selected only unavailable or already-executed "
+            "actions. Forcing next available action."
+        )
 
     debug_print(f"Plan: {plan.actions} | {plan.rationale[:100]}...")
     if len(plan.actions) > tool_budget:

@@ -171,6 +171,73 @@ def test_seed_plan_actions_keeps_s3_audit_first():
     assert seeded[0] == "get_s3_object"
 
 
+def test_seed_plan_actions_filters_unavailable_actions():
+    seeded = _seed_plan_actions(
+        planned_actions=["query_grafana_logs", "query_grafana_alert_rules"],
+        available_action_names=["query_grafana_alert_rules"],
+        available_sources={},
+    )
+
+    assert seeded == ["query_grafana_alert_rules"]
+
+
+def test_plan_actions_falls_back_when_planner_returns_only_executed_action(monkeypatch):
+    actions = [
+        MockAction("query_grafana_logs", "grafana"),
+        MockAction("query_grafana_alert_rules", "grafana"),
+    ]
+
+    def _mock_detect_sources(raw_alert, context, resolved_integrations=None):
+        _ = (raw_alert, context, resolved_integrations)
+        return {"grafana": {"connection_verified": True}}
+
+    def _mock_get_available_actions():
+        return actions
+
+    def _mock_get_prioritized_actions_with_reasons(sources=None, keywords=None):
+        _ = (sources, keywords)
+        return actions, []
+
+    def _mock_plan_actions_with_llm(**kwargs):
+        return kwargs["plan_model"](
+            actions=["query_grafana_logs"],
+            rationale="Mocked planner repeated a previous action",
+        )
+
+    monkeypatch.setattr(plan_actions_module, "detect_sources", _mock_detect_sources)
+    monkeypatch.setattr(plan_actions_module, "get_available_actions", _mock_get_available_actions)
+    monkeypatch.setattr(
+        plan_actions_module,
+        "get_prioritized_actions_with_reasons",
+        _mock_get_prioritized_actions_with_reasons,
+    )
+    monkeypatch.setattr(plan_actions_module, "get_llm_for_tools", object)
+    monkeypatch.setattr(
+        plan_actions_module,
+        "plan_actions_with_llm",
+        _mock_plan_actions_with_llm,
+    )
+
+    input_data = InvestigateInput(
+        raw_alert={"alert_name": "RDS write latency critical"},
+        context={},
+        problem_md="# RDS write latency critical",
+        alert_name="RDSWriteLatencyCritical",
+        executed_hypotheses=[{"actions": ["query_grafana_logs"], "loop_count": 0}],
+        tool_budget=10,
+    )
+
+    plan, *_ = plan_actions(
+        input_data=input_data,
+        plan_model=MockPlan,
+        resolved_integrations={"grafana": {"connection_verified": True}},
+    )
+
+    assert plan is not None
+    assert plan.actions == ["query_grafana_alert_rules"]
+    assert "already-executed" in plan.rationale
+
+
 def test_ensure_seed_actions_available_inserts_openclaw_action():
     selected, names = _ensure_seed_actions_available(
         available_actions=[MockAction("query_datadog_logs", "datadog")],
