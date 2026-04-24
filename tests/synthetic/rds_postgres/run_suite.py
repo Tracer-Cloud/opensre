@@ -321,14 +321,14 @@ def score_result(
         if not mentions_event_reasoning:
             failure_reason = "RDS events gathered but not used as primary reasoning signal"
 
-        _REQUIRED_SEQUENCE_TOKENS = (
+        required_sequence_tokens = (
             "failover initiated",
             "failover in progress",
             "failover completed",
             "instance available",
         )
 
-        sequence_present = all(token in reasoning_text for token in _REQUIRED_SEQUENCE_TOKENS)
+        sequence_present = all(token in reasoning_text for token in required_sequence_tokens)
 
         if not failure_reason and not sequence_present:
             failure_reason = "RDS event sequence not explicitly listed in required form"

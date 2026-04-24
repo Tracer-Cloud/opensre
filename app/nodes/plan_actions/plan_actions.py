@@ -89,7 +89,7 @@ def _seed_plan_actions(
         if action_name in available_action_names
     ]
 
-    allowed_action_names = set[str](available_action_names)
+    allowed_action_names: set[str] = set(available_action_names)
     result: list[str] = []
     seen: set[str] = set()
     for action_name in [*allowed_seeds, *planned_actions]:
