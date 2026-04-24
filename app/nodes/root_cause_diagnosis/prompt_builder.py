@@ -49,6 +49,7 @@ def build_diagnosis_prompt(
         Formatted prompt string for LLM
     """
     from app.masking import MaskingContext
+
     _masking_ctx = MaskingContext.from_state(dict(state))
     problem = _masking_ctx.mask(state.get("problem_md", "") or "")
     hypotheses = [_masking_ctx.mask(h) for h in state.get("hypotheses", [])]
@@ -329,7 +330,9 @@ Use these patterns to recognize similar failure modes and accelerate diagnosis.
 """
 
 
-def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any], masking_ctx=None) -> str:
+def _build_evidence_sections(
+    state: InvestigationState, evidence: dict[str, Any], masking_ctx=None
+) -> str:
     """Build all evidence sections for the prompt."""
     sections: list[str] = []
 
@@ -365,7 +368,7 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     if isinstance(raw_alert, str):
         raw_alert_text = masking_ctx.mask(raw_alert) if masking_ctx else raw_alert
     elif isinstance(raw_alert, dict):
-        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or      raw_alert.get("cloudwatch_url")
+        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
         vercel_url = raw_alert.get("vercel_log_url") or raw_alert.get("vercel_url")
         alert_annotations = (
             raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}

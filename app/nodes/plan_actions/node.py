@@ -50,6 +50,7 @@ def node_plan_actions(state: InvestigationState, config: Optional[RunnableConfig
 
     # Mask sensitive identifiers in planning input before LLM sees it
     from app.masking import MaskingContext
+
     masking_ctx = MaskingContext.from_state(dict(state))
     input_data = input_data.model_copy(
         update={k: masking_ctx.mask_value(v) for k, v in input_data.model_dump().items()}
