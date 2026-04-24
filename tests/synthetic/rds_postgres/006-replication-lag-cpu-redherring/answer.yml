@@ -7,14 +7,12 @@ required_keywords:
   - UPDATE
   - SELECT
   - causally independent
-forbidden_categories:
+forbidden_keywords:
   - cpu_saturation
-forbidden_phrases:
   - two root causes
   - multiple root causes
   - independent root causes
   - second root cause
-  - contributing cause
 required_evidence_sources:
   - aws_performance_insights
 optimal_trajectory:
