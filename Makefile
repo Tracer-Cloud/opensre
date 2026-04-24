@@ -3,12 +3,18 @@ export
 
 .PHONY: install onboard benchmark benchmark-update-readme test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog chaos-mesh-up chaos-mesh-down chaos-engineering-apply chaos-engineering-delete chaos-lab-up chaos-lab-down chaos-experiment-list chaos-experiment-up chaos-experiment-down deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke deploy-langsmith destroy-langsmith test-langsmith deploy-vercel destroy-vercel test-vercel deploy-ec2 destroy-ec2 test-ec2 deploy-ec2-hello destroy-ec2-hello deploy-remote destroy-remote deploy-bedrock destroy-bedrock test-bedrock
 
-ifneq ($(wildcard .venv/bin/python),)
-PYTHON = .venv/bin/python
+PYTHON_WIN := $(wildcard .venv/Scripts/python.exe)
+PYTHON_UNIX := $(wildcard .venv/bin/python3)
+
+ifneq ($(PYTHON_WIN),)
+PYTHON = .venv/Scripts/python
+PIP = .venv/Scripts/python -m pip
+else ifneq ($(PYTHON_UNIX),)
+PYTHON = .venv/bin/python3
 PIP = .venv/bin/python -m pip
 else
-PYTHON = python3
-PIP = python3 -m pip
+PYTHON := $(shell python3 -c 'import sys; print(sys.executable)' 2>/dev/null || echo python3)
+PIP := $(PYTHON) -m pip
 endif
 # PIP_INSTALL_FLAGS = --user --break-system-packages
 USER_BASE := $(shell $(PYTHON) -m site --user-base)
@@ -17,7 +23,7 @@ export PATH := $(if $(wildcard .venv/bin),$(CURDIR)/.venv/bin:,)$(USER_BIN):$(PA
 
 # Create venv and install dependencies
 install:
-	python3 -m venv .venv
+	$(PYTHON) -m venv .venv
 	$(PIP) install --upgrade pip
 	$(PIP) install $(PIP_INSTALL_FLAGS) -e ".[dev]"
 	$(PYTHON) -m app.analytics.install
