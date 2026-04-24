@@ -589,6 +589,250 @@ def test_run_wizard_persists_matching_local_config_and_env(monkeypatch, tmp_path
     assert saved_llm_keys == [("OPENAI_API_KEY", "openai-secret")]
 
 
+def test_run_wizard_codex_skips_api_key_and_runs_cli_onboarding(monkeypatch, tmp_path) -> None:
+    select_responses = iter(["quickstart", "codex", "skip"])
+    saved_llm_keys: list[tuple[str, str]] = []
+    cli_onboarding_providers: list[str] = []
+
+    def _mock_select(*_args, **_kwargs):
+        m = MagicMock()
+        m.ask.return_value = next(select_responses)
+        return m
+
+    def _cli_onboarding(provider):
+        cli_onboarding_providers.append(provider.value)
+        return "ok"
+
+    store_path = tmp_path / "opensre.json"
+    env_path = tmp_path / ".env"
+
+    monkeypatch.setattr(flow, "select_prompt", _mock_select)
+    monkeypatch.setattr(flow, "get_store_path", lambda: store_path)
+    monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
+    monkeypatch.setattr(flow, "_run_cli_llm_onboarding", _cli_onboarding)
+    monkeypatch.setattr(
+        flow,
+        "build_demo_action_response",
+        lambda: {"success": True, "topics": [], "guidance": []},
+    )
+    monkeypatch.setattr(
+        flow,
+        "save_local_config",
+        lambda **kwargs: wizard_store.save_local_config(path=store_path, **kwargs),
+    )
+    monkeypatch.setattr(
+        flow,
+        "sync_provider_env",
+        lambda **kwargs: sync_provider_env(env_path=env_path, **kwargs),
+    )
+    monkeypatch.setattr(
+        flow,
+        "save_llm_api_key",
+        lambda env_var, value: saved_llm_keys.append((env_var, value)),
+    )
+
+    exit_code = flow.run_wizard()
+
+    assert exit_code == 0
+    assert cli_onboarding_providers == ["codex"]
+    assert saved_llm_keys == []
+
+    payload = json.loads(store_path.read_text(encoding="utf-8"))
+    env_values = env_path.read_text(encoding="utf-8")
+    assert payload["targets"]["local"]["provider"] == "codex"
+    assert payload["targets"]["local"]["api_key_env"] == ""
+    assert payload["targets"]["local"]["model_env"] == "CODEX_MODEL"
+    assert "LLM_PROVIDER=codex\n" in env_values
+    assert "CODEX_MODEL=\n" in env_values
+
+
+def test_run_cli_llm_onboarding_ok_when_logged_in(monkeypatch) -> None:
+    adapter = MagicMock()
+    adapter.name = "codex"
+    adapter.binary_env_key = "CODEX_BIN"
+    adapter.install_hint = "npm i -g @openai/codex"
+    adapter.auth_hint = "Run: codex login"
+    adapter.detect.return_value = MagicMock(
+        installed=True,
+        logged_in=True,
+        detail="Logged in.",
+    )
+    provider = MagicMock()
+    provider.label = "OpenAI Codex CLI"
+    provider.adapter_factory = lambda: adapter
+
+    result = flow._run_cli_llm_onboarding(provider)
+    assert result == "ok"
+    adapter.detect.assert_called_once()
+
+
+def test_run_cli_llm_onboarding_repick_when_not_logged_in(monkeypatch) -> None:
+    adapter = MagicMock()
+    adapter.name = "codex"
+    adapter.binary_env_key = "CODEX_BIN"
+    adapter.install_hint = "npm i -g @openai/codex"
+    adapter.auth_hint = "Run: codex login"
+    adapter.detect.return_value = MagicMock(
+        installed=True,
+        logged_in=False,
+        detail="Not logged in.",
+    )
+    provider = MagicMock()
+    provider.label = "OpenAI Codex CLI"
+    provider.adapter_factory = lambda: adapter
+
+    monkeypatch.setattr(flow, "_choose", lambda *_args, **_kwargs: "repick")
+    result = flow._run_cli_llm_onboarding(provider)
+    assert result == "repick"
+
+
+def test_run_cli_llm_onboarding_ok_after_login_retry(monkeypatch) -> None:
+    adapter = MagicMock()
+    adapter.name = "codex"
+    adapter.binary_env_key = "CODEX_BIN"
+    adapter.install_hint = "npm i -g @openai/codex"
+    adapter.auth_hint = "Run: codex login"
+    detect_calls: list[object] = []
+
+    def _detect():
+        detect_calls.append(None)
+        if len(detect_calls) == 1:
+            return MagicMock(
+                installed=True,
+                logged_in=False,
+                detail="Not logged in.",
+            )
+        return MagicMock(installed=True, logged_in=True, detail="Logged in.")
+
+    adapter.detect = _detect
+    provider = MagicMock()
+    provider.label = "OpenAI Codex CLI"
+    provider.adapter_factory = lambda: adapter
+
+    monkeypatch.setattr(flow, "_choose", lambda *_args, **_kwargs: "retry")
+    result = flow._run_cli_llm_onboarding(provider)
+    assert result == "ok"
+    assert len(detect_calls) == 2
+
+
+def test_run_cli_llm_onboarding_repick_when_auth_status_unclear(monkeypatch) -> None:
+    adapter = MagicMock()
+    adapter.name = "codex"
+    adapter.binary_env_key = "CODEX_BIN"
+    adapter.install_hint = "npm i -g @openai/codex"
+    adapter.auth_hint = "Run: codex login"
+    adapter.detect.return_value = MagicMock(
+        installed=True,
+        logged_in=None,
+        detail="Auth status unknown.",
+    )
+    provider = MagicMock()
+    provider.label = "OpenAI Codex CLI"
+    provider.adapter_factory = lambda: adapter
+
+    monkeypatch.setattr(flow, "_choose", lambda *_args, **_kwargs: "repick")
+    result = flow._run_cli_llm_onboarding(provider)
+    assert result == "repick"
+
+
+def test_run_cli_llm_onboarding_ok_after_unclear_auth_retry(monkeypatch) -> None:
+    adapter = MagicMock()
+    adapter.name = "codex"
+    adapter.binary_env_key = "CODEX_BIN"
+    adapter.install_hint = "npm i -g @openai/codex"
+    adapter.auth_hint = "Run: codex login"
+    detect_calls: list[object] = []
+
+    def _detect():
+        detect_calls.append(None)
+        if len(detect_calls) == 1:
+            return MagicMock(
+                installed=True,
+                logged_in=None,
+                detail="Auth status unknown.",
+            )
+        return MagicMock(installed=True, logged_in=True, detail="Logged in.")
+
+    adapter.detect = _detect
+    provider = MagicMock()
+    provider.label = "OpenAI Codex CLI"
+    provider.adapter_factory = lambda: adapter
+
+    monkeypatch.setattr(flow, "_choose", lambda *_args, **_kwargs: "retry")
+    result = flow._run_cli_llm_onboarding(provider)
+    assert result == "ok"
+    assert len(detect_calls) == 2
+
+
+def test_run_cli_llm_onboarding_repick_when_user_chooses_repick(monkeypatch) -> None:
+    adapter = MagicMock()
+    adapter.name = "codex"
+    adapter.binary_env_key = "CODEX_BIN"
+    adapter.install_hint = "npm i -g @openai/codex"
+    adapter.auth_hint = "Run: codex login"
+    adapter.detect.return_value = MagicMock(
+        installed=False,
+        logged_in=None,
+        detail="Not found.",
+    )
+    provider = MagicMock()
+    provider.label = "OpenAI Codex CLI"
+    provider.adapter_factory = lambda: adapter
+
+    monkeypatch.setattr(flow, "_choose", lambda *_args, **_kwargs: "repick")
+    result = flow._run_cli_llm_onboarding(provider)
+    assert result == "repick"
+
+
+def test_run_cli_llm_onboarding_path_override_then_ok(monkeypatch, tmp_path) -> None:
+    adapter = MagicMock()
+    adapter.name = "codex"
+    adapter.binary_env_key = "CODEX_BIN"
+    adapter.install_hint = "npm i -g @openai/codex"
+    adapter.auth_hint = "Run: codex login"
+
+    detect_calls: list[object] = []
+
+    def _detect():
+        detect_calls.append(None)
+        if len(detect_calls) == 1:
+            return MagicMock(installed=False, logged_in=None, detail="Not found.")
+        return MagicMock(installed=True, logged_in=True, detail="Logged in.")
+
+    adapter.detect = _detect
+    provider = MagicMock()
+    provider.label = "OpenAI Codex CLI"
+    provider.adapter_factory = lambda: adapter
+
+    monkeypatch.setattr(flow, "_choose", lambda *_args, **_kwargs: "path")
+    monkeypatch.setattr(flow, "_prompt_value", lambda *_args, **_kwargs: str(tmp_path / "codex"))
+    monkeypatch.setattr(flow, "sync_env_values", lambda *_args, **_kwargs: None)
+    result = flow._run_cli_llm_onboarding(provider)
+    assert result == "ok"
+    assert len(detect_calls) == 2
+
+
+def test_run_cli_llm_onboarding_abort_after_max_retries(monkeypatch) -> None:
+    adapter = MagicMock()
+    adapter.name = "codex"
+    adapter.binary_env_key = "CODEX_BIN"
+    adapter.install_hint = "npm i -g @openai/codex"
+    adapter.auth_hint = "Run: codex login"
+    adapter.detect.return_value = MagicMock(
+        installed=False,
+        logged_in=None,
+        detail="Not found.",
+    )
+    provider = MagicMock()
+    provider.label = "OpenAI Codex CLI"
+    provider.adapter_factory = lambda: adapter
+
+    monkeypatch.setattr(flow, "_choose", lambda *_args, **_kwargs: "retry")
+    result = flow._run_cli_llm_onboarding(provider)
+    assert result == "abort"
+    assert adapter.detect.call_count == 10
+
+
 def test_run_wizard_configures_gitlab(monkeypatch, tmp_path) -> None:
     select_responses = iter(["quickstart", "anthropic", "gitlab"])
     password_responses = iter(["llm-secret", "glpat_test"])

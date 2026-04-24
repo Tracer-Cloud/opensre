@@ -12,7 +12,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from anthropic import Anthropic, AnthropicBedrock, AuthenticationError
 from azure.identity import DefaultAzureCredential
@@ -461,11 +461,9 @@ class AzureOpenAILLMClient:
 
 
 class StructuredOutputClient:
-    def __init__(
-        self,
-        base: LLMClient | OpenAILLMClient | BedrockLLMClient | AzureOpenAILLMClient,
-        model: type[BaseModel],
-    ) -> None:
+    """Wraps any LLM client with `.invoke` (API or CLI subprocess) for Pydantic JSON parsing."""
+
+    def __init__(self, base: Any, model: type[BaseModel]) -> None:
         self._base = base
         self._model = model
 
@@ -487,6 +485,20 @@ class StructuredOutputClient:
                 fallback = {"actions": payload, "rationale": "LLM returned actions only."}
                 return self._model.model_validate(fallback)
             raise
+
+
+class SupportsLLMInvoke(Protocol):
+    def with_config(self, **_kwargs: Any) -> SupportsLLMInvoke:
+        pass
+
+    def with_structured_output(self, model: type[BaseModel]) -> Any:
+        pass
+
+    def bind_tools(self, _tools: list[Any]) -> SupportsLLMInvoke:
+        pass
+
+    def invoke(self, prompt_or_messages: Any) -> LLMResponse:
+        pass
 
 
 def _normalize_messages_openai(prompt_or_messages: Any) -> list[dict[str, str]]:
@@ -573,7 +585,10 @@ def _extract_json_payload(text: str) -> Any:
 # LLM Client
 # ─────────────────────────────────────────────────────────────────────────────
 
-_LLMClientType = LLMClient | OpenAILLMClient | BedrockLLMClient | AzureOpenAILLMClient
+
+# Protocol keeps static type safety for CLI-backed clients without runtime import cycles.
+_LLMClientType = LLMClient | OpenAILLMClient | BedrockLLMClient | SupportsLLMInvoke | AzureOpenAILLMClient
+
 _llm: _LLMClientType | None = None
 _llm_for_tools: _LLMClientType | None = None
 
@@ -695,6 +710,19 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
             else settings.bedrock_toolcall_model
         )
         return BedrockLLMClient(model=model, max_tokens=config.max_tokens)
+    elif provider == "codex":
+        from app.config import DEFAULT_MAX_TOKENS
+        from app.integrations.llm_cli.codex import CodexAdapter
+        from app.integrations.llm_cli.runner import CLIBackedLLMClient
+
+        # Empty CODEX_MODEL means "use Codex CLI's configured default/current model" (omit -m).
+        model_name = os.getenv("CODEX_MODEL", "").strip() or None
+        return CLIBackedLLMClient(
+            CodexAdapter(),
+            model=model_name,
+            max_tokens=DEFAULT_MAX_TOKENS,
+            model_type=model_type,
+        )
     else:
         config = ANTHROPIC_LLM_CONFIG
         model = (

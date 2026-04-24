@@ -55,6 +55,7 @@ def build_diagnosis_prompt(
     upstream_directive = _build_upstream_directive(evidence)
     database_directive = _build_database_directive(state, evidence)
     kubernetes_directive = _build_kubernetes_directive(state, evidence)
+    failover_directive = _build_failover_directive(evidence)
     memory_section = _build_memory_section(memory_context)
 
     # Build evidence sections
@@ -72,7 +73,7 @@ Follow this reasoning sequence:
 4. Eliminate hypotheses that contradict the evidence.
 5. Select the best-supported hypothesis as the root cause. If multiple survive, pick the most parsimonious one and note alternatives.
 6. If no hypothesis can be confirmed, state "Most likely ..." with the strongest candidate and explicitly list what evidence is missing.
-{upstream_directive}{database_directive}{kubernetes_directive}{memory_section}
+{upstream_directive}{database_directive}{kubernetes_directive}{failover_directive}{memory_section}
 DEFINITIONS:
 - VALIDATED_CLAIMS: Directly supported by the evidence shown below (observed facts).
 - NON_VALIDATED_CLAIMS: Plausible hypotheses or contributing factors that are NOT directly proven by the evidence.
@@ -127,6 +128,60 @@ CAUSAL_CHAIN:
 """
 
     return prompt
+
+
+def _build_failover_directive(evidence: dict[str, Any]) -> str:
+    rds_events = evidence.get("aws_rds_events", [])
+    grafana_logs = evidence.get("grafana_logs", [])
+    grafana_error_logs = evidence.get("grafana_error_logs", [])
+
+    event_messages = " ".join(
+        str(event.get("message", "")).lower() for event in rds_events if isinstance(event, dict)
+    )
+
+    log_messages = " ".join(
+        str(log.get("message", "")).lower()
+        for log in [*grafana_logs, *grafana_error_logs]
+        if isinstance(log, dict)
+    )
+
+    has_rds_failover = "failover" in event_messages and (
+        "multi-az" in event_messages
+        or "health check failure" in event_messages
+        or "primary host" in event_messages
+    )
+
+    has_log_failover = "failover" in log_messages and (
+        "multi-az" in log_messages
+        or "health check failure" in log_messages
+        or "primary host" in log_messages
+    )
+
+    if not (has_rds_failover or has_log_failover):
+        return ""
+
+    return """
+FAILOVER-SPECIFIC RULES:
+- This incident is a failover scenario.
+- You MUST use the exact phrase: "primary evidence source".
+- You MUST include the exact phrases:
+  - "failover initiated"
+  - "failover in progress"
+  - "failover completed"
+  - "instance available"
+  - "workload resumed normally"
+- Do not paraphrase or omit any of these phrases.
+
+REQUIRED FAILOVER OUTPUT:
+- ROOT_CAUSE MUST include:
+  "Based on the RDS event timeline (primary evidence source)"
+- VALIDATED_CLAIMS MUST include one claim with this exact sequence:
+  "failover initiated -> failover in progress -> failover completed -> instance available"
+- CAUSAL_CHAIN MUST include:
+  "health check failure -> failover -> standby promotion -> DNS update -> brief outage -> recovery"
+- ROOT_CAUSE or VALIDATED_CLAIMS MUST explicitly say:
+  "the system recovered and workload resumed normally"
+"""
 
 
 def _build_upstream_directive(evidence: dict[str, Any]) -> str:

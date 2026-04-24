@@ -16,10 +16,7 @@ VERSION_PATTERN = re.compile(r"v?(?P<version>\d{4}\.\d{1,2}\.\d{1,2})")
 def _normalize_release_version(raw_value: str) -> str:
     match = VERSION_PATTERN.fullmatch(raw_value.strip())
     if match is None:
-        msg = (
-            "Release tag must look like 'vYYYY.M.D' or 'YYYY.M.D'; "
-            f"got {raw_value!r}."
-        )
+        msg = f"Release tag must look like 'vYYYY.M.D' or 'YYYY.M.D'; got {raw_value!r}."
         raise ValueError(msg)
 
     return match.group("version")

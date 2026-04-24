@@ -50,3 +50,16 @@ def test_sync_provider_env_appends_to_file_without_final_newline(tmp_path) -> No
     assert content.endswith("OPENAI_MODEL=gpt-5-mini\n")
     assert "LLM_PROVIDER=openai\n" in content
     assert "ANTHROPIC_API_KEY=" not in content
+
+
+def test_sync_provider_env_codex_writes_codex_model(tmp_path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text("LLM_PROVIDER=anthropic\n", encoding="utf-8")
+    sync_provider_env(
+        provider=PROVIDER_BY_VALUE["codex"],
+        model="",
+        env_path=env_path,
+    )
+    content = env_path.read_text(encoding="utf-8")
+    assert "LLM_PROVIDER=codex\n" in content
+    assert "CODEX_MODEL=\n" in content

@@ -118,7 +118,16 @@ AZURE_OPENAI_TOOLCALL_MODEL = "gpt-4o-mini"
 AZURE_OPENAI_API_VERSION = "2025-04-01"
 
 LLMProvider = Literal[
-    "anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock", "minimax", "azure"
+    "anthropic",
+    "openai",
+    "openrouter",
+    "gemini",
+    "nvidia",
+    "ollama",
+    "bedrock",
+    "minimax",
+    "codex",
+    "azure",
 ]
 
 
@@ -169,6 +178,7 @@ class LLMSettings(StrictConfigModel):
             "bedrock",
             "minimax",
             "azure",
+            "codex",
         )
         if provider in valid_providers:
             return provider
@@ -183,7 +193,7 @@ class LLMSettings(StrictConfigModel):
 
     @model_validator(mode="after")
     def _require_api_key_for_selected_provider(self) -> "LLMSettings":
-        if self.provider in ("ollama", "bedrock"):
+        if self.provider in ("ollama", "bedrock","codex"):
             return self  # ollama: local server; bedrock: IAM-based auth
         if self.provider == "azure":
             # Azure supports both API key and managed identity; at least endpoint is required
