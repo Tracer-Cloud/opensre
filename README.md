@@ -768,6 +768,13 @@ Thanks goes to these amazing people:
             <sub><b>Sarah-Salah</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/jerome-wilson">
+            <img src="https://avatars.githubusercontent.com/u/116165488?v=4" width="100" alt="jerome-wilson"/>
+            <br />
+            <sub><b>jerome-wilson</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
