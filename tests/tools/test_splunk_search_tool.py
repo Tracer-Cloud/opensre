@@ -211,9 +211,7 @@ def test_run_passes_verify_ssl_to_client() -> None:
         m.search_logs.return_value = {"success": True, "logs": [], "total": 0}
         return m
 
-    with patch(
-        "app.tools.SplunkSearchTool.make_client", side_effect=fake_make_client
-    ):
+    with patch("app.tools.SplunkSearchTool.make_client", side_effect=fake_make_client):
         tool.run(
             query="index=main | head 50",
             base_url="https://splunk:8089",
