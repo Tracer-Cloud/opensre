@@ -65,6 +65,7 @@ jobs:
       - name: Format check
         run: python -m ruff format --check app/ tests/
 
+
 # ---------------------------------------------------------------
 # TYPECHECK
 # ---------------------------------------------------------------
@@ -98,8 +99,9 @@ jobs:
       - name: Typecheck
         run: python -m mypy app/
 
+
 # ---------------------------------------------------------------
-# TESTS (MAIN CI GATE)
+# TESTS (MAIN GATE)
 # ---------------------------------------------------------------
   test:
     name: test (${{ matrix.os }})
@@ -113,7 +115,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
 
-    # Fork-safe: do NOT require secrets for external PRs
+    # IMPORTANT FIX:
+    # Fork PRs now explicitly run a SAFE subset instead of skipping entirely
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
 
     env:
@@ -172,6 +175,7 @@ jobs:
             .coverage
           retention-days: 7
 
+
 # ---------------------------------------------------------------
 # KUBERNETES TESTS
 # ---------------------------------------------------------------
@@ -210,6 +214,7 @@ jobs:
           AWS_DEFAULT_REGION: us-east-1
         run: python -m tests.e2e.kubernetes.test_local
 
+
 # ---------------------------------------------------------------
 # THOROUGH E2E (MAIN ONLY)
 # ---------------------------------------------------------------
@@ -234,7 +239,8 @@ jobs:
           - name: flink-ecs
             command: python3 -m tests.e2e.upstream_apache_flink_ecs.test_agent_e2e
 
-    # SAFEGUARD: explicit dependencies
+    name: test-thorough (${{ matrix.name }})
+
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       JWT_TOKEN: ${{ secrets.JWT_TOKEN }}
@@ -255,6 +261,7 @@ jobs:
       AWS_DEFAULT_REGION: us-east-1
 
       GRAFANA_READ_TOKEN: ${{ secrets.GRAFANA_READ_TOKEN }}
+
       GCLOUD_HOSTED_METRICS_ID: ${{ secrets.GCLOUD_HOSTED_METRICS_ID }}
       GCLOUD_HOSTED_METRICS_URL: ${{ secrets.GCLOUD_HOSTED_METRICS_URL }}
       GCLOUD_HOSTED_LOGS_ID: ${{ secrets.GCLOUD_HOSTED_LOGS_ID }}
@@ -263,6 +270,9 @@ jobs:
 
       GCLOUD_OTLP_ENDPOINT: ""
       OTEL_EXPORTER_OTLP_ENDPOINT: ""
+
+      # FIXED (safe default instead of removed variable)
+      CLOUDWATCH_VERIFY_LOGS: "1"
 
     steps:
       - uses: actions/checkout@v5
