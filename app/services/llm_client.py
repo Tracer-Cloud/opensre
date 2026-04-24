@@ -15,12 +15,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from anthropic import Anthropic, AnthropicBedrock, AuthenticationError
+from azure.identity import DefaultAzureCredential
 from openai import AuthenticationError as OpenAIAuthError
-from openai import OpenAI
+from openai import AzureOpenAI, OpenAI
 from pydantic import BaseModel, ValidationError
 
 from app.config import (
     ANTHROPIC_LLM_CONFIG,
+    AZURE_LLM_CONFIG,
     GEMINI_BASE_URL,
     MINIMAX_BASE_URL,
     NVIDIA_BASE_URL,
@@ -325,9 +327,144 @@ class OpenAILLMClient:
         return LLMResponse(content=content.strip())
 
 
+class AzureOpenAILLMClient:
+    """Azure OpenAI client supporting API key and managed identity auth."""
+
+    def __init__(
+        self,
+        *,
+        model: str,
+        azure_endpoint: str,
+        deployment_name: str,
+        max_tokens: int = 1024,
+        temperature: float | None = None,
+        api_key: str | None = None,
+        api_version: str = "2025-04-01",
+    ) -> None:
+        """
+        Initialize Azure OpenAI client.
+
+        Args:
+            model: Model name (for reference/logging)
+            azure_endpoint: Azure OpenAI endpoint URL (e.g., https://myresource.openai.azure.com)
+            deployment_name: Deployment name in Azure (e.g., gpt-4-turbo)
+            max_tokens: Maximum tokens in response
+            temperature: Sampling temperature
+            api_key: Optional API key; if not provided, DefaultAzureCredential is used
+            api_version: Azure API version (default: 2025-04-01)
+        """
+        self._model = model
+        self._azure_endpoint = azure_endpoint
+        self._deployment_name = deployment_name
+        self._max_tokens = max_tokens
+        self._temperature = temperature
+        self._api_key = api_key
+        self._api_version = api_version
+
+        # Initialize client with either API key or managed identity
+        self._client = self._create_azure_client()
+
+    def _create_azure_client(self) -> AzureOpenAI:
+        """Create Azure OpenAI client with appropriate auth."""
+        if self._api_key:
+            # API key authentication
+            return AzureOpenAI(
+                api_key=self._api_key,
+                api_version=self._api_version,
+                azure_endpoint=self._azure_endpoint,
+                timeout=60.0,
+            )
+        else:
+            # Managed identity (DefaultAzureCredential)
+            credential = DefaultAzureCredential()
+
+            def token_provider() -> str:
+                """Wrapper to convert Azure credential token to string."""
+                token = credential.get_token("https://cognitiveservices.azure.com/.default")
+                return token.token
+
+            return AzureOpenAI(
+                azure_ad_token_provider=token_provider,
+                api_version=self._api_version,
+                azure_endpoint=self._azure_endpoint,
+                timeout=60.0,
+            )
+
+    def with_config(self, **_kwargs: Any) -> "AzureOpenAILLMClient":
+        return self
+
+    def with_structured_output(self, model: type[BaseModel]) -> StructuredOutputClient:
+        return StructuredOutputClient(self, model)
+
+    def bind_tools(self, _tools: list[Any]) -> "AzureOpenAILLMClient":
+        return self
+
+    def _ensure_client(self) -> None:
+        """Refresh Azure client if credentials have changed."""
+        api_key = resolve_llm_api_key("AZURE_OPENAI_API_KEY")
+        if api_key and api_key != self._api_key:
+            self._api_key = api_key
+            self._client = self._create_azure_client()
+
+    def invoke(self, prompt_or_messages: Any) -> LLMResponse:
+        self._ensure_client()
+        messages = _normalize_messages_openai(prompt_or_messages)
+
+        from app.guardrails.engine import GuardrailBlockedError, get_guardrail_engine
+
+        engine = get_guardrail_engine()
+        if engine.is_active:
+            for msg in messages:
+                msg["content"] = engine.apply(msg["content"])
+
+        token_param = (
+            "max_completion_tokens" if _uses_max_completion_tokens(self._model) else "max_tokens"
+        )
+        kwargs: dict[str, Any] = {
+            "model": self._deployment_name,  # Azure uses deployment name, not model name
+            token_param: self._max_tokens,
+            "messages": messages,
+        }
+        if self._temperature is not None:
+            kwargs["temperature"] = self._temperature
+
+        backoff_seconds = 1.0
+        max_attempts = 3
+        last_err: Exception | None = None
+        for attempt in range(max_attempts):
+            try:
+                response = self._client.chat.completions.create(**kwargs)
+                break
+            except OpenAIAuthError as err:
+                raise RuntimeError(
+                    "Azure OpenAI authentication failed. Check AZURE_OPENAI_API_KEY or "
+                    "DefaultAzureCredential in your environment."
+                ) from err
+            except GuardrailBlockedError:
+                raise
+            except Exception as err:
+                last_err = err
+                if attempt == max_attempts - 1:
+                    raise RuntimeError(
+                        "Azure OpenAI request failed after retries. Try again in a few seconds."
+                    ) from err
+                time.sleep(backoff_seconds)
+                backoff_seconds *= 2
+        else:
+            error_msg = "Azure OpenAI invocation failed without a concrete error"
+            raise RuntimeError(error_msg) from last_err
+
+        if not response.choices:
+            raise RuntimeError("Azure OpenAI API returned an empty choices list")
+        content = response.choices[0].message.content or ""
+        return LLMResponse(content=content.strip())
+
+
 class StructuredOutputClient:
     def __init__(
-        self, base: LLMClient | OpenAILLMClient | BedrockLLMClient, model: type[BaseModel]
+        self,
+        base: LLMClient | OpenAILLMClient | BedrockLLMClient | AzureOpenAILLMClient,
+        model: type[BaseModel],
     ) -> None:
         self._base = base
         self._model = model
@@ -436,7 +573,7 @@ def _extract_json_payload(text: str) -> Any:
 # LLM Client
 # ─────────────────────────────────────────────────────────────────────────────
 
-_LLMClientType = LLMClient | OpenAILLMClient | BedrockLLMClient
+_LLMClientType = LLMClient | OpenAILLMClient | BedrockLLMClient | AzureOpenAILLMClient
 _llm: _LLMClientType | None = None
 _llm_for_tools: _LLMClientType | None = None
 
@@ -531,6 +668,22 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
             base_url=f"{host}/v1",
             api_key_env="OLLAMA_API_KEY",
             api_key_default="ollama",
+        )
+    elif provider == "azure":
+        config = AZURE_LLM_CONFIG
+        model = (
+            settings.azure_openai_reasoning_model
+            if model_type == "reasoning"
+            else settings.azure_openai_toolcall_model
+        )
+        api_key = resolve_llm_api_key("AZURE_OPENAI_API_KEY")
+        return AzureOpenAILLMClient(
+            model=model,
+            azure_endpoint=settings.azure_openai_endpoint,
+            deployment_name=model,
+            max_tokens=config.max_tokens,
+            api_key=api_key or None,
+            api_version=settings.azure_openai_api_version,
         )
     elif provider == "bedrock":
         from app.config import BEDROCK_LLM_CONFIG

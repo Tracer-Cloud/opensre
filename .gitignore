@@ -126,3 +126,5 @@ CLAUDE_PERSONAL.md
 tasks/
 app/memories
 .aider*
+# Added by code-review-graph
+.code-review-graph/

@@ -38,6 +38,8 @@ dependencies = [
     "keyring",
     # AWS
     "boto3>=1.42.88",
+    # Azure
+    "azure-identity>=1.14.0,<2",
     # Utilities
     "python-dotenv>=1.2.2",
     "click>=8.1.0",

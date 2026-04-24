@@ -112,8 +112,13 @@ BEDROCK_TOOLCALL_MODEL = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 DEFAULT_OLLAMA_MODEL = "llama3.2"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
+# Azure OpenAI model constants
+AZURE_OPENAI_REASONING_MODEL = "gpt-4-turbo"
+AZURE_OPENAI_TOOLCALL_MODEL = "gpt-4o-mini"
+AZURE_OPENAI_API_VERSION = "2025-04-01"
+
 LLMProvider = Literal[
-    "anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock", "minimax"
+    "anthropic", "openai", "openrouter", "gemini", "nvidia", "ollama", "bedrock", "minimax", "azure"
 ]
 
 
@@ -127,6 +132,8 @@ class LLMSettings(StrictConfigModel):
     gemini_api_key: str = ""
     nvidia_api_key: str = ""
     minimax_api_key: str = ""
+    azure_openai_api_key: str = ""
+    azure_openai_endpoint: str = ""
     ollama_model: str = DEFAULT_OLLAMA_MODEL
     ollama_host: str = DEFAULT_OLLAMA_HOST
     anthropic_reasoning_model: str = ANTHROPIC_REASONING_MODEL
@@ -143,6 +150,9 @@ class LLMSettings(StrictConfigModel):
     minimax_toolcall_model: str = MINIMAX_TOOLCALL_MODEL
     bedrock_reasoning_model: str = BEDROCK_REASONING_MODEL
     bedrock_toolcall_model: str = BEDROCK_TOOLCALL_MODEL
+    azure_openai_reasoning_model: str = AZURE_OPENAI_REASONING_MODEL
+    azure_openai_toolcall_model: str = AZURE_OPENAI_TOOLCALL_MODEL
+    azure_openai_api_version: str = AZURE_OPENAI_API_VERSION
     max_tokens: int = Field(default=DEFAULT_MAX_TOKENS, gt=0)
 
     @field_validator("provider", mode="before")
@@ -158,6 +168,7 @@ class LLMSettings(StrictConfigModel):
             "ollama",
             "bedrock",
             "minimax",
+            "azure",
         )
         if provider in valid_providers:
             return provider
@@ -174,6 +185,15 @@ class LLMSettings(StrictConfigModel):
     def _require_api_key_for_selected_provider(self) -> "LLMSettings":
         if self.provider in ("ollama", "bedrock"):
             return self  # ollama: local server; bedrock: IAM-based auth
+        if self.provider == "azure":
+            # Azure supports both API key and managed identity; at least endpoint is required
+            if not self.azure_openai_endpoint:
+                raise ValueError(
+                    "LLM provider 'azure' requires AZURE_OPENAI_ENDPOINT to be set. "
+                    "Optionally set AZURE_OPENAI_API_KEY for key-based auth; "
+                    "otherwise DefaultAzureCredential (managed identity) will be used."
+                )
+            return self
         provider_to_key = {
             "anthropic": self.anthropic_api_key,
             "openai": self.openai_api_key,
@@ -207,6 +227,8 @@ class LLMSettings(StrictConfigModel):
                 "gemini_api_key": resolve_llm_api_key("GEMINI_API_KEY"),
                 "nvidia_api_key": resolve_llm_api_key("NVIDIA_API_KEY"),
                 "minimax_api_key": resolve_llm_api_key("MINIMAX_API_KEY"),
+                "azure_openai_api_key": resolve_llm_api_key("AZURE_OPENAI_API_KEY"),
+                "azure_openai_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT", "").strip(),
                 "anthropic_reasoning_model": os.getenv(
                     "ANTHROPIC_REASONING_MODEL", ANTHROPIC_REASONING_MODEL
                 ).strip()
@@ -275,6 +297,18 @@ class LLMSettings(StrictConfigModel):
                 or DEFAULT_OLLAMA_MODEL,
                 "ollama_host": os.getenv("OLLAMA_HOST", DEFAULT_OLLAMA_HOST).strip()
                 or DEFAULT_OLLAMA_HOST,
+                "azure_openai_reasoning_model": os.getenv(
+                    "AZURE_OPENAI_REASONING_MODEL", AZURE_OPENAI_REASONING_MODEL
+                ).strip()
+                or AZURE_OPENAI_REASONING_MODEL,
+                "azure_openai_toolcall_model": os.getenv(
+                    "AZURE_OPENAI_TOOLCALL_MODEL", AZURE_OPENAI_TOOLCALL_MODEL
+                ).strip()
+                or AZURE_OPENAI_TOOLCALL_MODEL,
+                "azure_openai_api_version": os.getenv(
+                    "AZURE_OPENAI_API_VERSION", AZURE_OPENAI_API_VERSION
+                ).strip()
+                or AZURE_OPENAI_API_VERSION,
                 "max_tokens": os.getenv("LLM_MAX_TOKENS", str(DEFAULT_MAX_TOKENS)),
             }
         )
@@ -326,6 +360,12 @@ BEDROCK_LLM_CONFIG = LLMModelConfig(
 OLLAMA_LLM_CONFIG = LLMModelConfig(
     reasoning_model=DEFAULT_OLLAMA_MODEL,
     toolcall_model=DEFAULT_OLLAMA_MODEL,
+    max_tokens=DEFAULT_MAX_TOKENS,
+)
+
+AZURE_LLM_CONFIG = LLMModelConfig(
+    reasoning_model=AZURE_OPENAI_REASONING_MODEL,
+    toolcall_model=AZURE_OPENAI_TOOLCALL_MODEL,
     max_tokens=DEFAULT_MAX_TOKENS,
 )
 
