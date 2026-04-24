@@ -761,6 +761,66 @@ Thanks goes to these amazing people:
             <sub><b>Sarah-Salah</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/jerome-wilson">
+            <img src="https://avatars.githubusercontent.com/u/116165488?v=4" width="100" alt="jerome-wilson"/>
+            <br />
+            <sub><b>jerome-wilson</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/hcombalicer">
+            <img src="https://avatars.githubusercontent.com/u/40112059?v=4" width="100" alt="hcombalicer"/>
+            <br />
+            <sub><b>hcombalicer</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/CuriousHet">
+            <img src="https://avatars.githubusercontent.com/u/102606191?v=4" width="100" alt="CuriousHet"/>
+            <br />
+            <sub><b>CuriousHet</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Dipxssi">
+            <img src="https://avatars.githubusercontent.com/u/151428630?v=4" width="100" alt="Dipxssi"/>
+            <br />
+            <sub><b>Dipxssi</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/sirohikartik">
+            <img src="https://avatars.githubusercontent.com/u/99896785?v=4" width="100" alt="sirohikartik"/>
+            <br />
+            <sub><b>sirohikartik</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/imjohnzakkam">
+            <img src="https://avatars.githubusercontent.com/u/42964266?v=4" width="100" alt="imjohnzakkam"/>
+            <br />
+            <sub><b>imjohnzakkam</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/paarths-collab">
+            <img src="https://avatars.githubusercontent.com/u/205314222?v=4" width="100" alt="paarths-collab"/>
+            <br />
+            <sub><b>paarths-collab</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/wahajahmed010">
+            <img src="https://avatars.githubusercontent.com/u/57330918?v=4" width="100" alt="wahajahmed010"/>
+            <br />
+            <sub><b>wahajahmed010</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>

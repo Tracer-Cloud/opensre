@@ -21,6 +21,7 @@ def _call_run_investigation(
     severity: str,
     *,
     raw_alert: dict[str, Any],
+    opensre_evaluate: bool = False,
 ) -> AgentState:
     """Import the heavy investigation runner only when execution starts."""
     from app.pipeline.runners import run_investigation
@@ -30,6 +31,7 @@ def _call_run_investigation(
         pipeline_name,
         severity,
         raw_alert=raw_alert,
+        opensre_evaluate=opensre_evaluate,
     )
 
 
@@ -55,6 +57,7 @@ def run_investigation_cli(
     alert_name: str | None = None,
     pipeline_name: str | None = None,
     severity: str | None = None,
+    opensre_evaluate: bool = False,
 ) -> dict[str, Any]:
     """Run the investigation and return the CLI-facing JSON payload."""
     LLMSettings.from_env()
@@ -69,14 +72,33 @@ def run_investigation_cli(
         resolved_pipeline_name,
         resolved_severity,
         raw_alert=raw_alert,
+        opensre_evaluate=opensre_evaluate,
     )
     slack_message = state["slack_message"]
-    return {
+    out: dict[str, Any] = {
         "report": slack_message,
         "problem_md": state["problem_md"],
         "root_cause": state["root_cause"],
         "is_noise": state.get("is_noise", False),
     }
+    if opensre_evaluate:
+        ev = state.get("opensre_llm_eval")
+        if isinstance(ev, dict) and ev:
+            out["opensre_llm_eval"] = ev
+        elif not (state.get("opensre_eval_rubric") or "").strip():
+            out["opensre_llm_eval"] = {
+                "skipped": True,
+                "reason": (
+                    "No scoring_points on this alert — nothing to judge against "
+                    "(not an OpenRCA rubric payload, or field missing)."
+                ),
+            }
+        else:
+            out["opensre_llm_eval"] = {
+                "skipped": True,
+                "reason": "Evaluate was enabled but no judge output was recorded.",
+            }
+    return out
 
 
 def stream_investigation_cli(

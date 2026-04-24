@@ -88,6 +88,12 @@ dev = [
     "types-PyMySQL",
     "types-PyYAML",
     "boto3-stubs[essential]",
+    "huggingface_hub>=0.26.0",
+    "datasets>=3.0.0",
+]
+opensre-hub = [
+    "huggingface_hub>=0.26.0",
+    "datasets>=3.0.0",
 ]
 kafka = [
     "confluent-kafka>=2.14.0",
