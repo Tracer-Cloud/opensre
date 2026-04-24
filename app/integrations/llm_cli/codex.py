@@ -105,7 +105,10 @@ def _candidate_binary_names(platform: str | None = None) -> tuple[str, ...]:
 
 
 def _append_candidate_paths(
-    candidates: list[str], directory: Path | PurePosixPath | PureWindowsPath | str, names: tuple[str, ...], platform: str | None = None
+    candidates: list[str],
+    directory: Path | PurePosixPath | PureWindowsPath | str,
+    names: tuple[str, ...],
+    platform: str | None = None,
 ) -> None:
     base = str(directory).strip()
     if not base:

@@ -285,9 +285,15 @@ def test_detect_uses_first_runnable_fallback_path(
 
 
 def test_get_codex_fallback_directories_public_helper_delegates_to_internal_helper() -> None:
-    assert get_codex_fallback_directories(platform="darwin") == _fallback_codex_paths(platform="darwin")
-    assert get_codex_fallback_directories(platform="linux") == _fallback_codex_paths(platform="linux")
-    assert get_codex_fallback_directories(platform="win32") == _fallback_codex_paths(platform="win32")
+    assert get_codex_fallback_directories(platform="darwin") == _fallback_codex_paths(
+        platform="darwin"
+    )
+    assert get_codex_fallback_directories(platform="linux") == _fallback_codex_paths(
+        platform="linux"
+    )
+    assert get_codex_fallback_directories(platform="win32") == _fallback_codex_paths(
+        platform="win32"
+    )
 
 
 def test_fallback_paths_include_env_and_npm_prefix() -> None:
