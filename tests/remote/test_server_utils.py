@@ -124,24 +124,22 @@ def test_safe_investigation_path_rejects_x_md() -> None:
 
 
 @pytest.mark.parametrize(
-    ("invalid_id", "description"),
+    "invalid_id",
     [
-        ("x\n", "trailing newline"),
-        ("\nvalid-id", "newline prefix"),
-        ("valid\nid", "embedded newline"),
-        ("x\n\n", "multiple newlines"),
-        ("x\r\n", "CRLF line ending"),
-        ("x\r", "carriage return"),
-        ("\n", "only newline"),
-        ("\r\n", "only CRLF"),
-        ("x\x00", "null byte"),
-        ("x\u2028", "unicode line separator"),
-        ("x\u2029", "unicode paragraph separator"),
+        pytest.param("x\n", id="trailing_newline"),
+        pytest.param("\nvalid-id", id="newline_prefix"),
+        pytest.param("valid\nid", id="embedded_newline"),
+        pytest.param("x\n\n", id="multiple_newlines"),
+        pytest.param("x\r\n", id="CRLF_line_ending"),
+        pytest.param("x\r", id="carriage_return"),
+        pytest.param("\n", id="only_newline"),
+        pytest.param("\r\n", id="only_CRLF"),
+        pytest.param("x\x00", id="null_byte"),
+        pytest.param("x\u2028", id="unicode_line_separator"),
+        pytest.param("x\u2029", id="unicode_paragraph_separator"),
     ],
 )
-def test_safe_investigation_path_rejects_newline_variants(
-    invalid_id: str, description: str
-) -> None:
+def test_safe_investigation_path_rejects_newline_variants(invalid_id: str) -> None:
     """Test that IDs with newline/injection characters return 400 Invalid investigation ID.
 
     Covers path traversal and injection attack vectors including:
