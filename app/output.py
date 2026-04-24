@@ -78,6 +78,7 @@ _LOADING_VERBS: dict[str, list[str]] = {
         "prioritising queries",
     ],
     "investigate": [
+        "loading OpenSRE dataset telemetry",
         "querying logs",
         "fetching metrics",
         "scanning monitors",

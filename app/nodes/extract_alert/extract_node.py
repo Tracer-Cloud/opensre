@@ -8,7 +8,7 @@ from typing import Any, Optional
 from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
-from app.nodes.extract_alert.extract import extract_alert_details
+from app.nodes.extract_alert.extract import _CANONICAL_ALERT_SOURCES, extract_alert_details
 from app.nodes.extract_alert.models import AlertDetails
 from app.output import debug_print, get_tracker, render_investigation_header
 from app.state import InvestigationState
@@ -34,13 +34,14 @@ def _enrich_raw_alert(raw_alert: Any, details: AlertDetails) -> Any:
         # Convert string alerts to dict so downstream can find extracted fields
         raw_alert = {}
     enriched = dict(raw_alert)
+    prior_source = str(raw_alert.get("alert_source", "")).lower()
     if details.kube_namespace:
         enriched["kube_namespace"] = details.kube_namespace
     if details.cloudwatch_log_group:
         enriched["cloudwatch_log_group"] = details.cloudwatch_log_group
     if details.error_message:
         enriched["error_message"] = details.error_message
-    if details.alert_source:
+    if details.alert_source and prior_source not in _CANONICAL_ALERT_SOURCES:
         enriched["alert_source"] = details.alert_source
     if details.log_query:
         enriched["log_query"] = details.log_query
