@@ -61,7 +61,7 @@ def build_diagnosis_prompt(
     memory_section = _build_memory_section(memory_context)
 
     # Build evidence sections
-    evidence_text = _build_evidence_sections(state, evidence)
+    evidence_text = _build_evidence_sections(state, evidence, _masking_ctx)
 
     # Construct final prompt
     prompt = f"""You are an experienced SRE performing a root cause analysis (RCA) for a production incident.
@@ -329,7 +329,7 @@ Use these patterns to recognize similar failure modes and accelerate diagnosis.
 """
 
 
-def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]) -> str:
+def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any], masking_ctx=None) -> str:
     """Build all evidence sections for the prompt."""
     sections: list[str] = []
 
@@ -363,9 +363,9 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     alert_annotations: dict[str, Any] = {}
     raw_alert_text: str = ""
     if isinstance(raw_alert, str):
-        raw_alert_text = _masking_ctx.mask(raw_alert)
+        raw_alert_text = masking_ctx.mask(raw_alert) if masking_ctx else raw_alert
     elif isinstance(raw_alert, dict):
-        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
+        cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or      raw_alert.get("cloudwatch_url")
         vercel_url = raw_alert.get("vercel_log_url") or raw_alert.get("vercel_url")
         alert_annotations = (
             raw_alert.get("annotations", {}) or raw_alert.get("commonAnnotations", {}) or {}
