@@ -34,6 +34,10 @@ class TestEksAvailableOrBackend:
         sources = {"eks": {"_backend": None}}
         assert eks_available_or_backend(sources) is False
 
+    def test_eks_backend_overrides_failed_verification(self) -> None:
+        sources = {"eks": {"connection_verified": False, "_backend": object()}}
+        assert eks_available_or_backend(sources) is True
+
 
 class TestDatadogAvailableOrBackend:
     def test_datadog_missing(self) -> None:
@@ -59,6 +63,10 @@ class TestDatadogAvailableOrBackend:
     def test_datadog_backend_none(self) -> None:
         sources = {"datadog": {"_backend": None}}
         assert datadog_available_or_backend(sources) is False
+
+    def test_datadog_backend_overrides_failed_verification(self) -> None:
+        sources = {"datadog": {"connection_verified": False, "_backend": object()}}
+        assert datadog_available_or_backend(sources) is True
 
 
 class TestCloudwatchIsAvailable:
