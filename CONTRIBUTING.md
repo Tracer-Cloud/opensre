@@ -13,9 +13,9 @@ Welcome to OpenSRE
 
 Use the path that matches the kind of contribution you want to make:
 
-1. **Bugs & small fixes** -> Open a PR. If you need to file an issue first, use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md).
-2. **New features or behavioral changes** -> Start with a [feature request](https://github.com/Tracer-Cloud/opensre/issues/new/choose) or ask in Discord before coding. Most feature ideas are better shipped as third-party plugins via the plugin SDK.
-3. **Improvements tied to concrete work** -> Use the [improvement template](.github/ISSUE_TEMPLATE/improvement.md) when proposing a focused refactor, optimization, or quality improvement.
+1. **Bugs & small fixes** -> Open a PR. If you need to file an issue first, use the [bug report template](https://github.com/Tracer-Cloud/opensre/issues/new?template=bug_report.yml).
+2. **New features or behavioral changes** -> Start with a [feature request](https://github.com/Tracer-Cloud/opensre/issues/new?template=feature_request.yml) or ask in Discord before coding. Most feature ideas are better shipped as third-party plugins via the plugin SDK.
+3. **Improvements tied to concrete work** -> Use the [improvement template](https://github.com/Tracer-Cloud/opensre/issues/new?template=improvement.yml) when proposing a focused refactor, optimization, or quality improvement.
 4. **Refactor-only PRs** -> Do not open one unless a maintainer explicitly asked for it as part of a real fix.
 5. **Test/CI-only PRs for known `main` failures** -> Do not open one unless the change is required to validate a real fix the maintainers asked for.
 6. **Questions** -> Use the docs, email hello@tracer.cloud, or ask in Discord [#contribute](http://discord.gg/opensre). GitHub Issues are for actionable work.
@@ -191,7 +191,7 @@ make build
 
 ## Reporting Bugs
 
-Use the **[bug report template](.github/ISSUE_TEMPLATE/bug_report.md)** when creating an issue. It guides you to include:
+Use the **[bug report template](https://github.com/Tracer-Cloud/opensre/issues/new?template=bug_report.yml)** when creating an issue. It guides you to include:
 
 - **Summary:** One-line description of the bug (specific, not vague)
 - **Expected behavior:** What should happen
@@ -225,7 +225,7 @@ Error: exit code 0
 
 ## Requesting Features
 
-Use the **[feature request template](.github/ISSUE_TEMPLATE/feature_request.md)** to propose new functionality. It guides you to clarify:
+Use the **[feature request template](https://github.com/Tracer-Cloud/opensre/issues/new?template=feature_request.yml)** to propose new functionality. It guides you to clarify:
 
 - **Problem statement:** Why do we need this? (focus on the problem, not solution)
 - **Proposed solution:** How should it work? (specific and concrete with examples)
@@ -236,7 +236,7 @@ Use the **[feature request template](.github/ISSUE_TEMPLATE/feature_request.md)*
 
 ## Suggesting Improvements
 
-Use the **[improvement template](.github/ISSUE_TEMPLATE/improvement.md)** to propose refactors, optimizations, or quality improvements. It requires:
+Use the **[improvement template](https://github.com/Tracer-Cloud/opensre/issues/new?template=improvement.yml)** to propose refactors, optimizations, or quality improvements. It requires:
 
 - **Current state:** How does it work now? (with code references)
 - **Desired state:** How should it work instead?
