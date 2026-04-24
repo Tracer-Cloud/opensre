@@ -123,11 +123,36 @@ def test_safe_investigation_path_rejects_x_md() -> None:
     assert exc_info.value.status_code == 400
 
 
-def test_safe_investigation_path_rejects_x_newline() -> None:
-    """Test that x\\n returns 400 Invalid investigation ID."""
+@pytest.mark.parametrize(
+    ("invalid_id", "description"),
+    [
+        ("x\n", "trailing newline"),
+        ("\nvalid-id", "newline prefix"),
+        ("valid\nid", "embedded newline"),
+        ("x\n\n", "multiple newlines"),
+        ("x\r\n", "CRLF line ending"),
+        ("x\r", "carriage return"),
+        ("\n", "only newline"),
+        ("\r\n", "only CRLF"),
+        ("x\x00", "null byte"),
+        ("x\u2028", "unicode line separator"),
+        ("x\u2029", "unicode paragraph separator"),
+    ],
+)
+def test_safe_investigation_path_rejects_newline_variants(
+    invalid_id: str, description: str
+) -> None:
+    """Test that IDs with newline/injection characters return 400 Invalid investigation ID.
+
+    Covers path traversal and injection attack vectors including:
+    - Newline characters (LF, CRLF, CR)
+    - Null bytes
+    - Unicode line/paragraph separators
+    """
     with pytest.raises(HTTPException) as exc_info:
-        _safe_investigation_path("x\n")
+        _safe_investigation_path(invalid_id)
     assert exc_info.value.status_code == 400
+    assert "Invalid investigation ID" in exc_info.value.detail
 
 
 def test_safe_investigation_path_rejects_empty() -> None:
