@@ -11,9 +11,9 @@ PYTHON = .venv/Scripts/python
 PIP = .venv/Scripts/python -m pip
 else ifneq ($(PYTHON_UNIX),)
 PYTHON = .venv/bin/python3
-PIP = .venv/bin/python -m pip
+PIP = .venv/bin/python3 -m pip
 else
-PYTHON := $(shell python3 -c 'import sys; print(sys.executable)' 2>/dev/null || echo python3)
+PYTHON := $(shell python -c 'import sys; print(sys.executable)' 2>/dev/null || python3 -c 'import sys; print(sys.executable)' 2>/dev/null || echo python3)
 PIP := $(PYTHON) -m pip
 endif
 # PIP_INSTALL_FLAGS = --user --break-system-packages
