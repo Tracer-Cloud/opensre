@@ -389,8 +389,8 @@ format:
 typecheck:
 	$(PYTHON) -m mypy app/
 
-# Run all checks
-check: lint typecheck test-full
+# Run all checks (lint + format read-only check + types + full tests; mirrors CI quality gates)
+check: lint format-check typecheck test-full
 
 # ─── Deployment Tests (LangSmith) ────────────────────────────────────────────
 deploy-langsmith:

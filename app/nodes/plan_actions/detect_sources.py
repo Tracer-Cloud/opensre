@@ -658,7 +658,9 @@ def detect_sources(
     # the role_arn credential gate the same way the Grafana path does.
     _eks_int = (resolved_integrations or {}).get("aws")
     _has_injected_eks_backend = bool(_eks_int and "_backend" in _eks_int)
-    if _eks_int and (_eks_int.get("role_arn") or _has_injected_eks_backend):
+    if _eks_int and (
+        _eks_int.get("role_arn") or _has_injected_eks_backend or _eks_int.get("credentials")
+    ):
         eks_cluster = annotations.get("eks_cluster") or annotations.get("cluster_name")
         # When a backend is injected but the alert omits cluster_name from its
         # annotations, fall back to the first cluster_names entry on the

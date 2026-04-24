@@ -68,3 +68,18 @@ def test_get_chat_llm_anthropic_uses_chat_anthropic(monkeypatch: pytest.MonkeyPa
         out = chat_mod._get_chat_llm(with_tools=False)
         mock_anthropic.assert_called_once()
         assert out is mock_llm
+
+
+def test_general_node_returns_user_facing_message_for_codex_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "codex")
+    chat_mod._chat_llm_cache.clear()
+    state = {"messages": [{"role": "user", "content": "hello"}]}
+
+    out = chat_mod.general_node(state, {"configurable": {}})
+
+    assert out["messages"]
+    assert (
+        "Interactive chat requires LLM_PROVIDER=anthropic or openai." in out["messages"][0].content
+    )

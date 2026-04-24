@@ -72,6 +72,9 @@ class PtyAction:
     expect: str
     send: bytes
     timeout: float = 10.0
+    #: If > 0, send this many ``j`` keypresses one at a time (prompt_toolkit may
+    #: coalesce a single burst), then send ``send`` (usually ``\\r``).
+    stagger_j: int = 0
 
 
 @dataclass
@@ -279,6 +282,10 @@ def _run_cli_pty(
     try:
         for action in actions:
             _wait_for_output(process, master_fd, buffer, action.expect, timeout=action.timeout)
+            if action.stagger_j:
+                for _ in range(action.stagger_j):
+                    os.write(master_fd, b"j")
+                    time.sleep(0.05)
             os.write(master_fd, action.send)
 
         deadline = time.monotonic() + timeout
@@ -482,7 +489,11 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
             PtyAction(expect="How do you want to get started?", send=b"\r"),
             PtyAction(expect="Choose your LLM provider", send=b"\r"),
             PtyAction(expect="Anthropic API key", send=b"smoke-test-key\r"),
-            PtyAction(expect="Choose an integration to configure", send=b"jjjjjjjjjjjjjjjjjjj\r"),
+            PtyAction(
+                expect="Choose an integration to configure",
+                send=b"\r",
+                stagger_j=19,
+            ),
         ],
         timeout=30.0,
     )
@@ -497,6 +508,51 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
     assert "LLM_PROVIDER=anthropic" in cli_sandbox.read_project_env()
     assert "ANTHROPIC_API_KEY=" not in cli_sandbox.read_project_env()
     assert "ANTHROPIC_REASONING_MODEL=" in cli_sandbox.read_project_env()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
+@pytest.mark.skipif(shutil.which("codex") is None, reason="OpenAI Codex CLI not on PATH")
+def test_onboard_interactive_smoke_codex(cli_sandbox: CliSandbox) -> None:
+    """End-to-end PTY: quickstart → Codex CLI path → repick when unauthenticated.
+
+    Selects ``OpenAI Codex CLI`` (five ``j`` presses). With a fresh HOME the CLI
+    is not logged in, so the wizard repicks the default provider (Anthropic) and
+    uses a placeholder API key. Requires ``codex`` on PATH; skips when absent.
+    """
+    result = _run_cli_pty(
+        cli_sandbox,
+        "onboard",
+        actions=[
+            PtyAction(expect="How do you want to get started?", send=b"\r"),
+            PtyAction(expect="Choose your LLM provider", send=b"\r", stagger_j=5),
+            # Fresh HOME in CliSandbox has no Codex auth: repick to Anthropic to finish onboarding.
+            PtyAction(
+                expect="OpenAI Codex CLI requires login. What next?",
+                send=b"\r",
+                stagger_j=1,
+            ),
+            PtyAction(expect="Choose your LLM provider", send=b"\r"),
+            PtyAction(expect="Anthropic API key", send=b"smoke-test-key\r"),
+            PtyAction(
+                expect="Choose an integration to configure",
+                send=b"\r",
+                stagger_j=19,
+            ),
+        ],
+        timeout=60.0,
+    )
+
+    assert result.exit_code == 0
+    assert "Done." in result.stdout
+    assert "summary" in result.stdout
+
+    store = cli_sandbox.read_wizard_store()
+    assert store["targets"]["local"]["provider"] == "anthropic"
+    assert "api_key" not in store["targets"]["local"]
+    env_body = cli_sandbox.read_project_env()
+    assert "LLM_PROVIDER=anthropic\n" in env_body
+    assert "ANTHROPIC_API_KEY=" not in env_body
+    assert "ANTHROPIC_REASONING_MODEL=" in env_body
 
 
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
