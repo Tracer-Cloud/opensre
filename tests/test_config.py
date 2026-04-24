@@ -88,6 +88,36 @@ def test_llm_settings_from_env_uses_enigmagent_override(monkeypatch) -> None:
     }
 
 
+def test_llm_settings_from_env_enigmagent_ignored_errors_fallback(monkeypatch) -> None:
+    class MissingVaultSecretError(Exception):
+        code = "not_found"
+
+    class FakeVaultClient:
+        def __init__(self, host: str, port: int, timeout: float, origin: str) -> None:
+            pass
+
+        def resolve(self, placeholder: str, origin: str | None = None) -> str:
+            assert placeholder == "OPENAI_API_KEY"
+            assert origin == "http://localhost"
+            raise MissingVaultSecretError("secret is not available in EnigmAgent")
+
+    monkeypatch.setitem(
+        sys.modules, "enigmagent", types.SimpleNamespace(VaultClient=FakeVaultClient)
+    )
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("ENIGM_AGENT_URL", "http://127.0.0.1:3737")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "app.config.resolve_llm_api_key",
+        lambda env_var: "stored-secret" if env_var == "OPENAI_API_KEY" else "",
+    )
+
+    settings = LLMSettings.from_env()
+
+    assert settings.provider == "openai"
+    assert settings.openai_api_key == "stored-secret"
+
+
 def test_llm_settings_from_env_rejects_non_local_plain_http_enigmagent_url(monkeypatch) -> None:
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("ENIGM_AGENT_URL", "http://vault.example.internal:3737")

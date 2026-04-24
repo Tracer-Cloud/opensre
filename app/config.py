@@ -143,6 +143,8 @@ def _resolve_enigmagent_api_key_overrides(provider: str, enigm_agent_url: str) -
         return {}
 
     parsed = urlparse(enigm_agent_url)
+    # EnigmAgent's current local agent flow is intentionally limited to plain HTTP on loopback.
+    # If the SDK adds TLS support later, this validator can be relaxed to allow HTTPS hosts.
     if parsed.scheme != "http" or not parsed.hostname:
         raise ValueError("ENIGM_AGENT_URL must be a valid http://host[:port] URL.")
     if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
