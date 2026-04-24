@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 import requests
 
 from app.deployment.health import poll_deployment_health
@@ -46,7 +47,7 @@ def test_poll_deployment_health_times_out_for_unreachable_endpoint() -> None:
 
     sleep_calls: list[float] = []
 
-    try:
+    with pytest.raises(TimeoutError) as exc_info:
         poll_deployment_health(
             "http://example.test",
             interval_seconds=0.5,
@@ -55,11 +56,9 @@ def test_poll_deployment_health_times_out_for_unreachable_endpoint() -> None:
             http_get=_http_get,
             sleep=lambda seconds: sleep_calls.append(seconds),
         )
-    except TimeoutError as exc:
-        assert "timed out" in str(exc)
-        assert "example.test" in str(exc)
-    else:
-        raise AssertionError("Expected TimeoutError")
+
+    assert "timed out" in str(exc_info.value)
+    assert "example.test" in str(exc_info.value)
 
     assert sleep_calls == [0.5, 0.5]
 
