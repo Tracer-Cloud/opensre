@@ -4,7 +4,7 @@ Fixes #
 
 #### Describe the changes you have made in this PR -
 
-### Demo/Screenshot evidence for feature changes (required for feature PRs) -
+### Demo/Screenshot for feature changes and bug fixes - 
 <!-- Include at least one proof of the change: UI screenshot, terminal screenshot/log snippet, short video/GIF, or equivalent demo output. -->
 <!-- Do not add code diff here -->
 
