@@ -48,6 +48,13 @@ def node_plan_actions(state: InvestigationState, config: Optional[RunnableConfig
     input_data = InvestigateInput.from_state(state)
     loop_count = state.get("investigation_loop_count", 0)
 
+    # Mask sensitive identifiers in planning input before LLM sees it
+    from app.masking import MaskingContext
+    masking_ctx = MaskingContext.from_state(dict(state))
+    input_data = input_data.model_copy(
+    update={k: masking_ctx.mask_value(v) for k, v in input_data.model_dump().items()}
+    )
+
     tracker = get_tracker()
     tracker.start("plan_actions", "Planning evidence gathering")
 

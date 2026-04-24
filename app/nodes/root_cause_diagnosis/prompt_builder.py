@@ -48,8 +48,10 @@ def build_diagnosis_prompt(
     Returns:
         Formatted prompt string for LLM
     """
-    problem = state.get("problem_md", "")
-    hypotheses = state.get("hypotheses", [])
+    from app.masking import MaskingContext
+    _masking_ctx = MaskingContext.from_state(dict(state))
+    problem = _masking_ctx.mask(state.get("problem_md", "") or "")
+    hypotheses = [_masking_ctx.mask(h) for h in state.get("hypotheses", [])]
 
     # Build directive sections
     upstream_directive = _build_upstream_directive(evidence)
@@ -361,7 +363,7 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     alert_annotations: dict[str, Any] = {}
     raw_alert_text: str = ""
     if isinstance(raw_alert, str):
-        raw_alert_text = raw_alert
+        raw_alert_text = _masking_ctx.mask(raw_alert)
     elif isinstance(raw_alert, dict):
         cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
         vercel_url = raw_alert.get("vercel_log_url") or raw_alert.get("vercel_url")
