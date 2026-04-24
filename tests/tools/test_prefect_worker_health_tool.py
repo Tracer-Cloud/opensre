@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.tools.PrefectWorkerHealthTool import PrefectWorkerHealthTool
-from tests.tools.conftest import BaseToolContract, mock_agent_state
+from tests.tools.conftest import BaseToolContract
 
 
 class TestPrefectWorkerHealthToolContract(BaseToolContract):
@@ -72,6 +72,12 @@ def test_run_returns_unavailable_without_api_url(tool: PrefectWorkerHealthTool) 
 
 def test_run_returns_unavailable_for_whitespace_only_api_url(tool: PrefectWorkerHealthTool) -> None:
     result = tool.run(api_url="   ")
+    assert result["available"] is False
+
+
+def test_run_returns_unavailable_when_client_none(tool: PrefectWorkerHealthTool) -> None:
+    with patch("app.tools.PrefectWorkerHealthTool.make_prefect_client", return_value=None):
+        result = tool.run(api_url="http://localhost:4200/api")
     assert result["available"] is False
 
 
