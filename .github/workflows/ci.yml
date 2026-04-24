@@ -31,8 +31,6 @@ jobs:
   ci-fast:
     name: ci-fast (ubuntu)
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     env:
       PYTHONUTF8: "1"
 
@@ -53,13 +51,13 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
 
-      - name: Lint with ruff
+      - name: Lint
         run: python -m ruff check app/ tests/
 
-      - name: Format check with ruff
+      - name: Format check
         run: python -m ruff format --check app/ tests/
 
-      - name: Type check with mypy
+      - name: Type check
         run: python -m mypy app/
 
       - name: Run tests
@@ -78,22 +76,31 @@ jobs:
           GCLOUD_HOSTED_LOGS_ID: ${{ secrets.GCLOUD_HOSTED_LOGS_ID }}
           GCLOUD_HOSTED_LOGS_URL: ${{ secrets.GCLOUD_HOSTED_LOGS_URL }}
           GCLOUD_RW_API_KEY: ${{ secrets.GCLOUD_RW_API_KEY }}
-          GCLOUD_OTLP_ENDPOINT: ""
+          GCLOUD_OTLP_ENDPOINT: ${{ secrets.GCLOUD_OTLP_ENDPOINT }}
           GCLOUD_OTLP_AUTH_HEADER: ${{ secrets.GCLOUD_OTLP_AUTH_HEADER }}
           OTEL_EXPORTER_OTLP_ENDPOINT: ""
         run: >-
-          python -m pytest -n auto -v --cov=app --cov-report=term-missing
+          python -m pytest -n auto -v
+          --cov=app --cov-report=term-missing --cov-report=html
           --ignore=tests/e2e/kubernetes_local_alert_simulation
           --ignore=tests/synthetic
           -m "not synthetic"
         timeout-minutes: 15
 
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            htmlcov/
+            .coverage
+          retention-days: 7
+
   ci-windows:
-    name: ci-windows (test only)
+    name: ci-windows (unit smoke)
     if: github.event_name == 'push'
     runs-on: windows-latest
-    permissions:
-      contents: read
     continue-on-error: true
     env:
       PYTHONUTF8: "1"
@@ -103,9 +110,6 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: "pyproject.toml"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -115,15 +119,13 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
 
-      - name: Run tests on Windows
-        run: python -m pytest -v -m "not synthetic"
+      - name: Run unit tests only (no secrets)
+        run: python -m pytest -v -m "not synthetic and not integration"
         timeout-minutes: 10
 
   test-kubernetes:
     runs-on: ubuntu-latest
     needs: [ci-fast]
-    permissions:
-      contents: read
     continue-on-error: true
     if: >-
       github.event_name == 'push' ||
@@ -135,9 +137,6 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: "pyproject.toml"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -147,7 +146,7 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
 
-      - name: Run Kubernetes tests (kind cluster + real S3)
+      - name: Run Kubernetes tests
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -159,8 +158,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ci-fast]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
 
     strategy:
       fail-fast: false
@@ -178,9 +175,6 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: "pyproject.toml"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -212,8 +206,8 @@ jobs:
           GCLOUD_HOSTED_LOGS_ID: ${{ secrets.GCLOUD_HOSTED_LOGS_ID }}
           GCLOUD_HOSTED_LOGS_URL: ${{ secrets.GCLOUD_HOSTED_LOGS_URL }}
           GCLOUD_RW_API_KEY: ${{ secrets.GCLOUD_RW_API_KEY }}
+          GCLOUD_OTLP_ENDPOINT: ${{ secrets.GCLOUD_OTLP_ENDPOINT }}
           GCLOUD_OTLP_AUTH_HEADER: ${{ secrets.GCLOUD_OTLP_AUTH_HEADER }}
-          GCLOUD_OTLP_ENDPOINT: ""
           OTEL_EXPORTER_OTLP_ENDPOINT: ""
           PYTHONUTF8: "1"
         run: ${{ matrix.command }}
