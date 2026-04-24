@@ -539,6 +539,7 @@ class SplunkIntegrationConfig(StrictConfigModel):
     token: str = ""
     index: str = "main"
     verify_ssl: bool = True
+    ca_bundle: str = ""
     integration_id: str = ""
 
     @field_validator("base_url", mode="before")
@@ -556,6 +557,11 @@ class SplunkIntegrationConfig(StrictConfigModel):
     def _normalize_index(cls, value: object) -> str:
         normalized = str(value or "main").strip()
         return normalized or "main"
+
+    @field_validator("ca_bundle", mode="before")
+    @classmethod
+    def _normalize_ca_bundle(cls, value: object) -> str:
+        return str(value or "").strip()
 
 
 class IntegrationInstance(StrictConfigModel):

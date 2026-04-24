@@ -723,6 +723,7 @@ def _classify_service_instance(
                     "token": credentials.get("token", ""),
                     "index": credentials.get("index", "main"),
                     "verify_ssl": credentials.get("verify_ssl", True),
+                    "ca_bundle": credentials.get("ca_bundle", ""),
                     "integration_id": record_id,
                 }
             )
@@ -1479,6 +1480,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 "token": splunk_token,
                 "index": os.getenv("SPLUNK_INDEX", "main").strip(),
                 "verify_ssl": os.getenv("SPLUNK_VERIFY_SSL", "true").strip().lower() != "false",
+                "ca_bundle": os.getenv("SPLUNK_CA_BUNDLE", "").strip(),
             }
         )
         integrations.append(

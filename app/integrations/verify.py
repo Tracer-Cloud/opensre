@@ -811,12 +811,19 @@ def _verify_splunk(source: str, config: dict[str, Any]) -> dict[str, str]:
     token = config.get("token", "")
     index = config.get("index", "main")
     verify_ssl = config.get("verify_ssl", True)
+    ca_bundle = config.get("ca_bundle", "")
 
     if not base_url or not token:
         return _result("splunk", source, "missing", "Missing base_url or token.")
 
     client = SplunkClient(
-        SplunkConfig(base_url=base_url, token=token, index=index, verify_ssl=verify_ssl)
+        SplunkConfig(
+            base_url=base_url,
+            token=token,
+            index=index,
+            verify_ssl=verify_ssl,
+            ca_bundle=ca_bundle,
+        )
     )
     result = client.validate_access()
     if not result.get("success"):

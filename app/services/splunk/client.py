@@ -54,11 +54,25 @@ class SplunkConfig:
         token: str,
         index: str = "main",
         verify_ssl: bool = True,
+        ca_bundle: str = "",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.index = index
         self.verify_ssl = verify_ssl
+        self.ca_bundle = ca_bundle.strip()
+
+    @property
+    def ssl_verify(self) -> bool | str:
+        """Return the value to pass as httpx's ``verify`` parameter.
+
+        When a CA bundle path is provided it takes precedence over the
+        boolean ``verify_ssl`` flag — httpx accepts either a bool or a
+        path string for the ``verify`` argument.
+        """
+        if self.ca_bundle:
+            return self.ca_bundle
+        return self.verify_ssl
 
     @property
     def is_configured(self) -> bool:
@@ -109,7 +123,7 @@ class SplunkClient:
                 headers=self._headers(),
                 data=params,
                 timeout=_DEFAULT_TIMEOUT_SECONDS,
-                verify=self.config.verify_ssl,
+                verify=self.config.ssl_verify,
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -168,7 +182,7 @@ class SplunkClient:
                 headers={"Authorization": f"Bearer {self.config.token}"},
                 params={"output_mode": "json"},
                 timeout=10.0,
-                verify=self.config.verify_ssl,
+                verify=self.config.ssl_verify,
             )
             response.raise_for_status()
             data = response.json()

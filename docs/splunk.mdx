@@ -29,7 +29,8 @@ Add to your `.env`:
 SPLUNK_URL=https://splunk.corp.com:8089    # REST API base URL (port 8089 default)
 SPLUNK_TOKEN=your-bearer-token             # API bearer token (NOT an HEC token)
 SPLUNK_INDEX=main                          # Default index to search (optional)
-SPLUNK_VERIFY_SSL=true                     # Set false for self-signed certs (optional)
+SPLUNK_VERIFY_SSL=true                     # Set false to skip SSL verification (optional)
+SPLUNK_CA_BUNDLE=/etc/ssl/certs/corp-ca.pem  # Path to custom CA bundle (optional)
 ```
 
 | Variable | Default | Description |
@@ -37,7 +38,8 @@ SPLUNK_VERIFY_SSL=true                     # Set false for self-signed certs (op
 | `SPLUNK_URL` | — | **Required.** REST API base URL including port |
 | `SPLUNK_TOKEN` | — | **Required.** Bearer token with search capability |
 | `SPLUNK_INDEX` | `main` | Default index searched when no index is specified in the alert |
-| `SPLUNK_VERIFY_SSL` | `true` | Set to `false` when using self-signed TLS certificates |
+| `SPLUNK_VERIFY_SSL` | `true` | Set to `false` to disable SSL verification (dev/local only) |
+| `SPLUNK_CA_BUNDLE` | — | Path to a PEM CA bundle for enterprise self-signed certificates |
 
 ### Option 3: Persistent store
 
@@ -53,7 +55,8 @@ SPLUNK_VERIFY_SSL=true                     # Set false for self-signed certs (op
         "base_url": "https://splunk.corp.com:8089",
         "token": "your-bearer-token",
         "index": "main",
-        "verify_ssl": true
+        "verify_ssl": true,
+        "ca_bundle": "/etc/ssl/certs/corp-ca.pem"
       }
     }
   ]
@@ -152,7 +155,7 @@ This runs a synthetic investigation using a pre-built alert fixture — no live 
 
 | Symptom | Fix |
 | --- | --- |
-| `SSL: CERTIFICATE_VERIFY_FAILED` | Set `SPLUNK_VERIFY_SSL=false` (self-signed cert) |
+| `SSL: CERTIFICATE_VERIFY_FAILED` | Set `SPLUNK_CA_BUNDLE=/path/to/corp-ca.pem` (preferred) or `SPLUNK_VERIFY_SSL=false` (dev only) |
 | `HTTP 401 Unauthorized` | Token expired or was generated with the wrong account — regenerate |
 | `HTTP 403 Forbidden` | Token lacks `search` capability — check the role assigned to the token |
 | Empty search results | Data may not have been ingested yet, or the index name is wrong |
@@ -164,5 +167,6 @@ This runs a synthetic investigation using a pre-built alert fixture — no live 
 - Use a **read-only bearer token** — never use an admin token in production.
 - Store `SPLUNK_TOKEN` in `.env` or the credential store, not in source code or CI logs.
 - Prefer a dedicated `opensre` service account with only the `search` capability.
-- Set `SPLUNK_VERIFY_SSL=false` only in local or dev environments with self-signed certificates.
+- For enterprise self-signed certificates, set `SPLUNK_CA_BUNDLE` to the CA bundle path rather than disabling verification entirely.
+- Set `SPLUNK_VERIFY_SSL=false` only in local or dev environments when you cannot supply a CA bundle.
 - Rotate tokens on a schedule and revoke them when no longer needed.

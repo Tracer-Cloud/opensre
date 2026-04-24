@@ -1396,9 +1396,20 @@ def _configure_splunk() -> tuple[str, str]:
             "Verify SSL certificate?",
             default=bool(credentials.get("verify_ssl", True)),
         )
+        ca_bundle = ""
+        if verify_ssl:
+            ca_bundle = _prompt_value(
+                "Path to CA bundle for SSL verification (leave empty to use system defaults)",
+                default=_string_value(credentials.get("ca_bundle")),
+                allow_empty=True,
+            )
         with _console.status("Validating Splunk integration...", spinner="dots"):
             result = validate_splunk_integration(
-                base_url=base_url, token=token, index=index, verify_ssl=verify_ssl
+                base_url=base_url,
+                token=token,
+                index=index,
+                verify_ssl=verify_ssl,
+                ca_bundle=ca_bundle,
             )
         _render_integration_result("Splunk", result)
         if result.ok:
@@ -1410,17 +1421,19 @@ def _configure_splunk() -> tuple[str, str]:
                         "token": token,
                         "index": index,
                         "verify_ssl": verify_ssl,
+                        "ca_bundle": ca_bundle,
                     }
                 },
             )
-            env_path = sync_env_values(
-                {
-                    "SPLUNK_URL": base_url,
-                    "SPLUNK_INDEX": index,
-                    "SPLUNK_VERIFY_SSL": "true" if verify_ssl else "false",
-                    # Do NOT write SPLUNK_TOKEN to .env — it goes to the credential store only
-                }
-            )
+            env_values: dict[str, str] = {
+                "SPLUNK_URL": base_url,
+                "SPLUNK_INDEX": index,
+                "SPLUNK_VERIFY_SSL": "true" if verify_ssl else "false",
+                # Do NOT write SPLUNK_TOKEN to .env — it goes to the credential store only
+            }
+            if ca_bundle:
+                env_values["SPLUNK_CA_BUNDLE"] = ca_bundle
+            env_path = sync_env_values(env_values)
             return "Splunk", str(env_path)
         _console.print("[dim]Try again or press Ctrl+C to cancel.[/]")
 
