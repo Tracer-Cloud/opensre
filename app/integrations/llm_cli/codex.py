@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from app.integrations.llm_cli.base import CLIInvocation, CLIProbe, PromptDelivery
 
@@ -71,25 +71,59 @@ def _codex_workspace_and_skip_git() -> tuple[str, bool]:
     return os.getcwd(), True
 
 
-def _candidate_binary_names() -> tuple[str, ...]:
-    if sys.platform == "win32":
+def _active_platform(platform: str | None = None) -> str:
+    return platform if platform is not None else sys.platform
+
+
+def _platform_home(platform: str | None = None) -> PurePosixPath | PureWindowsPath:
+    platform = _active_platform(platform)
+    if platform == "win32":
+        return PureWindowsPath(os.path.expanduser("~"))
+
+    username = Path.home().name
+    if platform == "darwin":
+        return PurePosixPath("/Users") / username
+    return PurePosixPath("/home") / username
+
+
+def get_codex_fallback_directories(platform: str | None = None) -> list[str]:
+    return _fallback_codex_paths(platform=platform)
+
+
+def normalize_codex_candidate_path(candidate: str, platform: str | None = None) -> str:
+    platform = _active_platform(platform)
+    candidate = os.path.expanduser(candidate)
+    if platform == "win32":
+        return str(PureWindowsPath(candidate))
+    return str(PurePosixPath(candidate))
+
+
+def _candidate_binary_names(platform: str | None = None) -> tuple[str, ...]:
+    if _active_platform(platform) == "win32":
         return ("codex.cmd", "codex.exe", "codex.ps1", "codex.bat")
     return ("codex",)
 
 
 def _append_candidate_paths(
-    candidates: list[str], directory: Path | str, names: tuple[str, ...]
+    candidates: list[str], directory: Path | PurePosixPath | PureWindowsPath | str, names: tuple[str, ...], platform: str | None = None
 ) -> None:
     base = str(directory).strip()
     if not base:
         return
-    root = Path(base).expanduser()
+    platform = _active_platform(platform)
+    base = os.path.expanduser(base)
+    root: PurePosixPath | PureWindowsPath
+    if platform == "win32":
+        root = PureWindowsPath(base)
+    else:
+        root = PurePosixPath(base)
     for name in names:
         candidates.append(str(root / name))
 
 
 @lru_cache(maxsize=1)
-def _npm_prefix_bin_dirs() -> tuple[str, ...]:
+def _npm_prefix_bin_dirs(platform: str | None = None) -> tuple[str, ...]:
+    platform = _active_platform(platform)
     env_prefix = os.getenv("NPM_CONFIG_PREFIX", "").strip()
     if not env_prefix:
         # npm often exports lowercase `npm_config_prefix`; accept any casing.
@@ -99,9 +133,10 @@ def _npm_prefix_bin_dirs() -> tuple[str, ...]:
                 if env_prefix:
                     break
     if env_prefix:
-        if sys.platform == "win32":
-            return (str(Path(env_prefix).expanduser()),)
-        return (str(Path(env_prefix).expanduser() / "bin"),)
+        env_prefix = os.path.expanduser(env_prefix)
+        if platform == "win32":
+            return (str(PureWindowsPath(env_prefix)),)
+        return (str(PurePosixPath(env_prefix) / "bin"),)
 
     try:
         proc = subprocess.run(
@@ -118,42 +153,45 @@ def _npm_prefix_bin_dirs() -> tuple[str, ...]:
     if proc.returncode != 0 or not prefix:
         return ()
 
-    if sys.platform == "win32":
-        return (str(Path(prefix).expanduser()),)
-    return (str(Path(prefix).expanduser() / "bin"),)
+    prefix = os.path.expanduser(prefix)
+    if platform == "win32":
+        return (str(PureWindowsPath(prefix)),)
+    return (str(PurePosixPath(prefix) / "bin"),)
 
 
-def _fallback_codex_paths() -> list[str]:
-    home = Path.home()
-    names = _candidate_binary_names()
+def _fallback_codex_paths(platform: str | None = None) -> list[str]:
+    platform = _active_platform(platform)
+    home = _platform_home(platform)
+    names = _candidate_binary_names(platform)
     candidates: list[str] = []
 
-    if sys.platform == "win32":
-        _append_candidate_paths(candidates, Path(os.getenv("APPDATA", "")) / "npm", names)
+    if platform == "win32":
+        _append_candidate_paths(candidates, Path(os.getenv("APPDATA", "")) / "npm", names, platform)
         _append_candidate_paths(
             candidates,
             Path(os.getenv("LOCALAPPDATA", "")) / "Programs" / "codex",
             names,
+            platform,
         )
     else:
-        if sys.platform == "darwin":
-            _append_candidate_paths(candidates, "/opt/homebrew/bin", names)
-        _append_candidate_paths(candidates, "/usr/local/bin", names)
-        _append_candidate_paths(candidates, home / ".local/bin", names)
-        _append_candidate_paths(candidates, home / ".npm-global/bin", names)
-        _append_candidate_paths(candidates, home / ".volta/bin", names)
-        _append_candidate_paths(candidates, os.getenv("PNPM_HOME", ""), names)
+        if platform == "darwin":
+            _append_candidate_paths(candidates, "/opt/homebrew/bin", names, platform)
+        _append_candidate_paths(candidates, "/usr/local/bin", names, platform)
+        _append_candidate_paths(candidates, home / ".local/bin", names, platform)
+        _append_candidate_paths(candidates, home / ".npm-global/bin", names, platform)
+        _append_candidate_paths(candidates, home / ".volta/bin", names, platform)
+        _append_candidate_paths(candidates, os.getenv("PNPM_HOME", ""), names, platform)
         xdg_data_home = os.getenv("XDG_DATA_HOME", "").strip()
         if xdg_data_home:
-            _append_candidate_paths(candidates, Path(xdg_data_home) / "pnpm", names)
+            _append_candidate_paths(candidates, f"{xdg_data_home}/pnpm", names, platform)
 
-    for npm_dir in _npm_prefix_bin_dirs():
-        _append_candidate_paths(candidates, npm_dir, names)
+    for npm_dir in _npm_prefix_bin_dirs(platform=platform):
+        _append_candidate_paths(candidates, npm_dir, names, platform)
 
     deduped: list[str] = []
     seen: set[str] = set()
     for candidate in candidates:
-        normalized = str(Path(candidate).expanduser())
+        normalized = normalize_codex_candidate_path(candidate, platform=platform)
         if normalized in seen:
             continue
         seen.add(normalized)

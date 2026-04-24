@@ -83,3 +83,13 @@ def test_general_node_returns_user_facing_message_for_codex_provider(
     assert (
         "Interactive chat requires LLM_PROVIDER=anthropic or openai." in out["messages"][0].content
     )
+
+
+def test_get_chat_llm_raises_unsupported_chat_provider_for_codex(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "codex")
+    _clear_chat_llm_singletons()
+
+    with pytest.raises(chat_mod.UnsupportedChatProviderError):
+        chat_mod._get_chat_llm(with_tools=False)

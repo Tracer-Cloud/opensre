@@ -136,6 +136,9 @@ LLM_PROVIDER_API_KEY_ENV_MAP: dict[str, str] = {
     "minimax": "MINIMAX_API_KEY",
 }
 
+LLM_PROVIDERS_WITHOUT_API_KEY = ("ollama", "bedrock", "codex")
+SUPPORTED_LLM_PROVIDERS = (*LLM_PROVIDER_API_KEY_ENV_MAP, *LLM_PROVIDERS_WITHOUT_API_KEY)
+
 DEFAULT_LLM_PROVIDER = "anthropic"
 
 
@@ -162,9 +165,7 @@ def resolve_llm_provider() -> str:
     """
     provider = _provider_from_env()
     if provider:
-        if provider in ("ollama", "bedrock"):
-            return provider
-        if provider in LLM_PROVIDER_API_KEY_ENV_MAP:
+        if provider in SUPPORTED_LLM_PROVIDERS:
             return provider
 
         logger.warning(
@@ -209,31 +210,20 @@ class LLMSettings(StrictConfigModel):
     @classmethod
     def _normalize_provider(cls, value: object) -> str:
         provider = str(value or "anthropic").strip().lower() or "anthropic"
-        valid_providers = (
-            "anthropic",
-            "openai",
-            "openrouter",
-            "gemini",
-            "nvidia",
-            "ollama",
-            "bedrock",
-            "minimax",
-            "codex",
-        )
-        if provider in valid_providers:
+        if provider in SUPPORTED_LLM_PROVIDERS:
             return provider
-        suggestion = get_close_matches(provider, valid_providers, n=1)
+        suggestion = get_close_matches(provider, SUPPORTED_LLM_PROVIDERS, n=1)
         if suggestion:
             raise ValueError(
                 f"Unsupported LLM provider '{provider}'. Did you mean '{suggestion[0]}'?"
             )
         raise ValueError(
-            f"Unsupported LLM provider '{provider}'. Expected one of: {', '.join(valid_providers)}."
+            f"Unsupported LLM provider '{provider}'. Expected one of: {', '.join(SUPPORTED_LLM_PROVIDERS)}."
         )
 
     @model_validator(mode="after")
     def _require_api_key_for_selected_provider(self) -> "LLMSettings":
-        if self.provider in ("ollama", "bedrock", "codex"):
+        if self.provider in LLM_PROVIDERS_WITHOUT_API_KEY:
             return self  # ollama: local; bedrock: IAM; codex: `codex login` (CLI)
         provider_to_key = {
             "anthropic": self.anthropic_api_key,

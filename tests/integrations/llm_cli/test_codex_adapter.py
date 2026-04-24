@@ -10,6 +10,7 @@ from app.integrations.llm_cli.codex import (
     CodexAdapter,
     _fallback_codex_paths,
     _npm_prefix_bin_dirs,
+    get_codex_fallback_directories,
 )
 from app.integrations.llm_cli.text import flatten_messages_to_prompt
 
@@ -283,6 +284,12 @@ def test_detect_uses_first_runnable_fallback_path(
     mock_which.assert_called()
 
 
+def test_get_codex_fallback_directories_public_helper_delegates_to_internal_helper() -> None:
+    assert get_codex_fallback_directories(platform="darwin") == _fallback_codex_paths(platform="darwin")
+    assert get_codex_fallback_directories(platform="linux") == _fallback_codex_paths(platform="linux")
+    assert get_codex_fallback_directories(platform="win32") == _fallback_codex_paths(platform="win32")
+
+
 def test_fallback_paths_include_env_and_npm_prefix() -> None:
     _npm_prefix_bin_dirs.cache_clear()
     with (
@@ -302,6 +309,9 @@ def test_fallback_paths_include_env_and_npm_prefix() -> None:
     assert "/pnpm/home/codex" in paths
     assert "/xdg/data/pnpm/codex" in paths
     assert "/custom/npm/bin/codex" in paths
+    assert f"/home/{Path.home().name}/.local/bin/codex" in paths
+    assert f"/home/{Path.home().name}/.npm-global/bin/codex" in paths
+    assert f"/home/{Path.home().name}/.volta/bin/codex" in paths
 
 
 def test_fallback_paths_include_macos_defaults() -> None:
@@ -314,9 +324,9 @@ def test_fallback_paths_include_macos_defaults() -> None:
 
     assert "/opt/homebrew/bin/codex" in paths
     assert "/usr/local/bin/codex" in paths
-    assert str(Path.home() / ".local/bin/codex") in paths
-    assert str(Path.home() / ".npm-global/bin/codex") in paths
-    assert str(Path.home() / ".volta/bin/codex") in paths
+    assert f"/Users/{Path.home().name}/.local/bin/codex" in paths
+    assert f"/Users/{Path.home().name}/.npm-global/bin/codex" in paths
+    assert f"/Users/{Path.home().name}/.volta/bin/codex" in paths
 
 
 def test_fallback_paths_include_windows_defaults() -> None:

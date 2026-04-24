@@ -15,8 +15,8 @@ from langchain_core.tools import StructuredTool
 from app.config import (
     ANTHROPIC_LLM_CONFIG,
     DEFAULT_MAX_TOKENS,
-    LLM_PROVIDER_API_KEY_ENV_MAP,
     OPENAI_LLM_CONFIG,
+    SUPPORTED_LLM_PROVIDERS,
 )
 from app.constants.prompts import GENERAL_SYSTEM_PROMPT, ROUTER_PROMPT, SYSTEM_PROMPT
 from app.services import get_llm_for_tools
@@ -152,11 +152,7 @@ def _build_chat_model(*, provider: str, model_name: str) -> BaseChatModel:
 def _get_chat_llm(*, with_tools: bool = False) -> BaseChatModel | ToolEnabledChatModel:
     """Get the provider-aware chat model used by chat nodes."""
     explicit_provider = os.getenv("LLM_PROVIDER", "").strip().lower()
-    if explicit_provider and explicit_provider not in (
-        "ollama",
-        "bedrock",
-        *LLM_PROVIDER_API_KEY_ENV_MAP,
-    ):
+    if explicit_provider and explicit_provider not in SUPPORTED_LLM_PROVIDERS:
         raise ValueError(f"Unsupported chat model provider: {explicit_provider}")
 
     provider = CfgHelpers.resolve_llm_provider()
