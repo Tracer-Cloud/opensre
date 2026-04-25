@@ -197,7 +197,7 @@ class TestRealWorldPayloads:
         # Stripped from https://prometheus.io/docs/alerting/latest/configuration/#webhook_config
         payload = {
             "version": "4",
-            "groupKey": "{}:{alertname=\"HighCPUUsage\"}",
+            "groupKey": '{}:{alertname="HighCPUUsage"}',
             "status": "firing",
             "receiver": "team-X",
             "alerts": [
@@ -362,9 +362,7 @@ class TestEdgeCases:
         assert result.until == future_now
 
     def test_lookback_clamped_to_max(self) -> None:
-        result = resolve_incident_window(
-            {}, lookback_minutes=10 * MAX_LOOKBACK_MINUTES, now=NOW
-        )
+        result = resolve_incident_window({}, lookback_minutes=10 * MAX_LOOKBACK_MINUTES, now=NOW)
         assert result.until - result.since == timedelta(minutes=MAX_LOOKBACK_MINUTES)
 
     def test_lookback_zero_falls_back_to_default(self) -> None:

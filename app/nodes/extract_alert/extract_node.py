@@ -135,10 +135,16 @@ def node_extract_alert(state: InvestigationState, config: Optional[RunnableConfi
         result["alert_source"] = details.alert_source
     if not state.get("investigation_started_at"):
         result["investigation_started_at"] = time.monotonic()
-    # Resolve a single incident window from the alert's own timestamps. Tools
-    # that opt into the shared window will read this; tools that have not yet
-    # been migrated keep their existing per-tool defaults. Resolution is
-    # best-effort and never raises — falls back to a default window centred
-    # on "now" when no anchor is found in the payload.
-    result["incident_window"] = resolve_incident_window(enriched_alert).to_dict()
+    # Resolve a single incident window from the alert's own timestamps.
+    # IMPORTANT: pass the ORIGINAL ``raw_alert`` (string or dict), NOT the
+    # enriched one. ``_enrich_raw_alert`` discards the content of any
+    # non-dict raw_alert (it returns a fresh dict containing only the
+    # LLM-extracted fields), so a string-form webhook payload would lose
+    # all timestamps before the resolver ever sees it. The resolver's
+    # ``_coerce_alert_dict`` knows how to parse JSON-string payloads.
+    # Tools that opt into the shared window will read this; tools not yet
+    # migrated keep their existing per-tool defaults. Resolution is
+    # best-effort and never raises — falls back to a default window
+    # centred on "now" when no anchor is found.
+    result["incident_window"] = resolve_incident_window(raw_alert).to_dict()
     return result

@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -115,9 +116,7 @@ class IncidentWindow:
                 "A zero-length or inverted window is never valid."
             )
         if not (0.0 <= float(self.confidence) <= 1.0):
-            raise ValueError(
-                f"confidence must be in [0.0, 1.0], got {self.confidence}"
-            )
+            raise ValueError(f"confidence must be in [0.0, 1.0], got {self.confidence}")
         if not isinstance(self.source, str) or not self.source.strip():
             raise ValueError("source must be a non-empty string")
         # Apply the UTC normalisation, frozen-dataclass style.
@@ -267,14 +266,10 @@ def _alertmanager_anchor(payload: dict[str, Any]) -> tuple[datetime, str] | None
     return None
 
 
-def _grafana_anchor(payload: dict[str, Any]) -> tuple[datetime, str] | None:
-    """Grafana managed alerts use the same Alertmanager schema.
-
-    Kept as a separate function so the dispatch order in
-    ``_ANCHOR_PARSERS`` can prioritise grafana-shaped payloads over
-    raw Alertmanager if needed in the future. Today both share logic.
-    """
-    return _alertmanager_anchor(payload)
+# Grafana managed alerts use the Alertmanager webhook schema verbatim, so
+# they are handled by ``_alertmanager_anchor`` above. No separate Grafana
+# parser exists today; if Grafana ever adds a distinct timestamp field, add
+# a dedicated parser here and register it in ``_ANCHOR_PARSERS``.
 
 
 def _datadog_anchor(payload: dict[str, Any]) -> tuple[datetime, str] | None:
@@ -342,9 +337,7 @@ stack overflow.
 """
 
 
-def _cloudwatch_anchor(
-    payload: dict[str, Any], _depth: int = 0
-) -> tuple[datetime, str] | None:
+def _cloudwatch_anchor(payload: dict[str, Any], _depth: int = 0) -> tuple[datetime, str] | None:
     """CloudWatch alarm payloads carry ``StateUpdatedTimestamp``.
 
     The payload arrives wrapped in SNS, so the actual alarm dict often
@@ -380,12 +373,14 @@ def _cloudwatch_anchor(
 
 # Order matters: the first parser to find an anchor wins. The order
 # reflects which format expresses incident-start most accurately.
-_ANCHOR_PARSERS: tuple = (
-    _alertmanager_anchor,  # ``startsAt`` is the underlying condition time
-    _grafana_anchor,       # same schema as Alertmanager
-    _pagerduty_anchor,     # ``triggered_at`` is reliable for incident time
-    _datadog_anchor,       # ``event_time`` is fired-at, less ideal
-    _cloudwatch_anchor,    # ``StateUpdatedTimestamp`` is state-flip time
+# Grafana managed alerts share Alertmanager's schema and are handled by
+# ``_alertmanager_anchor`` — no separate parser is needed.
+_AnchorParser = Callable[[dict[str, Any]], tuple[datetime, str] | None]
+_ANCHOR_PARSERS: tuple[_AnchorParser, ...] = (
+    _alertmanager_anchor,  # ``startsAt`` is the underlying condition time (also covers Grafana)
+    _pagerduty_anchor,  # ``triggered_at`` is reliable for incident time
+    _datadog_anchor,  # ``event_time`` is fired-at, less ideal
+    _cloudwatch_anchor,  # ``StateUpdatedTimestamp`` is state-flip time
 )
 
 
@@ -400,9 +395,7 @@ def _extract_anchor(payload: dict[str, Any]) -> tuple[datetime, str] | None:
         try:
             result = parser(payload)
         except Exception:  # noqa: BLE001 - defensive isolation
-            logger.debug(
-                "incident_window: anchor parser %s raised", parser.__name__, exc_info=True
-            )
+            logger.debug("incident_window: anchor parser %s raised", parser.__name__, exc_info=True)
             continue
         if result is not None:
             return result
@@ -462,7 +455,9 @@ def resolve_incident_window(
     if override is not None:
         logger.debug(
             "incident_window: override provided source=%s since=%s until=%s",
-            override.source, _iso_utc(override.since), _iso_utc(override.until),
+            override.source,
+            _iso_utc(override.since),
+            _iso_utc(override.until),
         )
         return override
 
@@ -485,11 +480,17 @@ def resolve_incident_window(
         since = until - timedelta(minutes=lookback)
         # since < until is guaranteed because lookback is clamped to >= 1.
         window = IncidentWindow(
-            since=since, until=until, source=label, confidence=1.0,
+            since=since,
+            until=until,
+            source=label,
+            confidence=1.0,
         )
         logger.info(
             "incident_window: anchored source=%s since=%s until=%s lookback_min=%d",
-            window.source, _iso_utc(window.since), _iso_utc(window.until), lookback,
+            window.source,
+            _iso_utc(window.since),
+            _iso_utc(window.until),
+            lookback,
         )
         return window
 
@@ -497,11 +498,16 @@ def resolve_incident_window(
     until = current
     since = until - timedelta(minutes=lookback)
     window = IncidentWindow(
-        since=since, until=until, source=SOURCE_DEFAULT, confidence=0.0,
+        since=since,
+        until=until,
+        source=SOURCE_DEFAULT,
+        confidence=0.0,
     )
     logger.debug(
         "incident_window: no anchor found, using default since=%s until=%s lookback_min=%d",
-        _iso_utc(window.since), _iso_utc(window.until), lookback,
+        _iso_utc(window.since),
+        _iso_utc(window.until),
+        lookback,
     )
     return window
 
