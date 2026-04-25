@@ -160,7 +160,7 @@ jobs:
           -m "not synthetic"
 
       - name: Run full tests
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+        if: (github.repository == 'Tracer-Cloud/opensre') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
         run: >-
           python -m pytest -n auto -v
           --cov=app
