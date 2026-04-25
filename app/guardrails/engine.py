@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 from app.guardrails.audit import AuditLogger
 from app.guardrails.rules import (
@@ -25,6 +26,22 @@ class ScanMatch:
     matched_text: str
     start: int
     end: int
+
+
+class _MergedSpan(NamedTuple):
+    """One contiguous interval produced by ``GuardrailEngine._redact`` after
+    overlapping ``ScanMatch`` ranges have been collapsed.
+
+    ``rule_name`` is the *representative* rule for the span — the contributing
+    match with the largest original ``width`` wins, which preserves the
+    "longest-keyword-wins" behaviour for same-start overlaps while extending
+    it to contained and partially-overlapping spans.
+    """
+
+    start: int
+    end: int
+    rule_name: str
+    width: int
 
 
 @dataclass(frozen=True)
@@ -152,23 +169,23 @@ class GuardrailEngine:
             [m for m in matches if m.action == GuardrailAction.REDACT],
             key=lambda m: (m.start, -m.end),
         )
-        merged: list[tuple[int, int, str, int]] = []
+        merged: list[_MergedSpan] = []
         for match in redact_matches:
             width = match.end - match.start
-            if merged and match.start < merged[-1][1]:
-                prev_start, prev_end, prev_rule, prev_width = merged[-1]
-                new_end = max(prev_end, match.end)
-                if width > prev_width:
-                    merged[-1] = (prev_start, new_end, match.rule_name, width)
+            if merged and match.start < merged[-1].end:
+                prev = merged[-1]
+                new_end = max(prev.end, match.end)
+                if width > prev.width:
+                    merged[-1] = _MergedSpan(prev.start, new_end, match.rule_name, width)
                 else:
-                    merged[-1] = (prev_start, new_end, prev_rule, prev_width)
+                    merged[-1] = _MergedSpan(prev.start, new_end, prev.rule_name, prev.width)
             else:
-                merged.append((match.start, match.end, match.rule_name, width))
+                merged.append(_MergedSpan(match.start, match.end, match.rule_name, width))
 
         redacted = text
-        for start, end, rule_name, _ in reversed(merged):
-            replacement = self._get_replacement(rule_name)
-            redacted = redacted[:start] + replacement + redacted[end:]
+        for span in reversed(merged):
+            replacement = self._get_replacement(span.rule_name)
+            redacted = redacted[: span.start] + replacement + redacted[span.end :]
         return redacted
 
     def should_block(self, text: str) -> bool:
