@@ -7,6 +7,15 @@ def test_is_json_output_no_context() -> None:
     assert is_json_output() is False
 
 
+def test_context_with_no_obj() -> None:
+    cmd = click.Command("test")
+    with click.Context(cmd):
+        assert is_json_output() is False
+        assert is_verbose() is False
+        assert is_debug() is False
+        assert is_yes() is False
+
+
 def test_is_json_output_with_context() -> None:
     cmd = click.Command("test")
     with click.Context(cmd, obj={"json": True}):
@@ -67,5 +76,6 @@ def test_nested_context_reads_from_root() -> None:
         # and read `obj` from the root context.
         assert is_json_output() is True
         assert is_verbose() is True
-        # The root context does not have `debug` set to True
+        # The root context does not have `debug` or `yes` set to True
         assert is_debug() is False
+        assert is_yes() is False
