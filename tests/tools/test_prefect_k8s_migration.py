@@ -1,6 +1,6 @@
 import pytest
 import os
-from app.services.prefect.client import PrefectClient
+from app.integrations.clients.prefect.client import PrefectClient
 
 def test_prefect_client_env_compatibility():
     """
