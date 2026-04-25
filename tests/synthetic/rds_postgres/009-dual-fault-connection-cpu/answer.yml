@@ -7,10 +7,9 @@ required_keywords:
   - CPU
   - root
 forbidden_keywords:
-  - independent faults
+  - two independent problems
   - separate root causes
   - two root causes
-  - contributing cause
 required_evidence_sources:
   - aws_performance_insights
 optimal_trajectory:
