@@ -48,18 +48,13 @@ def should_call_tools(state: AgentState) -> str:
     return "done"
 
 
-def distribute_hypotheses(state: AgentState) -> list[Send]:
+def distribute_hypotheses(state: AgentState) -> list[Send] | list[str]:
     """Distribute planned actions to parallel hypothesis execution nodes."""
     actions = state.get("planned_actions", [])
     available_sources = state.get("available_sources", {})
     if not actions:
         # No actions planned, skip to merge
-        return [
-            Send(
-                "investigate_hypothesis",
-                {"action_to_run": "", "available_sources": available_sources},
-            )
-        ]
+        return ["merge_hypothesis_results"]
 
     return [
         Send(

@@ -31,6 +31,11 @@ def node_investigate_hypothesis(state: InvestigationState) -> dict:
     # Check if action is available
     if action_name not in actions_by_name:
         logger.warning("Planned action '%s' not found in action registry", action_name)
+        tracker.complete(
+            f"investigate_{action_name}",
+            fields_updated=[],
+            message=f"Skipped {action_name}: not in registry",
+        )
         return {"hypothesis_results": []}
 
     available_actions = {action_name: actions_by_name[action_name]}

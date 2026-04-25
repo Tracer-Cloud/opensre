@@ -19,8 +19,10 @@ from app.strict_config import StrictConfigModel
 from app.types.retrieval import RetrievalControlsMap
 
 
-def merge_results_reducer(existing: list | None, new: list | None) -> list:
-    if new == ["CLEAR"]:
+def merge_results_reducer(
+    existing: list[dict[str, Any]] | None, new: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
+    if new and len(new) == 1 and new[0].get("__clear"):
         return []
     if not existing:
         return new or []

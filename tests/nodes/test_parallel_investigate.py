@@ -34,14 +34,22 @@ def test_distribute_hypotheses_empty():
     routes = distribute_hypotheses(state)
 
     assert len(routes) == 1
-    assert routes[0].node == "investigate_hypothesis"
-    assert routes[0].arg["action_to_run"] == ""
+    assert routes[0] == "merge_hypothesis_results"
 
 
 def test_node_investigate_hypothesis_empty():
     """Test parallel node with empty action."""
     state = make_initial_state("test", "test", "low")
     state["action_to_run"] = ""
+
+    result = node_investigate_hypothesis(state)
+    assert result == {"hypothesis_results": []}
+
+
+def test_node_investigate_hypothesis_unknown_action():
+    """Test parallel node handles missing registry actions safely."""
+    state = make_initial_state("test", "test", "low")
+    state["action_to_run"] = "non_existent_action_123"
 
     result = node_investigate_hypothesis(state)
     assert result == {"hypothesis_results": []}

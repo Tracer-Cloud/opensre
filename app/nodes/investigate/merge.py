@@ -10,7 +10,7 @@ from app.nodes.investigate.execution.execute_actions import ActionExecutionResul
 from app.nodes.investigate.models import InvestigateInput, InvestigateOutput
 from app.nodes.investigate.processing import summarize_execution_results
 from app.nodes.investigate.types import PlanAudit
-from app.output import get_tracker
+from app.output import debug_print, get_tracker
 from app.state import InvestigationState
 
 logger = logging.getLogger(__name__)
@@ -36,8 +36,6 @@ def _load_opensre_telemetry_into_evidence(
         logger.exception("OpenSRE telemetry load failed during evidence gathering")
         return prior, None
     ev = seed.get("evidence") or prior
-    from app.output import debug_print
-
     if ev.get("opensre_telemetry_seed"):
         debug_print(f"OpenSRE telemetry loaded from {ev.get('opensre_telemetry_dir', '')}")
     return ev, seed.get("resolved_integrations")
@@ -119,7 +117,7 @@ def merge_hypothesis_results(state: InvestigationState) -> dict:
     result: dict[str, object] = {
         **output.to_dict(),
         "available_sources": available_sources,
-        "hypothesis_results": ["CLEAR"],
+        "hypothesis_results": [{"__clear": True}],
     }
 
     if resolved_from_opensre is not None:
