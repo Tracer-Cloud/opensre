@@ -44,7 +44,11 @@ def test_cli_client_invoke_success(mock_adapter):
 
     # Mock probe
     mock_adapter.detect.return_value = CLIProbe(
-        installed=True, version="1.0.0", logged_in=True, bin_path="/usr/bin/test-cli", detail="Ready"
+        installed=True,
+        version="1.0.0",
+        logged_in=True,
+        bin_path="/usr/bin/test-cli",
+        detail="Ready",
     )
 
     # Mock build
