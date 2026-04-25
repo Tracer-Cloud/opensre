@@ -40,6 +40,13 @@
         "pages": [
           "integrations-overview",
           {
+            "group": "LLM Providers",
+            "defaultOpen": true,
+            "pages": [
+              "codex-cli"
+            ]
+          },
+          {
             "group": "Enterprise",
             "defaultOpen": true,
             "pages": [

@@ -1,0 +1,126 @@
+---
+title: "OpenAI Codex CLI"
+---
+
+The Codex CLI integration lets you run OpenSRE investigations using the [OpenAI Codex CLI](https://github.com/openai/codex) as the LLM backend — no API key required. OpenSRE shells out to `codex exec` in a read-only sandbox and uses your existing Codex login session.
+
+---
+
+### Prerequisites
+
+Install the Codex CLI via npm:
+
+```bash
+npm i -g @openai/codex
+```
+
+Verify the installation:
+
+```bash
+codex --version
+```
+
+Then authenticate with your OpenAI account:
+
+```bash
+codex login
+```
+
+Confirm you are logged in:
+
+```bash
+codex login status
+```
+
+---
+
+### Step 1: Run the Onboarding Wizard
+
+```bash
+opensre onboard
+```
+
+When prompted to select an LLM provider, choose **OpenAI Codex CLI** (listed under _Local CLI providers_).
+
+OpenSRE will probe the binary and verify your login session automatically — no API key entry is needed.
+
+---
+
+### Step 2: Select a Model (Optional)
+
+The wizard will ask which model to use. The available options include:
+
+| Option | Model flag passed to Codex |
+| --- | --- |
+| CLI default | _(none — uses your Codex configured default)_ |
+| `gpt-5.4` | Strong default for everyday investigations |
+| `gpt-5.2-codex` | Frontier agentic coding model |
+| `gpt-5.1-codex-max` | Deep / fast reasoning |
+| `gpt-5.4-mini` | Fast, cost-efficient |
+
+You can also set or override the model at any time via the `CODEX_MODEL` environment variable:
+
+```bash
+export CODEX_MODEL=gpt-5.2-codex
+```
+
+Leave `CODEX_MODEL` unset or empty to use the model configured in Codex itself.
+
+---
+
+### Step 3: Run an Investigation
+
+```bash
+opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
+```
+
+OpenSRE will invoke `codex exec --ephemeral -s read-only` under the hood, passing your prompt via stdin. No API key environment variables are needed.
+
+---
+
+### Configuration Reference
+
+| Environment Variable | Purpose |
+| --- | --- |
+| `CODEX_BIN` | Override the path to the Codex binary. Useful when `codex` is not on your `PATH`. |
+| `CODEX_MODEL` | Model passed via `-m` to `codex exec`. Leave empty to use the Codex default. |
+
+**Binary resolution order** (when `CODEX_BIN` is not set):
+
+1. `codex` / `codex.cmd` / `codex.ps1` on your `PATH`
+2. Common install locations: `/opt/homebrew/bin`, `~/.npm-global/bin`, `~/.volta/bin`, `~/.local/bin`, `$PNPM_HOME`
+3. npm global prefix (`npm config get prefix`)
+
+---
+
+### Troubleshooting
+
+**"Codex CLI not found"**
+
+The binary is not on your `PATH` and was not found in the standard install locations. Either add it to your `PATH` or point OpenSRE to it directly:
+
+```bash
+export CODEX_BIN=/path/to/codex
+```
+
+**"Not logged in. Run: codex login"**
+
+Your Codex session has expired or was never created. Re-authenticate:
+
+```bash
+codex login
+```
+
+**"Session expired. Re-authenticate: codex login"**
+
+Same as above — run `codex login` to refresh your session.
+
+**"Auth status unclear"**
+
+OpenSRE could not determine your login state (network error or unexpected output). Check your internet connection and run `codex login status` manually to diagnose.
+
+---
+
+### Developer Extension Guide
+
+To add support for a new CLI-backed LLM provider (similar to Codex), see [`app/integrations/llm_cli/AGENTS.md`](https://github.com/Tracer-Cloud/opensre/blob/main/app/integrations/llm_cli/AGENTS.md).
