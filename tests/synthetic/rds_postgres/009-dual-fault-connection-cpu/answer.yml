@@ -1,9 +1,16 @@
 root_cause_category: resource_exhaustion
 required_keywords:
   - connection
-  - CPU
+  - connection pool leak
   - idle
-  - query
+  - Client:ClientRead
+  - CPU
+  - root
+forbidden_keywords:
+  - independent faults
+  - separate root causes
+  - two root causes
+  - contributing cause
 required_evidence_sources:
   - aws_performance_insights
 optimal_trajectory:
