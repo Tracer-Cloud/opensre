@@ -84,6 +84,15 @@ class AgentState(TypedDict, total=False):
     executed_hypotheses: list[dict[str, Any]]
     investigation_started_at: float
 
+    # Resolved [since, until) time window for the current incident.
+    # Populated by extract_alert from the alert's own timestamps via
+    # ``app.incident_window.resolve_incident_window``. Time-aware tools will
+    # read from this in a follow-up PR; in this PR the field is wired through
+    # state but not yet consumed. ``None`` means extract_alert has not run yet.
+    # Shape: {"_schema_version": int, "since": iso8601, "until": iso8601,
+    #         "source": str, "confidence": float}.
+    incident_window: dict[str, Any] | None
+
     # Placeholder→original map for reversible infrastructure identifier masking
     masking_map: dict[str, str]
 
@@ -162,6 +171,7 @@ class AgentStateModel(StrictConfigModel):
     hypotheses: list[str] = Field(default_factory=list)
     executed_hypotheses: list[dict[str, Any]] = Field(default_factory=list)
     investigation_started_at: float = 0.0
+    incident_window: dict[str, Any] | None = None
     masking_map: dict[str, str] = Field(default_factory=dict)
     slack_context: dict[str, Any] = Field(default_factory=dict)
     discord_context: dict[str, Any] = Field(default_factory=dict)

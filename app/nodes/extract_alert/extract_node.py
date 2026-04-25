@@ -8,6 +8,7 @@ from typing import Any, Optional
 from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
+from app.incident_window import resolve_incident_window
 from app.nodes.extract_alert.extract import _CANONICAL_ALERT_SOURCES, extract_alert_details
 from app.nodes.extract_alert.models import AlertDetails
 from app.output import debug_print, get_tracker, render_investigation_header
@@ -134,4 +135,10 @@ def node_extract_alert(state: InvestigationState, config: Optional[RunnableConfi
         result["alert_source"] = details.alert_source
     if not state.get("investigation_started_at"):
         result["investigation_started_at"] = time.monotonic()
+    # Resolve a single incident window from the alert's own timestamps. Tools
+    # that opt into the shared window will read this; tools that have not yet
+    # been migrated keep their existing per-tool defaults. Resolution is
+    # best-effort and never raises — falls back to a default window centred
+    # on "now" when no anchor is found in the payload.
+    result["incident_window"] = resolve_incident_window(enriched_alert).to_dict()
     return result
