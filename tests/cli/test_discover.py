@@ -157,7 +157,8 @@ class TestDiscoverRcaFiles:
         items = discover.discover_rca_files()
         assert items[0].display_name == "Empty File"
 
-    def test_empty_rca_dir_returns_nothing(self, mock_rca_dir: Path) -> None:
+    @pytest.mark.usefixtures("mock_rca_dir")
+    def test_empty_rca_dir_returns_nothing(self) -> None:
         assert discover.discover_rca_files() == []
 
 
@@ -185,10 +186,10 @@ class TestDiscoverSyntheticScenarios:
 
         items = discover._discover_rds_synthetic_scenarios()
         assert len(items) == 2
-        
+
         cpu_item = next(i for i in items if i.id == "synthetic:cpu_spike")
         assert cpu_item.display_name == "cpu_spike  [High Load]"
-        
+
         disk_item = next(i for i in items if i.id == "synthetic:disk_full")
         assert disk_item.display_name == "disk_full"
 
@@ -208,14 +209,14 @@ def test_load_test_catalog_sorting_and_aggregation(
 ) -> None:
     # Mock everything to return controlled sets
     monkeypatch.setattr(discover, "REPO_ROOT", tmp_path)
-    
+
     # Create required directory for discover_cli_commands
     (tmp_path / "tests" / "synthetic" / "rds_postgres").mkdir(parents=True)
-    
+
     makefile = tmp_path / "Makefile"
     makefile.write_text("\ntest:\n\techo test", encoding="utf-8")
     monkeypatch.setattr(discover, "MAKEFILE_PATH", makefile)
-    
+
     rca_dir = tmp_path / "rca"
     rca_dir.mkdir()
     (rca_dir / "aaa.md").write_text("# ZZZ First Title", encoding="utf-8")
@@ -223,10 +224,10 @@ def test_load_test_catalog_sorting_and_aggregation(
     monkeypatch.setattr(discover, "RCA_DIR", rca_dir)
 
     # We won't mock discover_cli_commands as it's small, but REPO_ROOT is already mocked
-    
+
     catalog = discover.load_test_catalog()
     display_names = [item.display_name for item in catalog.items]
-    
+
     # Verify sorting (case-insensitive)
     assert display_names == sorted(display_names, key=str.lower)
     assert "AAA Last Title" in display_names
@@ -239,22 +240,22 @@ def test_load_test_catalog_exclude_logic(
     """Verify that only certain types of items are included/excluded as expected."""
     monkeypatch.setattr(discover, "REPO_ROOT", tmp_path)
     (tmp_path / "tests" / "synthetic" / "rds_postgres").mkdir(parents=True)
-    
+
     makefile = tmp_path / "Makefile"
     makefile.write_text("\ntest-cov:\ndemo:\n", encoding="utf-8")
     monkeypatch.setattr(discover, "MAKEFILE_PATH", makefile)
-    
+
     rca_dir = tmp_path / "rca"
     rca_dir.mkdir()
     (rca_dir / "pipeline_error_in_logs.md").write_text("# Error", encoding="utf-8")
     monkeypatch.setattr(discover, "RCA_DIR", rca_dir)
 
     catalog = discover.load_test_catalog()
-    
+
     # Verify our specific "smoke test" items are found (using their IDs)
     assert catalog.find("make:test-cov") is not None
     assert catalog.find("make:demo") is not None
     assert catalog.find("rca:pipeline_error_in_logs") is not None
-    
+
     # Verify synthetic suites (which have 'suite:' prefix) are excluded
     assert catalog.find("suite:rds_postgres") is None
