@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.integrations.clients.prefect import make_prefect_client
+
+
+from app.services.prefect.client import PrefectClient
+
 from app.tools.base import BaseTool
 
 _UNHEALTHY_WORKER_STATUSES = {"OFFLINE", "UNHEALTHY"}
