@@ -8,19 +8,19 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from app.services.eks.eks_client import EKSClient
-from app.tools.EKSListClustersTool import _eks_available, _eks_creds
 from app.tools.tool_decorator import tool
+from app.tools.utils.aws import aws_available, aws_creds
 
 logger = logging.getLogger(__name__)
 
 
 def _describe_cluster_is_available(sources: dict[str, dict]) -> bool:
-    return bool(_eks_available(sources) and sources.get("eks", {}).get("cluster_name"))
+    return bool(aws_available(sources) and sources.get("eks", {}).get("cluster_name"))
 
 
 def _describe_cluster_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     eks = sources["eks"]
-    return {"cluster_name": eks["cluster_name"], **_eks_creds(eks)}
+    return {"cluster_name": eks["cluster_name"], **aws_creds(eks)}
 
 
 @tool(

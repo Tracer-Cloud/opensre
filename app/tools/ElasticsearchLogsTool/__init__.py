@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from app.tools.base import BaseTool
-from app.tools.ElasticsearchLogsTool._client import make_client, unavailable
+from app.tools.ElasticsearchLogsTool._client import make_client
+from app.tools.utils.availability import unavailable
 from app.tools.utils.compaction import compact_logs, summarize_counts
 
 _ERROR_KEYWORDS = (

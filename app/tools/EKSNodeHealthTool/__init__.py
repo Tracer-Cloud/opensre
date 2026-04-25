@@ -6,8 +6,9 @@ import logging
 from typing import Any, cast
 
 from app.services.eks.eks_k8s_client import build_k8s_clients
-from app.tools.EKSListClustersTool import _eks_creds
+from app.services.eks.workloads import format_eks_node
 from app.tools.tool_decorator import tool
+from app.tools.utils.aws import aws_creds
 from app.tools.utils.availability import eks_available_or_backend
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ def _node_health_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     return {
         "cluster_name": eks.get("cluster_name", ""),
         "eks_backend": eks.get("_backend"),
-        **_eks_creds(eks),
+        **aws_creds(eks),
     }
 
 
@@ -70,29 +71,7 @@ def get_eks_node_health(
     try:
         core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
         nodes = core_v1.list_node()
-        node_health = []
-        for node in nodes.items:
-            conditions = {c.type: c.status for c in (node.status.conditions or [])}
-            capacity = node.status.capacity or {}
-            allocatable = node.status.allocatable or {}
-            addresses = {a.type: a.address for a in (node.status.addresses or [])}
-            node_health.append(
-                {
-                    "name": node.metadata.name,
-                    "internal_ip": addresses.get("InternalIP"),
-                    "ready": conditions.get("Ready"),
-                    "memory_pressure": conditions.get("MemoryPressure"),
-                    "disk_pressure": conditions.get("DiskPressure"),
-                    "pid_pressure": conditions.get("PIDPressure"),
-                    "capacity_cpu": capacity.get("cpu"),
-                    "capacity_memory": capacity.get("memory"),
-                    "allocatable_cpu": allocatable.get("cpu"),
-                    "allocatable_memory": allocatable.get("memory"),
-                    "instance_type": node.metadata.labels.get("node.kubernetes.io/instance-type")
-                    if node.metadata.labels
-                    else None,
-                }
-            )
+        node_health = [format_eks_node(node) for node in nodes.items]
         not_ready = sum(1 for n in node_health if n["ready"] != "True")
         return {
             "source": "eks",

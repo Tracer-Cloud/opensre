@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from app.tools.DataDogLogsTool import _dd_creds
-from app.tools.DataDogLogsTool._client import make_client, unavailable
+from app.tools.DataDogLogsTool._client import make_client
+from app.tools.utils.availability import unavailable
 from app.tools.tool_decorator import tool
 
 

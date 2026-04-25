@@ -19,6 +19,3 @@ def make_client(
     )
 
 
-def unavailable(source: str, empty_key: str, error: str, **extra: Any) -> dict[str, Any]:
-    """Standardised unavailable response — mirrors the Datadog helper."""
-    return {"source": source, "available": False, "error": error, empty_key: [], **extra}

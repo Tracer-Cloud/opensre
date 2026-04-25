@@ -34,6 +34,3 @@ def make_async_client(
     return DatadogAsyncClient(_config(api_key, app_key, site))  # type: ignore[arg-type]
 
 
-def unavailable(source: str, empty_key: str, error: str, **extra: Any) -> dict[str, Any]:
-    """Standardised unavailable response."""
-    return {"source": source, "available": False, "error": error, empty_key: [], **extra}

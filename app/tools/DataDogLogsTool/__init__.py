@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from app.tools.DataDogLogsTool._client import make_client, unavailable
+from app.tools.DataDogLogsTool._client import make_client
+from app.tools.utils.availability import unavailable
 from app.tools.tool_decorator import tool
 from app.tools.utils.availability import datadog_available_or_backend
 from app.tools.utils.compaction import compact_logs, summarize_counts

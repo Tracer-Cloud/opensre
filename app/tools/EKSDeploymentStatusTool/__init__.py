@@ -6,14 +6,14 @@ import logging
 from typing import Any
 
 from app.services.eks.eks_k8s_client import build_k8s_clients
-from app.tools.EKSListClustersTool import _eks_available, _eks_creds
 from app.tools.tool_decorator import tool
+from app.tools.utils.aws import aws_available, aws_creds
 
 logger = logging.getLogger(__name__)
 
 
 def _deployment_status_is_available(sources: dict[str, dict]) -> bool:
-    return bool(_eks_available(sources) and sources.get("eks", {}).get("deployment"))
+    return bool(aws_available(sources) and sources.get("eks", {}).get("deployment"))
 
 
 def _deployment_status_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -22,7 +22,7 @@ def _deployment_status_extract_params(sources: dict[str, dict]) -> dict[str, Any
         "cluster_name": eks["cluster_name"],
         "namespace": eks.get("namespace", "default"),
         "deployment_name": eks["deployment"],
-        **_eks_creds(eks),
+        **aws_creds(eks),
     }
 
 

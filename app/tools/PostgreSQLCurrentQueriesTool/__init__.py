@@ -9,6 +9,7 @@ from app.integrations.postgresql import (
     resolve_postgresql_config,
 )
 from app.tools.tool_decorator import tool
+from app.tools.utils.sql import sql_tool_flow
 
 
 @tool(
@@ -31,13 +32,11 @@ def get_postgresql_current_queries(
     port: int = 5432,
 ) -> dict[str, Any]:
     """Fetch currently running queries above the threshold (default 1 second)."""
-    _db_defaulted = database is None
-    if database is None:
-        database = "postgres"
-    config = resolve_postgresql_config(host=host, database=database, port=port)
-    result = get_current_queries(config, threshold_seconds=threshold_seconds)
-    if _db_defaulted:
-        result["default_db_warning"] = (
-            "WARNING: No database was specified; defaulted to 'postgres'. Results may not reflect application data."
-        )
-    return result
+    return sql_tool_flow(
+        database=database,
+        default_db="postgres",
+        resolve_func=resolve_postgresql_config,
+        execute_func=get_current_queries,
+        identifying_params={"host": host, "port": port},
+        execute_params={"threshold_seconds": threshold_seconds},
+    )

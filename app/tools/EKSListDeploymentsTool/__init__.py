@@ -6,8 +6,9 @@ import logging
 from typing import Any, cast
 
 from app.services.eks.eks_k8s_client import build_k8s_clients
-from app.tools.EKSListClustersTool import _eks_creds
+from app.services.eks.workloads import format_eks_deployment
 from app.tools.tool_decorator import tool
+from app.tools.utils.aws import aws_available, aws_creds
 from app.tools.utils.availability import eks_available_or_backend
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ def _list_deployments_extract_params(sources: dict[str, dict]) -> dict[str, Any]
         "cluster_name": eks.get("cluster_name", ""),
         "namespace": eks.get("namespace") or "all",
         "eks_backend": eks.get("_backend"),
-        **_eks_creds(eks),
+        **aws_creds(eks),
     }
 
 
@@ -43,7 +44,7 @@ def _list_deployments_extract_params(sources: dict[str, dict]) -> dict[str, Any]
         },
         "required": ["cluster_name", "namespace", "role_arn"],
     },
-    is_available=eks_available_or_backend,
+    is_available=aws_available,
     extract_params=_list_deployments_extract_params,
 )
 def list_eks_deployments(
@@ -73,23 +74,7 @@ def list_eks_deployments(
             if namespace == "all"
             else apps_v1.list_namespaced_deployment(namespace=namespace)
         )
-        deployments = []
-        for dep in dep_list.items:
-            status = dep.status
-            desired = dep.spec.replicas or 0
-            ready = status.ready_replicas or 0
-            unavailable = status.unavailable_replicas or 0
-            deployments.append(
-                {
-                    "name": dep.metadata.name,
-                    "namespace": dep.metadata.namespace,
-                    "desired": desired,
-                    "ready": ready,
-                    "available": status.available_replicas or 0,
-                    "unavailable": unavailable,
-                    "degraded": unavailable > 0 or ready < desired,
-                }
-            )
+        deployments = [format_eks_deployment(dep) for dep in dep_list.items]
         degraded = [d for d in deployments if d["degraded"]]
         return {
             "source": "eks",

@@ -9,6 +9,7 @@ from app.integrations.azure_sql import (
     resolve_azure_sql_config,
 )
 from app.tools.tool_decorator import tool
+from app.tools.utils.sql import sql_tool_flow
 
 
 @tool(
@@ -31,13 +32,11 @@ def get_azure_sql_current_queries(
     threshold_seconds: int = 1,
 ) -> dict[str, Any]:
     """Fetch currently running queries from an Azure SQL Database instance."""
-    _db_defaulted = database is None
-    if database is None:
-        database = "master"
-    config = resolve_azure_sql_config(server=server, database=database, port=port)
-    result = get_current_queries(config, threshold_seconds=threshold_seconds)
-    if _db_defaulted:
-        result["default_db_warning"] = (
-            "WARNING: No database was specified; defaulted to 'master'. Results may not reflect application data."
-        )
-    return result
+    return sql_tool_flow(
+        database=database,
+        default_db="master",
+        resolve_func=resolve_azure_sql_config,
+        execute_func=get_current_queries,
+        identifying_params={"server": server, "port": port},
+        execute_params={"threshold_seconds": threshold_seconds},
+    )
