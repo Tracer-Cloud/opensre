@@ -1,11 +1,12 @@
 """Unit tests for the CLI-backed LLM runner."""
 
-import pytest
-from unittest.mock import MagicMock, patch
 import subprocess
+from unittest.mock import MagicMock, patch
 
-from app.integrations.llm_cli.runner import CLIBackedLLMClient, _strip_ansi, _build_subprocess_env
-from app.integrations.llm_cli.base import CLIProbe, CLIInvocation
+import pytest
+
+from app.integrations.llm_cli.base import CLIInvocation, CLIProbe
+from app.integrations.llm_cli.runner import CLIBackedLLMClient, _build_subprocess_env, _strip_ansi
 from app.services.llm_client import LLMResponse
 
 
@@ -38,34 +39,34 @@ def mock_adapter():
 def test_cli_client_invoke_success(mock_adapter):
     """Test successful CLI LLM invocation."""
     client = CLIBackedLLMClient(mock_adapter)
-    
+
     # Mock probe
     mock_adapter.detect.return_value = CLIProbe(
-        installed=True, 
-        logged_in=True, 
+        installed=True,
+        logged_in=True,
         bin_path="/usr/bin/test-cli"
     )
-    
+
     # Mock build
     mock_adapter.build.return_value = CLIInvocation(
         argv=["test-cli", "generate"],
         stdin="Prompt",
         timeout_sec=30
     )
-    
+
     # Mock subprocess
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(
-            returncode=0, 
-            stdout="Raw output", 
+            returncode=0,
+            stdout="Raw output",
             stderr=""
         )
-        
+
         # Mock parse
         mock_adapter.parse.return_value = "Cleaned output"
-        
+
         response = client.invoke("Test prompt")
-        
+
         assert isinstance(response, LLMResponse)
         assert response.content == "Cleaned output"
         mock_run.assert_called_once()
@@ -75,7 +76,7 @@ def test_cli_client_not_installed(mock_adapter):
     """Test error when CLI is not installed."""
     client = CLIBackedLLMClient(mock_adapter)
     mock_adapter.detect.return_value = CLIProbe(installed=False, detail="Not found")
-    
+
     with pytest.raises(RuntimeError, match="CLI not found"):
         client.invoke("prompt")
 
@@ -84,7 +85,7 @@ def test_cli_client_not_authenticated(mock_adapter):
     """Test error when CLI is not authenticated."""
     client = CLIBackedLLMClient(mock_adapter)
     mock_adapter.detect.return_value = CLIProbe(installed=True, logged_in=False, detail="Expired")
-    
+
     with pytest.raises(RuntimeError, match="not authenticated"):
         client.invoke("prompt")
 
@@ -94,10 +95,10 @@ def test_cli_client_timeout(mock_adapter):
     client = CLIBackedLLMClient(mock_adapter)
     mock_adapter.detect.return_value = CLIProbe(installed=True, logged_in=True, bin_path="/bin/test")
     mock_adapter.build.return_value = CLIInvocation(argv=["test"], timeout_sec=1)
-    
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="test", timeout=1)):
-        with pytest.raises(RuntimeError, match="timed out"):
-            client.invoke("prompt")
+
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="test", timeout=1)), \
+         pytest.raises(RuntimeError, match="timed out"):
+        client.invoke("prompt")
 
 
 def test_cli_client_failure_exit_code(mock_adapter):
@@ -105,10 +106,10 @@ def test_cli_client_failure_exit_code(mock_adapter):
     client = CLIBackedLLMClient(mock_adapter)
     mock_adapter.detect.return_value = CLIProbe(installed=True, logged_in=True, bin_path="/bin/test")
     mock_adapter.build.return_value = CLIInvocation(argv=["test"])
-    
+
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="Error msg")
         mock_adapter.explain_failure.return_value = "CLI failed: Error msg"
-        
+
         with pytest.raises(RuntimeError, match="CLI failed: Error msg"):
             client.invoke("prompt")
