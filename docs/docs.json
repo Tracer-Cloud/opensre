@@ -32,7 +32,8 @@
         "group": "Getting started",
         "pages": [
           "quickstart",
-          "faq"
+          "faq",
+          "development"
         ]
       },
       {
@@ -241,13 +242,13 @@
   "fonts": {
     "heading": {
       "family": "Britti Sans Trial",
-      "source": "/images/fonts/BrittiSansTrial-Regular-BF6757bfd47ffbf copy.woff2",
+      "source": "/images/fonts/BrittiSansTrial-Regular-BF6757bfd47ffbf.woff2",
       "format": "woff2",
       "weight": 400
     },
     "body": {
       "family": "Britti Sans Trial",
-      "source": "/images/fonts/BrittiSansTrial-Regular-BF6757bfd47ffbf copy.woff2",
+      "source": "/images/fonts/BrittiSansTrial-Regular-BF6757bfd47ffbf.woff2",
       "format": "woff2",
       "weight": 400
     }
