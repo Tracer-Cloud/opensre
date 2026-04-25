@@ -24,6 +24,7 @@ def _events_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 @tool(
     name="query_datadog_events",
+    display_name="Datadog events",
     source="datadog",
     description="Query Datadog events for deployments, alerts, and system changes.",
     use_cases=[

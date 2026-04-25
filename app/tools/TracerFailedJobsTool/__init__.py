@@ -22,6 +22,7 @@ def _tracer_trace_id(sources: dict[str, dict]) -> str:
 
 @tool(
     name="get_failed_jobs",
+    display_name="batch jobs",
     source="batch",
     description="Get AWS Batch jobs that failed during a pipeline run.",
     use_cases=[

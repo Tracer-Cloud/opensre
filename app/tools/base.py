@@ -17,6 +17,7 @@ class ToolMetadata(StrictConfigModel):
 
     name: str
     description: str
+    display_name: str | None = None
     input_schema: dict[str, Any]
     source: EvidenceSource
     use_cases: list[str] = Field(default_factory=list)
@@ -27,9 +28,11 @@ class ToolMetadata(StrictConfigModel):
         description="Declares which structured retrieval controls this tool supports",
     )
 
-    @field_validator("name", "description")
+    @field_validator("name", "description", "display_name")
     @classmethod
-    def _require_non_empty_strings(cls, value: str) -> str:
+    def _require_non_empty_strings(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         normalized = value.strip()
         if not normalized:
             raise ValueError("must be a non-empty string")
@@ -58,6 +61,7 @@ class BaseTool(ABC):
 
     name: ClassVar[str]
     description: ClassVar[str]
+    display_name: ClassVar[str | None] = None
     input_schema: ClassVar[dict[str, Any]]  # JSON Schema — consumed by LLM planner
     source: ClassVar[EvidenceSource]
     use_cases: ClassVar[list[str]] = []
@@ -86,6 +90,7 @@ class BaseTool(ABC):
             {
                 "name": getattr(cls, "name", ""),
                 "description": getattr(cls, "description", ""),
+                "display_name": getattr(cls, "display_name", None),
                 "input_schema": getattr(cls, "input_schema", {}),
                 "source": getattr(cls, "source", ""),
                 "use_cases": list(getattr(cls, "use_cases", [])),

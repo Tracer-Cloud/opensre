@@ -162,3 +162,11 @@ def get_registered_tools(surface: ToolSurface | None = None) -> list[RegisteredT
 
 def get_registered_tool_map(surface: ToolSurface | None = None) -> dict[str, RegisteredTool]:
     return {tool.name: tool for tool in get_registered_tools(surface)}
+
+
+def resolve_tool_display_name(tool_name: str) -> str:
+    """Return a human-friendly label for a tool name."""
+    tool = get_registered_tool_map().get(tool_name)
+    if tool is not None:
+        return tool.display_name or tool.name.replace("_", " ")
+    return tool_name.replace("_", " ")
