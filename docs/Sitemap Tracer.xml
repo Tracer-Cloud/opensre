@@ -1,4 +1,4 @@
-# Query: 
+# Query:
 # ContextLines: 1
 
 <?xml version="1.0" encoding="UTF-8"?>
@@ -204,7 +204,7 @@
     <priority>0.64</priority>
   </url>
   <url>
-    <loc>https://tracer.mintlify.app/integrations/overview</loc>
+    <loc>https://tracer.mintlify.app/integrations/integration-workflow</loc>
     <lastmod>2025-11-13T15:53:06+00:00</lastmod>
     <priority>0.64</priority>
   </url>
