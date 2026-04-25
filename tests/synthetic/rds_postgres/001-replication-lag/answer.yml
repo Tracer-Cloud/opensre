@@ -10,9 +10,6 @@ forbidden_keywords: []
 ruling_out_keywords:
   # "cpu" — agent must mention CPU but explicitly rule it out as the root cause
   - cpu
-required_evidence_sources:
-  - aws_cloudwatch_metrics
-  - aws_performance_insights
 optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs
@@ -35,4 +32,3 @@ model_response: |
   - A write-heavy workload drove sustained bulk updates on the primary.
   - WAL generation increased faster than the replica could replay.
   - Replication lag accumulated on payments-prod-replica-1 and stale reads triggered the alert.
-  - CPU is not elevated enough to be the cause; the IO:WALWrite wait dominates at 65.9% of db load.
