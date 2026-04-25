@@ -19,6 +19,16 @@ from app.strict_config import StrictConfigModel
 from app.types.retrieval import RetrievalControlsMap
 
 
+def merge_results_reducer(existing: list | None, new: list | None) -> list:
+    if new == ["CLEAR"]:
+        return []
+    if not existing:
+        return new or []
+    if not new:
+        return existing
+    return existing + new
+
+
 class AgentState(TypedDict, total=False):
     """Unified state for chat and investigation modes.
 
@@ -82,6 +92,8 @@ class AgentState(TypedDict, total=False):
     investigation_loop_count: int
     hypotheses: list[str]
     executed_hypotheses: list[dict[str, Any]]
+    hypothesis_results: Annotated[list[dict[str, Any]], merge_results_reducer]
+    action_to_run: str
     investigation_started_at: float
 
     # Placeholder→original map for reversible infrastructure identifier masking
@@ -161,6 +173,8 @@ class AgentStateModel(StrictConfigModel):
     investigation_loop_count: int = 0
     hypotheses: list[str] = Field(default_factory=list)
     executed_hypotheses: list[dict[str, Any]] = Field(default_factory=list)
+    hypothesis_results: list[dict[str, Any]] = Field(default_factory=list)
+    action_to_run: str = ""
     investigation_started_at: float = 0.0
     masking_map: dict[str, str] = Field(default_factory=dict)
     slack_context: dict[str, Any] = Field(default_factory=dict)
