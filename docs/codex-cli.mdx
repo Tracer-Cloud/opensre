@@ -88,10 +88,8 @@ OpenSRE will invoke `codex exec --ephemeral -s read-only` under the hood, passin
 | `CODEX_BIN` | Override the path to the Codex binary. Useful when `codex` is not on your `PATH`. |
 | `CODEX_MODEL` | Model passed via `-m` to `codex exec`. Leave empty to use the Codex default. |
 
-**Binary resolution order** (when `CODEX_BIN` is not set):
-
-1. `codex` / `codex.cmd` / `codex.ps1` on your `PATH`
-2. Common install locations: `/opt/homebrew/bin`, `~/.npm-global/bin`, `~/.volta/bin`, `~/.local/bin`, `$PNPM_HOME`
+1. `codex` / `codex.cmd` / `codex.exe` / `codex.ps1` / `codex.bat` on your `PATH`
+2. Common install locations: `/opt/homebrew/bin` _(macOS)_, `/usr/local/bin`, `~/.npm-global/bin`, `~/.volta/bin`, `~/.local/bin`, `$PNPM_HOME`
 3. npm global prefix (`npm config get prefix`)
 
 ---
