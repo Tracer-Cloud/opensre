@@ -38,7 +38,7 @@
       {
         "group": "Integrations",
         "pages": [
-          "intergrations-overview",
+          "integrations-overview",
           {
             "group": "Enterprise",
             "defaultOpen": true,

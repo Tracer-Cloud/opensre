@@ -1,23 +1,28 @@
 -include .env
 export
 
-.PHONY: install onboard benchmark benchmark-update-readme test test-full demo alert-template investigate-alert verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog chaos-mesh-up chaos-mesh-down chaos-engineering-apply chaos-engineering-delete chaos-lab-up chaos-lab-down chaos-experiment-list chaos-experiment-up chaos-experiment-down deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke deploy-langsmith destroy-langsmith test-langsmith deploy-vercel destroy-vercel test-vercel deploy-ec2 destroy-ec2 test-ec2 deploy-ec2-hello destroy-ec2-hello deploy-remote destroy-remote deploy-bedrock destroy-bedrock test-bedrock
+.PHONY: install onboard benchmark benchmark-update-readme test test-full demo alert-template investigate-alert opensre-hub-fetch opensre-hub-export opensre-hub-investigate verify-integrations check-docker check-langgraph check-langsmith-api-key grafana-local-up grafana-local-down grafana-local-seed langgraph-build langgraph-deploy clean lint format deploy deploy-lambda deploy-prefect deploy-flink destroy destroy-lambda destroy-prefect destroy-flink prefect-local-test simulate-k8s-alert test-k8s-local test-k8s test-k8s-datadog chaos-mesh-up chaos-mesh-down chaos-engineering-apply chaos-engineering-delete chaos-lab-up chaos-lab-down chaos-experiment-list chaos-experiment-up chaos-experiment-down deploy-dd-monitors cleanup-dd-monitors deploy-eks destroy-eks test-k8s-eks datadog-demo crashloop-demo regen-trigger-config test-rca test-rca-grafana test-synthetic test-rds-synthetic test-cli-smoke deploy-langsmith destroy-langsmith test-langsmith deploy-vercel destroy-vercel test-vercel deploy-ec2 destroy-ec2 test-ec2 deploy-ec2-hello destroy-ec2-hello deploy-remote destroy-remote deploy-bedrock destroy-bedrock test-bedrock
+
 
 ifneq ($(wildcard .venv/bin/python),)
-PYTHON = .venv/bin/python
-PIP = .venv/bin/python -m pip
+    PYTHON = .venv/bin/python
+    PIP = .venv/bin/python -m pip
 else ifeq ($(OS),Windows_NT)
-ifneq ($(wildcard .venv/Scripts/python.exe),)
-PYTHON = .venv\\Scripts\\python.exe
-PIP = .venv\\Scripts\\python.exe -m pip
-endif
-else ifneq ($(shell python3 -c "import sys" 2>$(if $(filter Windows_NT,$(OS)),NUL,/dev/null)),)
-PYTHON = python3
-PIP = python3 -m pip
+    ifneq ($(wildcard .venv/Scripts/python.exe),)
+        PYTHON = .venv\\Scripts\\python.exe
+        PIP = .venv\\Scripts\\python.exe -m pip
+    else
+        PYTHON = python
+        PIP = python -m pip
+    endif
+else ifneq ($(shell python3 -c "import sys" 2>/dev/null),)
+    PYTHON = python3
+    PIP = python3 -m pip
 else
-PYTHON = python
-PIP = python -m pip
+    PYTHON = python
+    PIP = python -m pip
 endif
+
 # PIP_INSTALL_FLAGS = --user --break-system-packages
 USER_BASE := $(shell $(PYTHON) -m site --user-base)
 USER_BIN := $(if $(filter Windows_NT,$(OS)),$(USER_BASE)/Scripts,$(USER_BASE)/bin)
@@ -55,6 +60,28 @@ alert-template:
 investigate-alert:
 	@[ -n "$(ALERT)" ] || { echo "Usage: make investigate-alert ALERT=/path/to/alert.json"; exit 1; }
 	opensre investigate --input "$(ALERT)"
+
+# Fetch first alert from Hugging Face tracer-cloud/opensre (needs Hub extra + network).
+# OPENSRE_QUERY_PREFIX=Telecom/query_alerts make opensre-hub-fetch
+# OPENSRE_HF_DATASET_ID=tracer-cloud/opensre is optional (same default as the app).
+OPENSRE_HUB_ALERT ?= /tmp/opensre-hub-alert.json
+OPENSRE_QUERY_PREFIX ?= Market/cloudbed-1/query_alerts
+# 0-based: second alert => OPENSRE_HUB_INDEX=1
+OPENSRE_HUB_INDEX ?= 0
+# Extra flags for investigate, e.g. omit --evaluate: OPENSRE_INVESTIGATE_FLAGS=
+OPENSRE_INVESTIGATE_FLAGS ?= --evaluate
+
+opensre-hub-fetch:
+	$(PYTHON) scripts/fetch_opensre_hub_alert.py --prefix "$(OPENSRE_QUERY_PREFIX)" --output "$(OPENSRE_HUB_ALERT)" --index $(OPENSRE_HUB_INDEX)
+
+# Batch: OPENSRE_EXPORT_DIR=./bank_alerts OPENSRE_EXPORT_LIMIT=30 make opensre-hub-export
+opensre-hub-export:
+	@[ -n "$(OPENSRE_EXPORT_DIR)" ] || { echo "Set OPENSRE_EXPORT_DIR (e.g. ./hub_alerts) and OPENSRE_EXPORT_LIMIT"; exit 1; }
+	@[ -n "$(OPENSRE_EXPORT_LIMIT)" ] || { echo "Set OPENSRE_EXPORT_LIMIT (e.g. 25)"; exit 1; }
+	$(PYTHON) scripts/fetch_opensre_hub_alert.py --prefix "$(OPENSRE_QUERY_PREFIX)" --export-dir "$(OPENSRE_EXPORT_DIR)" --limit $(OPENSRE_EXPORT_LIMIT)
+
+opensre-hub-investigate: opensre-hub-fetch
+	opensre investigate -i "$(OPENSRE_HUB_ALERT)" $(OPENSRE_INVESTIGATE_FLAGS)
 
 verify-integrations:
 	opensre integrations verify $(if $(SERVICE),$(SERVICE),) $(if $(SLACK_TEST),--send-slack-test,)
