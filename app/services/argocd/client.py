@@ -1,0 +1,452 @@
+"""Argo CD REST API client.
+
+Wraps the read-only Argo CD API endpoints used by investigation tools and
+integration verification. Credentials come from the local integration store or
+from environment variables resolved by ``app.integrations.catalog``.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from ipaddress import ip_address
+from typing import Any
+from urllib.parse import quote, urlparse
+
+import httpx
+from pydantic import field_validator, model_validator
+
+from app.strict_config import StrictConfigModel
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_TIMEOUT = 10.0
+_MAX_DIFF_CHARS = 10_000
+_SECRET_LINE_RE = re.compile(
+    r"(?i)(password|passwd|secret|token|api[_-]?key|authorization|bearer)\s*[:=]"
+)
+
+_GENERIC_SECRET_VALUE_RE = re.compile(
+    r"(?i)(bearer\s+[A-Za-z0-9._~+/=-]{6,}"
+    r"|authorization\s*[:=]\s*\S+"
+    r"|xox[baprs]-[A-Za-z0-9-]{8,}"
+    r"|gh[pousr]_[A-Za-z0-9_]{20,}"
+    r"|AKIA[0-9A-Z]{16}"
+    r"|-----BEGIN [A-Z ]*PRIVATE KEY-----"
+    r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})"
+)
+
+
+def _is_loopback_host(host: str) -> bool:
+    normalized = host.strip().strip("[]").lower()
+    if normalized == "localhost":
+        return True
+    try:
+        return ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_base_url(value: str) -> str:
+    if not value:
+        return ""
+    parsed = urlparse(value)
+    scheme = parsed.scheme.lower()
+    if scheme == "https" and parsed.netloc:
+        return value
+    if scheme == "http" and parsed.netloc and _is_loopback_host(parsed.hostname or ""):
+        return value
+    raise ValueError("Argo CD base_url must use https:// unless targeting localhost/loopback.")
+
+
+def _normalize_verify_ssl(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return True
+    text = str(value).strip().lower()
+    if text in {"0", "false", "no", "off"}:
+        return False
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    return bool(value)
+
+
+class ArgoCDConfig(StrictConfigModel):
+    """Normalized Argo CD connection settings."""
+
+    base_url: str
+    bearer_token: str = ""
+    username: str = ""
+    password: str = ""
+    project: str = ""
+    app_namespace: str = ""
+    verify_ssl: bool = True
+    integration_id: str = ""
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: object) -> str:
+        normalized = str(value or "").strip().rstrip("/")
+        return _validate_base_url(normalized)
+
+    @field_validator(
+        "bearer_token",
+        "username",
+        "password",
+        "project",
+        "app_namespace",
+        "integration_id",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        text = str(value or "").strip()
+        if text.lower().startswith("bearer "):
+            text = text.split(None, 1)[1].strip()
+        return text
+
+    @field_validator("verify_ssl", mode="before")
+    @classmethod
+    def _normalize_bool(cls, value: object) -> bool:
+        return _normalize_verify_ssl(value)
+
+    @model_validator(mode="after")
+    def _no_dual_auth(self) -> ArgoCDConfig:
+        if self.bearer_token and (self.username or self.password):
+            raise ValueError(
+                "Argo CD config has both bearer_token and username/password set; "
+                "use one auth method only."
+            )
+        return self
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.base_url and (self.bearer_token or (self.username and self.password)))
+
+
+class ArgoCDClient:
+    """Synchronous read-only client for Argo CD's REST API."""
+
+    def __init__(
+        self,
+        config: ArgoCDConfig,
+        *,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        self.config = config
+        self._transport = transport
+        self._client: httpx.Client | None = None
+        self._session_token = ""
+
+    def _get_client(self) -> httpx.Client:
+        if self._client is None:
+            self._client = httpx.Client(
+                base_url=self.config.base_url,
+                timeout=_DEFAULT_TIMEOUT,
+                verify=self.config.verify_ssl,
+                transport=self._transport,
+            )
+        return self._client
+
+    def close(self) -> None:
+        """Close the underlying HTTP connection pool."""
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+
+    def __enter__(self) -> ArgoCDClient:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
+    @property
+    def is_configured(self) -> bool:
+        return self.config.is_configured
+
+    def _redact(self, value: object) -> str:
+        text = str(value)
+        for secret in (
+            self.config.bearer_token,
+            self.config.password,
+            self._session_token,
+        ):
+            if secret:
+                text = text.replace(secret, "[REDACTED]")
+        text = _GENERIC_SECRET_VALUE_RE.sub("[REDACTED]", text)
+        return re.sub(
+            r"(?i)\b(password|passwd|secret|token|api[_-]?key)\b\s+([A-Za-z0-9._~+/=-]{6,})",
+            r"\1 [REDACTED]",
+            text,
+        )
+
+    def _error_result(self, prefix: str, exc: Exception) -> dict[str, Any]:
+        if isinstance(exc, httpx.HTTPStatusError):
+            response_text = self._redact(exc.response.text[:2000])
+            return {
+                "success": False,
+                "error": f"HTTP {exc.response.status_code}: {response_text}",
+            }
+        return {"success": False, "error": self._redact(f"{prefix}: {exc}")}
+
+    def _ensure_session_token(self) -> str:
+        if self.config.bearer_token:
+            return self.config.bearer_token
+        if self._session_token:
+            return self._session_token
+        if not (self.config.username and self.config.password):
+            return ""
+
+        # Investigation tools issue short-lived read-only calls; if Argo CD expires
+        # this session token mid-run, the next request will surface the 401/403
+        # without leaking the token so callers can retry with fresh credentials.
+        response = self._get_client().post(
+            "/api/v1/session",
+            json={"username": self.config.username, "password": self.config.password},
+            headers={"Content-Type": "application/json"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        token = str(payload.get("token", "")).strip() if isinstance(payload, dict) else ""
+        self._session_token = token
+        return token
+
+    def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        token = self._ensure_session_token()
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        headers.update(kwargs.pop("headers", {}) or {})
+        response = self._get_client().request(method, path, headers=headers, **kwargs)
+        response.raise_for_status()
+        return response
+
+    def list_applications(
+        self,
+        *,
+        projects: list[str] | None = None,
+        selector: str = "",
+    ) -> dict[str, Any]:
+        """List Argo CD applications, optionally filtered by projects or selector."""
+        params: dict[str, Any] = {}
+        cleaned_projects = [
+            str(project).strip() for project in (projects or []) if str(project).strip()
+        ]
+        if cleaned_projects:
+            params["projects"] = ",".join(cleaned_projects)
+        cleaned_selector = str(selector or "").strip()
+        if cleaned_selector:
+            params["selector"] = cleaned_selector
+        try:
+            response = self._request("GET", "/api/v1/applications", params=params)
+            payload = response.json()
+            items = payload.get("items", []) if isinstance(payload, dict) else []
+            applications = [
+                _normalize_application(item) for item in items if isinstance(item, dict)
+            ]
+            return {"success": True, "applications": applications, "total": len(applications)}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[argocd] list_applications failed type=%s", type(exc).__name__)
+            return self._error_result("list applications failed", exc)
+
+    def get_application_summary(
+        self,
+        application_name: str,
+        *,
+        project: str = "",
+        app_namespace: str = "",
+    ) -> dict[str, Any]:
+        """Fetch one Argo CD application and return a compact status summary."""
+        name = str(application_name or "").strip()
+        if not name:
+            return {"success": False, "error": "application_name is required"}
+        params = _application_params(
+            project or self.config.project, app_namespace or self.config.app_namespace
+        )
+        try:
+            response = self._request(
+                "GET",
+                f"/api/v1/applications/{quote(name, safe='')}",
+                params=params,
+            )
+            payload = response.json()
+            if not isinstance(payload, dict):
+                return {"success": False, "error": "unexpected application response"}
+            app = _normalize_application(payload)
+            return {
+                "success": True,
+                "application": app,
+                "recent_history": _recent_history(payload),
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[argocd] get_application_summary failed type=%s app=%r",
+                type(exc).__name__,
+                name,
+            )
+            return self._error_result("get application summary failed", exc)
+
+    def get_application_diff(
+        self,
+        application_name: str,
+        *,
+        project: str = "",
+        app_namespace: str = "",
+    ) -> dict[str, Any]:
+        """Fetch Argo CD server-side diff data for one application."""
+        name = str(application_name or "").strip()
+        if not name:
+            return {"success": False, "error": "application_name is required"}
+        params = _application_params(
+            project or self.config.project, app_namespace or self.config.app_namespace
+        )
+        try:
+            response = self._request(
+                "GET",
+                f"/api/v1/applications/{quote(name, safe='')}/server-side-diff",
+                params=params,
+            )
+            payload = response.json()
+            raw_diffs = payload.get("diffs", []) if isinstance(payload, dict) else []
+            diffs = [_normalize_diff(diff) for diff in raw_diffs if isinstance(diff, dict)]
+            return {
+                "success": True,
+                "application_name": name,
+                "drift_detected": bool(diffs),
+                "diffs": diffs,
+                "diff_count": len(diffs),
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[argocd] get_application_diff failed type=%s app=%r",
+                type(exc).__name__,
+                name,
+            )
+            return self._error_result("get application diff failed", exc)
+
+
+def _application_params(project: str = "", app_namespace: str = "") -> dict[str, str]:
+    params: dict[str, str] = {}
+    if project:
+        params["project"] = project
+    if app_namespace:
+        params["appNamespace"] = app_namespace
+    return params
+
+
+def _normalize_application(payload: dict[str, Any]) -> dict[str, Any]:
+    metadata = payload.get("metadata", {}) if isinstance(payload.get("metadata"), dict) else {}
+    spec = payload.get("spec", {}) if isinstance(payload.get("spec"), dict) else {}
+    source = spec.get("source", {}) if isinstance(spec.get("source"), dict) else {}
+    destination = spec.get("destination", {}) if isinstance(spec.get("destination"), dict) else {}
+    status = payload.get("status", {}) if isinstance(payload.get("status"), dict) else {}
+    sync = status.get("sync", {}) if isinstance(status.get("sync"), dict) else {}
+    health = status.get("health", {}) if isinstance(status.get("health"), dict) else {}
+    operation_state = (
+        status.get("operationState", {}) if isinstance(status.get("operationState"), dict) else {}
+    )
+    sync_result = (
+        operation_state.get("syncResult", {})
+        if isinstance(operation_state.get("syncResult"), dict)
+        else {}
+    )
+    history = status.get("history", []) if isinstance(status.get("history"), list) else []
+    summary = status.get("summary", {}) if isinstance(status.get("summary"), dict) else {}
+    revision = (
+        str(sync.get("revision") or "").strip()
+        or str(sync_result.get("revision") or "").strip()
+        or _history_revision(history)
+    )
+    return {
+        "name": str(metadata.get("name", "")).strip(),
+        "namespace": str(metadata.get("namespace", "")).strip(),
+        "project": str(spec.get("project", "")).strip(),
+        "repo_url": str(source.get("repoURL", "")).strip(),
+        "target_revision": str(source.get("targetRevision", "")).strip(),
+        "destination_server": str(destination.get("server", "")).strip(),
+        "destination_namespace": str(destination.get("namespace", "")).strip(),
+        "sync_status": str(sync.get("status", "")).strip(),
+        "health_status": str(health.get("status", "")).strip(),
+        "health_message": str(health.get("message", "")).strip(),
+        "revision": revision,
+        "operation_phase": str(operation_state.get("phase", "")).strip(),
+        "operation_message": str(operation_state.get("message", "")).strip(),
+        "images": list(summary.get("images", []) or [])
+        if isinstance(summary.get("images", []), list)
+        else [],
+        "history_count": len(history),
+    }
+
+
+def _history_revision(history: list[Any]) -> str:
+    for item in reversed(history):
+        if isinstance(item, dict) and item.get("revision"):
+            return str(item["revision"]).strip()
+    return ""
+
+
+def _recent_history(payload: dict[str, Any], limit: int = 5) -> list[dict[str, Any]]:
+    status = payload.get("status", {}) if isinstance(payload.get("status"), dict) else {}
+    history = status.get("history", []) if isinstance(status.get("history"), list) else []
+    recent = [item for item in reversed(history) if isinstance(item, dict)]
+    return recent[:limit]
+
+
+def _sanitize_diff(value: object, *, resource_kind: str = "") -> str:
+    if str(resource_kind or "").strip().lower() == "secret":
+        return "[REDACTED Kubernetes Secret diff]"
+
+    lines: list[str] = []
+    for line in str(value or "").splitlines():
+        if _SECRET_LINE_RE.search(line) or _GENERIC_SECRET_VALUE_RE.search(line):
+            lines.append("[REDACTED secret-bearing diff line]")
+        else:
+            lines.append(line)
+    text = "\n".join(lines)
+    if len(text) > _MAX_DIFF_CHARS:
+        return f"{text[:_MAX_DIFF_CHARS]}\n[truncated after {_MAX_DIFF_CHARS} chars]"
+    return text
+
+
+def _normalize_diff(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "group": str(payload.get("group", "")).strip(),
+        "kind": str(payload.get("kind", "")).strip(),
+        "name": str(payload.get("name", "")).strip(),
+        "namespace": str(payload.get("namespace", "")).strip(),
+        "diff": _sanitize_diff(payload.get("diff", ""), resource_kind=payload.get("kind", "")),
+    }
+
+
+def make_argocd_client(
+    base_url: str | None,
+    bearer_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    *,
+    project: str | None = None,
+    app_namespace: str | None = None,
+    verify_ssl: bool | str = True,
+) -> ArgoCDClient | None:
+    """Create an ArgoCDClient when a URL and auth method are available."""
+    url = (base_url or "").strip().rstrip("/")
+    token = (bearer_token or "").strip()
+    user = (username or "").strip()
+    pw = (password or "").strip()
+    if not url or not (token or (user and pw)):
+        return None
+    try:
+        return ArgoCDClient(
+            ArgoCDConfig(
+                base_url=url,
+                bearer_token=token,
+                username=user,
+                password=pw,
+                project=project or "",
+                app_namespace=app_namespace or "",
+                verify_ssl=_normalize_verify_ssl(verify_ssl),
+            )
+        )
+    except Exception:
+        return None

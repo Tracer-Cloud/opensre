@@ -35,6 +35,7 @@ INVESTIGATED_EVIDENCE_KEYS = frozenset(
         "eks_node_health",
         "eks_pod_logs",
         "eks_deployment_status",
+        "argocd_application",
     }
 )
 
