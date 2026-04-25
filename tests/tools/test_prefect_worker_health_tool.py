@@ -10,6 +10,15 @@ from app.tools.PrefectWorkerHealthTool import PrefectWorkerHealthTool
 from tests.tools.conftest import BaseToolContract
 
 
+# NEW IMPORT:
+from app.services.prefect.client import PrefectClient
+import pytest
+
+def test_worker_health_check_logic():
+    # Ensure the client is instantiated from the new service path
+    client = PrefectClient() 
+    # ... rest of the test logic
+
 class TestPrefectWorkerHealthToolContract(BaseToolContract):
     def get_tool_under_test(self):
         return PrefectWorkerHealthTool()
