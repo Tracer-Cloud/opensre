@@ -3,20 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import yaml
 
 import app.cli.tests.discover as discover
-from app.cli.tests.discover import (
-    _comment_map_for_makefile,
-    _discover_rds_synthetic_scenarios,
-    discover_make_targets,
-    discover_rca_files,
-    load_test_catalog,
-)
 
 
 def test_load_test_catalog_includes_make_targets_and_rca_fixtures() -> None:
-    catalog = load_test_catalog()
+    catalog = discover.load_test_catalog()
 
     assert catalog.find("make:test-cov") is not None
     assert catalog.find("make:demo") is not None
@@ -24,7 +16,7 @@ def test_load_test_catalog_includes_make_targets_and_rca_fixtures() -> None:
 
 
 def test_load_test_catalog_excludes_synthetic_suite_for_now() -> None:
-    catalog = load_test_catalog()
+    catalog = discover.load_test_catalog()
 
     assert catalog.find("suite:rds_postgres") is None
 
@@ -36,7 +28,7 @@ class TestCommentMapForMakefile:
             "# Run the tests\ntest:\n\tpytest\n",
             encoding="utf-8",
         )
-        comments = _comment_map_for_makefile(makefile)
+        comments = discover._comment_map_for_makefile(makefile)
         assert comments == {"test": "Run the tests"}
 
     def test_parses_multiline_comments(self, tmp_path: Path) -> None:
@@ -45,7 +37,7 @@ class TestCommentMapForMakefile:
             "# This is a multiline\n# comment for the demo\ndemo:\n\tpython demo.py\n",
             encoding="utf-8",
         )
-        comments = _comment_map_for_makefile(makefile)
+        comments = discover._comment_map_for_makefile(makefile)
         assert comments == {"demo": "This is a multiline comment for the demo"}
 
     def test_clears_buffer_on_empty_line(self, tmp_path: Path) -> None:
@@ -54,7 +46,7 @@ class TestCommentMapForMakefile:
             "# This comment is orphaned\n\ntest:\n\tpytest\n",
             encoding="utf-8",
         )
-        comments = _comment_map_for_makefile(makefile)
+        comments = discover._comment_map_for_makefile(makefile)
         assert comments == {"test": ""}
 
     def test_multiple_targets(self, tmp_path: Path) -> None:
@@ -63,7 +55,7 @@ class TestCommentMapForMakefile:
             "# Test target\ntest:\n\tpytest\n\n# Demo target\ndemo:\n\tpython demo.py\n",
             encoding="utf-8",
         )
-        comments = _comment_map_for_makefile(makefile)
+        comments = discover._comment_map_for_makefile(makefile)
         assert comments == {"test": "Test target", "demo": "Demo target"}
 
     def test_special_characters_in_comments(self, tmp_path: Path) -> None:
@@ -72,13 +64,13 @@ class TestCommentMapForMakefile:
             "# Special ch@racters $ & ! #\ntest:\n\tpytest\n",
             encoding="utf-8",
         )
-        comments = _comment_map_for_makefile(makefile)
+        comments = discover._comment_map_for_makefile(makefile)
         assert comments == {"test": "Special ch@racters $ & ! #"}
 
     def test_missing_makefile_raises_error(self, tmp_path: Path) -> None:
         missing = tmp_path / "DoesNotExist"
         with pytest.raises(FileNotFoundError):
-            _comment_map_for_makefile(missing)
+            discover._comment_map_for_makefile(missing)
 
 
 class TestDiscoverMakeTargets:
@@ -91,7 +83,7 @@ class TestDiscoverMakeTargets:
     def test_skips_missing_targets(self, mock_makefile: Path) -> None:
         mock_makefile.write_text("\ntest:\n\tpytest\n", encoding="utf-8")
 
-        targets = discover_make_targets()
+        targets = discover.discover_make_targets()
         target_ids = {t.id for t in targets}
 
         assert "make:test" in target_ids
@@ -100,7 +92,7 @@ class TestDiscoverMakeTargets:
     def test_applies_metadata(self, mock_makefile: Path) -> None:
         mock_makefile.write_text("\ntest:\n\tpytest\n", encoding="utf-8")
 
-        targets = discover_make_targets()
+        targets = discover.discover_make_targets()
         test_target = next(t for t in targets if t.id == "make:test")
 
         # Verify metadata from _TARGET_METADATA is applied
@@ -117,7 +109,7 @@ class TestDiscoverMakeTargets:
 
         mock_makefile.write_text("\nunknown-target:\n\techo hello\n", encoding="utf-8")
 
-        targets = discover_make_targets()
+        targets = discover.discover_make_targets()
         unknown = next(t for t in targets if t.id == "make:unknown-target")
 
         assert unknown.display_name == "unknown-target"
@@ -126,7 +118,7 @@ class TestDiscoverMakeTargets:
 
     def test_empty_makefile_returns_no_targets(self, mock_makefile: Path) -> None:
         mock_makefile.write_text("", encoding="utf-8")
-        assert discover_make_targets() == []
+        assert discover.discover_make_targets() == []
 
     def test_missing_makefile_raises_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -134,7 +126,7 @@ class TestDiscoverMakeTargets:
         missing = tmp_path / "DoesNotExist"
         monkeypatch.setattr(discover, "MAKEFILE_PATH", missing)
         with pytest.raises(FileNotFoundError):
-            discover_make_targets()
+            discover.discover_make_targets()
 
 
 class TestDiscoverRcaFiles:
@@ -149,7 +141,7 @@ class TestDiscoverRcaFiles:
         (mock_rca_dir / "test_issue.md").write_text("# Test Title\nContent", encoding="utf-8")
         (mock_rca_dir / "ignored.txt").write_text("Not MD", encoding="utf-8")
 
-        items = discover_rca_files()
+        items = discover.discover_rca_files()
         assert len(items) == 1
         assert items[0].id == "rca:test_issue"
         assert items[0].display_name == "Test Title"
@@ -157,11 +149,16 @@ class TestDiscoverRcaFiles:
     def test_falls_back_to_filename_if_no_header(self, mock_rca_dir: Path) -> None:
         (mock_rca_dir / "no_header_file.md").write_text("Just content", encoding="utf-8")
 
-        items = discover_rca_files()
+        items = discover.discover_rca_files()
         assert items[0].display_name == "No Header File"
 
+    def test_empty_md_file_is_handled_gracefully(self, mock_rca_dir: Path) -> None:
+        (mock_rca_dir / "empty_file.md").write_text("", encoding="utf-8")
+        items = discover.discover_rca_files()
+        assert items[0].display_name == "Empty File"
+
     def test_empty_rca_dir_returns_nothing(self, mock_rca_dir: Path) -> None:
-        assert discover_rca_files() == []
+        assert discover.discover_rca_files() == []
 
 
 class TestDiscoverSyntheticScenarios:
@@ -186,7 +183,7 @@ class TestDiscoverSyntheticScenarios:
         # Hidden folder (should be skipped)
         (scenarios_dir / "_internal").mkdir()
 
-        items = _discover_rds_synthetic_scenarios()
+        items = discover._discover_rds_synthetic_scenarios()
         assert len(items) == 2
         
         cpu_item = next(i for i in items if i.id == "synthetic:cpu_spike")
@@ -202,7 +199,7 @@ class TestDiscoverSyntheticScenarios:
         s1.mkdir()
         (s1 / "scenario.yml").write_text("!!invalid yaml", encoding="utf-8")
 
-        items = _discover_rds_synthetic_scenarios()
+        items = discover._discover_rds_synthetic_scenarios()
         assert items[0].display_name == "bad_yaml"
 
 
@@ -227,7 +224,7 @@ def test_load_test_catalog_sorting_and_aggregation(
 
     # We won't mock discover_cli_commands as it's small, but REPO_ROOT is already mocked
     
-    catalog = load_test_catalog()
+    catalog = discover.load_test_catalog()
     display_names = [item.display_name for item in catalog.items]
     
     # Verify sorting (case-insensitive)
@@ -252,7 +249,7 @@ def test_load_test_catalog_exclude_logic(
     (rca_dir / "pipeline_error_in_logs.md").write_text("# Error", encoding="utf-8")
     monkeypatch.setattr(discover, "RCA_DIR", rca_dir)
 
-    catalog = load_test_catalog()
+    catalog = discover.load_test_catalog()
     
     # Verify our specific "smoke test" items are found (using their IDs)
     assert catalog.find("make:test-cov") is not None
