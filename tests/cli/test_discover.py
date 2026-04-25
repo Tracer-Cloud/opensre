@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest
@@ -126,7 +128,9 @@ class TestDiscoverMakeTargets:
         mock_makefile.write_text("", encoding="utf-8")
         assert discover_make_targets() == []
 
-    def test_missing_makefile_raises_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_missing_makefile_raises_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         missing = tmp_path / "DoesNotExist"
         monkeypatch.setattr(discover, "MAKEFILE_PATH", missing)
         with pytest.raises(FileNotFoundError):
@@ -212,7 +216,7 @@ def test_load_test_catalog_sorting_and_aggregation(
     (tmp_path / "tests" / "synthetic" / "rds_postgres").mkdir(parents=True)
     
     makefile = tmp_path / "Makefile"
-    makefile.write_text("test:\n\techo test", encoding="utf-8")
+    makefile.write_text("\ntest:\n\techo test", encoding="utf-8")
     monkeypatch.setattr(discover, "MAKEFILE_PATH", makefile)
     
     rca_dir = tmp_path / "rca"
