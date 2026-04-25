@@ -755,12 +755,21 @@ Thanks goes to these amazing people:
         </a>
     </td>
             <td align="center">
+        <a href="https://github.com/SB2318">
+            <img src="https://avatars.githubusercontent.com/u/87614560?v=4" width="100" alt="SB2318"/>
+            <br />
+            <sub><b>SB2318</b></sub>
+        </a>
+    </td>
+            <td align="center">
         <a href="https://github.com/Sarah-Salah">
             <img src="https://avatars.githubusercontent.com/u/11881117?v=4" width="100" alt="Sarah-Salah"/>
             <br />
             <sub><b>Sarah-Salah</b></sub>
         </a>
     </td>
+		</tr>
+		<tr>
             <td align="center">
         <a href="https://github.com/jerome-wilson">
             <img src="https://avatars.githubusercontent.com/u/116165488?v=4" width="100" alt="jerome-wilson"/>
@@ -768,8 +777,6 @@ Thanks goes to these amazing people:
             <sub><b>jerome-wilson</b></sub>
         </a>
     </td>
-		</tr>
-		<tr>
             <td align="center">
         <a href="https://github.com/hcombalicer">
             <img src="https://avatars.githubusercontent.com/u/40112059?v=4" width="100" alt="hcombalicer"/>
@@ -805,6 +812,8 @@ Thanks goes to these amazing people:
             <sub><b>imjohnzakkam</b></sub>
         </a>
     </td>
+		</tr>
+		<tr>
             <td align="center">
         <a href="https://github.com/paarths-collab">
             <img src="https://avatars.githubusercontent.com/u/205314222?v=4" width="100" alt="paarths-collab"/>
@@ -812,8 +821,6 @@ Thanks goes to these amazing people:
             <sub><b>paarths-collab</b></sub>
         </a>
     </td>
-		</tr>
-		<tr>
             <td align="center">
         <a href="https://github.com/wahajahmed010">
             <img src="https://avatars.githubusercontent.com/u/57330918?v=4" width="100" alt="wahajahmed010"/>
@@ -833,13 +840,6 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/105605801?v=4" width="100" alt="MichaelGurevich"/>
             <br />
             <sub><b>MichaelGurevich</b></sub>
-        </a>
-    </td>
-            <td align="center">
-        <a href="https://github.com/SB2318">
-            <img src="https://avatars.githubusercontent.com/u/87614560?v=4" width="100" alt="SB2318"/>
-            <br />
-            <sub><b>SB2318</b></sub>
         </a>
     </td>
             <td align="center">
