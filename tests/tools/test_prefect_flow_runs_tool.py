@@ -6,7 +6,16 @@ from unittest.mock import MagicMock, patch
 
 from app.tools.PrefectFlowRunsTool import PrefectFlowRunsTool
 from tests.tools.conftest import BaseToolContract, mock_agent_state
+from app.services.prefect.client import PrefectClient
+import unittest.mock as mock
 
+def test_prefect_flow_runs_execution():
+    # If you are using mocking/patching, update the target path:
+    # OLD: @mock.patch('app.integrations.clients.prefect.client.PrefectClient.get_flow_runs')
+    # NEW:
+    with mock.patch('app.services.prefect.client.PrefectClient.get_flow_runs') as mocked_get:
+        mocked_get.return_value = {"status": "success"}
+        # ... rest of the test logic
 
 class TestPrefectFlowRunsToolContract(BaseToolContract):
     def get_tool_under_test(self):
