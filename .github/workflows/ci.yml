@@ -190,7 +190,7 @@ jobs:
     timeout-minutes: 25
 
     if: >-
-      github.event_name == 'push' ||
+      (github.repository == 'Tracer-Cloud/opensre' && github.event_name == 'push') ||
       contains(github.event.pull_request.title, 'k8s') ||
       contains(github.event.pull_request.title, 'kubernetes')
 
@@ -213,7 +213,7 @@ jobs:
 
       # ---------------- SAFE MODE (FORK PRs) ----------------
       - name: Skip Kubernetes tests (fork PRs)
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true
+        if: github.repository != 'Tracer-Cloud/opensre' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true
         run: echo "Skipping Kubernetes tests for fork PR (no AWS secrets)"
 
       # ---------------- FULL MODE (trusted env) ----------------
@@ -231,7 +231,7 @@ jobs:
   test-thorough:
     runs-on: ubuntu-latest
     needs: [test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.repository == 'Tracer-Cloud/opensre' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 30
 
     strategy:
