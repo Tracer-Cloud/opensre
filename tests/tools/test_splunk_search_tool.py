@@ -205,7 +205,7 @@ def test_run_passes_verify_ssl_to_client() -> None:
     tool = SplunkSearchTool()
     captured = {}
 
-    def fake_make_client(_base_url, _token, _index, verify_ssl):
+    def fake_make_client(_base_url, _token, _index, verify_ssl, ca_bundle=""):
         captured["verify_ssl"] = verify_ssl
         m = MagicMock()
         m.search_logs.return_value = {"success": True, "logs": [], "total": 0}
@@ -220,3 +220,31 @@ def test_run_passes_verify_ssl_to_client() -> None:
         )
 
     assert captured["verify_ssl"] is False
+
+
+def test_run_passes_ca_bundle_to_client() -> None:
+    tool = SplunkSearchTool()
+    captured = {}
+
+    def fake_make_client(_base_url, _token, _index, verify_ssl, ca_bundle=""):
+        captured["ca_bundle"] = ca_bundle
+        m = MagicMock()
+        m.search_logs.return_value = {"success": True, "logs": [], "total": 0}
+        return m
+
+    with patch("app.tools.SplunkSearchTool.make_client", side_effect=fake_make_client):
+        tool.run(
+            query="index=main | head 50",
+            base_url="https://splunk:8089",
+            token="tok",
+            ca_bundle="/etc/ssl/certs/corp-ca.pem",
+        )
+
+    assert captured["ca_bundle"] == "/etc/ssl/certs/corp-ca.pem"
+
+
+def test_extract_params_includes_ca_bundle() -> None:
+    tool = SplunkSearchTool()
+    sources = mock_agent_state()
+    params = tool.extract_params(sources)
+    assert params["ca_bundle"] == "/etc/ssl/certs/corp-ca.pem"

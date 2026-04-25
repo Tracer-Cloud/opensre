@@ -82,6 +82,7 @@ class SplunkSearchTool(BaseTool):
             "base_url": splunk.get("base_url"),
             "token": splunk.get("token"),
             "verify_ssl": splunk.get("verify_ssl", True),
+            "ca_bundle": splunk.get("ca_bundle", ""),
         }
 
     def run(
@@ -93,9 +94,10 @@ class SplunkSearchTool(BaseTool):
         base_url: str | None = None,
         token: str | None = None,
         verify_ssl: bool = True,
+        ca_bundle: str = "",
         **_kwargs: Any,
     ) -> dict:
-        client = make_client(base_url, token, index, verify_ssl)
+        client = make_client(base_url, token, index, verify_ssl, ca_bundle)
         if client is None:
             return unavailable(
                 "splunk_logs",

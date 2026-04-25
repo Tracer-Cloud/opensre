@@ -1300,6 +1300,7 @@ def detect_sources(
         splunk_token = str(splunk_int.get("token", "")).strip()
         splunk_index = str(splunk_int.get("index", "main")).strip() or "main"
         splunk_verify_ssl = splunk_int.get("verify_ssl", True)
+        splunk_ca_bundle = str(splunk_int.get("ca_bundle", "")).strip()
 
         if splunk_base_url and splunk_token:
             # 1. Check if operator supplied a verbatim SPL in alert annotations
@@ -1334,6 +1335,7 @@ def detect_sources(
                 "token": splunk_token,
                 "index": splunk_index,
                 "verify_ssl": splunk_verify_ssl,
+                "ca_bundle": splunk_ca_bundle,
                 "default_query": default_query,
                 "time_range_minutes": alert_time_range_minutes,
                 "connection_verified": True,

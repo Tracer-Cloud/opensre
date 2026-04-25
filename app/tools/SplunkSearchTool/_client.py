@@ -12,11 +12,18 @@ def make_client(
     token: str | None = None,
     index: str = "main",
     verify_ssl: bool = True,
+    ca_bundle: str = "",
 ) -> SplunkClient | None:
     if not base_url or not token:
         return None
     return SplunkClient(
-        SplunkConfig(base_url=base_url, token=token, index=index, verify_ssl=verify_ssl)
+        SplunkConfig(
+            base_url=base_url,
+            token=token,
+            index=index,
+            verify_ssl=verify_ssl,
+            ca_bundle=ca_bundle,
+        )
     )
 
 
