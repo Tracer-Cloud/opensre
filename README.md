@@ -849,6 +849,13 @@ Thanks goes to these amazing people:
             <sub><b>Davidson3556</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/gitsofaryan">
+            <img src="https://avatars.githubusercontent.com/u/117700812?v=4" width="100" alt="gitsofaryan"/>
+            <br />
+            <sub><b>gitsofaryan</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
