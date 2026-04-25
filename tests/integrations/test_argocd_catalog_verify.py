@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from app.integrations.catalog import classify_integrations, resolve_effective_integrations
+from app.integrations.models import ArgoCDIntegrationConfig
 from app.integrations.verify import _verify_argocd, verify_integrations
 
 
@@ -86,6 +87,21 @@ def test_classify_argocd_rejects_ambiguous_auth_methods() -> None:
     )
 
     assert "argocd" not in resolved
+
+
+def test_argocd_integration_config_only_strips_bearer_prefix_from_token() -> None:
+    config = ArgoCDIntegrationConfig(
+        base_url="https://argocd.example.com",
+        bearer_token="Bearer tok_store",
+        project="bearer platform",
+        app_namespace="bearer namespace",
+        integration_id="bearer integration",
+    )
+
+    assert config.bearer_token == "tok_store"
+    assert config.project == "bearer platform"
+    assert config.app_namespace == "bearer namespace"
+    assert config.integration_id == "bearer integration"
 
 
 def test_resolve_effective_integrations_includes_argocd_from_env(

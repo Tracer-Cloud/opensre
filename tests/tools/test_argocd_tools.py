@@ -73,6 +73,34 @@ def test_argocd_status_tool_extracts_params_and_returns_application(monkeypatch)
     assert result["recent_history"][0]["revision"] == "abc123"
 
 
+def test_argocd_status_list_mode_preserves_applications_in_evidence(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(
+        "app.tools.ArgoCDApplicationStatusTool.make_argocd_client",
+        lambda *_args, **_kwargs: _FakeArgoCDClient(),
+    )
+    tool = ArgoCDApplicationStatusTool()
+    source = {**_ARGOCD_SOURCE, "application_name": ""}
+
+    result = tool.run(**tool.extract_params({"argocd": source}))
+    execution_results = {
+        "argocd_application_status": ActionExecutionResult(
+            action_name="argocd_application_status",
+            success=True,
+            data=result,
+        )
+    }
+    evidence = merge_evidence({}, execution_results)
+    summary = build_evidence_summary(execution_results)
+
+    assert result["available"] is True
+    assert result["applications"] == [{"name": "payments-api"}]
+    assert evidence["argocd_application"] == {}
+    assert evidence["argocd_applications"] == [{"name": "payments-api"}]
+    assert evidence["argocd_applications_total"] == 1
+    assert "argocd:1 applications" in summary
+    assert "argocd:? status unknown" not in summary
+
+
 def test_argocd_diff_tool_reports_drift(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setattr(
         "app.tools.ArgoCDApplicationDiffTool.make_argocd_client",

@@ -87,6 +87,28 @@ def test_config_rejects_ambiguous_auth_methods() -> None:
     )
 
 
+def test_config_only_strips_bearer_prefix_from_bearer_token() -> None:
+    token_config = ArgoCDConfig(
+        base_url="https://argocd.example.com",
+        bearer_token="Bearer tok_prefixed",
+        project="bearer platform",
+        app_namespace="bearer namespace",
+        integration_id="bearer integration",
+    )
+    assert token_config.bearer_token == "tok_prefixed"
+    assert token_config.project == "bearer platform"
+    assert token_config.app_namespace == "bearer namespace"
+    assert token_config.integration_id == "bearer integration"
+
+    login_config = ArgoCDConfig(
+        base_url="https://argocd.example.com",
+        username="bearer admin",
+        password="bearer password",
+    )
+    assert login_config.username == "bearer admin"
+    assert login_config.password == "bearer password"
+
+
 def test_list_applications_uses_bearer_auth_and_normalizes_status() -> None:
     seen_requests: list[httpx.Request] = []
 

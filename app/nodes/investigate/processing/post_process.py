@@ -398,8 +398,13 @@ def _map_git_deploy_timeline(data: dict) -> dict:
 
 
 def _map_argocd_application_status(data: dict) -> dict:
+    applications = data.get("applications", [])
+    if not isinstance(applications, list):
+        applications = []
     return {
         "argocd_application": data.get("application", {}) or {},
+        "argocd_applications": applications,
+        "argocd_applications_total": data.get("total", len(applications)) or 0,
         "argocd_revision_history": data.get("recent_history", []) or [],
     }
 
@@ -720,6 +725,11 @@ def build_evidence_summary(execution_results: dict[str, ActionExecutionResult]) 
                 if count:
                     summary_parts.append(f"github:{count} commits in deploy window")
             elif action_name == "argocd_application_status":
+                applications = data.get("applications")
+                if isinstance(applications, list) and not data.get("application"):
+                    total = int(data.get("total", len(applications)) or 0)
+                    summary_parts.append(f"argocd:{total} applications")
+                    continue
                 app = (
                     data.get("application", {})
                     if isinstance(data.get("application", {}), dict)

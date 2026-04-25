@@ -90,21 +90,20 @@ class ArgoCDConfig(StrictConfigModel):
         normalized = str(value or "").strip().rstrip("/")
         return _validate_base_url(normalized)
 
-    @field_validator(
-        "bearer_token",
-        "username",
-        "password",
-        "project",
-        "app_namespace",
-        "integration_id",
-        mode="before",
-    )
+    @field_validator("bearer_token", mode="before")
     @classmethod
-    def _normalize_str(cls, value: object) -> str:
+    def _normalize_bearer_token(cls, value: object) -> str:
         text = str(value or "").strip()
         if text.lower().startswith("bearer "):
             text = text.split(None, 1)[1].strip()
         return text
+
+    @field_validator(
+        "username", "password", "project", "app_namespace", "integration_id", mode="before"
+    )
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
 
     @field_validator("verify_ssl", mode="before")
     @classmethod
