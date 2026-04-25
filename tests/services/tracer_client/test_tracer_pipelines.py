@@ -5,25 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-import pytest
-
 from app.services.tracer_client.tracer_pipelines import (
     PipelineRunSummary,
     PipelineSummary,
     TracerPipelinesMixin,
     TracerRunResult,
 )
-
-
-class _FakeResponse:
-    def __init__(self, payload: dict[str, Any]):
-        self._payload = payload
-
-    def raise_for_status(self) -> None:
-        return None
-
-    def json(self) -> dict[str, Any]:
-        return self._payload
 
 
 class _FakePipelinesClient(TracerPipelinesMixin):
@@ -37,6 +24,21 @@ class _FakePipelinesClient(TracerPipelinesMixin):
     def _get(self, _endpoint: str, _params: Mapping[str, Any] | None = None) -> dict[str, Any]:
         """Stub _get to return the configured response."""
         return self._response
+
+
+class _FakePipelinesClientWithCapture(TracerPipelinesMixin):
+    """Fake subclass that captures params passed to _get()."""
+
+    def __init__(self) -> None:
+        self.org_id = "test-org-123"
+        self.base_url = "https://test.tracer.com"
+        self.last_params: Mapping[str, Any] | None = None
+        self.last_endpoint: str | None = None
+
+    def _get(self, endpoint: str, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        self.last_endpoint = endpoint
+        self.last_params = params
+        return {"success": True, "data": []}
 
 
 class TestGetPipelines:
@@ -141,19 +143,13 @@ class TestGetPipelines:
         assert result[0].n_active_runs == 0
         assert result[0].n_completed_runs == 0
 
+    def test_get_pipelines_calls_correct_endpoint(self) -> None:
+        client = _FakePipelinesClientWithCapture()
+        client.get_pipelines()
+
+        assert client.last_endpoint == "/api/pipelines"
+
     def test_get_pipelines_with_pagination_params(self) -> None:
-        class _FakePipelinesClientWithCapture(TracerPipelinesMixin):
-            def __init__(self) -> None:
-                self.org_id = "test-org-123"
-                self.base_url = "https://test.tracer.com"
-                self.last_params: Mapping[str, Any] | None = None
-
-            def _get(
-                self, _endpoint: str, params: Mapping[str, Any] | None = None
-            ) -> dict[str, Any]:
-                self.last_params = params
-                return {"success": True, "data": []}
-
         client = _FakePipelinesClientWithCapture()
         client.get_pipelines(page=2, size=25)
 
@@ -276,6 +272,18 @@ class TestGetPipelineRuns:
 
         assert len(result) == 1
         assert result[0].pipeline_name == "my-pipeline"
+
+    def test_get_pipeline_runs_calls_correct_endpoint(self) -> None:
+        client = _FakePipelinesClientWithCapture()
+        client.get_pipeline_runs("my-pipeline")
+
+        assert client.last_endpoint == "/api/batch-runs"
+        assert client.last_params == {
+            "orgId": "test-org-123",
+            "page": 1,
+            "size": 50,
+            "pipelineName": "my-pipeline",
+        }
 
 
 class TestGetLatestRun:
@@ -411,22 +419,11 @@ class TestGetLatestRun:
         result_2gb = client_2gb.get_latest_run("my-pipeline")
         assert result_2gb.max_ram_gb == 2.0
 
-    def test_get_latest_run_with_pipeline_name_filter(self) -> None:
-        class _FakePipelinesClientWithCapture(TracerPipelinesMixin):
-            def __init__(self) -> None:
-                self.org_id = "test-org-123"
-                self.base_url = "https://test.tracer.com"
-                self.last_params: Mapping[str, Any] | None = None
-
-            def _get(
-                self, _endpoint: str, params: Mapping[str, Any] | None = None
-            ) -> dict[str, Any]:
-                self.last_params = params
-                return {"success": True, "data": []}
-
+    def test_get_latest_run_calls_correct_endpoint_with_pipeline(self) -> None:
         client = _FakePipelinesClientWithCapture()
         client.get_latest_run("my-pipeline")
 
+        assert client.last_endpoint == "/api/batch-runs"
         assert client.last_params == {
             "page": 1,
             "size": 1,
@@ -434,22 +431,11 @@ class TestGetLatestRun:
             "pipelineName": "my-pipeline",
         }
 
-    def test_get_latest_run_without_pipeline_name(self) -> None:
-        class _FakePipelinesClientWithCapture(TracerPipelinesMixin):
-            def __init__(self) -> None:
-                self.org_id = "test-org-123"
-                self.base_url = "https://test.tracer.com"
-                self.last_params: Mapping[str, Any] | None = None
-
-            def _get(
-                self, _endpoint: str, params: Mapping[str, Any] | None = None
-            ) -> dict[str, Any]:
-                self.last_params = params
-                return {"success": True, "data": []}
-
+    def test_get_latest_run_calls_correct_endpoint_without_pipeline(self) -> None:
         client = _FakePipelinesClientWithCapture()
         client.get_latest_run()
 
+        assert client.last_endpoint == "/api/batch-runs"
         assert client.last_params == {"page": 1, "size": 1, "orgId": "test-org-123"}
         assert "pipelineName" not in client.last_params
 
