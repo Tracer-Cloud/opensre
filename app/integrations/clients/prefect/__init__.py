@@ -1,4 +1,5 @@
 """Compatibility shim for moved Prefect client."""
+
 import warnings
 
 from app.services.prefect import PrefectClient, PrefectConfig, make_prefect_client

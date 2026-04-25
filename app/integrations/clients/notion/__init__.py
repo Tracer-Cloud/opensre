@@ -1,4 +1,5 @@
 """Compatibility shim for moved Notion client."""
+
 import warnings
 
 from app.services.notion import NotionClient, NotionConfig
