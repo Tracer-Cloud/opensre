@@ -2,10 +2,18 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
 from click import ClickException
 from click.testing import CliRunner
 
 from app.cli.__main__ import cli
+from app.cli.deploy import (
+    _extract_railway_url,
+    deploy_to_railway,
+    get_railway_auth_status,
+    is_railway_cli_installed,
+    run_deploy,
+)
 
 
 def test_deploy_ec2_health_check_failure_is_non_fatal() -> None:
@@ -147,22 +155,6 @@ def test_deploy_langsmith_missing_key_fails() -> None:
 
     assert result.exit_code != 0
     assert "LangSmith API key not found." in result.output
-
-
-# ======================================================================
-# Tests moved from app/cli/deploy_test.py
-# See: https://github.com/Tracer-Cloud/opensre/issues/899
-# ======================================================================
-
-import pytest
-
-from app.cli.deploy import (
-    _extract_railway_url,
-    deploy_to_railway,
-    get_railway_auth_status,
-    is_railway_cli_installed,
-    run_deploy,
-)
 
 
 class TestIsRailwayCliInstalled:
