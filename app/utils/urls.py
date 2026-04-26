@@ -3,12 +3,10 @@
 from app.config import get_tracer_base_url
 
 
-def get_investigation_url(
-    organization_slug: str | None,
-    investigation_id: str | None,
-) -> str | None:
-    if not organization_slug or not investigation_id:
-        return None
-
-    base_url = get_tracer_base_url().rstrip("/")
-    return f"{base_url}/o/{organization_slug}/investigations/{investigation_id}"
+def get_investigation_url(org_slug: str | None = None, investigation_id: str | None = None) -> str:
+    """Build investigation URL using the organization slug and optional investigation ID."""
+    base = get_tracer_base_url()
+    prefix = f"{base}/{org_slug}" if org_slug else base
+    if investigation_id:
+        return f"{prefix}/investigations/{investigation_id}"
+    return f"{prefix}/investigations"

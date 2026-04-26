@@ -46,14 +46,19 @@ def generate_report(state: InvestigationState) -> dict:
     investigation_id: str | None = None
     investigation_url: str | None = None
 
-    try:
-        investigation_id, investigation_url = create_investigation_and_attach_url(
-            state,
-            slack_message,
-            short_summary,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[publish] ingest failed: %s", exc)
+    # try:
+    #     investigation_id, investigation_url = create_investigation_and_attach_url(
+    #         state,
+    #         slack_message,
+    #         short_summary,
+    #     )
+    # except Exception as exc:  # noqa: BLE001
+    #     logger.warning("[publish] ingest failed: %s", exc)
+    investigation_id, investigation_url = create_investigation_and_attach_url(
+        state,
+        slack_message,
+        short_summary,
+    )
 
     # Slack blocks
     all_blocks = build_slack_blocks(ctx) + build_action_blocks(investigation_url, investigation_id)
