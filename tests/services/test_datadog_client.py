@@ -1,4 +1,3 @@
-
 import pytest
 from unittest.mock import MagicMock, patch
 import httpx
@@ -29,6 +28,7 @@ def mock_httpx_client():
 # -------------------------
 # search_logs
 # -------------------------
+
 
 def test_search_logs_success(client, mock_httpx_client):
     mock_instance = MagicMock()
@@ -102,6 +102,7 @@ def test_search_logs_http_error(client, mock_httpx_client):
 # list_monitors
 # -------------------------
 
+
 def test_list_monitors_success(client, mock_httpx_client):
     mock_instance = MagicMock()
     mock_httpx_client.return_value = mock_instance
@@ -168,6 +169,7 @@ def test_list_monitors_http_error(client, mock_httpx_client):
 # -------------------------
 # get_events
 # -------------------------
+
 
 def test_get_events_success(client, mock_httpx_client):
     mock_instance = MagicMock()
