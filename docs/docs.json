@@ -204,6 +204,14 @@
       }
     ]
   },
+  "redirects": [
+    { "source": "/getting-started", "destination": "/quickstart" },
+    { "source": "/onboarding",      "destination": "/quickstart" },
+    { "source": "/welcome",         "destination": "/quickstart" },
+    { "source": "/start",           "destination": "/quickstart" },
+    { "source": "/setup",           "destination": "/quickstart" },
+    { "source": "/docs",            "destination": "/quickstart" }
+  ],
   "navbar": {
     "links": [
       {
