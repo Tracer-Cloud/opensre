@@ -12,12 +12,13 @@ Acceptance criteria (from issue #867):
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import MagicMock, call, patch
+from typing import Any, cast
+from unittest.mock import patch
 
 import pytest
 
 from app.nodes.publish_findings.node import _create_investigation_and_attach_url
+from app.state import InvestigationState
 from app.utils.ingest_delivery import ingest_investigation_with_url
 
 # ---------------------------------------------------------------------------
@@ -25,7 +26,7 @@ from app.utils.ingest_delivery import ingest_investigation_with_url
 # ---------------------------------------------------------------------------
 
 
-def _make_state(**overrides: Any) -> dict:
+def _make_state(**overrides: Any) -> InvestigationState:
     base: dict[str, Any] = {
         "org_id": "org-123",
         "alert_name": "HighCPU",
@@ -44,7 +45,7 @@ def _make_state(**overrides: Any) -> dict:
         "problem_report": None,
     }
     base.update(overrides)
-    return base
+    return cast(InvestigationState, base)
 
 
 # ===========================================================================
@@ -144,11 +145,11 @@ class TestIngestInvestigationWithUrl:
 
         send_results = ["inv-999", RuntimeError("timeout")]
 
-        def _side_effect(*_args: Any, **_kwargs: Any) -> str:
+        def _side_effect(*_args: Any, **_kwargs: Any) -> str | None:
             val = send_results.pop(0)
             if isinstance(val, Exception):
                 raise val
-            return val
+            return str(val)
 
         with (
             patch("app.utils.ingest_delivery.send_ingest", side_effect=_side_effect),

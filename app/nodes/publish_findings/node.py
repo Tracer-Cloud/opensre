@@ -97,7 +97,9 @@ def generate_report(state: InvestigationState) -> dict:
         state, report_md=slack_message, summary=short_summary
     )
 
-    all_blocks = build_slack_blocks(ctx) + build_action_blocks(investigation_url, investigation_id)
+    all_blocks = build_slack_blocks(ctx) + build_action_blocks(
+        investigation_url or "", investigation_id
+    )
     all_blocks = masking_ctx.unmask_value(all_blocks)
     render_report(slack_message, root_cause_category=state.get("root_cause_category"))
     open_in_editor(slack_message)
