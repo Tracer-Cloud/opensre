@@ -213,8 +213,7 @@ jobs:
 
       # ---------------- SAFE MODE (FORK PRs) ----------------
       - name: Skip Kubernetes tests (fork PRs)
-        if: github.repository != 'Tracer-Cloud/opensre' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true
-        run: echo "Skipping Kubernetes tests for fork PR (no AWS secrets)"
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true
 
       # ---------------- FULL MODE (trusted env) ----------------
       - name: Run Kubernetes tests
