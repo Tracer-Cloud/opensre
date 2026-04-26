@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -59,13 +59,19 @@ def test_call_reactions_api_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result is True
 
 
-def test_call_reactions_api_failure_logs_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_call_reactions_api_failure_logs_warning(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     monkeypatch.setattr(
         "app.utils.slack_delivery.httpx.post",
         lambda *_a, **_kw: _mock_response(200, {"ok": False, "error": "channel_not_found"}),
     )
-    result = _call_reactions_api("reactions.add", "token", "C123", "12345.678", "thumbsup")
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="app.utils.slack_delivery"):
+        result = _call_reactions_api("reactions.add", "token", "C123", "12345.678", "thumbsup")
     assert result is False
+    assert any("channel_not_found" in msg for msg in caplog.messages)
 
 
 @pytest.mark.parametrize("expected_error", ["already_reacted", "no_reaction", "message_not_found"])
@@ -339,6 +345,8 @@ def test_post_via_webapp_uses_tracer_api_url(monkeypatch: pytest.MonkeyPatch) ->
 def test_post_via_webapp_falls_back_to_slack_channel_when_no_channel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from app.config import SLACK_CHANNEL
+
     monkeypatch.setenv("TRACER_API_URL", "https://tracer.example.com")
     captured: dict[str, Any] = {}
 
@@ -347,10 +355,8 @@ def test_post_via_webapp_falls_back_to_slack_channel_when_no_channel(
         return _mock_response(200)
 
     monkeypatch.setattr("app.utils.slack_delivery.httpx.post", _fake_post)
-    # Pass channel=None so it falls back to SLACK_CHANNEL constant
     _post_via_webapp("text", None, "ts.1")
-    # Just assert channel key is present and truthy (uses SLACK_CHANNEL default)
-    assert "channel" in captured["json"]
+    assert captured["json"]["channel"] == SLACK_CHANNEL
 
 
 # ---------------------------------------------------------------------------
