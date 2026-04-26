@@ -34,16 +34,6 @@ def _mock_http_response(status_code: int = 200, body: dict[str, Any] | None = No
     return resp
 
 
-def _mock_http_error(status_code: int, body_text: str = "") -> MagicMock:
-    import httpx
-
-    resp = MagicMock()
-    resp.status_code = status_code
-    resp.text = body_text
-    exc = httpx.HTTPStatusError("error", request=MagicMock(), response=resp)
-    return exc
-
-
 # ===========================================================================
 # _call_reactions_api
 # ===========================================================================
@@ -167,9 +157,9 @@ class TestBuildActionBlocks:
         select = next(e for e in elements if e.get("action_id") == "give_feedback")
         assert select["type"] == "static_select"
         option_values = [o["value"] for o in select["options"]]
-        assert any("accurate" in v for v in option_values)
-        assert any("partial" in v for v in option_values)
-        assert any("inaccurate" in v for v in option_values)
+        assert any(v.startswith("accurate") for v in option_values)
+        assert any(v.startswith("partial") for v in option_values)
+        assert any(v.startswith("inaccurate") for v in option_values)
 
     def test_investigation_id_embedded_in_feedback_values(self) -> None:
         blocks = build_action_blocks("https://app.example.com/inv/42", investigation_id="inv-42")
