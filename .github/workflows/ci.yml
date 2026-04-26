@@ -160,7 +160,7 @@ jobs:
           -m "not synthetic"
 
       - name: Run full tests
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+        if: (github.repository == 'Tracer-Cloud/opensre') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
         run: >-
           python -m pytest -n auto -v
           --cov=app
@@ -181,16 +181,16 @@ jobs:
           retention-days: 7
 
 # ---------------------------------------------------------------
-# KUBERNETES TESTS
+# KUBERNETES TESTS (SAFE)
 # ---------------------------------------------------------------
   test-kubernetes:
     runs-on: ubuntu-latest
     needs: [quality, typecheck]
     continue-on-error: true
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     if: >-
-      github.event_name == 'push' ||
+      (github.repository == 'Tracer-Cloud/opensre' && github.event_name == 'push') ||
       contains(github.event.pull_request.title, 'k8s') ||
       contains(github.event.pull_request.title, 'kubernetes')
 
@@ -211,7 +211,13 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
 
+      # ---------------- SAFE MODE (FORK PRs) ----------------
+      - name: Skip Kubernetes tests (fork PRs)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true
+        run: echo "Skipping Kubernetes tests for fork PR"
+      # ---------------- FULL MODE (trusted env) ----------------
       - name: Run Kubernetes tests
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -224,7 +230,7 @@ jobs:
   test-thorough:
     runs-on: ubuntu-latest
     needs: [test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.repository == 'Tracer-Cloud/opensre' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 30
 
     strategy:
@@ -296,6 +302,14 @@ jobs:
         continue-on-error: true
         timeout-minutes: 2
 
+      # ---------------- SAFE MODE (missing secrets) ----------------
+      - name: Skip E2E (missing AWS secrets)
+        if: env.AWS_ACCESS_KEY_ID == '' || env.AWS_SECRET_ACCESS_KEY == ''
+        run: echo "Skipping E2E tests due to missing AWS credentials"
+
+      # ---------------- FULL MODE ----------------
       - name: Run test
+        if: env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
         run: ${{ matrix.command }}
         timeout-minutes: 30
+        
