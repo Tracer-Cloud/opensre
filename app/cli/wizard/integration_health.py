@@ -182,7 +182,11 @@ def validate_slack_webhook(*, webhook_url: str) -> IntegrationHealthResult:
         return IntegrationHealthResult(ok=False, detail=str(err))
 
     try:
-        response = httpx.get(slack_config.webhook_url, timeout=10, follow_redirects=False)
+        response = httpx.get(
+            slack_config.webhook_url,
+            timeout=10,
+            follow_redirects=False,
+        )
     except httpx.RequestError as err:
         return IntegrationHealthResult(ok=False, detail=f"Slack webhook validation failed: {err}")
 

@@ -157,6 +157,7 @@ Basic steps:
 - If a tool's API or schema changes -> update docs in `docs/` and update the related unit tests, usually under `tests/tools/`.
 - If an integration changes -> update `tests/integrations/` and verify with `make verify-integrations`.
 - If adding a new integration -> follow the New Integration Checklist below before opening the PR for review.
+- If adding new tests -> always place them in `tests/`, never in `app/` (no inline tests).
 - If CI-only tests are added -> mark them with the right pytest marker or place them in the appropriate e2e/synthetic/chaos folder so they do not run in the default local suite.
 - If node branching or loop behavior changes -> update `app/pipeline/routing.py` and the graph tests for that path.
 
