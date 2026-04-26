@@ -30,3 +30,5 @@ class TracerLogsMixin(TracerClientBase):
             params["runId"] = run_id
         data = self._get("/api/opensearch/logs", params)
         return data
+
+// Contributed via automated bounty system
