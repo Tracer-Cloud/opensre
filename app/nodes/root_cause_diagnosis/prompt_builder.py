@@ -235,29 +235,31 @@ When evaluating database health metrics (especially RDS/Postgres):
 - Replication lag: If a massive write-heavy workload on the primary generates WAL faster than the read replica can replay it, resulting in ReplicaLag spikes, the root cause is `resource_exhaustion` driven by the write workload on the primary. Watch out for red herrings: if concurrent analytics queries cause high CPU, do NOT classify the root cause as CPU-driven if the actual failing metric (like ReplicaLag) is driven by the write-heavy workload. The CPU spike is an independent issue. If the `ReplicaLag` metric is missing, infer lag from RDS events (e.g., 'exceeded 900s') and high `TransactionLogsGeneration`.
 - Compositional Faults: If two completely independent workloads cause two separate faults simultaneously (e.g., CPU saturation from an analytics SELECT AND storage exhaustion from an audit_log INSERT), explicitly identify BOTH as independent root causes. Use `resource_exhaustion` as ROOT_CAUSE_CATEGORY and describe both causes clearly in ROOT_CAUSE (e.g., "Two independent root causes: ..."). Trace each causal chain separately in CAUSAL_CHAIN. Connection spikes and ReplicaLag are often just downstream symptoms of the blocked writers.
 - Misleading Context: Check RDS event timestamps carefully! Ignore historical events (maintenance, failovers, replica promotions) that completed hours before the current incident started.
-- Healthy Systems / Stale Alerts: If metrics are oscillating but remain within normal operating bounds (e.g. connections at 55-65%, CPU at 40-70%, no error logs), the system is `healthy`.
+- Healthy Systems / Stale Alerts: If metrics are oscillating but remain within normal operating bounds (e.g. connections at 55-65%, CPU at 40-70%, no error logs), the system is `healthy`. If a threshold was briefly crossed (e.g. low FreeStorageSpace) but autoscaling successfully expanded the volume and fully recovered the system before the investigation, the system is `healthy` and the alert is stale.
 
 - Healthy System Detection:
 If ALL of the following are true:
-- connections are below 70% of max
-- CPU is not sustained above 80-85%
+- connections are clearly below exhaustion levels or not proven to be near `max_connections`
+- CPU is not near saturation and remains within normal range
 - no errors are present in logs or events
+- DB load and latency do not show sustained degradation
 
 Then:
 - You MUST classify the system as `healthy`
 - You MUST conclude "no active failure"
-- You MUST stop investigation early
+- You MUST NOT default to `unknown` only because an exact threshold such as `max_connections` is unavailable
 
-STRICT PROHIBITIONS:
+When the above healthy conditions are ALL met, apply these scoped prohibitions:
 - Do NOT infer connection pool leaks
 - Do NOT infer resource exhaustion
 - Do NOT generate speculative root causes
 - Do NOT interpret monotonic increase or oscillation as failure
 
-IMPORTANT:
+When the above healthy conditions are ALL met, apply these scoped interpretation rules:
 - Trend ≠ failure
 - Oscillation ≠ instability
 - Moderate utilization ≠ degradation
+- Missing exact thresholds do NOT imply failure or `unknown` when the available evidence shows no errors, moderate load, and no saturation signals
 
 If an alert fires without errors or threshold breaches:
 - treat it as a noisy or warning-level alert, NOT a real incident
