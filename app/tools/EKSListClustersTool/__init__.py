@@ -22,6 +22,7 @@ def _eks_creds(eks: dict) -> dict:
         "role_arn": eks.get("role_arn", ""),
         "external_id": eks.get("external_id", ""),
         "region": eks.get("region", "us-east-1"),
+        "credentials": eks.get("credentials"),
     }
 
 
