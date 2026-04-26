@@ -42,7 +42,7 @@ def test_is_configured(config: HoneycombIntegrationConfig) -> None:
     # So we should check if is_configured handles that or if we need to force it.
     # But based on the code: bool(self.config.api_key and self.config.dataset)
     # If dataset is "__all__", it's truthy.
-    assert client_no_ds.is_configured is True # because it defaults to "__all__"
+    assert client_no_ds.is_configured is True  # because it defaults to "__all__"
 
 
 def test_validate_access_success(client: HoneycombClient) -> None:
@@ -68,7 +68,7 @@ def test_validate_access_http_error(client: HoneycombClient) -> None:
     mock_response = MagicMock()
     mock_response.status_code = 401
     mock_response.text = "Unauthorized"
-    
+
     # We need to simulate httpx.HTTPStatusError
     error = httpx.HTTPStatusError("Auth failed", request=MagicMock(), response=mock_response)
     mock_response.raise_for_status.side_effect = error
@@ -162,7 +162,11 @@ def test_create_query_result_http_error(client: HoneycombClient) -> None:
 
 def test_get_query_result_success(client: HoneycombClient) -> None:
     mock_response = MagicMock()
-    mock_response.json.return_value = {"id": "result-456", "complete": True, "data": {"results": []}}
+    mock_response.json.return_value = {
+        "id": "result-456",
+        "complete": True,
+        "data": {"results": []},
+    }
     mock_response.raise_for_status = MagicMock()
 
     with patch("httpx.Client.get", return_value=mock_response) as mock_get:
@@ -198,8 +202,13 @@ def test_get_query_result_generic_exception(client: HoneycombClient) -> None:
 def test_run_query_full_flow(client: HoneycombClient) -> None:
     # We'll mock the internal methods to avoid deep httpx patching
     client.create_query = MagicMock(return_value={"success": True, "query_id": "q1"})
-    client.create_query_result = MagicMock(return_value={"success": True, "result": {"id": "r1", "complete": True, "data": {"results": [{"data": {"val": 10}}]}}})
-    
+    client.create_query_result = MagicMock(
+        return_value={
+            "success": True,
+            "result": {"id": "r1", "complete": True, "data": {"results": [{"data": {"val": 10}}]}},
+        }
+    )
+
     # We also need to mock time.sleep to speed up tests if it ever hits it
     with patch("time.sleep"):
         result = client.run_query({"calculations": []})
@@ -212,9 +221,9 @@ def test_run_query_full_flow(client: HoneycombClient) -> None:
 
 def test_query_traces_success(client: HoneycombClient) -> None:
     client.run_query = MagicMock(return_value={"success": True, "results": []})
-    
+
     result = client.query_traces(service_name="auth-service", trace_id="trace-abc")
-    
+
     assert result["success"] is True
     # Verify run_query was called with correct filter shape
     args, kwargs = client.run_query.call_args
