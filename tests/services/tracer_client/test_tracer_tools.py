@@ -1,24 +1,39 @@
 """Tests for TracerToolsMixin."""
 
-from typing import Any
+from __future__ import annotations
 
-from app.services.tracer_client.tracer_tools import TracerTaskResult, TracerToolsMixin
+from typing import Any
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from app.services.tracer_client.tracer_tools import TracerToolsMixin
 
 
 class FakeTracerClient(TracerToolsMixin):
     """Fake subclass that stubs _get()."""
 
-    def __init__(self):
-        # We don't need real args for the mixin tests
-        self.base_url = "https://api.tracer.cloud"
-        self.org_id = "test-org"
-        self._get_response = {}
+    def __init__(self) -> None:
+        """Initialize with dummy values, avoiding side effects from base class."""
+        with (
+            patch(
+                "app.services.tracer_client.tracer_client_base.extract_org_slug_from_jwt",
+                return_value="test-slug",
+            ),
+            patch("httpx.Client"),
+        ):
+            super().__init__(
+                base_url="https://api.tracer.cloud", org_id="test-org", jwt_token="dummy-jwt"
+            )
+        self._get_response: dict[str, Any] = {}
 
     def _get(self, _endpoint: str, _params: Any = None) -> dict[str, Any]:
+        """Stub for the GET request."""
         return self._get_response
 
 
-def test_get_run_tasks_all_success():
+def test_get_run_tasks_all_success() -> None:
+    """Test get_run_tasks when all tasks are successful."""
     client = FakeTracerClient()
     client._get_response = {
         "success": True,
@@ -35,11 +50,12 @@ def test_get_run_tasks_all_success():
     assert result.total_tasks == 3
     assert result.failed_tasks == 0
     assert result.completed_tasks == 3
-    assert len(result.tasks) == 3
-    assert len(result.failed_task_details) == 0
+    assert len(result.tasks or []) == 3
+    assert len(result.failed_task_details or []) == 0
 
 
-def test_get_run_tasks_mixed_failure():
+def test_get_run_tasks_mixed_failure() -> None:
+    """Test get_run_tasks with a mix of successful and failed tasks."""
     client = FakeTracerClient()
     client._get_response = {
         "success": True,
@@ -63,6 +79,7 @@ def test_get_run_tasks_mixed_failure():
     assert result.failed_tasks == 1
     assert result.completed_tasks == 1
 
+    assert result.failed_task_details is not None
     failed = result.failed_task_details[0]
     assert failed["tool_name"] == "grep"
     assert failed["exit_code"] == "1"
@@ -71,18 +88,18 @@ def test_get_run_tasks_mixed_failure():
     assert failed["explanation"] == "The file did not contain 'foo'"
 
 
-def test_get_run_tasks_empty_payload():
+def test_get_run_tasks_empty_payload() -> None:
+    """Test get_run_tasks with an empty data payload."""
     client = FakeTracerClient()
     client._get_response = {"success": True, "data": []}
 
     result = client.get_run_tasks("run-123")
 
-    assert result.found is False  # data.get("data") is truthy check in code?
-    # Wait, if not data.get("data"): return found=False
-    # An empty list is falsy in Python.
+    assert result.found is False
 
 
-def test_get_run_tasks_unsuccessful_response():
+def test_get_run_tasks_unsuccessful_response() -> None:
+    """Test get_run_tasks with an unsuccessful API response."""
     client = FakeTracerClient()
     client._get_response = {"success": False, "error": "Not Found"}
 
@@ -90,19 +107,20 @@ def test_get_run_tasks_unsuccessful_response():
     assert result.found is False
 
 
-def test_get_run_tasks_exit_code_handling():
-    client = FakeTracerClient()
-
-    cases = [
+@pytest.mark.parametrize(
+    ("code", "expected_fail"),
+    [
         ("0", False),
         ("", False),
         (None, False),
         ("1", True),
         ("127", True),
-        (2, True),  # The code checks 'exit_code not in ("0", "", None)'
-    ]
-
-    for code, expected_fail in cases:
-        client._get_response = {"success": True, "data": [{"tool_name": "test", "exit_code": code}]}
-        result = client.get_run_tasks("run-123")
-        assert (result.failed_tasks == 1) is expected_fail, f"Failed for exit_code: {code}"
+        (2, True),
+    ],
+)
+def test_get_run_tasks_exit_code_handling(code: Any, expected_fail: bool) -> None:
+    """Test get_run_tasks with various exit code formats."""
+    client = FakeTracerClient()
+    client._get_response = {"success": True, "data": [{"tool_name": "test", "exit_code": code}]}
+    result = client.get_run_tasks("run-123")
+    assert (result.failed_tasks == 1) is expected_fail
