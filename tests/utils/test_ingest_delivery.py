@@ -1,7 +1,5 @@
-import pytest
 
 from app.utils.ingest_delivery import create_investigation_and_attach_url
-
 
 def test_create_investigation_and_attach_url_success(mocker):
     """

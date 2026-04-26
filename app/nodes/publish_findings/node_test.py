@@ -9,6 +9,7 @@ import pytest
 
 from app.nodes.publish_findings.node import _build_mr_note
 
+
 # ---------------------------------------------------------------------------
 # _build_mr_note
 # ---------------------------------------------------------------------------
@@ -28,7 +29,7 @@ def test_build_mr_note_truncates_long_messages() -> None:
 
     result = _build_mr_note(long_message)
 
-    assert len(result) < 5000 + 200  # body capped + wrapper overhead
+    assert len(result) < 5000 + 200
     assert result.endswith("</details>")
     assert "..." in result
 
@@ -67,7 +68,7 @@ def _make_state(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-def _patch_generate_report_deps(monkeypatch: pytest.MonkeyPatch) -> None:
+def _patch_generate_report_deps(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """Patch all heavy dependencies of generate_report so we can run it in tests."""
     monkeypatch.setattr(
         "app.nodes.publish_findings.node.build_report_context",
@@ -81,10 +82,14 @@ def _patch_generate_report_deps(monkeypatch: pytest.MonkeyPatch) -> None:
         "app.nodes.publish_findings.node.build_slack_blocks",
         lambda _ctx: [],
     )
+
+    #  FINAL FIX: match real helper signature
+    mock_helper = MagicMock(return_value=("inv-id-123", "https://app.example.com/inv/1"))
     monkeypatch.setattr(
-        "app.nodes.publish_findings.node.get_investigation_url",
-        lambda _slug, _inv_id: "https://app.example.com/inv/1",
+        "app.nodes.publish_findings.node.create_investigation_and_attach_url",
+        lambda *_args, **_kwargs: mock_helper(),
     )
+
     monkeypatch.setattr(
         "app.nodes.publish_findings.node.render_report",
         lambda _msg, **_kw: None,
@@ -93,14 +98,12 @@ def _patch_generate_report_deps(monkeypatch: pytest.MonkeyPatch) -> None:
         "app.nodes.publish_findings.node.open_in_editor",
         lambda _msg: None,
     )
-    monkeypatch.setattr(
-        "app.nodes.publish_findings.node.send_ingest",
-        lambda _state: "inv-id-123",
-    )
+
+    return mock_helper
 
 
 def test_gitlab_writeback_calls_post_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_generate_report_deps(monkeypatch)
+    mock_helper = _patch_generate_report_deps(monkeypatch)
     monkeypatch.setenv("GITLAB_MR_WRITEBACK", "true")
 
     mock_send_slack = MagicMock(return_value=(False, None))
@@ -118,13 +121,15 @@ def test_gitlab_writeback_calls_post_when_enabled(monkeypatch: pytest.MonkeyPatc
         generate_report(_make_state())  # type: ignore[arg-type]
 
     mock_post_note.assert_called_once()
+    mock_helper.assert_called_once()
+
     _, kwargs = mock_post_note.call_args
     assert kwargs["project_id"] == "my-org/my-repo"
     assert kwargs["mr_iid"] == "5"
 
 
 def test_gitlab_writeback_skipped_when_env_var_not_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_generate_report_deps(monkeypatch)
+    mock_helper = _patch_generate_report_deps(monkeypatch)
     monkeypatch.delenv("GITLAB_MR_WRITEBACK", raising=False)
 
     mock_post_note = MagicMock()
@@ -141,15 +146,17 @@ def test_gitlab_writeback_skipped_when_env_var_not_set(monkeypatch: pytest.Monke
         generate_report(_make_state())  # type: ignore[arg-type]
 
     mock_post_note.assert_not_called()
+    mock_helper.assert_called_once()
 
 
 def test_gitlab_writeback_skipped_when_mr_iid_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_generate_report_deps(monkeypatch)
+    mock_helper = _patch_generate_report_deps(monkeypatch)
     monkeypatch.setenv("GITLAB_MR_WRITEBACK", "true")
 
     state = _make_state(
         available_sources={"gitlab": {"project_id": "my-org/my-repo", "merge_request_iid": ""}}
     )
+
     mock_post_note = MagicMock()
     mock_send_slack = MagicMock(return_value=(False, None))
     mock_build_action_blocks = MagicMock(return_value=[])
@@ -164,10 +171,11 @@ def test_gitlab_writeback_skipped_when_mr_iid_missing(monkeypatch: pytest.Monkey
         generate_report(state)  # type: ignore[arg-type]
 
     mock_post_note.assert_not_called()
+    mock_helper.assert_called_once()
 
 
 def test_gitlab_writeback_failure_does_not_raise(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_generate_report_deps(monkeypatch)
+    mock_helper = _patch_generate_report_deps(monkeypatch)
     monkeypatch.setenv("GITLAB_MR_WRITEBACK", "true")
 
     mock_send_slack = MagicMock(return_value=(False, None))
@@ -177,7 +185,8 @@ def test_gitlab_writeback_failure_does_not_raise(monkeypatch: pytest.MonkeyPatch
         patch("app.utils.slack_delivery.send_slack_report", mock_send_slack),
         patch("app.utils.slack_delivery.build_action_blocks", mock_build_action_blocks),
         patch(
-            "app.integrations.gitlab.post_gitlab_mr_note", side_effect=RuntimeError("network error")
+            "app.integrations.gitlab.post_gitlab_mr_note",
+            side_effect=RuntimeError("network error"),
         ),
         patch("app.integrations.gitlab.build_gitlab_config", return_value=MagicMock()),
     ):
@@ -185,4 +194,5 @@ def test_gitlab_writeback_failure_does_not_raise(monkeypatch: pytest.MonkeyPatch
 
         result = generate_report(_make_state())  # type: ignore[arg-type]
 
-    assert "slack_message" in result  # report returned despite write-back failure
+    mock_helper.assert_called_once()
+    assert "slack_message" in result

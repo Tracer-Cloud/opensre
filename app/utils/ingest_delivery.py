@@ -9,8 +9,6 @@ from typing import Any
 import httpx
 
 from app.config import get_tracer_base_url
-
-# from app.nodes.publish_findings.formatters.report import get_investigation_url
 from app.state import InvestigationState
 from app.utils.urls import get_investigation_url
 
