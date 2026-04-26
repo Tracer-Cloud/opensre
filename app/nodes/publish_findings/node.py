@@ -2,7 +2,6 @@
 
 import logging
 import os
-from typing import Optional
 
 from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
@@ -187,7 +186,7 @@ def generate_report(state: InvestigationState) -> dict:
 @traceable(name="node_publish_findings")
 def node_publish_findings(
     state: InvestigationState,
-    config: Optional[RunnableConfig] = None,  # noqa: ARG001
+    config: RunnableConfig | None = None,  # noqa: ARG001
 ) -> dict:
     """LangGraph node wrapper with LangSmith tracking."""
     return generate_report(state)
