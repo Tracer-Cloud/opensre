@@ -155,7 +155,9 @@ def main() -> None:
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list", help="List metric/log/trace CSV files")
 
-    sp_raw = sub.add_parser("raw", help="Print first rows of one CSV (path relative to telemetry dir)")
+    sp_raw = sub.add_parser(
+        "raw", help="Print first rows of one CSV (path relative to telemetry dir)"
+    )
     sp_raw.add_argument("csv_path", help="e.g. metric/container_cpu.csv")
     sp_raw.add_argument("--limit", type=int, default=50)
 

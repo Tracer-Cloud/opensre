@@ -17,7 +17,7 @@ from app.nodes.publish_findings.renderers.editor import open_in_editor
 from app.nodes.publish_findings.renderers.terminal import render_report
 from app.nodes.publish_findings.report_context import build_report_context
 from app.state import InvestigationState
-from app.utils.ingest_delivery import send_ingest
+from app.utils.ingest_delivery import create_investigation_and_attach_url
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,9 @@ def generate_report(state: InvestigationState) -> dict:
             InvestigationState,
             {**state, "problem_report": {"report_md": slack_message}, "summary": short_summary},
         )
-        investigation_id = send_ingest(state_with_report)
+        investigation_id, investigation_url = create_investigation_and_attach_url(
+            state_with_report, slack_message, short_summary
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("[publish] ingest failed: %s", exc)
 
@@ -72,7 +74,20 @@ def generate_report(state: InvestigationState) -> dict:
                     "summary": short_summary,
                 },
             )
-            send_ingest(state_with_url)
+            investigation_id = create_investigation_and_attach_url(
+                state_with_url, slack_message, short_summary
+            )[0]  # type: ignore[index]
+            logger.debug(
+                "[publish] ingest update: investigation_id=%s thread_id=%s",
+                investigation_id,
+                state.get("thread_id"),
+            )
+            logger.info(
+                "[publish] ingest update completed: investigation_id=%s thread_id=%s",
+                investigation_id,
+                state.get("thread_id"),
+            )
+
         except Exception as exc:  # noqa: BLE001
             logger.warning("[publish] ingest url update failed: %s", exc)
 
