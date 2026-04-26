@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import requests
+import httpx
 
 from app.integrations.betterstack import build_betterstack_config, validate_betterstack_config
 from app.integrations.github_mcp import (
@@ -182,8 +182,12 @@ def validate_slack_webhook(*, webhook_url: str) -> IntegrationHealthResult:
         return IntegrationHealthResult(ok=False, detail=str(err))
 
     try:
-        response = requests.get(slack_config.webhook_url, timeout=10, allow_redirects=False)
-    except requests.RequestException as err:
+        response = httpx.get(
+            slack_config.webhook_url,
+            timeout=10,
+            follow_redirects=False,
+        )
+    except httpx.RequestError as err:
         return IntegrationHealthResult(ok=False, detail=f"Slack webhook validation failed: {err}")
 
     if response.status_code == 404:

@@ -1,0 +1,36 @@
+---
+title: "Daily Update — 2026-04-25"
+description: "OpenSRE engineering daily update for 2026-04-25 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+ANIRUDDHA ADAK, Aryan Jain, GoDiao, Matt Van Horn, mayankbharati-ops, Turan Buyukkamaci, Vaibhav Upreti, and vignesh Gopikrishnan 🙏🚀
+
+## Main updates shipped (April 25, 2026)
+
+- test(services): add direct unit tests for s3_client.py (#886) — GoDiao
+- test: add unit tests for TracerPipelinesMixin (#888) — Turan Buyukkamaci
+- refactor(wizard): migrate Slack webhook validation from requests to httpx — vignesh Gopikrishnan
+- docs: standardize package manager, deduplicate assets, and sync README — ANIRUDDHA ADAK
+- test(cli): move local_llm_test.py from app/ to tests/cli/ (#900) — Matt Van Horn
+- test(plan_actions): repair _InputStub after model_copy/model_dump usage — mayankbharati-ops
+- test: add unit tests for app/cli/context.py — Aryan Jain
+- docs: add contributor note about test locations — Aryan Jain
+
+## Source pull requests
+
+- [#929](https://github.com/Tracer-Cloud/opensre/pull/929) test(plan_actions): repair _InputStub after model_copy/model_dump usage (author: mayankbharati-ops; contributors: mayankbharati-ops; labels: _none_; files: `tests/nodes/plan_actions/test_node_plan_actions.py`)
+- [#931](https://github.com/Tracer-Cloud/opensre/pull/931) test: add unit tests for app/cli/context.py (author: Aryan Jain; contributors: Aryan Jain; labels: _none_; files: `tests/cli/test_context.py`)
+- [#933](https://github.com/Tracer-Cloud/opensre/pull/933) docs: add contributor note about test locations (author: Aryan Jain; contributors: Aryan Jain; labels: _none_; files: `AGENTS.md`, `CONTRIBUTING.md`)
+- [#943](https://github.com/Tracer-Cloud/opensre/pull/943) test(cli): move local_llm_test.py from app/ to tests/cli/ (#900) (author: Matt Van Horn; contributors: Matt Van Horn; labels: _none_; files: `tests/cli/test_local_llm.py`)
+- [#924](https://github.com/Tracer-Cloud/opensre/pull/924) docs: standardize package manager, deduplicate assets, and sync README (author: ANIRUDDHA ADAK; contributors: ANIRUDDHA ADAK; labels: _none_; files: `README.md`, `docs/docs.json`, `docs/images/createaccount(1).png`, `docs/images/createworkspace(1).png`, `docs/images/createworkspace-1.png`, `docs/images/fonts/BrittiSansTrial-Light-BF6757bfd494951.otf`, `docs/images/fonts/BrittiSansTrial-LightItalic-BF6757bfd48c7c7.otf`, `docs/images/fonts/BrittiSansTrial-Regular-BF6757bfd47ffbf.otf`, `docs/images/fonts/BrittiSansTrial-Regular-BF6757bfd47ffbf.woff2`, `docs/images/fonts/BrittiSansTrial-RegularItalic-BF6757bfd44e013.otf`, and 4 more)
+- [#953](https://github.com/Tracer-Cloud/opensre/pull/953) test(services): add direct unit tests for s3_client.py (#886) (author: GoDiao; contributors: GoDiao; labels: _none_; files: `tests/services/test_s3_client.py`)
+- [#957](https://github.com/Tracer-Cloud/opensre/pull/957) refactor(wizard): migrate Slack webhook validation from requests to httpx (author: vignesh Gopikrishnan; contributors: Vaibhav Upreti and vignesh Gopikrishnan; labels: _none_; files: `app/cli/wizard/integration_health.py`, `tests/cli/wizard/test_integration_health.py`)
+- [#950](https://github.com/Tracer-Cloud/opensre/pull/950) test: add unit tests for TracerPipelinesMixin (#888) (author: Turan Buyukkamaci; contributors: Turan Buyukkamaci; labels: _none_; files: `tests/services/tracer_client/test_tracer_pipelines.py`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-24T23:00:00+00:00` to `2026-04-25T23:00:00+00:00`
