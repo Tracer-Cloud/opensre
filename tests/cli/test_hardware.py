@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import mock_open, patch
 
 import pytest
 
@@ -252,9 +252,14 @@ class TestRecommendModel:
         assert len(reason) > 0
 
     def test_safe_ram_capped_at_half_total(self) -> None:
+        # available=16 exceeds total*0.5=8, so safe_ram is capped at 8 GB.
+        # Without the cap, safe_ram would be 16 (>= 12) → llama3.1:8b.
+        # With the cap, safe_ram is 8 (< 12) → llama3.2.
         hw = self._hw(total=16.0, available=16.0)
         model, reason = recommend_model(hw)
-        assert "8" in reason
+        assert model == "llama3.2"
+        assert "8GB" in reason
+        assert "16GB" not in reason
 
     def test_exactly_12gb_available_picks_8b(self) -> None:
         hw = self._hw(total=24.0, available=12.0)
