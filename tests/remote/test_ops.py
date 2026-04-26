@@ -85,8 +85,9 @@ def test_railway_provider_logs() -> None:
     ):
         provider.logs(scope, lines=10, follow=True)
 
-    logs_cmd = next(c for c in captured if c[:2] == ["railway", "logs"])
-    assert logs_cmd == ["railway", "logs", "--tail", "10", "--follow"]
+    logs_cmds = [c for c in captured if c[:2] == ["railway", "logs"]]
+    assert len(logs_cmds) == 1, f"Expected exactly one 'railway logs' call, got: {logs_cmds}"
+    assert logs_cmds[0] == ["railway", "logs", "--tail", "10", "--follow"]
 
 
 def test_railway_provider_fetch_logs() -> None:
