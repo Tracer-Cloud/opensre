@@ -15,10 +15,11 @@ app/services/
 ├── s3_client.py      # Single-file clients
 └── vercel/
 app/integrations/
+├── clients/
+│   └── prefect/      # Legacy location — new clients go in app/services/
 ├── opensre_mcp.py    # MCP server implementation
 └── ...
 ```
-
 ## Adding a New Integration
 
 1. Create a client under `app/services/<vendor>/`
