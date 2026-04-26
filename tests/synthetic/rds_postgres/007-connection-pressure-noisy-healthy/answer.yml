@@ -1,7 +1,6 @@
 root_cause_category: healthy
 required_keywords:
-  - operating bounds
-  - no failure
+  - healthy
 forbidden_categories:
   - resource_exhaustion
   - infrastructure
