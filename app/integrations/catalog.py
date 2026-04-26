@@ -976,22 +976,6 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 }
             )
 
-    victoria_logs_url = os.getenv("VICTORIA_LOGS_URL", "").strip()
-    if victoria_logs_url:
-        victoria_logs_config = VictoriaLogsIntegrationConfig.model_validate(
-            {
-                "base_url": victoria_logs_url,
-                "tenant_id": os.getenv("VICTORIA_LOGS_TENANT_ID", "0").strip() or "0",
-            }
-        )
-        integrations.append(
-            {
-                "id": "env-victoria-logs",
-                "service": "victoria_logs",
-                "status": "active",
-                "credentials": victoria_logs_config.model_dump(exclude={"integration_id"}),
-            }
-        )
 
     github_mode = (
         os.getenv("GITHUB_MCP_MODE", "streamable-http").strip() or "streamable-http"
@@ -1558,7 +1542,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
             victoria_logs_config = VictoriaLogsIntegrationConfig.model_validate(
                 {
                     "base_url": victoria_logs_url,
-                    "tenant_id": os.getenv("VICTORIA_LOGS_TENANT_ID", "0").strip() or "0",
+                    "tenant_id": os.getenv("VICTORIA_LOGS_TENANT_ID"),
                 }
             )
             integrations.append(
