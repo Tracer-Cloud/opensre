@@ -51,3 +51,12 @@ def test_extract_judge_json_raises_for_json_array() -> None:
 def test_extract_judge_json_raises_for_invalid_json() -> None:
     with pytest.raises(ValueError):
         extract_judge_json_from_response('{"overall_pass": true, "score_0_100": 90,')
+
+
+def test_extract_judge_json_raises_for_fenced_json_array() -> None:
+    with pytest.raises(ValueError, match="JSON must be an object"):
+        extract_judge_json_from_response(
+            """```json
+[{"overall_pass": true}]
+```"""
+        )
