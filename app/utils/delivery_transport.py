@@ -21,7 +21,9 @@ for Telegram).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any
 
 import httpx
@@ -38,19 +40,34 @@ class DeliveryResponse:
         status_code: HTTP status code from the response, or ``0`` when the
             request itself raised before a response was received.
         data: Parsed JSON body when the response was a JSON object,
-            otherwise an empty dict. Never ``None``, so callers can chain
-            ``.get(...)`` safely without a None-check.
+            otherwise an empty mapping. Never ``None``, so callers can
+            chain ``.get(...)`` safely without a None-check. The mapping
+            is read-only (``MappingProxyType``) so the frozen dataclass
+            stays fully immutable end-to-end.
         text: Raw response body, useful for fallback error extraction
             when the body is not valid JSON or is empty.
         error: String form of the exception that aborted the request.
             Empty when ``ok`` is True.
+        error_type: Class name of the exception that aborted the request
+            (e.g. ``"TimeoutError"``, ``"ConnectError"``). Empty when
+            ``ok`` is True. Surfaced separately so callers can include
+            the exception shape in triage logs without parsing ``error``.
     """
 
     ok: bool
     status_code: int = 0
-    data: dict[str, Any] = field(default_factory=dict)
+    data: Mapping[str, Any] = field(default_factory=dict)
     text: str = ""
     error: str = ""
+    error_type: str = ""
+
+    def __post_init__(self) -> None:
+        # Wrap ``data`` in a read-only view so callers cannot mutate the
+        # response after the fact and break the frozen-dataclass contract.
+        # ``object.__setattr__`` is required because ``frozen=True`` blocks
+        # normal attribute assignment.
+        if not isinstance(self.data, MappingProxyType):
+            object.__setattr__(self, "data", MappingProxyType(dict(self.data)))
 
 
 def post_json(
@@ -95,7 +112,7 @@ def post_json(
             follow_redirects=follow_redirects,
         )
     except Exception as exc:  # noqa: BLE001 — transport never re-raises
-        return DeliveryResponse(ok=False, error=str(exc))
+        return DeliveryResponse(ok=False, error=str(exc), error_type=type(exc).__name__)
 
     text = response.text
     data: dict[str, Any] = {}

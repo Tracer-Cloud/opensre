@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from app.utils.delivery_transport import post_json
@@ -17,7 +18,7 @@ def _discord_auth_headers(bot_token: str) -> dict[str, str]:
     }
 
 
-def _discord_error_from_data(data: dict[str, Any]) -> str:
+def _discord_error_from_data(data: Mapping[str, Any]) -> str:
     return str(data.get("message", data.get("error", "unknown")))
 
 

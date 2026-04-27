@@ -217,10 +217,11 @@ def _post_direct(
     )
     if not response.ok:
         logger.error(
-            "[slack] Direct post exception channel=%s thread_ts=%s detail=%s "
-            "(caller may attempt fallback)",
+            "[slack] Direct post exception channel=%s thread_ts=%s "
+            "exc_type=%s detail=%s (caller may attempt fallback)",
             channel,
             thread_ts,
+            response.error_type or "Exception",
             response.error,
         )
         return False, f"exception={response.error}"

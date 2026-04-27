@@ -16,6 +16,7 @@ network is never touched. Provider-specific success criteria
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -301,3 +302,150 @@ class TestSendSlackReport:
             "https://slack.com/api/chat.postMessage",
             "https://api.tracer.test/api/slack",
         ]
+
+
+# ---------------------------------------------------------------------------
+# Exception-type triage log line (regression for the #864 refactor)
+# ---------------------------------------------------------------------------
+
+
+class TestPostDirectExceptionLog:
+    """The original ``_post_direct`` log embedded ``type(exc).__name__``
+    so on-call could distinguish ``TimeoutError`` from ``ConnectionError``
+    at a glance. The shared transport now exposes ``error_type`` and the
+    Slack helper threads it back into the log line."""
+
+    def test_log_includes_exception_class_name(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        def _raise(*_a: Any, **_kw: Any) -> Any:
+            raise TimeoutError("read timeout")
+
+        monkeypatch.setattr("app.utils.delivery_transport.httpx.post", _raise)
+        with caplog.at_level(logging.ERROR, logger="app.utils.slack_delivery"):
+            slack_delivery._post_direct("hi", "C1", "1.0", "tok")
+
+        joined = " ".join(rec.getMessage() for rec in caplog.records)
+        assert "exc_type=TimeoutError" in joined
+        assert "read timeout" in joined
+
+    def test_log_distinguishes_connection_from_timeout(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        def _raise(*_a: Any, **_kw: Any) -> Any:
+            raise ConnectionError("dns failure")
+
+        monkeypatch.setattr("app.utils.delivery_transport.httpx.post", _raise)
+        with caplog.at_level(logging.ERROR, logger="app.utils.slack_delivery"):
+            slack_delivery._post_direct("hi", "C1", "1.0", "tok")
+
+        joined = " ".join(rec.getMessage() for rec in caplog.records)
+        assert "exc_type=ConnectionError" in joined
+
+
+# ---------------------------------------------------------------------------
+# Shared-transport delegation (regression coverage for the #864 refactor)
+# ---------------------------------------------------------------------------
+
+
+class TestDelegatesToSharedTransport:
+    """After #864 the slack helper uses ``delivery_transport.post_json``
+    rather than calling httpx directly. These tests pin that contract so
+    a future regression that re-imports httpx into ``slack_delivery`` —
+    or that bypasses ``post_json`` from any of the four code paths — is
+    caught immediately. Mirrors the same regression class on the Discord
+    and Telegram test files."""
+
+    def test_module_does_not_import_httpx(self) -> None:
+        import app.utils.slack_delivery as mod
+
+        assert not hasattr(mod, "httpx"), (
+            "slack_delivery should not import httpx directly — "
+            "it must go through delivery_transport.post_json"
+        )
+
+    def test_call_reactions_api_uses_post_json_helper(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        captured: dict[str, Any] = {}
+
+        def _stub_post_json(url: str, payload: dict[str, Any], **kw: Any) -> DeliveryResponse:
+            captured["url"] = url
+            captured["payload"] = payload
+            captured["headers"] = kw.get("headers")
+            captured["timeout"] = kw.get("timeout")
+            return DeliveryResponse(ok=True, status_code=200, data={"ok": True})
+
+        monkeypatch.setattr("app.utils.slack_delivery.post_json", _stub_post_json)
+        ok = slack_delivery._call_reactions_api(
+            "reactions.add", "tok", "C9", "1.5", "thinking_face"
+        )
+        assert ok is True
+        assert captured["url"] == "https://slack.com/api/reactions.add"
+        assert captured["headers"]["Authorization"] == "Bearer tok"
+        # Reactions API uses a tighter 8s timeout than the default 15s.
+        assert captured["timeout"] == 8.0
+
+    def test_post_direct_uses_post_json_helper(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        captured: dict[str, Any] = {}
+
+        def _stub_post_json(url: str, payload: dict[str, Any], **kw: Any) -> DeliveryResponse:
+            captured["url"] = url
+            captured["payload"] = payload
+            captured["headers"] = kw.get("headers")
+            return DeliveryResponse(ok=True, status_code=200, data={"ok": True, "ts": "1.234"})
+
+        monkeypatch.setattr("app.utils.slack_delivery.post_json", _stub_post_json)
+        ok, err = slack_delivery._post_direct(
+            "hello", "C1", "1.000", "secret-tok", blocks=[{"x": 1}]
+        )
+        assert ok is True
+        assert err == ""
+        assert captured["url"] == "https://slack.com/api/chat.postMessage"
+        assert captured["headers"]["Authorization"] == "Bearer secret-tok"
+        assert captured["payload"]["blocks"] == [{"x": 1}]
+
+    def test_post_via_webapp_uses_post_json_helper(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        monkeypatch.setenv("TRACER_API_URL", "https://api.tracer.test")
+        captured: dict[str, Any] = {}
+
+        def _stub_post_json(url: str, payload: dict[str, Any], **kw: Any) -> DeliveryResponse:
+            captured["url"] = url
+            captured["payload"] = payload
+            captured["follow_redirects"] = kw.get("follow_redirects")
+            return DeliveryResponse(ok=True, status_code=200, data={}, text="")
+
+        monkeypatch.setattr("app.utils.slack_delivery.post_json", _stub_post_json)
+        ok = slack_delivery._post_via_webapp("hi", "C1", "1.0")
+        assert ok is True
+        assert captured["url"] == "https://api.tracer.test/api/slack"
+        assert captured["follow_redirects"] is True
+
+    def test_post_via_incoming_webhook_uses_post_json_helper(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        captured: dict[str, Any] = {}
+
+        def _stub_post_json(url: str, payload: dict[str, Any], **kw: Any) -> DeliveryResponse:
+            captured["url"] = url
+            captured["payload"] = payload
+            captured["follow_redirects"] = kw.get("follow_redirects")
+            return DeliveryResponse(ok=True, status_code=200, data={}, text="ok")
+
+        monkeypatch.setattr("app.utils.slack_delivery.post_json", _stub_post_json)
+        ok = slack_delivery._post_via_incoming_webhook(
+            "hi", "https://hooks.slack.test/abc", blocks=[{"b": 1}]
+        )
+        assert ok is True
+        assert captured["url"] == "https://hooks.slack.test/abc"
+        assert captured["payload"]["text"] == "hi"
+        assert captured["payload"]["blocks"] == [{"b": 1}]
+        assert captured["follow_redirects"] is True

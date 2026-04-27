@@ -188,6 +188,7 @@ class TestDeliveryResponseShape:
         assert result.data == {}
         assert result.text == ""
         assert result.error == ""
+        assert result.error_type == ""
 
     def test_response_is_frozen(self) -> None:
         """``DeliveryResponse`` is a frozen dataclass — callers cannot mutate
@@ -197,3 +198,79 @@ class TestDeliveryResponseShape:
         result = DeliveryResponse(ok=True)
         with pytest.raises(FrozenInstanceError):
             result.ok = False  # type: ignore[misc]
+
+    def test_data_is_read_only(self) -> None:
+        """``data`` is wrapped in ``MappingProxyType`` so the frozen
+        dataclass stays fully immutable end-to-end. Mutating it must
+        raise ``TypeError`` rather than silently succeeding."""
+        result = DeliveryResponse(ok=True, data={"a": 1})
+        with pytest.raises(TypeError):
+            result.data["b"] = 2  # type: ignore[index]
+
+    def test_data_is_isolated_from_caller_dict(self) -> None:
+        """Mutating the dict the caller passed in must not bleed through
+        to the response — the proxy must wrap a copy, not the original."""
+        original: dict[str, Any] = {"a": 1}
+        result = DeliveryResponse(ok=True, data=original)
+        original["a"] = 999
+        original["b"] = "leaked"
+        assert dict(result.data) == {"a": 1}
+
+    def test_data_compares_equal_to_plain_dict(self) -> None:
+        """``MappingProxyType`` must still compare equal to a regular dict
+        so existing assertions in delivery test files keep working."""
+        body = {"ok": True, "id": "msg-1"}
+        result = DeliveryResponse(ok=True, status_code=200, data=body)
+        assert result.data == body
+
+    def test_default_data_instances_are_independent(self) -> None:
+        """Each default ``data`` must be its own mapping — no shared state
+        between instances (a classic mutable-default-argument bug)."""
+        a = DeliveryResponse(ok=True)
+        b = DeliveryResponse(ok=True)
+        assert a.data is not b.data
+
+
+class TestPostJsonErrorType:
+    """The transport surfaces the exception class name on failure so callers
+    can include it in triage logs without parsing the error string."""
+
+    def test_error_type_populated_on_transport_exception(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _raise(*_a: Any, **_kw: Any) -> Any:
+            raise TimeoutError("read timeout")
+
+        monkeypatch.setattr("app.utils.delivery_transport.httpx.post", _raise)
+        result = post_json("https://example.test", {})
+        assert result.ok is False
+        assert result.error_type == "TimeoutError"
+        assert "read timeout" in result.error
+
+    @pytest.mark.parametrize(
+        ("exc", "expected_name"),
+        [
+            (httpx.ConnectError("refused"), "ConnectError"),
+            (httpx.ReadTimeout("timed out"), "ReadTimeout"),
+            (OSError("network down"), "OSError"),
+            (RuntimeError("oops"), "RuntimeError"),
+        ],
+    )
+    def test_error_type_matches_exception_class(
+        self, exc: Exception, expected_name: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _raise(*_a: Any, **_kw: Any) -> Any:
+            raise exc
+
+        monkeypatch.setattr("app.utils.delivery_transport.httpx.post", _raise)
+        result = post_json("https://example.test", {})
+        assert result.error_type == expected_name
+
+    def test_error_type_empty_on_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            "app.utils.delivery_transport.httpx.post",
+            lambda *_a, **_kw: _mock_response(200, {"ok": True}),
+        )
+        result = post_json("https://example.test", {})
+        assert result.ok is True
+        assert result.error_type == ""
