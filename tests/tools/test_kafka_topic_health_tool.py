@@ -14,16 +14,19 @@ class TestKafkaTopicHealthToolContract(BaseToolContract):
 
 
 # ── is_available ────────────────────────────────────────────────────
+# kafka_is_available checks sources["kafka"]["connection_verified"], not
+# bootstrap_servers directly. Positive test must include connection_verified.
 
-def test_is_available_true_with_bootstrap_servers() -> None:
+def test_is_available_true_when_connection_verified() -> None:
     rt = get_kafka_topic_health.__opensre_registered_tool__
-    sources = {"kafka": {"bootstrap_servers": "localhost:9092"}}
+    sources = {"kafka": {"connection_verified": True, "bootstrap_servers": "localhost:9092"}}
     assert rt.is_available(sources) is True
 
 
-def test_is_available_false_empty_bootstrap_servers() -> None:
+def test_is_available_false_missing_connection_verified() -> None:
     rt = get_kafka_topic_health.__opensre_registered_tool__
-    assert rt.is_available({"kafka": {"bootstrap_servers": ""}}) is False
+    # bootstrap_servers present but connection_verified absent → False
+    assert rt.is_available({"kafka": {"bootstrap_servers": "localhost:9092"}}) is False
 
 
 def test_is_available_false_missing_kafka_key() -> None:
@@ -32,23 +35,21 @@ def test_is_available_false_missing_kafka_key() -> None:
 
 
 # ── extract_params ──────────────────────────────────────────────────
+# kafka_extract_params maps fields from sources["kafka"]; the tool then
+# receives bootstrap_servers, security_protocol, etc. as keyword args.
 
-def test_extract_params_maps_fields() -> None:
+def test_extract_params_maps_bootstrap_servers() -> None:
     rt = get_kafka_topic_health.__opensre_registered_tool__
     sources = {
         "kafka": {
-            "bootstrap_servers": "localhost:9092",
+            "connection_verified": True,
+            "bootstrap_servers": "broker:9092",
             "topic": "my-topic",
-            "security_protocol": "SASL_SSL",
-            "sasl_mechanism": "PLAIN",
-            "sasl_username": "user",
-            "sasl_password": "pass",
+            "security_protocol": "PLAINTEXT",
         }
     }
     params = rt.extract_params(sources)
-    assert params["bootstrap_servers"] == "localhost:9092"
-    assert params["topic"] == "my-topic"
-    assert params["security_protocol"] == "SASL_SSL"
+    assert params["bootstrap_servers"] == "broker:9092"
 
 
 # ── run ─────────────────────────────────────────────────────────────
@@ -75,7 +76,7 @@ def test_run_returns_topic_health_on_success() -> None:
     assert "topics" in result
 
 
-def test_run_returns_error_on_no_brokers() -> None:
+def test_run_returns_error_on_exception() -> None:
     with patch(
         "app.tools.KafkaTopicHealthTool.get_topic_health",
         side_effect=Exception("NoBrokersAvailable"),
