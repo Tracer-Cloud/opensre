@@ -14,9 +14,12 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, Literal, NoReturn, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 import questionary
+
+if TYPE_CHECKING:
+    from app.integrations.github_mcp import GitHubMcpDisplayDetailLevel
 
 from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL
 from app.integrations.store import (
@@ -35,9 +38,6 @@ from app.integrations.verify import (
 
 _B = "\033[1m"
 _R = "\033[0m"
-GitHubMcpDisplayDetailLevel = Literal["summary", "standard", "full"]
-GitHubMcpRepoView = Literal["auto", "user", "accessible", "starred", "search_user"]
-GitHubMcpRepoVisibilityFilter = Literal["any", "public", "private"]
 
 
 def _json_echo(data: Any) -> None:
@@ -102,7 +102,9 @@ def _prompt_github_repo_report_level() -> GitHubMcpDisplayDetailLevel:
     if sel is None:
         return "summary"
     if sel in ("summary", "standard", "full"):
-        return cast(GitHubMcpDisplayDetailLevel, sel)
+        from app.integrations.github_mcp import GitHubMcpDisplayDetailLevel as _Detail
+
+        return cast(_Detail, sel)
     return "summary"
 
 
@@ -321,6 +323,8 @@ def _setup_betterstack() -> None:
 
 def _setup_github() -> None:
     from app.integrations.github_mcp import (
+        GitHubMcpRepoView,
+        GitHubMcpRepoVisibilityFilter,
         build_github_mcp_config,
         format_github_mcp_validation_cli_report,
         print_github_mcp_validation_report,
