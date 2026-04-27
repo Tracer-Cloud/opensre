@@ -47,9 +47,9 @@ def _claims_lines(claims: list[Any], key: str = "claim") -> str:
 
 def extract_judge_json_from_response(text: str) -> dict[str, Any]:
     text = text.strip()
-    fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
+    fence = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, re.DOTALL)
     if fence:
-        text = fence.group(1)
+        text = fence.group(1).strip()
 
     if text.startswith("["):
         msg = "Judge response JSON must be an object"
