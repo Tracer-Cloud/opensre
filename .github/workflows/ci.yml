@@ -43,7 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.full_matrix == 'true') && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        os: ${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.full_matrix == 'true')) && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
@@ -80,7 +80,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'push' || ( github.event_name == 'workflow_dispatch' && inputs.full_matrix == 'true')  && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        os: ${{ (github.event_name == 'push' || ( github.event_name == 'workflow_dispatch' && inputs.full_matrix == 'true'))  && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 27
@@ -116,7 +116,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.full_matrix == 'true') && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        os: ${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.full_matrix == 'true')) && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
