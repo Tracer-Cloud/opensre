@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.tools.PrefectWorkerHealthTool import PrefectWorkerHealthTool
-from tests.tools.conftest import BaseToolContract, mock_agent_state
+from tests.tools.conftest import BaseToolContract
 
 
 class TestPrefectWorkerHealthToolContract(BaseToolContract):
@@ -50,6 +50,9 @@ def test_extract_params_maps_source_fields(tool: PrefectWorkerHealthTool) -> Non
 
 def test_is_available_requires_connection_verified(tool: PrefectWorkerHealthTool) -> None:
     assert tool.is_available({"prefect": {"connection_verified": True}}) is True
+
+
+def test_is_available_false_without_connection_verified(tool: PrefectWorkerHealthTool) -> None:
     assert tool.is_available({"prefect": {}}) is False
     assert tool.is_available({}) is False
 
@@ -58,7 +61,14 @@ def test_extract_params_maps_fields(tool: PrefectWorkerHealthTool) -> None:
     sources = mock_agent_state()
     params = tool.extract_params(sources)
     assert params["api_url"] == "http://localhost:4200/api"
+    assert params["work_pool_name"] == "my-pool"
+    assert params["pool_limit"] == 20
+    assert params["worker_limit"] == 20
 
+
+# ---------------------------------------------------------------------------
+# run — missing api_url
+# ---------------------------------------------------------------------------
 
 def test_run_returns_unavailable_without_api_url(tool: PrefectWorkerHealthTool) -> None:
     result = tool.run(api_url="")
@@ -74,6 +84,13 @@ def test_run_returns_unavailable_for_whitespace_only_api_url(tool: PrefectWorker
 
 def test_run_returns_unavailable_when_no_api_url(tool: PrefectWorkerHealthTool) -> None:
     result = tool.run(api_url="")
+    assert result["available"] is False
+    assert result["work_pools"] == []
+    assert result["workers"] == []
+
+
+def test_run_returns_unavailable_for_whitespace_only_api_url(tool: PrefectWorkerHealthTool) -> None:
+    result = tool.run(api_url="   ")
     assert result["available"] is False
 
 
@@ -106,30 +123,57 @@ def test_run_happy_path_no_work_pool(tool: PrefectWorkerHealthTool) -> None:
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get_work_pools.return_value = {
         "success": True,
-        "work_pools": [
-            {"name": "pool-1", "status": "READY", "is_paused": False},
-            {"name": "pool-2", "status": "PAUSED", "is_paused": True},
-        ],
+        "work_pools": pools,
+        "total": 3,
     }
+
     with patch("app.tools.PrefectWorkerHealthTool.make_prefect_client", return_value=mock_client):
         result = tool.run(api_url="http://localhost:4200/api")
+
     assert result["available"] is True
-    assert result["total_pools"] == 2
-    assert len(result["unhealthy_pools"]) == 1
+    assert result["total_pools"] == 3
+    assert result["total_unhealthy_pools"] == 2
+    names = {p["name"] for p in result["unhealthy_pools"]}
+    assert "batch" in names
+    assert "nightly" in names
+    assert "default" not in names
 
 
 def test_run_with_work_pool_name(tool: PrefectWorkerHealthTool) -> None:
     mock_client = MagicMock()
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
-    mock_client.get_work_pools.return_value = {"success": True, "work_pools": []}
-    mock_client.get_workers.return_value = {
+    mock_client.get_work_pools.return_value = {
         "success": True,
-        "workers": [
-            {"name": "worker-1", "status": "ONLINE"},
-            {"name": "worker-2", "status": "OFFLINE"},
-        ],
+        "work_pools": [],
+        "total": 0,
     }
+
+    with patch("app.tools.PrefectWorkerHealthTool.make_prefect_client", return_value=mock_client):
+        result = tool.run(api_url="http://localhost:4200/api")
+
+    assert result["available"] is True
+    assert result["total_pools"] == 0
+    assert result["unhealthy_pools"] == []
+
+
+# ---------------------------------------------------------------------------
+# run — workers
+# ---------------------------------------------------------------------------
+
+
+def test_run_fetches_workers_when_pool_name_provided(tool: PrefectWorkerHealthTool) -> None:
+    workers = [
+        {"name": "worker-1", "status": "ONLINE", "last_heartbeat_time": "2026-04-05T10:00:00Z"},
+        {"name": "worker-2", "status": "OFFLINE", "last_heartbeat_time": "2026-04-04T08:00:00Z"},
+        {"name": "worker-3", "status": "UNHEALTHY", "last_heartbeat_time": "2026-04-05T09:00:00Z"},
+    ]
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.get_work_pools.return_value = {"success": True, "work_pools": [], "total": 0}
+    mock_client.get_workers.return_value = {"success": True, "workers": workers, "total": 3}
+
     with patch("app.tools.PrefectWorkerHealthTool.make_prefect_client", return_value=mock_client):
         result = tool.run(api_url="http://localhost:4200/api", work_pool_name="pool-1")
     assert result["total_workers"] == 2

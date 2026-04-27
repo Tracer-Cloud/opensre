@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import importlib
 import json
 import os
 import re
@@ -40,6 +41,30 @@ def _hub_import_error(name: str) -> ImportError:
         f"{name} is required for Hugging Face OpenSRE helpers. "
         "Install with: pip install 'opensre[opensre-hub]'"
     )
+
+
+def _load_dataset_loader() -> Any:
+    try:
+        module = importlib.import_module("datasets")
+    except ImportError as e:
+        raise _hub_import_error("datasets") from e
+
+    loader = getattr(module, "load_dataset", None)
+    if loader is None:
+        raise _hub_import_error("datasets")
+    return loader
+
+
+def _load_snapshot_download() -> Any:
+    try:
+        module = importlib.import_module("huggingface_hub")
+    except ImportError as e:
+        raise _hub_import_error("huggingface_hub") from e
+
+    downloader = getattr(module, "snapshot_download", None)
+    if downloader is None:
+        raise _hub_import_error("huggingface_hub")
+    return downloader
 
 
 def hub_repo_prefix_from_pipeline(pipeline_name: str) -> str:
@@ -143,11 +168,7 @@ def stream_opensre_query_alerts(
     rubric from the in-graph ``raw_alert`` when ``--evaluate`` is off — see
     :func:`app.state.factory.make_initial_state`.
     """
-    try:
-        from datasets import load_dataset
-    except ImportError as e:
-        raise _hub_import_error("datasets") from e
-
+    load_dataset = _load_dataset_loader()
     repo = (dataset_id or OPENSRE_HF_DATASET_ID).strip()
     rev = (revision or os.environ.get("OPENSRE_HF_REVISION") or "main").strip()
     prefix = query_alerts_prefix.strip().strip("/")
@@ -175,11 +196,7 @@ def materialize_opensre_telemetry_from_hub(
     cache_dir: Path | None = None,
 ) -> Path:
     """Download only ``telemetry_relative/**`` from the dataset repo into a persistent cache."""
-    try:
-        from huggingface_hub import snapshot_download
-    except ImportError as e:
-        raise _hub_import_error("huggingface_hub") from e
-
+    snapshot_download = _load_snapshot_download()
     rel = telemetry_relative.strip().strip("/")
     if not rel:
         raise ValueError("telemetry_relative must be non-empty")
