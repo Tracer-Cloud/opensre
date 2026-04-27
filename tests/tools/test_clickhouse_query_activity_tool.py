@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from app.tools.ClickHouseQueryActivityTool import get_clickhouse_query_activity
 from tests.tools.conftest import BaseToolContract, mock_agent_state
