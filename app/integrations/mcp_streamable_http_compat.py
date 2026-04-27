@@ -18,9 +18,6 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
-from mcp.client.streamable_http import (  # type: ignore[import-not-found]
-    streamable_http_client as _mcp_streamable_http_client,
-)
 
 
 @asynccontextmanager
@@ -34,6 +31,13 @@ async def streamable_http_client(
     terminate_on_close: bool = True,
 ) -> AsyncGenerator[tuple[Any, Any, Any]]:
     del headers, timeout, sse_read_timeout
+    try:
+        from mcp.client.streamable_http import streamable_http_client as _mcp_streamable_http_client
+    except ImportError as err:
+        raise ImportError(
+            "GitHub MCP streamable-http transport requires optional dependency 'mcp'. "
+            "Install it to use GitHub MCP functionality."
+        ) from err
     async with _mcp_streamable_http_client(
         url,
         http_client=http_client,

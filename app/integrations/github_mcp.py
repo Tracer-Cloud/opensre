@@ -17,15 +17,25 @@ from typing import Any, Literal, cast
 from urllib.parse import urlparse, urlunparse
 
 import httpx
-from mcp import ClientSession, StdioServerParameters, types  # type: ignore[import-not-found]
-from mcp.client.sse import sse_client  # type: ignore[import-not-found]
-from mcp.client.stdio import stdio_client  # type: ignore[import-not-found]
 from pydantic import Field, field_validator, model_validator
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 
 from app.integrations.mcp_streamable_http_compat import streamable_http_client
+
+
+def _import_github_mcp_dependencies():
+    try:
+        from mcp import ClientSession, StdioServerParameters, types  # type: ignore[import-not-found]
+        from mcp.client.sse import sse_client  # type: ignore[import-not-found]
+        from mcp.client.stdio import stdio_client  # type: ignore[import-not-found]
+    except ImportError as err:
+        raise ImportError(
+            "GitHub MCP integration requires optional dependency 'mcp'. "
+            "Install it to use GitHub MCP functionality."
+        ) from err
+    return ClientSession, StdioServerParameters, types, sse_client, stdio_client
 from app.strict_config import StrictConfigModel
 
 DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
@@ -418,6 +428,8 @@ def github_mcp_config_from_env() -> GitHubMCPConfig | None:
 async def _open_github_mcp_session(config: GitHubMCPConfig) -> AsyncIterator[ClientSession]:
     stack = AsyncExitStack()
     try:
+        ClientSession, StdioServerParameters, types, sse_client, stdio_client = _import_github_mcp_dependencies()
+
         if config.mode == "stdio":
             if not config.command:
                 raise ValueError(
@@ -524,6 +536,8 @@ def _connectivity_failure_detail(err: BaseException) -> str:
 
 
 def _tool_result_to_dict(result: types.CallToolResult) -> dict[str, Any]:
+    from mcp import types  # type: ignore[import-not-found]
+
     text_parts: list[str] = []
     content_items: list[dict[str, Any]] = []
 
