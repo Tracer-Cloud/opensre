@@ -50,6 +50,4 @@ def test_extract_judge_json_raises_for_json_array() -> None:
 
 def test_extract_judge_json_raises_for_invalid_json() -> None:
     with pytest.raises(ValueError):
-        extract_judge_json_from_response(
-            '{"overall_pass": true, "score_0_100": 90,'
-        )
+        extract_judge_json_from_response('{"overall_pass": true, "score_0_100": 90,')
