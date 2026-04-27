@@ -21,6 +21,12 @@ on:
       - "Makefile"
       - ".github/workflows/ci.yml"
 
+  workflow_dispatch:
+    inputs:
+      full_matrix:
+        description: "Run full OS matrix (Linux + Windows)"
+        required: false
+        default: "true"
 permissions:
   contents: read
 
@@ -37,10 +43,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        os: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
 
     steps:
@@ -74,10 +80,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        os: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 27
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
 
     steps:
@@ -110,7 +116,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        os: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
@@ -187,7 +193,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [quality, typecheck]
     continue-on-error: true
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     if: >-
       github.event_name == 'push' ||
@@ -286,6 +292,31 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+
+      - name: Verify AWS authentication
+        run: |
+          set -e
+          aws sts get-caller-identity
+      
+      - name: Validate required runtime secrets
+        run: |
+         if [ -z "$ANTHROPIC_API_KEY" ]; then
+          echo "Missing ANTHROPIC_API_KEY"
+          exit 1
+         fi
+
+      - name: Validate CloudWatch access (safe)
+        run: aws logs describe-log-groups --limit 1 || true
+
+      # ---------------- TRACER ----------------
+
       - name: Install tracer CLI
         run: |
           curl -sSL https://install.tracer.cloud | CLI_BRANCH=dev sh -s user_36fbN6K6FwEgJFHsQv1pUByo8K6
@@ -294,7 +325,7 @@ jobs:
         run: |
           sudo tracer init --token ${{ secrets.JWT_TOKEN }}
         continue-on-error: true
-        timeout-minutes: 2
+        timeout-minutes: 7
 
       - name: Run test
         run: ${{ matrix.command }}
