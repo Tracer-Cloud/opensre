@@ -11,6 +11,7 @@ from app.tools.tool_decorator import tool
 @tool(
     name="run_diagnostic_code",
     source="knowledge",
+    is_available=lambda _: False,
     description=(
         "Execute a Python snippet in a restricted sandbox for targeted diagnostics. "
         "Network access and filesystem writes outside /tmp are blocked. "
