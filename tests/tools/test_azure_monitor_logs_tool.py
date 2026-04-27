@@ -101,7 +101,11 @@ def test_bounded_limit_caps_requested_limit() -> None:
     "query,limit,expected",
     [
         ("", 10, "AppTraces | order by TimeGenerated desc | take 10"),
-        ("AppTraces | order by TimeGenerated desc", 5, "AppTraces | order by TimeGenerated desc | take 5"),
+        (
+            "AppTraces | order by TimeGenerated desc",
+            5,
+            "AppTraces | order by TimeGenerated desc | take 5",
+        ),
         ("AppTraces | take 100", 5, "AppTraces | take 100"),
     ],
 )
