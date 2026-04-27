@@ -120,8 +120,8 @@ opensre integrations verify azure
 Expected output:
 
 ```
-SERVICE   SOURCE   STATUS   DETAIL
-azure     env      passed   Azure Log Analytics credentials are configured for workspace 00000000-0000-0000-0000-000000000000 at https://api.loganalytics.io
+SERVICE   SOURCE      STATUS   DETAIL
+azure     local env   passed   Azure Log Analytics credentials are configured for workspace 00000000-0000-0000-0000-000000000000 at https://api.loganalytics.io
 ```
 
 The verify step is a credential-shape check — it does not call the workspace. To exercise the live path, point OpenSRE at a synthetic alert that names `azure` as the source and inspect the resulting evidence.
