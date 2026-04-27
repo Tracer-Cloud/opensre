@@ -30,6 +30,24 @@ def _assume_role(role_arn: str, external_id: str, session_name: str) -> dict[str
     return creds
 
 
+def _stored_credentials_to_aws_creds(credentials: dict[str, Any]) -> dict[str, Any] | None:
+    """Convert a stored-integration credentials dict into the AssumeRole-shaped
+    dict the rest of this module consumes. Returns None when the stored dict
+    lacks the required IAM user keys."""
+    access_key_id = credentials.get("access_key_id") or ""
+    secret_access_key = credentials.get("secret_access_key") or ""
+    if not (access_key_id and secret_access_key):
+        return None
+    # Empty session_token must be coerced to None — botocore rejects "" but
+    # accepts a missing token for IAM user credentials.
+    session_token = credentials.get("session_token") or None
+    return {
+        "AccessKeyId": access_key_id,
+        "SecretAccessKey": secret_access_key,
+        "SessionToken": session_token,
+    }
+
+
 def _generate_eks_token(cluster_name: str, assumed_creds: dict[str, Any], region: str) -> str:
     """Generate EKS bearer token equivalent to `aws eks get-token`.
 
@@ -76,13 +94,28 @@ def build_k8s_clients(
     role_arn: str,
     external_id: str,
     region: str,
+    credentials: dict[str, Any] | None = None,
 ) -> tuple[k8s_client.CoreV1Api, k8s_client.AppsV1Api]:
-    """Assume role, describe cluster, build in-memory Kubernetes API clients.
+    """Resolve AWS credentials, describe cluster, build in-memory Kubernetes API clients.
 
     Returns (CoreV1Api, AppsV1Api) ready to query pods, events, nodes, deployments.
     No kubeconfig file is written to disk.
+
+    Credential resolution priority:
+
+    1. ``credentials`` — stored IAM user keys forwarded from the AWS integration
+       (highest priority: when the integration was explicitly configured with
+       these keys, they are what the user expects to be used).
+    2. ``role_arn`` — STS AssumeRole using the ambient session.
     """
-    assumed = _assume_role(role_arn, external_id, "TracerEKSK8sInvestigation")
+    assumed = _stored_credentials_to_aws_creds(credentials) if credentials else None
+    if assumed is not None:
+        logger.info(
+            "[eks] Using stored integration credentials — AccessKeyId prefix: %s",
+            assumed["AccessKeyId"][:8],
+        )
+    else:
+        assumed = _assume_role(role_arn, external_id, "TracerEKSK8sInvestigation")
 
     logger.info("[eks] Describing cluster: %s in region %s", cluster_name, region)
     eks = boto3.client(
