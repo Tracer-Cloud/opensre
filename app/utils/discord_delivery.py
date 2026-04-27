@@ -12,10 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 def _discord_auth_headers(bot_token: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bot {bot_token}",
-        "Content-Type": "application/json; charset=utf-8",
-    }
+    # ``Content-Type: application/json`` is set automatically by httpx when
+    # the request uses the ``json=`` kwarg, so we only need to add auth.
+    return {"Authorization": f"Bot {bot_token}"}
 
 
 def _discord_error_from_data(data: Mapping[str, Any]) -> str:

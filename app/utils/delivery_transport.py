@@ -48,10 +48,12 @@ class DeliveryResponse:
             when the body is not valid JSON or is empty.
         error: String form of the exception that aborted the request.
             Empty when ``ok`` is True.
-        error_type: Class name of the exception that aborted the request
+        exc_type: Class name of the exception that aborted the request
             (e.g. ``"TimeoutError"``, ``"ConnectError"``). Empty when
             ``ok`` is True. Surfaced separately so callers can include
             the exception shape in triage logs without parsing ``error``.
+            Named ``exc_type`` rather than ``type`` because ``type`` is
+            a Python builtin.
     """
 
     ok: bool
@@ -59,7 +61,7 @@ class DeliveryResponse:
     data: Mapping[str, Any] = field(default_factory=dict)
     text: str = ""
     error: str = ""
-    error_type: str = ""
+    exc_type: str = ""
 
     def __post_init__(self) -> None:
         # Wrap ``data`` in a read-only view so callers cannot mutate the
@@ -112,7 +114,7 @@ def post_json(
             follow_redirects=follow_redirects,
         )
     except Exception as exc:  # noqa: BLE001 — transport never re-raises
-        return DeliveryResponse(ok=False, error=str(exc), error_type=type(exc).__name__)
+        return DeliveryResponse(ok=False, error=str(exc), exc_type=type(exc).__name__)
 
     text = response.text
     data: dict[str, Any] = {}

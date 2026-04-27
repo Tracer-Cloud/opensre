@@ -311,9 +311,11 @@ class TestSendSlackReport:
 
 class TestPostDirectExceptionLog:
     """The original ``_post_direct`` log embedded ``type(exc).__name__``
-    so on-call could distinguish ``TimeoutError`` from ``ConnectionError``
-    at a glance. The shared transport now exposes ``error_type`` and the
-    Slack helper threads it back into the log line."""
+    as ``type=…`` so on-call could distinguish ``TimeoutError`` from
+    ``ConnectionError`` at a glance. The shared transport now exposes
+    ``exc_type`` on ``DeliveryResponse`` and the Slack helper threads it
+    back into the log line under the original ``type=`` key for
+    log-parser compatibility with the pre-refactor format."""
 
     def test_log_includes_exception_class_name(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
@@ -326,7 +328,7 @@ class TestPostDirectExceptionLog:
             slack_delivery._post_direct("hi", "C1", "1.0", "tok")
 
         joined = " ".join(rec.getMessage() for rec in caplog.records)
-        assert "exc_type=TimeoutError" in joined
+        assert "type=TimeoutError" in joined
         assert "read timeout" in joined
 
     def test_log_distinguishes_connection_from_timeout(
@@ -340,7 +342,7 @@ class TestPostDirectExceptionLog:
             slack_delivery._post_direct("hi", "C1", "1.0", "tok")
 
         joined = " ".join(rec.getMessage() for rec in caplog.records)
-        assert "exc_type=ConnectionError" in joined
+        assert "type=ConnectionError" in joined
 
 
 # ---------------------------------------------------------------------------
@@ -357,9 +359,10 @@ class TestDelegatesToSharedTransport:
     and Telegram test files."""
 
     def test_module_does_not_import_httpx(self) -> None:
-        import app.utils.slack_delivery as mod
-
-        assert not hasattr(mod, "httpx"), (
+        # Reuse the top-level ``from app.utils import slack_delivery`` to
+        # avoid importing the same module via both ``import`` and
+        # ``from import`` styles (CodeQL py/import-and-import-from).
+        assert not hasattr(slack_delivery, "httpx"), (
             "slack_delivery should not import httpx directly — "
             "it must go through delivery_transport.post_json"
         )

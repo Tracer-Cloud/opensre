@@ -188,7 +188,7 @@ class TestDeliveryResponseShape:
         assert result.data == {}
         assert result.text == ""
         assert result.error == ""
-        assert result.error_type == ""
+        assert result.exc_type == ""
 
     def test_response_is_frozen(self) -> None:
         """``DeliveryResponse`` is a frozen dataclass — callers cannot mutate
@@ -235,7 +235,7 @@ class TestPostJsonErrorType:
     """The transport surfaces the exception class name on failure so callers
     can include it in triage logs without parsing the error string."""
 
-    def test_error_type_populated_on_transport_exception(
+    def test_exc_type_populated_on_transport_exception(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         def _raise(*_a: Any, **_kw: Any) -> Any:
@@ -244,7 +244,7 @@ class TestPostJsonErrorType:
         monkeypatch.setattr("app.utils.delivery_transport.httpx.post", _raise)
         result = post_json("https://example.test", {})
         assert result.ok is False
-        assert result.error_type == "TimeoutError"
+        assert result.exc_type == "TimeoutError"
         assert "read timeout" in result.error
 
     @pytest.mark.parametrize(
@@ -256,7 +256,7 @@ class TestPostJsonErrorType:
             (RuntimeError("oops"), "RuntimeError"),
         ],
     )
-    def test_error_type_matches_exception_class(
+    def test_exc_type_matches_exception_class(
         self, exc: Exception, expected_name: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         def _raise(*_a: Any, **_kw: Any) -> Any:
@@ -264,13 +264,13 @@ class TestPostJsonErrorType:
 
         monkeypatch.setattr("app.utils.delivery_transport.httpx.post", _raise)
         result = post_json("https://example.test", {})
-        assert result.error_type == expected_name
+        assert result.exc_type == expected_name
 
-    def test_error_type_empty_on_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_exc_type_empty_on_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "app.utils.delivery_transport.httpx.post",
             lambda *_a, **_kw: _mock_response(200, {"ok": True}),
         )
         result = post_json("https://example.test", {})
         assert result.ok is True
-        assert result.error_type == ""
+        assert result.exc_type == ""

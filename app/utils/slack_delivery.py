@@ -14,10 +14,9 @@ logger = logging.getLogger(__name__)
 
 
 def _slack_bearer_headers(token: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json; charset=utf-8",
-    }
+    # ``Content-Type: application/json`` is set automatically by httpx when
+    # the request uses the ``json=`` kwarg, so we only need to add auth.
+    return {"Authorization": f"Bearer {token}"}
 
 
 def _call_reactions_api(method: str, token: str, channel: str, timestamp: str, emoji: str) -> bool:
@@ -217,11 +216,11 @@ def _post_direct(
     )
     if not response.ok:
         logger.error(
-            "[slack] Direct post exception channel=%s thread_ts=%s "
-            "exc_type=%s detail=%s (caller may attempt fallback)",
+            "[slack] Direct post exception type=%s channel=%s thread_ts=%s detail=%s "
+            "(caller may attempt fallback)",
+            response.exc_type or "Exception",
             channel,
             thread_ts,
-            response.error_type or "Exception",
             response.error,
         )
         return False, f"exception={response.error}"

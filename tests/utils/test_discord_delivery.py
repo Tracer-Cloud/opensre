@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.utils import discord_delivery
 from app.utils.discord_delivery import (
     create_discord_thread,
     post_discord_message,
@@ -239,9 +240,10 @@ class TestDelegatesToSharedTransport:
     caught immediately."""
 
     def test_module_does_not_import_httpx(self) -> None:
-        import app.utils.discord_delivery as mod
-
-        assert not hasattr(mod, "httpx"), (
+        # Reuse the module-level ``from app.utils import discord_delivery``
+        # to avoid importing the same module via both ``import`` and
+        # ``from import`` styles (CodeQL py/import-and-import-from).
+        assert not hasattr(discord_delivery, "httpx"), (
             "discord_delivery should not import httpx directly — "
             "it must go through delivery_transport.post_json"
         )
