@@ -14,19 +14,10 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, NoReturn, cast
+from typing import Any, Literal, NoReturn, cast
 
 import questionary
 
-from app.integrations.github_mcp import (
-    GitHubMcpDisplayDetailLevel,
-    GitHubMcpRepoView,
-    GitHubMcpRepoVisibilityFilter,
-    build_github_mcp_config,
-    format_github_mcp_validation_cli_report,
-    print_github_mcp_validation_report,
-    validate_github_mcp_config,
-)
 from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL
 from app.integrations.store import (
     STORE_PATH,
@@ -44,6 +35,9 @@ from app.integrations.verify import (
 
 _B = "\033[1m"
 _R = "\033[0m"
+GitHubMcpDisplayDetailLevel = Literal["summary", "standard", "full"]
+GitHubMcpRepoView = Literal["auto", "user", "accessible", "starred", "search_user"]
+GitHubMcpRepoVisibilityFilter = Literal["any", "public", "private"]
 
 
 def _json_echo(data: Any) -> None:
@@ -326,6 +320,13 @@ def _setup_betterstack() -> None:
 
 
 def _setup_github() -> None:
+    from app.integrations.github_mcp import (
+        build_github_mcp_config,
+        format_github_mcp_validation_cli_report,
+        print_github_mcp_validation_report,
+        validate_github_mcp_config,
+    )
+
     print("  1) SSE  2) Streamable HTTP  3) stdio")
     choice = _p("Choice", default="2")
     mode = {"1": "sse", "2": "streamable-http", "3": "stdio"}.get(choice, "streamable-http")
