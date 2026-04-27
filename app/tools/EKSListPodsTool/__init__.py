@@ -54,6 +54,7 @@ def list_eks_pods(
     external_id: str = "",
     region: str = "us-east-1",
     eks_backend: Any = None,
+    credentials: dict[str, Any] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """List all pods in a namespace with their status, phase, restart counts, and conditions.
@@ -68,7 +69,9 @@ def list_eks_pods(
             eks_backend.list_pods(cluster_name=cluster_name, namespace=namespace),
         )
     try:
-        core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
+        core_v1, _ = build_k8s_clients(
+            cluster_name, role_arn, external_id, region, credentials=credentials
+        )
         pod_list = (
             core_v1.list_pod_for_all_namespaces()
             if namespace == "all"

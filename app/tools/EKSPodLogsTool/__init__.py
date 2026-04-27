@@ -62,6 +62,7 @@ def get_eks_pod_logs(
     region: str = "us-east-1",
     tail_lines: int = 100,
     eks_backend: Any = None,
+    credentials: dict[str, Any] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Fetch logs from a specific EKS pod.
@@ -78,7 +79,9 @@ def get_eks_pod_logs(
             ),
         )
     try:
-        core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
+        core_v1, _ = build_k8s_clients(
+            cluster_name, role_arn, external_id, region, credentials=credentials
+        )
         logs = core_v1.read_namespaced_pod_log(
             name=pod_name, namespace=namespace, tail_lines=tail_lines
         )

@@ -91,6 +91,26 @@ def test_run_all_namespaces() -> None:
     assert result["available"] is True
 
 
+def test_run_forwards_credentials_to_build_k8s_clients() -> None:
+    """Stored integration credentials must thread through to
+    ``build_k8s_clients`` so the new explicit-credentials path is reachable."""
+    mock_core_v1 = MagicMock()
+    mock_core_v1.list_namespaced_pod.return_value = MagicMock(items=[])
+    creds = {"access_key_id": "AKIA", "secret_access_key": "s", "session_token": ""}
+    with patch(
+        "app.tools.EKSListPodsTool.build_k8s_clients", return_value=(mock_core_v1, MagicMock())
+    ) as build:
+        list_eks_pods(
+            cluster_name="c1",
+            namespace="default",
+            role_arn="",
+            region="us-east-1",
+            credentials=creds,
+        )
+    _, kwargs = build.call_args
+    assert kwargs.get("credentials") is creds
+
+
 def test_run_handles_exception() -> None:
     with patch("app.tools.EKSListPodsTool.build_k8s_clients", side_effect=Exception("auth error")):
         result = list_eks_pods(

@@ -53,6 +53,7 @@ def list_eks_deployments(
     external_id: str = "",
     region: str = "us-east-1",
     eks_backend: Any = None,
+    credentials: dict[str, Any] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """List all deployments in a namespace with replica counts and availability status.
@@ -67,7 +68,9 @@ def list_eks_deployments(
             eks_backend.list_deployments(cluster_name=cluster_name, namespace=namespace),
         )
     try:
-        _, apps_v1 = build_k8s_clients(cluster_name, role_arn, external_id, region)
+        _, apps_v1 = build_k8s_clients(
+            cluster_name, role_arn, external_id, region, credentials=credentials
+        )
         dep_list = (
             apps_v1.list_deployment_for_all_namespaces()
             if namespace == "all"

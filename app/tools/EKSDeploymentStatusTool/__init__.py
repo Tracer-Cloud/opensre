@@ -57,6 +57,7 @@ def get_eks_deployment_status(
     role_arn: str,
     external_id: str = "",
     region: str = "us-east-1",
+    credentials: dict[str, Any] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Get EKS deployment rollout status — desired vs ready vs unavailable replicas."""
@@ -67,7 +68,9 @@ def get_eks_deployment_status(
         deployment_name,
     )
     try:
-        _, apps_v1 = build_k8s_clients(cluster_name, role_arn, external_id, region)
+        _, apps_v1 = build_k8s_clients(
+            cluster_name, role_arn, external_id, region, credentials=credentials
+        )
         dep = apps_v1.read_namespaced_deployment(name=deployment_name, namespace=namespace)
         spec = dep.spec
         status = dep.status

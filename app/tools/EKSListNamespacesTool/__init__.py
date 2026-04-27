@@ -48,12 +48,15 @@ def list_eks_namespaces(
     role_arn: str,
     external_id: str = "",
     region: str = "us-east-1",
+    credentials: dict[str, Any] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """List all namespaces in the EKS cluster with their status."""
     logger.info("[eks] list_eks_namespaces cluster=%s", cluster_name)
     try:
-        core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
+        core_v1, _ = build_k8s_clients(
+            cluster_name, role_arn, external_id, region, credentials=credentials
+        )
         ns_list = core_v1.list_namespace()
         namespaces = [
             {

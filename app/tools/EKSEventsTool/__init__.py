@@ -57,6 +57,7 @@ def get_eks_events(
     external_id: str = "",
     region: str = "us-east-1",
     eks_backend: Any = None,
+    credentials: dict[str, Any] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Get Kubernetes Warning events in a namespace.
@@ -71,7 +72,9 @@ def get_eks_events(
             eks_backend.get_events(cluster_name=cluster_name, namespace=namespace),
         )
     try:
-        core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
+        core_v1, _ = build_k8s_clients(
+            cluster_name, role_arn, external_id, region, credentials=credentials
+        )
         event_list = (
             core_v1.list_event_for_all_namespaces()
             if namespace == "all"

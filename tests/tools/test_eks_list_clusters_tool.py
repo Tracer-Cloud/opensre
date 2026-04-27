@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from botocore.exceptions import ClientError
 
-from app.tools.EKSListClustersTool import list_eks_clusters
+from app.tools.EKSListClustersTool import _eks_creds, list_eks_clusters
 from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
@@ -44,6 +44,20 @@ def test_run_with_cluster_filter() -> None:
     with patch("app.tools.EKSListClustersTool.EKSClient", return_value=mock_client):
         result = list_eks_clusters(role_arn="arn:aws:iam::123:role/r", cluster_names=["cluster-1"])
     assert result["clusters"] == ["cluster-1"]
+
+
+def test_eks_creds_forwards_stored_credentials() -> None:
+    """Stored integration credentials must be surfaced via ``_eks_creds`` so
+    downstream EKS tools can hand them to ``build_k8s_clients``."""
+    creds = {"access_key_id": "AKIA", "secret_access_key": "s", "session_token": ""}
+    out = _eks_creds({"role_arn": "", "region": "us-east-2", "credentials": creds})
+    assert out["credentials"] is creds
+    assert out["region"] == "us-east-2"
+
+
+def test_eks_creds_credentials_default_to_none_when_absent() -> None:
+    out = _eks_creds({"role_arn": "arn:aws:iam::123:role/r"})
+    assert out["credentials"] is None
 
 
 def test_run_handles_client_error() -> None:

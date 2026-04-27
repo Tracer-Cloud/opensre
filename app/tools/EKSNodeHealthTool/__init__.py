@@ -54,6 +54,7 @@ def get_eks_node_health(
     external_id: str = "",
     region: str = "us-east-1",
     eks_backend: Any = None,
+    credentials: dict[str, Any] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Get health status of all EKS nodes — conditions, capacity, allocatable, pod counts.
@@ -68,7 +69,9 @@ def get_eks_node_health(
             eks_backend.get_node_health(cluster_name=cluster_name),
         )
     try:
-        core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
+        core_v1, _ = build_k8s_clients(
+            cluster_name, role_arn, external_id, region, credentials=credentials
+        )
         nodes = core_v1.list_node()
         node_health = []
         for node in nodes.items:
