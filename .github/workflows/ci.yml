@@ -37,8 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Run Windows on PRs and pushes so cross-platform issues surface before merge.
-        os: [ubuntu-latest, windows-latest]
+        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -75,8 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Run Windows on PRs and pushes so cross-platform issues surface before merge.
-        os: [ubuntu-latest, windows-latest]
+        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -112,8 +110,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Run Windows on PRs and pushes so cross-platform issues surface before merge.
-        os: [ubuntu-latest, windows-latest]
+        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
