@@ -94,9 +94,9 @@ class AWSBatchJobsMixin(TracerClientBase):
 
             started_at = None
             if row.get("startedAt"):
-                started_at = datetime.fromtimestamp(
-                    row["startedAt"] / 1000, tz=UTC
-                ).strftime("%Y-%m-%d %H:%M:%S")
+                started_at = datetime.fromtimestamp(row["startedAt"] / 1000, tz=UTC).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
 
             jobs.append(
                 {
