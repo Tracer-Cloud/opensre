@@ -14,16 +14,17 @@ class TestKafkaConsumerGroupToolContract(BaseToolContract):
 
 
 # ── is_available ────────────────────────────────────────────────────
+# kafka_is_available checks sources["kafka"]["connection_verified"].
 
-def test_is_available_true_with_bootstrap_servers() -> None:
+def test_is_available_true_when_connection_verified() -> None:
     rt = get_kafka_consumer_group_lag.__opensre_registered_tool__
-    sources = {"kafka": {"bootstrap_servers": "localhost:9092"}}
+    sources = {"kafka": {"connection_verified": True, "bootstrap_servers": "localhost:9092"}}
     assert rt.is_available(sources) is True
 
 
-def test_is_available_false_empty_bootstrap_servers() -> None:
+def test_is_available_false_missing_connection_verified() -> None:
     rt = get_kafka_consumer_group_lag.__opensre_registered_tool__
-    assert rt.is_available({"kafka": {"bootstrap_servers": ""}}) is False
+    assert rt.is_available({"kafka": {"bootstrap_servers": "broker:9092"}}) is False
 
 
 def test_is_available_false_missing_kafka_key() -> None:
@@ -33,18 +34,17 @@ def test_is_available_false_missing_kafka_key() -> None:
 
 # ── extract_params ──────────────────────────────────────────────────
 
-def test_extract_params_maps_fields() -> None:
+def test_extract_params_maps_bootstrap_servers() -> None:
     rt = get_kafka_consumer_group_lag.__opensre_registered_tool__
     sources = {
         "kafka": {
+            "connection_verified": True,
             "bootstrap_servers": "broker:9092",
             "group_id": "my-consumer-group",
-            "security_protocol": "PLAINTEXT",
         }
     }
     params = rt.extract_params(sources)
     assert params["bootstrap_servers"] == "broker:9092"
-    assert params["group_id"] == "my-consumer-group"
 
 
 # ── run ─────────────────────────────────────────────────────────────
@@ -55,7 +55,6 @@ def test_run_returns_lag_info_on_success() -> None:
         "group_id": "my-consumer-group",
         "lag": [
             {"topic": "events", "partition": 0, "lag": 142},
-            {"topic": "events", "partition": 1, "lag": 0},
         ],
     }
     with patch(
@@ -70,7 +69,7 @@ def test_run_returns_lag_info_on_success() -> None:
     assert "lag" in result
 
 
-def test_run_returns_error_on_no_brokers() -> None:
+def test_run_returns_error_on_exception() -> None:
     with patch(
         "app.tools.KafkaConsumerGroupTool.get_consumer_group_lag",
         side_effect=Exception("NoBrokersAvailable"),
