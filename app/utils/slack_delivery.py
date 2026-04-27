@@ -14,9 +14,16 @@ logger = logging.getLogger(__name__)
 
 
 def _slack_bearer_headers(token: str) -> dict[str, str]:
-    # ``Content-Type: application/json`` is set automatically by httpx when
-    # the request uses the ``json=`` kwarg, so we only need to add auth.
-    return {"Authorization": f"Bearer {token}"}
+    # Slack explicitly recommends ``charset=utf-8`` on JSON POSTs — without
+    # it the API replies with a ``missing_charset`` warning in
+    # ``response_metadata.warnings``. httpx only auto-sets the bare
+    # ``application/json`` (no charset) for ``json=`` kwargs, so we keep
+    # the explicit charset header here.
+    # See https://api.slack.com/web#posting_json
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
 
 
 def _call_reactions_api(method: str, token: str, channel: str, timestamp: str, emoji: str) -> bool:

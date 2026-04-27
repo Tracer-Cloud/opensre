@@ -96,6 +96,11 @@ class TestCallReactionsApi:
         )
         assert captured["url"] == "https://slack.com/api/reactions.remove"
         assert captured["headers"]["Authorization"] == "Bearer my-token"
+        # Slack emits a `missing_charset` warning without the explicit
+        # ``charset=utf-8`` suffix on JSON POSTs (httpx alone only sets
+        # the bare ``application/json``). Pin the header to match Slack's
+        # documented recommendation: https://api.slack.com/web#posting_json
+        assert captured["headers"]["Content-Type"] == "application/json; charset=utf-8"
         assert captured["json"] == {"channel": "C9", "timestamp": "1.5", "name": "thinking_face"}
         assert captured["timeout"] == 8.0
 
@@ -148,6 +153,8 @@ class TestPostDirect:
         slack_delivery._post_direct("the body", "C42", "9.876", "secret-tok", blocks=[{"x": 1}])
         assert captured["url"] == "https://slack.com/api/chat.postMessage"
         assert captured["headers"]["Authorization"] == "Bearer secret-tok"
+        # Pin the charset header — Slack emits ``missing_charset`` without it.
+        assert captured["headers"]["Content-Type"] == "application/json; charset=utf-8"
         assert captured["json"]["channel"] == "C42"
         assert captured["json"]["thread_ts"] == "9.876"
         assert captured["json"]["text"] == "the body"
