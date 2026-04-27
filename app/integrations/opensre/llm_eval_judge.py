@@ -50,11 +50,17 @@ def extract_judge_json_from_response(text: str) -> dict[str, Any]:
     fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
     if fence:
         text = fence.group(1)
+
+    if text.startswith("["):
+        msg = "Judge response JSON must be an object"
+        raise ValueError(msg)
+
     start = text.find("{")
     end = text.rfind("}")
     if start == -1 or end == -1 or end <= start:
         msg = "Judge response did not contain a JSON object"
         raise ValueError(msg)
+
     raw = json.loads(text[start : end + 1])
     if not isinstance(raw, dict):
         msg = "Judge response JSON must be an object"
