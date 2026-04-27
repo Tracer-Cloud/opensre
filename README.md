@@ -930,6 +930,13 @@ Thanks goes to these amazing people:
             <sub><b>Lozsku</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/Piyushtiwari919">
+            <img src="https://avatars.githubusercontent.com/u/184945555?v=4" width="100" alt="Piyushtiwari919"/>
+            <br />
+            <sub><b>Piyushtiwari919</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
