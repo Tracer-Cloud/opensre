@@ -128,7 +128,7 @@
           {
             "group": "Frameworks",
             "pages": [
-              "integrations/overview",
+              "integrations/integration-workflow",
               "integrations/nextflow",
               "integrations/wdl",
               "integrations/bash",
