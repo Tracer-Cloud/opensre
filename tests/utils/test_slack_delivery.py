@@ -34,7 +34,7 @@ class TestCallReactionsApi:
     def test_add_reaction_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *a, **kw: DeliveryResponse(ok=True, status_code=200, data={"ok": True}),
+            lambda *_, **__: DeliveryResponse(ok=True, status_code=200, data={"ok": True}),
         )
         ok = slack_delivery._call_reactions_api(
             "reactions.add", "tok", "C123", "1.0", "white_check_mark"
@@ -47,21 +47,21 @@ class TestCallReactionsApi:
     ) -> None:
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *a, **kw: DeliveryResponse(ok=True, status_code=200, data={"ok": False, "error": err}),
+            lambda *_, **__: DeliveryResponse(ok=True, status_code=200, data={"ok": False, "error": err}),
         )
         assert slack_delivery._call_reactions_api("reactions.add", "tok", "C", "1.0", "x") is False
 
     def test_unexpected_error_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *a, **kw: DeliveryResponse(ok=True, status_code=200, data={"ok": False, "error": "channel_not_found"}),
+            lambda *_, **__: DeliveryResponse(ok=True, status_code=200, data={"ok": False, "error": "channel_not_found"}),
         )
         assert slack_delivery._call_reactions_api("reactions.add", "tok", "C", "1.0", "x") is False
 
     def test_transport_exception_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *a, **kw: DeliveryResponse(ok=False, error="dns failure"),
+            lambda *_, **__: DeliveryResponse(ok=False, error="dns failure"),
         )
         assert slack_delivery._call_reactions_api("reactions.add", "tok", "C", "1.0", "x") is False
 
@@ -75,7 +75,7 @@ class TestPostDirect:
     def test_success_returns_true_empty_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *a, **kw: DeliveryResponse(ok=True, status_code=200, data={"ok": True, "ts": "1.234"}),
+            lambda *_, **__: DeliveryResponse(ok=True, status_code=200, data={"ok": True, "ts": "1.234"}),
         )
         ok, err = slack_delivery._post_direct("hello", "C1", "1.000", "tok")
         assert ok is True
@@ -84,7 +84,7 @@ class TestPostDirect:
     def test_slack_error_returned_with_prefix(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *a, **kw: DeliveryResponse(ok=True, status_code=200, data={"ok": False, "error": "channel_not_found"}),
+            lambda *_, **__: DeliveryResponse(ok=True, status_code=200, data={"ok": False, "error": "channel_not_found"}),
         )
         ok, err = slack_delivery._post_direct("hello", "C1", "1.000", "tok")
         assert ok is False
@@ -95,7 +95,7 @@ class TestPostDirect:
     ) -> None:
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *a, **kw: DeliveryResponse(ok=False, error="read timeout", exc_type="TimeoutError"),
+            lambda *_, **__: DeliveryResponse(ok=False, error="read timeout", exc_type="TimeoutError"),
         )
         ok, err = slack_delivery._post_direct("hello", "C1", "1.000", "tok")
         assert ok is False
@@ -139,7 +139,7 @@ def test_post_direct_redacts_token_in_error(monkeypatch: pytest.MonkeyPatch) -> 
     token = "xoxb-very-secret-token"
     monkeypatch.setattr(
         "app.utils.slack_delivery.post_json",
-        lambda *a, **kw: DeliveryResponse(ok=False, error=f"Failed with {token}"),
+        lambda *_, **__: DeliveryResponse(ok=False, error=f"Failed with {token}"),
     )
     ok, err = slack_delivery._post_direct("hi", "C1", "1.0", token)
     assert ok is False
@@ -150,7 +150,7 @@ def test_post_direct_redacts_token_in_error(monkeypatch: pytest.MonkeyPatch) -> 
 def test_post_direct_handles_non_json_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.utils.slack_delivery.post_json",
-        lambda *a, **kw: DeliveryResponse(
+        lambda *_, **__: DeliveryResponse(
             ok=True, status_code=502, data={}, text="<html>Bad Gateway</html>"
         ),
     )
@@ -207,7 +207,7 @@ class TestIncomingWebhook:
         monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.test")
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *a, **kw: DeliveryResponse(ok=True, status_code=200, text="ok"),
+            lambda *_, **__: DeliveryResponse(ok=True, status_code=200, text="ok"),
         )
         ok, err = slack_delivery.send_slack_report("hi")
         assert ok is True
@@ -217,7 +217,7 @@ class TestIncomingWebhook:
         monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/T/B/SECRET")
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *a, **kw: DeliveryResponse(ok=False, error="ConnectError", exc_type="ConnectError"),
+            lambda *_, **__: DeliveryResponse(ok=False, error="ConnectError", exc_type="ConnectError"),
         )
         ok, err = slack_delivery.send_slack_report("hi")
         assert ok is False

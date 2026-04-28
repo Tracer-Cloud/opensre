@@ -38,7 +38,7 @@ def _mock_response(status_code: int, json_body: Any = None, text: str = "") -> M
 def test_post_discord_message_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.utils.discord_delivery.post_json",
-        lambda *a, **kw: DeliveryResponse(ok=True, status_code=200, data={"id": "msg-123"}),
+        lambda *_, **__: DeliveryResponse(ok=True, status_code=200, data={"id": "msg-123"}),
     )
     ok, error, message_id = post_discord_message("chan-1", [], "bot-token")
     assert ok is True
@@ -49,7 +49,7 @@ def test_post_discord_message_success(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_post_discord_message_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.utils.discord_delivery.post_json",
-        lambda *a, **kw: DeliveryResponse(
+        lambda *_, **__: DeliveryResponse(
             ok=True, status_code=403, data={"message": "Missing Permissions"}, text='{"message": "Missing Permissions"}'
         ),
     )
@@ -86,7 +86,7 @@ def test_post_discord_message_redacts_token_in_error(monkeypatch: pytest.MonkeyP
     token = "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0.ABCDEF.MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3"
     monkeypatch.setattr(
         "app.utils.discord_delivery.post_json",
-        lambda *a, **kw: DeliveryResponse(ok=False, error=f"Failed with {token}"),
+        lambda *_, **__: DeliveryResponse(ok=False, error=f"Failed with {token}"),
     )
     ok, err, _ = post_discord_message("chan-1", [], token)
     assert ok is False
@@ -97,7 +97,7 @@ def test_post_discord_message_redacts_token_in_error(monkeypatch: pytest.MonkeyP
 def test_post_discord_message_handles_non_json_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.utils.discord_delivery.post_json",
-        lambda *a, **kw: DeliveryResponse(
+        lambda *_, **__: DeliveryResponse(
             ok=True, status_code=502, data={}, text="<html>Bad Gateway</html>"
         ),
     )
@@ -114,7 +114,7 @@ def test_post_discord_message_handles_non_json_error(monkeypatch: pytest.MonkeyP
 def test_create_discord_thread_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.utils.discord_delivery.post_json",
-        lambda *a, **kw: DeliveryResponse(ok=True, status_code=201, data={"id": "thread-99"}),
+        lambda *_, **__: DeliveryResponse(ok=True, status_code=201, data={"id": "thread-99"}),
     )
     ok, error, thread_id = create_discord_thread("chan-1", "msg-1", "My Thread", "bot-token")
     assert ok is True
