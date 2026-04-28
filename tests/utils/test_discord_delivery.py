@@ -50,7 +50,10 @@ def test_post_discord_message_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.utils.discord_delivery.post_json",
         lambda *_, **__: DeliveryResponse(
-            ok=True, status_code=403, data={"message": "Missing Permissions"}, text='{"message": "Missing Permissions"}'
+            ok=True,
+            status_code=403,
+            data={"message": "Missing Permissions"},
+            text='{"message": "Missing Permissions"}',
         ),
     )
     ok, error, message_id = post_discord_message("chan-1", [], "bot-token")
@@ -66,6 +69,7 @@ def test_post_discord_message_failure(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_discord_token_filter_scrubs_msg() -> None:
     from app.utils.discord_delivery import _DiscordTokenFilter
+
     f = _DiscordTokenFilter()
     token = "DISCORD_TOKEN_PART_1_XXX.ABCDEF.DISCORD_TOKEN_PART_3_XXXXXXXX"
     record = logging.LogRecord(

@@ -358,4 +358,3 @@ def _post_via_incoming_webhook(
 
     debug_print("Slack report posted via incoming webhook.")
     return True
-

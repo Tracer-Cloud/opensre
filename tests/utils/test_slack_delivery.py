@@ -47,14 +47,18 @@ class TestCallReactionsApi:
     ) -> None:
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *_, **__: DeliveryResponse(ok=True, status_code=200, data={"ok": False, "error": err}),
+            lambda *_, **__: DeliveryResponse(
+                ok=True, status_code=200, data={"ok": False, "error": err}
+            ),
         )
         assert slack_delivery._call_reactions_api("reactions.add", "tok", "C", "1.0", "x") is False
 
     def test_unexpected_error_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *_, **__: DeliveryResponse(ok=True, status_code=200, data={"ok": False, "error": "channel_not_found"}),
+            lambda *_, **__: DeliveryResponse(
+                ok=True, status_code=200, data={"ok": False, "error": "channel_not_found"}
+            ),
         )
         assert slack_delivery._call_reactions_api("reactions.add", "tok", "C", "1.0", "x") is False
 
@@ -75,7 +79,9 @@ class TestPostDirect:
     def test_success_returns_true_empty_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *_, **__: DeliveryResponse(ok=True, status_code=200, data={"ok": True, "ts": "1.234"}),
+            lambda *_, **__: DeliveryResponse(
+                ok=True, status_code=200, data={"ok": True, "ts": "1.234"}
+            ),
         )
         ok, err = slack_delivery._post_direct("hello", "C1", "1.000", "tok")
         assert ok is True
@@ -84,7 +90,9 @@ class TestPostDirect:
     def test_slack_error_returned_with_prefix(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *_, **__: DeliveryResponse(ok=True, status_code=200, data={"ok": False, "error": "channel_not_found"}),
+            lambda *_, **__: DeliveryResponse(
+                ok=True, status_code=200, data={"ok": False, "error": "channel_not_found"}
+            ),
         )
         ok, err = slack_delivery._post_direct("hello", "C1", "1.000", "tok")
         assert ok is False
@@ -95,7 +103,9 @@ class TestPostDirect:
     ) -> None:
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *_, **__: DeliveryResponse(ok=False, error="read timeout", exc_type="TimeoutError"),
+            lambda *_, **__: DeliveryResponse(
+                ok=False, error="read timeout", exc_type="TimeoutError"
+            ),
         )
         ok, err = slack_delivery._post_direct("hello", "C1", "1.000", "tok")
         assert ok is False
@@ -110,6 +120,7 @@ class TestPostDirect:
 
 def test_slack_token_filter_scrubs_msg() -> None:
     from app.utils.slack_delivery import _SlackTokenFilter
+
     f = _SlackTokenFilter()
     record = logging.LogRecord(
         name="httpx",
@@ -127,6 +138,7 @@ def test_slack_token_filter_scrubs_msg() -> None:
 
 def test_slack_token_filter_scrubs_webhook() -> None:
     from app.utils.slack_delivery import _SlackTokenFilter
+
     f = _SlackTokenFilter()
     msg = "Post to https://hooks.slack.com/services/T000/B000/SECRET_TOKEN failed"
     record = logging.LogRecord("httpx", logging.INFO, "", 0, msg, None, None)
@@ -217,7 +229,9 @@ class TestIncomingWebhook:
         monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/T/B/SECRET")
         monkeypatch.setattr(
             "app.utils.slack_delivery.post_json",
-            lambda *_, **__: DeliveryResponse(ok=False, error="ConnectError", exc_type="ConnectError"),
+            lambda *_, **__: DeliveryResponse(
+                ok=False, error="ConnectError", exc_type="ConnectError"
+            ),
         )
         ok, err = slack_delivery.send_slack_report("hi")
         assert ok is False
@@ -225,7 +239,9 @@ class TestIncomingWebhook:
 
 
 class TestDelegatesToSharedTransport:
-    def test_call_reactions_api_uses_post_json_helper(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_call_reactions_api_uses_post_json_helper(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         captured: dict[str, Any] = {}
 
         def _stub_post_json(url: str, payload: dict[str, Any], **kw: Any) -> DeliveryResponse:
