@@ -347,7 +347,12 @@ async def test_fetch_all_success_strong(
     # Execute
     # -------------------------
 
-    result = await async_client.fetch_all("error")
+    result = result = await async_client.fetch_all(
+        time_range_minutes=15,
+        logs_limit=100,
+        monitor_query="error",
+        events_query="error",
+    )
 
     # -------------------------
     # Assertions (strong)
