@@ -43,6 +43,8 @@ def run_investigation(
     severity: str,
     raw_alert: str | dict[str, Any] | None = None,
     resolved_integrations: dict[str, Any] | None = None,
+    *,
+    opensre_evaluate: bool = False,
 ) -> AgentState:
     """Run investigation pipeline via LangGraph. Pure function: inputs in, state out.
 
@@ -53,7 +55,13 @@ def run_investigation(
     """
     from app.pipeline.graph import graph as compiled_graph  # lazy to avoid circular import
 
-    initial = make_initial_state(alert_name, pipeline_name, severity, raw_alert=raw_alert)
+    initial = make_initial_state(
+        alert_name,
+        pipeline_name,
+        severity,
+        raw_alert=raw_alert,
+        opensre_evaluate=opensre_evaluate,
+    )
     if resolved_integrations is not None:
         cast(dict[str, Any], initial)["resolved_integrations"] = resolved_integrations
     return cast(AgentState, compiled_graph.invoke(initial))
@@ -64,6 +72,8 @@ async def astream_investigation(
     pipeline_name: str,
     severity: str,
     raw_alert: str | dict[str, Any] | None = None,
+    *,
+    opensre_evaluate: bool = False,
 ) -> AsyncIterator[StreamEvent]:
     """Stream investigation events via LangGraph's ``astream_events``.
 
@@ -73,7 +83,13 @@ async def astream_investigation(
     """
     from app.pipeline.graph import graph as compiled_graph  # lazy to avoid circular import
 
-    initial = make_initial_state(alert_name, pipeline_name, severity, raw_alert=raw_alert)
+    initial = make_initial_state(
+        alert_name,
+        pipeline_name,
+        severity,
+        raw_alert=raw_alert,
+        opensre_evaluate=opensre_evaluate,
+    )
 
     async for event in compiled_graph.astream_events(initial, version="v2"):
         yield _map_langgraph_event(dict(event))

@@ -48,8 +48,11 @@ def build_diagnosis_prompt(
     Returns:
         Formatted prompt string for LLM
     """
-    problem = state.get("problem_md", "")
-    hypotheses = state.get("hypotheses", [])
+    from app.masking import MaskingContext
+
+    _masking_ctx = MaskingContext.from_state(dict(state))
+    problem = _masking_ctx.mask(state.get("problem_md", "") or "")
+    hypotheses = [_masking_ctx.mask(h) for h in state.get("hypotheses", [])]
 
     # Build directive sections
     upstream_directive = _build_upstream_directive(evidence)
@@ -59,7 +62,7 @@ def build_diagnosis_prompt(
     memory_section = _build_memory_section(memory_context)
 
     # Build evidence sections
-    evidence_text = _build_evidence_sections(state, evidence)
+    evidence_text = _build_evidence_sections(state, evidence, _masking_ctx)
 
     # Construct final prompt
     prompt = f"""You are an experienced SRE performing a root cause analysis (RCA) for a production incident.
@@ -229,10 +232,38 @@ When evaluating database health metrics (especially RDS/Postgres):
 - Storage exhaustion (when `FreeStorageSpace` approaches 0) blocks all writes and causes Write IOPS to collapse to 0. The root cause is `resource_exhaustion` due to storage limits. If the `FreeStorageSpace` metric is completely missing, you MUST infer storage exhaustion from indirect signals: WriteIOPS dropping to 0, WriteLatency spiking, and RDS events indicating 'ran out of storage space'.
 - A single bad query driving CPU near 100% while connections and storage are healthy is `resource_exhaustion` due to CPU saturation (e.g. missing index, full table scans at high ReadIOPS). Pay close attention to Performance Insights to identify the exact query.
 - Checkpoint Storms / VACUUM FREEZE: If CPU is high but the dominant wait event is `LWLock:BufferMapping` with massive WriteIOPS, the root cause is an I/O storm from checkpointing (e.g., `VACUUM FREEZE`) and should be classified as `resource_exhaustion`, NOT `code_defect`. The high CPU is a downstream symptom of I/O contention.
-- Replication lag: If a massive write-heavy workload on the primary generates WAL faster than the read replica can replay it, resulting in ReplicaLag spikes, the root cause is `resource_exhaustion` driven by the write workload on the primary. Watch out for red herrings: if concurrent analytics queries cause high CPU, do NOT classify the root cause as CPU-driven if the actual failing metric (like ReplicaLag) is driven by the write-heavy workload. The CPU spike is an independent issue. If the `ReplicaLag` metric is missing, infer lag from RDS events (e.g., 'exceeded 900s') and high `TransactionLogsGeneration`.
+- Replication lag: If a massive write-heavy workload on the primary generates WAL faster than the read replica can replay it, resulting in ReplicaLag spikes, the root cause is `resource_exhaustion` driven by the write workload on the primary. Watch out for red herrings: if concurrent analytics queries cause high CPU, do NOT classify the root cause as CPU-driven if the actual failing metric (like ReplicaLag) is driven by the write-heavy workload. Treat the CPU spike as an unrelated confounder/red herring and explicitly describe it as a red herring (i.e., not the root cause) in the final answer. Do not treat it as a second root cause or a contributing cause. Explicitly state that the analytics SELECT is not the root cause when the evidence shows it is causally independent from WAL generation. If the `ReplicaLag` metric is missing, infer lag from RDS events (e.g., 'exceeded 900s') and high `TransactionLogsGeneration`.
 - Compositional Faults: If two completely independent workloads cause two separate faults simultaneously (e.g., CPU saturation from an analytics SELECT AND storage exhaustion from an audit_log INSERT), explicitly identify BOTH as independent root causes (do not merge them into a single IOPS fault). You MUST explicitly state they are two independent, coincidental faults. Provide evidence for both the analytics query and the audit_log query. Use `resource_exhaustion` as ROOT_CAUSE_CATEGORY and describe both causes clearly in ROOT_CAUSE (e.g., "Two independent root causes: ..."). Trace each causal chain separately in CAUSAL_CHAIN. You MUST explicitly state that connection growth is a symptom of blocked writers, not connection exhaustion. You MUST explicitly state that ReplicaLag growth is a downstream symptom of the write burst (not an independent fault). NEVER diagnose `connection_exhaustion` as a root cause when connections spike due to a blocked write queue.
 - Misleading Context: Check RDS event timestamps carefully! Ignore historical events (maintenance, failovers, replica promotions) that completed hours before the current incident started.
 - Healthy Systems / Stale Alerts: If metrics are oscillating but remain within normal operating bounds (e.g. connections at 55-65%, CPU at 40-70%, no error logs), the system is `healthy`. If a threshold was briefly crossed (e.g. low FreeStorageSpace) but autoscaling successfully expanded the volume and fully recovered the system before the investigation, the system is `healthy` and the alert is stale.
+
+- Healthy System Detection:
+If ALL of the following are true:
+- connections are clearly below exhaustion levels or not proven to be near `max_connections`
+- CPU is not near saturation and remains within normal range
+- no errors are present in logs or events
+- DB load and latency do not show sustained degradation
+
+Then:
+- You MUST classify the system as `healthy`
+- You MUST conclude "no active failure"
+- You MUST NOT default to `unknown` only because an exact threshold such as `max_connections` is unavailable
+
+When the above healthy conditions are ALL met, apply these scoped prohibitions:
+- Do NOT infer connection pool leaks
+- Do NOT infer resource exhaustion
+- Do NOT generate speculative root causes
+- Do NOT interpret monotonic increase or oscillation as failure
+
+When the above healthy conditions are ALL met, apply these scoped interpretation rules:
+- Trend ≠ failure
+- Oscillation ≠ instability
+- Moderate utilization ≠ degradation
+- Missing exact thresholds do NOT imply failure or `unknown` when the available evidence shows no errors, moderate load, and no saturation signals
+
+If an alert fires without errors or threshold breaches:
+- treat it as a noisy or warning-level alert, NOT a real incident
+
 - ALWAYS trace the causal chain properly (e.g., connection leak -> idle sessions -> connections maxed out, OR missing index -> full table scans -> ReadIOPS -> CPU saturated, OR VACUUM FREEZE -> massive WAL -> checkpoint flush -> I/O saturation -> CPU as symptom).
 """
 
@@ -327,7 +358,9 @@ Use these patterns to recognize similar failure modes and accelerate diagnosis.
 """
 
 
-def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]) -> str:
+def _build_evidence_sections(
+    state: InvestigationState, evidence: dict[str, Any], masking_ctx=None
+) -> str:
     """Build all evidence sections for the prompt."""
     sections: list[str] = []
 
@@ -361,7 +394,7 @@ def _build_evidence_sections(state: InvestigationState, evidence: dict[str, Any]
     alert_annotations: dict[str, Any] = {}
     raw_alert_text: str = ""
     if isinstance(raw_alert, str):
-        raw_alert_text = raw_alert
+        raw_alert_text = masking_ctx.mask(raw_alert) if masking_ctx else raw_alert
     elif isinstance(raw_alert, dict):
         cloudwatch_url = raw_alert.get("cloudwatch_logs_url") or raw_alert.get("cloudwatch_url")
         vercel_url = raw_alert.get("vercel_log_url") or raw_alert.get("vercel_url")

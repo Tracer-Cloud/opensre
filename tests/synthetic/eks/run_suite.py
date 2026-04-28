@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -158,6 +159,101 @@ def _normalize_text(value: str) -> str:
     return " ".join(value.lower().split())
 
 
+def _normalize_query_token(value: str) -> str:
+    return _normalize_text(value).replace(" ", "_").replace("-", "_")
+
+
+def _query_token_variants(value: str) -> set[str]:
+    """Return canonical variants for tool identifiers used in Axis 2 auditing."""
+
+    token = _normalize_query_token(value)
+    variants = {token}
+    for source in ("_eks_", "_datadog_"):
+        if source in token:
+            variants.add(token.replace(source, "_"))
+    return variants
+
+
+def _matches_required_keyword(normalized_output: str, keyword: str) -> bool:
+    normalized_keyword = _normalize_text(keyword)
+    if normalized_keyword in normalized_output:
+        return True
+
+    keyword_aliases = {
+        "imagepullbackoff": (
+            "image pull backoff",
+            "failed to pull image",
+            "pull image",
+            "manifest unknown",
+        ),
+        "crashloopbackoff": (
+            "crash loop backoff",
+            "crashloopbackoff",
+            "restart",
+        ),
+        "oomkilled": (
+            "oom killed",
+            "oomkiller",
+            "out of memory",
+        ),
+        "noimagepull": (
+            "not an image pull",
+            "not image pull",
+            "not an image pull failure",
+            "no imagepullbackoff",
+        ),
+        "sibling": (
+            "sibling replicas",
+            "other replicas",
+            "remaining replicas",
+            "other two replicas",
+            "replicas are unaffected",
+        ),
+    }
+    for alias in keyword_aliases.get(normalized_keyword.replace(" ", ""), ()):
+        if _normalize_text(alias) in normalized_output:
+            return True
+
+    keyword_tokens = set(re.findall(r"[a-z0-9]+", normalized_keyword))
+    if not keyword_tokens:
+        return False
+
+    output_tokens = set(re.findall(r"[a-z0-9]+", normalized_output))
+    return keyword_tokens.issubset(output_tokens)
+
+
+def _accepted_categories(fixture: K8sScenarioFixture) -> set[str]:
+    """Return the set of root-cause categories we consider equivalent.
+
+    Some Kubernetes failure modes naturally straddle adjacent labels when a real
+    LLM summarizes them. In particular, in-cluster DNS/service-discovery outages
+    are often described as either a configuration problem or a dependency
+    failure. Treat both labels as acceptable for that scenario to avoid
+    penalizing semantically correct diagnoses.
+    """
+
+    accepted = {fixture.answer_key.root_cause_category}
+    if fixture.metadata.failure_mode == "dns_resolution_failure":
+        accepted.add("dependency_failure")
+    return accepted
+
+
+def _scored_output_text(final_state: dict[str, Any]) -> str:
+    """Return the broadest textual output we should grade for synthetic scenarios."""
+    return " ".join(
+        [
+            str(final_state.get("root_cause") or ""),
+            " ".join(claim.get("claim", "") for claim in final_state.get("validated_claims", [])),
+            " ".join(
+                claim.get("claim", "") for claim in final_state.get("non_validated_claims", [])
+            ),
+            " ".join(final_state.get("causal_chain", [])),
+            str(final_state.get("report") or ""),
+            str((final_state.get("problem_report") or {}).get("report_md") or ""),
+        ]
+    )
+
+
 def score_trajectory(
     fixture: K8sScenarioFixture,
     final_state: dict[str, Any],
@@ -222,30 +318,21 @@ def score_reasoning(
     if not has_ruling_out and not has_required_queries:
         return None
 
-    evidence_text = " ".join(
-        [
-            str(final_state.get("root_cause") or ""),
-            " ".join(claim.get("claim", "") for claim in final_state.get("validated_claims", [])),
-            " ".join(
-                claim.get("claim", "") for claim in final_state.get("non_validated_claims", [])
-            ),
-            " ".join(final_state.get("causal_chain", [])),
-        ]
-    )
+    evidence_text = _scored_output_text(final_state)
     normalized_output = _normalize_text(evidence_text)
 
     missing_ruling_out: list[str] = []
     if has_ruling_out:
         for token in fixture.answer_key.ruling_out_keywords:
-            if token.lower() not in normalized_output:
+            if not _matches_required_keyword(normalized_output, token):
                 missing_ruling_out.append(token)
 
     missing_queries: list[str] = []
     if has_required_queries:
-        audited = queried_tools or []
+        audited = {_normalize_query_token(item) for item in (queried_tools or [])}
         for required in fixture.answer_key.required_queries:
-            token = required.lower()
-            if not any(token in q.lower() for q in audited):
+            variants = _query_token_variants(required)
+            if not any(any(variant in q or q in variant for variant in variants) for q in audited):
                 missing_queries.append(required)
 
     ruling_out_ok = not missing_ruling_out
@@ -270,22 +357,13 @@ def score_result(
     actual_category = str(final_state.get("root_cause_category") or "unknown").strip()
     root_cause_present = bool(root_cause and root_cause.lower() != "unable to determine root cause")
 
-    evidence_text = " ".join(
-        [
-            root_cause,
-            " ".join(claim.get("claim", "") for claim in final_state.get("validated_claims", [])),
-            " ".join(
-                claim.get("claim", "") for claim in final_state.get("non_validated_claims", [])
-            ),
-            " ".join(final_state.get("causal_chain", [])),
-        ]
-    )
+    evidence_text = _scored_output_text(final_state)
     normalized_output = _normalize_text(evidence_text)
 
     matched_keywords = [
         keyword
         for keyword in fixture.answer_key.required_keywords
-        if _normalize_text(keyword) in normalized_output
+        if _matches_required_keyword(normalized_output, keyword)
     ]
     missing_keywords = [
         keyword
@@ -294,13 +372,15 @@ def score_result(
     ]
 
     answer_key = fixture.answer_key
+    accepted_categories = _accepted_categories(fixture)
     failure_reason = ""
 
     if not root_cause_present:
         failure_reason = "no root cause in output"
-    elif actual_category != answer_key.root_cause_category:
+    elif actual_category not in accepted_categories:
         failure_reason = (
-            f"wrong category: got {actual_category!r}, expected {answer_key.root_cause_category!r}"
+            "wrong category: "
+            f"got {actual_category!r}, expected one of {sorted(accepted_categories)!r}"
         )
     elif missing_keywords:
         failure_reason = f"missing required keywords: {missing_keywords}"

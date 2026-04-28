@@ -1,0 +1,47 @@
+---
+title: "Daily Update — 2026-04-23"
+description: "OpenSRE engineering daily update for 2026-04-23 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+Anwesh, Ceren Camkiran, chaosreload, gbsierra, mayankbharati-ops, paulovitorcl, RoomWithOutRoof, Sarah Salah, Vaibhav Upreti, weichao, and Yash Kumar Saini 🙏🚀
+
+## Main updates shipped (April 23, 2026)
+
+- feat: add CLI framework base and codex CLI integration (#642) — Anwesh
+- feat: add telegram integration to delivery messages — paulovitorcl
+- fix: emit healthy-short-circuit claims from investigation keys only — mayankbharati-ops
+- Improve investigation planning prompt for discriminating RCA evidence (#654) — Ceren Camkiran
+- fix(eks): detect EKS source when AWS integration uses IAM user credentials — chaosreload
+- fix: anchor investigation ID regex and add invalid ID tests — RoomWithOutRoof
+- Fix(makefile): support Windows — gbsierra
+- fix(wizard): bind Grafana provisioning relative to compose file — Anwesh
+- synthetic: enforce strict RDS event timeline reasoning for 005-failover — Ceren Camkiran
+- fix(mypy): remove stale NewGenericSyntax enable flag — Sarah Salah
+- docs(dev): align local checks with CI ruff format — Anwesh
+- fix: use relative provisioning path in local Grafana compose — Yash Kumar Saini
+- Update CONTRIBUTING.md with contribution guidelines — Anwesh
+
+## Source pull requests
+
+- [#755](https://github.com/Tracer-Cloud/opensre/pull/755) feat: add telegram integration to delivery messages (author: paulovitorcl; contributors: paulovitorcl; labels: _none_; files: `app/cli/constants.py`, `app/integrations/catalog.py`, `app/integrations/models.py`, `app/integrations/verify.py`, `app/nodes/publish_findings/node.py`, `app/state/agent_state.py`, `app/state/factory.py`, `app/utils/telegram_delivery.py`, `tests/utils/test_telegram_delivery.py`)
+- [#779](https://github.com/Tracer-Cloud/opensre/pull/779) Update CONTRIBUTING.md with contribution guidelines (author: Anwesh; contributors: Anwesh; labels: _none_; files: `CONTRIBUTING.md`)
+- [#777](https://github.com/Tracer-Cloud/opensre/pull/777) fix: emit healthy-short-circuit claims from investigation keys only (author: mayankbharati-ops; contributors: mayankbharati-ops; labels: _none_; files: `app/nodes/root_cause_diagnosis/evidence_checker.py`, `app/nodes/root_cause_diagnosis/node.py`, `tests/nodes/root_cause_diagnosis/test_evidence_checker.py`, `tests/nodes/root_cause_diagnosis/test_healthy_short_circuit.py`)
+- [#715](https://github.com/Tracer-Cloud/opensre/pull/715) Improve investigation planning prompt for discriminating RCA evidence (#654) (author: Ceren Camkiran; contributors: Ceren Camkiran; labels: _none_; files: `app/nodes/plan_actions/build_prompt.py`)
+- [#786](https://github.com/Tracer-Cloud/opensre/pull/786) fix: use relative provisioning path in local Grafana compose (author: Yash Kumar Saini; contributors: Yash Kumar Saini; labels: _none_; files: `app/cli/wizard/local_grafana_stack/docker-compose.yml`, `tests/test_devcontainer.py`)
+- [#787](https://github.com/Tracer-Cloud/opensre/pull/787) Revert "fix: use relative provisioning path in local Grafana compose" (author: Yash Kumar Saini; contributors: Yash Kumar Saini; labels: _none_; files: `app/cli/wizard/local_grafana_stack/docker-compose.yml`, `tests/test_devcontainer.py`)
+- [#785](https://github.com/Tracer-Cloud/opensre/pull/785) fix(wizard): bind Grafana provisioning relative to compose file (author: Anwesh; contributors: Anwesh; labels: _none_; files: `app/cli/wizard/local_grafana_stack/docker-compose.yml`, `tests/test_devcontainer.py`)
+- [#783](https://github.com/Tracer-Cloud/opensre/pull/783) fix: anchor investigation ID regex and add invalid ID tests (author: RoomWithOutRoof; contributors: RoomWithOutRoof and Vaibhav Upreti; labels: _none_; files: `app/remote/server.py`, `tests/remote/test_server_utils.py`)
+- [#721](https://github.com/Tracer-Cloud/opensre/pull/721) Fix(makefile): support Windows (author: gbsierra; contributors: gbsierra and Vaibhav Upreti; labels: _none_; files: `Makefile`)
+- [#781](https://github.com/Tracer-Cloud/opensre/pull/781) feat: add CLI framework base and codex CLI integration (author: Anwesh; contributors: Anwesh; labels: _none_; files: `.env.example`, `.gitignore`, `AGENTS.md`, `app/cli/wizard/config.py`, `app/cli/wizard/env_sync.py`, `app/cli/wizard/flow.py`, `app/config.py`, `app/integrations/llm_cli/AGENTS.md`, `app/integrations/llm_cli/__init__.py`, `app/integrations/llm_cli/base.py`, and 11 more)
+- [#705](https://github.com/Tracer-Cloud/opensre/pull/705) synthetic: enforce strict RDS event timeline reasoning for 005-failover (author: Ceren Camkiran; contributors: Ceren Camkiran; labels: _none_; files: `airflow_alert.json`, `app/nodes/root_cause_diagnosis/prompt_builder.py`, `tests/synthetic/rds_postgres/005-failover/answer.yml`, `tests/synthetic/rds_postgres/run_suite.py`)
+- [#789](https://github.com/Tracer-Cloud/opensre/pull/789) docs(dev): align local checks with CI ruff format (author: Anwesh; contributors: Anwesh; labels: _none_; files: `.cursor/rules/code-style.mdc`, `AGENTS.md`, `CONTRIBUTING.md`, `Makefile`)
+- [#724](https://github.com/Tracer-Cloud/opensre/pull/724) fix(eks): detect EKS source when AWS integration uses IAM user credentials (author: chaosreload; contributors: chaosreload and weichao; labels: _none_; files: `app/nodes/plan_actions/detect_sources.py`)
+- [#798](https://github.com/Tracer-Cloud/opensre/pull/798) fix(mypy): remove stale NewGenericSyntax enable flag (author: Sarah Salah; contributors: Sarah Salah; labels: _none_; files: `mypy.ini`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-22T23:00:00+00:00` to `2026-04-23T23:00:00+00:00`

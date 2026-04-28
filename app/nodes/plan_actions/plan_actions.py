@@ -236,6 +236,15 @@ def plan_actions(
         input_data.raw_alert, input_data.context, resolved_integrations=resolved_integrations
     )
 
+    # Thread shared incident metadata to opt-in tools. The reserved ``_meta``
+    # key holds investigation-level context (today: incident_window) that is
+    # NOT bound to any specific service. Tools that want it read
+    # ``sources["_meta"]["incident_window"]`` in their extract_params; tools
+    # that don't simply ignore the key. Omitted entirely when the state has
+    # no incident_window so the dict shape stays clean.
+    if input_data.incident_window is not None:
+        available_sources["_meta"] = {"incident_window": input_data.incident_window}
+
     # Enhance sources with dynamically discovered information from evidence (e.g., audit_key from S3 metadata)
     s3_object = _evidence_object_dict(input_data.evidence.get("s3_object", {}))
     s3_metadata = _evidence_object_dict(s3_object.get("metadata", {}))

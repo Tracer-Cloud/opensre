@@ -45,7 +45,12 @@ def test_extract_params_maps_fields() -> None:
 def test_run_returns_unavailable_when_no_config() -> None:
     with patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None):
         result = get_github_file_contents(owner="org", repo="repo", path="README.md")
-    assert result["available"] is False
+    assert result == {
+        "source": "github",
+        "available": False,
+        "error": "GitHub MCP integration is not configured.",
+        "file": {},
+    }
 
 
 def test_run_happy_path() -> None:

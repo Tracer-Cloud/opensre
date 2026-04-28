@@ -11,6 +11,7 @@ from app.integrations.bitbucket import (
     search_code,
 )
 from app.tools.tool_decorator import tool
+from app.tools.utils.code_host_unavailable import code_host_unavailable_payload
 
 
 def _resolve_config(
@@ -116,10 +117,10 @@ def search_bitbucket_code(
         integration_id,
     )
     if config is None:
-        return {
-            "source": "bitbucket",
-            "available": False,
-            "error": "Bitbucket integration is not configured.",
-            "results": [],
-        }
+        return code_host_unavailable_payload(
+            source="bitbucket",
+            integration_name="Bitbucket",
+            empty_key="results",
+            empty_value=[],
+        )
     return search_code(config, query=query, repo_slug=repo_slug, limit=limit)

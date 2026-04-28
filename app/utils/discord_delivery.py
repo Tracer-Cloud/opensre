@@ -3,11 +3,22 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
-import httpx
+from app.utils.delivery_transport import post_json
 
 logger = logging.getLogger(__name__)
+
+
+def _discord_auth_headers(bot_token: str) -> dict[str, str]:
+    # ``Content-Type: application/json`` is set automatically by httpx when
+    # the request uses the ``json=`` kwarg, so we only need to add auth.
+    return {"Authorization": f"Bot {bot_token}"}
+
+
+def _discord_error_from_data(data: Mapping[str, Any]) -> str:
+    return str(data.get("message", data.get("error", "unknown")))
 
 
 def post_discord_message(
@@ -21,29 +32,22 @@ def post_discord_message(
     Returns True on success, False on expected failures.
     """
     logger.debug("[discord] post message params channel_id: %s", channel_id)
-    try:
-        resp = httpx.post(
-            url=f"https://discord.com/api/v10/channels/{channel_id}/messages",
-            json={"content": content, "embeds": embeds},
-            headers={
-                "Authorization": f"Bot {bot_token}",
-                "Content-Type": "application/json; charset=utf-8",
-            },
-            timeout=15.0,
-        )
-        data = resp.json()
-        error_message = ""
-        if resp.status_code not in (200, 201):
-            logger.warning("[discord] post message failed: %s", resp.status_code)
-            logger.warning("[discord] api response %s", data)
-            error_message = data.get("message", data.get("error", "unknown"))
-            logger.warning("[discord] post message failed: %s", error_message)
-            return False, error_message, ""
-        message_id: str = str(data.get("id") or "")
-        return True, error_message, message_id
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[discord] post message exception: %s", exc)
-        return False, str(exc), ""
+    response = post_json(
+        url=f"https://discord.com/api/v10/channels/{channel_id}/messages",
+        payload={"content": content, "embeds": embeds},
+        headers=_discord_auth_headers(bot_token),
+    )
+    if not response.ok:
+        logger.warning("[discord] post message exception: %s", response.error)
+        return False, response.error, ""
+    if response.status_code not in (200, 201):
+        logger.warning("[discord] post message failed: %s", response.status_code)
+        logger.warning("[discord] api response %s", response.data)
+        error_message = _discord_error_from_data(response.data)
+        logger.warning("[discord] post message failed: %s", error_message)
+        return False, error_message, ""
+    message_id = str(response.data.get("id") or "")
+    return True, "", message_id
 
 
 def create_discord_thread(
@@ -56,29 +60,20 @@ def create_discord_thread(
 
     Returns True on success, False on expected failures.
     """
-    try:
-        resp = httpx.post(
-            url=(
-                f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}/threads"
-            ),
-            json={"name": name, "auto_archive_duration": 1440},
-            headers={
-                "Authorization": f"Bot {bot_token}",
-                "Content-Type": "application/json; charset=utf-8",
-            },
-            timeout=15.0,
-        )
-        data = resp.json()
-        error_message = ""
-        if resp.status_code not in (200, 201):
-            error_message = data.get("message", data.get("error", "unknown"))
-            logger.warning("[discord] create thread failed: %s", error_message)
-            return False, error_message, ""
-        thread_id: str = str(data.get("id") or "")
-        return True, error_message, thread_id
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[discord] create thread exception: %s", exc)
-        return False, str(exc), ""
+    response = post_json(
+        url=f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}/threads",
+        payload={"name": name, "auto_archive_duration": 1440},
+        headers=_discord_auth_headers(bot_token),
+    )
+    if not response.ok:
+        logger.warning("[discord] create thread exception: %s", response.error)
+        return False, response.error, ""
+    if response.status_code not in (200, 201):
+        error_message = _discord_error_from_data(response.data)
+        logger.warning("[discord] create thread failed: %s", error_message)
+        return False, error_message, ""
+    thread_id = str(response.data.get("id") or "")
+    return True, "", thread_id
 
 
 _EMBED_TITLE_LIMIT = 256

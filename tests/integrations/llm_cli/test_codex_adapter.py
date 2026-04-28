@@ -6,12 +6,14 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from app.integrations.llm_cli.codex import (
-    CodexAdapter,
-    _fallback_codex_paths,
-    _npm_prefix_bin_dirs,
-)
+from app.integrations.llm_cli.binary_resolver import npm_prefix_bin_dirs
+from app.integrations.llm_cli.codex import CodexAdapter, _fallback_codex_paths
 from app.integrations.llm_cli.text import flatten_messages_to_prompt
+
+
+def _posix_path_set(paths: list[str]) -> set[str]:
+    """Normalize paths for assertions when simulating POSIX platforms on Windows CI."""
+    return {Path(p).as_posix() for p in paths}
 
 
 def test_flatten_messages_joins_roles() -> None:
@@ -284,9 +286,9 @@ def test_detect_uses_first_runnable_fallback_path(
 
 
 def test_fallback_paths_include_env_and_npm_prefix() -> None:
-    _npm_prefix_bin_dirs.cache_clear()
+    npm_prefix_bin_dirs.cache_clear()
     with (
-        patch("app.integrations.llm_cli.codex.sys.platform", "linux"),
+        patch("app.integrations.llm_cli.binary_resolver.sys.platform", "linux"),
         patch.dict(
             os.environ,
             {
@@ -299,30 +301,32 @@ def test_fallback_paths_include_env_and_npm_prefix() -> None:
     ):
         paths = _fallback_codex_paths()
 
-    assert "/pnpm/home/codex" in paths
-    assert "/xdg/data/pnpm/codex" in paths
-    assert "/custom/npm/bin/codex" in paths
+    normalized = _posix_path_set(paths)
+    assert "/pnpm/home/codex" in normalized
+    assert "/xdg/data/pnpm/codex" in normalized
+    assert "/custom/npm/bin/codex" in normalized
 
 
 def test_fallback_paths_include_macos_defaults() -> None:
-    _npm_prefix_bin_dirs.cache_clear()
+    npm_prefix_bin_dirs.cache_clear()
     with (
-        patch("app.integrations.llm_cli.codex.sys.platform", "darwin"),
+        patch("app.integrations.llm_cli.binary_resolver.sys.platform", "darwin"),
         patch.dict(os.environ, {}, clear=False),
     ):
         paths = _fallback_codex_paths()
 
-    assert "/opt/homebrew/bin/codex" in paths
-    assert "/usr/local/bin/codex" in paths
-    assert str(Path.home() / ".local/bin/codex") in paths
-    assert str(Path.home() / ".npm-global/bin/codex") in paths
-    assert str(Path.home() / ".volta/bin/codex") in paths
+    normalized = _posix_path_set(paths)
+    assert "/opt/homebrew/bin/codex" in normalized
+    assert "/usr/local/bin/codex" in normalized
+    assert (Path.home() / ".local/bin/codex").as_posix() in normalized
+    assert (Path.home() / ".npm-global/bin/codex").as_posix() in normalized
+    assert (Path.home() / ".volta/bin/codex").as_posix() in normalized
 
 
 def test_fallback_paths_include_windows_defaults() -> None:
-    _npm_prefix_bin_dirs.cache_clear()
+    npm_prefix_bin_dirs.cache_clear()
     with (
-        patch("app.integrations.llm_cli.codex.sys.platform", "win32"),
+        patch("app.integrations.llm_cli.binary_resolver.sys.platform", "win32"),
         patch.dict(
             os.environ,
             {
@@ -343,23 +347,23 @@ def test_fallback_paths_include_windows_defaults() -> None:
 
 
 def test_npm_prefix_bin_dirs_windows_uses_prefix_root() -> None:
-    _npm_prefix_bin_dirs.cache_clear()
+    npm_prefix_bin_dirs.cache_clear()
     with (
-        patch("app.integrations.llm_cli.codex.sys.platform", "win32"),
+        patch("app.integrations.llm_cli.binary_resolver.sys.platform", "win32"),
         patch.dict(os.environ, {"NPM_CONFIG_PREFIX": r"C:\npm\prefix"}, clear=False),
     ):
-        dirs = _npm_prefix_bin_dirs()
+        dirs = npm_prefix_bin_dirs()
     assert dirs == (r"C:\npm\prefix",)
 
 
 def test_npm_prefix_bin_dirs_unix_uses_prefix_bin() -> None:
-    _npm_prefix_bin_dirs.cache_clear()
+    npm_prefix_bin_dirs.cache_clear()
     with (
-        patch("app.integrations.llm_cli.codex.sys.platform", "linux"),
+        patch("app.integrations.llm_cli.binary_resolver.sys.platform", "linux"),
         patch.dict(os.environ, {"NPM_CONFIG_PREFIX": "/opt/npm"}, clear=False),
     ):
-        dirs = _npm_prefix_bin_dirs()
-    assert dirs == ("/opt/npm/bin",)
+        dirs = npm_prefix_bin_dirs()
+    assert tuple(Path(d).as_posix() for d in dirs) == ("/opt/npm/bin",)
 
 
 @patch("app.integrations.llm_cli.codex.shutil.which", return_value="/usr/bin/codex")

@@ -1,10 +1,18 @@
 root_cause_category: resource_exhaustion
 required_keywords:
   - replication
+  - replication lag
   - WAL
   - replica
-forbidden_categories:
+  - UPDATE
+  - SELECT
+  - causally independent
+forbidden_keywords:
   - cpu_saturation
+  - two root causes
+  - multiple root causes
+  - independent root causes
+  - second root cause
 required_evidence_sources:
   - aws_performance_insights
 optimal_trajectory:

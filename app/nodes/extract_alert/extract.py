@@ -8,6 +8,40 @@ from app.output import debug_print
 from app.services import get_llm_for_reasoning
 from app.state import InvestigationState
 
+# Do not let the classifier overwrite these — routing and OpenSRE telemetry depend on them.
+_CANONICAL_ALERT_SOURCES = frozenset({"openrca_dataset", "opensre", "opensre_dataset"})
+
+
+def _alert_dict_needs_full_json_for_llm(raw_alert: dict[str, Any]) -> bool:
+    """True when shrinking to ``text`` would hide labels/annotations the LLM must see."""
+    src = str(raw_alert.get("alert_source", "")).lower()
+    if src in _CANONICAL_ALERT_SOURCES:
+        return True
+    if raw_alert.get("commonLabels") or raw_alert.get("commonAnnotations"):
+        return True
+    if raw_alert.get("alerts"):
+        return True
+    for key in (
+        "opensre_telemetry_relative",
+        "openrca_telemetry_relative",
+        "opensre_dataset_root",
+        "openrca_dataset_root",
+    ):
+        if raw_alert.get(key):
+            return True
+    ann = raw_alert.get("commonAnnotations")
+    if isinstance(ann, dict):
+        for key in (
+            "opensre_telemetry_relative",
+            "openrca_telemetry_relative",
+            "opensre_dataset_root",
+            "openrca_dataset_root",
+        ):
+            if ann.get(key):
+                return True
+    meta = raw_alert.get("_meta")
+    return bool(isinstance(meta, dict) and "openrca" in str(meta.get("purpose", "")).lower())
+
 
 def extract_alert_details(state: InvestigationState) -> AlertDetails:
     """Single LLM call: classify noise + extract all routing fields simultaneously."""
@@ -27,7 +61,7 @@ Extract these fields from the message text:
 - alert_name: The name of the alert (e.g. "Pipeline Error in Logs")
 - pipeline_name: The affected pipeline/table/service name
 - severity: critical/high/warning/info
-- alert_source: Which platform fired this alert. Set to "grafana" if the URL/text mentions grafana.net, Grafana alerting, or grafana_folder. Set to "datadog" if it mentions datadoghq.com or Datadog monitors. Set to "honeycomb" if it mentions Honeycomb or api.honeycomb.io. Set to "coralogix" if it mentions Coralogix or DataPrime. Set to "cloudwatch" if it mentions AWS CloudWatch alarms. Set to "eks" if it mentions EKS, CrashLoopBackOff, OOMKilled, Kubernetes pods, or kube_namespace. Set to "alertmanager" if the payload contains Prometheus/Alertmanager-specific fields such as "fingerprint", "generatorURL" pointing to Prometheus, "startsAt"/"endsAt" in the Alertmanager webhook format, or the text mentions Alertmanager. Leave null if truly unknown.
+- alert_source: Which platform fired this alert. If the JSON already sets alert_source to "openrca_dataset", "opensre", or "opensre_dataset", keep that exact value. Set to "grafana" if the URL/text mentions grafana.net, Grafana alerting, or grafana_folder. Set to "datadog" if it mentions datadoghq.com or Datadog monitors. Set to "honeycomb" if it mentions Honeycomb or api.honeycomb.io. Set to "coralogix" if it mentions Coralogix or DataPrime. Set to "cloudwatch" if it mentions AWS CloudWatch alarms. Set to "eks" if it mentions EKS, CrashLoopBackOff, OOMKilled, Kubernetes pods, or kube_namespace. Set to "alertmanager" if the payload contains Prometheus/Alertmanager-specific fields such as "fingerprint", "generatorURL" pointing to Prometheus, "startsAt"/"endsAt" in the Alertmanager webhook format, or the text mentions Alertmanager. Leave null if truly unknown.
 - kube_namespace: Kubernetes namespace if mentioned (e.g. "tracer-test" from "kube_namespace:tracer-test")
 - cloudwatch_log_group: AWS CloudWatch log group if mentioned (e.g. "/aws/ecs/my-service")
 - error_message: The actual error line from the alert (e.g. "PIPELINE_ERROR: Schema validation failed: Missing fields ['customer_id']")
@@ -86,7 +120,11 @@ def _fallback_details(state: InvestigationState, raw_alert: str | dict[str, Any]
 def _format_raw_alert(raw_alert: str | dict[str, Any]) -> str:
     if isinstance(raw_alert, str):
         return raw_alert
-    # For Slack alerts, prefer the human-readable text field
-    if isinstance(raw_alert, dict) and raw_alert.get("text"):
-        return str(raw_alert["text"])
+    if isinstance(raw_alert, dict):
+        if _alert_dict_needs_full_json_for_llm(raw_alert):
+            return json.dumps(raw_alert, indent=2, sort_keys=True)
+        # Slack-style payloads: prefer human-readable text when no structured routing fields.
+        if raw_alert.get("text"):
+            return str(raw_alert["text"])
+        return json.dumps(raw_alert, indent=2, sort_keys=True)
     return json.dumps(raw_alert, indent=2, sort_keys=True)

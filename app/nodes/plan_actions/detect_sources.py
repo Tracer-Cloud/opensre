@@ -11,6 +11,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 from app.integrations.azure_sql import DEFAULT_AZURE_SQL_PORT
+from app.integrations.opensre.csv_grafana_backend import OpenSRECsvGrafanaBackend
+from app.integrations.opensre.inject import inject_opensre_into_resolved_integrations
 from app.services.coralogix import build_coralogix_logs_query
 from app.tools.GrafanaLogsTool import _map_pipeline_to_service_name
 
@@ -190,6 +192,16 @@ def detect_sources(
 
     if isinstance(raw_alert, str):
         raw_alert = {}
+
+    resolved_integrations = inject_opensre_into_resolved_integrations(
+        raw_alert, resolved_integrations
+    )
+
+    opensre_csv_backend_active = False
+    if resolved_integrations:
+        _gg = resolved_integrations.get("grafana")
+        if isinstance(_gg, dict) and _gg.get("_backend") is not None:
+            opensre_csv_backend_active = isinstance(_gg["_backend"], OpenSRECsvGrafanaBackend)
 
     # Determine alert origin platform to avoid querying irrelevant integrations
     alert_source = raw_alert.get("alert_source", "").lower() if isinstance(raw_alert, dict) else ""
@@ -391,14 +403,16 @@ def detect_sources(
             or "us-east-1"
         )
 
-    if aws_metadata:
+    if aws_metadata and not opensre_csv_backend_active:
         sources["aws_metadata"] = aws_metadata
 
     # Detect Grafana sources from resolved_integrations
     common_labels = raw_alert.get("commonLabels", {}) if isinstance(raw_alert, dict) else {}
+    # Prefer label pipeline (authoritative on webhooks / Hub JSON) over LLM-enriched
+    # top-level pipeline_name, which is often shortened (e.g. "cloudbed-1").
     pipeline_name = (
-        annotations.get("pipeline_name")
-        or common_labels.get("pipeline_name")
+        common_labels.get("pipeline_name")
+        or annotations.get("pipeline_name")
         or context.get("pipeline_name", "")
     )
     execution_run_id = (
@@ -464,11 +478,15 @@ def detect_sources(
                 )
 
         if grafana_int is None:
-            if resolved_integrations.get("grafana_local"):
+            grafana_cloud = resolved_integrations.get("grafana")
+            if isinstance(grafana_cloud, dict) and grafana_cloud.get("_backend") is not None:
+                grafana_int = grafana_cloud
+                grafana_local = False
+            elif resolved_integrations.get("grafana_local"):
                 grafana_int = resolved_integrations["grafana_local"]
                 grafana_local = True
-            elif resolved_integrations.get("grafana"):
-                grafana_int = resolved_integrations["grafana"]
+            elif grafana_cloud:
+                grafana_int = grafana_cloud
 
     # When a _backend is injected we allow any alert_source; otherwise restrict to Grafana/unknown.
     _has_injected_backend = bool(grafana_int and "_backend" in grafana_int)
@@ -696,6 +714,12 @@ def detect_sources(
                 "role_arn": _eks_int.get("role_arn", ""),
                 "external_id": _eks_int.get("external_id", ""),
                 "cluster_names": _eks_int.get("cluster_names", []),
+                # Forward stored AWS integration credentials so build_k8s_clients
+                # can use them explicitly instead of silently missing them when
+                # the AWS integration is configured with IAM user credentials
+                # (access_key_id + secret_access_key, no role_arn). Follow-up
+                # to #724 (stored-integration credential forwarding).
+                "credentials": _eks_int.get("credentials") or None,
             }
             if _has_injected_eks_backend:
                 # Backend-only path: only fixture-aware EKS tools should activate,
