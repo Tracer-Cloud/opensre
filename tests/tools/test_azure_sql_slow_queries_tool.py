@@ -69,7 +69,5 @@ def test_no_default_db_warning_when_database_provided() -> None:
         "app.tools.AzureSQLSlowQueriesTool.get_slow_queries",
         return_value={"source": "azure_sql", "available": True, "queries": []},
     ):
-        result = get_azure_sql_slow_queries(
-            server="myserver.database.windows.net", database="mydb"
-        )
+        result = get_azure_sql_slow_queries(server="myserver.database.windows.net", database="mydb")
     assert "default_db_warning" not in result
