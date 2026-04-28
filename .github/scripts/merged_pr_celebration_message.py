@@ -62,7 +62,7 @@ head = random.choice(templates) + random.choice(gif_blocks)
 footer = (
     "---\n\n"
     f"👋 **Join us on [Discord - OpenSRE]({discord})** : hang out, contribute, "
-    "or hunt for feature requests and issues. Everyone's welcome."
+    "or hunt for features and issues. Everyone's welcome."
 )
 body = f"{head}\n\n{footer}"
 
