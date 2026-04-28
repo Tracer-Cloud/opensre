@@ -265,7 +265,7 @@ def _post_direct(
         logger.error(
             "[slack] Direct post EXCEPTION type=%s channel=%s thread_ts=%s detail=%s "
             "(caller may attempt fallback)",
-            response.exc_type,
+            response.exc_type or "Exception",
             channel,
             thread_ts,
             error,

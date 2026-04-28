@@ -262,3 +262,29 @@ class TestDelegatesToSharedTransport:
         monkeypatch.setattr("app.utils.slack_delivery.post_json", _stub_post_json)
         slack_delivery._post_direct("hi", "C1", "1.0", "tok")
         assert captured["url"] == "https://slack.com/api/chat.postMessage"
+
+
+class TestPostDirectExceptionLog:
+    def test_exc_type_appears_in_log(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setattr(
+            "app.utils.slack_delivery.post_json",
+            lambda *_, **__: DeliveryResponse(ok=False, error="timeout", exc_type="TimeoutError"),
+        )
+        with caplog.at_level(logging.ERROR, logger="app.utils.slack_delivery"):
+            slack_delivery._post_direct("hi", "C1", "1.0", "tok")
+        joined = " ".join(rec.getMessage() for rec in caplog.records)
+        assert "type=TimeoutError" in joined
+
+    def test_exc_type_fallback_when_missing(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setattr(
+            "app.utils.slack_delivery.post_json",
+            lambda *_, **__: DeliveryResponse(ok=False, error="something"),
+        )
+        with caplog.at_level(logging.ERROR, logger="app.utils.slack_delivery"):
+            slack_delivery._post_direct("hi", "C1", "1.0", "tok")
+        joined = " ".join(rec.getMessage() for rec in caplog.records)
+        assert "type=Exception" in joined

@@ -33,7 +33,7 @@ class _DiscordTokenFilter(logging.Filter):
 
 
 def _install_httpx_token_filter() -> None:
-    for name in ("httpx", "httpcore"):
+    for name in ("app.utils.discord_delivery",):
         lgr = logging.getLogger(name)
         # Avoid adding multiple instances of the same filter type
         if not any(isinstance(f, _DiscordTokenFilter) for f in lgr.filters):

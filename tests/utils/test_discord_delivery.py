@@ -161,3 +161,50 @@ class TestDelegatesToSharedTransport:
         assert ok is True
         assert mid == "m-via-helper"
         assert "/channels/c1/messages" in calls[0]["url"]
+
+
+def test_post_discord_message_201_also_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.utils.discord_delivery.post_json",
+        lambda *_, **__: DeliveryResponse(ok=True, status_code=201, data={"id": "msg-201"}),
+    )
+    ok, error, message_id = post_discord_message("chan-1", [], "bot-token")
+    assert ok is True
+    assert message_id == "msg-201"
+
+
+def test_send_discord_report_truncates_description_to_4096(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def _fake_post(*_, **kw):
+        captured.update(kw)
+        return DeliveryResponse(ok=True, status_code=200, data={"id": "x"})
+
+    monkeypatch.setattr("app.utils.discord_delivery.post_json", _fake_post)
+    long_text = "a" * 5000
+    send_discord_report(long_text, {"channel_id": "c1", "bot_token": "tok"})
+    # The payload is in 'payload' in my current mock structure, but user request says 'json'
+    # Wait, my post_discord_message calls post_json(payload=...).
+    # DeliveryResponse in send_discord_report uses post_discord_message.
+    # Let's check how captured is updated.
+    embeds = captured.get("payload", {}).get("embeds", [{}])
+    assert len(embeds[0]["description"]) <= 4096
+
+
+def test_send_discord_report_returns_false_on_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.utils.discord_delivery.post_json",
+        lambda *_, **__: DeliveryResponse(ok=False, error="API down"),
+    )
+    ok, _ = send_discord_report("hi", {"channel_id": "c1", "bot_token": "tok"})
+    assert ok is False
+
+
+def test_create_discord_thread_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.utils.discord_delivery.post_json",
+        lambda *_, **__: DeliveryResponse(ok=False, error="forbidden"),
+    )
+    ok, error, thread_id = create_discord_thread("chan-1", "msg-1", "My Thread", "bot-token")
+    assert ok is False
+    assert thread_id == ""
