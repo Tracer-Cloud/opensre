@@ -298,3 +298,37 @@ def test_query_traces_no_filters(client: HoneycombClient) -> None:
 
     assert result["success"] is False
     assert "require a service_name or trace_id" in result["error"]
+
+
+def test_run_query_create_query_failure(client: HoneycombClient) -> None:
+    client.create_query = MagicMock(return_value={"success": False, "error": "Query error"})
+    result = client.run_query({"calculations": []})
+    assert result["success"] is False
+    assert result["error"] == "Query error"
+
+
+def test_run_query_missing_result_id(client: HoneycombClient) -> None:
+    client.create_query = MagicMock(return_value={"success": True, "query_id": "q1"})
+    client.create_query_result = MagicMock(
+        return_value={"success": True, "result": {"complete": False}}  # No 'id'
+    )
+    result = client.run_query({"calculations": []})
+    assert result["success"] is False
+    assert "no result ID" in result["error"]
+
+
+def test_run_query_polling_fetch_failure(client: HoneycombClient) -> None:
+    client.create_query = MagicMock(return_value={"success": True, "query_id": "q1"})
+    client.create_query_result = MagicMock(
+        return_value={"success": True, "result": {"id": "r1", "complete": False}}
+    )
+    # Fail on the first poll
+    client.get_query_result = MagicMock(
+        return_value={"success": False, "error": "Fetch failed"}
+    )
+
+    with patch("time.sleep"):
+        result = client.run_query({"calculations": []}, poll_attempts=1)
+
+    assert result["success"] is False
+    assert result["error"] == "Fetch failed"
