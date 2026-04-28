@@ -1,9 +1,8 @@
-"""Slack delivery helper - posts directly to Slack API or delegates to NextJS."""
-
 from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any
 
 from app.config import SLACK_CHANNEL
@@ -12,18 +11,47 @@ from app.utils.delivery_transport import post_json
 
 logger = logging.getLogger(__name__)
 
+# xox[a-z]- covers bot, user, app, workspace, etc.
+# hooks.slack.com/services/... covers incoming webhooks.
+_SLACK_TOKEN_RE = re.compile(r"(xox[a-z]-[0-9a-zA-Z-]+|hooks\.slack\.com/services/[a-zA-Z0-9/]+)")
 
-def _slack_bearer_headers(token: str) -> dict[str, str]:
-    # Slack explicitly recommends ``charset=utf-8`` on JSON POSTs — without
-    # it the API replies with a ``missing_charset`` warning in
-    # ``response_metadata.warnings``. httpx only auto-sets the bare
-    # ``application/json`` (no charset) for ``json=`` kwargs, so we keep
-    # the explicit charset header here.
-    # See https://api.slack.com/web#posting_json
-    return {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json; charset=utf-8",
-    }
+
+def _redact_arg(a: object) -> object:
+    """Redact Slack token from a log arg, preserving the original type if no match."""
+    s = str(a)
+    redacted = _SLACK_TOKEN_RE.sub("<redacted>", s)
+    return redacted if redacted != s else a
+
+
+class _SlackTokenFilter(logging.Filter):
+    """Scrub Slack tokens from httpx/httpcore log records."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = _SLACK_TOKEN_RE.sub("<redacted>", str(record.msg))
+        if record.args:
+            if isinstance(record.args, tuple):
+                record.args = tuple(_redact_arg(a) for a in record.args)
+            elif isinstance(record.args, dict):
+                record.args = {k: _redact_arg(v) for k, v in record.args.items()}
+        return True
+
+
+def _install_httpx_token_filter() -> None:
+    for name in ("httpx", "httpcore"):
+        lgr = logging.getLogger(name)
+        # Avoid adding multiple instances of the same filter type
+        if not any(isinstance(f, _SlackTokenFilter) for f in lgr.filters):
+            lgr.addFilter(_SlackTokenFilter())
+
+
+_install_httpx_token_filter()
+
+
+def _redact_token(text: str, token: str) -> str:
+    """Replace token with <redacted> to prevent accidental log/error leakage."""
+    if token and token in text:
+        return text.replace(token, "<redacted>")
+    return text
 
 
 def _call_reactions_api(method: str, token: str, channel: str, timestamp: str, emoji: str) -> bool:
@@ -34,17 +62,24 @@ def _call_reactions_api(method: str, token: str, channel: str, timestamp: str, e
     response = post_json(
         url=f"https://slack.com/api/{method}",
         payload={"channel": channel, "timestamp": timestamp, "name": emoji},
-        headers=_slack_bearer_headers(token),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json; charset=utf-8",
+        },
         timeout=8.0,
     )
     if not response.ok:
-        logger.warning("[slack] %s(%s) exception: %s", method, emoji, response.error)
+        error = _redact_token(response.error, token)
+        logger.warning("[slack] %s(%s) exception: %s", method, emoji, error)
         return False
+
     if not response.data.get("ok"):
-        error = response.data.get("error", "unknown")
+        error = _redact_token(str(response.data.get("error", "unknown")), token)
         if error not in ("already_reacted", "no_reaction", "message_not_found"):
             logger.warning("[slack] %s(%s) failed: %s", method, emoji, error)
-    return bool(response.data.get("ok", False))
+        return False
+
+    return True
 
 
 def add_reaction(
@@ -219,20 +254,26 @@ def _post_direct(
     response = post_json(
         url="https://slack.com/api/chat.postMessage",
         payload=payload,
-        headers=_slack_bearer_headers(token),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json; charset=utf-8",
+        },
+        timeout=15.0,
     )
     if not response.ok:
+        error = _redact_token(response.error, token)
         logger.error(
-            "[slack] Direct post exception type=%s channel=%s thread_ts=%s detail=%s "
+            "[slack] Direct post EXCEPTION type=%s channel=%s thread_ts=%s detail=%s "
             "(caller may attempt fallback)",
-            response.exc_type or "Exception",
+            response.exc_type,
             channel,
             thread_ts,
-            response.error,
+            error,
         )
-        return False, f"exception={response.error}"
+        return False, f"exception={error}"
+
     if not response.data.get("ok"):
-        error = response.data.get("error", "unknown")
+        error = _redact_token(str(response.data.get("error", "unknown")), token)
         response_meta = response.data.get("response_metadata", {})
         logger.error(
             "[slack] Direct post FAILED: error=%s, metadata=%s (channel=%s, thread_ts=%s)",
@@ -242,6 +283,7 @@ def _post_direct(
             thread_ts,
         )
         return False, f"slack_error={error}"
+
     warnings = response.data.get("response_metadata", {}).get("warnings", [])
     if warnings:
         logger.warning("[slack] Reply posted with warnings: %s", warnings)
@@ -274,13 +316,16 @@ def _post_via_webapp(
 
     api_url = f"{base_url.rstrip('/')}/api/slack"
     payload = _merge_payload(target_channel, text, thread_ts, blocks=blocks, **extra)
+
     response = post_json(url=api_url, payload=payload, timeout=10.0, follow_redirects=True)
     if not response.ok:
         debug_print(f"Slack delivery failed: {response.error}")
         return False
-    if not 200 <= response.status_code < 300:
+
+    if response.status_code >= 400:
         debug_print(f"Slack delivery failed: HTTP {response.status_code}: {response.text[:200]}")
         return False
+
     debug_print(f"Slack delivery triggered via NextJS /api/slack (thread_ts={thread_ts}).")
     return True
 
@@ -301,12 +346,16 @@ def _post_via_incoming_webhook(
 
     response = post_json(url=webhook_url, payload=payload, timeout=10.0, follow_redirects=True)
     if not response.ok:
-        debug_print(f"Slack incoming webhook failed: {response.error}")
+        # Mask the webhook URL secret by using exc_type
+        debug_print(f"Slack incoming webhook failed: {response.exc_type}")
         return False
-    if not 200 <= response.status_code < 300:
+
+    if response.status_code >= 400:
         debug_print(
             f"Slack incoming webhook failed: HTTP {response.status_code}: {response.text[:200]}"
         )
         return False
+
     debug_print("Slack report posted via incoming webhook.")
     return True
+
