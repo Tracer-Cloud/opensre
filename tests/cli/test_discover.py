@@ -234,9 +234,7 @@ def test_load_test_catalog_sorting_and_aggregation(
     assert "ZZZ First Title" in display_names
 
 
-def test_load_test_catalog_exclude_logic(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_load_test_catalog_exclude_logic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that only certain types of items are included/excluded as expected."""
     monkeypatch.setattr(discover, "REPO_ROOT", tmp_path)
     (tmp_path / "tests" / "synthetic" / "rds_postgres").mkdir(parents=True)
