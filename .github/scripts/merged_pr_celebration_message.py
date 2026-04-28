@@ -49,12 +49,13 @@ _base = "https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/.github/ass
 gif_blocks: list[str] = [
     "",
     "",
-    f"\n\n![]({_base}/hooray.gif)",
-    f"\n\n![]({_base}/success.gif)",
+    f"\n\n![]({_base}/party.gif)",
+    f"\n\n![]({_base}/celebrate.gif)",
+    f"\n\n![]({_base}/ship.gif)",
+    f"\n\n![]({_base}/merge.gif)",
     f"\n\n![]({_base}/shipped.gif)",
-    f"\n\n![]({_base}/cheers.gif)",
+    f"\n\n![]({_base}/success.gif)",
     f"\n\n![]({_base}/fireworks.gif)",
-    f"\n\n![]({_base}/confetti.gif)",
 ]
 
 head = random.choice(templates) + random.choice(gif_blocks)
