@@ -17,7 +17,11 @@ class DummyTracerClient(TracerIntegrationsMixin):
     """Dummy client to isolate and test the TracerIntegrationsMixin."""
 
     def __init__(self, payload: dict[str, Any]) -> None:
-        self.org_id = "test_org_123"
+        super().__init__(
+            base_url="https://tracer.example.com",
+            org_id="test_org_123",
+            jwt_token="invalid-test-token",
+        )
         self._payload = payload
         self.last_endpoint = ""
         self.last_params: dict[str, Any] = {}
