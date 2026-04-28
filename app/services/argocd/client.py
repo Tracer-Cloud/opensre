@@ -7,6 +7,8 @@ from environment variables resolved by ``app.integrations.catalog``.
 
 from __future__ import annotations
 
+import difflib
+import json
 import logging
 import re
 from typing import Any
@@ -34,6 +36,10 @@ _GENERIC_SECRET_VALUE_RE = re.compile(
     r"|AKIA[0-9A-Z]{16}"
     r"|-----BEGIN [A-Z ]*PRIVATE KEY-----"
     r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})"
+)
+_SENSITIVE_FIELD_RE = re.compile(
+    r"(?i)(password|passwd|secret|token|api[_-]?key|authorization|auth|private[_-]?key|"
+    r"client[_-]?secret|connection[_-]?string|credential)"
 )
 
 
@@ -288,7 +294,7 @@ class ArgoCDClient:
         project: str = "",
         app_namespace: str = "",
     ) -> dict[str, Any]:
-        """Fetch Argo CD server-side diff data for one application."""
+        """Fetch Argo CD diff data for one application."""
         name = str(application_name or "").strip()
         if not name:
             return {"success": False, "error": "application_name is required"}
@@ -302,12 +308,24 @@ class ArgoCDClient:
                 params=params,
             )
             payload = response.json()
-            raw_diffs = payload.get("diffs", []) if isinstance(payload, dict) else []
-            diffs = [_normalize_diff(diff) for diff in raw_diffs if isinstance(diff, dict)]
+            raw_diffs: list[Any] = []
+            payload_modified = False
+            if isinstance(payload, dict):
+                # Argo CD v3.3 exposes this response as {items, modified}; keep
+                # accepting the older/tested {diffs} shape for compatibility.
+                raw_diffs = payload.get("diffs") or payload.get("items") or []
+                payload_modified = bool(payload.get("modified"))
+            diffs = [
+                _normalize_diff(diff)
+                for diff in raw_diffs
+                if isinstance(diff, dict) and _resource_diff_is_modified(diff)
+            ]
+            if not diffs:
+                diffs = self._get_managed_resource_diffs(name, params=params)
             return {
                 "success": True,
                 "application_name": name,
-                "drift_detected": bool(diffs),
+                "drift_detected": bool(diffs) or payload_modified,
                 "diffs": diffs,
                 "diff_count": len(diffs),
             }
@@ -318,6 +336,29 @@ class ArgoCDClient:
                 name,
             )
             return self._error_result("get application diff failed", exc)
+
+    def _get_managed_resource_diffs(
+        self,
+        application_name: str,
+        *,
+        params: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        """Derive drift from Argo CD managed resource target/live states."""
+        response = self._request(
+            "GET",
+            f"/api/v1/applications/{quote(application_name, safe='')}/managed-resources",
+            params=params,
+        )
+        payload = response.json()
+        raw_items = payload.get("items", []) if isinstance(payload, dict) else []
+        diffs: list[dict[str, Any]] = []
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            diff = _managed_resource_diff(item)
+            if diff:
+                diffs.append(_normalize_diff(diff))
+        return diffs
 
 
 def _application_params(project: str = "", app_namespace: str = "") -> dict[str, str]:
@@ -385,6 +426,86 @@ def _recent_history(payload: dict[str, Any], limit: int = 5) -> list[dict[str, A
     history = status.get("history", []) if isinstance(status.get("history"), list) else []
     recent = [item for item in reversed(history) if isinstance(item, dict)]
     return recent[:limit]
+
+
+def _resource_diff_is_modified(payload: dict[str, Any]) -> bool:
+    if "modified" in payload:
+        return bool(payload.get("modified"))
+    return bool(
+        payload.get("diff")
+        or payload.get("liveState")
+        or payload.get("normalizedLiveState")
+        or payload.get("targetState")
+        or payload.get("predictedLiveState")
+    )
+
+
+def _managed_resource_diff(payload: dict[str, Any]) -> dict[str, Any] | None:
+    desired = str(payload.get("predictedLiveState") or payload.get("targetState") or "")
+    live = str(payload.get("normalizedLiveState") or payload.get("liveState") or "")
+    desired_state = _parse_json_state(desired)
+    live_state = _parse_json_state(live)
+    if desired_state is None or live_state is None:
+        # Argo CD managed resource states are expected to be JSON. Avoid
+        # synthesizing diffs from plain text/YAML where formatting alone can
+        # look like drift.
+        return None
+    desired_lines = _json_state_lines(desired_state)
+    live_lines = _json_state_lines(live_state)
+    if desired_lines == live_lines:
+        return None
+    if _json_contains_sensitive_data(desired_state) or _json_contains_sensitive_data(live_state):
+        rendered_diff = "[REDACTED secret-bearing resource diff]"
+    else:
+        rendered_diff = _render_state_diff(desired_lines, live_lines)
+    return {
+        "group": payload.get("group", ""),
+        "kind": payload.get("kind", ""),
+        "name": payload.get("name", ""),
+        "namespace": payload.get("namespace", ""),
+        "diff": rendered_diff,
+    }
+
+
+def _parse_json_state(value: str) -> Any | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+def _json_state_lines(value: Any) -> list[str]:
+    return json.dumps(value, indent=2, sort_keys=True).splitlines()
+
+
+def _json_contains_sensitive_data(value: Any) -> bool:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if _SENSITIVE_FIELD_RE.search(str(key)):
+                return True
+            if _json_contains_sensitive_data(nested):
+                return True
+        return False
+    if isinstance(value, list):
+        return any(_json_contains_sensitive_data(item) for item in value)
+    if isinstance(value, str):
+        return bool(_GENERIC_SECRET_VALUE_RE.search(value))
+    return False
+
+
+def _render_state_diff(desired_lines: list[str], live_lines: list[str]) -> str:
+    return "\n".join(
+        difflib.unified_diff(
+            desired_lines,
+            live_lines,
+            fromfile="desired",
+            tofile="live",
+            lineterm="",
+        )
+    )
 
 
 def _sanitize_diff(value: object, *, resource_kind: str = "") -> str:

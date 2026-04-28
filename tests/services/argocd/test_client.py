@@ -275,6 +275,237 @@ def test_get_application_diff_reports_drift_from_server_side_diff() -> None:
     assert result["diffs"][0]["kind"] == "Deployment"
 
 
+def test_get_application_diff_accepts_argocd_items_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/applications/payments-api/server-side-diff"
+        return httpx.Response(
+            200,
+            json={
+                "modified": True,
+                "items": [
+                    {
+                        "group": "apps",
+                        "kind": "Deployment",
+                        "name": "payments-api",
+                        "namespace": "payments",
+                        "modified": True,
+                        "diff": "- replicas: 3\n+ replicas: 2",
+                    }
+                ],
+            },
+            request=request,
+        )
+
+    client = ArgoCDClient(
+        ArgoCDConfig(base_url="https://argocd.example.com", bearer_token="tok_test"),
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.get_application_diff("payments-api")
+
+    assert result["success"] is True
+    assert result["drift_detected"] is True
+    assert result["diff_count"] == 1
+    assert result["diffs"][0]["kind"] == "Deployment"
+
+
+def test_get_application_diff_falls_back_to_managed_resources_when_server_side_diff_empty() -> None:
+    seen_paths: list[str] = []
+    target_state = json.dumps(
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "payments-api", "namespace": "payments"},
+            "spec": {"replicas": 1},
+        },
+        sort_keys=True,
+    )
+    live_state = json.dumps(
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "payments-api", "namespace": "payments"},
+            "spec": {"replicas": 2},
+        },
+        sort_keys=True,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_paths.append(request.url.path)
+        if request.url.path.endswith("/server-side-diff"):
+            return httpx.Response(200, json={"modified": False}, request=request)
+        assert request.url.path.endswith("/managed-resources")
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "group": "apps",
+                        "kind": "Deployment",
+                        "name": "payments-api",
+                        "namespace": "payments",
+                        "targetState": target_state,
+                        "normalizedLiveState": live_state,
+                    }
+                ]
+            },
+            request=request,
+        )
+
+    client = ArgoCDClient(
+        ArgoCDConfig(base_url="https://argocd.example.com", bearer_token="tok_test"),
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.get_application_diff("payments-api")
+
+    assert result["success"] is True
+    assert result["drift_detected"] is True
+    assert result["diff_count"] == 1
+    assert result["diffs"][0]["kind"] == "Deployment"
+    assert "replicas" in result["diffs"][0]["diff"]
+    assert seen_paths == [
+        "/api/v1/applications/payments-api/server-side-diff",
+        "/api/v1/applications/payments-api/managed-resources",
+    ]
+
+
+def test_get_application_diff_fallback_ignores_equal_managed_resource_states() -> None:
+    state = json.dumps(
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "payments-api", "namespace": "payments"},
+            "spec": {"replicas": 1},
+        },
+        sort_keys=True,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/server-side-diff"):
+            return httpx.Response(200, json={"modified": False}, request=request)
+        assert request.url.path.endswith("/managed-resources")
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "group": "apps",
+                        "kind": "Deployment",
+                        "name": "payments-api",
+                        "namespace": "payments",
+                        "targetState": state,
+                        "normalizedLiveState": state,
+                    }
+                ]
+            },
+            request=request,
+        )
+
+    client = ArgoCDClient(
+        ArgoCDConfig(base_url="https://argocd.example.com", bearer_token="tok_test"),
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.get_application_diff("payments-api")
+
+    assert result["success"] is True
+    assert result["drift_detected"] is False
+    assert result["diff_count"] == 0
+    assert result["diffs"] == []
+
+
+def test_get_application_diff_fallback_skips_non_json_managed_resource_states() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/server-side-diff"):
+            return httpx.Response(200, json={"modified": False}, request=request)
+        assert request.url.path.endswith("/managed-resources")
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "group": "",
+                        "kind": "ConfigMap",
+                        "name": "payments-config",
+                        "namespace": "payments",
+                        "targetState": "kind: ConfigMap\nmetadata:\n  name: payments-config\n",
+                        "normalizedLiveState": "kind: ConfigMap\nmetadata: {name: payments-config}\n",
+                    }
+                ]
+            },
+            request=request,
+        )
+
+    client = ArgoCDClient(
+        ArgoCDConfig(base_url="https://argocd.example.com", bearer_token="tok_test"),
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.get_application_diff("payments-config")
+
+    assert result["success"] is True
+    assert result["drift_detected"] is False
+    assert result["diff_count"] == 0
+
+
+def test_get_application_diff_fallback_redacts_sensitive_non_secret_json_state() -> None:
+    target_state = json.dumps(
+        {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "payments-config", "namespace": "payments"},
+            "data": {"clientSecret": "old-super-secret-value"},
+        },
+        sort_keys=True,
+    )
+    live_state = json.dumps(
+        {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "payments-config", "namespace": "payments"},
+            "data": {"clientSecret": "new-super-secret-value"},
+        },
+        sort_keys=True,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/server-side-diff"):
+            return httpx.Response(200, json={"modified": False}, request=request)
+        assert request.url.path.endswith("/managed-resources")
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "group": "",
+                        "kind": "ConfigMap",
+                        "name": "payments-config",
+                        "namespace": "payments",
+                        "targetState": target_state,
+                        "normalizedLiveState": live_state,
+                    }
+                ]
+            },
+            request=request,
+        )
+
+    client = ArgoCDClient(
+        ArgoCDConfig(base_url="https://argocd.example.com", bearer_token="tok_test"),
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.get_application_diff("payments-config")
+
+    assert result["success"] is True
+    assert result["drift_detected"] is True
+    assert result["diff_count"] == 1
+    rendered = result["diffs"][0]["diff"]
+    assert "old-super-secret-value" not in rendered
+    assert "new-super-secret-value" not in rendered
+    assert rendered == "[REDACTED secret-bearing resource diff]"
+
+
 def test_get_application_diff_redacts_secret_resources_and_token_like_values() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
