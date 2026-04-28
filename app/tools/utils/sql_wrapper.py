@@ -8,7 +8,8 @@ See: https://github.com/Tracer-Cloud/opensre/issues/894
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
 def run_sql_tool(
