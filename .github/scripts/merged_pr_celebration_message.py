@@ -10,46 +10,67 @@ contributor = os.environ["CONTRIBUTOR_LOGIN"]
 
 templates: list[str] = [
     (
-        f"🎉 **Merged — thanks @{contributor}!** Your change is in; "
-        "appreciate you taking the time to contribute."
+        f"🎉 **MERGED!** @{contributor} just shipped something. "
+        "The diff gods are pleased. 🙌"
     ),
     (
-        f"✨ **Shipped.** Thank you @{contributor} — this PR is merged and "
-        "helps everyone using OpenSRE."
+        f"🚀 **Houston, we have a merge.** @{contributor} your PR is in orbit. "
+        "Thanks for launching this one!"
     ),
     (
-        f"🚀 **Land ho.** @{contributor}, congrats on getting this merged; "
-        "reviews and CI did their job."
+        f"💜 **One more reason the changelog grows.** Thanks @{contributor} — "
+        "your contribution just landed on `main`."
     ),
     (
-        f"💜 **Thank you @{contributor}.** Another contribution landed — "
-        "maintainers and users appreciate it."
+        f"🎊 **Achievement unlocked: PR Merged.** @{contributor} passed code review, "
+        "survived CI, and shipped. Respect. 🤝"
     ),
     (
-        f"🎊 **Merged.** @{contributor}, nice work sticking through review; "
-        "glad this is on main."
+        f"✅ **Merged and deployed to prod^** @{contributor}. "
+        "(*^not actually prod, but your PR is on `main` which is basically the same thing*)"
     ),
     (
-        f"👏 **Thanks @{contributor}!** Your PR merged — documentation, fixes, "
-        "and features all count."
+        f"🔥 **Another one.** @{contributor} said \"here's a PR\" and maintainers said "
+        "\"ship it\". That's how it's done."
     ),
     (
-        f"✅ **On main.** @{contributor}, appreciated — every merged PR moves "
-        "the project forward."
+        f"🧑‍💻 **@{contributor} has entered the contributor hall of fame.** "
+        "Merged. Done. Shipped. Go touch grass (then come back with another PR). 🌱"
+    ),
+    (
+        f"🎯 **Bullseye.** @{contributor} opened a PR, kept the vibes clean, "
+        "and got it merged. Absolute cinema. 🎬"
+    ),
+    (
+        f"⚡ **LGTM → Merged.** @{contributor}, your work is in. "
+        "Every commit counts — thank you for this one."
+    ),
+    (
+        f"🏆 **PR merged, @{contributor}.** Whether it was a typo fix or a monster feature, "
+        "you shipped and that matters."
     ),
 ]
 
+# All verified HTTP 200. Weighted toward "" so not every PR gets a GIF (keeps it fresh).
 gif_blocks: list[str] = [
     "",
+    "",
     "\n\n![](https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif)",
-    "\n\n![](https://media.giphy.com/media/3oz8xAFtuv5nhAfd0I/giphy.gif)",
+    "\n\n![](https://media.giphy.com/media/g9582DNuQppxC/giphy.gif)",
+    "\n\n![](https://media.giphy.com/media/artj92V8o75VPL7AeQ/giphy.gif)",
+    "\n\n![](https://media.giphy.com/media/26u4cqiYI30juCOGY/giphy.gif)",
+    "\n\n![](https://media.giphy.com/media/kyLYXonQYYfwYDIeZl/giphy.gif)",
+    "\n\n![](https://media.giphy.com/media/xT9IgG50Lg7russbCY/giphy.gif)",
+    "\n\n![](https://media.giphy.com/media/zGnnFpOB6s5oNa5VlZ/giphy.gif)",
+    "\n\n![](https://media.giphy.com/media/11sBLVxNs7v6WA/giphy.gif)",
+    "\n\n![](https://media.giphy.com/media/Swx36wwSsU49HAnIhC/giphy.gif)",
 ]
 
 head = random.choice(templates) + random.choice(gif_blocks)
 footer = (
     "---\n\n"
-    f"💬 **Community:** [**Discord — OpenSRE**]({discord}) (`#contribute`) — "
-    "questions, coordination, and roadmap chatter welcome anytime."
+    f"💬 **Come hang out:** [**Discord — OpenSRE**]({discord}) — "
+    "`#contribute` for questions, `#general` for vibes. Everyone's welcome."
 )
 body = f"{head}\n\n{footer}"
 
