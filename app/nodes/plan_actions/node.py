@@ -48,6 +48,15 @@ def node_plan_actions(state: InvestigationState, config: Optional[RunnableConfig
     input_data = InvestigateInput.from_state(state)
     loop_count = state.get("investigation_loop_count", 0)
 
+    # Mask sensitive identifiers in planning input before LLM sees it
+    from app.masking import MaskingContext
+
+    masking_ctx = MaskingContext.from_state(dict(state))
+    input_data = input_data.model_copy(
+        update={k: masking_ctx.mask_value(v) for k, v in input_data.model_dump().items()}
+    )
+    masking_map = masking_ctx.to_state()
+
     tracker = get_tracker()
     tracker.start("plan_actions", "Planning evidence gathering")
 
@@ -137,6 +146,7 @@ def node_plan_actions(state: InvestigationState, config: Optional[RunnableConfig
                 "available_action_names": available_action_names,
                 "investigation_recommendations": [],  # Clear to stop loop
                 "plan_audit": audit_entry,
+                **({"masking_map": masking_map} if masking_map else {}),
             }
 
         debug_print("No new actions selected in planning.")
@@ -158,6 +168,7 @@ def node_plan_actions(state: InvestigationState, config: Optional[RunnableConfig
             "available_sources": available_sources,
             "available_action_names": available_action_names,
             "plan_audit": audit_entry,
+            **({"masking_map": masking_map} if masking_map else {}),
         }
 
     tracker.complete(
@@ -179,4 +190,5 @@ def node_plan_actions(state: InvestigationState, config: Optional[RunnableConfig
         "available_sources": available_sources,
         "available_action_names": available_action_names,
         "plan_audit": audit_entry,
+        **({"masking_map": masking_map} if masking_map else {}),
     }

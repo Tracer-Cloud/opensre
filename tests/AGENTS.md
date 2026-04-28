@@ -10,7 +10,7 @@
 # use_case.py - Pure business logic, no test infrastructure
 def extract_and_validate(input_path: str) -> str:
     if not os.path.exists(input_path):
-        raise FileNotFoundError(f"empty file not present: {input_path}")
+        raise FileNotFoundError(f"input file not present: {input_path}")
     return data
 
 # test_orchestrator.py - All test orchestration separate

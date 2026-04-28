@@ -72,3 +72,22 @@ def test_run_error_propagated() -> None:
         result = get_postgresql_current_queries(host="invalid", database="testdb")
     assert "error" in result
     assert result["available"] is False
+
+
+def test_default_db_warning_present_when_database_omitted() -> None:
+    with patch(
+        "app.tools.PostgreSQLCurrentQueriesTool.get_current_queries",
+        return_value={"source": "postgresql", "available": True, "queries": []},
+    ):
+        result = get_postgresql_current_queries(host="localhost")
+    assert "default_db_warning" in result
+    assert "postgres" in result["default_db_warning"]
+
+
+def test_no_default_db_warning_when_database_provided() -> None:
+    with patch(
+        "app.tools.PostgreSQLCurrentQueriesTool.get_current_queries",
+        return_value={"source": "postgresql", "available": True, "queries": []},
+    ):
+        result = get_postgresql_current_queries(host="localhost", database="mydb")
+    assert "default_db_warning" not in result
