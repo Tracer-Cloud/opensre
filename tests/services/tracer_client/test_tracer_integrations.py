@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 from collections.abc import Mapping
 from typing import Any
@@ -28,7 +29,7 @@ class DummyTracerClient(TracerIntegrationsMixin):
     ) -> dict[str, Any]:
         self.last_endpoint = endpoint
         self.last_params = dict(params or {})
-        return self._payload
+        return copy.deepcopy(self._payload)
 
 
 def test_get_integration_credentials_uses_service_filter() -> None:
@@ -99,7 +100,10 @@ def test_get_all_integrations_falls_back_to_empty_credentials_on_malformed_json(
     }
     client = DummyTracerClient(payload)
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(
+        logging.WARNING,
+        logger="app.services.tracer_client.tracer_integrations",
+    ):
         result = client.get_all_integrations()
 
     assert result[0]["credentials"] == {}
@@ -138,6 +142,51 @@ def test_get_grafana_credentials_prefers_active_integration() -> None:
         api_key="active-token",
         integration_id="grafana-active",
         status="active",
+    )
+
+
+def test_get_grafana_credentials_returns_not_found_when_no_integrations() -> None:
+    """Return found=False when no Grafana integrations exist."""
+    client = DummyTracerClient({"success": True, "data": []})
+
+    result = client.get_grafana_credentials()
+
+    assert result == GrafanaIntegrationCredentials(found=False)
+
+
+def test_get_grafana_credentials_falls_back_to_first_inactive_integration() -> None:
+    """Use the first integration when no Grafana records are active."""
+    payload = {
+        "success": True,
+        "data": [
+            {
+                "id": "grafana-inactive-1",
+                "status": "inactive",
+                "credentials": {
+                    "endpoint": "https://inactive-one.grafana.example.com",
+                    "api_key": "inactive-one-token",
+                },
+            },
+            {
+                "id": "grafana-inactive-2",
+                "status": "pending",
+                "credentials": {
+                    "endpoint": "https://inactive-two.grafana.example.com",
+                    "api_key": "inactive-two-token",
+                },
+            },
+        ],
+    }
+    client = DummyTracerClient(payload)
+
+    result = client.get_grafana_credentials()
+
+    assert result == GrafanaIntegrationCredentials(
+        found=True,
+        endpoint="https://inactive-one.grafana.example.com",
+        api_key="inactive-one-token",
+        integration_id="grafana-inactive-1",
+        status="inactive",
     )
 
 
