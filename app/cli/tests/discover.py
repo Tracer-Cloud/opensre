@@ -278,9 +278,9 @@ def discover_rca_files() -> list[TestCatalogItem]:
     items: list[TestCatalogItem] = []
     for path in sorted(RCA_DIR.glob("*.md")):
         title = path.stem.replace("_", " ").title()
-        lines = path.read_text(encoding="utf-8").splitlines()
-        if lines and lines[0].strip().startswith("# "):
-            title = lines[0].strip()[2:].strip()
+        first_line = path.read_text(encoding="utf-8").splitlines()[0].strip()
+        if first_line.startswith("# "):
+            title = first_line[2:].strip()
         items.append(
             TestCatalogItem(
                 id=f"rca:{path.stem}",
