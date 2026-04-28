@@ -11,6 +11,7 @@ never touched and the URL resolution is deterministic.
 
 from __future__ import annotations
 
+import importlib
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -20,7 +21,7 @@ import pytest
 # Prime the heavy import chain (app.state → app.nodes → app.utils.ingest_delivery)
 # before grabbing a direct handle to ingest_delivery, otherwise running this
 # file in isolation hits the partial-init circular import.
-import app.nodes  # noqa: F401  -- import-order primer
+importlib.import_module("app.nodes")
 from app.utils import ingest_delivery
 
 
