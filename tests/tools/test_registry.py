@@ -279,7 +279,10 @@ def test_resolve_tool_display_name_prefers_registered_metadata(
 
 
 def test_resolve_tool_display_name_falls_back_for_unknown_tools() -> None:
-    assert registry_module.resolve_tool_display_name("my_custom_tool") == "my custom tool"
+    assert (
+        registry_module.resolve_tool_display_name("nonexistent_tool_xyz_sentinel")
+        == "nonexistent tool xyz sentinel"
+    )
 
 
 def test_real_registry_discovers_migrated_sre_guidance_tool() -> None:

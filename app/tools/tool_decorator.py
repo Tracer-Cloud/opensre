@@ -109,7 +109,6 @@ def tool(  # noqa: UP047
             [
                 name is not None,
                 description is not None,
-                display_name is not None,
                 input_schema is not None,
                 source is not None,
                 surfaces is not None,

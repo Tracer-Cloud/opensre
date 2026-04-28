@@ -76,6 +76,7 @@ class BaseTool(ABC):
         metadata = cls.metadata()
         cls.name = metadata.name
         cls.description = metadata.description
+        cls.display_name = metadata.display_name
         cls.input_schema = metadata.input_schema
         cls.source = metadata.source
         cls.use_cases = metadata.use_cases
