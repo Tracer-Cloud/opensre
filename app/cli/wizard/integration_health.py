@@ -9,6 +9,7 @@ from app.cli.wizard.integration_validators.client_validators import (
     validate_coralogix_integration,
     validate_datadog_integration,
     validate_gitlab_integration,
+    validate_google_docs_integration,
     validate_grafana_integration,
     validate_honeycomb_integration,
     validate_opsgenie_integration,
@@ -17,7 +18,6 @@ from app.cli.wizard.integration_validators.client_validators import (
 )
 from app.cli.wizard.integration_validators.http_probe_validators import (
     validate_discord_bot,
-    validate_google_docs_integration,
     validate_jira_integration,
     validate_notion_integration,
     validate_slack_webhook,

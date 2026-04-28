@@ -27,7 +27,31 @@ from app.integrations.github_mcp import GitHubMCPValidationResult
 def test_legacy_integration_health_import_surface_still_exports_validators() -> None:
     module = import_module("app.cli.wizard.integration_health")
 
-    assert hasattr(module, "validate_slack_webhook")
+    expected_exports = {
+        "IntegrationHealthResult",
+        "validate_alertmanager_integration",
+        "validate_aws_integration",
+        "validate_betterstack_integration",
+        "validate_coralogix_integration",
+        "validate_datadog_integration",
+        "validate_discord_bot",
+        "validate_github_mcp_integration",
+        "validate_gitlab_integration",
+        "validate_google_docs_integration",
+        "validate_grafana_integration",
+        "validate_honeycomb_integration",
+        "validate_jira_integration",
+        "validate_notion_integration",
+        "validate_openclaw_integration",
+        "validate_opsgenie_integration",
+        "validate_sentry_integration",
+        "validate_slack_webhook",
+        "validate_vercel_integration",
+    }
+
+    assert set(module.__all__) == expected_exports
+    for symbol in expected_exports:
+        assert hasattr(module, symbol)
 
 
 class _FakeGrafanaClient:
