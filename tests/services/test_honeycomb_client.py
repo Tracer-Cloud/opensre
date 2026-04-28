@@ -323,9 +323,7 @@ def test_run_query_polling_fetch_failure(client: HoneycombClient) -> None:
         return_value={"success": True, "result": {"id": "r1", "complete": False}}
     )
     # Fail on the first poll
-    client.get_query_result = MagicMock(
-        return_value={"success": False, "error": "Fetch failed"}
-    )
+    client.get_query_result = MagicMock(return_value={"success": False, "error": "Fetch failed"})
 
     with patch("time.sleep"):
         result = client.run_query({"calculations": []}, poll_attempts=1)
