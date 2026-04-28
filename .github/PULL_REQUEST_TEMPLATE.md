@@ -1,6 +1,8 @@
 Fixes #
 
-<!-- Add issue number above --> 
+<!-- Add issue number above -->
+
+**Community:** Contributors hang out on **[Discord — OpenSRE](https://discord.com/invite/opensre)** (`#contribute`) for questions, reviews, and roadmap chatter.
 
 #### Describe the changes you have made in this PR -
 

@@ -20,8 +20,10 @@ from app.nodes.chat import (
     tool_executor_node,
 )
 from app.nodes.evaluate_opensre import node_opensre_llm_eval
-from app.nodes.investigate.node import node_investigate
+from app.nodes.investigate.merge import merge_hypothesis_results
+from app.nodes.investigate.parallel import node_investigate_hypothesis
 from app.pipeline.routing import (
+    distribute_hypotheses,
     route_after_extract,
     route_by_mode,
     route_chat,
@@ -46,7 +48,8 @@ def build_graph(config: None = None) -> CompiledStateGraph:
     graph.add_node("extract_alert", node_extract_alert)
     graph.add_node("resolve_integrations", node_resolve_integrations)
     graph.add_node("plan_actions", node_plan_actions)
-    graph.add_node("investigate", node_investigate)
+    graph.add_node("investigate_hypothesis", node_investigate_hypothesis)
+    graph.add_node("merge_hypothesis_results", merge_hypothesis_results)
     graph.add_node("diagnose", node_diagnose_root_cause)
     graph.add_node("opensre_eval", node_opensre_llm_eval)
     graph.add_node("publish", node_publish_findings)
@@ -70,8 +73,9 @@ def build_graph(config: None = None) -> CompiledStateGraph:
         "extract_alert", route_after_extract, {"end": END, "investigate": "resolve_integrations"}
     )
     graph.add_edge("resolve_integrations", "plan_actions")
-    graph.add_edge("plan_actions", "investigate")
-    graph.add_edge("investigate", "diagnose")
+    graph.add_conditional_edges("plan_actions", distribute_hypotheses)
+    graph.add_edge("investigate_hypothesis", "merge_hypothesis_results")
+    graph.add_edge("merge_hypothesis_results", "diagnose")
     graph.add_conditional_edges(
         "diagnose",
         route_investigation_loop,

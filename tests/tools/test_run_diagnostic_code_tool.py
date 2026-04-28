@@ -40,8 +40,11 @@ class TestRunDiagnosticCodeMetadata:
         assert "inputs" not in required
         assert "timeout" not in required
 
-    def test_tool_is_available_without_sources(self) -> None:
-        assert _registered().is_available({}) is True
+    def test_tool_is_not_auto_selected_by_dispatcher(self) -> None:
+        # The dispatcher can't supply the required `code` argument from alert sources,
+        # so this tool must never be auto-selected during an investigation.
+        assert _registered().is_available({}) is False
+        assert _registered().is_available({"knowledge": {"code": "print(1)"}}) is False
 
     def test_registered_on_investigation_surface(self) -> None:
         assert "investigation" in _registered().surfaces

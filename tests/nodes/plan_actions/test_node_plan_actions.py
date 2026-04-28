@@ -28,11 +28,6 @@ def test_node_plan_actions_emits_retrieval_controls(monkeypatch: Any) -> None:
     )
 
     monkeypatch.setattr(
-        node_module,
-        "InvestigateInput",
-        InvestigateInput,
-    )
-    monkeypatch.setattr(
         node_module.InvestigateInput,
         "from_state",
         lambda _state: InvestigateInput(raw_alert={}, context={}, tool_budget=10),
