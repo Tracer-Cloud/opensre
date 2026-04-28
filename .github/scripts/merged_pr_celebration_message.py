@@ -45,10 +45,6 @@ templates: list[str] = [
         f"⚡ **LGTM → Merged.** @{contributor}, your work is in. "
         "Every commit counts — thank you for this one."
     ),
-    (
-        f"🏆 **PR merged, @{contributor}.** Whether it was a typo fix or a monster feature, "
-        "you shipped and that matters."
-    ),
 ]
 
 # All verified HTTP 200. Weighted toward "" so not every PR gets a GIF (keeps it fresh).
