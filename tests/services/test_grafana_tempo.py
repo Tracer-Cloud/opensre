@@ -2,8 +2,6 @@
 
 from unittest.mock import Mock, patch
 
-import pytest
-
 from app.services.grafana.tempo import TempoMixin
 
 
@@ -75,16 +73,18 @@ class TestTempoMixin:
         client = FakeGrafanaClient()
 
         # Mock the search response (from self._make_request)
-        client._make_request = Mock(return_value={
-            "traces": [
-                {
-                    "traceID": "trace-123",
-                    "rootServiceName": "auth-service",
-                    "durationMs": 150,
-                    "spanCount": 2,
-                }
-            ]
-        })
+        client._make_request = Mock(
+            return_value={
+                "traces": [
+                    {
+                        "traceID": "trace-123",
+                        "rootServiceName": "auth-service",
+                        "durationMs": 150,
+                        "spanCount": 2,
+                    }
+                ]
+            }
+        )
 
         # Mock the trace details response (from requests.get in _get_trace_details)
         mock_response = Mock()
@@ -98,9 +98,12 @@ class TestTempoMixin:
                                 {
                                     "name": "DB Query",
                                     "attributes": [
-                                        {"key": "db.system", "value": {"stringValue": "postgresql"}},
+                                        {
+                                            "key": "db.system",
+                                            "value": {"stringValue": "postgresql"},
+                                        },
                                         {"key": "http.status_code", "value": {"intValue": 200}},
-                                    ]
+                                    ],
                                 }
                             ]
                         }
@@ -124,6 +127,7 @@ class TestTempoMixin:
         assert enriched_trace["trace_id"] == "trace-123"
         assert enriched_trace["root_service"] == "auth-service"
         assert enriched_trace["duration_ms"] == 150
+        assert enriched_trace["span_count"] == 2
 
         # Assert span parsing and attribute extraction
         assert len(enriched_trace["spans"]) == 1
