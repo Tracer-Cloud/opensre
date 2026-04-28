@@ -11,7 +11,13 @@ from app.tools.eks_helpers import extract_eks_workload_params
 
 
 def _make_sources(**eks_fields) -> dict:
-    return {"eks": {"cluster_name": "my-cluster", "role_arn": "arn:aws:iam::123:role/r", **eks_fields}}
+    return {
+        "eks": {
+            "cluster_name": "my-cluster",
+            "role_arn": "arn:aws:iam::123:role/r",
+            **eks_fields,
+        }
+    }
 
 
 def test_extract_eks_workload_params_defaults() -> None:
