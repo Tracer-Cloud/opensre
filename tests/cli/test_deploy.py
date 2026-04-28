@@ -155,9 +155,7 @@ def test_deploy_langsmith_missing_key_fails() -> None:
 # ======================================================================
 
 import pytest
-from click.testing import CliRunner
 
-from app.cli.__main__ import cli
 from app.cli.deploy import (
     _extract_railway_url,
     deploy_to_railway,
