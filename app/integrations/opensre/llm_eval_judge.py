@@ -51,7 +51,7 @@ def extract_judge_json_from_response(text: str) -> dict[str, Any]:
     if fence:
         text = fence.group(1).strip()
 
-    if text.startswith("["):
+    if text.lstrip().startswith("["):
         msg = "Judge response JSON must be an object"
         raise ValueError(msg)
 

@@ -44,7 +44,7 @@ def test_extract_judge_json_raises_when_no_json_object() -> None:
 
 
 def test_extract_judge_json_raises_for_json_array() -> None:
-    with pytest.raises(ValueError, match="JSON must be an object|did not contain a JSON object"):
+    with pytest.raises(ValueError, match="JSON must be an object"):
         extract_judge_json_from_response('[{"overall_pass": true}]')
 
 
@@ -60,3 +60,8 @@ def test_extract_judge_json_raises_for_fenced_json_array() -> None:
 [{"overall_pass": true}]
 ```"""
         )
+
+
+def test_extract_judge_json_raises_for_whitespace_json_array() -> None:
+    with pytest.raises(ValueError, match="JSON must be an object"):
+        extract_judge_json_from_response('   \n  [{"overall_pass": true}]')
