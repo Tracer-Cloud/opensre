@@ -3,6 +3,8 @@
 Programmatic equivalent of `aws eks get-token` — no kubectl binary required.
 """
 
+from __future__ import annotations
+
 import base64
 import logging
 import os
@@ -14,9 +16,10 @@ import boto3
 import botocore.auth
 import botocore.awsrequest
 import botocore.credentials
+import botocore.session
 from kubernetes import client as k8s_client
 
-from app.services.eks.eks_client import _stored_credentials_to_aws_creds
+from app.services.eks.utils import stored_credentials_to_aws_creds
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +93,7 @@ def build_k8s_clients(
     Returns (CoreV1Api, AppsV1Api) ready to query pods, events, nodes, deployments.
     No kubeconfig file is written to disk.
     """
-    stored = _stored_credentials_to_aws_creds(credentials)
+    stored = stored_credentials_to_aws_creds(credentials)
     if stored is not None:
         # Explicit stored-integration credentials path (highest priority).
         # Matches the catalog + resolve_integrations flow: the AWS integration
@@ -98,7 +101,7 @@ def build_k8s_clients(
         # possibly with a session_token, and no role_arn. Previously these
         # silently fell through to the ambient botocore chain which missed
         # the stored values entirely when ambient creds were also set but
-        # pointed elsewhere. The shared ``_stored_credentials_to_aws_creds``
+        # pointed elsewhere. The shared ``stored_credentials_to_aws_creds``
         # helper keeps the normalization rules (empty session_token → None,
         # both required keys present) in sync with ``EKSClient``.
         logger.info("[eks] Using explicit stored-integration AWS credentials")
@@ -110,9 +113,7 @@ def build_k8s_clients(
         # credentials (env AK/SK, shared config profile, or instance profile
         # / IRSA). Preserves the #724 fallback behaviour.
         logger.info("[eks] No role_arn or explicit credentials; using ambient AWS credentials")
-        import botocore.session as _bsession
-
-        sess = _bsession.get_session()
+        sess = botocore.session.get_session()
         ambient = sess.get_credentials()
         if ambient is None:
             msg = "No AWS credentials available for EKS investigation"
@@ -122,7 +123,7 @@ def build_k8s_clients(
         assumed = {
             "AccessKeyId": frozen.access_key,
             "SecretAccessKey": frozen.secret_key,
-            "SessionToken": frozen.token or "",
+            "SessionToken": frozen.token or None,
         }
 
     logger.info("[eks] Describing cluster: %s in region %s", cluster_name, region)

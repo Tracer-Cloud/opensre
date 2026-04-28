@@ -54,7 +54,7 @@ def get_eks_node_health(
     role_arn: str = "",
     external_id: str = "",
     region: str = "us-east-1",
-    credentials: dict | None = None,
+    credentials: dict[str, Any] | None = None,
     eks_backend: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:

@@ -49,7 +49,7 @@ def list_eks_namespaces(
     role_arn: str,
     external_id: str = "",
     region: str = "us-east-1",
-    credentials: dict | None = None,
+    credentials: dict[str, Any] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """List all namespaces in the EKS cluster with their status."""

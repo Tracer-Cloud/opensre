@@ -6,18 +6,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.eks.eks_client import (
-    EKSClient,
-    _stored_credentials_to_aws_creds,
-)
+from app.services.eks.eks_client import EKSClient
+from app.services.eks.utils import stored_credentials_to_aws_creds
 
 # ---------------------------------------------------------------------------
-# _stored_credentials_to_aws_creds
+# stored_credentials_to_aws_creds
 # ---------------------------------------------------------------------------
 
 
 def test_stored_creds_helper_full_triplet() -> None:
-    result = _stored_credentials_to_aws_creds(
+    result = stored_credentials_to_aws_creds(
         {
             "access_key_id": "AKIA_TEST",
             "secret_access_key": "SECRET",
@@ -32,7 +30,7 @@ def test_stored_creds_helper_full_triplet() -> None:
 
 
 def test_stored_creds_helper_empty_session_token_coerced_to_none() -> None:
-    result = _stored_credentials_to_aws_creds(
+    result = stored_credentials_to_aws_creds(
         {
             "access_key_id": "AKIA_TEST",
             "secret_access_key": "SECRET",
@@ -44,7 +42,7 @@ def test_stored_creds_helper_empty_session_token_coerced_to_none() -> None:
 
 
 def test_stored_creds_helper_missing_session_token() -> None:
-    result = _stored_credentials_to_aws_creds(
+    result = stored_credentials_to_aws_creds(
         {
             "access_key_id": "AKIA_TEST",
             "secret_access_key": "SECRET",
@@ -56,24 +54,24 @@ def test_stored_creds_helper_missing_session_token() -> None:
 
 def test_stored_creds_helper_missing_access_key_returns_none() -> None:
     assert (
-        _stored_credentials_to_aws_creds({"secret_access_key": "SECRET", "session_token": "TOKEN"})
+        stored_credentials_to_aws_creds({"secret_access_key": "SECRET", "session_token": "TOKEN"})
         is None
     )
 
 
 def test_stored_creds_helper_missing_secret_key_returns_none() -> None:
     assert (
-        _stored_credentials_to_aws_creds({"access_key_id": "AKIA_TEST", "session_token": "TOKEN"})
+        stored_credentials_to_aws_creds({"access_key_id": "AKIA_TEST", "session_token": "TOKEN"})
         is None
     )
 
 
 def test_stored_creds_helper_none_input() -> None:
-    assert _stored_credentials_to_aws_creds(None) is None
+    assert stored_credentials_to_aws_creds(None) is None
 
 
 def test_stored_creds_helper_empty_dict() -> None:
-    assert _stored_credentials_to_aws_creds({}) is None
+    assert stored_credentials_to_aws_creds({}) is None
 
 
 # ---------------------------------------------------------------------------

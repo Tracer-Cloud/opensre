@@ -61,7 +61,7 @@ def get_eks_pod_logs(
     role_arn: str = "",
     external_id: str = "",
     region: str = "us-east-1",
-    credentials: dict | None = None,
+    credentials: dict[str, Any] | None = None,
     tail_lines: int = 100,
     eks_backend: Any = None,
     **_kwargs: Any,

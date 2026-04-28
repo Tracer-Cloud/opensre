@@ -51,7 +51,7 @@ def describe_eks_addon(
     role_arn: str,
     external_id: str = "",
     region: str = "us-east-1",
-    credentials: dict | None = None,
+    credentials: dict[str, Any] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Describe an EKS addon — coredns, kube-proxy, vpc-cni, aws-ebs-csi-driver, etc."""

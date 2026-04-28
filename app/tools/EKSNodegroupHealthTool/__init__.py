@@ -51,7 +51,7 @@ def get_eks_nodegroup_health(
     external_id: str = "",
     region: str = "us-east-1",
     nodegroup_name: str | None = None,
-    credentials: dict | None = None,
+    credentials: dict[str, Any] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Get EKS node group health — instance types, scaling config, AMI version, health issues."""

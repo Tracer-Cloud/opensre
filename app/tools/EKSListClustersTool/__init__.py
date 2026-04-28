@@ -62,7 +62,7 @@ def list_eks_clusters(
     external_id: str = "",
     region: str = "us-east-1",
     cluster_names: list | None = None,
-    credentials: dict | None = None,
+    credentials: dict[str, Any] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """List EKS clusters in the AWS account."""

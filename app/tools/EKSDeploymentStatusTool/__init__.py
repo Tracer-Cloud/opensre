@@ -58,7 +58,7 @@ def get_eks_deployment_status(
     role_arn: str,
     external_id: str = "",
     region: str = "us-east-1",
-    credentials: dict | None = None,
+    credentials: dict[str, Any] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Get EKS deployment rollout status — desired vs ready vs unavailable replicas."""
