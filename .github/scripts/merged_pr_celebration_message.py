@@ -61,8 +61,8 @@ gif_blocks: list[str] = [
 head = random.choice(templates) + random.choice(gif_blocks)
 footer = (
     "---\n\n"
-    f"💬 **Come hang out:** [**Discord — OpenSRE**]({discord}) — "
-    "`#contribute` for questions, `#general` for vibes. Everyone's welcome."
+    f"👋 **Join us on [Discord — OpenSRE]({discord})** — hang out, contribute, "
+    "or hunt for good first issues. Everyone's welcome."
 )
 body = f"{head}\n\n{footer}"
 
