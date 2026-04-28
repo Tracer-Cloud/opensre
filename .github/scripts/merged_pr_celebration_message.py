@@ -43,19 +43,17 @@ templates: list[str] = [
     ),
 ]
 
-# All verified HTTP 200. Weighted toward "" so not every PR gets a GIF (keeps it fresh).
+# GIFs are repo-hosted under .github/assets/celebrations/ so GitHub's own CDN serves them.
+# Two empty slots keep ~22% of merges emoji-only (avoids GIF fatigue).
+_base = "https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/.github/assets/celebrations"
 gif_blocks: list[str] = [
-    "",
-    "",
-    "\n\n![](https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif)",
-    "\n\n![](https://media.giphy.com/media/g9582DNuQppxC/giphy.gif)",
-    "\n\n![](https://media.giphy.com/media/artj92V8o75VPL7AeQ/giphy.gif)",
-    "\n\n![](https://media.giphy.com/media/26u4cqiYI30juCOGY/giphy.gif)",
-    "\n\n![](https://media.giphy.com/media/kyLYXonQYYfwYDIeZl/giphy.gif)",
-    "\n\n![](https://media.giphy.com/media/xT9IgG50Lg7russbCY/giphy.gif)",
-    "\n\n![](https://media.giphy.com/media/zGnnFpOB6s5oNa5VlZ/giphy.gif)",
-    "\n\n![](https://media.giphy.com/media/11sBLVxNs7v6WA/giphy.gif)",
-    "\n\n![](https://media.giphy.com/media/Swx36wwSsU49HAnIhC/giphy.gif)",
+    f"\n\n![]({_base}/party.gif)",
+    f"\n\n![]({_base}/celebrate.gif)",
+    f"\n\n![]({_base}/ship.gif)",
+    f"\n\n![]({_base}/shipped.gif)",
+    f"\n\n![]({_base}/success.gif)",
+    f"\n\n![]({_base}/fireworks.gif)",
+    f"\n\n![]({_base}/woohoo.gif)",
 ]
 
 head = random.choice(templates) + random.choice(gif_blocks)
