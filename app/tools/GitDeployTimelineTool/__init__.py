@@ -287,6 +287,21 @@ def get_git_deploy_timeline(
     # narrow the window or raise per_page rather than concluding "nothing
     # else shipped".
     truncated = len(commits) >= effective_per_page
+    # Trace where the window came from for the diagnose narrative.
+    # Three distinct sources, never conflated:
+    #   "shared_incident_window" — tool used state.incident_window because
+    #       no caller-explicit window was provided.
+    #   "caller_explicit"        — caller passed since/until or
+    #       window_minutes_before_alert; the tool honoured it.
+    #   "tool_default"           — no caller input AND no shared window;
+    #       the tool fell back to DEFAULT_WINDOW_MINUTES.
+    if used_shared_window:
+        window_source = "shared_incident_window"
+    elif since or until or window_minutes_before_alert is not None:
+        window_source = "caller_explicit"
+    else:
+        window_source = "tool_default"
+
     payload.update(
         {
             "commits": commits,
@@ -297,10 +312,7 @@ def get_git_deploy_timeline(
                 "branch": branch,
                 "per_page": effective_per_page,
                 "truncated": truncated,
-                # Trace where the window came from for the diagnose narrative.
-                # "shared_incident_window" means the tool used state.incident_window
-                # because no caller-explicit window was provided.
-                "source": "shared_incident_window" if used_shared_window else "tool_default",
+                "source": window_source,
             },
         }
     )

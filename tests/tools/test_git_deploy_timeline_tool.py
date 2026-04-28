@@ -430,7 +430,8 @@ def test_run_uses_shared_window_when_no_caller_override() -> None:
 
 
 def test_run_caller_since_until_overrides_shared_window() -> None:
-    """Explicit since/until from the caller wins over the shared window."""
+    """Explicit since/until from the caller wins over the shared window
+    and is reported as ``caller_explicit`` in the window source."""
     shared = _shared_window_dict("2026-04-20T08:00:00Z", "2026-04-20T10:00:00Z")
     captured, result = _run_with_shared_window(
         shared,
@@ -439,15 +440,15 @@ def test_run_caller_since_until_overrides_shared_window() -> None:
     )
     assert captured["arguments"]["since"] == "2026-04-20T11:00:00Z"
     assert captured["arguments"]["until"] == "2026-04-20T11:30:00Z"
-    assert result["window"]["source"] == "tool_default"
+    assert result["window"]["source"] == "caller_explicit"
 
 
 def test_run_caller_window_minutes_overrides_shared_window() -> None:
-    """Explicit window_minutes_before_alert from the caller also wins."""
+    """Explicit window_minutes_before_alert from the caller also wins
+    and is reported as ``caller_explicit``."""
     shared = _shared_window_dict("2026-04-20T08:00:00Z", "2026-04-20T10:00:00Z")
     _, result = _run_with_shared_window(shared, window_minutes_before_alert=30)
-    # Did NOT use the shared window — used the explicit 30-min lookback.
-    assert result["window"]["source"] == "tool_default"
+    assert result["window"]["source"] == "caller_explicit"
 
 
 def test_run_falls_back_to_default_when_no_shared_window() -> None:
