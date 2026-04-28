@@ -3,19 +3,24 @@
 from __future__ import annotations
 
 import base64
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 from app.tools.GitLabFileTool import get_gitlab_file_contents
 from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
+def _registered_tool() -> Any:
+    return cast(Any, get_gitlab_file_contents).__opensre_registered_tool__
+
+
 class TestGitLabFileToolContract(BaseToolContract):
     def get_tool_under_test(self):
-        return get_gitlab_file_contents.__opensre_registered_tool__
+        return _registered_tool()
 
 
 def test_is_available_requires_connection_project_id_and_file_path() -> None:
-    rt = get_gitlab_file_contents.__opensre_registered_tool__
+    rt = _registered_tool()
     assert (
         rt.is_available(
             {
@@ -37,7 +42,7 @@ def test_is_available_requires_connection_project_id_and_file_path() -> None:
 
 
 def test_extract_params_maps_fields() -> None:
-    rt = get_gitlab_file_contents.__opensre_registered_tool__
+    rt = _registered_tool()
     sources = mock_agent_state(
         {
             "gitlab": {
@@ -59,7 +64,7 @@ def test_extract_params_maps_fields() -> None:
 
 
 def test_extract_params_defaults_ref_to_main() -> None:
-    rt = get_gitlab_file_contents.__opensre_registered_tool__
+    rt = _registered_tool()
     sources = mock_agent_state(
         {"gitlab": {"connection_verified": True, "project_id": "42", "file_path": "src/main.py"}}
     )
@@ -73,7 +78,7 @@ def test_run_returns_unavailable_when_config_missing() -> None:
     assert result == {
         "source": "gitlab",
         "available": False,
-        "error": "GitLab integration is not configured.",
+        "error": "gitlab integration is not configured.",
         "file": {},
     }
 

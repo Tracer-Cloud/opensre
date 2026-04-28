@@ -66,7 +66,7 @@ def get_gitlab_file_contents(
     if config is None:
         return code_host_unavailable_payload(
             source="gitlab",
-            integration_name="GitLab",
+            integration_name="gitlab",
             empty_key="file",
             empty_value={},
         )

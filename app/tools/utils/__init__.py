@@ -29,6 +29,7 @@ from app.tools.utils.log_compaction import (
 __all__ = [
     # Database warnings
     "default_db_warning",
+    # Code-host utilities
     "code_host_unavailable_payload",
     # Data validation
     "validate_host_metrics",
