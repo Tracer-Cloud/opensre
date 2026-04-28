@@ -156,3 +156,4 @@ def test_argocd_evidence_counts_as_investigated_for_healthy_short_circuit() -> N
 
     assert is_clearly_healthy(alert, {"argocd_application": {"name": "payments-api"}}) is True
     assert is_clearly_healthy(alert, {"argocd_applications": []}) is True
+    assert is_clearly_healthy(alert, {"argocd_diff": []}) is True
