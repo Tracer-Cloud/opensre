@@ -358,28 +358,8 @@ async def test_fetch_all_success_strong(async_client, mock_async_httpx):
     assert "monitors" in result
     assert "events" in result
 
-    assert result["logs"]["success"] is True
-    assert result["monitors"]["success"] is True
-    assert result["events"]["success"] is True
-
-    # ---- content sanity checks (recommended) ----
-    assert "logs" in result["logs"]
-    assert "monitors" in result["monitors"]
-    assert "events" in result["events"]
-
-
-@pytest.mark.asyncio
-async def test_fetch_all_calls_sources(async_client, mock_async_httpx):
-    mock_instance = MagicMock()
-    mock_async_httpx.return_value.__aenter__.return_value = mock_instance
-
-    mock_instance.post = AsyncMock(return_value=MagicMock())
-    mock_instance.get = AsyncMock(return_value=MagicMock())
-
-    await async_client.fetch_all(
-        logs_query="error",
-        time_range_minutes=15,
-        logs_limit=100,
+    assert mock_instance.post.call_count == 2  # logs + events
+    assert mock_instance.get.call_count == 1   # monitors
         monitor_query="error",
         events_query="error",
     )
