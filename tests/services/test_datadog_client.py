@@ -355,6 +355,8 @@ async def test_fetch_all_success_strong(async_client, mock_async_httpx):
 
         raise AssertionError(f"Unexpected POST url: {url}")
 
+    mock_instance.post = AsyncMock(side_effect=post_router)
+    mock_instance.get = AsyncMock(return_value=monitor_response)
     # --- Execute ---
     result = await async_client.fetch_all(
         logs_query="error",
