@@ -168,11 +168,11 @@ class TestSendSlackReport:
     def test_direct_success_skips_webapp(self, monkeypatch: pytest.MonkeyPatch) -> None:
         captured: list[str] = []
 
-        def _mock_post_direct(*a, **kw):
+        def _mock_post_direct(*_, **__):
             captured.append("direct")
             return True, ""
 
-        def _mock_post_webapp(*a, **kw):
+        def _mock_post_webapp(*_, **__):
             captured.append("webapp")
             return True
 
@@ -186,11 +186,11 @@ class TestSendSlackReport:
     def test_direct_failure_falls_back_to_webapp(self, monkeypatch: pytest.MonkeyPatch) -> None:
         captured: list[str] = []
 
-        def _mock_post_direct(*a, **kw):
+        def _mock_post_direct(*_, **__):
             captured.append("direct")
             return False, "some_error"
 
-        def _mock_post_webapp(*a, **kw):
+        def _mock_post_webapp(*_, **__):
             captured.append("webapp")
             return True
 
