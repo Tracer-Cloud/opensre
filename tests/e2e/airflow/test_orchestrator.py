@@ -164,7 +164,7 @@ def test_airflow_investigation_e2e():
     """
     Full investigation flow with Airflow as a supplementary evidence source.
 
-    Simulates a production alert that includes Airflow context in annotations.
+    Simulates a production alert while Airflow is resolved from env/config.
     The agent is expected to use Airflow tools alongside the alert context to
     produce a root cause.
     """
@@ -174,14 +174,6 @@ def test_airflow_investigation_e2e():
 
     fixture_path = FIXTURES_DIR / "airflow_task_failure_alert.json"
     raw_alert = json.loads(fixture_path.read_text())
-
-    for alert in raw_alert.get("alerts", []):
-        annotations = alert.setdefault("annotations", {})
-        annotations["airflow_base_url"] = base_url
-        annotations["airflow_dag_id"] = dag_id
-
-    raw_alert.setdefault("commonAnnotations", {})["airflow_base_url"] = base_url
-    raw_alert["commonAnnotations"]["airflow_dag_id"] = dag_id
 
     investigation_result = run_investigation_cli(
         alert_name=f"Airflow DAG failure: {dag_id}",

@@ -596,7 +596,7 @@ def _classify_service_instance(
                 **airflow_config.model_dump(),
                 "integration_id": record_id,
             }, "airflow"
-        return None, None  # ← eksikti
+        return None, None
 
     if key == "betterstack":
         try:
@@ -618,7 +618,7 @@ def _classify_service_instance(
                 "sources": list(bs_config.sources),
                 "integration_id": record_id,
             }, "betterstack"
-        return None, None  # ← eksikti
+        return None, None
 
     if key == "azure_sql":
         try:

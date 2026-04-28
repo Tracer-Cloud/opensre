@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -9,6 +10,8 @@ from urllib.parse import quote
 
 import httpx
 from pydantic import BaseModel, Field, field_validator
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_AIRFLOW_BASE_URL = "http://localhost:8080/api/v1"
 DEFAULT_AIRFLOW_TIMEOUT_SECONDS = 15.0
@@ -36,10 +39,6 @@ class AirflowConfig(BaseModel):
     @classmethod
     def _normalize_str(cls, value: Any) -> str:
         return str(value or "").strip()
-
-    @property
-    def api_base_url(self) -> str:
-        return self.base_url.rstrip("/")
 
     @property
     def headers(self) -> dict[str, str]:
@@ -109,7 +108,7 @@ def _request_json(
     json: dict[str, Any] | None = None,
 ) -> Any:
     """Make an Airflow API request and return parsed JSON."""
-    url = f"{config.api_base_url}{path}"
+    url = f"{config.base_url}{path}"
     response = httpx.request(
         method,
         url,
@@ -161,32 +160,6 @@ def validate_airflow_connection(
         params=[("limit", 1)],
     )
     return payload if isinstance(payload, dict) else {}
-
-
-def get_airflow_dags(
-    *,
-    config: AirflowConfig,
-    limit: int = 20,
-    only_active: bool = True,
-) -> list[dict[str, Any]]:
-    """Fetch DAGs from Airflow."""
-    effective_limit = min(limit, config.max_results)
-    params: list[tuple[str, str | int | float | bool | None]] = [
-        ("limit", effective_limit),
-    ]
-    if only_active:
-        params.append(("only_active", True))
-
-    payload = _request_json(
-        config,
-        "GET",
-        "/dags",
-        params=params,
-    )
-    if not isinstance(payload, dict):
-        return []
-    dags = payload.get("dags", [])
-    return dags if isinstance(dags, list) else []
 
 
 def get_airflow_dag_runs(
@@ -255,16 +228,6 @@ def _to_failure_evidence(
     max_tries = task_instance.get("max_tries")
     duration = task_instance.get("duration")
 
-    note_parts: list[str] = []
-    if state:
-        note_parts.append(f"task state={state}")
-    if try_number is not None:
-        note_parts.append(f"try_number={try_number}")
-    if max_tries is not None:
-        note_parts.append(f"max_tries={max_tries}")
-    if dag_run.get("state"):
-        note_parts.append(f"dag_run_state={dag_run['state']}")
-
     return {
         "source": "airflow",
         "dag_id": dag_id,
@@ -286,7 +249,6 @@ def _to_failure_evidence(
         "pool": task_instance.get("pool", ""),
         "queue": task_instance.get("queue", ""),
         "priority_weight": task_instance.get("priority_weight"),
-        "note": "; ".join(note_parts),
     }
 
 
@@ -323,7 +285,12 @@ def get_recent_airflow_failures(
                 dag_id=dag_id,
                 dag_run_id=dag_run_id,
             )
-        except Exception:
+        except Exception as err:
+            logger.warning(
+                "Failed to fetch Airflow task instances for dag_run_id=%s: %s",
+                dag_run_id,
+                type(err).__name__,
+            )
             continue
 
         for task_instance in task_instances:
