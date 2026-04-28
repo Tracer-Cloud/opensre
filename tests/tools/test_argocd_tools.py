@@ -155,3 +155,4 @@ def test_argocd_evidence_counts_as_investigated_for_healthy_short_circuit() -> N
     alert = {"state": "resolved", "commonLabels": {"severity": "info"}, "commonAnnotations": {}}
 
     assert is_clearly_healthy(alert, {"argocd_application": {"name": "payments-api"}}) is True
+    assert is_clearly_healthy(alert, {"argocd_applications": []}) is True

@@ -48,6 +48,22 @@ def test_argocd_source_created_when_configured_even_without_app_hint() -> None:
     assert argocd["project"] == "default"
 
 
+def test_argocd_source_detected_from_argocd_specific_hint() -> None:
+    alert = {"annotations": {"summary": "Argo-CD application is OutOfSync"}}
+
+    sources = detect_sources(alert, {}, {"argocd": _ARGOCD_INT})
+
+    assert "argocd" in sources
+
+
+def test_argocd_source_not_created_for_generic_deployment_alert() -> None:
+    alert = {"annotations": {"summary": "EKS pod deployment failed during rollout"}}
+
+    sources = detect_sources(alert, {}, {"argocd": _ARGOCD_INT})
+
+    assert "argocd" not in sources
+
+
 def test_argocd_source_not_created_without_integration() -> None:
     alert = {"annotations": {"argocd_application": "payments-api"}}
 

@@ -35,7 +35,9 @@ INVESTIGATED_EVIDENCE_KEYS = frozenset(
         "eks_node_health",
         "eks_pod_logs",
         "eks_deployment_status",
+        # Argo CD status can be collected for one app or in list mode.
         "argocd_application",
+        "argocd_applications",
     }
 )
 

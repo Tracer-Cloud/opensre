@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from ipaddress import ip_address
 from typing import Any
 from urllib.parse import urlparse
 
@@ -11,33 +10,12 @@ from pydantic import Field, field_validator, model_validator
 
 from app.config import get_tracer_base_url
 from app.strict_config import StrictConfigModel
+from app.utils.url_validation import validate_https_or_loopback_http_url
 
 _LOCAL_GRAFANA_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0"}
 DEFAULT_HONEYCOMB_BASE_URL = "https://api.honeycomb.io"
 DEFAULT_HONEYCOMB_DATASET = "__all__"
 DEFAULT_CORALOGIX_BASE_URL = "https://api.coralogix.com"
-
-
-def _is_loopback_host(host: str) -> bool:
-    normalized = host.strip().strip("[]").lower()
-    if normalized == "localhost":
-        return True
-    try:
-        return ip_address(normalized).is_loopback
-    except ValueError:
-        return False
-
-
-def _validate_argocd_base_url(value: str) -> str:
-    if not value:
-        return ""
-    parsed = urlparse(value)
-    scheme = parsed.scheme.lower()
-    if scheme == "https" and parsed.netloc:
-        return value
-    if scheme == "http" and parsed.netloc and _is_loopback_host(parsed.hostname or ""):
-        return value
-    raise ValueError("Argo CD base_url must use https:// unless targeting localhost/loopback.")
 
 
 class GrafanaIntegrationConfig(StrictConfigModel):
@@ -571,7 +549,7 @@ class ArgoCDIntegrationConfig(StrictConfigModel):
     @classmethod
     def _normalize_base_url(cls, value: object) -> str:
         normalized = str(value or "").strip().rstrip("/")
-        return _validate_argocd_base_url(normalized)
+        return validate_https_or_loopback_http_url(normalized, service_name="Argo CD")
 
     @field_validator("bearer_token", mode="before")
     @classmethod

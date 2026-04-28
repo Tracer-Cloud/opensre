@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import logging
 import re
-from ipaddress import ip_address
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
 import httpx
 from pydantic import field_validator, model_validator
 
 from app.strict_config import StrictConfigModel
+from app.utils.url_validation import validate_https_or_loopback_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -35,28 +35,6 @@ _GENERIC_SECRET_VALUE_RE = re.compile(
     r"|-----BEGIN [A-Z ]*PRIVATE KEY-----"
     r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})"
 )
-
-
-def _is_loopback_host(host: str) -> bool:
-    normalized = host.strip().strip("[]").lower()
-    if normalized == "localhost":
-        return True
-    try:
-        return ip_address(normalized).is_loopback
-    except ValueError:
-        return False
-
-
-def _validate_base_url(value: str) -> str:
-    if not value:
-        return ""
-    parsed = urlparse(value)
-    scheme = parsed.scheme.lower()
-    if scheme == "https" and parsed.netloc:
-        return value
-    if scheme == "http" and parsed.netloc and _is_loopback_host(parsed.hostname or ""):
-        return value
-    raise ValueError("Argo CD base_url must use https:// unless targeting localhost/loopback.")
 
 
 def _normalize_verify_ssl(value: object) -> bool:
@@ -88,7 +66,7 @@ class ArgoCDConfig(StrictConfigModel):
     @classmethod
     def _normalize_base_url(cls, value: object) -> str:
         normalized = str(value or "").strip().rstrip("/")
-        return _validate_base_url(normalized)
+        return validate_https_or_loopback_http_url(normalized, service_name="Argo CD")
 
     @field_validator("bearer_token", mode="before")
     @classmethod
@@ -137,6 +115,7 @@ class ArgoCDClient:
         self._transport = transport
         self._client: httpx.Client | None = None
         self._session_token = ""
+        self._retired_session_tokens: set[str] = set()
 
     def _get_client(self) -> httpx.Client:
         if self._client is None:
@@ -170,6 +149,7 @@ class ArgoCDClient:
             self.config.bearer_token,
             self.config.password,
             self._session_token,
+            *self._retired_session_tokens,
         ):
             if secret:
                 text = text.replace(secret, "[REDACTED]")
@@ -197,9 +177,9 @@ class ArgoCDClient:
         if not (self.config.username and self.config.password):
             return ""
 
-        # Investigation tools issue short-lived read-only calls; if Argo CD expires
-        # this session token mid-run, the next request will surface the 401/403
-        # without leaking the token so callers can retry with fresh credentials.
+        # Investigation tools issue short-lived read-only calls. If Argo CD expires
+        # a session token mid-run, _request clears the cached token, retries once,
+        # and redacts both active and retired tokens in any surfaced error.
         response = self._get_client().post(
             "/api/v1/session",
             json={"username": self.config.username, "password": self.config.password},
@@ -212,14 +192,29 @@ class ArgoCDClient:
         return token
 
     def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
-        token = self._ensure_session_token()
-        headers = {"Content-Type": "application/json"}
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        headers.update(kwargs.pop("headers", {}) or {})
-        response = self._get_client().request(method, path, headers=headers, **kwargs)
-        response.raise_for_status()
-        return response
+        for attempt in range(2):
+            request_kwargs = dict(kwargs)
+            token = self._ensure_session_token()
+            headers = {"Content-Type": "application/json"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            headers.update(request_kwargs.pop("headers", {}) or {})
+            response = self._get_client().request(method, path, headers=headers, **request_kwargs)
+            try:
+                response.raise_for_status()
+                return response
+            except httpx.HTTPStatusError as exc:
+                if (
+                    exc.response.status_code == 401
+                    and self._session_token
+                    and not self.config.bearer_token
+                ):
+                    self._retired_session_tokens.add(self._session_token)
+                    self._session_token = ""
+                    if attempt == 0:
+                        continue
+                raise
+        raise RuntimeError("Argo CD request retry exhausted")
 
     def list_applications(
         self,

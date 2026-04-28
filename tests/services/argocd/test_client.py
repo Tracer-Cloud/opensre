@@ -160,18 +160,49 @@ def test_username_password_login_fetches_session_token_lazily() -> None:
     assert seen[1][2] == "Bearer session-token"
 
 
-def test_expired_session_token_surfaces_401_without_relogin() -> None:
+def test_expired_session_token_is_cleared_and_retried_once() -> None:
     seen: list[tuple[str, str, str]] = []
+    issued_tokens = iter(["expired-session-token", "fresh-session-token"])
 
     def handler(request: httpx.Request) -> httpx.Response:
         auth = request.headers.get("authorization", "")
         seen.append((request.method, request.url.path, auth))
         if request.method == "POST" and request.url.path == "/api/v1/session":
-            return httpx.Response(200, json={"token": "expired-session-token"}, request=request)
-        assert auth == "Bearer expired-session-token"
+            return httpx.Response(200, json={"token": next(issued_tokens)}, request=request)
+        if auth == "Bearer expired-session-token":
+            return httpx.Response(401, text="session expired", request=request)
+        assert auth == "Bearer fresh-session-token"
+        return httpx.Response(200, json=_application_payload(), request=request)
+
+    client = ArgoCDClient(
+        ArgoCDConfig(base_url="https://argocd.example.com", username="admin", password="pw"),
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.get_application_summary("payments-api")
+
+    assert result["success"] is True
+    assert result["application"]["name"] == "payments-api"
+    assert seen == [
+        ("POST", "/api/v1/session", ""),
+        ("GET", "/api/v1/applications/payments-api", "Bearer expired-session-token"),
+        ("POST", "/api/v1/session", ""),
+        ("GET", "/api/v1/applications/payments-api", "Bearer fresh-session-token"),
+    ]
+
+
+def test_expired_session_token_final_401_redacts_retired_tokens() -> None:
+    seen: list[tuple[str, str, str]] = []
+    issued_tokens = iter(["expired-session-token", "second-expired-session-token"])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        auth = request.headers.get("authorization", "")
+        seen.append((request.method, request.url.path, auth))
+        if request.method == "POST" and request.url.path == "/api/v1/session":
+            return httpx.Response(200, json={"token": next(issued_tokens)}, request=request)
         return httpx.Response(
             401,
-            text="session expired for bearer expired-session-token password leaked-password",
+            text=f"session expired for {auth} password leaked-password",
             request=request,
         )
 
@@ -185,9 +216,10 @@ def test_expired_session_token_surfaces_401_without_relogin() -> None:
     assert result["success"] is False
     assert "401" in result["error"]
     assert "expired-session-token" not in result["error"]
+    assert "second-expired-session-token" not in result["error"]
     assert "leaked-password" not in result["error"]
     assert "[REDACTED]" in result["error"]
-    assert [call[0] for call in seen] == ["POST", "GET"]
+    assert [call[0] for call in seen] == ["POST", "GET", "POST", "GET"]
 
 
 def test_get_application_summary_includes_revision_history_and_operation_state() -> None:

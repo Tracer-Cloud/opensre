@@ -1272,7 +1272,14 @@ def detect_sources(
         ).lower()
         has_gitops_hint = any(
             marker in argocd_hint_text
-            for marker in ("argocd", "argo cd", "gitops", "drift", "deploy")
+            for marker in (
+                "argocd",
+                "argo cd",
+                "argo-cd",
+                "gitops",
+                "outofsync",
+                "outofsynced",
+            )
         )
         if application_name or revision or has_gitops_hint:
             sources["argocd"] = {
