@@ -5,6 +5,8 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import MagicMock
 
+import questionary
+
 from app.cli.local_llm.ollama import (
     install,
     is_installed,
@@ -78,7 +80,7 @@ def test_wait_for_server_returns_true_after_retries(monkeypatch) -> None:
 
 def test_wait_for_server_returns_false_on_timeout(monkeypatch) -> None:
     monkeypatch.setattr("app.cli.local_llm.ollama.is_server_running", lambda _: False)
-    sleep_calls: list[int] = []
+    sleep_calls: list[float] = []
     monkeypatch.setattr("app.cli.local_llm.ollama.time.sleep", lambda s: sleep_calls.append(s))
 
     assert wait_for_server("http://localhost:11434", timeout_s=3) is False
@@ -96,9 +98,6 @@ def test_install_macos_brew_present_user_confirms_succeeds(monkeypatch) -> None:
     fake_result = MagicMock()
     fake_result.returncode = 0
     monkeypatch.setattr("app.cli.local_llm.ollama.subprocess.run", lambda *_a, **_kw: fake_result)
-
-    import questionary
-
     monkeypatch.setattr(questionary, "confirm", lambda *_a, **_kw: MagicMock(ask=lambda: True))
 
     console = MagicMock()
@@ -108,9 +107,6 @@ def test_install_macos_brew_present_user_confirms_succeeds(monkeypatch) -> None:
 def test_install_macos_brew_present_user_declines_returns_false(monkeypatch) -> None:
     monkeypatch.setattr("app.cli.local_llm.ollama.sys.platform", "darwin")
     monkeypatch.setattr("app.cli.local_llm.ollama.shutil.which", lambda _: "/usr/local/bin/brew")
-
-    import questionary
-
     monkeypatch.setattr(questionary, "confirm", lambda *_a, **_kw: MagicMock(ask=lambda: False))
 
     console = MagicMock()
@@ -133,9 +129,6 @@ def test_install_macos_brew_present_subprocess_fails_returns_false(monkeypatch) 
     fake_result = MagicMock()
     fake_result.returncode = 1
     monkeypatch.setattr("app.cli.local_llm.ollama.subprocess.run", lambda *_a, **_kw: fake_result)
-
-    import questionary
-
     monkeypatch.setattr(questionary, "confirm", lambda *_a, **_kw: MagicMock(ask=lambda: True))
 
     console = MagicMock()
@@ -152,9 +145,6 @@ def test_install_linux_user_confirms_succeeds(monkeypatch) -> None:
     fake_result = MagicMock()
     fake_result.returncode = 0
     monkeypatch.setattr("app.cli.local_llm.ollama.subprocess.run", lambda *_a, **_kw: fake_result)
-
-    import questionary
-
     monkeypatch.setattr(questionary, "confirm", lambda *_a, **_kw: MagicMock(ask=lambda: True))
 
     console = MagicMock()
@@ -163,9 +153,6 @@ def test_install_linux_user_confirms_succeeds(monkeypatch) -> None:
 
 def test_install_linux_user_declines_returns_false(monkeypatch) -> None:
     monkeypatch.setattr("app.cli.local_llm.ollama.sys.platform", "linux")
-
-    import questionary
-
     monkeypatch.setattr(questionary, "confirm", lambda *_a, **_kw: MagicMock(ask=lambda: False))
 
     console = MagicMock()
@@ -177,9 +164,6 @@ def test_install_linux_subprocess_fails_returns_false(monkeypatch) -> None:
     fake_result = MagicMock()
     fake_result.returncode = 2
     monkeypatch.setattr("app.cli.local_llm.ollama.subprocess.run", lambda *_a, **_kw: fake_result)
-
-    import questionary
-
     monkeypatch.setattr(questionary, "confirm", lambda *_a, **_kw: MagicMock(ask=lambda: True))
 
     console = MagicMock()
