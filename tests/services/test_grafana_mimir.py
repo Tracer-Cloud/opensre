@@ -20,6 +20,7 @@ class DummyMimirClient(MimirMixin):
         self._build_datasource_url = MagicMock(return_value="https://fake-grafana.com/api/v1/query")
         self._make_request = MagicMock()
 
+
 def test_query_mimir_plain_metric():
     """Test query construction for a plain metric without a service filter."""
     client = DummyMimirClient()
@@ -29,8 +30,7 @@ def test_query_mimir_plain_metric():
 
     # Verify PromQL exact match (Requirement: Mimir query construction is protected)
     client._make_request.assert_called_once_with(
-        "https://fake-grafana.com/api/v1/query",
-        params={"query": "cpu_usage_total"}
+        "https://fake-grafana.com/api/v1/query", params={"query": "cpu_usage_total"}
     )
 
 
@@ -44,8 +44,10 @@ def test_query_mimir_service_filtered():
     # Verify PromQL bracket injection (Requirement: Service filtering is tested)
     client._make_request.assert_called_once_with(
         "https://fake-grafana.com/api/v1/query",
-        params={"query": 'cpu_usage_total{service_name="backend-api"}'}
+        params={"query": 'cpu_usage_total{service_name="backend-api"}'},
     )
+
+
 def test_query_mimir_result_normalization():
     """Test that raw Grafana JSON is normalized into the expected clean dictionary."""
     client = DummyMimirClient()
@@ -56,7 +58,7 @@ def test_query_mimir_result_normalization():
             "result": [
                 {
                     "metric": {"__name__": "cpu_usage_total", "instance": "server-1"},
-                    "value": [1670000000, "95.5"]
+                    "value": [1670000000, "95.5"],
                 }
             ]
         }
@@ -74,6 +76,8 @@ def test_query_mimir_result_normalization():
     metric_data = result["metrics"][0]
     assert metric_data["metric"]["instance"] == "server-1"
     assert metric_data["value"][1] == "95.5"
+
+
 def test_query_mimir_not_configured():
     """Test the early exit path when the client is not configured."""
     client = DummyMimirClient(is_configured=False)
