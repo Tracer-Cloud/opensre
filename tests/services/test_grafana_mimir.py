@@ -74,6 +74,7 @@ def test_query_mimir_result_normalization():
     assert result["total_series"] == 1
     assert result["query"] == "cpu_usage_total"
     assert len(result["metrics"]) == 1
+    assert result["account_id"] == "test_acc_123"
 
     metric_data = result["metrics"][0]
     assert metric_data["metric"]["instance"] == "server-1"
@@ -103,4 +104,28 @@ def test_query_mimir_exception_handling():
     # Requirement: Exception cases / error envelope
     assert result["success"] is False
     assert "Network timeout" in result["error"]
+    assert result["metrics"] == []
+
+
+def test_query_mimir_http_exception_handling():
+    client = DummyMimirClient()
+
+    # 1. Create a fake HTTP response object
+    mock_response = MagicMock()
+    mock_response.status_code = 502
+    mock_response.text = "Bad Gateway: Mimir database is unreachable"
+
+    # 2. Create a generic exception, but attach our fake response to it
+    mock_exception = Exception("HTTP Error")
+    mock_exception.response = mock_response
+
+    # 3. Force the mock client to crash using our custom exception
+    client._make_request.side_effect = mock_exception
+
+    result = client.query_mimir("cpu_usage_total")
+
+    # 4. Verify it hit lines 69-71 and correctly formatted the error
+    assert result["success"] is False
+    assert result["error"] == "Mimir query failed: 502"
+    assert result["response"] == "Bad Gateway: Mimir database is unreachable"
     assert result["metrics"] == []
