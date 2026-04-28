@@ -1,5 +1,7 @@
 """Unit tests for Grafana Mimir metrics query mixin."""
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock
 
 from app.services.grafana.mimir import MimirMixin
