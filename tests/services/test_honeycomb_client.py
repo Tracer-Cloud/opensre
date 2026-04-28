@@ -231,3 +231,70 @@ def test_query_traces_success(client: HoneycombClient) -> None:
     filters = query["filters"]
     assert any(f["column"] == "service.name" and f["value"] == "auth-service" for f in filters)
     assert any(f["column"] == "trace.trace_id" and f["value"] == "trace-abc" for f in filters)
+
+
+def test_run_query_with_polling(client: HoneycombClient) -> None:
+    client.create_query = MagicMock(return_value={"success": True, "query_id": "q1"})
+    client.create_query_result = MagicMock(
+        return_value={"success": True, "result": {"id": "r1", "complete": False}}
+    )
+    # Mock two calls to get_query_result: first False, then True
+    client.get_query_result = MagicMock(
+        side_effect=[
+            {"success": True, "result": {"id": "r1", "complete": False}},
+            {"success": True, "result": {"id": "r1", "complete": True, "data": {"results": []}}},
+        ]
+    )
+
+    with patch("time.sleep"):
+        result = client.run_query({"calculations": []}, poll_attempts=3)
+
+    assert result["success"] is True
+    assert client.get_query_result.call_count == 2
+
+
+def test_run_query_timeout(client: HoneycombClient) -> None:
+    client.create_query = MagicMock(return_value={"success": True, "query_id": "q1"})
+    client.create_query_result = MagicMock(
+        return_value={"success": True, "result": {"id": "r1", "complete": False}}
+    )
+    # Always return incomplete
+    client.get_query_result = MagicMock(
+        return_value={"success": True, "result": {"id": "r1", "complete": False}}
+    )
+
+    with patch("time.sleep"):
+        result = client.run_query({"calculations": []}, poll_attempts=2)
+
+    assert result["success"] is False
+    assert "did not complete before the timeout" in result["error"]
+    # 2 poll attempts + initial check from create_query_result
+    # wait, run_query does:
+    # for _ in range(max(poll_attempts, 1)):
+    #   if current_result.get("complete") is True: break
+    #   time.sleep(...)
+    #   fetched = self.get_query_result(...)
+    # So if poll_attempts=2:
+    # iteration 1: complete is False, sleep, get_query_result (fetched 1)
+    # iteration 2: complete is False, sleep, get_query_result (fetched 2)
+    # loop ends, return timeout error.
+    assert client.get_query_result.call_count == 2
+
+
+def test_run_query_create_result_failure(client: HoneycombClient) -> None:
+    client.create_query = MagicMock(return_value={"success": True, "query_id": "q1"})
+    client.create_query_result = MagicMock(
+        return_value={"success": False, "error": "Internal failure"}
+    )
+
+    result = client.run_query({"calculations": []})
+
+    assert result["success"] is False
+    assert result["error"] == "Internal failure"
+
+
+def test_query_traces_no_filters(client: HoneycombClient) -> None:
+    result = client.query_traces()
+
+    assert result["success"] is False
+    assert "require a service_name or trace_id" in result["error"]
