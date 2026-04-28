@@ -1049,3 +1049,5 @@ Apache 2.0 - see [LICENSE](LICENSE) for details.
 ## Citations
 
 <sup>1</sup> https://arxiv.org/abs/2310.06770
+
+<!-- No visible change: smoke test for post-merge PR comment workflow. -->
