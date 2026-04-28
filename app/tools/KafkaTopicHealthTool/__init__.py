@@ -11,6 +11,13 @@ from app.integrations.kafka import (
 from app.tools.tool_decorator import tool
 
 
+def _get_kafka_topic_health_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
+    """Extract Kafka connection and topic parameters from sources."""
+    params = kafka_extract_params(sources)
+    params["topic"] = str(sources.get("kafka", {}).get("topic", "")).strip()
+    return params
+
+
 @tool(
     name="get_kafka_topic_health",
     description="Retrieve topic partition health from a Kafka cluster, including replica status, ISR counts, and under-replicated partitions.",
@@ -22,7 +29,7 @@ from app.tools.tool_decorator import tool
         "Reviewing topic metadata for capacity planning",
     ],
     is_available=kafka_is_available,
-    extract_params=kafka_extract_params,
+    extract_params=_get_kafka_topic_health_extract_params,
 )
 def get_kafka_topic_health(
     bootstrap_servers: str,
@@ -41,4 +48,7 @@ def get_kafka_topic_health(
         sasl_username=sasl_username,
         sasl_password=sasl_password,
     )
-    return get_topic_health(config, topic=topic or None, limit=limit)
+    try:
+        return get_topic_health(config, topic=topic or None, limit=limit)
+    except Exception as err:  # noqa: BLE001
+        return {"source": "kafka", "available": False, "error": str(err)}

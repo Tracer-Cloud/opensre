@@ -58,7 +58,7 @@ class KafkaValidationResult:
 
 def kafka_is_available(sources: dict[str, dict]) -> bool:
     """Check if Kafka integration params are present in available sources."""
-    return bool(sources.get("kafka", {}).get("connection_verified"))
+    return bool(str(sources.get("kafka", {}).get("bootstrap_servers", "")).strip())
 
 
 def kafka_extract_params(sources: dict[str, dict]) -> dict[str, Any]:

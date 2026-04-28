@@ -11,6 +11,15 @@ from app.integrations.kafka import (
 from app.tools.tool_decorator import tool
 
 
+def _get_kafka_consumer_group_lag_extract_params(
+    sources: dict[str, dict],
+) -> dict[str, Any]:
+    """Extract Kafka connection and consumer group parameters from sources."""
+    params = kafka_extract_params(sources)
+    params["group_id"] = str(sources.get("kafka", {}).get("group_id", "")).strip()
+    return params
+
+
 @tool(
     name="get_kafka_consumer_group_lag",
     description="Retrieve consumer group lag per partition from a Kafka cluster, showing committed offsets versus high watermarks.",
@@ -22,7 +31,7 @@ from app.tools.tool_decorator import tool
         "Checking consumer group health after a deployment",
     ],
     is_available=kafka_is_available,
-    extract_params=kafka_extract_params,
+    extract_params=_get_kafka_consumer_group_lag_extract_params,
 )
 def get_kafka_consumer_group_lag(
     bootstrap_servers: str,
@@ -40,4 +49,7 @@ def get_kafka_consumer_group_lag(
         sasl_username=sasl_username,
         sasl_password=sasl_password,
     )
-    return get_consumer_group_lag(config, group_id=group_id)
+    try:
+        return get_consumer_group_lag(config, group_id=group_id)
+    except Exception as err:  # noqa: BLE001
+        return {"source": "kafka", "available": False, "error": str(err)}
