@@ -33,15 +33,23 @@ class _MergedSpan(NamedTuple):
     overlapping ``ScanMatch`` ranges have been collapsed.
 
     ``rule_name`` is the *representative* rule for the span — the contributing
-    match with the largest original ``width`` wins, which preserves the
+    match with the largest ``source_width`` wins, which preserves the
     "longest-keyword-wins" behaviour for same-start overlaps while extending
     it to contained and partially-overlapping spans.
+
+    ``source_width`` is the width of the single ``ScanMatch`` that contributed
+    the current ``rule_name`` — i.e. that match's ``end - start`` *before* any
+    merging happened. It is **not** the merged span's width (``end - start``
+    of the ``_MergedSpan``); in a chained-overlap scenario where A merges B
+    and then C overlaps the grown span, the rule-name winner is whichever
+    individual source match was the widest, not whichever rule covered the
+    widest post-merge range.
     """
 
     start: int
     end: int
     rule_name: str
-    width: int
+    source_width: int
 
 
 @dataclass(frozen=True)
@@ -159,9 +167,10 @@ class GuardrailEngine:
         2. Sweep left-to-right, merging any match whose ``start`` falls before
            the current interval's ``end``. The representative rule for the
            merged interval is whichever contributing match had the largest
-           original width — keeps the existing "longest-keyword-wins"
-           behavior of same-start overlaps while correctly handling contained
-           and partially-overlapping spans.
+           ``source_width`` (its individual ``end - start`` before any merging
+           — *not* the merged span's width). This preserves the existing
+           "longest-keyword-wins" behaviour for same-start overlaps and
+           extends it to contained and partially-overlapping spans.
         3. Apply replacements right-to-left over the merged intervals so string
            indices remain valid as each redaction resizes the output.
         """
@@ -171,16 +180,18 @@ class GuardrailEngine:
         )
         merged: list[_MergedSpan] = []
         for match in redact_matches:
-            width = match.end - match.start
+            # Width of this individual match — used only for representative-
+            # rule selection. The merged span's actual width is ``end - start``.
+            source_width = match.end - match.start
             if merged and match.start < merged[-1].end:
                 prev = merged[-1]
                 new_end = max(prev.end, match.end)
-                if width > prev.width:
-                    merged[-1] = _MergedSpan(prev.start, new_end, match.rule_name, width)
+                if source_width > prev.source_width:
+                    merged[-1] = _MergedSpan(prev.start, new_end, match.rule_name, source_width)
                 else:
-                    merged[-1] = _MergedSpan(prev.start, new_end, prev.rule_name, prev.width)
+                    merged[-1] = _MergedSpan(prev.start, new_end, prev.rule_name, prev.source_width)
             else:
-                merged.append(_MergedSpan(match.start, match.end, match.rule_name, width))
+                merged.append(_MergedSpan(match.start, match.end, match.rule_name, source_width))
 
         redacted = text
         for span in reversed(merged):
