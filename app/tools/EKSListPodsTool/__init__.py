@@ -6,7 +6,7 @@ import logging
 from typing import Any, cast
 
 from app.services.eks.eks_k8s_client import build_k8s_clients
-from app.tools.eks_helpers import eks_available_or_backend, extract_eks_workload_params
+from app.tools._eks_helpers import eks_available_or_backend, extract_eks_workload_params
 from app.tools.tool_decorator import tool
 
 logger = logging.getLogger(__name__)
