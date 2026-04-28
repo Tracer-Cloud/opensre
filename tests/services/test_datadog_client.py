@@ -349,14 +349,14 @@ async def test_fetch_all_success_strong(async_client, mock_async_httpx):
         url = ""
 
         if args:
-           url = args[0]
+            url = args[0]
         elif "url" in kwargs:
-           url = kwargs["url"]
+            url = kwargs["url"]
 
         if "logs" in url:
-           return log_response
+            return log_response
         elif "events" in url:
-           return event_response
+            return event_response
 
         raise AssertionError(f"Unexpected POST url: {url}")
 
