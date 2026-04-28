@@ -54,10 +54,21 @@ class InvestigateInput(BaseModel):
     evidence: dict[str, object] = Field(default_factory=dict, description="Current evidence")
     investigation_loop_count: int = Field(default=0, description="Number of investigation loops")
     tool_budget: int = Field(default=10, ge=1, le=50, description="Maximum tools per step")
+    incident_window: dict[str, object] | None = Field(
+        default=None,
+        description=(
+            "Resolved incident time window (from app.incident_window). Threaded "
+            "through plan_actions and exposed to opt-in tools via "
+            "available_sources['_meta']['incident_window']. None when "
+            "extract_alert has not yet populated state.incident_window."
+        ),
+    )
 
     @classmethod
     def from_state(cls, state: InvestigationState | dict[str, object]) -> "InvestigateInput":
         """Create InvestigateInput from investigation state."""
+        raw_window = state.get("incident_window")
+        incident_window = raw_window if isinstance(raw_window, dict) else None
         return cls(
             raw_alert=_raw_alert(state.get("raw_alert", {})),
             context=_object_dict(state.get("context", {})),
@@ -72,6 +83,7 @@ class InvestigateInput(BaseModel):
             evidence=_object_dict(state.get("evidence", {})),
             investigation_loop_count=_int_value(state.get("investigation_loop_count", 0), 0),
             tool_budget=_int_value(state.get("tool_budget", 10), 10),
+            incident_window=incident_window,
         )
 
 

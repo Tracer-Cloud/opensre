@@ -22,6 +22,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.incident_window import IncidentWindow
 from app.integrations.github_mcp import call_github_mcp_tool
 from app.tools.GitHubSearchCodeTool import (
     _gh_available,
@@ -127,10 +128,20 @@ def _summarize_commit(raw: dict[str, Any]) -> dict[str, Any]:
 
 def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     gh = sources["github"]
+    # ``_meta`` carries investigation-level context shared across tools
+    # (today: incident_window). Tools that don't care about it ignore the
+    # key. See app.nodes.plan_actions.plan_actions for where this is set.
+    # Defensive isinstance check: if anything ever stuffs a non-dict under
+    # the reserved ``_meta`` key, we degrade to no-shared-window rather
+    # than crashing with AttributeError on the .get below.
+    raw_meta = sources.get("_meta")
+    meta = raw_meta if isinstance(raw_meta, dict) else {}
+    incident_window = meta.get("incident_window")
     return {
         "owner": gh["owner"],
         "repo": gh["repo"],
         "branch": gh.get("branch") or gh.get("default_branch") or "main",
+        "shared_incident_window": incident_window if isinstance(incident_window, dict) else None,
         **_gh_creds(gh),
     }
 
@@ -173,9 +184,10 @@ def _is_available(sources: dict[str, dict]) -> bool:
                 "type": "integer",
                 "description": (
                     "Convenience: minutes back from 'until' (or now) when 'since' is "
-                    f"omitted. Clamped to {MAX_WINDOW_MINUTES} minutes."
+                    f"omitted. Clamped to {MAX_WINDOW_MINUTES} minutes. When omitted, "
+                    "the tool prefers the shared incident window from state if one is "
+                    f"available, otherwise falls back to {DEFAULT_WINDOW_MINUTES} minutes."
                 ),
-                "default": DEFAULT_WINDOW_MINUTES,
             },
             "per_page": {
                 "type": "integer",
@@ -198,8 +210,9 @@ def get_git_deploy_timeline(
     branch: str = "main",
     since: str = "",
     until: str = "",
-    window_minutes_before_alert: int | None = DEFAULT_WINDOW_MINUTES,
+    window_minutes_before_alert: int | None = None,
     per_page: int = DEFAULT_PER_PAGE,
+    shared_incident_window: dict[str, Any] | None = None,
     github_url: str | None = None,
     github_mode: str | None = None,
     github_token: str | None = None,
@@ -207,7 +220,15 @@ def get_git_deploy_timeline(
     github_args: list[str] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
-    """Return commits on ``branch`` between ``since`` and ``until``."""
+    """Return commits on ``branch`` between ``since`` and ``until``.
+
+    Window resolution priority (highest to lowest):
+        1. Explicit ``since`` AND ``until`` from the caller.
+        2. Explicit ``window_minutes_before_alert`` from the caller.
+        3. ``shared_incident_window`` from agent state (when both ``since``
+           and ``until`` are empty AND no explicit window-minutes override).
+        4. ``DEFAULT_WINDOW_MINUTES`` (120 minutes before now).
+    """
     config = _resolve_config(github_url, github_mode, github_token, github_command, github_args)
     if config is None:
         return {
@@ -218,7 +239,28 @@ def get_git_deploy_timeline(
             "window": {},
         }
 
-    resolved_since, resolved_until = _resolve_window(since, until, window_minutes_before_alert)
+    # If neither since/until nor an explicit window-minutes was provided, try
+    # to use the shared incident window from agent state. ``from_dict``
+    # returns None on a malformed payload, which falls back to defaults.
+    effective_since, effective_until = since, until
+    used_shared_window = False
+    if not since and not until and window_minutes_before_alert is None and shared_incident_window:
+        window_obj = IncidentWindow.from_dict(shared_incident_window)
+        if window_obj is not None:
+            effective_since = window_obj.since.isoformat().replace("+00:00", "Z")
+            effective_until = window_obj.until.isoformat().replace("+00:00", "Z")
+            used_shared_window = True
+
+    # Final lookback used by the resolver: caller-explicit if given, else
+    # the tool's traditional default. The resolver clamps + validates.
+    effective_minutes = (
+        window_minutes_before_alert
+        if window_minutes_before_alert is not None
+        else DEFAULT_WINDOW_MINUTES
+    )
+    resolved_since, resolved_until = _resolve_window(
+        effective_since, effective_until, effective_minutes
+    )
     # Clamp per_page to the GitHub REST API maximum of 100. Values above this
     # are silently truncated upstream; we enforce the ceiling explicitly so
     # ``truncated`` below is meaningful.
@@ -245,6 +287,21 @@ def get_git_deploy_timeline(
     # narrow the window or raise per_page rather than concluding "nothing
     # else shipped".
     truncated = len(commits) >= effective_per_page
+    # Trace where the window came from for the diagnose narrative.
+    # Three distinct sources, never conflated:
+    #   "shared_incident_window" — tool used state.incident_window because
+    #       no caller-explicit window was provided.
+    #   "caller_explicit"        — caller passed since/until or
+    #       window_minutes_before_alert; the tool honoured it.
+    #   "tool_default"           — no caller input AND no shared window;
+    #       the tool fell back to DEFAULT_WINDOW_MINUTES.
+    if used_shared_window:
+        window_source = "shared_incident_window"
+    elif since or until or window_minutes_before_alert is not None:
+        window_source = "caller_explicit"
+    else:
+        window_source = "tool_default"
+
     payload.update(
         {
             "commits": commits,
@@ -255,6 +312,7 @@ def get_git_deploy_timeline(
                 "branch": branch,
                 "per_page": effective_per_page,
                 "truncated": truncated,
+                "source": window_source,
             },
         }
     )
