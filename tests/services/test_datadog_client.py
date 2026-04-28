@@ -1,9 +1,17 @@
-from unittest.mock import MagicMock, patch
-
+from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.services.datadog.client import DatadogClient, DatadogConfig
+from app.services.datadog.client import DatadogClient, DatadogAsyncClient, DatadogConfig
+
+
+@pytest.fixture
+def async_config():
+    return DatadogConfig(
+        api_key="test-api-key",
+        app_key="test-app-key",
+        site="datadoghq.com",
+    )
 
 
 @pytest.fixture
@@ -16,13 +24,24 @@ def config():
 
 
 @pytest.fixture
-def client(config):
+def client(config, mock_httpx_client):
     return DatadogClient(config)
+
+
+@pytest.fixture
+def async_client(async_config, mock_async_httpx):
+    return DatadogAsyncClient(async_config)
 
 
 @pytest.fixture
 def mock_httpx_client():
     with patch("app.services.datadog.client.httpx.Client") as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_async_httpx():
+    with patch("app.services.datadog.client.httpx.AsyncClient") as mock:
         yield mock
 
 
@@ -278,9 +297,78 @@ def test_get_events_generic_exception(client, mock_httpx_client):
     assert result["error"] == "timeout"
 
 
+@pytest.mark.asyncio
+async def test_fetch_all_success_strong(
+    async_client,
+    mock_async_httpx,
+):
+    mock_instance = MagicMock()
+    mock_async_httpx.return_value = mock_instance
+
+    # -------------------------
+    # Fake API responses FIRST
+    # -------------------------
+
+    log_response = MagicMock()
+    log_response.json.return_value = {
+        "data": [
+            {
+                "attributes": {
+                    "message": "log message",
+                    "status": "info",
+                }
+            }
+        ]
+    }
+    log_response.raise_for_status.return_value = None
+
+    monitor_response = MagicMock()
+    monitor_response.json.return_value = [{"id": 1, "name": "CPU Monitor"}]
+    monitor_response.raise_for_status.return_value = None
+
+    event_response = MagicMock()
+    event_response.json.return_value = {"data": [{"attributes": {"title": "event title"}}]}
+    event_response.raise_for_status.return_value = None
+
+    # -------------------------
+    # Proper AsyncMock setup
+    # -------------------------
+
+    mock_instance.post = AsyncMock(return_value=log_response)
+    mock_instance.get = AsyncMock(
+        side_effect=[
+            monitor_response,
+            event_response,
+        ]
+    )
+
+    # -------------------------
+    # Execute
+    # -------------------------
+
+    result = await async_client.fetch_all("error")
+
+    # -------------------------
+    # Assertions (strong)
+    # -------------------------
+
+    assert isinstance(result, dict)
+
+    assert mock_instance.post.called
+    assert mock_instance.get.called
+
+    # stronger validation
+    assert len(mock_instance.get.call_args_list) == 2
+
+
 # -------------------------
 # is_configured
 # -------------------------
+
+
+def test_async_is_configured_true(async_config):
+    client = DatadogAsyncClient(async_config)
+    assert client.is_configured is True
 
 
 def test_is_configured_true():
@@ -310,7 +398,7 @@ def test_is_configured_missing_app_key():
 
 
 # -------------------------
-# get_pod_mode_tests
+# get_pod_node_tests
 # -------------------------
 
 
