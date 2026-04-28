@@ -59,6 +59,20 @@ def test_extract_params_defaults_target_branch_to_main() -> None:
     assert params["target_branch"] == "main"
 
 
+def test_extract_params_defaults_updated_after_to_empty_string() -> None:
+    rt = list_gitlab_mrs.__opensre_registered_tool__
+    sources = mock_agent_state(
+        {
+            "gitlab": {
+                "connection_verified": True,
+                "project_id": "42",
+            }
+        }
+    )
+    params = rt.extract_params(sources)
+    assert params["updated_after"] == ""
+
+
 def test_run_returns_unavailable_when_config_missing() -> None:
     with patch("app.tools.GitLabMRsTool._resolve_config", return_value=None):
         result = list_gitlab_mrs(project_id="42")
