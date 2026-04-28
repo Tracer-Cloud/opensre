@@ -47,8 +47,6 @@ templates: list[str] = [
 # Two empty slots keep ~22% of merges emoji-only (avoids GIF fatigue).
 _base = "https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/.github/assets/celebrations"
 gif_blocks: list[str] = [
-    "",
-    "",
     f"\n\n![]({_base}/party.gif)",
     f"\n\n![]({_base}/celebrate.gif)",
     f"\n\n![]({_base}/ship.gif)",
