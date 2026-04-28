@@ -10,6 +10,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from app.services.cloudwatch_client import (
     filter_log_events,
@@ -69,7 +70,7 @@ class TestGetMetricStatistics:
             end_time="2024-01-01T01:00:00Z",
             statistics=["Average", "Sum"],
         )
-        call_kwargs = mock_cw_client.get_metric_statistics.call_args[1]
+        call_kwargs = mock_cw_client.get_metric_statistics.call_args.kwargs
         assert call_kwargs["Dimensions"] == [{"Name": "ServiceName", "Value": "my-service"}]
         assert call_kwargs["Statistics"] == ["Average", "Sum"]
 
@@ -81,12 +82,10 @@ class TestGetMetricStatistics:
             start_time="2024-01-01T00:00:00Z",
             end_time="2024-01-01T01:00:00Z",
         )
-        call_kwargs = mock_cw_client.get_metric_statistics.call_args[1]
+        call_kwargs = mock_cw_client.get_metric_statistics.call_args.kwargs
         assert call_kwargs["Statistics"] == ["Average", "Maximum", "Minimum"]
 
     def test_returns_error_on_client_error(self, mock_cw_client):
-        from botocore.exceptions import ClientError
-
         mock_cw_client.get_metric_statistics.side_effect = ClientError(
             {"Error": {"Code": "AccessDenied", "Message": "Not authorized"}}, "GetMetricStatistics"
         )
@@ -147,7 +146,7 @@ class TestFilterLogEvents:
             end_time=1700003600000,
             limit=50,
         )
-        call_kwargs = mock_logs_client.filter_log_events.call_args[1]
+        call_kwargs = mock_logs_client.filter_log_events.call_args.kwargs
         assert call_kwargs["filterPattern"] == "timeout"
         assert call_kwargs["startTime"] == 1700000000000
         assert call_kwargs["endTime"] == 1700003600000
@@ -156,20 +155,19 @@ class TestFilterLogEvents:
     def test_omits_optional_params_when_none(self, mock_logs_client):
         mock_logs_client.filter_log_events.return_value = {"events": []}
         filter_log_events(log_group_name="/aws/batch/job")
-        call_kwargs = mock_logs_client.filter_log_events.call_args[1]
+        call_kwargs = mock_logs_client.filter_log_events.call_args.kwargs
         assert "filterPattern" not in call_kwargs
         assert "startTime" not in call_kwargs
         assert "endTime" not in call_kwargs
 
     def test_returns_error_on_client_error(self, mock_logs_client):
-        from botocore.exceptions import ClientError
-
         mock_logs_client.filter_log_events.side_effect = ClientError(
             {"Error": {"Code": "ResourceNotFoundException", "Message": "Log group not found"}},
             "FilterLogEvents",
         )
         result = filter_log_events(log_group_name="/nonexistent")
         assert result["success"] is False
+        assert "ResourceNotFoundException" in result["error"]
 
     def test_returns_error_when_no_client(self):
         with patch("app.services.cloudwatch_client._get_cloudwatch_logs_client", return_value=None):
@@ -212,7 +210,7 @@ class TestGetLogEvents:
             end_time=1700003600000,
             limit=50,
         )
-        call_kwargs = mock_logs_client.get_log_events.call_args[1]
+        call_kwargs = mock_logs_client.get_log_events.call_args.kwargs
         assert call_kwargs["startTime"] == 1700000000000
         assert call_kwargs["endTime"] == 1700003600000
         assert call_kwargs["limit"] == 50
@@ -223,19 +221,18 @@ class TestGetLogEvents:
             log_group_name="/aws/batch/job",
             log_stream_name="stream-1",
         )
-        call_kwargs = mock_logs_client.get_log_events.call_args[1]
+        call_kwargs = mock_logs_client.get_log_events.call_args.kwargs
         assert "startTime" not in call_kwargs
         assert "endTime" not in call_kwargs
 
     def test_returns_error_on_client_error(self, mock_logs_client):
-        from botocore.exceptions import ClientError
-
         mock_logs_client.get_log_events.side_effect = ClientError(
             {"Error": {"Code": "ResourceNotFoundException", "Message": "Stream not found"}},
             "GetLogEvents",
         )
         result = get_log_events(log_group_name="/aws/batch/job", log_stream_name="bad-stream")
         assert result["success"] is False
+        assert "ResourceNotFoundException" in result["error"]
 
     def test_returns_error_when_no_client(self):
         with patch("app.services.cloudwatch_client._get_cloudwatch_logs_client", return_value=None):
