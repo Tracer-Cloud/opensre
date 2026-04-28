@@ -9,6 +9,7 @@ from app.integrations.azure_sql import (
     resolve_azure_sql_config,
 )
 from app.tools.tool_decorator import tool
+from app.tools.utils.db_warnings import default_db_warning
 
 
 @tool(
@@ -37,7 +38,5 @@ def get_azure_sql_slow_queries(
     config = resolve_azure_sql_config(server=server, database=database, port=port)
     result = get_slow_queries(config, threshold_ms=threshold_ms)
     if _db_defaulted:
-        result["default_db_warning"] = (
-            "WARNING: No database was specified; defaulted to 'master'. Results may not reflect application data."
-        )
+        result["default_db_warning"] = default_db_warning("master")
     return result

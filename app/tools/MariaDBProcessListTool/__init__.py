@@ -9,6 +9,7 @@ from app.integrations.mariadb import (
     mariadb_is_available,
 )
 from app.tools.tool_decorator import tool
+from app.tools.utils.db_warnings import default_db_warning
 
 
 @tool(
@@ -43,7 +44,5 @@ def get_mariadb_process_list(
     )
     result = get_process_list(config)
     if _db_defaulted:
-        result["default_db_warning"] = (
-            "WARNING: No database was specified; defaulted to 'mysql'. Results may not reflect application data."
-        )
+        result["default_db_warning"] = default_db_warning("mysql")
     return result

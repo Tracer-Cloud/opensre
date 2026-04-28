@@ -39,3 +39,22 @@ def test_run_error_propagated() -> None:
     ):
         result = get_mariadb_process_list(host="invalid", database="test", username="user")
     assert "error" in result
+
+
+def test_default_db_warning_present_when_database_omitted() -> None:
+    with patch(
+        "app.tools.MariaDBProcessListTool.get_process_list",
+        return_value={"source": "mariadb", "available": True, "processes": []},
+    ):
+        result = get_mariadb_process_list(host="localhost", username="user")
+    assert "default_db_warning" in result
+    assert "mysql" in result["default_db_warning"]
+
+
+def test_no_default_db_warning_when_database_provided() -> None:
+    with patch(
+        "app.tools.MariaDBProcessListTool.get_process_list",
+        return_value={"source": "mariadb", "available": True, "processes": []},
+    ):
+        result = get_mariadb_process_list(host="localhost", username="user", database="mydb")
+    assert "default_db_warning" not in result

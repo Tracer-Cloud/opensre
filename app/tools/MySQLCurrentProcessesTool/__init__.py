@@ -9,6 +9,7 @@ from app.integrations.mysql import (
     resolve_mysql_config,
 )
 from app.tools.tool_decorator import tool
+from app.tools.utils.db_warnings import default_db_warning
 
 
 @tool(
@@ -37,7 +38,5 @@ def get_mysql_current_processes(
     config = resolve_mysql_config(host=host, database=database, port=port)
     result = get_current_processes(config, threshold_seconds=threshold_seconds)
     if _db_defaulted:
-        result["default_db_warning"] = (
-            "WARNING: No database was specified; defaulted to 'mysql'. Results may not reflect application data."
-        )
+        result["default_db_warning"] = default_db_warning("mysql")
     return result
