@@ -76,6 +76,7 @@
               "prefect",
               "rabbitmq",
               "sentry",
+              "telegram",
               "vercel"
             ]
           }
