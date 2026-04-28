@@ -1,0 +1,37 @@
+name: Celebrate merged pull requests
+
+# Runs after a PR lands (merged into the target branch). Uses pull_request_target so the
+# token can comment on merged PRs from forks; checkout is base/default only — no PR head.
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  celebrate-merge:
+    name: Post-merge celebration comment
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build celebration comment
+        id: celebrate
+        env:
+          DISCORD_INVITE_URL: https://discord.com/invite/opensre
+          CONTRIBUTOR_LOGIN: ${{ github.event.pull_request.user.login }}
+        run: python3 .github/scripts/merged_pr_celebration_message.py
+
+      - name: Comment on merged PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          gh pr comment "${{ github.event.pull_request.number }}"
+          --repo "${{ github.repository }}"
+          --body-file comment.md

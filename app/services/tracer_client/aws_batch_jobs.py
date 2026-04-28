@@ -1,7 +1,7 @@
 """Batch jobs-related API methods and models."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from app.services.tracer_client.tracer_client_base import TracerClientBase
@@ -94,7 +94,7 @@ class AWSBatchJobsMixin(TracerClientBase):
 
             started_at = None
             if row.get("startedAt"):
-                started_at = datetime.fromtimestamp(row["startedAt"] / 1000).strftime(
+                started_at = datetime.fromtimestamp(row["startedAt"] / 1000, tz=UTC).strftime(
                     "%Y-%m-%d %H:%M:%S"
                 )
 

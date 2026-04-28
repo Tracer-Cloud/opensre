@@ -1,10 +1,13 @@
 Fixes #
 
-<!-- Add issue number above --> 
+<!-- Add issue number above -->
+
+**Community:** Contributors hang out on **[Discord — OpenSRE](https://discord.com/invite/opensre)** (`#contribute`) for questions, reviews, and roadmap chatter.
 
 #### Describe the changes you have made in this PR -
 
-### Screenshots of the UI changes (If any) -
+### Demo/Screenshot for feature changes and bug fixes - 
+<!-- Include at least one proof of the change: UI screenshot, terminal screenshot/log snippet, short video/GIF, or equivalent demo output. -->
 <!-- Do not add code diff here -->
 
 ---

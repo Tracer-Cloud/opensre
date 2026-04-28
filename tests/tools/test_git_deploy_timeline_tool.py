@@ -331,6 +331,147 @@ def test_run_flags_window_not_truncated_when_fewer_than_page() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Shared incident window integration (PR 2)
+# ---------------------------------------------------------------------------
+
+
+def _shared_window_dict(since: str, until: str) -> dict:
+    """Build a shared incident_window dict in the shape extract_alert produces."""
+    return {
+        "_schema_version": 1,
+        "since": since,
+        "until": until,
+        "source": "alert.startsAt",
+        "confidence": 1.0,
+    }
+
+
+def _run_with_shared_window(
+    shared_window: dict | None,
+    *,
+    since: str = "",
+    until: str = "",
+    window_minutes_before_alert: int | None = None,
+) -> tuple[dict, dict]:
+    """Helper: run the tool with a stubbed MCP and return (kwargs_to_mcp, payload)."""
+    captured: dict = {}
+
+    def _fake_call(config, name, arguments):  # noqa: ARG001
+        captured["arguments"] = arguments
+        return {"is_error": False, "text": "", "structured_content": [], "content": []}
+
+    mock_config = MagicMock()
+    with (
+        patch("app.tools.GitHubSearchCodeTool.github_mcp_config_from_env", return_value=None),
+        patch("app.tools.GitHubSearchCodeTool.build_github_mcp_config", return_value=mock_config),
+        patch("app.tools.GitDeployTimelineTool.call_github_mcp_tool", side_effect=_fake_call),
+    ):
+        result = get_git_deploy_timeline(
+            owner="org",
+            repo="repo",
+            since=since,
+            until=until,
+            window_minutes_before_alert=window_minutes_before_alert,
+            shared_incident_window=shared_window,
+            github_url="http://mcp",
+            github_mode="streamable-http",
+            github_token="tok",
+        )
+    return captured, result
+
+
+def test_extract_params_passes_shared_incident_window_through() -> None:
+    """The tool's extract_params reads ``_meta.incident_window`` from sources
+    and threads it as the ``shared_incident_window`` kwarg."""
+    rt = get_git_deploy_timeline.__opensre_registered_tool__
+    sources = mock_agent_state()
+    sources["_meta"] = {
+        "incident_window": _shared_window_dict("2026-04-20T08:00:00Z", "2026-04-20T10:00:00Z")
+    }
+    params = rt.extract_params(sources)
+    assert params["shared_incident_window"] == sources["_meta"]["incident_window"]
+
+
+def test_extract_params_handles_missing_meta_key() -> None:
+    """If ``_meta`` is absent (e.g. extract_alert hasn't run yet),
+    extract_params returns ``shared_incident_window=None`` cleanly."""
+    rt = get_git_deploy_timeline.__opensre_registered_tool__
+    params = rt.extract_params(mock_agent_state())
+    assert params["shared_incident_window"] is None
+
+
+def test_extract_params_defensive_against_non_dict_meta() -> None:
+    """If ``_meta`` is ever populated with a non-dict (e.g. a future bug
+    upstream), extract_params must not raise — it degrades to None."""
+    rt = get_git_deploy_timeline.__opensre_registered_tool__
+    sources = mock_agent_state()
+    sources["_meta"] = "not-a-dict"  # type: ignore[assignment]
+    params = rt.extract_params(sources)
+    assert params["shared_incident_window"] is None
+
+
+def test_extract_params_defensive_against_non_dict_incident_window() -> None:
+    """If the nested incident_window is non-dict, same degradation."""
+    rt = get_git_deploy_timeline.__opensre_registered_tool__
+    sources = mock_agent_state()
+    sources["_meta"] = {"incident_window": "garbage"}
+    params = rt.extract_params(sources)
+    assert params["shared_incident_window"] is None
+
+
+def test_run_uses_shared_window_when_no_caller_override() -> None:
+    """When neither since/until nor window_minutes_before_alert is given,
+    the tool MUST use the shared incident window."""
+    shared = _shared_window_dict("2026-04-20T08:00:00Z", "2026-04-20T10:00:00Z")
+    captured, result = _run_with_shared_window(shared)
+    assert captured["arguments"]["since"] == "2026-04-20T08:00:00Z"
+    assert captured["arguments"]["until"] == "2026-04-20T10:00:00Z"
+    assert result["window"]["source"] == "shared_incident_window"
+
+
+def test_run_caller_since_until_overrides_shared_window() -> None:
+    """Explicit since/until from the caller wins over the shared window
+    and is reported as ``caller_explicit`` in the window source."""
+    shared = _shared_window_dict("2026-04-20T08:00:00Z", "2026-04-20T10:00:00Z")
+    captured, result = _run_with_shared_window(
+        shared,
+        since="2026-04-20T11:00:00Z",
+        until="2026-04-20T11:30:00Z",
+    )
+    assert captured["arguments"]["since"] == "2026-04-20T11:00:00Z"
+    assert captured["arguments"]["until"] == "2026-04-20T11:30:00Z"
+    assert result["window"]["source"] == "caller_explicit"
+
+
+def test_run_caller_window_minutes_overrides_shared_window() -> None:
+    """Explicit window_minutes_before_alert from the caller also wins
+    and is reported as ``caller_explicit``."""
+    shared = _shared_window_dict("2026-04-20T08:00:00Z", "2026-04-20T10:00:00Z")
+    _, result = _run_with_shared_window(shared, window_minutes_before_alert=30)
+    assert result["window"]["source"] == "caller_explicit"
+
+
+def test_run_falls_back_to_default_when_no_shared_window() -> None:
+    """Backward compat: no shared window present, no overrides → existing
+    DEFAULT_WINDOW_MINUTES default."""
+    captured, result = _run_with_shared_window(None)
+    # 'until' should be ~now, 'since' should be 120 min before now.
+    until_dt = datetime.fromisoformat(captured["arguments"]["until"].replace("Z", "+00:00"))
+    since_dt = datetime.fromisoformat(captured["arguments"]["since"].replace("Z", "+00:00"))
+    assert (until_dt - since_dt) == timedelta(minutes=DEFAULT_WINDOW_MINUTES)
+    assert result["window"]["source"] == "tool_default"
+
+
+def test_run_malformed_shared_window_falls_back_to_default() -> None:
+    """A malformed shared window dict must not crash; tool falls back."""
+    captured, result = _run_with_shared_window({"junk": "not a window"})
+    until_dt = datetime.fromisoformat(captured["arguments"]["until"].replace("Z", "+00:00"))
+    since_dt = datetime.fromisoformat(captured["arguments"]["since"].replace("Z", "+00:00"))
+    assert (until_dt - since_dt) == timedelta(minutes=DEFAULT_WINDOW_MINUTES)
+    assert result["window"]["source"] == "tool_default"
+
+
+# ---------------------------------------------------------------------------
 # _resolve_window
 # ---------------------------------------------------------------------------
 

@@ -15,7 +15,7 @@ def _list_gitlab_mrs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     gl = sources["gitlab"]
     return {
         "project_id": gl["project_id"],
-        "updated_after": gl["updated_after"],
+        "updated_after": gl.get("updated_after", ""),
         "target_branch": gl.get("target_branch", "main"),
         "per_page": 10,
         **_gl_creds(gl),

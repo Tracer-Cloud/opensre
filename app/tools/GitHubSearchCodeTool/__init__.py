@@ -12,6 +12,7 @@ from app.integrations.github_mcp import (
     github_mcp_config_from_env,
 )
 from app.tools.tool_decorator import tool
+from app.tools.utils.code_host_unavailable import code_host_unavailable_payload
 
 
 def _resolve_config(
@@ -126,12 +127,12 @@ def search_github_code(
     """Search GitHub repository code through the configured GitHub MCP server."""
     config = _resolve_config(github_url, github_mode, github_token, github_command, github_args)
     if config is None:
-        return {
-            "source": "github",
-            "available": False,
-            "error": "GitHub MCP integration is not configured.",
-            "matches": [],
-        }
+        return code_host_unavailable_payload(
+            source="github",
+            integration_name="GitHub MCP",
+            empty_key="matches",
+            empty_value=[],
+        )
 
     final_query = build_github_code_search_query(owner, repo, query)
     result = call_github_mcp_tool(config, "search_code", {"query": final_query})

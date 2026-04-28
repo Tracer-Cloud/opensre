@@ -1,0 +1,54 @@
+---
+title: "Daily Update — 2026-04-24"
+description: "OpenSRE engineering daily update for 2026-04-24 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+Adeoluwa Daniel Ademoye, ANIRUDDHA ADAK, Anwesh, Awokoya Olawale Davidson, Chris Chen, DIPSHA DAS, Het Patel, Jerome Wilson, John Zakkam, Just Harold, Kartik Sirohi, MichaelGurevich, Paarth, Ryjen1, S. B. | Software Developer, Tan Wee Joe, Vaibhav Upreti, vincenthus, Wahaj Ahmed, and Wahaj Ahmed 🙏🚀
+
+## Main updates shipped (April 24, 2026)
+
+- Feature: Add OpenSRE hugging face dataset integration & eval (#<number>) — Tan Wee Joe
+- Fix/restore readable investigation output after masking 479 — Adeoluwa Daniel Ademoye
+- fix: Database logic expansion for QA Edge Cases (Batch 2) — ANIRUDDHA ADAK
+- ci: speed up workflow with uv caching + single fast job for PRs (Fixes #647) — S. B. | Software Developer
+- test(integrations): add direct unit tests for grafana_wire_format.pytest(integrations): add direct unit tests for grafana_wire_format.py — Awokoya Olawale Davidson
+- feat: add direct unit tests for health_view rendering helpers — Maryjane Okafor
+- test: add direct unit tests for data validation (#831) — Kartik Sirohi
+- test(tools): consolidate PrefectWorkerHealthTool tests — Het Patel
+- test(plan-actions): cover extract_keywords behavior — MichaelGurevich
+- fix: remove redundant NewGenericSyntax from mypy.ini — Chris Chen
+- Add unit tests for availability helpers #830 — DIPSHA DAS
+- test: add comprehensive coverage for invalid investigation IDs with newline characters — Jerome Wilson
+- test: deduplicate Dockerfile guard tests — John Zakkam
+- test: remove inline PrefectFlowRunsTool test file after migration — Paarth
+- chore(github): edit PR template to add a demo/screenshot for the feature/bugs — Anwesh
+- Fix #824: Correct typo in docs filename and references — Wahaj Ahmed
+- Fix: Fix broken issue template links in CONTRIBUTING.md — Just Harold
+
+## Source pull requests
+
+- [#814](https://github.com/Tracer-Cloud/opensre/pull/814) test: add comprehensive coverage for invalid investigation IDs with newline characters (author: Jerome Wilson; contributors: Jerome Wilson; labels: _none_; files: `tests/remote/test_server_utils.py`)
+- [#752](https://github.com/Tracer-Cloud/opensre/pull/752) Feature: Add OpenSRE hugging face dataset integration & eval (author: Tan Wee Joe; contributors: Tan Wee Joe; labels: _none_; files: `Makefile`, `app/cli/args.py`, `app/cli/commands/general.py`, `app/cli/investigate.py`, `app/integrations/opensre/__init__.py`, `app/integrations/opensre/constants.py`, `app/integrations/opensre/csv_grafana_backend.py`, `app/integrations/opensre/grafana_wire_format.py`, `app/integrations/opensre/hf_remote.py`, `app/integrations/opensre/inject.py`, and 26 more)
+- [#845](https://github.com/Tracer-Cloud/opensre/pull/845) Fix: Fix broken issue template links in CONTRIBUTING.md (author: Just Harold; contributors: Just Harold; labels: _none_; files: `CONTRIBUTING.md`)
+- [#853](https://github.com/Tracer-Cloud/opensre/pull/853) test(tools): consolidate PrefectWorkerHealthTool tests (author: Het Patel; contributors: Het Patel; labels: _none_; files: `app/tools/PrefectWorkerHealthTool/tool_test.py`, `tests/tools/test_prefect_worker_health_tool.py`)
+- [#851](https://github.com/Tracer-Cloud/opensre/pull/851) feat: add direct unit tests for health_view rendering helpers (author: Maryjane Okafor; contributors: Maryjane Okafor and Ryjen1; labels: _none_; files: `tests/cli/test_health_view.py`)
+- [#854](https://github.com/Tracer-Cloud/opensre/pull/854) Add unit tests for availability helpers #830 (author: DIPSHA DAS; contributors: DIPSHA DAS; labels: _none_; files: `tests/tools/test_availability.py`)
+- [#852](https://github.com/Tracer-Cloud/opensre/pull/852) test: add direct unit tests for data validation (#831) (author: Kartik Sirohi; contributors: Kartik Sirohi; labels: _none_; files: `tests/tools/utils/test_data_validation.py`)
+- [#848](https://github.com/Tracer-Cloud/opensre/pull/848) test: deduplicate Dockerfile guard tests (author: John Zakkam; contributors: John Zakkam; labels: _none_; files: `app/dockerfile_test.py`)
+- [#856](https://github.com/Tracer-Cloud/opensre/pull/856) test: remove inline PrefectFlowRunsTool test file after migration (author: Paarth; contributors: Paarth; labels: _none_; files: `app/tools/PrefectFlowRunsTool/tool_test.py`)
+- [#857](https://github.com/Tracer-Cloud/opensre/pull/857) Fix #824: Correct typo in docs filename and references (author: Wahaj Ahmed; contributors: Wahaj Ahmed and Wahaj Ahmed; labels: _none_; files: `docs/daily-updates/2026-04-09.mdx`, `docs/daily-updates/2026-04-13.mdx`, `docs/daily-updates/2026-04-17.mdx`, `docs/daily-updates/2026-04-20.mdx`, `docs/docs.json`, `docs/integrations-overview.mdx`)
+- [#626](https://github.com/Tracer-Cloud/opensre/pull/626) fix: Database logic expansion for QA Edge Cases (Batch 2) (author: ANIRUDDHA ADAK; contributors: ANIRUDDHA ADAK, Vaibhav Upreti, and vincenthus; labels: _none_; files: `app/nodes/root_cause_diagnosis/prompt_builder.py`)
+- [#802](https://github.com/Tracer-Cloud/opensre/pull/802) fix: remove redundant NewGenericSyntax from mypy.ini (author: Chris Chen; contributors: Chris Chen; labels: _none_; files: `mypy.ini`)
+- [#807](https://github.com/Tracer-Cloud/opensre/pull/807) Fix/restore readable investigation output after masking 479 (author: Adeoluwa Daniel Ademoye; contributors: Adeoluwa Daniel Ademoye and Vaibhav Upreti; labels: _none_; files: `Makefile`, `app/nodes/plan_actions/node.py`, `app/nodes/root_cause_diagnosis/prompt_builder.py`)
+- [#860](https://github.com/Tracer-Cloud/opensre/pull/860) test(plan-actions): cover extract_keywords behavior (author: MichaelGurevich; contributors: MichaelGurevich and MichaelGurevich; labels: _none_; files: `app/nodes/plan_actions/extract_keywords.py`, `tests/nodes/plan_actions/test_extract_keywords.py`)
+- [#820](https://github.com/Tracer-Cloud/opensre/pull/820) chore(github): edit PR template to add a demo/screenshot for the feature/bugs (author: Anwesh; contributors: Anwesh; labels: _none_; files: `.github/PULL_REQUEST_TEMPLATE.md`)
+- [#817](https://github.com/Tracer-Cloud/opensre/pull/817) ci: speed up workflow with uv caching + single fast job for PRs (Fixes #647) (author: S. B. | Software Developer; contributors: S. B. | Software Developer; labels: _none_; files: `.github/workflows/ci.yml`, `README.md`)
+- [#862](https://github.com/Tracer-Cloud/opensre/pull/862) test(integrations): add direct unit tests for grafana_wire_format.pytest(integrations): add direct unit tests for grafana_wire_format.py (author: Awokoya Olawale Davidson; contributors: Awokoya Olawale Davidson; labels: _none_; files: `tests/integrations/test_grafana_wire_format.py`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-23T23:00:00+00:00` to `2026-04-24T23:00:00+00:00`
