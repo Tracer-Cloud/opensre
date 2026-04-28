@@ -253,6 +253,11 @@ class TestBuildIngestPayload:
 class TestSendIngest:
     def test_returns_none_when_token_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("TRACER_INGEST_TOKEN", raising=False)
+        monkeypatch.setenv("TRACER_API_URL", "https://api.example.com")
+        monkeypatch.setattr(
+            "app.utils.ingest_delivery.get_tracer_base_url",
+            lambda: "https://api.example.com",
+        )
         called: dict[str, Any] = {}
 
         def _capture(*_a: Any, **_kw: Any) -> Any:  # pragma: no cover - guard
