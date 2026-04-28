@@ -18,6 +18,17 @@ def _get_executed_sources(executed_hypotheses: list[ExecutedHypothesis]) -> set[
     return executed_sources_set
 
 
+def get_blocked_action_names(executed_hypotheses: list[ExecutedHypothesis]) -> set[str]:
+    """Actions that should not be offered again to the planner."""
+    blocked_actions: set[str] = set()
+    for hyp in executed_hypotheses:
+        for field_name in ("actions", "exhausted_actions"):
+            actions_list = hyp.get(field_name, [])
+            if isinstance(actions_list, list):
+                blocked_actions.update(action for action in actions_list if isinstance(action, str))
+    return blocked_actions
+
+
 def _build_available_sources_hint(available_sources: dict[str, dict]) -> str:
     """
     Build hints for all available data sources.
@@ -303,16 +314,10 @@ def build_investigation_prompt(
     Returns:
         Formatted prompt string for LLM
     """
-    executed_actions_flat = set()
-    for hyp in executed_hypotheses:
-        actions_list = hyp.get("actions", [])
-        if isinstance(actions_list, list):
-            executed_actions_flat.update(actions_list)
-
-    executed_actions = sorted(executed_actions_flat)
+    blocked_actions = sorted(get_blocked_action_names(executed_hypotheses))
 
     available_actions_filtered = [
-        action for action in available_actions if action.name not in executed_actions
+        action for action in available_actions if action.name not in blocked_actions
     ]
 
     problem_context = problem_md or "No problem statement available"
@@ -357,9 +362,9 @@ Problem Context:
 Available Investigation Actions:
 {actions_description if actions_description else "No actions available"}
 
-Executed Actions: {", ".join(executed_actions) if executed_actions else "None"}
+Blocked Actions: {", ".join(blocked_actions) if blocked_actions else "None"}
 
-Previously executed actions should be treated as already explored evidence paths unless there is a clear reason they may now yield new discriminating evidence.
+Blocked actions are already explored successful evidence paths or exhausted failures. Do not select them again.
 
 Task: Select the most relevant actions to execute now based on the problem context.
 
@@ -448,14 +453,10 @@ def select_actions(
     """
     available_actions = [action for action in actions if action.is_available(available_sources)]
 
-    executed_actions_flat = set()
-    for hyp in executed_hypotheses:
-        actions_list = hyp.get("actions", [])
-        if isinstance(actions_list, list):
-            executed_actions_flat.update(actions_list)
+    blocked_action_names = get_blocked_action_names(executed_hypotheses)
 
     available_actions = [
-        action for action in available_actions if action.name not in executed_actions_flat
+        action for action in available_actions if action.name not in blocked_action_names
     ]
 
     # Apply tool budget to cap the selected tool set
