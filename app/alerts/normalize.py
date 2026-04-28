@@ -93,7 +93,11 @@ def normalize_alert_payload(raw_alert: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(raw_alert)
 
     raw_common_labels = normalized.get("commonLabels")
-    labels = _as_mapping(raw_common_labels) if raw_common_labels is not None else _as_mapping(normalized.get("labels"))
+    labels = (
+        _as_mapping(raw_common_labels)
+        if raw_common_labels is not None
+        else _as_mapping(normalized.get("labels"))
+    )
 
     tags = _parse_tags(normalized.get("tags"))
     if tags:
