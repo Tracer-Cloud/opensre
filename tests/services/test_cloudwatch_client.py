@@ -17,7 +17,6 @@ from app.services.cloudwatch_client import (
     get_metric_statistics,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -111,7 +110,7 @@ class TestGetMetricStatistics:
         assert result["success"] is False
         assert "boto3 not available" in result["error"]
 
-    def test_returns_error_when_credentials_missing(self, mock_cw_client):
+    def test_returns_error_when_credentials_missing(self):
         with patch(
             "app.services.cloudwatch_client.require_aws_credentials",
             return_value={"success": False, "error": "Missing AWS credentials"},
@@ -178,7 +177,7 @@ class TestFilterLogEvents:
         assert result["success"] is False
         assert "boto3 not available" in result["error"]
 
-    def test_returns_error_when_credentials_missing(self, mock_logs_client):
+    def test_returns_error_when_credentials_missing(self):
         with patch(
             "app.services.cloudwatch_client.require_aws_credentials",
             return_value={"success": False, "error": "Missing AWS credentials"},
@@ -247,7 +246,7 @@ class TestGetLogEvents:
         assert result["success"] is False
         assert "boto3 not available" in result["error"]
 
-    def test_returns_error_when_credentials_missing(self, mock_logs_client):
+    def test_returns_error_when_credentials_missing(self):
         with patch(
             "app.services.cloudwatch_client.require_aws_credentials",
             return_value={"success": False, "error": "Missing AWS credentials"},
