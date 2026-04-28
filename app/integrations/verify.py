@@ -15,7 +15,10 @@ from app.integrations.betterstack import build_betterstack_config, validate_bett
 from app.integrations.catalog import (
     resolve_effective_integrations as _resolve_effective_integrations,
 )
-from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
+from app.integrations.github_mcp import (
+    build_github_mcp_config,
+    validate_github_mcp_config,
+)
 from app.integrations.mariadb import build_mariadb_config, validate_mariadb_config
 from app.integrations.models import (
     AWSIntegrationConfig,
@@ -26,12 +29,19 @@ from app.integrations.models import (
     HoneycombIntegrationConfig,
     SlackWebhookConfig,
     TracerIntegrationConfig,
+    VictoriaLogsIntegrationConfig,
 )
 from app.integrations.mongodb import build_mongodb_config, validate_mongodb_config
-from app.integrations.mongodb_atlas import build_mongodb_atlas_config, validate_mongodb_atlas_config
+from app.integrations.mongodb_atlas import (
+    build_mongodb_atlas_config,
+    validate_mongodb_atlas_config,
+)
 from app.integrations.mysql import build_mysql_config, validate_mysql_config
 from app.integrations.openclaw import build_openclaw_config, validate_openclaw_config
-from app.integrations.postgresql import build_postgresql_config, validate_postgresql_config
+from app.integrations.postgresql import (
+    build_postgresql_config,
+    validate_postgresql_config,
+)
 from app.integrations.rabbitmq import build_rabbitmq_config, validate_rabbitmq_config
 from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.services.alertmanager import AlertmanagerClient, AlertmanagerConfig
@@ -41,6 +51,7 @@ from app.services.honeycomb import HoneycombClient
 from app.services.opsgenie import OpsGenieClient, OpsGenieConfig
 from app.services.tracer_client.client import TracerClient
 from app.services.vercel.client import VercelClient, VercelConfig
+from app.services.victoria_logs.client import VictoriaLogsClient
 
 SUPPORTED_VERIFY_SERVICES = (
     "alertmanager",
@@ -70,12 +81,15 @@ SUPPORTED_VERIFY_SERVICES = (
     "telegram",
     "mysql",
     "openclaw",
+    "victoria_logs",
     "snowflake",
     "azure",
     "openobserve",
     "opensearch",
 )
-CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
+CORE_VERIFY_SERVICES = frozenset(
+    {"grafana", "datadog", "honeycomb", "coralogix", "aws", "victoria_logs"}
+)
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
 
 
@@ -286,6 +300,21 @@ def _build_sts_client(config: dict[str, Any]) -> tuple[Any, str, str]:
     )
 
 
+def _verify_victoria_logs(source: str, config: dict[str, Any]) -> dict[str, str]:
+    try:
+        conf = VictoriaLogsIntegrationConfig.model_validate(config)
+        if not conf.base_url:
+            return _result("victoria_logs", source, "missing", "Missing Victoria Logs base_url.")
+
+        client = VictoriaLogsClient(conf)
+        res = client.query_logs("*", limit=1)
+        if res.get("success"):
+            return _result("victoria_logs", source, "verified", "")
+        return _result("victoria_logs", source, "failed", res.get("error", "Unknown error"))
+    except Exception as e:
+        return _result("victoria_logs", source, "failed", str(e))
+
+
 def _verify_aws(source: str, config: dict[str, Any]) -> dict[str, str]:
     try:
         sts_client, auth_mode, region = _build_sts_client(config)
@@ -355,7 +384,10 @@ def _verify_tracer(source: str, config: dict[str, Any]) -> dict[str, str]:
     org_id = extract_org_id_from_jwt(jwt_token)
     if not org_id:
         return _result(
-            "tracer", source, "failed", "JWT token does not contain an organization claim."
+            "tracer",
+            source,
+            "failed",
+            "JWT token does not contain an organization claim.",
         )
 
     try:
@@ -625,7 +657,10 @@ def _verify_kafka(source: str, config: dict[str, Any]) -> dict[str, str]:
 
 
 def _verify_clickhouse(source: str, config: dict[str, Any]) -> dict[str, str]:
-    from app.integrations.clickhouse import build_clickhouse_config, validate_clickhouse_config
+    from app.integrations.clickhouse import (
+        build_clickhouse_config,
+        validate_clickhouse_config,
+    )
 
     clickhouse_config = build_clickhouse_config(config)
     result = validate_clickhouse_config(clickhouse_config)
@@ -638,7 +673,10 @@ def _verify_clickhouse(source: str, config: dict[str, Any]) -> dict[str, str]:
 
 
 def _verify_bitbucket(source: str, config: dict[str, Any]) -> dict[str, str]:
-    from app.integrations.bitbucket import build_bitbucket_config, validate_bitbucket_config
+    from app.integrations.bitbucket import (
+        build_bitbucket_config,
+        validate_bitbucket_config,
+    )
 
     bitbucket_config = build_bitbucket_config(config)
     result = validate_bitbucket_config(bitbucket_config)
@@ -833,7 +871,12 @@ def verify_integrations(
         integration = effective_integrations.get(current_service)
         if not integration:
             results.append(
-                _result(current_service, "-", "missing", "Not configured in local store or env.")
+                _result(
+                    current_service,
+                    "-",
+                    "missing",
+                    "Not configured in local store or env.",
+                )
             )
             continue
 
@@ -849,6 +892,8 @@ def verify_integrations(
             results.append(_verify_coralogix(source, config))
         elif current_service == "aws":
             results.append(_verify_aws(source, config))
+        elif current_service == "victoria_logs":
+            results.append(_verify_victoria_logs(source, config))
         elif current_service == "tracer":
             results.append(_verify_tracer(source, config))
         elif current_service == "github":

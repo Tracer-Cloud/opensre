@@ -1,0 +1,33 @@
+# VictoriaLogs
+
+VictoriaLogs is an open-source, high-performance, cost-effective, and scalable log management and analytics solution.
+
+## Setup
+
+To enable VictoriaLogs integration in OpenSRE, you need to provide the base URL and an optional tenant ID.
+
+### Environment Variables
+
+You can configure VictoriaLogs using environment variables:
+
+```bash
+VICTORIA_LOGS_URL="http://localhost:9428"
+VICTORIA_LOGS_TENANT_ID="0"
+```
+
+### Local Store
+
+Alternatively, you can add it to your local store using the CLI:
+
+```bash
+opensre integration add victoria_logs --base_url http://localhost:9428 --tenant_id 0
+```
+
+## Features
+
+- **Query Logs**: Query structured logs from VictoriaLogs using LogsQL.
+- **Investigation**: Automatically search for relevant logs during an incident investigation.
+
+## LogsQL Support
+
+OpenSRE supports standard LogsQL queries. For more information on LogsQL, see the [VictoriaLogs documentation](https://docs.victoriametrics.com/victorialogs/logsql/).

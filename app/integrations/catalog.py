@@ -26,6 +26,7 @@ from app.integrations.models import (
     OpsGenieIntegrationConfig,
     SlackWebhookConfig,
     TelegramBotConfig,
+    VictoriaLogsIntegrationConfig,
 )
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config
@@ -84,6 +85,8 @@ _SERVICE_KEY_MAP = {
     "opensearch": "opensearch",
     "open search": "opensearch",
     "alertmanager": "alertmanager",
+    "victoria_logs": "victoria_logs",
+    "victorialogs": "victoria_logs",
 }
 
 
@@ -627,6 +630,21 @@ def _classify_service_instance(
             return alertmanager_config.model_dump(), "alertmanager"
         return None, None
 
+    if key == "victoria_logs":
+        try:
+            victoria_logs_config = VictoriaLogsIntegrationConfig.model_validate(
+                {
+                    "base_url": credentials.get("base_url", ""),
+                    "tenant_id": credentials.get("tenant_id"),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if victoria_logs_config.base_url:
+            return victoria_logs_config.model_dump(), "victoria_logs"
+        return None, None
+
     if key == "bitbucket":
         workspace = str(credentials.get("workspace", "")).strip()
         if not workspace:
@@ -1028,9 +1046,11 @@ def load_env_integrations() -> list[dict[str, Any]]:
         postgresql_config = build_postgresql_config(
             {
                 "host": postgresql_host,
-                "port": int(_pg_port)
-                if (_pg_port := os.getenv("POSTGRESQL_PORT", "").strip()) and _pg_port.isdigit()
-                else 5432,
+                "port": (
+                    int(_pg_port)
+                    if (_pg_port := os.getenv("POSTGRESQL_PORT", "").strip()) and _pg_port.isdigit()
+                    else 5432
+                ),
                 "database": postgresql_database,
                 "username": os.getenv("POSTGRESQL_USERNAME", "postgres").strip() or "postgres",
                 "password": os.getenv("POSTGRESQL_PASSWORD", "").strip(),
@@ -1273,9 +1293,12 @@ def load_env_integrations() -> list[dict[str, Any]]:
         mysql_config = build_mysql_config(
             {
                 "host": mysql_host,
-                "port": int(_mysql_port)
-                if (_mysql_port := os.getenv("MYSQL_PORT", "").strip()) and _mysql_port.isdigit()
-                else 3306,
+                "port": (
+                    int(_mysql_port)
+                    if (_mysql_port := os.getenv("MYSQL_PORT", "").strip())
+                    and _mysql_port.isdigit()
+                    else 3306
+                ),
                 "database": mysql_database,
                 "username": os.getenv("MYSQL_USERNAME", "root").strip() or "root",
                 "password": os.getenv("MYSQL_PASSWORD", "").strip(),
@@ -1374,7 +1397,8 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "access_token": azure_access_token,
                     "endpoint": (
                         os.getenv(
-                            "AZURE_LOG_ANALYTICS_ENDPOINT", "https://api.loganalytics.io"
+                            "AZURE_LOG_ANALYTICS_ENDPOINT",
+                            "https://api.loganalytics.io",
                         ).strip()
                         or "https://api.loganalytics.io"
                     ),
@@ -1445,6 +1469,29 @@ def load_env_integrations() -> list[dict[str, Any]]:
         except Exception:
             logger.debug("Failed to load Alertmanager config from env", exc_info=True)
 
+    victoria_logs_url = (
+        os.getenv("VICTORIA_LOGS_BASE_URL", "").strip()
+        or os.getenv("VICTORIA_LOGS_URL", "").strip()
+    ).rstrip("/")
+    if victoria_logs_url:
+        try:
+            victoria_logs_config = VictoriaLogsIntegrationConfig.model_validate(
+                {
+                    "base_url": victoria_logs_url,
+                    "tenant_id": os.getenv("VICTORIA_LOGS_TENANT_ID"),
+                }
+            )
+            integrations.append(
+                {
+                    "id": "env-victoria-logs",
+                    "service": "victoria_logs",
+                    "status": "active",
+                    "credentials": victoria_logs_config.model_dump(exclude={"integration_id"}),
+                }
+            )
+        except Exception:
+            logger.debug("Failed to load VictoriaLogs config from env", exc_info=True)
+
     return integrations
 
 
@@ -1470,7 +1517,11 @@ def merge_integrations_by_service(
 
 
 def _effective_entry(source: str, config: dict[str, Any]) -> dict[str, Any]:
-    return {"source": source, "config": config}
+    return {
+        "integration_id": str(config.get("integration_id", "")),
+        "source": source,
+        "config": config,
+    }
 
 
 def _service_metadata(
@@ -1545,6 +1596,7 @@ def resolve_effective_integrations(
         "openobserve",
         "opensearch",
         "alertmanager",
+        "victoria_logs",
     )
     for service in direct_services:
         resolved_integration = classified_integrations.get(service)

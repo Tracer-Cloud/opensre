@@ -532,6 +532,19 @@ class AlertmanagerIntegrationConfig(StrictConfigModel):
         return self
 
 
+class VictoriaLogsIntegrationConfig(StrictConfigModel):
+    """Normalized VictoriaLogs credentials used by resolution and verification flows."""
+
+    base_url: str
+    tenant_id: str | None = None
+    integration_id: str = ""
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: object) -> str:
+        return str(value or "").strip().rstrip("/")
+
+
 class IntegrationInstance(StrictConfigModel):
     """One named instance of a provider.
 
@@ -576,6 +589,7 @@ class EffectiveIntegrationEntry(StrictConfigModel):
     without re-validating through Pydantic's forbidding config.
     """
 
+    integration_id: str = ""
     source: str
     config: dict[str, Any]
     instances: list[dict[str, Any]] | None = None
@@ -621,3 +635,4 @@ class EffectiveIntegrations(StrictConfigModel):
     openobserve: EffectiveIntegrationEntry | None = None
     opensearch: EffectiveIntegrationEntry | None = None
     alertmanager: EffectiveIntegrationEntry | None = None
+    victoria_logs: EffectiveIntegrationEntry | None = None
