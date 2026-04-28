@@ -177,10 +177,9 @@ def test_get_function_code_no_extract(mock_lambda_client) -> None:
     # Should not call requests.get
     with patch("requests.get") as mock_get:
         result = get_function_code("test-func", extract_files=False)
-
-    assert result["success"] is True
-    assert "files" not in result["data"]
-    mock_get.assert_not_called()
+        assert result["success"] is True
+        assert "files" not in result["data"]
+        mock_get.assert_not_called()
 
 
 def test_get_function_code_too_large(mock_lambda_client) -> None:
@@ -190,10 +189,9 @@ def test_get_function_code_too_large(mock_lambda_client) -> None:
     }
     with patch("requests.get") as mock_get:
         result = get_function_code("test-func")
-
-    assert result["success"] is True
-    assert "files" not in result["data"]
-    mock_get.assert_not_called()
+        assert result["success"] is True
+        assert "files" not in result["data"]
+        mock_get.assert_not_called()
 
 
 def test_get_invocation_logs_by_request_id_success(mock_logs_client) -> None:
@@ -271,10 +269,16 @@ def test_get_recent_invocations_multiple(mock_logs_client) -> None:
             {"timestamp": 1000, "message": "START RequestId: req1\n"},
             {"timestamp": 1050, "message": "log 1\n"},
             {"timestamp": 1100, "message": "END RequestId: req1\n"},
-            {"timestamp": 1150, "message": "REPORT RequestId: req1 Duration: 100ms\n"},
+            {
+                "timestamp": 1150,
+                "message": "REPORT RequestId: req1\tDuration: 100.00 ms\tBilled Duration: 100 ms\tMemory Size: 128 MB\tMax Memory Used: 64 MB\t\n",
+            },
             {"timestamp": 1200, "message": "START RequestId: req2\n"},
             {"timestamp": 1250, "message": "log 2\n"},
-            {"timestamp": 1300, "message": "REPORT RequestId: req2 Duration: 50ms\n"},
+            {
+                "timestamp": 1300,
+                "message": "REPORT RequestId: req2\tDuration: 50.00 ms\tBilled Duration: 50 ms\tMemory Size: 128 MB\tMax Memory Used: 32 MB\t\n",
+            },
         ]
     }
 
@@ -282,7 +286,11 @@ def test_get_recent_invocations_multiple(mock_logs_client) -> None:
 
     assert result["success"] is True
     assert result["data"]["invocation_count"] == 2
-    assert result["data"]["invocations"][0]["request_id"] == "req1"
-    assert result["data"]["invocations"][1]["request_id"] == "req2"
-    assert len(result["data"]["invocations"][0]["logs"]) == 4
-    assert len(result["data"]["invocations"][1]["logs"]) == 3
+    inv1 = result["data"]["invocations"][0]
+    inv2 = result["data"]["invocations"][1]
+    assert inv1["request_id"] == "req1"
+    assert inv1["duration_ms"] == 100.0
+    assert inv2["request_id"] == "req2"
+    assert inv2["duration_ms"] == 50.0
+    assert len(inv1["logs"]) == 4
+    assert len(inv2["logs"]) == 3
