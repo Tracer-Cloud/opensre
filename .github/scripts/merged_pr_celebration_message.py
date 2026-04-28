@@ -18,16 +18,12 @@ templates: list[str] = [
         "Thanks for launching this one!"
     ),
     (
-        f"💜 **One more reason the changelog grows.** Thanks @{contributor} — "
-        "your contribution just landed on `main`."
+        f"💜 **One more reason the project grows.** Thanks @{contributor} — "
+        "your contribution just landed!"
     ),
     (
         f"🎊 **Achievement unlocked: PR Merged.** @{contributor} passed code review, "
         "survived CI, and shipped. Respect. 🤝"
-    ),
-    (
-        f"✅ **Merged and deployed to prod^** @{contributor}. "
-        "(*^not actually prod, but your PR is on `main` which is basically the same thing*)"
     ),
     (
         f"🔥 **Another one.** @{contributor} said \"here's a PR\" and maintainers said "
