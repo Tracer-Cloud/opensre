@@ -122,7 +122,9 @@ def test_get_grafana_credentials_prefers_active_integration() -> None:
             {
                 "id": "grafana-active",
                 "status": "active",
-                "credentials": '{"endpoint":"https://active.grafana.example.com","api_key":"active-token"}',
+                "credentials": (
+                    '{"endpoint":"https://active.grafana.example.com","api_key":"active-token"}'
+                ),
             },
         ],
     }
