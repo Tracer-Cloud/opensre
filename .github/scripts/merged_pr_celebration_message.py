@@ -52,7 +52,6 @@ gif_blocks: list[str] = [
     f"\n\n![]({_base}/party.gif)",
     f"\n\n![]({_base}/celebrate.gif)",
     f"\n\n![]({_base}/ship.gif)",
-    f"\n\n![]({_base}/merge.gif)",
     f"\n\n![]({_base}/shipped.gif)",
     f"\n\n![]({_base}/success.gif)",
     f"\n\n![]({_base}/fireworks.gif)",
