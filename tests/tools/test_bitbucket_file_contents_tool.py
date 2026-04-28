@@ -59,6 +59,18 @@ class TestBitbucketFileContentsToolContract(BaseToolContract):
             },
             False,
         ),
+        (
+            {
+                "bitbucket": {
+                    "connection_verified": True,
+                    "workspace": "acme",
+                    "username": "bb-user",
+                    "app_password": "bb-pass",
+                    "repo_slug": "backend-service",
+                }
+            },
+            False,
+        ),
         ({"bitbucket": {"connection_verified": True, "workspace": "acme"}}, False),
         ({"bitbucket": {"connection_verified": True, "repo_slug": "backend-service"}}, False),
         ({"bitbucket": {"connection_verified": True, "path": "src/main.py"}}, False),

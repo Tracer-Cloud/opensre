@@ -42,6 +42,17 @@ class TestBitbucketCommitsToolContract(BaseToolContract):
             {"bitbucket": {"workspace": "acme", "username": "bb-user", "app_password": "bb-pass"}},
             False,
         ),
+        (
+            {
+                "bitbucket": {
+                    "connection_verified": True,
+                    "workspace": "acme",
+                    "username": "bb-user",
+                    "app_password": "bb-pass",
+                }
+            },
+            False,
+        ),
         ({}, False),
     ],
 )
