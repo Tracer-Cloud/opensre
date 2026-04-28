@@ -15,7 +15,10 @@ class TestClickHouseQueryActivityToolContract(BaseToolContract):
 
 def test_is_available_true_when_connection_verified() -> None:
     rt = get_clickhouse_query_activity.__opensre_registered_tool__
-    assert rt.is_available({"clickhouse": {"host": "ch.example.com", "connection_verified": True}}) is True
+    assert (
+        rt.is_available({"clickhouse": {"host": "ch.example.com", "connection_verified": True}})
+        is True
+    )
 
 
 def test_is_available_false_without_connection_verified() -> None:

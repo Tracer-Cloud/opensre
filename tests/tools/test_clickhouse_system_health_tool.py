@@ -15,7 +15,10 @@ class TestClickHouseSystemHealthToolContract(BaseToolContract):
 
 def test_is_available_true_when_connection_verified() -> None:
     rt = get_clickhouse_system_health.__opensre_registered_tool__
-    assert rt.is_available({"clickhouse": {"host": "ch.example.com", "connection_verified": True}}) is True
+    assert (
+        rt.is_available({"clickhouse": {"host": "ch.example.com", "connection_verified": True}})
+        is True
+    )
 
 
 def test_is_available_false_without_connection_verified() -> None:
@@ -76,12 +79,8 @@ def test_run_happy_path_with_table_stats() -> None:
         ],
     }
     with (
-        patch(
-            "app.tools.ClickHouseSystemHealthTool.get_system_health", return_value=health_result
-        ),
-        patch(
-            "app.tools.ClickHouseSystemHealthTool.get_table_stats", return_value=table_result
-        ),
+        patch("app.tools.ClickHouseSystemHealthTool.get_system_health", return_value=health_result),
+        patch("app.tools.ClickHouseSystemHealthTool.get_table_stats", return_value=table_result),
     ):
         result = get_clickhouse_system_health(host="ch.example.com", include_table_stats=True)
     assert result["available"] is True
@@ -112,12 +111,8 @@ def test_run_skips_table_stats_when_health_unavailable() -> None:
         "error": "connection refused",
     }
     with (
-        patch(
-            "app.tools.ClickHouseSystemHealthTool.get_system_health", return_value=health_result
-        ),
-        patch(
-            "app.tools.ClickHouseSystemHealthTool.get_table_stats"
-        ) as mock_table_stats,
+        patch("app.tools.ClickHouseSystemHealthTool.get_system_health", return_value=health_result),
+        patch("app.tools.ClickHouseSystemHealthTool.get_table_stats") as mock_table_stats,
     ):
         result = get_clickhouse_system_health(host="ch.example.com", include_table_stats=True)
     assert result["available"] is False
@@ -130,9 +125,7 @@ def test_run_error_path() -> None:
         "available": False,
         "error": "connection refused",
     }
-    with patch(
-        "app.tools.ClickHouseSystemHealthTool.get_system_health", return_value=error_result
-    ):
+    with patch("app.tools.ClickHouseSystemHealthTool.get_system_health", return_value=error_result):
         result = get_clickhouse_system_health(host="ch.example.com")
     assert result["available"] is False
     assert "error" in result
