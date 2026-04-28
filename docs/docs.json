@@ -57,6 +57,7 @@
               "honeycomb",
               "coralogix",
               "sentry",
+              "argocd",
               "github",
               "gitlab",
               "bitbucket",
