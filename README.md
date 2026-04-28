@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/tracer-cloud-opensre-badge.png)](https://mseep.ai/app/tracer-cloud-opensre)
+
 <div align="center">
 
 <p align="center">
