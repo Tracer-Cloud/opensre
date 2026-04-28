@@ -226,6 +226,11 @@
     "copyright": "\u00a9 2025 Tracer Cloud. All rights reserved."
   },
   "integrations": {
+    "posthog": {
+      "apiKey": "phc_zutpVhmQw7oUmMkbawKNdYCKQWjpfASATtf5ywB75W2",
+      "apiHost": "https://us.i.posthog.com",
+      "sessionRecording": true
+    },
     "hotjar": {
       "hjid": "6568352",
       "hjsv": "6"
