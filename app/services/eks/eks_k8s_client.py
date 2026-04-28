@@ -110,10 +110,7 @@ def build_k8s_clients(
     """
     assumed = _stored_credentials_to_aws_creds(credentials) if credentials else None
     if assumed is not None:
-        logger.info(
-            "[eks] Using stored integration credentials — AccessKeyId prefix: %s",
-            assumed["AccessKeyId"][:8],
-        )
+        logger.info("[eks] Using stored integration credentials")
     else:
         assumed = _assume_role(role_arn, external_id, "TracerEKSK8sInvestigation")
 
