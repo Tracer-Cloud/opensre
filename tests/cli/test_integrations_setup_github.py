@@ -35,7 +35,7 @@ def test_setup_github_prints_connected_and_saves_on_validation_success(
     )
 
     monkeypatch.setattr(
-        "app.integrations.cli.validate_github_mcp_config",
+        "app.integrations.github_mcp.validate_github_mcp_config",
         lambda _c, **_kwargs: GitHubMCPValidationResult(
             ok=True,
             detail=(
@@ -93,7 +93,7 @@ def test_setup_github_exits_without_save_on_validation_failure(
         lambda *_a, **_k: type("X", (), {"ask": lambda *_aa, **_kk: "auto"})(),
     )
     monkeypatch.setattr(
-        "app.integrations.cli.validate_github_mcp_config",
+        "app.integrations.github_mcp.validate_github_mcp_config",
         lambda _c, **_kwargs: GitHubMCPValidationResult(
             ok=False,
             detail="GitHub MCP connected, but authentication failed: bad token",
@@ -129,7 +129,7 @@ def test_cmd_setup_github_skips_saved_line_on_validation_failure(
         lambda *_a, **_k: type("X", (), {"ask": lambda *_aa, **_kk: "auto"})(),
     )
     monkeypatch.setattr(
-        "app.integrations.cli.validate_github_mcp_config",
+        "app.integrations.github_mcp.validate_github_mcp_config",
         lambda _c, **_kwargs: GitHubMCPValidationResult(
             ok=False,
             detail="validation failed for test",
@@ -164,7 +164,7 @@ def test_cmd_setup_github_prints_saved_after_success(
         lambda *_a, **_k: type("X", (), {"ask": lambda *_aa, **_kk: "auto"})(),
     )
     monkeypatch.setattr(
-        "app.integrations.cli.validate_github_mcp_config",
+        "app.integrations.github_mcp.validate_github_mcp_config",
         lambda _c, **_kwargs: GitHubMCPValidationResult(
             ok=True,
             detail="OK @u; repos=0; owners=-; examples=-; mcp_tools=5",

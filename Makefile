@@ -275,6 +275,9 @@ run:
 dev: 
 	langgraph dev
 
+docs-dev:
+	cd docs && mint dev
+
 
 # Deploy all test case infrastructure in parallel (SDK - fast!)
 deploy:
@@ -531,6 +534,7 @@ help:
 	@echo "  LOCAL DEVELOPMENT"
 	@echo "  make install         - Install dependencies"
 	@echo "  make onboard         - Run the OpenSRE onboarding flow"
+	@echo "  make docs-dev        - Start the local documentation preview (requires mint CLI)"
 	@echo ""
 	@echo "  CLI (tab-completable, run 'opensre -h' for full help)"
 	@echo "  opensre onboard                    - Interactive setup wizard"

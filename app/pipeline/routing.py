@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+from langgraph.constants import Send
+
 from app.investigation_constants import MAX_INVESTIGATION_LOOPS
 from app.output import debug_print
 from app.state import AgentState, InvestigationState
@@ -44,6 +46,23 @@ def should_call_tools(state: AgentState) -> str:
         if hasattr(last, "tool_calls") and getattr(last, "tool_calls", None):
             return "call_tools"
     return "done"
+
+
+def distribute_hypotheses(state: AgentState) -> list[Send] | list[str]:
+    """Distribute planned actions to parallel hypothesis execution nodes."""
+    actions = state.get("planned_actions", [])
+    available_sources = state.get("available_sources", {})
+    if not actions:
+        # No actions planned, skip to merge
+        return ["merge_hypothesis_results"]
+
+    return [
+        Send(
+            "investigate_hypothesis",
+            {"action_to_run": action, "available_sources": available_sources},
+        )
+        for action in actions
+    ]
 
 
 def should_continue_investigation(state: InvestigationState) -> str:

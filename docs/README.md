@@ -1,43 +1,53 @@
-# Mintlify Starter Kit
+# OpenSRE Documentation
 
-Use the starter kit to get your docs deployed and ready to customize.
+This directory contains the source for the OpenSRE documentation, powered by [Mintlify](https://mintlify.com).
 
-Click the green **Use this template** button at the top of this repo to copy the Mintlify starter kit. The starter kit contains examples with
+## Local Development
 
-- Guide pages
-- Navigation
-- Customizations
-- API reference pages
-- Use of popular components
+To preview the documentation locally, you need to install the Mintlify CLI.
 
-**[Follow the full quickstart guide](https://starter.mintlify.com/quickstart)**
+### Prerequisites
 
-## Development
+- [Node.js](https://nodejs.org/) (version 18 or higher)
+- [npm](https://www.npmjs.com/)
 
-Install the [Mintlify CLI](https://www.npmjs.com/package/mint) to preview your documentation changes locally. To install, use the following command:
+### Setup
 
-```
-npm i -g mint
-```
+1. Install the Mintlify CLI globally:
 
-Run the following command at the root of your documentation, where your `docs.json` is located:
+   ```bash
+   npm i -g mint
+   ```
 
-```
-mint dev
-```
+2. Run the development server from this directory:
 
-View your local preview at `http://localhost:3000`.
+   ```bash
+   mint dev
+   ```
 
-## Publishing changes
+   Alternatively, from the project root, you can run:
 
-Install our GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app) to propagate changes from your repo to your deployment. Changes are deployed to production automatically after pushing to the default branch.
+   ```bash
+   make docs-dev
+   ```
 
-## Need help?
+The documentation will be available at `http://localhost:3000`.
 
-### Troubleshooting
+## Structure
 
-- If your dev environment isn't running: Run `mint update` to ensure you have the most recent version of the CLI.
-- If a page loads as a 404: Make sure you are running in a folder with a valid `docs.json`.
+- `docs.json`: Configuration file for the documentation, including navigation and theme settings.
+- `*.mdx`: Documentation pages written in MDX (Markdown with JSX).
+- `images/`: Static assets such as screenshots and diagrams.
+- `snippets/`: Reusable content blocks.
 
-### Resources
-- [Mintlify documentation](https://mintlify.com/docs)
+## Contributing
+
+1. Create a new branch for your changes.
+2. Edit the relevant `.mdx` files or update `docs.json` if adding new pages.
+3. Preview your changes locally using `mint dev`.
+4. Submit a Pull Request with a clear description of your changes.
+
+## Resources
+
+- [Mintlify Documentation](https://mintlify.com/docs)
+- [MDX Syntax Guide](https://mdxjs.com/docs/what-is-mdx/)

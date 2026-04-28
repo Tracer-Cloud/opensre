@@ -6,12 +6,24 @@ import logging
 import os
 from typing import Any
 
-import httpx
-
 from app.config import SLACK_CHANNEL
 from app.output import debug_print
+from app.utils.delivery_transport import post_json
 
 logger = logging.getLogger(__name__)
+
+
+def _slack_bearer_headers(token: str) -> dict[str, str]:
+    # Slack explicitly recommends ``charset=utf-8`` on JSON POSTs — without
+    # it the API replies with a ``missing_charset`` warning in
+    # ``response_metadata.warnings``. httpx only auto-sets the bare
+    # ``application/json`` (no charset) for ``json=`` kwargs, so we keep
+    # the explicit charset header here.
+    # See https://api.slack.com/web#posting_json
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
 
 
 def _call_reactions_api(method: str, token: str, channel: str, timestamp: str, emoji: str) -> bool:
@@ -19,25 +31,20 @@ def _call_reactions_api(method: str, token: str, channel: str, timestamp: str, e
 
     Returns True on success, False on expected failures (already_reacted, no_reaction, etc.).
     """
-    try:
-        resp = httpx.post(
-            f"https://slack.com/api/{method}",
-            json={"channel": channel, "timestamp": timestamp, "name": emoji},
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json; charset=utf-8",
-            },
-            timeout=8.0,
-        )
-        data = resp.json()
-        if not data.get("ok"):
-            error = data.get("error", "unknown")
-            if error not in ("already_reacted", "no_reaction", "message_not_found"):
-                logger.warning("[slack] %s(%s) failed: %s", method, emoji, error)
-        return bool(data.get("ok", False))
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[slack] %s(%s) exception: %s", method, emoji, exc)
+    response = post_json(
+        url=f"https://slack.com/api/{method}",
+        payload={"channel": channel, "timestamp": timestamp, "name": emoji},
+        headers=_slack_bearer_headers(token),
+        timeout=8.0,
+    )
+    if not response.ok:
+        logger.warning("[slack] %s(%s) exception: %s", method, emoji, response.error)
         return False
+    if not response.data.get("ok"):
+        error = response.data.get("error", "unknown")
+        if error not in ("already_reacted", "no_reaction", "message_not_found"):
+            logger.warning("[slack] %s(%s) failed: %s", method, emoji, error)
+    return bool(response.data.get("ok", False))
 
 
 def add_reaction(
@@ -209,46 +216,41 @@ def _post_direct(
     Returns (success, error_detail) where error_detail is empty on success.
     """
     payload = _merge_payload(channel, text, thread_ts, blocks=blocks, **extra)
-
-    try:
-        resp = httpx.post(
-            "https://slack.com/api/chat.postMessage",
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json; charset=utf-8",
-            },
-            timeout=15.0,
-        )
-        data = resp.json()
-        if not data.get("ok"):
-            error = data.get("error", "unknown")
-            response_meta = data.get("response_metadata", {})
-            logger.error(
-                "[slack] Direct post FAILED: error=%s, metadata=%s (channel=%s, thread_ts=%s)",
-                error,
-                response_meta,
-                channel,
-                thread_ts,
-            )
-            return False, f"slack_error={error}"
-        warnings = data.get("response_metadata", {}).get("warnings", [])
-        if warnings:
-            logger.warning("[slack] Reply posted with warnings: %s", warnings)
-        logger.info(
-            "[slack] Reply posted successfully (thread_ts=%s, ts=%s)", thread_ts, data.get("ts")
-        )
-        return True, ""
-    except Exception as exc:  # noqa: BLE001
+    response = post_json(
+        url="https://slack.com/api/chat.postMessage",
+        payload=payload,
+        headers=_slack_bearer_headers(token),
+    )
+    if not response.ok:
         logger.error(
             "[slack] Direct post exception type=%s channel=%s thread_ts=%s detail=%s "
             "(caller may attempt fallback)",
-            type(exc).__name__,
+            response.exc_type or "Exception",
             channel,
             thread_ts,
-            exc,
+            response.error,
         )
-        return False, f"exception={exc}"
+        return False, f"exception={response.error}"
+    if not response.data.get("ok"):
+        error = response.data.get("error", "unknown")
+        response_meta = response.data.get("response_metadata", {})
+        logger.error(
+            "[slack] Direct post FAILED: error=%s, metadata=%s (channel=%s, thread_ts=%s)",
+            error,
+            response_meta,
+            channel,
+            thread_ts,
+        )
+        return False, f"slack_error={error}"
+    warnings = response.data.get("response_metadata", {}).get("warnings", [])
+    if warnings:
+        logger.warning("[slack] Reply posted with warnings: %s", warnings)
+    logger.info(
+        "[slack] Reply posted successfully (thread_ts=%s, ts=%s)",
+        thread_ts,
+        response.data.get("ts"),
+    )
+    return True, ""
 
 
 def _post_via_webapp(
@@ -272,22 +274,15 @@ def _post_via_webapp(
 
     api_url = f"{base_url.rstrip('/')}/api/slack"
     payload = _merge_payload(target_channel, text, thread_ts, blocks=blocks, **extra)
-
-    try:
-        response = httpx.post(api_url, json=payload, timeout=10.0, follow_redirects=True)
-        response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        detail = exc.response.text if exc.response is not None else str(exc)
-        debug_print(
-            f"Slack delivery failed: HTTP {exc.response.status_code if exc.response else 'unknown'}: {detail[:200]}"
-        )
+    response = post_json(url=api_url, payload=payload, timeout=10.0, follow_redirects=True)
+    if not response.ok:
+        debug_print(f"Slack delivery failed: {response.error}")
         return False
-    except Exception as exc:  # noqa: BLE001
-        debug_print(f"Slack delivery failed: {exc}")
+    if not 200 <= response.status_code < 300:
+        debug_print(f"Slack delivery failed: HTTP {response.status_code}: {response.text[:200]}")
         return False
-    else:
-        debug_print(f"Slack delivery triggered via NextJS /api/slack (thread_ts={thread_ts}).")
-        return True
+    debug_print(f"Slack delivery triggered via NextJS /api/slack (thread_ts={thread_ts}).")
+    return True
 
 
 def _post_via_incoming_webhook(
@@ -304,18 +299,14 @@ def _post_via_incoming_webhook(
     if extra:
         payload.update(extra)
 
-    try:
-        response = httpx.post(webhook_url, json=payload, timeout=10.0, follow_redirects=True)
-        response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        detail = exc.response.text if exc.response is not None else str(exc)
+    response = post_json(url=webhook_url, payload=payload, timeout=10.0, follow_redirects=True)
+    if not response.ok:
+        debug_print(f"Slack incoming webhook failed: {response.error}")
+        return False
+    if not 200 <= response.status_code < 300:
         debug_print(
-            f"Slack incoming webhook failed: HTTP {exc.response.status_code if exc.response else 'unknown'}: {detail[:200]}"
+            f"Slack incoming webhook failed: HTTP {response.status_code}: {response.text[:200]}"
         )
         return False
-    except Exception as exc:  # noqa: BLE001
-        debug_print(f"Slack incoming webhook failed: {exc}")
-        return False
-    else:
-        debug_print("Slack report posted via incoming webhook.")
-        return True
+    debug_print("Slack report posted via incoming webhook.")
+    return True

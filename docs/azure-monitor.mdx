@@ -1,0 +1,178 @@
+---
+title: "Azure Monitor"
+description: "Connect Azure Monitor Log Analytics so OpenSRE can pull KQL log evidence during investigations"
+---
+
+OpenSRE queries Azure Monitor Log Analytics through the public Query REST API to surface relevant logs during alert investigations. Each query is bounded by a `take` clause so result sets stay capped at a safe row limit.
+
+## Prerequisites
+
+- Azure subscription with at least one **Log Analytics Workspace** collecting logs
+- A **Microsoft Entra ID (Azure AD) app registration** authorized to query the workspace
+- The **Log Analytics Reader** role granted on the workspace (or its resource group / subscription) to the app's service principal
+- Network access from the OpenSRE environment to `https://api.loganalytics.io` (or the sovereign cloud equivalent) over HTTPS
+
+## Setup
+
+### Option 1: Environment variables
+
+Add to your `.env`:
+
+```bash
+AZURE_LOG_ANALYTICS_WORKSPACE_ID=00000000-0000-0000-0000-000000000000
+AZURE_LOG_ANALYTICS_TOKEN=<azure-ad-bearer-token>
+AZURE_LOG_ANALYTICS_ENDPOINT=https://api.loganalytics.io
+AZURE_TENANT_ID=<azure-ad-tenant-id>          # optional, informational
+AZURE_SUBSCRIPTION_ID=<azure-subscription-id> # optional, informational
+AZURE_MAX_RESULTS=100                          # optional, capped at 200
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `AZURE_LOG_ANALYTICS_WORKSPACE_ID` | — | **Required.** Log Analytics Workspace ID (GUID) from the Azure portal |
+| `AZURE_LOG_ANALYTICS_TOKEN` | — | **Required.** Microsoft Entra ID OAuth2 bearer token with `Data.Read` on the workspace |
+| `AZURE_LOG_ANALYTICS_ENDPOINT` | `https://api.loganalytics.io` | Override for sovereign clouds (e.g. `https://api.loganalytics.azure.us` for Azure Government) |
+| `AZURE_TENANT_ID` | — | Microsoft Entra ID tenant ID (informational; useful for multi-tenant audits) |
+| `AZURE_SUBSCRIPTION_ID` | — | Azure subscription ID (informational) |
+| `AZURE_MAX_RESULTS` | `100` | Per-query row cap; OpenSRE clamps to a hard maximum of `200` |
+
+### Option 2: Persistent store
+
+Credentials are persisted to `~/.tracer/integrations.json` with `0o600` permissions:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "azure-prod",
+      "service": "azure",
+      "status": "active",
+      "credentials": {
+        "workspace_id": "00000000-0000-0000-0000-000000000000",
+        "access_token": "<azure-ad-bearer-token>",
+        "endpoint": "https://api.loganalytics.io",
+        "tenant_id": "<azure-ad-tenant-id>",
+        "subscription_id": "<azure-subscription-id>",
+        "max_results": 100
+      }
+    }
+  ]
+}
+```
+
+## Getting credentials
+
+### 1. Find the Workspace ID
+
+1. In the Azure portal, open **Log Analytics workspaces** and select your workspace.
+2. On the workspace **Overview** page, copy **Workspace ID** (a GUID).
+
+### 2. Register an Azure AD application
+
+1. Open **Microsoft Entra ID** → **App registrations** → **New registration**.
+2. Give the app a name (e.g. `opensre-log-analytics`) and register it as a single-tenant app.
+3. From the app's **Overview** page, copy the **Application (client) ID** and the **Directory (tenant) ID**.
+4. Open **Certificates & secrets** → **New client secret**, copy the **secret value** (it is shown only once).
+
+### 3. Grant `Log Analytics Reader` on the workspace
+
+1. Open the Log Analytics workspace in the portal.
+2. Go to **Access control (IAM)** → **Add** → **Add role assignment**.
+3. Pick the **Log Analytics Reader** role and assign it to the service principal created above.
+
+### 4. Obtain a bearer token (client credentials flow)
+
+```bash
+curl -s -X POST \
+  "https://login.microsoftonline.com/$AZURE_TENANT_ID/oauth2/v2.0/token" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=$AZURE_CLIENT_ID" \
+  -d "client_secret=$AZURE_CLIENT_SECRET" \
+  -d "scope=https://api.loganalytics.io/.default" \
+  | jq -r '.access_token'
+```
+
+Set the resulting token as `AZURE_LOG_ANALYTICS_TOKEN`. Tokens expire (usually after 60 minutes) — see the **Token rotation** note in *Security best practices*.
+
+## Investigation tool
+
+OpenSRE exposes one tool against an Azure Monitor workspace:
+
+### `query_azure_monitor_logs`
+
+`POST`s a KQL query to `<endpoint>/v1/workspaces/<workspace_id>/query` and returns the first table flattened into row dicts.
+
+Arguments the planner supplies:
+
+- **`query`** — KQL query text. If omitted, OpenSRE falls back to `AppTraces | order by TimeGenerated desc | take <limit>`.
+- **`time_range_minutes`** — sent as the `timespan` (`PT<N>M`); defaults to `60`.
+- **`limit`** — per-query row cap; defaults to `50` and is clamped to `max_results` (hard limit `200`).
+
+OpenSRE always appends a `| take <limit>` clause to the query if one is not present, so the workspace never returns more rows than the configured cap.
+
+## Verify
+
+```bash
+opensre integrations verify azure
+```
+
+Expected output:
+
+```
+SERVICE   SOURCE      STATUS   DETAIL
+azure     local env   passed   Azure Log Analytics credentials are configured for workspace 00000000-0000-0000-0000-000000000000 at https://api.loganalytics.io
+```
+
+The verify step is a credential-shape check — it does not call the workspace. To exercise the live path, point OpenSRE at a synthetic alert that names `azure` as the source and inspect the resulting evidence.
+
+## Example KQL queries
+
+Recent application errors:
+
+```kql
+AppTraces
+| where SeverityLevel >= 3
+| where TimeGenerated > ago(15m)
+| project TimeGenerated, OperationName, Message, AppRoleName
+| order by TimeGenerated desc
+| take 50
+```
+
+Error count by severity over the last hour:
+
+```kql
+AppTraces
+| where TimeGenerated > ago(1h)
+| summarize count() by SeverityLevel
+| order by SeverityLevel desc
+```
+
+Failed dependency calls correlated with a request id:
+
+```kql
+AppDependencies
+| where Success == false
+| where TimeGenerated > ago(30m)
+| project TimeGenerated, Name, ResultCode, DurationMs, OperationId
+| order by TimeGenerated desc
+| take 50
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Token is missing, expired, or scoped to the wrong audience. Regenerate with `scope=https://api.loganalytics.io/.default` and confirm the service principal has **Log Analytics Reader** on the workspace. |
+| **403 Forbidden** | The token is valid but the principal lacks `Data.Read`. Re-check the role assignment on the workspace (or its parent resource group). |
+| **Empty result set** | Either the KQL `where` filter excludes everything or the workspace has no data in the requested timespan. Run the same query in **Logs** in the portal to confirm. |
+| **Wrong endpoint / DNS error** | Sovereign clouds use a different host (e.g. `https://api.loganalytics.azure.us` for US Government, `https://api.loganalytics.azure.cn` for China). Set `AZURE_LOG_ANALYTICS_ENDPOINT` accordingly. |
+| **`Missing workspace_id` / `Missing access_token`** | One or both required credentials are absent. Confirm both env vars (or both fields in the persistent store) are populated. |
+
+## Security best practices
+
+- Use a **dedicated app registration** for OpenSRE — do not reuse a personal token or a broadly-scoped service principal.
+- Grant only **Log Analytics Reader** on the workspace; OpenSRE only needs read access to query data.
+- Keep the client secret out of source control — store it in `.env` or in a secret manager and only export it long enough to mint a token.
+- **Rotate the bearer token** before its 60-minute expiry. Long-lived deployments should re-mint the token from the client secret on a schedule rather than pasting a static token into `.env`.
+- The integration is **read-only**: OpenSRE only issues `POST /v1/workspaces/<id>/query` requests with a `take`-bounded KQL string.

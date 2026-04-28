@@ -55,6 +55,7 @@
             "defaultOpen": true,
             "pages": [
               "alertmanager",
+              "azure-monitor",
               "betterstack",
               "bitbucket",
               "clickhouse",

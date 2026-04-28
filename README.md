@@ -43,6 +43,25 @@
 
 ---
 
+## Table of Contents
+
+- [Why OpenSRE?](#why-opensre)
+- [Install](#install)
+- [Quick Start](#quick-start)
+- [Railway Deployment](#railway-deployment)
+- [Development](#development)
+- [How OpenSRE Works](#how-opensre-works)
+- [Benchmark](#benchmark)
+- [Capabilities](#capabilities)
+- [Integrations](#integrations)
+- [Contributing](#contributing)
+- [Security](#security)
+- [Telemetry](#telemetry)
+- [License](#license)
+- [Citations](#citations)
+
+---
+
 ## Why OpenSRE?
 
 When something breaks in production, the evidence is scattered across logs, metrics, traces, runbooks, and Slack threads. OpenSRE is an open-source framework for AI SRE agents that resolve production incidents, built to run on your own infrastructure.
@@ -877,6 +896,94 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/131914656?v=4" width="100" alt="turancannb02"/>
             <br />
             <sub><b>turancannb02</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/ShivaniNR">
+            <img src="https://avatars.githubusercontent.com/u/47320667?v=4" width="100" alt="ShivaniNR"/>
+            <br />
+            <sub><b>ShivaniNR</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/0xDevNinja">
+            <img src="https://avatars.githubusercontent.com/u/102245100?v=4" width="100" alt="0xDevNinja"/>
+            <br />
+            <sub><b>0xDevNinja</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/blut-agent">
+            <img src="https://avatars.githubusercontent.com/u/278569635?v=4" width="100" alt="blut-agent"/>
+            <br />
+            <sub><b>blut-agent</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/Ghraven">
+            <img src="https://avatars.githubusercontent.com/u/115199279?v=4" width="100" alt="Ghraven"/>
+            <br />
+            <sub><b>Ghraven</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/kespineira">
+            <img src="https://avatars.githubusercontent.com/u/44882187?v=4" width="100" alt="kespineira"/>
+            <br />
+            <sub><b>kespineira</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/AarushSharmaa">
+            <img src="https://avatars.githubusercontent.com/u/68619452?v=4" width="100" alt="AarushSharmaa"/>
+            <br />
+            <sub><b>AarushSharmaa</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Lozsku">
+            <img src="https://avatars.githubusercontent.com/u/98460727?v=4" width="100" alt="Lozsku"/>
+            <br />
+            <sub><b>Lozsku</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Piyushtiwari919">
+            <img src="https://avatars.githubusercontent.com/u/184945555?v=4" width="100" alt="Piyushtiwari919"/>
+            <br />
+            <sub><b>Piyushtiwari919</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/hruico">
+            <img src="https://avatars.githubusercontent.com/u/218068869?v=4" width="100" alt="hruico"/>
+            <br />
+            <sub><b>hruico</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/IBOCATA">
+            <img src="https://avatars.githubusercontent.com/u/74919012?v=4" width="100" alt="IBOCATA"/>
+            <br />
+            <sub><b>IBOCATA</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Jeel3011">
+            <img src="https://avatars.githubusercontent.com/u/166152117?v=4" width="100" alt="Jeel3011"/>
+            <br />
+            <sub><b>Jeel3011</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Gingiris">
+            <img src="https://avatars.githubusercontent.com/u/260675847?v=4" width="100" alt="Gingiris"/>
+            <br />
+            <sub><b>Gingiris</b></sub>
         </a>
     </td>
 		</tr>
