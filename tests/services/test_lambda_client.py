@@ -135,10 +135,10 @@ def test_get_recent_invocations_success(mock_logs_client) -> None:
 
 
 def test_get_recent_invocations_resource_not_found(mock_logs_client) -> None:
-    error_response = {"Error": {"Code": "ResourceNotFoundException", "Message": "Log group not found"}}
-    mock_logs_client.filter_log_events.side_effect = ClientError(
-        error_response, "FilterLogEvents"
-    )
+    error_response = {
+        "Error": {"Code": "ResourceNotFoundException", "Message": "Log group not found"}
+    }
+    mock_logs_client.filter_log_events.side_effect = ClientError(error_response, "FilterLogEvents")
 
     result = get_recent_invocations("missing-func")
 
@@ -160,7 +160,7 @@ def test_invoke_function_success(mock_lambda_client) -> None:
     assert result["success"] is True
     assert result["data"]["payload"] == {"body": "ok"}
     assert result["data"]["log_result"] == "some logs"
-    
+
     # Verify call
     mock_lambda_client.invoke.assert_called_once_with(
         FunctionName="test-func",
