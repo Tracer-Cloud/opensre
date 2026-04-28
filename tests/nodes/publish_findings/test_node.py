@@ -111,7 +111,10 @@ def test_gitlab_writeback_calls_post_when_enabled(monkeypatch: pytest.MonkeyPatc
         patch("app.utils.slack_delivery.send_slack_report", mock_send_slack),
         patch("app.utils.slack_delivery.build_action_blocks", mock_build_action_blocks),
         patch("app.nodes.publish_findings.gitlab_writeback.post_gitlab_mr_note", mock_post_note),
-        patch("app.nodes.publish_findings.gitlab_writeback.build_gitlab_config", return_value=MagicMock()),
+        patch(
+            "app.nodes.publish_findings.gitlab_writeback.build_gitlab_config",
+            return_value=MagicMock(),
+        ),
     ):
         from app.nodes.publish_findings.node import generate_report
 
@@ -177,9 +180,13 @@ def test_gitlab_writeback_failure_does_not_raise(monkeypatch: pytest.MonkeyPatch
         patch("app.utils.slack_delivery.send_slack_report", mock_send_slack),
         patch("app.utils.slack_delivery.build_action_blocks", mock_build_action_blocks),
         patch(
-            "app.nodes.publish_findings.gitlab_writeback.post_gitlab_mr_note", side_effect=RuntimeError("network error")
+            "app.nodes.publish_findings.gitlab_writeback.post_gitlab_mr_note",
+            side_effect=RuntimeError("network error"),
         ),
-        patch("app.nodes.publish_findings.gitlab_writeback.build_gitlab_config", return_value=MagicMock()),
+        patch(
+            "app.nodes.publish_findings.gitlab_writeback.build_gitlab_config",
+            return_value=MagicMock(),
+        ),
     ):
         from app.nodes.publish_findings.node import generate_report
 
