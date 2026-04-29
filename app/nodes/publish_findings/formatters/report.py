@@ -2,7 +2,6 @@
 
 import re
 
-from app.config import get_tracer_base_url
 from app.nodes.publish_findings.formatters.base import format_slack_link
 from app.nodes.publish_findings.formatters.evidence import format_cited_evidence_section
 from app.nodes.publish_findings.formatters.infrastructure import (
@@ -12,15 +11,6 @@ from app.nodes.publish_findings.formatters.infrastructure import (
 )
 from app.nodes.publish_findings.report_context import ReportContext
 from app.nodes.publish_findings.urls.aws import build_cloudwatch_url
-
-
-def get_investigation_url(org_slug: str | None = None, investigation_id: str | None = None) -> str:
-    """Build investigation URL using the organization slug and optional investigation ID."""
-    base = get_tracer_base_url()
-    prefix = f"{base}/{org_slug}" if org_slug else base
-    if investigation_id:
-        return f"{prefix}/investigations/{investigation_id}"
-    return f"{prefix}/investigations"
 
 
 def render_cloudwatch_link(ctx: ReportContext) -> str:

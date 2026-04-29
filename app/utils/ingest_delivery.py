@@ -9,7 +9,6 @@ from typing import Any
 import httpx
 
 from app.config import get_tracer_base_url
-from app.nodes.publish_findings.formatters.report import get_investigation_url
 from app.state import InvestigationState
 
 logger = logging.getLogger(__name__)
@@ -89,6 +88,15 @@ def build_ingest_payload(state: InvestigationState) -> dict[str, Any]:
     }
 
     return {"investigation_output": investigation_output, "metadata": metadata}
+
+
+def get_investigation_url(org_slug: str | None = None, investigation_id: str | None = None) -> str:
+    """Build investigation URL using the organization slug and optional investigation ID."""
+    base = get_tracer_base_url()
+    prefix = f"{base}/{org_slug}" if org_slug else base
+    if investigation_id:
+        return f"{prefix}/investigations/{investigation_id}"
+    return f"{prefix}/investigations"
 
 
 def send_ingest(state: InvestigationState) -> str | None:

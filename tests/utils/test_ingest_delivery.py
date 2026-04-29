@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import importlib
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -353,3 +353,61 @@ class TestSendIngest:
         with caplog.at_level("WARNING"):
             assert ingest_delivery.send_ingest({"thread_id": "t-1"}) is None
         assert any("Delivery failed" in r.message for r in caplog.records)
+
+    def test_create_investigation_success(self, sample_state):
+        with (
+            patch("app.utils.ingest_delivery.send_ingest") as mock_send,
+            patch("app.utils.ingest_delivery.get_investigation_url") as mock_url,
+        ):
+            mock_send.side_effect = ["inv-123", None]
+            mock_url.return_value = "https://test/inv-123"
+
+            investigation_id, investigation_url = (
+                ingest_delivery.create_investigation_and_attach_url(
+                    sample_state,
+                    "slack message",
+                    "summary",
+                )
+            )
+
+            assert investigation_id == "inv-123"
+            assert investigation_url == "https://test/inv-123"
+            assert mock_send.call_count == 2
+
+
+def test_create_investigation_first_ingest_failure(self, sample_state):
+    with (
+        patch("app.utils.ingest_delivery.send_ingest") as mock_send,
+        patch("app.utils.ingest_delivery.get_investigation_url") as mock_url,
+    ):
+        mock_send.side_effect = Exception("ingest failed")
+        mock_url.return_value = None
+
+        investigation_id, investigation_url = ingest_delivery.create_investigation_and_attach_url(
+            sample_state,
+            "slack message",
+            "summary",
+        )
+
+        assert investigation_id is None
+        assert investigation_url is None
+        assert mock_send.call_count == 1
+
+
+def test_create_investigation_second_ingest_failure(self, sample_state):
+    with (
+        patch("app.utils.ingest_delivery.send_ingest") as mock_send,
+        patch("app.utils.ingest_delivery.get_investigation_url") as mock_url,
+    ):
+        mock_send.side_effect = ["inv-123", Exception("update failed")]
+        mock_url.return_value = "https://test/inv-123"
+
+        investigation_id, investigation_url = ingest_delivery.create_investigation_and_attach_url(
+            sample_state,
+            "slack message",
+            "summary",
+        )
+
+        assert investigation_id == "inv-123"
+        assert investigation_url == "https://test/inv-123"
+        assert mock_send.call_count == 2

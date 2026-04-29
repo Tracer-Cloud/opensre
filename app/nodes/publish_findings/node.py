@@ -33,17 +33,15 @@ def generate_report(state: InvestigationState) -> dict:
     if isinstance(short_summary, str):
         short_summary = masking_ctx.unmask(short_summary)
 
-    # First ingest: persist the report and get back the investigation_id
-    investigation_id: str | None = None
-    investigation_url: str | None = None
-
     investigation_id, investigation_url = create_investigation_and_attach_url(
         state,
         slack_message,
         short_summary,
     )
 
-    all_blocks = build_slack_blocks(ctx) + build_action_blocks(investigation_url, investigation_id)
+    all_blocks = build_slack_blocks(ctx) + build_action_blocks(
+        investigation_url or "", investigation_id
+    )
     all_blocks = masking_ctx.unmask_value(all_blocks)
     render_report(slack_message, root_cause_category=state.get("root_cause_category"))
     open_in_editor(slack_message)
