@@ -347,12 +347,12 @@ def _post_via_incoming_webhook(
     response = post_json(url=webhook_url, payload=payload, timeout=10.0, follow_redirects=True)
     if not response.ok:
         # Mask the webhook URL secret by using exc_type
-        debug_print(f"Slack incoming webhook failed: {response.exc_type}")
+        debug_print(f"Slack incoming webhook failed: {response.error}")
         return False
 
     if response.status_code >= 400:
         debug_print(
-            f"Slack incoming webhook failed: HTTP {response.status_code}: {response.text[:200]}"
+            f"Slack incoming webhook failed: {response.exc_type or response.error or 'unknown'}"
         )
         return False
 
