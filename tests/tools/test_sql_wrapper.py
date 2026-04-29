@@ -80,7 +80,11 @@ def test_wrapper_passes_kwargs_to_resolver() -> None:
         return config
 
     def db_caller_with_config_check(config: FakeConfig) -> dict:
-        return {"database": config.database, "host": config.host, "port": config.port}
+        return {
+            "database": config.database,
+            "host": config.host,
+            "port": config.port,
+        }
 
     result = call_db_tool_with_default_db_warning(
         database="testdb",

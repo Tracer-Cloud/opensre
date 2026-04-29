@@ -14,7 +14,10 @@ from app.tools.utils.sql_wrapper import call_db_tool_with_default_db_warning
 
 @tool(
     name="get_azure_sql_current_queries",
-    description="Retrieve currently running queries on Azure SQL Database above a duration threshold, including wait types and resource usage.",
+    description=(
+        "Retrieve currently running queries on Azure SQL Database above a duration"
+        " threshold, including wait types and resource usage."
+    ),
     source="azure_sql",
     surfaces=("investigation", "chat"),
     use_cases=[

@@ -14,7 +14,10 @@ from app.tools.utils.sql_wrapper import call_db_tool_with_default_db_warning
 
 @tool(
     name="get_postgresql_current_queries",
-    description="Retrieve currently executing PostgreSQL queries above a specific duration threshold.",
+    description=(
+        "Retrieve currently executing PostgreSQL queries above a specific duration"
+        " threshold."
+    ),
     source="postgresql",
     surfaces=("investigation", "chat"),
     use_cases=[

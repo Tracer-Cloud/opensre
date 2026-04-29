@@ -14,7 +14,10 @@ from app.tools.utils.sql_wrapper import call_db_tool_with_default_db_warning
 
 @tool(
     name="get_mysql_current_processes",
-    description="Retrieve currently active MySQL processes above a duration threshold, excluding sleeping connections.",
+    description=(
+        "Retrieve currently active MySQL processes above a duration threshold,"
+        " excluding sleeping connections."
+    ),
     source="mysql",
     surfaces=("investigation", "chat"),
     use_cases=[

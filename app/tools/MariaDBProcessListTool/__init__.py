@@ -14,7 +14,10 @@ from app.tools.utils.sql_wrapper import call_db_tool_with_default_db_warning
 
 @tool(
     name="get_mariadb_process_list",
-    description="Retrieve active MariaDB threads and queries from information_schema.PROCESSLIST, excluding idle connections.",
+    description=(
+        "Retrieve active MariaDB threads and queries from"
+        " information_schema.PROCESSLIST, excluding idle connections."
+    ),
     source="mariadb",
     surfaces=("investigation", "chat"),
     is_available=mariadb_is_available,

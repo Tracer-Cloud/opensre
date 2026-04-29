@@ -14,7 +14,10 @@ from app.tools.utils.sql_wrapper import call_db_tool_with_default_db_warning
 
 @tool(
     name="get_azure_sql_slow_queries",
-    description="Retrieve slow query statistics from Azure SQL Database query stats DMV, ordered by average elapsed time.",
+    description=(
+        "Retrieve slow query statistics from Azure SQL Database query stats DMV,"
+        " ordered by average elapsed time."
+    ),
     source="azure_sql",
     surfaces=("investigation", "chat"),
     use_cases=[
@@ -37,5 +40,7 @@ def get_azure_sql_slow_queries(
         default_db_name="master",
         config_resolver=resolve_azure_sql_config,
         resolver_kwargs={"server": server, "port": port},
-        db_caller=lambda config: get_slow_queries(config, threshold_ms=threshold_ms),
+        db_caller=lambda config: get_slow_queries(
+            config, threshold_ms=threshold_ms
+        ),
     )
