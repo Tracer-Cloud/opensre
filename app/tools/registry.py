@@ -45,12 +45,6 @@ _LEGACY_CHAT_TOOL_NAMES = {
     "list_sentry_issue_events",
 }
 
-_LEGACY_TOOL_DISPLAY_NAMES = {
-    "query_kubernetes_logs": "Kubernetes logs",
-    "query_elasticsearch": "Elasticsearch",
-    "get_deployment_status": "deployment status",
-}
-
 
 def _iter_tool_module_names() -> list[str]:
     module_names: list[str] = []
@@ -183,7 +177,4 @@ def resolve_tool_display_name(tool_name: str) -> str:
     tool = _load_registry_tool_map().get(tool_name)
     if tool is not None:
         return tool.display_name or tool.name.replace("_", " ")
-    legacy_display_name = _LEGACY_TOOL_DISPLAY_NAMES.get(tool_name)
-    if legacy_display_name is not None:
-        return legacy_display_name
     return tool_name.replace("_", " ")
