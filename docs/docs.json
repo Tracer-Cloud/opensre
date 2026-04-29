@@ -67,7 +67,6 @@
               "prefect",
               "google-docs",
               "discord",
-              "rabbitmq",
               "integrations/airflow_integration"
             ]
           }
