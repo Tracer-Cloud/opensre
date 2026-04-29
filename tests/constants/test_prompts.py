@@ -66,6 +66,34 @@ def test_general_prompt_requires_evidence_pointer_and_handoff() -> None:
     )
 
 
+def test_general_prompt_pins_four_section_response_headings() -> None:
+    """The refusal branch commits to four section headings in a fixed order.
+
+    The four-section response template is the load-bearing structural
+    contract of the refusal: a future edit that renames or removes a
+    heading while preserving the surrounding keyword text would silently
+    break the response shape. Pinning the headings (and their ordering)
+    makes that failure mode caught by CI.
+    """
+    text = GENERAL_SYSTEM_PROMPT.lower()
+    headings = (
+        "what you can see in the input",
+        "why a root cause cannot be given here",
+        "what evidence would be required",
+        "how to get a real investigation",
+    )
+    positions: list[int] = []
+    for heading in headings:
+        idx = text.find(heading)
+        assert idx >= 0, f"GENERAL_SYSTEM_PROMPT must contain heading {heading!r}"
+        positions.append(idx)
+    assert positions == sorted(positions), (
+        "Four-section headings must appear in order "
+        f"{list(headings)}, but found ordering "
+        f"{[h for _, h in sorted(zip(positions, headings, strict=True))]}"
+    )
+
+
 def test_other_prompts_unchanged_in_shape() -> None:
     """SYSTEM_PROMPT and ROUTER_PROMPT should remain investigation-mode oriented."""
     assert "Tracer" in SYSTEM_PROMPT
