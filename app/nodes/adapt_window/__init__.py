@@ -7,9 +7,9 @@ The package is split into two modules:
   dicts so tests can drive it without spinning up LangGraph. Today it
   contains a single rule: expand-on-empty-deploy-timeline.
 
-- ``node.py`` — the LangGraph entry point ``node_adapt_window`` (added in
-  the next commit). Wraps the rule in ``@traceable`` and adapts the
-  state-delta to LangGraph's reducer.
+- ``node.py`` — the LangGraph entry point ``node_adapt_window``. Wraps
+  the rule in ``@traceable`` and adapts the state-delta to LangGraph's
+  reducer.
 """
 
 from app.nodes.adapt_window.node import node_adapt_window
