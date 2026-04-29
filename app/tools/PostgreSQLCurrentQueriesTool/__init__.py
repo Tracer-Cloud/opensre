@@ -15,8 +15,7 @@ from app.tools.utils.sql_wrapper import call_db_tool_with_default_db_warning
 @tool(
     name="get_postgresql_current_queries",
     description=(
-        "Retrieve currently executing PostgreSQL queries above a specific duration"
-        " threshold."
+        "Retrieve currently executing PostgreSQL queries above a specific duration threshold."
     ),
     source="postgresql",
     surfaces=("investigation", "chat"),
@@ -40,7 +39,5 @@ def get_postgresql_current_queries(
         default_db_name="postgres",
         config_resolver=resolve_postgresql_config,
         resolver_kwargs={"host": host, "port": port},
-        db_caller=lambda config: get_current_queries(
-            config, threshold_seconds=threshold_seconds
-        ),
+        db_caller=lambda config: get_current_queries(config, threshold_seconds=threshold_seconds),
     )

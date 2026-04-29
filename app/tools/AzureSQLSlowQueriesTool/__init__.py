@@ -40,7 +40,5 @@ def get_azure_sql_slow_queries(
         default_db_name="master",
         config_resolver=resolve_azure_sql_config,
         resolver_kwargs={"server": server, "port": port},
-        db_caller=lambda config: get_slow_queries(
-            config, threshold_ms=threshold_ms
-        ),
+        db_caller=lambda config: get_slow_queries(config, threshold_ms=threshold_ms),
     )

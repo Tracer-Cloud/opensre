@@ -23,10 +23,7 @@ from app.tools.utils.sql_wrapper import call_db_tool_with_default_db_warning
     use_cases=[
         "Identifying slow queries that may be causing performance degradation",
         "Analyzing query execution patterns during incident timeframes",
-        (
-            "Finding poorly optimized queries with high execution times or low cache"
-            " hit rates"
-        ),
+        ("Finding poorly optimized queries with high execution times or low cache hit rates"),
     ],
     is_available=postgresql_is_available,
     extract_params=postgresql_extract_params,
@@ -43,7 +40,5 @@ def get_postgresql_slow_queries(
         default_db_name="postgres",
         config_resolver=resolve_postgresql_config,
         resolver_kwargs={"host": host, "port": port},
-        db_caller=lambda config: get_slow_queries(
-            config, threshold_ms=threshold_ms
-        ),
+        db_caller=lambda config: get_slow_queries(config, threshold_ms=threshold_ms),
     )

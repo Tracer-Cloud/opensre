@@ -40,7 +40,5 @@ def get_mysql_current_processes(
         default_db_name="mysql",
         config_resolver=resolve_mysql_config,
         resolver_kwargs={"host": host, "port": port},
-        db_caller=lambda config: get_current_processes(
-            config, threshold_seconds=threshold_seconds
-        ),
+        db_caller=lambda config: get_current_processes(config, threshold_seconds=threshold_seconds),
     )

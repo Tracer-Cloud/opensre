@@ -33,6 +33,7 @@ def get_mariadb_process_list(
     max_results: int = 50,
 ) -> dict[str, Any]:
     """Fetch active threads from information_schema.PROCESSLIST."""
+
     def mariadb_config_builder(database: str) -> MariaDBConfig:
         return MariaDBConfig(
             host=host,

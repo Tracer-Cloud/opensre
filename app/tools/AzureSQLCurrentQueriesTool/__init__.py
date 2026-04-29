@@ -40,7 +40,5 @@ def get_azure_sql_current_queries(
         default_db_name="master",
         config_resolver=resolve_azure_sql_config,
         resolver_kwargs={"server": server, "port": port},
-        db_caller=lambda config: get_current_queries(
-            config, threshold_seconds=threshold_seconds
-        ),
+        db_caller=lambda config: get_current_queries(config, threshold_seconds=threshold_seconds),
     )

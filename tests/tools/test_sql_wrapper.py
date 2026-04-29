@@ -71,9 +71,7 @@ def test_wrapper_no_warning_when_database_provided() -> None:
 def test_wrapper_passes_kwargs_to_resolver() -> None:
     """Test that resolver_kwargs are correctly passed to config_resolver."""
 
-    def resolver_with_multiple_params(
-        database: str, host: str, port: int = 5432
-    ) -> FakeConfig:
+    def resolver_with_multiple_params(database: str, host: str, port: int = 5432) -> FakeConfig:
         config = FakeConfig(database=database)
         config.host = host
         config.port = port
