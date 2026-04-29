@@ -1,4 +1,3 @@
-import inspect
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
