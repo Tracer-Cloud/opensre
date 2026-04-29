@@ -65,10 +65,10 @@ def test_stable_catalog_ids_always_present() -> None:
 def test_tests_list_search_filter_narrows_results() -> None:
     runner = CliRunner()
 
-    result = runner.invoke(cli, ["tests", "list", "--search", "grafana"])
+    result = runner.invoke(cli, ["tests", "list", "--search", "pipeline"])
 
     assert result.exit_code == 0
-    assert "make:test-grafana" in result.output
+    assert "rca:pipeline_error_in_logs" in result.output
     assert "make:test-cov" not in result.output
 
 
