@@ -44,80 +44,68 @@ templates: list[str] = [
     # new additions
     (
         f"😤 **@{contributor} said \"I will fix this\" and then actually fixed it.** "
-        "Not many people do that. You did. Hall of fame behavior."
+        "Legendary behavior."
     ),
     (
-        f"🍕 **Hot take:** great PRs and great pizza have the same energy — "
-        f"crispy edges, no unnecessary toppings, delivered on time. "
-        f"@{contributor} understood the assignment. 🔥"
+        f"🍕 **@{contributor}'s PR:** crispy edges, no unnecessary toppings, delivered on time. "
+        "Understood the assignment. 🔥"
     ),
     (
-        f"🌊 **The PR was opened. The review happened. The merge commit exists.** "
-        f"@{contributor} — you are now permanently woven into git history. "
-        "No take-backs. No refunds. We love you. 😄"
+        f"🌊 **Merged.** @{contributor} is now permanently woven into git history. "
+        "No take-backs. 😄"
     ),
     (
-        f"🤖 **CI ran. Tests passed. Linter didn't scream. Reviewer typed LGTM.** "
-        f"@{contributor}, every machine in this pipeline just gave you a standing ovation. 🖥️✨"
+        f"🤖 **CI passed. Linter didn't scream. Reviewer typed LGTM.** "
+        f"@{contributor}, every machine in this pipeline just slow-clapped. 🖥️✨"
     ),
     (
         f"🧠 **@{contributor} opened a PR.** "
-        "Maintainers feared them. Linters respected them. CI genuflected. "
-        "It merged. This is not a drill. 🚨"
+        "Maintainers feared them. CI genuflected. It merged. 🚨"
     ),
     (
         f"😭 **Clear commit message. Green tests. Kind review.** "
-        f"@{contributor}, stop making the rest of us look bad. "
-        "We're begging. This is too perfect."
+        f"@{contributor}, stop making the rest of us look bad."
     ),
     (
-        f"🐸 **Rebase? Handled. Conflicts? Squashed. CI? Fully vibing.** "
-        f"@{contributor} touched the untouchable and lived. "
-        "Main branch bows in respect. 🫡"
+        f"🐸 **Rebase? Handled. Conflicts? Squashed. CI? Vibing.** "
+        f"@{contributor} touched the untouchable and lived. 🫡"
     ),
     (
         f"🏆 **@{contributor} did not come to play.** "
-        "Came to open a PR, survive the review gauntlet, and merge clean. "
-        "Textbook execution. Retire the jersey. 🎽"
+        "PR opened. Review survived. Merged clean. Retire the jersey. 🎽"
     ),
     (
-        f"🎲 **Researchers are baffled.** A PR appeared, got reviewed without drama, "
-        f"and merged with zero incidents. @{contributor} has broken the known laws of open source. "
-        "Send help. 🔬"
+        f"🎲 **Researchers are baffled.** @{contributor} opened a PR, got it reviewed without drama, "
+        "and merged clean. This violates known laws of open source. 🔬"
     ),
     (
-        f"🌮 **@{contributor}'s PR:** showed up unannounced, immediately improved everything, "
-        "left zero bugs, and asked for nothing in return. "
-        "Just like a perfect taco. 🌮🌮🌮"
+        f"🌮 **@{contributor}'s PR:** showed up unannounced, improved everything, left zero bugs. "
+        "Just like a perfect taco. 🌮"
     ),
     (
-        f"🐉 **Legend says** each merged PR brings you one step closer to ascending. "
-        f"@{contributor} is getting dangerously close to the final form. "
-        "We'll miss them when they're gone. 🌤️"
+        f"🐉 **Legend says** enough merged PRs and you ascend. "
+        f"@{contributor} is dangerously close. 🌤️"
     ),
     (
-        f"🛸 **Aliens monitoring our repo** just saw @{contributor}'s PR merge clean "
-        "and updated their threat assessment to: "
-        "*do not engage — this civilization has too many good contributors*. 👽"
+        f"🛸 **Aliens watching our repo** just upgraded @{contributor}'s threat level to: "
+        "*do not engage — too competent*. 👽"
     ),
     (
-        f"🎻 **A poet once wrote:** \"The diff was clean, the tests did pass, "
-        f"the reviewer wept.\" "
-        f"That poem was about @{contributor}'s PR. It was always about this PR. 🥹"
+        f"🎻 **\"The diff was clean, the tests did pass, the reviewer wept.\"** "
+        f"That poem was about @{contributor}'s PR. 🥹"
     ),
     (
-        f"🍵 **@{contributor} made tea. Opened a PR. Merged before the tea cooled.** "
-        "This is what elite performance looks like. No notes. Literally no notes. ☕"
+        f"🍵 **@{contributor} made tea, opened a PR, and merged before it cooled.** "
+        "No notes. ☕"
     ),
     (
-        f"🏄 **Some PRs get stuck in review purgatory for six weeks.** "
-        f"@{contributor}'s PR looked at the queue, said \"not today\", "
-        "and merged like it owned the place. 🌊"
+        f"🏄 **Some PRs rot in review for six weeks.** "
+        f"@{contributor}'s said \"not today\" and merged like it owned the place. 🌊"
     ),
     (
-        f"💼 **Interviewer:** describe a time you shipped something with real impact.\n\n"
-        f"**@{contributor}:** *silently points at this PR*\n\n"
-        "**Interviewer:** ...you're hired. Start Monday. 🤝"
+        f"💼 **Interviewer:** describe a time you shipped something impactful.\n\n"
+        f"**@{contributor}:** *points at this PR*\n\n"
+        "**Interviewer:** you're hired. 🤝"
     )
 ]
 
