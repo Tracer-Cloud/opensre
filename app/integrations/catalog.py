@@ -8,6 +8,11 @@ import os
 from typing import Any
 
 from app.config import get_tracer_base_url
+from app.integrations.airflow import (
+    DEFAULT_AIRFLOW_BASE_URL,
+    airflow_config_from_env,
+    build_airflow_config,
+)
 from app.integrations.azure_sql import build_azure_sql_config
 from app.integrations.betterstack import build_betterstack_config
 from app.integrations.github_mcp import build_github_mcp_config
@@ -85,6 +90,8 @@ _SERVICE_KEY_MAP = {
     "opensearch": "opensearch",
     "open search": "opensearch",
     "alertmanager": "alertmanager",
+    "airflow": "airflow",
+    "apache airflow": "airflow",
 }
 
 
@@ -556,6 +563,28 @@ def _classify_service_instance(
                 "verify_ssl": rabbitmq_config.verify_ssl,
                 "integration_id": record_id,
             }, "rabbitmq"
+        return None, None
+
+    if key == "airflow":
+        try:
+            airflow_config = build_airflow_config(
+                {
+                    "base_url": credentials.get("base_url", DEFAULT_AIRFLOW_BASE_URL),
+                    "username": credentials.get("username", ""),
+                    "password": credentials.get("password", ""),
+                    "auth_token": credentials.get("auth_token", ""),
+                    "timeout_seconds": credentials.get("timeout_seconds", 15.0),
+                    "verify_ssl": credentials.get("verify_ssl", True),
+                    "max_results": credentials.get("max_results", 50),
+                }
+            )
+        except Exception:
+            return None, None
+        if airflow_config.is_configured:
+            return {
+                **airflow_config.model_dump(),
+                "integration_id": record_id,
+            }, "airflow"
         return None, None
 
     if key == "betterstack":
@@ -1110,6 +1139,17 @@ def load_env_integrations() -> list[dict[str, Any]]:
             }
         )
 
+    airflow_config = airflow_config_from_env()
+    if airflow_config is not None:
+        integrations.append(
+            {
+                "id": "env-airflow",
+                "service": "airflow",
+                "status": "active",
+                "credentials": airflow_config.model_dump(),
+            }
+        )
+
     telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if telegram_bot_token:
         tg_config = TelegramBotConfig.model_validate(
@@ -1534,6 +1574,7 @@ def resolve_effective_integrations(
         "openobserve",
         "opensearch",
         "alertmanager",
+        "airflow",
     )
     for service in direct_services:
         resolved_integration = classified_integrations.get(service)

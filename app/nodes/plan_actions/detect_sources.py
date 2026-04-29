@@ -429,6 +429,25 @@ def detect_sources(
         or pipeline_name
     ).strip()
 
+    airflow_int = (resolved_integrations or {}).get("airflow")
+    if airflow_int:
+        airflow_config = airflow_int.get("config", airflow_int)
+        if isinstance(airflow_config, dict):
+            dag_id = str(
+                annotations.get("dag_id")
+                or common_labels.get("dag_id")
+                or raw_alert.get("dag_id", "")
+                or context.get("dag_id", "")
+                or pipeline_name
+            ).strip()
+
+            sources["airflow"] = {
+                **airflow_config,
+                "dag_id": dag_id,
+                "pipeline_name": pipeline_name,
+                "connection_verified": True,
+            }
+
     # Only include Grafana when alert came from Grafana, or when source is truly unknown,
     # or when a pre-injected backend is present (e.g. FixtureGrafanaBackend for synthetic tests).
     grafana_int = None

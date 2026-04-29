@@ -621,3 +621,4 @@ class EffectiveIntegrations(StrictConfigModel):
     openobserve: EffectiveIntegrationEntry | None = None
     opensearch: EffectiveIntegrationEntry | None = None
     alertmanager: EffectiveIntegrationEntry | None = None
+    airflow: dict[str, Any] | None = None
