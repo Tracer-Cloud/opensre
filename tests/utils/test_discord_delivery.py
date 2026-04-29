@@ -223,14 +223,13 @@ def test_send_discord_report_prefers_thread_over_channel(monkeypatch: pytest.Mon
 
 def test_module_does_not_import_httpx() -> None:
     import importlib
+    import inspect
     import sys
 
     # Remove cached module to force re-inspection
     mods_to_remove = [k for k in sys.modules if "discord_delivery" in k]
     for m in mods_to_remove:
         sys.modules.pop(m)
-    import app.utils.discord_delivery as mod
-    import inspect
-
+    mod = importlib.import_module("app.utils.discord_delivery")
     source = inspect.getsource(mod)
     assert "import httpx" not in source

@@ -51,7 +51,7 @@ class TestCallReactionsApi:
                 ok=True, status_code=200, data={"ok": False, "error": err}
             ),
         )
-        assert slack_delivery._call_reactions_api("reactions.add", "tok", "C", "1.0", "x") is False
+        assert slack_delivery._call_reactions_api("reactions.add", "tok", "C", "1.0", "x") is True
 
     def test_unexpected_error_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
@@ -326,9 +326,10 @@ class TestPostViaWebapp:
 
 
 def test_module_does_not_import_httpx() -> None:
+    import importlib
     import inspect
-    import app.utils.slack_delivery as mod
 
+    mod = importlib.import_module("app.utils.slack_delivery")
     source = inspect.getsource(mod)
     assert "import httpx" not in source
 

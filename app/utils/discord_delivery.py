@@ -7,7 +7,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from app.utils.delivery_transport import DeliveryResponse, post_json, redact_arg, redact_token
+from app.utils.delivery_transport import post_json, redact_arg, redact_token
 
 logger = logging.getLogger(__name__)
 
