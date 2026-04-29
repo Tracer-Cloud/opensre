@@ -57,6 +57,9 @@ gif_blocks: list[str] = [
     f"\n\n![]({_base}/office-dance.gif)",
     f"\n\n![]({_base}/office-celebrate.gif)",
     f"\n\n![]({_base}/office-win.gif)",
+    f"\n\n![]({_base}/merge-celebrate-1.gif)",
+    f"\n\n![]({_base}/merge-celebrate-2.gif)",
+    f"\n\n![]({_base}/merge-celebrate-3.gif)",
 ]
 
 head = random.choice(templates) + random.choice(gif_blocks)
