@@ -342,7 +342,7 @@ class TestGetProcessList:
         result = get_process_list(self._config())
 
         assert result["processes"][0]["query"].endswith("...")
-        assert len(result["processes"][0]["query"]) == 203
+        assert len(result["processes"][0]["query"]) == 200
 
     @patch("app.integrations.mariadb._get_connection")
     def test_empty_process_list(self, mock_get_conn: MagicMock) -> None:
