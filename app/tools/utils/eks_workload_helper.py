@@ -29,3 +29,15 @@ def extract_workload_params(sources: dict[str, dict]) -> dict[str, Any]:
         "eks_backend": eks.get("_backend"),
         **_eks_creds(eks),
     }
+
+
+def extract_cluster_params(sources: dict[str, dict]) -> dict[str, Any]:
+    """Extract parameters for cluster list operation"""
+    eks = sources.get("eks")
+    if eks is None:
+        raise ValueError("Sources dictionary must contain an 'eks' key with cluster configuration")
+
+    return {
+        "cluster_names": eks.get("cluster_names", []),
+        **_eks_creds(eks),
+    }
