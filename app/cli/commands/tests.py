@@ -81,13 +81,14 @@ def tests(ctx: click.Context) -> None:
     from app.cli.tests.interactive import run_interactive_picker
 
     try:
-        capture_tests_picker_opened()
-        raise SystemExit(run_interactive_picker(load_test_catalog()))
+        exit_code = run_interactive_picker(load_test_catalog())
     except RuntimeError as exc:
         raise OpenSREError(
             str(exc),
             suggestion="Run 'opensre tests list' or 'opensre tests run <test_id>'.",
         ) from exc
+    capture_tests_picker_opened()
+    raise SystemExit(exit_code)
 
 
 @tests.command(name="synthetic")
@@ -170,7 +171,7 @@ def run_test(test_id: str, dry_run: bool) -> None:
     if not item.is_runnable:
         raise OpenSREError(
             f"Test '{test_id}' is a suite and cannot be run directly.",
-            suggestion="Run 'opensre tests list' to see runnable ids, or select a specific child.",
+            suggestion="Run 'opensre tests list' to see individual runnable ids.",
         )
 
     capture_test_run_started(test_id, dry_run=dry_run)

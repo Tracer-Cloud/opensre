@@ -57,7 +57,6 @@ def test_stable_catalog_ids_always_present() -> None:
     ids = {item["id"] for item in json.loads(result.output)}
     assert "make:test-cov" in ids
     assert "make:test-full" in ids
-    assert "make:test-grafana" in ids
 
 
 # --- Filtering ---
@@ -66,12 +65,11 @@ def test_stable_catalog_ids_always_present() -> None:
 def test_tests_list_search_filter_narrows_results() -> None:
     runner = CliRunner()
 
-    all_result = runner.invoke(cli, ["tests", "list"])
-    filtered_result = runner.invoke(cli, ["tests", "list", "--search", "grafana"])
+    result = runner.invoke(cli, ["tests", "list", "--search", "grafana"])
 
-    assert filtered_result.exit_code == 0
-    assert len(filtered_result.output) < len(all_result.output)
-    assert "grafana" in filtered_result.output.lower()
+    assert result.exit_code == 0
+    assert "make:test-grafana" in result.output
+    assert "make:test-cov" not in result.output
 
 
 def test_tests_list_category_synthetic() -> None:
