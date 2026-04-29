@@ -76,7 +76,8 @@
               "prefect",
               "rabbitmq",
               "sentry",
-              "vercel"
+              "vercel",
+              "integrations/airflow_integration"
             ]
           }
         ]
