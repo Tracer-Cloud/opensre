@@ -76,8 +76,13 @@ def _call_reactions_api(method: str, token: str, channel: str, timestamp: str, e
         if error not in ("already_reacted", "no_reaction", "message_not_found"):
             logger.warning("[slack] %s(%s) failed: %s", method, emoji, error)
             return False
+<<<<<<< HEAD
         # idempotent no-ops are silenced but still treated as success
         return True
+=======
+        # idempotent no-ops are silenced but still return False to match old behavior
+        return False
+>>>>>>> fix/delivery-hardening-clean
 
     return True
 

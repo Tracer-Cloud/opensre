@@ -71,7 +71,7 @@ def test_discord_token_filter_scrubs_msg() -> None:
     from app.utils.discord_delivery import _DiscordTokenFilter
 
     f = _DiscordTokenFilter()
-    token = "DISCORD_TOKEN_PART_1_XXX.ABCDEF.DISCORD_TOKEN_PART_3_XXXXXXXX"
+    token = "Bot DISCORD_TOKEN_PART_1_XXX.ABCDEF.DISCORD_TOKEN_PART_3_XXXXXXXX"
     record = logging.LogRecord(
         name="httpx",
         level=logging.INFO,
