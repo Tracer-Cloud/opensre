@@ -421,7 +421,6 @@ def detect_sources(
         or pipeline_name
     ).strip()
 
-
     airflow_int = (resolved_integrations or {}).get("airflow")
     if airflow_int:
         airflow_config = airflow_int.get("config", airflow_int)

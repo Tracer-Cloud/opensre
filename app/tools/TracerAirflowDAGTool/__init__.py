@@ -38,9 +38,7 @@ def _airflow_config(sources: dict[str, Any]) -> AirflowConfig:
 def _airflow_dag_id(sources: dict[str, Any]) -> str:
     source = _airflow_source(sources)
     return str(
-        source.get("dag_id")
-        or source.get("pipeline_name")
-        or os.getenv("AIRFLOW_DAG_ID", "")
+        source.get("dag_id") or source.get("pipeline_name") or os.getenv("AIRFLOW_DAG_ID", "")
     ).strip()
 
 
