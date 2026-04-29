@@ -73,12 +73,13 @@ def test_tests_list_search_filter_narrows_results() -> None:
 
 
 def test_tests_list_category_synthetic() -> None:
-    """--category synthetic must be accepted (it was missing from _TEST_CATEGORIES)."""
+    """--category synthetic must be accepted and return real entries."""
     runner = CliRunner()
 
     result = runner.invoke(cli, ["tests", "list", "--category", "synthetic"])
 
     assert result.exit_code == 0
+    assert "synthetic:001-replication-lag" in result.output
 
 
 def test_tests_list_category_rca_excludes_make_targets() -> None:
