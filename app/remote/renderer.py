@@ -86,13 +86,14 @@ class StreamRenderer:
             for event in events:
                 self._handle_event(event)
         finally:
-            # Always stop the active spinner thread, even if the stream
-            # raises (e.g. LLM quota exhausted). Otherwise the background
-            # thread keeps writing \r + erase-line escapes forever and
-            # corrupts any subsequent prompt/output.
+            # Always stop the active spinner thread and flush whatever
+            # final state was accumulated, even if the stream raises
+            # (e.g. LLM quota exhausted). Otherwise the spinner keeps
+            # writing \r + erase-line escapes forever, and any partial
+            # report the user has been watching stream live would be
+            # silently discarded before the exception propagates.
             self._finish_active_node()
-
-        self._print_report()
+            self._print_report()
         return dict(self._final_state)
 
     def _handle_event(self, event: StreamEvent) -> None:

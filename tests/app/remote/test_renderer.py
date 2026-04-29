@@ -292,3 +292,58 @@ class TestStreamRendererEventsMode:
             tags=["langsmith:hidden"],
         )
         assert StreamRenderer._is_graph_node_event(evt) is False
+
+
+class TestStreamRendererCleanupOnException:
+    """Tests for spinner + report cleanup when the stream raises mid-iteration.
+
+    The stream may raise (LLM quota, network, cancel). The renderer must always
+    stop the spinner thread AND flush whatever final state was accumulated, so
+    the user sees the partial report they were watching stream live before the
+    exception propagates.
+    """
+
+    @patch.dict(os.environ, {"TRACER_OUTPUT_FORMAT": "text"})
+    def test_partial_state_flushed_when_stream_raises(self) -> None:
+        """_print_report must run on the error path, not just the happy path."""
+
+        def stream_raises_after_extract() -> Iterator[StreamEvent]:
+            yield _make_event("metadata", data={"run_id": "r-x"})
+            yield _make_event(
+                "updates",
+                "extract_alert",
+                {"extract_alert": {"alert_name": "partial-alert"}},
+            )
+            raise RuntimeError("simulated upstream stream failure")
+
+        renderer = StreamRenderer()
+        print_report_calls: list[None] = []
+        original_print_report = renderer._print_report
+        finish_calls: list[None] = []
+        original_finish = renderer._finish_active_node
+
+        def spy_print_report() -> None:
+            print_report_calls.append(None)
+            original_print_report()
+
+        def spy_finish() -> None:
+            finish_calls.append(None)
+            original_finish()
+
+        renderer._print_report = spy_print_report  # type: ignore[method-assign]
+        renderer._finish_active_node = spy_finish  # type: ignore[method-assign]
+
+        try:
+            renderer.render_stream(stream_raises_after_extract())
+            raise AssertionError("expected stream exception to propagate")
+        except RuntimeError as exc:
+            assert "simulated upstream stream failure" in str(exc)
+
+        assert finish_calls, "spinner cleanup must run on stream failure"
+        assert print_report_calls, (
+            "partial report must be flushed on stream failure — "
+            "_print_report() must run from the finally block"
+        )
+        assert renderer.final_state.get("alert_name") == "partial-alert", (
+            "accumulated state from before the failure must be retained"
+        )
