@@ -1,0 +1,108 @@
+---
+title: "Telegram"
+---
+
+OpenSRE's Telegram integration delivers investigation findings directly to a Telegram chat via the Bot API — the same pattern used by the Discord integration, but for Telegram groups, channels, or private chats.
+
+---
+
+## Step 1: Create a Telegram Bot
+
+1. Open Telegram and search for **@BotFather**.
+2. Send the command `/newbot`.
+3. Follow the prompts to choose a name and username for your bot (the username must end in `bot`, e.g. `opensre_alerts_bot`).
+4. BotFather will reply with a **Bot Token** that looks like:
+   ```
+   123456789:AAFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   ```
+   Copy this token — you will need it in Step 3. Treat it like a password.
+
+---
+
+## Step 2: Add the Bot to Your Chat
+
+**For a group or channel:**
+
+1. Open the group or channel where you want OpenSRE to post findings.
+2. Click the group/channel name → **Edit** → **Administrators**.
+3. Search for your bot's username and add it as an administrator.
+4. Grant the **Post Messages** permission (for channels) or simply add it as a member (for groups).
+
+**To find your Chat ID:**
+
+- For a private chat: start a conversation with your bot, then open `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates` in your browser. The `chat.id` field in the response is your Chat ID.
+- For a group: add `@userinfobot` to your group temporarily, send any message, and it will reply with the group's Chat ID (a negative number like `-1001234567890`).
+
+<Note>
+Channel Chat IDs start with `-100` followed by the channel ID. Group Chat IDs are negative integers.
+</Note>
+
+---
+
+## Step 3: Configure the Integration in OpenSRE
+
+Run the setup wizard and select **Telegram**:
+
+```bash
+opensre onboard
+```
+
+When prompted, enter:
+- **Bot Token** — from Step 1
+- **Default Chat ID** *(optional)* — the chat where findings are posted when no runtime chat ID is provided. If omitted, a `chat_id` must be passed at investigation time.
+
+OpenSRE will validate your bot token using the Telegram `getMe` endpoint and write the following to your `.env` file:
+
+| Variable | Description |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Bot token for Telegram Bot API calls |
+| `TELEGRAM_DEFAULT_CHAT_ID` | Fallback chat ID for CLI-triggered investigations |
+
+---
+
+## Step 4: Trigger an Investigation
+
+When an investigation completes, OpenSRE will automatically send the findings to your configured Telegram chat:
+
+```bash
+opensre investigate --alert "High CPU on prod-db-01"
+```
+
+You can also override the chat at runtime by passing `telegram_context` with `bot_token` and `chat_id` fields through the API or investigation payload.
+
+---
+
+## Message Format
+
+OpenSRE sends findings as plain text messages truncated to Telegram's **4096-character limit**. Long reports are automatically truncated with a `…` indicator at the end.
+
+To reply findings in a thread (Telegram topic or reply chain), supply a `reply_to_message_id` in the runtime context.
+
+---
+
+## Required Bot Permissions Summary
+
+| Permission | Why it's needed |
+|---|---|
+| **Send Messages** | Post the investigation findings to the chat |
+| **Post Messages** *(channels only)* | Required when the destination is a channel |
+
+---
+
+## Troubleshooting
+
+**Bot token validation fails during `opensre onboard`**
+
+Ensure the token is copied exactly as provided by BotFather — no extra spaces or line breaks. The token format is `<numeric-id>:<alphanumeric-string>`.
+
+**Findings are not appearing in my group**
+
+Verify the bot has been added as a member (groups) or administrator (channels). The bot must be in the chat before it can post.
+
+**Chat ID not found / `Bad Request: chat not found`**
+
+Double-check the Chat ID format. Group IDs are negative integers and channel IDs start with `-100`. Use the `getUpdates` method described in Step 2 to confirm the correct ID.
+
+**Message silently truncated**
+
+Reports longer than 4096 characters are automatically shortened. This is a Telegram API limit and applies to all bots.
