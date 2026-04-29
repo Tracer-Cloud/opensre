@@ -1,5 +1,7 @@
 """Unit tests for the Grafana Tempo mixin."""
 
+from __future__ import annotations
+
 from unittest.mock import Mock, patch
 
 from app.services.grafana.tempo import TempoMixin
@@ -157,7 +159,7 @@ class TestTempoMixin:
                 {"key": "valid_int", "value": {"intValue": 42}},
                 {"key": "unsupported_type", "value": {"boolValue": True}},
                 {"key": "empty_value", "value": {}},
-                {"value": {"stringValue": "missing_key"}},  # Missing key falls back to ""
+                {"value": {"stringValue": "missing_key"}},  # Should be skipped!
             ]
         }
 
@@ -167,4 +169,19 @@ class TestTempoMixin:
         assert attributes.get("valid_int") == 42
         assert "unsupported_type" not in attributes
         assert "empty_value" not in attributes
-        assert attributes.get("") == "missing_key"
+        assert "" not in attributes
+
+    @patch("app.services.grafana.tempo.requests.get")
+    def test_get_trace_details_non_200_status(self, mock_requests_get):
+        """Test _get_trace_details when the API returns a non-200 status."""
+        client = FakeGrafanaClient()
+
+        # Setup mock to return a 404 status code
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_requests_get.return_value = mock_response
+
+        result = client._get_trace_details(trace_id="trace-123")
+
+        # Assert it safely falls back to empty spans
+        assert result == {"spans": []}
