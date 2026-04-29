@@ -225,3 +225,37 @@ def test_run_catalog_items_skips_non_runnable_and_prints_message(
     captured = capsys.readouterr()
     assert "suite:empty" in captured.err
     assert "Skipping" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Bundled-binary degradation for ``opensre tests synthetic`` (regression #1078)
+#
+# ``packaging/opensre.spec`` excludes the ``tests`` tree from PyInstaller
+# bundles, so ``from tests.synthetic.rds_postgres.run_suite import main``
+# raises ``ModuleNotFoundError`` in a packaged binary. Surface a clean
+# ``OpenSREError`` instead of a raw traceback so users know to run from a
+# source checkout.
+# ---------------------------------------------------------------------------
+
+
+def test_tests_synthetic_surfaces_clean_error_when_suite_not_bundled() -> None:
+    runner = CliRunner()
+
+    real_import = __import__
+
+    def _fail_synthetic_import(name: str, *args: object, **kwargs: object) -> object:
+        if name.startswith("tests.synthetic.rds_postgres"):
+            raise ModuleNotFoundError(f"No module named {name!r}")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    with unittest.mock.patch("builtins.__import__", side_effect=_fail_synthetic_import):
+        result = runner.invoke(cli, ["tests", "synthetic", "--scenario", "001-replication-lag"])
+
+    # OpenSREError is rendered by the CLI as a non-zero exit + a clear
+    # message; we don't want the raw ModuleNotFoundError traceback.
+    assert result.exit_code != 0
+    output = result.output or ""
+    assert "synthetic" in output.lower() or "rds_postgres" in output
+    # No raw traceback or stdlib exception name reaches the user.
+    assert "ModuleNotFoundError" not in output
+    assert "Traceback" not in output

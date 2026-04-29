@@ -248,6 +248,12 @@ def _comment_map_for_makefile(path: Path) -> dict[str, str]:
 
 
 def discover_make_targets() -> list[TestCatalogItem]:
+    if not MAKEFILE_PATH.is_file():
+        # PyInstaller-bundled builds ship only the ``app/`` tree (see
+        # ``packaging/opensre.spec``), so the Makefile is absent at runtime.
+        # Return an empty catalog slice so ``opensre tests`` still launches
+        # against whatever sources *are* bundled.
+        return []
     comment_map = _comment_map_for_makefile(MAKEFILE_PATH)
     makefile_text = MAKEFILE_PATH.read_text(encoding="utf-8")
     items: list[TestCatalogItem] = []
@@ -276,6 +282,12 @@ def discover_make_targets() -> list[TestCatalogItem]:
 
 def discover_rca_files() -> list[TestCatalogItem]:
     items: list[TestCatalogItem] = []
+    if not RCA_DIR.is_dir():
+        # ``Path.glob`` on a missing parent returns an empty iterator on
+        # CPython, so this isn't a crash today — but the explicit guard
+        # documents the bundled-binary contract and matches the shape of
+        # the other ``discover_*`` helpers below.
+        return items
     for path in sorted(RCA_DIR.glob("*.md")):
         title = path.stem.replace("_", " ").title()
         first_line = path.read_text(encoding="utf-8").splitlines()[0].strip()
@@ -297,9 +309,18 @@ def discover_rca_files() -> list[TestCatalogItem]:
 
 
 def _discover_rds_synthetic_scenarios() -> list[TestCatalogItem]:
-    """One catalog item per RDS synthetic scenario directory."""
+    """One catalog item per RDS synthetic scenario directory.
+
+    Bundled (PyInstaller) builds collect only ``app/`` data files (see
+    ``packaging/opensre.spec``), so ``tests/synthetic/rds_postgres`` is
+    absent at runtime and ``iterdir()`` would raise ``FileNotFoundError``.
+    Skip cleanly in that case — the synthetic-suite catalog entries are
+    only meaningful when the scenarios are on disk anyway.
+    """
     scenarios_dir = REPO_ROOT / "tests" / "synthetic" / "rds_postgres"
     items: list[TestCatalogItem] = []
+    if not scenarios_dir.is_dir():
+        return items
     req = TestRequirement(env_vars=("ANTHROPIC_API_KEY",))
     for scenario_dir in sorted(scenarios_dir.iterdir()):
         if not scenario_dir.is_dir() or scenario_dir.name.startswith("_"):

@@ -105,7 +105,22 @@ def tests(ctx: click.Context) -> None:
 )
 def run_synthetic_suite(scenario: str, output_json: bool, mock_grafana: bool) -> None:
     """Run the synthetic RDS PostgreSQL RCA benchmark."""
-    from tests.synthetic.rds_postgres.run_suite import main as run_suite_main
+    try:
+        # ``packaging/opensre.spec`` excludes the ``tests`` tree from
+        # PyInstaller bundles, so this import will raise ``ModuleNotFoundError``
+        # in a packaged binary. Surface a clear error rather than a raw
+        # traceback so users know to run from a source checkout.
+        from tests.synthetic.rds_postgres.run_suite import main as run_suite_main
+    except ModuleNotFoundError as exc:
+        raise OpenSREError(
+            "The synthetic RDS PostgreSQL suite is not available in this build.",
+            suggestion=(
+                "Run 'opensre tests synthetic' from a source checkout (clone "
+                "https://github.com/Tracer-Cloud/opensre) — the synthetic "
+                "scenarios under 'tests/synthetic/rds_postgres/' are not "
+                "bundled into the released binary."
+            ),
+        ) from exc
 
     capture_test_synthetic_started(scenario or "all", mock_grafana=mock_grafana)
     raise SystemExit(
