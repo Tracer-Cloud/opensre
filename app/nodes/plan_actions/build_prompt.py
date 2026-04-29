@@ -326,16 +326,16 @@ def build_investigation_prompt(
     airflow_priority_hint = ""
     if "airflow" in available_sources:
         airflow_priority_hint = """
-**Airflow Investigation Priority:**
-This incident explicitly involves Airflow and an Airflow integration is available.
-Prioritize Airflow-specific investigation actions before generic infrastructure tools.
+**Airflow Investigation Priority (MANDATORY):**
+This incident involves Airflow.
 
-Use Airflow tools FIRST:
+You MUST start by using Airflow investigation actions if they are available:
 - get_recent_airflow_failures
 - get_airflow_dag_runs
-- get_airflow_task_instances
 
-Do not start with unrelated generic platform tools unless Airflow evidence is exhausted.
+Do NOT start with generic diagnostic/code or SRE runbook actions before collecting Airflow DAG/task evidence.
+
+Only use generic tools if Airflow tools fail or return no useful data.
 """
 
     # Build lineage investigation directive if S3 data is available

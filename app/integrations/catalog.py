@@ -1585,6 +1585,7 @@ def resolve_effective_integrations(
         "openobserve",
         "opensearch",
         "alertmanager",
+        "airflow",
     )
     for service in direct_services:
         resolved_integration = classified_integrations.get(service)
