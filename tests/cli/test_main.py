@@ -124,6 +124,7 @@ def test_agent_subcommand_launches_repl(monkeypatch) -> None:
     monkeypatch.setattr("app.cli.__main__.capture_first_run_if_needed", lambda: None)
     monkeypatch.setattr("app.cli.__main__.shutdown_analytics", lambda **_kw: None)
     monkeypatch.setattr("app.cli.commands.agent.capture_cli_invoked", lambda: None)
+    monkeypatch.setattr("app.cli.commands.agent.sys.stdin.isatty", lambda: True)
     monkeypatch.setenv("OPENSRE_INTERACTIVE", "0")
 
     load_calls: list[dict] = []
@@ -162,6 +163,7 @@ def test_agent_subcommand_accepts_layout(monkeypatch) -> None:
     monkeypatch.setattr("app.cli.__main__.capture_first_run_if_needed", lambda: None)
     monkeypatch.setattr("app.cli.__main__.shutdown_analytics", lambda **_kw: None)
     monkeypatch.setattr("app.cli.commands.agent.capture_cli_invoked", lambda: None)
+    monkeypatch.setattr("app.cli.commands.agent.sys.stdin.isatty", lambda: True)
 
     run_repl_calls: list[ReplConfig] = []
 
@@ -180,3 +182,29 @@ def test_agent_subcommand_accepts_layout(monkeypatch) -> None:
     assert exit_code == 0
     assert len(run_repl_calls) == 1
     assert run_repl_calls[0].layout == "pinned"
+
+
+def test_agent_subcommand_errors_on_non_tty(monkeypatch, capsys) -> None:
+    """`opensre agent` must surface a clear error on non-TTY stdin.
+
+    The module docstring promises the explicit subcommand starts the REPL on
+    user intent. On piped/CI stdin we cannot do that, so we raise a loud
+    OpenSREError with a suggestion instead of silently returning 0.
+    """
+    monkeypatch.setattr("app.cli.__main__.capture_first_run_if_needed", lambda: None)
+    monkeypatch.setattr("app.cli.__main__.shutdown_analytics", lambda **_kw: None)
+    monkeypatch.setattr("app.cli.commands.agent.capture_cli_invoked", lambda: None)
+    monkeypatch.setattr("app.cli.commands.agent.sys.stdin.isatty", lambda: False)
+
+    def _fail_if_called(**_kw: object) -> int:
+        raise AssertionError("run_repl must not run when stdin is not a TTY")
+
+    with (
+        patch("app.cli.repl.run_repl", side_effect=_fail_if_called),
+        patch("app.cli.repl.loop.run_repl", side_effect=_fail_if_called),
+    ):
+        exit_code = main(["agent"])
+
+    assert exit_code != 0, "non-TTY agent invocation must not silently succeed"
+    captured = capsys.readouterr()
+    assert "TTY" in captured.err or "TTY" in captured.out

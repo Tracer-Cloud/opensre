@@ -4,12 +4,15 @@ Running bare ``opensre`` on a TTY already enters the REPL, but users often
 prefer an explicit subcommand — it reads better in scripts, composes with
 ``--layout``, and avoids ambiguity with the landing-page fallback path.
 
-``opensre agent`` always starts the REPL regardless of the
-``OPENSRE_INTERACTIVE`` env var or ``~/.opensre/config.yml`` — the user
-typed the command; they want the terminal.
+``opensre agent`` overrides ``OPENSRE_INTERACTIVE`` and
+``~/.opensre/config.yml`` — the user typed the command; they want the
+terminal. A real TTY is still required; on piped/CI stdin we surface a
+clear error instead of silently no-op'ing.
 """
 
 from __future__ import annotations
+
+import sys
 
 import click
 
@@ -26,9 +29,18 @@ from app.analytics.cli import capture_cli_invoked
 )
 def agent_command(layout: str | None) -> None:
     """Launch the interactive SRE agent terminal."""
+    from app.cli.errors import OpenSREError
     from app.cli.repl import run_repl
     from app.cli.repl.config import ReplConfig
 
     capture_cli_invoked()
+
+    if not sys.stdin.isatty():
+        raise OpenSREError(
+            "`opensre agent` needs an interactive terminal (TTY).",
+            suggestion="Run `opensre agent` directly in your terminal, "
+            "or use `opensre investigate` for non-interactive workflows.",
+        )
+
     config = ReplConfig.load(cli_enabled=True, cli_layout=layout)
     raise SystemExit(run_repl(config=config))
