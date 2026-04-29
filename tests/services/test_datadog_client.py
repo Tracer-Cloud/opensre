@@ -43,25 +43,14 @@ def test_search_logs_success(client, mock_httpx_client):
         raise_for_status=MagicMock(),
     )
 
-    mock_instance.get.return_value = MagicMock(
-        json=lambda: [{"name": "CPU Monitor"}],
-        raise_for_status=MagicMock(),
-    )
-
     mock_httpx_client.return_value = mock_instance
 
     result = client.search_logs("error")
 
+    assert result["success"] is True
     assert "logs" in result
-    assert "monitors" in result
-    assert "events" in result
-
-    assert result["logs"]["success"] is True
-    assert result["monitors"]["success"] is True
-    assert result["events"]["success"] is True
-
-    assert result["logs"]["logs"][0]["message"] == "log message"
-    assert result["monitors"]["monitors"][0]["name"] == "CPU Monitor"
+    assert result["logs"][0]["message"] == "log message"
+    assert result["total"] == 1
 
 
 def test_search_logs_empty_data(client, mock_httpx_client):
@@ -72,19 +61,13 @@ def test_search_logs_empty_data(client, mock_httpx_client):
         raise_for_status=MagicMock(),
     )
 
-    mock_instance.get.return_value = MagicMock(
-        json=lambda: [],
-        raise_for_status=MagicMock(),
-    )
-
     mock_httpx_client.return_value = mock_instance
 
     result = client.search_logs("error")
 
-    assert result["logs"]["success"] is True
-    assert result["logs"]["logs"] == []
-    assert result["monitors"]["success"] is True
-    assert result["events"]["success"] is True
+    assert result["success"] is True
+    assert result["logs"] == []
+    assert result["total"] == 0
 
 
 def test_search_logs_http_error(client, mock_httpx_client):
@@ -98,14 +81,12 @@ def test_search_logs_http_error(client, mock_httpx_client):
         response=mock_response,
     )
 
-    mock_instance.get.return_value = MagicMock()
-
     mock_httpx_client.return_value = mock_instance
 
     result = client.search_logs("error")
 
-    assert result["logs"]["success"] is False
-    assert "HTTP 500" in result["logs"]["error"]
+    assert result["success"] is False
+    assert "HTTP 500" in result["error"]
 
 
 def test_search_logs_generic_exception(client, mock_httpx_client):
