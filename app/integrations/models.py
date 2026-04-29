@@ -10,6 +10,7 @@ from pydantic import Field, field_validator, model_validator
 
 from app.config import get_tracer_base_url
 from app.strict_config import StrictConfigModel
+from app.utils.url_validation import validate_https_or_loopback_http_url
 
 _LOCAL_GRAFANA_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0"}
 DEFAULT_HONEYCOMB_BASE_URL = "https://api.honeycomb.io"
@@ -532,6 +533,63 @@ class AlertmanagerIntegrationConfig(StrictConfigModel):
         return self
 
 
+class ArgoCDIntegrationConfig(StrictConfigModel):
+    """Normalized Argo CD credentials used by resolution and verification flows."""
+
+    base_url: str
+    bearer_token: str = ""
+    username: str = ""
+    password: str = ""
+    project: str = ""
+    app_namespace: str = ""
+    verify_ssl: bool = True
+    integration_id: str = ""
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: object) -> str:
+        normalized = str(value or "").strip().rstrip("/")
+        return validate_https_or_loopback_http_url(normalized, service_name="Argo CD")
+
+    @field_validator("bearer_token", mode="before")
+    @classmethod
+    def _normalize_bearer_token(cls, value: object) -> str:
+        text = str(value or "").strip()
+        if text.lower().startswith("bearer "):
+            text = text.split(None, 1)[1].strip()
+        return text
+
+    @field_validator(
+        "username", "password", "project", "app_namespace", "integration_id", mode="before"
+    )
+    @classmethod
+    def _normalize_str(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("verify_ssl", mode="before")
+    @classmethod
+    def _normalize_bool(cls, value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return True
+        text = str(value).strip().lower()
+        if text in {"0", "false", "no", "off"}:
+            return False
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        return bool(value)
+
+    @model_validator(mode="after")
+    def _no_dual_auth(self) -> ArgoCDIntegrationConfig:
+        if self.bearer_token and (self.username or self.password):
+            raise ValueError(
+                "Argo CD config has both bearer_token and username/password set; "
+                "use one auth method only."
+            )
+        return self
+
+
 class IntegrationInstance(StrictConfigModel):
     """One named instance of a provider.
 
@@ -622,3 +680,4 @@ class EffectiveIntegrations(StrictConfigModel):
     opensearch: EffectiveIntegrationEntry | None = None
     alertmanager: EffectiveIntegrationEntry | None = None
     airflow: dict[str, Any] | None = None
+    argocd: EffectiveIntegrationEntry | None = None

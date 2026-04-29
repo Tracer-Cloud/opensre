@@ -1235,6 +1235,67 @@ def detect_sources(
             "connection_verified": True,
         }
 
+    argocd_int = (resolved_integrations or {}).get("argocd")
+    if argocd_int and str(argocd_int.get("base_url", "")).strip():
+        application_name = str(
+            annotations.get("argocd_application")
+            or annotations.get("argocd_app")
+            or annotations.get("application_name")
+            or raw_alert.get("argocd_application", "")
+            or raw_alert.get("argocd_app", "")
+        ).strip()
+        revision = str(
+            annotations.get("argocd_revision")
+            or annotations.get("revision")
+            or raw_alert.get("argocd_revision", "")
+        ).strip()
+        project = str(
+            annotations.get("argocd_project")
+            or raw_alert.get("argocd_project", "")
+            or argocd_int.get("project", "")
+        ).strip()
+        app_namespace = str(
+            annotations.get("argocd_app_namespace")
+            or raw_alert.get("argocd_app_namespace", "")
+            or argocd_int.get("app_namespace", "")
+        ).strip()
+        argocd_hint_text = " ".join(
+            str(value)
+            for value in (
+                raw_alert.get("alert_name", ""),
+                raw_alert.get("error_message", ""),
+                annotations.get("summary", ""),
+                annotations.get("description", ""),
+                annotations.get("message", ""),
+            )
+            if value
+        ).lower()
+        has_gitops_hint = any(
+            marker in argocd_hint_text
+            for marker in (
+                "argocd",
+                "argo cd",
+                "argo-cd",
+                "gitops",
+                "outofsync",
+                "outofsynced",
+            )
+        )
+        if application_name or revision or has_gitops_hint:
+            sources["argocd"] = {
+                "base_url": str(argocd_int.get("base_url", "")).strip().rstrip("/"),
+                "bearer_token": str(argocd_int.get("bearer_token", "")).strip(),
+                "username": str(argocd_int.get("username", "")).strip(),
+                "password": str(argocd_int.get("password", "")).strip(),
+                "application_name": application_name,
+                "revision": revision,
+                "project": project,
+                "app_namespace": app_namespace,
+                "verify_ssl": argocd_int.get("verify_ssl", True),
+                "integration_id": str(argocd_int.get("integration_id", "")).strip(),
+                "connection_verified": True,
+            }
+
     alertmanager_int = (resolved_integrations or {}).get("alertmanager")
     if alertmanager_int and str(alertmanager_int.get("base_url", "")).strip():
         # Carry label filters from the alert when present so tools can pre-scope the query

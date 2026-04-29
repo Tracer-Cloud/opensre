@@ -140,3 +140,20 @@ def test_integrations_verify_accepts_openclaw() -> None:
         send_slack_test=False,
     )
     mock_capture.assert_called_once_with("openclaw")
+
+
+def test_integrations_verify_accepts_argocd() -> None:
+    runner = CliRunner()
+
+    with (
+        patch("app.cli.commands.integrations.capture_integration_verified") as mock_capture,
+        patch("app.integrations.cli.cmd_verify", return_value=0) as mock_verify,
+    ):
+        result = runner.invoke(cli, ["integrations", "verify", "argocd"])
+
+    assert result.exit_code == 0
+    mock_verify.assert_called_once_with(
+        "argocd",
+        send_slack_test=False,
+    )
+    mock_capture.assert_called_once_with("argocd")

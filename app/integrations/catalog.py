@@ -20,6 +20,7 @@ from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL, build_gitlab_config
 from app.integrations.mariadb import build_mariadb_config
 from app.integrations.models import (
     AlertmanagerIntegrationConfig,
+    ArgoCDIntegrationConfig,
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
     DatadogIntegrationConfig,
@@ -92,6 +93,7 @@ _SERVICE_KEY_MAP = {
     "alertmanager": "alertmanager",
     "airflow": "airflow",
     "apache airflow": "airflow",
+    "argocd": "argocd",
 }
 
 
@@ -645,6 +647,30 @@ def _classify_service_instance(
             return alertmanager_config.model_dump(), "alertmanager"
         return None, None
 
+    if key == "argocd":
+        try:
+            argocd_config = ArgoCDIntegrationConfig.model_validate(
+                {
+                    "base_url": credentials.get("base_url", ""),
+                    "bearer_token": credentials.get("bearer_token", "")
+                    or credentials.get("auth_token", "")
+                    or credentials.get("token", ""),
+                    "username": credentials.get("username", ""),
+                    "password": credentials.get("password", ""),
+                    "project": credentials.get("project", ""),
+                    "app_namespace": credentials.get("app_namespace", ""),
+                    "verify_ssl": credentials.get("verify_ssl", True),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if argocd_config.base_url and (
+            argocd_config.bearer_token or (argocd_config.username and argocd_config.password)
+        ):
+            return argocd_config.model_dump(), "argocd"
+        return None, None
+
     if key == "bitbucket":
         workspace = str(credentials.get("workspace", "")).strip()
         if not workspace:
@@ -1063,6 +1089,43 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 "credentials": postgresql_config.model_dump(exclude={"integration_id"}),
             }
         )
+
+    argocd_multi = _parse_instances_env("ARGOCD_INSTANCES", "argocd")
+    if argocd_multi is not None:
+        integrations.append(argocd_multi)
+        argocd_base_url = ""
+        argocd_auth_token = ""
+        argocd_username = ""
+        argocd_password = ""
+    else:
+        argocd_base_url = os.getenv("ARGOCD_BASE_URL", "").strip()
+        argocd_auth_token = os.getenv("ARGOCD_AUTH_TOKEN", os.getenv("ARGOCD_TOKEN", "")).strip()
+        argocd_username = os.getenv("ARGOCD_USERNAME", "").strip()
+        argocd_password = os.getenv("ARGOCD_PASSWORD", "").strip()
+    if argocd_base_url and (argocd_auth_token or (argocd_username and argocd_password)):
+        try:
+            argocd_config = ArgoCDIntegrationConfig.model_validate(
+                {
+                    "base_url": argocd_base_url,
+                    "bearer_token": argocd_auth_token,
+                    "username": argocd_username,
+                    "password": argocd_password,
+                    "project": os.getenv("ARGOCD_PROJECT", "").strip(),
+                    "app_namespace": os.getenv("ARGOCD_APP_NAMESPACE", "").strip(),
+                    "verify_ssl": os.getenv("ARGOCD_VERIFY_SSL", "true").strip(),
+                }
+            )
+        except Exception:
+            pass
+        else:
+            integrations.append(
+                {
+                    "id": "env-argocd",
+                    "service": "argocd",
+                    "status": "active",
+                    "credentials": argocd_config.model_dump(exclude={"integration_id"}),
+                }
+            )
 
     vercel_api_token = os.getenv("VERCEL_API_TOKEN", "").strip()
     if vercel_api_token:
@@ -1575,6 +1638,7 @@ def resolve_effective_integrations(
         "opensearch",
         "alertmanager",
         "airflow",
+        "argocd",
     )
     for service in direct_services:
         resolved_integration = classified_integrations.get(service)

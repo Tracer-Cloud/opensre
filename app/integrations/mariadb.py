@@ -16,6 +16,7 @@ from pydantic import Field, field_validator
 
 from app.strict_config import StrictConfigModel
 from app.utils.coercion import safe_int
+from app.utils.truncation import truncate
 
 logger = logging.getLogger(__name__)
 
@@ -149,12 +150,6 @@ def validate_mariadb_config(config: MariaDBConfig) -> MariaDBValidationResult:
         return MariaDBValidationResult(ok=False, detail=f"MariaDB connection failed: {err}")
 
 
-def _truncate(text: str, max_len: int = _QUERY_TRUNCATE_LEN) -> str:
-    if len(text) <= max_len:
-        return text
-    return text[:max_len] + "..."
-
-
 def mariadb_is_available(sources: dict[str, dict]) -> bool:
     """Check if MariaDB integration credentials are present."""
     mdb = sources.get("mariadb", {})
@@ -213,7 +208,7 @@ def get_process_list(
                             "command": row[4],
                             "time_secs": row[5] or 0,
                             "state": row[6] or "",
-                            "query": _truncate(row[7] or ""),
+                            "query": truncate(row[7] or "", _QUERY_TRUNCATE_LEN),
                         }
                     )
                 return {
@@ -358,7 +353,7 @@ def get_slow_queries(
                 for row in cur.fetchall():
                     queries.append(
                         {
-                            "digest_text": _truncate(row[0] or ""),
+                            "digest_text": truncate(row[0] or "", _QUERY_TRUNCATE_LEN),
                             "count": row[1] or 0,
                             "avg_time_ms": float(row[2]) if row[2] is not None else 0,
                             "total_time_ms": float(row[3]) if row[3] is not None else 0,

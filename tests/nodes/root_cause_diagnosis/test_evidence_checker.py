@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.nodes.root_cause_diagnosis.evidence_checker import is_clearly_healthy
+from app.nodes.root_cause_diagnosis.evidence_checker import (
+    check_evidence_availability,
+    is_clearly_healthy,
+)
 
 
 def _healthy_alert() -> dict:
@@ -132,6 +135,23 @@ class TestIsClearlyHealthyRejectsUnhealthyStates:
         evidence = {"random_custom_key": "some value"}
         assert is_clearly_healthy(_healthy_alert(), evidence) is False
 
+    def test_argocd_diff_evidence_triggers_short_circuit(self) -> None:
+        evidence = {"argocd_diff": []}
+        assert is_clearly_healthy(_healthy_alert(), evidence) is True
+
     def test_non_dict_alert_returns_false(self) -> None:
         evidence = {"eks_pods": [{"name": "x"}]}
         assert is_clearly_healthy("raw text alert", evidence) is False
+
+
+class TestEvidenceAvailabilityArgoCD:
+    @pytest.mark.parametrize(
+        "evidence_key",
+        ["argocd_application", "argocd_applications", "argocd_diff"],
+    )
+    def test_argocd_evidence_counts_as_vendor_evidence(self, evidence_key: str) -> None:
+        has_tracer, has_vendor, has_alert = check_evidence_availability({}, {evidence_key: []}, {})
+
+        assert has_tracer is None
+        assert has_vendor is True
+        assert has_alert is False

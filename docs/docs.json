@@ -56,6 +56,7 @@
               "honeycomb",
               "coralogix",
               "sentry",
+              "argocd",
               "github",
               "gitlab",
               "bitbucket",
@@ -66,7 +67,8 @@
               "jira",
               "prefect",
               "google-docs",
-              "discord"
+              "discord",
+              "airflow"
             ]
           }
         ]
