@@ -1,7 +1,8 @@
 """Shared SQL tool wrapper helper.
 
 Extracts the repeated ``resolve config → call integration → attach warning``
-pattern that all six SQL tools (AzureSQL, PostgreSQL, MySQL, MariaDB) share.
+pattern shared across all 20 SQL tools (5 per family: AzureSQL, PostgreSQL,
+MySQL, MariaDB).
 
 See: https://github.com/Tracer-Cloud/opensre/issues/894
 """
@@ -25,7 +26,7 @@ def run_sql_tool(
 
     1. Call the integration helper function with the resolved config params
     2. If a *warning* string is provided, inject it into the returned dict
-       under the ``"warning"`` key (only when the call succeeds)
+       under the ``"default_db_warning"`` key (only when the call succeeds)
     3. Return the dict unchanged on failure
 
     Parameters
@@ -38,15 +39,17 @@ def run_sql_tool(
     warning:
         Optional warning message to attach to a successful result.
         Set by tools that need to surface a default-database notice, a
-        deprecated-credentials notice, etc.
+        deprecated-credentials notice, etc.  Written under the
+        ``"default_db_warning"`` key to match the convention used by all
+        existing SQL tools.
     **kwargs:
         Keyword arguments forwarded to *integration_fn*.
 
     Returns
     -------
     dict[str, Any]
-        The result dict from *integration_fn*, with ``"warning"`` added
-        when *warning* is not ``None`` and the call succeeded.
+        The result dict from *integration_fn*, with ``"default_db_warning"``
+        added when *warning* is not ``None`` and the call succeeded.
 
     Example
     -------
@@ -62,5 +65,5 @@ def run_sql_tool(
     """
     result: dict[str, Any] = integration_fn(*args, **kwargs)
     if warning is not None and result.get("available", True):
-        result["warning"] = warning
+        result["default_db_warning"] = warning
     return result
