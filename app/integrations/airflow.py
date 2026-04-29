@@ -9,7 +9,9 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
+
+from app.strict_config import StrictConfigModel
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +20,7 @@ DEFAULT_AIRFLOW_TIMEOUT_SECONDS = 15.0
 DEFAULT_AIRFLOW_MAX_RESULTS = 50
 
 
-class AirflowConfig(BaseModel):
+class AirflowConfig(StrictConfigModel):
     """Normalized Airflow connection settings."""
 
     base_url: str = DEFAULT_AIRFLOW_BASE_URL
