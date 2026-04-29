@@ -54,7 +54,7 @@ def test_search_logs_success(client, mock_httpx_client):
 
     assert "logs" in result
     assert result["success"] is True
-    assert result["logs"]["logs"][0]["message"] == "log message"
+    assert result["logs"][0]["message"] == "log message"
 
 
 def test_search_logs_empty_data(client, mock_httpx_client):
@@ -74,7 +74,7 @@ def test_search_logs_empty_data(client, mock_httpx_client):
 
     result = client.search_logs("error")
 
-    assert result["logs"]["logs"] == []
+    assert result["logs"] == []
 
 
 def test_search_logs_http_error(client, mock_httpx_client):

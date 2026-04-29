@@ -124,7 +124,7 @@ async def test_fetch_all_success_strong(async_client, mock_async_httpx):
     # -------------------------
     # REQUIRED: field validation
     # -------------------------
-    assert result["logs"]["logs"][0]["message"] == "log message"
+    assert result["logs"][0]["message"] == "log message"
     assert result["monitors"]["monitors"][0]["name"] == "CPU Monitor"
     assert result["events"]["events"][0]["title"] == "event title"
 
