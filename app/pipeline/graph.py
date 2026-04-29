@@ -6,6 +6,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.nodes import (
+    node_adapt_window,
     node_diagnose_root_cause,
     node_extract_alert,
     node_plan_actions,
@@ -51,6 +52,7 @@ def build_graph(config: None = None) -> CompiledStateGraph:
     graph.add_node("investigate_hypothesis", node_investigate_hypothesis)
     graph.add_node("merge_hypothesis_results", merge_hypothesis_results)
     graph.add_node("diagnose", node_diagnose_root_cause)
+    graph.add_node("adapt_window", node_adapt_window)
     graph.add_node("opensre_eval", node_opensre_llm_eval)
     graph.add_node("publish", node_publish_findings)
 
@@ -76,11 +78,16 @@ def build_graph(config: None = None) -> CompiledStateGraph:
     graph.add_conditional_edges("plan_actions", distribute_hypotheses)
     graph.add_edge("investigate_hypothesis", "merge_hypothesis_results")
     graph.add_edge("merge_hypothesis_results", "diagnose")
+    # When the routing function returns "investigate" (loop again), the path
+    # goes through ``adapt_window`` first so the window can be widened
+    # before the next plan_actions iteration. Terminal paths
+    # ("opensre_eval", "publish") bypass adapt_window entirely.
     graph.add_conditional_edges(
         "diagnose",
         route_investigation_loop,
-        {"investigate": "plan_actions", "opensre_eval": "opensre_eval", "publish": "publish"},
+        {"investigate": "adapt_window", "opensre_eval": "opensre_eval", "publish": "publish"},
     )
+    graph.add_edge("adapt_window", "plan_actions")
     graph.add_edge("opensre_eval", "publish")
     graph.add_edge("publish", END)
 

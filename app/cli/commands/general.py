@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import platform
+import sys
 import time
 
 import click
@@ -18,31 +19,6 @@ from app.cli.constants import ALERT_TEMPLATE_CHOICES
 from app.cli.context import is_json_output, is_yes
 from app.cli.exit_codes import ERROR, SUCCESS
 from app.version import get_version
-
-
-def _build_investigate_argv(
-    *,
-    input_path: str | None,
-    input_json: str | None,
-    interactive: bool,
-    print_template: str | None,
-    output: str | None,
-    evaluate: bool = False,
-) -> list[str]:
-    argv: list[str] = []
-    if input_path is not None:
-        argv.extend(["--input", input_path])
-    if input_json is not None:
-        argv.extend(["--input-json", input_json])
-    if interactive:
-        argv.append("--interactive")
-    if print_template is not None:
-        argv.extend(["--print-template", print_template])
-    if output is not None:
-        argv.extend(["--output", output])
-    if evaluate:
-        argv.append("--evaluate")
-    return argv
 
 
 @click.command(name="update")
@@ -207,7 +183,10 @@ def investigate_command(
             suggestion="Pass --service <name> alongside --slack-thread CHANNEL/TS.",
         )
 
-    from app.main import main as investigate_main
+    from app.cli import write_json
+    from app.cli.alert_templates import build_alert_template
+    from app.cli.investigate import run_investigation_cli, run_investigation_cli_streaming
+    from app.cli.payload import load_payload
 
     capture_investigation_started(
         input_path=input_path,
@@ -215,25 +194,38 @@ def investigate_command(
         interactive=interactive,
     )
     try:
-        exit_code = investigate_main(
-            _build_investigate_argv(
-                input_path=input_path,
-                input_json=input_json,
-                interactive=interactive,
-                print_template=print_template,
-                output=output,
-                evaluate=evaluate,
-            )
+        if print_template:
+            write_json(build_alert_template(print_template), output)
+            capture_investigation_completed()
+            raise SystemExit(SUCCESS)
+
+        payload = load_payload(
+            input_path=input_path,
+            input_json=input_json,
+            interactive=interactive,
         )
+        # Only stream the live UI when the user is interactively watching stdout
+        # and hasn't asked for machine-readable JSON. Otherwise the spinner and
+        # ANSI control codes corrupt the JSON payload that consumers expect on
+        # stdout (pipes, redirection, --json, CI logs).
+        # --evaluate forces the non-streaming path because the streaming runner
+        # does not yet wire opensre_evaluate scoring through the renderer.
+        stream_to_stdout = (
+            sys.stdout.isatty() and not is_json_output() and output is None and not evaluate
+        )
+        if stream_to_stdout:
+            result = run_investigation_cli_streaming(raw_alert=payload)
+        else:
+            result = run_investigation_cli(raw_alert=payload, opensre_evaluate=evaluate)
+        write_json(result, output)
+    except SystemExit:
+        raise
     except Exception:
         capture_investigation_failed()
         raise
 
-    if exit_code == SUCCESS:
-        capture_investigation_completed()
-    else:
-        capture_investigation_failed()
-    raise SystemExit(exit_code)
+    capture_investigation_completed()
+    raise SystemExit(SUCCESS)
 
 
 def _run_service_investigation(

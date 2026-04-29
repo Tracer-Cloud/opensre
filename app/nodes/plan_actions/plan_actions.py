@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from app.nodes.investigate.models import InvestigateInput
 from app.nodes.investigate.types import ExecutedHypothesis
 from app.nodes.plan_actions.build_prompt import (
+    get_blocked_action_names,
     plan_actions_with_llm,
     select_actions,
 )
@@ -29,19 +30,8 @@ SourceConfig = dict[str, object]
 AvailableSources = dict[str, SourceConfig]
 
 
-def _hypothesis_actions(hypothesis: ExecutedHypothesis) -> list[str]:
-    return hypothesis.get("actions", [])
-
-
 def _evidence_object_dict(value: object) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
-
-
-def _get_executed_action_names(executed_hypotheses: list[ExecutedHypothesis]) -> set[str]:
-    executed_actions: set[str] = set()
-    for hypothesis in executed_hypotheses:
-        executed_actions.update(action for action in _hypothesis_actions(hypothesis) if action)
-    return executed_actions
 
 
 def _seed_action_names_for_sources(
@@ -55,6 +45,10 @@ def _seed_action_names_for_sources(
     if "openclaw" in available_sources:
         seeded.append("search_openclaw_conversations")
         seeded.append("list_openclaw_tools")
+
+    if "airflow" in available_sources:
+        seeded.append("get_recent_airflow_failures")
+        seeded.append("get_airflow_dag_runs")
 
     return seeded
 
@@ -89,9 +83,12 @@ def _seed_plan_actions(
         if action_name in available_action_names
     ]
 
+    allowed_action_names: set[str] = set(available_action_names)
     result: list[str] = []
     seen: set[str] = set()
     for action_name in [*allowed_seeds, *planned_actions]:
+        if action_name not in allowed_action_names:
+            continue
         if action_name in seen:
             continue
         seen.add(action_name)
@@ -109,7 +106,7 @@ def _ensure_seed_actions_available(
 ) -> tuple[list[InvestigationAction], list[str]]:
     selected = list(available_actions)
     selected_names = {action.name for action in selected}
-    executed_action_names = _get_executed_action_names(executed_hypotheses)
+    blocked_action_names = get_blocked_action_names(executed_hypotheses)
     pool_by_name = {action.name: action for action in action_pool}
     seed_actions: list[InvestigationAction] = []
     required_action_names = [
@@ -122,7 +119,7 @@ def _ensure_seed_actions_available(
         if action_name in seen_required:
             continue
         seen_required.add(action_name)
-        if action_name in executed_action_names:
+        if action_name in blocked_action_names:
             continue
         action = pool_by_name.get(action_name)
         if action is None or action_name in selected_names:
@@ -159,13 +156,13 @@ def detect_reroute_trigger(
     Returns:
         Tuple of (should_reroute, reroute_reason)
     """
+    blocked_action_names = get_blocked_action_names(executed_hypotheses)
+
     # Check if s3_audit source was discovered from evidence but not yet utilized
     s3_audit_in_sources = "s3_audit" in available_sources
 
     # Check if we've already done audit tracing in a previous loop
-    s3_audit_already_executed = any(
-        "get_s3_object" in _hypothesis_actions(hyp) for hyp in executed_hypotheses
-    )
+    s3_audit_already_executed = "get_s3_object" in blocked_action_names
 
     # Trigger reroute if s3_audit source available but audit not yet executed
     if s3_audit_in_sources and not s3_audit_already_executed:
@@ -178,9 +175,7 @@ def detect_reroute_trigger(
     grafana_service_names = evidence.get("grafana_service_names", [])
     grafana_logs = evidence.get("grafana_logs", [])
     if grafana_service_names and not grafana_logs:
-        grafana_logs_already_queried = any(
-            "query_grafana_logs" in _hypothesis_actions(hyp) for hyp in executed_hypotheses
-        )
+        grafana_logs_already_queried = "query_grafana_logs" in blocked_action_names
         if not grafana_logs_already_queried:
             return True, "grafana service names discovered but logs not yet fetched"
 
@@ -200,7 +195,6 @@ def detect_reroute_trigger(
 def plan_actions(
     input_data: InvestigateInput,
     plan_model: type[BaseModel],
-    _pipeline_name: str = "",
     resolved_integrations: dict[str, object] | None = None,
 ) -> tuple[
     BaseModel | None,
@@ -220,7 +214,6 @@ def plan_actions(
     Args:
         input_data: InvestigateInput (or compatible) object
         plan_model: Pydantic model for structured LLM output
-        _pipeline_name: Unused (was for memory lookup, kept for caller compatibility)
         resolved_integrations: Pre-fetched integration credentials from resolve_integrations node
 
     Returns:
@@ -232,6 +225,15 @@ def plan_actions(
     available_sources = detect_sources(
         input_data.raw_alert, input_data.context, resolved_integrations=resolved_integrations
     )
+
+    # Thread shared incident metadata to opt-in tools. The reserved ``_meta``
+    # key holds investigation-level context (today: incident_window) that is
+    # NOT bound to any specific service. Tools that want it read
+    # ``sources["_meta"]["incident_window"]`` in their extract_params; tools
+    # that don't simply ignore the key. Omitted entirely when the state has
+    # no incident_window so the dict shape stays clean.
+    if input_data.incident_window is not None:
+        available_sources["_meta"] = {"incident_window": input_data.incident_window}
 
     # Enhance sources with dynamically discovered information from evidence (e.g., audit_key from S3 metadata)
     s3_object = _evidence_object_dict(input_data.evidence.get("s3_object", {}))
@@ -315,6 +317,12 @@ def plan_actions(
         available_action_names=available_action_names,
         available_sources=available_sources,
     )
+    if not plan.actions and available_action_names:
+        plan.actions = [available_action_names[0]]
+        plan.rationale = (
+            "Controller fallback: planner selected only unavailable or already-executed "
+            "actions. Forcing next available action."
+        )
 
     debug_print(f"Plan: {plan.actions} | {plan.rationale[:100]}...")
     if len(plan.actions) > tool_budget:

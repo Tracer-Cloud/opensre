@@ -18,10 +18,22 @@ class PlanAudit(TypedDict, total=False):
     inclusion_reasons: list[dict[str, Any]]
 
 
+class FailedAction(TypedDict, total=False):
+    """Failure metadata recorded separately from successful action history."""
+
+    action: str
+    error: str
+    failure_kind: str
+    failure_count: int
+    loop_count: int
+
+
 class ExecutedHypothesis(TypedDict, total=False):
     """A single planning/execution round recorded in state."""
 
     actions: list[str]
+    failed_actions: list[FailedAction]
+    exhausted_actions: list[str]
     rationale: str
     loop_count: int
     source: str

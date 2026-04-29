@@ -1,32 +1,32 @@
 ---
 title: "macOS"
-description: "Install OpenSRE locally on your macOS under two minutes"
+description: "Install Tracer locally on your macOS under two minutes"
 ---
 
-## 1. Install OpenSRE
+## 1. Install Tracer
 
-Run the following command to install OpenSRE:
+Run the following command to install Tracer:
 
 ```bash
 curl -sSL https://install.tracer.cloud | sh
 ```
 <Accordion title="macOS Compatibility Notes">
-While OpenSRE can run on macOS, certain features are limited due to system restrictions.<br/>
+While Tracer can run on macOS, certain features are limited due to system restrictions.<br/>
   **– eBPF features:** Disabled due to macOS kernel restrictions<br/>
   **– Process recognition:** Less precise than on Linux due to limited access to low-level system data
 
-  For full functionality, including accurate process visibility and eBPF support, we recommend running OpenSRE directly on a Linux machine.
+  For full functionality, including accurate process visibility and eBPF support, we recommend running Tracer directly on a Linux machine.
 </Accordion>
 
 
-## 2. Start OpenSRE agent
+## 2. Start Tracer agent
 
 To start tracking a pipeline, run the following command:
 
 ```bash
 sudo tracer login
 ```
-<Info>This will open up a browser window to log in to your OpenSRE account.</Info>
+<Info>This will open up a browser window to log in to your Tracer account.</Info>
 
 To start tracking a pipeline, run the following command:
 
@@ -38,7 +38,7 @@ You will be prompted to configure the pipeline name. Filling this out ensures th
 
 
 <Tip>
-**OpenSRE is now tracking your pipeline.**
+**Tracer is now tracking your pipeline.**
 
 Every run you launch for this pipeline will be automatically monitored.
 
@@ -66,18 +66,18 @@ sudo tracer demo
   <img
     className="block dark:hidden"
     src="/images/logo/tracer/Tracer Full Body - Black.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
   <img
     className="hidden dark:block"
     src="/images/logo/tracer/Tracer Full Body - Black.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
 
   <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1rem', color: 'inherit' }}>
-    Watch your pipeline run in the OpenSRE dashboard
+    Watch your pipeline run in the Tracer dashboard
   </div>
 
   <div style={{ color: 'inherit' }}>

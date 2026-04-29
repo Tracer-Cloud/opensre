@@ -1,0 +1,60 @@
+---
+title: "Daily Update — 2026-04-27"
+description: "OpenSRE engineering daily update for 2026-04-27 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+Aarush Sharma, Aarush Sharma, Anwesh, Awokoya Olawale Davidson, Blut-agent, DevNinja, Ghraven, Gingiris, hruico, Ibocata, Jeel3011, Kevin Espiñeira, Lozsku, Malik Amir Hamza, Piyush Tiwari, Ryjen1, ShivaniNR, Vaibhav Upreti, vignesh Gopikrishnan, and Yash Kumar Saini 🙏🚀
+
+## Main updates shipped (April 27, 2026)
+
+- feat: add IncidentWindow foundation for shared incident time (#951) — Malik Amir Hamza
+- Refactor: Parallelize Investigation via LangGraph Send() — Jeel3011
+- docs(azure-monitor): add Azure Monitor integration guide — DevNinja
+- feat(llm-cli): modularize CLI binary resolution — Anwesh
+- fix: stop run_diagnostic_code from crashing every investigation dispatch — Aarush Sharma
+- test: add unit tests for AWSBatchJobsMixin and fix timezone bug — Kevin Espiñeira
+- Fix :Add deprecation warning for prefect integration — Ibocata
+- fix(CI): lazy-load GitHub MCP in CLI setup — Anwesh
+- test(tools): add unit tests for Azure Monitor Logs tool — vignesh Gopikrishnan
+- fix: add missing __init__.py to tests/integrations and tests/nodes packages — Ghraven
+- refactor(tests): move detect_sources GitLab tests into tests/nodes/plan_actions/ — Awokoya Olawale Davidson
+- test(tracer): add unit tests for get_logs parameter construction — Piyush Tiwari
+- Fix: Moved pwhtool tests into tests dir  @hruico — hruico
+- docs: replace stale Mintlify starter content — Maryjane Okafor
+- test(nodes): move publish_findings node_test.py into tests/ tree — Lozsku
+- test(llm-cli): fix Windows CI codex path assertions — Anwesh
+- docs: add Table of Contents to README — Gingiris
+- test(tools): move log_compaction_test.py into tests/ tree — Lozsku
+- fix: correct misleading FileNotFoundError message in example — Blut-agent
+- fix: rename tests/AGENTS.MD to tests/AGENTS.md — ShivaniNR
+
+## Source pull requests
+
+- [#979](https://github.com/Tracer-Cloud/opensre/pull/979) fix: rename tests/AGENTS.MD to tests/AGENTS.md (author: ShivaniNR; contributors: ShivaniNR; labels: _none_; files: `tests/AGENTS.md`)
+- [#951](https://github.com/Tracer-Cloud/opensre/pull/951) feat: add IncidentWindow foundation for shared incident time (author: Malik Amir Hamza; contributors: Malik Amir Hamza; labels: _none_; files: `app/incident_window.py`, `app/nodes/extract_alert/extract_node.py`, `app/state/agent_state.py`, `tests/app/test_incident_window.py`, `tests/app/test_incident_window_cloudwatch_depth.py`, `tests/app/test_incident_window_extract_wiring.py`)
+- [#999](https://github.com/Tracer-Cloud/opensre/pull/999) docs(azure-monitor): add Azure Monitor integration guide (author: DevNinja; contributors: DevNinja; labels: _none_; files: `docs/azure-monitor.mdx`, `docs/docs.json`)
+- [#1004](https://github.com/Tracer-Cloud/opensre/pull/1004) fix: correct misleading FileNotFoundError message in example (author: Blut-agent; contributors: Blut-agent; labels: _none_; files: `tests/AGENTS.md`)
+- [#1000](https://github.com/Tracer-Cloud/opensre/pull/1000) fix: add missing __init__.py to tests/integrations and tests/nodes packages (author: Ghraven; contributors: Ghraven; labels: _none_; files: `tests/integrations/__init__.py`, `tests/nodes/__init__.py`)
+- [#1006](https://github.com/Tracer-Cloud/opensre/pull/1006) test: add unit tests for AWSBatchJobsMixin and fix timezone bug (author: Kevin Espiñeira; contributors: Kevin Espiñeira; labels: _none_; files: `app/services/tracer_client/aws_batch_jobs.py`, `tests/services/tracer_client/test_aws_batch_jobs.py`)
+- [#795](https://github.com/Tracer-Cloud/opensre/pull/795) feat(llm-cli): modularize CLI binary resolution (author: Anwesh; contributors: Anwesh; labels: _none_; files: `app/integrations/llm_cli/AGENTS.md`, `app/integrations/llm_cli/binary_resolver.py`, `app/integrations/llm_cli/codex.py`, `tests/integrations/llm_cli/conftest.py`, `tests/integrations/llm_cli/test_codex_adapter.py`)
+- [#988](https://github.com/Tracer-Cloud/opensre/pull/988) fix: stop run_diagnostic_code from crashing every investigation dispatch (author: Aarush Sharma; contributors: Aarush Sharma and Aarush Sharma; labels: _none_; files: `app/tools/run_diagnostic_code.py`, `tests/tools/test_run_diagnostic_code_tool.py`)
+- [#964](https://github.com/Tracer-Cloud/opensre/pull/964) test(tools): move log_compaction_test.py into tests/ tree (author: Lozsku; contributors: Lozsku; labels: _none_; files: `tests/tools/test_log_compaction.py`)
+- [#983](https://github.com/Tracer-Cloud/opensre/pull/983) test(tracer): add unit tests for get_logs parameter construction (author: Piyush Tiwari; contributors: Piyush Tiwari; labels: _none_; files: `tests/services/tracer_client/test_tracer_logs.py`)
+- [#847](https://github.com/Tracer-Cloud/opensre/pull/847) Fix: Moved pwhtool tests into tests dir  @hruico (author: hruico; contributors: hruico and Vaibhav Upreti; labels: _none_; files: `tests/tools/test_prefect_worker_health_tool.py`)
+- [#937](https://github.com/Tracer-Cloud/opensre/pull/937) Fix :Add deprecation warning for prefect integration (author: Ibocata; contributors: Ibocata; labels: _none_; files: `app/integrations/clients/prefect/__init__.py`)
+- [#936](https://github.com/Tracer-Cloud/opensre/pull/936) Refactor: Parallelize Investigation via LangGraph Send() (author: Jeel3011; contributors: Jeel3011; labels: _none_; files: `app/nodes/__init__.py`, `app/nodes/investigate/__init__.py`, `app/nodes/investigate/merge.py`, `app/nodes/investigate/parallel.py`, `app/pipeline/graph.py`, `app/pipeline/routing.py`, `app/state/agent_state.py`, `tests/nodes/test_parallel_investigate.py`)
+- [#965](https://github.com/Tracer-Cloud/opensre/pull/965) test(nodes): move publish_findings node_test.py into tests/ tree (author: Lozsku; contributors: Lozsku; labels: _none_; files: `tests/nodes/publish_findings/__init__.py`, `tests/nodes/publish_findings/test_node.py`)
+- [#959](https://github.com/Tracer-Cloud/opensre/pull/959) refactor(tests): move detect_sources GitLab tests into tests/nodes/plan_actions/ (author: Awokoya Olawale Davidson; contributors: Awokoya Olawale Davidson; labels: _none_; files: `app/nodes/plan_actions/detect_sources_test.py`, `tests/nodes/plan_actions/test_detect_sources.py`)
+- [#1009](https://github.com/Tracer-Cloud/opensre/pull/1009) test(llm-cli): fix Windows CI codex path assertions (author: Anwesh; contributors: Anwesh; labels: _none_; files: `tests/integrations/llm_cli/test_codex_adapter.py`)
+- [#1011](https://github.com/Tracer-Cloud/opensre/pull/1011) fix(CI): lazy-load GitHub MCP in CLI setup (author: Anwesh; contributors: Anwesh; labels: _none_; files: `app/integrations/cli.py`, `tests/cli/test_integrations_setup_github.py`)
+- [#1012](https://github.com/Tracer-Cloud/opensre/pull/1012) docs: add Table of Contents to README (author: Gingiris; contributors: Gingiris; labels: _none_; files: `README.md`)
+- [#1010](https://github.com/Tracer-Cloud/opensre/pull/1010) docs: replace stale Mintlify starter content (author: Maryjane Okafor; contributors: Maryjane Okafor and Ryjen1; labels: _none_; files: `Makefile`, `docs/README.md`)
+- [#1007](https://github.com/Tracer-Cloud/opensre/pull/1007) test(tools): add unit tests for Azure Monitor Logs tool (author: vignesh Gopikrishnan; contributors: vignesh Gopikrishnan and Yash Kumar Saini; labels: _none_; files: `tests/tools/test_azure_monitor_logs_tool.py`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-26T23:00:00+00:00` to `2026-04-27T23:00:00+00:00`

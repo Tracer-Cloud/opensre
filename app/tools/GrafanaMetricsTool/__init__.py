@@ -28,6 +28,7 @@ def _query_grafana_metrics_available(sources: dict[str, dict]) -> bool:
 
 @tool(
     name="query_grafana_metrics",
+    display_name="Grafana Mimir",
     source="grafana",
     description="Query Grafana Cloud Mimir for pipeline metrics.",
     use_cases=[

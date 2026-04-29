@@ -42,4 +42,6 @@ EvidenceSource = Literal[
     "openobserve",
     "opensearch",
     "alertmanager",
+    "airflow",
+    "argocd",
 ]

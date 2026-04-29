@@ -26,6 +26,7 @@ def _cloudwatch_logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 @tool(
     name="get_cloudwatch_logs",
+    display_name="CloudWatch",
     source="cloudwatch",
     description="Fetch error logs from AWS CloudWatch Logs.",
     use_cases=[

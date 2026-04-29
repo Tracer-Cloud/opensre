@@ -1,16 +1,16 @@
 ---
-title: 'OpenSRE/tune'
-sidebarTitle: 'OpenSRE/tune'
+title: 'Tracer/tune'
+sidebarTitle: 'Tracer/tune'
 description: 'Turn "working" pipelines into fast, efficient pipelines'
 ---
 
-OpenSRE/tune is where execution visibility becomes optimization. It answers what actually happened at runtime and turns that understanding into concrete recommendations to improve pipeline performance, stability, and cost efficiency.
+Tracer/tune is where execution visibility becomes optimization. It answers what actually happened at runtime and turns that understanding into concrete recommendations to improve pipeline performance, stability, and cost efficiency.
 
-OpenSRE/tune is built on execution signals captured by OpenSRE/collect. It does not change pipeline code, rewrite workflows, or rely on heuristics. All recommendations are based on observed execution behavior.
+Tracer/tune is built on execution signals captured by Tracer/collect. It does not change pipeline code, rewrite workflows, or rely on heuristics. All recommendations are based on observed execution behavior.
 
-## What OpenSRE/tune does
+## What Tracer/tune does
 
-OpenSRE/tune analyzes how pipelines actually ran and translates that behavior into actionable guidance.
+Tracer/tune analyzes how pipelines actually ran and translates that behavior into actionable guidance.
 
 Specifically, it:
 
@@ -19,15 +19,15 @@ Specifically, it:
 - Identifies bottlenecks, idle execution, and over-allocation
 - Produces right-sizing and optimization recommendations grounded in runtime data
 
-OpenSRE/tune focuses on execution reality, not configuration intent.
+Tracer/tune focuses on execution reality, not configuration intent.
 
 <Frame>
   <img src="/images/features/runtime-view.webp" alt="Runtime view showing pipeline execution organized by pipeline, run, step, and tool" />
 </Frame>
 
-## What OpenSRE/tune is optimized for
+## What Tracer/tune is optimized for
 
-OpenSRE/tune is designed for teams with pipelines that fail or already run successfully but are inefficient, unstable, or expensive.
+Tracer/tune is designed for teams with pipelines that fail or already run successfully but are inefficient, unstable, or expensive.
 
 <CardGroup cols={3}>
   <Card title="Repeatability" icon="repeat">
@@ -49,13 +49,13 @@ OpenSRE/tune is designed for teams with pipelines that fail or already run succe
 
 <Note>These problems are difficult to solve with logs, dashboards, or orchestration metadata alone.</Note>
 
-## How OpenSRE/tune produces recommendations
+## How Tracer/tune produces recommendations
 
-OpenSRE/tune operates entirely on execution signals derived from the host-layer.
+Tracer/tune operates entirely on execution signals derived from the host-layer.
 
 ### Inputs
 
-OpenSRE/tune analyzes:
+Tracer/tune analyzes:
 
 - CPU utilization and scheduling behavior
 - Memory usage, peak memory, and pressure
@@ -71,7 +71,7 @@ These signals come from kernel-level telemetry and reflect what actually happene
 
 ### Outputs
 
-Based on these observations, OpenSRE/tune produces recommendations such as:
+Based on these observations, Tracer/tune produces recommendations such as:
 
 - Lowering CPU or memory requests for underutilized steps
 - Increasing peak memory to prevent OOM retries
@@ -81,9 +81,9 @@ Based on these observations, OpenSRE/tune produces recommendations such as:
 
 Recommendations are advisory, explainable, and based only on observed behavior.
 
-## What you see in the OpenSRE UI
+## What you see in the Tracer UI
 
-OpenSRE/tune is driven by a shared execution view in the OpenSRE UI.
+Tracer/tune is driven by a shared execution view in the Tracer UI.
 
 You can:
 
@@ -101,7 +101,7 @@ You can:
   <img src="/images/features/automatic-logging.webp" alt="Automatic logging showing structured execution timelines from kernel-level signals" />
 </Frame>
 
-OpenSRE/tune generates complete, structured execution timelines directly from kernel-level signals, even for tools that produce minimal logs, logs that disappear after a failure, or no logs at all. Because logging is derived from the operating system rather than the application, you always get complete runtime information without instrumentation, wrappers, or re-running pipelines.
+Tracer/tune generates complete, structured execution timelines directly from kernel-level signals, even for tools that produce minimal logs, logs that disappear after a failure, or no logs at all. Because logging is derived from the operating system rather than the application, you always get complete runtime information without instrumentation, wrappers, or re-running pipelines.
 
 This view is reconstructed directly from execution signals and does not depend on workflow metadata or application logs.
 
@@ -113,7 +113,7 @@ These examples are framework-agnostic and apply across workflow engines and envi
 
 A step requests many cores but consistently uses only a small fraction.
 
-→ OpenSRE/tune recommends lowering CPU allocation without affecting runtime.
+→ Tracer/tune recommends lowering CPU allocation without affecting runtime.
 
 <Frame>
   <img src="/images/features/kernel-level-tele.webp" alt="Kernel-level telemetry using eBPF for low-level performance observation" />
@@ -123,7 +123,7 @@ A step requests many cores but consistently uses only a small fraction.
 
 A task spends most of its time blocked on disk or network I/O.
 
-→ OpenSRE/tune recommends storage or locality changes, not additional cores.
+→ Tracer/tune recommends storage or locality changes, not additional cores.
 
 <Frame>
   <img src="/images/features/failure-signals.webp" alt="Failure signals showing OOM kills, stalled tools, and I/O wait issues" />
@@ -133,13 +133,13 @@ A task spends most of its time blocked on disk or network I/O.
 
 A step occasionally exceeds memory limits and retries.
 
-→ OpenSRE/tune recommends right-sizing peak memory to stabilize execution.
+→ Tracer/tune recommends right-sizing peak memory to stabilize execution.
 
 In each case, the recommendation is tied directly to observed runtime behavior.
 
 ## Cost-aware optimization
 
-OpenSRE/tune links execution behavior to actual cloud cost. It:
+Tracer/tune links execution behavior to actual cloud cost. It:
 
 - Breaks down usage and cost by pipeline, run, step, tool, and instance
 - Uses cloud-provider billing metrics for accurate cost attribution
@@ -156,26 +156,26 @@ OpenSRE/tune links execution behavior to actual cloud cost. It:
 
 Cost optimization is derived from execution data, not estimates or tagging.
 
-## What OpenSRE/tune does not replace
+## What Tracer/tune does not replace
 
 <Warning>
-**OpenSRE/tune is not:**
+**Tracer/tune is not:**
 - A workflow orchestrator or scheduler
 - A language-level or function-level profiler
 </Warning>
 
-OpenSRE/tune provides process-level execution truth. For code-level optimization, it complements traditional profilers rather than replacing them.
+Tracer/tune provides process-level execution truth. For code-level optimization, it complements traditional profilers rather than replacing them.
 
 ## Requirements
 
-OpenSRE/tune requires OpenSRE/collect to be installed and running.
+Tracer/tune requires Tracer/collect to be installed and running.
 
 It supports:
 
 - AWS Batch and other Linux-based cloud compute
 - On-prem and hybrid HPC environments
 - Containerized and non-containerized workloads
-- Any workflow engine, scheduler, language, or binary supported by OpenSRE/collect
+- Any workflow engine, scheduler, language, or binary supported by Tracer/collect
 
 No code changes, instrumentation, or tagging are required.
 
@@ -183,19 +183,19 @@ Once installed, your next run is visible automatically. See [Quickstart](/quicks
 
 ## Summary
 
-OpenSRE/tune turns execution visibility into optimization. By analyzing what actually happened at runtime, it helps teams make informed decisions about resource allocation, performance tuning, and cost control, without rewriting pipelines or changing how they work.
+Tracer/tune turns execution visibility into optimization. By analyzing what actually happened at runtime, it helps teams make informed decisions about resource allocation, performance tuning, and cost control, without rewriting pipelines or changing how they work.
 
 <CardGroup cols={2}>
   <Card href="/technology/tracer-collect">
     <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
-      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
     </span>
     <br />
     Learn how execution data is captured
   </Card>
   <Card href="/technology/tracer-sweep">
     <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
-      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #4436BD, #5646E2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #4436BD, #5646E2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
     </span>
     <br />
     Explore systemwide cloud cost discovery

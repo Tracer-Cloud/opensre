@@ -1,20 +1,20 @@
 ---
 title: 'eBPF and security'
 sidebarTitle: 'eBPF and security'
-description: 'How OpenSRE observes execution safely and securely'
+description: 'How Tracer observes execution safely and securely'
 ---
 
-OpenSRE uses eBPF (extended Berkeley Packet Filter) to observe execution behavior directly from the Linux kernel. This approach enables high-fidelity visibility with minimal overhead, while maintaining strong safety and security guarantees.
+Tracer uses eBPF (extended Berkeley Packet Filter) to observe execution behavior directly from the Linux kernel. This approach enables high-fidelity visibility with minimal overhead, while maintaining strong safety and security guarantees.
 
-This page explains why eBPF is used, what OpenSRE observes, what it does not observe, and how security is enforced.
+This page explains why eBPF is used, what Tracer observes, what it does not observe, and how security is enforced.
 
-## Why OpenSRE uses eBPF
+## Why Tracer uses eBPF
 
 Traditional observability approaches depend on logs, metrics exporters, or application-level instrumentation. These methods rely on what software chooses to expose and often miss behavior in short-lived processes, external binaries, or between metric collection intervals.
 
-eBPF allows OpenSRE to observe execution where it actually happens, at the boundary between user processes and the operating system.
+eBPF allows Tracer to observe execution where it actually happens, at the boundary between user processes and the operating system.
 
-Using eBPF, OpenSRE can:
+Using eBPF, Tracer can:
 
 - Observe syscalls, scheduling events, and I/O activity
 - Track process lifecycles across containers and hosts
@@ -24,14 +24,14 @@ Using eBPF, OpenSRE can:
 This makes eBPF well suited for scientific and ML workloads that rely on many heterogeneous tools.
 
 <Frame>
-  <img src="/images/howTracerWorks.webp" alt="How OpenSRE works: observing execution at the kernel level using eBPF" />
+  <img src="/images/howTracerWorks.webp" alt="How Tracer works: observing execution at the kernel level using eBPF" />
 </Frame>
 
 ## Safety model
 
 eBPF programs are subject to strict safety constraints enforced by the Linux kernel.
 
-OpenSRE's use of eBPF follows these principles:
+Tracer's use of eBPF follows these principles:
 
 <AccordionGroup>
   <Accordion title="Verified bytecode">
@@ -41,18 +41,18 @@ OpenSRE's use of eBPF follows these principles:
     eBPF programs run in a restricted environment and cannot access arbitrary memory or crash the kernel.
   </Accordion>
   <Accordion title="No kernel modifications">
-    OpenSRE does not load kernel modules or modify kernel code.
+    Tracer does not load kernel modules or modify kernel code.
   </Accordion>
   <Accordion title="Controlled attachment points">
-    OpenSRE attaches only to well-defined kernel hooks such as system call boundaries and scheduler events.
+    Tracer attaches only to well-defined kernel hooks such as system call boundaries and scheduler events.
   </Accordion>
 </AccordionGroup>
 
-These guarantees are provided by the kernel itself and apply regardless of how OpenSRE is configured.
+These guarantees are provided by the kernel itself and apply regardless of how Tracer is configured.
 
-## What OpenSRE observes
+## What Tracer observes
 
-OpenSRE observes execution metadata, not application data.
+Tracer observes execution metadata, not application data.
 
 <CardGroup cols={3}>
   <Card title="CPU & scheduling" icon="microchip">
@@ -74,10 +74,10 @@ OpenSRE observes execution metadata, not application data.
 
 This data is used to reconstruct execution timelines and resource usage patterns.
 
-## What OpenSRE does not observe
+## What Tracer does not observe
 
 <Warning>
-**OpenSRE explicitly does not collect:**
+**Tracer explicitly does not collect:**
 - Application payloads or scientific input/output data
 - File contents or data values
 - Source code or function-level execution traces
@@ -85,11 +85,11 @@ This data is used to reconstruct execution timelines and resource usage patterns
 - Application- or domain-level interpretation of what a command does
 </Warning>
 
-While OpenSRE can observe which binaries and commands were executed, it does not inspect the data those commands operate on or infer application semantics.
+While Tracer can observe which binaries and commands were executed, it does not inspect the data those commands operate on or infer application semantics.
 
 ## Data handling and isolation
 
-OpenSRE separates data collection from analysis.
+Tracer separates data collection from analysis.
 
 - Execution signals are captured locally and processed into structured telemetry
 - Only metadata required for analysis is transmitted
@@ -100,7 +100,7 @@ This design minimizes data exposure while preserving execution insight.
 
 ## Performance considerations
 
-OpenSRE's eBPF-based collection is designed to minimize overhead:
+Tracer's eBPF-based collection is designed to minimize overhead:
 
 <CardGroup cols={2}>
   <Card title="Low latency" icon="bolt">
@@ -121,7 +121,7 @@ OpenSRE's eBPF-based collection is designed to minimize overhead:
 
 ## Security boundaries
 
-OpenSRE is intentionally scoped.
+Tracer is intentionally scoped.
 
 <Warning>
 **It does not:**
@@ -131,35 +131,35 @@ OpenSRE is intentionally scoped.
 - Replace IAM, RBAC, or cloud security controls
 </Warning>
 
-Security ownership remains with the operating system, container runtime, and cloud provider. OpenSRE observes execution behavior within those boundaries.
+Security ownership remains with the operating system, container runtime, and cloud provider. Tracer observes execution behavior within those boundaries.
 
 ## When to read this page
 
 This page is most relevant if you:
 
-- Need to understand how OpenSRE observes execution safely
+- Need to understand how Tracer observes execution safely
 - Operate in regulated or security-sensitive environments
 - Evaluate eBPF-based tooling for production systems
-- Want clarity on what data OpenSRE does and does not collect
+- Want clarity on what data Tracer does and does not collect
 
 <CardGroup cols={3}>
   <Card href="/technology/tracer-collect">
     <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
-      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
     </span>
     <br />
     Implementation details
   </Card>
   <Card href="/technology/tracer-tune">
     <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
-      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
     </span>
     <br />
     Execution analysis and optimization
   </Card>
   <Card href="/technology/tracer-sweep">
     <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
-      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #4436BD, #5646E2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #4436BD, #5646E2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
     </span>
     <br />
     Cloud waste discovery

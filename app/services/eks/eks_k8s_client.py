@@ -3,6 +3,8 @@
 Programmatic equivalent of `aws eks get-token` — no kubectl binary required.
 """
 
+from __future__ import annotations
+
 import base64
 import logging
 import os
@@ -14,7 +16,10 @@ import boto3
 import botocore.auth
 import botocore.awsrequest
 import botocore.credentials
+import botocore.session
 from kubernetes import client as k8s_client
+
+from app.services.eks.utils import stored_credentials_to_aws_creds
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +45,10 @@ def _generate_eks_token(cluster_name: str, assumed_creds: dict[str, Any], region
     creds = botocore.credentials.Credentials(
         access_key=assumed_creds["AccessKeyId"],
         secret_key=assumed_creds["SecretAccessKey"],
-        token=assumed_creds["SessionToken"],
+        token=assumed_creds["SessionToken"] or None,
     )
 
-    sts_url = "https://sts.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15"
+    sts_url = f"https://sts.{region}.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15"
     request = botocore.awsrequest.AWSRequest(
         method="GET",
         url=sts_url,
@@ -76,13 +81,50 @@ def build_k8s_clients(
     role_arn: str,
     external_id: str,
     region: str,
+    credentials: dict[str, Any] | None = None,
 ) -> tuple[k8s_client.CoreV1Api, k8s_client.AppsV1Api]:
     """Assume role, describe cluster, build in-memory Kubernetes API clients.
+
+    Credential resolution priority:
+      1. Explicit `credentials` kwarg (stored AWS integration IAM user creds).
+      2. `role_arn` → STS AssumeRole (existing behaviour).
+      3. Ambient botocore chain (env AK/SK, shared config, instance profile / IRSA).
 
     Returns (CoreV1Api, AppsV1Api) ready to query pods, events, nodes, deployments.
     No kubeconfig file is written to disk.
     """
-    assumed = _assume_role(role_arn, external_id, "TracerEKSK8sInvestigation")
+    stored = stored_credentials_to_aws_creds(credentials)
+    if stored is not None:
+        # Explicit stored-integration credentials path (highest priority).
+        # Matches the catalog + resolve_integrations flow: the AWS integration
+        # is configured with IAM user creds (access_key_id + secret_access_key),
+        # possibly with a session_token, and no role_arn. Previously these
+        # silently fell through to the ambient botocore chain which missed
+        # the stored values entirely when ambient creds were also set but
+        # pointed elsewhere. The shared ``stored_credentials_to_aws_creds``
+        # helper keeps the normalization rules (empty session_token → None,
+        # both required keys present) in sync with ``EKSClient``.
+        logger.info("[eks] Using explicit stored-integration AWS credentials")
+        assumed = stored
+    elif role_arn:
+        assumed = _assume_role(role_arn, external_id, "TracerEKSK8sInvestigation")
+    else:
+        # No role_arn and no explicit creds: fall back to ambient AWS
+        # credentials (env AK/SK, shared config profile, or instance profile
+        # / IRSA). Preserves the #724 fallback behaviour.
+        logger.info("[eks] No role_arn or explicit credentials; using ambient AWS credentials")
+        sess = botocore.session.get_session()
+        ambient = sess.get_credentials()
+        if ambient is None:
+            msg = "No AWS credentials available for EKS investigation"
+            logger.error("[eks] %s", msg)
+            raise RuntimeError(msg)
+        frozen = ambient.get_frozen_credentials()
+        assumed = {
+            "AccessKeyId": frozen.access_key,
+            "SecretAccessKey": frozen.secret_key,
+            "SessionToken": frozen.token or None,
+        }
 
     logger.info("[eks] Describing cluster: %s in region %s", cluster_name, region)
     eks = boto3.client(
@@ -90,7 +132,7 @@ def build_k8s_clients(
         region_name=region,
         aws_access_key_id=assumed["AccessKeyId"],
         aws_secret_access_key=assumed["SecretAccessKey"],
-        aws_session_token=assumed["SessionToken"],
+        aws_session_token=assumed["SessionToken"] or None,
     )
     cluster_info = eks.describe_cluster(name=cluster_name)["cluster"]
     endpoint = cluster_info["endpoint"]

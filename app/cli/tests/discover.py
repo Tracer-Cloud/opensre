@@ -253,7 +253,7 @@ def discover_make_targets() -> list[TestCatalogItem]:
     items: list[TestCatalogItem] = []
 
     for target in _TARGETS_TO_INDEX:
-        if f"\n{target}:" not in makefile_text:
+        if not re.search(rf"^{re.escape(target)}:", makefile_text, re.MULTILINE):
             continue
         metadata = _TARGET_METADATA.get(target, {})
         tags = cast(tuple[str, ...], metadata.get("tags") or ("make",))

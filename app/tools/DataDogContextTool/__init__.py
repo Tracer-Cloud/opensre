@@ -165,6 +165,7 @@ def _context_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 @tool(
     name="query_datadog_all",
+    display_name="Datadog",
     source="datadog",
     description="Fetch Datadog logs, monitors, and events in parallel for fast investigation.",
     use_cases=[

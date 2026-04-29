@@ -1,19 +1,22 @@
 ---
-title: 'Debugging nf-core demo pipeline'
-description: 'Using OpenSRE to diagnose and optimize UMI-based consensus sequencing'
+title: "Debugging nf-core demo pipeline"
+description: "Using Tracer to diagnose and optimize UMI-based consensus sequencing"
 ---
 
-This tutorial walks a bioinformatics engineer through real-time observability of the nf-core/fastquorum pipeline using OpenSRE's eBPF-powered monitoring. We simulate a small but realistic UMI-based duplex sequencing workflow on a single chromosome (chr17.fa), run it in a GitHub Codespace, and use OpenSRE to detect resource bottlenecks, identify redundant I/O, and explain why the pipeline completed in 1m 36s despite only 12 processes.
+This tutorial walks a bioinformatics engineer through real-time observability of the nf-core/fastquorum pipeline using Tracer's eBPF-powered monitoring. We simulate a small but realistic UMI-based duplex sequencing workflow on a single chromosome (chr17.fa), run it in a GitHub Codespace, and use Tracer to detect resource bottlenecks, identify redundant I/O, and explain why the pipeline completed in 1m 36s despite only 12 processes.
 
 ## What You'll Learn
 
-- Connect a live Codespace to the OpenSRE sandbox
+- Connect a live Codespace to the Tracer sandbox
 - Auto-instrument a Nextflow pipeline with zero code changes
 - Visualize per-process CPU, memory, and I/O in real time
 - Extract actionable optimization insights
 
 <Info>
-**Why this matters:** fastquorum is complex (UMI grouping, consensus calling, dual alignment). Without OS-level visibility, engineers guess where time is spent. OpenSRE shows exactly which process is the bottleneck — no logs, no profiling flags.
+    **Why this matters:** fastquorum is complex (UMI grouping, consensus
+    calling, dual alignment). Without OS-level visibility, engineers guess where
+    time is spent. Tracer shows exactly which process is the bottleneck — no
+    logs, no profiling flags.
 </Info>
 
 ## Tools Used
@@ -24,9 +27,9 @@ This tutorial walks a bioinformatics engineer through real-time observability of
 - **Container:** Docker
 - **Genome:** chr17.fa (subset of GRCh38)
 
-## 1. Login & Setup: OpenSRE Sandbox + GitHub Codespaces
+## 1. Login & Setup: Tracer Sandbox + GitHub Codespaces
 
-We begin in a GitHub Codespace — a reproducible, cloud-based dev environment that mimics a local VM. OpenSRE's eBPF agent runs natively here and streams metrics to the OpenSRE Sandbox Dashboard (https://dev.sandbox.tracer.cloud) in real time.
+We begin in a GitHub Codespace — a reproducible, cloud-based dev environment that mimics a local VM. Tracer's eBPF agent runs natively here and streams metrics to the Tracer Sandbox Dashboard (https://dev.sandbox.tracer.cloud) in real time.
 
 <Steps>
   <Step title="Open GitHub Codespaces">
@@ -39,17 +42,19 @@ We begin in a GitHub Codespace — a reproducible, cloud-based dev environment t
     ![Codespace display with the cloned nf-core pipeline repository](/images/tutorials/observability-driven/tracer-fig-1.webp)
 
     *Fig 1: Codespace display with the cloned nf-core pipeline repository*
+
   </Step>
 
-  <Step title="Install OpenSRE (One-Liner with Dev Branch & User Token)">
+  <Step title="Install Tracer (One-Liner with Dev Branch & User Token)">
     In the Codespaces terminal, run:
 
     ```bash
     curl -sSL https://install.tracer.cloud | CLI_BRANCH=dev sh -s user_35Fukh3QxSAxJLgfyE9SwPoPy9K
     ```
+
   </Step>
 
-  <Step title="Start OpenSRE Agent">
+  <Step title="Start Tracer Agent">
     To start tracking a pipeline, run the following command:
 
     ```bash
@@ -65,8 +70,9 @@ We begin in a GitHub Codespace — a reproducible, cloud-based dev environment t
     *Fig 2: You will see something like this upon successful connection (Snapshot of tracer init command which connecting to tracer)*
 
     <Tip>
-    With OpenSRE agent connected, input validated, and genome indexed, we now execute the full nf-core/fastquorum pipeline. No code changes are required — OpenSRE's eBPF hooks automatically detect nextflow launches, label processes, and stream OS-level metrics (CPU, RAM, I/O, syscalls) to your sandbox dashboard in real time.
+    With the Tracer agent connected, input validated, and genome indexed, we now execute the full nf-core/fastquorum pipeline. No code changes are required — Tracer's eBPF hooks automatically detect nextflow launches, label processes, and stream OS-level metrics (CPU, RAM, I/O, syscalls) to your sandbox dashboard in real time.
     </Tip>
+
   </Step>
 </Steps>
 
@@ -77,23 +83,31 @@ This section is critical — nf-core/fastquorum enforces strict requirements on 
 ### Key Preparation Steps
 
 <Accordion title="Download Test Data">
-We begin by downloading real test data directly from the nf-core test-datasets repository, ensuring authenticity and compatibility.
+    We begin by downloading real test data directly from the nf-core
+    test-datasets repository, ensuring authenticity and compatibility.
 </Accordion>
 
 <Accordion title="Inspect FASTQ Files">
-Confirm UMI structure — in this case, a 6-base inline UMI (NNNNNN) embedded at the start of Read 1, which matches the expected pattern for duplex consensus sequencing.
+    Confirm UMI structure — in this case, a 6-base inline UMI (NNNNNN) embedded
+    at the start of Read 1, which matches the expected pattern for duplex
+    consensus sequencing.
 </Accordion>
 
 <Accordion title="Validate File Paths">
-Ensure all FASTQs are properly gzipped and accessible via relative paths to avoid runtime errors.
+    Ensure all FASTQs are properly gzipped and accessible via relative paths to
+    avoid runtime errors.
 </Accordion>
 
 <Accordion title="Create Samplesheet">
-A correctly formatted `samplesheet.csv` is constructed with mandatory columns: `sample`, `fastq_1`, `fastq_2`, `umi_read`, and `umi_pattern`, adhering to the pipeline's JSON schema.
+    A correctly formatted `samplesheet.csv` is constructed with mandatory
+    columns: `sample`, `fastq_1`, `fastq_2`, `umi_read`, and `umi_pattern`,
+    adhering to the pipeline's JSON schema.
 </Accordion>
 
 <Accordion title="Pre-build Genome Index">
-To eliminate I/O noise during the observed run, the genome index (BWA-MEM1, SAMtools FAIDX, and DICT) is pre-built locally and stored for reuse, ensuring clean, reproducible eBPF telemetry from OpenSRE.
+    To eliminate I/O noise during the observed run, the genome index (BWA-MEM1,
+    SAMtools FAIDX, and DICT) is pre-built locally and stored for reuse,
+    ensuring clean, reproducible eBPF telemetry from Tracer.
 </Accordion>
 
 ## 3. Launch the Pipeline
@@ -113,24 +127,25 @@ nextflow run . \
 
 ### Parameters
 
-| Flag | Purpose |
-|------|---------|
-| `--input samplesheet.csv` | Validated manifest |
-| `--fasta data/chr17.fa` | Local reference |
-| `--duplex_seq true` | Enable duplex consensus |
-| `-profile test,docker` | Use test config + containers |
-| `-with-trace` | Nextflow-native trace (optional) |
-| `-with-report results/report.html` | HTML execution report |
+| Flag                               | Purpose                          |
+| ---------------------------------- | -------------------------------- |
+| `--input samplesheet.csv`          | Validated manifest               |
+| `--fasta data/chr17.fa`            | Local reference                  |
+| `--duplex_seq true`                | Enable duplex consensus          |
+| `-profile test,docker`             | Use test config + containers     |
+| `-with-trace`                      | Nextflow-native trace (optional) |
+| `-with-report results/report.html` | HTML execution report            |
 
-## 4. Live Visualization: OpenSRE Dashboard During Execution
+## 4. Live Visualization: Tracer Dashboard During Execution
 
-With the nf-core/fastquorum pipeline launched and OpenSRE's eBPF agent actively streaming OS-level events, the OpenSRE Sandbox Dashboard becomes a real-time observability cockpit. No polling, no logs — just continuous, kernel-level telemetry delivered via WebSocket every 2 seconds.
+With the nf-core/fastquorum pipeline launched and Tracer's eBPF agent actively streaming OS-level events, the Tracer Sandbox Dashboard becomes a real-time observability cockpit. No polling, no logs — just continuous, kernel-level telemetry delivered via WebSocket every 2 seconds.
 
 ### Dashboard Entry Point: Run Overview
 
 Upon launching `nextflow run .`, a new run card appears instantly:
 
 **Run Overview Card:**
+
 - **Run Name:** run_1
 - **Status:** Running (blue dot)
 - **Elapsed:** 45s and counting
@@ -140,79 +155,92 @@ Upon launching `nextflow run .`, a new run card appears instantly:
 
 ![Run Overview Snapshot](/images/tutorials/observability-driven/run-overview.webp)
 
-*Fig 3: Run Overview Snapshot*
+_Fig 3: Run Overview Snapshot_
 
 ![Compact Summary](/images/tutorials/observability-driven/compact-summary.webp)
 
 <Info>
-This compact summary is the first signal that OpenSRE has auto-detected the Nextflow executor and attached to all child processes — no `-with-trace` or config changes needed. The progress bar fills as tasks complete, and resource meters update in real time.
+    This compact summary is the first signal that Tracer has auto-detected the
+    Nextflow executor and attached to all child processes — no `-with-trace` or
+    config changes needed. The progress bar fills as tasks complete, and
+    resource meters update in real time.
 </Info>
 
 ### System Specs & Cost Panel
 
-| Metric | Value | Status |
-|--------|-------|--------|
-| **RAM** | 2.97 GB used / 15.62 GB | HEALTHY |
-| **CPU** | 1.81 cores / 4 cores | HEALTHY |
-| **DISK** | 42.90 GB / 207.35 GB | HEALTHY |
-| **GPU** | Not detected | — |
-| **TOTAL COST** | $0.00 | Free tier (Codespaces) |
+| Metric         | Value                   | Status                 |
+| -------------- | ----------------------- | ---------------------- |
+| **RAM**        | 2.97 GB used / 15.62 GB | HEALTHY                |
+| **CPU**        | 1.81 cores / 4 cores    | HEALTHY                |
+| **DISK**       | 42.90 GB / 207.35 GB    | HEALTHY                |
+| **GPU**        | Not detected            | —                      |
+| **TOTAL COST** | $0.00                   | Free tier (Codespaces) |
 
 ![System Specs & Cost Panel](/images/tutorials/observability-driven/specs&cost.webp)
 
 <Tip>
-This panel confirms the GitHub Codespaces environment: a 4-core, 16 GB VM with ample headroom. The cost meter at $0.00 reflects that this is a non-billable sandbox run, but in production (e.g., AWS EC2), OpenSRE would estimate hourly cost based on instance type and utilization.
+    This panel confirms the GitHub Codespaces environment: a 4-core, 16 GB VM
+    with ample headroom. The cost meter at $0.00 reflects that this is a
+    non-billable sandbox run, but in production (e.g., AWS EC2), Tracer would
+    estimate hourly cost based on instance type and utilization.
 </Tip>
 
 ### Tool Table: Real-Time Process Monitoring
 
 **Table Observations:**
+
 - `bwa index` is still running — expected: indexing chr17.fa (~80MB) is CPU-heavy
 - FastQC hit 118% CPU → Java thread burst (common in multi-threaded mode)
 - `samtools faidx` is I/O-light — just reads the FASTA once
 - Status badges update live: Running → Success as tasks finish
 
 **Visual Insights:**
+
 - **Critical path:** bwa index → FastqToBam → GroupReadsByUmi
 - **Parallelism:** samtools faidx and dict run concurrently with FastQC
 - **Tail latency:** Final MultiQC runs alone
 
 <Info>
-This Gantt view is interactive — hover to see exact command, stdout, and resource curve.
+    This Gantt view is interactive — hover to see exact command, stdout, and
+    resource curve.
 </Info>
 
-| Tool | Status | Runtime | Max RAM | Max CPU | Max Disk I/O |
-|------|--------|---------|---------|---------|--------------|
-| bwa index | Running | 9s 851ms | 0.12 GB | 115.49% | 0.04 GB |
-| samtools faidx | Success | 482ms | 0.00 GB | 38.10% | 0.00 GB |
-| samtools dict | Success | 1s 111ms | 0.08 GB | 54.63% | 0.08 GB |
-| FastQC | Success | 5s 775ms | 0.30 GB | 118.23% | 0.01 GB |
-| fgbio FastqToBam | Success | 4s 813ms | 0.14 GB | 120.60% | 0.00 GB |
+| Tool             | Status  | Runtime  | Max RAM | Max CPU | Max Disk I/O |
+| ---------------- | ------- | -------- | ------- | ------- | ------------ |
+| bwa index        | Running | 9s 851ms | 0.12 GB | 115.49% | 0.04 GB      |
+| samtools faidx   | Success | 482ms    | 0.00 GB | 38.10%  | 0.00 GB      |
+| samtools dict    | Success | 1s 111ms | 0.08 GB | 54.63%  | 0.08 GB      |
+| FastQC           | Success | 5s 775ms | 0.30 GB | 118.23% | 0.01 GB      |
+| fgbio FastqToBam | Success | 4s 813ms | 0.14 GB | 120.60% | 0.00 GB      |
 
 ![Timeline view](/images/tutorials/observability-driven/timeline-view.webp)
 
 ![Table and visual insights for the tools running in pipeline at real-time](/images/tutorials/observability-driven/tool-table.webp)
 
-*Fig 4: Table (detailed) and visual insights for the tools running in pipeline at real-time*
+_Fig 4: Table (detailed) and visual insights for the tools running in pipeline at real-time_
 
 ### Metrics Over Time: System-Level Trends
 
 **CPU Usage:**
+
 - Avg: 91.4%
 - Max: 115.5% (burst during bwa index)
 - Pattern: High at start (indexing), drops to ~70% during alignment
 
 **Memory Usage:**
+
 - Avg: 99.8 MB
 - Max: 121.5 MB
 - Spike at 6s: fgbio FastqToBam loads both FASTQs into memory
 
 **Disk I/O:**
+
 - Avg: 0.08 GB
 - Max: 0.18 GB
 - Burst at 40s: Writing intermediate BAM files
 
 **Network I/O:**
+
 - Avg: 81.42 MB
 - Max: 180.80 MB
 - Cause: Docker pulling nf-core/fastquorum:1.2.0 layers (first run)
@@ -221,7 +249,7 @@ This Gantt view is interactive — hover to see exact command, stdout, and resou
 
 ![Metrics Over Time 2](/images/tutorials/observability-driven/metrics-over-time-2.webp)
 
-*Fig 5,6: System level trend*
+_Fig 5,6: System level trend_
 
 ## 5. Post-Run Analysis: Resource Heatmap & Bottleneck Detection
 
@@ -229,12 +257,12 @@ The pipeline completes in **1m 36s** with **12 successful tasks**. Now we analyz
 
 ### Resource Analysis
 
-| Process | CPU (avg) | RAM (peak) | I/O (total) | Duration |
-|---------|-----------|------------|-------------|----------|
-| BWAMEM1_INDEX | 95% | 1.4 GB | 180 MB | 53s |
-| GROUPREADSBYUMI | 99% | 3.1 GB | 42 MB | 24s |
-| CALLDDUPLEXCONSENSUS | 60% | 1.8 GB | 28 MB | 16s |
-| FASTQTOBAM | 75% | 1.2 GB | 35 MB | 18s |
+| Process              | CPU (avg) | RAM (peak) | I/O (total) | Duration |
+| -------------------- | --------- | ---------- | ----------- | -------- |
+| BWAMEM1_INDEX        | 95%       | 1.4 GB     | 180 MB      | 53s      |
+| GROUPREADSBYUMI      | 99%       | 3.1 GB     | 42 MB       | 24s      |
+| CALLDDUPLEXCONSENSUS | 60%       | 1.8 GB     | 28 MB       | 16s      |
+| FASTQTOBAM           | 75%       | 1.2 GB     | 35 MB       | 18s      |
 
 ### Key Insights
 
@@ -255,11 +283,11 @@ The pipeline completes in **1m 36s** with **12 successful tasks**. Now we analyz
 
 ## 6. Conclusion
 
-In the fast-evolving landscape of bioinformatics, where pipelines demand precision amid mounting computational complexity, **OpenSRE emerges as an indispensable ally** for bioinformaticians seeking deeper, actionable insights without the burden of invasive instrumentation.
+In the fast-evolving landscape of bioinformatics, where pipelines demand precision amid mounting computational complexity, **Tracer emerges as an indispensable ally** for bioinformaticians seeking deeper, actionable insights without the burden of invasive instrumentation.
 
 ### Key Benefits
 
-By harnessing **eBPF technology** at the operating system level, OpenSRE delivers:
+By harnessing **eBPF technology** at the operating system level, Tracer delivers:
 
 - **Real-time observability** into every facet of your workflows (Nextflow, WDL, Bash, or CWL)
 - **Automatic detection** of hangs, crashes, and silent failures that traditional logs often overlook
@@ -268,33 +296,46 @@ By harnessing **eBPF technology** at the operating system level, OpenSRE deliver
 ### Real-World Impact
 
 <Accordion title="Pinpoint Exact Failures">
-Imagine pinpointing the exact genome file or tool process causing a crash in a duplex sequencing run, or uncovering memory oversizing in dependency updates that could shave weeks off troubleshooting.
+    Imagine pinpointing the exact genome file or tool process causing a crash in
+    a duplex sequencing run, or uncovering memory oversizing in dependency
+    updates that could shave weeks off troubleshooting.
 </Accordion>
 
 <Accordion title="Resource Optimization">
-OpenSRE excels in resource orchestration, spotlighting inefficiencies like redundant I/O in alignment steps or overprovisioned instances.
+    Tracer excels in resource orchestration, spotlighting inefficiencies like
+    redundant I/O in alignment steps or overprovisioned instances.
 </Accordion>
 
 <Accordion title="AI-Driven Recommendations">
-AI-driven recommendations enable right-sizing of compute environments in mere clicks, potentially slashing costs by 30% or more on cloud platforms, paying only 5% of your pipeline's compute expenses without upfront fees.
+    AI-driven recommendations enable right-sizing of compute environments in
+    mere clicks, potentially slashing costs by 30% or more on cloud platforms,
+    paying only 5% of your pipeline's compute expenses without upfront fees.
 </Accordion>
 
 ### Your Next Steps
 
-For bioinformaticians juggling high-throughput NGS data, evolving dependencies, and the pressure to derive reproducible insights from vast datasets, **OpenSRE isn't just a monitoring tool — it's a superpower** that shifts focus from infrastructure headaches to scientific discovery, fostering scalable, cost-effective workflows that accelerate breakthroughs in genomics, proteomics, and beyond.
+For bioinformaticians juggling high-throughput NGS data, evolving dependencies, and the pressure to derive reproducible insights from vast datasets, **Tracer isn't just a monitoring tool — it's a superpower** that shifts focus from infrastructure headaches to scientific discovery, fostering scalable, cost-effective workflows that accelerate breakthroughs in genomics, proteomics, and beyond.
 
-<Card title="Try OpenSRE Sandbox" icon="flask" href="https://tracer.bio">
-  Dive into the OpenSRE sandbox today and experience how effortless observability can redefine your pipeline mastery.
+<Card title="Try Tracer Sandbox" icon="flask" href="https://tracer.bio">
+    Dive into the Tracer sandbox today and experience how effortless
+    observability can redefine your pipeline mastery.
 </Card>
 
 ## Related Tutorials
 
 <CardGroup cols={2}>
-  <Card title="Viewing Task Status" href="/tutorials/viewing-task-status" icon="eye">
-    Learn how to monitor task execution in real-time
-  </Card>
-  <Card title="Investigating Task Failures" href="/tutorials/investigating-task-failures" icon="bug">
-    Debug and resolve failures with diagnostic tools
-  </Card>
+    <Card
+        title="Viewing Task Status"
+        href="/tutorials/viewing-task-status"
+        icon="eye"
+    >
+        Learn how to monitor task execution in real-time
+    </Card>
+    <Card
+        title="Investigating Task Failures"
+        href="/tutorials/investigating-task-failures"
+        icon="bug"
+    >
+        Debug and resolve failures with diagnostic tools
+    </Card>
 </CardGroup>
-

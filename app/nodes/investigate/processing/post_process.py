@@ -4,7 +4,26 @@ import json
 from collections.abc import Callable
 
 from app.nodes.investigate.execution.execute_actions import ActionExecutionResult
-from app.nodes.investigate.types import ExecutedHypothesis, PlanAudit
+from app.nodes.investigate.types import ExecutedHypothesis, FailedAction, PlanAudit
+
+MAX_RETRYABLE_ACTION_FAILURES = 2
+_NON_RETRYABLE_FAILURE_INDICATORS = (
+    "typeerror",
+    "missing required",
+    "unknown action",
+    "action not available",
+    "invalid response",
+)
+_RETRYABLE_FAILURE_INDICATORS = (
+    "timeout",
+    "throttling",
+    "rate exceeded",
+    "connection",
+    "service unavailable",
+    "internal error",
+    "500",
+    "503",
+)
 
 
 def _parse_vendor_audit_from_logs(logs: list) -> dict | None:
@@ -33,6 +52,62 @@ def _map_failed_tools(data: dict) -> dict:
         "failed_tools": data.get("failed_tools", []),
         "total_tools": data.get("total_tools", 0),
     }
+
+
+def _classify_action_failure(error: str | None) -> str:
+    error_text = (error or "").lower()
+    if any(indicator in error_text for indicator in _NON_RETRYABLE_FAILURE_INDICATORS):
+        return "non_retryable"
+    if any(indicator in error_text for indicator in _RETRYABLE_FAILURE_INDICATORS):
+        return "retryable"
+    return "retryable"
+
+
+def _failure_count_for_action(
+    executed_hypotheses: list[ExecutedHypothesis], action_name: str
+) -> int:
+    max_count = 0
+    for hypothesis in executed_hypotheses:
+        for failed_action in hypothesis.get("failed_actions", []):
+            if failed_action.get("action") != action_name:
+                continue
+            max_count = max(max_count, int(failed_action.get("failure_count", 0)))
+    return max_count
+
+
+def _build_failed_action_records(
+    execution_results: dict[str, ActionExecutionResult],
+    executed_hypotheses: list[ExecutedHypothesis],
+    investigation_loop_count: int,
+) -> list[FailedAction]:
+    failed_actions: list[FailedAction] = []
+    for action_name, result in execution_results.items():
+        if result.success:
+            continue
+        failure_count = _failure_count_for_action(executed_hypotheses, action_name) + 1
+        failed_actions.append(
+            {
+                "action": action_name,
+                "error": result.error or "unknown",
+                "failure_kind": _classify_action_failure(result.error),
+                "failure_count": failure_count,
+                "loop_count": investigation_loop_count,
+            }
+        )
+    return failed_actions
+
+
+def _exhausted_action_names(failed_actions: list[FailedAction]) -> list[str]:
+    exhausted: list[str] = []
+    for failed_action in failed_actions:
+        action_name = failed_action.get("action")
+        if not action_name:
+            continue
+        failure_kind = failed_action.get("failure_kind")
+        failure_count = int(failed_action.get("failure_count", 0))
+        if failure_kind == "non_retryable" or failure_count >= MAX_RETRYABLE_ACTION_FAILURES:
+            exhausted.append(action_name)
+    return exhausted
 
 
 def _map_error_logs(data: dict) -> dict:
@@ -322,6 +397,25 @@ def _map_git_deploy_timeline(data: dict) -> dict:
     }
 
 
+def _map_argocd_application_status(data: dict) -> dict:
+    applications = data.get("applications", [])
+    if not isinstance(applications, list):
+        applications = []
+    return {
+        "argocd_application": data.get("application", {}) or {},
+        "argocd_applications": applications,
+        "argocd_applications_total": data.get("total", len(applications)) or 0,
+        "argocd_revision_history": data.get("recent_history", []) or [],
+    }
+
+
+def _map_argocd_application_diff(data: dict) -> dict:
+    return {
+        "argocd_drift_detected": bool(data.get("drift_detected", False)),
+        "argocd_diff": data.get("diffs", []) or [],
+    }
+
+
 def _map_alertmanager_alerts(data: dict) -> dict:
     return {
         "alertmanager_alerts": data.get("alerts") or [],
@@ -422,6 +516,8 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "get_github_file_contents": _map_github_file_contents,
     "list_github_commits": _map_github_commits,
     "get_git_deploy_timeline": _map_git_deploy_timeline,
+    "argocd_application_status": _map_argocd_application_status,
+    "argocd_application_diff": _map_argocd_application_diff,
     "alertmanager_alerts": _map_alertmanager_alerts,
     "alertmanager_silences": _map_alertmanager_silences,
     "list_eks_pods": _map_eks_pods,
@@ -470,6 +566,8 @@ def track_hypothesis(
     rationale: str,
     investigation_loop_count: int,
     plan_audit: PlanAudit | None = None,
+    failed_actions: list[FailedAction] | None = None,
+    exhausted_actions: list[str] | None = None,
 ) -> list[ExecutedHypothesis]:
     """
     Track executed hypothesis for deduplication and audit trail.
@@ -480,6 +578,8 @@ def track_hypothesis(
         rationale: Rationale for executing these actions
         investigation_loop_count: Current loop count
         plan_audit: Optional audit data from planning step (rerouting, budget, etc)
+        failed_actions: Failed action audit records from this execution round
+        exhausted_actions: Failed actions that should be excluded from future planning
 
     Returns:
         Updated executed_hypotheses list with audit trail
@@ -489,6 +589,10 @@ def track_hypothesis(
         "rationale": rationale,
         "loop_count": investigation_loop_count,
     }
+    if failed_actions:
+        new_hypothesis["failed_actions"] = failed_actions
+    if exhausted_actions:
+        new_hypothesis["exhausted_actions"] = exhausted_actions
     # Include audit data if rerouting occurred or budget was enforced
     if plan_audit:
         new_hypothesis["audit"] = plan_audit
@@ -620,6 +724,24 @@ def build_evidence_summary(execution_results: dict[str, ActionExecutionResult]) 
                 count = data.get("commits_count") or len(data.get("commits") or [])
                 if count:
                     summary_parts.append(f"github:{count} commits in deploy window")
+            elif action_name == "argocd_application_status":
+                applications = data.get("applications")
+                if isinstance(applications, list) and not data.get("application"):
+                    total = int(data.get("total", len(applications)) or 0)
+                    summary_parts.append(f"argocd:{total} applications")
+                    continue
+                app = (
+                    data.get("application", {})
+                    if isinstance(data.get("application", {}), dict)
+                    else {}
+                )
+                app_name = str(app.get("name", "")).strip() or "?"
+                sync_status = str(app.get("sync_status", "")).strip() or "unknown"
+                summary_parts.append(f"argocd:{app_name} status {sync_status}")
+            elif action_name == "argocd_application_diff":
+                app_name = str(data.get("application_name", "")).strip() or "?"
+                drift = str(bool(data.get("drift_detected", False))).lower()
+                summary_parts.append(f"argocd:{app_name} drift {drift}")
             elif action_name == "alertmanager_alerts":
                 firing_count = len(data.get("firing_alerts") or [])
                 total = data.get("total", 0)
@@ -667,16 +789,24 @@ def summarize_execution_results(
     """
     evidence = merge_evidence(current_evidence, execution_results)
 
-    # Only successes go into executed_hypotheses: planning filters out any name seen there,
-    # so recording failures would block retries for transient errors on any tool.
+    failed_actions = _build_failed_action_records(
+        execution_results, executed_hypotheses, investigation_loop_count
+    )
+    exhausted_actions = _exhausted_action_names(failed_actions)
+
+    # Only successes go into actions: synthetic trajectory scoring reads that field as
+    # the successful action sequence. Failed actions are tracked separately for audit
+    # and exhausted-action filtering.
     successful_actions = [name for name, result in execution_results.items() if result.success]
-    if successful_actions:
+    if successful_actions or failed_actions:
         executed_hypotheses = track_hypothesis(
             executed_hypotheses,
             successful_actions,
             rationale,
             investigation_loop_count,
             plan_audit,
+            failed_actions=failed_actions,
+            exhausted_actions=exhausted_actions,
         )
 
     evidence_summary = build_evidence_summary(execution_results)

@@ -15,6 +15,7 @@ from app.tools.tool_decorator import tool
 
 @tool(
     name="query_betterstack_logs",
+    display_name="Better Stack logs",
     description=(
         "Query a Better Stack Telemetry source for log rows using ClickHouse "
         "SQL over HTTP. Returns (dt, raw) pairs by UNIONing recent logs from "

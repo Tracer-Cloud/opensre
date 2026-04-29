@@ -44,7 +44,7 @@ class TestBitbucketSearchCodeToolContract(BaseToolContract):
         ({}, False),
     ],
 )
-def test_is_available_requires_credentials(sources: dict, expected: bool) -> None:
+def test_is_available_requires_credentials(sources: dict[str, dict], expected: bool) -> None:
     rt = _registered_tool()
     assert rt.is_available(sources) is expected
 
@@ -59,6 +59,9 @@ def test_extract_params_maps_fields() -> None:
                 "workspace": "acme",
                 "username": "bb-user",
                 "app_password": "bb-pass",
+                "base_url": "https://api.bitbucket.org/2.0",
+                "max_results": 50,
+                "integration_id": "bb-main",
             }
         }
     )
@@ -68,7 +71,22 @@ def test_extract_params_maps_fields() -> None:
     assert params["workspace"] == "acme"
     assert params["username"] == "bb-user"
     assert params["app_password"] == "bb-pass"
+    assert params["base_url"] == "https://api.bitbucket.org/2.0"
+    assert params["max_results"] == 50
+    assert params["integration_id"] == "bb-main"
     assert params["limit"] == 20
+
+
+def test_run_returns_unavailable_without_credentials() -> None:
+    with patch("app.tools.BitbucketSearchCodeTool.bitbucket_config_from_env", return_value=None):
+        result = search_bitbucket_code(query="error OR exception")
+
+    assert result == {
+        "source": "bitbucket",
+        "available": False,
+        "error": "Bitbucket integration is not configured.",
+        "results": [],
+    }
 
 
 def test_run_happy_path() -> None:
@@ -109,13 +127,3 @@ def test_run_happy_path() -> None:
         "repo_slug": "backend-service",
         "limit": 5,
     }
-
-
-def test_run_returns_unavailable_without_credentials() -> None:
-    # Ensure env-based config does not make this test call out to Bitbucket
-    with patch("app.tools.BitbucketSearchCodeTool.bitbucket_config_from_env", return_value=None):
-        result = search_bitbucket_code(query="error OR exception")
-
-    assert result["available"] is False
-    assert result["results"] == []
-    assert result["error"] == "Bitbucket integration is not configured."

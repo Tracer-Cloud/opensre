@@ -7,7 +7,7 @@ import logging
 import re
 from typing import Any
 
-import httpx
+from app.utils.delivery_transport import post_json
 
 logger = logging.getLogger(__name__)
 
@@ -73,29 +73,27 @@ def post_telegram_message(
     if reply_to_message_id and reply_to_message_id != "0":
         with contextlib.suppress(ValueError, TypeError):
             payload["reply_to_message_id"] = int(reply_to_message_id)
-    try:
-        resp = httpx.post(
-            url=f"https://api.telegram.org/bot{bot_token}/sendMessage",
-            json=payload,
-            timeout=15.0,
-        )
-        if resp.status_code != 200:
-            logger.warning("[telegram] post message failed: %s", resp.status_code)
-            try:
-                data = resp.json()
-                error_message = str(data.get("description", data.get("error", "unknown")))
-            except Exception:  # noqa: BLE001
-                error_message = resp.text or f"HTTP {resp.status_code}"
-            logger.warning("[telegram] post message failed: %s", error_message)
-            return False, error_message, ""
-        data = resp.json()
-        result = data.get("result", {})
-        message_id: str = str(result.get("message_id") or "")
-        return True, "", message_id
-    except Exception as exc:  # noqa: BLE001
-        error = _redact_token(str(exc), bot_token)
+    response = post_json(
+        url=f"https://api.telegram.org/bot{bot_token}/sendMessage",
+        payload=payload,
+    )
+    if not response.ok:
+        error = _redact_token(response.error, bot_token)
         logger.warning("[telegram] post message exception: %s", error)
         return False, error, ""
+    if response.status_code != 200:
+        logger.warning("[telegram] post message failed: %s", response.status_code)
+        if response.data:
+            error_message = str(
+                response.data.get("description", response.data.get("error", "unknown"))
+            )
+        else:
+            error_message = response.text or f"HTTP {response.status_code}"
+        logger.warning("[telegram] post message failed: %s", error_message)
+        return False, error_message, ""
+    result = response.data.get("result", {})
+    message_id = str(result.get("message_id") or "") if isinstance(result, dict) else ""
+    return True, "", message_id
 
 
 def send_telegram_report(report: str, telegram_ctx: dict[str, Any]) -> tuple[bool, str]:
