@@ -12,6 +12,7 @@ from app.tools.GitHubSearchCodeTool import (
     _resolve_config,
 )
 from app.tools.tool_decorator import tool
+from app.tools.utils.code_host_unavailable import code_host_unavailable_payload
 
 
 def _get_github_file_contents_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -75,12 +76,12 @@ def get_github_file_contents(
     """Fetch a file or directory from GitHub through the MCP server."""
     config = _resolve_config(github_url, github_mode, github_token, github_command, github_args)
     if config is None:
-        return {
-            "source": "github",
-            "available": False,
-            "error": "GitHub MCP integration is not configured.",
-            "file": {},
-        }
+        return code_host_unavailable_payload(
+            source="github",
+            integration_name="GitHub MCP",
+            empty_key="file",
+            empty_value={},
+        )
 
     arguments = {"owner": owner, "repo": repo, "path": path}
     if ref:

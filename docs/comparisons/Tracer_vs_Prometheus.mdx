@@ -1,15 +1,15 @@
 ---
-title: 'How to use OpenSRE with Prometheus'
+title: 'How to use Tracer with Prometheus'
 sidebarTitle: 'Prometheus'
 description: 'Observed execution beneath scraped metrics'
 ---
 
 Prometheus collects and stores time-series metrics emitted by applications, services, and system exporters. In bioinformatics and HPC environments, it is commonly used to record system- and application-reported metrics for compute-intensive pipelines.
 
-OpenSRE complements Prometheus by observing how tasks, tools, and processes actually execute at runtime and organizing this behavior by pipeline, run, and execution unit.
+Tracer complements Prometheus by observing how tasks, tools, and processes actually execute at runtime and organizing this behavior by pipeline, run, and execution unit.
 
 <Note>
-If you're new to OpenSRE or want a conceptual overview, see [How OpenSRE fits in your stack](/comparisons/overview).
+If you're new to Tracer or want a conceptual overview, see [How Tracer fits in your stack](/comparisons/overview).
 </Note>
 
 ## What Prometheus does well
@@ -49,9 +49,9 @@ As a result:
 
 These approaches are useful, but they have limits when execution is not directly observed.
 
-## What OpenSRE adds
+## What Tracer adds
 
-OpenSRE observes execution directly from the host and container runtime and adds:
+Tracer observes execution directly from the host and container runtime and adds:
 
 - Observed CPU, memory, disk, and network behavior
 - Visibility into short-lived processes and nested tools
@@ -62,7 +62,7 @@ These insights are derived from observed execution, not from reported metrics.
 
 ## Example: scraped metrics versus observed execution
 
-Prometheus shows sustained CPU utilization during a pipeline run. OpenSRE reveals that:
+Prometheus shows sustained CPU utilization during a pipeline run. Tracer reveals that:
 
 - CPU usage remains low for most tasks
 - Execution is dominated by disk I/O wait
@@ -77,35 +77,35 @@ This indicates an I/O-bound workload rather than insufficient compute. The disti
   width="100%"
   height="720"
   style={{ border: 'none', borderRadius: '8px' }}
-  title="Prometheus vs OpenSRE+Prometheus capabilities comparison"
+  title="Prometheus vs Tracer+Prometheus capabilities comparison"
 />
 
 This comparison highlights the difference between scraped metrics and execution-level observation.
 
-## What OpenSRE does not replace
+## What Tracer does not replace
 
-OpenSRE is not a general-purpose metrics backend.
+Tracer is not a general-purpose metrics backend.
 
 - It does not replace Prometheus for collecting arbitrary application metrics
 - It does not replace long-term storage for unrelated or user-defined metrics
 - It does not replace metric-based alerting outside execution behavior
 - It does not replace dashboards built from non-execution telemetry
 
-OpenSRE stores and analyzes execution-derived metrics it observes, scoped to pipeline workloads.
+Tracer stores and analyzes execution-derived metrics it observes, scoped to pipeline workloads.
 
-## When to use OpenSRE with Prometheus
+## When to use Tracer with Prometheus
 
-OpenSRE is most useful alongside Prometheus when teams need to:
+Tracer is most useful alongside Prometheus when teams need to:
 
 - Understand pipeline behavior beyond scraped metrics
 - Diagnose performance issues involving short-lived tasks
 - Attribute resource usage and cost to workflows or tools
 - Reduce manual metric instrumentation and correlation
 
-OpenSRE focuses on execution behavior. Prometheus continues to provide metric collection and querying across broader systems.
+Tracer focuses on execution behavior. Prometheus continues to provide metric collection and querying across broader systems.
 
 ## Summary
 
-Prometheus records metrics that systems and applications report. OpenSRE adds execution-level visibility that shows how pipelines, tasks, and tools actually behave at runtime and how resource usage and cost map to real work. Together, they provide complementary perspectives without overlap.
+Prometheus records metrics that systems and applications report. Tracer adds execution-level visibility that shows how pipelines, tasks, and tools actually behave at runtime and how resource usage and cost map to real work. Together, they provide complementary perspectives without overlap.
 
 <div style={{ height: '50vh' }}></div>

@@ -37,6 +37,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Print a starter alert JSON template and exit.",
     )
     parser.add_argument("--output", "-o", default=None, help="Output JSON file (default: stdout)")
+    parser.add_argument(
+        "--evaluate",
+        action="store_true",
+        help=(
+            "After the final diagnosis, run an LLM judge vs OpenRCA scoring_points on the alert "
+            "(rubric is stripped from the agent copy of the alert)."
+        ),
+    )
     return parser.parse_args(argv)
 
 

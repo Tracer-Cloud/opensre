@@ -38,6 +38,7 @@ def _nodegroup_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
             "external_id": {"type": "string", "default": ""},
             "region": {"type": "string", "default": "us-east-1"},
             "nodegroup_name": {"type": "string"},
+            "credentials": {"type": ["object", "null"], "default": None},
         },
         "required": ["cluster_name", "role_arn"],
     },
@@ -50,11 +51,17 @@ def get_eks_nodegroup_health(
     external_id: str = "",
     region: str = "us-east-1",
     nodegroup_name: str | None = None,
+    credentials: dict[str, Any] | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Get EKS node group health — instance types, scaling config, AMI version, health issues."""
     try:
-        client = EKSClient(role_arn=role_arn, external_id=external_id, region=region)
+        client = EKSClient(
+            role_arn=role_arn,
+            external_id=external_id,
+            region=region,
+            credentials=credentials,
+        )
         nodegroups = [nodegroup_name] if nodegroup_name else client.list_nodegroups(cluster_name)
         results = []
         for ng in nodegroups:

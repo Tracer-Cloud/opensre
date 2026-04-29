@@ -9,6 +9,7 @@ from app.integrations.postgresql import (
     resolve_postgresql_config,
 )
 from app.tools.tool_decorator import tool
+from app.tools.utils.db_warnings import default_db_warning
 
 
 @tool(
@@ -37,7 +38,5 @@ def get_postgresql_current_queries(
     config = resolve_postgresql_config(host=host, database=database, port=port)
     result = get_current_queries(config, threshold_seconds=threshold_seconds)
     if _db_defaulted:
-        result["default_db_warning"] = (
-            "WARNING: No database was specified; defaulted to 'postgres'. Results may not reflect application data."
-        )
+        result["default_db_warning"] = default_db_warning("postgres")
     return result

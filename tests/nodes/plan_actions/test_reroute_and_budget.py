@@ -139,6 +139,20 @@ def test_detect_reroute_no_reroute_when_grafana_query_ran_but_empty():
     assert reason == ""
 
 
+def test_detect_reroute_no_reroute_when_grafana_query_exhausted():
+    """An exhausted Grafana log query should not keep triggering reroutes."""
+    evidence = {
+        "grafana_service_names": ["service-1"],
+        "grafana_logs": [],
+    }
+    available_sources = {}
+    executed_hypotheses = [{"actions": [], "exhausted_actions": ["query_grafana_logs"]}]
+
+    rerouted, reason = detect_reroute_trigger(evidence, available_sources, executed_hypotheses)
+    assert rerouted is False
+    assert reason == ""
+
+
 def test_detect_reroute_trigger_vendor_audit_discovery():
     """Vendor audit evidence should trigger reroute even if s3 audit was previously used."""
     evidence = {"vendor_audit_from_logs": {"api": "stripe", "status": 500}}
@@ -169,6 +183,73 @@ def test_seed_plan_actions_keeps_s3_audit_first():
     )
 
     assert seeded[0] == "get_s3_object"
+
+
+def test_seed_plan_actions_filters_unavailable_actions():
+    seeded = _seed_plan_actions(
+        planned_actions=["query_grafana_logs", "query_grafana_alert_rules"],
+        available_action_names=["query_grafana_alert_rules"],
+        available_sources={},
+    )
+
+    assert seeded == ["query_grafana_alert_rules"]
+
+
+def test_plan_actions_falls_back_when_planner_returns_only_executed_action(monkeypatch):
+    actions = [
+        MockAction("query_grafana_logs", "grafana"),
+        MockAction("query_grafana_alert_rules", "grafana"),
+    ]
+
+    def _mock_detect_sources(raw_alert, context, resolved_integrations=None):
+        _ = (raw_alert, context, resolved_integrations)
+        return {"grafana": {"connection_verified": True}}
+
+    def _mock_get_available_actions():
+        return actions
+
+    def _mock_get_prioritized_actions_with_reasons(sources=None, keywords=None):
+        _ = (sources, keywords)
+        return actions, []
+
+    def _mock_plan_actions_with_llm(**kwargs):
+        return kwargs["plan_model"](
+            actions=["query_grafana_logs"],
+            rationale="Mocked planner repeated a previous action",
+        )
+
+    monkeypatch.setattr(plan_actions_module, "detect_sources", _mock_detect_sources)
+    monkeypatch.setattr(plan_actions_module, "get_available_actions", _mock_get_available_actions)
+    monkeypatch.setattr(
+        plan_actions_module,
+        "get_prioritized_actions_with_reasons",
+        _mock_get_prioritized_actions_with_reasons,
+    )
+    monkeypatch.setattr(plan_actions_module, "get_llm_for_tools", object)
+    monkeypatch.setattr(
+        plan_actions_module,
+        "plan_actions_with_llm",
+        _mock_plan_actions_with_llm,
+    )
+
+    input_data = InvestigateInput(
+        raw_alert={"alert_name": "RDS write latency critical"},
+        context={},
+        problem_md="# RDS write latency critical",
+        alert_name="RDSWriteLatencyCritical",
+        executed_hypotheses=[{"actions": ["query_grafana_logs"], "loop_count": 0}],
+        tool_budget=10,
+    )
+
+    plan, *_ = plan_actions(
+        input_data=input_data,
+        plan_model=MockPlan,
+        resolved_integrations={"grafana": {"connection_verified": True}},
+    )
+
+    assert plan is not None
+    assert plan.actions == ["query_grafana_alert_rules"]
+    assert "already-executed" in plan.rationale
 
 
 def test_ensure_seed_actions_available_inserts_openclaw_action():
@@ -349,8 +430,8 @@ def test_plan_actions_keeps_deterministic_fallback_when_budget_is_full(monkeypat
     assert available_actions[0].name == "get_sre_guidance"
 
 
-def test_summarize_execution_results_does_not_record_failed_actions_in_hypotheses():
-    """Failed runs must stay re-plannable; only successes populate executed_hypotheses."""
+def test_summarize_execution_results_tracks_retryable_failure_without_exhausting():
+    """Retryable failures are audited but remain available before the retry limit."""
     execution_results = {
         "search_openclaw_conversations": ActionExecutionResult(
             action_name="search_openclaw_conversations",
@@ -370,8 +451,125 @@ def test_summarize_execution_results_does_not_record_failed_actions_in_hypothese
     )
 
     assert evidence == {}
-    assert executed_hypotheses == []
+    assert executed_hypotheses[0]["actions"] == []
+    assert executed_hypotheses[0]["failed_actions"][0]["action"] == "search_openclaw_conversations"
+    assert executed_hypotheses[0]["failed_actions"][0]["failure_kind"] == "retryable"
+    assert "exhausted_actions" not in executed_hypotheses[0]
     assert "FAILED" in evidence_summary
+
+
+def test_non_retryable_failed_action_is_not_reselected_after_summarize():
+    """A deterministic tool failure should not be offered again next loop."""
+    execution_results = {
+        "run_diagnostic_code": ActionExecutionResult(
+            action_name="run_diagnostic_code",
+            success=False,
+            data={},
+            error="TypeError: run_diagnostic_code() missing 1 required positional argument: 'code'",
+        )
+    }
+
+    _evidence, executed_hypotheses, _evidence_summary = summarize_execution_results(
+        execution_results=execution_results,
+        current_evidence={},
+        executed_hypotheses=[],
+        investigation_loop_count=1,
+        rationale="Try diagnostic code",
+        plan_audit={},
+    )
+
+    actions = [
+        MockAction("run_diagnostic_code"),
+        MockAction("query_grafana_logs"),
+    ]
+
+    _available_actions, available_action_names = select_actions(
+        actions=actions,
+        available_sources={"test": {}},
+        executed_hypotheses=executed_hypotheses,
+        tool_budget=10,
+    )
+
+    assert available_action_names == ["query_grafana_logs"]
+
+
+def test_retryable_failed_action_is_reselected_before_retry_limit():
+    """A retryable failure should remain available until it reaches the limit."""
+    execution_results = {
+        "query_grafana_logs": ActionExecutionResult(
+            action_name="query_grafana_logs",
+            success=False,
+            data={},
+            error="Connection closed",
+        )
+    }
+
+    _evidence, executed_hypotheses, _evidence_summary = summarize_execution_results(
+        execution_results=execution_results,
+        current_evidence={},
+        executed_hypotheses=[],
+        investigation_loop_count=1,
+        rationale="Try Grafana logs",
+        plan_audit={},
+    )
+
+    actions = [
+        MockAction("query_grafana_logs"),
+        MockAction("query_grafana_alert_rules"),
+    ]
+
+    _available_actions, available_action_names = select_actions(
+        actions=actions,
+        available_sources={"test": {}},
+        executed_hypotheses=executed_hypotheses,
+        tool_budget=10,
+    )
+
+    assert available_action_names == ["query_grafana_logs", "query_grafana_alert_rules"]
+
+
+def test_retryable_failed_action_is_exhausted_at_retry_limit():
+    """Repeated retryable failures should eventually be removed from planning."""
+    execution_results = {
+        "query_grafana_logs": ActionExecutionResult(
+            action_name="query_grafana_logs",
+            success=False,
+            data={},
+            error="Connection closed",
+        )
+    }
+
+    _evidence, executed_hypotheses, _evidence_summary = summarize_execution_results(
+        execution_results=execution_results,
+        current_evidence={},
+        executed_hypotheses=[],
+        investigation_loop_count=1,
+        rationale="Try Grafana logs",
+        plan_audit={},
+    )
+    _evidence, executed_hypotheses, _evidence_summary = summarize_execution_results(
+        execution_results=execution_results,
+        current_evidence={},
+        executed_hypotheses=executed_hypotheses,
+        investigation_loop_count=2,
+        rationale="Retry Grafana logs",
+        plan_audit={},
+    )
+
+    actions = [
+        MockAction("query_grafana_logs"),
+        MockAction("query_grafana_alert_rules"),
+    ]
+
+    _available_actions, available_action_names = select_actions(
+        actions=actions,
+        available_sources={"test": {}},
+        executed_hypotheses=executed_hypotheses,
+        tool_budget=10,
+    )
+
+    assert executed_hypotheses[-1]["exhausted_actions"] == ["query_grafana_logs"]
+    assert available_action_names == ["query_grafana_alert_rules"]
 
 
 def test_track_hypothesis_with_audit():

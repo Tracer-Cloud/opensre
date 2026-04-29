@@ -1,14 +1,14 @@
 ---
-title: 'How OpenSRE fits in your stack'
+title: 'How Tracer fits in your stack'
 sidebarTitle: 'Overview'
-description: 'Where OpenSRE fits in modern scientific and data platforms'
+description: 'Where Tracer fits in modern scientific and data platforms'
 ---
 
 Modern scientific and data platforms are built from multiple layers: workflow orchestration, execution environments, infrastructure, and observability tooling. Each layer answers different questions, but gaps often appear between them, especially at runtime.
 
-OpenSRE is designed to sit between orchestration and infrastructure, observing what actually executes on the system and mapping that behavior back to pipelines, runs, tasks, and tools.
+Tracer is designed to sit between orchestration and infrastructure, observing what actually executes on the system and mapping that behavior back to pipelines, runs, tasks, and tools.
 
-This page explains where OpenSRE fits, what it adds, and how it complements the tools already in your stack.
+This page explains where Tracer fits, what it adds, and how it complements the tools already in your stack.
 
 ## The typical stack (and where gaps appear)
 
@@ -20,13 +20,13 @@ Most bioinformatics, data, and HPC environments include some combination of:
 
 Each layer is effective within its scope, but none are designed to fully explain how execution actually behaves at runtime, especially for short-lived, heterogeneous scientific workloads.
 
-## Where OpenSRE fits
+## Where Tracer fits
 
-OpenSRE observes execution directly from the host and container runtime. It does not replace orchestration or monitoring tools. Instead, it adds a missing layer:
+Tracer observes execution directly from the host and container runtime. It does not replace orchestration or monitoring tools. Instead, it adds a missing layer:
 
 **Execution-level visibility, grounded in what the operating system actually runs.**
 
-OpenSRE answers questions such as:
+Tracer answers questions such as:
 
 - What is each pipeline step doing while it runs?
 - Which tools are CPU-bound, I/O-bound, stalled, or idle?
@@ -35,11 +35,11 @@ OpenSRE answers questions such as:
 
 This visibility is derived from observed system behavior, not from reported metrics, labels, or manual instrumentation.
 
-## How OpenSRE complements workflow orchestration
+## How Tracer complements workflow orchestration
 
 Workflow engines define pipeline structure, scheduling, retries, and state. They do not observe low-level execution behavior inside containers or processes.
 
-OpenSRE complements orchestration tools by:
+Tracer complements orchestration tools by:
 
 - Observing execution inside containers and hosts
 - Capturing short-lived processes and subprocesses
@@ -47,14 +47,14 @@ OpenSRE complements orchestration tools by:
 - Providing execution context without modifying workflows
 
 <Card title="Workflow orchestration tools" icon="diagram-project" href="/comparisons/workflow-orchestration">
-  See how OpenSRE works with Airflow, Dagster, Flyte, Prefect, and Seqera
+  See how Tracer works with Airflow, Dagster, Flyte, Prefect, and Seqera
 </Card>
 
-## How OpenSRE complements observability and monitoring tools
+## How Tracer complements observability and monitoring tools
 
 Observability platforms collect telemetry that systems and applications report. They organize data around hosts, services, and metrics.
 
-OpenSRE complements these tools by:
+Tracer complements these tools by:
 
 - Observing execution behavior directly, not via exporters
 - Organizing data around pipelines, runs, tasks, and tools
@@ -62,14 +62,14 @@ OpenSRE complements these tools by:
 - Surfacing behavior that occurs between metric scrapes or outside service boundaries
 
 <Card title="Observability and telemetry tools" icon="chart-line" href="/comparisons/observability-tools">
-  See how OpenSRE works with Datadog, Grafana, and Prometheus
+  See how Tracer works with Datadog, Grafana, and Prometheus
 </Card>
 
-## How OpenSRE complements cloud-native monitoring
+## How Tracer complements cloud-native monitoring
 
 Cloud-native monitoring services such as AWS CloudWatch collect metrics, logs, and events from managed infrastructure. They are tightly integrated with cloud platforms but remain resource-centric rather than execution-aware.
 
-OpenSRE complements these tools by:
+Tracer complements these tools by:
 
 - Observing execution behavior inside cloud workloads
 - Mapping resource consumption to pipelines, tasks, and tools
@@ -77,19 +77,19 @@ OpenSRE complements these tools by:
 - Attributing cost to actual work, not just instance uptime
 
 <Card title="Cloud-native monitoring" icon="cloud" href="/comparisons/cloud-native-monitoring">
-  See how OpenSRE works with AWS CloudWatch
+  See how Tracer works with AWS CloudWatch
 </Card>
 
-## What OpenSRE does not try to be
+## What Tracer does not try to be
 
-OpenSRE is intentionally scoped. It does not aim to replace:
+Tracer is intentionally scoped. It does not aim to replace:
 
 - Workflow orchestration engines
 - General-purpose metric storage systems
 - Organization-wide dashboarding for unrelated services
 - Arbitrary business or application analytics
 
-OpenSRE focuses on execution behavior, not on replacing every tool upstream or downstream.
+Tracer focuses on execution behavior, not on replacing every tool upstream or downstream.
 
 ## A shared mental model
 
@@ -100,9 +100,9 @@ A useful way to think about the stack:
 | **Orchestration tools** | Define intent |
 | **Infrastructure** | Execute work |
 | **Monitoring tools** | Report signals |
-| **OpenSRE** | Observe reality |
+| **Tracer** | Observe reality |
 
-OpenSRE bridges intent and reality by showing how execution actually unfolds on the system.
+Tracer bridges intent and reality by showing how execution actually unfolds on the system.
 
 ## Where to go next
 
@@ -120,6 +120,6 @@ Choose the page that matches the tools in your environment:
   </Card>
 </CardGroup>
 
-Each page explains what that tool does well, where execution-level visibility becomes important, and how OpenSRE integrates without changing existing workflows.
+Each page explains what that tool does well, where execution-level visibility becomes important, and how Tracer integrates without changing existing workflows.
 
 <div style={{ height: '50vh' }}></div>

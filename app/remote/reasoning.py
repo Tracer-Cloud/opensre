@@ -9,14 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.output import _ACTION_DISPLAY
-
-TOOL_DISPLAY: dict[str, str] = {
-    **_ACTION_DISPLAY,
-    "query_kubernetes_logs": "Kubernetes logs",
-    "query_elasticsearch": "Elasticsearch",
-    "get_deployment_status": "deployment status",
-}
+from app.tools.registry import resolve_tool_display_name
 
 _NODE_VERB: dict[str, str] = {
     "extract_alert": "parsing",
@@ -32,7 +25,7 @@ _NODE_VERB: dict[str, str] = {
 
 def tool_display_name(tool_name: str) -> str:
     """Return a human-friendly label for a tool, falling back to de-snaking."""
-    return TOOL_DISPLAY.get(tool_name, tool_name.replace("_", " "))
+    return resolve_tool_display_name(tool_name)
 
 
 def reasoning_text(kind: str, data: dict[str, Any], node_name: str) -> str | None:

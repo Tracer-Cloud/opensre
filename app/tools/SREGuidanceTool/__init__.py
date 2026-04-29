@@ -19,6 +19,7 @@ def _extract_guidance_params(sources: dict[str, dict[str, Any]]) -> dict[str, An
 
 @tool(
     name="get_sre_guidance",
+    display_name="SRE runbook",
     source="knowledge",
     description="Retrieve SRE best practices for data pipeline incidents.",
     use_cases=[

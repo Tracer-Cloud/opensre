@@ -145,6 +145,11 @@ def health_command(watch: bool, rate: int) -> None:
 @click.option(
     "--output", "-o", default=None, type=click.Path(), help="Output JSON file (default: stdout)."
 )
+@click.option(
+    "--evaluate",
+    is_flag=True,
+    help="After final diagnosis, LLM-judge vs OpenRCA scoring_points (rubric stripped from agent alert).",
+)
 def investigate_command(
     input_path: str | None,
     input_json: str | None,
@@ -153,6 +158,7 @@ def investigate_command(
     service: str | None,
     slack_thread: str | None,
     output: str | None,
+    evaluate: bool,
 ) -> None:
     """Run an RCA investigation against an alert payload."""
     if service:
@@ -164,6 +170,7 @@ def investigate_command(
                 "input_json": input_json,
                 "interactive": interactive,
                 "print_template": print_template,
+                "evaluate": evaluate,
             },
             output=output,
         )
@@ -201,11 +208,15 @@ def investigate_command(
         # and hasn't asked for machine-readable JSON. Otherwise the spinner and
         # ANSI control codes corrupt the JSON payload that consumers expect on
         # stdout (pipes, redirection, --json, CI logs).
-        stream_to_stdout = sys.stdout.isatty() and not is_json_output() and output is None
+        # --evaluate forces the non-streaming path because the streaming runner
+        # does not yet wire opensre_evaluate scoring through the renderer.
+        stream_to_stdout = (
+            sys.stdout.isatty() and not is_json_output() and output is None and not evaluate
+        )
         if stream_to_stdout:
             result = run_investigation_cli_streaming(raw_alert=payload)
         else:
-            result = run_investigation_cli(raw_alert=payload)
+            result = run_investigation_cli(raw_alert=payload, opensre_evaluate=evaluate)
         write_json(result, output)
     except SystemExit:
         raise
@@ -262,11 +273,13 @@ def _run_service_investigation(
             slack_thread_ref=slack_thread,
             slack_bot_token=slack_bot_token or None,
         )
+        _eval = bool(other_inputs.get("evaluate"))
         result = run_investigation_cli(
             raw_alert=raw_alert,
             alert_name=raw_alert.get("alert_name"),
             pipeline_name=raw_alert.get("pipeline_name"),
             severity=raw_alert.get("severity"),
+            opensre_evaluate=_eval,
         )
     except Exception:
         capture_investigation_failed()

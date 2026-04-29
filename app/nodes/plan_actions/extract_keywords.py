@@ -56,9 +56,9 @@ def extract_keywords(problem_md: str, alert_name: str) -> list[str]:
 
     Examples:
         >>> extract_keywords("Pipeline failed with memory error", "PipelineFailure")
-        ['failure', 'failed', 'error', 'pipeline', 'memory']
+        ['memory', 'failure', 'failed', 'error', 'pipeline']
         >>> extract_keywords("", "BatchJobTimeout")
-        ['batch', 'job', 'timeout']
+        ['timeout', 'batch', 'job']
         >>> extract_keywords("No issues detected", "Success")
         []
     """

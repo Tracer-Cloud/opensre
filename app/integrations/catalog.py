@@ -36,6 +36,7 @@ from app.integrations.rabbitmq import build_rabbitmq_config
 from app.integrations.sentry import build_sentry_config
 from app.integrations.store import _STRUCTURAL_RECORD_FIELDS, load_integrations
 from app.services.vercel import VercelConfig
+from app.utils.coercion import safe_int
 
 logger = logging.getLogger(__name__)
 
@@ -100,18 +101,6 @@ _SERVICE_FAMILY = {
 
 def _family_key(flat_key: str) -> str:
     return _SERVICE_FAMILY.get(flat_key, flat_key)
-
-
-def _safe_int(value: Any, default: int) -> int:
-    """Coerce ``value`` to int, falling back to ``default`` on bad input.
-
-    Mirrors the helper in ``app.nodes.plan_actions.detect_sources``; duplicated
-    here to avoid pulling node-layer code into the shared catalog module.
-    """
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def _record_instances(record: dict[str, Any]) -> list[dict[str, Any]]:
@@ -640,7 +629,7 @@ def _classify_service_instance(
             "username": str(credentials.get("username", "")).strip(),
             "app_password": str(credentials.get("app_password", "")).strip(),
             "base_url": base_url,
-            "max_results": max(1, min(_safe_int(credentials.get("max_results", 25), 25), 100)),
+            "max_results": max(1, min(safe_int(credentials.get("max_results", 25), 25), 100)),
             "integration_id": record_id,
         }, "bitbucket"
 
@@ -660,7 +649,7 @@ def _classify_service_instance(
             "role": str(credentials.get("role", "")).strip(),
             "database": str(credentials.get("database", "")).strip(),
             "schema": str(credentials.get("schema", "")).strip(),
-            "max_results": max(1, min(_safe_int(credentials.get("max_results", 50), 50), 200)),
+            "max_results": max(1, min(safe_int(credentials.get("max_results", 50), 50), 200)),
             "integration_id": record_id,
         }, "snowflake"
 
@@ -679,7 +668,7 @@ def _classify_service_instance(
             "endpoint": endpoint,
             "tenant_id": str(credentials.get("tenant_id", "")).strip(),
             "subscription_id": str(credentials.get("subscription_id", "")).strip(),
-            "max_results": max(1, min(_safe_int(credentials.get("max_results", 100), 100), 500)),
+            "max_results": max(1, min(safe_int(credentials.get("max_results", 100), 100), 500)),
             "integration_id": record_id,
         }, "azure"
 
@@ -697,7 +686,7 @@ def _classify_service_instance(
             "username": username,
             "password": password,
             "stream": str(credentials.get("stream", "")).strip(),
-            "max_results": max(1, min(_safe_int(credentials.get("max_results", 100), 100), 500)),
+            "max_results": max(1, min(safe_int(credentials.get("max_results", 100), 100), 500)),
             "integration_id": record_id,
         }, "openobserve"
 
@@ -709,7 +698,7 @@ def _classify_service_instance(
             "url": url.rstrip("/"),
             "api_key": str(credentials.get("api_key", "")).strip(),
             "index_pattern": str(credentials.get("index_pattern", "*")).strip() or "*",
-            "max_results": max(1, min(_safe_int(credentials.get("max_results", 100), 100), 500)),
+            "max_results": max(1, min(safe_int(credentials.get("max_results", 100), 100), 500)),
             "integration_id": record_id,
         }, "opensearch"
 
@@ -1331,7 +1320,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                         "BITBUCKET_BASE_URL", "https://api.bitbucket.org/2.0"
                     ).strip()
                     or "https://api.bitbucket.org/2.0",
-                    "max_results": _safe_int(os.getenv("BITBUCKET_MAX_RESULTS", "25"), 25),
+                    "max_results": safe_int(os.getenv("BITBUCKET_MAX_RESULTS", "25"), 25),
                 },
             }
         )
@@ -1356,7 +1345,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "role": os.getenv("SNOWFLAKE_ROLE", "").strip(),
                     "database": os.getenv("SNOWFLAKE_DATABASE", "").strip(),
                     "schema": os.getenv("SNOWFLAKE_SCHEMA", "").strip(),
-                    "max_results": _safe_int(os.getenv("SNOWFLAKE_MAX_RESULTS", "50"), 50),
+                    "max_results": safe_int(os.getenv("SNOWFLAKE_MAX_RESULTS", "50"), 50),
                 },
             }
         )
@@ -1380,7 +1369,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     ),
                     "tenant_id": os.getenv("AZURE_TENANT_ID", "").strip(),
                     "subscription_id": os.getenv("AZURE_SUBSCRIPTION_ID", "").strip(),
-                    "max_results": _safe_int(os.getenv("AZURE_MAX_RESULTS", "100"), 100),
+                    "max_results": safe_int(os.getenv("AZURE_MAX_RESULTS", "100"), 100),
                 },
             }
         )
@@ -1402,7 +1391,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "username": openobserve_username,
                     "password": openobserve_password,
                     "stream": os.getenv("OPENOBSERVE_STREAM", "").strip(),
-                    "max_results": _safe_int(os.getenv("OPENOBSERVE_MAX_RESULTS", "100"), 100),
+                    "max_results": safe_int(os.getenv("OPENOBSERVE_MAX_RESULTS", "100"), 100),
                 },
             }
         )
@@ -1418,7 +1407,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "url": opensearch_url.rstrip("/"),
                     "api_key": os.getenv("OPENSEARCH_API_KEY", "").strip(),
                     "index_pattern": os.getenv("OPENSEARCH_INDEX_PATTERN", "*").strip() or "*",
-                    "max_results": _safe_int(os.getenv("OPENSEARCH_MAX_RESULTS", "100"), 100),
+                    "max_results": safe_int(os.getenv("OPENSEARCH_MAX_RESULTS", "100"), 100),
                 },
             }
         )

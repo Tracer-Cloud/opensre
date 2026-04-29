@@ -5,6 +5,10 @@ from __future__ import annotations
 import time
 from typing import Any, cast
 
+from app.integrations.opensre.hf_remote import (
+    extract_openrca_scoring_points,
+    strip_scoring_points_from_alert,
+)
 from app.state.agent_state import AgentState, AgentStateModel
 from app.state.types import ChatMessage
 
@@ -53,16 +57,31 @@ def make_initial_state(
     pipeline_name: str,
     severity: str,
     raw_alert: str | dict[str, Any] | None = None,
+    *,
+    opensre_evaluate: bool = False,
 ) -> AgentState:
     """Create initial state for investigation mode."""
+    rubric = ""
+    alert_payload: str | dict[str, Any] = raw_alert if raw_alert is not None else {}
+    if isinstance(alert_payload, dict):
+        if opensre_evaluate:
+            rubric = extract_openrca_scoring_points(alert_payload)
+            if rubric:
+                alert_payload = strip_scoring_points_from_alert(dict(alert_payload))
+        elif extract_openrca_scoring_points(alert_payload):
+            # Blind investigation: drop rubric from agent-visible alert (file may include it).
+            alert_payload = strip_scoring_points_from_alert(dict(alert_payload))
+
     state = AgentStateModel.model_validate(
         {
             "mode": "investigation",
             "alert_name": alert_name,
             "pipeline_name": pipeline_name,
             "severity": severity,
-            "raw_alert": raw_alert if raw_alert is not None else {},
+            "raw_alert": alert_payload,
             "investigation_started_at": time.monotonic(),
+            "opensre_evaluate": opensre_evaluate,
+            "opensre_eval_rubric": rubric,
             **{k: v for k, v in STATE_DEFAULTS.items() if k not in ("mode", "messages")},
         }
     )

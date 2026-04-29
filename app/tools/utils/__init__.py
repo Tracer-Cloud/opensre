@@ -1,5 +1,6 @@
-"""Tool utilities - data validation, evidence compaction, and log deduplication."""
+"""Tool utilities - code-host helpers, data validation, evidence compaction, and log deduplication."""
 
+from app.tools.utils.code_host_unavailable import code_host_unavailable_payload
 from app.tools.utils.compaction import (
     DEFAULT_ERROR_LOG_LIMIT,
     DEFAULT_LOG_LIMIT,
@@ -16,6 +17,7 @@ from app.tools.utils.compaction import (
     truncate_message,
 )
 from app.tools.utils.data_validation import validate_host_metrics
+from app.tools.utils.db_warnings import default_db_warning
 from app.tools.utils.log_compaction import (
     build_error_taxonomy,
     deduplicate_logs,
@@ -25,6 +27,10 @@ from app.tools.utils.log_compaction import (
 )
 
 __all__ = [
+    # Database warnings
+    "default_db_warning",
+    # Code-host utilities
+    "code_host_unavailable_payload",
     # Data validation
     "validate_host_metrics",
     # Compaction utilities

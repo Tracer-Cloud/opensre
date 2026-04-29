@@ -37,6 +37,7 @@ def test_run_investigation_cli_shapes_agent_state(monkeypatch) -> None:
         severity: str,
         *,
         raw_alert: dict[str, object],
+        **_: object,
     ) -> dict[str, object]:
         captured["alert_name"] = alert_name
         captured["pipeline_name"] = pipeline_name
@@ -70,6 +71,42 @@ def test_run_investigation_cli_shapes_agent_state(monkeypatch) -> None:
         "root_cause": "bad deploy",
         "is_noise": False,
     }
+
+
+def test_run_investigation_cli_evaluate_reports_skip_when_no_rubric(monkeypatch) -> None:
+    def fake_run(
+        alert_name: str,
+        pipeline_name: str,
+        severity: str,
+        *,
+        raw_alert: dict[str, object],
+        **_: object,
+    ) -> dict[str, object]:
+        return {
+            "slack_message": "r",
+            "problem_md": "p",
+            "root_cause": "c",
+            "opensre_evaluate": True,
+            "opensre_eval_rubric": "",
+            "opensre_llm_eval": {},
+        }
+
+    monkeypatch.setattr("app.cli.investigate.LLMSettings.from_env", object)
+    monkeypatch.setattr("app.cli.investigate._call_run_investigation", fake_run)
+
+    result = run_investigation_cli(
+        raw_alert={"alert_name": "A"},
+        opensre_evaluate=True,
+    )
+    assert result["opensre_llm_eval"]["skipped"] is True
+    assert "No scoring_points" in result["opensre_llm_eval"]["reason"]
+
+
+def test_parse_args_evaluate_flag() -> None:
+    from app.cli.args import parse_args
+
+    assert parse_args(["--input", "a.json"]).evaluate is False
+    assert parse_args(["--input", "a.json", "--evaluate"]).evaluate is True
 
 
 def test_run_investigation_cli_fails_fast_for_invalid_llm_config(monkeypatch) -> None:

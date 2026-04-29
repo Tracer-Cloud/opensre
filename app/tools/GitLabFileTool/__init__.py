@@ -10,6 +10,7 @@ from app.integrations.gitlab import (
 )
 from app.tools.GitLabCommitsTool import _gitlab_available, _gl_creds, _resolve_config
 from app.tools.tool_decorator import tool
+from app.tools.utils.code_host_unavailable import code_host_unavailable_payload
 
 
 def _get_gitlab_file_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -63,12 +64,12 @@ def get_gitlab_file_contents(
     """Read the contents of a specific file from a GitLab repository."""
     config = _resolve_config(gitlab_url, gitlab_token)
     if config is None:
-        return {
-            "source": "gitlab",
-            "available": False,
-            "error": "gitlab integration is not configured.",
-            "file": {},
-        }
+        return code_host_unavailable_payload(
+            source="gitlab",
+            integration_name="gitlab",
+            empty_key="file",
+            empty_value={},
+        )
 
     result = get_gitlab_file(
         config=config,

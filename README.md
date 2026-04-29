@@ -6,31 +6,31 @@
 
 <h1>OpenSRE: Build Your Own AI SRE Agents</h1>
 
-
 <p>The open-source framework for AI SRE agents, and the training and evaluation environment they need to improve. Connect the 60+ tools you already run, define your own workflows, and investigate incidents on your own infrastructure.</p>
 
-<p>
-  <a href="https://github.com/Tracer-Cloud/opensre/stargazers"><img src="https://img.shields.io/github/stars/Tracer-Cloud/opensre?style=flat-square&color=FF6B00" alt="Stars"></a>
-  <a href="https://github.com/Tracer-Cloud/opensre/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License"></a>
-  <a href="https://github.com/Tracer-Cloud/opensre/blob/main/.github/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Tracer-Cloud/opensre/ci.yml?style=flat-square&label=CI" alt="CI"></a>
-  <img src="https://img.shields.io/badge/open%20source-forever-brightgreen?style=flat-square" alt="Open Source">
-  <a href="https://discord.gg/7NTpevXf7w"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord"></a>
- 
+<p align="center">
+  <a href="https://github.com/Tracer-Cloud/opensre/actions/workflows/ci.yml?branch=main"><img src="https://img.shields.io/github/actions/workflow/status/Tracer-Cloud/opensre/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
+  <a href="https://github.com/Tracer-Cloud/opensre/releases"><img src="https://img.shields.io/github/v/release/Tracer-Cloud/opensre?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
+  <a href="https://github.com/Tracer-Cloud/opensre/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge" alt="Apache 2.0 License"></a>
+  <a href="https://discord.gg/7NTpevXf7w"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
-<a href="https://trendshift.io/repositories/25889" target="_blank">
-  <img
-    src="https://trendshift.io/api/badge/repositories/25889"
-    alt="Tracer-Cloud%2Fopensre | Trendshift"
-    style="height: 30px; width: auto;"
-    height="30"
-  />
-</a>
+
+<p align="center">
+  <a href="https://trendshift.io/repositories/25889" target="_blank">
+    <img
+      src="https://trendshift.io/api/badge/repositories/25889"
+      alt="Tracer-Cloud%2Fopensre | Trendshift"
+      style="height: 30px; width: auto;"
+      height="30"
+    />
+  </a>
+</p>
 
 <p align="center">
   <strong>
     <a href="https://www.opensre.com/docs/quickstart">Quickstart</a> ·
     <a href="https://www.opensre.com/docs">Docs</a> ·
-    <a href="https://tracer.mintlify.app/faq">FAQ</a> ·
+    <a href="https://opensre.com/docs/faq">FAQ</a> ·
     <a href="https://trust.tracer.cloud/">Security</a>
   </strong>
 </p>
@@ -40,6 +40,25 @@
 ---
 
 > 🚧 Public Alpha: Core workflows are usable for early exploration, though not yet fully stable. The project is in active development, and APIs and integrations may evolve
+
+---
+
+## Table of Contents
+
+- [Why OpenSRE?](#why-opensre)
+- [Install](#install)
+- [Quick Start](#quick-start)
+- [Railway Deployment](#railway-deployment)
+- [Development](#development)
+- [How OpenSRE Works](#how-opensre-works)
+- [Benchmark](#benchmark)
+- [Capabilities](#capabilities)
+- [Integrations](#integrations)
+- [Contributing](#contributing)
+- [Security](#security)
+- [Telemetry](#telemetry)
+- [License](#license)
+- [Citations](#citations)
 
 ---
 
@@ -218,18 +237,18 @@ make benchmark
 
 OpenSRE connects to 60+ tools and services across the modern cloud stack, from LLM providers and observability platforms to infrastructure, databases, and incident management.
 
-| Category | Integrations | Roadmap |
-| --- | --- | --- |
-| **AI / LLM Providers** | Anthropic · OpenAI · Ollama · Google Gemini · OpenRouter · NVIDIA NIM · Bedrock | |
-| **Observability** | <img src="docs/assets/icons/grafana.webp" width="16"> Grafana (Loki · Mimir · Tempo) · <img src="docs/assets/icons/datadog.svg" width="16"> Datadog · Honeycomb · Coralogix · <img src="docs/assets/icons/cloudwatch.png" width="16"> CloudWatch · <img src="docs/assets/icons/sentry.png" width="16"> Sentry · Elasticsearch · Better Stack Telemetry | [Splunk](https://github.com/Tracer-Cloud/opensre/issues/319) · [New Relic](https://github.com/Tracer-Cloud/opensre/issues/139) · [Victoria Logs](https://github.com/Tracer-Cloud/opensre/issues/126) |
-| **Infrastructure** | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS (S3 · Lambda · EKS · EC2 · Bedrock) · <img src="docs/assets/icons/gcp.jpg" width="16"> GCP · <img src="docs/assets/icons/azure.png" width="16"> Azure | [Helm](https://github.com/Tracer-Cloud/opensre/issues/321) · [ArgoCD](https://github.com/Tracer-Cloud/opensre/issues/320) |
-| **Database** | MongoDB · ClickHouse | [PostgreSQL · MySQL](https://github.com/Tracer-Cloud/opensre/issues/322) · [MariaDB](https://github.com/Tracer-Cloud/opensre/issues/331) · [MongoDB Atlas](https://github.com/Tracer-Cloud/opensre/issues/332) · [Azure SQL](https://github.com/Tracer-Cloud/opensre/issues/333) · [RDS](https://github.com/Tracer-Cloud/opensre/issues/125) · [Snowflake](https://github.com/Tracer-Cloud/opensre/issues/364) |
-| **Data Platform** | Apache Airflow · Apache Kafka · Apache Spark · Prefect · RabbitMQ | |
-| **Dev Tools** | <img src="docs/assets/icons/github.webp" width="16"> GitHub · GitHub MCP · Bitbucket | [GitLab](https://github.com/Tracer-Cloud/opensre/issues/318) |
-| **Incident Management** | <img src="docs/assets/icons/pagerduty.png" width="16"> PagerDuty · Opsgenie · Jira | [ServiceNow](https://github.com/Tracer-Cloud/opensre/issues/314) · [incident.io](https://github.com/Tracer-Cloud/opensre/issues/317) · [Alertmanager](https://github.com/Tracer-Cloud/opensre/issues/316) · [Linear](https://github.com/Tracer-Cloud/opensre/issues/124) · [Trello](https://github.com/Tracer-Cloud/opensre/issues/361) |
-| **Communication** | <img src="docs/assets/icons/slack.png" width="16"> Slack · Google Docs | [Discord](https://github.com/Tracer-Cloud/opensre/issues/359) · [Teams](https://github.com/Tracer-Cloud/opensre/issues/138) · [WhatsApp](https://github.com/Tracer-Cloud/opensre/issues/360) · [Confluence](https://github.com/Tracer-Cloud/opensre/issues/313) · [Notion](https://github.com/Tracer-Cloud/opensre/issues/286) |
-| **Agent Deployment** | <img src="docs/assets/icons/vercel.png" width="16"> Vercel · <img src="docs/assets/icons/langsmith.png" width="16"> LangSmith · <img src="docs/assets/icons/aws.png" width="16"> EC2 · <img src="docs/assets/icons/aws.png" width="16"> ECS | [Railway](https://github.com/Tracer-Cloud/opensre/issues/271) |
-| **Protocols** | <img src="docs/assets/icons/mcp.svg" width="16"> MCP · <img src="docs/assets/icons/acp.png" width="16"> ACP · <img src="docs/assets/icons/openclaw.jpg" width="16"> OpenClaw | |
+| Category                | Integrations                                                                                                                                                                                                                                                                                                                                           | Roadmap                                                                                                                                                                                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **AI / LLM Providers**  | Anthropic · OpenAI · Ollama · Google Gemini · OpenRouter · NVIDIA NIM · Bedrock                                                                                                                                                                                                                                                                        |                                                                                                                                                                                                                                                                    |
+| **Observability**       | <img src="docs/assets/icons/grafana.webp" width="16"> Grafana (Loki · Mimir · Tempo) · <img src="docs/assets/icons/datadog.svg" width="16"> Datadog · Honeycomb · Coralogix · <img src="docs/assets/icons/cloudwatch.png" width="16"> CloudWatch · <img src="docs/assets/icons/sentry.png" width="16"> Sentry · Elasticsearch · Better Stack Telemetry | [Splunk](https://github.com/Tracer-Cloud/opensre/issues/319) · [New Relic](https://github.com/Tracer-Cloud/opensre/issues/139) · [Victoria Logs](https://github.com/Tracer-Cloud/opensre/issues/126)                                                               |
+| **Infrastructure**      | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS (S3 · Lambda · EKS · EC2 · Bedrock) · <img src="docs/assets/icons/gcp.jpg" width="16"> GCP · <img src="docs/assets/icons/azure.png" width="16"> Azure                                                                        | [Helm](https://github.com/Tracer-Cloud/opensre/issues/321) · [ArgoCD](https://github.com/Tracer-Cloud/opensre/issues/320)                                                                                                                                          |
+| **Database**            | MongoDB · ClickHouse · PostgreSQL · MySQL · MariaDB · MongoDB Atlas · Azure SQL · Snowflake                                                                                                                                                                                                                                                            | [RDS](https://github.com/Tracer-Cloud/opensre/issues/125)                                                                                                                                                                                                          |
+| **Data Platform**       | Apache Airflow · Apache Kafka · Apache Spark · Prefect · RabbitMQ                                                                                                                                                                                                                                                                                      |                                                                                                                                                                                                                                                                    |
+| **Dev Tools**           | <img src="docs/assets/icons/github.webp" width="16"> GitHub · GitHub MCP · Bitbucket · GitLab                                                                                                                                                                                                                                                          |                                                                                                                                                                                                                                                                    |
+| **Incident Management** | <img src="docs/assets/icons/pagerduty.png" width="16"> PagerDuty · Opsgenie · Jira · Alertmanager                                                                                                                                                                                                                                                      | [Trello](https://github.com/Tracer-Cloud/opensre/issues/361) · [ServiceNow](https://github.com/Tracer-Cloud/opensre/issues/314) · [incident.io](https://github.com/Tracer-Cloud/opensre/issues/317) · [Linear](https://github.com/Tracer-Cloud/opensre/issues/124) |
+| **Communication**       | <img src="docs/assets/icons/slack.png" width="16"> Slack · Google Docs · Discord                                                                                                                                                                                                                                                                       | [Notion](https://github.com/Tracer-Cloud/opensre/issues/286) · [Teams](https://github.com/Tracer-Cloud/opensre/issues/138) · [WhatsApp](https://github.com/Tracer-Cloud/opensre/issues/360) · [Confluence](https://github.com/Tracer-Cloud/opensre/issues/313)     |
+| **Agent Deployment**    | <img src="docs/assets/icons/vercel.png" width="16"> Vercel · <img src="docs/assets/icons/langsmith.png" width="16"> LangSmith · <img src="docs/assets/icons/aws.png" width="16"> EC2 · <img src="docs/assets/icons/aws.png" width="16"> ECS · Railway                                                                                                  |                                                                                                                                                                                                                                                                    |
+| **Protocols**           | <img src="docs/assets/icons/mcp.svg" width="16"> MCP · <img src="docs/assets/icons/acp.png" width="16"> ACP · <img src="docs/assets/icons/openclaw.jpg" width="16"> OpenClaw                                                                                                                                                                           |                                                                                                                                                                                                                                                                    |
 
 ---
 
@@ -251,6 +270,12 @@ Good first issues are labeled [`good first issue`](https://github.com/Tracer-Clo
 - ⭐ Star the repo - it helps other engineers find OpenSRE
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
+
+<p align="center">
+  <a href="https://www.star-history.com/#Tracer-Cloud/opensre&Date">
+    <img src="https://api.star-history.com/svg?repos=Tracer-Cloud/opensre&type=Date" alt="Star History Chart">
+  </a>
+</p>
 
 Thanks goes to these amazing people:
 
@@ -777,6 +802,233 @@ Thanks goes to these amazing people:
             <sub><b>Sarah-Salah</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/jerome-wilson">
+            <img src="https://avatars.githubusercontent.com/u/116165488?v=4" width="100" alt="jerome-wilson"/>
+            <br />
+            <sub><b>jerome-wilson</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/hcombalicer">
+            <img src="https://avatars.githubusercontent.com/u/40112059?v=4" width="100" alt="hcombalicer"/>
+            <br />
+            <sub><b>hcombalicer</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/CuriousHet">
+            <img src="https://avatars.githubusercontent.com/u/102606191?v=4" width="100" alt="CuriousHet"/>
+            <br />
+            <sub><b>CuriousHet</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Dipxssi">
+            <img src="https://avatars.githubusercontent.com/u/151428630?v=4" width="100" alt="Dipxssi"/>
+            <br />
+            <sub><b>Dipxssi</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/sirohikartik">
+            <img src="https://avatars.githubusercontent.com/u/99896785?v=4" width="100" alt="sirohikartik"/>
+            <br />
+            <sub><b>sirohikartik</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/imjohnzakkam">
+            <img src="https://avatars.githubusercontent.com/u/42964266?v=4" width="100" alt="imjohnzakkam"/>
+            <br />
+            <sub><b>imjohnzakkam</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/paarths-collab">
+            <img src="https://avatars.githubusercontent.com/u/205314222?v=4" width="100" alt="paarths-collab"/>
+            <br />
+            <sub><b>paarths-collab</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/wahajahmed010">
+            <img src="https://avatars.githubusercontent.com/u/57330918?v=4" width="100" alt="wahajahmed010"/>
+            <br />
+            <sub><b>wahajahmed010</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Ade20boss">
+            <img src="https://avatars.githubusercontent.com/u/168012500?v=4" width="100" alt="Ade20boss"/>
+            <br />
+            <sub><b>Ade20boss</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/MichaelGurevich">
+            <img src="https://avatars.githubusercontent.com/u/105605801?v=4" width="100" alt="MichaelGurevich"/>
+            <br />
+            <sub><b>MichaelGurevich</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/SB2318">
+            <img src="https://avatars.githubusercontent.com/u/87614560?v=4" width="100" alt="SB2318"/>
+            <br />
+            <sub><b>SB2318</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Davidson3556">
+            <img src="https://avatars.githubusercontent.com/u/99369614?v=4" width="100" alt="Davidson3556"/>
+            <br />
+            <sub><b>Davidson3556</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/gitsofaryan">
+            <img src="https://avatars.githubusercontent.com/u/117700812?v=4" width="100" alt="gitsofaryan"/>
+            <br />
+            <sub><b>gitsofaryan</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/GoDiao">
+            <img src="https://avatars.githubusercontent.com/u/104132148?v=4" width="100" alt="GoDiao"/>
+            <br />
+            <sub><b>GoDiao</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/7vignesh">
+            <img src="https://avatars.githubusercontent.com/u/97684755?v=4" width="100" alt="7vignesh"/>
+            <br />
+            <sub><b>7vignesh</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/turancannb02">
+            <img src="https://avatars.githubusercontent.com/u/131914656?v=4" width="100" alt="turancannb02"/>
+            <br />
+            <sub><b>turancannb02</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/ShivaniNR">
+            <img src="https://avatars.githubusercontent.com/u/47320667?v=4" width="100" alt="ShivaniNR"/>
+            <br />
+            <sub><b>ShivaniNR</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/0xDevNinja">
+            <img src="https://avatars.githubusercontent.com/u/102245100?v=4" width="100" alt="0xDevNinja"/>
+            <br />
+            <sub><b>0xDevNinja</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/blut-agent">
+            <img src="https://avatars.githubusercontent.com/u/278569635?v=4" width="100" alt="blut-agent"/>
+            <br />
+            <sub><b>blut-agent</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/Ghraven">
+            <img src="https://avatars.githubusercontent.com/u/115199279?v=4" width="100" alt="Ghraven"/>
+            <br />
+            <sub><b>Ghraven</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/kespineira">
+            <img src="https://avatars.githubusercontent.com/u/44882187?v=4" width="100" alt="kespineira"/>
+            <br />
+            <sub><b>kespineira</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/AarushSharmaa">
+            <img src="https://avatars.githubusercontent.com/u/68619452?v=4" width="100" alt="AarushSharmaa"/>
+            <br />
+            <sub><b>AarushSharmaa</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Lozsku">
+            <img src="https://avatars.githubusercontent.com/u/98460727?v=4" width="100" alt="Lozsku"/>
+            <br />
+            <sub><b>Lozsku</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Piyushtiwari919">
+            <img src="https://avatars.githubusercontent.com/u/184945555?v=4" width="100" alt="Piyushtiwari919"/>
+            <br />
+            <sub><b>Piyushtiwari919</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/hruico">
+            <img src="https://avatars.githubusercontent.com/u/218068869?v=4" width="100" alt="hruico"/>
+            <br />
+            <sub><b>hruico</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/IBOCATA">
+            <img src="https://avatars.githubusercontent.com/u/74919012?v=4" width="100" alt="IBOCATA"/>
+            <br />
+            <sub><b>IBOCATA</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Jeel3011">
+            <img src="https://avatars.githubusercontent.com/u/166152117?v=4" width="100" alt="Jeel3011"/>
+            <br />
+            <sub><b>Jeel3011</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Gingiris">
+            <img src="https://avatars.githubusercontent.com/u/260675847?v=4" width="100" alt="Gingiris"/>
+            <br />
+            <sub><b>Gingiris</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/rameshkumarkoyya">
+            <img src="https://avatars.githubusercontent.com/u/109403918?v=4" width="100" alt="rameshkumarkoyya"/>
+            <br />
+            <sub><b>rameshkumarkoyya</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/JustInCache">
+            <img src="https://avatars.githubusercontent.com/u/105823120?v=4" width="100" alt="JustInCache"/>
+            <br />
+            <sub><b>JustInCache</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Genmin">
+            <img src="https://avatars.githubusercontent.com/u/90125084?v=4" width="100" alt="Genmin"/>
+            <br />
+            <sub><b>Genmin</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
@@ -833,3 +1085,5 @@ Apache 2.0 - see [LICENSE](LICENSE) for details.
 ## Citations
 
 <sup>1</sup> https://arxiv.org/abs/2310.06770
+
+<!-- No visible change: test for post-merge PR comment workflow. -->

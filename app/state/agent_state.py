@@ -19,6 +19,18 @@ from app.strict_config import StrictConfigModel
 from app.types.retrieval import RetrievalControlsMap
 
 
+def merge_results_reducer(
+    existing: list[dict[str, Any]] | None, new: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
+    if new and len(new) == 1 and new[0].get("__clear"):
+        return []
+    if not existing:
+        return new or []
+    if not new:
+        return existing
+    return existing + new
+
+
 class AgentState(TypedDict, total=False):
     """Unified state for chat and investigation modes.
 
@@ -82,7 +94,27 @@ class AgentState(TypedDict, total=False):
     investigation_loop_count: int
     hypotheses: list[str]
     executed_hypotheses: list[dict[str, Any]]
+    hypothesis_results: Annotated[list[dict[str, Any]], merge_results_reducer]
+    action_to_run: str
     investigation_started_at: float
+
+    # Resolved [since, until) time window for the current incident.
+    # Populated by extract_alert from the alert's own timestamps via
+    # ``app.incident_window.resolve_incident_window``. Time-aware tools will
+    # read from this in a follow-up PR; in this PR the field is wired through
+    # state but not yet consumed. ``None`` means extract_alert has not run yet.
+    # Shape: {"_schema_version": int, "since": iso8601, "until": iso8601,
+    #         "source": str, "confidence": float}.
+    incident_window: dict[str, Any] | None
+
+    # Append-only audit trail of windows replaced by ``adapt_window``. Each
+    # entry is the OLD window dict at the moment of replacement, plus
+    # ``replaced_at`` (ISO-8601) and ``replaced_reason`` (e.g.
+    # "expanded:empty_deploy_timeline"). Bounded by ``MAX_EXPANSIONS`` in
+    # the adapt_window rule layer; the field itself imposes no cap.
+    # ``None`` until the first expansion. Diagnose narratives may cite
+    # this to explain "we tried 120m, found no deploys, widened to 240m".
+    incident_window_history: list[dict[str, Any]] | None
 
     # Placeholder→original map for reversible infrastructure identifier masking
     masking_map: dict[str, str]
@@ -107,6 +139,11 @@ class AgentState(TypedDict, total=False):
     summary: str
     problem_report: dict[str, Any]
     report: str
+
+    # OpenRCA offline rubric eval (``opensre investigate --evaluate``)
+    opensre_evaluate: bool
+    opensre_eval_rubric: str
+    opensre_llm_eval: dict[str, Any]
 
 
 InvestigationState = AgentState
@@ -156,7 +193,11 @@ class AgentStateModel(StrictConfigModel):
     investigation_loop_count: int = 0
     hypotheses: list[str] = Field(default_factory=list)
     executed_hypotheses: list[dict[str, Any]] = Field(default_factory=list)
+    hypothesis_results: list[dict[str, Any]] = Field(default_factory=list)
+    action_to_run: str = ""
     investigation_started_at: float = 0.0
+    incident_window: dict[str, Any] | None = None
+    incident_window_history: list[dict[str, Any]] | None = None
     masking_map: dict[str, str] = Field(default_factory=dict)
     slack_context: dict[str, Any] = Field(default_factory=dict)
     discord_context: dict[str, Any] = Field(default_factory=dict)
@@ -169,3 +210,6 @@ class AgentStateModel(StrictConfigModel):
     summary: str = ""
     problem_report: dict[str, Any] = Field(default_factory=dict)
     report: str = ""
+    opensre_evaluate: bool = False
+    opensre_eval_rubric: str = ""
+    opensre_llm_eval: dict[str, Any] = Field(default_factory=dict)

@@ -1,0 +1,29 @@
+{
+  "_meta": {
+    "purpose": "Root cause analysis query from OpenRCA Market/cloudbed-1 benchmark",
+    "dataset": "https://huggingface.co/datasets/tracer-cloud/opensre",
+    "telemetry_relative": "Market/cloudbed-1/telemetry/2022_03_20",
+    "note": "Set OPENSRE_DATASET_ROOT or OPENRCA_DATASET_ROOT to your local clone; do not commit scoring into alert.json for fair runs."
+  },
+  "title": "[Triggered] RCA task task_6 — Market/cloudbed-1",
+  "alert_name": "OpenRCA monitor: task_6 (Market/cloudbed-1)",
+  "pipeline_name": "market/cloudbed-1",
+  "severity": "warning",
+  "alert_source": "openrca_dataset",
+  "message": "The cloud service system, cloudbed-1, experienced one failure within the time range of March 20, 2022, from 09:00 to 09:30. The specific component responsible for this failure and the underlying reason are currently unknown. You are tasked with identifying the root cause component and the root cause reason.",
+  "text": "The cloud service system, cloudbed-1, experienced one failure within the time range of March 20, 2022, from 09:00 to 09:30. The specific component responsible for this failure and the underlying reason are currently unknown. You are tasked with identifying the root cause component and the root cause reason.",
+  "commonLabels": {
+    "pipeline_name": "market/cloudbed-1",
+    "severity": "warning",
+    "kube_deployment": "openrca-market-cloudbed-1",
+    "task_index": "task_6"
+  },
+  "commonAnnotations": {
+    "summary": "The cloud service system, cloudbed-1, experienced one failure within the time range of March 20, 2022, from 09:00 to 09:30. The specific component responsible for this failure and the underlying reason are currently unknown. You are tasked with identifying the root cause component and the root cause reason.",
+    "query": "kube_namespace:openrca",
+    "kube_namespace": "openrca",
+    "kube_deployment": "openrca-market-cloudbed-1",
+    "correlation_id": "market-cloudbed-1-0001",
+    "openrca_telemetry_relative": "Market/cloudbed-1/telemetry/2022_03_20"
+  }
+}

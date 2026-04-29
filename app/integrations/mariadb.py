@@ -15,6 +15,7 @@ from typing import Any
 from pydantic import Field, field_validator
 
 from app.strict_config import StrictConfigModel
+from app.utils.coercion import safe_int
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +61,7 @@ class MariaDBConfig(StrictConfigModel):
     @field_validator("port", mode="before")
     @classmethod
     def _normalize_port(cls, value: Any) -> int:
-        try:
-            return int(value)
-        except (ValueError, TypeError):
-            return DEFAULT_MARIADB_PORT
+        return safe_int(value, DEFAULT_MARIADB_PORT)
 
     @property
     def is_configured(self) -> bool:

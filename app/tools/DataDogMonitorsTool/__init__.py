@@ -25,6 +25,7 @@ def _monitors_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 @tool(
     name="query_datadog_monitors",
+    display_name="Datadog monitors",
     source="datadog",
     description="List Datadog monitors to understand alerting configuration and current states.",
     use_cases=[

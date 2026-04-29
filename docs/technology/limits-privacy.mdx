@@ -1,16 +1,16 @@
 ---
 title: 'Limits and privacy'
 sidebarTitle: 'Limits and privacy'
-description: 'What OpenSRE does and does not collect'
+description: 'What Tracer does and does not collect'
 ---
 
-OpenSRE is designed to provide execution insight while minimizing data exposure. It observes how workloads run, not what they compute or the data they process.
+Tracer is designed to provide execution insight while minimizing data exposure. It observes how workloads run, not what they compute or the data they process.
 
-This page explains OpenSRE's intentional limits, privacy boundaries, and data handling principles.
+This page explains Tracer's intentional limits, privacy boundaries, and data handling principles.
 
-## What OpenSRE collects
+## What Tracer collects
 
-OpenSRE collects execution metadata derived from operating system–level signals.
+Tracer collects execution metadata derived from operating system–level signals.
 
 <CardGroup cols={3}>
   <Card title="CPU & scheduling" icon="microchip">
@@ -38,9 +38,9 @@ OpenSRE collects execution metadata derived from operating system–level signal
 
 This data is used to reconstruct execution timelines and resource usage patterns.
 
-## What OpenSRE does not collect
+## What Tracer does not collect
 
-OpenSRE explicitly does not collect or inspect:
+Tracer explicitly does not collect or inspect:
 
 <AccordionGroup>
   <Accordion title="Application and scientific data" icon="database">
@@ -49,7 +49,7 @@ OpenSRE explicitly does not collect or inspect:
     - Sample, patient, or experimental data
     - File contents or payloads
 
-    <Note>OpenSRE may observe that a file was accessed, but never reads or captures file contents. This behavior can be verified in the open-source OpenSRE/collect implementation.</Note>
+    <Note>Tracer may observe that a file was accessed, but never reads or captures file contents. This behavior can be verified in the open-source Tracer/collect implementation.</Note>
   </Accordion>
   <Accordion title="Source code and runtime internals" icon="code">
     - Source code or scripts
@@ -57,34 +57,34 @@ OpenSRE explicitly does not collect or inspect:
     - Variables, objects, or in-memory data
     - Language-level execution traces
 
-    <Note>OpenSRE operates at the process and kernel level, not inside language runtimes.</Note>
+    <Note>Tracer operates at the process and kernel level, not inside language runtimes.</Note>
   </Accordion>
   <Accordion title="Secrets and sensitive configuration" icon="key">
     - Environment variables
     - Credentials or API keys
     - Tokens, passwords, or certificates
 
-    <Note>OpenSRE does not inspect process memory or application configuration.</Note>
+    <Note>Tracer does not inspect process memory or application configuration.</Note>
   </Accordion>
   <Accordion title="Application- or domain-level semantics" icon="microscope">
     - Biological meaning or correctness
     - Algorithmic intent
     - Business or scientific interpretation of results
 
-    <Note>While OpenSRE can observe which binaries or commands were executed, it does not infer what those commands mean within an application or domain.</Note>
+    <Note>While Tracer can observe which binaries or commands were executed, it does not infer what those commands mean within an application or domain.</Note>
   </Accordion>
 </AccordionGroup>
 
 ## Command visibility (clarification)
 
-OpenSRE may observe:
+Tracer may observe:
 
 - Which binaries were executed
 - Command-line arguments passed to those binaries
 
 This visibility is limited to execution metadata and is required to correlate processes to tools and pipeline steps.
 
-OpenSRE does not:
+Tracer does not:
 
 - Inspect data passed through those commands
 - Parse command arguments for domain meaning
@@ -92,7 +92,7 @@ OpenSRE does not:
 
 ## Data minimization
 
-OpenSRE follows a data-minimization approach:
+Tracer follows a data-minimization approach:
 
 <CardGroup cols={2}>
   <Card title="Minimal collection" icon="filter">
@@ -113,7 +113,7 @@ OpenSRE follows a data-minimization approach:
 
 ## Maintained allowlists and denylists
 
-OpenSRE maintains a small set of internal allowlists and denylists to focus collection on meaningful execution activity and reduce unnecessary data.
+Tracer maintains a small set of internal allowlists and denylists to focus collection on meaningful execution activity and reduce unnecessary data.
 
 These lists are used to:
 
@@ -153,7 +153,7 @@ In environments with custom tools or binaries, these lists can be extended or re
 
 ### Why this matters
 
-Maintaining explicit allowlists and denylists helps OpenSRE:
+Maintaining explicit allowlists and denylists helps Tracer:
 
 - Minimize data collection to what is operationally relevant
 - Reduce overhead in high-throughput environments
@@ -165,15 +165,15 @@ This approach supports accurate execution insight while keeping collection conse
 ## Data handling and storage
 
 - Execution signals are captured locally and aggregated into structured telemetry
-- Only derived metadata is transmitted to the OpenSRE backend
+- Only derived metadata is transmitted to the Tracer backend
 - Payload data is never exported
 - Data retention and access are governed by account-level configuration
 
-OpenSRE separates collection, correlation, and analysis to reduce exposure.
+Tracer separates collection, correlation, and analysis to reduce exposure.
 
 ## Product boundaries
 
-OpenSRE is intentionally scoped.
+Tracer is intentionally scoped.
 
 <Warning>
 **It does not:**
@@ -183,15 +183,15 @@ OpenSRE is intentionally scoped.
 - Replace IAM, RBAC, or cloud security controls
 </Warning>
 
-OpenSRE observes execution within the boundaries enforced by the operating system, container runtime, and cloud provider.
+Tracer observes execution within the boundaries enforced by the operating system, container runtime, and cloud provider.
 
 ## Transparency and open source
 
-The core OpenSRE agent (OpenSRE/collect) is open source. The repository documents how execution signals are collected, filtered, and structured, and makes it possible to independently review what data is gathered and what is explicitly excluded.
+The core Tracer agent (Tracer/collect) is open source. The repository documents how execution signals are collected, filtered, and structured, and makes it possible to independently review what data is gathered and what is explicitly excluded.
 
-This transparency supports security reviews and helps teams verify OpenSRE's data-collection boundaries.
+This transparency supports security reviews and helps teams verify Tracer's data-collection boundaries.
 
-<Card title="OpenSRE/collect on GitHub" icon="github" href="https://github.com/Tracer-Cloud/tracer-client">
+<Card title="Tracer/collect on GitHub" icon="github" href="https://github.com/Tracer-Cloud/tracer-client">
   Review the open-source implementation
 </Card>
 
@@ -201,7 +201,7 @@ This page is especially relevant if you:
 
 - Operate in regulated or security-sensitive environments
 - Need to complete security or privacy reviews
-- Evaluate OpenSRE's suitability for production workloads
+- Evaluate Tracer's suitability for production workloads
 - Want clarity on data collection boundaries
 
 <CardGroup cols={2}>
@@ -219,7 +219,7 @@ This page is especially relevant if you:
 
 ## Summary
 
-OpenSRE provides execution visibility without inspecting application data. By limiting collection to system-level execution metadata, applying conservative filtering, and enforcing clear boundaries, OpenSRE delivers performance and cost insight while preserving privacy and security.
+Tracer provides execution visibility without inspecting application data. By limiting collection to system-level execution metadata, applying conservative filtering, and enforcing clear boundaries, Tracer delivers performance and cost insight while preserving privacy and security.
 
 <div style={{ height: '50vh' }}></div>
 

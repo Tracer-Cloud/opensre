@@ -1,10 +1,10 @@
 ---
 title: 'Capabilities and compatibility'
 sidebarTitle: 'Capabilities and compatibility'
-description: 'What OpenSRE supports and guarantees'
+description: 'What Tracer supports and guarantees'
 ---
 
-OpenSRE is an execution-level observability platform designed for scientific and compute-intensive workloads. This page describes the capabilities, compatibility, and guarantees that apply across all OpenSRE products.
+Tracer is an execution-level observability platform designed for scientific and compute-intensive workloads. This page describes the capabilities, compatibility, and guarantees that apply across all Tracer products.
 
 For details on how execution data is collected, analyzed, or acted on, see:
 
@@ -12,21 +12,21 @@ For details on how execution data is collected, analyzed, or acted on, see:
   <Card href="/technology/tracer-collect">
     <div style={{ textAlign: 'center' }}>
       <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
-        <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
+        <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
       </span>
     </div>
   </Card>
   <Card href="/technology/tracer-tune">
     <div style={{ textAlign: 'center' }}>
       <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
-        <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
+        <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
       </span>
     </div>
   </Card>
   <Card href="/technology/tracer-sweep">
     <div style={{ textAlign: 'center' }}>
       <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
-        <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #4436BD, #5646E2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
+        <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #4436BD, #5646E2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
       </span>
     </div>
   </Card>
@@ -34,7 +34,7 @@ For details on how execution data is collected, analyzed, or acted on, see:
 
 ## Execution-level observability
 
-OpenSRE observes workloads at the operating system level. It captures how processes execute and use resources, rather than relying on workflow metadata, logs, or application instrumentation.
+Tracer observes workloads at the operating system level. It captures how processes execute and use resources, rather than relying on workflow metadata, logs, or application instrumentation.
 
 <CardGroup cols={3}>
   <Card title="Real behavior" icon="eye">
@@ -48,11 +48,11 @@ OpenSRE observes workloads at the operating system level. It captures how proces
   </Card>
 </CardGroup>
 
-<Note>This execution-first approach is consistent whether OpenSRE is used for pipeline analysis, optimization, or systemwide cost discovery.</Note>
+<Note>This execution-first approach is consistent whether Tracer is used for pipeline analysis, optimization, or systemwide cost discovery.</Note>
 
 ## Supported environments
 
-OpenSRE is designed to work in real production environments with heterogeneous tooling.
+Tracer is designed to work in real production environments with heterogeneous tooling.
 
 ### Operating system
 
@@ -72,11 +72,11 @@ OpenSRE is designed to work in real production environments with heterogeneous t
 - Pipelines with many short-lived processes
 - Legacy tools and custom binaries
 
-If a workload runs on Linux, OpenSRE can observe it.
+If a workload runs on Linux, Tracer can observe it.
 
 ## Framework and workflow support
 
-OpenSRE is framework-agnostic. It does not depend on workflow engine metadata and does not require configuration for specific systems.
+Tracer is framework-agnostic. It does not depend on workflow engine metadata and does not require configuration for specific systems.
 
 Commonly used with:
 
@@ -105,14 +105,14 @@ Across all supported environments:
   </Card>
 </CardGroup>
 
-<Tip>Once OpenSRE is installed, execution visibility is available automatically on the next run. See [Quickstart](/quickstart) for setup instructions.</Tip>
+<Tip>Once Tracer is installed, execution visibility is available automatically on the next run. See [Quickstart](/quickstart) for setup instructions.</Tip>
 
 ## Security and data boundaries
 
-OpenSRE is designed to minimize data exposure.
+Tracer is designed to minimize data exposure.
 
 <Warning>
-**Across all products, OpenSRE:**
+**Across all products, Tracer:**
 - Collects system-level execution metadata only
 - Does not inspect application payloads or scientific data
 - Does not read file contents or memory
@@ -125,7 +125,7 @@ Information about kernel-level safety and isolation is covered in [eBPF and secu
 
 ## Performance characteristics
 
-OpenSRE is built for continuous use in compute-heavy cloud environments. (Also works locally)
+Tracer is built for continuous use in compute-heavy cloud environments. (Also works locally)
 
 General characteristics:
 
@@ -133,40 +133,40 @@ General characteristics:
 - **No re-runs** — No need to re-run pipelines to collect data
 - **Scales well** — Handles thousands of short-lived processes
 
-Specific performance details depend on workload characteristics and are documented in [OpenSRE/collect](/technology/tracer-collect).
+Specific performance details depend on workload characteristics and are documented in [Tracer/collect](/technology/tracer-collect).
 
 ## What this page is for
 
 This page answers:
 
-- Will OpenSRE work in my environment?
+- Will Tracer work in my environment?
 - What are the system requirements and guarantees?
-- What assumptions does OpenSRE make about workflows and infrastructure?
+- What assumptions does Tracer make about workflows and infrastructure?
 
 It intentionally does not describe product-specific behavior or UI features.
 
 ## Summary
 
-OpenSRE provides execution-level observability across diverse scientific and compute environments. Its capabilities are defined by what it supports, what it guarantees, and what it deliberately does not require, independent of any specific workflow engine or cloud provider.
+Tracer provides execution-level observability across diverse scientific and compute environments. Its capabilities are defined by what it supports, what it guarantees, and what it deliberately does not require, independent of any specific workflow engine or cloud provider.
 
 <CardGroup cols={3}>
   <Card href="/technology/tracer-collect">
     <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
-      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
     </span>
     <br />
     Learn how execution signals are captured at the kernel level
   </Card>
   <Card href="/technology/tracer-tune">
     <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
-      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
     </span>
     <br />
     Analyze and optimize pipeline performance and resource usage
   </Card>
   <Card href="/technology/tracer-sweep">
     <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
-      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #4436BD, #5646E2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #4436BD, #5646E2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>sweep</span>
     </span>
     <br />
     Uncover systemwide cloud waste using real execution behavior

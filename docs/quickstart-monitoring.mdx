@@ -8,24 +8,24 @@ import { CodePreview } from '/snippets/code-preview.mdx';
 
 ## 2 minutes walkthrough
 
-OpenSRE runs anywhere from the OS, just follow the steps below:
+Tracer runs anywhere from the OS, just follow the steps below:
 
-<Note>Coming from Tracer? Welcome. The installer, dashboard, and CLI commands below may still use the Tracer name while the OpenSRE docs transition is underway.</Note>
+<Note>Use the Tracer CLI and dashboard below to start tracking your pipelines in minutes.</Note>
 
 <Steps>
-  <Step icon="/images/logo/tracer/Tracer-Head-Black.png" title="Step 1: Install OpenSRE - Only One Line of Code">
+  <Step icon="/images/logo/tracer/Tracer-Head-Black.png" title="Step 1: Install Tracer - Only One Line of Code">
     ```bash
     curl -sSL https://install.tracer.cloud | sh -s
     ```
   </Step>
 
-  <Step icon="key" title="Step 2: Authenticate with OpenSRE">
+  <Step icon="key" title="Step 2: Authenticate with Tracer">
 
 ```bash
 sudo tracer login
 ```
 
-<Info>This will open up a browser window to log in to your OpenSRE account.</Info>
+<Info>This will open up a browser window to log in to your Tracer account.</Info>
 
   </Step>
 
@@ -61,7 +61,7 @@ You will be prompted to configure the pipeline name. Filling this out ensures th
         fontSize: '1.15em',
         marginBottom: '10px'
       }} className="dark:text-white text-black">
-        OpenSRE is now tracking your pipeline.
+        Tracer is now tracking your pipeline.
       </div>
       <div style={{ marginBottom: '10px' }}>
         Every run you launch for this pipeline will be automatically monitored.
@@ -85,9 +85,9 @@ You will be prompted to configure the pipeline name. Filling this out ensures th
     sudo tracer demo
     ```
 
-    Alternatively: Run your usual command (Nextflow, Snakemake, WDL, etc.)<br/>OpenSRE works automatically once the agent is active.
+    Alternatively: Run your usual command (Nextflow, Snakemake, WDL, etc.)<br/>Tracer works automatically once the agent is active.
 
-    Watch your pipeline run in the [OpenSRE dashboard](https://app.tracer.cloud/).
+    Watch your pipeline run in the [Tracer dashboard](https://app.tracer.cloud/).
 
     <CodePreview
       filename="fastquorum.nf"

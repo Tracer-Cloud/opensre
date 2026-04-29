@@ -1,24 +1,27 @@
 ---
-title: 'Investigating Task Failures'
-description: 'Debug and resolve failures with OpenSRE powerful diagnostic tools'
+title: "Investigating Task Failures"
+description: "Debug and resolve failures with Tracer powerful diagnostic tools"
 ---
 
 ## Overview
 
-OpenSRE automatically captures logs, resource metrics, and system call data for every task, even those that fail. 
-Therefore, when tasks fail, OpenSRE provides detailed information to help you understand what went wrong and how to fix it.
+Tracer automatically captures logs, resource metrics, and system call data for every task, even those that fail.
+Therefore, when tasks fail, Tracer provides detailed information to help you understand what went wrong and how to fix it.
 
 Find out how to do this easily below.
 
 <video
-  autoPlay
-  loop
-  muted
-  playsInline
-  style={{ width: '100%', maxWidth: '100%' }}
+    autoPlay
+    loop
+    muted
+    playsInline
+    style={{ width: "100%", maxWidth: "100%" }}
 >
-  <source src="/images/tutorials/failure-investigation/Investigating-failures.mp4" type="video/mp4" />
-  Your browser does not support the video tag.
+    <source
+        src="/images/tutorials/failure-investigation/Investigating-failures.mp4"
+        type="video/mp4"
+    />
+    Your browser does not support the video tag.
 </video>
 
 ## Previous Knowledge
@@ -26,15 +29,16 @@ Find out how to do this easily below.
 Before diving in how we can investigate task failures, it is recommended to have a basic understanding of the following concepts:
 
 <CardGroup cols={2}>
-  <Card title="Navigate to Run Overview" href="/tutorials/viewing-task-status">
-    See the run details
-  </Card>
-  <Card title="Viewing Task Status" href="/tutorials/viewing-task-status">
-    Monitoring your tasks
-  </Card>
+    <Card
+        title="Navigate to Run Overview"
+        href="/tutorials/viewing-task-status"
+    >
+        See the run details
+    </Card>
+    <Card title="Viewing Task Status" href="/tutorials/viewing-task-status">
+        Monitoring your tasks
+    </Card>
 </CardGroup>
-
-
 
 ## Identifying Failed Tasks
 
@@ -59,8 +63,8 @@ Before diving in how we can investigate task failures, it is recommended to have
     2. **Next steps/Solution Suggestions** - How to resolve the issue and refrain from making the same mistake again
     3. **Error Entries** - The specific lines in the log that caused the error
 
+![AI Insights](/images/tutorials/failure-investigation/4.png)
 
-  ![AI Insights](/images/tutorials/failure-investigation/4.png)
   </Step>
   <Step title="Log Details">
     If you want to dig deeper into the logs, in this section you can see the full log with highlighted error lines.<br/>
@@ -81,12 +85,12 @@ Tasks may fail due to insufficient resources:
 - **CPU Timeout** - Task exceeded maximum execution time
 
 <Info>
-OpenSRE's eBPF monitoring captures resource usage leading up to failures, helping you identify resource constraints.
+    Tracer's eBPF monitoring captures resource usage leading up to failures,
+    helping you identify resource constraints.
 </Info>
 
 ## Next Steps
 
 <Card title="Viewing Task Status" href="/tutorials/viewing-task-status">
-  Learn how to monitor task execution
+    Learn how to monitor task execution
 </Card>
-

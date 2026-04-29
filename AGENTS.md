@@ -33,17 +33,19 @@
 
 ## 1. Repo Map
 
-| Path | What it does |
-| --- | --- |
-| `app/` | Core agent logic, CLI, tools, integrations, services, graph pipeline, and runtime state. |
-| `tests/` | Unit, integration, synthetic, deployment, e2e, chaos engineering, and support tests. |
-| `docs/` | User-facing documentation, integration guides, and docs-site assets. |
-| `.github/` | CI workflows, issue templates, pull request template, and repository automation. |
-| `langgraph.json` | LangGraph deployment configuration for the hosted agent runtime. |
-| `pyproject.toml` | Python project metadata, dependency configuration, tooling, and package settings. |
-| `Makefile` | Canonical local automation for install, test, verify, deploy, and cleanup targets. |
-| `README.md` | Product overview, quick start, capabilities, integrations, and common workflows. |
-| `CONTRIBUTING.md` | Contribution workflow, branch/PR guidance, and quality expectations. |
+
+| Path              | What it does                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------- |
+| `app/`            | Core agent logic, CLI, tools, integrations, services, graph pipeline, and runtime state. |
+| `tests/`          | Unit, integration, synthetic, deployment, e2e, chaos engineering, and support tests.     |
+| `docs/`           | User-facing documentation, integration guides, and docs-site assets.                     |
+| `.github/`        | CI workflows, issue templates, pull request template, and repository automation.         |
+| `langgraph.json`  | LangGraph deployment configuration for the hosted agent runtime.                         |
+| `pyproject.toml`  | Python project metadata, dependency configuration, tooling, and package settings.        |
+| `Makefile`        | Canonical local automation for install, test, verify, deploy, and cleanup targets.       |
+| `README.md`       | Product overview, quick start, capabilities, integrations, and common workflows.         |
+| `CONTRIBUTING.md` | Contribution workflow, branch/PR guidance, and quality expectations.                     |
+
 
 `app/` one level deeper:
 
@@ -157,6 +159,7 @@ Basic steps:
 - If a tool's API or schema changes -> update docs in `docs/` and update the related unit tests, usually under `tests/tools/`.
 - If an integration changes -> update `tests/integrations/` and verify with `make verify-integrations`.
 - If adding a new integration -> follow the New Integration Checklist below before opening the PR for review.
+- If adding new tests -> always place them in `tests/`, never in `app/` (no inline tests).
 - If CI-only tests are added -> mark them with the right pytest marker or place them in the appropriate e2e/synthetic/chaos folder so they do not run in the default local suite.
 - If node branching or loop behavior changes -> update `app/pipeline/routing.py` and the graph tests for that path.
 
@@ -188,11 +191,11 @@ The fastest local loop is `make test-cov`, which exercises the non-live unit sui
 
 When adding a new integration, a PR is only ready when:
 
-- [ ] Integration code added under `app/integrations/<name>/`
-- [ ] Tool(s) added under `app/tools/` with proper typing
-- [ ] Unit/mock tests added under `tests/integrations/`
-- [ ] Docs added under `docs/`
-- [ ] Screenshot or demo GIF showing the integration working
-- [ ] E2E or synthetic test added
-- [ ] `make verify-integrations` passes
-- [ ] `make lint` and `make typecheck` pass
+- Integration code added under `app/integrations/<name>/`
+- Tool(s) added under `app/tools/` with proper typing
+- Unit/mock tests added under `tests/integrations/`
+- Docs added under `docs/`
+- Screenshot or demo GIF showing the integration working
+- E2E or synthetic test added
+- `make verify-integrations` passes
+- `make lint` and `make typecheck` pass

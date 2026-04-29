@@ -13,6 +13,7 @@ def _extract_inspect_lambda_params(sources: dict[str, dict]) -> dict:
 
 @tool(
     name="inspect_lambda_function",
+    display_name="Lambda config",
     source="cloudwatch",
     description="Inspect a Lambda function's configuration and optionally its code.",
     use_cases=[
