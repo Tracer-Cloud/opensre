@@ -44,13 +44,14 @@ def _airflow_dag_id(sources: dict[str, Any]) -> str:
 
 @tool(
     name="get_recent_airflow_failures",
-    source="tracer_web",
+    source="airflow",
     description="Fetch recent failed or retrying Airflow task evidence for a DAG.",
     use_cases=[
         "Investigating Airflow DAG failures",
         "Finding failed or retrying task instances",
         "Grounding RCA in Airflow DAG/task evidence",
     ],
+    surfaces=("investigation", "chat"),
     requires=["dag_id"],
     input_schema={
         "type": "object",
@@ -89,13 +90,14 @@ def get_recent_airflow_failures(
 
 @tool(
     name="get_airflow_dag_runs",
-    source="tracer_web",
+    source="airflow",
     description="Fetch recent Airflow DAG runs for a DAG.",
     use_cases=[
         "Checking recent Airflow DAG run state",
         "Finding failed DAG runs",
         "Validating Airflow orchestration state",
     ],
+    surfaces=("investigation", "chat"),
     requires=["dag_id"],
     input_schema={
         "type": "object",
@@ -137,13 +139,14 @@ def get_airflow_dag_runs(
 
 @tool(
     name="get_airflow_task_instances",
-    source="tracer_web",
+    source="airflow",
     description="Fetch Airflow task instances for a specific DAG run.",
     use_cases=[
         "Inspecting failed Airflow task instances",
         "Finding task-level failure evidence",
         "Grounding RCA in Airflow task state",
     ],
+    surfaces=("investigation", "chat"),
     requires=["dag_id", "dag_run_id"],
     input_schema={
         "type": "object",

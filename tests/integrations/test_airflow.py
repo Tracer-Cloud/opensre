@@ -211,3 +211,91 @@ def test_get_recent_airflow_failures(monkeypatch: pytest.MonkeyPatch) -> None:
     assert evidence[0]["dag_run_id"] == "manual__1"
     assert evidence[0]["task_id"] == "extract"
     assert evidence[0]["task_state"] == "failed"
+
+
+def test_get_recent_airflow_failures_partial_run_error_preserves_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One run's task-instance fetch raises; evidence from the other run is preserved."""
+    call_count = 0
+
+    def _mock_request(
+        method: str,
+        url: str,
+        headers=None,
+        auth=None,
+        params=None,
+        json=None,
+        timeout=None,
+        verify=None,
+    ) -> httpx.Response:
+        nonlocal call_count
+
+        # DAG runs endpoint — return two runs
+        if "/dags/example_dag/dagRuns" in url and "taskInstances" not in url:
+            return httpx.Response(
+                200,
+                json={
+                    "dag_runs": [
+                        {
+                            "dag_run_id": "run_ok",
+                            "state": "failed",
+                            "logical_date": "2026-04-01T00:00:00Z",
+                            "run_type": "manual",
+                        },
+                        {
+                            "dag_run_id": "run_bad",
+                            "state": "failed",
+                            "logical_date": "2026-04-02T00:00:00Z",
+                            "run_type": "manual",
+                        },
+                    ]
+                },
+                request=httpx.Request(method, url),
+            )
+
+        # run_ok: returns one failed task instance
+        if "/dagRuns/run_ok/taskInstances" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "task_instances": [
+                        {
+                            "task_id": "transform",
+                            "state": "failed",
+                            "try_number": 1,
+                            "max_tries": 3,
+                            "operator": "PythonOperator",
+                        }
+                    ]
+                },
+                request=httpx.Request(method, url),
+            )
+
+        # run_bad: simulates a 500 from the Airflow API
+        if "/dagRuns/run_bad/taskInstances" in url:
+            call_count += 1
+            raise httpx.HTTPStatusError(
+                "server error",
+                request=httpx.Request(method, url),
+                response=httpx.Response(500, request=httpx.Request(method, url)),
+            )
+
+        return httpx.Response(
+            404,
+            json={"detail": "not found"},
+            request=httpx.Request(method, url),
+        )
+
+    monkeypatch.setattr(httpx, "request", _mock_request)
+
+    config = AirflowConfig(auth_token="test-token")
+    evidence = get_recent_airflow_failures(config=config, dag_id="example_dag", limit=5)
+
+    # Evidence from run_ok must be preserved despite run_bad raising
+    assert len(evidence) == 1
+    assert evidence[0]["dag_run_id"] == "run_ok"
+    assert evidence[0]["task_id"] == "transform"
+    assert evidence[0]["task_state"] == "failed"
+    # Confirms the bad run was actually attempted (not silently skipped before the call)
+    assert call_count == 1
