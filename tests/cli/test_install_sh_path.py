@@ -6,8 +6,6 @@ import subprocess
 import textwrap
 from pathlib import Path
 
-import pytest
-
 INSTALL_SH = Path(__file__).parents[2] / "install.sh"
 _LOCAL_BIN = ".local/bin"
 
@@ -119,3 +117,15 @@ def test_fish_creates_parent_dirs(tmp_path: Path) -> None:
     result = _run(tmp_path, shell="/usr/bin/fish")
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "home" / ".config" / "fish" / "config.fish").exists()
+
+
+def test_readds_export_when_marker_present_but_line_removed(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    zshrc = home / ".zshrc"
+    zshrc.write_text("# Added by opensre installer\n")
+
+    result = _run(tmp_path, shell="/bin/zsh")
+    assert result.returncode == 0, result.stderr
+    content = zshrc.read_text()
+    assert _LOCAL_BIN in content

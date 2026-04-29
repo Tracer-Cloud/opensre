@@ -323,7 +323,7 @@ configure_path() {
   fi
 
   local marker="# Added by opensre installer"
-  if [ -f "$rc_file" ] && grep -qF "$marker" "$rc_file"; then
+  if [ -f "$rc_file" ] && grep -qF "$marker" "$rc_file" && grep -qF "${INSTALL_DIR}" "$rc_file"; then
     return
   fi
 
@@ -331,7 +331,7 @@ configure_path() {
 
   log ""
   log "${BIN_NAME:-opensre} has been added to PATH in ${rc_file}."
-  log "To apply now, run:  source ${rc_file}"
+  log "To apply now, run:  source \"${rc_file}\""
   log "Or open a new terminal."
 }
 
