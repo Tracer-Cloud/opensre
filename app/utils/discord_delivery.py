@@ -1,3 +1,5 @@
+"""Discord delivery helper - posts investigation findings to Discord API."""
+
 from __future__ import annotations
 
 import logging
@@ -5,18 +7,11 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from app.utils.delivery_transport import post_json
+from app.utils.delivery_transport import DeliveryResponse, post_json, redact_arg, redact_token
 
 logger = logging.getLogger(__name__)
 
-_DISCORD_TOKEN_RE = re.compile(r"([a-zA-Z0-9_-]{24,}\.[a-zA-Z0-9_-]{6,}\.[a-zA-Z0-9_-]{27,})")
-
-
-def _redact_arg(a: object) -> object:
-    """Redact Discord token from a log arg, preserving the original type if no match."""
-    s = str(a)
-    redacted = _DISCORD_TOKEN_RE.sub("<redacted>", s)
-    return redacted if redacted != s else a
+_DISCORD_TOKEN_RE = re.compile(r"(Bot\s+[a-zA-Z0-9_-]{24,}\.[a-zA-Z0-9_-]{6,}\.[a-zA-Z0-9_-]{27,})")
 
 
 class _DiscordTokenFilter(logging.Filter):
@@ -26,28 +21,20 @@ class _DiscordTokenFilter(logging.Filter):
         record.msg = _DISCORD_TOKEN_RE.sub("<redacted>", str(record.msg))
         if record.args:
             if isinstance(record.args, tuple):
-                record.args = tuple(_redact_arg(a) for a in record.args)
+                record.args = tuple(redact_arg(a, _DISCORD_TOKEN_RE) for a in record.args)
             elif isinstance(record.args, dict):
-                record.args = {k: _redact_arg(v) for k, v in record.args.items()}
+                record.args = {k: redact_arg(v, _DISCORD_TOKEN_RE) for k, v in record.args.items()}
         return True
 
 
 def _install_httpx_token_filter() -> None:
     for name in ("httpx", "httpcore"):
         lgr = logging.getLogger(name)
-        # Avoid adding multiple instances of the same filter type
         if not any(isinstance(f, _DiscordTokenFilter) for f in lgr.filters):
             lgr.addFilter(_DiscordTokenFilter())
 
 
 _install_httpx_token_filter()
-
-
-def _redact_token(text: str, token: str) -> str:
-    """Replace token with <redacted> to prevent accidental log/error leakage."""
-    if token and token in text:
-        return text.replace(token, "<redacted>")
-    return text
 
 
 def _discord_auth_headers(bot_token: str) -> dict[str, str]:
@@ -58,7 +45,7 @@ def _discord_error_from_data(data: Any, bot_token: str) -> str:
     if not isinstance(data, Mapping):
         return "unknown"
     err = str(data.get("message", data.get("error", "unknown")))
-    return _redact_token(err, bot_token)
+    return redact_token(err, bot_token)
 
 
 def post_discord_message(
@@ -78,14 +65,14 @@ def post_discord_message(
         headers=_discord_auth_headers(bot_token),
     )
     if not response.ok:
-        error = _redact_token(response.error, bot_token)
+        error = redact_token(response.error, bot_token)
         logger.warning("[discord] post message exception: %s", error)
         return False, error, ""
 
     if response.status_code not in (200, 201):
         logger.warning("[discord] post message failed: %s", response.status_code)
         logger.warning(
-            "[discord] api response %s", _redact_token(response.text or "empty", bot_token)
+            "[discord] api response %s", redact_token(response.text or "empty", bot_token)
         )
         error_message = _discord_error_from_data(response.data, bot_token)
         logger.warning("[discord] post message failed: %s", error_message)
@@ -111,7 +98,7 @@ def create_discord_thread(
         headers=_discord_auth_headers(bot_token),
     )
     if not response.ok:
-        error = _redact_token(response.error, bot_token)
+        error = redact_token(response.error, bot_token)
         logger.warning("[discord] create thread exception: %s", error)
         return False, error, ""
 

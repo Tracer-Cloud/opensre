@@ -1,3 +1,5 @@
+"""Slack delivery helper - posts directly to Slack API or delegates to NextJS."""
+
 from __future__ import annotations
 
 import logging
@@ -7,20 +9,19 @@ from typing import Any
 
 from app.config import SLACK_CHANNEL
 from app.output import debug_print
-from app.utils.delivery_transport import post_json
+from app.utils.delivery_transport import post_json, redact_arg, redact_token
 
 logger = logging.getLogger(__name__)
 
-# xox[a-z]- covers bot, user, app, workspace, etc.
-# hooks.slack.com/services/... covers incoming webhooks.
 _SLACK_TOKEN_RE = re.compile(r"(xox[a-z]-[0-9a-zA-Z-]+|hooks\.slack\.com/services/[a-zA-Z0-9/]+)")
 
 
 def _redact_arg(a: object) -> object:
-    """Redact Slack token from a log arg, preserving the original type if no match."""
-    s = str(a)
-    redacted = _SLACK_TOKEN_RE.sub("<redacted>", s)
-    return redacted if redacted != s else a
+    return redact_arg(a, _SLACK_TOKEN_RE)
+
+
+def _redact_token(text: str, token: str) -> str:
+    return redact_token(text, token)
 
 
 class _SlackTokenFilter(logging.Filter):
@@ -39,7 +40,6 @@ class _SlackTokenFilter(logging.Filter):
 def _install_httpx_token_filter() -> None:
     for name in ("httpx", "httpcore"):
         lgr = logging.getLogger(name)
-        # Avoid adding multiple instances of the same filter type
         if not any(isinstance(f, _SlackTokenFilter) for f in lgr.filters):
             lgr.addFilter(_SlackTokenFilter())
 
@@ -47,25 +47,23 @@ def _install_httpx_token_filter() -> None:
 _install_httpx_token_filter()
 
 
-def _redact_token(text: str, token: str) -> str:
-    """Replace token with <redacted> to prevent accidental log/error leakage."""
-    if token and token in text:
-        return text.replace(token, "<redacted>")
-    return text
+def _slack_bearer_headers(token: str) -> dict[str, str]:
+    """Build Slack auth headers.
+
+    Content-Type must include charset=utf-8 — Slack emits ``missing_charset``
+    warnings without it.
+    """
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
 
 
 def _call_reactions_api(method: str, token: str, channel: str, timestamp: str, emoji: str) -> bool:
-    """Call Slack reactions.add or reactions.remove.
-
-    Returns True on success, False on expected failures (already_reacted, no_reaction, etc.).
-    """
     response = post_json(
         url=f"https://slack.com/api/{method}",
         payload={"channel": channel, "timestamp": timestamp, "name": emoji},
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json; charset=utf-8",
-        },
+        headers=_slack_bearer_headers(token),
         timeout=8.0,
     )
     if not response.ok:
@@ -77,37 +75,25 @@ def _call_reactions_api(method: str, token: str, channel: str, timestamp: str, e
         error = _redact_token(str(response.data.get("error", "unknown")), token)
         if error not in ("already_reacted", "no_reaction", "message_not_found"):
             logger.warning("[slack] %s(%s) failed: %s", method, emoji, error)
+            return False
+        # idempotent no-ops are silenced but still return False to match old behavior
         return False
 
     return True
 
 
-def add_reaction(
-    emoji: str,
-    channel: str,
-    timestamp: str,
-    token: str,
-) -> None:
+def add_reaction(emoji: str, channel: str, timestamp: str, token: str) -> None:
     """Add a reaction emoji to a Slack message."""
     _call_reactions_api("reactions.add", token, channel, timestamp, emoji)
 
 
-def remove_reaction(
-    emoji: str,
-    channel: str,
-    timestamp: str,
-    token: str,
-) -> None:
+def remove_reaction(emoji: str, channel: str, timestamp: str, token: str) -> None:
     """Remove a reaction emoji from a Slack message (silently ignores if not present)."""
     _call_reactions_api("reactions.remove", token, channel, timestamp, emoji)
 
 
 def swap_reaction(
-    remove_emoji: str,
-    add_emoji: str,
-    channel: str,
-    timestamp: str,
-    token: str,
+    remove_emoji: str, add_emoji: str, channel: str, timestamp: str, token: str
 ) -> None:
     """Remove one emoji reaction and add another atomically (best-effort)."""
     remove_reaction(remove_emoji, channel, timestamp, token)
@@ -117,27 +103,18 @@ def swap_reaction(
 def build_action_blocks(
     investigation_url: str, investigation_id: str | None = None
 ) -> list[dict[str, Any]]:
-    """Build Slack Block Kit action blocks with interactive buttons.
-
-    Args:
-        investigation_url: URL to the investigation details page in Tracer.
-        investigation_id: Investigation ID embedded in feedback option values so the
-            interactivity handler can update the correct record.
-
-    Returns:
-        List of Block Kit block dicts ready for the blocks parameter.
-    """
+    """Build Slack Block Kit action blocks with interactive buttons."""
     feedback_options = [
         {
-            "text": {"type": "plain_text", "text": "\U0001f44d Accurate"},
+            "text": {"type": "plain_text", "text": "👍 Accurate"},
             "value": f"accurate|{investigation_id or ''}",
         },
         {
-            "text": {"type": "plain_text", "text": "\U0001f914 Partially accurate"},
+            "text": {"type": "plain_text", "text": "🤔 Partially accurate"},
             "value": f"partial|{investigation_id or ''}",
         },
         {
-            "text": {"type": "plain_text", "text": "\U0001f44e Inaccurate"},
+            "text": {"type": "plain_text", "text": "👎 Inaccurate"},
             "value": f"inaccurate|{investigation_id or ''}",
         },
     ]
@@ -151,7 +128,7 @@ def build_action_blocks(
         },
         {
             "type": "static_select",
-            "placeholder": {"type": "plain_text", "text": "\U0001f4dd Give Feedback"},
+            "placeholder": {"type": "plain_text", "text": "📝 Give Feedback"},
             "action_id": "give_feedback",
             "options": feedback_options,
         },
@@ -166,12 +143,7 @@ def _merge_payload(
     blocks: list[dict[str, Any]] | None = None,
     **extra: Any,
 ) -> dict[str, Any]:
-    """Build Slack payload by merging base config with optional blocks and any extra keys."""
-    payload: dict[str, Any] = {
-        "channel": channel,
-        "text": text,
-        "thread_ts": thread_ts,
-    }
+    payload: dict[str, Any] = {"channel": channel, "text": text, "thread_ts": thread_ts}
     if blocks:
         payload["blocks"] = blocks
     if extra:
@@ -187,32 +159,12 @@ def send_slack_report(
     blocks: list[dict[str, Any]] | None = None,
     **extra: Any,
 ) -> tuple[bool, str]:
-    """
-    Post the RCA report as a thread reply in Slack.
-
-    When thread context is available, prefers a thread reply to avoid creating
-    loops for inbound Slack-triggered investigations. For standalone CLI or
-    local investigations, falls back to SLACK_WEBHOOK_URL if configured.
-
-    Args:
-        slack_message: The formatted RCA report text.
-        channel: Slack channel ID to post to.
-        thread_ts: The parent message ts to reply under. Required.
-        access_token: Slack bot/user OAuth token for direct posting.
-        blocks: Optional Slack Block Kit blocks for interactive elements.
-        **extra: Any additional Slack API params (e.g. unfurl_links, mrkdwn) merged into the payload.
-
-    Returns:
-        (success, error_detail) — success is True if posted, error_detail is non-empty on failure.
-    """
+    """Post the RCA report as a thread reply in Slack."""
     if not thread_ts:
         webhook_url = os.getenv("SLACK_WEBHOOK_URL", "").strip()
         if webhook_url:
             webhook_ok = _post_via_incoming_webhook(
-                slack_message,
-                webhook_url,
-                blocks=blocks,
-                **extra,
+                slack_message, webhook_url, blocks=blocks, **extra
             )
             return (True, "") if webhook_ok else (False, "webhook=failed")
         logger.debug("[slack] Delivery skipped: no thread_ts (channel=%s)", channel)
@@ -246,18 +198,12 @@ def _post_direct(
     blocks: list[dict[str, Any]] | None = None,
     **extra: Any,
 ) -> tuple[bool, str]:
-    """Post as a thread reply via Slack chat.postMessage.
-
-    Returns (success, error_detail) where error_detail is empty on success.
-    """
+    """Post as a thread reply via Slack chat.postMessage."""
     payload = _merge_payload(channel, text, thread_ts, blocks=blocks, **extra)
     response = post_json(
         url="https://slack.com/api/chat.postMessage",
         payload=payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json; charset=utf-8",
-        },
+        headers=_slack_bearer_headers(token),
         timeout=15.0,
     )
     if not response.ok:
@@ -303,10 +249,7 @@ def _post_via_webapp(
     blocks: list[dict[str, Any]] | None = None,
     **extra: Any,
 ) -> bool:
-    """Fallback: delegate to NextJS /api/slack endpoint.
-
-    Returns True if the message was delivered successfully, False otherwise.
-    """
+    """Fallback: delegate to NextJS /api/slack endpoint."""
     base_url = os.getenv("TRACER_API_URL")
     target_channel = channel or SLACK_CHANNEL
 
@@ -322,7 +265,7 @@ def _post_via_webapp(
         debug_print(f"Slack delivery failed: {response.error}")
         return False
 
-    if response.status_code >= 400:
+    if not 200 <= response.status_code < 300:
         debug_print(f"Slack delivery failed: HTTP {response.status_code}: {response.text[:200]}")
         return False
 
@@ -346,11 +289,10 @@ def _post_via_incoming_webhook(
 
     response = post_json(url=webhook_url, payload=payload, timeout=10.0, follow_redirects=True)
     if not response.ok:
-        # Mask the webhook URL secret by using exc_type
         debug_print(f"Slack incoming webhook failed: {response.error}")
         return False
 
-    if response.status_code >= 400:
+    if not 200 <= response.status_code < 300:
         debug_print(
             f"Slack incoming webhook failed: {response.exc_type or response.error or 'unknown'}"
         )

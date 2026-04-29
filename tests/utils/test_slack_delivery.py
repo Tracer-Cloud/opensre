@@ -323,3 +323,32 @@ class TestPostViaWebapp:
             lambda *_, **__: DeliveryResponse(ok=True, status_code=500, text="boom"),
         )
         assert slack_delivery._post_via_webapp("hi", "C1", "1.0") is False
+
+
+def test_module_does_not_import_httpx() -> None:
+    import inspect
+    import app.utils.slack_delivery as mod
+
+    source = inspect.getsource(mod)
+    assert "import httpx" not in source
+
+
+def test_sends_correct_url_and_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def _stub(url: str, payload: dict, headers: dict, **kw: Any) -> Any:
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["payload"] = payload
+        from app.utils.delivery_transport import DeliveryResponse
+
+        return DeliveryResponse(ok=True, status_code=200, data={"ok": True, "ts": "1.0"})
+
+    monkeypatch.setattr("app.utils.slack_delivery.post_json", _stub)
+    slack_delivery._post_direct("the body", "C42", "9.876", "secret-tok")
+    assert captured["url"] == "https://slack.com/api/chat.postMessage"
+    assert captured["headers"]["Authorization"] == "Bearer secret-tok"
+    assert captured["headers"]["Content-Type"] == "application/json; charset=utf-8"
+    assert captured["payload"]["channel"] == "C42"
+    assert captured["payload"]["thread_ts"] == "9.876"
+    assert captured["payload"]["text"] == "the body"

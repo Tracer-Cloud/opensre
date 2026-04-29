@@ -26,6 +26,8 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
 
+import re
+
 import httpx
 
 
@@ -70,6 +72,20 @@ class DeliveryResponse:
         # normal attribute assignment.
         if not isinstance(self.data, MappingProxyType):
             object.__setattr__(self, "data", MappingProxyType(dict(self.data)))
+
+
+def redact_token(text: str, token: str) -> str:
+    """Replace a literal token string with ``<redacted>``."""
+    if token and token in text:
+        return text.replace(token, "<redacted>")
+    return text
+
+
+def redact_arg(a: object, pattern: re.Pattern[str]) -> object:
+    """Redact regex matches from a log arg, preserving type when no match."""
+    s = str(a)
+    redacted = pattern.sub("<redacted>", s)
+    return redacted if redacted != s else a
 
 
 def post_json(

@@ -71,7 +71,7 @@ def test_discord_token_filter_scrubs_msg() -> None:
     from app.utils.discord_delivery import _DiscordTokenFilter
 
     f = _DiscordTokenFilter()
-    token = "DISCORD_TOKEN_PART_1_XXX.ABCDEF.DISCORD_TOKEN_PART_3_XXXXXXXX"
+    token = "Bot DISCORD_TOKEN_PART_1_XXX.ABCDEF.DISCORD_TOKEN_PART_3_XXXXXXXX"
     record = logging.LogRecord(
         name="httpx",
         level=logging.INFO,
@@ -183,10 +183,6 @@ def test_send_discord_report_truncates_description_to_4096(monkeypatch: pytest.M
     monkeypatch.setattr("app.utils.discord_delivery.post_json", _fake_post)
     long_text = "a" * 5000
     send_discord_report(long_text, {"channel_id": "c1", "bot_token": "tok"})
-    # The payload is in 'payload' in my current mock structure, but user request says 'json'
-    # Wait, my post_discord_message calls post_json(payload=...).
-    # DeliveryResponse in send_discord_report uses post_discord_message.
-    # Let's check how captured is updated.
     embeds = captured.get("payload", {}).get("embeds", [{}])
     assert len(embeds[0]["description"]) <= 4096
 
@@ -223,3 +219,18 @@ def test_send_discord_report_prefers_thread_over_channel(monkeypatch: pytest.Mon
     )
     assert "thread-99" in captured["url"]
     assert "chan-1" not in captured["url"]
+
+
+def test_module_does_not_import_httpx() -> None:
+    import importlib
+    import sys
+
+    # Remove cached module to force re-inspection
+    mods_to_remove = [k for k in sys.modules if "discord_delivery" in k]
+    for m in mods_to_remove:
+        sys.modules.pop(m)
+    import app.utils.discord_delivery as mod
+    import inspect
+
+    source = inspect.getsource(mod)
+    assert "import httpx" not in source
