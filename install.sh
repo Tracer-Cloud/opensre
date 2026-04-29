@@ -274,6 +274,67 @@ verify_binary_version() {
   esac
 }
 
+configure_path() {
+  case ":$PATH:" in
+    *":${INSTALL_DIR}:"*)
+      return
+      ;;
+  esac
+
+  if [ "$platform" = "windows" ]; then
+    warn "'${INSTALL_DIR}' is not in PATH for this shell. Add it to Git Bash or Windows PATH to run ${BIN_NAME:-opensre} from any terminal."
+    return
+  fi
+
+  local rc_file=""
+  local path_line=""
+  local shell_name
+  shell_name="${SHELL##*/}"
+
+  case "$shell_name" in
+    zsh)
+      rc_file="${HOME}/.zshrc"
+      path_line="export PATH=\"\$PATH:${INSTALL_DIR}\""
+      ;;
+    bash)
+      if [ "$platform" = "darwin" ]; then
+        rc_file="${HOME}/.bash_profile"
+      else
+        rc_file="${HOME}/.bashrc"
+      fi
+      path_line="export PATH=\"\$PATH:${INSTALL_DIR}\""
+      ;;
+    fish)
+      rc_file="${HOME}/.config/fish/config.fish"
+      path_line="fish_add_path \"${INSTALL_DIR}\""
+      ;;
+    *)
+      log "Add the following line to your shell profile to use ${BIN_NAME:-opensre}:"
+      log "  export PATH=\"\$PATH:${INSTALL_DIR}\""
+      return
+      ;;
+  esac
+
+  local rc_dir="${rc_file%/*}"
+  [ "$rc_dir" != "$rc_file" ] && [ ! -d "$rc_dir" ] && mkdir -p "$rc_dir"
+
+  if [ -f "$rc_file" ] && grep -qF "${INSTALL_DIR}" "$rc_file"; then
+    return
+  fi
+
+  local marker="# Added by opensre installer"
+  if [ -f "$rc_file" ] && grep -qF "$marker" "$rc_file"; then
+    return
+  fi
+
+  printf '\n%s\n%s\n' "$marker" "$path_line" >> "$rc_file"
+
+  log ""
+  log "${BIN_NAME:-opensre} has been added to PATH in ${rc_file}."
+  log "To apply now, run:  source ${rc_file}"
+  log "Or open a new terminal."
+}
+
 os="$(uname -s)"
 arch="$(uname -m)"
 
@@ -377,15 +438,4 @@ install_binary "$binary_path" "${INSTALL_DIR}/${BIN_NAME}"
 
 log "Installed ${BIN_NAME} v${installed_version} to ${INSTALL_DIR}/${BIN_NAME}"
 
-case ":$PATH:" in
-  *":${INSTALL_DIR}:"*)
-    ;;
-  *)
-    if [ "$platform" = "windows" ]; then
-      warn "'${INSTALL_DIR}' is not in PATH for this shell. Add it to Git Bash or Windows PATH to run ${BIN_NAME} from any terminal."
-    else
-      warn "'${INSTALL_DIR}' is not in PATH. Add this line to your shell profile:"
-      warn "  export PATH=\"\$PATH:${INSTALL_DIR}\""
-    fi
-    ;;
-esac
+configure_path
