@@ -15,7 +15,7 @@ else ifeq ($(OS),Windows_NT)
         PYTHON = python
         PIP = python -m pip
     endif
-else ifneq ($(shell python3 -c "import sys" 2>/dev/null),)
+else ifneq ($(shell command -v python3 2>/dev/null),)
     PYTHON = python3
     PIP = python3 -m pip
 else
@@ -405,15 +405,15 @@ clean:
 
 # Lint code
 lint:
-	ruff check app/ tests/
+	$(PYTHON) -m ruff check app/ tests/
 
 # Check formatting (read-only; CI uses this)
 format-check:
-	ruff format --check app/ tests/
+	$(PYTHON) -m ruff format --check app/ tests/
 
 # Format code
 format:
-	ruff format app/ tests/
+	$(PYTHON) -m ruff format app/ tests/
 
 # Type check
 typecheck:
