@@ -16,7 +16,7 @@ from app.analytics.cli import (
 from app.cli.context import is_json_output, is_yes
 from app.cli.errors import OpenSREError
 
-_TEST_CATEGORIES: tuple[str, ...] = ("all", "rca", "demo", "infra-heavy", "ci-safe")
+_TEST_CATEGORIES: tuple[str, ...] = ("all", "rca", "synthetic", "demo", "infra-heavy", "ci-safe")
 
 
 class _TestIdType(click.ParamType):
@@ -80,8 +80,15 @@ def tests(ctx: click.Context) -> None:
     from app.cli.tests.discover import load_test_catalog
     from app.cli.tests.interactive import run_interactive_picker
 
+    try:
+        exit_code = run_interactive_picker(load_test_catalog())
+    except RuntimeError as exc:
+        raise OpenSREError(
+            str(exc),
+            suggestion="Run 'opensre tests list' or 'opensre tests run <test_id>'.",
+        ) from exc
     capture_tests_picker_opened()
-    raise SystemExit(run_interactive_picker(load_test_catalog()))
+    raise SystemExit(exit_code)
 
 
 @tests.command(name="synthetic")
@@ -158,8 +165,13 @@ def run_test(test_id: str, dry_run: bool) -> None:
     item = find_test_item(test_id)
     if item is None:
         raise OpenSREError(
-            f"Unknown test id: {test_id}",
+            f"Unknown test id: '{test_id}'.",
             suggestion="Run 'opensre tests list' to see available test ids.",
+        )
+    if not item.is_runnable:
+        raise OpenSREError(
+            f"Test '{test_id}' is a suite and cannot be run directly.",
+            suggestion="Run 'opensre tests list' to see individual runnable ids.",
         )
 
     capture_test_run_started(test_id, dry_run=dry_run)

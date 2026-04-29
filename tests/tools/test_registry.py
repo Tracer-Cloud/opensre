@@ -27,6 +27,7 @@ def test_tool_decorator_registers_function_tool_with_inferred_schema() -> None:
     @tool(
         name="lookup_incident",
         description="Lookup incident metadata.",
+        display_name="Incident metadata",
         source="knowledge",
         surfaces=("investigation", "chat"),
     )
@@ -42,6 +43,7 @@ def test_tool_decorator_registers_function_tool_with_inferred_schema() -> None:
     registered = tools[0]
     assert registered.input_schema["properties"]["incident_id"]["type"] == "string"
     assert registered.input_schema["properties"]["limit"]["type"] == "integer"
+    assert registered.display_name == "Incident metadata"
     assert registered.input_schema["required"] == ["incident_id"]
     assert registered.surfaces == ("investigation", "chat")
 
@@ -249,6 +251,38 @@ def test_auto_discovery_populates_investigation_and_chat_surfaces(
     assert registry_module.get_registered_tool_map("chat")["get_incident_metadata"].run(
         "inc-1"
     ) == {"incident_id": "inc-1"}
+
+
+def test_resolve_tool_display_name_prefers_registered_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module: Any = ModuleType("app.tools.fake_display_name_tool")
+
+    @tool(
+        name="get_incident_metadata",
+        display_name="Incident metadata",
+        description="Return normalized incident metadata.",
+        source="knowledge",
+    )
+    def get_incident_metadata(incident_id: str) -> dict[str, str]:
+        return {"incident_id": incident_id}
+
+    get_incident_metadata.__module__ = module.__name__
+    module.get_incident_metadata = get_incident_metadata
+
+    monkeypatch.setattr(
+        registry_module, "_iter_tool_module_names", lambda: ["fake_display_name_tool"]
+    )
+    monkeypatch.setattr(registry_module, "_import_tool_module", lambda _name: module)
+
+    assert registry_module.resolve_tool_display_name("get_incident_metadata") == "Incident metadata"
+
+
+def test_resolve_tool_display_name_falls_back_for_unknown_tools() -> None:
+    assert (
+        registry_module.resolve_tool_display_name("nonexistent_tool_xyz_sentinel")
+        == "nonexistent tool xyz sentinel"
+    )
 
 
 def test_real_registry_discovers_migrated_sre_guidance_tool() -> None:

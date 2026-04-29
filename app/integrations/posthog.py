@@ -11,11 +11,13 @@ from typing import Any
 import httpx
 from pydantic import Field, field_validator
 
+from app.constants.posthog import (
+    DEFAULT_POSTHOG_BOUNCE_THRESHOLD,
+    DEFAULT_POSTHOG_BOUNCE_WINDOW,
+    DEFAULT_POSTHOG_TIMEOUT_SECONDS,
+    DEFAULT_POSTHOG_URL,
+)
 from app.strict_config import StrictConfigModel
-
-DEFAULT_POSTHOG_URL = "https://us.i.posthog.com"
-DEFAULT_POSTHOG_BOUNCE_THRESHOLD = 0.6
-DEFAULT_POSTHOG_BOUNCE_WINDOW = "24h"
 
 
 class PostHogConfig(StrictConfigModel):
@@ -24,7 +26,7 @@ class PostHogConfig(StrictConfigModel):
     base_url: str = DEFAULT_POSTHOG_URL
     project_id: str = ""
     personal_api_key: str = ""
-    timeout_seconds: float = Field(default=15.0, gt=0)
+    timeout_seconds: float = Field(default=DEFAULT_POSTHOG_TIMEOUT_SECONDS, gt=0)
     bounce_rate_threshold: float = Field(default=DEFAULT_POSTHOG_BOUNCE_THRESHOLD, ge=0.0, le=1.0)
     bounce_rate_window: str = DEFAULT_POSTHOG_BOUNCE_WINDOW
     integration_id: str = ""
@@ -108,7 +110,9 @@ def posthog_config_from_env() -> PostHogConfig | None:
             "base_url": os.getenv("POSTHOG_BASE_URL", DEFAULT_POSTHOG_URL),
             "project_id": project_id,
             "personal_api_key": personal_api_key,
-            "timeout_seconds": os.getenv("POSTHOG_TIMEOUT_SECONDS", "15.0"),
+            "timeout_seconds": os.getenv(
+                "POSTHOG_TIMEOUT_SECONDS", str(DEFAULT_POSTHOG_TIMEOUT_SECONDS)
+            ),
             "bounce_rate_threshold": os.getenv(
                 "POSTHOG_BOUNCE_THRESHOLD", str(DEFAULT_POSTHOG_BOUNCE_THRESHOLD)
             ),

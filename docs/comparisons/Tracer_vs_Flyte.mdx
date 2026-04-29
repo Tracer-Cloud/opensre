@@ -1,15 +1,15 @@
 ---
-title: 'How to use OpenSRE with Flyte'
+title: 'How to use Tracer with Flyte'
 sidebarTitle: 'Flyte'
 description: 'Execution insight beneath tasks and workflows'
 ---
 
 Flyte orchestrates data and ML workflows by defining tasks, workflows, and launch plans. It determines how tasks are scheduled, retried, and executed across compute environments, but it does not observe how code behaves once a task is running inside a container or node.
 
-OpenSRE complements Flyte by exposing execution behavior: CPU, memory, disk, and network usage, during task execution, without modifying Flyte task definitions, container images, or execution semantics.
+Tracer complements Flyte by exposing execution behavior: CPU, memory, disk, and network usage, during task execution, without modifying Flyte task definitions, container images, or execution semantics.
 
 <Note>
-For a conceptual overview, see [How OpenSRE fits in your stack](/comparisons/overview).
+For a conceptual overview, see [How Tracer fits in your stack](/comparisons/overview).
 </Note>
 
 ## What Flyte does well
@@ -49,9 +49,9 @@ Without execution-level visibility, teams struggle to answer:
 
 As a result, workflows remain correct and reproducible, but inefficient.
 
-## What OpenSRE adds
+## What Tracer adds
 
-OpenSRE observes execution directly from the host and container runtime and adds:
+Tracer observes execution directly from the host and container runtime and adds:
 
 - Observed CPU, memory, disk, and network usage per task execution
 - Visibility into subprocesses and nested tools invoked within tasks
@@ -65,20 +65,20 @@ These insights are derived from observed runtime behavior, not from task configu
   width="100%"
   height="1450"
   style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
-  title="Flyte + OpenSRE Pipeline Intelligence"
+  title="Flyte + Tracer Pipeline Intelligence"
 />
 
 ## Example: diagnosing a slow Flyte task
 
 A Flyte task responsible for feature generation begins taking significantly longer, despite no changes to task code or inputs. Flyte logs show successful execution with no errors.
 
-OpenSRE reveals:
+Tracer reveals:
 
 - Low average CPU utilization
 - Sustained disk I/O wait
 - Repeated short-lived subprocesses reading from shared storage
 
-This indicates an I/O-bound workload rather than insufficient compute. Increasing CPU requests would not reduce runtime. OpenSRE makes this visible by observing execution behavior directly, rather than inferring causes from task duration.
+This indicates an I/O-bound workload rather than insufficient compute. Increasing CPU requests would not reduce runtime. Tracer makes this visible by observing execution behavior directly, rather than inferring causes from task duration.
 
 ## Using execution insight to tune Flyte workflows
 
@@ -98,35 +98,35 @@ These adjustments can reduce cost, improve predictability, or both.
   width="100%"
   height="700px"
   style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
-  title="Flyte vs OpenSRE+Flyte Radar Chart"
+  title="Flyte vs Tracer+Flyte Radar Chart"
 />
 
-This comparison highlights the difference between Flyte's task-level orchestration visibility and OpenSRE's execution-level observation.
+This comparison highlights the difference between Flyte's task-level orchestration visibility and Tracer's execution-level observation.
 
-## What OpenSRE does not replace
+## What Tracer does not replace
 
-OpenSRE is not an orchestration framework.
+Tracer is not an orchestration framework.
 
 - It does not replace Flyte
 - It does not define tasks, workflows, or launch plans
 - It does not change execution logic, retries, or scheduling
 
-Flyte remains responsible for orchestration and correctness. OpenSRE makes execution behavior visible.
+Flyte remains responsible for orchestration and correctness. Tracer makes execution behavior visible.
 
-## When to use OpenSRE with Flyte
+## When to use Tracer with Flyte
 
-OpenSRE is most useful when teams need to:
+Tracer is most useful when teams need to:
 
 - Explain slow or inconsistent task runtimes
 - Identify idle or over-provisioned resources
 - Diagnose performance issues beyond logs and task state
 - Attribute resource usage and cost to specific workflows or tasks
 
-OpenSRE operates independently of Flyte and supports workflows written in any language or toolchain.
+Tracer operates independently of Flyte and supports workflows written in any language or toolchain.
 
 ## Summary
 
-Flyte defines and orchestrates tasks and workflows with strong guarantees around correctness and reproducibility. OpenSRE adds execution-level visibility that shows how those tasks actually behave at runtime. Together, they provide both control and insight, without changes to existing Flyte workflows.
+Flyte defines and orchestrates tasks and workflows with strong guarantees around correctness and reproducibility. Tracer adds execution-level visibility that shows how those tasks actually behave at runtime. Together, they provide both control and insight, without changes to existing Flyte workflows.
 
 <div style={{ height: '50vh' }}></div>
 

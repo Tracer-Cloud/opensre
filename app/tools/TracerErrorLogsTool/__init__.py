@@ -23,6 +23,7 @@ def _error_logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 @tool(
     name="get_error_logs",
+    display_name="error logs",
     source="tracer_web",
     description="Get logs from OpenSearch, optionally filtered for errors.",
     use_cases=[

@@ -333,10 +333,23 @@ def score_result(
                 failure_reason = f"required evidence not gathered: {source_key!r}"
                 break
 
-    # 5. Primary evidence + explicit sequence check — for failover scenarios,
-    # RDS events must be explicitly reflected in the reasoning, and the failover
-    # sequence must be listed in the required ordered form.
-    if not failure_reason and "aws_rds_events" in answer_key.required_evidence_sources:
+    # 5. Primary evidence + explicit sequence check — only for scenarios that
+    # explicitly require the failover event timeline wording.
+    failover_required_tokens = {
+        "primary evidence source",
+        "failover initiated",
+        "failover in progress",
+        "failover completed",
+        "instance available",
+    }
+    normalized_required_keywords = {
+        _normalize_text(keyword) for keyword in answer_key.required_keywords
+    }
+    requires_failover_event_reasoning = failover_required_tokens.issubset(
+        normalized_required_keywords
+    )
+
+    if not failure_reason and requires_failover_event_reasoning:
         root_cause_text = _normalize_text(root_cause)
         validated_text = _normalize_text(
             " ".join(claim.get("claim", "") for claim in final_state.get("validated_claims", []))
@@ -354,14 +367,14 @@ def score_result(
         if not mentions_event_reasoning:
             failure_reason = "RDS events gathered but not used as primary reasoning signal"
 
-        _REQUIRED_SEQUENCE_TOKENS = (
+        required_sequence_tokens = (
             "failover initiated",
             "failover in progress",
             "failover completed",
             "instance available",
         )
 
-        sequence_present = all(token in reasoning_text for token in _REQUIRED_SEQUENCE_TOKENS)
+        sequence_present = all(token in reasoning_text for token in required_sequence_tokens)
 
         if not failure_reason and not sequence_present:
             failure_reason = "RDS event sequence not explicitly listed in required form"

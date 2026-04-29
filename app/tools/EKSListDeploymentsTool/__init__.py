@@ -40,6 +40,7 @@ def _list_deployments_extract_params(sources: dict[str, dict]) -> dict[str, Any]
             "role_arn": {"type": "string"},
             "external_id": {"type": "string", "default": ""},
             "region": {"type": "string", "default": "us-east-1"},
+            "credentials": {"type": ["object", "null"], "default": None},
         },
         "required": ["cluster_name", "namespace", "role_arn"],
     },
@@ -52,6 +53,7 @@ def list_eks_deployments(
     role_arn: str = "",
     external_id: str = "",
     region: str = "us-east-1",
+    credentials: dict[str, Any] | None = None,
     eks_backend: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
@@ -67,7 +69,13 @@ def list_eks_deployments(
             eks_backend.list_deployments(cluster_name=cluster_name, namespace=namespace),
         )
     try:
-        _, apps_v1 = build_k8s_clients(cluster_name, role_arn, external_id, region)
+        _, apps_v1 = build_k8s_clients(
+            cluster_name,
+            role_arn,
+            external_id,
+            region,
+            credentials=credentials,
+        )
         dep_list = (
             apps_v1.list_deployment_for_all_namespaces()
             if namespace == "all"

@@ -9,19 +9,21 @@ globs:
 ## Directory Structure
 
 ```
+app/services/
+├── grafana/          # Vendor-specific client packages
+├── datadog/
+├── s3_client.py      # Single-file clients
+└── vercel/
+
 app/integrations/
 ├── clients/
-│   ├── grafana/          # Vendor-specific client packages
-│   ├── datadog/
-│   ├── s3_client.py      # Single-file clients
-│   └── vercel.py
-├── opensre_mcp.py        # MCP server implementation
+│   └── prefect/      # Legacy location — new clients go in app/services/
+├── opensre_mcp.py    # MCP server implementation
 └── ...
 ```
-
 ## Adding a New Integration
 
-1. Create a client under `app/integrations/clients/<vendor>/`
+1. Create a client under `app/services/<vendor>/`
 2. Implement connection, authentication, and API methods
 3. Create a tool under `app/tools/<VendorTool>/` that uses the client
 4. Wire availability into `resolve_integrations` node if the integration requires runtime discovery

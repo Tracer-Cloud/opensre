@@ -49,6 +49,7 @@ def _logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 @tool(
     name="query_datadog_logs",
+    display_name="Datadog logs",
     source="datadog",
     tags=("logs", "observability"),
     cost_tier="moderate",

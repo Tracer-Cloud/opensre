@@ -1,0 +1,22 @@
+{
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "AirflowTaskFailure",
+        "severity": "critical",
+        "service": "airflow",
+        "component": "airflow",
+        "dag_id": "test_fail_dag"
+      },
+      "annotations": {
+        "summary": "Airflow DAG test_fail_dag task failure detected",
+        "description": "The Airflow DAG test_fail_dag has a failed task. Investigate recent DAG runs and task instances in Airflow before using generic infrastructure tools."
+      }
+    }
+  ],
+  "commonAnnotations": {
+    "summary": "Airflow DAG test_fail_dag task failure detected",
+    "description": "Airflow DAG test_fail_dag failed and requires investigation using Airflow evidence."
+  }
+}

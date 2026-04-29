@@ -27,6 +27,7 @@ import httpx
 from pydantic import Field, field_validator
 
 from app.strict_config import StrictConfigModel
+from app.utils.coercion import safe_int
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +76,7 @@ class RabbitMQConfig(StrictConfigModel):
     @field_validator("management_port", mode="before")
     @classmethod
     def _normalize_management_port(cls, value: Any) -> int:
-        try:
-            return int(value)
-        except (ValueError, TypeError):
-            return DEFAULT_RABBITMQ_MANAGEMENT_PORT
+        return safe_int(value, DEFAULT_RABBITMQ_MANAGEMENT_PORT)
 
     @property
     def is_configured(self) -> bool:

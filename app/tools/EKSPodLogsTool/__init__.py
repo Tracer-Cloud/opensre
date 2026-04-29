@@ -46,6 +46,7 @@ def _pod_logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
             "role_arn": {"type": "string"},
             "external_id": {"type": "string", "default": ""},
             "region": {"type": "string", "default": "us-east-1"},
+            "credentials": {"type": ["object", "null"], "default": None},
             "tail_lines": {"type": "integer", "default": 100},
         },
         "required": ["cluster_name", "namespace", "pod_name", "role_arn"],
@@ -60,6 +61,7 @@ def get_eks_pod_logs(
     role_arn: str = "",
     external_id: str = "",
     region: str = "us-east-1",
+    credentials: dict[str, Any] | None = None,
     tail_lines: int = 100,
     eks_backend: Any = None,
     **_kwargs: Any,
@@ -78,7 +80,13 @@ def get_eks_pod_logs(
             ),
         )
     try:
-        core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
+        core_v1, _ = build_k8s_clients(
+            cluster_name,
+            role_arn,
+            external_id,
+            region,
+            credentials=credentials,
+        )
         logs = core_v1.read_namespaced_pod_log(
             name=pod_name, namespace=namespace, tail_lines=tail_lines
         )

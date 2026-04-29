@@ -12,6 +12,6 @@ Harassment, discrimination, or personal attacks are not tolerated.
 
 If you encounter unacceptable behavior, contact:
 
-hello@tracer.cloud
+support@opensre.com
 
 Maintainers may remove comments, issues, or contributions that violate these expectations.

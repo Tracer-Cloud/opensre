@@ -1,12 +1,12 @@
 ---
-title: "How to use OpenSRE with Seqera"
+title: "How to use Tracer with Seqera"
 sidebarTitle: "Seqera"
 description: 'Execution behavior inside Nextflow pipelines'
 ---
 
 Seqera orchestrates scientific workflows built with Nextflow, defining pipeline structure, dependencies, and execution across compute environments. It determines what runs and when, but it does not observe how tasks behave at runtime inside containers or at the operating system level.
 
-OpenSRE complements Seqera by exposing execution behavior: CPU, memory, disk, and network usage, and more during pipeline runs. It collects this telemetry without modifying workflows or task definitions.
+Tracer complements Seqera by exposing execution behavior: CPU, memory, disk, and network usage, and more during pipeline runs. It collects this telemetry without modifying workflows or task definitions.
 
 ## What Seqera does well
 
@@ -43,9 +43,9 @@ Pipeline resources are often over-allocated to reduce the risk of failure, espec
 
 As a result, pipelines may succeed reliably but consume more time and cost than necessary.
 
-## What OpenSRE adds
+## What Tracer adds
 
-OpenSRE observes execution directly from the host and container runtime and adds:
+Tracer observes execution directly from the host and container runtime and adds:
 
 - Observed CPU, memory, disk, and network usage per task
 - Visibility into subprocesses and nested execution
@@ -59,12 +59,12 @@ This visibility is based on observed behavior, not metadata, configuration, or h
   width="100%"
   height="1300"
   style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
-  title="OpenSRE/collect execution panel"
+  title="Tracer/collect execution panel"
 />
 
 ## Example: identifying I/O-bound tasks
 
-A pipeline task requests many CPUs and a large memory allocation. During execution, OpenSRE shows:
+A pipeline task requests many CPUs and a large memory allocation. During execution, Tracer shows:
 
 - Low CPU utilization
 - Memory usage well below allocation
@@ -72,7 +72,7 @@ A pipeline task requests many CPUs and a large memory allocation. During executi
 
 This pattern indicates an I/O-bound task rather than a compute-bound one. Adding CPUs or memory will not improve performance.
 
-OpenSRE makes this distinction explicit by observing runtime behavior rather than inferring it from configuration.
+Tracer makes this distinction explicit by observing runtime behavior rather than inferring it from configuration.
 
 ## Using execution insight to tune resources
 
@@ -97,29 +97,29 @@ These adjustments can reduce cost, improve runtime performance, or both.
 
 This comparison highlights the difference between orchestration-level visibility and execution-level observation.
 
-## What OpenSRE does not replace
+## What Tracer does not replace
 
-OpenSRE is not a workflow engine.
+Tracer is not a workflow engine.
 
 - It does not replace Seqera or Nextflow
 - It does not schedule, retry, or cache tasks
 - It does not modify pipeline definitions or execution logic
 
-Seqera remains responsible for orchestration. OpenSRE makes runtime behavior visible.
+Seqera remains responsible for orchestration. Tracer makes runtime behavior visible.
 
-## When to use OpenSRE with Seqera
+## When to use Tracer with Seqera
 
-OpenSRE is most useful when teams need to:
+Tracer is most useful when teams need to:
 
 - Explain slow or inconsistent task runtimes
 - Identify unused or underutilized resources
 - Diagnose performance issues beyond application logs
 - Choose infrastructure based on observed workload behavior
 
-OpenSRE operates independently of the workflow engine and supports pipelines across multiple frameworks and languages.
+Tracer operates independently of the workflow engine and supports pipelines across multiple frameworks and languages.
 
 ## Summary
 
-Seqera and Nextflow define and orchestrate scientific workflows. OpenSRE adds execution-level visibility that shows how resources are actually used at runtime. Together, they support reliable execution and informed optimization decisions, without changes to existing workflows.
+Seqera and Nextflow define and orchestrate scientific workflows. Tracer adds execution-level visibility that shows how resources are actually used at runtime. Together, they support reliable execution and informed optimization decisions, without changes to existing workflows.
 
 <div style={{ height: '50vh' }}></div>

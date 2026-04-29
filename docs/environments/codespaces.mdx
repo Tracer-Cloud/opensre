@@ -1,13 +1,13 @@
 ---
 title: "Our Demo Environment"
-description: "Run OpenSRE in our demo environment within minutes"
+description: "Run Tracer in our demo environment within minutes"
 ---
 
 Our demo environment is built on GitHub with no local installation required.
 
 ## 1. Open GitHub Codespaces
 
-Codespaces will be your coding environment to run any pipeline as an alternative to installing OpenSRE into your own system.
+Codespaces will be your coding environment to run any pipeline as an alternative to installing Tracer into your own system.
 
 <Card href="https://github.com/codespaces">
   <img
@@ -38,15 +38,15 @@ You can change the machine type options to whichever configuration you prefer fo
 
 </Accordion>
 
-## 2. Install OpenSRE
+## 2. Install Tracer
 
-Run the following command to install OpenSRE:
+Run the following command to install Tracer:
 
 ```bash
 curl -sSL https://install.tracer.cloud | sh
 ```
 
-## 3. Start OpenSRE agent
+## 3. Start Tracer agent
 
 To start tracking a pipeline, run the following command:
 
@@ -58,7 +58,7 @@ tracer init --token <your-token>
 You will be prompted to configure the pipeline name. Filling this out ensures that each pipeline is uniquely identifiable, customizable, and easy to search later on.
 
 <Tip>
-**OpenSRE is now tracking your pipeline.**
+**Tracer is now tracking your pipeline.**
 
 Every run you launch for this pipeline will be automatically monitored.
 
@@ -85,18 +85,18 @@ tracer demo
   <img
     className="block dark:hidden"
     src="/images/logo/tracer/Tracer Full Body - Black.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
   <img
     className="hidden dark:block"
     src="/images/logo/tracer/Tracer Full Body - Black.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
 
   <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1 rem', color: 'inherit' }}>
-    Watch your pipeline run in the OpenSRE dashboard
+    Watch your pipeline run in the Tracer dashboard
   </div>
 
   <div style={{ color: 'inherit' }}>

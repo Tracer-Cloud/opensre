@@ -16,6 +16,7 @@ def _extract_lambda_errors_params(sources: dict[str, dict]) -> dict:
 
 @tool(
     name="get_lambda_errors",
+    display_name="Lambda errors",
     source="cloudwatch",
     description="Get Lambda function error logs.",
     use_cases=[

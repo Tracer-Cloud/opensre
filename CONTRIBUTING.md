@@ -4,9 +4,9 @@ Welcome to OpenSRE
 
 ## Quick Links
 
-- **GitHub:** https://github.com/Tracer-Cloud/opensre
-- **Vision:** [`VISION.md`](VISION.md)
-- **Discord:** https://discord.gg/opensre
+- **GitHub:** [https://github.com/Tracer-Cloud/opensre](https://github.com/Tracer-Cloud/opensre)
+- **Vision:** `[VISION.md](VISION.md)`
+- **Discord:** [https://discord.gg/opensre](https://discord.gg/opensre)
 - **X/Twitter:** §[@open_sre](https://x.com/open_sre)
 
 ## How to Contribute
@@ -18,7 +18,7 @@ Use the path that matches the kind of contribution you want to make:
 3. **Improvements tied to concrete work** -> Use the [improvement template](https://github.com/Tracer-Cloud/opensre/issues/new?template=improvement.yml) when proposing a focused refactor, optimization, or quality improvement.
 4. **Refactor-only PRs** -> Do not open one unless a maintainer explicitly asked for it as part of a real fix.
 5. **Test/CI-only PRs for known `main` failures** -> Do not open one unless the change is required to validate a real fix the maintainers asked for.
-6. **Questions** -> Use the docs, email hello@tracer.cloud, or ask in Discord [#contribute](http://discord.gg/opensre). GitHub Issues are for actionable work.
+6. **Questions** -> Use the docs, email [support@opensre.com](mailto:support@opensre.com), or ask in Discord [#contribute](http://discord.gg/opensre). GitHub Issues are for actionable work.
 7. **Security issues** -> Follow `SECURITY.md`; do not open a public issue.
 
 ### Environment Setup
@@ -32,7 +32,7 @@ See **[SETUP.md](SETUP.md)** for detailed setup instructions including Windows-s
 3. Run checks: `make lint && make format-check && make typecheck && make test-cov`
 4. Build release artifacts when needed: `make build`
 
-If you prefer VS Code, you can use the repo's devcontainer at [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) instead of setting up Python manually.
+If you prefer VS Code, you can use the repo's devcontainer at `[.devcontainer/devcontainer.json](.devcontainer/devcontainer.json)` instead of setting up Python manually.
 
 ---
 
@@ -130,13 +130,13 @@ Use the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** (automatically provi
 
 ### PR Checklist Before Submitting
 
-- [ ] Linked to the relevant issue
-- [ ] All local checks pass: `make lint && make format-check && make typecheck && make test-cov`
-- [ ] Added tests for bug fixes or new features
-- [ ] Updated documentation if behavior changed
-- [ ] Code follows project style (see **Code Quality** section below)
-- [ ] Self-reviewed your own code first
-- [ ] Considered edge cases
+- Linked to the relevant issue
+- All local checks pass: `make lint && make format-check && make typecheck && make test-cov`
+- Added tests for bug fixes or new features
+- Updated documentation if behavior changed
+- Code follows project style (see **Code Quality** section below)
+- Self-reviewed your own code first
+- Considered edge cases
 
 ### If Your PR Includes Screenshots or Logs
 
@@ -150,11 +150,11 @@ Provide **before** and **after** examples when:
 
 If you used AI tools (Claude, ChatGPT, Copilot, etc.) to generate code, the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** requires you to confirm:
 
-- [ ] I reviewed **every single line** of AI-generated code (not just skimmed)
-- [ ] I understand the logic and can explain it in my own words
-- [ ] I tested edge cases (what could break?)
-- [ ] I modified output to match project conventions ([Code Quality Standards](#code-quality-standards))
-- [ ] Verified tests pass with the AI-generated code
+- I reviewed **every single line** of AI-generated code (not just skimmed)
+- I understand the logic and can explain it in my own words
+- I tested edge cases (what could break?)
+- I modified output to match project conventions ([Code Quality Standards](#code-quality-standards))
+- Verified tests pass with the AI-generated code
 
 This ensures you understand the code, not just copied it. Reviewers will pay extra attention to AI-assisted code.
 

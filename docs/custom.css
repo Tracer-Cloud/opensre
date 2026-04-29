@@ -1,3 +1,137 @@
+/* Keep this file minimal. Prefer Mintlify defaults + `sidebar.css`. */
+
+/* Radar chart helpers (used by `radar-chart.js`). */
+.radar-chart-container {
+    max-width: 100%;
+    margin: 2rem auto;
+    padding: 20px 30px;
+}
+
+.radar-chart-legend {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.radar-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.radar-legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 2px;
+}
+
+.radar-tooltip {
+    position: absolute;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.25rem;
+    padding: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    max-width: 300px;
+    z-index: 1000;
+    color: #374151;
+}
+
+.radar-tooltip.show {
+    opacity: 1;
+}
+
+html.dark .radar-tooltip {
+    background: #0a0a0a;
+    border-color: #262626;
+    color: #ffffff;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* Intentionally small: legacy hook for optional overrides.
+   Most styling should stay in Mintlify defaults + `sidebar.css`. */
+
+/* TOC custom actions (injected by `toc-actions.js`). */
+.toc-custom-actions {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+html.dark .toc-custom-actions {
+    border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+.toc-custom-action {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-left: 0.25rem;
+    font-size: 0.875rem;
+    line-height: 1.75rem;
+}
+
+/* Radar chart helpers (used by `radar-chart.js`). */
+.radar-chart-container {
+    max-width: 100%;
+    margin: 2rem auto;
+    padding: 20px 30px;
+}
+
+.radar-chart-legend {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.radar-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.radar-legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 2px;
+}
+
+.radar-tooltip {
+    position: absolute;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.25rem;
+    padding: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    max-width: 300px;
+    z-index: 1000;
+    color: #374151;
+}
+
+.radar-tooltip.show {
+    opacity: 1;
+}
+
+html.dark .radar-tooltip {
+    background: #0a0a0a;
+    border-color: #262626;
+    color: #ffffff;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+}
 /* Fonts are loaded via docs.json configuration - Mintlify applies them automatically */
 
 /* ========================================
@@ -6,36 +140,38 @@
 
 /* Page title (h1): display heading — tight tracking, neutral-900 */
 h1 {
-  font-family: 'Britti Sans Trial', sans-serif !important;
-  font-weight: 400 !important;
-  letter-spacing: -0.04em !important;
-  line-height: 1.1 !important;
-  color: #171717 !important;
+    font-family: "Britti Sans Trial", sans-serif !important;
+    font-weight: 400 !important;
+    letter-spacing: -0.04em !important;
+    line-height: 1.1 !important;
+    color: #171717 !important;
 }
 
 /* Section heading (h2): large display or article body */
 h2 {
-  font-family: 'Britti Sans Trial', sans-serif !important;
-  font-weight: 400 !important;
-  letter-spacing: -0.04em !important;
-  line-height: 1.2 !important;
-  color: #171717 !important;
+    font-family: "Britti Sans Trial", sans-serif !important;
+    font-weight: 400 !important;
+    letter-spacing: -0.04em !important;
+    line-height: 1.2 !important;
+    color: #171717 !important;
 }
 
 /* Sub-section heading (h3): article body */
 h3 {
-  font-family: 'Britti Sans Trial', sans-serif !important;
-  font-weight: 400 !important;
-  letter-spacing: -0.02em !important;
-  line-height: 1.375 !important;
-  color: #171717 !important;
+    font-family: "Britti Sans Trial", sans-serif !important;
+    font-weight: 400 !important;
+    letter-spacing: -0.02em !important;
+    line-height: 1.375 !important;
+    color: #171717 !important;
 }
 
-h4, h5, h6 {
-  font-family: 'Britti Sans Trial', sans-serif !important;
-  font-weight: 400 !important;
-  letter-spacing: -0.02em !important;
-  color: #171717 !important;
+h4,
+h5,
+h6 {
+    font-family: "Britti Sans Trial", sans-serif !important;
+    font-weight: 400 !important;
+    letter-spacing: -0.02em !important;
+    color: #171717 !important;
 }
 
 /* Dark mode headings */
@@ -45,7 +181,7 @@ html.dark h3,
 html.dark h4,
 html.dark h5,
 html.dark h6 {
-  color: #FFFFFF !important;
+    color: #ffffff !important;
 }
 
 /* Body / prose: Britti Sans, 18px (prose-lg), relaxed leading, neutral-700 */
@@ -56,174 +192,244 @@ td,
 th,
 label,
 span:not(code span):not(pre span) {
-  font-family: 'Britti Sans Trial', sans-serif;
-  line-height: 1.625;
-  color: #404040;
+    font-family: "Britti Sans Trial", sans-serif;
+    line-height: 1.625;
+    color: #404040;
 }
 
 /* Article paragraphs: prose-lg base (18px), relaxed, neutral-700 */
 article p,
 .markdown p,
 [class*="content"] > p {
-  color: #404040 !important;
-  line-height: 1.625 !important;
-  margin-top: 1rem !important;
-  margin-bottom: 1rem !important;
-  overflow-wrap: break-word !important;
-  word-break: break-word !important;
+    color: #404040 !important;
+    line-height: 1.625 !important;
+    margin-top: 1rem !important;
+    margin-bottom: 1rem !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
 }
 
 /* Strong / bold: medium weight, black */
-strong, b {
-  font-weight: 500 !important;
-  color: #000000 !important;
+strong,
+b {
+    font-weight: 500 !important;
+    color: #000000 !important;
 }
 
 html.dark strong,
 html.dark b {
-  color: #FFFFFF !important;
+    color: #ffffff !important;
 }
 
 /* Links in article body: black, underline, hover neutral-600 */
 article a:not([class*="card" i]):not([class*="Card" i]):not([href*="sign-up"]),
 .markdown a:not([class*="card" i]):not([class*="Card" i]) {
-  color: #000000 !important;
-  text-decoration: underline !important;
-  text-decoration-thickness: 1px !important;
-  text-underline-offset: 2px !important;
-  transition: color 0.15s ease !important;
+    color: #000000 !important;
+    text-decoration: underline !important;
+    text-decoration-thickness: 1px !important;
+    text-underline-offset: 2px !important;
+    transition: color 0.15s ease !important;
 }
 
-article a:not([class*="card" i]):not([class*="Card" i]):not([href*="sign-up"]):hover,
+article
+    a:not([class*="card" i]):not([class*="Card" i]):not(
+        [href*="sign-up"]
+    ):hover,
 .markdown a:not([class*="card" i]):not([class*="Card" i]):hover {
-  color: #525252 !important;
+    color: #525252 !important;
 }
 
-html.dark article a:not([class*="card" i]):not([class*="Card" i]):not([href*="sign-up"]),
+html.dark
+    article
+    a:not([class*="card" i]):not([class*="Card" i]):not([href*="sign-up"]),
 html.dark .markdown a:not([class*="card" i]):not([class*="Card" i]) {
-  color: #D4D4D4 !important;
+    color: #d4d4d4 !important;
 }
 
-html.dark article a:not([class*="card" i]):not([class*="Card" i]):not([href*="sign-up"]):hover,
+html.dark
+    article
+    a:not([class*="card" i]):not([class*="Card" i]):not(
+        [href*="sign-up"]
+    ):hover,
 html.dark .markdown a:not([class*="card" i]):not([class*="Card" i]):hover {
-  color: #a3a3a3 !important;
+    color: #a3a3a3 !important;
 }
 
 /* Unordered lists: no bullets, flush left */
-main ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul),
-article ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul),
-.markdown ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul),
-[class*="content"] ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) {
-  list-style: none !important;
-  padding-left: 1.5rem !important;
-  margin-top: 1.5rem !important;
-  margin-bottom: 1.5rem !important;
-  color: #404040 !important;
+main
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul),
+article
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul),
+.markdown
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul),
+[class*="content"]
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul) {
+    list-style: none !important;
+    padding-left: 1.5rem !important;
+    margin-top: 1.5rem !important;
+    margin-bottom: 1.5rem !important;
+    color: #404040 !important;
 }
 
 /* Ordered lists: decimal, indented */
 main ol:not(nav ol):not([class*="sidebar"] ol),
 article ol,
 .markdown ol {
-  list-style-type: decimal !important;
-  padding-left: 1.5rem !important;
-  margin-top: 1.5rem !important;
-  margin-bottom: 1.5rem !important;
-  color: #404040 !important;
+    list-style-type: decimal !important;
+    padding-left: 1.5rem !important;
+    margin-top: 1.5rem !important;
+    margin-bottom: 1.5rem !important;
+    color: #404040 !important;
 }
 
 /* List items: relative positioning for arrow icon */
-main ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li,
-article ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li,
-.markdown ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li,
-[class*="content"] ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li {
-  color: #404040 !important;
-  line-height: 1.625 !important;
-  position: relative !important;
-  padding-left: 1.5rem !important;
-  margin-bottom: 0.5rem !important;
-  list-style: none !important;
-  list-style-type: none !important;
+main
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li,
+article
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li,
+.markdown
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li,
+[class*="content"]
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li {
+    color: #404040 !important;
+    line-height: 1.625 !important;
+    position: relative !important;
+    padding-left: 1.5rem !important;
+    margin-bottom: 0.5rem !important;
+    list-style: none !important;
+    list-style-type: none !important;
 }
 
 /* Hide default marker pseudo-element */
-main ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li::marker,
-article ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li::marker,
-.markdown ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li::marker,
-[class*="content"] ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li::marker {
-  content: none !important;
-  display: none !important;
-  font-size: 0 !important;
+main
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li::marker,
+article
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li::marker,
+.markdown
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li::marker,
+[class*="content"]
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li::marker {
+    content: none !important;
+    display: none !important;
+    font-size: 0 !important;
 }
 
 /* ArrowDownRight icon (Lucide) — unordered list bullets */
-main ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li::before,
-article ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li::before,
-.markdown ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li::before,
-[class*="content"] ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li::before {
-  content: '' !important;
-  position: absolute !important;
-  left: 0 !important;
-  top: 5px !important;
-  width: 16px !important;
-  height: 16px !important;
-  border: none !important;
-  border-radius: 0 !important;
-  background-color: transparent !important;
-  box-shadow: none !important;
-  outline: none !important;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a3a3a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='7' y1='7' x2='17' y2='17'/%3E%3Cpolyline points='17 7 17 17 7 17'/%3E%3C/svg%3E") !important;
-  background-repeat: no-repeat !important;
-  background-size: 16px 16px !important;
+main
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li::before,
+article
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li::before,
+.markdown
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li::before,
+[class*="content"]
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li::before {
+    content: "" !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 5px !important;
+    width: 16px !important;
+    height: 16px !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a3a3a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='7' y1='7' x2='17' y2='17'/%3E%3Cpolyline points='17 7 17 17 7 17'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-size: 16px 16px !important;
 }
 
 /* Ordered list items keep default numbering, no arrow */
 main ol:not(nav ol) > li,
 article ol > li,
 .markdown ol > li {
-  color: #404040 !important;
-  line-height: 1.625 !important;
-  margin-bottom: 0.5rem !important;
+    color: #404040 !important;
+    line-height: 1.625 !important;
+    margin-bottom: 0.5rem !important;
 }
 
 main ol:not(nav ol) > li::before,
 article ol > li::before,
 .markdown ol > li::before {
-  content: none !important;
+    content: none !important;
 }
 
 /* Blockquotes: left border, italic, neutral tones */
 article blockquote,
 .markdown blockquote {
-  border-left: 3px solid #d4d4d4 !important;
-  padding-left: 1.5rem !important;
-  padding-top: 0.5rem !important;
-  padding-bottom: 0.5rem !important;
-  margin-top: 2rem !important;
-  margin-bottom: 2rem !important;
-  font-style: italic !important;
-  color: #525252 !important;
-  background-color: #fafafa !important;
+    border-left: 3px solid #d4d4d4 !important;
+    padding-left: 1.5rem !important;
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+    margin-top: 2rem !important;
+    margin-bottom: 2rem !important;
+    font-style: italic !important;
+    color: #525252 !important;
+    background-color: #fafafa !important;
 }
 
 html.dark article blockquote,
 html.dark .markdown blockquote {
-  border-left-color: #404040 !important;
-  color: #a3a3a3 !important;
-  background-color: #171717 !important;
+    border-left-color: #404040 !important;
+    color: #a3a3a3 !important;
+    background-color: #171717 !important;
 }
 
 /* Horizontal rules */
 article hr,
 .markdown hr {
-  margin-top: 3rem !important;
-  margin-bottom: 3rem !important;
-  border-top: 1px solid #e5e5e5 !important;
+    margin-top: 3rem !important;
+    margin-bottom: 3rem !important;
+    border-top: 1px solid #e5e5e5 !important;
 }
 
 html.dark article hr,
 html.dark .markdown hr {
-  border-top-color: #404040 !important;
+    border-top-color: #404040 !important;
 }
 
 html.dark body,
@@ -233,14 +439,14 @@ html.dark td,
 html.dark th,
 html.dark label,
 html.dark span:not(code span):not(pre span) {
-  color: #D4D4D4 !important;
+    color: #d4d4d4 !important;
 }
 
 /* Dark mode sidebar text */
 html.dark #sidebar *:not(svg):not(path):not(img):not(code):not(pre),
 html.dark #sidebar-content *:not(svg):not(path):not(img):not(code):not(pre),
 html.dark #navigation-items *:not(svg):not(path):not(img):not(code):not(pre) {
-  color: #D4D4D4 !important;
+    color: #d4d4d4 !important;
 }
 
 /* Dark mode sidebar group headers: white like headings */
@@ -248,7 +454,7 @@ html.dark #sidebar .sidebar-group-header,
 html.dark #sidebar .sidebar-group-header h5,
 html.dark #navigation-items .sidebar-group-header,
 html.dark #navigation-items .sidebar-group-header h5 {
-  color: #FFFFFF !important;
+    color: #ffffff !important;
 }
 
 /* Dark mode sidebar child links: neutral-500 */
@@ -258,13 +464,13 @@ html.dark #sidebar li,
 html.dark #navigation-items a:not([href*="sign-up"]),
 html.dark #navigation-items button,
 html.dark #navigation-items li {
-  color: #a3a3a3 !important;
+    color: #a3a3a3 !important;
 }
 
 html.dark article p,
 html.dark .markdown p,
 html.dark [class*="content"] > p {
-  color: #D4D4D4 !important;
+    color: #d4d4d4 !important;
 }
 
 html.dark article ul,
@@ -273,25 +479,73 @@ html.dark article ol,
 html.dark .markdown ol,
 html.dark article li,
 html.dark .markdown li,
-html.dark main ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul),
-html.dark [class*="content"] ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul),
+html.dark
+    main
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul),
+html.dark
+    [class*="content"]
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul),
 html.dark main ol:not(nav ol):not([class*="sidebar"] ol),
-html.dark main ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li,
-html.dark [class*="content"] ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li,
+html.dark
+    main
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li,
+html.dark
+    [class*="content"]
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li,
 html.dark main ol:not(nav ol) > li,
-html.dark article ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li,
-html.dark .markdown ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li,
+html.dark
+    article
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li,
+html.dark
+    .markdown
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li,
 html.dark article ol > li,
 html.dark .markdown ol > li {
-  color: #D4D4D4 !important;
+    color: #d4d4d4 !important;
 }
 
 /* Dark mode arrow: lighter stroke */
-html.dark main ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li::before,
-html.dark article ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li::before,
-html.dark .markdown ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li::before,
-html.dark [class*="content"] ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(#navigation-items ul):not([class*="toc"] ul):not([class*="table-of-contents"] ul) > li::before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23737373' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='7' y1='7' x2='17' y2='17'/%3E%3Cpolyline points='17 7 17 17 7 17'/%3E%3C/svg%3E") !important;
+html.dark
+    main
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li::before,
+html.dark
+    article
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li::before,
+html.dark
+    .markdown
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li::before,
+html.dark
+    [class*="content"]
+    ul:not(nav ul):not([class*="sidebar"] ul):not(#sidebar ul):not(
+        #navigation-items ul
+    ):not([class*="toc"] ul):not([class*="table-of-contents"] ul)
+    > li::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23737373' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='7' y1='7' x2='17' y2='17'/%3E%3Cpolyline points='17 7 17 17 7 17'/%3E%3C/svg%3E") !important;
 }
 
 /* Navigation: 14.5px, weight 400 — covered by sidebar rule below */
@@ -301,10 +555,10 @@ button:not(#sidebar button):not(#sidebar-content button),
 [role="button"]:not(#sidebar [role="button"]),
 a[class*="btn" i],
 a[class*="button" i] {
-  font-family: 'Britti Sans Trial', sans-serif !important;
-  font-weight: 500;
-  font-size: 15px;
-  line-height: 1;
+    font-family: "Britti Sans Trial", sans-serif !important;
+    font-weight: 500;
+    font-size: 15px;
+    line-height: 1;
 }
 
 /* Meta / labels / dates: 13px, -0.01em tracking */
@@ -312,61 +566,61 @@ a[class*="button" i] {
 [class*="subtitle" i],
 figcaption,
 time {
-  font-family: 'Britti Sans Trial', sans-serif;
-  font-size: 13px;
-  letter-spacing: -0.01em;
-  color: #737373;
+    font-family: "Britti Sans Trial", sans-serif;
+    font-size: 13px;
+    letter-spacing: -0.01em;
+    color: #737373;
 }
 
 html.dark [class*="description" i],
 html.dark [class*="subtitle" i],
 html.dark figcaption,
 html.dark time {
-  color: #737373 !important;
+    color: #737373 !important;
 }
 
 /* Card titles: 18px, -0.02em, neutral-900 */
 [class*="card" i] strong,
 [class*="Card" i] strong {
-  font-family: 'Britti Sans Trial', sans-serif !important;
-  font-size: 18px !important;
-  font-weight: 400 !important;
-  line-height: 26px !important;
-  letter-spacing: -0.02em !important;
-  color: #171717 !important;
+    font-family: "Britti Sans Trial", sans-serif !important;
+    font-size: 18px !important;
+    font-weight: 400 !important;
+    line-height: 26px !important;
+    letter-spacing: -0.02em !important;
+    color: #171717 !important;
 }
 
 html.dark [class*="card" i] strong,
 html.dark [class*="Card" i] strong {
-  color: #FFFFFF !important;
+    color: #ffffff !important;
 }
 
 /* Inline code: neutral tones, 13px */
 code:not(pre code) {
-  font-size: 13px !important;
-  background-color: #f5f5f5 !important;
-  color: #171717 !important;
-  padding: 1.5px 6px !important;
-  border: 1px solid #e5e5e5 !important;
-  border-radius: 0.125rem !important;
-  font-weight: 400 !important;
+    font-size: 13px !important;
+    background-color: #f5f5f5 !important;
+    color: #171717 !important;
+    padding: 1.5px 6px !important;
+    border: 1px solid #e5e5e5 !important;
+    border-radius: 0.125rem !important;
+    font-weight: 400 !important;
 }
 
 html.dark code:not(pre code) {
-  background-color: #262626 !important;
-  color: #FFFFFF !important;
-  border-color: #404040 !important;
+    background-color: #262626 !important;
+    color: #ffffff !important;
+    border-color: #404040 !important;
 }
 
 /* Text rendering */
 body {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {
-  background: #D4D4D4;
-  color: #202020;
+    background: #d4d4d4;
+    color: #202020;
 }
 
 /* ========================================
@@ -377,71 +631,71 @@ body {
 
 /* Style for custom TOC actions */
 .toc-custom-actions {
-  margin-top: 1rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 html.dark .toc-custom-actions {
-  border-top-color: rgba(255, 255, 255, 0.1);
+    border-top-color: rgba(255, 255, 255, 0.1);
 }
 
 .toc-custom-action {
-  display: block;
-  font-size: 0.875rem;
-  line-height: 1.75rem;
-  color: #6B7280;
-  cursor: pointer;
-  transition: color 0.2s;
-  text-decoration: none;
+    display: block;
+    font-size: 0.875rem;
+    line-height: 1.75rem;
+    color: #6b7280;
+    cursor: pointer;
+    transition: color 0.2s;
+    text-decoration: none;
 }
 
 .toc-custom-action:hover {
-  color: #171717;
+    color: #171717;
 }
 
 html.dark .toc-custom-action {
-  color: #9CA3AF;
+    color: #9ca3af;
 }
 
 html.dark .toc-custom-action:hover {
-  color: #FFFFFF;
+    color: #ffffff;
 }
 
 /* SVG icon colors for TOC actions */
 .toc-action-icon path {
-  fill: #444444;
+    fill: #444444;
 }
 
 html.dark .toc-action-icon path {
-  fill: #ffffff;
+    fill: #ffffff;
 }
 
 /* Make feature icons black in light mode, white in dark mode */
 /* Icons use mask-image with background-color, so we override the bg classes */
 svg.feature-icon,
 .feature-icon {
-  background-color: #000000 !important;
+    background-color: #000000 !important;
 }
 
 html.dark svg.feature-icon,
 html.dark .feature-icon {
-  background-color: #FFFFFF !important;
+    background-color: #ffffff !important;
 }
 
 /* Make step titles medium weight (matches brand spec) */
 .step-title {
-  font-weight: 500 !important;
+    font-weight: 500 !important;
 }
 
 /* Add spacing between rows in eBPF benefits table */
 .ebpf-benefits-table {
-  margin-top: 1rem;
+    margin-top: 1rem;
 }
 
 .ebpf-benefits-table td {
-  padding: 2rem 1rem;
-  vertical-align: top;
+    padding: 2rem 1rem;
+    vertical-align: top;
 }
 
 /* Keep monospace font for code */
@@ -454,39 +708,41 @@ code *,
 kbd,
 samp,
 tt {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace !important;
+    font-family:
+        "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
+        monospace !important;
 }
 
 /* Align inline icons with text */
 svg[class*="icon" i],
 svg[data-icon],
 [class*="Icon" i] svg {
-  vertical-align: middle !important;
-  display: inline-block !important;
-  margin-bottom: 0.15em !important;
+    vertical-align: middle !important;
+    display: inline-block !important;
+    margin-bottom: 0.15em !important;
 }
 
 /* Remove background from Step icons */
 [class*="step" i] img,
 [class*="Step" i] img,
 div[class*="step"] img {
-  background: transparent !important;
-  background-color: transparent !important;
+    background: transparent !important;
+    background-color: transparent !important;
 }
 
 /* Reduce Info panel margins */
 [class*="info" i],
 [class*="Info" i],
 div[class*="callout" i] {
-  margin-top: 0.5rem !important;
-  margin-bottom: 0.5rem !important;
+    margin-top: 0.5rem !important;
+    margin-bottom: 0.5rem !important;
 }
 
 /* Callout border-radius - 2px */
 .callout,
 [class*="callout" i],
 div[class*="callout" i] {
-  border-radius: 0.125rem !important;
+    border-radius: 0.125rem !important;
 }
 
 /* Card border-radius - 2px */
@@ -495,14 +751,14 @@ div[class*="callout" i] {
 a[class*="card" i],
 a[class*="Card" i],
 div[data-component-part="card-content-container"] {
-  border-radius: 0.125rem !important;
+    border-radius: 0.125rem !important;
 }
 
 /* Ensure Info callouts use body font, not monospace */
 [class*="info" i] *:not(code):not(pre):not(pre *),
 [class*="Info" i] *:not(code):not(pre):not(pre *),
 div[class*="callout" i] *:not(code):not(pre):not(pre *) {
-  font-family: 'Britti Sans Trial', sans-serif !important;
+    font-family: "Britti Sans Trial", sans-serif !important;
 }
 
 /* Ensure Accordion/Expandable dropdowns use body font, not monospace */
@@ -514,7 +770,7 @@ div[class*="callout" i] *:not(code):not(pre):not(pre *) {
 [class*="Collapse" i] *:not(code):not(pre):not(pre *),
 details *:not(code):not(pre):not(pre *),
 summary {
-  font-family: 'Britti Sans Trial', sans-serif !important;
+    font-family: "Britti Sans Trial", sans-serif !important;
 }
 
 /* Hide navigation group titles */
@@ -522,10 +778,8 @@ summary {
 #sidebar h3,
 #navigation-items [class*="group-title" i],
 #navigation-items h3 {
-  display: none !important;
+    display: none !important;
 }
-
-
 
 /* Transparent table borders */
 table,
@@ -536,15 +790,15 @@ table thead,
 table tbody,
 thead th,
 thead td {
-  border-color: transparent !important;
-  border-top: none !important;
-  border-bottom: none !important;
+    border-color: transparent !important;
+    border-top: none !important;
+    border-bottom: none !important;
 }
 
 /* Larger bold text in features table only */
 .features-table strong,
 .features-table b {
-  font-size: 1.1rem !important;
+    font-size: 1.1rem !important;
 }
 
 /* Sidebar/nav: consistent Britti Sans 14.5px for ALL text elements.
@@ -554,11 +808,11 @@ thead td {
 #sidebar *:not(svg):not(path):not(img):not(code):not(pre),
 #sidebar-content *:not(svg):not(path):not(img):not(code):not(pre),
 #navigation-items *:not(svg):not(path):not(img):not(code):not(pre) {
-  font-family: 'Britti Sans Trial', sans-serif !important;
-  font-size: 14.5px !important;
-  font-weight: 400 !important;
-  letter-spacing: normal !important;
-  line-height: 1.5 !important;
+    font-family: "Britti Sans Trial", sans-serif !important;
+    font-size: 14.5px !important;
+    font-weight: 400 !important;
+    letter-spacing: normal !important;
+    line-height: 1.5 !important;
 }
 
 /* Sidebar group headers: override Mintlify's font-medium (500) */
@@ -567,11 +821,11 @@ thead td {
 #sidebar h5,
 #sidebar button,
 #sidebar a {
-  font-family: 'Britti Sans Trial', sans-serif !important;
-  font-size: 14.5px !important;
-  font-weight: 400 !important;
-  letter-spacing: normal !important;
-  line-height: 1.5 !important;
+    font-family: "Britti Sans Trial", sans-serif !important;
+    font-size: 14.5px !important;
+    font-weight: 400 !important;
+    letter-spacing: normal !important;
+    line-height: 1.5 !important;
 }
 
 /* Sidebar top-level group titles: dark black like headings */
@@ -579,7 +833,7 @@ thead td {
 #sidebar .sidebar-group-header h5,
 #navigation-items .sidebar-group-header,
 #navigation-items .sidebar-group-header h5 {
-  color: #171717 !important;
+    color: #171717 !important;
 }
 
 /* Sidebar child links: grey like body copy meta */
@@ -589,92 +843,241 @@ thead td {
 #navigation-items a:not([href*="sign-up"]),
 #navigation-items button,
 #navigation-items li {
-  color: #737373 !important;
+    color: #737373 !important;
 }
 
-
-
 body {
-  background: white;
-  position: relative;
+    background: white;
+    position: relative;
 }
 
 html.dark body {
-  background: #060606 !important;
+    background: #060606 !important;
 }
 
 main {
-  background: transparent !important;
-  position: relative;
-  z-index: 1;
+    background: transparent !important;
+    position: relative;
+    z-index: 1;
 }
 
 /* Let Mintlify handle default content width/padding for consistency */
 
 .index-hero-row {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 2rem;
-  align-items: flex-start;
-  justify-content: space-between;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 2rem;
+    align-items: flex-start;
+    justify-content: space-between;
 }
 
 .index-hero-left {
-  flex: 1 1 520px;
-  min-width: 480px;
-  max-width: 720px;
-  width: 100%;
+    flex: 1 1 520px;
+    min-width: 480px;
+    max-width: 720px;
+    width: 100%;
 }
 
 .index-hero-right {
-  flex: 1 1 520px;
-  min-width: 480px;
-  max-width: 720px;
-  width: 100%;
-  display: flex;
-  justify-content: flex-end;
+    flex: 1 1 520px;
+    min-width: 480px;
+    max-width: 720px;
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
 }
 
 @media (max-width: 1024px) {
-  .index-hero-row {
-    flex-wrap: wrap;
-  }
-  .index-hero-left,
-  .index-hero-right {
-    min-width: 100%;
-    max-width: 100%;
-    justify-content: flex-start;
-  }
+    .index-hero-row {
+        flex-wrap: wrap;
+    }
+    .index-hero-left,
+    .index-hero-right {
+        min-width: 100%;
+        max-width: 100%;
+        justify-content: flex-start;
+    }
 }
 
 /* Keep hero and other images fluid without forcing overflow */
 .index-page img {
-  max-width: 100% !important;
-  height: auto !important;
+    max-width: 100% !important;
+    height: auto !important;
+}
+
+.index-transition-note {
+    position: relative;
+    overflow: hidden;
+    margin: 1.5rem 0 2rem !important;
+    padding: 1rem 1.125rem 1.125rem;
+    border: 1px solid #d4d4d4;
+    border-radius: 0.125rem;
+    background:
+        radial-gradient(
+            circle at top left,
+            rgba(0, 0, 0, 0.05),
+            transparent 52%
+        ),
+        linear-gradient(180deg, #ffffff 0%, #f5f5f5 100%);
+}
+
+.index-transition-note::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(0, 0, 0, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 0, 0, 0.045) 1px, transparent 1px);
+    background-size: 28px 28px;
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+.index-transition-note > * {
+    position: relative;
+    z-index: 1;
+}
+
+.index-transition-note-label {
+    margin: 0 0 0.5rem !important;
+    font-size: 0.75rem !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase;
+    color: #737373 !important;
+}
+
+.index-transition-note p:last-child {
+    margin: 0 !important;
+    color: #262626 !important;
+}
+
+.index-diagram-frame {
+    position: relative;
+    overflow: hidden;
+    margin-top: 1.5rem;
+    padding: clamp(1rem, 2vw, 1.5rem);
+    border: 1px solid #e5e5e5;
+    border-radius: 0.125rem;
+    background:
+        radial-gradient(
+            circle at top left,
+            rgba(0, 0, 0, 0.06),
+            transparent 32%
+        ),
+        linear-gradient(180deg, #ffffff 0%, #f5f5f5 100%);
+}
+
+.index-diagram-frame::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+    background-size: 24px 24px;
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.index-diagram-kicker {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin-bottom: 1rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #737373;
+}
+
+.index-diagram-kicker::before {
+    content: "";
+    width: 1.75rem;
+    height: 1px;
+    background: currentColor;
+}
+
+.index-diagram-image {
+    position: relative;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: auto;
+    margin: 0 auto;
+}
+
+html.dark .index-transition-note {
+    border-color: #262626;
+    background:
+        radial-gradient(
+            circle at top left,
+            rgba(255, 255, 255, 0.08),
+            transparent 52%
+        ),
+        linear-gradient(180deg, #121212 0%, #080808 100%);
+}
+
+html.dark .index-transition-note::before {
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    opacity: 0.35;
+}
+
+html.dark .index-transition-note-label {
+    color: #a3a3a3 !important;
+}
+
+html.dark .index-transition-note p:last-child {
+    color: #e5e5e5 !important;
+}
+
+html.dark .index-diagram-frame {
+    border-color: #262626;
+    background:
+        radial-gradient(
+            circle at top left,
+            rgba(255, 255, 255, 0.08),
+            transparent 32%
+        ),
+        linear-gradient(180deg, #121212 0%, #050505 100%);
+}
+
+html.dark .index-diagram-frame::before {
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    opacity: 0.45;
+}
+
+html.dark .index-diagram-kicker {
+    color: #a3a3a3;
 }
 
 /* Prevent how_tracer_works image from stretching in lightbox */
 img[src*="how_tracer_works"] {
-  object-fit: contain !important;
-  width: 100% !important;
-  max-width: none !important;
-  height: auto !important;
-  display: block !important;
+    object-fit: contain !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    display: block !important;
 }
 
 /* Prevent hero image from jumping: cap width and height inside its column */
 .index-hero-right img {
-  width: 100% !important;
-  max-width: 640px !important;
-  max-height: 380px !important;
-  aspect-ratio: 16 / 9 !important;
-  object-fit: contain !important;
-  display: block !important;
+    width: 100% !important;
+    max-width: 640px !important;
+    max-height: 380px !important;
+    aspect-ratio: 16 / 9 !important;
+    object-fit: contain !important;
+    display: block !important;
 }
 
 /* Spacing between main content and left sidebar */
 body > div > div {
-  column-gap: 1rem !important;
+    column-gap: 1rem !important;
 }
 
 /* Let Mintlify handle main content spacing */
@@ -682,9 +1085,9 @@ body > div > div {
 /* Hide the fade overlay at the bottom of code blocks */
 [data-fade-overlay],
 [data-fade-overlay="true"] {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
 }
 
 /* Code blocks - Light mode: lighter background for better readability */
@@ -695,18 +1098,18 @@ html:not(.dark) pre,
 html:not(.dark) [data-component-part="code-block-root"],
 html:not(.dark) div[class*="code-block"],
 html:not(.dark) div[class*="codeblock"] {
-  background-color: #f5f5f5 !important;
-  border-radius: 0.125rem !important;
-  border: 1px solid #e0e0e0 !important;
+    background-color: #f5f5f5 !important;
+    border-radius: 0.125rem !important;
+    border: 1px solid #e0e0e0 !important;
 }
 
 html:not(.dark) pre,
 html:not(.dark) div[class*="highlight"] pre,
 html:not(.dark) .highlight pre {
-  padding: 0 !important;
-  border: none !important;
-  border-radius: 0 !important;
-  background-color: transparent !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background-color: transparent !important;
 }
 
 html:not(.dark) pre code,
@@ -714,9 +1117,9 @@ html:not(.dark) div[class*="highlight"] pre code,
 html:not(.dark) .highlight pre code,
 html:not(.dark) code[language],
 html:not(.dark) code[class*="language"] {
-  background-color: transparent !important;
-  padding: 0 !important;
-  border: none !important;
+    background-color: transparent !important;
+    padding: 0 !important;
+    border: none !important;
 }
 
 html:not(.dark) pre code *,
@@ -729,8 +1132,8 @@ html:not(.dark) pre code [class*="token"],
 html:not(.dark) code .line,
 html:not(.dark) code .line span,
 html:not(.dark) code span {
-  background-color: transparent !important;
-  background: none !important;
+    background-color: transparent !important;
+    background: none !important;
 }
 
 /* Code blocks - Dark mode: dark background */
@@ -741,17 +1144,17 @@ html.dark pre,
 html.dark [data-component-part="code-block-root"],
 html.dark div[class*="code-block"],
 html.dark div[class*="codeblock"] {
-  background-color: #1a1a1a !important;
-  border-radius: 0.125rem !important;
-  border: 1px solid #333 !important;
+    background-color: #1a1a1a !important;
+    border-radius: 0.125rem !important;
+    border: 1px solid #333 !important;
 }
 
 html.dark pre,
 html.dark div[class*="highlight"] pre,
 html.dark .highlight pre {
-  padding: 0 !important;
-  border: none !important;
-  border-radius: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
 }
 
 html.dark pre code,
@@ -759,9 +1162,9 @@ html.dark div[class*="highlight"] pre code,
 html.dark .highlight pre code,
 html.dark code[language],
 html.dark code[class*="language"] {
-  background-color: transparent !important;
-  padding: 0 !important;
-  border: none !important;
+    background-color: transparent !important;
+    padding: 0 !important;
+    border: none !important;
 }
 
 html.dark pre code *,
@@ -774,10 +1177,9 @@ html.dark pre code [class*="token"],
 html.dark code .line,
 html.dark code .line span,
 html.dark code span {
-  background-color: transparent !important;
-  background: none !important;
+    background-color: transparent !important;
+    background: none !important;
 }
-
 
 /* Inline code color — overridden by Typography System block above */
 
@@ -786,17 +1188,17 @@ body:not(.dark) pre button svg,
 body:not(.dark) div[class*="highlight"] button svg,
 body:not(.dark) button[class*="copy" i] svg,
 body:not(.dark) button[aria-label*="Copy" i] svg {
-  color: #444444 !important;
-  stroke: #444444 !important;
-  fill: none !important;
-  opacity: 0.7 !important;
+    color: #444444 !important;
+    stroke: #444444 !important;
+    fill: none !important;
+    opacity: 0.7 !important;
 }
 
 body:not(.dark) pre button:hover svg,
 body:not(.dark) div[class*="highlight"] button:hover svg,
 body:not(.dark) button[class*="copy" i]:hover svg,
 body:not(.dark) button[aria-label*="Copy" i]:hover svg {
-  opacity: 1 !important;
+    opacity: 1 !important;
 }
 
 /* Copy button icon - make it light in dark mode since code block background is dark */
@@ -804,41 +1206,44 @@ html.dark pre button svg,
 html.dark div[class*="highlight"] button svg,
 html.dark button[class*="copy" i] svg,
 html.dark button[aria-label*="Copy" i] svg {
-  color: #ffffff !important;
-  stroke: #ffffff !important;
-  fill: none !important;
-  opacity: 0.7 !important;
+    color: #ffffff !important;
+    stroke: #ffffff !important;
+    fill: none !important;
+    opacity: 0.7 !important;
 }
 
 html.dark pre button:hover svg,
 html.dark div[class*="highlight"] button:hover svg,
 html.dark button[class*="copy" i]:hover svg,
 html.dark button[aria-label*="Copy" i]:hover svg {
-  opacity: 1 !important;
+    opacity: 1 !important;
 }
 
 /* Link underlines - make them visible in dark mode (but exclude cards) */
 html.dark a:not([class*="card" i]):not([class*="Card" i]) {
-  text-decoration-color: currentColor !important;
+    text-decoration-color: currentColor !important;
 }
 
 html.dark p a:not([class*="card" i]):not([class*="Card" i]),
 html.dark li a:not([class*="card" i]):not([class*="Card" i]),
 html.dark div a:not([class*="card" i]):not([class*="Card" i]) {
-  border-bottom-color: currentColor !important;
+    border-bottom-color: currentColor !important;
 }
 
 /* Text links - change to neutral on hover */
 a:not([class*="card" i]):not([class*="Card" i]):not([href*="sign-up"]):hover {
-  color: #525252 !important;
-  text-decoration-color: #525252 !important;
-  border-bottom-color: #525252 !important;
+    color: #525252 !important;
+    text-decoration-color: #525252 !important;
+    border-bottom-color: #525252 !important;
 }
 
-html.dark a:not([class*="card" i]):not([class*="Card" i]):not([href*="sign-up"]):hover {
-  color: #a3a3a3 !important;
-  text-decoration-color: #a3a3a3 !important;
-  border-bottom-color: #a3a3a3 !important;
+html.dark
+    a:not([class*="card" i]):not([class*="Card" i]):not(
+        [href*="sign-up"]
+    ):hover {
+    color: #a3a3a3 !important;
+    text-decoration-color: #a3a3a3 !important;
+    border-bottom-color: #a3a3a3 !important;
 }
 
 /* Card hover - change border to neutral and pointer cursor */
@@ -846,8 +1251,8 @@ html.dark a:not([class*="card" i]):not([class*="Card" i]):not([href*="sign-up"])
 [class*="Card" i]:hover,
 a[class*="card" i]:hover,
 a[class*="Card" i]:hover {
-  border-color: #171717 !important;
-  cursor: pointer !important;
+    border-color: #171717 !important;
+    cursor: pointer !important;
 }
 
 /* Card hover - dark mode */
@@ -855,11 +1260,9 @@ html.dark [class*="card" i]:hover,
 html.dark [class*="Card" i]:hover,
 html.dark a[class*="card" i]:hover,
 html.dark a[class*="Card" i]:hover {
-  border-color: #a3a3a3 !important;
-  cursor: pointer !important;
+    border-color: #a3a3a3 !important;
+    cursor: pointer !important;
 }
-
-
 
 /* Scale down the site navbar logo */
 header img,
@@ -868,244 +1271,375 @@ nav img[alt*="tracer" i],
 a[href="/"] img,
 img[src*="tracer-docs-light"],
 img[src*="tracer-docs-dark"] {
-  max-height: 18px !important;
-  height: 18px !important;
-  width: auto !important;
+    max-height: 18px !important;
+    height: 18px !important;
+    width: auto !important;
 }
 
 /* Remove background from logo icons and their containers */
 img[src*="/other_logos/"] {
-  background: transparent !important;
-  background-color: transparent !important;
+    background: transparent !important;
+    background-color: transparent !important;
 }
 
 [class*="icon"] img[src*="/other_logos/"],
 [class*="Icon"] img[src*="/other_logos/"] {
-  background: transparent !important;
-  background-color: transparent !important;
+    background: transparent !important;
+    background-color: transparent !important;
 }
 
 /* Remove background from icon wrapper in Cards */
 html.dark [class*="icon"],
 html.dark [class*="Icon"] {
-  background: transparent !important;
-  background-color: transparent !important;
+    background: transparent !important;
+    background-color: transparent !important;
 }
 
 /* Replace black logos with white logos in dark mode - match CDN URLs */
-html.dark img[src*="AWS-Black.png"] { content: url("/docs/images/other_logos/AWS-White.png") !important; }
-html.dark img[src*="AWS-Batch-Black.png"] { content: url("/docs/images/other_logos/AWS-Batch-White.png") !important; }
-html.dark img[src*="Apple-Black.png"] { content: url("/docs/images/other_logos/Apple-White.png") !important; }
-html.dark img[src*="Bash-Black.png"] { content: url("/docs/images/other_logos/Bash-White.png") !important; }
-html.dark img[src*="Dagster-Black.png"] { content: url("/docs/images/other_logos/Dagster-White.png") !important; }
-html.dark img[src*="Docker-Black.png"] { content: url("/docs/images/other_logos/Docker-White.png") !important; }
-html.dark img[src*="Grafana-Black.png"] { content: url("/docs/images/other_logos/Grafana-White.png") !important; }
-html.dark img[src*="GitHub-Black.png"] { content: url("/docs/images/other_logos/GitHub-White.png") !important; }
-html.dark img[src*="Linux-Black.png"] { content: url("/docs/images/other_logos/Linux-White.png") !important; }
-html.dark img[src*="Nextflow-Black.png"] { content: url("/docs/images/other_logos/Nextflow-White.png") !important; }
-html.dark img[src*="Prefect-Black.png"] { content: url("/docs/images/other_logos/Prefect-White.png") !important; }
-html.dark img[src*="Seqera-Black.png"] { content: url("/docs/images/other_logos/Seqera-White.png") !important; }
-html.dark img[src*="Ubuntu-Black.png"] { content: url("/docs/images/other_logos/Ubuntu-White.png") !important; }
-html.dark img[src*="WLD-Black.png"] { content: url("/docs/images/other_logos/WLD-White.png") !important; }
-html.dark img[src*="Windows-Black.png"] { content: url("/docs/images/other_logos/Windows-White.png") !important; }
-html.dark img[src*="Tracer-Head-Black.png"] { content: url("/docs/images/logo/tracer/Tracer-Head-White.png") !important; }
-html.dark img[src*="Tracer-Full-Body-and-Text-Black.png"] { content: url("/docs/images/logo/tracer/Tracer-Full-Body-and-Text-White.png") !important; }
-html.dark img[src*="eBPF-Black.png"] { content: url("/docs/images/other_logos/eBPF-White.png") !important; }
-html.dark img[src*="Snakemake-Black.png"] { content: url("/docs/images/other_logos/Snakemake-White.png") !important; }
-html.dark img[src*="Slurm-Black.png"] { content: url("/docs/images/other_logos/Slurm-White.png") !important; }
-html.dark img[src*="EC2-Black.png"] { content: url("/docs/images/other_logos/EC2-White.png") !important; }
-html.dark img[src*="Google-Cloud-Dark.png"] { content: url("/docs/images/other_logos/Google-Cloud-White.png") !important; }
+html.dark img[src*="AWS-Black.png"] {
+    content: url("/docs/images/other_logos/AWS-White.png") !important;
+}
+html.dark img[src*="AWS-Batch-Black.png"] {
+    content: url("/docs/images/other_logos/AWS-Batch-White.png") !important;
+}
+html.dark img[src*="Apple-Black.png"] {
+    content: url("/docs/images/other_logos/Apple-White.png") !important;
+}
+html.dark img[src*="Bash-Black.png"] {
+    content: url("/docs/images/other_logos/Bash-White.png") !important;
+}
+html.dark img[src*="Dagster-Black.png"] {
+    content: url("/docs/images/other_logos/Dagster-White.png") !important;
+}
+html.dark img[src*="Docker-Black.png"] {
+    content: url("/docs/images/other_logos/Docker-White.png") !important;
+}
+html.dark img[src*="Grafana-Black.png"] {
+    content: url("/docs/images/other_logos/Grafana-White.png") !important;
+}
+html.dark img[src*="GitHub-Black.png"] {
+    content: url("/docs/images/other_logos/GitHub-White.png") !important;
+}
+html.dark img[src*="Linux-Black.png"] {
+    content: url("/docs/images/other_logos/Linux-White.png") !important;
+}
+html.dark img[src*="Nextflow-Black.png"] {
+    content: url("/docs/images/other_logos/Nextflow-White.png") !important;
+}
+html.dark img[src*="Prefect-Black.png"] {
+    content: url("/docs/images/other_logos/Prefect-White.png") !important;
+}
+html.dark img[src*="Seqera-Black.png"] {
+    content: url("/docs/images/other_logos/Seqera-White.png") !important;
+}
+html.dark img[src*="Ubuntu-Black.png"] {
+    content: url("/docs/images/other_logos/Ubuntu-White.png") !important;
+}
+html.dark img[src*="WLD-Black.png"] {
+    content: url("/docs/images/other_logos/WLD-White.png") !important;
+}
+html.dark img[src*="Windows-Black.png"] {
+    content: url("/docs/images/other_logos/Windows-White.png") !important;
+}
+html.dark img[src*="Tracer-Head-Black.png"] {
+    content: url("/docs/images/logo/tracer/Tracer-Head-White.png") !important;
+}
+html.dark img[src*="Tracer-Full-Body-and-Text-Black.png"] {
+    content: url("/docs/images/logo/tracer/Tracer-Full-Body-and-Text-White.png") !important;
+}
+html.dark img[src*="eBPF-Black.png"] {
+    content: url("/docs/images/other_logos/eBPF-White.png") !important;
+}
+html.dark img[src*="Snakemake-Black.png"] {
+    content: url("/docs/images/other_logos/Snakemake-White.png") !important;
+}
+html.dark img[src*="Slurm-Black.png"] {
+    content: url("/docs/images/other_logos/Slurm-White.png") !important;
+}
+html.dark img[src*="EC2-Black.png"] {
+    content: url("/docs/images/other_logos/EC2-White.png") !important;
+}
+html.dark img[src*="Google-Cloud-Dark.png"] {
+    content: url("/docs/images/other_logos/Google-Cloud-White.png") !important;
+}
 
 /* SVG fill color control for light/dark mode */
 /* For inline SVG in Cards - multiple approaches */
 svg {
-  color: #000000 !important;
+    color: #000000 !important;
 }
 
 svg path[fill="currentColor"],
 svg g[fill="currentColor"] {
-  fill: #000000 !important;
+    fill: #000000 !important;
 }
 
 html.dark svg {
-  color: #FFFFFF !important;
+    color: #ffffff !important;
 }
 
 html.dark svg path[fill="currentColor"],
 html.dark svg g[fill="currentColor"] {
-  fill: #FFFFFF !important;
+    fill: #ffffff !important;
 }
 
-/* Sign up - blue background */
+/* Try Tracer CTA */
 nav a[href*="sign-up"],
 header a[href*="sign-up"],
 #sidebar a[href*="sign-up"],
-#navigation-items a[href*="sign-up"],
-nav a[href*="sign-up"]:link,
-nav a[href*="sign-up"]:visited,
-nav a[href*="sign-up"]:active {
-  padding: 8px 16px !important;
-  background-color: #171717 !important;
-  background: #171717 !important;
-  border-radius: 0.125rem !important;
-  color: #ffffff !important;
-  border: none !important;
+#navigation-items a[href*="sign-up"] {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.45rem !important;
+    box-sizing: border-box !important;
+    text-decoration: none !important;
+    font-weight: 500 !important;
+    line-height: 1.2 !important;
+    border: 1px solid #171717 !important;
+    transition:
+        background-color 0.18s ease,
+        border-color 0.18s ease,
+        color 0.18s ease,
+        box-shadow 0.18s ease,
+        transform 0.18s ease !important;
+}
+
+nav a[href*="sign-up"],
+header a[href*="sign-up"] {
+    padding: 0.625rem 0.95rem !important;
+    border-radius: 0.125rem !important;
+    background: #171717 !important;
+    color: #ffffff !important;
+    box-shadow: 0 1px 2px rgba(23, 23, 23, 0.12) !important;
 }
 
 nav a[href*="sign-up"]::after,
 header a[href*="sign-up"]::after,
-#sidebar a[href*="sign-up"]::after,
-#navigation-items a[href*="sign-up"]::after,
 nav a[href*="sign-up"] svg,
-header a[href*="sign-up"] svg,
-#sidebar a[href*="sign-up"] svg,
-#navigation-items a[href*="sign-up"] svg {
-  color: #ffffff !important;
-  fill: none !important;
-  stroke: #ffffff !important;
+header a[href*="sign-up"] svg {
+    color: #ffffff !important;
+    fill: none !important;
+    stroke: #ffffff !important;
 }
 
-html.dark nav a[href*="sign-up"],
-html.dark header a[href*="sign-up"],
-html.dark #sidebar a[href*="sign-up"],
-html.dark #navigation-items a[href*="sign-up"] {
-  background-color: #FFFFFF !important;
-  background: #FFFFFF !important;
-  color: #171717 !important;
-}
-
-html.dark nav a[href*="sign-up"]::after,
-html.dark header a[href*="sign-up"]::after,
-html.dark #sidebar a[href*="sign-up"]::after,
-html.dark #navigation-items a[href*="sign-up"]::after,
-html.dark nav a[href*="sign-up"] svg,
-html.dark header a[href*="sign-up"] svg,
-html.dark #sidebar a[href*="sign-up"] svg,
-html.dark #navigation-items a[href*="sign-up"] svg {
-  color: #171717 !important;
-  fill: none !important;
-  stroke: #171717 !important;
-}
-
-/* Sign up hover - text color matches page mode */
 nav a[href*="sign-up"]:hover,
 header a[href*="sign-up"]:hover {
-  background-color: transparent !important;
-  background: transparent !important;
-  color: #000000 !important;
-  border: 1px solid #000000 !important;
+    background: #2b2b2b !important;
+    border-color: #2b2b2b !important;
+    color: #ffffff !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 8px 24px rgba(23, 23, 23, 0.12) !important;
 }
 
 nav a[href*="sign-up"]:hover::after,
 header a[href*="sign-up"]:hover::after,
 nav a[href*="sign-up"]:hover svg,
 header a[href*="sign-up"]:hover svg {
-  color: #000000 !important;
-  fill: #000000 !important;
-  stroke: #000000 !important;
+    color: #ffffff !important;
+    fill: none !important;
+    stroke: #ffffff !important;
+}
+
+/* Sidebar/mobile CTA gets a more card-like treatment */
+#sidebar a[href*="sign-up"],
+#navigation-items a[href*="sign-up"] {
+    display: flex !important;
+    width: calc(100% - 1rem) !important;
+    min-height: 36px !important;
+    margin: 0.5rem auto 0 !important;
+    padding: 0.625rem 0.875rem !important;
+    justify-content: center !important;
+    text-align: center !important;
+    border-radius: 0.125rem !important;
+    background: #111111 !important;
+    border-color: #111111 !important;
+    color: #ffffff !important;
+    box-shadow: none !important;
+}
+
+#sidebar a[href*="sign-up"]::after,
+#navigation-items a[href*="sign-up"]::after,
+#sidebar a[href*="sign-up"] svg,
+#navigation-items a[href*="sign-up"] svg {
+    color: #ffffff !important;
+    fill: none !important;
+    stroke: #ffffff !important;
+}
+
+#sidebar a[href*="sign-up"]:hover,
+#navigation-items a[href*="sign-up"]:hover {
+    background: #000000 !important;
+    border-color: #000000 !important;
+    color: #ffffff !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+#sidebar a[href*="sign-up"]:hover::after,
+#navigation-items a[href*="sign-up"]:hover::after,
+#sidebar a[href*="sign-up"]:hover svg,
+#navigation-items a[href*="sign-up"]:hover svg {
+    color: #ffffff !important;
+    fill: none !important;
+    stroke: #ffffff !important;
+}
+
+html.dark nav a[href*="sign-up"],
+html.dark header a[href*="sign-up"] {
+    background: #f5f5f5 !important;
+    border-color: #e5e5e5 !important;
+    color: #171717 !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18) !important;
+}
+
+html.dark nav a[href*="sign-up"]::after,
+html.dark header a[href*="sign-up"]::after,
+html.dark nav a[href*="sign-up"] svg,
+html.dark header a[href*="sign-up"] svg {
+    color: #171717 !important;
+    fill: none !important;
+    stroke: #171717 !important;
 }
 
 html.dark nav a[href*="sign-up"]:hover,
 html.dark header a[href*="sign-up"]:hover {
-  background-color: transparent !important;
-  background: transparent !important;
-  color: #ffffff !important;
-  border: 1px solid #ffffff !important;
+    background: #ffffff !important;
+    border-color: #ffffff !important;
+    color: #171717 !important;
 }
 
 html.dark nav a[href*="sign-up"]:hover::after,
 html.dark header a[href*="sign-up"]:hover::after,
 html.dark nav a[href*="sign-up"]:hover svg,
 html.dark header a[href*="sign-up"]:hover svg {
-  color: #ffffff !important;
-  fill: #ffffff !important;
-  stroke: #ffffff !important;
+    color: #171717 !important;
+    fill: none !important;
+    stroke: #171717 !important;
+}
+
+html.dark #sidebar a[href*="sign-up"],
+html.dark #navigation-items a[href*="sign-up"] {
+    background: #121212 !important;
+    border-color: #2f2f2f !important;
+    color: #f5f5f5 !important;
+    box-shadow: none !important;
+}
+
+html.dark #sidebar a[href*="sign-up"]::after,
+html.dark #navigation-items a[href*="sign-up"]::after,
+html.dark #sidebar a[href*="sign-up"] svg,
+html.dark #navigation-items a[href*="sign-up"] svg {
+    color: #f5f5f5 !important;
+    fill: none !important;
+    stroke: #f5f5f5 !important;
+}
+
+html.dark #sidebar a[href*="sign-up"]:hover,
+html.dark #navigation-items a[href*="sign-up"]:hover {
+    background: #1a1a1a !important;
+    border-color: #4a4a4a !important;
+    color: #ffffff !important;
+    transform: none !important;
+}
+
+html.dark #sidebar a[href*="sign-up"]:hover::after,
+html.dark #navigation-items a[href*="sign-up"]:hover::after,
+html.dark #sidebar a[href*="sign-up"]:hover svg,
+html.dark #navigation-items a[href*="sign-up"]:hover svg {
+    color: #ffffff !important;
+    fill: none !important;
+    stroke: #ffffff !important;
 }
 
 /* Radar Chart Styles */
 .radar-chart-container {
-  max-width: 100%;
-  margin: 2rem auto;
-  padding: 20px 30px;
+    max-width: 100%;
+    margin: 2rem auto;
+    padding: 20px 30px;
 }
 
 .radar-chart-legend {
-  display: flex;
-  justify-content: center;
-  gap: 2rem;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
 }
 
 .radar-legend-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
 }
 
 .radar-legend-color {
-  width: 16px;
-  height: 16px;
-  border-radius: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 2px;
 }
 
 .radar-tooltip {
-  position: absolute;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.125rem;
-  padding: 12px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.2s;
-  max-width: 300px;
-  z-index: 1000;
-  color: #374151;
+    position: absolute;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.125rem;
+    padding: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    max-width: 300px;
+    z-index: 1000;
+    color: #374151;
 }
 
 .radar-tooltip.show {
-  opacity: 1;
+    opacity: 1;
 }
 
 html.dark .radar-tooltip {
-  background: #0a0a0a;
-  border-color: #262626;
-  color: #ffffff;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+    background: #0a0a0a;
+    border-color: #262626;
+    color: #ffffff;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
 }
 
 .tooltip-title {
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-  font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
 }
 
 .tooltip-content {
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  color: #6b7280;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: #6b7280;
 }
 
 html.dark .tooltip-title {
-  color: #ffffff;
+    color: #ffffff;
 }
 
 html.dark .tooltip-content {
-  color: #d1d5db;
+    color: #d1d5db;
 }
 
-.seqera { color: #3b82f6; }
-.tracer { color: #27BF9F; }
+.seqera {
+    color: #3b82f6;
+}
+.tracer {
+    color: #27bf9f;
+}
 
 /* Hide the floating chat assistant input */
 .chat-assistant-floating-input,
 .left-0.right-0.sticky.sm\:px-4.pb-4.sm\:pb-6.bottom-0 {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
 }
 
 /* Feature Cards - Icon separator for all screens */
@@ -1113,94 +1647,69 @@ html.dark .tooltip-content {
 /* Icon section with border separator */
 .index-page [class*="card" i] [class*="icon"],
 .index-page [class*="Card" i] [class*="icon"] {
-  padding-bottom: 1rem !important;
-  margin-bottom: 1rem !important;
-  border-bottom: 1px solid #e5e7eb !important;
+    padding-bottom: 1rem !important;
+    margin-bottom: 1rem !important;
+    border-bottom: 1px solid #e5e7eb !important;
 }
 
 html.dark .index-page [class*="card" i] [class*="icon"],
 html.dark .index-page [class*="Card" i] [class*="icon"] {
-  border-bottom-color: #374151 !important;
+    border-bottom-color: #374151 !important;
 }
 
 /* Desktop-only improvements (1280px and up) */
 @media (min-width: 1280px) {
-  /* Remove the 24px padding from card groups to align with text */
-  .index-page div[class*="card-group"] {
-    padding: 0 !important;
-  }
+    /* Remove the 24px padding from card groups to align with text */
+    .index-page div[class*="card-group"] {
+        padding: 0 !important;
+    }
 
-  /* Section headings */
-  .index-page h3 {
-    font-size: 1.4rem;
-    font-weight: 400;
-    margin-top: 3rem;
-    margin-bottom: 1.25rem;
-    letter-spacing: -0.04em;
-    margin-left: 0 !important;
-    padding-left: 0 !important;
-  }
+    /* Section headings */
+    .index-page h3 {
+        font-size: 1.4rem;
+        font-weight: 400;
+        margin-top: 3rem;
+        margin-bottom: 1.25rem;
+        letter-spacing: -0.04em;
+        margin-left: 0 !important;
+        padding-left: 0 !important;
+    }
 
-  /* Larger card titles */
-  .index-page [class*="card" i] strong,
-  .index-page [class*="Card" i] strong {
-    font-size: 18px !important;
-    font-weight: 400 !important;
-    line-height: 1.4 !important;
-    display: block !important;
-    margin-bottom: 0.75rem !important;
-  }
+    /* Larger card titles */
+    .index-page [class*="card" i] strong,
+    .index-page [class*="Card" i] strong {
+        font-size: 18px !important;
+        font-weight: 400 !important;
+        line-height: 1.4 !important;
+        display: block !important;
+        margin-bottom: 0.75rem !important;
+    }
 
-  /* Card description text — matches meta/labels spec */
-  .index-page [class*="card" i] p,
-  .index-page [class*="Card" i] p {
-    font-size: 15px !important;
-    line-height: 1.625 !important;
-    color: #737373 !important;
-  }
+    /* Card description text — matches meta/labels spec */
+    .index-page [class*="card" i] p,
+    .index-page [class*="Card" i] p {
+        font-size: 15px !important;
+        line-height: 1.625 !important;
+        color: #737373 !important;
+    }
 
-  html.dark .index-page [class*="card" i] p,
-  html.dark .index-page [class*="Card" i] p {
-    color: #737373 !important;
-  }
+    html.dark .index-page [class*="card" i] p,
+    html.dark .index-page [class*="Card" i] p {
+        color: #737373 !important;
+    }
 
-  /* More padding in cards */
-  .index-page [class*="card" i],
-  .index-page [class*="Card" i] {
-    padding: 1.5rem !important;
-  }
+    /* More padding in cards */
+    .index-page [class*="card" i],
+    .index-page [class*="Card" i] {
+        padding: 1.5rem !important;
+    }
 }
 
-
-/* Sign-up button override — must be last to win specificity wars */
-html.dark nav a[href*="sign-up"],
-html.dark nav a[href*="sign-up"] *,
-html.dark header a[href*="sign-up"],
-html.dark header a[href*="sign-up"] *,
-html.dark #sidebar a[href*="sign-up"],
-html.dark #sidebar a[href*="sign-up"] *,
-html.dark #sidebar-content a[href*="sign-up"],
-html.dark #sidebar-content a[href*="sign-up"] *,
-html.dark #navigation-items a[href*="sign-up"],
-html.dark #navigation-items a[href*="sign-up"] * {
-  color: #171717 !important;
-  background-color: #FFFFFF !important;
-  background: #FFFFFF !important;
-}
-
-html.dark nav a[href*="sign-up"] svg,
-html.dark nav a[href*="sign-up"] svg *,
-html.dark header a[href*="sign-up"] svg,
-html.dark header a[href*="sign-up"] svg *,
-html.dark #sidebar a[href*="sign-up"] svg,
-html.dark #sidebar a[href*="sign-up"] svg *,
-html.dark #navigation-items a[href*="sign-up"] svg,
-html.dark #navigation-items a[href*="sign-up"] svg * {
-  color: #171717 !important;
-  fill: none !important;
-  stroke: #171717 !important;
-  background-color: transparent !important;
-  background: transparent !important;
+/* Keep sidebar CTA text/icon colors stable across nested elements */
+#sidebar a[href*="sign-up"] *,
+#navigation-items a[href*="sign-up"] * {
+    color: inherit !important;
+    background: transparent !important;
 }
 
 /* ========================================
@@ -1227,11 +1736,11 @@ aside ul > li::before,
 [class*="TableOfContents"] ul > li::before,
 [class*="on-this-page"] ul > li::before,
 [class*="right-sidebar"] ul > li::before {
-  content: none !important;
-  background-image: none !important;
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
+    content: none !important;
+    background-image: none !important;
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
 }
 
 #sidebar li,
@@ -1254,7 +1763,7 @@ aside ul > li,
 [class*="TableOfContents"] ul > li,
 [class*="on-this-page"] ul > li,
 [class*="right-sidebar"] ul > li {
-  padding-left: 0 !important;
-  position: static !important;
-  list-style: none !important;
+    padding-left: 0 !important;
+    position: static !important;
+    list-style: none !important;
 }

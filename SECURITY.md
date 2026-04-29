@@ -14,7 +14,7 @@ If you believe you’ve found a security vulnerability in Tracer, please report 
 
 **Please do not open a public GitHub issue** for security vulnerabilities.
 
-Email: hello@tracer.cloud
+Email: support@opensre.com
 
 ### What to include
 
@@ -36,4 +36,4 @@ If you need product help or documentation, use:
 
 - Docs: https://opensre.com/docs
 - Book a demo: https://opensre.com
-- Email: hello@tracer.cloud
+- Email: support@opensre.com
