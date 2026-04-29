@@ -41,7 +41,6 @@ def call_db_tool_with_default_db_warning(  # noqa: UP047
         database = default_db_name
 
     # Resolve config using the vendor-specific resolver
-    # Use shallow copy to avoid mutating caller's dict
     kwargs = {**resolver_kwargs, "database": database}
     config = config_resolver(**kwargs)
 

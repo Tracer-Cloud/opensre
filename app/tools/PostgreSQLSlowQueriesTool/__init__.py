@@ -23,7 +23,7 @@ from app.tools.utils.sql_wrapper import call_db_tool_with_default_db_warning
     use_cases=[
         "Identifying slow queries that may be causing performance degradation",
         "Analyzing query execution patterns during incident timeframes",
-        ("Finding poorly optimized queries with high execution times or low cache hit rates"),
+        "Finding poorly optimized queries with high execution times or low cache hit rates",
     ],
     is_available=postgresql_is_available,
     extract_params=postgresql_extract_params,
