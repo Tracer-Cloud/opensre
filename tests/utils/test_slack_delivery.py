@@ -288,3 +288,38 @@ class TestPostDirectExceptionLog:
             slack_delivery._post_direct("hi", "C1", "1.0", "tok")
         joined = " ".join(rec.getMessage() for rec in caplog.records)
         assert "type=Exception" in joined
+
+
+class TestPostViaWebapp:
+    def test_skips_when_tracer_api_url_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("TRACER_API_URL", raising=False)
+        called = {"n": 0}
+        monkeypatch.setattr(
+            "app.utils.slack_delivery.post_json",
+            lambda *_, **__: (
+                called.update(n=called["n"] + 1),
+                DeliveryResponse(ok=True, status_code=200, text=""),
+            )[1],
+        )
+        assert slack_delivery._post_via_webapp("hi", "C1", "1.0") is False
+        assert called["n"] == 0
+
+    def test_success_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("TRACER_API_URL", "https://api.tracer.test")
+        captured: dict[str, Any] = {}
+
+        def _stub(url: str, payload: dict, **kw: Any) -> DeliveryResponse:
+            captured["url"] = url
+            return DeliveryResponse(ok=True, status_code=200, text="")
+
+        monkeypatch.setattr("app.utils.slack_delivery.post_json", _stub)
+        assert slack_delivery._post_via_webapp("hi", "C1", "1.0") is True
+        assert captured["url"] == "https://api.tracer.test/api/slack"
+
+    def test_5xx_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("TRACER_API_URL", "https://api.tracer.test")
+        monkeypatch.setattr(
+            "app.utils.slack_delivery.post_json",
+            lambda *_, **__: DeliveryResponse(ok=True, status_code=500, text="boom"),
+        )
+        assert slack_delivery._post_via_webapp("hi", "C1", "1.0") is False

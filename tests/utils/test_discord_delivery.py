@@ -208,3 +208,18 @@ def test_create_discord_thread_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     ok, error, thread_id = create_discord_thread("chan-1", "msg-1", "My Thread", "bot-token")
     assert ok is False
     assert thread_id == ""
+
+
+def test_send_discord_report_prefers_thread_over_channel(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def _stub(url: str, payload: dict, **kw: Any) -> DeliveryResponse:
+        captured["url"] = url
+        return DeliveryResponse(ok=True, status_code=200, data={"id": "m-1"})
+
+    monkeypatch.setattr("app.utils.discord_delivery.post_json", _stub)
+    send_discord_report(
+        "hi", {"channel_id": "chan-1", "thread_id": "thread-99", "bot_token": "tok"}
+    )
+    assert "thread-99" in captured["url"]
+    assert "chan-1" not in captured["url"]
