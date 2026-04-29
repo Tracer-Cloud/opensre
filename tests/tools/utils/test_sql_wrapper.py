@@ -16,6 +16,10 @@ def _integration_fail(**kwargs) -> dict:
     return {"available": False, "error": "connection refused"}
 
 
+def _integration_positional(*args, **kwargs) -> dict:
+    return {"available": True, "args": list(args), **kwargs}
+
+
 # ── Core wrapper behaviour ────────────────────────────────────────────────────
 
 def test_run_sql_tool_returns_integration_result() -> None:
@@ -30,9 +34,15 @@ def test_run_sql_tool_forwards_kwargs() -> None:
     assert result["port"] == 5432
 
 
+def test_run_sql_tool_forwards_positional_args() -> None:
+    """Positional args must be forwarded to the integration function."""
+    result = run_sql_tool(_integration_positional, "host-arg", 5432)
+    assert result["args"] == ["host-arg", 5432]
+
+
 def test_run_sql_tool_no_warning_by_default() -> None:
     result = run_sql_tool(_integration_ok)
-    assert "warning" not in result
+    assert "default_db_warning" not in result
 
 
 # ── Warning injection ─────────────────────────────────────────────────────────
@@ -42,7 +52,7 @@ def test_run_sql_tool_injects_warning_on_success() -> None:
         _integration_ok,
         warning="Using default database.",
     )
-    assert result["warning"] == "Using default database."
+    assert result["default_db_warning"] == "Using default database."
 
 
 def test_run_sql_tool_does_not_inject_warning_on_failure() -> None:
@@ -51,7 +61,7 @@ def test_run_sql_tool_does_not_inject_warning_on_failure() -> None:
         _integration_fail,
         warning="This should not appear.",
     )
-    assert "warning" not in result
+    assert "default_db_warning" not in result
     assert result["available"] is False
 
 
