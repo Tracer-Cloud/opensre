@@ -150,6 +150,96 @@ class TestSerialisation:
 
 
 # ---------------------------------------------------------------------------
+# Adaptation: expanded()
+# ---------------------------------------------------------------------------
+
+
+class TestExpanded:
+    """``IncidentWindow.expanded()`` — used by the adapt_window node when
+    the deploy timeline came back empty for a shared-window query. The
+    method is deliberately tiny: it widens the lookback, clamps to
+    MAX_LOOKBACK_MINUTES, and preserves every other field. The history of
+    expansions is tracked separately in ``state.incident_window_history``.
+    """
+
+    def _two_hour_window(self) -> IncidentWindow:
+        return IncidentWindow(
+            since=NOW - timedelta(hours=2),
+            until=NOW,
+            source=SOURCE_STARTS_AT,
+            confidence=1.0,
+        )
+
+    def test_doubles_lookback_with_default_factor(self) -> None:
+        original = self._two_hour_window()
+        widened = original.expanded()
+        assert (widened.until - widened.since) == timedelta(hours=4)
+        assert widened.until == original.until  # anchor preserved
+
+    def test_custom_factor_scales_lookback(self) -> None:
+        original = self._two_hour_window()
+        widened = original.expanded(factor=3.0)
+        assert (widened.until - widened.since) == timedelta(hours=6)
+
+    def test_clamps_to_max_lookback_minutes(self) -> None:
+        # Start at 5 days, doubling would be 10 days; cap is 7 days.
+        original = IncidentWindow(
+            since=NOW - timedelta(days=5),
+            until=NOW,
+            source=SOURCE_STARTS_AT,
+            confidence=1.0,
+        )
+        widened = original.expanded(factor=2.0)
+        actual_lookback_min = (widened.until - widened.since).total_seconds() / 60.0
+        assert actual_lookback_min == float(MAX_LOOKBACK_MINUTES)
+
+    def test_already_at_cap_returns_same_width(self) -> None:
+        # When we're already at the cap, expansion is a no-op for width.
+        # The rule layer detects this via a strictly-wider check.
+        original = IncidentWindow(
+            since=NOW - timedelta(minutes=MAX_LOOKBACK_MINUTES),
+            until=NOW,
+            source=SOURCE_STARTS_AT,
+            confidence=1.0,
+        )
+        widened = original.expanded(factor=2.0)
+        assert (widened.until - widened.since) == (original.until - original.since)
+
+    def test_returns_new_instance_not_mutation(self) -> None:
+        # Frozen dataclass; identity must differ even if values match.
+        original = self._two_hour_window()
+        widened = original.expanded(factor=2.0)
+        assert widened is not original
+        assert original.since == NOW - timedelta(hours=2)  # unchanged
+
+    def test_preserves_until_anchor(self) -> None:
+        original = self._two_hour_window()
+        widened = original.expanded(factor=4.0)
+        assert widened.until == original.until
+
+    def test_preserves_source_and_confidence(self) -> None:
+        original = IncidentWindow(
+            since=NOW - timedelta(hours=2),
+            until=NOW,
+            source=SOURCE_FIRED_AT,
+            confidence=1.0,
+        )
+        widened = original.expanded(factor=2.0)
+        assert widened.source == SOURCE_FIRED_AT
+        assert widened.confidence == 1.0
+
+    def test_factor_one_is_rejected(self) -> None:
+        # factor=1.0 is a no-op width but the API contract is "expansion
+        # only" so we reject it explicitly rather than silently no-op.
+        with pytest.raises(ValueError, match="factor > 1.0"):
+            self._two_hour_window().expanded(factor=1.0)
+
+    def test_factor_below_one_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="factor > 1.0"):
+            self._two_hour_window().expanded(factor=0.5)
+
+
+# ---------------------------------------------------------------------------
 # Resolver precedence
 # ---------------------------------------------------------------------------
 
