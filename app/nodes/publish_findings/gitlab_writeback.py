@@ -5,14 +5,16 @@ import os
 
 from app.integrations.gitlab import build_gitlab_config, post_gitlab_mr_note
 from app.state import InvestigationState
+from app.utils.truncation import truncate
 
 logger = logging.getLogger(__name__)
 
 
+_GITLAB_MR_NOTE_LIMIT = 4000
+
+
 def _build_mr_note(report: str) -> str:
-    body = report.strip()
-    if len(body) > 4000:
-        body = body[:3997] + "..."
+    body = truncate(report.strip(), _GITLAB_MR_NOTE_LIMIT)
     return f"### RCA Finding\n\n<details>\n<summary>Investigation summary</summary>\n\n{body}\n\n</details>"
 
 

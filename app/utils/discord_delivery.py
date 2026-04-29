@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from app.utils.delivery_transport import post_json
+from app.utils.truncation import truncate
 
 logger = logging.getLogger(__name__)
 
@@ -80,18 +81,14 @@ _EMBED_TITLE_LIMIT = 256
 _EMBED_DESCRIPTION_LIMIT = 4096
 
 
-def _truncate(text: str, limit: int) -> str:
-    return (text[: limit - 1] + "…") if len(text) > limit else text
-
-
 def send_discord_report(report: str, discord_ctx: dict[str, Any]) -> tuple[bool, str]:
     channel_id: str = str(discord_ctx.get("channel_id") or "")
     thread_id: str = str(discord_ctx.get("thread_id") or "")
     bot_token: str = str(discord_ctx.get("bot_token") or "")
     embed = {
-        "title": _truncate("Investigation Complete", _EMBED_TITLE_LIMIT),
+        "title": truncate("Investigation Complete", _EMBED_TITLE_LIMIT, suffix="…"),
         "color": 15158332,
-        "description": _truncate(report, _EMBED_DESCRIPTION_LIMIT),
+        "description": truncate(report, _EMBED_DESCRIPTION_LIMIT, suffix="…"),
         "footer": {"text": "OpenSRE Investigation"},
     }
     target = thread_id if thread_id else channel_id

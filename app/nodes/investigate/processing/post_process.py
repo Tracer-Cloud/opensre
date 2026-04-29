@@ -397,6 +397,25 @@ def _map_git_deploy_timeline(data: dict) -> dict:
     }
 
 
+def _map_argocd_application_status(data: dict) -> dict:
+    applications = data.get("applications", [])
+    if not isinstance(applications, list):
+        applications = []
+    return {
+        "argocd_application": data.get("application", {}) or {},
+        "argocd_applications": applications,
+        "argocd_applications_total": data.get("total", len(applications)) or 0,
+        "argocd_revision_history": data.get("recent_history", []) or [],
+    }
+
+
+def _map_argocd_application_diff(data: dict) -> dict:
+    return {
+        "argocd_drift_detected": bool(data.get("drift_detected", False)),
+        "argocd_diff": data.get("diffs", []) or [],
+    }
+
+
 def _map_alertmanager_alerts(data: dict) -> dict:
     return {
         "alertmanager_alerts": data.get("alerts") or [],
@@ -497,6 +516,8 @@ EVIDENCE_MAPPERS: dict[str, Callable[[dict], dict]] = {
     "get_github_file_contents": _map_github_file_contents,
     "list_github_commits": _map_github_commits,
     "get_git_deploy_timeline": _map_git_deploy_timeline,
+    "argocd_application_status": _map_argocd_application_status,
+    "argocd_application_diff": _map_argocd_application_diff,
     "alertmanager_alerts": _map_alertmanager_alerts,
     "alertmanager_silences": _map_alertmanager_silences,
     "list_eks_pods": _map_eks_pods,
@@ -703,6 +724,24 @@ def build_evidence_summary(execution_results: dict[str, ActionExecutionResult]) 
                 count = data.get("commits_count") or len(data.get("commits") or [])
                 if count:
                     summary_parts.append(f"github:{count} commits in deploy window")
+            elif action_name == "argocd_application_status":
+                applications = data.get("applications")
+                if isinstance(applications, list) and not data.get("application"):
+                    total = int(data.get("total", len(applications)) or 0)
+                    summary_parts.append(f"argocd:{total} applications")
+                    continue
+                app = (
+                    data.get("application", {})
+                    if isinstance(data.get("application", {}), dict)
+                    else {}
+                )
+                app_name = str(app.get("name", "")).strip() or "?"
+                sync_status = str(app.get("sync_status", "")).strip() or "unknown"
+                summary_parts.append(f"argocd:{app_name} status {sync_status}")
+            elif action_name == "argocd_application_diff":
+                app_name = str(data.get("application_name", "")).strip() or "?"
+                drift = str(bool(data.get("drift_detected", False))).lower()
+                summary_parts.append(f"argocd:{app_name} drift {drift}")
             elif action_name == "alertmanager_alerts":
                 firing_count = len(data.get("firing_alerts") or [])
                 total = data.get("total", 0)
