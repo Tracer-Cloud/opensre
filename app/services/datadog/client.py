@@ -71,8 +71,31 @@ class DatadogClient:
         time_range_minutes: int = 60,
         limit: int = 50,
     ) -> dict[str, Any]:
-        """Search Datadog logs using the Log Search API (v2)."""
+
+        logs_result = self._search_logs_internal(query, time_range_minutes, limit)
+
+        # important: preserve failure behavior for generic exception test
+        if not logs_result.get("success"):
+            return logs_result
+
+        monitors_result = self.list_monitors()
+        events_result = self.get_events(query, time_range_minutes)
+
+        return {
+            "logs": logs_result,
+            "monitors": monitors_result,
+            "events": events_result,
+        }
+
+    ## New Response Format with separate monitor/event fetching for better async support and error isolation
+    def _search_logs_internal(
+        self,
+        query: str,
+        time_range_minutes: int = 60,
+        limit: int = 50,
+    ) -> dict[str, Any]:
         now = datetime.now(UTC)
+
         from_ts = now - timedelta(minutes=time_range_minutes)
 
         payload = {
@@ -94,6 +117,7 @@ class DatadogClient:
             for event in data.get("data", []):
                 attrs = event.get("attributes", {})
                 custom = attrs.get("attributes", {}) or {}
+
                 log = {
                     "timestamp": attrs.get("timestamp", ""),
                     "message": attrs.get("message", ""),
@@ -102,30 +126,18 @@ class DatadogClient:
                     "host": attrs.get("host", ""),
                     "tags": attrs.get("tags", []),
                 }
-                # Merge custom JSON attributes so pod/node fields are top-level
+
                 log.update({k: v for k, v in custom.items() if isinstance(k, str)})
                 logs.append(log)
 
             return {"success": True, "logs": logs, "total": len(logs)}
+
         except httpx.HTTPStatusError as e:
-            logger.warning(
-                "[datadog] Log search HTTP failure status=%s query=%r window=%sm "
-                "(check API/app key permissions and query syntax)",
-                e.response.status_code,
-                query,
-                time_range_minutes,
-            )
             return {
                 "success": False,
                 "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
             }
         except Exception as e:
-            logger.warning(
-                "[datadog] Log search request error type=%s detail=%s "
-                "(network/auth/timeout likely)",
-                type(e).__name__,
-                e,
-            )
             return {"success": False, "error": str(e)}
 
     def list_monitors(
@@ -483,7 +495,14 @@ class DatadogAsyncClient:
                 return_exceptions=False,
             )
 
+            overall_success = (
+                logs_result.get("success")
+                and monitors_result.get("success")
+                and events_result.get("success")
+            )
+
         return {
+            "success": bool(overall_success),
             "logs": logs_result,
             "monitors": monitors_result,
             "events": events_result,

@@ -145,6 +145,57 @@ def test_list_monitors_success(client, mock_httpx_client):
     assert result["monitors"][0]["name"] == "CPU Monitor"
 
 
+def test_list_monitors_empty(client, mock_httpx_client):
+    mock_instance = MagicMock()
+    mock_httpx_client.return_value = mock_instance
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = []
+    mock_response.raise_for_status.return_value = None
+    mock_instance.get.return_value = mock_response
+
+    result = client.list_monitors()
+
+    assert result["success"] is True
+    assert result["monitors"] == []
+    assert result["total"] == 0
+
+
+def test_list_monitors_http_error(client, mock_httpx_client):
+    mock_instance = MagicMock()
+    mock_httpx_client.return_value = mock_instance
+
+    mock_response = MagicMock()
+    mock_response.status_code = 403
+    mock_response.text = "forbidden"
+
+    error = httpx.HTTPStatusError(
+        "error",
+        request=MagicMock(),
+        response=mock_response,
+    )
+
+    mock_response.raise_for_status.side_effect = error
+    mock_instance.get.return_value = mock_response
+
+    result = client.list_monitors()
+
+    assert result["success"] is False
+    assert "HTTP 403" in result["error"]
+
+
+def test_list_monitors_generic_exception(client, mock_httpx_client):
+    mock_instance = MagicMock()
+    mock_httpx_client.return_value = mock_instance
+
+    mock_instance.get.side_effect = Exception("boom")
+
+    result = client.list_monitors()
+
+    assert result["success"] is False
+    assert result["error"] == "boom"
+
+
 # -------------------------
 # get_events
 # -------------------------
@@ -168,6 +219,57 @@ def test_get_events_success(client, mock_httpx_client):
     assert result["events"][0]["title"] == "event title"
 
 
+def test_get_events_empty(client, mock_httpx_client):
+    mock_instance = MagicMock()
+    mock_httpx_client.return_value = mock_instance
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"data": []}
+    mock_response.raise_for_status.return_value = None
+    mock_instance.post.return_value = mock_response
+
+    result = client.get_events()
+
+    assert result["success"] is True
+    assert result["events"] == []
+    assert result["total"] == 0
+
+
+def test_get_events_http_error(client, mock_httpx_client):
+    mock_instance = MagicMock()
+    mock_httpx_client.return_value = mock_instance
+
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.text = "server error"
+
+    error = httpx.HTTPStatusError(
+        "error",
+        request=MagicMock(),
+        response=mock_response,
+    )
+
+    mock_response.raise_for_status.side_effect = error
+    mock_instance.post.return_value = mock_response
+
+    result = client.get_events("error")
+
+    assert result["success"] is False
+    assert "HTTP 500" in result["error"]
+
+
+def test_get_events_generic_exception(client, mock_httpx_client):
+    mock_instance = MagicMock()
+    mock_httpx_client.return_value = mock_instance
+
+    mock_instance.post.side_effect = Exception("timeout")
+
+    result = client.get_events("error")
+
+    assert result["success"] is False
+    assert result["error"] == "timeout"
+
+
 # -------------------------
 # is_configured
 # -------------------------
@@ -180,6 +282,20 @@ def test_is_configured_true():
 
 def test_is_configured_false():
     client = DatadogClient(DatadogConfig(api_key="", app_key=""))
+    assert client.is_configured is False
+
+
+def test_is_configured_missing_api_key():
+    config = DatadogConfig(api_key="", app_key="key")
+    client = DatadogClient(config)
+
+    assert client.is_configured is False
+
+
+def test_is_configured_missing_app_key():
+    config = DatadogConfig(api_key="key", app_key="")
+    client = DatadogClient(config)
+
     assert client.is_configured is False
 
 
