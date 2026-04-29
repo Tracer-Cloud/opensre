@@ -12,6 +12,7 @@ The package is split into two modules:
   state-delta to LangGraph's reducer.
 """
 
+from app.nodes.adapt_window.node import node_adapt_window
 from app.nodes.adapt_window.rules import adapt_incident_window
 
-__all__ = ["adapt_incident_window"]
+__all__ = ["adapt_incident_window", "node_adapt_window"]
