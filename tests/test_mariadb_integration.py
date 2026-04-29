@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.integrations.mariadb import (
-    DEFAULT_MARIADB_PORT,
     _QUERY_TRUNCATE_LEN,
+    DEFAULT_MARIADB_PORT,
     MariaDBConfig,
     build_mariadb_config,
     get_global_status,
