@@ -41,6 +41,84 @@ templates: list[str] = [
         f"⚡ **LGTM → Merged.** @{contributor}, your work is in. "
         "Every commit counts — thank you for this one."
     ),
+    # new additions
+    (
+        f"😤 **@{contributor} said \"I will fix this\" and then actually fixed it.** "
+        "Not many people do that. You did. Hall of fame behavior."
+    ),
+    (
+        f"🍕 **Hot take:** great PRs and great pizza have the same energy — "
+        f"crispy edges, no unnecessary toppings, delivered on time. "
+        f"@{contributor} understood the assignment. 🔥"
+    ),
+    (
+        f"🌊 **The PR was opened. The review happened. The merge commit exists.** "
+        f"@{contributor} — you are now permanently woven into git history. "
+        "No take-backs. No refunds. We love you. 😄"
+    ),
+    (
+        f"🤖 **CI ran. Tests passed. Linter didn't scream. Reviewer typed LGTM.** "
+        f"@{contributor}, every machine in this pipeline just gave you a standing ovation. 🖥️✨"
+    ),
+    (
+        f"🧠 **@{contributor} opened a PR.** "
+        "Maintainers feared them. Linters respected them. CI genuflected. "
+        "It merged. This is not a drill. 🚨"
+    ),
+    (
+        f"😭 **Clear commit message. Green tests. Kind review.** "
+        f"@{contributor}, stop making the rest of us look bad. "
+        "We're begging. This is too perfect."
+    ),
+    (
+        f"🐸 **Rebase? Handled. Conflicts? Squashed. CI? Fully vibing.** "
+        f"@{contributor} touched the untouchable and lived. "
+        "Main branch bows in respect. 🫡"
+    ),
+    (
+        f"🏆 **@{contributor} did not come to play.** "
+        "Came to open a PR, survive the review gauntlet, and merge clean. "
+        "Textbook execution. Retire the jersey. 🎽"
+    ),
+    (
+        f"🎲 **Researchers are baffled.** A PR appeared, got reviewed without drama, "
+        f"and merged with zero incidents. @{contributor} has broken the known laws of open source. "
+        "Send help. 🔬"
+    ),
+    (
+        f"🌮 **@{contributor}'s PR:** showed up unannounced, immediately improved everything, "
+        "left zero bugs, and asked for nothing in return. "
+        "Just like a perfect taco. 🌮🌮🌮"
+    ),
+    (
+        f"🐉 **Legend says** each merged PR brings you one step closer to ascending. "
+        f"@{contributor} is getting dangerously close to the final form. "
+        "We'll miss them when they're gone. 🌤️"
+    ),
+    (
+        f"🛸 **Aliens monitoring our repo** just saw @{contributor}'s PR merge clean "
+        "and updated their threat assessment to: "
+        "*do not engage — this civilization has too many good contributors*. 👽"
+    ),
+    (
+        f"🎻 **A poet once wrote:** \"The diff was clean, the tests did pass, "
+        f"the reviewer wept.\" "
+        f"That poem was about @{contributor}'s PR. It was always about this PR. 🥹"
+    ),
+    (
+        f"🍵 **@{contributor} made tea. Opened a PR. Merged before the tea cooled.** "
+        "This is what elite performance looks like. No notes. Literally no notes. ☕"
+    ),
+    (
+        f"🏄 **Some PRs get stuck in review purgatory for six weeks.** "
+        f"@{contributor}'s PR looked at the queue, said \"not today\", "
+        "and merged like it owned the place. 🌊"
+    ),
+    (
+        f"💼 **Interviewer:** describe a time you shipped something with real impact.\n\n"
+        f"**@{contributor}:** *silently points at this PR*\n\n"
+        "**Interviewer:** ...you're hired. Start Monday. 🤝"
+    )
 ]
 
 # GIFs are repo-hosted under .github/assets/celebrations/ so GitHub's own CDN serves them.
