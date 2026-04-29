@@ -144,11 +144,24 @@ class DatadogClient:
             return {"success": True, "logs": logs, "total": len(logs)}
 
         except httpx.HTTPStatusError as e:
+            logger.warning(
+                "[datadog] Log search HTTP failure status=%s query=%r window=%sm "
+                "(check API/app key permissions and query syntax)",
+                e.response.status_code,
+                query,
+                time_range_minutes,
+            )
             return {
                 "success": False,
                 "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
             }
         except Exception as e:
+            logger.warning(
+                "[datadog] Log search request error type=%s detail=%s "
+                "(network/auth/timeout likely)",
+                type(e).__name__,
+                e,
+            )
             return {"success": False, "error": str(e)}
 
     def list_monitors(
