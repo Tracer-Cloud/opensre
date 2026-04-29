@@ -4,5 +4,6 @@
 def truncate(text: str, limit: int, suffix: str = "...") -> str:
     if len(text) <= limit:
         return text
-    cut = max(0, limit - len(suffix))
-    return text[:cut] + suffix
+    if limit <= len(suffix):
+        return suffix[:limit]
+    return text[: limit - len(suffix)] + suffix
