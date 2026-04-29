@@ -67,7 +67,7 @@
               "prefect",
               "google-docs",
               "discord",
-              "integrations/airflow_integration"
+              "airflow"
             ]
           }
         ]
