@@ -4,12 +4,12 @@ import botocore.exceptions
 
 import sys
 import os
-
-sys.path.append(os.path.abspath("app/services"))
-
-from aws_sdk_client import (
+from app.services.aws_sdk_client import (
     _is_operation_allowed,
     _sanitize_response,
+    execute_aws_sdk_call,
+    MAX_LIST_ITEMS,
+)
     execute_aws_sdk_call,
     MAX_LIST_ITEMS,
 )
