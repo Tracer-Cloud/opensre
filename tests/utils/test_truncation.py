@@ -17,7 +17,7 @@ from app.utils.truncation import truncate
     ],
 )
 def test_truncate(text: str, limit: int, ellipsis: str, expected: str) -> None:
-    assert truncate(text, limit, ellipsis=ellipsis) == expected
+    assert truncate(text, limit, suffix=ellipsis) == expected
 
 
 def test_truncate_default_ellipsis() -> None:
@@ -27,7 +27,7 @@ def test_truncate_default_ellipsis() -> None:
 
 
 def test_truncate_unicode_ellipsis() -> None:
-    result = truncate("hello world", 8, ellipsis="…")
+    result = truncate("hello world", 8, suffix="…")
     assert result.endswith("…")
     assert len(result) == 8
 

@@ -100,7 +100,7 @@ def send_telegram_report(report: str, telegram_ctx: dict[str, Any]) -> tuple[boo
     if not bot_token or not chat_id:
         return False, "Missing bot_token or chat_id"
     reply_to_message_id: str = str(telegram_ctx.get("reply_to_message_id") or "")
-    text = truncate(report, _MESSAGE_LIMIT, ellipsis="…")
+    text = truncate(report, _MESSAGE_LIMIT, suffix="…")
     post_success, error, _ = post_telegram_message(
         chat_id, text, bot_token, reply_to_message_id=reply_to_message_id
     )
