@@ -5,6 +5,7 @@ See: https://github.com/Tracer-Cloud/opensre/issues/895
 
 from __future__ import annotations
 
+import pytest
 from unittest.mock import MagicMock
 
 from app.tools._eks_helpers import extract_eks_workload_params
@@ -26,7 +27,7 @@ def test_extract_eks_workload_params_defaults() -> None:
     assert params["cluster_name"] == "my-cluster"
     assert params["namespace"] == "all"
     assert params["eks_backend"] is None
-    # Credential fields delegated to _eks_creds must be present
+    # Credential fields delegated to eks_creds must be present
     assert params["role_arn"] == "arn:aws:iam::123:role/r"
     assert params["external_id"] == ""
     assert params["region"] == "us-east-1"
@@ -67,3 +68,10 @@ def test_extract_eks_workload_params_with_external_id() -> None:
     sources = _make_sources(external_id="my-ext-id-123")
     params = extract_eks_workload_params(sources)
     assert params["external_id"] == "my-ext-id-123"
+
+
+def test_extract_eks_workload_params_missing_eks_key_raises_clear_error() -> None:
+    """sources without 'eks' must raise KeyError with a descriptive message."""
+    sources: dict = {}
+    with pytest.raises(KeyError, match="'eks' key missing from sources dict"):
+        extract_eks_workload_params(sources)
