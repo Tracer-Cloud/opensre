@@ -9,7 +9,7 @@ from app.integrations.mysql import (
     resolve_mysql_config,
 )
 from app.tools.tool_decorator import tool
-from app.tools.utils.db_warnings import default_db_warning
+from app.tools.utils.sql_wrapper import call_db_tool_with_default_db_warning
 
 
 @tool(
@@ -32,11 +32,12 @@ def get_mysql_current_processes(
     port: int = 3306,
 ) -> dict[str, Any]:
     """Fetch active processes running longer than threshold_seconds (default 1s)."""
-    _db_defaulted = database is None
-    if database is None:
-        database = "mysql"
-    config = resolve_mysql_config(host=host, database=database, port=port)
-    result = get_current_processes(config, threshold_seconds=threshold_seconds)
-    if _db_defaulted:
-        result["default_db_warning"] = default_db_warning("mysql")
-    return result
+    return call_db_tool_with_default_db_warning(
+        database=database,
+        default_db_name="mysql",
+        config_resolver=resolve_mysql_config,
+        resolver_kwargs={"host": host, "port": port},
+        db_caller=lambda config: get_current_processes(
+            config, threshold_seconds=threshold_seconds
+        ),
+    )

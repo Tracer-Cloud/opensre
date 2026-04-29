@@ -9,7 +9,7 @@ from app.integrations.azure_sql import (
     resolve_azure_sql_config,
 )
 from app.tools.tool_decorator import tool
-from app.tools.utils.db_warnings import default_db_warning
+from app.tools.utils.sql_wrapper import call_db_tool_with_default_db_warning
 
 
 @tool(
@@ -32,11 +32,12 @@ def get_azure_sql_current_queries(
     threshold_seconds: int = 1,
 ) -> dict[str, Any]:
     """Fetch currently running queries from an Azure SQL Database instance."""
-    _db_defaulted = database is None
-    if database is None:
-        database = "master"
-    config = resolve_azure_sql_config(server=server, database=database, port=port)
-    result = get_current_queries(config, threshold_seconds=threshold_seconds)
-    if _db_defaulted:
-        result["default_db_warning"] = default_db_warning("master")
-    return result
+    return call_db_tool_with_default_db_warning(
+        database=database,
+        default_db_name="master",
+        config_resolver=resolve_azure_sql_config,
+        resolver_kwargs={"server": server, "port": port},
+        db_caller=lambda config: get_current_queries(
+            config, threshold_seconds=threshold_seconds
+        ),
+    )
