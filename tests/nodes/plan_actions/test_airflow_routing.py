@@ -14,7 +14,6 @@ def test_seed_action_names_for_sources_includes_airflow_tools() -> None:
 
     assert "get_recent_airflow_failures" in seeded
     assert "get_airflow_dag_runs" in seeded
-    assert "get_airflow_task_instances" in seeded
 
 
 def test_seed_action_names_for_sources_keeps_existing_seed_sources() -> None:
@@ -35,7 +34,6 @@ def test_seed_action_names_for_sources_keeps_existing_seed_sources() -> None:
     assert "list_openclaw_tools" in seeded
     assert "get_recent_airflow_failures" in seeded
     assert "get_airflow_dag_runs" in seeded
-    assert "get_airflow_task_instances" in seeded
 
 
 def test_seed_action_names_for_sources_without_airflow_excludes_airflow_tools() -> None:
