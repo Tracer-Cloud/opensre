@@ -217,12 +217,12 @@
   },
   "footer": {
     "socials": {
-      "website": "https://tracer.cloud",
-      "github": "https://github.com/Tracer-Cloud",
-      "linkedin": "https://linkedin.com/company/tracercloud",
+      "website": "https://opensre.com",
+      "github": "https://github.com/Tracer-Cloud/opensre",
+      "linkedin": "https://www.linkedin.com/company/opensre/",
       "slack": "https://join.slack.com/t/tracer-cloud/shared_invite/zt-3ifakcs2e-igoUEH8ygMlfxgJGLxsqeA"
     },
-    "copyright": "\u00a9 2025 Tracer Cloud. All rights reserved."
+    "copyright": "© 2025 Tracer Cloud. All rights reserved."
   },
   "integrations": {
     "posthog": {
