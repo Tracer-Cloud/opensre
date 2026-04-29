@@ -288,10 +288,7 @@ def test_resolve_tool_display_name_falls_back_for_unknown_tools() -> None:
 def test_resolve_tool_display_name_preserves_legacy_aliases() -> None:
     assert registry_module.resolve_tool_display_name("query_kubernetes_logs") == "Kubernetes logs"
     assert registry_module.resolve_tool_display_name("query_elasticsearch") == "Elasticsearch"
-    assert (
-        registry_module.resolve_tool_display_name("get_deployment_status")
-        == "deployment status"
-    )
+    assert registry_module.resolve_tool_display_name("get_deployment_status") == "deployment status"
 
 
 def test_real_registry_discovers_migrated_sre_guidance_tool() -> None:
