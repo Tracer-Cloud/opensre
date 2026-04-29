@@ -120,9 +120,6 @@ def test_wrapper_handles_empty_string_database() -> None:
         resolver_kwargs={"host": "localhost"},
         db_caller=fake_db_caller,
     )
-    # Empty string is falsy but was explicitly provided, so no warning
-    # Actually, the wrapper treats None as "not provided", so "" would trigger warning
-    # Let me verify the actual behavior: the condition is "if database is None"
-    # So "" is NOT None and should not trigger warning
+    # Empty string is explicitly provided (not None), so no default warning is injected.
     assert "default_db_warning" not in result
     assert result["database"] == ""

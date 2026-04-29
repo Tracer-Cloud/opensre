@@ -39,11 +39,10 @@ def call_db_tool_with_default_db_warning(
     if database is None:
         database = default_db_name
 
-    # Update resolver kwargs with the resolved database
-    resolver_kwargs["database"] = database
-
     # Resolve config using the vendor-specific resolver
-    config = config_resolver(**resolver_kwargs)
+    # Use shallow copy to avoid mutating caller's dict
+    kwargs = {**resolver_kwargs, "database": database}
+    config = config_resolver(**kwargs)
 
     # Call the vendor-specific query/process function
     result = db_caller(config)
