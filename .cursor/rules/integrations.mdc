@@ -14,6 +14,7 @@ app/services/
 ├── datadog/
 ├── s3_client.py      # Single-file clients
 └── vercel/
+
 app/integrations/
 ├── clients/
 │   └── prefect/      # Legacy location — new clients go in app/services/
