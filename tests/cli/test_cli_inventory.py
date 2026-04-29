@@ -224,5 +224,5 @@ def test_run_catalog_items_skips_non_runnable_and_prints_message(
 
     assert exit_code == 0
     captured = capsys.readouterr()
-    assert "suite:empty" in captured.out
-    assert "Skipping" in captured.out
+    assert "suite:empty" in captured.err
+    assert "Skipping" in captured.err

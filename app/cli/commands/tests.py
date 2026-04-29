@@ -80,8 +80,8 @@ def tests(ctx: click.Context) -> None:
     from app.cli.tests.discover import load_test_catalog
     from app.cli.tests.interactive import run_interactive_picker
 
-    capture_tests_picker_opened()
     try:
+        capture_tests_picker_opened()
         raise SystemExit(run_interactive_picker(load_test_catalog()))
     except RuntimeError as exc:
         raise OpenSREError(
