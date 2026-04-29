@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest.mock
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -238,7 +239,7 @@ def test_run_catalog_items_skips_non_runnable_and_prints_message(
 # ---------------------------------------------------------------------------
 
 
-def test_tests_synthetic_clean_error_when_data_dir_missing(tmp_path: object) -> None:
+def test_tests_synthetic_clean_error_when_data_dir_missing(tmp_path: Path) -> None:
     """Real bundled-binary failure mode (per live PyInstaller verification):
     the ``tests.synthetic.rds_postgres`` Python package is bundled
     transitively but the per-scenario data directories are absent. Pre-check
@@ -262,7 +263,7 @@ def test_tests_synthetic_clean_error_when_data_dir_missing(tmp_path: object) -> 
     assert "Traceback" not in output
 
 
-def test_tests_synthetic_clean_error_when_module_not_bundled(tmp_path) -> None:
+def test_tests_synthetic_clean_error_when_module_not_bundled(tmp_path: Path) -> None:
     """Adjacent failure mode: the synthetic Python package is missing
     entirely. The narrowed ``ModuleNotFoundError`` catch must convert it
     into the same structured error."""
@@ -292,7 +293,7 @@ def test_tests_synthetic_clean_error_when_module_not_bundled(tmp_path) -> None:
     assert "Traceback" not in output
 
 
-def test_tests_synthetic_unrelated_module_not_found_propagates(tmp_path) -> None:
+def test_tests_synthetic_unrelated_module_not_found_propagates(tmp_path: Path) -> None:
     """Narrow-catch contract: if the synthetic suite *is* available but a
     transitive dep (e.g. ``psycopg``) is missing, the user must see the
     real cause — not a misleading "not bundled" message."""
