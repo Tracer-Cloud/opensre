@@ -300,6 +300,8 @@ def _discover_rds_synthetic_scenarios() -> list[TestCatalogItem]:
     """One catalog item per RDS synthetic scenario directory."""
     scenarios_dir = REPO_ROOT / "tests" / "synthetic" / "rds_postgres"
     items: list[TestCatalogItem] = []
+    if not scenarios_dir.is_dir():
+        return items
     req = TestRequirement(env_vars=("ANTHROPIC_API_KEY",))
     for scenario_dir in sorted(scenarios_dir.iterdir()):
         if not scenario_dir.is_dir() or scenario_dir.name.startswith("_"):
