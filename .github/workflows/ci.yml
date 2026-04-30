@@ -15,7 +15,13 @@ on:
 
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "pytest.ini"
+      - "Makefile"
+      - ".github/workflows/ci.yml"
 
 permissions:
   contents: read
@@ -25,38 +31,20 @@ concurrency:
   cancel-in-progress: true
 
 # ---------------------------------------------------------------
-# MATRIX: Ubuntu only by default (push and PR). Windows runs only when a PR has
-# label `ci:windows`; add/remove that label (pull_request labeled/unlabeled) to re-run CI.
-# Kubernetes local tests: push to main, PR title contains k8s/kubernetes, or label `ci:k8s`.
+# MATRIX: Ubuntu-only default matrix for push and pull_request in this workflow.
+# Optional label-driven checks (windows + ci:k8s) run in `.github/workflows/ci-labels.yml`.
+# Kubernetes local tests here run on push to main or PR titles containing k8s/kubernetes.
 # ---------------------------------------------------------------
 jobs:
-  matrix-prep:
-    runs-on: ubuntu-latest
-    outputs:
-      os_json: ${{ steps.set.outputs.os_json }}
-    steps:
-      - id: set
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            labels="${{ join(github.event.pull_request.labels.*.name, ',') }}"
-            case ",${labels}," in
-              *,ci:windows,*) echo 'os_json=["ubuntu-latest","windows-latest"]' >> "$GITHUB_OUTPUT" ;;
-              *) echo 'os_json=["ubuntu-latest"]' >> "$GITHUB_OUTPUT" ;;
-            esac
-          else
-            echo 'os_json=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
-          fi
-
 # ---------------------------------------------------------------
 # QUALITY CHECKS (lint + format)
 # ---------------------------------------------------------------
   quality:
     name: quality (${{ matrix.os }})
-    needs: [matrix-prep]
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(needs.matrix-prep.outputs.os_json) }}
+        os: [ubuntu-latest]
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -90,11 +78,10 @@ jobs:
 # ---------------------------------------------------------------
   typecheck:
     name: typecheck (${{ matrix.os }})
-    needs: [matrix-prep]
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(needs.matrix-prep.outputs.os_json) }}
+        os: [ubuntu-latest]
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -125,12 +112,12 @@ jobs:
 # ---------------------------------------------------------------
   test:
     name: test (${{ matrix.os }})
-    needs: [matrix-prep, quality, typecheck]
+    needs: [quality, typecheck]
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(needs.matrix-prep.outputs.os_json) }}
+        os: [ubuntu-latest]
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
@@ -215,8 +202,7 @@ jobs:
         github.event_name == 'pull_request' &&
         (
           contains(github.event.pull_request.title, 'k8s') ||
-          contains(github.event.pull_request.title, 'kubernetes') ||
-          contains(github.event.pull_request.labels.*.name, 'ci:k8s')
+          contains(github.event.pull_request.title, 'kubernetes')
         )
       )
 
