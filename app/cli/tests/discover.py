@@ -11,6 +11,7 @@ from app.cli.tests.catalog import TestCatalog, TestCatalogItem, TestRequirement
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MAKEFILE_PATH = REPO_ROOT / "Makefile"
 RCA_DIR = REPO_ROOT / "tests" / "e2e" / "rca"
+SYNTHETIC_SCENARIOS_DIR = REPO_ROOT / "tests" / "synthetic" / "rds_postgres"
 
 _TARGETS_TO_INDEX = (
     "test",
@@ -317,12 +318,11 @@ def _discover_rds_synthetic_scenarios() -> list[TestCatalogItem]:
     Skip cleanly in that case — the synthetic-suite catalog entries are
     only meaningful when the scenarios are on disk anyway.
     """
-    scenarios_dir = REPO_ROOT / "tests" / "synthetic" / "rds_postgres"
     items: list[TestCatalogItem] = []
-    if not scenarios_dir.is_dir():
+    if not SYNTHETIC_SCENARIOS_DIR.is_dir():
         return items
     req = TestRequirement(env_vars=("ANTHROPIC_API_KEY",))
-    for scenario_dir in sorted(scenarios_dir.iterdir()):
+    for scenario_dir in sorted(SYNTHETIC_SCENARIOS_DIR.iterdir()):
         if not scenario_dir.is_dir() or scenario_dir.name.startswith("_"):
             continue
         scenario_id = scenario_dir.name

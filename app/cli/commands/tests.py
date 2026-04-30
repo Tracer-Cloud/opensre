@@ -91,6 +91,19 @@ def tests(ctx: click.Context) -> None:
     raise SystemExit(exit_code)
 
 
+def _synthetic_suite_not_bundled_error() -> OpenSREError:
+    """Structured error for ``opensre tests synthetic`` when the suite isn't shipped."""
+    return OpenSREError(
+        "The synthetic RDS PostgreSQL suite is not available in this build.",
+        suggestion=(
+            "Pre-built binaries do not bundle the per-scenario data files "
+            "under 'tests/synthetic/rds_postgres/'. Install from source "
+            "(`git clone https://github.com/Tracer-Cloud/opensre && pip "
+            "install -e .`) and re-run 'opensre tests synthetic'."
+        ),
+    )
+
+
 @tests.command(name="synthetic")
 @click.option(
     "--scenario", default="", help="Pin to a single scenario directory, e.g. 001-replication-lag."
@@ -119,11 +132,12 @@ def run_synthetic_suite(scenario: str, output_json: bool, mock_grafana: bool) ->
     #
     # We pre-check the data dir explicitly *and* catch a narrow
     # ``ModuleNotFoundError`` so users see one structured message regardless
-    # of which failure mode their bundle produces.
-    from app.cli.tests.discover import REPO_ROOT
+    # of which failure mode their bundle produces. The data-dir path is the
+    # ``SYNTHETIC_SCENARIOS_DIR`` constant from ``discover.py`` — single
+    # source of truth shared with ``_discover_rds_synthetic_scenarios``.
+    from app.cli.tests.discover import SYNTHETIC_SCENARIOS_DIR
 
-    scenarios_dir = REPO_ROOT / "tests" / "synthetic" / "rds_postgres"
-    if not scenarios_dir.is_dir():
+    if not SYNTHETIC_SCENARIOS_DIR.is_dir():
         raise _synthetic_suite_not_bundled_error()
 
     try:
@@ -145,19 +159,6 @@ def run_synthetic_suite(scenario: str, output_json: bool, mock_grafana: bool) ->
                 mock_grafana=mock_grafana,
             )
         )
-    )
-
-
-def _synthetic_suite_not_bundled_error() -> OpenSREError:
-    """Structured error for ``opensre tests synthetic`` when the suite isn't shipped."""
-    return OpenSREError(
-        "The synthetic RDS PostgreSQL suite is not available in this build.",
-        suggestion=(
-            "Pre-built binaries do not bundle the per-scenario data files "
-            "under 'tests/synthetic/rds_postgres/'. Install from source "
-            "(`git clone https://github.com/Tracer-Cloud/opensre && pip "
-            "install -e .`) and re-run 'opensre tests synthetic'."
-        ),
     )
 
 

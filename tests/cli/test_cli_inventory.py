@@ -246,9 +246,10 @@ def test_tests_synthetic_clean_error_when_data_dir_missing(tmp_path: Path) -> No
     on the data dir must surface a structured error before the import fires."""
     runner = CliRunner()
 
-    # tmp_path has no ``tests/synthetic/rds_postgres`` subtree, so the
+    # Point SYNTHETIC_SCENARIOS_DIR at a path that doesn't exist so the
     # pre-check in ``run_synthetic_suite`` short-circuits to OpenSREError.
-    with unittest.mock.patch("app.cli.tests.discover.REPO_ROOT", tmp_path):
+    missing = tmp_path / "missing-rds-postgres"
+    with unittest.mock.patch("app.cli.tests.discover.SYNTHETIC_SCENARIOS_DIR", missing):
         result = runner.invoke(cli, ["tests", "synthetic", "--scenario", "001-replication-lag"])
 
     output = result.output or ""
@@ -277,11 +278,11 @@ def test_tests_synthetic_clean_error_when_module_not_bundled(tmp_path: Path) -> 
         return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
 
     # Make the data-dir pre-check pass so the import path is what fails.
-    scenarios_dir = tmp_path / "tests" / "synthetic" / "rds_postgres"
+    scenarios_dir = tmp_path / "rds_postgres"
     (scenarios_dir / "001-replication-lag").mkdir(parents=True)
 
     with (
-        unittest.mock.patch("app.cli.tests.discover.REPO_ROOT", tmp_path),
+        unittest.mock.patch("app.cli.tests.discover.SYNTHETIC_SCENARIOS_DIR", scenarios_dir),
         unittest.mock.patch("builtins.__import__", side_effect=_fail_synthetic_import),
     ):
         result = runner.invoke(cli, ["tests", "synthetic", "--scenario", "001-replication-lag"])
@@ -308,11 +309,11 @@ def test_tests_synthetic_unrelated_module_not_found_propagates(tmp_path: Path) -
             raise ModuleNotFoundError("No module named 'psycopg'", name="psycopg")
         return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
 
-    scenarios_dir = tmp_path / "tests" / "synthetic" / "rds_postgres"
+    scenarios_dir = tmp_path / "rds_postgres"
     (scenarios_dir / "001-replication-lag").mkdir(parents=True)
 
     with (
-        unittest.mock.patch("app.cli.tests.discover.REPO_ROOT", tmp_path),
+        unittest.mock.patch("app.cli.tests.discover.SYNTHETIC_SCENARIOS_DIR", scenarios_dir),
         unittest.mock.patch("builtins.__import__", side_effect=_fail_unrelated_import),
     ):
         result = runner.invoke(cli, ["tests", "synthetic", "--scenario", "001-replication-lag"])
@@ -361,21 +362,41 @@ def test_deploy_ec2_clean_error_when_not_bundled(argv: list[str]) -> None:
     assert "Traceback" not in output
 
 
-def test_deploy_ec2_unrelated_module_not_found_propagates() -> None:
+@pytest.mark.parametrize(
+    ("argv", "patched_module"),
+    [
+        # Destroy path (--down): try/except wraps `destroy_remote` import.
+        (
+            ["deploy", "ec2", "--down"],
+            "tests.deployment.ec2.infrastructure_sdk.destroy_remote",
+        ),
+        # Deploy path (no --down): try/except wraps `deploy_remote` import,
+        # which has its own narrow-catch in deploy_ec2 — covered separately
+        # so a regression in either branch is caught independently.
+        (
+            ["deploy", "ec2"],
+            "tests.deployment.ec2.infrastructure_sdk.deploy_remote",
+        ),
+    ],
+)
+def test_deploy_ec2_unrelated_module_not_found_propagates(
+    argv: list[str], patched_module: str
+) -> None:
     """Narrow-catch contract for EC2 deploy: an unrelated transitive
     missing dep (e.g. ``boto3``) must surface as the real error, not the
-    "EC2 not bundled" suggestion."""
+    "EC2 not bundled" suggestion. Both ``deploy ec2`` and ``deploy ec2 --down``
+    have their own try/except blocks — exercise both."""
     runner = CliRunner()
 
     real_import = __import__
 
     def _fail_unrelated_import(name: str, *args: object, **kwargs: object) -> object:
-        if name == "tests.deployment.ec2.infrastructure_sdk.destroy_remote":
+        if name == patched_module:
             raise ModuleNotFoundError("No module named 'boto3'", name="boto3")
         return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
 
     with unittest.mock.patch("builtins.__import__", side_effect=_fail_unrelated_import):
-        result = runner.invoke(cli, ["deploy", "ec2", "--down"])
+        result = runner.invoke(cli, argv)
 
     output = result.output or ""
     assert "EC2 deployment is not available" not in output

@@ -61,10 +61,11 @@ def _patch_discover_paths(
     repo_root: Path | None = None,
     makefile: Path | None = None,
     rca_dir: Path | None = None,
+    synthetic_dir: Path | None = None,
 ) -> None:
     """Helper: monkeypatch any subset of the discover module's path constants.
 
-    Reduces the ``monkeypatch.setattr("app.cli.tests.discover.X", ...)`` ×3
+    Reduces the ``monkeypatch.setattr("app.cli.tests.discover.X", ...)`` ×4
     repetition that tests in ``TestDiscoverGracefulOnMissingSource`` would
     otherwise carry. Per @muddlebee's PR #952 review nit on duplicated test
     setup."""
@@ -74,6 +75,8 @@ def _patch_discover_paths(
         monkeypatch.setattr("app.cli.tests.discover.MAKEFILE_PATH", makefile)
     if rca_dir is not None:
         monkeypatch.setattr("app.cli.tests.discover.RCA_DIR", rca_dir)
+    if synthetic_dir is not None:
+        monkeypatch.setattr("app.cli.tests.discover.SYNTHETIC_SCENARIOS_DIR", synthetic_dir)
 
 
 class TestDiscoverGracefulOnMissingSource:
@@ -81,8 +84,7 @@ class TestDiscoverGracefulOnMissingSource:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The reported #1078 crash: ``iterdir()`` on a missing path."""
-        # tmp_path has no ``tests/synthetic/rds_postgres`` subtree.
-        _patch_discover_paths(monkeypatch, repo_root=tmp_path)
+        _patch_discover_paths(monkeypatch, synthetic_dir=tmp_path / "missing-rds-postgres")
         assert _discover_rds_synthetic_scenarios() == []
 
     def test_make_targets_returns_empty_when_makefile_missing(
@@ -115,6 +117,7 @@ class TestDiscoverGracefulOnMissingSource:
             repo_root=empty,
             makefile=empty / "Makefile",
             rca_dir=empty / "rca",
+            synthetic_dir=empty / "rds_postgres",
         )
 
         catalog = load_test_catalog()
@@ -129,9 +132,9 @@ class TestDiscoverGracefulOnMissingSource:
         """Sanity: the existence guard must not break the source-checkout
         path. With one scenario directory on disk, the helper must still
         emit one catalog item."""
-        scenarios_dir = tmp_path / "tests" / "synthetic" / "rds_postgres"
+        scenarios_dir = tmp_path / "rds_postgres"
         (scenarios_dir / "001-replication-lag").mkdir(parents=True)
-        _patch_discover_paths(monkeypatch, repo_root=tmp_path)
+        _patch_discover_paths(monkeypatch, synthetic_dir=scenarios_dir)
 
         items = _discover_rds_synthetic_scenarios()
         assert len(items) == 1
@@ -142,9 +145,9 @@ class TestDiscoverGracefulOnMissingSource:
     ) -> None:
         """Edge case from gap analysis: directory exists but is empty —
         ``iterdir()`` is fine, and the function must return ``[]``."""
-        scenarios_dir = tmp_path / "tests" / "synthetic" / "rds_postgres"
+        scenarios_dir = tmp_path / "rds_postgres"
         scenarios_dir.mkdir(parents=True)
-        _patch_discover_paths(monkeypatch, repo_root=tmp_path)
+        _patch_discover_paths(monkeypatch, synthetic_dir=scenarios_dir)
         assert _discover_rds_synthetic_scenarios() == []
 
     def test_rds_synthetic_skips_underscore_and_pycache_entries(
@@ -153,12 +156,12 @@ class TestDiscoverGracefulOnMissingSource:
         """The existing ``startswith('_')`` filter must skip ``__pycache__``
         and any other underscore-prefixed sibling. It must also skip stray
         files at the top level (only directories become catalog items)."""
-        scenarios_dir = tmp_path / "tests" / "synthetic" / "rds_postgres"
+        scenarios_dir = tmp_path / "rds_postgres"
         (scenarios_dir / "001-real-scenario").mkdir(parents=True)
         (scenarios_dir / "__pycache__").mkdir()
         (scenarios_dir / "_template").mkdir()
         (scenarios_dir / "README.md").write_text("not a scenario")
-        _patch_discover_paths(monkeypatch, repo_root=tmp_path)
+        _patch_discover_paths(monkeypatch, synthetic_dir=scenarios_dir)
 
         items = _discover_rds_synthetic_scenarios()
         ids = [item.id for item in items]
@@ -169,10 +172,11 @@ class TestDiscoverGracefulOnMissingSource:
     ) -> None:
         """Happy YAML path: ``scenario.yml`` with a ``failure_mode`` field
         produces the ``"<id>  [<mode>]"`` display name."""
-        scenario = tmp_path / "tests" / "synthetic" / "rds_postgres" / "001-replication-lag"
+        scenarios_dir = tmp_path / "rds_postgres"
+        scenario = scenarios_dir / "001-replication-lag"
         scenario.mkdir(parents=True)
         (scenario / "scenario.yml").write_text("failure_mode: replication-lag\n")
-        _patch_discover_paths(monkeypatch, repo_root=tmp_path)
+        _patch_discover_paths(monkeypatch, synthetic_dir=scenarios_dir)
 
         items = _discover_rds_synthetic_scenarios()
         assert len(items) == 1
@@ -183,10 +187,11 @@ class TestDiscoverGracefulOnMissingSource:
     ) -> None:
         """Defensive YAML parse: malformed ``scenario.yml`` must not crash
         discovery — fall back to the bare directory name as display name."""
-        scenario = tmp_path / "tests" / "synthetic" / "rds_postgres" / "002-broken-yaml"
+        scenarios_dir = tmp_path / "rds_postgres"
+        scenario = scenarios_dir / "002-broken-yaml"
         scenario.mkdir(parents=True)
         (scenario / "scenario.yml").write_text(":::not yaml:::\n  - [unbalanced\n")
-        _patch_discover_paths(monkeypatch, repo_root=tmp_path)
+        _patch_discover_paths(monkeypatch, synthetic_dir=scenarios_dir)
 
         items = _discover_rds_synthetic_scenarios()
         assert len(items) == 1
