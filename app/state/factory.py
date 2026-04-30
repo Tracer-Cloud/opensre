@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any, cast
 
+from app.alerts import normalize_alert_payload
 from app.integrations.opensre.hf_remote import (
     extract_openrca_scoring_points,
     strip_scoring_points_from_alert,
@@ -71,6 +72,10 @@ def make_initial_state(
         elif extract_openrca_scoring_points(alert_payload):
             # Blind investigation: drop rubric from agent-visible alert (file may include it).
             alert_payload = strip_scoring_points_from_alert(dict(alert_payload))
+
+        # Normalize source-specific payloads into a canonical alert shape once,
+        # before any downstream extraction/planning nodes run.
+        alert_payload = normalize_alert_payload(alert_payload)
 
     state = AgentStateModel.model_validate(
         {
