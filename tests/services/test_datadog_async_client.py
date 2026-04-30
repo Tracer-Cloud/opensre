@@ -2,6 +2,7 @@ import inspect
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import httpx
 
 from app.services.datadog.client import DatadogAsyncClient, DatadogConfig
 
@@ -164,6 +165,37 @@ async def test_fetch_all_partial_failure(async_client, mock_async_httpx):
     assert result["logs"]["error"] is not None
     assert result["monitors"]["error"] is not None
     assert result["events"]["error"] is not None
+
+
+@pytest.mark.asyncio
+async def test_fetch_all_http_error(async_client, mock_async_httpx):
+    mock_instance = MagicMock()
+    mock_async_httpx.return_value.__aenter__.return_value = mock_instance
+
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_response.text = "unauthorized"
+    mock_response.raise_for_status = AsyncMock(
+        side_effect=httpx.HTTPStatusError(
+            "err",
+            request=MagicMock(),
+            response=mock_response,
+        )
+    )
+
+    mock_instance.post = AsyncMock(return_value=mock_response)
+    mock_instance.get = AsyncMock(return_value=mock_response)
+
+    result = await async_client.fetch_all(
+        logs_query="error",
+        time_range_minutes=15,
+        logs_limit=100,
+        monitor_query="error",
+        events_query="error",
+    )
+
+    assert result["logs"]["success"] is False
+    assert "HTTP 401" in result["logs"]["error"]
 
 
 # -------------------------

@@ -64,23 +64,31 @@ def test_search_logs_empty_data(client, mock_httpx_client):
 
     result = client.search_logs("error")
 
+    assert result["success"] is True
     assert result["logs"] == []
+    assert result["total"] == 0
 
 
 def test_search_logs_http_error(client, mock_httpx_client):
     mock_instance = MagicMock()
+    mock_httpx_client.return_value = mock_instance
 
-    mock_response = MagicMock(status_code=500, text="server error")
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.text = "server error"
 
-    mock_instance.post.side_effect = httpx.HTTPStatusError(
+    error = httpx.HTTPStatusError(
         "error",
         request=MagicMock(),
         response=mock_response,
     )
 
-    mock_httpx_client.return_value = mock_instance
+    mock_response.raise_for_status.side_effect = error
+    mock_instance.post.return_value = mock_response
 
     result = client.search_logs("error")
+
+    assert result["success"] is False
     assert "HTTP 500" in result["error"]
 
 
@@ -109,8 +117,6 @@ def test_list_monitors_success(client, mock_httpx_client):
         json=lambda: [{"name": "CPU Monitor"}],
         raise_for_status=MagicMock(),
     )
-
-    mock_instance.post.return_value = MagicMock()
 
     mock_httpx_client.return_value = mock_instance
 
@@ -183,8 +189,6 @@ def test_get_events_success(client, mock_httpx_client):
         json=lambda: {"data": [{"attributes": {"title": "event title"}}]},
         raise_for_status=MagicMock(),
     )
-
-    mock_instance.get.return_value = MagicMock()
 
     mock_httpx_client.return_value = mock_instance
 
