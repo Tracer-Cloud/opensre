@@ -347,3 +347,52 @@ def test_registry_regression_duplicate_tool_names_across_modules(
         for record in caplog.records
         if record.levelname == "WARNING"
     )
+
+
+def test_registry_regression_import_failures(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that registry gracefully skips modules with import failures."""
+    module: Any = ModuleType("app.tools.valid_tool")
+
+    @tool(
+        name="valid_tool",
+        description="A valid tool.",
+        source="knowledge",
+    )
+    def valid_tool() -> dict[str, str]:
+        return {"status": "ok"}
+
+    valid_tool.__module__ = module.__name__
+    module.valid_tool = valid_tool
+
+    def mock_import(name: str) -> ModuleType:
+        if name == "broken_module":
+            raise RuntimeError("Module initialization failed")
+        return module
+
+    monkeypatch.setattr(
+        registry_module,
+        "_iter_tool_module_names",
+        lambda: ["broken_module", "valid_tool"],
+    )
+    monkeypatch.setattr(
+        registry_module,
+        "_import_tool_module",
+        mock_import,
+    )
+
+    tools = registry_module.get_registered_tools()
+    tool_names = [t.name for t in tools]
+
+    assert "valid_tool" in tool_names
+    assert len(tools) >= 1
+    assert registry_module.get_registered_tool_map()["valid_tool"].run() == {
+        "status": "ok"
+    }
+
+    assert any(
+        "Skipping broken_module" in record.message
+        and record.levelname == "WARNING"
+        for record in caplog.records
+    )
