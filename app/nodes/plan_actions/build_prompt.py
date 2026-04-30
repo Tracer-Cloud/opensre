@@ -412,6 +412,21 @@ Planning rules:
    - storage growth sources such as audit logs (for PostgreSQL/Aurora) or other logging mechanisms
    Prefer actions that reveal these mechanisms when relevant signals (CPU, connections, storage) are elevated.
 
+11. For RDS/Postgres incidents where BOTH CPU and storage pressure are observed:
+
+   - Assume a possible compositional failure unless proven otherwise
+   - Explicitly investigate whether there are TWO independent workloads:
+     (1) analytics/aggregation queries causing CPU saturation
+     (2) audit_log INSERT or write-heavy jobs causing storage exhaustion
+
+   - Prioritize AWS Performance Insights to identify:
+     - the CPU-driving SQL query
+     - the write/storage-driving workload
+
+   - Do NOT rely only on Grafana metrics/logs for final RCA when query-level evidence is required
+
+   - Prefer actions that surface SQL-level evidence rather than only system-level metrics
+
 When selecting actions, optimize for:
 - ruling out competing explanations
 - resolving ambiguous or mixed signals
