@@ -117,9 +117,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cli(args=argv, standalone_mode=True)
     except KeyboardInterrupt:
-        # Suppress Click's "Aborted!" message; a clean exit with no output is
-        # correct here because handle_ctrl_c_press already printed the hint or
-        # "Goodbye!" before raising SystemExit / letting the interrupt propagate.
+        # A KeyboardInterrupt that escapes cli() was not handled by our
+        # double-exit logic (e.g. click.prompt, an unpatched library prompt).
+        # Print a newline so the terminal cursor lands on a clean line, then
+        # exit quietly — Click's "Aborted!" message is intentionally suppressed.
+        print(flush=True)
         return 0
     except SystemExit as exc:
         if isinstance(exc.code, int):
