@@ -57,6 +57,7 @@ def install_questionary_escape_cancel() -> None:
     import questionary
     import questionary.prompts.checkbox as checkbox_mod
     import questionary.prompts.confirm as confirm_mod
+    import questionary.prompts.password as password_mod
     import questionary.prompts.path as path_mod
     import questionary.prompts.select as select_mod
     import questionary.prompts.text as text_mod
@@ -66,12 +67,14 @@ def install_questionary_escape_cancel() -> None:
     confirm_mod.confirm = _wrap_question_prompt(confirm_mod.confirm)
     text_mod.text = _wrap_question_prompt(text_mod.text)
     path_mod.path = _wrap_question_prompt(path_mod.path)
+    password_mod.password = _wrap_question_prompt(password_mod.password)
 
     questionary.select = select_mod.select
     questionary.checkbox = checkbox_mod.checkbox
     questionary.confirm = confirm_mod.confirm
     questionary.text = text_mod.text
     questionary.path = path_mod.path
+    questionary.password = password_mod.password
 
     _escape_patch_installed[0] = True
 
@@ -147,6 +150,7 @@ def install_questionary_ctrl_c_double_exit() -> None:
     import questionary
     import questionary.prompts.checkbox as checkbox_mod
     import questionary.prompts.confirm as confirm_mod
+    import questionary.prompts.password as password_mod
     import questionary.prompts.path as path_mod
     import questionary.prompts.select as select_mod
     import questionary.prompts.text as text_mod
@@ -156,11 +160,13 @@ def install_questionary_ctrl_c_double_exit() -> None:
     confirm_mod.confirm = _wrap_question_ctrl_c(confirm_mod.confirm)
     text_mod.text = _wrap_question_ctrl_c(text_mod.text)
     path_mod.path = _wrap_question_ctrl_c(path_mod.path)
+    password_mod.password = _wrap_question_ctrl_c(password_mod.password)
 
     questionary.select = select_mod.select
     questionary.checkbox = checkbox_mod.checkbox
     questionary.confirm = confirm_mod.confirm
     questionary.text = text_mod.text
     questionary.path = path_mod.path
+    questionary.password = password_mod.password
 
     _ctrl_c_patch_installed[0] = True
