@@ -590,6 +590,29 @@ class ArgoCDIntegrationConfig(StrictConfigModel):
         return self
 
 
+class VictoriaLogsIntegrationConfig(StrictConfigModel):
+    """Normalized VictoriaLogs credentials used by resolution and verification flows."""
+
+    base_url: str
+    tenant_id: str | None = None
+    integration_id: str = ""
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: object) -> str:
+        return str(value or "").strip().rstrip("/")
+
+    @field_validator("tenant_id", mode="before")
+    @classmethod
+    def _normalize_tenant_id(cls, value: object) -> str | None:
+        # Treat empty / blank / None uniformly as "not configured" so the
+        # AccountID header is only sent when the user explicitly opts in.
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+
 class IntegrationInstance(StrictConfigModel):
     """One named instance of a provider.
 
@@ -681,3 +704,4 @@ class EffectiveIntegrations(StrictConfigModel):
     alertmanager: EffectiveIntegrationEntry | None = None
     airflow: dict[str, Any] | None = None
     argocd: EffectiveIntegrationEntry | None = None
+    victoria_logs: EffectiveIntegrationEntry | None = None

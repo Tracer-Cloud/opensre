@@ -42,6 +42,7 @@ from app.services.honeycomb import HoneycombClient
 from app.services.opsgenie import OpsGenieClient, OpsGenieConfig
 from app.services.tracer_client.client import TracerClient
 from app.services.vercel.client import VercelClient, VercelConfig
+from app.services.victoria_logs import VictoriaLogsClient, VictoriaLogsConfig
 
 SUPPORTED_VERIFY_SERVICES = (
     "alertmanager",
@@ -76,6 +77,7 @@ SUPPORTED_VERIFY_SERVICES = (
     "azure",
     "openobserve",
     "opensearch",
+    "victoria_logs",
 )
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "honeycomb", "coralogix", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
@@ -627,6 +629,43 @@ def _verify_argocd(source: str, config: dict[str, Any]) -> dict[str, str]:
     return _result("argocd", source, "passed", f"Connected to Argo CD and listed {total} {suffix}.")
 
 
+def _verify_victoria_logs(source: str, config: dict[str, Any]) -> dict[str, str]:
+    base_url = str(config.get("base_url", ""))
+    if not base_url:
+        return _result("victoria_logs", source, "missing", "Missing base_url.")
+
+    try:
+        victoria_logs_config = VictoriaLogsConfig.model_validate(
+            {
+                "base_url": base_url,
+                "tenant_id": config.get("tenant_id"),
+            }
+        )
+    except Exception as err:
+        return _result("victoria_logs", source, "missing", str(err))
+
+    with VictoriaLogsClient(victoria_logs_config) as client:
+        # A trivial probe — `*` matches any logs and `limit=1` keeps the
+        # response tiny. We only care that the endpoint accepts a query
+        # and returns a 2xx; the rows themselves are unused.
+        result = client.query_logs("*", limit=1)
+
+    if not result.get("success"):
+        return _result(
+            "victoria_logs",
+            source,
+            "failed",
+            f"Query probe failed: {result.get('error', 'unknown error')}",
+        )
+
+    return _result(
+        "victoria_logs",
+        source,
+        "passed",
+        f"Connected to VictoriaLogs at {base_url}.",
+    )
+
+
 def _verify_opsgenie(source: str, config: dict[str, Any]) -> dict[str, str]:
     try:
         opsgenie_config = OpsGenieConfig.model_validate(
@@ -942,6 +981,8 @@ def verify_integrations(
             results.append(_verify_alertmanager(source, config))
         elif current_service == "argocd":
             results.append(_verify_argocd(source, config))
+        elif current_service == "victoria_logs":
+            results.append(_verify_victoria_logs(source, config))
         elif current_service == "snowflake":
             results.append(_verify_snowflake(source, config))
         elif current_service == "azure":
