@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest.mock
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -225,3 +226,177 @@ def test_run_catalog_items_skips_non_runnable_and_prints_message(
     captured = capsys.readouterr()
     assert "suite:empty" in captured.err
     assert "Skipping" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Bundled-binary degradation for ``opensre tests synthetic`` (regression #1078)
+#
+# ``packaging/opensre.spec`` excludes the ``tests`` tree from PyInstaller
+# bundles, so ``from tests.synthetic.rds_postgres.run_suite import main``
+# raises ``ModuleNotFoundError`` in a packaged binary. Surface a clean
+# ``OpenSREError`` instead of a raw traceback so users know to run from a
+# source checkout.
+# ---------------------------------------------------------------------------
+
+
+def test_tests_synthetic_clean_error_when_data_dir_missing(tmp_path: Path) -> None:
+    """Real bundled-binary failure mode (per live PyInstaller verification):
+    the ``tests.synthetic.rds_postgres`` Python package is bundled
+    transitively but the per-scenario data directories are absent. Pre-check
+    on the data dir must surface a structured error before the import fires."""
+    runner = CliRunner()
+
+    # Point SYNTHETIC_SCENARIOS_DIR at a path that doesn't exist so the
+    # pre-check in ``run_synthetic_suite`` short-circuits to OpenSREError.
+    missing = tmp_path / "missing-rds-postgres"
+    with unittest.mock.patch("app.cli.tests.discover.SYNTHETIC_SCENARIOS_DIR", missing):
+        result = runner.invoke(cli, ["tests", "synthetic", "--scenario", "001-replication-lag"])
+
+    output = result.output or ""
+    assert result.exit_code == 1, f"unexpected exit code {result.exit_code}; output={output!r}"
+    # Pin the contractual message — these strings are user-facing and a
+    # silent rewording would be a regression for support docs / scripts.
+    assert "synthetic RDS PostgreSQL suite is not available" in output
+    assert "pip install -e ." in output
+    # No raw traceback or stdlib exception name reaches the user.
+    assert "FileNotFoundError" not in output
+    assert "ModuleNotFoundError" not in output
+    assert "Traceback" not in output
+
+
+def test_tests_synthetic_clean_error_when_module_not_bundled(tmp_path: Path) -> None:
+    """Adjacent failure mode: the synthetic Python package is missing
+    entirely. The narrowed ``ModuleNotFoundError`` catch must convert it
+    into the same structured error."""
+    runner = CliRunner()
+
+    real_import = __import__
+
+    def _fail_synthetic_import(name: str, *args: object, **kwargs: object) -> object:
+        if name.startswith("tests.synthetic.rds_postgres"):
+            raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    # Make the data-dir pre-check pass so the import path is what fails.
+    scenarios_dir = tmp_path / "rds_postgres"
+    (scenarios_dir / "001-replication-lag").mkdir(parents=True)
+
+    with (
+        unittest.mock.patch("app.cli.tests.discover.SYNTHETIC_SCENARIOS_DIR", scenarios_dir),
+        unittest.mock.patch("builtins.__import__", side_effect=_fail_synthetic_import),
+    ):
+        result = runner.invoke(cli, ["tests", "synthetic", "--scenario", "001-replication-lag"])
+
+    output = result.output or ""
+    assert result.exit_code == 1, f"unexpected exit code {result.exit_code}; output={output!r}"
+    assert "synthetic RDS PostgreSQL suite is not available" in output
+    assert "ModuleNotFoundError" not in output
+    assert "Traceback" not in output
+
+
+def test_tests_synthetic_unrelated_module_not_found_propagates(tmp_path: Path) -> None:
+    """Narrow-catch contract: if the synthetic suite *is* available but a
+    transitive dep (e.g. ``psycopg``) is missing, the user must see the
+    real cause — not a misleading "not bundled" message."""
+    runner = CliRunner()
+
+    real_import = __import__
+
+    def _fail_unrelated_import(name: str, *args: object, **kwargs: object) -> object:
+        # Synthetic module's run_suite fails because of a missing transitive
+        # dep (``psycopg``), not because the synthetic package is absent.
+        if name == "tests.synthetic.rds_postgres.run_suite":
+            raise ModuleNotFoundError("No module named 'psycopg'", name="psycopg")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    scenarios_dir = tmp_path / "rds_postgres"
+    (scenarios_dir / "001-replication-lag").mkdir(parents=True)
+
+    with (
+        unittest.mock.patch("app.cli.tests.discover.SYNTHETIC_SCENARIOS_DIR", scenarios_dir),
+        unittest.mock.patch("builtins.__import__", side_effect=_fail_unrelated_import),
+    ):
+        result = runner.invoke(cli, ["tests", "synthetic", "--scenario", "001-replication-lag"])
+
+    output = result.output or ""
+    # The misleading "not bundled" message MUST NOT be shown — the user
+    # needs to see the real missing-dep cause so they can fix it.
+    assert "synthetic RDS PostgreSQL suite is not available" not in output
+
+
+# ---------------------------------------------------------------------------
+# Bundled-binary degradation for ``opensre deploy ec2`` (audit finding)
+#
+# Same class of bug as #1078: ``app/cli/commands/deploy.py:323,329`` import
+# from ``tests.deployment.ec2.infrastructure_sdk`` which is excluded from
+# PyInstaller bundles. Without a guard, ``opensre deploy ec2`` and
+# ``opensre deploy ec2 --down`` both crash with raw ModuleNotFoundError.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["deploy", "ec2"],
+        ["deploy", "ec2", "--down"],
+    ],
+)
+def test_deploy_ec2_clean_error_when_not_bundled(argv: list[str]) -> None:
+    runner = CliRunner()
+
+    real_import = __import__
+
+    def _fail_ec2_import(name: str, *args: object, **kwargs: object) -> object:
+        if name.startswith("tests.deployment.ec2"):
+            raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    with unittest.mock.patch("builtins.__import__", side_effect=_fail_ec2_import):
+        result = runner.invoke(cli, argv)
+
+    output = result.output or ""
+    assert result.exit_code == 1, f"unexpected exit code {result.exit_code}; output={output!r}"
+    assert "EC2 deployment is not available" in output
+    assert "pip install -e ." in output
+    assert "ModuleNotFoundError" not in output
+    assert "Traceback" not in output
+
+
+@pytest.mark.parametrize(
+    ("argv", "patched_module"),
+    [
+        # Destroy path (--down): try/except wraps `destroy_remote` import.
+        (
+            ["deploy", "ec2", "--down"],
+            "tests.deployment.ec2.infrastructure_sdk.destroy_remote",
+        ),
+        # Deploy path (no --down): try/except wraps `deploy_remote` import,
+        # which has its own narrow-catch in deploy_ec2 — covered separately
+        # so a regression in either branch is caught independently.
+        (
+            ["deploy", "ec2"],
+            "tests.deployment.ec2.infrastructure_sdk.deploy_remote",
+        ),
+    ],
+)
+def test_deploy_ec2_unrelated_module_not_found_propagates(
+    argv: list[str], patched_module: str
+) -> None:
+    """Narrow-catch contract for EC2 deploy: an unrelated transitive
+    missing dep (e.g. ``boto3``) must surface as the real error, not the
+    "EC2 not bundled" suggestion. Both ``deploy ec2`` and ``deploy ec2 --down``
+    have their own try/except blocks — exercise both."""
+    runner = CliRunner()
+
+    real_import = __import__
+
+    def _fail_unrelated_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == patched_module:
+            raise ModuleNotFoundError("No module named 'boto3'", name="boto3")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    with unittest.mock.patch("builtins.__import__", side_effect=_fail_unrelated_import):
+        result = runner.invoke(cli, argv)
+
+    output = result.output or ""
+    assert "EC2 deployment is not available" not in output

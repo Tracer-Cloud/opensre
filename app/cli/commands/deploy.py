@@ -277,6 +277,25 @@ def _check_deploy_health(status: dict[str, str], console: Any) -> None:
         console.print(f"  [red]Unhealthy[/red]  {exc}")
 
 
+def _ec2_deploy_not_bundled_error() -> OpenSREError:
+    """Structured error for ``opensre deploy ec2`` when the deploy SDK isn't shipped.
+
+    The EC2 deployment SDK lives under ``tests/deployment/ec2/`` and is excluded
+    from PyInstaller bundles by ``packaging/opensre.spec``'s ``_is_runtime_submodule``
+    filter, so ``opensre deploy ec2`` (with or without ``--down``) cannot run from
+    a packaged binary.
+    """
+    return OpenSREError(
+        "EC2 deployment is not available in this build.",
+        suggestion=(
+            "Pre-built binaries do not bundle the EC2 deployment SDK under "
+            "'tests/deployment/ec2/'. Install from source (`git clone "
+            "https://github.com/Tracer-Cloud/opensre && pip install -e .`) "
+            "and re-run 'opensre deploy ec2'."
+        ),
+    )
+
+
 def _build_remote_url(outputs: Mapping[str, object]) -> str | None:
     ip = str(outputs.get("PublicIpAddress", "")).strip()
     if not ip:
@@ -320,13 +339,28 @@ def deploy_ec2(down: bool, branch: str) -> None:
       opensre deploy ec2 --branch main   # deploy from a specific branch
     """
     if down:
-        from tests.deployment.ec2.infrastructure_sdk.destroy_remote import destroy
+        try:
+            from tests.deployment.ec2.infrastructure_sdk.destroy_remote import destroy
+        except ModuleNotFoundError as exc:
+            # ``packaging/opensre.spec`` excludes the ``tests`` tree from
+            # PyInstaller bundles. Surface a clean OpenSREError instead of a
+            # raw ``ModuleNotFoundError`` traceback. Narrow on ``exc.name``
+            # so unrelated transitive missing-deps still bubble up.
+            if exc.name is None or not exc.name.startswith("tests.deployment.ec2"):
+                raise
+            raise _ec2_deploy_not_bundled_error() from exc
 
         destroy()
         return
 
     from app.cli.commands.remote_health import run_remote_health_check
-    from tests.deployment.ec2.infrastructure_sdk.deploy_remote import deploy as run_deploy
+
+    try:
+        from tests.deployment.ec2.infrastructure_sdk.deploy_remote import deploy as run_deploy
+    except ModuleNotFoundError as exc:
+        if exc.name is None or not exc.name.startswith("tests.deployment.ec2"):
+            raise
+        raise _ec2_deploy_not_bundled_error() from exc
 
     outputs = run_deploy(branch=branch)
     _persist_remote_url(outputs)
