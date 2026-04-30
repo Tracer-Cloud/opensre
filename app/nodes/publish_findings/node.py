@@ -37,6 +37,7 @@ def generate_report(state: InvestigationState) -> dict:
     slack_message = masking_ctx.unmask(slack_message)
     if isinstance(short_summary, str):
         short_summary = masking_ctx.unmask(short_summary)
+        short_summary = redact_secrets(short_summary).text
 
     _redaction = redact_secrets(slack_message)
     if _redaction.has_findings:
@@ -79,6 +80,7 @@ def generate_report(state: InvestigationState) -> dict:
 
     all_blocks = build_slack_blocks(ctx) + build_action_blocks(investigation_url, investigation_id)
     all_blocks = masking_ctx.unmask_value(all_blocks)
+    all_blocks = redact_secrets(str(all_blocks)).text
     render_report(slack_message, root_cause_category=state.get("root_cause_category"))
     open_in_editor(slack_message)
 

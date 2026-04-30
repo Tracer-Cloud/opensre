@@ -39,10 +39,11 @@ _PATTERNS: Final[list[tuple[str, re.Pattern[str]]]] = [
     (
         # JWT — three base64url segments separated by dots, each 10–200 chars
         # Anchored by the literal "eyJ" header that all JWTs start with.
-        # Upper bound 200 per segment is generous for real JWTs (typical: 30-150)
+        # Upper bound 500 per segment covers RS256 (~342 chars) and RS512 (~683 chars)
+        # signatures, which are common in service-account and OAuth tokens.
         # and prevents runaway on adversarial input.
         "jwt_token",
-        re.compile(r"eyJ[A-Za-z0-9_-]{10,200}\.eyJ[A-Za-z0-9_-]{10,200}\.[A-Za-z0-9_-]{10,200}"),
+        re.compile(r"eyJ[A-Za-z0-9_-]{10,500}\.eyJ[A-Za-z0-9_-]{10,500}\.[A-Za-z0-9_-]{10,500}"),
     ),
     (
         # PEM private key header — detects the block delimiter line only.
