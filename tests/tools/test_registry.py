@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Generator
 from types import ModuleType
 from typing import Any
@@ -335,7 +336,9 @@ def test_registry_regression_duplicate_tool_names_across_modules(
         lambda name: module1 if name == "first_module" else module2,
     )
 
-    tools = registry_module.get_registered_tools()
+    with caplog.at_level(logging.WARNING, logger="app.tools.registry"):
+        tools = registry_module.get_registered_tools()
+
     tool_names = [t.name for t in tools]
 
     assert tool_names.count("shared_tool_name") == 1
