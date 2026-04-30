@@ -385,14 +385,14 @@ def test_diagnose_binary_path_missing_file(tmp_path: Path) -> None:
 def test_diagnose_binary_path_valid_executable(tmp_path: Path) -> None:
     exe = tmp_path / "my-bin"
     exe.write_bytes(b"")
-    os.chmod(exe, 0o755)
+    os.chmod(exe, 0o700)
     assert diagnose_binary_path(str(exe)) is None
 
 
 def test_diagnose_binary_path_not_executable(tmp_path: Path) -> None:
     f = tmp_path / "not-executable"
     f.write_bytes(b"")
-    os.chmod(f, 0o644)
+    os.chmod(f, 0o600)
     result = diagnose_binary_path(str(f))
     if sys.platform != "win32":
         assert result is not None
