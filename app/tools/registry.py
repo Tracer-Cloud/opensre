@@ -128,7 +128,7 @@ def _load_registry_snapshot() -> tuple[RegisteredTool, ...]:
         except ModuleNotFoundError as exc:
             logger.warning("[tools] Skipping %s: %s", module_name, exc)
             continue
-        except Exception as exc:  # pragma: no cover - defensive logging path
+        except Exception as exc:
             logger.warning(
                 "[tools] Skipping %s due to import failure: %s",
                 module_name,
