@@ -63,7 +63,7 @@
 - `app/pipeline/` — Graph assembly, routing, and runner helpers; `app/graph_pipeline.py` is the compatibility shim.
 - `app/remote/` — Remote-hosted runtime operations and integration points.
 - `app/sandbox/` — Sandboxed execution helpers for controlled runtime actions.
-- `app/services/` — Reusable API clients and service adapters consumed by integrations and tools.
+- `app/services/` — Reusable clients and adapters for integrations/tools. LLM APIs: `app/services/AGENTS.md`.
 - `app/state/` — Shared agent and investigation state models plus state factories.
 - `app/tools/` — Tool registry, decorator, base classes, per-tool packages, shared utilities, and registry helpers.
 - `app/types/` — Shared typed contracts for evidence, retrieval, and tool-related payloads.

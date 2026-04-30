@@ -11,12 +11,12 @@ Primary reference for provider discovery:
 ## Where provider wiring lives
 
 
-| File                                           | Role                                                                              |
-| ---------------------------------------------- | --------------------------------------------------------------------------------- |
-| `app/config.py`                                | Declares `LLMProvider`, provider env vars, defaults, and validation requirements. |
-| `app/services/llm_client.py`                   | Routes `LLM_PROVIDER` to the runtime client implementation.                       |
-| `app/cli/wizard/config.py`                     | Defines onboarding metadata (`SUPPORTED_PROVIDERS`) and model choices.            |
-| `app/cli/wizard/env_sync.py`                   | Keeps `.env` values in sync when provider/model changes.                          |
+| File                         | Role                                                                              |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| `app/config.py`              | Declares `LLMProvider`, provider env vars, defaults, and validation requirements. |
+| `app/services/llm_client.py` | Routes `LLM_PROVIDER` to the runtime client implementation.                       |
+| `app/cli/wizard/config.py`   | Defines onboarding metadata (`SUPPORTED_PROVIDERS`) and model choices.            |
+| `app/cli/wizard/env_sync.py` | Keeps `.env` values in sync when provider/model changes.                          |
 
 
 ## Adding a new API provider
@@ -35,3 +35,4 @@ Primary reference for provider discovery:
 - Use one source of truth for provider defaults in `app/config.py`.
 - Treat API keys as secrets: store in keychain via existing credential helpers, not in plaintext docs.
 - Prefer OpenAI-compatible client path for providers exposing compatible APIs.
+
