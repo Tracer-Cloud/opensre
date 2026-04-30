@@ -24,11 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def redact_block(block: dict) -> dict:
-    return {
-        k: redact_secrets(str(v)).text if isinstance(v, str) else v
-        for k, v in block.items()
-    }
-
+    return {k: redact_secrets(str(v)).text if isinstance(v, str) else v for k, v in block.items()}
 
 
 def generate_report(state: InvestigationState) -> dict:

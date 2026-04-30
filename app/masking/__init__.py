@@ -25,5 +25,4 @@ __all__ = [
     "find_identifiers",
     "RedactionResult",
     "redact_secrets",
-
 ]
