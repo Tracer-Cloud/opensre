@@ -158,6 +158,7 @@ def create_investigation_and_attach_url(
         (investigation_id, investigation_url)
     """
     investigation_id: str | None = None
+    investigation_url: str | None = None
 
     # First ingest: create investigation
     try:
@@ -170,10 +171,13 @@ def create_investigation_and_attach_url(
     except Exception as exc:  # noqa: BLE001
         logger.warning("[publish] ingest failed: %s", exc)
 
-    investigation_url = get_investigation_url(state.get("organization_slug"), investigation_id)
-
-    # Second ingest: attach URL
     if investigation_id:
+        investigation_url = get_investigation_url(
+            state.get("organization_slug"),
+            investigation_id,
+        )
+
+        # Second ingest: attach URL
         try:
             state_with_url = {
                 **state,
