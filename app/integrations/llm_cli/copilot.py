@@ -61,7 +61,12 @@ def _classify_copilot_auth(returncode: int, stdout: str, stderr: str) -> tuple[b
         return None, "Network error while checking auth; will retry at invocation."
     if returncode != 0:
         tail = (stderr or stdout).strip()[:200]
-        return (None, f"Auth status unclear (exit {returncode}): {tail}" if tail else f"Auth status unclear (exit {returncode}).")
+        return (
+            None,
+            f"Auth status unclear (exit {returncode}): {tail}"
+            if tail
+            else f"Auth status unclear (exit {returncode}).",
+        )
     return None, "Auth status unknown."
 
 
