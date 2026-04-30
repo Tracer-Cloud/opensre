@@ -56,7 +56,7 @@ _SAFE_SUBPROCESS_ENV_KEYS = frozenset(
         "XDG_STATE_HOME",
     }
 )
-_SAFE_SUBPROCESS_ENV_PREFIXES = ("LC_", "CODEX_")
+_SAFE_SUBPROCESS_ENV_PREFIXES = ("LC_", "CODEX_", "CURSOR_")
 
 
 def _strip_ansi(text: str) -> str:
