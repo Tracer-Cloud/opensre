@@ -298,3 +298,52 @@ def test_real_registry_discovers_honeycomb_and_coralogix_tools() -> None:
 def test_real_registry_preserves_existing_chat_tool_surface() -> None:
     chat_names = {tool_def.name for tool_def in registry_module.get_registered_tools("chat")}
     assert {"fetch_failed_run", "get_tracer_run", "search_github_code"} <= chat_names
+
+
+def test_registry_regression_duplicate_tool_names_across_modules(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that when two modules export the same tool name, only the first is kept."""
+    module1: Any = ModuleType("app.tools.first_module")
+    module2: Any = ModuleType("app.tools.second_module")
+
+    first_tool = tool(
+        name="shared_tool_name",
+        description="Tool in first module.",
+        source="knowledge",
+    )(lambda: {"module": "first"})
+
+    second_tool = tool(
+        name="shared_tool_name",
+        description="Tool in second module.",
+        source="knowledge",
+    )(lambda: {"module": "second"})
+
+    first_tool.__module__ = module1.__name__
+    second_tool.__module__ = module2.__name__
+    module1.shared_tool_first = first_tool
+    module2.shared_tool_second = second_tool
+
+    monkeypatch.setattr(
+        registry_module,
+        "_iter_tool_module_names",
+        lambda: ["first_module", "second_module"],
+    )
+    monkeypatch.setattr(
+        registry_module,
+        "_import_tool_module",
+        lambda name: module1 if name == "first_module" else module2,
+    )
+
+    tools = registry_module.get_registered_tools()
+    tool_names = [t.name for t in tools]
+
+    assert tool_names.count("shared_tool_name") == 1
+    registered_tool = registry_module.get_registered_tool_map()["shared_tool_name"]
+    assert registered_tool.run() == {"module": "first"}
+
+    assert any(
+        "Duplicate tool name 'shared_tool_name' across modules" in record.message
+        for record in caplog.records
+        if record.levelname == "WARNING"
+    )
