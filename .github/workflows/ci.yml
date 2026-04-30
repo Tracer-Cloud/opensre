@@ -32,7 +32,7 @@ concurrency:
 
 # ---------------------------------------------------------------
 # MATRIX: Ubuntu-only default matrix for push and pull_request in this workflow.
-# Optional label-driven checks (windows + ci:k8s) run in `.github/workflows/ci-labels.yml`.
+# Optional label-driven checks: `ci-labels-windows.yml` (`ci:windows`), `ci-labels-k8s.yml` (`ci:k8s`).
 # Kubernetes local tests here run on push to main or PR titles containing k8s/kubernetes.
 # ---------------------------------------------------------------
 jobs:

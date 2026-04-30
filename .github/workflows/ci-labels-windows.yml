@@ -1,4 +1,7 @@
-name: CI Labels
+# Optional Windows CI when PR label `ci:windows` is present.
+# Separate workflow + concurrency group so `ci:k8s` runs cannot cancel Windows runs.
+
+name: CI Labels (Windows)
 
 on:
   pull_request:
@@ -9,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-labels-${{ github.ref }}
+  group: ci-labels-windows-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -124,34 +127,3 @@ jobs:
           --ignore=tests/e2e/kubernetes_local_alert_simulation
           --ignore=tests/synthetic
           -m "not synthetic and not integration"
-
-  k8s-test:
-    if: contains(github.event.pull_request.labels.*.name, 'ci:k8s')
-    name: k8s label test
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    continue-on-error: true
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: "pyproject.toml"
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
-
-      - name: Run Kubernetes tests
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
-        run: python -m tests.e2e.kubernetes.test_local
