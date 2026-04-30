@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -380,14 +382,6 @@ def test_diagnose_binary_path_missing_file(tmp_path: Path) -> None:
     assert "does not exist" in result
 
 
-def test_diagnose_binary_path_broken_symlink(tmp_path: Path) -> None:
-    link = tmp_path / "broken-link"
-    link.symlink_to(tmp_path / "ghost")  # target does not exist
-    result = diagnose_binary_path(str(link))
-    assert result is not None
-    assert "broken symlink" in result
-
-
 def test_diagnose_binary_path_valid_executable(tmp_path: Path) -> None:
     exe = tmp_path / "my-bin"
     exe.write_bytes(b"")
@@ -400,20 +394,31 @@ def test_diagnose_binary_path_not_executable(tmp_path: Path) -> None:
     f.write_bytes(b"")
     os.chmod(f, 0o644)
     result = diagnose_binary_path(str(f))
-    import sys
-
     if sys.platform != "win32":
         assert result is not None
         assert "not executable" in result
+
+
+def test_diagnose_binary_path_broken_symlink_windows_skip(tmp_path: Path) -> None:
+    """Skip gracefully on Windows hosts where symlink creation requires elevation."""
+    link = tmp_path / "broken-link-win"
+    try:
+        link.symlink_to(tmp_path / "ghost")
+    except (OSError, NotImplementedError):
+        return  # symlinks not available on this runner; skip
+    result = diagnose_binary_path(str(link))
+    assert result is not None
+    assert "broken symlink" in result
 
 
 def test_resolve_cli_binary_warns_on_broken_symlink(tmp_path: Path, caplog) -> None:
     from app.integrations.llm_cli.binary_resolver import resolve_cli_binary
 
     link = tmp_path / "broken-codex"
-    link.symlink_to(tmp_path / "ghost")
-
-    import logging
+    try:
+        link.symlink_to(tmp_path / "ghost")
+    except (OSError, NotImplementedError):
+        return  # symlinks not available on this runner; skip
 
     with (
         patch.dict(os.environ, {"CODEX_BIN": str(link)}, clear=False),

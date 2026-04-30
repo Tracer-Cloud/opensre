@@ -1,4 +1,52 @@
-"""Shared binary resolution helpers for subprocess-backed CLI adapters."""
+"""Shared binary resolution helpers for subprocess-backed CLI adapters.
+
+Key public API
+--------------
+
+resolve_cli_binary(...)
+    Locate an executable using three-stage resolution:
+    1. Explicit ``*_BIN`` env override (e.g. ``CODEX_BIN``) — only used when the
+       path is runnable; logs a WARNING and falls through otherwise.
+    2. ``shutil.which`` PATH lookup for platform-specific binary names.
+    3. Conventional install-location fallbacks (npm, volta, pnpm, Homebrew, etc.).
+
+diagnose_binary_path(path) -> str | None
+    Return a human-readable reason why *path* is not usable, or ``None`` when it
+    is fine.  Distinguishes the following states so callers can surface actionable
+    messages to users:
+
+    +---------------------------------+----------------------------------------------------+
+    | Path state                      | Returned message (excerpt)                         |
+    +=================================+====================================================+
+    | Broken symlink                  | "'<path>' is a broken symlink (points to '<target>'). Remove or fix it." |
+    +---------------------------------+----------------------------------------------------+
+    | Does not exist                  | "'<path>' does not exist."                         |
+    +---------------------------------+----------------------------------------------------+
+    | Exists but is not a file        | "'<path>' is not a file."                          |
+    +---------------------------------+----------------------------------------------------+
+    | File but not executable (Unix)  | "'<path>' is not executable. Run: chmod +x <path>" |
+    +---------------------------------+----------------------------------------------------+
+    | Valid runnable binary           | ``None``                                           |
+    +---------------------------------+----------------------------------------------------+
+
+    On Windows the executable check is based on file extension
+    (``.cmd``, ``.exe``, ``.ps1``, ``.bat``) since there is no Unix execute bit.
+
+is_runnable_binary(path) -> bool
+    Low-level predicate used by ``resolve_cli_binary`` and the CLI wizard.
+    Prefer ``diagnose_binary_path`` when a user-facing message is needed.
+
+Platform notes
+--------------
+
+* Windows binary names include ``.cmd``, ``.exe``, ``.ps1``, ``.bat`` suffixes;
+  ``candidate_binary_names`` returns all four for a given base name.
+* ``npm_prefix_bin_dirs`` is ``@lru_cache``-d — call ``.cache_clear()`` in tests
+  that vary ``NPM_CONFIG_PREFIX`` or ``sys.platform``.
+* ``diagnose_binary_path`` reads the symlink target via ``Path.readlink()``
+  (Python ≥ 3.9) for a more actionable error message; falls back silently on
+  older hosts or permission errors.
+"""
 
 from __future__ import annotations
 
