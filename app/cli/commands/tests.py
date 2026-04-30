@@ -91,6 +91,19 @@ def tests(ctx: click.Context) -> None:
     raise SystemExit(exit_code)
 
 
+def _synthetic_suite_not_bundled_error() -> OpenSREError:
+    """Structured error for ``opensre tests synthetic`` when the suite isn't shipped."""
+    return OpenSREError(
+        "The synthetic RDS PostgreSQL suite is not available in this build.",
+        suggestion=(
+            "Pre-built binaries do not bundle the per-scenario data files "
+            "under 'tests/synthetic/rds_postgres/'. Install from source "
+            "(`git clone https://github.com/Tracer-Cloud/opensre && pip "
+            "install -e .`) and re-run 'opensre tests synthetic'."
+        ),
+    )
+
+
 @tests.command(name="synthetic")
 @click.option(
     "--scenario", default="", help="Pin to a single scenario directory, e.g. 001-replication-lag."
@@ -105,7 +118,37 @@ def tests(ctx: click.Context) -> None:
 )
 def run_synthetic_suite(scenario: str, output_json: bool, mock_grafana: bool) -> None:
     """Run the synthetic RDS PostgreSQL RCA benchmark."""
-    from tests.synthetic.rds_postgres.run_suite import main as run_suite_main
+    # ``packaging/opensre.spec`` only collects ``app/`` data files, so neither
+    # the synthetic Python package's submodules nor the per-scenario data
+    # directories are reliably present in PyInstaller bundles. Two failure
+    # modes can trip a bundled binary here:
+    #
+    # 1. The ``tests.synthetic.rds_postgres.*`` Python package is missing
+    #    entirely  →  ``ModuleNotFoundError`` raised at import time.
+    # 2. The package is included transitively but its data dir
+    #    (``tests/synthetic/rds_postgres/<scenario>/``) is absent
+    #    →  ``run_suite`` crashes later with ``FileNotFoundError`` from
+    #    ``Path.iterdir()`` inside the scenario loader.
+    #
+    # We pre-check the data dir explicitly *and* catch a narrow
+    # ``ModuleNotFoundError`` so users see one structured message regardless
+    # of which failure mode their bundle produces. The data-dir path is the
+    # ``SYNTHETIC_SCENARIOS_DIR`` constant from ``discover.py`` — single
+    # source of truth shared with ``_discover_rds_synthetic_scenarios``.
+    from app.cli.tests.discover import SYNTHETIC_SCENARIOS_DIR
+
+    if not SYNTHETIC_SCENARIOS_DIR.is_dir():
+        raise _synthetic_suite_not_bundled_error()
+
+    try:
+        from tests.synthetic.rds_postgres.run_suite import main as run_suite_main
+    except ModuleNotFoundError as exc:
+        # Narrow to the actual missing-bundle case; re-raise unrelated import
+        # failures (e.g. a missing transitive dep like ``psycopg``) so users
+        # see the real cause instead of a misleading "not bundled" message.
+        if exc.name is None or not exc.name.startswith("tests.synthetic.rds_postgres"):
+            raise
+        raise _synthetic_suite_not_bundled_error() from exc
 
     capture_test_synthetic_started(scenario or "all", mock_grafana=mock_grafana)
     raise SystemExit(
