@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import shutil
 from typing import Any
 
 import pytest
+
+# Named tuple matching shutil.disk_usage's return shape — constructed without
+# touching the real filesystem, so tests are fully isolated from host disk state.
+_DiskUsage = collections.namedtuple("usage", ["total", "used", "free"])
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -227,12 +232,7 @@ def test_check_disk_health_returns_passed_when_below_warn_threshold(
 ) -> None:
     """Disk usage below 85% should return status='passed'."""
     # 50 GiB used out of 100 GiB total = 50%
-    total = 100 * 1024**3
-    used = 50 * 1024**3
-    free = 50 * 1024**3
-    # shutil.disk_usage returns a named tuple of type shutil.usage
-    real = shutil.disk_usage("/")
-    fake_usage = type(real)(total, used, free)
+    fake_usage = _DiskUsage(total=100 * 1024**3, used=50 * 1024**3, free=50 * 1024**3)
     monkeypatch.setattr(shutil, "disk_usage", lambda _path: fake_usage)
 
     result = _check_disk_health()
@@ -249,11 +249,7 @@ def test_check_disk_health_returns_warn_when_at_or_above_threshold(
 ) -> None:
     """Disk usage at or above 85% should return status='warn'."""
     # 90 GiB used out of 100 GiB total = 90%
-    total = 100 * 1024**3
-    used = 90 * 1024**3
-    free = 10 * 1024**3
-    real = shutil.disk_usage("/")
-    fake_usage = type(real)(total, used, free)
+    fake_usage = _DiskUsage(total=100 * 1024**3, used=90 * 1024**3, free=10 * 1024**3)
     monkeypatch.setattr(shutil, "disk_usage", lambda _path: fake_usage)
 
     result = _check_disk_health()
@@ -263,3 +259,19 @@ def test_check_disk_health_returns_warn_when_at_or_above_threshold(
     assert result.status == "warn"
     assert "90% used" in result.detail
     assert "90GiB / 100GiB" in result.detail
+
+
+def test_check_disk_health_returns_missing_when_total_is_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When disk_usage reports total=0 (e.g. some container environments),
+    status should be 'missing' rather than raising a ZeroDivisionError."""
+    fake_usage = _DiskUsage(total=0, used=0, free=0)
+    monkeypatch.setattr(shutil, "disk_usage", lambda _path: fake_usage)
+
+    result = _check_disk_health()
+
+    assert isinstance(result, DeepHealthCheck)
+    assert result.name == "Disk"
+    assert result.status == "missing"
+    assert "Unable to determine disk size" in result.detail
