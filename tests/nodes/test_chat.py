@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.constants.prompts import SYSTEM_PROMPT
 from app.nodes import chat as chat_mod
 
 
@@ -83,3 +84,12 @@ def test_general_node_returns_user_facing_message_for_codex_provider(
     assert (
         "Interactive chat requires LLM_PROVIDER=anthropic or openai." in out["messages"][0].content
     )
+
+
+def test_system_prompt_requires_evidence_first_reasoning() -> None:
+    prompt = SYSTEM_PROMPT.lower()
+
+    assert "separate observations from inferences" in prompt
+    assert "competing hypotheses" in prompt
+    assert "confirm or refute" in prompt
+    assert "not present a root cause as confirmed" in prompt

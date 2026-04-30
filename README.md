@@ -1060,6 +1060,13 @@ Thanks goes to these amazing people:
             <sub><b>cokerrd</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/jason8745">
+            <img src="https://avatars.githubusercontent.com/u/41944427?v=4" width="100" alt="jason8745"/>
+            <br />
+            <sub><b>jason8745</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
