@@ -1104,6 +1104,20 @@ Thanks goes to these amazing people:
             <sub><b>PrakharJain345</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/Bhavarth7">
+            <img src="https://avatars.githubusercontent.com/u/76651028?v=4" width="100" alt="Bhavarth7"/>
+            <br />
+            <sub><b>Bhavarth7</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/emefienem">
+            <img src="https://avatars.githubusercontent.com/u/122095740?v=4" width="100" alt="emefienem"/>
+            <br />
+            <sub><b>emefienem</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
