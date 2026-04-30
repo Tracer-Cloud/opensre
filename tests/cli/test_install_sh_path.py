@@ -3,8 +3,28 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
+
+import pytest
+
+# install.sh is a POSIX shell script that exercises zsh/bash/fish rc-file
+# behaviour, and these tests drive it via ``subprocess.run(["bash", "-c", ...])``.
+# On the GitHub Actions ``windows-latest`` runner, ``bash`` is resolved to
+# ``wsl.exe`` and the runner has no installed WSL distribution — every
+# ``_run`` call exits 1 with a "Windows Subsystem for Linux has no installed
+# distributions" message and none of the asserted rc files get written.
+# Skip the whole module rather than chase a Windows analogue for a Unix-only
+# installer script.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "install.sh is POSIX-only; the Windows runner has no usable bash "
+        "(resolves to unconfigured WSL), so this module's subprocess-driven "
+        "tests cannot run there. See issue #1099."
+    ),
+)
 
 INSTALL_SH = Path(__file__).parents[2] / "install.sh"
 _LOCAL_BIN = ".local/bin"

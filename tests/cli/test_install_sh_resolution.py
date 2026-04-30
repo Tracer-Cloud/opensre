@@ -4,10 +4,30 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
 import pytest
+
+# Same Windows-skip rationale as ``test_install_sh_path.py`` — install.sh is
+# POSIX-only and the GitHub Actions ``windows-latest`` runner has no usable
+# bash. See issue #1099.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "install.sh is POSIX-only; the Windows runner has no usable bash "
+        "(resolves to unconfigured WSL), so this module's subprocess-driven "
+        "tests cannot run there. See issue #1099."
+    ),
+)
+
+# ``os.geteuid`` does not exist on Windows. The skipif decorator below is
+# evaluated at decorator-application time (i.e. module import), so a bare
+# ``os.geteuid() == 0`` check would raise ``AttributeError`` on Windows
+# *before* ``pytestmark`` ever takes effect. ``hasattr`` short-circuits the
+# ``and`` so the ``os.geteuid()`` call only runs on platforms that have it.
+_RUNNING_AS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 
 INSTALL_SH = Path(__file__).parents[2] / "install.sh"
 
@@ -62,7 +82,7 @@ def test_prefers_writable_user_path_dir(tmp_path: Path) -> None:
     assert "INSTALL_WITH_SUDO=0" in result.stdout
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="sudo fallback is only meaningful for non-root users")
+@pytest.mark.skipif(_RUNNING_AS_ROOT, reason="sudo fallback is only meaningful for non-root users")
 def test_uses_sudo_for_non_writable_system_path_dir(tmp_path: Path) -> None:
     system_bin = tmp_path / "system-bin"
     system_bin.mkdir()
