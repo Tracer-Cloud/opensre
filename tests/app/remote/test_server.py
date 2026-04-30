@@ -222,11 +222,6 @@ async def test_lifespan_starts_and_cancels_vercel_poller(
 # ---------------------------------------------------------------------------
 
 
-# ---------------------------------------------------------------------------
-# _check_disk_health tests
-# ---------------------------------------------------------------------------
-
-
 def test_check_disk_health_returns_passed_when_below_warn_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
