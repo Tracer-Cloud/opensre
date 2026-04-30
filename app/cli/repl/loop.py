@@ -50,7 +50,12 @@ async def _run_one_turn(
     *,
     _interrupt_count: list[int],
 ) -> bool:
-    """Read one line of input and dispatch. Returns False to exit."""
+    """Read one line of input and dispatch. Returns False to exit.
+
+    The ``_interrupt_count`` list is a one-element mutable counter shared
+    with the caller so that two consecutive Ctrl+C presses exit the REPL
+    while a single press merely cancels the current input line.
+    """
     try:
         text = await prompt.prompt_async(ANSI("\x1b[1;36m› \x1b[0m"))
         _interrupt_count[0] = 0  # reset on successful input
