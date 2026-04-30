@@ -47,7 +47,7 @@ def test_install_questionary_ctrl_c_double_exit_is_idempotent() -> None:
 
 def test_ctrl_c_first_press_shows_hint_and_reprompts(capsys) -> None:
     """First Ctrl+C prints the hint and re-displays the prompt; Enter then submits."""
-    _last_ctrl_c[0] = 0.0
+    _last_ctrl_c[0] = None
     install_questionary_ctrl_c_double_exit()
     with create_pipe_input() as pipe_input:
         q = questionary.select(
@@ -75,7 +75,7 @@ def test_ctrl_c_second_press_exits(capsys) -> None:
 
 def test_ctrl_c_hint_resets_after_window(capsys) -> None:
     # A press older than the exit window should show the hint again, not exit.
-    _last_ctrl_c[0] = 0.0  # effectively "long ago"
+    _last_ctrl_c[0] = None  # effectively "long ago"
     handle_ctrl_c_press()
     out = capsys.readouterr().out
     assert "(Press Ctrl+C again to exit)" in out

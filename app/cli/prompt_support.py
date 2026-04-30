@@ -14,8 +14,8 @@ from prompt_toolkit.keys import Keys
 _escape_patch_installed: list[bool] = [False]
 _ctrl_c_patch_installed: list[bool] = [False]
 
-# Shared timestamp of the last Ctrl+C press (0.0 = never pressed).
-_last_ctrl_c: list[float] = [0.0]
+# Shared timestamp of the last Ctrl+C press (None = never pressed).
+_last_ctrl_c: list[float | None] = [None]
 _CTRL_C_EXIT_WINDOW: float = 2.0
 
 
@@ -86,7 +86,7 @@ def handle_ctrl_c_press() -> None:
     Second call within _CTRL_C_EXIT_WINDOW seconds:  prints Goodbye and exits.
     """
     now = time.monotonic()
-    if now - _last_ctrl_c[0] <= _CTRL_C_EXIT_WINDOW:
+    if _last_ctrl_c[0] is not None and now - _last_ctrl_c[0] <= _CTRL_C_EXIT_WINDOW:
         print("\nGoodbye!", flush=True)
         sys.exit(0)
     _last_ctrl_c[0] = now
@@ -118,7 +118,7 @@ def _with_ctrl_c_double_exit(
                 if isinstance(exc, _HardQuitInterrupt):
                     raise  # Ctrl+Q hard-quit — bypass retry logic
                 now = time.monotonic()
-                if now - _last_ctrl_c[0] <= _CTRL_C_EXIT_WINDOW:
+                if _last_ctrl_c[0] is not None and now - _last_ctrl_c[0] <= _CTRL_C_EXIT_WINDOW:
                     print("\nGoodbye!", flush=True)
                     sys.exit(0)
                 _last_ctrl_c[0] = now
