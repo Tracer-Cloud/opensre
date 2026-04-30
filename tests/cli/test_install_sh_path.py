@@ -156,6 +156,27 @@ def test_readds_export_when_marker_present_but_line_removed(tmp_path: Path) -> N
 # ---------------------------------------------------------------------------
 
 
+def _find_post_install_start_line() -> int:
+    """Return the line number where the post-install output block starts in install.sh.
+
+    We look for the first line of the version-print block that immediately
+    follows the ``install_binary`` call — i.e. the ``if [ "$INSTALL_CHANNEL"``
+    line that opens the "Installed opensre ..." log statement.  Everything from
+    that line to EOF is the post-install output block that we want to run in
+    tests.
+    """
+    marker = 'if [ "$INSTALL_CHANNEL" = "main" ]; then'
+    lines = INSTALL_SH.read_text().splitlines()
+    # Walk backwards from EOF so we pick up the last (main-script-level)
+    # occurrence, not any occurrence inside a function body.
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].strip() == marker:
+            return i + 1  # 1-indexed for tail / awk
+    raise RuntimeError(
+        f"Could not locate post-install block in {INSTALL_SH}. Did the script structure change?"
+    )
+
+
 def _run_post_install(
     tmp_path: Path,
     shell: str,
@@ -167,41 +188,43 @@ def _run_post_install(
     """Run the real post-install output block of install.sh with side-effects stubbed.
 
     Unlike ``_run()``, which only calls ``configure_path()`` in isolation, this
-    helper executes the exact same code block that sits at the bottom of the
-    real script:
+    helper sources *the actual lines* that sit at the bottom of install.sh
+    (version print + configure_path + onboarding hint) rather than copying
+    them into the test.  That means if the hint is removed from install.sh
+    the assertions will correctly fail — there is no tautology.
 
-        # version confirmation line  (lines 690-698)
-        configure_path               (line 700)
-        # onboarding hint            (lines 702-703 — added by issue #1153)
-
-    This lets us assert on the full output sequence under every PATH scenario,
-    including the silent early-return path inside ``configure_path()`` when the
-    install dir is already on PATH — a case the old ``_run()`` helper could
-    never exercise.
+    The approach:
+      1. Load all function definitions from install.sh via awk.
+      2. Stub the four side-effect functions so no network/binary calls occur.
+      3. Set every shell variable the output block needs.
+      4. Use ``tail -n +N`` to feed the real post-install lines from install.sh
+         to bash, so the test drives install.sh source directly.
     """
     fake_home = tmp_path / "home"
     fake_home.mkdir(exist_ok=True)
     idir = str(fake_home / _LOCAL_BIN)
 
-    # When dir_already_on_path=True, configure_path() hits the early return at
-    # line 490 and prints nothing.  The onboarding hint must still appear.
+    # When dir_already_on_path=True, configure_path() hits the early return
+    # and prints nothing.  The onboarding hint must still appear.
     path_value = f"{idir}:/usr/bin:/bin" if dir_already_on_path else "/usr/bin:/bin"
 
+    start_line = _find_post_install_start_line()
+
     script = textwrap.dedent(f"""\
-        # Load every function definition from install.sh
+        # 1. Load every function definition from install.sh
         eval "$(awk '
             /^[a-z_][a-z_]*\\(\\)/ {{ in_fn=1 }}
             in_fn {{ print }}
             in_fn && /^\\}}$/ {{ in_fn=0 }}
         ' {INSTALL_SH})"
 
-        # Stub out side-effect functions so no binary or network calls happen
+        # 2. Stub side-effect functions — no binary or network calls
         install_binary()               {{ :; }}
         get_binary_path_from_archive() {{ printf '/tmp/fake-opensre\\n'; }}
         verify_binary_version()        {{ printf '%s\\n' "${{2:-{installed_version}}}"; }}
         run_with_privilege()           {{ "$@"; }}
 
-        # Set every variable the output block reads
+        # 3. Set every variable the output block reads
         BIN_NAME="opensre"
         INSTALL_DIR="{idir}"
         INSTALL_CHANNEL="{install_channel}"
@@ -212,23 +235,37 @@ def _run_post_install(
         PATH="{path_value}"
         export HOME SHELL PATH
 
-        # --- real post-install output block (mirrors install.sh lines 690-703) ---
-        if [ "$INSTALL_CHANNEL" = "main" ]; then
-          if [ "$installed_version" = "main" ]; then
-            log "Installed ${{BIN_NAME}} main build to ${{INSTALL_DIR}}/${{BIN_NAME}}"
-          else
-            log "Installed ${{BIN_NAME}} main build (${{installed_version}}) to ${{INSTALL_DIR}}/${{BIN_NAME}}"
-          fi
-        else
-          log "Installed ${{BIN_NAME}} v${{installed_version}} to ${{INSTALL_DIR}}/${{BIN_NAME}}"
-        fi
-
-        configure_path
-
-        log ""
-        log "Next: run 'opensre onboard' to complete setup."
+        # 4. Execute the real post-install lines sourced directly from install.sh.
+        #    tail -n +{start_line} feeds everything from the version-print block
+        #    to EOF, so any change to those lines in install.sh is immediately
+        #    reflected here — no copy-paste tautology.
+        eval "$(tail -n +{start_line} {INSTALL_SH})"
     """)
     return subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+
+
+def test_install_sh_contains_onboarding_hint() -> None:
+    """Contract test: the hint string must be present in install.sh source.
+
+    This is a direct grep of the script file — independent of any subprocess
+    execution — so it will fail immediately if the hint is removed from
+    install.sh even if the subprocess-based tests are somehow still passing.
+    """
+    source = INSTALL_SH.read_text()
+    assert "opensre onboard" in source, (
+        "install.sh does not contain the onboarding hint. "
+        "Expected a line like: log \"Next: run 'opensre onboard' to complete setup.\""
+    )
+
+
+def test_install_ps1_contains_onboarding_hint() -> None:
+    """Contract test: the hint string must be present in install.ps1 source."""
+    install_ps1 = Path(__file__).parents[2] / "install.ps1"
+    source = install_ps1.read_text()
+    assert "opensre onboard" in source, (
+        "install.ps1 does not contain the onboarding hint. "
+        "Expected a line like: Write-Host \"Next: run 'opensre onboard' to complete setup.\""
+    )
 
 
 def test_onboarding_hint_shown_when_path_not_set(tmp_path: Path) -> None:
