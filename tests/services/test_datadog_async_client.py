@@ -143,7 +143,8 @@ async def test_fetch_all_http_error(async_client, mock_async_httpx):
     mock_response = MagicMock()
     mock_response.status_code = 401
     mock_response.text = "unauthorized"
-    mock_response.raise_for_status = AsyncMock(
+
+    mock_response.raise_for_status = MagicMock(
         side_effect=httpx.HTTPStatusError(
             "err",
             request=MagicMock(),
