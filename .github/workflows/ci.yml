@@ -1,7 +1,6 @@
 name: CI
 
-# PR: no paths filter so `labeled` / `unlabeled` (e.g. ci:windows) still trigger runs.
-# Push to main stays path-filtered to avoid noise.
+# Default CI remains path-scoped for pull_request and push events.
 on:
   push:
     branches: [main]
@@ -32,9 +31,8 @@ concurrency:
 
 # ---------------------------------------------------------------
 # MATRIX: Ubuntu-only default matrix for push and pull_request in this workflow.
-# Optional label-driven checks: `ci-labels-windows.yml` (`ci:windows`), `ci-labels-k8s.yml` (`ci:k8s`).
-# Kubernetes local tests here run on push to main only.
-# PR-side k8s is label-driven in `.github/workflows/ci-labels-k8s.yml` via `ci:k8s`.
+# Optional label-driven Windows checks live in `ci-labels-windows.yml` (`ci:windows`).
+# Kubernetes local tests here run on push to main or PR titles containing k8s/kubernetes.
 # ---------------------------------------------------------------
 jobs:
 # ---------------------------------------------------------------
@@ -197,7 +195,15 @@ jobs:
     continue-on-error: true
     timeout-minutes: 15
 
-    if: github.event_name == 'push'
+    if: >-
+      github.event_name == 'push' ||
+      (
+        github.event_name == 'pull_request' &&
+        (
+          contains(github.event.pull_request.title, 'k8s') ||
+          contains(github.event.pull_request.title, 'kubernetes')
+        )
+      )
 
     steps:
       - uses: actions/checkout@v5

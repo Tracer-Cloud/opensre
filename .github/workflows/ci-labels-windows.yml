@@ -1,5 +1,5 @@
 # Optional Windows CI when PR label `ci:windows` is present.
-# Separate workflow + concurrency group so `ci:k8s` runs cannot cancel Windows runs.
+# Separate workflow + concurrency group so Windows label runs are isolated.
 
 name: CI Labels (Windows)
 
