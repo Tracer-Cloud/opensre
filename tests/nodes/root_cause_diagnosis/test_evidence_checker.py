@@ -106,6 +106,26 @@ class TestIsClearlyHealthyExistingSources:
         assert is_clearly_healthy(_healthy_alert(), evidence) is True
 
 
+class TestIsClearlyHealthyMissingObservabilitySources:
+    """Healthy states from shipped observability integrations must also fast-path."""
+
+    @pytest.mark.parametrize(
+        "evidence_key",
+        [
+            "alertmanager_alerts",
+            "alertmanager_silences",
+            "coralogix_logs",
+            "coralogix_error_logs",
+            "honeycomb_traces",
+        ],
+    )
+    def test_single_missing_observability_key_triggers_short_circuit(
+        self, evidence_key: str
+    ) -> None:
+        evidence = {evidence_key: []}
+        assert is_clearly_healthy(_healthy_alert(), evidence) is True
+
+
 class TestIsClearlyHealthyRejectsUnhealthyStates:
     """Every gate condition must still reject non-healthy alerts."""
 
