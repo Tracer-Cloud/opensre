@@ -1,15 +1,3 @@
-from __future__ import annotations
-
-import sys
-from types import ModuleType
-import pytest
-from datetime import datetime
-import botocore.exceptions
-
-
-# ----------------------------
-# Generic dynamic mock (handles ANY attribute)
-# ----------------------------
 def create_mock_module(name: str):
     module = ModuleType(name)
 
