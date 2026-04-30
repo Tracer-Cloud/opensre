@@ -25,6 +25,11 @@ INVESTIGATED_EVIDENCE_KEYS = frozenset(
         "datadog_logs",
         "datadog_monitors",
         "betterstack_logs",
+        "honeycomb_traces",
+        "coralogix_logs",
+        "coralogix_error_logs",
+        "alertmanager_alerts",
+        "alertmanager_silences",
         # Kubernetes / EKS evidence keys — written by the _map_eks_* mappers in
         # app/nodes/investigate/processing/post_process.py.  Without these, a pure
         # Kubernetes healthy investigation never satisfies the evidence gate below

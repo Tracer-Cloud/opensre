@@ -144,6 +144,12 @@ class TestIsClearlyHealthyRejectsUnhealthyStates:
         evidence = {"eks_pods": [{"name": "x"}]}
         assert is_clearly_healthy(alert, evidence) is False
 
+    def test_critical_severity_with_new_observability_key_returns_false(self) -> None:
+        alert = _healthy_alert()
+        alert["commonLabels"] = {"severity": "critical"}
+        evidence = {"alertmanager_alerts": []}
+        assert is_clearly_healthy(alert, evidence) is False
+
     def test_error_annotation_returns_false(self) -> None:
         alert = _healthy_alert()
         alert["commonAnnotations"] = {"error": "something went wrong"}
