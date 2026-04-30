@@ -155,6 +155,7 @@ def test_readds_export_when_marker_present_but_line_removed(tmp_path: Path) -> N
 # Helpers and tests for the post-install onboarding hint (issue #1153)
 # ---------------------------------------------------------------------------
 
+
 def _run_post_install(
     tmp_path: Path,
     shell: str,
