@@ -484,6 +484,12 @@ class TestRedaction:
         result = slack_delivery._redact_token("some error", "xoxb-missing")
         assert result == "some error"
 
+    def test_redact_token_scrubs_slack_token_pattern_without_exact_match(self) -> None:
+        leaked_token = "xoxb-token-from-response-body"
+        result = slack_delivery._redact_token(f"proxy echoed {leaked_token}", "different-token")
+        assert leaked_token not in result
+        assert "xoxb-<redacted>" in result
+
 
 class TestExtractError:
     def test_prefers_error_field(self) -> None:
@@ -520,6 +526,32 @@ class TestNonJsonBody:
         ok, err = slack_delivery._post_direct("hi", "C1", "1.0", "tok")
         assert ok is False
         assert "<html>Bad Gateway</html>" in err
+
+    def test_post_direct_redacts_token_from_html_error_body(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        token = "xoxb-1234567890-abcdefghij"
+        monkeypatch.setattr(
+            "app.utils.slack_delivery.post_json",
+            lambda *_a, **_kw: DeliveryResponse(
+                ok=True,
+                status_code=502,
+                data={},
+                text=f"<html>proxy echoed {token}</html>",
+            ),
+        )
+
+        with caplog.at_level(logging.ERROR, logger="app.utils.slack_delivery"):
+            ok, err = slack_delivery._post_direct("hi", "C1", "1.0", token)
+
+        joined = " ".join(rec.getMessage() for rec in caplog.records)
+        assert ok is False
+        assert token not in err
+        assert token not in joined
+        assert "<redacted>" in err
+        assert "<redacted>" in joined
 
 
 class TestExceptionRedaction:

@@ -13,14 +13,15 @@ from app.utils.delivery_transport import post_json
 
 logger = logging.getLogger(__name__)
 
-_ACCESS_TOKEN_RE = re.compile(r"(xox[baprs]-)[^/\s]+")
+_ACCESS_TOKEN_RE = re.compile(r"(xox[baprs]-)[A-Za-z0-9-]+")
 
 
 def _redact_token(text: str, access_token: str) -> str:
     """Replace ``access_token`` with ``<redacted>`` to prevent accidental log/error leakage."""
+    redacted = text
     if access_token and access_token in text:
-        return text.replace(access_token, "<redacted>")
-    return text
+        redacted = text.replace(access_token, "<redacted>")
+    return _ACCESS_TOKEN_RE.sub(r"\1<redacted>", redacted)
 
 
 def _extract_error(data: dict[str, Any], status_code: int, text: str) -> str:
@@ -263,15 +264,16 @@ def _post_direct(
         error = response.data.get("error")
         if not error:
             error = _extract_error(dict(response.data), response.status_code, response.text)
+        safe_error = _redact_token(str(error), token)
         response_meta = response.data.get("response_metadata", {})
         logger.error(
             "[slack] Direct post FAILED: error=%s, metadata=%s (channel=%s, thread_ts=%s)",
-            error,
+            safe_error,
             response_meta,
             channel,
             thread_ts,
         )
-        return False, f"slack_error={error}"
+        return False, f"slack_error={safe_error}"
     warnings = response.data.get("response_metadata", {}).get("warnings", [])
     if warnings:
         logger.warning("[slack] Reply posted with warnings: %s", warnings)

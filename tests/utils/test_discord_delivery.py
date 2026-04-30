@@ -326,7 +326,9 @@ class TestDiscordExtractError:
 
 
 class TestDiscordNonJsonBody:
-    def test_post_discord_message_handles_html_error_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_post_discord_message_handles_html_error_body(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from app.utils.delivery_transport import DeliveryResponse
 
         monkeypatch.setattr(
@@ -345,7 +347,9 @@ class TestDiscordNonJsonBody:
         assert "<html>Bad Gateway</html>" in error
         assert message_id == ""
 
-    def test_create_discord_thread_handles_html_error_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_create_discord_thread_handles_html_error_body(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from app.utils.delivery_transport import DeliveryResponse
 
         monkeypatch.setattr(
@@ -396,7 +400,9 @@ class TestDiscordExceptionRedaction:
             "app.utils.discord_delivery.post_json",
             lambda *_a, **_kw: DeliveryResponse(ok=False, error=leak_msg),
         )
-        ok, error = discord_delivery.send_discord_report("Report", {"channel_id": "c1", "bot_token": token})
+        ok, error = discord_delivery.send_discord_report(
+            "Report", {"channel_id": "c1", "bot_token": token}
+        )
         assert ok is False
         assert token not in error
         assert "<redacted>" in error

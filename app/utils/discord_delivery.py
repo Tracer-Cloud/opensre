@@ -25,10 +25,6 @@ def _redact_token(text: str, bot_token: str) -> str:
     return text
 
 
-def _discord_error_from_data(data: Mapping[str, Any]) -> str:
-    return str(data.get("message", data.get("error", "unknown")))
-
-
 def _extract_error(data: Mapping[str, Any], status_code: int, text: str) -> str:
     """Return a human-readable error string from a Discord API response.
 
