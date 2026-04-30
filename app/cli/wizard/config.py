@@ -157,6 +157,12 @@ def _codex_adapter_factory() -> LLMCLIAdapter:
     return CodexAdapter()
 
 
+def _copilot_adapter_factory() -> LLMCLIAdapter:
+    from app.integrations.llm_cli.copilot import CopilotAdapter
+
+    return CopilotAdapter()
+
+
 SUPPORTED_PROVIDERS = (
     ProviderOption(
         value="anthropic",
@@ -219,6 +225,24 @@ SUPPORTED_PROVIDERS = (
         credential_kind="cli",
         credential_secret=False,
         adapter_factory=_codex_adapter_factory,
+    ),
+    ProviderOption(
+        value="copilot",
+        label="GitHub Copilot CLI",
+        group="Local CLI providers",
+        api_key_env="",
+        model_env="COPILOT_MODEL",
+        default_model="",
+        models=(
+            ModelOption(value="", label="CLI default (no --model; use Copilot configured model)"),
+            ModelOption(value="auto", label="auto — let Copilot pick the best model"),
+            ModelOption(value="gpt-5.3-codex", label="gpt-5.3-codex — coding-optimized"),
+            ModelOption(value="gpt-5.4", label="gpt-5.4 — strong default for everyday coding"),
+            ModelOption(value="claude-sonnet-4.6", label="Claude Sonnet 4.6"),
+        ),
+        credential_kind="cli",
+        credential_secret=False,
+        adapter_factory=_copilot_adapter_factory,
     ),
     ProviderOption(
         value="ollama",
