@@ -10,6 +10,7 @@ Enable shell tab-completion (add to your shell profile for persistence):
 from __future__ import annotations
 
 import os
+import signal
 import sys
 
 import click
@@ -19,7 +20,11 @@ from app.analytics.cli import capture_cli_invoked
 from app.analytics.provider import capture_first_run_if_needed, shutdown_analytics
 from app.cli.commands import register_commands
 from app.cli.layout import RichGroup, render_landing
-from app.cli.prompt_support import install_questionary_escape_cancel
+from app.cli.prompt_support import (
+    handle_ctrl_c_press,
+    install_questionary_ctrl_c_double_exit,
+    install_questionary_escape_cancel,
+)
 from app.version import get_version
 
 
@@ -87,14 +92,35 @@ def cli(
 register_commands(cli)
 
 
+def _install_sigint_handler() -> None:
+    """Handle Ctrl+C between prompts (when prompt_toolkit is not active).
+
+    prompt_toolkit intercepts Ctrl+C internally while a prompt is running, so
+    the key binding in prompt_support.py handles that case.  This SIGINT handler
+    covers everything else: long-running operations, streaming output, etc.
+    """
+
+    def _handler(signum: int, frame: object) -> None:  # noqa: ARG001
+        handle_ctrl_c_press()
+
+    signal.signal(signal.SIGINT, _handler)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``opensre`` console script."""
     load_dotenv(override=False)
     install_questionary_escape_cancel()
+    install_questionary_ctrl_c_double_exit()
+    _install_sigint_handler()
     capture_first_run_if_needed()
 
     try:
         cli(args=argv, standalone_mode=True)
+    except KeyboardInterrupt:
+        # Suppress Click's "Aborted!" message; a clean exit with no output is
+        # correct here because handle_ctrl_c_press already printed the hint or
+        # "Goodbye!" before raising SystemExit / letting the interrupt propagate.
+        return 0
     except SystemExit as exc:
         if isinstance(exc.code, int):
             return exc.code
