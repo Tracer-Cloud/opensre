@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any
 
 from app.config import SLACK_CHANNEL
@@ -11,6 +12,30 @@ from app.output import debug_print
 from app.utils.delivery_transport import post_json
 
 logger = logging.getLogger(__name__)
+
+_ACCESS_TOKEN_RE = re.compile(r"(xox[baprs]-)[^/\s]+")
+
+
+def _redact_token(text: str, access_token: str) -> str:
+    """Replace ``access_token`` with ``<redacted>`` to prevent accidental log/error leakage."""
+    if access_token and access_token in text:
+        return text.replace(access_token, "<redacted>")
+    return text
+
+
+def _extract_error(data: dict[str, Any], status_code: int, text: str) -> str:
+    """Return a human-readable error string from a Slack API response.
+
+    Tries ``data["error"]`` first, then falls back to the raw response body
+    or the HTTP status code so non-JSON failure bodies (HTML, plain text)
+    never cause a crash.
+    """
+    error = data.get("error")
+    if error:
+        return str(error)
+    if text:
+        return text[:500]
+    return f"HTTP {status_code}"
 
 
 def _slack_bearer_headers(token: str) -> dict[str, str]:
@@ -38,7 +63,8 @@ def _call_reactions_api(method: str, token: str, channel: str, timestamp: str, e
         timeout=8.0,
     )
     if not response.ok:
-        logger.warning("[slack] %s(%s) exception: %s", method, emoji, response.error)
+        safe_error = _redact_token(response.error, token)
+        logger.warning("[slack] %s(%s) exception: %s", method, emoji, safe_error)
         return False
     if not response.data.get("ok"):
         error = response.data.get("error", "unknown")
@@ -189,12 +215,13 @@ def send_slack_report(
             slack_message, channel, thread_ts, access_token, blocks=blocks, **extra
         )
         if not success:
+            safe_error = _redact_token(direct_error, access_token)
             logger.info(
-                "[slack] Direct post failed (%s), falling back to webapp delivery", direct_error
+                "[slack] Direct post failed (%s), falling back to webapp delivery", safe_error
             )
             webapp_ok = _post_via_webapp(slack_message, channel, thread_ts, blocks=blocks, **extra)
             if not webapp_ok:
-                return False, f"direct={direct_error}, webapp=failed"
+                return False, f"direct={safe_error}, webapp=failed"
             return True, ""
         return True, ""
     else:
@@ -222,17 +249,20 @@ def _post_direct(
         headers=_slack_bearer_headers(token),
     )
     if not response.ok:
+        safe_error = _redact_token(response.error, token)
         logger.error(
             "[slack] Direct post exception type=%s channel=%s thread_ts=%s detail=%s "
             "(caller may attempt fallback)",
             response.exc_type or "Exception",
             channel,
             thread_ts,
-            response.error,
+            safe_error,
         )
-        return False, f"exception={response.error}"
-    if not response.data.get("ok"):
-        error = response.data.get("error", "unknown")
+        return False, f"exception={safe_error}"
+    if response.data.get("ok") is not True:
+        error = response.data.get("error")
+        if not error:
+            error = _extract_error(dict(response.data), response.status_code, response.text)
         response_meta = response.data.get("response_metadata", {})
         logger.error(
             "[slack] Direct post FAILED: error=%s, metadata=%s (channel=%s, thread_ts=%s)",

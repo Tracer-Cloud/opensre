@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -281,3 +282,142 @@ class TestDelegatesToSharedTransport:
         assert "/messages/m1/threads" in captured["url"]
         assert captured["payload"]["name"] == "Investigation"
         assert captured["payload"]["auto_archive_duration"] == 1440
+
+
+# ---------------------------------------------------------------------------
+# Issue #865 – Discord hardening: non-JSON bodies and token redaction
+# ---------------------------------------------------------------------------
+
+
+class TestDiscordRedaction:
+    def test_redact_token_in_error_string(self) -> None:
+        token = "MTIzNDU2Nzg5.MTg4NjY2.NqIIjOjHrFJzE5jgwSGM1Nz"
+        error = f"connect failed with {token}"
+        result = discord_delivery._redact_token(error, token)
+        assert token not in result
+        assert "<redacted>" in result
+
+    def test_redact_token_returns_original_when_token_not_present(self) -> None:
+        result = discord_delivery._redact_token("some error", "MTIzNDU2Nzg5.MTg4NjY2.NqIIjO")
+        assert result == "some error"
+
+
+class TestDiscordExtractError:
+    def test_prefers_message_field(self) -> None:
+        result = discord_delivery._extract_error({"message": "Missing Permissions"}, 403, "html")
+        assert result == "Missing Permissions"
+
+    def test_falls_back_to_error_field(self) -> None:
+        result = discord_delivery._extract_error({"error": "invalid_form_data"}, 400, "html")
+        assert result == "invalid_form_data"
+
+    def test_falls_back_to_text(self) -> None:
+        result = discord_delivery._extract_error({}, 502, "<html>Bad Gateway</html>")
+        assert result == "<html>Bad Gateway</html>"
+
+    def test_falls_back_to_http_status(self) -> None:
+        result = discord_delivery._extract_error({}, 500, "")
+        assert result == "HTTP 500"
+
+    def test_truncates_text_to_500_chars(self) -> None:
+        long_text = "x" * 1000
+        result = discord_delivery._extract_error({}, 502, long_text)
+        assert len(result) == 500
+
+
+class TestDiscordNonJsonBody:
+    def test_post_discord_message_handles_html_error_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        monkeypatch.setattr(
+            "app.utils.discord_delivery.post_json",
+            lambda *_a, **_kw: DeliveryResponse(
+                ok=True,
+                status_code=502,
+                data={},
+                text="<html>Bad Gateway</html>",
+            ),
+        )
+        ok, error, message_id = discord_delivery.post_discord_message(
+            "chan-1", [{"title": "Alert"}], "bot-token"
+        )
+        assert ok is False
+        assert "<html>Bad Gateway</html>" in error
+        assert message_id == ""
+
+    def test_create_discord_thread_handles_html_error_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        monkeypatch.setattr(
+            "app.utils.discord_delivery.post_json",
+            lambda *_a, **_kw: DeliveryResponse(
+                ok=True,
+                status_code=502,
+                data={},
+                text="<html>Bad Gateway</html>",
+            ),
+        )
+        ok, error, thread_id = discord_delivery.create_discord_thread(
+            "chan-1", "msg-1", "Test Thread", "bot-token"
+        )
+        assert ok is False
+        assert "<html>Bad Gateway</html>" in error
+        assert thread_id == ""
+
+
+class TestDiscordExceptionRedaction:
+    def test_exception_error_redacts_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        token = "MTIzNDU2Nzg5.MTg4NjY2.NqIIjOjHrFJzE5jgwSGM1Nz"
+        leak_msg = f"connect failed with {token}"
+
+        monkeypatch.setattr(
+            "app.utils.discord_delivery.post_json",
+            lambda *_a, **_kw: DeliveryResponse(ok=False, error=leak_msg),
+        )
+        ok, error, message_id = discord_delivery.post_discord_message(
+            "chan-1", [{"title": "Alert"}], token
+        )
+        assert ok is False
+        assert token not in error
+        assert "<redacted>" in error
+        assert message_id == ""
+
+    def test_send_discord_report_returns_redacted_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        token = "MTIzNDU2Nzg5.MTg4NjY2.NqIIjOjHrFJzE5jgwSGM1Nz"
+        leak_msg = f"connect failed with {token}"
+
+        monkeypatch.setattr(
+            "app.utils.discord_delivery.post_json",
+            lambda *_a, **_kw: DeliveryResponse(ok=False, error=leak_msg),
+        )
+        ok, error = discord_delivery.send_discord_report("Report", {"channel_id": "c1", "bot_token": token})
+        assert ok is False
+        assert token not in error
+        assert "<redacted>" in error
+
+
+class TestDiscordExceptionLogRedaction:
+    def test_exception_log_redacts_token(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        token = "MTIzNDU2Nzg5.MTg4NjY2.NqIIjOjHrFJzE5jgwSGM1Nz"
+        leak_msg = f"connect failed with {token}"
+
+        monkeypatch.setattr(
+            "app.utils.discord_delivery.post_json",
+            lambda *_a, **_kw: DeliveryResponse(ok=False, error=leak_msg),
+        )
+        with caplog.at_level(logging.WARNING, logger="app.utils.discord_delivery"):
+            discord_delivery.post_discord_message("chan-1", [{"title": "Alert"}], token)
+
+        joined = " ".join(rec.getMessage() for rec in caplog.records)
+        assert token not in joined
+        assert "<redacted>" in joined

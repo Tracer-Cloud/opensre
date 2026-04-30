@@ -459,3 +459,122 @@ class TestDelegatesToSharedTransport:
         assert captured["payload"]["text"] == "hi"
         assert captured["payload"]["blocks"] == [{"b": 1}]
         assert captured["follow_redirects"] is True
+
+
+# ---------------------------------------------------------------------------
+# Issue #865 – Slack hardening: non-JSON bodies and token redaction
+# ---------------------------------------------------------------------------
+
+
+class TestRedaction:
+    def test_redact_token_in_error_string(self) -> None:
+        token = "xoxb-1234567890-abcdefghij"
+        error = "connect failed for url=https://slack.com/api/chat.postMessage"
+        result = slack_delivery._redact_token(error, token)
+        assert result == error
+
+    def test_redact_token_in_error_string_with_token_present(self) -> None:
+        token = "xoxb-1234567890-abcdefghij"
+        error = "connect failed with xoxb-1234567890-abcdefghij"
+        result = slack_delivery._redact_token(error, token)
+        assert token not in result
+        assert "<redacted>" in result
+
+    def test_redact_token_returns_original_when_token_not_present(self) -> None:
+        result = slack_delivery._redact_token("some error", "xoxb-missing")
+        assert result == "some error"
+
+
+class TestExtractError:
+    def test_prefers_error_field(self) -> None:
+        result = slack_delivery._extract_error({"error": "channel_not_found"}, 400, "html body")
+        assert result == "channel_not_found"
+
+    def test_falls_back_to_text_when_no_error_field(self) -> None:
+        result = slack_delivery._extract_error({}, 502, "<html>Bad Gateway</html>")
+        assert result == "<html>Bad Gateway</html>"
+
+    def test_falls_back_to_http_status_when_no_data(self) -> None:
+        result = slack_delivery._extract_error({}, 500, "")
+        assert result == "HTTP 500"
+
+    def test_truncates_text_to_500_chars(self) -> None:
+        long_text = "x" * 1000
+        result = slack_delivery._extract_error({}, 502, long_text)
+        assert len(result) == 500
+
+
+class TestNonJsonBody:
+    def test_post_direct_handles_html_error_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        monkeypatch.setattr(
+            "app.utils.slack_delivery.post_json",
+            lambda *_a, **_kw: DeliveryResponse(
+                ok=True,
+                status_code=502,
+                data={},
+                text="<html>Bad Gateway</html>",
+            ),
+        )
+        ok, err = slack_delivery._post_direct("hi", "C1", "1.0", "tok")
+        assert ok is False
+        assert "<html>Bad Gateway</html>" in err
+
+
+class TestExceptionRedaction:
+    def test_exception_error_redacts_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        token = "xoxb-1234567890-abcdefghij"
+        leak_msg = f"connect failed with {token}"
+
+        monkeypatch.setattr(
+            "app.utils.slack_delivery.post_json",
+            lambda *_a, **_kw: DeliveryResponse(ok=False, error=leak_msg),
+        )
+        ok, err = slack_delivery._post_direct("hi", "C1", "1.0", token)
+        assert ok is False
+        assert token not in err
+        assert "<redacted>" in err
+
+    def test_send_slack_report_redacts_token_in_composed_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        token = "xoxb-1234567890-abcdefghij"
+
+        def _stub_post_json(url: str, payload: dict, **kw: Any) -> DeliveryResponse:
+            if "chat.postMessage" in url:
+                return DeliveryResponse(ok=False, error=f"connect with {token}")
+            return DeliveryResponse(ok=False, error="webapp down")
+
+        monkeypatch.setattr("app.utils.slack_delivery.post_json", _stub_post_json)
+        ok, err = slack_delivery.send_slack_report(
+            "hi", channel="C1", thread_ts="1.0", access_token=token
+        )
+        assert ok is False
+        assert token not in err
+        assert "<redacted>" in err
+
+
+class TestExceptionLogRedaction:
+    def test_exception_log_redacts_token(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from app.utils.delivery_transport import DeliveryResponse
+
+        token = "xoxb-1234567890-abcdefghij"
+        leak_msg = f"connect failed with {token}"
+
+        monkeypatch.setattr(
+            "app.utils.slack_delivery.post_json",
+            lambda *_a, **_kw: DeliveryResponse(ok=False, error=leak_msg),
+        )
+        with caplog.at_level(logging.ERROR, logger="app.utils.slack_delivery"):
+            slack_delivery._post_direct("hi", "C1", "1.0", token)
+
+        joined = " ".join(rec.getMessage() for rec in caplog.records)
+        assert token not in joined
+        assert "<redacted>" in joined
