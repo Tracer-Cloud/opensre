@@ -26,11 +26,14 @@ diagnose_binary_path(path) -> str | None
     +---------------------------------+----------------------------------------------------+
     | File but not executable (Unix)  | "'<path>' is not executable. Run: chmod +x <path>" |
     +---------------------------------+----------------------------------------------------+
+    | File with wrong extension (Win) | "'<path>' is not a recognised executable (expected .cmd, .exe, .ps1, or .bat)." |
+    +---------------------------------+----------------------------------------------------+
     | Valid runnable binary           | ``None``                                           |
     +---------------------------------+----------------------------------------------------+
 
-    On Windows the executable check is based on file extension
-    (``.cmd``, ``.exe``, ``.ps1``, ``.bat``) since there is no Unix execute bit.
+    On Windows the executable check uses file extension (``.cmd``, ``.exe``,
+    ``.ps1``, ``.bat``) mirroring ``is_runnable_binary``, so both functions
+    accept and reject the same set of paths.
 
 is_runnable_binary(path) -> bool
     Low-level predicate used by ``resolve_cli_binary`` and the CLI wizard.
@@ -187,7 +190,15 @@ def diagnose_binary_path(path: str) -> str | None:
         return f"'{path}' does not exist."
     if not p.is_file():
         return f"'{path}' is not a file."
-    if sys.platform != "win32" and not os.access(p, os.X_OK):
+    if sys.platform == "win32":
+        if p.suffix.lower() not in {".cmd", ".exe", ".ps1", ".bat"} and not os.access(
+            p, os.X_OK
+        ):
+            return (
+                f"'{path}' is not a recognised executable "
+                f"(expected .cmd, .exe, .ps1, or .bat)."
+            )
+    elif not os.access(p, os.X_OK):
         return f"'{path}' is not executable. Run: chmod +x {path}"
     return None
 
