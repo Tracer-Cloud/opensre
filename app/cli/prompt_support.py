@@ -113,7 +113,9 @@ def _with_ctrl_c_double_exit(
             try:
                 # unsafe_ask() propagates KeyboardInterrupt instead of
                 # swallowing it the way ask() does.
-                return question.unsafe_ask(*args, **kwargs)
+                result = question.unsafe_ask(*args, **kwargs)
+                _last_ctrl_c[0] = None  # reset on clean exit so next prompt starts fresh
+                return result
             except KeyboardInterrupt as exc:
                 if isinstance(exc, _HardQuitInterrupt):
                     raise  # Ctrl+Q hard-quit — bypass retry logic
