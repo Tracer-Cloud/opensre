@@ -44,6 +44,7 @@ def _events_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
             "role_arn": {"type": "string"},
             "external_id": {"type": "string", "default": ""},
             "region": {"type": "string", "default": "us-east-1"},
+            "credentials": {"type": ["object", "null"], "default": None},
         },
         "required": ["cluster_name", "namespace", "role_arn"],
     },
@@ -56,6 +57,7 @@ def get_eks_events(
     role_arn: str = "",
     external_id: str = "",
     region: str = "us-east-1",
+    credentials: dict[str, Any] | None = None,
     eks_backend: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
@@ -71,7 +73,13 @@ def get_eks_events(
             eks_backend.get_events(cluster_name=cluster_name, namespace=namespace),
         )
     try:
-        core_v1, _ = build_k8s_clients(cluster_name, role_arn, external_id, region)
+        core_v1, _ = build_k8s_clients(
+            cluster_name,
+            role_arn,
+            external_id,
+            region,
+            credentials=credentials,
+        )
         event_list = (
             core_v1.list_event_for_all_namespaces()
             if namespace == "all"

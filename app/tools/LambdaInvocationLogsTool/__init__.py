@@ -24,6 +24,7 @@ def _extract_lambda_invocation_logs_params(sources: dict[str, dict]) -> dict:
 
 @tool(
     name="get_lambda_invocation_logs",
+    display_name="Lambda logs",
     source="cloudwatch",
     description="Get Lambda invocation logs from CloudWatch.",
     use_cases=[

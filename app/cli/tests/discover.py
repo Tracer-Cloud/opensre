@@ -11,6 +11,7 @@ from app.cli.tests.catalog import TestCatalog, TestCatalogItem, TestRequirement
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MAKEFILE_PATH = REPO_ROOT / "Makefile"
 RCA_DIR = REPO_ROOT / "tests" / "e2e" / "rca"
+SYNTHETIC_SCENARIOS_DIR = REPO_ROOT / "tests" / "synthetic" / "rds_postgres"
 
 _TARGETS_TO_INDEX = (
     "test",
@@ -248,12 +249,18 @@ def _comment_map_for_makefile(path: Path) -> dict[str, str]:
 
 
 def discover_make_targets() -> list[TestCatalogItem]:
+    if not MAKEFILE_PATH.is_file():
+        # PyInstaller-bundled builds ship only the ``app/`` tree (see
+        # ``packaging/opensre.spec``), so the Makefile is absent at runtime.
+        # Return an empty catalog slice so ``opensre tests`` still launches
+        # against whatever sources *are* bundled.
+        return []
     comment_map = _comment_map_for_makefile(MAKEFILE_PATH)
     makefile_text = MAKEFILE_PATH.read_text(encoding="utf-8")
     items: list[TestCatalogItem] = []
 
     for target in _TARGETS_TO_INDEX:
-        if f"\n{target}:" not in makefile_text:
+        if not re.search(rf"^{re.escape(target)}:", makefile_text, re.MULTILINE):
             continue
         metadata = _TARGET_METADATA.get(target, {})
         tags = cast(tuple[str, ...], metadata.get("tags") or ("make",))
@@ -276,6 +283,12 @@ def discover_make_targets() -> list[TestCatalogItem]:
 
 def discover_rca_files() -> list[TestCatalogItem]:
     items: list[TestCatalogItem] = []
+    if not RCA_DIR.is_dir():
+        # ``Path.glob`` on a missing parent returns an empty iterator on
+        # CPython, so this isn't a crash today — but the explicit guard
+        # documents the bundled-binary contract and matches the shape of
+        # the other ``discover_*`` helpers below.
+        return items
     for path in sorted(RCA_DIR.glob("*.md")):
         title = path.stem.replace("_", " ").title()
         first_line = path.read_text(encoding="utf-8").splitlines()[0].strip()
@@ -297,11 +310,19 @@ def discover_rca_files() -> list[TestCatalogItem]:
 
 
 def _discover_rds_synthetic_scenarios() -> list[TestCatalogItem]:
-    """One catalog item per RDS synthetic scenario directory."""
-    scenarios_dir = REPO_ROOT / "tests" / "synthetic" / "rds_postgres"
+    """One catalog item per RDS synthetic scenario directory.
+
+    Bundled (PyInstaller) builds collect only ``app/`` data files (see
+    ``packaging/opensre.spec``), so ``tests/synthetic/rds_postgres`` is
+    absent at runtime and ``iterdir()`` would raise ``FileNotFoundError``.
+    Skip cleanly in that case — the synthetic-suite catalog entries are
+    only meaningful when the scenarios are on disk anyway.
+    """
     items: list[TestCatalogItem] = []
+    if not SYNTHETIC_SCENARIOS_DIR.is_dir():
+        return items
     req = TestRequirement(env_vars=("ANTHROPIC_API_KEY",))
-    for scenario_dir in sorted(scenarios_dir.iterdir()):
+    for scenario_dir in sorted(SYNTHETIC_SCENARIOS_DIR.iterdir()):
         if not scenario_dir.is_dir() or scenario_dir.name.startswith("_"):
             continue
         scenario_id = scenario_dir.name

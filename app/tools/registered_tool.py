@@ -127,6 +127,7 @@ class RegisteredTool:
     input_schema: dict[str, Any]
     source: EvidenceSource
     run: Callable[..., Any] = field(repr=False)
+    display_name: str | None = None
     surfaces: tuple[ToolSurface, ...] = _DEFAULT_SURFACES
     use_cases: list[str] = field(default_factory=list)
     requires: list[str] = field(default_factory=list)
@@ -152,6 +153,7 @@ class RegisteredTool:
             {
                 "name": self.name,
                 "description": self.description,
+                "display_name": self.display_name,
                 "input_schema": self.input_schema,
                 "source": self.source,
                 "use_cases": self.use_cases,
@@ -162,6 +164,7 @@ class RegisteredTool:
         )
         self.name = metadata.name
         self.description = metadata.description
+        self.display_name = metadata.display_name
         self.input_schema = metadata.input_schema
         self.source = metadata.source
         self.use_cases = metadata.use_cases
@@ -225,6 +228,7 @@ class RegisteredTool:
         return cls(
             name=metadata.name,
             description=metadata.description,
+            display_name=metadata.display_name,
             input_schema=metadata.input_schema,
             source=metadata.source,
             use_cases=metadata.use_cases,
@@ -248,6 +252,7 @@ class RegisteredTool:
         *,
         name: str | None = None,
         description: str | None = None,
+        display_name: str | None = None,
         input_schema: dict[str, Any] | None = None,
         source: EvidenceSource | None,
         surfaces: Iterable[str] | None = None,
@@ -267,6 +272,7 @@ class RegisteredTool:
         return cls(
             name=name or func.__name__,
             description=description or inferred_description,
+            display_name=display_name,
             input_schema=input_schema or infer_input_schema(func),
             source=source,
             surfaces=_normalize_surfaces(surfaces),

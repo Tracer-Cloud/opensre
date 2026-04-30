@@ -27,6 +27,7 @@ def _query_grafana_alert_rules_available(sources: dict[str, dict]) -> bool:
 
 @tool(
     name="query_grafana_alert_rules",
+    display_name="Grafana alerts",
     source="grafana",
     description="Query Grafana alert rules to understand what is being monitored.",
     use_cases=[

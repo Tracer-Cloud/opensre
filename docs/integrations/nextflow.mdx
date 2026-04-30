@@ -1,19 +1,19 @@
 ---
 title: "Nextflow"
-description: "Monitor Nextflow pipelines with OpenSRE"
+description: "Monitor Nextflow pipelines with Tracer"
 ---
 
-OpenSRE integrates with Nextflow to provide step-level visibility into every process and container.<br/>
+Tracer integrates with Nextflow to provide step-level visibility into every process and container.<br/>
 Once installed, it automatically detects all Nextflow processes and displays real-time metrics, performance traces, and cost data for each task.
 
-## Why use OpenSRE when running Nextflow pipelines
+## Why use Tracer when running Nextflow pipelines
 
 Many teams running Nextflow also rely on Seqera Platform to orchestrate and monitor workflows across different environments.<br/>
 
-Because both tools appear in the same setups, we’ve prepared an objective comparison that explains how OpenSRE and Seqera differ in focus and how they can complement each other effectively.
-You can read the full comparison here: [OpenSRE vs Seqera](/comparisons/Tracer_vs_Seqera)
+Because both tools appear in the same setups, we’ve prepared an objective comparison that explains how Tracer and Seqera differ in focus and how they can complement each other effectively.
+You can read the full comparison here: [Tracer vs Seqera](/comparisons/Tracer_vs_Seqera)
 
-Nextflow orchestrates complex scientific workflows efficiently, but it doesn’t provide full visibility into why certain tasks run slowly, stall, or waste compute. OpenSRE fills that gap:
+Nextflow orchestrates complex scientific workflows efficiently, but it doesn’t provide full visibility into why certain tasks run slowly, stall, or waste compute. Tracer fills that gap:
 
 - Real-time insight into every process, container, and tool
 - Performance metrics (CPU, memory, I/O, GPU) per task
@@ -26,11 +26,11 @@ Nextflow orchestrates complex scientific workflows efficiently, but it doesn’t
 ### Prerequisites
 
 - Nextflow installed and working (`nextflow run hello` test passes)
-- OpenSRE installed on [your operating system](/environments/overview)
+- Tracer installed on [your operating system](/environments/overview)
 
-### Just run your pipeline, OpenSRE will automatically attach
+### Just run your pipeline, Tracer will automatically attach
 
-If OpenSRE is already installed on your operating system, you only need to enable the OpenSRE agent for pipelines that have not been run with OpenSRE before.<br/>
+If Tracer is already installed on your operating system, you only need to enable the Tracer agent for pipelines that have not been run with Tracer before.<br/>
 In that case, run the following command:
 
 ```bash
@@ -42,31 +42,31 @@ When running this command, you will be asked to name your pipeline for clear lab
 
 ## Examples
 
-Launch the OpenSRE demo workflow:
+Launch the Tracer demo workflow:
 
 ```bash
 sudo tracer demo
 ```
 Or run any Nextflow pipeline as usual.
 
-Once the pipeline starts, open the OpenSRE dashboard, and you’ll see each Nextflow process as a timeline step updating in real time.
+Once the pipeline starts, open the Tracer dashboard, and you’ll see each Nextflow process as a timeline step updating in real time.
 
 <Card href="https://app.tracer.cloud/tracer-bioinformatics">
   <img
     className="block dark:hidden"
     src="/images/logo/tracer/Tracer Full Body - Black.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
   <img
     className="hidden dark:block"
     src="/images/logo/tracer/Tracer Full Body - Black.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
 
   <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1 rem', color: 'inherit' }}>
-    Watch your pipeline run in the OpenSRE dashboard
+    Watch your pipeline run in the Tracer dashboard
   </div>
 
   <div style={{ color: 'inherit' }}>

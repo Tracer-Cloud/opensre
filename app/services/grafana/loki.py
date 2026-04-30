@@ -64,7 +64,7 @@ class LokiMixin:
                         {
                             "timestamp": timestamp_ns,
                             "message": log_line,
-                            "labels": stream_labels,
+                            "labels": dict(stream_labels),
                         }
                     )
 

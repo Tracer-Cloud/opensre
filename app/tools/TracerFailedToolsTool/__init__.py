@@ -11,6 +11,7 @@ from app.tools.TracerFailedJobsTool import _tracer_available, _tracer_trace_id
 
 @tool(
     name="get_failed_tools",
+    display_name="tool results",
     source="tracer_web",
     description="Get tools that failed during a pipeline execution.",
     use_cases=[

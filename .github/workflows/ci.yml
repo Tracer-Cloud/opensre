@@ -1,5 +1,6 @@
 name: CI
 
+# Default CI remains path-scoped for pull_request and push events.
 on:
   push:
     branches: [main]
@@ -29,15 +30,20 @@ concurrency:
   cancel-in-progress: true
 
 # ---------------------------------------------------------------
-# QUALITY CHECKS (lint + format)
+# MATRIX: Ubuntu-only default matrix for push and pull_request in this workflow.
+# Optional label-driven Windows checks live in `ci-labels-windows.yml` (`ci:windows`).
+# Kubernetes local tests here run on push to main or PR titles containing k8s/kubernetes.
 # ---------------------------------------------------------------
 jobs:
+# ---------------------------------------------------------------
+# QUALITY CHECKS (lint + format)
+# ---------------------------------------------------------------
   quality:
     name: quality (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        os: [ubuntu-latest]
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -74,7 +80,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        os: [ubuntu-latest]
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -110,7 +116,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        os: [ubuntu-latest]
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
@@ -191,8 +197,13 @@ jobs:
 
     if: >-
       github.event_name == 'push' ||
-      contains(github.event.pull_request.title, 'k8s') ||
-      contains(github.event.pull_request.title, 'kubernetes')
+      (
+        github.event_name == 'pull_request' &&
+        (
+          contains(github.event.pull_request.title, 'k8s') ||
+          contains(github.event.pull_request.title, 'kubernetes')
+        )
+      )
 
     steps:
       - uses: actions/checkout@v5

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.synthetic.rds_postgres.run_suite import run_scenario
+from tests.synthetic.rds_postgres.run_suite import run_scenario, score_result
 from tests.synthetic.rds_postgres.scenario_loader import (
     SUITE_DIR,
     load_all_scenarios,
@@ -49,6 +49,130 @@ def test_scenario_evidence_matches_available_evidence() -> None:
             f"{fixture.scenario_id}: evidence keys {set(evidence_dict.keys())} "
             f"do not match available_evidence {fixture.metadata.available_evidence}"
         )
+
+
+def test_score_result_does_not_apply_failover_wording_to_storage_scenario() -> None:
+    fixture = load_scenario(SUITE_DIR / "008-storage-full-missing-metric")
+
+    final_state = {
+        "root_cause": (
+            "The RDS instance ran out of storage space, and storage space exhaustion is "
+            "confirmed by the RDS event plus collapsing WriteIOPS."
+        ),
+        "root_cause_category": "resource_exhaustion",
+        "validated_claims": [
+            {"claim": 'RDS event states "DB instance ran out of storage space".'},
+        ],
+        "non_validated_claims": [],
+        "causal_chain": ["Storage filled up, blocked writes, and caused the alert."],
+        "evidence": {
+            "grafana_logs": [
+                {"message": "DB instance ran out of storage space."},
+            ]
+        },
+        "executed_hypotheses": [
+            {
+                "actions": [
+                    "query_grafana_logs",
+                    "query_grafana_metrics",
+                    "query_grafana_alert_rules",
+                ]
+            }
+        ],
+    }
+
+    score = score_result(fixture, final_state)
+
+    assert score.passed is True
+
+
+def test_score_result_keeps_failover_event_reasoning_requirement() -> None:
+    fixture = load_scenario(SUITE_DIR / "005-failover")
+
+    final_state = {
+        "root_cause": (
+            "A Multi-AZ automatic failover occurred after a health check failure on the "
+            "primary host, and workload resumed normally after failover completed. The "
+            "timeline shows failover initiated, failover in progress, failover completed, "
+            "and instance available as the primary evidence source."
+        ),
+        "root_cause_category": "infrastructure",
+        "validated_claims": [
+            {"claim": "The timeline confirms the instance became available again."},
+        ],
+        "non_validated_claims": [],
+        "causal_chain": [
+            "Health check failure triggered standby promotion and client reconnection."
+        ],
+        "evidence": {
+            "grafana_logs": [
+                {"message": "Failover initiated."},
+                {"message": "Failover in progress."},
+                {"message": "Failover completed."},
+                {"message": "Instance available."},
+            ]
+        },
+        "executed_hypotheses": [
+            {
+                "actions": [
+                    "query_grafana_logs",
+                    "query_grafana_metrics",
+                    "query_grafana_alert_rules",
+                ]
+            }
+        ],
+    }
+
+    score = score_result(fixture, final_state)
+
+    assert score.failure_reason == "RDS events gathered but not used as primary reasoning signal"
+
+
+def test_score_result_accepts_failover_event_reasoning() -> None:
+    fixture = load_scenario(SUITE_DIR / "005-failover")
+
+    final_state = {
+        "root_cause": (
+            "Based on the RDS event timeline (primary evidence source), a Multi-AZ "
+            "automatic failover occurred after a health check failure on the primary "
+            "host, and workload resumed normally after failover completed."
+        ),
+        "root_cause_category": "infrastructure",
+        "validated_claims": [
+            {
+                "claim": (
+                    "RDS events show the full sequence: failover initiated -> "
+                    "failover in progress -> failover completed -> instance available."
+                )
+            },
+        ],
+        "non_validated_claims": [],
+        "causal_chain": [
+            "Health check failure triggered failover, standby promotion, DNS update, "
+            "brief outage, and recovery."
+        ],
+        "evidence": {
+            "grafana_logs": [
+                {"message": "Failover initiated."},
+                {"message": "Failover in progress."},
+                {"message": "Failover completed."},
+                {"message": "Instance available."},
+            ]
+        },
+        "executed_hypotheses": [
+            {
+                "actions": [
+                    "query_grafana_logs",
+                    "query_grafana_metrics",
+                    "query_grafana_alert_rules",
+                ]
+            }
+        ],
+    }
+
+    score = score_result(fixture, final_state)
+
+    assert score.passed is True
 
 
 _ALL_SCENARIOS = load_all_scenarios()

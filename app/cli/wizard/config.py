@@ -56,7 +56,7 @@ class ProviderOption:
     #: Optional hint shown as the default value in the prompt (e.g. the
     #: default Ollama host URL). Empty string means no default.
     credential_default: str = ""
-    #: ``cli`` providers use `adapter_factory` + `codex login` instead of API keys.
+    #: ``cli`` providers use ``adapter_factory`` and vendor auth (no API key in .env).
     credential_kind: CredentialKind = "api_key"
     adapter_factory: Callable[[], LLMCLIAdapter] | None = None
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from app.integrations.llm_cli.binary_resolver import npm_prefix_bin_dirs
+from app.integrations.llm_cli.binary_resolver import diagnose_binary_path, npm_prefix_bin_dirs
 from app.integrations.llm_cli.codex import CodexAdapter, _fallback_codex_paths
 from app.integrations.llm_cli.text import flatten_messages_to_prompt
 
@@ -46,7 +48,7 @@ def _login_ok_proc() -> MagicMock:
 
 
 @patch("app.integrations.llm_cli.codex.subprocess.run")
-@patch("app.integrations.llm_cli.codex.shutil.which")
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which")
 def test_detect_path_binary_logged_in(mock_which: MagicMock, mock_run: MagicMock) -> None:
     mock_which.return_value = "/usr/bin/codex"
 
@@ -66,7 +68,7 @@ def test_detect_path_binary_logged_in(mock_which: MagicMock, mock_run: MagicMock
 
 
 @patch("app.integrations.llm_cli.codex.subprocess.run")
-@patch("app.integrations.llm_cli.codex.shutil.which")
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which")
 def test_detect_not_logged_in(mock_which: MagicMock, mock_run: MagicMock) -> None:
     mock_which.return_value = "/usr/bin/codex"
 
@@ -88,7 +90,7 @@ def test_detect_not_logged_in(mock_which: MagicMock, mock_run: MagicMock) -> Non
 
 
 @patch("app.integrations.llm_cli.codex.subprocess.run")
-@patch("app.integrations.llm_cli.codex.shutil.which")
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which")
 def test_detect_not_logged_in_exit_zero(mock_which: MagicMock, mock_run: MagicMock) -> None:
     """Some Codex versions may exit 0 while printing 'Not logged in' — must not match 'logged in'."""
     mock_which.return_value = "/usr/bin/codex"
@@ -110,7 +112,7 @@ def test_detect_not_logged_in_exit_zero(mock_which: MagicMock, mock_run: MagicMo
     assert probe.logged_in is False
 
 
-@patch("app.integrations.llm_cli.codex.shutil.which", return_value="/usr/bin/codex")
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
 def test_build_adds_model_flag_when_not_default(mock_which: MagicMock) -> None:
     inv = CodexAdapter().build(prompt="p", model="o3", workspace="")
     assert inv.stdin == "p"
@@ -232,7 +234,7 @@ def test_detect_uses_codex_bin_env_file(tmp_path) -> None:
 
 
 @patch("app.integrations.llm_cli.codex.subprocess.run")
-@patch("app.integrations.llm_cli.codex.shutil.which", return_value="/usr/bin/codex")
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
 def test_detect_falls_back_when_codex_bin_invalid(
     mock_which: MagicMock, mock_run: MagicMock
 ) -> None:
@@ -255,11 +257,11 @@ def test_detect_falls_back_when_codex_bin_invalid(
 
 
 @patch("app.integrations.llm_cli.codex.subprocess.run")
-@patch("app.integrations.llm_cli.codex.shutil.which", return_value=None)
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which", return_value=None)
 @patch(
     "app.integrations.llm_cli.codex._fallback_codex_paths", return_value=["/x/codex", "/y/codex"]
 )
-@patch("app.integrations.llm_cli.codex._is_runnable_binary")
+@patch("app.integrations.llm_cli.binary_resolver.is_runnable_binary")
 def test_detect_uses_first_runnable_fallback_path(
     mock_is_runnable: MagicMock,
     mock_fallback: MagicMock,
@@ -366,9 +368,77 @@ def test_npm_prefix_bin_dirs_unix_uses_prefix_bin() -> None:
     assert tuple(Path(d).as_posix() for d in dirs) == ("/opt/npm/bin",)
 
 
-@patch("app.integrations.llm_cli.codex.shutil.which", return_value="/usr/bin/codex")
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
 def test_codex_default_exec_timeout_is_shorter(mock_which) -> None:
     """Default timeout is asserted without requiring a real codex binary on CI PATH."""
     inv = CodexAdapter().build(prompt="p", model=None, workspace="")
     assert inv.timeout_sec == 120.0
     mock_which.assert_called()
+
+
+def test_diagnose_binary_path_missing_file(tmp_path: Path) -> None:
+    result = diagnose_binary_path(str(tmp_path / "no-such-binary"))
+    assert result is not None
+    assert "does not exist" in result
+
+
+def test_diagnose_binary_path_valid_executable(tmp_path: Path) -> None:
+    exe = tmp_path / "my-bin"
+    exe.write_bytes(b"")
+    os.chmod(exe, 0o700)
+    assert diagnose_binary_path(str(exe)) is None
+
+
+def test_diagnose_binary_path_not_executable(tmp_path: Path) -> None:
+    f = tmp_path / "not-executable"
+    f.write_bytes(b"")
+    os.chmod(f, 0o600)
+    result = diagnose_binary_path(str(f))
+    if sys.platform != "win32":
+        assert result is not None
+        assert "not executable" in result
+
+
+def test_diagnose_binary_path_broken_symlink_windows_skip(tmp_path: Path) -> None:
+    """Skip gracefully on Windows hosts where symlink creation requires elevation."""
+    link = tmp_path / "broken-link-win"
+    try:
+        link.symlink_to(tmp_path / "ghost")
+    except (OSError, NotImplementedError):
+        return  # symlinks not available on this runner; skip
+    result = diagnose_binary_path(str(link))
+    assert result is not None
+    assert "broken symlink" in result
+
+
+def test_resolve_cli_binary_warns_on_broken_symlink(tmp_path: Path, caplog) -> None:
+    from app.integrations.llm_cli.binary_resolver import resolve_cli_binary
+
+    link = tmp_path / "broken-codex"
+    try:
+        link.symlink_to(tmp_path / "ghost")
+    except (OSError, NotImplementedError):
+        return  # symlinks not available on this runner; skip
+
+    with (
+        patch.dict(os.environ, {"CODEX_BIN": str(link)}, clear=False),
+        patch("app.integrations.llm_cli.binary_resolver.shutil.which", return_value=None),
+        caplog.at_level(logging.WARNING, logger="app.integrations.llm_cli.binary_resolver"),
+    ):
+        result = resolve_cli_binary(
+            explicit_env_key="CODEX_BIN",
+            binary_names=("codex",),
+            fallback_paths=[],
+        )
+
+    assert result is None
+    assert any("broken symlink" in r.message for r in caplog.records)
+
+
+def test_codex_cli_registry_entry() -> None:
+    from app.integrations.llm_cli.registry import get_cli_provider_registration
+
+    reg = get_cli_provider_registration("codex")
+    assert reg is not None
+    assert reg.model_env_key == "CODEX_MODEL"
+    assert reg.adapter_factory().name == "codex"

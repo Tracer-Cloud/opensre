@@ -1,16 +1,16 @@
 ---
 title: "WDL"
-description: "Using OpenSRE with WDL workflows"
+description: "Using Tracer with WDL workflows"
 ---
 
 
-OpenSRE integrates with WDL (Workflow Description Language) pipelines executed through engines like Cromwell or miniWDL.
+Tracer integrates with WDL (Workflow Description Language) pipelines executed through engines like Cromwell or miniWDL.
 It automatically traces all WDL tasks as they run, giving per-task performance data and cross-node visibility without modifying workflow definitions.
 
-## Why use OpenSRE in combination with WDL
+## Why use Tracer in combination with WDL
 
 While WDL focuses on portability and reproducibility, it lacks system-level telemetry.
-OpenSRE adds observability that helps teams debug and optimize large WDL workflows:
+Tracer adds observability that helps teams debug and optimize large WDL workflows:
 - Step-level execution graphs for each WDL task
 - Real-time metrics for CPU, memory, I/O, and storage
 - Correlated logs and system traces even if task logs are minimal
@@ -23,11 +23,11 @@ OpenSRE adds observability that helps teams debug and optimize large WDL workflo
 ### Prerequisites
 
 - WDL engine installed and working (e.g., Cromwell or miniWDL)
-- OpenSRE installed on [your operating system](/environments/overview)
+- Tracer installed on [your operating system](/environments/overview)
 
-### Just run your pipeline, OpenSRE will automatically attach
+### Just run your pipeline, Tracer will automatically attach
 
-If OpenSRE is already installed on your operating system, you only need to enable the OpenSRE agent for pipelines that have not been run with OpenSRE before.<br/>
+If Tracer is already installed on your operating system, you only need to enable the Tracer agent for pipelines that have not been run with Tracer before.<br/>
 In that case, run the following command:
 
 ```bash
@@ -39,7 +39,7 @@ When running this command, you will be asked to name your pipeline for clear lab
 
 ## Examples
 
-Launch the OpenSRE demo workflow:
+Launch the Tracer demo workflow:
 
 ```bash
 sudo tracer demo
@@ -47,24 +47,24 @@ sudo tracer demo
 
 Or run your WDL pipeline as usual.
 
-Once the pipeline starts, open the OpenSRE dashboard, and you’ll see each WDL task as a timeline step updating in real time.
+Once the pipeline starts, open the Tracer dashboard, and you’ll see each WDL task as a timeline step updating in real time.
 
 <Card href="https://app.tracer.cloud/">
   <img
     className="block dark:hidden"
     src="/images/logo/tracer/Tracer Full Body - Black.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
   <img
     className="hidden dark:block"
     src="/images/logo/tracer/Tracer Full Body - Black.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
 
   <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1rem', color: 'inherit' }}>
-    Watch your pipeline run in the OpenSRE dashboard
+    Watch your pipeline run in the Tracer dashboard
   </div>
 
   <div style={{ color: 'inherit' }}>

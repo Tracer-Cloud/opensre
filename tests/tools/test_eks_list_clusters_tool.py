@@ -54,3 +54,33 @@ def test_run_handles_client_error() -> None:
         result = list_eks_clusters(role_arn="arn:aws:iam::123:role/r")
     assert result["available"] is False
     assert result["clusters"] == []
+
+
+def test_run_forwards_credentials_to_eks_client() -> None:
+    """Stored AWS-integration credentials must thread through into ``EKSClient``.
+
+    Without this the `list_eks_clusters` path (the cluster-discovery /
+    connection-verification step) would still hit ``sts.assume_role(RoleArn="", ...)``
+    for IAM-user-only integrations and raise ``ParamValidationError``.
+    """
+    mock_client = MagicMock()
+    mock_client.list_clusters.return_value = ["cluster-1"]
+    creds = {
+        "access_key_id": "AKIA_TEST",
+        "secret_access_key": "SECRET",
+        "session_token": "",
+    }
+    with patch("app.tools.EKSListClustersTool.EKSClient", return_value=mock_client) as cls:
+        list_eks_clusters(role_arn="", credentials=creds)
+    cls.assert_called_once()
+    assert cls.call_args.kwargs["credentials"] == creds
+    assert cls.call_args.kwargs["role_arn"] == ""
+
+
+def test_run_credentials_none_by_default() -> None:
+    """Existing role-based callers must keep working — credentials defaults to None."""
+    mock_client = MagicMock()
+    mock_client.list_clusters.return_value = []
+    with patch("app.tools.EKSListClustersTool.EKSClient", return_value=mock_client) as cls:
+        list_eks_clusters(role_arn="arn:aws:iam::123:role/r")
+    assert cls.call_args.kwargs["credentials"] is None

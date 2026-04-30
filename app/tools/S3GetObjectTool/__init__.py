@@ -27,6 +27,7 @@ def _extract_get_s3_object_params(sources: dict[str, dict]) -> dict:
 
 @tool(
     name="get_s3_object",
+    display_name="S3 audit",
     source="storage",
     description="Get full S3 object content — audit payloads, configs, lineage data.",
     use_cases=[

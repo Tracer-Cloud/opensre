@@ -1,0 +1,61 @@
+---
+title: "Daily Update — 2026-04-29"
+description: "OpenSRE engineering daily update for 2026-04-29 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+Anwesh, Aryan Jain, Awokoya Olawale Davidson, Ceren Camkiran, Joey Roth, John Zakkam, Kartik Sirohi, Malik Amir Hamza, Mateus Scheuer Macedo, Richard Coker, Rohit Rajan, Rohit Rajan, Ryjen1, Udit, vignesh Gopikrishnan, vincenthus, WatchTree-19, Yash Kumar Saini, and Yassir Maknaoui 🙏🚀
+
+## Main updates shipped (April 29, 2026)
+
+- feat: interactive REPL — the first step toward a Claude-Code-style SRE terminal (#243) — Yash Kumar Saini
+- feat: add Argo CD deployment investigation integration (#320) — Mateus Scheuer Macedo
+- feat: add Apache Airflow integration with DAG/task evidence and tests (#330) — Ceren Camkiran
+- Adaptive incident window: expand-on-empty-deploy-timeline — Malik Amir Hamza
+- refactor(tools): resolve action labels from registry metadata (#870) — John Zakkam
+- fix: resolve synthetic RDS scenario 008 scoring and planner loops (#604) — Yassir Maknaoui
+- refactor(wizard): split integration health validators into grouped modules (#873) — vignesh Gopikrishnan
+- fix(airflow): correct tool source, StrictConfigModel, surfaces, exception-recovery test — Yash Kumar Saini
+- refactor: extract shared SQL wrapper helper for repeated tool flow (#894) — Maryjane Okafor
+- refactor(utils): extract shared truncate() helper, replace six inline _truncate() implementations (#1056) — Udit
+- auto-configure PATH in shell profile after install (#1063) — Rohit Rajan
+- feat(cli): harden test inventory discovery and UX (#172) — Awokoya Olawale Davidson
+- refactor: move Notion client to app/services/ (#898) — Aryan Jain
+- refactor: centralize credential and param extraction for eks workload list (#895) — Richard Coker
+- test: add direct unit tests for tempo mixin (#882) — Kartik Sirohi
+- test(grafana): add direct unit tests for LokiMixin.query_loki (#880) — WatchTree-19
+- test(tools): add unit tests for Bitbucket tools (#992) — vignesh Gopikrishnan
+- Create airflow_integration.mdx (#1020) — Ceren Camkiran
+- Fix Makefile Ruff targets to use configured Python (#176) — Joey Roth
+- chore(github): trim celebration GIFs and add three new merge GIFs — Anwesh
+
+## Source pull requests
+
+- [#1062](https://github.com/Tracer-Cloud/opensre/pull/1062) Fix Makefile Ruff targets to use configured Python (author: Joey Roth; contributors: Joey Roth; labels: _none_; files: `Makefile`)
+- [#844](https://github.com/Tracer-Cloud/opensre/pull/844) fix: resolve synthetic RDS scenario 008 scoring and planner loops (author: Yassir Maknaoui; contributors: Yassir Maknaoui; labels: _none_; files: `app/nodes/investigate/processing/post_process.py`, `app/nodes/investigate/types.py`, `app/nodes/plan_actions/build_prompt.py`, `app/nodes/plan_actions/plan_actions.py`, `tests/nodes/plan_actions/test_reroute_and_budget.py`, `tests/synthetic/rds_postgres/run_suite.py`, `tests/synthetic/rds_postgres/test_suite.py`)
+- [#945](https://github.com/Tracer-Cloud/opensre/pull/945) refactor: move Notion client to app/services/ (author: Aryan Jain; contributors: Aryan Jain; labels: _none_; files: `.cursor/rules/integrations.mdc`, `app/integrations/clients/notion/__init__.py`, `app/services/notion/__init__.py`, `app/services/notion/client.py`, `tests/integrations/test_notion_client.py`)
+- [#915](https://github.com/Tracer-Cloud/opensre/pull/915) refactor(tools): resolve action labels from registry metadata (author: John Zakkam; contributors: John Zakkam; labels: _none_; files: `app/output.py`, `app/remote/reasoning.py`, `app/tools/BetterStackLogsTool/__init__.py`, `app/tools/CloudWatchLogsTool/__init__.py`, `app/tools/DataDogContextTool/__init__.py`, `app/tools/DataDogEventsTool/__init__.py`, `app/tools/DataDogLogsTool/__init__.py`, `app/tools/DataDogMonitorsTool/__init__.py`, `app/tools/GrafanaAlertRulesTool/__init__.py`, `app/tools/GrafanaLogsTool/__init__.py`, and 18 more)
+- [#1074](https://github.com/Tracer-Cloud/opensre/pull/1074) Adaptive incident window: expand-on-empty-deploy-timeline (author: Malik Amir Hamza; contributors: Malik Amir Hamza; labels: _none_; files: `app/incident_window.py`, `app/investigation_constants.py`, `app/nodes/__init__.py`, `app/nodes/adapt_window/__init__.py`, `app/nodes/adapt_window/node.py`, `app/nodes/adapt_window/rules.py`, `app/pipeline/graph.py`, `app/state/agent_state.py`, `tests/app/test_incident_window.py`, `tests/nodes/adapt_window/__init__.py`, and 3 more)
+- [#958](https://github.com/Tracer-Cloud/opensre/pull/958) refactor(wizard): split integration health validators into grouped modules (author: vignesh Gopikrishnan; contributors: vignesh Gopikrishnan; labels: _none_; files: `app/cli/wizard/integration_health.py`, `app/cli/wizard/integration_validators/__init__.py`, `app/cli/wizard/integration_validators/client_validators.py`, `app/cli/wizard/integration_validators/http_probe_validators.py`, `app/cli/wizard/integration_validators/mcp_validators.py`, `app/cli/wizard/integration_validators/shared.py`, `tests/cli/wizard/test_integration_health.py`)
+- [#1059](https://github.com/Tracer-Cloud/opensre/pull/1059) test: add direct unit tests for tempo mixin (#882) (author: Kartik Sirohi; contributors: Kartik Sirohi; labels: _none_; files: `app/services/grafana/tempo.py`, `tests/services/test_grafana_tempo.py`)
+- [#570](https://github.com/Tracer-Cloud/opensre/pull/570) feat: add Apache Airflow integration with DAG/task evidence and tests (author: Ceren Camkiran; contributors: Ceren Camkiran and vincenthus; labels: _none_; files: `app/integrations/airflow.py`, `app/integrations/catalog.py`, `app/integrations/models.py`, `app/nodes/plan_actions/build_prompt.py`, `app/nodes/plan_actions/detect_sources.py`, `app/nodes/plan_actions/plan_actions.py`, `app/tools/TracerAirflowDAGTool/__init__.py`, `packaging/sync_release_version.py`, `tests/e2e/airflow/__init__.py`, `tests/e2e/airflow/fixtures/airflow_task_failure_alert.json`, and 4 more)
+- [#1075](https://github.com/Tracer-Cloud/opensre/pull/1075) chore(github): trim celebration GIFs and add three new merge GIFs (author: Anwesh; contributors: Anwesh; labels: _none_; files: `.github/assets/celebrations/merge-celebrate-1.gif`, `.github/assets/celebrations/merge-celebrate-2.gif`, `.github/assets/celebrations/merge-celebrate-3.gif`, `.github/assets/celebrations/office-dance.gif`, `.github/assets/celebrations/office-win.gif`, `.github/assets/celebrations/office-yes.gif`, `.github/assets/celebrations/winner.gif`, `.github/scripts/merged_pr_celebration_message.py`)
+- [#1066](https://github.com/Tracer-Cloud/opensre/pull/1066) feat(cli): harden test inventory discovery and UX (#172) (author: Awokoya Olawale Davidson; contributors: Awokoya Olawale Davidson; labels: _none_; files: `app/cli/commands/tests.py`, `app/cli/tests/discover.py`, `app/cli/tests/runner.py`, `tests/cli/test_cli_inventory.py`, `tests/cli/test_discover.py`)
+- [#1077](https://github.com/Tracer-Cloud/opensre/pull/1077) fix(airflow): correct tool source, StrictConfigModel, surfaces, exception-recovery test (author: Yash Kumar Saini; contributors: Yash Kumar Saini; labels: _none_; files: `app/integrations/airflow.py`, `app/tools/TracerAirflowDAGTool/__init__.py`, `app/types/evidence.py`, `tests/integrations/test_airflow.py`)
+- [#591](https://github.com/Tracer-Cloud/opensre/pull/591) feat: interactive REPL — the first step toward a Claude-Code-style SRE terminal (author: Yash Kumar Saini; contributors: Rohit Rajan, vincenthus, and Yash Kumar Saini; labels: `product direction`; files: `README.md`, `app/cli/__main__.py`, `app/cli/commands/__init__.py`, `app/cli/commands/agent.py`, `app/cli/commands/general.py`, `app/cli/investigate.py`, `app/cli/layout.py`, `app/cli/repl/__init__.py`, `app/cli/repl/banner.py`, `app/cli/repl/commands.py`, and 15 more)
+- [#948](https://github.com/Tracer-Cloud/opensre/pull/948) feat: add Argo CD deployment investigation integration (author: Mateus Scheuer Macedo; contributors: Mateus Scheuer Macedo; labels: _none_; files: `.env.example`, `app/cli/constants.py`, `app/integrations/catalog.py`, `app/integrations/models.py`, `app/integrations/verify.py`, `app/nodes/investigate/processing/post_process.py`, `app/nodes/plan_actions/detect_sources.py`, `app/nodes/root_cause_diagnosis/evidence_checker.py`, `app/services/argocd/__init__.py`, `app/services/argocd/client.py`, and 13 more)
+- [#1058](https://github.com/Tracer-Cloud/opensre/pull/1058) Create airflow_integration.mdx (author: Ceren Camkiran; contributors: Ceren Camkiran; labels: _none_; files: `docs/airflow.mdx`, `docs/docs.json`)
+- [#1080](https://github.com/Tracer-Cloud/opensre/pull/1080) refactor(utils): extract shared truncate() helper, replace six inline _truncate() implementations (author: Udit; contributors: Udit; labels: _none_; files: `app/integrations/azure_sql.py`, `app/integrations/mariadb.py`, `app/integrations/mysql.py`, `app/nodes/publish_findings/gitlab_writeback.py`, `app/utils/discord_delivery.py`, `app/utils/telegram_delivery.py`, `app/utils/truncation.py`, `tests/nodes/publish_findings/test_gitlab_writeback.py`, `tests/test_mariadb_integration.py`, `tests/utils/test_truncation.py`)
+- [#1084](https://github.com/Tracer-Cloud/opensre/pull/1084) refactor: extract shared SQL wrapper helper for repeated tool flow (author: Maryjane Okafor; contributors: Maryjane Okafor and Ryjen1; labels: _none_; files: `app/tools/AzureSQLCurrentQueriesTool/__init__.py`, `app/tools/AzureSQLSlowQueriesTool/__init__.py`, `app/tools/MariaDBProcessListTool/__init__.py`, `app/tools/MySQLCurrentProcessesTool/__init__.py`, `app/tools/PostgreSQLCurrentQueriesTool/__init__.py`, `app/tools/PostgreSQLSlowQueriesTool/__init__.py`, `app/tools/utils/sql_wrapper.py`, `tests/tools/test_sql_wrapper.py`)
+- [#1088](https://github.com/Tracer-Cloud/opensre/pull/1088) feat(github): add 16 PR celebration message templates (author: Anwesh; contributors: Anwesh; labels: _none_; files: `.github/scripts/merged_pr_celebration_message.py`)
+- [#1017](https://github.com/Tracer-Cloud/opensre/pull/1017) test(tools): add unit tests for Bitbucket tools (author: vignesh Gopikrishnan; contributors: vignesh Gopikrishnan; labels: _none_; files: `app/tools/BitbucketSearchCodeTool/__init__.py`, `tests/tools/test_bitbucket_commits_tool.py`, `tests/tools/test_bitbucket_file_contents_tool.py`, `tests/tools/test_bitbucket_search_code_tool.py`)
+- [#1082](https://github.com/Tracer-Cloud/opensre/pull/1082) test(grafana): add direct unit tests for LokiMixin.query_loki (author: WatchTree-19; contributors: WatchTree-19; labels: _none_; files: `tests/services/test_grafana_loki.py`)
+- [#1064](https://github.com/Tracer-Cloud/opensre/pull/1064) auto-configure PATH in shell profile after install (author: Rohit Rajan; contributors: Rohit Rajan and Rohit Rajan; labels: _none_; files: `install.sh`, `tests/cli/test_install_sh_path.py`)
+- [#1089](https://github.com/Tracer-Cloud/opensre/pull/1089) refactor: centralize credential and param extraction for eks workload list (author: Richard Coker; contributors: Richard Coker; labels: _none_; files: `app/tools/EKSListClustersTool/__init__.py`, `app/tools/EKSListDeploymentsTool/__init__.py`, `app/tools/EKSListPodsTool/__init__.py`, `app/tools/utils/eks_workload_helper.py`, `tests/tools/utils/test_eks_workload_helper.py`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-28T23:00:00+00:00` to `2026-04-29T23:00:00+00:00`

@@ -14,6 +14,7 @@ from typing import Any
 from pydantic import Field, field_validator
 
 from app.strict_config import StrictConfigModel
+from app.utils.truncation import truncate
 
 DEFAULT_MYSQL_PORT = 3306
 DEFAULT_MYSQL_USER = "root"
@@ -200,12 +201,6 @@ def validate_mysql_config(config: MySQLConfig) -> MySQLValidationResult:
         return MySQLValidationResult(ok=False, detail=f"MySQL connection failed: {err}")
 
 
-def _truncate(text: str, max_len: int = _QUERY_TRUNCATE_LEN) -> str:
-    if len(text) <= max_len:
-        return text
-    return text[:max_len] + "..."
-
-
 def mysql_is_available(sources: dict[str, dict]) -> bool:
     """Check if MySQL integration identifying params are present."""
     my = sources.get("mysql", {})
@@ -359,7 +354,7 @@ def get_current_processes(
                             "command": row["COMMAND"],
                             "time_seconds": row["TIME"] or 0,
                             "state": row["STATE"] or "",
-                            "query": _truncate(row["INFO"] or ""),
+                            "query": truncate(row["INFO"] or "", _QUERY_TRUNCATE_LEN),
                         }
                     )
 
@@ -511,7 +506,7 @@ def get_slow_queries(
                 for row in cur.fetchall():
                     queries.append(
                         {
-                            "digest_text": _truncate(row["DIGEST_TEXT"] or ""),
+                            "digest_text": truncate(row["DIGEST_TEXT"] or "", _QUERY_TRUNCATE_LEN),
                             "schema_name": row["SCHEMA_NAME"] or "",
                             "count": row["COUNT_STAR"] or 0,
                             "avg_time_ms": float(row["avg_time_ms"])

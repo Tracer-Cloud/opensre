@@ -7,8 +7,8 @@ import sys
 from app.version import PACKAGE_NAME, get_version
 
 _RELEASES_API = "https://api.github.com/repos/Tracer-Cloud/opensre/releases/latest"
-_INSTALL_SCRIPT = "https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.sh"
-_INSTALL_SCRIPT_PS1 = "https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.ps1"
+_INSTALL_SCRIPT = "https://install.opensre.com"
+_INSTALL_SCRIPT_PS1 = "https://install.opensre.com"
 _RELEASE_URL = "https://github.com/Tracer-Cloud/opensre/releases/tag/v{}"
 
 

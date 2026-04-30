@@ -1,15 +1,15 @@
 ---
-title: "How to use OpenSRE with Prefect"
+title: "How to use Tracer with Prefect"
 sidebarTitle: "Prefect"
 description: 'Runtime visibility beneath flow state'
 ---
 
 Prefect orchestrates data and scientific workflows by defining flows, tasks, and execution state across compute environments. It determines what runs, when it runs, and whether it succeeded, but it does not observe how tasks behave while executing inside processes, containers, or the operating system.
 
-OpenSRE complements Prefect by exposing execution behavior: CPU, memory, disk, and network usage, during flow runs, without modifying flow definitions or task code.
+Tracer complements Prefect by exposing execution behavior: CPU, memory, disk, and network usage, during flow runs, without modifying flow definitions or task code.
 
 <Note>
-For a conceptual overview, see [How OpenSRE fits in your stack](/comparisons/overview).
+For a conceptual overview, see [How Tracer fits in your stack](/comparisons/overview).
 </Note>
 
 ## What Prefect does well
@@ -48,9 +48,9 @@ Without execution-level visibility, teams struggle to answer:
 
 As a result, workflows may complete successfully but waste time and compute budget.
 
-## What OpenSRE adds
+## What Tracer adds
 
-OpenSRE observes execution directly from the host and container runtime and adds:
+Tracer observes execution directly from the host and container runtime and adds:
 
 - Observed CPU, memory, disk, and network usage per task
 - Visibility into subprocesses and nested tools invoked by tasks
@@ -64,12 +64,12 @@ These insights are derived from observed behavior, not from task metadata or con
   width="100%"
   height="1500"
   style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
-  title="Prefect + OpenSRE Pipeline Intelligence"
+  title="Prefect + Tracer Pipeline Intelligence"
 />
 
 ## Example: diagnosing slow Prefect tasks
 
-A Prefect task reports a long runtime but no errors. OpenSRE shows:
+A Prefect task reports a long runtime but no errors. Tracer shows:
 
 - Low CPU utilization
 - Frequent blocking on disk or network I/O
@@ -77,7 +77,7 @@ A Prefect task reports a long runtime but no errors. OpenSRE shows:
 
 This indicates an I/O-bound or externally constrained task rather than insufficient compute. Increasing CPU allocation would not improve performance.
 
-OpenSRE makes this distinction explicit by observing runtime behavior rather than inferring it from task duration alone.
+Tracer makes this distinction explicit by observing runtime behavior rather than inferring it from task duration alone.
 
 ## Using execution insight to tune workflows
 
@@ -97,34 +97,34 @@ These changes can reduce cost, stabilize runtimes, or both.
   width="100%"
   height="700px"
   style={{ border: 'none', borderRadius: '0.125rem', background: 'transparent', overflow: 'hidden' }}
-  title="Prefect vs OpenSRE+Prefect Radar Chart"
+  title="Prefect vs Tracer+Prefect Radar Chart"
 />
 
 This comparison highlights the difference between task-state visibility and execution-level observation.
 
-## What OpenSRE does not replace
+## What Tracer does not replace
 
-OpenSRE is not a workflow orchestrator.
+Tracer is not a workflow orchestrator.
 
 - It does not replace Prefect
 - It does not schedule, retry, or manage task state
 - It does not modify flow definitions or task logic
 
-Prefect remains responsible for orchestration. OpenSRE makes runtime behavior visible.
+Prefect remains responsible for orchestration. Tracer makes runtime behavior visible.
 
-## When to use OpenSRE with Prefect
+## When to use Tracer with Prefect
 
-OpenSRE is most useful when teams need to:
+Tracer is most useful when teams need to:
 
 - Explain slow or inconsistent task runtimes
 - Identify idle or inefficient task execution
 - Diagnose performance issues beyond logs and task states
 - Attribute resource usage and cost to specific flows or tasks
 
-OpenSRE operates independently of Prefect and supports workflows written in any language or toolchain.
+Tracer operates independently of Prefect and supports workflows written in any language or toolchain.
 
 ## Summary
 
-Prefect defines and orchestrates workflows through flows and tasks. OpenSRE adds execution-level visibility that shows how those tasks actually behave at runtime. Together, they provide both control and insight, without changes to existing workflows.
+Prefect defines and orchestrates workflows through flows and tasks. Tracer adds execution-level visibility that shows how those tasks actually behave at runtime. Together, they provide both control and insight, without changes to existing workflows.
 
 <div style={{ height: '50vh' }}></div>

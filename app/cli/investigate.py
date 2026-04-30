@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
@@ -13,6 +14,8 @@ from app.config import LLMSettings
 if TYPE_CHECKING:
     from app.remote.stream import StreamEvent
     from app.state import AgentState
+
+_logger = logging.getLogger(__name__)
 
 
 def _call_run_investigation(
@@ -185,7 +188,7 @@ def run_investigation_cli_streaming(
         pipeline_name=pipeline_name,
         severity=severity,
     )
-    renderer = StreamRenderer()
+    renderer = StreamRenderer(local=True)
     final_state = renderer.render_stream(events)
     return {
         "report": final_state.get("slack_message", final_state.get("report", "")),
@@ -193,3 +196,107 @@ def run_investigation_cli_streaming(
         "root_cause": final_state.get("root_cause", ""),
         "is_noise": final_state.get("is_noise", False),
     }
+
+
+def run_investigation_for_session(
+    *,
+    alert_text: str,
+    context_overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run a streaming investigation from a free-text alert description.
+
+    Used by the REPL loop: wraps the user's text as the alert payload, runs
+    the full pipeline with live streaming, and returns the final state so
+    follow-ups and context accumulation can reference it.
+
+    KeyboardInterrupt in the main thread is forwarded to the background
+    asyncio loop as a task cancel, so Ctrl+C unwinds the in-flight LangGraph
+    run cleanly instead of leaving it orphaned.
+    """
+    import queue
+    import threading
+
+    from app.pipeline.runners import astream_investigation
+    from app.remote.renderer import StreamRenderer
+
+    LLMSettings.from_env()
+    raw_alert: dict[str, Any] = {"alert_name": "Interactive session", "message": alert_text}
+    if context_overrides:
+        raw_alert.setdefault("annotations", {}).update(context_overrides)
+
+    resolved_alert_name, resolved_pipeline_name, resolved_severity = resolve_investigation_context(
+        raw_alert=raw_alert,
+        alert_name=None,
+        pipeline_name=None,
+        severity=None,
+    )
+
+    event_queue: queue.Queue[StreamEvent | BaseException | None] = queue.Queue()
+    loop_ref: dict[str, asyncio.AbstractEventLoop] = {}
+    pump_task_ref: dict[str, asyncio.Task[None]] = {}
+
+    def _run_async() -> None:
+        loop = asyncio.new_event_loop()
+        loop_ref["loop"] = loop
+        try:
+
+            async def _pump() -> None:
+                async for evt in astream_investigation(
+                    resolved_alert_name,
+                    resolved_pipeline_name,
+                    resolved_severity,
+                    raw_alert=raw_alert,
+                ):
+                    event_queue.put(evt)
+
+            task = loop.create_task(_pump())
+            pump_task_ref["task"] = task
+            try:
+                loop.run_until_complete(task)
+            except asyncio.CancelledError:
+                event_queue.put(KeyboardInterrupt("investigation cancelled"))
+        except Exception as exc:  # noqa: BLE001
+            event_queue.put(exc)
+        finally:
+            event_queue.put(None)
+            loop.close()
+
+    thread = threading.Thread(target=_run_async, daemon=True)
+    thread.start()
+
+    def _cancel_pump() -> None:
+        loop = loop_ref.get("loop")
+        task = pump_task_ref.get("task")
+        if loop is None or task is None or loop.is_closed():
+            return
+        loop.call_soon_threadsafe(task.cancel)
+
+    def _events() -> Iterator[StreamEvent]:
+        try:
+            while True:
+                item = event_queue.get()
+                if isinstance(item, BaseException):
+                    raise item
+                if item is None:
+                    return
+                yield item
+        except KeyboardInterrupt:
+            _cancel_pump()
+            raise
+
+    renderer = StreamRenderer(local=True)
+    try:
+        final_state = renderer.render_stream(_events())
+    except KeyboardInterrupt:
+        _cancel_pump()
+        raise
+    finally:
+        # Always join so unexpected exceptions from render_stream don't leak
+        # the daemon thread and leave an orphaned LLM call running.
+        thread.join(timeout=5)
+        if thread.is_alive():
+            _logger.warning(
+                "investigation thread did not terminate within 5s after cancellation; "
+                "an LLM call may still be in flight"
+            )
+    return dict(final_state)

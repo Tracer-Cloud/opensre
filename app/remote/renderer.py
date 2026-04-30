@@ -49,13 +49,14 @@ class StreamRenderer:
     in real time with tool calls, LLM reasoning, and other decisions.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, local: bool = False) -> None:
         self._tracker = ProgressTracker()
         self._active_node: str | None = None
         self._events_received: int = 0
         self._node_names_seen: list[str] = []
         self._final_state: dict[str, Any] = {}
         self._stream_completed = False
+        self._local = local
 
     @property
     def events_received(self) -> int:
@@ -78,13 +79,21 @@ class StreamRenderer:
 
         Returns the accumulated final state dict.
         """
-        _print_connection_banner()
+        if not self._local:
+            _print_connection_banner()
 
-        for event in events:
-            self._handle_event(event)
-
-        self._finish_active_node()
-        self._print_report()
+        try:
+            for event in events:
+                self._handle_event(event)
+        finally:
+            # Always stop the active spinner thread and flush whatever
+            # final state was accumulated, even if the stream raises
+            # (e.g. LLM quota exhausted). Otherwise the spinner keeps
+            # writing \r + erase-line escapes forever, and any partial
+            # report the user has been watching stream live would be
+            # silently discarded before the exception propagates.
+            self._finish_active_node()
+            self._print_report()
         return dict(self._final_state)
 
     def _handle_event(self, event: StreamEvent) -> None:

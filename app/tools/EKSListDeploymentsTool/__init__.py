@@ -6,21 +6,11 @@ import logging
 from typing import Any, cast
 
 from app.services.eks.eks_k8s_client import build_k8s_clients
-from app.tools.EKSListClustersTool import _eks_creds
 from app.tools.tool_decorator import tool
 from app.tools.utils.availability import eks_available_or_backend
+from app.tools.utils.eks_workload_helper import extract_workload_params
 
 logger = logging.getLogger(__name__)
-
-
-def _list_deployments_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    eks = sources["eks"]
-    return {
-        "cluster_name": eks.get("cluster_name", ""),
-        "namespace": eks.get("namespace") or "all",
-        "eks_backend": eks.get("_backend"),
-        **_eks_creds(eks),
-    }
 
 
 @tool(
@@ -40,11 +30,12 @@ def _list_deployments_extract_params(sources: dict[str, dict]) -> dict[str, Any]
             "role_arn": {"type": "string"},
             "external_id": {"type": "string", "default": ""},
             "region": {"type": "string", "default": "us-east-1"},
+            "credentials": {"type": ["object", "null"], "default": None},
         },
         "required": ["cluster_name", "namespace", "role_arn"],
     },
     is_available=eks_available_or_backend,
-    extract_params=_list_deployments_extract_params,
+    extract_params=extract_workload_params,
 )
 def list_eks_deployments(
     cluster_name: str,
@@ -52,6 +43,7 @@ def list_eks_deployments(
     role_arn: str = "",
     external_id: str = "",
     region: str = "us-east-1",
+    credentials: dict[str, Any] | None = None,
     eks_backend: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
@@ -67,7 +59,13 @@ def list_eks_deployments(
             eks_backend.list_deployments(cluster_name=cluster_name, namespace=namespace),
         )
     try:
-        _, apps_v1 = build_k8s_clients(cluster_name, role_arn, external_id, region)
+        _, apps_v1 = build_k8s_clients(
+            cluster_name,
+            role_arn,
+            external_id,
+            region,
+            credentials=credentials,
+        )
         dep_list = (
             apps_v1.list_deployment_for_all_namespaces()
             if namespace == "all"

@@ -1,6 +1,6 @@
 ---
 title: "AWS Batch"
-description: "Install OpenSRE on AWS Batch (Multi-Node) under two minutes"
+description: "Install Tracer on AWS Batch (Multi-Node) under two minutes"
 ---
 
 <style>
@@ -28,7 +28,7 @@ description: "Install OpenSRE on AWS Batch (Multi-Node) under two minutes"
 `}
 </style>
 
-Try OpenSRE in Your AWS Batch Workloads
+Try Tracer in Your AWS Batch Workloads
 
 <Tabs>
   <Tab title="CloudFormation">
@@ -40,7 +40,7 @@ Try OpenSRE in Your AWS Batch Workloads
 
 ### 1. Connect AWS Integration
 
-Open the following link to connect your AWS account automatically to OpenSRE. This will allow OpenSRE to monitor your AWS Batch jobs.
+Open the following link to connect your AWS account automatically to Tracer. This will allow Tracer to monitor your AWS Batch jobs.
 
 [→ Connect AWS](https://app.tracer.cloud/onboarding/linux-cloud-multi)
 
@@ -61,7 +61,7 @@ Resources:
             - ...
 ```
 
-### 3. Append OpenSRE install in EC2 Launch Template UserData
+### 3. Append Tracer install in EC2 Launch Template UserData
 
 Add these commands to the `runcmd`: section in your UserData:
 
@@ -111,7 +111,7 @@ In your Nextflow `batch.config` file, you need to:
 1. Add a `params` section to generate a UUID that will be shared across all jobs in the workflow
 2. Add `containerOptions` in the `process` section to pass the trace ID as an environment variable to each container
 
-This allows OpenSRE to correlate all jobs from the same workflow execution.
+This allows Tracer to correlate all jobs from the same workflow execution.
 
 ```bash
 // 1. Add params section to generate UUID
@@ -138,13 +138,13 @@ aws {region = 'YOUR_REGION'
   <img
     className="block dark:hidden"
     src="/images/logo/tracer/Tracer Full Body - Black.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
   <img
     className="hidden dark:block"
     src="/images/logo/tracer/Tracer Full Body - White.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
 
@@ -156,7 +156,7 @@ aws {region = 'YOUR_REGION'
     color: "inherit",
   }}
 >
-  Watch your pipeline run in the OpenSRE dashboard
+  Watch your pipeline run in the Tracer dashboard
 </div>
 
   <div style={{ color: 'inherit' }}>
@@ -238,7 +238,7 @@ Make sure these tools are installed locally before proceeding.
 
 ### 1. Connect AWS Integration
 
-Open the following link to connect your AWS account automatically to OpenSRE. This will allow OpenSRE to monitor your AWS Batch jobs.
+Open the following link to connect your AWS account automatically to Tracer. This will allow Tracer to monitor your AWS Batch jobs.
 
 [→ Connect AWS](https://app.tracer.cloud/onboarding/linux-cloud-multi)
 
@@ -253,7 +253,7 @@ cd nextflow-test-pipelines/pipelines/aws-batch/rnaseq
 
 ### 3. Update user_data_mime.sh
 
-Update the user_data_mime.sh file to include your OpenSRE user ID. Navigate to the terraform directory and edit the file:
+Update the user_data_mime.sh file to include your Tracer user ID. Navigate to the terraform directory and edit the file:
 
 ```bash
 cd nextflow-test-pipelines/pipelines/aws-batch/rnaseq/terraform
@@ -299,7 +299,7 @@ cd nextflow-test-pipelines/pipelines/aws-batch/rnaseq
 </Info>
 
 <Info>
-  **Alternative for OpenSRE AWS Account Users:** If you have access to OpenSRE's
+  **Alternative for Tracer AWS Account Users:** If you have access to Tracer's
   AWS account, you can skip the infrastructure setup and run the pipeline
   directly: ```bash cd nextflow-test-pipelines/pipelines/aws-batch/rnaseq
   ./run.sh tracer run ```
@@ -320,13 +320,13 @@ cd nextflow-test-pipelines/pipelines/aws-batch/rnaseq
   <img
     className="block dark:hidden"
     src="/images/logo/tracer/Tracer Full Body - Black.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
   <img
     className="hidden dark:block"
     src="/images/logo/tracer/Tracer Full Body - White.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
 
@@ -338,7 +338,7 @@ cd nextflow-test-pipelines/pipelines/aws-batch/rnaseq
     color: "inherit",
   }}
 >
-  Watch your pipeline run in the OpenSRE dashboard
+  Watch your pipeline run in the Tracer dashboard
 </div>
 
   <div style={{ color: 'inherit' }}>

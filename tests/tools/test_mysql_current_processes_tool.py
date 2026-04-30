@@ -69,3 +69,22 @@ def test_run_error_propagated() -> None:
         result = get_mysql_current_processes(host="invalid", database="testdb")
     assert "error" in result
     assert result["available"] is False
+
+
+def test_default_db_warning_present_when_database_omitted() -> None:
+    with patch(
+        "app.tools.MySQLCurrentProcessesTool.get_current_processes",
+        return_value={"source": "mysql", "available": True, "processes": []},
+    ):
+        result = get_mysql_current_processes(host="localhost")
+    assert "default_db_warning" in result
+    assert "mysql" in result["default_db_warning"]
+
+
+def test_no_default_db_warning_when_database_provided() -> None:
+    with patch(
+        "app.tools.MySQLCurrentProcessesTool.get_current_processes",
+        return_value={"source": "mysql", "available": True, "processes": []},
+    ):
+        result = get_mysql_current_processes(host="localhost", database="mydb")
+    assert "default_db_warning" not in result

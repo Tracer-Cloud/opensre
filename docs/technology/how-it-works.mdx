@@ -3,15 +3,15 @@ title: "How It Works"
 description: "Technology overview"
 ---
 
-## OpenSRE Technology Benefits
-OpenSRE offers a set of core capabilities that improve visibility and analysis across scientific workflows compared to traditional monitoring tools:
+## Tracer Technology Benefits
+Tracer offers a set of core capabilities that improve visibility and analysis across scientific workflows compared to traditional monitoring tools:
 - Deep information: enabling faster and more accurate issue detection.
 - Workflow-agnostic: Works with any workflow without required modifications.
 - Advanced Features: driving up value creation such as resource and cost optimization<br/>
 
-## How OpenSRE Can Offer This
-OpenSRE is built on top of eBPF (extended Berkeley Packet Filter), a Linux kernel technology that allows safe, high-performance instrumentation without kernel modifications. eBPF programs run inside the kernel and expose detailed telemetry to OpenSRE’s runtime, which correlates system events with pipeline steps, tools, and samples.
-Below is a high-level view of how OpenSRE uses eBPF during development and runtime:
+## How Tracer Can Offer This
+Tracer is built on top of eBPF (extended Berkeley Packet Filter), a Linux kernel technology that allows safe, high-performance instrumentation without kernel modifications. eBPF programs run inside the kernel and expose detailed telemetry to Tracer’s runtime, which correlates system events with pipeline steps, tools, and samples.
+Below is a high-level view of how Tracer uses eBPF during development and runtime:
 
 <img
   className="block dark:hidden"
@@ -28,9 +28,9 @@ Below is a high-level view of how OpenSRE uses eBPF during development and runti
 
 
 ### Development
-eBPF programs are compiled into safe bytecode and validated by the kernel’s verifier. OpenSRE distributes precompiled, architecture-compatible eBPF modules through its Go-based agent, so no user compilation is required.
+eBPF programs are compiled into safe bytecode and validated by the kernel’s verifier. Tracer distributes precompiled, architecture-compatible eBPF modules through its Go-based agent, so no user compilation is required.
 ### Runtime
-At runtime, OpenSRE’s eBPF modules attach to system call boundaries, network operations, scheduling events, and other kernel hooks. Using eBPF Maps, OpenSRE aggregates telemetry efficiently and streams enriched metrics to its backend. This enables:
+At runtime, Tracer’s eBPF modules attach to system call boundaries, network operations, scheduling events, and other kernel hooks. Using eBPF Maps, Tracer aggregates telemetry efficiently and streams enriched metrics to its backend. This enables:
 - Per-tool and per-task CPU/I/O visibility
 - Real-time failure attribution
 - Identification of idle or stuck processes
@@ -41,9 +41,9 @@ At runtime, OpenSRE’s eBPF modules attach to system call boundaries, network o
 All instrumentation operates with minimal overhead and without requiring privileged kernel modules.
 
 ## Why eBPF
-Understanding why OpenSRE uses eBPF for observability
+Understanding why Tracer uses eBPF for observability
 Traditional approaches rely on logs, metrics exporters, or code instrumentation.
-eBPF serves four main purposes for OpenSRE:
+eBPF serves four main purposes for Tracer:
 <table className="ebpf-benefits-table">
   <tr>
     <td>
@@ -74,11 +74,11 @@ eBPF serves four main purposes for OpenSRE:
 This provides low-overhead visibility into black-box tools, which is particularly valuable for bioinformatics and computational biology pipelines.
 
 
-## How OpenSRE works, next to eBPF
-OpenSRE observes pipeline execution directly at the OS level using eBPF and a multi-layer data processing architecture. The workflow consists of four main stages:
+## How Tracer works, next to eBPF
+Tracer observes pipeline execution directly at the OS level using eBPF and a multi-layer data processing architecture. The workflow consists of four main stages:
 <Steps>
   <Step title="Attach">
-The OpenSRE agent attaches non-intrusively to running processes and containers. No restarts, code changes, or wrapper scripts are required.
+The Tracer agent attaches non-intrusively to running processes and containers. No restarts, code changes, or wrapper scripts are required.
   </Step>
   <Step title="Collect">
 Using eBPF, the agent captures granular system-level signals, including CPU scheduling delays, I/O operations, memory activity, GPU context switches, and other kernel events, while maintaining low overhead.
@@ -87,20 +87,20 @@ Using eBPF, the agent captures granular system-level signals, including CPU sche
 Captured events are mapped back to the structure of the pipeline, including jobs, tasks, and steps. This provides context for understanding runtime behavior across diverse tools and workflow engines.
   </Step>
   <Step title="Stream">
-Structured telemetry is sent to the OpenSRE backend (on-premises or cloud). Data is aggregated, visualized in dashboards, and made available for export through standard interfaces such as APIs.
+Structured telemetry is sent to the Tracer backend (on-premises or cloud). Data is aggregated, visualized in dashboards, and made available for export through standard interfaces such as APIs.
   </Step>
 </Steps>
 
 <img
   className="block dark:hidden"
   src="/images/Tracer-Functioning-Light.png"
-  alt="OpenSRE Functioning Overview"
+  alt="Tracer Functioning Overview"
   style={{ width: '100%', height: 'auto' }}
 />
 <img
   className="hidden dark:block"
   src="/images/Tracer-Functioning-Dark.png"
-  alt="OpenSRE Functioning Overview"
+  alt="Tracer Functioning Overview"
   style={{ width: '100%', height: 'auto' }}
 />
 

@@ -1,0 +1,129 @@
+# Optional Windows CI when PR label `ci:windows` is present.
+# Separate workflow + concurrency group so Windows label runs are isolated.
+
+name: CI Labels (Windows)
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-labels-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-quality:
+    if: contains(github.event.pull_request.labels.*.name, 'ci:windows')
+    name: windows quality
+    runs-on: windows-latest
+    timeout-minutes: 15
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Lint
+        run: python -m ruff check app/ tests/
+
+      - name: Format check
+        run: python -m ruff format --check app/ tests/
+
+  windows-typecheck:
+    if: contains(github.event.pull_request.labels.*.name, 'ci:windows')
+    name: windows typecheck
+    needs: [windows-quality]
+    runs-on: windows-latest
+    timeout-minutes: 20
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Typecheck
+        run: python -m mypy app/
+
+  windows-test:
+    if: contains(github.event.pull_request.labels.*.name, 'ci:windows')
+    name: windows test
+    needs: [windows-quality, windows-typecheck]
+    runs-on: windows-latest
+    timeout-minutes: 25
+    continue-on-error: true
+
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      JWT_TOKEN: ${{ secrets.JWT_TOKEN }}
+      TRACER_ORG_ID: ${{ secrets.TRACER_ORG_ID }}
+      TRACER_WEB_APP_URL: ${{ secrets.TRACER_WEB_APP_URL }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+      LANGSMITH_ENDPOINT: ${{ secrets.LANGSMITH_ENDPOINT }}
+      LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
+      LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
+      GRAFANA_READ_TOKEN: ${{ secrets.GRAFANA_READ_TOKEN }}
+      GCLOUD_HOSTED_METRICS_ID: ${{ secrets.GCLOUD_HOSTED_METRICS_ID }}
+      GCLOUD_HOSTED_METRICS_URL: ${{ secrets.GCLOUD_HOSTED_METRICS_URL }}
+      GCLOUD_HOSTED_LOGS_ID: ${{ secrets.GCLOUD_HOSTED_LOGS_ID }}
+      GCLOUD_HOSTED_LOGS_URL: ${{ secrets.GCLOUD_HOSTED_LOGS_URL }}
+      GCLOUD_RW_API_KEY: ${{ secrets.GCLOUD_RW_API_KEY }}
+      GCLOUD_OTLP_ENDPOINT: ${{ secrets.GCLOUD_OTLP_ENDPOINT }}
+      GCLOUD_OTLP_AUTH_HEADER: ${{ secrets.GCLOUD_OTLP_AUTH_HEADER }}
+      PYTHONUTF8: "1"
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Run full tests
+        run: >-
+          python -m pytest -n auto -v
+          --cov=app
+          --cov-report=term-missing
+          --cov-report=html
+          --ignore=tests/e2e/kubernetes_local_alert_simulation
+          --ignore=tests/synthetic
+          -m "not synthetic and not integration"

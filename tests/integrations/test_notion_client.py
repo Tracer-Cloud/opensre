@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.integrations.clients.notion.client import NotionClient, NotionConfig
+from app.services.notion.client import NotionClient, NotionConfig
 
 
 @pytest.fixture
@@ -67,3 +67,13 @@ def test_create_investigation_page_http_error(client: NotionClient) -> None:
 
     assert result["success"] is False
     assert "401" in result["error"]
+
+
+def test_notion_compatibility_import() -> None:
+    """Verify that the old import path still works through __init__."""
+    from app.integrations.clients.notion import NotionClient as LegacyClient
+    from app.integrations.clients.notion import NotionConfig as LegacyConfig
+    from app.services.notion.client import NotionClient, NotionConfig
+
+    assert LegacyClient is NotionClient
+    assert LegacyConfig is NotionConfig

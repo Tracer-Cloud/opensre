@@ -16,12 +16,14 @@ _ASCII_HEADER = """\
  \\___/|_|   |_____|_| \\_|____/|_| \\_\\_____|"""
 
 _HELP_COMMANDS: tuple[tuple[str, str], ...] = (
+    ("agent", "Launch the interactive SRE agent terminal."),
     ("onboard", "Run the interactive onboarding wizard."),
     ("investigate", "Run an RCA investigation against an alert payload."),
     ("deploy", "Deploy OpenSRE to a cloud environment (EC2)."),
     ("remote", "Connect to remote agents and hosted service ops."),
     ("tests", "Browse and run inventoried tests from the terminal."),
     ("integrations", "Manage local integration credentials."),
+    ("guardrails", "Manage sensitive information guardrail rules."),
     ("health", "Check integration and agent setup status."),
     ("doctor", "Run a full environment diagnostic."),
     ("update", "Check for a newer version and update if one is available."),
@@ -29,6 +31,7 @@ _HELP_COMMANDS: tuple[tuple[str, str], ...] = (
 )
 
 _LANDING_COMMANDS: tuple[tuple[str, str], ...] = (
+    ("opensre agent", "Launch the interactive SRE agent terminal"),
     ("opensre onboard", "Configure LLM provider and integrations"),
     ("opensre investigate -i alert.json", "Run RCA against an alert payload"),
     ("opensre deploy ec2", "Deploy investigation server on AWS EC2"),
@@ -36,6 +39,7 @@ _LANDING_COMMANDS: tuple[tuple[str, str], ...] = (
     ("opensre remote ops status", "Inspect hosted service status (Railway)"),
     ("opensre tests", "Browse and run inventoried tests"),
     ("opensre integrations list", "Show configured integrations"),
+    ("opensre guardrails rules", "List configured guardrail rules"),
     ("opensre health", "Check integration and agent setup status"),
     ("opensre doctor", "Run a full environment diagnostic"),
     ("opensre update", "Update to the latest version"),

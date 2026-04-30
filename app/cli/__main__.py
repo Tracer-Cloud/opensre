@@ -10,6 +10,8 @@ Enable shell tab-completion (add to your shell profile for persistence):
 from __future__ import annotations
 
 import os
+import signal
+import sys
 
 import click
 from dotenv import load_dotenv
@@ -18,7 +20,11 @@ from app.analytics.cli import capture_cli_invoked
 from app.analytics.provider import capture_first_run_if_needed, shutdown_analytics
 from app.cli.commands import register_commands
 from app.cli.layout import RichGroup, render_landing
-from app.cli.prompt_support import install_questionary_escape_cancel
+from app.cli.prompt_support import (
+    handle_ctrl_c_press,
+    install_questionary_ctrl_c_double_exit,
+    install_questionary_escape_cancel,
+)
 from app.version import get_version
 
 
@@ -34,6 +40,18 @@ from app.version import get_version
 @click.option("--verbose", is_flag=True, help="Print extra diagnostic information.")
 @click.option("--debug", is_flag=True, help="Print debug-level logs and traces.")
 @click.option("--yes", "-y", is_flag=True, help="Auto-confirm all interactive prompts.")
+@click.option(
+    "--interactive/--no-interactive",
+    default=True,
+    help="Disable the interactive REPL and print the landing page instead.",
+)
+@click.option(
+    "--layout",
+    type=click.Choice(["classic", "pinned"]),
+    default=None,
+    help="REPL layout: 'classic' (scrolling) or 'pinned' (fixed input bar). "
+    "Overrides OPENSRE_LAYOUT env var and ~/.opensre/config.yml.",
+)
 @click.pass_context
 def cli(
     ctx: click.Context,
@@ -41,6 +59,8 @@ def cli(
     verbose: bool,
     debug: bool,
     yes: bool,
+    interactive: bool,
+    layout: str | None,
 ) -> None:
     """OpenSRE - open-source SRE agent for automated incident investigation and root cause analysis."""
     ctx.ensure_object(dict)
@@ -54,6 +74,16 @@ def cli(
 
     if ctx.invoked_subcommand is None:
         capture_cli_invoked()
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            from app.cli.repl import run_repl
+            from app.cli.repl.config import ReplConfig
+
+            config = ReplConfig.load(
+                cli_enabled=interactive,
+                cli_layout=layout,
+            )
+            if config.enabled:
+                raise SystemExit(run_repl(config=config))
         click.echo("🚧 OpenSRE is in Public Beta — features may change.", err=True)
         render_landing()
         raise SystemExit(0)
@@ -62,14 +92,37 @@ def cli(
 register_commands(cli)
 
 
+def _install_sigint_handler() -> None:
+    """Handle Ctrl+C between prompts (when prompt_toolkit is not active).
+
+    prompt_toolkit intercepts Ctrl+C internally while a prompt is running, so
+    the key binding in prompt_support.py handles that case.  This SIGINT handler
+    covers everything else: long-running operations, streaming output, etc.
+    """
+
+    def _handler(signum: int, frame: object) -> None:  # noqa: ARG001
+        handle_ctrl_c_press()
+
+    signal.signal(signal.SIGINT, _handler)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``opensre`` console script."""
     load_dotenv(override=False)
     install_questionary_escape_cancel()
+    install_questionary_ctrl_c_double_exit()
+    _install_sigint_handler()
     capture_first_run_if_needed()
 
     try:
         cli(args=argv, standalone_mode=True)
+    except KeyboardInterrupt:
+        # A KeyboardInterrupt that escapes cli() was not handled by our
+        # double-exit logic (e.g. click.prompt, an unpatched library prompt).
+        # Print a newline so the terminal cursor lands on a clean line, then
+        # exit quietly — Click's "Aborted!" message is intentionally suppressed.
+        print(flush=True)
+        return 0
     except SystemExit as exc:
         if isinstance(exc.code, int):
             return exc.code

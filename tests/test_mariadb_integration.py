@@ -10,9 +10,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.integrations.mariadb import (
+    _QUERY_TRUNCATE_LEN,
     DEFAULT_MARIADB_PORT,
     MariaDBConfig,
-    _truncate,
     build_mariadb_config,
     get_global_status,
     get_innodb_status,
@@ -25,6 +25,12 @@ from app.integrations.mariadb import (
     validate_mariadb_config,
 )
 from app.nodes.resolve_integrations.node import _classify_integrations
+from app.utils.truncation import truncate as _truncate_shared
+
+
+def _truncate(text: str, max_len: int = _QUERY_TRUNCATE_LEN) -> str:
+    return _truncate_shared(text, max_len)
+
 
 # ---------------------------------------------------------------------------
 # Shared mock helpers
@@ -224,18 +230,18 @@ class TestTruncate:
     def test_over_limit_truncated(self) -> None:
         result = _truncate("x" * 201)
         assert result.endswith("...")
-        assert len(result) == 203  # 200 chars + "..."
+        assert len(result) == 200  # capped at limit
 
     def test_empty_string(self) -> None:
         assert _truncate("") == ""
 
     def test_custom_max_len(self) -> None:
-        assert _truncate("hello world", max_len=5) == "hello..."
+        assert _truncate("hello world", max_len=5) == "he..."
 
     def test_very_long_string(self) -> None:
         result = _truncate("A" * 10_000)
         assert result.endswith("...")
-        assert len(result) == 203
+        assert len(result) == 200  # capped at limit
 
 
 # ---------------------------------------------------------------------------
@@ -336,7 +342,7 @@ class TestGetProcessList:
         result = get_process_list(self._config())
 
         assert result["processes"][0]["query"].endswith("...")
-        assert len(result["processes"][0]["query"]) == 203
+        assert len(result["processes"][0]["query"]) == 200
 
     @patch("app.integrations.mariadb._get_connection")
     def test_empty_process_list(self, mock_get_conn: MagicMock) -> None:

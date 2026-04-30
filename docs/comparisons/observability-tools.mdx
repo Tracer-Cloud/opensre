@@ -1,15 +1,15 @@
 ---
 title: 'Observability and telemetry tools'
 sidebarTitle: 'Overview'
-description: 'How OpenSRE adds execution-aware context to metrics, logs, and dashboards'
+description: 'How Tracer adds execution-aware context to metrics, logs, and dashboards'
 ---
 
 Observability and telemetry tools collect, store, and visualize metrics, logs, and traces reported by systems and applications. They are effective at showing what was reported over time and at supporting alerting and dashboards across many environments.
 
-OpenSRE complements these tools by observing what actually executes at runtime. It captures execution behavior directly from the host and container runtime and organizes this data by pipeline, run, task, and tool.
+Tracer complements these tools by observing what actually executes at runtime. It captures execution behavior directly from the host and container runtime and organizes this data by pipeline, run, task, and tool.
 
 <Note>
-If you're new to OpenSRE or want a conceptual overview, see [How OpenSRE fits in your stack](/comparisons/overview).
+If you're new to Tracer or want a conceptual overview, see [How Tracer fits in your stack](/comparisons/overview).
 </Note>
 
 ## What observability tools do well
@@ -48,55 +48,55 @@ These limitations are a direct consequence of relying on reported telemetry rath
 
 This removes the need to infer execution behavior from indirect signals and allows performance and cost to be attributed to observed runtime activity, rather than to proxies.
 
-## What OpenSRE adds
+## What Tracer adds
 
-OpenSRE observes execution directly from the operating system and runtime. When used alongside observability and telemetry tools, it adds:
+Tracer observes execution directly from the operating system and runtime. When used alongside observability and telemetry tools, it adds:
 
 - Execution-level visibility for pipelines, runs, tasks, and tools
 - Observed CPU, memory, disk, and network behavior
 - Insight into stalls, idle execution, and contention
 - Resource usage and cost attribution aligned with actual work
 
-OpenSRE does not replace metrics backends or dashboards. It adds execution context that reported telemetry alone cannot provide.
+Tracer does not replace metrics backends or dashboards. It adds execution context that reported telemetry alone cannot provide.
 
-## How OpenSRE works with current observability and telemetry tools
+## How Tracer works with current observability and telemetry tools
 
-The pages below describe how OpenSRE works alongside common observability platforms used in scientific, data, HPC, and cloud environments.
+The pages below describe how Tracer works alongside common observability platforms used in scientific, data, HPC, and cloud environments.
 
-Select a tool to see how OpenSRE adds additional observability.
+Select a tool to see how Tracer adds additional observability.
 
 <CardGroup cols={2}>
-  <Card title="OpenSRE and Datadog" icon="chart-line" href="/comparisons/Tracer_vs_Datadog">
+  <Card title="Tracer and Datadog" icon="chart-line" href="/comparisons/Tracer_vs_Datadog">
     **Pipeline-level insight within broad observability**
 
-    OpenSRE organizes execution behavior around pipelines instead of services or hosts.
+    Tracer organizes execution behavior around pipelines instead of services or hosts.
   </Card>
-  <Card title="OpenSRE and Grafana" icon="chart-line" href="/comparisons/Tracer_vs_Grafana">
+  <Card title="Tracer and Grafana" icon="chart-line" href="/comparisons/Tracer_vs_Grafana">
     **Execution-aware dashboards without manual wiring**
 
-    OpenSRE provides pipeline-aware views that reduce the need to infer execution behavior from generic dashboards.
+    Tracer provides pipeline-aware views that reduce the need to infer execution behavior from generic dashboards.
   </Card>
-  <Card title="OpenSRE and Prometheus" icon="chart-line" href="/comparisons/Tracer_vs_Prometheus">
+  <Card title="Tracer and Prometheus" icon="chart-line" href="/comparisons/Tracer_vs_Prometheus">
     **Observed execution versus scraped metrics**
 
-    OpenSRE captures runtime behavior that may not appear in scraped or aggregated metrics.
+    Tracer captures runtime behavior that may not appear in scraped or aggregated metrics.
   </Card>
 </CardGroup>
 
-## When OpenSRE is useful with observability tools
+## When Tracer is useful with observability tools
 
-OpenSRE is most useful alongside observability and telemetry platforms when teams need to:
+Tracer is most useful alongside observability and telemetry platforms when teams need to:
 
 - Understand pipeline behavior beyond reported metrics
 - Diagnose performance issues involving short-lived tasks
 - Attribute resource usage and cost to specific workflows or tools
 - Reduce manual dashboard configuration and metric correlation
 
-OpenSRE focuses on execution behavior. Observability tools continue to provide metric storage, dashboards, and alerting across broader systems.
+Tracer focuses on execution behavior. Observability tools continue to provide metric storage, dashboards, and alerting across broader systems.
 
 ## Where to go next
 
-- [How OpenSRE fits in your stack](/comparisons/overview) – conceptual overview
+- [How Tracer fits in your stack](/comparisons/overview) – conceptual overview
 - Individual integration pages – tool-specific execution gaps and observability comparisons
 
 <div style={{ height: '50vh' }}></div>

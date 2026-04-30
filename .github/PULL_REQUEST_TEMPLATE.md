@@ -1,6 +1,6 @@
 Fixes #
 
-<!-- Add issue number above --> 
+<!-- Add issue number above -->
 
 #### Describe the changes you have made in this PR -
 

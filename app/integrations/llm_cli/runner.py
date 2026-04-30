@@ -179,6 +179,11 @@ class CLIBackedLLMClient:
 
         content = self._adapter.parse(stdout=out, stderr=err, returncode=proc.returncode)
         content = _strip_ansi(content).strip()
+        if err:
+            logger.debug(
+                "cli_llm_stderr",
+                extra={"provider": self._adapter.name, "stderr": err[:500]},
+            )
         logger.debug(
             "cli_llm_invoke",
             extra={"provider": self._adapter.name, "cli_cost_unknown": True},

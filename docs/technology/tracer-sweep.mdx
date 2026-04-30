@@ -1,18 +1,18 @@
 ---
-title: 'OpenSRE/sweep'
-sidebarTitle: 'OpenSRE/sweep'
+title: 'Tracer/sweep'
+sidebarTitle: 'Tracer/sweep'
 description: 'Systemwide cloud waste detection based on real execution activity'
 ---
 
-OpenSRE/sweep analyzes runtime behavior across your cloud compute environment to identify resources that are running but not performing useful work. It uses execution-level signals collected from each instance to locate idle machines, underutilized compute, and other forms of waste that are not visible through billing or utilization summaries.
+Tracer/sweep analyzes runtime behavior across your cloud compute environment to identify resources that are running but not performing useful work. It uses execution-level signals collected from each instance to locate idle machines, underutilized compute, and other forms of waste that are not visible through billing or utilization summaries.
 
-<Note>OpenSRE/sweep does not modify workloads or infrastructure. It only reads execution metadata and cloud billing information to provide findings.</Note>
+<Note>Tracer/sweep does not modify workloads or infrastructure. It only reads execution metadata and cloud billing information to provide findings.</Note>
 
-## What OpenSRE/sweep does
+## What Tracer/sweep does
 
-OpenSRE/sweep performs a read-only scan of your compute environment and:
+Tracer/sweep performs a read-only scan of your compute environment and:
 
-- Map it to pipeline and execution activity from OpenSRE/collect (if setup)
+- Map it to pipeline and execution activity from Tracer/collect (if setup)
 - Evaluates CPU, memory, process, I/O, and container-level behavior
 - Detects periods where machines are running without active work
 - Identifies resources that appear active but have no meaningful execution
@@ -32,7 +32,7 @@ Idle Instance Scanning identifies EC2 instances that remain online without runni
 
 ### How it works
 
-OpenSRE/sweep relies on execution signals collected from each instance. These include:
+Tracer/sweep relies on execution signals collected from each instance. These include:
 
 - CPU scheduling activity
 - Memory activity and pressure
@@ -41,7 +41,7 @@ OpenSRE/sweep relies on execution signals collected from each instance. These in
 - Container and namespace activity
 - GPU job activity when present
 
-Using these signals, OpenSRE/sweep identifies:
+Using these signals, Tracer/sweep identifies:
 
 - Instances with no running processes
 - Machines that remain idle after a workflow or task completes
@@ -49,17 +49,17 @@ Using these signals, OpenSRE/sweep identifies:
 - GPU nodes with no scheduled workloads
 - Instances with periodic spikes but no sustained execution
 
-When an instance meets the idle criteria, OpenSRE/sweep records:
+When an instance meets the idle criteria, Tracer/sweep records:
 
 - The detection timestamp
 - The reason for classification
 - The duration of the idle period (when available)
 
-<Tip>These findings appear in the OpenSRE UI as part of the waste summary.</Tip>
+<Tip>These findings appear in the Tracer UI as part of the waste summary.</Tip>
 
-## What OpenSRE/sweep finds
+## What Tracer/sweep finds
 
-OpenSRE/sweep highlights several categories of unused or inefficient compute, including:
+Tracer/sweep highlights several categories of unused or inefficient compute, including:
 
 <AccordionGroup>
   <Accordion title="Idle instances" icon="power-off">
@@ -80,7 +80,7 @@ OpenSRE/sweep highlights several categories of unused or inefficient compute, in
 
 ## Outputs
 
-OpenSRE/sweep provides:
+Tracer/sweep provides:
 
 - A ranked list of potential cost-saving opportunities
 - The detection reason for each idle or underutilized instance
@@ -89,9 +89,9 @@ OpenSRE/sweep provides:
 
 <Tip>Findings are designed to be auditable. Each result is backed by measurable signals.</Tip>
 
-## What OpenSRE/sweep does not do
+## What Tracer/sweep does not do
 
-OpenSRE/sweep is read-only. It does not:
+Tracer/sweep is read-only. It does not:
 
 <Warning>
 - Start, stop, or terminate instances
@@ -104,11 +104,11 @@ OpenSRE/sweep is read-only. It does not:
 
 ## Requirements
 
-OpenSRE/sweep requires:
+Tracer/sweep requires:
 
-- OpenSRE/collect installed on instances to provide execution signals
+- Tracer/collect installed on instances to provide execution signals
 - A read-only IAM role to access cloud cost and usage data (AWS supported)
-- Access to the OpenSRE UI
+- Access to the Tracer UI
 
 No application changes, tagging, or instrumentation are needed.
 
@@ -121,34 +121,34 @@ Follow these steps to connect your AWS account.
 Ensure you have:
 
 - An AWS account with permission to create IAM roles
-- Access to the OpenSRE UI
+- Access to the Tracer UI
 
 <Steps>
   <Step title="Create a read-only IAM role">
-    In the OpenSRE UI, open the provided CloudFormation link.
+    In the Tracer UI, open the provided CloudFormation link.
     
     1. Deploy the CloudFormation stack.
     2. The External ID is pre-filled.
     
-    The stack creates a read-only role with the permissions required by OpenSRE/sweep.
+    The stack creates a read-only role with the permissions required by Tracer/sweep.
   </Step>
   <Step title="Provide the Role ARN">
     After deployment, locate the `TracerReadRoleArn` output.
     
     1. Copy the Role ARN.
-    2. Paste it into the OpenSRE UI and save.
+    2. Paste it into the Tracer UI and save.
     
-    OpenSRE will use this role to read cost and usage metadata.
+    Tracer will use this role to read cost and usage metadata.
   </Step>
   <Step title="Review results">
-    Once connected, OpenSRE/sweep analyzes your environment so you can:
+    Once connected, Tracer/sweep analyzes your environment so you can:
     
     - Review historical cloud usage (up to 90 days)
     - Identify idle or low-activity instances
     - View current execution activity
     - Inspect estimated waste
     
-    Findings appear automatically in the OpenSRE UI.
+    Findings appear automatically in the Tracer UI.
   </Step>
 </Steps>
 
@@ -156,30 +156,30 @@ Ensure you have:
 
 - The IAM role is read-only
 - No application data or secrets are accessed
-- OpenSRE does not modify infrastructure
+- Tracer does not modify infrastructure
 - You can revoke access at any time by deleting the IAM role
 
 ## What happens next
 
-After setup, OpenSRE/sweep continues to evaluate execution activity and update findings. Idle Instance Scanning runs continuously in the background.
+After setup, Tracer/sweep continues to evaluate execution activity and update findings. Idle Instance Scanning runs continuously in the background.
 
-For workload-specific optimization, see OpenSRE/tune.
+For workload-specific optimization, see Tracer/tune.
 
 ## Summary
 
-OpenSRE/sweep detects unused or underutilized compute by analyzing real execution activity from each instance. This makes it possible to locate idle machines and other forms of waste that do not appear in billing summaries or coarse utilization metrics. The tool is read-only, requires minimal setup, and provides evidence-backed findings that are easy to verify.
+Tracer/sweep detects unused or underutilized compute by analyzing real execution activity from each instance. This makes it possible to locate idle machines and other forms of waste that do not appear in billing summaries or coarse utilization metrics. The tool is read-only, requires minimal setup, and provides evidence-backed findings that are easy to verify.
 
 <CardGroup cols={2}>
   <Card href="/technology/tracer-collect">
     <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
-      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #FB68E1, #953E96)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>collect</span>
     </span>
     <br />
     Learn how execution signals are captured
   </Card>
   <Card href="/technology/tracer-tune">
     <span style={{ fontSize: '1.25rem', fontWeight: '500' }}>
-      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>OpenSRE/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
+      <span style={{ background: 'linear-gradient(135deg, #FCFCFC, #C4C4C4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Tracer/</span><span style={{ background: 'linear-gradient(135deg, #38BDA4, #76E9D3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>tune</span>
     </span>
     <br />
     Optimize specific pipelines and workloads

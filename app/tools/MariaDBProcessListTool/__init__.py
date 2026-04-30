@@ -9,11 +9,15 @@ from app.integrations.mariadb import (
     mariadb_is_available,
 )
 from app.tools.tool_decorator import tool
+from app.tools.utils.sql_wrapper import call_db_tool_with_default_db_warning
 
 
 @tool(
     name="get_mariadb_process_list",
-    description="Retrieve active MariaDB threads and queries from information_schema.PROCESSLIST, excluding idle connections.",
+    description=(
+        "Retrieve active MariaDB threads and queries from"
+        " information_schema.PROCESSLIST, excluding idle connections."
+    ),
     source="mariadb",
     surfaces=("investigation", "chat"),
     is_available=mariadb_is_available,
@@ -29,21 +33,22 @@ def get_mariadb_process_list(
     max_results: int = 50,
 ) -> dict[str, Any]:
     """Fetch active threads from information_schema.PROCESSLIST."""
-    _db_defaulted = database is None
-    if database is None:
-        database = "mysql"
-    config = MariaDBConfig(
-        host=host,
-        port=port,
-        database=database,
-        username=username,
-        password=password,
-        ssl=ssl,
-        max_results=max_results,
-    )
-    result = get_process_list(config)
-    if _db_defaulted:
-        result["default_db_warning"] = (
-            "WARNING: No database was specified; defaulted to 'mysql'. Results may not reflect application data."
+
+    def mariadb_config_builder(database: str) -> MariaDBConfig:
+        return MariaDBConfig(
+            host=host,
+            port=port,
+            database=database,
+            username=username,
+            password=password,
+            ssl=ssl,
+            max_results=max_results,
         )
-    return result
+
+    return call_db_tool_with_default_db_warning(
+        database=database,
+        default_db_name="mysql",
+        config_resolver=mariadb_config_builder,
+        resolver_kwargs={},
+        db_caller=get_process_list,
+    )

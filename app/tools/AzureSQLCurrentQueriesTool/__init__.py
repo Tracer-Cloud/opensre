@@ -9,11 +9,15 @@ from app.integrations.azure_sql import (
     resolve_azure_sql_config,
 )
 from app.tools.tool_decorator import tool
+from app.tools.utils.sql_wrapper import call_db_tool_with_default_db_warning
 
 
 @tool(
     name="get_azure_sql_current_queries",
-    description="Retrieve currently running queries on Azure SQL Database above a duration threshold, including wait types and resource usage.",
+    description=(
+        "Retrieve currently running queries on Azure SQL Database above a duration"
+        " threshold, including wait types and resource usage."
+    ),
     source="azure_sql",
     surfaces=("investigation", "chat"),
     use_cases=[
@@ -31,13 +35,10 @@ def get_azure_sql_current_queries(
     threshold_seconds: int = 1,
 ) -> dict[str, Any]:
     """Fetch currently running queries from an Azure SQL Database instance."""
-    _db_defaulted = database is None
-    if database is None:
-        database = "master"
-    config = resolve_azure_sql_config(server=server, database=database, port=port)
-    result = get_current_queries(config, threshold_seconds=threshold_seconds)
-    if _db_defaulted:
-        result["default_db_warning"] = (
-            "WARNING: No database was specified; defaulted to 'master'. Results may not reflect application data."
-        )
-    return result
+    return call_db_tool_with_default_db_warning(
+        database=database,
+        default_db_name="master",
+        config_resolver=resolve_azure_sql_config,
+        resolver_kwargs={"server": server, "port": port},
+        db_caller=lambda config: get_current_queries(config, threshold_seconds=threshold_seconds),
+    )

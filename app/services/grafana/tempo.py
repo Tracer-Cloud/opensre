@@ -153,6 +153,8 @@ class TempoMixin:
         if "attributes" in span:
             for attr in span["attributes"]:
                 key = attr.get("key", "")
+                if not key:
+                    continue
                 value = attr.get("value", {})
 
                 if "stringValue" in value:

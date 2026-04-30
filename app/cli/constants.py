@@ -53,6 +53,7 @@ SETUP_SERVICES: tuple[str, ...] = (
 
 VERIFY_SERVICES: tuple[str, ...] = (
     "alertmanager",
+    "argocd",
     "aws",
     "betterstack",
     "bitbucket",

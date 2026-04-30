@@ -8,6 +8,11 @@ import os
 from typing import Any
 
 from app.config import get_tracer_base_url
+from app.integrations.airflow import (
+    DEFAULT_AIRFLOW_BASE_URL,
+    airflow_config_from_env,
+    build_airflow_config,
+)
 from app.integrations.azure_sql import build_azure_sql_config
 from app.integrations.betterstack import build_betterstack_config
 from app.integrations.github_mcp import build_github_mcp_config
@@ -15,6 +20,7 @@ from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL, build_gitlab_config
 from app.integrations.mariadb import build_mariadb_config
 from app.integrations.models import (
     AlertmanagerIntegrationConfig,
+    ArgoCDIntegrationConfig,
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
     DatadogIntegrationConfig,
@@ -36,6 +42,7 @@ from app.integrations.rabbitmq import build_rabbitmq_config
 from app.integrations.sentry import build_sentry_config
 from app.integrations.store import _STRUCTURAL_RECORD_FIELDS, load_integrations
 from app.services.vercel import VercelConfig
+from app.utils.coercion import safe_int
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +91,9 @@ _SERVICE_KEY_MAP = {
     "opensearch": "opensearch",
     "open search": "opensearch",
     "alertmanager": "alertmanager",
+    "airflow": "airflow",
+    "apache airflow": "airflow",
+    "argocd": "argocd",
 }
 
 
@@ -100,18 +110,6 @@ _SERVICE_FAMILY = {
 
 def _family_key(flat_key: str) -> str:
     return _SERVICE_FAMILY.get(flat_key, flat_key)
-
-
-def _safe_int(value: Any, default: int) -> int:
-    """Coerce ``value`` to int, falling back to ``default`` on bad input.
-
-    Mirrors the helper in ``app.nodes.plan_actions.detect_sources``; duplicated
-    here to avoid pulling node-layer code into the shared catalog module.
-    """
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def _record_instances(record: dict[str, Any]) -> list[dict[str, Any]]:
@@ -569,6 +567,28 @@ def _classify_service_instance(
             }, "rabbitmq"
         return None, None
 
+    if key == "airflow":
+        try:
+            airflow_config = build_airflow_config(
+                {
+                    "base_url": credentials.get("base_url", DEFAULT_AIRFLOW_BASE_URL),
+                    "username": credentials.get("username", ""),
+                    "password": credentials.get("password", ""),
+                    "auth_token": credentials.get("auth_token", ""),
+                    "timeout_seconds": credentials.get("timeout_seconds", 15.0),
+                    "verify_ssl": credentials.get("verify_ssl", True),
+                    "max_results": credentials.get("max_results", 50),
+                }
+            )
+        except Exception:
+            return None, None
+        if airflow_config.is_configured:
+            return {
+                **airflow_config.model_dump(),
+                "integration_id": record_id,
+            }, "airflow"
+        return None, None
+
     if key == "betterstack":
         try:
             bs_config = build_betterstack_config(
@@ -627,6 +647,30 @@ def _classify_service_instance(
             return alertmanager_config.model_dump(), "alertmanager"
         return None, None
 
+    if key == "argocd":
+        try:
+            argocd_config = ArgoCDIntegrationConfig.model_validate(
+                {
+                    "base_url": credentials.get("base_url", ""),
+                    "bearer_token": credentials.get("bearer_token", "")
+                    or credentials.get("auth_token", "")
+                    or credentials.get("token", ""),
+                    "username": credentials.get("username", ""),
+                    "password": credentials.get("password", ""),
+                    "project": credentials.get("project", ""),
+                    "app_namespace": credentials.get("app_namespace", ""),
+                    "verify_ssl": credentials.get("verify_ssl", True),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if argocd_config.base_url and (
+            argocd_config.bearer_token or (argocd_config.username and argocd_config.password)
+        ):
+            return argocd_config.model_dump(), "argocd"
+        return None, None
+
     if key == "bitbucket":
         workspace = str(credentials.get("workspace", "")).strip()
         if not workspace:
@@ -640,7 +684,7 @@ def _classify_service_instance(
             "username": str(credentials.get("username", "")).strip(),
             "app_password": str(credentials.get("app_password", "")).strip(),
             "base_url": base_url,
-            "max_results": max(1, min(_safe_int(credentials.get("max_results", 25), 25), 100)),
+            "max_results": max(1, min(safe_int(credentials.get("max_results", 25), 25), 100)),
             "integration_id": record_id,
         }, "bitbucket"
 
@@ -660,7 +704,7 @@ def _classify_service_instance(
             "role": str(credentials.get("role", "")).strip(),
             "database": str(credentials.get("database", "")).strip(),
             "schema": str(credentials.get("schema", "")).strip(),
-            "max_results": max(1, min(_safe_int(credentials.get("max_results", 50), 50), 200)),
+            "max_results": max(1, min(safe_int(credentials.get("max_results", 50), 50), 200)),
             "integration_id": record_id,
         }, "snowflake"
 
@@ -679,7 +723,7 @@ def _classify_service_instance(
             "endpoint": endpoint,
             "tenant_id": str(credentials.get("tenant_id", "")).strip(),
             "subscription_id": str(credentials.get("subscription_id", "")).strip(),
-            "max_results": max(1, min(_safe_int(credentials.get("max_results", 100), 100), 500)),
+            "max_results": max(1, min(safe_int(credentials.get("max_results", 100), 100), 500)),
             "integration_id": record_id,
         }, "azure"
 
@@ -697,7 +741,7 @@ def _classify_service_instance(
             "username": username,
             "password": password,
             "stream": str(credentials.get("stream", "")).strip(),
-            "max_results": max(1, min(_safe_int(credentials.get("max_results", 100), 100), 500)),
+            "max_results": max(1, min(safe_int(credentials.get("max_results", 100), 100), 500)),
             "integration_id": record_id,
         }, "openobserve"
 
@@ -709,7 +753,7 @@ def _classify_service_instance(
             "url": url.rstrip("/"),
             "api_key": str(credentials.get("api_key", "")).strip(),
             "index_pattern": str(credentials.get("index_pattern", "*")).strip() or "*",
-            "max_results": max(1, min(_safe_int(credentials.get("max_results", 100), 100), 500)),
+            "max_results": max(1, min(safe_int(credentials.get("max_results", 100), 100), 500)),
             "integration_id": record_id,
         }, "opensearch"
 
@@ -1046,6 +1090,43 @@ def load_env_integrations() -> list[dict[str, Any]]:
             }
         )
 
+    argocd_multi = _parse_instances_env("ARGOCD_INSTANCES", "argocd")
+    if argocd_multi is not None:
+        integrations.append(argocd_multi)
+        argocd_base_url = ""
+        argocd_auth_token = ""
+        argocd_username = ""
+        argocd_password = ""
+    else:
+        argocd_base_url = os.getenv("ARGOCD_BASE_URL", "").strip()
+        argocd_auth_token = os.getenv("ARGOCD_AUTH_TOKEN", os.getenv("ARGOCD_TOKEN", "")).strip()
+        argocd_username = os.getenv("ARGOCD_USERNAME", "").strip()
+        argocd_password = os.getenv("ARGOCD_PASSWORD", "").strip()
+    if argocd_base_url and (argocd_auth_token or (argocd_username and argocd_password)):
+        try:
+            argocd_config = ArgoCDIntegrationConfig.model_validate(
+                {
+                    "base_url": argocd_base_url,
+                    "bearer_token": argocd_auth_token,
+                    "username": argocd_username,
+                    "password": argocd_password,
+                    "project": os.getenv("ARGOCD_PROJECT", "").strip(),
+                    "app_namespace": os.getenv("ARGOCD_APP_NAMESPACE", "").strip(),
+                    "verify_ssl": os.getenv("ARGOCD_VERIFY_SSL", "true").strip(),
+                }
+            )
+        except Exception:
+            pass
+        else:
+            integrations.append(
+                {
+                    "id": "env-argocd",
+                    "service": "argocd",
+                    "status": "active",
+                    "credentials": argocd_config.model_dump(exclude={"integration_id"}),
+                }
+            )
+
     vercel_api_token = os.getenv("VERCEL_API_TOKEN", "").strip()
     if vercel_api_token:
         vercel_config = VercelConfig.model_validate(
@@ -1118,6 +1199,17 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 "service": "discord",
                 "status": "active",
                 "credentials": discord_config.model_dump(),
+            }
+        )
+
+    airflow_config = airflow_config_from_env()
+    if airflow_config is not None:
+        integrations.append(
+            {
+                "id": "env-airflow",
+                "service": "airflow",
+                "status": "active",
+                "credentials": airflow_config.model_dump(),
             }
         )
 
@@ -1331,7 +1423,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                         "BITBUCKET_BASE_URL", "https://api.bitbucket.org/2.0"
                     ).strip()
                     or "https://api.bitbucket.org/2.0",
-                    "max_results": _safe_int(os.getenv("BITBUCKET_MAX_RESULTS", "25"), 25),
+                    "max_results": safe_int(os.getenv("BITBUCKET_MAX_RESULTS", "25"), 25),
                 },
             }
         )
@@ -1356,7 +1448,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "role": os.getenv("SNOWFLAKE_ROLE", "").strip(),
                     "database": os.getenv("SNOWFLAKE_DATABASE", "").strip(),
                     "schema": os.getenv("SNOWFLAKE_SCHEMA", "").strip(),
-                    "max_results": _safe_int(os.getenv("SNOWFLAKE_MAX_RESULTS", "50"), 50),
+                    "max_results": safe_int(os.getenv("SNOWFLAKE_MAX_RESULTS", "50"), 50),
                 },
             }
         )
@@ -1380,7 +1472,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     ),
                     "tenant_id": os.getenv("AZURE_TENANT_ID", "").strip(),
                     "subscription_id": os.getenv("AZURE_SUBSCRIPTION_ID", "").strip(),
-                    "max_results": _safe_int(os.getenv("AZURE_MAX_RESULTS", "100"), 100),
+                    "max_results": safe_int(os.getenv("AZURE_MAX_RESULTS", "100"), 100),
                 },
             }
         )
@@ -1402,7 +1494,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "username": openobserve_username,
                     "password": openobserve_password,
                     "stream": os.getenv("OPENOBSERVE_STREAM", "").strip(),
-                    "max_results": _safe_int(os.getenv("OPENOBSERVE_MAX_RESULTS", "100"), 100),
+                    "max_results": safe_int(os.getenv("OPENOBSERVE_MAX_RESULTS", "100"), 100),
                 },
             }
         )
@@ -1418,7 +1510,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "url": opensearch_url.rstrip("/"),
                     "api_key": os.getenv("OPENSEARCH_API_KEY", "").strip(),
                     "index_pattern": os.getenv("OPENSEARCH_INDEX_PATTERN", "*").strip() or "*",
-                    "max_results": _safe_int(os.getenv("OPENSEARCH_MAX_RESULTS", "100"), 100),
+                    "max_results": safe_int(os.getenv("OPENSEARCH_MAX_RESULTS", "100"), 100),
                 },
             }
         )
@@ -1545,6 +1637,8 @@ def resolve_effective_integrations(
         "openobserve",
         "opensearch",
         "alertmanager",
+        "airflow",
+        "argocd",
     )
     for service in direct_services:
         resolved_integration = classified_integrations.get(service)

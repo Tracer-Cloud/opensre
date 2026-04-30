@@ -1,0 +1,31 @@
+services:
+  opensre-db:
+    image: postgres:16-alpine
+    container_name: opensre-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: opensre
+      POSTGRES_USER: opensre
+      POSTGRES_PASSWORD: opensre
+    ports:
+      - "5432:5432"
+    volumes:
+      - opensre-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opensre -d opensre"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  adminer:
+    image: adminer:4
+    container_name: opensre-db-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      opensre-db:
+        condition: service_healthy
+
+volumes:
+  opensre-postgres-data:

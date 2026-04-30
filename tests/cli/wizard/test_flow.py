@@ -785,6 +785,13 @@ def test_run_cli_llm_onboarding_repick_when_user_chooses_repick(monkeypatch) -> 
 
 
 def test_run_cli_llm_onboarding_path_override_then_ok(monkeypatch, tmp_path) -> None:
+    # Create a real executable so diagnose_binary_path accepts it.
+    fake_bin = tmp_path / "codex"
+    fake_bin.write_bytes(b"")
+    import os as _os
+
+    _os.chmod(fake_bin, 0o700)
+
     adapter = MagicMock()
     adapter.name = "codex"
     adapter.binary_env_key = "CODEX_BIN"
@@ -805,11 +812,23 @@ def test_run_cli_llm_onboarding_path_override_then_ok(monkeypatch, tmp_path) -> 
     provider.adapter_factory = lambda: adapter
 
     monkeypatch.setattr(flow, "_choose", lambda *_args, **_kwargs: "path")
-    monkeypatch.setattr(flow, "_prompt_value", lambda *_args, **_kwargs: str(tmp_path / "codex"))
+    monkeypatch.setattr(flow, "_prompt_value", lambda *_args, **_kwargs: str(fake_bin))
     monkeypatch.setattr(flow, "sync_env_values", lambda *_args, **_kwargs: None)
-    result = flow._run_cli_llm_onboarding(provider)
-    assert result == "ok"
-    assert len(detect_calls) == 2
+
+    original_codex_bin = _os.environ.get("CODEX_BIN")
+    try:
+        result = flow._run_cli_llm_onboarding(provider)
+
+        assert result == "ok"
+        assert len(detect_calls) == 2
+        # os.environ must be updated in-process so the next detect() call in the
+        # retry loop resolves the new binary without a process restart.
+        assert _os.environ.get("CODEX_BIN") == str(fake_bin)
+    finally:
+        if original_codex_bin is None:
+            _os.environ.pop("CODEX_BIN", None)
+        else:
+            _os.environ["CODEX_BIN"] = original_codex_bin
 
 
 def test_run_cli_llm_onboarding_abort_after_max_retries(monkeypatch) -> None:
@@ -831,6 +850,37 @@ def test_run_cli_llm_onboarding_abort_after_max_retries(monkeypatch) -> None:
     result = flow._run_cli_llm_onboarding(provider)
     assert result == "abort"
     assert adapter.detect.call_count == 10
+
+
+def test_credential_line_for_saved_summary_cli_codex() -> None:
+    from app.cli.wizard import config as wizard_config
+
+    codex = next(p for p in wizard_config.SUPPORTED_PROVIDERS if p.value == "codex")
+    assert flow._credential_line_for_saved_summary(codex) == ("OpenAI Codex CLI (Run: codex login)")
+
+
+def test_credential_line_for_saved_summary_anthropic() -> None:
+    from app.cli.wizard import config as wizard_config
+
+    anthropic = next(p for p in wizard_config.SUPPORTED_PROVIDERS if p.value == "anthropic")
+    assert flow._credential_line_for_saved_summary(anthropic) == "system keychain"
+
+
+def test_credential_line_for_saved_summary_cli_without_factory() -> None:
+    from app.cli.wizard.config import ModelOption, ProviderOption
+
+    p = ProviderOption(
+        value="fakecli",
+        label="Fake CLI",
+        group="Local CLI providers",
+        api_key_env="",
+        model_env="FAKE_MODEL",
+        default_model="",
+        models=(ModelOption(value="", label="default"),),
+        credential_kind="cli",
+        adapter_factory=None,
+    )
+    assert flow._credential_line_for_saved_summary(p) == "Fake CLI (CLI)"
 
 
 def test_run_wizard_configures_gitlab(monkeypatch, tmp_path) -> None:

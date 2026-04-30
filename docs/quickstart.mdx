@@ -3,54 +3,52 @@ title: "Quickstart"
 slug: "quickstart"
 ---
 
-### Install
+<Steps>
+  <Step title="Install OpenSRE">
+    <Tabs>
+      <Tab title="macOS / Linux">
+        Choose one install method:
 
-Choose your platform:
+        ```bash
+        brew install Tracer-Cloud/opensre/opensre
+        ```
 
-**macOS (Homebrew)**
+        ```bash
+        curl -fsSL https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.sh | bash
+        ```
+      </Tab>
+      <Tab title="Windows">
+        ```powershell
+        irm https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.ps1 | iex
+        ```
+      </Tab>
+    </Tabs>
 
-```bash
-brew install Tracer-Cloud/opensre/opensre
-```
+  </Step>
 
-**Linux / macOS (curl)**
+  <Step title="Onboard">
+    Run the onboarding wizard to configure your LLM provider and connect your integrations (Grafana, Datadog, Honeycomb, Coralogix, Slack, AWS, GitHub MCP, Sentry):
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.sh | bash
-```
+    ```bash
+    opensre onboard
+    ```
 
-**Windows (PowerShell)**
+  </Step>
 
-```powershell
-irm https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.ps1 | iex
-```
+  <Step title="Run your first investigation">
+    Trigger an investigation by passing in an alert file:
 
----
+    ```bash
+    opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
+    ```
 
-### Onboard
+    OpenSRE automatically fetches alert context, reasons across connected systems, and generates a structured root-cause report.
 
-Run the onboarding wizard to configure your LLM provider and connect your integrations (Grafana, Datadog, Honeycomb, Coralogix, Slack, AWS, GitHub MCP, Sentry):
+  </Step>
 
-```bash
-opensre onboard
-```
-
----
-
-### Run Your First Investigation
-
-Trigger an investigation by passing in an alert file:
-
-```bash
-opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
-```
-
-OpenSRE will automatically fetch alert context, reason across your connected systems, and generate a structured root-cause report — optionally posting a summary to Slack or PagerDuty.
-
----
-
-### Keep Up to Date
-
-```bash
-opensre update
-```
+  <Step title="Keep up to date">
+    ```bash
+    opensre update
+    ```
+  </Step>
+</Steps>

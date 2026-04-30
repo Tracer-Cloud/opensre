@@ -612,10 +612,12 @@ def test_integrations_remove_datadog_interactive_smoke(cli_sandbox: CliSandbox) 
 
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
 def test_tests_interactive_launcher_smoke(cli_sandbox: CliSandbox) -> None:
+    # The prompt instruction reads "Esc exit"; Escape is the PTY-safe way to
+    # dismiss the prompt in automation (no SIGINT/raw-mode race conditions).
     result = _run_cli_pty(
         cli_sandbox,
         "tests",
-        actions=[PtyAction(expect="Choose a test category:", send=b"\x03")],
+        actions=[PtyAction(expect="Choose a test category:", send=b"\x1b")],
     )
 
     assert result.exit_code == 0

@@ -149,8 +149,14 @@ def _load_registry_snapshot() -> tuple[RegisteredTool, ...]:
     return tuple(sorted(tools_by_name.values(), key=lambda tool: tool.name))
 
 
+@lru_cache(maxsize=1)
+def _load_registry_tool_map() -> dict[str, RegisteredTool]:
+    return {tool.name: tool for tool in _load_registry_snapshot()}
+
+
 def clear_tool_registry_cache() -> None:
     _load_registry_snapshot.cache_clear()
+    _load_registry_tool_map.cache_clear()
 
 
 def get_registered_tools(surface: ToolSurface | None = None) -> list[RegisteredTool]:
@@ -161,4 +167,14 @@ def get_registered_tools(surface: ToolSurface | None = None) -> list[RegisteredT
 
 
 def get_registered_tool_map(surface: ToolSurface | None = None) -> dict[str, RegisteredTool]:
+    if surface is None:
+        return dict(_load_registry_tool_map())
     return {tool.name: tool for tool in get_registered_tools(surface)}
+
+
+def resolve_tool_display_name(tool_name: str) -> str:
+    """Return a human-friendly label for a tool name."""
+    tool = _load_registry_tool_map().get(tool_name)
+    if tool is not None:
+        return tool.display_name or tool.name.replace("_", " ")
+    return tool_name.replace("_", " ")
