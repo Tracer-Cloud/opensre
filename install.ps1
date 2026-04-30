@@ -594,6 +594,9 @@ function Install-OpenSre {
     if (-not (Test-OpenSreDirectoryOnPath -Directory $installDir)) {
         Write-Warning "Add $installDir to your PATH to run opensre from any terminal."
     }
+
+    Write-Host ""
+    Write-Host "Next: run 'opensre onboard' to complete setup."
 }
 
 if (-not $SkipMain) {
