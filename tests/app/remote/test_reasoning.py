@@ -44,6 +44,16 @@ class TestReasoningText:
         result = reasoning_text("on_tool_end", data, "investigate")
         assert result == "error logs done"
 
+    def test_tool_end_malformed_data_string(self) -> None:
+        data = {"name": "query_datadog_logs", "data": "bad-payload"}
+        result = reasoning_text("on_tool_end", data, "investigate")
+        assert result == "Datadog logs done"
+
+    def test_tool_end_malformed_data_none(self) -> None:
+        data = {"name": "query_datadog_logs", "data": None}
+        result = reasoning_text("on_tool_end", data, "investigate")
+        assert result == "Datadog logs done"
+
     def test_chat_model_start_investigate(self) -> None:
         result = reasoning_text("on_chat_model_start", {}, "investigate")
         assert result == "querying"
