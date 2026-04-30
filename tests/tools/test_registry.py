@@ -391,7 +391,6 @@ def test_registry_regression_import_failures(
     tool_names = [t.name for t in tools]
 
     assert "valid_tool" in tool_names
-    assert len(tools) >= 1
     assert registry_module.get_registered_tool_map()["valid_tool"].run() == {"status": "ok"}
 
     assert any(
