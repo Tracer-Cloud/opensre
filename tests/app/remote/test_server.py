@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 from typing import Any
 
 import pytest
@@ -9,7 +10,9 @@ from fastapi.testclient import TestClient
 
 from app.remote import server as remote_server
 from app.remote.server import (
+    DeepHealthCheck,
     InvestigateRequest,
+    _check_disk_health,
     _lifespan,
     investigate,
     investigate_stream,
@@ -212,3 +215,56 @@ async def test_lifespan_starts_and_cancels_vercel_poller(
         await asyncio.wait_for(started.wait(), timeout=1)
 
     assert cancelled.is_set()
+
+
+# ---------------------------------------------------------------------------
+# _check_disk_health tests
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# _check_disk_health tests
+# ---------------------------------------------------------------------------
+
+
+def test_check_disk_health_returns_passed_when_below_warn_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Disk usage below 85% should return status='passed'."""
+    # 50 GiB used out of 100 GiB total = 50%
+    total = 100 * 1024**3
+    used = 50 * 1024**3
+    free = 50 * 1024**3
+    # shutil.disk_usage returns a named tuple of type shutil.usage
+    real = shutil.disk_usage("/")
+    fake_usage = type(real)(total, used, free)
+    monkeypatch.setattr(shutil, "disk_usage", lambda _path: fake_usage)
+
+    result = _check_disk_health()
+
+    assert isinstance(result, DeepHealthCheck)
+    assert result.name == "Disk"
+    assert result.status == "passed"
+    assert "50% used" in result.detail
+    assert "50GiB / 100GiB" in result.detail
+
+
+def test_check_disk_health_returns_warn_when_at_or_above_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Disk usage at or above 85% should return status='warn'."""
+    # 90 GiB used out of 100 GiB total = 90%
+    total = 100 * 1024**3
+    used = 90 * 1024**3
+    free = 10 * 1024**3
+    real = shutil.disk_usage("/")
+    fake_usage = type(real)(total, used, free)
+    monkeypatch.setattr(shutil, "disk_usage", lambda _path: fake_usage)
+
+    result = _check_disk_health()
+
+    assert isinstance(result, DeepHealthCheck)
+    assert result.name == "Disk"
+    assert result.status == "warn"
+    assert "90% used" in result.detail
+    assert "90GiB / 100GiB" in result.detail
