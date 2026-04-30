@@ -348,12 +348,14 @@ def test_parse_vercel_url_extracts_log_id() -> None:
     )
     assert parsed.selected_log_id == "54w4s-1775494460431-b04b1df81301"
 
+
 def test_parse_vercel_url_extracts_selected_log_id() -> None:
     parsed = parse_vercel_url(
         "https://vercel.com/vincenthus-projects/tracer-marketing-website-v3/logs"
         "?page=3&selectedLog=54w4s-1775494460431-b04b1df81301"
     )
     assert parsed.selected_log_id == "54w4s-1775494460431-b04b1df81301"
+
 
 def test_parse_vercel_url_extracts_deployment_id_snake() -> None:
     parsed = parse_vercel_url(
@@ -362,13 +364,13 @@ def test_parse_vercel_url_extracts_deployment_id_snake() -> None:
     )
     assert parsed.deployment_id == "54w4s-1775494460431-b04b1df81301"
 
+
 def test_parse_vercel_url_extracts_deployment_id_camel() -> None:
     parsed = parse_vercel_url(
         "https://vercel.com/vincenthus-projects/tracer-marketing-website-v3/logs"
         "?page=3&deploymentId=54w4s-1775494460431-b04b1df81301"
     )
     assert parsed.deployment_id == "54w4s-1775494460431-b04b1df81301"
-
 
 def test_parse_vercel_url_trims_whitespace_keeps_original_url() -> None:
     parsed = parse_vercel_url(
