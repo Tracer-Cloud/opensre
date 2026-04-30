@@ -223,6 +223,33 @@ async def test_lifespan_starts_and_cancels_vercel_poller(
 
 
 # ---------------------------------------------------------------------------
+# _id_to_iso tests
+# ---------------------------------------------------------------------------
+
+
+def test_id_to_iso_converts_valid_id_to_utc_iso_string() -> None:
+    # Valid format: YYYYMMDD_HHMMSS_slug
+    inv_id = "20260430_120001_alert-name"
+    iso_string = remote_server._id_to_iso(inv_id)
+    # Should convert to standard ISO format with +00:00 (UTC)
+    assert iso_string == "2026-04-30T12:00:01+00:00"
+
+
+@pytest.mark.parametrize(
+    "malformed_id",
+    [
+        "",
+        "invalid",
+        "20260430-120001-alert",  # wrong separator
+        "abc_def_ghi",  # non-numeric date part
+    ],
+)
+def test_id_to_iso_returns_empty_string_for_malformed_input(malformed_id: str) -> None:
+    # Function should fail quietly and return an empty string, not crash
+    assert remote_server._id_to_iso(malformed_id) == ""
+
+
+# ---------------------------------------------------------------------------
 # _check_disk_health tests
 # ---------------------------------------------------------------------------
 
