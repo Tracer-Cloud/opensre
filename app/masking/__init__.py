@@ -14,6 +14,7 @@ from __future__ import annotations
 from app.masking.context import MaskingContext
 from app.masking.detectors import DetectedIdentifier, find_identifiers
 from app.masking.policy import ALL_KINDS, IdentifierKind, MaskingPolicy
+from app.masking.secrets import RedactionResult, redact_secrets
 
 __all__ = [
     "ALL_KINDS",
@@ -22,4 +23,6 @@ __all__ = [
     "MaskingContext",
     "MaskingPolicy",
     "find_identifiers",
+    "RedactionResult",
+    "redact_secrets",
 ]
