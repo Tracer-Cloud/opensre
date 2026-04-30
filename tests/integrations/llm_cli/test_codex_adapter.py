@@ -46,7 +46,7 @@ def _login_ok_proc() -> MagicMock:
 
 
 @patch("app.integrations.llm_cli.codex.subprocess.run")
-@patch("app.integrations.llm_cli.codex.shutil.which")
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which")
 def test_detect_path_binary_logged_in(mock_which: MagicMock, mock_run: MagicMock) -> None:
     mock_which.return_value = "/usr/bin/codex"
 
@@ -66,7 +66,7 @@ def test_detect_path_binary_logged_in(mock_which: MagicMock, mock_run: MagicMock
 
 
 @patch("app.integrations.llm_cli.codex.subprocess.run")
-@patch("app.integrations.llm_cli.codex.shutil.which")
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which")
 def test_detect_not_logged_in(mock_which: MagicMock, mock_run: MagicMock) -> None:
     mock_which.return_value = "/usr/bin/codex"
 
@@ -88,7 +88,7 @@ def test_detect_not_logged_in(mock_which: MagicMock, mock_run: MagicMock) -> Non
 
 
 @patch("app.integrations.llm_cli.codex.subprocess.run")
-@patch("app.integrations.llm_cli.codex.shutil.which")
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which")
 def test_detect_not_logged_in_exit_zero(mock_which: MagicMock, mock_run: MagicMock) -> None:
     """Some Codex versions may exit 0 while printing 'Not logged in' — must not match 'logged in'."""
     mock_which.return_value = "/usr/bin/codex"
@@ -110,7 +110,7 @@ def test_detect_not_logged_in_exit_zero(mock_which: MagicMock, mock_run: MagicMo
     assert probe.logged_in is False
 
 
-@patch("app.integrations.llm_cli.codex.shutil.which", return_value="/usr/bin/codex")
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
 def test_build_adds_model_flag_when_not_default(mock_which: MagicMock) -> None:
     inv = CodexAdapter().build(prompt="p", model="o3", workspace="")
     assert inv.stdin == "p"
@@ -232,7 +232,7 @@ def test_detect_uses_codex_bin_env_file(tmp_path) -> None:
 
 
 @patch("app.integrations.llm_cli.codex.subprocess.run")
-@patch("app.integrations.llm_cli.codex.shutil.which", return_value="/usr/bin/codex")
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
 def test_detect_falls_back_when_codex_bin_invalid(
     mock_which: MagicMock, mock_run: MagicMock
 ) -> None:
@@ -255,11 +255,11 @@ def test_detect_falls_back_when_codex_bin_invalid(
 
 
 @patch("app.integrations.llm_cli.codex.subprocess.run")
-@patch("app.integrations.llm_cli.codex.shutil.which", return_value=None)
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which", return_value=None)
 @patch(
     "app.integrations.llm_cli.codex._fallback_codex_paths", return_value=["/x/codex", "/y/codex"]
 )
-@patch("app.integrations.llm_cli.codex._is_runnable_binary")
+@patch("app.integrations.llm_cli.binary_resolver.is_runnable_binary")
 def test_detect_uses_first_runnable_fallback_path(
     mock_is_runnable: MagicMock,
     mock_fallback: MagicMock,
@@ -366,7 +366,7 @@ def test_npm_prefix_bin_dirs_unix_uses_prefix_bin() -> None:
     assert tuple(Path(d).as_posix() for d in dirs) == ("/opt/npm/bin",)
 
 
-@patch("app.integrations.llm_cli.codex.shutil.which", return_value="/usr/bin/codex")
+@patch("app.integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
 def test_codex_default_exec_timeout_is_shorter(mock_which) -> None:
     """Default timeout is asserted without requiring a real codex binary on CI PATH."""
     inv = CodexAdapter().build(prompt="p", model=None, workspace="")

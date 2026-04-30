@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -1614,7 +1615,14 @@ def _run_cli_llm_onboarding(provider: ProviderOption) -> Literal["ok", "abort", 
             return "repick"
         if action == "path":
             path = _prompt_value(f"Full path to {name} binary")
+            if not os.path.isfile(path):
+                _console.print(f"[yellow]'{path}' is not a file. Try again.[/]")
+                continue
+            if not os.access(path, os.X_OK):
+                _console.print(f"[yellow]'{path}' is not executable. Try again.[/]")
+                continue
             sync_env_values({env_key: path})
+            os.environ[env_key] = path
             continue
         _console.print(f"[dim]Hint: {install_hint}[/]")
     _console.print("[yellow]Too many retry attempts. Aborting setup.[/]")

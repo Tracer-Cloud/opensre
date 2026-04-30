@@ -55,7 +55,7 @@ def npm_prefix_bin_dirs() -> tuple[str, ...]:
             ["npm", "config", "get", "prefix"],
             capture_output=True,
             text=True,
-            timeout=0.3,
+            timeout=2.0,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -124,21 +124,31 @@ def resolve_cli_binary(
     explicit_env_key: str,
     binary_names: Sequence[str],
     fallback_paths: Sequence[str] | Callable[[], Sequence[str]],
-    which_resolver: Callable[[str], str | None] = shutil.which,
-    runnable_check: Callable[[str], bool] = is_runnable_binary,
+    which_resolver: Callable[[str], str | None] | None = None,
+    runnable_check: Callable[[str], bool] | None = None,
 ) -> str | None:
-    """Resolve an executable path from env override, PATH lookup, and fallbacks."""
+    """Resolve an executable path from env override, PATH lookup, and fallbacks.
+
+    ``which_resolver`` and ``runnable_check`` default to ``shutil.which`` and
+    ``is_runnable_binary`` respectively.  They are looked up at *call time* (not
+    bound as default parameter values) so that test patches on this module's
+    ``shutil.which`` / ``is_runnable_binary`` take effect without callers having
+    to pass explicit overrides.
+    """
+    _which = which_resolver if which_resolver is not None else shutil.which
+    _runnable = runnable_check if runnable_check is not None else is_runnable_binary
+
     explicit = os.getenv(explicit_env_key, "").strip()
-    if explicit and runnable_check(explicit):
+    if explicit and _runnable(explicit):
         return explicit
 
     for name in binary_names:
-        found = which_resolver(name)
+        found = _which(name)
         if found:
             return found
 
     resolved_fallback_paths = fallback_paths() if callable(fallback_paths) else fallback_paths
     for candidate in resolved_fallback_paths:
-        if runnable_check(candidate):
+        if _runnable(candidate):
             return candidate
     return None
