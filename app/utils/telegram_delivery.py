@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from app.utils.delivery_transport import post_json
+from app.utils.truncation import truncate
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +43,6 @@ def _install_httpx_token_filter() -> None:
 
 
 _install_httpx_token_filter()
-
-
-def _truncate(text: str, limit: int) -> str:
-    return (text[: limit - 1] + "…") if len(text) > limit else text
 
 
 def _redact_token(text: str, bot_token: str) -> str:
@@ -103,7 +100,7 @@ def send_telegram_report(report: str, telegram_ctx: dict[str, Any]) -> tuple[boo
     if not bot_token or not chat_id:
         return False, "Missing bot_token or chat_id"
     reply_to_message_id: str = str(telegram_ctx.get("reply_to_message_id") or "")
-    text = _truncate(report, _MESSAGE_LIMIT)
+    text = truncate(report, _MESSAGE_LIMIT, suffix="…")
     post_success, error, _ = post_telegram_message(
         chat_id, text, bot_token, reply_to_message_id=reply_to_message_id
     )

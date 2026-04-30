@@ -8,8 +8,18 @@
 set -euo pipefail
 
 REPO="${OPENSRE_INSTALL_REPO:-Tracer-Cloud/opensre}"
-INSTALL_DIR="${OPENSRE_INSTALL_DIR:-$HOME/.local/bin}"
+DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
+USER_INSTALL_DIR_CANDIDATES="${OPENSRE_USER_INSTALL_DIR_CANDIDATES:-$HOME/.local/bin:$HOME/bin}"
+SYSTEM_INSTALL_DIR_CANDIDATES="${OPENSRE_SYSTEM_INSTALL_DIR_CANDIDATES:-/opt/homebrew/bin:/usr/local/bin:/opt/local/bin}"
+INSTALL_DIR="${OPENSRE_INSTALL_DIR:-}"
+INSTALL_DIR_OVERRIDE=0
+INSTALL_CHANNEL="${OPENSRE_INSTALL_CHANNEL:-release}"
 BIN_NAME="opensre"
+INSTALL_WITH_SUDO=0
+requested_version="${OPENSRE_VERSION:-}"
+
+[ -n "$INSTALL_DIR" ] && INSTALL_DIR_OVERRIDE=1
+requested_version="${requested_version#v}"
 
 log() {
   printf '%s\n' "$*"
@@ -23,6 +33,70 @@ die() {
   printf 'Error: %s\n' "$*" >&2
   exit 1
 }
+
+usage() {
+  cat <<'EOF'
+Usage: install.sh [--main] [--version <version>] [--install-dir <path>]
+
+Installs the OpenSRE CLI.
+
+Options:
+  --main                Install the rolling build published from the main branch.
+  --version <version>   Install a specific release version (for example 2026.4.29).
+  --install-dir <path>  Install into a specific directory.
+  -h, --help            Show this help text.
+
+Examples:
+  curl -fsSL https://install.opensre.com | bash
+  curl -fsSL https://install.opensre.com | bash -s -- --main
+  curl -fsSL https://install.opensre.com | bash -s -- --version 2026.4.29
+EOF
+}
+
+parse_args() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --main)
+        INSTALL_CHANNEL="main"
+        ;;
+      --release)
+        INSTALL_CHANNEL="release"
+        ;;
+      --version)
+        [ "$#" -ge 2 ] || die "--version requires a value."
+        requested_version="${2#v}"
+        shift
+        ;;
+      --install-dir)
+        [ "$#" -ge 2 ] || die "--install-dir requires a value."
+        INSTALL_DIR="$2"
+        INSTALL_DIR_OVERRIDE=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "Unknown argument: $1"
+        ;;
+    esac
+    shift
+  done
+
+  case "$INSTALL_CHANNEL" in
+    release|main) ;;
+    *)
+      die "Unsupported install channel: ${INSTALL_CHANNEL}"
+      ;;
+  esac
+
+  if [ "$INSTALL_CHANNEL" = "main" ] && [ -n "$requested_version" ]; then
+    die "--version cannot be combined with --main."
+  fi
+}
+
+parse_args "$@"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "'$1' is required but was not found in PATH."
@@ -63,7 +137,9 @@ fetch_release_json() {
   local version="${1:-}"
   local api_url
 
-  if [ -n "$version" ]; then
+  if [ "$INSTALL_CHANNEL" = "main" ]; then
+    api_url="https://api.github.com/repos/${REPO}/releases/tags/main"
+  elif [ -n "$version" ]; then
     api_url="https://api.github.com/repos/${REPO}/releases/tags/v${version}"
   else
     api_url="https://api.github.com/repos/${REPO}/releases/latest"
@@ -91,13 +167,129 @@ release_has_asset() {
 build_archive_name() {
   local version="$1"
   local asset_arch="$2"
+  local archive_version="$version"
+
+  if [ "$INSTALL_CHANNEL" = "main" ]; then
+    archive_version="main"
+  fi
 
   if [ "$platform" = "windows" ]; then
-    printf 'opensre_%s_windows-%s.zip\n' "$version" "$asset_arch"
+    printf 'opensre_%s_windows-%s.zip\n' "$archive_version" "$asset_arch"
     return
   fi
 
-  printf 'opensre_%s_%s-%s.tar.gz\n' "$version" "$platform" "$asset_arch"
+  printf 'opensre_%s_%s-%s.tar.gz\n' "$archive_version" "$platform" "$asset_arch"
+}
+
+path_has_dir() {
+  case ":$PATH:" in
+    *":$1:"*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+is_candidate_dir_writable() {
+  local dir="$1"
+  local parent_dir
+
+  if [ -d "$dir" ]; then
+    [ -w "$dir" ]
+    return
+  fi
+
+  parent_dir="${dir%/*}"
+  [ -n "$parent_dir" ] || parent_dir="/"
+  [ -d "$parent_dir" ] && [ -w "$parent_dir" ]
+}
+
+select_writable_path_candidate_from_list() {
+  local candidate_list="$1"
+  local old_ifs="$IFS"
+  local dir
+
+  IFS=':'
+  for dir in $candidate_list; do
+    [ -n "$dir" ] || continue
+    if path_has_dir "$dir" && is_candidate_dir_writable "$dir"; then
+      printf '%s\n' "$dir"
+      IFS="$old_ifs"
+      return 0
+    fi
+  done
+  IFS="$old_ifs"
+
+  return 1
+}
+
+select_path_candidate_for_sudo() {
+  local candidate_list="$1"
+  local old_ifs="$IFS"
+  local dir
+
+  command -v sudo >/dev/null 2>&1 || return 1
+  [ "${EUID:-0}" -ne 0 ] || return 1
+  [ "$INSTALL_DIR_OVERRIDE" -eq 0 ] || return 1
+
+  IFS=':'
+  for dir in $candidate_list; do
+    [ -n "$dir" ] || continue
+    if path_has_dir "$dir"; then
+      printf '%s\n' "$dir"
+      IFS="$old_ifs"
+      return 0
+    fi
+  done
+  IFS="$old_ifs"
+
+  return 1
+}
+
+resolve_install_dir() {
+  local existing_bin=""
+  local existing_dir=""
+
+  if [ -n "$INSTALL_DIR" ]; then
+    return
+  fi
+
+  if [ "$platform" = "windows" ]; then
+    INSTALL_DIR="$DEFAULT_INSTALL_DIR"
+    return
+  fi
+
+  if command -v opensre >/dev/null 2>&1; then
+    existing_bin="$(command -v opensre || true)"
+    existing_dir="${existing_bin%/*}"
+
+    if [ -n "$existing_dir" ] && path_has_dir "$existing_dir" && is_candidate_dir_writable "$existing_dir"; then
+      INSTALL_DIR="$existing_dir"
+      return
+    fi
+  fi
+
+  if INSTALL_DIR="$(select_writable_path_candidate_from_list "$USER_INSTALL_DIR_CANDIDATES")"; then
+    return
+  fi
+
+  if INSTALL_DIR="$(select_writable_path_candidate_from_list "$SYSTEM_INSTALL_DIR_CANDIDATES")"; then
+    return
+  fi
+
+  if [ -n "$existing_dir" ] && path_has_dir "$existing_dir" && command -v sudo >/dev/null 2>&1 && [ "${EUID:-0}" -ne 0 ] && [ "$INSTALL_DIR_OVERRIDE" -eq 0 ]; then
+    INSTALL_DIR="$existing_dir"
+    INSTALL_WITH_SUDO=1
+    return
+  fi
+
+  if INSTALL_DIR="$(select_path_candidate_for_sudo "$SYSTEM_INSTALL_DIR_CANDIDATES")"; then
+    INSTALL_WITH_SUDO=1
+    return
+  fi
+
+  INSTALL_DIR="$DEFAULT_INSTALL_DIR"
 }
 
 ps_escape() {
@@ -200,17 +392,26 @@ verify_checksum() {
   warn "No checksum verifier found (sha256sum, shasum, or openssl). Skipping checksum verification."
 }
 
+run_with_privilege() {
+  if [ "$INSTALL_WITH_SUDO" -eq 1 ]; then
+    sudo "$@"
+    return
+  fi
+
+  "$@"
+}
+
 install_binary() {
   local source_path="$1"
   local destination_path="$2"
 
   if command -v install >/dev/null 2>&1; then
-    install -m 0755 "$source_path" "$destination_path"
+    run_with_privilege install -m 0755 "$source_path" "$destination_path"
     return
   fi
 
-  cp "$source_path" "$destination_path"
-  chmod 0755 "$destination_path" 2>/dev/null || true
+  run_with_privilege cp "$source_path" "$destination_path"
+  run_with_privilege chmod 0755 "$destination_path" 2>/dev/null || true
 }
 
 get_binary_path_from_archive() {
@@ -249,7 +450,7 @@ get_binary_path_from_archive() {
 
 verify_binary_version() {
   local binary_path="$1"
-  local expected_version="$2"
+  local expected_version="${2:-}"
   local version_output
   local actual_version
 
@@ -259,12 +460,21 @@ verify_binary_version() {
 
   actual_version="$(printf '%s\n' "$version_output" | sed -n 's/.*\([0-9][0-9][0-9][0-9]\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | head -n 1)"
 
+  if [ -z "$expected_version" ]; then
+    if [ -n "$actual_version" ]; then
+      printf '%s\n' "$actual_version"
+    else
+      printf 'main\n'
+    fi
+    return
+  fi
+
   case "$version_output" in
     *"$expected_version"*)
       printf '%s\n' "$expected_version"
       ;;
     *)
-      if [ -n "${OPENSRE_VERSION:-}" ] || [ -z "$actual_version" ]; then
+      if [ -n "$requested_version" ] || [ -z "$actual_version" ]; then
         die "Downloaded binary version mismatch. Expected '${expected_version}' but got: ${version_output}"
       fi
 
@@ -272,6 +482,67 @@ verify_binary_version() {
       printf '%s\n' "$actual_version"
       ;;
   esac
+}
+
+configure_path() {
+  case ":$PATH:" in
+    *":${INSTALL_DIR}:"*)
+      return
+      ;;
+  esac
+
+  if [ "$platform" = "windows" ]; then
+    warn "'${INSTALL_DIR}' is not in PATH for this shell. Add it to Git Bash or Windows PATH to run ${BIN_NAME:-opensre} from any terminal."
+    return
+  fi
+
+  local rc_file=""
+  local path_line=""
+  local shell_name
+  shell_name="${SHELL##*/}"
+
+  case "$shell_name" in
+    zsh)
+      rc_file="${HOME}/.zshrc"
+      path_line="export PATH=\"\$PATH:${INSTALL_DIR}\""
+      ;;
+    bash)
+      if [ "$platform" = "darwin" ]; then
+        rc_file="${HOME}/.bash_profile"
+      else
+        rc_file="${HOME}/.bashrc"
+      fi
+      path_line="export PATH=\"\$PATH:${INSTALL_DIR}\""
+      ;;
+    fish)
+      rc_file="${HOME}/.config/fish/config.fish"
+      path_line="fish_add_path \"${INSTALL_DIR}\""
+      ;;
+    *)
+      log "Add the following line to your shell profile to use ${BIN_NAME:-opensre}:"
+      log "  export PATH=\"\$PATH:${INSTALL_DIR}\""
+      return
+      ;;
+  esac
+
+  local rc_dir="${rc_file%/*}"
+  [ "$rc_dir" != "$rc_file" ] && [ ! -d "$rc_dir" ] && mkdir -p "$rc_dir"
+
+  if [ -f "$rc_file" ] && grep -qF "${INSTALL_DIR}" "$rc_file"; then
+    return
+  fi
+
+  local marker="# Added by opensre installer"
+  if [ -f "$rc_file" ] && grep -qF "$marker" "$rc_file" && grep -qF "${INSTALL_DIR}" "$rc_file"; then
+    return
+  fi
+
+  printf '\n%s\n%s\n' "$marker" "$path_line" >> "$rc_file"
+
+  log ""
+  log "${BIN_NAME:-opensre} has been added to PATH in ${rc_file}."
+  log "To apply now, run:  source \"${rc_file}\""
+  log "Or open a new terminal."
 }
 
 os="$(uname -s)"
@@ -306,20 +577,39 @@ case "$arch" in
     ;;
 esac
 
-version="${OPENSRE_VERSION:-}"
-version="${version#v}"
+resolve_install_dir
 
-if [ -z "$version" ]; then
+version="$requested_version"
+release_tag=""
+
+if [ "$INSTALL_CHANNEL" = "main" ]; then
+  log "Fetching latest main build metadata..."
+elif [ -z "$version" ]; then
   log "Fetching latest release version..."
 fi
 
-release_json="$(fetch_release_json "$version")" || die "Failed to query release metadata from GitHub."
+release_json="$(fetch_release_json "$version")" || {
+  if [ "$INSTALL_CHANNEL" = "main" ]; then
+    die "Failed to query main build metadata from GitHub."
+  fi
 
-if [ -z "$version" ]; then
-  version="$(extract_tag_name "$release_json")"
+  die "Failed to query release metadata from GitHub."
+}
+
+if [ "$INSTALL_CHANNEL" = "main" ]; then
+  release_tag="$(extract_tag_name "$release_json")"
+else
+  if [ -z "$version" ]; then
+    version="$(extract_tag_name "$release_json")"
+  fi
+  release_tag="v${version}"
 fi
 
-[ -n "$version" ] || die "Failed to determine the release version."
+if [ "$INSTALL_CHANNEL" = "main" ]; then
+  [ -n "$release_tag" ] || die "Failed to determine the main build tag."
+else
+  [ -n "$version" ] || die "Failed to determine the release version."
+fi
 
 asset_arch="$target_arch"
 archive="$(build_archive_name "$version" "$asset_arch")"
@@ -334,13 +624,23 @@ if [ "$platform" = "windows" ] && [ "$target_arch" = "arm64" ] && ! release_has_
   fi
 fi
 
-release_has_asset "$release_json" "$archive" || die "Release v${version} does not include asset '${archive}'."
+if ! release_has_asset "$release_json" "$archive"; then
+  if [ "$INSTALL_CHANNEL" = "main" ]; then
+    die "Main build release does not include asset '${archive}'."
+  fi
 
-download_url="https://github.com/${REPO}/releases/download/v${version}/${archive}"
+  die "Release v${version} does not include asset '${archive}'."
+fi
+
+download_url="https://github.com/${REPO}/releases/download/${release_tag}/${archive}"
 checksum_asset="${archive}.sha256"
 checksum_url="${download_url}.sha256"
 
-log "Installing opensre v${version} (${platform}/${target_arch})..."
+if [ "$INSTALL_CHANNEL" = "main" ]; then
+  log "Installing opensre main build (${platform}/${target_arch})..."
+else
+  log "Installing opensre v${version} (${platform}/${target_arch})..."
+fi
 if [ "$asset_arch" != "$target_arch" ]; then
   log "Using release asset built for ${platform}/${asset_arch}."
 fi
@@ -365,27 +665,36 @@ if release_has_asset "$release_json" "$checksum_asset"; then
   download_to "$checksum_url" "$checksum_path" || die "Failed to download checksum '${checksum_asset}'."
   verify_checksum "$checksum_path" "$archive_path"
 else
-  warn "Release v${version} is missing checksum asset '${checksum_asset}'."
+  if [ "$INSTALL_CHANNEL" = "main" ]; then
+    warn "Main build release is missing checksum asset '${checksum_asset}'."
+  else
+    warn "Release v${version} is missing checksum asset '${checksum_asset}'."
+  fi
 fi
 
-mkdir -p "$INSTALL_DIR"
+if [ "$INSTALL_WITH_SUDO" -eq 1 ]; then
+  log "Installing into ${INSTALL_DIR} with sudo so '${BIN_NAME}' is available immediately in this shell."
+fi
+
+run_with_privilege mkdir -p "$INSTALL_DIR"
 extract_archive "$archive_path" "$tmp_dir"
 
 binary_path="$(get_binary_path_from_archive "$tmp_dir" "$BIN_NAME")"
-installed_version="$(verify_binary_version "$binary_path" "$version")"
+if [ "$INSTALL_CHANNEL" = "main" ]; then
+  installed_version="$(verify_binary_version "$binary_path")"
+else
+  installed_version="$(verify_binary_version "$binary_path" "$version")"
+fi
 install_binary "$binary_path" "${INSTALL_DIR}/${BIN_NAME}"
 
-log "Installed ${BIN_NAME} v${installed_version} to ${INSTALL_DIR}/${BIN_NAME}"
+if [ "$INSTALL_CHANNEL" = "main" ]; then
+  if [ "$installed_version" = "main" ]; then
+    log "Installed ${BIN_NAME} main build to ${INSTALL_DIR}/${BIN_NAME}"
+  else
+    log "Installed ${BIN_NAME} main build (${installed_version}) to ${INSTALL_DIR}/${BIN_NAME}"
+  fi
+else
+  log "Installed ${BIN_NAME} v${installed_version} to ${INSTALL_DIR}/${BIN_NAME}"
+fi
 
-case ":$PATH:" in
-  *":${INSTALL_DIR}:"*)
-    ;;
-  *)
-    if [ "$platform" = "windows" ]; then
-      warn "'${INSTALL_DIR}' is not in PATH for this shell. Add it to Git Bash or Windows PATH to run ${BIN_NAME} from any terminal."
-    else
-      warn "'${INSTALL_DIR}' is not in PATH. Add this line to your shell profile:"
-      warn "  export PATH=\"\$PATH:${INSTALL_DIR}\""
-    fi
-    ;;
-esac
+configure_path

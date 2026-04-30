@@ -1,26 +1,26 @@
 ---
 title: "Google Batch"
-description: "Install OpenSRE on Google Cloud Batch under two minutes"
+description: "Install Tracer on Google Cloud Batch under two minutes"
 ---
 
 ## Overview
 
-Google Cloud Batch is a fully managed batch processing service that enables you to run large-scale batch jobs on Google Cloud. OpenSRE integrates with Google Cloud Batch to provide real-time observability for your batch workloads.
+Google Cloud Batch is a fully managed batch processing service that enables you to run large-scale batch jobs on Google Cloud. Tracer integrates with Google Cloud Batch to provide real-time observability for your batch workloads.
 
 ## Prerequisites
 
 - Google Cloud account with Batch API enabled
 - `gcloud` CLI installed and configured
-- OpenSRE account and API token
+- Tracer account and API token
 
 ## Getting Started
 
-#### 1. Create a Machine Image With OpenSRE Installed
+#### 1. Create a Machine Image With Tracer Installed
 
 <Steps>
   <Step title="Create a new VM instance in Google Cloud." />
-  <Step title="Install OpenSRE on the instance." />
-  <Step title="Configure OpenSRE to run as a service so it automatically starts when the system boots." />
+  <Step title="Install Tracer on the instance." />
+  <Step title="Configure Tracer to run as a service so it automatically starts when the system boots." />
 </Steps>
 
 Once everything is correctly installed and running, create a Machine Image from this VM.
@@ -30,15 +30,15 @@ This Machine Image will serve as the base template for future instances.
 
 <Steps>
   <Step title="In your Google Batch configuration, set the Machine Image created above to be the default boot image." />
-  <Step title="This makes sure that every time a new Batch machine is spawned, it loads the image with OpenSRE pre-installed and running." />
+  <Step title="This makes sure that every time a new Batch machine is spawned, it loads the image with Tracer pre-installed and running." />
 </Steps>
 
-In this way, all new instances will automatically have OpenSRE active without any manual setup.
+In this way, all new instances will automatically have Tracer active without any manual setup.
 
-#### 3. Update Your nextflow.config to Work With OpenSRE
+#### 3. Update Your nextflow.config to Work With Tracer
 
 <Steps>
-  <Step title="Improve your nextflow.config so that it integrates correctly with OpenSRE in Google Batch environments." />
+  <Step title="Improve your nextflow.config so that it integrates correctly with Tracer in Google Batch environments." />
   <Step title="You can base the necessary configuration changes on the example below:" />
 </Steps>
 

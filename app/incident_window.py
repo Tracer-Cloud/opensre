@@ -164,6 +164,40 @@ class IncidentWindow:
         except (TypeError, ValueError):
             return None
 
+    # -- Adaptation ---------------------------------------------------------
+
+    def expanded(self, factor: float = 2.0) -> IncidentWindow:
+        """Return a NEW window with the lookback widened by ``factor``.
+
+        ``until`` is preserved (the anchor edge does not move). Only
+        ``since`` moves earlier. The widened lookback is clamped to
+        ``MAX_LOOKBACK_MINUTES`` so callers cannot accidentally page
+        through months of data.
+
+        ``source`` and ``confidence`` are preserved: the underlying anchor
+        is still trusted; the expansion only admits the original lookback
+        guess was too narrow. The fact of expansion is recorded
+        separately in ``state.incident_window_history`` by the caller.
+
+        Raises:
+            ValueError: when ``factor <= 1.0``. This method is for
+                expansion only; contraction is a separate, deferred
+                operation with different semantics.
+        """
+        if factor <= 1.0:
+            raise ValueError(
+                f"expanded() requires factor > 1.0 to widen the window (got {factor!r}); "
+                "use a separate contraction method to narrow."
+            )
+        current_lookback_min = (self.until - self.since).total_seconds() / 60.0
+        new_lookback_min = min(current_lookback_min * factor, float(MAX_LOOKBACK_MINUTES))
+        return IncidentWindow(
+            since=self.until - timedelta(minutes=new_lookback_min),
+            until=self.until,
+            source=self.source,
+            confidence=self.confidence,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Parsing helpers

@@ -1,14 +1,14 @@
 ---
 title: "Bash"
-description: "Using OpenSRE with Bash scripts"
+description: "Using Tracer with Bash scripts"
 ---
 
-OpenSRE can monitor any Bash-based pipeline, from small scripts to large chained commands, giving instant visibility into each command’s behavior.
+Tracer can monitor any Bash-based pipeline, from small scripts to large chained commands, giving instant visibility into each command’s behavior.
 
-## Why use OpenSRE in combination with Bash
+## Why use Tracer in combination with Bash
 
 Many scientific or data pipelines rely on simple shell scripts that lack structured logging.
-OpenSRE automatically adds observability:
+Tracer automatically adds observability:
 
 - Traces every subprocess (even background jobs)
 - Captures CPU, memory, and I/O usage for each command
@@ -20,11 +20,11 @@ OpenSRE automatically adds observability:
 ### Prerequisites
 
 - Bash 4.0 or higher
-- OpenSRE installed on [your operating system](/environments/overview)
+- Tracer installed on [your operating system](/environments/overview)
 
-### Just run your pipeline, OpenSRE will automatically attach
+### Just run your pipeline, Tracer will automatically attach
 
-If OpenSRE is already installed on your operating system, you only need to enable the OpenSRE agent for pipelines that have not been run with OpenSRE before.<br/>
+If Tracer is already installed on your operating system, you only need to enable the Tracer agent for pipelines that have not been run with Tracer before.<br/>
 In that case, run the following command:
 
 ```bash
@@ -36,36 +36,36 @@ When running this command, you will be asked to name your pipeline for clear lab
 
 ## Examples
 
-Run a Bash script under OpenSRE:
+Run a Bash script under Tracer:
 
 ```bash
 bash my_analysis.sh
 ```
 
-or launch the OpenSRE demo workflow:
+or launch the Tracer demo workflow:
 
 ```bash
 sudo tracer demo
 ```
 
-Once the pipeline starts, open the OpenSRE dashboard, and you’ll see each command as a timeline step updating in real time.
+Once the pipeline starts, open the Tracer dashboard, and you’ll see each command as a timeline step updating in real time.
 
 <Card href="https://app.tracer.cloud/">
   <img
     className="block dark:hidden"
     src="/images/logo/tracer/Tracer Full Body - Black.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
   <img
     className="hidden dark:block"
     src="/images/logo/tracer/Tracer Full Body - Black.png"
-    alt="OpenSRE Logo"
+    alt="Tracer Logo"
     style={{ width: '10%', height: 'auto', marginBottom: '1rem' }}
   />
 
   <div style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1 rem', color: 'inherit' }}>
-    Watch your pipeline run in the OpenSRE dashboard
+    Watch your pipeline run in the Tracer dashboard
   </div>
 
   <div style={{ color: 'inherit' }}>

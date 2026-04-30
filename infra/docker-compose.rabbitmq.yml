@@ -6,12 +6,12 @@
 #   - a deliberately-slow consumer so a backlog builds up within seconds
 #
 # Run:
-#   docker compose -f docker-compose.rabbitmq.yml up -d
+#   docker compose -f infra/docker-compose.rabbitmq.yml up -d
 #   # wait ~30s for the backlog to grow, then exercise the tools:
 #   make test-rabbitmq-real
 #
 # Tear down:
-#   docker compose -f docker-compose.rabbitmq.yml down -v
+#   docker compose -f infra/docker-compose.rabbitmq.yml down -v
 
 services:
   rabbitmq:
@@ -71,7 +71,7 @@ services:
       ch.queue_declare(queue='orders.process', durable=True)
       ch.basic_qos(prefetch_count=1)
       def on_msg(ch_, method, _props, _body):
-          time.sleep(0.2)   # 5 msg/s consume rate → guaranteed backlog
+          time.sleep(0.2)   # 5 msg/s consume rate -> guaranteed backlog
           ch_.basic_ack(method.delivery_tag)
       ch.basic_consume(queue='orders.process', on_message_callback=on_msg)
       ch.start_consuming()

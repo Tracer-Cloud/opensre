@@ -1,63 +1,63 @@
 ---
 title: 'Workflow orchestration'
 sidebarTitle: 'Overview'
-description: 'How OpenSRE adds execution-level visibility beneath schedulers and workflow engines'
+description: 'How Tracer adds execution-level visibility beneath schedulers and workflow engines'
 ---
 
 Workflow orchestration tools define pipeline structure, dependencies, scheduling, retries, and execution state. They determine what should run and when, but they do not observe how tasks behave while they execute.
 
-OpenSRE complements workflow orchestrators by observing execution behavior at runtime. It captures how tasks and subprocesses consume CPU, memory, disk, and network resources, and maps this behavior back to pipeline runs, steps, and workflows.
+Tracer complements workflow orchestrators by observing execution behavior at runtime. It captures how tasks and subprocesses consume CPU, memory, disk, and network resources, and maps this behavior back to pipeline runs, steps, and workflows.
 
 <Note>
-If you're new to OpenSRE or want a high-level mental model, see [How OpenSRE fits in your stack](/comparisons/overview).
+If you're new to Tracer or want a high-level mental model, see [How Tracer fits in your stack](/comparisons/overview).
 </Note>
 
 ## Supported workflow orchestrators
 
-The integrations below describe how OpenSRE works with common orchestration frameworks used in scientific, data, and bioinformatics pipelines. Each page focuses on the execution gaps specific to that tool.
+The integrations below describe how Tracer works with common orchestration frameworks used in scientific, data, and bioinformatics pipelines. Each page focuses on the execution gaps specific to that tool.
 
 <CardGroup cols={2}>
-  <Card title="OpenSRE and Apache Airflow" icon="diagram-project" href="/comparisons/Tracer_vs_Airflow">
+  <Card title="Tracer and Apache Airflow" icon="diagram-project" href="/comparisons/Tracer_vs_Airflow">
     **What DAGs don't show at runtime**
 
-    OpenSRE observes execution behavior inside Airflow tasks, including subprocesses and external tools.
+    Tracer observes execution behavior inside Airflow tasks, including subprocesses and external tools.
   </Card>
-  <Card title="OpenSRE and Dagster" icon="diagram-project" href="/comparisons/Tracer_vs_Dagster">
+  <Card title="Tracer and Dagster" icon="diagram-project" href="/comparisons/Tracer_vs_Dagster">
     **Execution insight beneath assets and jobs**
 
-    OpenSRE reveals how resources are consumed during execution of Dagster assets, ops, and jobs.
+    Tracer reveals how resources are consumed during execution of Dagster assets, ops, and jobs.
   </Card>
-  <Card title="OpenSRE and Flyte" icon="diagram-project" href="/comparisons/Tracer_vs_Flyte">
+  <Card title="Tracer and Flyte" icon="diagram-project" href="/comparisons/Tracer_vs_Flyte">
     **Execution insight beneath tasks and workflows**
 
-    OpenSRE shows how Flyte tasks actually behave at runtime, beyond task state and execution metadata.
+    Tracer shows how Flyte tasks actually behave at runtime, beyond task state and execution metadata.
   </Card>
-  <Card title="OpenSRE and Prefect" icon="diagram-project" href="/comparisons/Tracer_vs_Prefect">
+  <Card title="Tracer and Prefect" icon="diagram-project" href="/comparisons/Tracer_vs_Prefect">
     **Runtime visibility beneath flow state**
 
-    OpenSRE captures system-level behavior of Prefect tasks, including work performed outside Python.
+    Tracer captures system-level behavior of Prefect tasks, including work performed outside Python.
   </Card>
-  <Card title="OpenSRE and Seqera" icon="diagram-project" href="/comparisons/Tracer_vs_Seqera">
+  <Card title="Tracer and Seqera" icon="diagram-project" href="/comparisons/Tracer_vs_Seqera">
     **Execution behavior inside Nextflow pipelines**
 
-    OpenSRE observes what happens inside Nextflow tasks at runtime, beyond scheduling and task state.
+    Tracer observes what happens inside Nextflow tasks at runtime, beyond scheduling and task state.
   </Card>
 </CardGroup>
 
-## When OpenSRE is useful with orchestration tools
+## When Tracer is useful with orchestration tools
 
-OpenSRE is most useful alongside workflow orchestrators when teams need to:
+Tracer is most useful alongside workflow orchestrators when teams need to:
 
 - Understand why tasks run slower than expected
 - Distinguish CPU-bound, I/O-bound, and idle execution
 - Diagnose performance issues not visible in task logs
 - Attribute resource usage and cost to specific workflows or runs
 
-OpenSRE does not replace orchestration. It does not change scheduling, retries, or pipeline definitions. It adds execution-level visibility beneath existing workflows.
+Tracer does not replace orchestration. It does not change scheduling, retries, or pipeline definitions. It adds execution-level visibility beneath existing workflows.
 
 ## Where to go next
 
-- [How OpenSRE fits in your stack](/comparisons/overview) (conceptual overview)
+- [How Tracer fits in your stack](/comparisons/overview) (conceptual overview)
 - Individual integration pages (tool-specific execution gaps and observability comparisons)
 
 <div style={{ height: '50vh' }}></div>

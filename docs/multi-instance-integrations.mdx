@@ -22,7 +22,7 @@ export GRAFANA_INSTANCES='[
 ]'
 ```
 
-Supported env vars: `GRAFANA_INSTANCES`, `DD_INSTANCES`, `HONEYCOMB_INSTANCES`, `CORALOGIX_INSTANCES`, `AWS_INSTANCES`.
+Supported env vars: `GRAFANA_INSTANCES`, `DD_INSTANCES`, `HONEYCOMB_INSTANCES`, `CORALOGIX_INSTANCES`, `AWS_INSTANCES`, `ARGOCD_INSTANCES`.
 
 When `<SERVICE>_INSTANCES` is set, the legacy single-instance vars for that service (e.g. `GRAFANA_INSTANCE_URL`, `GRAFANA_READ_TOKEN`) are ignored. If the JSON is invalid the loader logs a warning and falls back to the legacy vars.
 
@@ -106,6 +106,7 @@ picked = select_instance(resolved_integrations, "grafana", tags={"env": "staging
 | AWS | ✅ | ✅ | Default instance only |
 | Honeycomb | ✅ | ✅ | Default instance only |
 | Coralogix | ✅ | ✅ | Default instance only |
+| Argo CD | ✅ | ✅ | Default instance only |
 | Others | — | Default instance only | Default instance only |
 
 Providers without end-to-end selection fall back to the default (first) instance — identical behavior to before this feature.

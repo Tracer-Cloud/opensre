@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.nodes.investigate.models import InvestigateInput
 from app.nodes.plan_actions import node as node_module
 from app.types.retrieval import RetrievalIntent
 
@@ -26,24 +27,11 @@ def test_node_plan_actions_emits_retrieval_controls(monkeypatch: Any) -> None:
         retrieval_controls={"get_logs": RetrievalIntent(limit=25)},
     )
 
-    class _InputStub:
-        # Production ``node_plan_actions`` calls ``input_data.model_copy(update=...)``
-        # after a ``input_data.model_dump()`` round-trip to mask sensitive
-        # identifiers before the LLM sees them. Mirror those two pydantic
-        # surfaces here so the stub stays a drop-in for ``InvestigateInput``
-        # without dragging in a full Pydantic model definition.
-        tool_budget = 10
-
-        def model_dump(self) -> dict[str, Any]:
-            return {"tool_budget": self.tool_budget}
-
-        def model_copy(self, *, update: dict[str, Any]) -> _InputStub:
-            copy = _InputStub()
-            for key, value in update.items():
-                setattr(copy, key, value)
-            return copy
-
-    monkeypatch.setattr(node_module.InvestigateInput, "from_state", lambda _state: _InputStub())
+    monkeypatch.setattr(
+        node_module.InvestigateInput,
+        "from_state",
+        lambda _state: InvestigateInput(raw_alert={}, context={}, tool_budget=10),
+    )
     monkeypatch.setattr(
         node_module,
         "build_plan_actions",

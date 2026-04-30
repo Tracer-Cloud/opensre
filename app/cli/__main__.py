@@ -10,6 +10,7 @@ Enable shell tab-completion (add to your shell profile for persistence):
 from __future__ import annotations
 
 import os
+import sys
 
 import click
 from dotenv import load_dotenv
@@ -34,6 +35,18 @@ from app.version import get_version
 @click.option("--verbose", is_flag=True, help="Print extra diagnostic information.")
 @click.option("--debug", is_flag=True, help="Print debug-level logs and traces.")
 @click.option("--yes", "-y", is_flag=True, help="Auto-confirm all interactive prompts.")
+@click.option(
+    "--interactive/--no-interactive",
+    default=True,
+    help="Disable the interactive REPL and print the landing page instead.",
+)
+@click.option(
+    "--layout",
+    type=click.Choice(["classic", "pinned"]),
+    default=None,
+    help="REPL layout: 'classic' (scrolling) or 'pinned' (fixed input bar). "
+    "Overrides OPENSRE_LAYOUT env var and ~/.opensre/config.yml.",
+)
 @click.pass_context
 def cli(
     ctx: click.Context,
@@ -41,6 +54,8 @@ def cli(
     verbose: bool,
     debug: bool,
     yes: bool,
+    interactive: bool,
+    layout: str | None,
 ) -> None:
     """OpenSRE - open-source SRE agent for automated incident investigation and root cause analysis."""
     ctx.ensure_object(dict)
@@ -54,6 +69,16 @@ def cli(
 
     if ctx.invoked_subcommand is None:
         capture_cli_invoked()
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            from app.cli.repl import run_repl
+            from app.cli.repl.config import ReplConfig
+
+            config = ReplConfig.load(
+                cli_enabled=interactive,
+                cli_layout=layout,
+            )
+            if config.enabled:
+                raise SystemExit(run_repl(config=config))
         click.echo("🚧 OpenSRE is in Public Beta — features may change.", err=True)
         render_landing()
         raise SystemExit(0)

@@ -17,14 +17,12 @@ import httpx
 
 from app.analytics.events import Event
 from app.cli.wizard.store import get_store_path
+from app.constants.posthog import POSTHOG_CAPTURE_API_KEY, POSTHOG_HOST
 from app.version import get_version
 
 _CONFIG_DIR = get_store_path().parent
 _ANONYMOUS_ID_PATH = _CONFIG_DIR / "anonymous_id"
 _FIRST_RUN_PATH = _CONFIG_DIR / "installed"
-
-_POSTHOG_API_KEY = "phc_zutpVhmQw7oUmMkbawKNdYCKQWjpfASATtf5ywB75W2"
-_POSTHOG_HOST = "https://us.i.posthog.com"
 
 _QUEUE_SIZE = 128
 _SEND_TIMEOUT = 2.0
@@ -159,7 +157,7 @@ class Analytics:
 
     def _send(self, client: httpx.Client, item: _Envelope) -> None:
         payload = {
-            "api_key": _POSTHOG_API_KEY,
+            "api_key": POSTHOG_CAPTURE_API_KEY,
             "event": item.event,
             "properties": {
                 "distinct_id": self._anonymous_id,
@@ -168,7 +166,7 @@ class Analytics:
             },
         }
         with contextlib.suppress(Exception):
-            client.post(f"{_POSTHOG_HOST}/capture/", json=payload).raise_for_status()
+            client.post(f"{POSTHOG_HOST}/capture/", json=payload).raise_for_status()
 
     def _mark_done(self) -> None:
         with self._pending_lock:
@@ -192,12 +190,13 @@ def shutdown_analytics(*, flush: bool = True) -> None:
         _instance.shutdown(flush=flush)
 
 
-def mark_install_detected() -> None:
-    with contextlib.suppress(OSError):
-        _FIRST_RUN_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _FIRST_RUN_PATH.touch(exist_ok=True)
+def capture_install_detected_if_needed(properties: Properties | None = None) -> bool:
+    """Capture ``install_detected`` once per persisted OpenSRE home."""
+    if not _touch_once(_FIRST_RUN_PATH):
+        return False
+    get_analytics().capture(Event.INSTALL_DETECTED, properties)
+    return True
 
 
 def capture_first_run_if_needed() -> None:
-    if _touch_once(_FIRST_RUN_PATH):
-        get_analytics().capture(Event.INSTALL_DETECTED)
+    capture_install_detected_if_needed()

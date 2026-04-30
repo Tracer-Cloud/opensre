@@ -1,16 +1,16 @@
 ---
-title: 'OpenSRE/collect'
-sidebarTitle: 'OpenSRE/collect'
-description: 'The core data collection daemon that powers OpenSRE observability'
+title: 'Tracer/collect'
+sidebarTitle: 'Tracer/collect'
+description: 'The core data collection daemon that powers Tracer observability'
 ---
 
-OpenSRE/collect is the core data collection daemon that powers OpenSRE's observability platform. It runs on Linux hosts, captures execution signals directly from the operating system, and streams structured telemetry to OpenSRE's backend for analysis and visualization.
+Tracer/collect is the core data collection daemon that powers Tracer's observability platform. It runs on Linux hosts, captures execution signals directly from the operating system, and streams structured telemetry to Tracer's backend for analysis and visualization.
 
-Unlike tools that rely on framework integrations, logs, or application instrumentation, OpenSRE/collect observes execution where it actually happens, at the kernel boundary between user processes and the operating system.
+Unlike tools that rely on framework integrations, logs, or application instrumentation, Tracer/collect observes execution where it actually happens, at the kernel boundary between user processes and the operating system.
 
 ## Overview
 
-OpenSRE/collect provides low-overhead, high-fidelity visibility into scientific and cloud-based high-compute workflows.
+Tracer/collect provides low-overhead, high-fidelity visibility into scientific and cloud-based high-compute workflows.
 
 <CardGroup cols={3}>
   <Card title="Framework-agnostic" icon="puzzle-piece">
@@ -24,46 +24,46 @@ OpenSRE/collect provides low-overhead, high-fidelity visibility into scientific 
   </Card>
 </CardGroup>
 
-## How OpenSRE/collect works
+## How Tracer/collect works
 
-OpenSRE/collect is built as a static Rust daemon that orchestrates eBPF programs to observe the Linux kernel.
+Tracer/collect is built as a static Rust daemon that orchestrates eBPF programs to observe the Linux kernel.
 
 ### Kernel-level observability with eBPF
 
-OpenSRE/collect uses eBPF (extended Berkeley Packet Filter) to attach probes at key points in the operating system. eBPF is a verified, sandboxed execution environment in the Linux kernel that lets user-space programs monitor kernel events safely and efficiently.
+Tracer/collect uses eBPF (extended Berkeley Packet Filter) to attach probes at key points in the operating system. eBPF is a verified, sandboxed execution environment in the Linux kernel that lets user-space programs monitor kernel events safely and efficiently.
 
-Using eBPF, OpenSRE/collect observes:
+Using eBPF, Tracer/collect observes:
 
 - **System calls and scheduling events**: when processes start, stop, or yield CPU
 - **Resource activity**: CPU usage, memory usage, I/O operations, and network activity
 - **Process lifecycles**: which binary ran, with what arguments, and in which container context
 
-These signals form the basis of OpenSRE's visibility into pipelines. eBPF allows this without inserting code into user binaries or requiring any language-specific hooks.
+These signals form the basis of Tracer's visibility into pipelines. eBPF allows this without inserting code into user binaries or requiring any language-specific hooks.
 
 <Frame>
   <img src="/images/features/tool-binary-detection.webp" alt="Tool and binary detection showing all binaries, scripts, and containers active on the cluster" />
 </Frame>
 
-OpenSRE/collect identifies every binary, script, or container active on your cluster, including hidden dependencies or subprocesses. This includes native executables, Python-spawned processes, Java tools, shell commands, and short-lived child processes. Even tools that don't produce logs appear with complete runtime information.
+Tracer/collect identifies every binary, script, or container active on your cluster, including hidden dependencies or subprocesses. This includes native executables, Python-spawned processes, Java tools, shell commands, and short-lived child processes. Even tools that don't produce logs appear with complete runtime information.
 
 <Frame>
-  <img src="/images/howTracerWorks.webp" alt="How OpenSRE/collect captures execution signals from the kernel level" />
+  <img src="/images/howTracerWorks.webp" alt="How Tracer/collect captures execution signals from the kernel level" />
 </Frame>
 
-OpenSRE/collect processes these kernel events and emits structured telemetry that maps to pipeline steps, tools, and tasks.
+Tracer/collect processes these kernel events and emits structured telemetry that maps to pipeline steps, tools, and tasks.
 
 ### Correlation through identifiers
 
-OpenSRE/collect correlates kernel events with higher-level execution semantics by using identifiers that the Linux kernel exposes:
+Tracer/collect correlates kernel events with higher-level execution semantics by using identifiers that the Linux kernel exposes:
 
 - Process IDs (PIDs) and parent PIDs
 - Namespaces and cgroups that define container boundaries
 
-This mapping lets OpenSRE distinguish between processes running concurrently on the same host and assign each observation to the correct tool, container, or pipeline step.
+This mapping lets Tracer distinguish between processes running concurrently on the same host and assign each observation to the correct tool, container, or pipeline step.
 
 ## Data collection stages
 
-OpenSRE/collect's internal workflow can be understood in four stages:
+Tracer/collect's internal workflow can be understood in four stages:
 
 <Steps>
   <Step title="Attach">
@@ -76,13 +76,13 @@ OpenSRE/collect's internal workflow can be understood in four stages:
     Events are linked to processes, containers, and pipelines using kernel metadata and optional scheduler-provided trace identifiers.
   </Step>
   <Step title="Stream">
-    Aggregated telemetry is batched and sent to OpenSRE's backend for indexing, visualization, and analysis.
+    Aggregated telemetry is batched and sent to Tracer's backend for indexing, visualization, and analysis.
   </Step>
 </Steps>
 
 ## Filtering and relevance
 
-Kernel probes can generate a high volume of events. OpenSRE/collect minimizes overhead and focuses on meaningful signals by applying filter rules at the source.
+Kernel probes can generate a high volume of events. Tracer/collect minimizes overhead and focuses on meaningful signals by applying filter rules at the source.
 
 <CardGroup cols={2}>
   <Card title="Include rules" icon="check">
@@ -97,7 +97,7 @@ Kernel probes can generate a high volume of events. OpenSRE/collect minimizes ov
 
 ## Deployment and lifecycle
 
-OpenSRE/collect is designed for modern compute environments:
+Tracer/collect is designed for modern compute environments:
 
 - It runs as a daemon on each host.
 - It can be installed via launch scripts, imaging systems, or orchestration tools (cloud init, configuration management, container DaemonSets).
@@ -107,7 +107,7 @@ Telemetry is buffered locally and retried until successfully delivered to the ba
 
 ## Performance
 
-OpenSRE/collect is optimized for minimal interference with workloads:
+Tracer/collect is optimized for minimal interference with workloads:
 
 <CardGroup cols={3}>
   <Card title="Low CPU overhead" icon="microchip">
@@ -123,11 +123,11 @@ OpenSRE/collect is optimized for minimal interference with workloads:
 
 <Note>Typical overhead measurements come from controlled benchmarks on pipeline runs.</Note>
 
-## When to use OpenSRE/collect
+## When to use Tracer/collect
 
-Use OpenSRE/collect when you want accurate, system-level insight into pipeline execution without modifying your workloads.
+Use Tracer/collect when you want accurate, system-level insight into pipeline execution without modifying your workloads.
 
-You should deploy OpenSRE/collect when:
+You should deploy Tracer/collect when:
 
 - Your pipelines are stable but slow or expensive, and you need to understand resource and time usage.
 - You run heterogeneous workflows that span multiple tools, languages, and schedulers.
@@ -135,12 +135,12 @@ You should deploy OpenSRE/collect when:
 - Application-level instrumentation is impractical or unavailable.
 - You want out-of-the-box insights that point you to the right optimization targets.
 
-OpenSRE/collect is not a language-specific profiler. If you need function-level or code-line profiling, combine OpenSRE's process-level signals with a dedicated profiling tool.
+Tracer/collect is not a language-specific profiler. If you need function-level or code-line profiling, combine Tracer's process-level signals with a dedicated profiling tool.
 
 ## Limits and boundaries
 
 <Warning>
-**OpenSRE/collect does not:**
+**Tracer/collect does not:**
 - Inspect or capture application payload data (input data or scientific output)
 - Provide source-code level traces (e.g., function call stacks) by default
 - Replace language-specific profilers (for deep sampling within process logic)
@@ -150,7 +150,7 @@ Instead, it surfaces resource and execution patterns that help you decide where 
 
 ## Why Rust?
 
-Rust enables OpenSRE/collect to be:
+Rust enables Tracer/collect to be:
 
 <CardGroup cols={3}>
   <Card title="Memory-safe" icon="shield">
@@ -168,7 +168,7 @@ These properties make it suitable for high-compute systems where stability and p
 
 ## Summary
 
-OpenSRE/collect is a system-level observability agent that delivers truthful execution data from the Linux kernel to OpenSRE's analysis backend. It provides process-level visibility without requiring code changes, supports heterogeneous pipelines, and produces data that helps you understand and optimize complex workflows. This design makes it especially useful in bioinformatics, machine learning, and scientific computing environments where tooling diversity and performance transparency are critical.
+Tracer/collect is a system-level observability agent that delivers truthful execution data from the Linux kernel to Tracer's analysis backend. It provides process-level visibility without requiring code changes, supports heterogeneous pipelines, and produces data that helps you understand and optimize complex workflows. This design makes it especially useful in bioinformatics, machine learning, and scientific computing environments where tooling diversity and performance transparency are critical.
 
 <div style={{ height: '50vh' }}></div>
 

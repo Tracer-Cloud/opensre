@@ -45,6 +45,7 @@ def _query_grafana_traces_available(sources: dict[str, dict]) -> bool:
 
 @tool(
     name="query_grafana_traces",
+    display_name="Grafana Tempo",
     source="grafana",
     description="Query Grafana Cloud Tempo for pipeline traces.",
     use_cases=[

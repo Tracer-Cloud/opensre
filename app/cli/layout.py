@@ -16,6 +16,7 @@ _ASCII_HEADER = """\
  \\___/|_|   |_____|_| \\_|____/|_| \\_\\_____|"""
 
 _HELP_COMMANDS: tuple[tuple[str, str], ...] = (
+    ("agent", "Launch the interactive SRE agent terminal."),
     ("onboard", "Run the interactive onboarding wizard."),
     ("investigate", "Run an RCA investigation against an alert payload."),
     ("deploy", "Deploy OpenSRE to a cloud environment (EC2)."),
@@ -30,6 +31,7 @@ _HELP_COMMANDS: tuple[tuple[str, str], ...] = (
 )
 
 _LANDING_COMMANDS: tuple[tuple[str, str], ...] = (
+    ("opensre agent", "Launch the interactive SRE agent terminal"),
     ("opensre onboard", "Configure LLM provider and integrations"),
     ("opensre investigate -i alert.json", "Run RCA against an alert payload"),
     ("opensre deploy ec2", "Deploy investigation server on AWS EC2"),

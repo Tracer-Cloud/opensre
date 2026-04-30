@@ -1,0 +1,199 @@
+---
+title: "Argo CD"
+description: "Connect Argo CD so OpenSRE can inspect GitOps application health, sync state, revisions, and drift during investigations"
+---
+
+OpenSRE queries the Argo CD REST API as a read-only evidence source during GitOps incident investigations. It can list visible applications, inspect one application's sync and health status, and fetch sanitized server-side diff output to show deployment drift.
+
+## Prerequisites
+
+- Argo CD API server reachable from the machine running OpenSRE
+- A dedicated Argo CD account or API token with read access to the applications you want OpenSRE to inspect
+- The Argo CD base URL, for example `https://argocd.example.com`
+- Optional alert annotations that identify the affected Argo CD application, project, namespace, or revision
+
+## Setup
+
+Argo CD is configured through environment variables or the persistent integration store.
+
+### Option 1: Environment variables
+
+Add one authentication method to your `.env`:
+
+```bash
+ARGOCD_BASE_URL=https://argocd.example.com
+
+# Option A: API token auth. The token may be set with or without a "Bearer " prefix.
+ARGOCD_AUTH_TOKEN=***
+# ARGOCD_TOKEN=***   # alias also supported
+
+# Option B: username/password auth. Use instead of ARGOCD_AUTH_TOKEN.
+# ARGOCD_USERNAME=opensre-readonly
+# ARGOCD_PASSWORD=***
+
+# Optional scoping and TLS settings
+ARGOCD_PROJECT=default
+ARGOCD_APP_NAMESPACE=argocd
+ARGOCD_VERIFY_SSL=true
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ARGOCD_BASE_URL` | — | **Required.** Argo CD API base URL. Remote URLs must use `https://`; plain `http://` is accepted only for loopback or localhost development URLs. |
+| `ARGOCD_AUTH_TOKEN` | — | Argo CD bearer/API token. Use this or username/password, not both. |
+| `ARGOCD_TOKEN` | — | Alias for `ARGOCD_AUTH_TOKEN`. |
+| `ARGOCD_USERNAME` | — | Username for Argo CD session login. Use together with `ARGOCD_PASSWORD`. |
+| `ARGOCD_PASSWORD` | — | Password for Argo CD session login. Use together with `ARGOCD_USERNAME`. |
+| `ARGOCD_PROJECT` | — | Optional Argo CD project filter for listing and application-specific requests. |
+| `ARGOCD_APP_NAMESPACE` | — | Optional application namespace passed as `appNamespace` for application-specific requests. |
+| `ARGOCD_VERIFY_SSL` | `true` | Whether to verify TLS certificates. Set to `false` only for trusted local or lab environments. |
+
+OpenSRE rejects ambiguous auth configuration. Do not set a bearer token and username/password at the same time.
+
+### Option 2: Persistent store
+
+You can also add Argo CD to `~/.tracer/integrations.json`:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "argocd-prod",
+      "service": "argocd",
+      "status": "active",
+      "credentials": {
+        "base_url": "https://argocd.example.com",
+        "bearer_token": "***",
+        "project": "default",
+        "app_namespace": "argocd",
+        "verify_ssl": true
+      }
+    }
+  ]
+}
+```
+
+The store also accepts `auth_token` or `token` as aliases for `bearer_token`. For username/password auth, omit `bearer_token` and set `username` and `password` instead.
+
+### Option 3: Multiple Argo CD instances
+
+For multiple Argo CD instances, set `ARGOCD_INSTANCES` to a JSON array. The first valid instance is used as the default integration for investigations.
+
+```bash
+export ARGOCD_INSTANCES='[
+  {
+    "name": "prod",
+    "tags": {"env": "prod"},
+    "credentials": {
+      "base_url": "https://argocd.prod.example.com",
+      "bearer_token": "***",
+      "project": "default"
+    }
+  },
+  {
+    "name": "staging",
+    "tags": {"env": "staging"},
+    "base_url": "https://argocd.staging.example.com",
+    "username": "opensre-readonly",
+    "password": "***"
+  }
+]'
+```
+
+When `ARGOCD_INSTANCES` is set, the single-instance `ARGOCD_BASE_URL` and auth variables are ignored for this service. `opensre integrations verify argocd` validates the resolved default instance.
+
+## Verify
+
+Run:
+
+```bash
+opensre integrations verify argocd
+```
+
+Expected output:
+
+```text
+Service: argocd
+Status:  passed
+Detail:  Connected to Argo CD and listed 3 applications.
+```
+
+Verification performs a read-only application list call. It proves OpenSRE can reach Argo CD and list visible applications with the configured credentials; it does not write to Argo CD or sync applications.
+
+## Usage in investigations
+
+When Argo CD is configured and an incoming alert contains GitOps context, OpenSRE can add Argo CD evidence to the investigation plan.
+
+OpenSRE recognizes these explicit alert fields:
+
+| Field | Location | Purpose |
+| --- | --- | --- |
+| `argocd_application` or `argocd_app` | Top-level alert payload or `annotations` | Name of the affected Argo CD application. |
+| `application_name` | `annotations` | Generic application name fallback. |
+| `argocd_revision` | Top-level alert payload or `annotations` | Revision mentioned by the alert. |
+| `revision` | `annotations` | Generic revision fallback. |
+| `argocd_project` | Top-level alert payload or `annotations` | Argo CD project for scoped application requests. |
+| `argocd_app_namespace` | Top-level alert payload or `annotations` | Argo CD application namespace for scoped requests. |
+
+OpenSRE also looks for GitOps hints in alert text such as `argocd`, `argo cd`, `argo-cd`, `gitops`, `outofsync`, or `outofsynced`.
+
+Example alert:
+
+```json
+{
+  "alert_name": "checkout-api OutOfSync",
+  "annotations": {
+    "summary": "Argo CD reports checkout-api is OutOfSync",
+    "argocd_application": "checkout-api",
+    "argocd_project": "default",
+    "argocd_revision": "abc123"
+  }
+}
+```
+
+Then run OpenSRE with the alert payload:
+
+```bash
+opensre investigate -i alert.json
+```
+
+## Evidence collected
+
+### `argocd_application_status`
+
+Fetches application status from Argo CD.
+
+- With `application_name`, it returns a compact summary for that application: sync status, health status, current revision, operation phase/message, destination, images, and recent deployment history.
+- Without `application_name`, it lists visible applications, optionally scoped by `ARGOCD_PROJECT`.
+
+The investigation agent uses this evidence to determine whether a deployment is `OutOfSync`, `Degraded`, on an unexpected revision, or correlated with a recent rollout.
+
+### `argocd_application_diff`
+
+Fetches Argo CD server-side diff output for one application.
+
+- Requires `application_name`.
+- Returns `drift_detected`, `diff_count`, and sanitized diff records.
+- Helps identify Kubernetes objects whose live state differs from the desired GitOps state.
+
+## Security best practices
+
+- Use a dedicated read-only Argo CD account or token for OpenSRE.
+- Store credentials in `.env` or `~/.tracer/integrations.json`, not in source code.
+- Use `https://` for remote Argo CD URLs. Plain `http://` is accepted only for loopback or localhost development URLs.
+- Do not disable `ARGOCD_VERIFY_SSL` for production instances.
+- OpenSRE redacts bearer tokens, passwords, token-like strings, and Kubernetes `Secret` diffs before surfacing Argo CD errors or diff evidence.
+- The integration is read-only: it lists applications, reads application summaries, and reads server-side diff data. It does not sync, modify, or delete Argo CD resources.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Status: missing** | Set `ARGOCD_BASE_URL` and exactly one auth method, or add an active `argocd` store entry. |
+| **Remote `http://` URL rejected** | Use `https://` for remote Argo CD. Use plain HTTP only for `localhost`, `127.0.0.1`, or `::1` development endpoints. |
+| **401 Unauthorized** | Check the token, or verify that username/password login can create an Argo CD session. |
+| **403 Forbidden** | Ensure the account can list applications and read the target application. |
+| **SSL error** | Fix the certificate chain or, for a trusted lab only, set `ARGOCD_VERIFY_SSL=false`. |
+| **No diff evidence** | Confirm the alert provides `argocd_application` or `argocd_app`; the diff tool requires an application name. |
+| **Application list succeeds but a named app fails** | Check `ARGOCD_PROJECT` and `ARGOCD_APP_NAMESPACE`, and confirm the account has access to that application. |

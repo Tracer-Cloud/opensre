@@ -20,6 +20,7 @@ from typing import Any
 from pydantic import Field, field_validator
 
 from app.strict_config import StrictConfigModel
+from app.utils.truncation import truncate
 
 logger = logging.getLogger(__name__)
 
@@ -172,12 +173,6 @@ def _get_connection(config: AzureSQLConfig) -> Any:
         f"APP=opensre;"
     )
     return pyodbc.connect(conn_str, timeout=int(config.timeout_seconds))
-
-
-def _truncate(text: str, max_len: int = _QUERY_TRUNCATE_LEN) -> str:
-    if len(text) <= max_len:
-        return text
-    return text[:max_len] + "..."
 
 
 def validate_azure_sql_config(config: AzureSQLConfig) -> AzureSQLValidationResult:
@@ -397,7 +392,7 @@ def get_current_queries(
                         "cpu_time_ms": row[9] or 0,
                         "logical_reads": row[10] or 0,
                         "writes": row[11] or 0,
-                        "query_text": _truncate(row[12] or ""),
+                        "query_text": truncate(row[12] or "", _QUERY_TRUNCATE_LEN),
                     }
                 )
 
@@ -544,7 +539,7 @@ def get_slow_queries(
                 queries.append(
                     {
                         "query_hash": str(row[0]) if row[0] else "",
-                        "query_text": _truncate(row[1] or ""),
+                        "query_text": truncate(row[1] or "", _QUERY_TRUNCATE_LEN),
                         "execution_count": row[2] or 0,
                         "total_time_ms": round(float(row[3] or 0), 3),
                         "avg_time_ms": round(float(row[4] or 0), 3),

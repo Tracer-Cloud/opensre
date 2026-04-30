@@ -58,6 +58,7 @@ def _query_grafana_logs_available(sources: dict[str, dict]) -> bool:
 
 @tool(
     name="query_grafana_logs",
+    display_name="Grafana Loki",
     source="grafana",
     description="Query Grafana Loki for pipeline logs.",
     use_cases=[

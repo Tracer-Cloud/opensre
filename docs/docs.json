@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "maple",
+  "theme": "mint",
   "name": "OpenSRE Documentation",
   "modeToggle": {
     "default": "dark",
@@ -13,92 +13,112 @@
   },
   "favicon": "/favicon.ico",
   "styles": {
-    "css": "/custom.css"
+    "css": "/sidebar.css"
   },
   "scripts": [
     "/toc-actions.js",
     "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js",
     "/radar-chart.js"
   ],
-  "background": {
-    "color": {
-      "light": "#FBFBFB",
-      "dark": "#060606"
-    }
-  },
   "navigation": {
-    "groups": [
+    "directory": "card",
+    "tabs": [
       {
-        "group": "Getting started",
-        "pages": [
-          "quickstart",
-          "faq",
-          "development"
-        ]
-      },
-      {
-        "group": "Integrations",
-        "pages": [
-          "integrations-overview",
+        "tab": "Getting Started",
+        "icon": "rocket",
+        "groups": [
           {
-            "group": "Enterprise",
-            "defaultOpen": true,
+            "group": "Overview",
             "pages": [
-              "aws",
-              "datadog",
-              "grafana",
-              "slack"
+              "index",
+              "showcase",
+              "features"
             ]
           },
           {
-            "group": "Local",
-            "defaultOpen": true,
+            "group": "First steps",
             "pages": [
-              "alertmanager",
-              "azure-monitor",
-              "betterstack",
-              "bitbucket",
-              "clickhouse",
-              "coralogix",
-              "discord",
-              "github",
-              "gitlab",
-              "google-docs",
-              "honeycomb",
-              "jira",
-              "kafka",
-              "mariadb",
-              "mongodb",
-              "mysql",
-              "openclaw",
-              "opsgenie",
-              "postgresql",
-              "prefect",
-              "rabbitmq",
-              "sentry",
-              "vercel"
+              "quickstart",
+              "faq"
             ]
           }
         ]
       },
       {
-        "group": "Investigations",
-        "pages": [
-          "investigation-overview",
-          "remote-runtime-investigation",
-          "masking",
-          "multi-instance-integrations"
+        "tab": "Install",
+        "icon": "download",
+        "groups": [
+          {
+            "group": "Investigation workflow",
+            "pages": [
+              "investigation-overview",
+              "remote-runtime-investigation",
+              "masking",
+              "multi-instance-integrations"
+            ]
+          }
         ]
       },
       {
-        "group": "Daily Updates",
-        "pages": [
-          "daily-updates/overview"
+        "tab": "Integrations",
+        "icon": "plug",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "integrations-overview"
+            ]
+          },
+          {
+            "group": "Observability and incidents",
+            "expanded": true,
+            "pages": [
+              "alertmanager",
+              "azure-monitor",
+              "betterstack",
+              "coralogix",
+              "datadog",
+              "grafana",
+              "honeycomb",
+              "opsgenie",
+              "sentry"
+            ]
+          },
+          {
+            "group": "Cloud, code, and collaboration",
+            "expanded": true,
+            "pages": [
+              "aws",
+              "bitbucket",
+              "discord",
+              "github",
+              "gitlab",
+              "google-docs",
+              "jira",
+              "slack",
+              "vercel"
+            ]
+          },
+          {
+            "group": "Data and workflow systems",
+            "pages": [
+              "clickhouse",
+              "kafka",
+              "mariadb",
+              "mongodb",
+              "mysql",
+              "openclaw",
+              "postgresql",
+              "prefect",
+              "rabbitmq"
+            ]
+          }
         ]
       },
       {
-        "group": "Monitoring",
-        "pages": [
+        "tab": "Tracer",
+        "icon": "/images/logo/tracer/Tracer-Head-Black.png",
+        "groups": [
           {
             "group": "Getting started",
             "pages": [
@@ -107,7 +127,7 @@
             ]
           },
           {
-            "group": "Key Use Cases",
+            "group": "Use cases",
             "pages": [
               "use-cases/logging",
               "use-cases/metrics",
@@ -137,44 +157,16 @@
             ]
           },
           {
-            "group": "How OpenSRE fits in your stack",
-            "pages": [
-              "comparisons/overview",
-              {
-                "group": "Workflow orchestration tools",
-                "pages": [
-                  "comparisons/workflow-orchestration",
-                  "comparisons/Tracer_vs_Airflow",
-                  "comparisons/Tracer_vs_Dagster",
-                  "comparisons/Tracer_vs_Flyte",
-                  "comparisons/Tracer_vs_Prefect",
-                  "comparisons/Tracer_vs_Seqera"
-                ]
-              },
-              {
-                "group": "Observability and telemetry tools",
-                "pages": [
-                  "comparisons/observability-tools",
-                  "comparisons/Tracer_vs_Datadog",
-                  "comparisons/Tracer_vs_Grafana",
-                  "comparisons/Tracer_vs_Prometheus"
-                ]
-              },
-              {
-                "group": "Cloud-native monitoring",
-                "pages": [
-                  "comparisons/cloud-native-monitoring",
-                  "comparisons/Tracer_vs_AWS_CloudWatch"
-                ]
-              }
-            ]
-          },
-          {
             "group": "Technology",
             "pages": [
               "technology/end-to-end",
+              "technology/our-features",
+              "technology/how-it-works",
+              "technology/product-benefits",
+              "technology/tracer-agent",
               {
-                "group": "OpenSRE Products",
+                "group": "Tracer products",
+                "expanded": true,
                 "pages": [
                   "technology/tracer-collect",
                   "technology/tracer-tune",
@@ -182,13 +174,14 @@
                 ]
               },
               "technology/ebpf-security",
+              "technology/why-ebpf",
               "technology/data-model",
               "technology/limits-privacy",
               "technology/capabilities-compatibility"
             ]
           },
           {
-            "group": "Deployment Environments",
+            "group": "Deployment environments",
             "pages": [
               "environments/overview",
               "environments/codespaces",
@@ -200,6 +193,54 @@
               "environments/macos",
               "environments/windows-local"
             ]
+          },
+          {
+            "group": "Comparisons",
+            "pages": [
+              "comparisons/overview",
+              {
+                "group": "Workflow orchestration",
+                "expanded": true,
+                "pages": [
+                  "comparisons/workflow-orchestration",
+                  "comparisons/Tracer_vs_Airflow",
+                  "comparisons/Tracer_vs_Dagster",
+                  "comparisons/Tracer_vs_Flyte",
+                  "comparisons/Tracer_vs_Prefect",
+                  "comparisons/Tracer_vs_Seqera"
+                ]
+              },
+              {
+                "group": "Observability",
+                "expanded": true,
+                "pages": [
+                  "comparisons/observability-tools",
+                  "comparisons/Tracer_vs_Datadog",
+                  "comparisons/Tracer_vs_Grafana",
+                  "comparisons/Tracer_vs_Prometheus"
+                ]
+              },
+              {
+                "group": "Cloud native",
+                "expanded": true,
+                "pages": [
+                  "comparisons/cloud-native-monitoring",
+                  "comparisons/Tracer_vs_AWS_CloudWatch"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Changelog",
+        "icon": "clock",
+        "groups": [
+          {
+            "group": "Daily updates",
+            "pages": [
+              "daily-updates/overview"
+            ]
           }
         ]
       }
@@ -208,8 +249,26 @@
   "navbar": {
     "links": [
       {
-        "label": "Try Tracer",
-        "href": "https://app.tracer.cloud/sign-up"
+        "label": "Discord",
+        "href": "https://discord.gg/opensre",
+        "icon": "discord",
+        "iconType": "brands"
+      },
+      {
+        "label": "Releases",
+        "href": "https://github.com/Tracer-Cloud/opensre/releases",
+        "icon": "box"
+      },
+      {
+        "label": "GitHub",
+        "href": "https://github.com/Tracer-Cloud/opensre",
+        "icon": "github",
+        "iconType": "brands"
+      },
+      {
+        "label": "OpenSRE Cloud",
+        "href": "https://app.tracer.cloud/",
+        "icon": "/images/logo/tracer/Tracer-Head-Black.png"
       }
     ]
   },
@@ -240,22 +299,8 @@
     "indexing": "all",
     "metatags": {}
   },
-  "fonts": {
-    "heading": {
-      "family": "Britti Sans Trial",
-      "source": "/images/fonts/BrittiSansTrial-Regular-BF6757bfd47ffbf.woff2",
-      "format": "woff2",
-      "weight": 400
-    },
-    "body": {
-      "family": "Britti Sans Trial",
-      "source": "/images/fonts/BrittiSansTrial-Regular-BF6757bfd47ffbf.woff2",
-      "format": "woff2",
-      "weight": 400
-    }
-  },
   "logo": {
-    "light": "/images/logo/tracer/opensre-docs-logo-dark.svg",
-    "dark": "/images/logo/tracer/opensre-docs-logo-light.svg"
+    "light": "/images/opensre-logo-black.svg",
+    "dark": "/images/opensre-logo-black.svg"
   }
 }

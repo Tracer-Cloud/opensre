@@ -39,7 +39,13 @@ def _resolve_config(
 
 
 def _bb_available(sources: dict[str, dict]) -> bool:
-    return bool(sources.get("bitbucket", {}).get("connection_verified"))
+    bb = sources.get("bitbucket", {})
+    return bool(
+        bb.get("connection_verified")
+        and bb.get("workspace")
+        and bb.get("username")
+        and bb.get("app_password")
+    )
 
 
 def _bb_creds(bb: dict[str, Any]) -> dict[str, Any]:

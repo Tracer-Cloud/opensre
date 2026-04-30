@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from rich.console import Console
 from rich.text import Text
 
+from app.tools.registry import resolve_tool_display_name
+
 
 def get_output_format() -> str:
     """Return 'rich' for interactive TTY, 'text' otherwise.
@@ -100,40 +102,13 @@ def _node_label(node_name: str) -> str:
     return _NODE_LABELS.get(node_name, node_name.replace("_", " ").title())
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Message humanisation
-# ─────────────────────────────────────────────────────────────────────────────
-
-_ACTION_DISPLAY: dict[str, str] = {
-    "query_datadog_all": "Datadog",
-    "query_datadog_logs": "Datadog logs",
-    "query_datadog_monitors": "Datadog monitors",
-    "query_datadog_events": "Datadog events",
-    "query_grafana_logs": "Grafana Loki",
-    "query_grafana_traces": "Grafana Tempo",
-    "query_grafana_metrics": "Grafana Mimir",
-    "query_grafana_alert_rules": "Grafana alerts",
-    "query_betterstack_logs": "Better Stack logs",
-    "get_cloudwatch_logs": "CloudWatch",
-    "get_error_logs": "error logs",
-    "get_failed_jobs": "batch jobs",
-    "get_sre_guidance": "SRE runbook",
-    "get_lambda_invocation_logs": "Lambda logs",
-    "get_lambda_errors": "Lambda errors",
-    "inspect_s3_object": "S3",
-    "get_s3_object": "S3 audit",
-    "inspect_lambda_function": "Lambda config",
-    "get_failed_tools": "tool results",
-}
-
-
 def _humanise_message(message: str) -> str:
     if not message:
         return ""
     m = re.match(r"Planned actions:\s*\[(.+)\]", message)
     if m:
         raw = re.findall(r"'([^']+)'", m.group(1))
-        return ", ".join(_ACTION_DISPLAY.get(a, a.replace("_", " ")) for a in raw)
+        return ", ".join(resolve_tool_display_name(action) for action in raw)
     if "No new actions" in message:
         return ""
     if "integrations" in message.lower() or "resolved" in message.lower():

@@ -105,6 +105,9 @@ Temporary Items
 *.sublime-workspace
 *.code-workspace
 
+# Wrangler local state
+**/.wrangler/
+
 # Project specific
 output/
 .langgraph_api/

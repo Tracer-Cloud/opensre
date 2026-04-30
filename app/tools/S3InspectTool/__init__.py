@@ -19,6 +19,7 @@ def _extract_inspect_s3_params(sources: dict[str, dict]) -> dict:
 
 @tool(
     name="inspect_s3_object",
+    display_name="S3",
     source="storage",
     description="Inspect an S3 object's metadata and sample content.",
     use_cases=[

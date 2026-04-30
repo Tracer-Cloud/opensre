@@ -1,0 +1,72 @@
+---
+title: "Daily Update — 2026-04-28"
+description: "OpenSRE engineering daily update for 2026-04-28 (Europe/London)"
+---
+
+Thanks to everyone who contributed yesterday:
+
+Ankush, Anwesh, Aryan Jain, Awokoya Olawale Davidson, Ceren Camkiran, chaosreload, DevNinja, DIPSHA DAS, Ghraven, GoDiao, Irfan Ansari, John Zakkam, Kartik Sirohi, Malik Amir Hamza, Mayank Bharati, Piyush Tiwari, rameshkumarkoyya, Udit, vignesh Gopikrishnan, and weichao 🙏🚀
+
+## Main updates shipped (April 28, 2026)
+
+- Incident window tool integration (#1036) — Malik Amir Hamza
+- fix(eks): forward stored AWS integration credentials to k8s client builder — chaosreload
+- refactor(utils): extract shared HTTP-post helper for delivery modules — Mayank Bharati
+- refactor(publish): extract GitLab MR write-back into dedicated helper module — Udit
+- refactor(tools): extract shared default_db_warning helper for SQL too… — Awokoya Olawale Davidson
+- synthetic: prevent overdiagnosis in noisy-but-healthy scenario (007) — Ceren Camkiran
+- synthetic: tighten validation and fix RCA reasoning for replication lag red-herring scenario (006) — Ceren Camkiran
+- test(tools): add unit tests for the four GitLab tools — DevNinja
+- refactor(tools): centralize code-host unavailable payload for code-host tools — vignesh Gopikrishnan
+- fix: move app/cli/deploy_test.py into tests/cli/ — Ghraven
+- refactor: move gitlab integration tests to tests/integrations (#901) — Kartik Sirohi
+- test(utils): add direct unit tests for ingest_delivery — DevNinja
+- test: add direct unit tests for app/services/honeycomb/client.py — Aryan Jain
+- Test/add lambda client unit tests — Aryan Jain
+- test(services): add direct unit tests for cloudwatch_client — GoDiao
+- Add tracer integration service tests — rameshkumarkoyya
+- test(cli): add regression test for command/help sync, fix missing guardrails entry — Awokoya Olawale Davidson
+- test: add direct unit tests for Mimir mixin (#881) — Piyush Tiwari
+- Add direct unit tests for app/services/tracer_client/tracer_tools.py — Aryan Jain
+- docs(readme): sync integration matrix with shipped integrations — Ankush
+
+## Source pull requests
+
+- [#952](https://github.com/Tracer-Cloud/opensre/pull/952) refactor(utils): extract shared HTTP-post helper for delivery modules (author: Mayank Bharati; contributors: Mayank Bharati; labels: _none_; files: `app/utils/delivery_transport.py`, `app/utils/discord_delivery.py`, `app/utils/slack_delivery.py`, `app/utils/telegram_delivery.py`, `tests/utils/test_delivery_transport.py`, `tests/utils/test_discord_delivery.py`, `tests/utils/test_slack_delivery.py`, `tests/utils/test_telegram_delivery.py`)
+- [#975](https://github.com/Tracer-Cloud/opensre/pull/975) Add direct unit tests for app/services/tracer_client/tracer_tools.py (author: Aryan Jain; contributors: Aryan Jain; labels: _none_; files: `tests/services/tracer_client/test_tracer_tools.py`)
+- [#960](https://github.com/Tracer-Cloud/opensre/pull/960) extended RailwayRemoteOpsProvider tests #907 (author: DIPSHA DAS; contributors: DIPSHA DAS; labels: _none_; files: `tests/remote/test_ops.py`)
+- [#1018](https://github.com/Tracer-Cloud/opensre/pull/1018) fix: move app/cli/deploy_test.py into tests/cli/ (author: Ghraven; contributors: Ghraven; labels: _none_; files: `app/cli/deploy_test.py`, `tests/cli/test_deploy.py`)
+- [#1021](https://github.com/Tracer-Cloud/opensre/pull/1021) test(utils): add direct unit tests for ingest_delivery (author: DevNinja; contributors: DevNinja; labels: _none_; files: `tests/utils/test_ingest_delivery.py`)
+- [#859](https://github.com/Tracer-Cloud/opensre/pull/859) test(cli): add direct unit coverage for args helpers (author: John Zakkam; contributors: John Zakkam; labels: _none_; files: `tests/cli/test_args.py`)
+- [#849](https://github.com/Tracer-Cloud/opensre/pull/849) test: move poll_deployment_health tests out of e2e (author: John Zakkam; contributors: John Zakkam; labels: _none_; files: `tests/test_deployment_health.py`)
+- [#917](https://github.com/Tracer-Cloud/opensre/pull/917) refactor: move gitlab integration tests to tests/integrations (#901) (author: Kartik Sirohi; contributors: Kartik Sirohi; labels: _none_; files: `tests/integrations/test_gitlab.py`)
+- [#1026](https://github.com/Tracer-Cloud/opensre/pull/1026) refactor(publish): extract GitLab MR write-back into dedicated helper module (author: Udit; contributors: Udit; labels: _none_; files: `app/nodes/publish_findings/gitlab_writeback.py`, `app/nodes/publish_findings/node.py`, `tests/nodes/publish_findings/test_gitlab_writeback.py`, `tests/nodes/publish_findings/test_node.py`)
+- [#1025](https://github.com/Tracer-Cloud/opensre/pull/1025) test(tools): add unit tests for ClickHouseQueryActivity and ClickHous… (author: Awokoya Olawale Davidson; contributors: Awokoya Olawale Davidson; labels: _none_; files: `tests/tools/test_clickhouse_query_activity_tool.py`, `tests/tools/test_clickhouse_system_health_tool.py`)
+- [#1003](https://github.com/Tracer-Cloud/opensre/pull/1003) test(tools): add unit tests for the four GitLab tools (author: DevNinja; contributors: DevNinja; labels: _none_; files: `app/tools/GitLabMRsTool/__init__.py`, `app/tools/GitLabPipelinesTool/__init__.py`, `tests/tools/test_gitlab_commits_tool.py`, `tests/tools/test_gitlab_file_tool.py`, `tests/tools/test_gitlab_mrs_tool.py`, `tests/tools/test_gitlab_pipelines_tool.py`)
+- [#1027](https://github.com/Tracer-Cloud/opensre/pull/1027) refactor(tools): extract shared default_db_warning helper for SQL too… (author: Awokoya Olawale Davidson; contributors: Awokoya Olawale Davidson; labels: _none_; files: `app/tools/AzureSQLCurrentQueriesTool/__init__.py`, `app/tools/AzureSQLSlowQueriesTool/__init__.py`, `app/tools/MariaDBProcessListTool/__init__.py`, `app/tools/MySQLCurrentProcessesTool/__init__.py`, `app/tools/PostgreSQLCurrentQueriesTool/__init__.py`, `app/tools/PostgreSQLSlowQueriesTool/__init__.py`, `app/tools/utils/__init__.py`, `app/tools/utils/db_warnings.py`, `tests/tools/test_azure_sql_current_queries_tool.py`, `tests/tools/test_azure_sql_slow_queries_tool.py`, and 5 more)
+- [#974](https://github.com/Tracer-Cloud/opensre/pull/974) test: add direct unit tests for app/services/honeycomb/client.py (author: Aryan Jain; contributors: Aryan Jain; labels: _none_; files: `tests/services/test_honeycomb_client.py`)
+- [#954](https://github.com/Tracer-Cloud/opensre/pull/954) Incident window tool integration (author: Malik Amir Hamza; contributors: Malik Amir Hamza; labels: _none_; files: `app/incident_window.py`, `app/nodes/extract_alert/extract_node.py`, `app/nodes/investigate/models.py`, `app/nodes/plan_actions/build_prompt.py`, `app/nodes/plan_actions/plan_actions.py`, `app/state/agent_state.py`, `app/tools/GitDeployTimelineTool/__init__.py`, `tests/app/test_incident_window.py`, `tests/app/test_incident_window_cloudwatch_depth.py`, `tests/app/test_incident_window_extract_wiring.py`, and 2 more)
+- [#1029](https://github.com/Tracer-Cloud/opensre/pull/1029) test(cli): add direct unit tests for ollama lifecycle helpers (author: Awokoya Olawale Davidson; contributors: Awokoya Olawale Davidson; labels: _none_; files: `tests/cli/test_local_llm_ollama_lifecycle.py`)
+- [#863](https://github.com/Tracer-Cloud/opensre/pull/863) test(cli): add regression test for command/help sync, fix missing guardrails entry (author: Awokoya Olawale Davidson; contributors: Awokoya Olawale Davidson; labels: _none_; files: `app/cli/layout.py`, `tests/cli/test_command_help_sync.py`)
+- [#1015](https://github.com/Tracer-Cloud/opensre/pull/1015) test(cli): add direct unit tests for CLI layout renderers (author: vignesh Gopikrishnan; contributors: vignesh Gopikrishnan; labels: _none_; files: `app/cli/layout.py`, `tests/cli/test_layout.py`)
+- [#1028](https://github.com/Tracer-Cloud/opensre/pull/1028) Test/add lambda client unit tests (author: Aryan Jain; contributors: Aryan Jain; labels: _none_; files: `tests/services/test_lambda_client.py`)
+- [#1032](https://github.com/Tracer-Cloud/opensre/pull/1032) test(services): add direct unit tests for cloudwatch_client (author: GoDiao; contributors: GoDiao; labels: _none_; files: `tests/services/test_cloudwatch_client.py`)
+- [#1035](https://github.com/Tracer-Cloud/opensre/pull/1035) Add tracer integration service tests (author: rameshkumarkoyya; contributors: Irfan Ansari and rameshkumarkoyya; labels: _none_; files: `tests/services/tracer_client/test_tracer_integrations.py`)
+- [#1038](https://github.com/Tracer-Cloud/opensre/pull/1038) chore: smoke test post-merge celebration workflow (author: Anwesh; contributors: Anwesh; labels: _none_; files: `README.md`)
+- [#1037](https://github.com/Tracer-Cloud/opensre/pull/1037) refactor(tools): centralize code-host unavailable payload for code-host tools (author: vignesh Gopikrishnan; contributors: vignesh Gopikrishnan; labels: _none_; files: `app/tools/BitbucketSearchCodeTool/__init__.py`, `app/tools/GitHubFileContentsTool/__init__.py`, `app/tools/GitHubSearchCodeTool/__init__.py`, `app/tools/GitLabFileTool/__init__.py`, `app/tools/utils/__init__.py`, `app/tools/utils/code_host_unavailable.py`, `tests/tools/test_bitbucket_search_code_tool.py`, `tests/tools/test_code_host_unavailable.py`, `tests/tools/test_github_file_contents_tool.py`, `tests/tools/test_github_search_code_tool.py`, and 1 more)
+- [#1039](https://github.com/Tracer-Cloud/opensre/pull/1039) chore: spice up post-merge celebration messages (author: Anwesh; contributors: Anwesh; labels: _none_; files: `.github/scripts/merged_pr_celebration_message.py`)
+- [#1040](https://github.com/Tracer-Cloud/opensre/pull/1040) test: add direct unit tests for Mimir mixin (#881) (author: Piyush Tiwari; contributors: Piyush Tiwari; labels: _none_; files: `tests/services/test_grafana_mimir.py`)
+- [#1045](https://github.com/Tracer-Cloud/opensre/pull/1045) fix(gifs): host celebration GIFs in repo to fix GitHub proxy rendering (author: Anwesh; contributors: Anwesh; labels: _none_; files: `.github/assets/celebrations/celebrate.gif`, `.github/assets/celebrations/fireworks.gif`, `.github/assets/celebrations/party.gif`, `.github/assets/celebrations/ship.gif`, `.github/assets/celebrations/shipped.gif`, `.github/assets/celebrations/success.gif`, `.github/scripts/merged_pr_celebration_message.py`)
+- [#1047](https://github.com/Tracer-Cloud/opensre/pull/1047) Update comment for post-merge PR comment workflow test (author: Anwesh; contributors: Anwesh; labels: _none_; files: `README.md`)
+- [#1049](https://github.com/Tracer-Cloud/opensre/pull/1049) fix(github): add woohoo.gif and polish post-merge celebration messages (author: Anwesh; contributors: Anwesh; labels: _none_; files: `.github/assets/celebrations/woohoo.gif`, `.github/scripts/merged_pr_celebration_message.py`)
+- [#978](https://github.com/Tracer-Cloud/opensre/pull/978) synthetic: prevent overdiagnosis in noisy-but-healthy scenario (007) (author: Ceren Camkiran; contributors: Ceren Camkiran; labels: _none_; files: `app/nodes/root_cause_diagnosis/prompt_builder.py`, `tests/synthetic/rds_postgres/007-connection-pressure-noisy-healthy/QA_VALIDATION.md`, `tests/synthetic/rds_postgres/007-connection-pressure-noisy-healthy/answer.yml`)
+- [#942](https://github.com/Tracer-Cloud/opensre/pull/942) synthetic: enforce single shared root cause for connection leak scenario (009) (author: Ceren Camkiran; contributors: Ceren Camkiran; labels: _none_; files: `tests/synthetic/rds_postgres/009-dual-fault-connection-cpu/QA_VALIDATION.md`, `tests/synthetic/rds_postgres/009-dual-fault-connection-cpu/answer.yml`)
+- [#843](https://github.com/Tracer-Cloud/opensre/pull/843) synthetic: tighten validation and fix RCA reasoning for replication lag red-herring scenario (006) (author: Ceren Camkiran; contributors: Ceren Camkiran; labels: _none_; files: `app/nodes/root_cause_diagnosis/prompt_builder.py`, `tests/synthetic/rds_postgres/006-replication-lag-cpu-redherring/QA_VALIDATION.md`, `tests/synthetic/rds_postgres/006-replication-lag-cpu-redherring/answer.yml`)
+- [#976](https://github.com/Tracer-Cloud/opensre/pull/976) fix(eks): forward stored AWS integration credentials to k8s client builder (author: chaosreload; contributors: chaosreload and weichao; labels: _none_; files: `app/nodes/plan_actions/detect_sources.py`, `app/services/eks/eks_client.py`, `app/services/eks/eks_k8s_client.py`, `app/services/eks/utils.py`, `app/tools/EKSDeploymentStatusTool/__init__.py`, `app/tools/EKSDescribeAddonTool/__init__.py`, `app/tools/EKSDescribeClusterTool/__init__.py`, `app/tools/EKSEventsTool/__init__.py`, `app/tools/EKSListClustersTool/__init__.py`, `app/tools/EKSListDeploymentsTool/__init__.py`, and 7 more)
+- [#1055](https://github.com/Tracer-Cloud/opensre/pull/1055) docs(readme): sync integration matrix with shipped integrations (author: Ankush; contributors: Ankush; labels: _none_; files: `README.md`)
+
+## Generation metadata
+
+- Generator version: `opensre 2026.4.5`
+- Fallback summary used: `no`
+- UTC window: `2026-04-27T23:00:00+00:00` to `2026-04-28T23:00:00+00:00`

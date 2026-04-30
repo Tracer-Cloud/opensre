@@ -35,6 +35,14 @@ def test_build_mr_note_truncates_long_message():
     assert "x" * 3998 not in note
 
 
+def test_build_mr_note_body_capped_at_4000_chars():
+    long_msg = "x" * 5000
+    note = _build_mr_note(long_msg)
+    body = note.split("<summary>Investigation summary</summary>\n\n")[1].split("\n\n</details>")[0]
+    assert len(body) == 4000
+    assert body.endswith("...")
+
+
 def test_no_op_when_env_flag_off(state_with_gitlab):
     with (
         patch.dict(os.environ, {"GITLAB_MR_WRITEBACK": "false"}),

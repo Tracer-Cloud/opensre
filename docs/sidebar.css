@@ -1,0 +1,104 @@
+/* Keep this file small: only sidebar/nav polish. */
+#sidebar .sidebar-group-header,
+#sidebar .sidebar-group-header h5,
+#navigation-items .sidebar-group-header,
+#navigation-items .sidebar-group-header h5 {
+  font-weight: 700 !important;
+}
+
+:root:not(.dark) #sidebar .sidebar-group-header,
+:root:not(.dark) #sidebar .sidebar-group-header h5,
+:root:not(.dark) #navigation-items .sidebar-group-header,
+:root:not(.dark) #navigation-items .sidebar-group-header h5 {
+  color: #000000 !important;
+}
+
+html.dark #sidebar .sidebar-group-header,
+html.dark #sidebar .sidebar-group-header h5,
+html.dark #navigation-items .sidebar-group-header,
+html.dark #navigation-items .sidebar-group-header h5 {
+  color: #ffffff !important;
+}
+
+/* Use the Tracer mark for the Tracer tab and swap to the white asset in dark mode. */
+header img[src*="Tracer-Head-Black.png"],
+header img[src*="Tracer-Head-White.png"],
+nav img[src*="Tracer-Head-Black.png"],
+nav img[src*="Tracer-Head-White.png"] {
+  width: 1rem !important;
+  height: 1rem !important;
+  object-fit: contain !important;
+}
+
+html.dark img[src*="Tracer-Head-Black.png"] {
+  filter: brightness(0) invert(1) !important;
+}
+
+/* Right sidebar ("On this page") alignment: keep TOC items + custom actions flush. */
+.toc-custom-actions {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+html.dark .toc-custom-actions {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+.toc-custom-action {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 0.25rem; /* match Mintlify TOC link inset */
+  font-size: 0.875rem;
+  line-height: 1.75rem;
+  color: inherit;
+}
+
+.toc-custom-action span {
+  display: inline-block;
+}
+
+/* Right sidebar TOC list should align under the "On this page" label. */
+#table-of-contents-content,
+[data-testid="table-of-contents"],
+nav[aria-label*="Table of contents"],
+[class*="table-of-contents"] {
+  padding-left: 0 !important;
+}
+
+#table-of-contents-content ul,
+[data-testid="table-of-contents"] ul,
+nav[aria-label*="Table of contents"] ul,
+[class*="table-of-contents"] ul {
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+}
+
+#table-of-contents-content a,
+[data-testid="table-of-contents"] a,
+nav[aria-label*="Table of contents"] a,
+[class*="table-of-contents"] a {
+  padding-left: 0.25rem !important; /* align with header text */
+  margin-left: 0 !important;
+}
+
+/* Mintlify sometimes centers/indents the right sidebar TOC via flex wrappers.
+   Force a consistent left alignment for all TOC rows. */
+[class*="right-sidebar"] #table-of-contents-content,
+[class*="right-sidebar"] [data-testid="table-of-contents"],
+[class*="right-sidebar"] nav[aria-label*="Table of contents"],
+[class*="right-sidebar"] [class*="table-of-contents"] {
+  text-align: left !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+}
+
+[class*="right-sidebar"] #table-of-contents-content a,
+[class*="right-sidebar"] [data-testid="table-of-contents"] a,
+[class*="right-sidebar"] nav[aria-label*="Table of contents"] a,
+[class*="right-sidebar"] [class*="table-of-contents"] a {
+  display: block !important;
+  width: 100% !important;
+  text-align: left !important;
+}

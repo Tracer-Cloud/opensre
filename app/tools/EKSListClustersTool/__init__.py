@@ -9,6 +9,7 @@ from botocore.exceptions import ClientError
 
 from app.services.eks.eks_client import EKSClient
 from app.tools.tool_decorator import tool
+from app.tools.utils.eks_workload_helper import extract_cluster_params
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +24,6 @@ def _eks_creds(eks: dict) -> dict:
         "external_id": eks.get("external_id", ""),
         "region": eks.get("region", "us-east-1"),
         "credentials": eks.get("credentials"),
-    }
-
-
-def _list_clusters_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    eks = sources["eks"]
-    return {
-        "cluster_names": eks.get("cluster_names", []),
-        **_eks_creds(eks),
     }
 
 
@@ -55,7 +48,7 @@ def _list_clusters_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
         "required": ["role_arn"],
     },
     is_available=_eks_available,
-    extract_params=_list_clusters_extract_params,
+    extract_params=extract_cluster_params,
 )
 def list_eks_clusters(
     role_arn: str,

@@ -1,12 +1,26 @@
 name: Release
 
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "**/*.mdx"
   schedule:
     - cron: "30 0 * * *"
   workflow_dispatch:
     inputs:
+      channel:
+        description: "Release channel to publish."
+        required: false
+        default: release
+        type: choice
+        options:
+          - release
+          - main
       tag:
-        description: "Optional tag to release (e.g. v2026.4.5). Defaults to today's vYYYY.M.D (UTC)."
+        description: "Optional tag to release (e.g. v2026.4.5). Ignored for the main channel."
         required: false
         type: string
 
@@ -15,35 +29,63 @@ permissions:
   actions: read
 
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+  group: release-${{ github.event_name == 'push' && 'main' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'main' && 'main') || 'stable' }}
+  cancel-in-progress: true
 
 jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      tag_name: ${{ steps.tag.outputs.tag_name }}
+      channel: ${{ steps.meta.outputs.channel }}
+      tag_name: ${{ steps.meta.outputs.tag_name }}
 
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Resolve tag name
-        id: tag
+      - name: Resolve release metadata
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_CHANNEL: ${{ inputs.channel }}
+          DISPATCH_TAG: ${{ inputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
-            echo "tag_name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          channel="release"
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            channel="main"
+          fi
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DISPATCH_CHANNEL" = "main" ]; then
+            channel="main"
+          fi
+
+          if [ "$channel" = "main" ]; then
+            if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$DISPATCH_TAG" ]; then
+              echo "The main channel does not accept a custom tag." >&2
+              exit 1
+            fi
+
+            echo "channel=main" >> "$GITHUB_OUTPUT"
+            echo "tag_name=main" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          year="$(date -u +%Y)"
-          month="$(date -u +%-m)"
-          day="$(date -u +%-d)"
-          echo "tag_name=v${year}.${month}.${day}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$DISPATCH_TAG" ]; then
+            tag_name="$DISPATCH_TAG"
+          else
+            year="$(date -u +%Y)"
+            month="$(date -u +%-m)"
+            day="$(date -u +%-d)"
+            tag_name="v${year}.${month}.${day}"
+          fi
+
+          echo "channel=release" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
 
   verify:
     runs-on: ubuntu-latest
@@ -73,6 +115,7 @@ jobs:
         run: make test-cli-smoke
 
   build-python-dist:
+    if: needs.prepare.outputs.channel == 'release'
     runs-on: ubuntu-latest
     needs: [verify, prepare]
     env:
@@ -146,6 +189,7 @@ jobs:
           # GitHub-hosted runner.
     runs-on: ${{ matrix.runner }}
     env:
+      RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
       TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
 
     steps:
@@ -158,6 +202,7 @@ jobs:
           cache: "pip"
 
       - name: Sync release version
+        if: env.RELEASE_CHANNEL == 'release'
         shell: bash
         run: python packaging/sync_release_version.py --tag "$TAG_NAME"
 
@@ -173,7 +218,7 @@ jobs:
         run: pyinstaller packaging/opensre.spec --clean --noconfirm
 
       - name: Smoke test binary
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && env.RELEASE_CHANNEL == 'release'
         shell: bash
         run: |
           VERSION="${TAG_NAME#v}"
@@ -189,7 +234,15 @@ jobs:
           ./dist/${{ matrix.binary_name }} -h >/dev/null
 
       - name: Smoke test binary
-        if: runner.os == 'Windows'
+        if: runner.os != 'Windows' && env.RELEASE_CHANNEL == 'main'
+        shell: bash
+        run: |
+          VERSION_OUTPUT="$(./dist/${{ matrix.binary_name }} --version 2>&1)"
+          printf '%s\n' "$VERSION_OUTPUT"
+          ./dist/${{ matrix.binary_name }} -h >/dev/null
+
+      - name: Smoke test binary
+        if: runner.os == 'Windows' && env.RELEASE_CHANNEL == 'release'
         shell: pwsh
         run: |
           $expectedVersion = $env:TAG_NAME.TrimStart("v")
@@ -201,8 +254,16 @@ jobs:
           }
           & ".\dist\${{ matrix.binary_name }}" -h | Out-Null
 
+      - name: Smoke test binary
+        if: runner.os == 'Windows' && env.RELEASE_CHANNEL == 'main'
+        shell: pwsh
+        run: |
+          $versionOutput = & ".\dist\${{ matrix.binary_name }}" --version 2>&1 | Out-String
+          Write-Host $versionOutput.Trim()
+          & ".\dist\${{ matrix.binary_name }}" -h | Out-Null
+
       - name: Package binary archive
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && env.RELEASE_CHANNEL == 'release'
         shell: bash
         run: |
           VERSION="${TAG_NAME#v}"
@@ -211,7 +272,15 @@ jobs:
           shasum -a 256 "${ASSET_BASENAME}.tar.gz" > "${ASSET_BASENAME}.tar.gz.sha256"
 
       - name: Package binary archive
-        if: runner.os == 'Windows'
+        if: runner.os != 'Windows' && env.RELEASE_CHANNEL == 'main'
+        shell: bash
+        run: |
+          ASSET_BASENAME="opensre_main_${{ matrix.target }}"
+          tar -C dist -czf "${ASSET_BASENAME}.tar.gz" "${{ matrix.binary_name }}"
+          shasum -a 256 "${ASSET_BASENAME}.tar.gz" > "${ASSET_BASENAME}.tar.gz.sha256"
+
+      - name: Package binary archive
+        if: runner.os == 'Windows' && env.RELEASE_CHANNEL == 'release'
         shell: pwsh
         run: |
           $version = $env:TAG_NAME.TrimStart("v")
@@ -220,7 +289,17 @@ jobs:
           $hash = (Get-FileHash -Algorithm SHA256 "${assetBaseName}.zip").Hash.ToLowerInvariant()
           Set-Content -Path "${assetBaseName}.zip.sha256" -Value "$hash  ${assetBaseName}.zip"
 
+      - name: Package binary archive
+        if: runner.os == 'Windows' && env.RELEASE_CHANNEL == 'main'
+        shell: pwsh
+        run: |
+          $assetBaseName = "opensre_main_${{ matrix.target }}"
+          Compress-Archive -Path "dist\${{ matrix.binary_name }}" -DestinationPath "${assetBaseName}.zip"
+          $hash = (Get-FileHash -Algorithm SHA256 "${assetBaseName}.zip").Hash.ToLowerInvariant()
+          Set-Content -Path "${assetBaseName}.zip.sha256" -Value "$hash  ${assetBaseName}.zip"
+
       - name: Upload binary archive
+        if: env.RELEASE_CHANNEL == 'release'
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.target }}
@@ -229,7 +308,18 @@ jobs:
             opensre_*_${{ matrix.target }}.${{ matrix.archive_ext }}.sha256
           if-no-files-found: error
 
+      - name: Upload binary archive
+        if: env.RELEASE_CHANNEL == 'main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-release-${{ matrix.target }}
+          path: |
+            opensre_main_${{ matrix.target }}.${{ matrix.archive_ext }}
+            opensre_main_${{ matrix.target }}.${{ matrix.archive_ext }}.sha256
+          if-no-files-found: error
+
   publish-release:
+    if: needs.prepare.outputs.channel == 'release'
     runs-on: ubuntu-latest
     needs:
       - prepare
@@ -250,8 +340,6 @@ jobs:
           merge-multiple: true
 
       - name: Create release notes
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -262,7 +350,6 @@ jobs:
           git fetch origin "$default_branch" --tags --force
           target_sha="$(git rev-parse "origin/$default_branch")"
 
-          # Generate changelog including commit authors (contributors).
           previous_tag="$(
             git tag --list 'v[0-9][0-9][0-9][0-9].[0-9]*.[0-9]*' --sort=-v:refname \
               | grep -v -x "$TAG_NAME" \
@@ -296,7 +383,13 @@ jobs:
             echo "### cURL (macOS / Linux)"
             echo
             echo '```bash'
-            echo "curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/${{ github.event.repository.default_branch }}/install.sh | bash"
+            echo 'curl -fsSL https://install.opensre.com | bash'
+            echo '```'
+            echo
+            echo "### cURL (macOS / Linux, latest main build)"
+            echo
+            echo '```bash'
+            echo 'curl -fsSL https://install.opensre.com | bash -s -- --main'
             echo '```'
             echo
             echo "### Homebrew (macOS / Linux)"
@@ -308,7 +401,7 @@ jobs:
             echo "### PowerShell (Windows)"
             echo
             echo '```powershell'
-            echo "irm https://raw.githubusercontent.com/${{ github.repository }}/${{ github.event.repository.default_branch }}/install.ps1 | iex"
+            echo 'irm https://install.opensre.com | iex'
             echo '```'
             echo
             echo "### Python"
@@ -344,36 +437,94 @@ jobs:
             --title "Latest" \
             --notes-file RELEASE_NOTES.md
 
-      # - name: Update Homebrew formula
-      #   shell: bash
-      #   run: |
-      #     chmod +x scripts/render_homebrew_formula.sh
-      #     VERSION="${GITHUB_REF_NAME#v}"
-      #     REPO="${{ github.repository }}"
-      #     DARWIN_X64_SHA="$(cut -d' ' -f1 "release-assets/opensre_${VERSION}_darwin-x64.tar.gz.sha256")"
-      #     DARWIN_ARM64_SHA="$(cut -d' ' -f1 "release-assets/opensre_${VERSION}_darwin-arm64.tar.gz.sha256")"
-      #     LINUX_X64_SHA="$(cut -d' ' -f1 "release-assets/opensre_${VERSION}_linux-x64.tar.gz.sha256")"
-      #     LINUX_ARM64_SHA="$(cut -d' ' -f1 "release-assets/opensre_${VERSION}_linux-arm64.tar.gz.sha256")"
-      #     mkdir -p Formula
-      #     ./scripts/render_homebrew_formula.sh \
-      #       "$VERSION" \
-      #       "$REPO" \
-      #       "$DARWIN_X64_SHA" \
-      #       "$DARWIN_ARM64_SHA" \
-      #       "$LINUX_X64_SHA" \
-      #       "$LINUX_ARM64_SHA" > Formula/opensre.rb
+  publish-main-release:
+    if: needs.prepare.outputs.channel == 'main'
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+      - build-binaries
 
-      # - name: Commit Homebrew formula update
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   shell: bash
-      #   run: |
-      #     if git diff --quiet -- Formula/opensre.rb; then
-      #       exit 0
-      #     fi
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-      #     git config user.name "github-actions[bot]"
-      #     git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      #     git add Formula/opensre.rb
-      #     git commit -m "chore: update Homebrew formula for ${GITHUB_REF_NAME}"
-      #     git push origin "HEAD:${{ github.event.repository.default_branch }}"
+      - name: Download main release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: main-release-*
+          path: main-release-assets
+          merge-multiple: true
+
+      - name: Create release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          short_sha="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+          built_at="$(date -u +"%Y-%m-%d %H:%M UTC")"
+
+          {
+            echo "## Main build"
+            echo
+            echo "Rolling binary build from \`main\`."
+            echo
+            echo "- Commit: \`${short_sha}\`"
+            echo "- Built: ${built_at}"
+            echo
+            echo "### Install"
+            echo
+            echo "Stable:"
+            echo
+            echo
+            echo '```bash'
+            echo 'curl -fsSL https://install.opensre.com | bash'
+            echo '```'
+            echo
+            echo "Main:"
+            echo
+            echo
+            echo '```bash'
+            echo 'curl -fsSL https://install.opensre.com | bash -s -- --main'
+            echo '```'
+            echo
+            echo "Windows stable:"
+            echo
+            echo
+            echo '```powershell'
+            echo 'irm https://install.opensre.com | iex'
+            echo '```'
+          } > MAIN_RELEASE_NOTES.md
+
+      - name: Move main tag to the latest commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f main "$GITHUB_SHA"
+          git push origin refs/tags/main --force
+
+      - name: Publish rolling main release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view main --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload main main-release-assets/* --repo "${{ github.repository }}" --clobber
+            gh release edit main \
+              --repo "${{ github.repository }}" \
+              --title "Main" \
+              --notes-file MAIN_RELEASE_NOTES.md
+            exit 0
+          fi
+
+          gh release create main \
+            main-release-assets/* \
+            --repo "${{ github.repository }}" \
+            --target "$GITHUB_SHA" \
+            --title "Main" \
+            --notes-file MAIN_RELEASE_NOTES.md \
+            --prerelease

@@ -1,4 +1,6 @@
 param(
+    [ValidateSet("release", "main")]
+    [string]$Channel = $(if ($env:OPENSRE_INSTALL_CHANNEL) { $env:OPENSRE_INSTALL_CHANNEL } else { "release" }),
     [switch]$SkipMain
 )
 
@@ -198,16 +200,22 @@ function Get-OpenSreArchiveName {
         [Parameter(Mandatory = $true)]
         [string]$Version,
         [Parameter(Mandatory = $true)]
+        [ValidateSet("release", "main")]
+        [string]$Channel,
+        [Parameter(Mandatory = $true)]
         [string]$TargetArch
     )
 
-    return "opensre_${Version}_windows-$TargetArch.zip"
+    $archiveVersion = if ($Channel -eq "main") { "main" } else { $Version }
+    return "opensre_${archiveVersion}_windows-$TargetArch.zip"
 }
 
 function Get-OpenSreReleaseMetadata {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Repo,
+        [ValidateSet("release", "main")]
+        [string]$Channel = "release",
         [string]$RequestedVersion = $env:OPENSRE_VERSION
     )
 
@@ -216,11 +224,21 @@ function Get-OpenSreReleaseMetadata {
         $normalizedVersion = $RequestedVersion.Trim().TrimStart("v")
     }
 
-    if (-not $normalizedVersion) {
+    if ($Channel -eq "main" -and $normalizedVersion) {
+        throw "OPENSRE_VERSION cannot be combined with the main install channel."
+    }
+
+    if ($Channel -eq "main") {
+        Write-Host "Fetching latest main build metadata..."
+    }
+    elseif (-not $normalizedVersion) {
         Write-Host "Fetching latest release version..."
     }
 
-    $releaseUri = if ($normalizedVersion) {
+    $releaseUri = if ($Channel -eq "main") {
+        "https://api.github.com/repos/$Repo/releases/tags/main"
+    }
+    elseif ($normalizedVersion) {
         "https://api.github.com/repos/$Repo/releases/tags/v$normalizedVersion"
     }
     else {
@@ -231,6 +249,10 @@ function Get-OpenSreReleaseMetadata {
         $release = Invoke-OpenSreRestMethod -Uri $releaseUri
     }
     catch {
+        if ($Channel -eq "main") {
+            throw "Failed to fetch main build metadata from GitHub for '$Repo'. $($_.Exception.Message)"
+        }
+
         if ($normalizedVersion) {
             throw "Failed to fetch release metadata for version '$normalizedVersion' from GitHub repo '$Repo'. $($_.Exception.Message)"
         }
@@ -238,12 +260,16 @@ function Get-OpenSreReleaseMetadata {
         throw "Failed to fetch latest release metadata from GitHub for '$Repo'. $($_.Exception.Message)"
     }
 
-    $version = [string]$release.tag_name
-    if ($version) {
+    $version = if ($Channel -eq "main") { "main" } else { [string]$release.tag_name }
+    if ($Channel -ne "main" -and $version) {
         $version = $version.Trim().TrimStart("v")
     }
 
     if (-not $version) {
+        if ($Channel -eq "main") {
+            throw "Failed to determine the main build tag."
+        }
+
         throw "Failed to determine the latest release version."
     }
 
@@ -277,29 +303,45 @@ function Resolve-OpenSreArchiveDownload {
         [Parameter(Mandatory = $true)]
         [string]$Version,
         [Parameter(Mandatory = $true)]
+        [ValidateSet("release", "main")]
+        [string]$Channel,
+        [Parameter(Mandatory = $true)]
         [string]$TargetArch
     )
 
     $resolvedArch = $TargetArch
-    $archiveName = Get-OpenSreArchiveName -Version $Version -TargetArch $resolvedArch
+    $archiveName = Get-OpenSreArchiveName -Version $Version -Channel $Channel -TargetArch $resolvedArch
     $archiveAsset = Get-OpenSreReleaseAsset -Release $Release -AssetName $archiveName
 
     if (-not $archiveAsset -and $TargetArch -eq "arm64") {
-        $fallbackArchiveName = Get-OpenSreArchiveName -Version $Version -TargetArch "x64"
+        $fallbackArchiveName = Get-OpenSreArchiveName -Version $Version -Channel $Channel -TargetArch "x64"
         $fallbackAsset = Get-OpenSreReleaseAsset -Release $Release -AssetName $fallbackArchiveName
 
         if ($fallbackAsset) {
             $resolvedArch = "x64"
             $archiveName = $fallbackArchiveName
             $archiveAsset = $fallbackAsset
-            Write-Warning "Windows ARM64 artifact is not published for v$Version; falling back to the x64 build."
+            if ($Channel -eq "main") {
+                Write-Warning "Windows ARM64 artifact is not published for the main build; falling back to the x64 build."
+            }
+            else {
+                Write-Warning "Windows ARM64 artifact is not published for v$Version; falling back to the x64 build."
+            }
         }
     }
 
     if (-not $archiveAsset) {
         $availableAssets = @($Release.assets | ForEach-Object { [string]$_.name } | Where-Object { $_ }) -join ", "
         if ($availableAssets) {
+            if ($Channel -eq "main") {
+                throw "Main build release does not include asset '$archiveName'. Available assets: $availableAssets"
+            }
+
             throw "Release v$Version does not include asset '$archiveName'. Available assets: $availableAssets"
+        }
+
+        if ($Channel -eq "main") {
+            throw "Main build release does not include asset '$archiveName'."
         }
 
         throw "Release v$Version does not include asset '$archiveName'."
@@ -457,13 +499,14 @@ function Install-OpenSre {
     $installDir = if ($env:OPENSRE_INSTALL_DIR) { $env:OPENSRE_INSTALL_DIR } else { Get-OpenSreDefaultInstallDir }
     $binaryName = "opensre.exe"
     $requestedVersion = if ($env:OPENSRE_VERSION) { $env:OPENSRE_VERSION.Trim().TrimStart("v") } else { "" }
+    $resolvedChannel = if ($Channel) { $Channel.Trim().ToLowerInvariant() } else { "release" }
 
     Enable-OpenSreTls
 
     $targetArch = Resolve-OpenSreWindowsArchitecture
-    $releaseMetadata = Get-OpenSreReleaseMetadata -Repo $repo
+    $releaseMetadata = Get-OpenSreReleaseMetadata -Repo $repo -Channel $resolvedChannel -RequestedVersion $requestedVersion
     $version = [string]$releaseMetadata.Version
-    $downloadPlan = Resolve-OpenSreArchiveDownload -Release $releaseMetadata.Release -Version $version -TargetArch $targetArch
+    $downloadPlan = Resolve-OpenSreArchiveDownload -Release $releaseMetadata.Release -Version $version -Channel $resolvedChannel -TargetArch $targetArch
     $archive = [string]$downloadPlan.ArchiveName
     $downloadUrl = [string]$downloadPlan.ArchiveUrl
     $checksumUrl = [string]$downloadPlan.ChecksumUrl
@@ -477,7 +520,12 @@ function Install-OpenSre {
         $archivePath = Join-Path $tmpDir $archive
         $checksumPath = "$archivePath.sha256"
 
-        Write-Host "Installing opensre v$version (windows/$targetArch)..."
+        if ($resolvedChannel -eq "main") {
+            Write-Host "Installing opensre main build (windows/$targetArch)..."
+        }
+        else {
+            Write-Host "Installing opensre v$version (windows/$targetArch)..."
+        }
         if ($resolvedArch -ne $targetArch) {
             Write-Host "Using release asset built for windows/$resolvedArch."
         }
@@ -496,7 +544,12 @@ function Install-OpenSre {
             }
         }
         else {
-            Write-Warning "Release v$version is missing checksum asset '$archive.sha256'."
+            if ($resolvedChannel -eq "main") {
+                Write-Warning "Main build release is missing checksum asset '$archive.sha256'."
+            }
+            else {
+                Write-Warning "Release v$version is missing checksum asset '$archive.sha256'."
+            }
         }
 
         Expand-Archive -LiteralPath $archivePath -DestinationPath $tmpDir -Force
@@ -506,7 +559,7 @@ function Install-OpenSre {
         $binaryVersionText = [string]$binaryVersionInfo.Text
         $binaryVersion = [string]$binaryVersionInfo.Version
 
-        if ($binaryVersionText -notmatch [Regex]::Escape($version)) {
+        if ($resolvedChannel -ne "main" -and $binaryVersionText -notmatch [Regex]::Escape($version)) {
             if ($requestedVersion) {
                 throw "Downloaded binary version mismatch. Expected '$version' but got '$binaryVersionText'."
             }
@@ -526,7 +579,17 @@ function Install-OpenSre {
     }
 
     $installedBinaryPath = Join-Path $installDir $binaryName
-    Write-Host "Installed opensre $version to $installedBinaryPath"
+    if ($resolvedChannel -eq "main") {
+        if ($binaryVersion) {
+            Write-Host "Installed opensre main build ($binaryVersion) to $installedBinaryPath"
+        }
+        else {
+            Write-Host "Installed opensre main build to $installedBinaryPath"
+        }
+    }
+    else {
+        Write-Host "Installed opensre $version to $installedBinaryPath"
+    }
 
     if (-not (Test-OpenSreDirectoryOnPath -Directory $installDir)) {
         Write-Warning "Add $installDir to your PATH to run opensre from any terminal."
