@@ -222,6 +222,11 @@ async def test_lifespan_starts_and_cancels_vercel_poller(
     assert cancelled.is_set()
 
 
+# ---------------------------------------------------------------------------
+# _id_to_iso tests
+# ---------------------------------------------------------------------------
+
+
 def test_id_to_iso_converts_valid_id_to_utc_iso_string() -> None:
     # Valid format: YYYYMMDD_HHMMSS_slug
     inv_id = "20260430_120001_alert-name"
