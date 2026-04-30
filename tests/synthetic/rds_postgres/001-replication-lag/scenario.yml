@@ -2,3 +2,4 @@ base: 000-healthy
 scenario_id: 001-replication-lag
 failure_mode: replication_lag
 severity: critical
+scenario_difficulty: 1

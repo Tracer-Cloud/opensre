@@ -6,6 +6,10 @@ required_keywords:
   - wal
 forbidden_categories:
   - cpu_saturation
+forbidden_keywords: []
+ruling_out_keywords:
+  # "cpu" — agent must mention CPU but explicitly rule it out as the root cause
+  - cpu
 optimal_trajectory:
   - query_grafana_metrics
   - query_grafana_logs
@@ -19,6 +23,7 @@ model_response: |
   - ReplicaLag stayed above 900 seconds on payments-prod-replica-1. [evidence: aws_cloudwatch_metrics]
   - WriteIOPS and transaction log generation spiked on the primary during the same window. [evidence: aws_cloudwatch_metrics]
   - Performance Insights shows bulk UPDATE statements dominated DB load with WAL write waits. [evidence: aws_performance_insights]
+  - CPU utilization on the primary was elevated (~22%) as a side-effect of the write burst but is not the root cause — it is not saturated and has no causal relationship to the replica lag. [evidence: aws_cloudwatch_metrics]
 
   NON_VALIDATED_CLAIMS:
   - Reducing batch size or adding replica capacity would likely reduce the lag more quickly.
