@@ -53,6 +53,11 @@ def test_llm_settings_minimax_provider_accepted() -> None:
     assert settings.minimax_toolcall_model == "MiniMax-M2.7-highspeed"
 
 
+def test_llm_settings_copilot_provider_accepted() -> None:
+    settings = LLMSettings.model_validate({"provider": "copilot"})
+    assert settings.provider == "copilot"
+
+
 def test_llm_settings_from_env_minimax(monkeypatch) -> None:
     monkeypatch.setenv("LLM_PROVIDER", "minimax")
     monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
@@ -65,6 +70,15 @@ def test_llm_settings_from_env_minimax(monkeypatch) -> None:
 
     assert settings.provider == "minimax"
     assert settings.minimax_api_key == "mm-stored-key"
+
+
+def test_llm_settings_from_env_copilot(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "copilot")
+    monkeypatch.setattr("app.config.resolve_llm_api_key", lambda _: "")
+
+    settings = LLMSettings.from_env()
+
+    assert settings.provider == "copilot"
 
 
 def test_llm_settings_from_env_max_tokens_override(monkeypatch) -> None:

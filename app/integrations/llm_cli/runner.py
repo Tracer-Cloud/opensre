@@ -43,6 +43,9 @@ _SAFE_SUBPROCESS_ENV_KEYS = frozenset(
         "HTTP_PROXY",
         "HTTPS_PROXY",
         "ALL_PROXY",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "COPILOT_GITHUB_TOKEN",
         "SSL_CERT_FILE",
         "SSL_CERT_DIR",
         "REQUESTS_CA_BUNDLE",
@@ -56,7 +59,7 @@ _SAFE_SUBPROCESS_ENV_KEYS = frozenset(
         "XDG_STATE_HOME",
     }
 )
-_SAFE_SUBPROCESS_ENV_PREFIXES = ("LC_", "CODEX_")
+_SAFE_SUBPROCESS_ENV_PREFIXES = ("LC_", "CODEX_", "COPILOT_")
 
 
 def _strip_ansi(text: str) -> str:

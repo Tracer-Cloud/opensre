@@ -859,6 +859,15 @@ def test_credential_line_for_saved_summary_cli_codex() -> None:
     assert flow._credential_line_for_saved_summary(codex) == ("OpenAI Codex CLI (Run: codex login)")
 
 
+def test_credential_line_for_saved_summary_cli_copilot() -> None:
+    from app.cli.wizard import config as wizard_config
+
+    copilot = next(p for p in wizard_config.SUPPORTED_PROVIDERS if p.value == "copilot")
+    assert flow._credential_line_for_saved_summary(copilot) == (
+        "GitHub Copilot CLI (Set COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN, or run copilot login)"
+    )
+
+
 def test_credential_line_for_saved_summary_anthropic() -> None:
     from app.cli.wizard import config as wizard_config
 

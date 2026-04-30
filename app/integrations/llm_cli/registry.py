@@ -23,8 +23,18 @@ def _codex_factory() -> LLMCLIAdapter:
     return CodexAdapter()
 
 
+def _copilot_factory() -> LLMCLIAdapter:
+    from app.integrations.llm_cli.copilot import CopilotAdapter
+
+    return CopilotAdapter()
+
+
 CLI_PROVIDER_REGISTRY: dict[str, CLIProviderRegistration] = {
     "codex": CLIProviderRegistration(adapter_factory=_codex_factory, model_env_key="CODEX_MODEL"),
+    "copilot": CLIProviderRegistration(
+        adapter_factory=_copilot_factory,
+        model_env_key="COPILOT_MODEL",
+    ),
 }
 
 
