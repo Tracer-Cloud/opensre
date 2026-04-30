@@ -698,3 +698,6 @@ else
 fi
 
 configure_path
+
+log ""
+log "Next: run 'opensre onboard' to complete setup."

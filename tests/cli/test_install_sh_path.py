@@ -149,3 +149,134 @@ def test_readds_export_when_marker_present_but_line_removed(tmp_path: Path) -> N
     assert result.returncode == 0, result.stderr
     content = zshrc.read_text()
     assert _LOCAL_BIN in content
+
+
+# ---------------------------------------------------------------------------
+# Helpers and tests for the post-install onboarding hint (issue #1153)
+# ---------------------------------------------------------------------------
+
+def _run_post_install(
+    tmp_path: Path,
+    shell: str,
+    platform: str = "linux",
+    install_channel: str = "release",
+    installed_version: str = "2026.4.1",
+    dir_already_on_path: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    """Run the real post-install output block of install.sh with side-effects stubbed.
+
+    Unlike ``_run()``, which only calls ``configure_path()`` in isolation, this
+    helper executes the exact same code block that sits at the bottom of the
+    real script:
+
+        # version confirmation line  (lines 690-698)
+        configure_path               (line 700)
+        # onboarding hint            (lines 702-703 — added by issue #1153)
+
+    This lets us assert on the full output sequence under every PATH scenario,
+    including the silent early-return path inside ``configure_path()`` when the
+    install dir is already on PATH — a case the old ``_run()`` helper could
+    never exercise.
+    """
+    fake_home = tmp_path / "home"
+    fake_home.mkdir(exist_ok=True)
+    idir = str(fake_home / _LOCAL_BIN)
+
+    # When dir_already_on_path=True, configure_path() hits the early return at
+    # line 490 and prints nothing.  The onboarding hint must still appear.
+    path_value = f"{idir}:/usr/bin:/bin" if dir_already_on_path else "/usr/bin:/bin"
+
+    script = textwrap.dedent(f"""\
+        # Load every function definition from install.sh
+        eval "$(awk '
+            /^[a-z_][a-z_]*\\(\\)/ {{ in_fn=1 }}
+            in_fn {{ print }}
+            in_fn && /^\\}}$/ {{ in_fn=0 }}
+        ' {INSTALL_SH})"
+
+        # Stub out side-effect functions so no binary or network calls happen
+        install_binary()               {{ :; }}
+        get_binary_path_from_archive() {{ printf '/tmp/fake-opensre\\n'; }}
+        verify_binary_version()        {{ printf '%s\\n' "${{2:-{installed_version}}}"; }}
+        run_with_privilege()           {{ "$@"; }}
+
+        # Set every variable the output block reads
+        BIN_NAME="opensre"
+        INSTALL_DIR="{idir}"
+        INSTALL_CHANNEL="{install_channel}"
+        installed_version="{installed_version}"
+        platform="{platform}"
+        HOME="{fake_home}"
+        SHELL="{shell}"
+        PATH="{path_value}"
+        export HOME SHELL PATH
+
+        # --- real post-install output block (mirrors install.sh lines 690-703) ---
+        if [ "$INSTALL_CHANNEL" = "main" ]; then
+          if [ "$installed_version" = "main" ]; then
+            log "Installed ${{BIN_NAME}} main build to ${{INSTALL_DIR}}/${{BIN_NAME}}"
+          else
+            log "Installed ${{BIN_NAME}} main build (${{installed_version}}) to ${{INSTALL_DIR}}/${{BIN_NAME}}"
+          fi
+        else
+          log "Installed ${{BIN_NAME}} v${{installed_version}} to ${{INSTALL_DIR}}/${{BIN_NAME}}"
+        fi
+
+        configure_path
+
+        log ""
+        log "Next: run 'opensre onboard' to complete setup."
+    """)
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+
+
+def test_onboarding_hint_shown_when_path_not_set(tmp_path: Path) -> None:
+    """Hint appears on a first install where configure_path writes the rc file."""
+    result = _run_post_install(tmp_path, shell="/bin/zsh", dir_already_on_path=False)
+    assert result.returncode == 0, result.stderr
+    assert "opensre onboard" in result.stdout + result.stderr
+
+
+def test_onboarding_hint_shown_when_path_already_set(tmp_path: Path) -> None:
+    """Hint appears even when configure_path returns early (install dir already on PATH).
+
+    This is the silent-upgrade scenario that the old configure_path-only
+    helper could never cover: configure_path() hits the early return at
+    line 490 and outputs nothing, yet the user must still see the hint.
+    """
+    result = _run_post_install(tmp_path, shell="/bin/zsh", dir_already_on_path=True)
+    assert result.returncode == 0, result.stderr
+    assert "opensre onboard" in result.stdout + result.stderr
+
+
+def test_onboarding_hint_shown_for_bash_linux(tmp_path: Path) -> None:
+    """Hint appears on bash/linux installs."""
+    result = _run_post_install(tmp_path, shell="/bin/bash", platform="linux")
+    assert result.returncode == 0, result.stderr
+    assert "opensre onboard" in result.stdout + result.stderr
+
+
+def test_onboarding_hint_shown_for_main_channel(tmp_path: Path) -> None:
+    """Hint appears when installing the rolling main build (not a versioned release)."""
+    result = _run_post_install(
+        tmp_path,
+        shell="/bin/zsh",
+        install_channel="main",
+        installed_version="main",
+    )
+    assert result.returncode == 0, result.stderr
+    assert "opensre onboard" in result.stdout + result.stderr
+
+
+def test_onboarding_hint_appears_after_version_line(tmp_path: Path) -> None:
+    """The onboarding hint must appear AFTER the 'Installed opensre v...' line."""
+    result = _run_post_install(tmp_path, shell="/bin/zsh", installed_version="2026.4.1")
+    assert result.returncode == 0, result.stderr
+    output = result.stdout + result.stderr
+    installed_pos = output.find("Installed opensre")
+    onboard_pos = output.find("opensre onboard")
+    assert installed_pos != -1, "'Installed opensre' line missing from output"
+    assert onboard_pos != -1, "'opensre onboard' hint missing from output"
+    assert onboard_pos > installed_pos, (
+        "Onboarding hint must come after the install confirmation line"
+    )
