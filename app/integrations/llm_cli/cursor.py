@@ -182,7 +182,9 @@ class CursorAdapter:
         elif "Workspace Trust Required" in text:
             bits.append("Workspace trust required. The adapter uses --trust for headless runs.")
         elif "Named models unavailable" in text:
-            bits.append("Model unavailable for this account. Use CURSOR_MODEL=auto or omit the model override.")
+            bits.append(
+                "Model unavailable for this account. Use CURSOR_MODEL=auto or omit the model override."
+            )
         elif err:
             bits.append(err[:2000])
         elif out:

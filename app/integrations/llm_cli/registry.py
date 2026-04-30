@@ -31,7 +31,9 @@ def _cursor_factory() -> LLMCLIAdapter:
 
 CLI_PROVIDER_REGISTRY: dict[str, CLIProviderRegistration] = {
     "codex": CLIProviderRegistration(adapter_factory=_codex_factory, model_env_key="CODEX_MODEL"),
-    "cursor": CLIProviderRegistration(adapter_factory=_cursor_factory, model_env_key="CURSOR_MODEL"),
+    "cursor": CLIProviderRegistration(
+        adapter_factory=_cursor_factory, model_env_key="CURSOR_MODEL"
+    ),
 }
 
 
