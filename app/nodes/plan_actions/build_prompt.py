@@ -417,7 +417,7 @@ Planning rules:
    - Assume a possible compositional failure unless proven otherwise
    - Explicitly investigate whether there are TWO independent workloads:
      (1) analytics/aggregation queries causing CPU saturation
-     (2) audit_log INSERT or write-heavy jobs causing storage exhaustion
+     (2) write-heavy workloads causing storage exhaustion (e.g. audit_log INSERT, WAL growth, or table bloat depending on the system)
 
    - Prioritize AWS Performance Insights to identify:
      - the CPU-driving SQL query
