@@ -1,0 +1,82 @@
+---
+title: "VictoriaLogs"
+description: "Connect VictoriaLogs so OpenSRE can pull structured log evidence during investigations"
+---
+
+OpenSRE queries [VictoriaLogs](https://docs.victoriametrics.com/victorialogs/) using LogsQL to retrieve structured log evidence — correlating recent application errors, request anomalies, and stream-level events with the alert under investigation.
+
+## Prerequisites
+
+- A reachable VictoriaLogs instance (e.g. `http://vmlogs:9428`)
+- LogsQL knowledge for any custom queries you want OpenSRE to run
+
+## Setup
+
+### Option 1: Environment variables
+
+Add to your `.env`:
+
+```bash
+VICTORIA_LOGS_URL=http://vmlogs.monitoring.svc:9428
+
+# Optional — only set this if your deployment is multi-tenant.
+# Single-tenant clusters should leave it unset; OpenSRE will not send
+# the AccountID header at all.
+# VICTORIA_LOGS_TENANT_ID=acme
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VICTORIA_LOGS_URL` | — | **Required.** Base URL of your VictoriaLogs instance |
+| `VICTORIA_LOGS_TENANT_ID` | _(unset)_ | Optional. Sent as the `AccountID` header on multi-tenant deployments |
+
+### Option 2: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "victoria-logs-prod",
+      "service": "victoria_logs",
+      "status": "active",
+      "credentials": {
+        "base_url": "http://vmlogs.monitoring.svc:9428"
+      }
+    }
+  ]
+}
+```
+
+## Verify
+
+```bash
+opensre integrations verify victoria_logs
+```
+
+Expected output:
+
+```
+Service: victoria_logs
+Status:  passed
+Detail:  Connected to VictoriaLogs at http://vmlogs.monitoring.svc:9428.
+```
+
+## How it works in investigations
+
+When VictoriaLogs is configured, the `victoria_logs_query` tool becomes available to the investigation agent. It runs LogsQL queries against `/select/logsql/query` and returns structured rows — defaulting to a wildcard match over the past hour, but the agent narrows the query based on alert context (service, level, trace ID, time window).
+
+Typical agent uses:
+
+- Pull recent error-level logs for the affected service to surface stack traces
+- Filter by request ID or trace ID to follow a single failing transaction across services
+- Compare log volume in the incident window against a known-good baseline to spot regressions
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Status: missing** | Set `VICTORIA_LOGS_URL` or add a `victoria_logs` entry to your integrations store |
+| **Connection refused** | Verify the URL is reachable from this host; check firewall rules |
+| **404 on `/select/logsql/query`** | Confirm you are pointing at VictoriaLogs (not VictoriaMetrics for time-series); they expose different endpoints |
+| **Empty rows** | Normal when no logs match — widen the time range with a longer `start` (e.g. `-24h`) or relax the LogsQL filter |

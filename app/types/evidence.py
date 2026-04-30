@@ -44,4 +44,5 @@ EvidenceSource = Literal[
     "alertmanager",
     "airflow",
     "argocd",
+    "victoria_logs",
 ]

@@ -32,6 +32,7 @@ from app.integrations.models import (
     OpsGenieIntegrationConfig,
     SlackWebhookConfig,
     TelegramBotConfig,
+    VictoriaLogsIntegrationConfig,
 )
 from app.integrations.mongodb import build_mongodb_config
 from app.integrations.mongodb_atlas import build_mongodb_atlas_config
@@ -94,6 +95,8 @@ _SERVICE_KEY_MAP = {
     "airflow": "airflow",
     "apache airflow": "airflow",
     "argocd": "argocd",
+    "victoria_logs": "victoria_logs",
+    "victorialogs": "victoria_logs",
 }
 
 
@@ -669,6 +672,21 @@ def _classify_service_instance(
             argocd_config.bearer_token or (argocd_config.username and argocd_config.password)
         ):
             return argocd_config.model_dump(), "argocd"
+        return None, None
+
+    if key == "victoria_logs":
+        try:
+            victoria_logs_config = VictoriaLogsIntegrationConfig.model_validate(
+                {
+                    "base_url": credentials.get("base_url", ""),
+                    "tenant_id": credentials.get("tenant_id"),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if victoria_logs_config.base_url:
+            return victoria_logs_config.model_dump(), "victoria_logs"
         return None, None
 
     if key == "bitbucket":
@@ -1537,6 +1555,26 @@ def load_env_integrations() -> list[dict[str, Any]]:
         except Exception:
             logger.debug("Failed to load Alertmanager config from env", exc_info=True)
 
+    victoria_logs_url = os.getenv("VICTORIA_LOGS_URL", "").strip().rstrip("/")
+    if victoria_logs_url:
+        try:
+            victoria_logs_config = VictoriaLogsIntegrationConfig.model_validate(
+                {
+                    "base_url": victoria_logs_url,
+                    "tenant_id": os.getenv("VICTORIA_LOGS_TENANT_ID"),
+                }
+            )
+            integrations.append(
+                {
+                    "id": "env-victoria_logs",
+                    "service": "victoria_logs",
+                    "status": "active",
+                    "credentials": victoria_logs_config.model_dump(exclude={"integration_id"}),
+                }
+            )
+        except Exception:
+            logger.debug("Failed to load VictoriaLogs config from env", exc_info=True)
+
     return integrations
 
 
@@ -1639,6 +1677,7 @@ def resolve_effective_integrations(
         "alertmanager",
         "airflow",
         "argocd",
+        "victoria_logs",
     )
     for service in direct_services:
         resolved_integration = classified_integrations.get(service)
