@@ -10,6 +10,8 @@ from fastapi.testclient import TestClient
 from app.remote import server as remote_server
 from app.remote.server import (
     InvestigateRequest,
+    _imds_get,
+    _imds_token,
     _lifespan,
     investigate,
     investigate_stream,
@@ -212,3 +214,61 @@ async def test_lifespan_starts_and_cancels_vercel_poller(
         await asyncio.wait_for(started.wait(), timeout=1)
 
     assert cancelled.is_set()
+
+
+def test_imds_token_returns_none_on_url_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    import urllib.error
+
+    def _raise_url_error(*args, **kwargs):
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr("urllib.request.urlopen", _raise_url_error)
+
+    assert _imds_token() is None
+
+
+def test_imds_token_returns_none_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise_timeout(*args, **kwargs):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("urllib.request.urlopen", _raise_timeout)
+
+    assert _imds_token() is None
+
+
+def test_imds_token_returns_none_on_os_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise_os_error(*args, **kwargs):
+        raise OSError("network unreachable")
+
+    monkeypatch.setattr("urllib.request.urlopen", _raise_os_error)
+
+    assert _imds_token() is None
+
+
+def test_imds_get_returns_none_on_url_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    import urllib.error
+
+    def _raise_url_error(*args, **kwargs):
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr("urllib.request.urlopen", _raise_url_error)
+
+    assert _imds_get("latest/meta-data/instance-id", token="test-token") is None
+
+
+def test_imds_get_returns_none_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise_timeout(*args, **kwargs):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("urllib.request.urlopen", _raise_timeout)
+
+    assert _imds_get("latest/meta-data/instance-id", token="test-token") is None
+
+
+def test_imds_get_returns_none_on_os_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise_os_error(*args, **kwargs):
+        raise OSError("network unreachable")
+
+    monkeypatch.setattr("urllib.request.urlopen", _raise_os_error)
+
+    assert _imds_get("latest/meta-data/instance-id", token="test-token") is None
