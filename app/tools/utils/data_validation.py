@@ -391,22 +391,22 @@ def validate_host_metrics(metrics: dict | Any) -> dict:
     # Handle list-based structure (common in API responses)
     if "data" in metrics and isinstance(metrics["data"], list):
         validated_data = []
+        all_issues = []
+
         for data_point in metrics["data"]:
             if isinstance(data_point, dict):
-                # Validate each data point
-                validated_point = validator._validate_flat_metrics(data_point.copy())
+                validated_point = validator.validate_metrics(data_point.copy())
+
+                if "data_quality_issues" in validated_point:
+                    all_issues.extend(validated_point["data_quality_issues"])
+                    del validated_point["data_quality_issues"]
+
                 validated_data.append(validated_point)
             else:
                 validated_data.append(data_point)
 
         result = metrics.copy()
         result["data"] = validated_data
-
-        # Collect all issues from all data points
-        all_issues = []
-        for point in validated_data:
-            if isinstance(point, dict) and "data_quality_issues" in point:
-                all_issues.extend(point["data_quality_issues"])
 
         if all_issues:
             result["data_quality_issues"] = all_issues
