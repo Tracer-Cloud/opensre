@@ -44,6 +44,40 @@ Notes:
 - **Structured output**: `CLIBackedLLMClient.with_structured_output` delegates to `StructuredOutputClient` (JSON-in-prompt), same pattern as API clients.
 - **Optional model envs**: provider model env vars (for Codex: `CODEX_MODEL`) should be optional; if unset, rely on vendor CLI defaults.
 
+## Auth probe pattern
+
+`detect()` must return a `CLIProbe` with `logged_in: bool | None` — three states:
+
+| Value | Meaning | Wizard behaviour |
+| ----- | ------- | ---------------- |
+| `True` | Binary found **and** auth confirmed. | Proceeds immediately. |
+| `False` | Binary found but definitely **not** authenticated. | Prompts user to run the login command (`auth_hint`). |
+| `None` | Binary found but auth **status is unclear** (network error, unexpected output, etc.). | Asks user to retry or repick provider. |
+
+Recommended probe sequence (mirrors Codex):
+
+1. Run `<binary> --version` — if it fails, return `installed=False` immediately.
+2. Run `<binary> <auth-status-command>` — parse stdout/stderr to classify `logged_in`.
+3. Write a `_classify_<name>_auth(returncode, stdout, stderr) -> tuple[bool | None, str]`
+   helper. Check **negative phrases first** (e.g. `"not logged in"` before `"logged in"`)
+   to avoid substring false-positives.
+4. Map network/timeout errors to `None`, not `False` — the user may be on a flaky
+   connection and shouldn't be forced to re-authenticate.
+
+See `_classify_codex_auth` in `codex.py` for a complete reference implementation.
+
+## Subprocess environment allowlist
+
+`CLIBackedLLMClient` in `runner.py` passes only a safe subset of env vars to the
+subprocess (`_SAFE_SUBPROCESS_ENV_KEYS` + `_SAFE_SUBPROCESS_ENV_PREFIXES`).
+
+The current prefix allowlist is `("LC_", "CODEX_")`.
+
+**If your CLI reads custom env vars** (e.g. `CLAUDE_*`, `GEMINI_*`) you must add the
+relevant prefix to `_SAFE_SUBPROCESS_ENV_PREFIXES` in `runner.py`, otherwise the
+subprocess will not receive those vars and authentication or configuration will silently
+fail. Add a test that asserts the required keys are forwarded.
+
 ## Codex binary resolution (reference)
 
 Order in `CodexAdapter._resolve_binary` (now delegated to shared resolver helpers):
@@ -68,10 +102,12 @@ CODEX_BIN=
 
 - Add adapter in `app/integrations/llm_cli/`.
 - Reuse `resolve_cli_binary(...)` for `_resolve_binary`.
-- Implement `detect()` with `--version` + auth status checks.
+- Implement `detect()` with `--version` + auth status checks; follow the three-state `logged_in` pattern above.
+- Write `_classify_<name>_auth` — test against a real logged-in **and** logged-out session before merging.
+- If the CLI reads custom env vars (e.g. `CLAUDE_*`), add the prefix to `_SAFE_SUBPROCESS_ENV_PREFIXES` in `runner.py`.
 - Wire provider in `app/services/llm_client.py` and `app/config.py`.
 - (Optional) Add wizard onboarding option in `app/cli/wizard/config.py`.
-- Add tests under `tests/integrations/llm_cli/` for detect/build/failure paths.
+- Add tests under `tests/integrations/llm_cli/` for detect/build/failure paths, including env forwarding.
 
 ## Tests
 
