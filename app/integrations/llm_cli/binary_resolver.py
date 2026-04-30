@@ -191,13 +191,8 @@ def diagnose_binary_path(path: str) -> str | None:
     if not p.is_file():
         return f"'{path}' is not a file."
     if sys.platform == "win32":
-        if p.suffix.lower() not in {".cmd", ".exe", ".ps1", ".bat"} and not os.access(
-            p, os.X_OK
-        ):
-            return (
-                f"'{path}' is not a recognised executable "
-                f"(expected .cmd, .exe, .ps1, or .bat)."
-            )
+        if p.suffix.lower() not in {".cmd", ".exe", ".ps1", ".bat"} and not os.access(p, os.X_OK):
+            return f"'{path}' is not a recognised executable (expected .cmd, .exe, .ps1, or .bat)."
     elif not os.access(p, os.X_OK):
         return f"'{path}' is not executable. Run: chmod +x {path}"
     return None
