@@ -33,7 +33,8 @@ concurrency:
 # ---------------------------------------------------------------
 # MATRIX: Ubuntu-only default matrix for push and pull_request in this workflow.
 # Optional label-driven checks: `ci-labels-windows.yml` (`ci:windows`), `ci-labels-k8s.yml` (`ci:k8s`).
-# Kubernetes local tests here run on push to main or PR titles containing k8s/kubernetes.
+# Kubernetes local tests here run on push to main only.
+# PR-side k8s is label-driven in `.github/workflows/ci-labels-k8s.yml` via `ci:k8s`.
 # ---------------------------------------------------------------
 jobs:
 # ---------------------------------------------------------------
@@ -196,15 +197,7 @@ jobs:
     continue-on-error: true
     timeout-minutes: 15
 
-    if: >-
-      github.event_name == 'push' ||
-      (
-        github.event_name == 'pull_request' &&
-        (
-          contains(github.event.pull_request.title, 'k8s') ||
-          contains(github.event.pull_request.title, 'kubernetes')
-        )
-      )
+    if: github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v5
