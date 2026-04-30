@@ -1,8 +1,6 @@
 """Tests for app/masking/secrets.py"""
 
-import pytest
-
-from app.masking.secrets import _REDACTED, RedactionResult, redact_secrets
+from app.masking.secrets import _REDACTED, redact_secrets
 
 # ---------------------------------------------------------------------------
 # Fixtures — official AWS example values, never real credentials

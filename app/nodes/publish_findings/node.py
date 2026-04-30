@@ -23,6 +23,14 @@ from app.utils.ingest_delivery import send_ingest
 logger = logging.getLogger(__name__)
 
 
+def redact_block(block: dict) -> dict:
+    return {
+        k: redact_secrets(str(v)).text if isinstance(v, str) else v
+        for k, v in block.items()
+    }
+
+
+
 def generate_report(state: InvestigationState) -> dict:
     """Generate and publish the final RCA report."""
     from app.utils.slack_delivery import build_action_blocks, send_slack_report
@@ -50,9 +58,10 @@ def generate_report(state: InvestigationState) -> dict:
     # First ingest: persist the report and get back the investigation_id
     investigation_id: str | None = None
     try:
+        safe_summary = redact_secrets(str(short_summary)).text
         state_with_report = cast(
             InvestigationState,
-            {**state, "problem_report": {"report_md": slack_message}, "summary": short_summary},
+            {**state, "problem_report": {"report_md": slack_message}, "summary": safe_summary},
         )
         investigation_id = send_ingest(state_with_report)
     except Exception as exc:  # noqa: BLE001
@@ -71,7 +80,7 @@ def generate_report(state: InvestigationState) -> dict:
                         "report_md": slack_message,
                         "investigation_url": investigation_url,
                     },
-                    "summary": short_summary,
+                    "summary": safe_summary,
                 },
             )
             send_ingest(state_with_url)
@@ -80,7 +89,7 @@ def generate_report(state: InvestigationState) -> dict:
 
     all_blocks = build_slack_blocks(ctx) + build_action_blocks(investigation_url, investigation_id)
     all_blocks = masking_ctx.unmask_value(all_blocks)
-    all_blocks = redact_secrets(str(all_blocks)).text
+    all_blocks = [redact_block(block) for block in all_blocks]
     render_report(slack_message, root_cause_category=state.get("root_cause_category"))
     open_in_editor(slack_message)
 
