@@ -82,7 +82,17 @@ class CursorAdapter:
                 detail=f"`{binary} --version` failed: {err or 'unknown error'}",
             )
 
-        version = _parse_version(version_proc.stdout + version_proc.stderr)
+        version_output = version_proc.stdout + version_proc.stderr
+        version = _parse_version(version_output)
+
+        if not version:
+            return CLIProbe(
+                installed=False,
+                version=None,
+                logged_in=None,
+                bin_path=None,
+                detail="Binary found but does not appear to be Cursor Agent CLI.",
+            )
 
         if os.environ.get("CURSOR_API_KEY"):
             return CLIProbe(
@@ -164,6 +174,8 @@ class CursorAdapter:
     def parse(self, *, stdout: str, stderr: str, returncode: int) -> str:
         result = (stdout or "").strip()
         if not result:
+            if returncode == 0:
+                raise RuntimeError("Cursor Agent CLI returned empty output.")
             raise RuntimeError(
                 self.explain_failure(stdout=stdout, stderr=stderr, returncode=returncode)
                 + " (empty output)"
