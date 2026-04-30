@@ -82,7 +82,7 @@ def _patch_generate_report_deps(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda _ctx: [],
     )
     monkeypatch.setattr(
-        "app.nodes.publish_findings.node.get_investigation_url",
+        "app.utils.ingest_delivery.get_investigation_url",
         lambda _slug, _inv_id: "https://app.example.com/inv/1",
     )
     monkeypatch.setattr(
