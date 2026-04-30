@@ -387,12 +387,9 @@ def test_registry_regression_import_failures(
 
     assert "valid_tool" in tool_names
     assert len(tools) >= 1
-    assert registry_module.get_registered_tool_map()["valid_tool"].run() == {
-        "status": "ok"
-    }
+    assert registry_module.get_registered_tool_map()["valid_tool"].run() == {"status": "ok"}
 
     assert any(
-        "Skipping broken_module" in record.message
-        and record.levelname == "WARNING"
+        "Skipping broken_module" in record.message and record.levelname == "WARNING"
         for record in caplog.records
     )
