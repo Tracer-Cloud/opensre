@@ -40,10 +40,10 @@ def generate_report(state: InvestigationState) -> dict:
 
     _redaction = redact_secrets(slack_message)
     if _redaction.has_findings:
-       logger.warning(
-           "Secrets detected in RCA output and redacted before publish",
-          extra={"matched_patterns": _redaction.findings},
-       )
+        logger.warning(
+            "Secrets detected in RCA output and redacted before publish",
+            extra={"matched_patterns": _redaction.findings},
+        )
     slack_message = _redaction.text
 
     # First ingest: persist the report and get back the investigation_id
