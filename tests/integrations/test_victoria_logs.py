@@ -109,10 +109,11 @@ class TestClassifyServiceInstance:
         )
         assert config is None and key is None
 
-    def test_alias_victorialogs_normalizes_to_victoria_logs(self) -> None:
-        # The service key map registers both spellings — confirm classification
-        # under the canonical key still works when callers feed in a record
-        # whose service field reaches this function pre-normalized.
+    def test_classifies_with_tenant_id(self) -> None:
+        # Records reaching ``_classify_service_instance`` have already been
+        # normalized through the service-key map, so they always arrive under
+        # the canonical key. This case verifies the tenant-id path round-trips
+        # correctly through the classifier.
         config, key = _classify_service_instance(
             key="victoria_logs",
             credentials={"base_url": "http://vmlogs:9428", "tenant_id": "team-a"},

@@ -1315,6 +1315,14 @@ def detect_sources(
             "connection_verified": True,
         }
 
+    victoria_logs_int = (resolved_integrations or {}).get("victoria_logs")
+    if victoria_logs_int and str(victoria_logs_int.get("base_url", "")).strip():
+        sources["victoria_logs"] = {
+            "base_url": str(victoria_logs_int.get("base_url", "")).strip().rstrip("/"),
+            "tenant_id": victoria_logs_int.get("tenant_id"),
+            "connection_verified": True,
+        }
+
     opsgenie_int = (resolved_integrations or {}).get("opsgenie")
     if opsgenie_int and str(opsgenie_int.get("api_key", "")).strip():
         alert_id = str(

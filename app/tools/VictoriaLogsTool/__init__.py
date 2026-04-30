@@ -49,7 +49,13 @@ class VictoriaLogsTool(BaseTool):
             },
             "query": {
                 "type": "string",
-                "description": "LogsQL query string (e.g. `_stream_id:* AND error`).",
+                "default": "*",
+                "description": (
+                    "LogsQL query string (e.g. `_stream_id:* AND error`). Defaults to "
+                    "the wildcard `*` because `detect_sources` does not yet propagate "
+                    "alert-derived query targeting; customising the query through the "
+                    "executor path is a known follow-up."
+                ),
             },
             "limit": {
                 "type": "integer",
@@ -62,7 +68,7 @@ class VictoriaLogsTool(BaseTool):
                 "description": "Time range expression accepted by VictoriaLogs (e.g. -1h, -24h).",
             },
         },
-        "required": ["base_url", "query"],
+        "required": ["base_url"],
     }
     outputs = {
         "rows": "List of structured log entries returned by the LogsQL query.",
