@@ -90,6 +90,15 @@ def build_ingest_payload(state: InvestigationState) -> dict[str, Any]:
     return {"investigation_output": investigation_output, "metadata": metadata}
 
 
+def get_investigation_url(org_slug: str | None = None, investigation_id: str | None = None) -> str:
+    """Build investigation URL using the organization slug and optional investigation ID."""
+    base = get_tracer_base_url()
+    prefix = f"{base}/{org_slug}" if org_slug else base
+    if investigation_id:
+        return f"{prefix}/investigations/{investigation_id}"
+    return f"{prefix}/investigations"
+
+
 def send_ingest(state: InvestigationState) -> str | None:
     """Deliver investigation to the ingest API.
 
@@ -135,3 +144,51 @@ def send_ingest(state: InvestigationState) -> str | None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("[ingest] Delivery failed: %s", exc)
     return None
+
+
+def create_investigation_and_attach_url(
+    state: InvestigationState,
+    slack_message: str,
+    summary: str | None,
+) -> tuple[str | None, str | None]:
+    """
+    Create an investigation via ingest, then attach investigation_url.
+
+    Returns:
+        (investigation_id, investigation_url)
+    """
+    investigation_id: str | None = None
+
+    # First ingest: create investigation
+    try:
+        state_with_report = {
+            **state,
+            "problem_report": {"report_md": slack_message},
+            "summary": summary,
+        }
+        investigation_id = send_ingest(state_with_report)  # type: ignore[arg-type]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[publish] ingest failed: %s", exc)
+
+    # Always compute URL (fallbacks to investigations list page when ID is None)
+    investigation_url = get_investigation_url(
+        state.get("organization_slug"),
+        investigation_id,
+    )
+
+    # Second ingest: attach URL only if investigation was created
+    if investigation_id:
+        try:
+            state_with_url = {
+                **state,
+                "problem_report": {
+                    "report_md": slack_message,
+                    "investigation_url": investigation_url,
+                },
+                "summary": summary,
+            }
+            send_ingest(state_with_url)  # type: ignore[arg-type]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[publish] ingest url update failed: %s", exc)
+
+    return investigation_id, investigation_url

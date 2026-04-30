@@ -46,7 +46,11 @@ def test_slack_message_is_unmasked_before_delivery() -> None:
         patch.object(pub_node, "build_slack_blocks", return_value=[]),
         patch.object(pub_node, "render_report"),
         patch.object(pub_node, "open_in_editor"),
-        patch.object(pub_node, "send_ingest", return_value=None),
+        patch.object(
+            pub_node,
+            "create_investigation_and_attach_url",
+            return_value=("inv-123", "https://test/inv-123"),
+        ),
         patch("app.utils.slack_delivery.send_slack_report", return_value=(False, None)),
         patch("app.utils.slack_delivery.build_action_blocks", return_value=[]),
     ):
@@ -71,7 +75,11 @@ def test_empty_masking_map_is_passthrough() -> None:
         patch.object(pub_node, "build_slack_blocks", return_value=[]),
         patch.object(pub_node, "render_report"),
         patch.object(pub_node, "open_in_editor"),
-        patch.object(pub_node, "send_ingest", return_value=None),
+        patch.object(
+            pub_node,
+            "create_investigation_and_attach_url",
+            return_value=("inv-123", "https://test/inv-123"),
+        ),
         patch("app.utils.slack_delivery.send_slack_report", return_value=(False, None)),
         patch("app.utils.slack_delivery.build_action_blocks", return_value=[]),
     ):
