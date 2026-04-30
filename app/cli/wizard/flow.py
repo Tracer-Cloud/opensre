@@ -19,6 +19,7 @@ from app.cli.wizard.integration_health import IntegrationHealthResult
 from app.cli.wizard.probes import ProbeResult, probe_local_target, probe_remote_target
 from app.cli.wizard.prompts import select as select_prompt
 from app.cli.wizard.store import get_store_path, load_local_config, save_local_config
+from app.integrations.llm_cli.binary_resolver import is_runnable_binary
 from app.integrations.store import get_integration, remove_integration, upsert_integration
 from app.llm_credentials import has_llm_api_key, save_llm_api_key
 
@@ -1615,11 +1616,8 @@ def _run_cli_llm_onboarding(provider: ProviderOption) -> Literal["ok", "abort", 
             return "repick"
         if action == "path":
             path = _prompt_value(f"Full path to {name} binary")
-            if not os.path.isfile(path):
-                _console.print(f"[yellow]'{path}' is not a file. Try again.[/]")
-                continue
-            if not os.access(path, os.X_OK):
-                _console.print(f"[yellow]'{path}' is not executable. Try again.[/]")
+            if not is_runnable_binary(path):
+                _console.print(f"[yellow]'{path}' is not a valid executable. Try again.[/]")
                 continue
             sync_env_values({env_key: path})
             os.environ[env_key] = path
