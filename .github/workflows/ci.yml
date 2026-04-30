@@ -25,8 +25,8 @@ concurrency:
   cancel-in-progress: true
 
 # ---------------------------------------------------------------
-# MATRIX: Windows on push to main, or on PR when label `ci:windows` is present.
-# Re-run the PR checks after adding/removing that label (pull_request labeled).
+# MATRIX: Ubuntu only by default (push and PR). Windows runs only when a PR has
+# label `ci:windows`; add/remove that label (pull_request labeled/unlabeled) to re-run CI.
 # Kubernetes local tests: push to main, PR title contains k8s/kubernetes, or label `ci:k8s`.
 # ---------------------------------------------------------------
 jobs:
@@ -37,9 +37,7 @@ jobs:
     steps:
       - id: set
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo 'os_json=["ubuntu-latest","windows-latest"]' >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
             labels="${{ join(github.event.pull_request.labels.*.name, ',') }}"
             case ",${labels}," in
               *,ci:windows,*) echo 'os_json=["ubuntu-latest","windows-latest"]' >> "$GITHUB_OUTPUT" ;;
