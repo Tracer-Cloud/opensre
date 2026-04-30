@@ -24,8 +24,15 @@ def test_detect_path_binary_with_headless_token(mock_which: MagicMock, mock_run:
 
     def side_effect(args: list[str], **kwargs: object) -> MagicMock:
         assert args[0] == "/usr/bin/copilot"
-        assert args[1] == "--version"
-        return _version_proc()
+        if args[1] == "--version":
+            return _version_proc()
+        if args[1:] == ["auth", "status"]:
+            m = MagicMock()
+            m.returncode = 0
+            m.stdout = "Logged in with headless token\n"
+            m.stderr = ""
+            return m
+        raise AssertionError(f"Unexpected args: {args}")
 
     mock_run.side_effect = side_effect
     with patch.dict(os.environ, {"COPILOT_GITHUB_TOKEN": "token-value"}, clear=False):
