@@ -1067,6 +1067,20 @@ Thanks goes to these amazing people:
             <sub><b>jason8745</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/Yajush-afk">
+            <img src="https://avatars.githubusercontent.com/u/180868061?v=4" width="100" alt="Yajush-afk"/>
+            <br />
+            <sub><b>Yajush-afk</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Aaryan-549">
+            <img src="https://avatars.githubusercontent.com/u/165829168?v=4" width="100" alt="Aaryan-549"/>
+            <br />
+            <sub><b>Aaryan-549</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>

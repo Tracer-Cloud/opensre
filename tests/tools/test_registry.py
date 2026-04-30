@@ -396,4 +396,12 @@ def test_registry_regression_import_failures(
     assert any(
         "Skipping broken_module" in record.message and record.levelname == "WARNING"
         for record in caplog.records
+    assert tool_names.count("shared_tool_name") == 1
+    registered_tool = registry_module.get_registered_tool_map()["shared_tool_name"]
+    assert registered_tool.run() == {"module": "first"}
+
+    assert any(
+        "Duplicate tool name 'shared_tool_name' across modules" in record.message
+        for record in caplog.records
+        if record.levelname == "WARNING"
     )
