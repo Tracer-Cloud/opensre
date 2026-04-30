@@ -852,6 +852,37 @@ def test_run_cli_llm_onboarding_abort_after_max_retries(monkeypatch) -> None:
     assert adapter.detect.call_count == 10
 
 
+def test_credential_line_for_saved_summary_cli_codex() -> None:
+    from app.cli.wizard import config as wizard_config
+
+    codex = next(p for p in wizard_config.SUPPORTED_PROVIDERS if p.value == "codex")
+    assert flow._credential_line_for_saved_summary(codex) == ("OpenAI Codex CLI (Run: codex login)")
+
+
+def test_credential_line_for_saved_summary_anthropic() -> None:
+    from app.cli.wizard import config as wizard_config
+
+    anthropic = next(p for p in wizard_config.SUPPORTED_PROVIDERS if p.value == "anthropic")
+    assert flow._credential_line_for_saved_summary(anthropic) == "system keychain"
+
+
+def test_credential_line_for_saved_summary_cli_without_factory() -> None:
+    from app.cli.wizard.config import ModelOption, ProviderOption
+
+    p = ProviderOption(
+        value="fakecli",
+        label="Fake CLI",
+        group="Local CLI providers",
+        api_key_env="",
+        model_env="FAKE_MODEL",
+        default_model="",
+        models=(ModelOption(value="", label="default"),),
+        credential_kind="cli",
+        adapter_factory=None,
+    )
+    assert flow._credential_line_for_saved_summary(p) == "Fake CLI (CLI)"
+
+
 def test_run_wizard_configures_gitlab(monkeypatch, tmp_path) -> None:
     select_responses = iter(["quickstart", "anthropic", "gitlab"])
     password_responses = iter(["llm-secret", "glpat_test"])

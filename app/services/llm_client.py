@@ -28,6 +28,7 @@ from app.config import (
     OPENROUTER_BASE_URL,
     LLMSettings,
 )
+from app.integrations.llm_cli.registry import get_cli_provider_registration
 from app.llm_credentials import resolve_llm_api_key
 
 logger = logging.getLogger(__name__)
@@ -557,15 +558,13 @@ def _create_llm_client(model_type: str) -> _LLMClientType:
             else settings.bedrock_toolcall_model
         )
         return BedrockLLMClient(model=model, max_tokens=config.max_tokens)
-    elif provider == "codex":
+    elif (cli_reg := get_cli_provider_registration(provider)) is not None:
         from app.config import DEFAULT_MAX_TOKENS
-        from app.integrations.llm_cli.codex import CodexAdapter
         from app.integrations.llm_cli.runner import CLIBackedLLMClient
 
-        # Empty CODEX_MODEL means "use Codex CLI's configured default/current model" (omit -m).
-        model_name = os.getenv("CODEX_MODEL", "").strip() or None
+        model_name = os.getenv(cli_reg.model_env_key, "").strip() or None
         return CLIBackedLLMClient(
-            CodexAdapter(),
+            cli_reg.adapter_factory(),
             model=model_name,
             max_tokens=DEFAULT_MAX_TOKENS,
             model_type=model_type,

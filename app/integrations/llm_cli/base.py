@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Protocol, runtime_checkable
-
-PromptDelivery = Literal["stdin", "arg", "file"]
+from typing import Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -41,7 +39,6 @@ class LLMCLIAdapter(Protocol):
     auth_hint: str
     min_version: str | None
     default_exec_timeout_sec: float
-    prompt_delivery: PromptDelivery
 
     def detect(self) -> CLIProbe:
         """Resolve binary, version, and auth. Never raises; returns a structured probe."""

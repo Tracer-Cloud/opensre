@@ -6,7 +6,7 @@ import os
 import re
 import subprocess
 
-from app.integrations.llm_cli.base import CLIInvocation, CLIProbe, PromptDelivery
+from app.integrations.llm_cli.base import CLIInvocation, CLIProbe
 from app.integrations.llm_cli.binary_resolver import (
     candidate_binary_names as _candidate_binary_names,
 )
@@ -90,7 +90,6 @@ class CodexAdapter:
     auth_hint = "Run: codex login"
     min_version: str | None = None
     default_exec_timeout_sec = 120.0
-    prompt_delivery: PromptDelivery = "stdin"
 
     def _resolve_binary(self) -> str | None:
         return resolve_cli_binary(

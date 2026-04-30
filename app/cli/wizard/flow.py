@@ -1549,6 +1549,16 @@ def _render_next_steps() -> None:
     )
 
 
+def _credential_line_for_saved_summary(provider: ProviderOption) -> str:
+    """One-line credential description for the post-wizard saved summary."""
+    if provider.credential_kind != "cli":
+        return "system keychain"
+    if provider.adapter_factory is None:
+        return f"{provider.label} (CLI)"
+    cli_adapter = provider.adapter_factory()
+    return f"{provider.label} ({cli_adapter.auth_hint})"
+
+
 def _run_cli_llm_onboarding(provider: ProviderOption) -> Literal["ok", "abort", "repick"]:
     """Probe CLI binary + auth; recovery menu when missing. ``repick`` = choose another LLM."""
     factory = provider.adapter_factory
@@ -1788,11 +1798,7 @@ def run_wizard(_argv: list[str] | None = None) -> int:
         saved_path=str(saved_path),
         env_path=summary_env_path,
         configured_integrations=configured_integrations,
-        credential_line=(
-            "OpenAI Codex CLI (`codex login`)"
-            if provider.credential_kind == "cli"
-            else "system keychain"
-        ),
+        credential_line=_credential_line_for_saved_summary(provider),
     )
     demo_response = build_demo_action_response()
     _render_demo_response(demo_response)

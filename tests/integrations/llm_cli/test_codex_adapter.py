@@ -433,3 +433,12 @@ def test_resolve_cli_binary_warns_on_broken_symlink(tmp_path: Path, caplog) -> N
 
     assert result is None
     assert any("broken symlink" in r.message for r in caplog.records)
+
+
+def test_codex_cli_registry_entry() -> None:
+    from app.integrations.llm_cli.registry import get_cli_provider_registration
+
+    reg = get_cli_provider_registration("codex")
+    assert reg is not None
+    assert reg.model_env_key == "CODEX_MODEL"
+    assert reg.adapter_factory().name == "codex"
