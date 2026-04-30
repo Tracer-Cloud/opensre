@@ -159,6 +159,7 @@ jobs:
           git add README.md
           git diff --staged --quiet || git commit -m "docs(contributor): contrib-readme-action has updated readme"
           if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git pull --rebase origin "refs/heads/${GITHUB_REF_NAME}"
           fi
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          # refs/heads/ avoids ambiguity when a tag shares the branch name (e.g. tag "main").
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
