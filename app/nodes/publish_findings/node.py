@@ -7,6 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from app.masking import MaskingContext
+from app.masking.secrets import redact_secrets
 from app.nodes.publish_findings.formatters.report import (
     build_slack_blocks,
     format_slack_message,
@@ -36,6 +37,14 @@ def generate_report(state: InvestigationState) -> dict:
     slack_message = masking_ctx.unmask(slack_message)
     if isinstance(short_summary, str):
         short_summary = masking_ctx.unmask(short_summary)
+
+    _redaction = redact_secrets(slack_message)
+    if _redaction.has_findings:
+       logger.warning(
+           "Secrets detected in RCA output and redacted before publish",
+          extra={"matched_patterns": _redaction.findings},
+       )
+    slack_message = _redaction.text
 
     # First ingest: persist the report and get back the investigation_id
     investigation_id: str | None = None
