@@ -52,7 +52,8 @@ def _on_tool_start(data: dict[str, Any]) -> str:
 
 
 def _on_tool_end(data: dict[str, Any], _node_name: str) -> str | None:
-    output = data.get("data", {}).get("output", "")
+    payload = data.get("data")
+    output = payload.get("output", "") if isinstance(payload, dict) else ""
     if isinstance(output, str) and len(output) > 120:
         output = output[:117] + "..."
     name = data.get("name", "")
