@@ -23,8 +23,17 @@ def _codex_factory() -> LLMCLIAdapter:
     return CodexAdapter()
 
 
+def _cursor_factory() -> LLMCLIAdapter:
+    from app.integrations.llm_cli.cursor import CursorAdapter
+
+    return CursorAdapter()
+
+
 CLI_PROVIDER_REGISTRY: dict[str, CLIProviderRegistration] = {
     "codex": CLIProviderRegistration(adapter_factory=_codex_factory, model_env_key="CODEX_MODEL"),
+    "cursor": CLIProviderRegistration(
+        adapter_factory=_cursor_factory, model_env_key="CURSOR_MODEL"
+    ),
 }
 
 

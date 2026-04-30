@@ -151,10 +151,28 @@ CODEX_MODELS = (
 )
 
 
+CURSOR_MODELS = (
+    ModelOption(
+        value="",
+        label="CLI default (no --model; use Cursor configured model)",
+    ),
+    ModelOption(value="auto", label="auto"),
+    ModelOption(value="gpt-5", label="gpt-5"),
+    ModelOption(value="sonnet-4", label="sonnet-4"),
+    ModelOption(value="sonnet-4-thinking", label="sonnet-4-thinking"),
+)
+
+
 def _codex_adapter_factory() -> LLMCLIAdapter:
     from app.integrations.llm_cli.codex import CodexAdapter
 
     return CodexAdapter()
+
+
+def _cursor_adapter_factory() -> LLMCLIAdapter:
+    from app.integrations.llm_cli.cursor import CursorAdapter
+
+    return CursorAdapter()
 
 
 SUPPORTED_PROVIDERS = (
@@ -219,6 +237,18 @@ SUPPORTED_PROVIDERS = (
         credential_kind="cli",
         credential_secret=False,
         adapter_factory=_codex_adapter_factory,
+    ),
+    ProviderOption(
+        value="cursor",
+        label="Cursor Agent CLI",
+        group="Local CLI providers",
+        api_key_env="",
+        model_env="CURSOR_MODEL",
+        default_model="auto",
+        models=CURSOR_MODELS,
+        credential_kind="cli",
+        credential_secret=False,
+        adapter_factory=_cursor_adapter_factory,
     ),
     ProviderOption(
         value="ollama",
