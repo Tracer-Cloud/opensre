@@ -37,16 +37,15 @@ def mock_httpx_client():
 
 def test_search_logs_success(client, mock_httpx_client):
     mock_instance = MagicMock()
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"data": [{"attributes": {"message": "log message"}}]}
 
-    mock_instance.post.return_value = MagicMock(
-        json=lambda: {"data": [{"attributes": {"message": "log message"}}]},
-        raise_for_status=MagicMock(),
-    )
-
+    mock_instance.post.return_value = mock_response
     mock_httpx_client.return_value = mock_instance
 
     result = client.search_logs("error")
 
+    mock_response.raise_for_status.assert_called_once()
     assert "logs" in result
     assert result["success"] is True
     assert result["logs"][0]["message"] == "log message"
