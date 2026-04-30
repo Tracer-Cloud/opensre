@@ -24,9 +24,22 @@ for concrete details they can share (alert text, error snippets, timelines) or u
 
 Always respond in clear markdown."""
 
-ROUTER_PROMPT = """Classify the user message:
+ROUTER_PROMPT = """Classify the user message as one of:
+- tracer_data
+- general
 
-- "tracer_data" if the user is asking to investigate an alert/incident or requesting analysis that likely requires querying data (e.g., logs, metrics, traces, failed runs/tasks/jobs, error messages, service health, Sentry issues, GitHub code/history).
-- "general" for general questions, greetings, or best practices
+Choose tracer_data when the user message is incident-bearing or asks for RCA/investigation that should use
+evidence from systems (logs, metrics, traces, alerts, run/task/job failures, service health, Sentry, GitHub).
+This includes pasted/paraphrased alerts and synthetic incident payloads (for example text with fields like:
+alertname, severity, state=alerting, summary, error, cluster_name, kube_namespace, db_instance_identifier).
+
+Choose general for conceptual discussion that does not require live/system evidence, such as:
+- definitions (e.g., "what is CrashLoopBackOff?")
+- best practices/runbooks/process advice
+- architecture/how-to explanations
+- greetings/small talk
+
+If the message includes a concrete production/synthetic incident symptom, active alert context, or asks to
+diagnose what is happening in a specific service/workload/environment, prefer tracer_data.
 
 Respond with ONLY: tracer_data or general"""
