@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import logging
 import os
 import shutil
 import subprocess
@@ -9,6 +11,8 @@ import sys
 from collections.abc import Callable, Sequence
 from functools import lru_cache
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def candidate_binary_names(binary_name: str) -> tuple[str, ...]:
@@ -119,6 +123,27 @@ def is_runnable_binary(path: str) -> bool:
     return os.access(p, os.X_OK)
 
 
+def diagnose_binary_path(path: str) -> str | None:
+    """Return a human-readable reason why *path* is not runnable, or None if it is.
+
+    Distinguishes broken symlinks from missing files so callers can surface a
+    more actionable message than a generic "not found".
+    """
+    p = Path(path)
+    if p.is_symlink() and not p.exists():
+        target = ""
+        with contextlib.suppress(OSError, AttributeError):
+            target = f" (points to '{p.readlink()}')"
+        return f"'{path}' is a broken symlink{target}. Remove or fix it."
+    if not p.exists():
+        return f"'{path}' does not exist."
+    if not p.is_file():
+        return f"'{path}' is not a file."
+    if sys.platform != "win32" and not os.access(p, os.X_OK):
+        return f"'{path}' is not executable. Run: chmod +x {path}"
+    return None
+
+
 def resolve_cli_binary(
     *,
     explicit_env_key: str,
@@ -139,8 +164,15 @@ def resolve_cli_binary(
     _runnable = runnable_check if runnable_check is not None else is_runnable_binary
 
     explicit = os.getenv(explicit_env_key, "").strip()
-    if explicit and _runnable(explicit):
-        return explicit
+    if explicit:
+        if _runnable(explicit):
+            return explicit
+        reason = diagnose_binary_path(explicit)
+        logger.warning(
+            "%s is set but unusable — falling back to PATH/defaults. %s",
+            explicit_env_key,
+            reason or "Not a runnable file.",
+        )
 
     for name in binary_names:
         found = _which(name)

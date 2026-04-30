@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from app.integrations.llm_cli.binary_resolver import npm_prefix_bin_dirs
+from app.integrations.llm_cli.binary_resolver import diagnose_binary_path, npm_prefix_bin_dirs
 from app.integrations.llm_cli.codex import CodexAdapter, _fallback_codex_paths
 from app.integrations.llm_cli.text import flatten_messages_to_prompt
 
@@ -372,3 +372,59 @@ def test_codex_default_exec_timeout_is_shorter(mock_which) -> None:
     inv = CodexAdapter().build(prompt="p", model=None, workspace="")
     assert inv.timeout_sec == 120.0
     mock_which.assert_called()
+
+
+def test_diagnose_binary_path_missing_file(tmp_path: Path) -> None:
+    result = diagnose_binary_path(str(tmp_path / "no-such-binary"))
+    assert result is not None
+    assert "does not exist" in result
+
+
+def test_diagnose_binary_path_broken_symlink(tmp_path: Path) -> None:
+    link = tmp_path / "broken-link"
+    link.symlink_to(tmp_path / "ghost")  # target does not exist
+    result = diagnose_binary_path(str(link))
+    assert result is not None
+    assert "broken symlink" in result
+
+
+def test_diagnose_binary_path_valid_executable(tmp_path: Path) -> None:
+    exe = tmp_path / "my-bin"
+    exe.write_bytes(b"")
+    os.chmod(exe, 0o755)
+    assert diagnose_binary_path(str(exe)) is None
+
+
+def test_diagnose_binary_path_not_executable(tmp_path: Path) -> None:
+    f = tmp_path / "not-executable"
+    f.write_bytes(b"")
+    os.chmod(f, 0o644)
+    result = diagnose_binary_path(str(f))
+    import sys
+
+    if sys.platform != "win32":
+        assert result is not None
+        assert "not executable" in result
+
+
+def test_resolve_cli_binary_warns_on_broken_symlink(tmp_path: Path, caplog) -> None:
+    from app.integrations.llm_cli.binary_resolver import resolve_cli_binary
+
+    link = tmp_path / "broken-codex"
+    link.symlink_to(tmp_path / "ghost")
+
+    import logging
+
+    with (
+        patch.dict(os.environ, {"CODEX_BIN": str(link)}, clear=False),
+        patch("app.integrations.llm_cli.binary_resolver.shutil.which", return_value=None),
+        caplog.at_level(logging.WARNING, logger="app.integrations.llm_cli.binary_resolver"),
+    ):
+        result = resolve_cli_binary(
+            explicit_env_key="CODEX_BIN",
+            binary_names=("codex",),
+            fallback_paths=[],
+        )
+
+    assert result is None
+    assert any("broken symlink" in r.message for r in caplog.records)
