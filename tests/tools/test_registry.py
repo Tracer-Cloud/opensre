@@ -344,6 +344,14 @@ def test_registry_regression_duplicate_tool_names_across_modules(
     assert tool_names.count("shared_tool_name") == 1
     registered_tool = registry_module.get_registered_tool_map()["shared_tool_name"]
     assert registered_tool.run() == {"module": "first"}
+    with caplog.at_level(logging.WARNING, logger="app.tools.registry"):
+        tools = registry_module.get_registered_tools()
+
+    tool_names = [t.name for t in tools]
+
+    assert tool_names.count("shared_tool_name") == 1
+    registered_tool = registry_module.get_registered_tool_map()["shared_tool_name"]
+    assert registered_tool.run() == {"module": "first"}
 
     assert any(
         "Duplicate tool name 'shared_tool_name' across modules" in record.message
