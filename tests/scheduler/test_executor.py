@@ -119,6 +119,92 @@ def _expire_claim(db_path: Path, task_id: str, fire_time: str) -> None:
 
 @pytest.mark.usefixtures("_tmp_stores")
 class TestExecutor:
+    @pytest.mark.parametrize("delivery_succeeds", [True, False])
+    def test_recovered_one_shot_finalizes_only_after_success(
+        self, tmp_path: Path, delivery_succeeds: bool
+    ) -> None:
+        from infrastructure.scheduling.scheduler.storage import get_task, try_claim
+
+        task = add_task(
+            ScheduledTask(
+                kind=TaskKind.MANUAL_LOOP,
+                cron="0 9 * * *",
+                provider=Provider.SLACK,
+                params={"disable_after_success": "true"},
+            )
+        )
+        assert try_claim(task.id, "old-tick") is not None
+        _expire_claim(tmp_path / "scheduler.db", task.id, "old-tick")
+        adapters = _install_fake_bundle()
+        adapters[Provider.SLACK].result = (
+            (True, "", "message") if delivery_succeeds else (False, "unavailable", "")
+        )
+        with patch(
+            "infrastructure.scheduling.scheduler.executor.build_message", return_value="report"
+        ):
+            _recover_expired_tasks(real_runners())
+        stored = get_task(task.id)
+        assert stored is not None
+        assert stored.enabled is not delivery_succeeds
+        assert (stored.last_run is not None) is delivery_succeeds
+        assert get_runs(task.id)[0].status is (
+            TaskStatus.SUCCESS if delivery_succeeds else TaskStatus.FAILED
+        )
+
+    @pytest.mark.parametrize("ineligible", ["disabled", "missing", "filtered"])
+    def test_recovery_skips_ineligible_claims_before_limiting(
+        self, tmp_path: Path, ineligible: str
+    ) -> None:
+        from infrastructure.scheduling.scheduler.storage import get_task, try_claim
+
+        blocked = ScheduledTask(
+            id="blocked",
+            kind=TaskKind.MANUAL_LOOP,
+            cron="0 9 * * *",
+            provider=Provider.TELEGRAM,
+            enabled=ineligible != "disabled",
+            chat_id="blocked",
+        )
+        if ineligible != "missing":
+            add_task(blocked)
+        task = add_task(
+            ScheduledTask(
+                kind=TaskKind.MANUAL_LOOP,
+                cron="0 9 * * *",
+                provider=Provider.SLACK,
+                chat_id="eligible",
+            )
+        )
+        for index in range(100):
+            assert try_claim(blocked.id, f"old-{index}") is not None
+        assert try_claim(task.id, "eligible-tick") is not None
+        with sqlite3.connect(tmp_path / "scheduler.db") as conn:
+            conn.execute(
+                "UPDATE task_runs SET lease_expires_at = ? WHERE task_id = ?",
+                ("2020-01-01T00:00:00+00:00", blocked.id),
+            )
+            conn.execute(
+                "UPDATE task_runs SET lease_expires_at = ? WHERE task_id = ?",
+                ("2021-01-01T00:00:00+00:00", task.id),
+            )
+        adapters = _install_fake_bundle()
+
+        def accepts_task(candidate: ScheduledTask) -> bool:
+            return candidate.provider is Provider.SLACK
+
+        with patch(
+            "infrastructure.scheduling.scheduler.executor.build_message", return_value="report"
+        ):
+            _recover_expired_tasks(
+                real_runners(), task_filter=accepts_task if ineligible == "filtered" else None
+            )
+        assert len(adapters[Provider.SLACK].calls) == 1
+        assert not adapters[Provider.TELEGRAM].calls
+        assert get_runs(task.id)[0].status is TaskStatus.SUCCESS
+        assert all(run.status is TaskStatus.RUNNING for run in get_runs(blocked.id, limit=100))
+        stored = get_task(task.id)
+        assert stored is not None and stored.last_run is not None
+
     @pytest.mark.parametrize("mutation", ["pause_and_edit", "delete"])
     def test_completion_preserves_concurrent_task_changes(self, mutation: str) -> None:
         from concurrent.futures import ThreadPoolExecutor

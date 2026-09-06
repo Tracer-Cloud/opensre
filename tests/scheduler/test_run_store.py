@@ -690,3 +690,13 @@ def test_delivery_scope_migration_rolls_back_on_failure(db_path: Path) -> None:
     finally:
         conn.close()
     assert len(get_runs("task", db_path=db_path)) == 1
+
+
+def test_expired_claim_eligibility_handles_empty_and_large_sets(db_path: Path) -> None:
+    _claimed(db_path, "eligible", "tick")
+    _expire_claim(db_path, "eligible", "tick")
+    assert get_expired_claims(db_path=db_path, eligible_task_ids=set()) == []
+    eligible = {f"task-{index}" for index in range(2000)} | {"eligible"}
+    assert get_expired_claims(db_path=db_path, eligible_task_ids=eligible) == [
+        ExpiredClaim(task_id="eligible", fire_time="tick")
+    ]

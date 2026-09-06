@@ -144,13 +144,16 @@ def _recover_expired_tasks(
     task_filter: TaskFilter | None = None,
 ) -> None:
     """Resubmit expired scheduled ticks through the normal fenced executor."""
-    for expired in get_expired_claims():
+    eligible_task_ids = _desired_task_ids(task_filter=task_filter)
+    for expired in get_expired_claims(eligible_task_ids=eligible_task_ids):
         task = get_task(expired.task_id)
         if task is None or not task.enabled:
             continue
         if task_filter is not None and not task_filter(task):
             continue
         result = execute_task(task, expired.fire_time, runners)
+        if result:
+            record_task_success(task.id)
         logger.info(
             "Recovered expired task %s fire_time=%s result=%s",
             expired.task_id,

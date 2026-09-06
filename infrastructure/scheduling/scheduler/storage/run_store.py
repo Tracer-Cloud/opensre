@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -137,20 +137,27 @@ def _decode_target_filter(raw: str) -> frozenset[tuple[Provider, str]] | None:
 
 
 def get_expired_claims(
-    *, limit: int = _EXPIRED_CLAIM_SCAN_LIMIT, db_path: Path | None = None
+    *,
+    limit: int = _EXPIRED_CLAIM_SCAN_LIMIT,
+    db_path: Path | None = None,
+    eligible_task_ids: Collection[str] | None = None,
 ) -> list[ExpiredClaim]:
-    """Return the latest expired running attempts that are eligible for retry."""
+    """Return expired attempts, applying task eligibility before the scan limit."""
+    if eligible_task_ids is not None and not eligible_task_ids:
+        return []
+    task_ids_json = json.dumps(list(eligible_task_ids)) if eligible_task_ids is not None else None
     with database.connection(db_path) as conn:
         now_text = datetime.now(UTC).isoformat()
         rows = conn.execute(
             "SELECT task_id, fire_time FROM task_runs AS current "
             "WHERE current.status = ? AND current.lease_expires_at != '' "
             "AND current.lease_expires_at < ? "
+            "AND (? IS NULL OR current.task_id IN (SELECT value FROM json_each(?))) "
             "AND current.attempt = (SELECT MAX(latest.attempt) FROM task_runs AS latest "
             "WHERE latest.task_id = current.task_id "
             "AND latest.fire_time = current.fire_time) "
             "ORDER BY current.lease_expires_at LIMIT ?",
-            (TaskStatus.RUNNING.value, now_text, limit),
+            (TaskStatus.RUNNING.value, now_text, task_ids_json, task_ids_json, limit),
         ).fetchall()
         return [ExpiredClaim(task_id=str(row[0]), fire_time=str(row[1])) for row in rows]
 
