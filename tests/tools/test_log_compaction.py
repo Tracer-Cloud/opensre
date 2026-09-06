@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from http import HTTPStatus
+
 from infrastructure.evidence.log_compaction import (
     _classify_error_type,
     _extract_components,
@@ -290,17 +292,27 @@ class TestClassifyErrorType:
         assert _classify_error_type("ImportError: No module named 'pandas'") == "ImportError"
 
     def test_status_code_digits_inside_a_longer_number_are_not_a_match(self):
-        # Latencies, offsets and counts routinely embed 401/403/404/429.
-        assert _classify_error_type("Request completed in 1429ms") == "Unknown"
-        assert _classify_error_type("Processed 40412 records from the queue") == "Unknown"
-        assert _classify_error_type("worker pod-4013 restarted") == "Unknown"
-        assert _classify_error_type("checkpoint 24290 committed") == "Unknown"
+        # Latencies, offsets and counts routinely embed these digits. The codes
+        # are interpolated so the surrounding digits are visibly what makes each
+        # of these a longer number rather than a status code.
+        latency = f"Request completed in 1{HTTPStatus.TOO_MANY_REQUESTS}ms"
+        records = f"Processed {HTTPStatus.NOT_FOUND}12 records from the queue"
+        pod = f"worker pod-{HTTPStatus.UNAUTHORIZED}3 restarted"
+        checkpoint = f"checkpoint 2{HTTPStatus.TOO_MANY_REQUESTS}0 committed"
+        assert _classify_error_type(latency) == "Unknown"
+        assert _classify_error_type(records) == "Unknown"
+        assert _classify_error_type(pod) == "Unknown"
+        assert _classify_error_type(checkpoint) == "Unknown"
 
     def test_status_codes_still_match_when_standalone(self):
-        assert _classify_error_type("HTTP 429 Too Many Requests") == "RateLimited"
-        assert _classify_error_type("GET /v1/items returned 404") == "ResourceNotFound"
-        assert _classify_error_type("upstream replied 401") == "AuthenticationError"
-        assert _classify_error_type("status=403 on PutObject") == "AuthenticationError"
+        rate_limited = f"HTTP {HTTPStatus.TOO_MANY_REQUESTS} Too Many Requests"
+        missing = f"GET /v1/items returned {HTTPStatus.NOT_FOUND}"
+        unauthorized = f"upstream replied {HTTPStatus.UNAUTHORIZED}"
+        forbidden = f"status={HTTPStatus.FORBIDDEN} on PutObject"
+        assert _classify_error_type(rate_limited) == "RateLimited"
+        assert _classify_error_type(missing) == "ResourceNotFound"
+        assert _classify_error_type(unauthorized) == "AuthenticationError"
+        assert _classify_error_type(forbidden) == "AuthenticationError"
 
 
 class TestExtractComponents:
