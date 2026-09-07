@@ -13,6 +13,12 @@ Terraform-managed, separately from this repo).
 In production, terminate TLS at a load balancer or reverse proxy in front of
 the application.
 
+The synchronous and asynchronous investigation APIs were removed in
+v0.1.2026.9.4. Existing `/investigate` clients must follow the
+[investigation-to-chat migration guide](/migration-investigation-to-chat-v0-1-2026-9-4);
+`POST /alerts` is intake only and is not a replacement for a report-returning
+endpoint.
+
 ## Authentication
 
 | Routes | Caller | Authentication |
