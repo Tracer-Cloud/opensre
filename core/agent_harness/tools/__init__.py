@@ -11,6 +11,7 @@ role), :mod:`core.agent_harness.runtime` (build and run the agent).
 
 from __future__ import annotations
 
+from core.agent_harness.tools.action_tools import registered_single_turn_tool_names
 from core.agent_harness.tools.tool_context import (
     ActionToolScope,
     action_context_from_agent_context,
@@ -27,4 +28,5 @@ __all__ = [
     "capability_available_from_sources",
     "coerce_gathered_evidence",
     "execute_with_action_context",
+    "registered_single_turn_tool_names",
 ]
