@@ -79,6 +79,10 @@ curl -X POST http://127.0.0.1:8000/alerts \
   }'
 ```
 
+The gateway acknowledges and queues this request, but does not currently drain
+the alert inbox. Use the interactive shell's alert listener when alerts must be
+triaged in chat; see [`/alerts`](/interactive-shell-commands#alerts).
+
 By default, `/alerts` accepts only loopback callers. To allow remote access, set
 `OPENSRE_ALERT_LISTENER_TOKEN` and send it as a bearer token:
 

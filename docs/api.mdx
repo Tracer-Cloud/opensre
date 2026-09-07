@@ -54,9 +54,9 @@ curl -X POST "https://<host>/alerts" \
 Required field: `text`. Optional fields: `alert_name`, `severity`, `source`,
 `received_at`. Request bodies larger than 1 MiB return `413`.
 
-Queued alerts are picked up by the agent's alert inbox — the interactive shell
-surfaces them with `/alerts`, and chat gateways deliver them to the paired
-channel.
+Queued alerts are drained only by the interactive shell when its alert listener
+is enabled; `/alerts` shows that inbox. The gateway web process accepts and
+queues this request but does not currently consume it.
 
 ## Status codes
 

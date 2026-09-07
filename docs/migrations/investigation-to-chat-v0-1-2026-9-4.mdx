@@ -25,7 +25,7 @@ Use this guide when upgrading from v0.1.2026.9.3 or earlier.
 | Embed the agent in Python | `AgentSession.chat()` | `TurnResult`; inspect `answered`, `cancelled`, and `primary_response_text` |
 | Repeat a free-form prompt | Scheduler kind `manual_loop` or `/loops` | One headless chat turn per schedule |
 | Repeat a supported packaged workflow | Scheduler kind `recurring_skill` | A named, revision-pinned skill with validated inputs |
-| Receive an external alert | `POST /alerts` | Queue acknowledgement only; a shell or chat gateway consumes the inbox |
+| Receive an external alert | `POST /alerts` | Queue acknowledgement only; the interactive shell drains the inbox when its listener is enabled |
 | Start and poll a remote investigation over HTTP | **No replacement** | There is no general HTTP chat/investigation endpoint |
 | Produce a typed RCA, score, tool-call list, or report artifact | **No replacement** | Consume conversational text or build that schema in your own host |
 
@@ -61,7 +61,7 @@ These surfaces are deliberately different:
 
 ### JSON return contract
 
-The old CLI, synchronous HTTP endpoint, and payload runner returned an
+The old CLI, synchronous HTTP endpoint, and investigation API returned an
 investigation object like this:
 
 ```json
@@ -95,12 +95,11 @@ investigation object like this:
 The old API returned a typed `InvestigationResult`:
 
 ```python
-from core.agent_harness import AgentSession
-from tools.investigation.capability import run_investigation_payload
+from core.agent_harness import AgentSession, InvestigationResult
 
-result = AgentSession().investigate(
+result: InvestigationResult = AgentSession().investigate(
     alert_payload,
-    runner=run_investigation_payload,
+    runner=your_investigation_runner,
 )
 print(result.report)
 print(result.root_cause)
@@ -165,11 +164,12 @@ It returns an acknowledgement such as:
 {"queued": true, "queue_depth": 1}
 ```
 
-Run a gateway or interactive shell that consumes the alert inbox. Do not wait
-for an investigation ID or poll `/api/investigations`; neither exists. If an
-HTTP caller needs the answer in its response, embed `AgentSession.chat()` in
-your own authenticated service and define that service's lifecycle, storage,
-cancellation, and response schema.
+Run the interactive shell with its alert listener enabled to drain the inbox.
+The gateway web process exposes the same intake route but does not consume its
+queued alerts. Do not wait for an investigation ID or poll
+`/api/investigations`; neither exists. If an HTTP caller needs the answer in its
+response, embed `AgentSession.chat()` in your own authenticated service and
+define that service's lifecycle, storage, cancellation, and response schema.
 
 ## Scheduler-store migration
 
@@ -188,9 +188,9 @@ cp ~/.opensre/scheduler_tasks.json \
 
 | Old kind | Migration |
 | --- | --- |
-| `daily_summary` | Change to `manual_loop` and set `params.prompt` to the exact daily-summary instruction you want |
-| `weekly_audit` | Change to `manual_loop` and set `params.prompt` to the exact weekly-audit instruction you want |
-| `custom_investigation` | Change to `manual_loop` only when `params.prompt` is non-empty; otherwise recreate it with `opensre cron add --kind manual_loop --prompt ...` |
+| `daily_summary` | Change to `manual_loop` and set `params.loop_prompt` to the exact daily-summary instruction you want |
+| `weekly_audit` | Change to `manual_loop` and set `params.loop_prompt` to the exact weekly-audit instruction you want |
+| `custom_investigation` | Change to `manual_loop` only when `params.loop_prompt` is non-empty; otherwise recreate it with `opensre cron add --kind manual_loop --prompt ...` |
 | `incident_window_replay` | **No replacement**; remove or disable the row |
 | `synthetic_run` | **No replacement**; the synthetic investigation product was removed |
 | `sentry_morning_digest`, `sentry_uptime_watch`, `github_pr_sweep`, `posthog_metric_report`, `work_item_reminder`, `work_item_checkin` | Still recognized; no kind change |
@@ -209,7 +209,7 @@ For example, a migrated task has this shape:
   "window_hours": 24,
   "enabled": true,
   "params": {
-    "prompt": "Summarize alerts, error spikes, and production risk from the last 24 hours."
+    "loop_prompt": "Summarize alerts, error spikes, and production risk from the last 24 hours."
   }
 }
 ```
