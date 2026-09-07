@@ -42,11 +42,22 @@ class WorkflowRun:
     completed_at: datetime
     attempt: int
     url: str
+    workflow_id: int = 0
+    """GitHub workflow id; 0 when the listing omitted it."""
+
+    head_repo: str = ""
+    """owner/name of the head repository, so fork branches do not collide."""
+
+    pr_numbers: tuple[int, ...] = ()
+    """Pull requests GitHub associated with this run, if the listing included them."""
+
+    earlier_failure_started_at: datetime | None = None
+    """Start of a prior attempt that failed, when that history was fetched."""
 
     @property
     def retried_to_green(self) -> bool:
-        """A re-run on the same commit passed after an earlier attempt failed."""
-        return self.succeeded and self.attempt > 1
+        """A later attempt passed after a fetched earlier attempt of this run failed."""
+        return self.succeeded and self.earlier_failure_started_at is not None
 
     @property
     def failed(self) -> bool:
@@ -75,6 +86,18 @@ class ClassifiedFailure:
 
     critical_path: bool
     """True when the PR branch was merged later, so the delay held up a real merge."""
+
+
+@dataclass(frozen=True)
+class MergedPullRequest:
+    """A pull request merged inside the report window, identified beyond branch name."""
+
+    number: int
+    branch: str
+    head_repo: str
+    """owner/name of the head repository at merge time."""
+
+    merged_at: datetime
 
 
 @dataclass(frozen=True)
@@ -190,6 +213,7 @@ __all__ = [
     "CiAnalyticsReport",
     "ClassifiedFailure",
     "FailureKind",
+    "MergedPullRequest",
     "Outage",
     "WorkflowRun",
     "WorkflowSummary",

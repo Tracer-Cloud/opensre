@@ -112,8 +112,6 @@ DEMO_SUGGESTIONS: tuple[DemoSuggestion, ...] = (
     ),
 )
 
-_SUGGESTIONS_BY_OPTION = {suggestion.option: suggestion for suggestion in DEMO_SUGGESTIONS}
-
 
 def marker_path() -> Path:
     return OPENSRE_HOME_DIR / MARKER_FILENAME
@@ -158,16 +156,19 @@ def offer_demo(session: Session, console: Console | None = None, *, force: bool 
             _record(_SKIPPED_OPTION)
             return False
         assert selected is not None
-        suggestion = _SUGGESTIONS_BY_OPTION.get(selected)
+        suggestion = _suggestion_for(selected)
         if suggestion is None:
             capture_onboarding_demo_selected(option=_CUSTOM_OPTION, custom=True)
             _record(_CUSTOM_OPTION)
             session.terminal.set_auto_command(selected)
             return True
         capture_onboarding_demo_selected(option=suggestion.option, custom=False)
-        _record(suggestion.option)
         if suggestion.option == OPTION_CI_ANALYTICS:
-            return _start_ci_analytics_demo(session, console, suggestion)
+            started = _start_ci_analytics_demo(session, console, suggestion)
+            if started:
+                _record(suggestion.option)
+            return started
+        _record(suggestion.option)
         session.terminal.set_auto_command(suggestion.prompt)
         return True
     except Exception:
@@ -214,6 +215,13 @@ def choose_repository(snapshot: WorkspaceSnapshot) -> str | None:
         return None
     assert selected is not None
     return selected.strip()
+
+
+def _suggestion_for(option: str) -> DemoSuggestion | None:
+    for suggestion in DEMO_SUGGESTIONS:
+        if suggestion.option == option:
+            return suggestion
+    return None
 
 
 def _nothing_chosen(selected: str | None) -> bool:

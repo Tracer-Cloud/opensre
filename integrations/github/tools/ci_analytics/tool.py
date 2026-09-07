@@ -227,7 +227,7 @@ def analyze_github_ci_reliability(
         window_days=window,
         branch_runs=collected.branch_runs,
         pr_runs=collected.pr_runs,
-        merged_branches=collected.merged_branches,
+        merged_prs=collected.merged_prs,
         now=now,
         coverage_notices=collected.coverage_notices,
     )

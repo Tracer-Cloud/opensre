@@ -11,6 +11,7 @@ from integrations.github.tools.ci_analytics.models import (
     CiAnalyticsReport,
     ClassifiedFailure,
     FailureKind,
+    MergedPullRequest,
     Outage,
     WorkflowRun,
     WorkflowSummary,
@@ -27,7 +28,7 @@ def compute_report(
     window_days: int,
     branch_runs: Sequence[WorkflowRun],
     pr_runs: Sequence[WorkflowRun],
-    merged_branches: Iterable[str],
+    merged_prs: Iterable[MergedPullRequest],
     now: datetime,
     coverage_notices: Iterable[str] = (),
 ) -> CiAnalyticsReport:
@@ -36,8 +37,8 @@ def compute_report(
     counted_pr = [run for run in pr_runs if run.failed or run.succeeded]
     all_runs = [*counted_branch, *counted_pr]
     normal = normal_minutes(all_runs)
-    merged = set(merged_branches)
-    classified = classify_failures(counted_pr, normal_minutes=normal, merged_branches=merged)
+    merged = tuple(merged_prs)
+    classified = classify_failures(counted_pr, normal_minutes=normal, merged_prs=merged)
     push_runs = [run for run in counted_branch if run.event == PUSH_EVENT]
     outages = find_outages(push_runs)
     closed = [o for o in outages if not o.ongoing]
@@ -52,7 +53,9 @@ def compute_report(
         pr_executions=len(counted_pr),
         pr_failures=sum(1 for run in counted_pr if run.failed or run.retried_to_green),
         classified=tuple(classified),
-        merged_pr_branches=len({c.failure.branch for c in reliability if c.critical_path}),
+        merged_pr_branches=len(
+            {_history_key(c.failure)[1:] for c in reliability if c.critical_path}
+        ),
         blocked_minutes=sum(c.delay_minutes for c in reliability if c.critical_path),
         blocked_minutes_all=sum(c.delay_minutes for c in reliability),
         branch_runs=len(push_runs),
@@ -67,47 +70,47 @@ def compute_report(
     )
 
 
-def normal_minutes(runs: Sequence[WorkflowRun]) -> dict[str, float]:
+def normal_minutes(runs: Sequence[WorkflowRun]) -> dict[int | str, float]:
     """Per-workflow baseline: median duration of first-attempt passing runs."""
-    durations: dict[str, list[float]] = defaultdict(list)
+    durations: dict[int | str, list[float]] = defaultdict(list)
     for run in runs:
         if run.succeeded and run.attempt == 1:
-            durations[run.workflow].append(run.minutes)
+            durations[_workflow_key(run)].append(run.minutes)
     return {workflow: median(values) for workflow, values in durations.items() if values}
 
 
 def classify_failures(
     pr_runs: Sequence[WorkflowRun],
     *,
-    normal_minutes: dict[str, float],
-    merged_branches: set[str],
+    normal_minutes: dict[int | str, float],
+    merged_prs: Sequence[MergedPullRequest],
 ) -> list[ClassifiedFailure]:
     """Pair each failed PR run with its recovery and judge whether CI or the code was at fault.
 
-    GitHub keeps one run id across re-runs, so a passing run with attempt > 1
-    is itself the record of an earlier failed attempt on the same commit: a
-    reliability failure whose delay runs from the run's creation to its end.
-    Other failed runs are grouped per workflow and PR branch in completion
-    order: the first later passing run on the same commit marks a reliability
-    failure, a pass on a newer commit a source-code failure, and no later pass
-    leaves it unresolved. Every delay subtracts the workflow's normal duration.
+    A passing run is a reliability failure only when an earlier attempt of the
+    same run actually failed. Other failed runs are grouped per workflow, head
+    repository, branch, and pull request in completion order: the first later
+    passing run on the same commit marks a reliability failure, a pass on a
+    newer commit a source-code failure, and no later pass leaves it unresolved.
+    Every delay subtracts the workflow's normal duration.
     """
-    groups: dict[tuple[str, str], list[WorkflowRun]] = defaultdict(list)
+    groups: dict[tuple[int | str, str, str, int], list[WorkflowRun]] = defaultdict(list)
     for run in pr_runs:
-        groups[(run.workflow, run.branch)].append(run)
+        groups[_history_key(run)].append(run)
     classified: list[ClassifiedFailure] = []
-    for (workflow, branch), runs in groups.items():
+    for (workflow_key, _head_repo, _branch, _pr), runs in groups.items():
         ordered = sorted(runs, key=lambda r: r.completed_at)
         for index, run in enumerate(ordered):
             if run.retried_to_green:
-                elapsed = (run.completed_at - run.created_at).total_seconds() / 60
+                started = run.earlier_failure_started_at or run.created_at
+                elapsed = (run.completed_at - started).total_seconds() / 60
                 classified.append(
                     ClassifiedFailure(
                         failure=run,
                         recovery=run,
                         kind=FailureKind.RELIABILITY,
-                        delay_minutes=max(0.0, elapsed - normal_minutes.get(workflow, 0.0)),
-                        critical_path=branch in merged_branches,
+                        delay_minutes=max(0.0, elapsed - normal_minutes.get(workflow_key, 0.0)),
+                        critical_path=_on_critical_path(run, merged_prs),
                     )
                 )
                 continue
@@ -123,14 +126,14 @@ def classify_failures(
             delay = 0.0
             if kind is FailureKind.RELIABILITY and recovery is not None:
                 elapsed = (recovery.completed_at - run.started_at).total_seconds() / 60
-                delay = max(0.0, elapsed - normal_minutes.get(workflow, 0.0))
+                delay = max(0.0, elapsed - normal_minutes.get(workflow_key, 0.0))
             classified.append(
                 ClassifiedFailure(
                     failure=run,
                     recovery=recovery,
                     kind=kind,
                     delay_minutes=delay,
-                    critical_path=branch in merged_branches,
+                    critical_path=_on_critical_path(run, merged_prs),
                 )
             )
     return sorted(classified, key=lambda c: c.failure.completed_at)
@@ -138,22 +141,23 @@ def classify_failures(
 
 def find_outages(runs: Sequence[WorkflowRun]) -> list[Outage]:
     """Red periods per workflow: from a failure's completion to the next success's completion."""
-    by_workflow: dict[str, list[WorkflowRun]] = defaultdict(list)
+    by_workflow: dict[int | str, list[WorkflowRun]] = defaultdict(list)
     for run in runs:
-        by_workflow[run.workflow].append(run)
+        by_workflow[_workflow_key(run)].append(run)
     outages: list[Outage] = []
-    for workflow, workflow_runs in by_workflow.items():
+    for workflow_runs in by_workflow.values():
         open_since: WorkflowRun | None = None
+        name = workflow_runs[0].workflow
         for run in sorted(workflow_runs, key=lambda r: r.completed_at):
             if run.failed and open_since is None:
                 open_since = run
             elif run.succeeded and open_since is not None:
                 outages.append(
-                    Outage(workflow, open_since.completed_at, run.completed_at, open_since.url)
+                    Outage(name, open_since.completed_at, run.completed_at, open_since.url)
                 )
                 open_since = None
         if open_since is not None:
-            outages.append(Outage(workflow, open_since.completed_at, None, open_since.url))
+            outages.append(Outage(name, open_since.completed_at, None, open_since.url))
     return sorted(outages, key=lambda o: o.started_at)
 
 
@@ -177,30 +181,52 @@ def union_hours(outages: Sequence[Outage], *, now: datetime) -> float:
 def summarize_workflows(
     runs: Sequence[WorkflowRun],
     classified: Sequence[ClassifiedFailure],
-    normal: dict[str, float],
+    normal: dict[int | str, float],
 ) -> list[WorkflowSummary]:
     """Per-workflow counts, worst first; workflows that never failed are omitted."""
-    run_counts: dict[str, int] = defaultdict(int)
-    failure_counts: dict[str, int] = defaultdict(int)
+    run_counts: dict[int | str, int] = defaultdict(int)
+    failure_counts: dict[int | str, int] = defaultdict(int)
+    names: dict[int | str, str] = {}
     for run in runs:
-        run_counts[run.workflow] += 1
+        key = _workflow_key(run)
+        names[key] = run.workflow
+        run_counts[key] += 1
         if run.failed:
-            failure_counts[run.workflow] += 1
-    reliability_counts: dict[str, int] = defaultdict(int)
+            failure_counts[key] += 1
+    reliability_counts: dict[int | str, int] = defaultdict(int)
     for item in classified:
         if item.kind is FailureKind.RELIABILITY:
-            reliability_counts[item.failure.workflow] += 1
+            reliability_counts[_workflow_key(item.failure)] += 1
     summaries = [
         WorkflowSummary(
-            workflow=workflow,
-            runs=run_counts[workflow],
+            workflow=names[key],
+            runs=run_counts[key],
             failures=failures,
-            reliability_failures=reliability_counts[workflow],
-            normal_minutes=normal.get(workflow),
+            reliability_failures=reliability_counts[key],
+            normal_minutes=normal.get(key),
         )
-        for workflow, failures in failure_counts.items()
+        for key, failures in failure_counts.items()
     ]
     return sorted(summaries, key=lambda s: (-s.failures, s.workflow))
+
+
+def _workflow_key(run: WorkflowRun) -> int | str:
+    return run.workflow_id if run.workflow_id else run.workflow
+
+
+def _history_key(run: WorkflowRun) -> tuple[int | str, str, str, int]:
+    pr_number = run.pr_numbers[0] if run.pr_numbers else 0
+    return (_workflow_key(run), run.head_repo, run.branch, pr_number)
+
+
+def _on_critical_path(run: WorkflowRun, merged: Sequence[MergedPullRequest]) -> bool:
+    if run.pr_numbers:
+        merged_ids = {pr.number for pr in merged}
+        return any(number in merged_ids for number in run.pr_numbers)
+    return any(
+        pr.branch == run.branch and pr.head_repo == run.head_repo and pr.merged_at >= run.created_at
+        for pr in merged
+    )
 
 
 __all__ = [

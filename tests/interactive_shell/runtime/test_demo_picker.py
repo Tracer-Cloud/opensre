@@ -102,7 +102,7 @@ def test_analytics_demo_scans_asks_for_the_repository_then_queues_the_analysis(
 def test_analytics_demo_stops_with_setup_hint_when_no_github_token(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _offerable(monkeypatch, tmp_path)
+    marker = _offerable(monkeypatch, tmp_path)
     monkeypatch.setattr(demo_picker, "resolve_github_token", lambda _token: "")
     calls = _answers(monkeypatch, demo_picker.OPTION_CI_ANALYTICS)
     session = Session()
@@ -114,6 +114,23 @@ def test_analytics_demo_stops_with_setup_hint_when_no_github_token(
     assert len(calls) == 1
     assert "opensre integrations setup github" in buf.getvalue()
     assert not session.terminal.pending_prompt_default
+    assert not marker.is_file()
+    assert demo_picker.should_offer_demo() is True
+
+
+def test_cancelled_repository_pick_does_not_record_the_demo(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    marker = _offerable(monkeypatch, tmp_path)
+    _answers(monkeypatch, demo_picker.OPTION_CI_ANALYTICS, None)
+    session = Session()
+
+    queued = demo_picker.offer_demo(session, None)
+
+    assert queued is False
+    assert not session.terminal.pending_prompt_default
+    assert not marker.is_file()
+    assert demo_picker.should_offer_demo() is True
 
 
 def test_other_demos_queue_their_prompt_directly(

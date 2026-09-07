@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from integrations.github.client import GitHubApiError
-from integrations.github.tools.ci_analytics.collector import CollectedRuns, parse_run
+from integrations.github.tools.ci_analytics.collector import CollectedRuns, collect_runs, parse_run
 from integrations.github.tools.ci_analytics.metrics import (
     classify_failures,
     compute_report,
@@ -17,7 +17,11 @@ from integrations.github.tools.ci_analytics.metrics import (
     normal_minutes,
     union_hours,
 )
-from integrations.github.tools.ci_analytics.models import FailureKind, WorkflowRun
+from integrations.github.tools.ci_analytics.models import (
+    FailureKind,
+    MergedPullRequest,
+    WorkflowRun,
+)
 from integrations.github.tools.ci_analytics.render import render_markdown
 from integrations.github.tools.ci_analytics.tool import TOOL_NAME, analyze_github_ci_reliability
 from tests.tools.conftest import BaseToolContract
@@ -37,6 +41,10 @@ def _run(
     attempt: int = 1,
     event: str = "pull_request",
     queued_minutes: int = 0,
+    workflow_id: int = 0,
+    head_repo: str = "",
+    pr_numbers: tuple[int, ...] = (),
+    earlier_failure_started_at: datetime | None = None,
 ) -> WorkflowRun:
     started = _T0 + timedelta(minutes=start_minutes)
     return WorkflowRun(
@@ -51,6 +59,22 @@ def _run(
         completed_at=started + timedelta(minutes=duration_minutes),
         attempt=attempt,
         url=f"https://github.com/o/r/actions/runs/{run_id}",
+        workflow_id=workflow_id,
+        head_repo=head_repo,
+        pr_numbers=pr_numbers,
+        earlier_failure_started_at=earlier_failure_started_at,
+    )
+
+
+def _merged(*branches: str, head_repo: str = "") -> tuple[MergedPullRequest, ...]:
+    return tuple(
+        MergedPullRequest(
+            number=index,
+            branch=branch,
+            head_repo=head_repo,
+            merged_at=_T0 + timedelta(days=1),
+        )
+        for index, branch in enumerate(branches, start=1)
     )
 
 
@@ -65,7 +89,7 @@ def test_classifies_same_commit_recovery_as_ci_fault_and_new_commit_as_source() 
     ]
 
     # Act
-    classified = classify_failures(runs, normal_minutes={"CI": 10.0}, merged_branches={"A"})
+    classified = classify_failures(runs, normal_minutes={"CI": 10.0}, merged_prs=_merged("A"))
 
     # Assert
     by_branch = {item.failure.branch: item for item in classified}
@@ -78,18 +102,47 @@ def test_classifies_same_commit_recovery_as_ci_fault_and_new_commit_as_source() 
     assert by_branch["C"].kind is FailureKind.UNRESOLVED
 
 
-def test_rerun_that_passed_counts_as_ci_fault_from_first_queue_time() -> None:
-    # Arrange: one run id, first attempt failed, re-run passed 50 minutes after creation.
+def test_rerun_that_passed_counts_as_ci_fault_from_first_failure_time() -> None:
+    # Arrange: later attempt passed, and a fetched earlier attempt actually failed.
     rerun = _run(
-        1, branch="A", sha="s", conclusion="success", start_minutes=40, attempt=2, queued_minutes=40
+        1,
+        branch="A",
+        sha="s",
+        conclusion="success",
+        start_minutes=40,
+        attempt=2,
+        queued_minutes=40,
+        earlier_failure_started_at=_T0,
     )
 
     # Act
-    classified = classify_failures([rerun], normal_minutes={"CI": 10.0}, merged_branches=set())
+    classified = classify_failures([rerun], normal_minutes={"CI": 10.0}, merged_prs=())
 
     # Assert: 50 minutes wall clock minus a 10 minute normal run.
     assert [item.kind for item in classified] == [FailureKind.RELIABILITY]
     assert classified[0].delay_minutes == 40.0
+
+
+def test_successful_rerun_without_earlier_failure_is_not_a_reliability_failure() -> None:
+    rerun = _run(
+        1, branch="A", sha="s", conclusion="success", start_minutes=40, attempt=2, queued_minutes=40
+    )
+
+    classified = classify_failures([rerun], normal_minutes={"CI": 10.0}, merged_prs=())
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[],
+        pr_runs=[rerun],
+        merged_prs=_merged("A"),
+        now=_T0 + timedelta(days=1),
+    )
+
+    assert classified == []
+    assert report.pr_failures == 0
+    assert report.blocked_minutes == 0.0
 
 
 def test_default_branch_red_time_ignores_dispatched_and_scheduled_runs() -> None:
@@ -105,7 +158,7 @@ def test_default_branch_red_time_ignores_dispatched_and_scheduled_runs() -> None
         window_days=30,
         branch_runs=branch_runs,
         pr_runs=[],
-        merged_branches=[],
+        merged_prs=(),
         now=_T0 + timedelta(days=1),
     )
 
@@ -131,7 +184,7 @@ def test_blocked_time_counts_only_merged_pr_branches() -> None:
         window_days=30,
         branch_runs=[],
         pr_runs=pr_runs,
-        merged_branches=["merged"],
+        merged_prs=_merged("merged"),
         now=_T0 + timedelta(days=1),
     )
 
@@ -187,19 +240,240 @@ def test_parse_run_reads_live_payload_shape_and_drops_incomplete_rows() -> None:
         "event": "push",
         "status": "completed",
         "conclusion": "success",
+        "workflow_id": 187654321,
         "run_attempt": 2,
         "created_at": "2026-09-07T10:33:52Z",
         "run_started_at": "2026-09-07T10:33:55Z",
         "updated_at": "2026-09-07T10:34:32Z",
         "html_url": "https://github.com/Tracer-Cloud/opensre/actions/runs/34112095561",
+        "head_repository": {"full_name": "alice/opensre"},
+        "pull_requests": [{"number": 88}],
     }
 
     parsed = parse_run(row)
 
     assert parsed is not None
     assert parsed.attempt == 2
+    assert parsed.workflow_id == 187654321
+    assert parsed.head_repo == "alice/opensre"
+    assert parsed.pr_numbers == (88,)
     assert parsed.minutes == 37 / 60
     assert parse_run({"name": "no id", "updated_at": "2026-09-07T10:34:32Z"}) is None
+
+
+def test_same_workflow_name_and_branch_do_not_share_history() -> None:
+    # Arrange: two workflows named CI, and two PRs that reused feat/x.
+    runs = [
+        _run(
+            1,
+            workflow_id=1,
+            head_repo="alice/fork",
+            pr_numbers=(11,),
+            sha="s1",
+            conclusion="failure",
+            start_minutes=0,
+        ),
+        _run(
+            2,
+            workflow_id=2,
+            head_repo="alice/fork",
+            pr_numbers=(11,),
+            sha="s1",
+            conclusion="success",
+            start_minutes=40,
+            duration_minutes=20,
+        ),
+        _run(
+            3,
+            workflow_id=1,
+            head_repo="bob/fork",
+            pr_numbers=(22,),
+            sha="s2",
+            conclusion="failure",
+            start_minutes=0,
+        ),
+    ]
+    merged = (
+        MergedPullRequest(
+            number=22, branch="feat/x", head_repo="bob/fork", merged_at=_T0 + timedelta(hours=2)
+        ),
+    )
+
+    classified = classify_failures(runs, normal_minutes={1: 10.0, 2: 10.0}, merged_prs=merged)
+    by_id = {item.failure.run_id: item for item in classified}
+
+    assert by_id[1].kind is FailureKind.UNRESOLVED
+    assert by_id[1].critical_path is False
+    assert by_id[3].kind is FailureKind.UNRESOLVED
+    assert by_id[3].critical_path is True
+
+
+def test_reused_branch_does_not_inherit_an_earlier_merge() -> None:
+    failure = _run(1, head_repo="o/r", conclusion="failure", start_minutes=0)
+    stale_merge = MergedPullRequest(
+        number=9, branch="feat/x", head_repo="o/r", merged_at=_T0 - timedelta(days=2)
+    )
+
+    classified = classify_failures(
+        [failure], normal_minutes={"CI": 10.0}, merged_prs=(stale_merge,)
+    )
+
+    assert classified[0].critical_path is False
+
+
+def test_same_display_name_does_not_share_duration_or_outage() -> None:
+    runs = [
+        _run(
+            1,
+            workflow_id=1,
+            event="push",
+            branch="main",
+            conclusion="success",
+            duration_minutes=8,
+        ),
+        _run(
+            2,
+            workflow_id=2,
+            event="push",
+            branch="main",
+            conclusion="success",
+            duration_minutes=40,
+        ),
+        _run(
+            3,
+            workflow_id=1,
+            event="push",
+            branch="main",
+            conclusion="failure",
+            start_minutes=60,
+        ),
+        _run(
+            4,
+            workflow_id=2,
+            event="push",
+            branch="main",
+            conclusion="success",
+            start_minutes=80,
+            duration_minutes=40,
+        ),
+    ]
+
+    assert normal_minutes(runs) == {1: 8.0, 2: 40.0}
+    outages = find_outages(runs)
+    assert len(outages) == 1
+    assert outages[0].ongoing is True
+
+
+def test_collect_runs_keeps_the_timestamp_cutoff_and_proves_earlier_failures() -> None:
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    since = now - timedelta(days=30)
+    inside = _payload(
+        11,
+        created_at=_iso(since + timedelta(hours=1)),
+        conclusion="success",
+        attempt=2,
+    )
+    earlier_day = _payload(
+        10,
+        created_at=_iso(since.replace(hour=10, minute=0, second=0)),
+        conclusion="failure",
+    )
+    client = _FakeGitHub(
+        repository={"default_branch": "main"},
+        runs=[inside, earlier_day],
+        attempts={
+            (11, 1): _payload(11, created_at=inside["created_at"], conclusion="failure", attempt=1)
+        },
+    )
+
+    collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    assert client.run_queries
+    assert all(">=2026-08-08T18:00:00Z" in str(call) for call in client.run_queries)
+    assert [run.run_id for run in collected.pr_runs] == [11]
+    assert collected.pr_runs[0].retried_to_green is True
+    assert collected.pr_runs[0].earlier_failure_started_at is not None
+
+
+def test_collect_runs_does_not_treat_a_cancelled_rerun_as_a_flake() -> None:
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    row = _payload(5, created_at="2026-09-01T09:00:00Z", conclusion="success", attempt=2)
+    client = _FakeGitHub(
+        repository={"default_branch": "main"},
+        runs=[row],
+        attempts={
+            (5, 1): _payload(5, created_at=row["created_at"], conclusion="cancelled", attempt=1)
+        },
+    )
+
+    collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    assert collected.pr_runs[0].retried_to_green is False
+
+
+def _iso(value: datetime) -> str:
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _payload(
+    run_id: int,
+    *,
+    created_at: str,
+    conclusion: str = "success",
+    attempt: int = 1,
+    event: str = "pull_request",
+) -> dict[str, Any]:
+    return {
+        "id": run_id,
+        "name": "CI",
+        "workflow_id": 1,
+        "head_branch": "feat/x",
+        "head_sha": "abc",
+        "event": event,
+        "conclusion": conclusion,
+        "run_attempt": attempt,
+        "created_at": created_at,
+        "run_started_at": created_at,
+        "updated_at": created_at,
+        "html_url": f"https://github.com/o/r/actions/runs/{run_id}",
+        "head_repository": {"full_name": "o/r"},
+    }
+
+
+class _FakeGitHub:
+    def __init__(
+        self,
+        *,
+        repository: dict[str, Any],
+        runs: list[dict[str, Any]],
+        attempts: dict[tuple[int, int], dict[str, Any]] | None = None,
+        pulls: list[dict[str, Any]] | None = None,
+    ) -> None:
+        self._repository = repository
+        self._runs = runs
+        self._attempts = attempts or {}
+        self._pulls = pulls or []
+        self.run_queries: list[dict[str, Any]] = []
+
+    def request(self, method: str, path: str, **_kwargs: Any) -> dict[str, Any]:
+        if path == "/repos/o/r":
+            return self._repository
+        marker = "/actions/runs/"
+        if marker in path and "/attempts/" in path:
+            rest = path.split(marker, 1)[1]
+            run_id, _, attempt = rest.partition("/attempts/")
+            return self._attempts[(int(run_id), int(attempt))]
+        raise AssertionError(f"unexpected {method} {path}")
+
+    def paginate(self, path: str, *, params: dict[str, Any] | None = None, **_kwargs: Any) -> list:
+        if path == "/repos/o/r/actions/runs":
+            self.run_queries.append(params or {})
+            if (params or {}).get("event") == "pull_request":
+                return self._runs
+            return []
+        if path == "/repos/o/r/pulls":
+            return self._pulls
+        return []
 
 
 def test_render_shows_the_kpi_block_and_classification() -> None:
@@ -214,7 +488,7 @@ def test_render_shows_the_kpi_block_and_classification() -> None:
         window_days=30,
         branch_runs=[_run(9, event="push", branch="main")],
         pr_runs=pr_runs,
-        merged_branches=["A"],
+        merged_prs=_merged("A"),
         now=_T0 + timedelta(days=1),
     )
 
@@ -246,7 +520,7 @@ def test_tool_renders_report_from_collected_runs() -> None:
             _run(1, branch="A", sha="s", conclusion="failure", start_minutes=0),
             _run(2, branch="A", sha="s", conclusion="success", start_minutes=40),
         ],
-        merged_branches={"A"},
+        merged_prs=_merged("A"),
         coverage_notices=["Coverage notice: sample"],
     )
     with patch("integrations.github.tools.ci_analytics.tool.collect_runs", return_value=collected):
