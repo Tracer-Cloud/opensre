@@ -152,6 +152,21 @@ class CiAnalyticsReport:
         )
 
     @property
+    def median_delay_minutes(self) -> float | None:
+        """Typical CI-caused delay, so one long re-run gap does not read as the norm."""
+        delays = sorted(
+            item.delay_minutes
+            for item in self.classified
+            if item.kind is FailureKind.RELIABILITY and item.delay_minutes > 0
+        )
+        if not delays:
+            return None
+        middle = len(delays) // 2
+        if len(delays) % 2:
+            return delays[middle]
+        return (delays[middle - 1] + delays[middle]) / 2
+
+    @property
     def longest_delay(self) -> ClassifiedFailure | None:
         delays = [item for item in self.classified if item.kind is FailureKind.RELIABILITY]
         if not delays:

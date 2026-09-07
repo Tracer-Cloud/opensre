@@ -49,6 +49,7 @@ def _repo_payload(snapshot: WorkspaceSnapshot) -> list[dict[str, Any]]:
             "path": repo.path,
             "github": repo.github_full_name,
             "commits": repo.commits,
+            "own_commits": repo.own_commits,
             "uncommitted": repo.uncommitted,
             "has_workflows": repo.has_workflows,
         }
@@ -105,7 +106,8 @@ def scan_local_git_workspace(
     with_workflows = sum(1 for repo in snapshot.repos if repo.has_workflows)
     summary = (
         f"Found {len(snapshot.repos)} git repositories under {snapshot.root}: "
-        f"{snapshot.total_commits} commits in the last {window} days, "
+        f"{snapshot.total_commits} commits in the last {window} days "
+        f"({snapshot.total_own_commits} by you), "
         f"{snapshot.total_uncommitted} uncommitted files, "
         f"{with_workflows} with GitHub Actions workflows."
     )
@@ -116,6 +118,7 @@ def scan_local_git_workspace(
         "days": window,
         "repo_count": len(snapshot.repos),
         "total_commits": snapshot.total_commits,
+        "total_own_commits": snapshot.total_own_commits,
         "total_uncommitted": snapshot.total_uncommitted,
         "repos_with_workflows": with_workflows,
         "truncated": snapshot.truncated,

@@ -255,6 +255,10 @@ def test_tool_renders_report_from_collected_runs() -> None:
     assert result["success"] is True
     assert result["reliability_failures"] == 1
     assert result["blocked_minutes"] == 40.0
+    assert result["headline"] == (
+        "Unreliable CI blocked merged pull requests for 40m in the last 7 days; "
+        "the typical CI-caused delay was 40m, the worst 40m."
+    )
     assert "Coverage notice: sample" in result["response_text"]
 
 

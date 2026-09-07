@@ -7,7 +7,7 @@ from typing import Any
 from rich.console import Group
 from rich.text import Text
 
-from tools.system.workspace_git_scan.scan import WorkspaceSnapshot
+from tools.system.workspace_git_scan.scan import RepoActivity, WorkspaceSnapshot
 
 _TOP_REPOS = 4
 _BAR_MAX_CELLS = 40
@@ -56,23 +56,36 @@ def _bar_chart(snapshot: WorkspaceSnapshot) -> list[Text]:
         return [title, Text("No commits in this window.", style="dim")]
     label_width = max(len(label) for label, _ in rows)
     peak = max(count for _, count in rows) or 1
+    total = snapshot.total_commits or 1
     lines = [title]
     for index, (label, count) in enumerate(rows):
         cells = max(1, round(count / peak * _BAR_MAX_CELLS)) if count else 0
         line = Text(f"{label:<{label_width}}  ")
         line.append(_BAR_CELL * cells, style=_SERIES_COLOURS[index % len(_SERIES_COLOURS)])
-        line.append(f" {count}", style="dim")
+        line.append(f" {count} ({count / total:.0%})", style="dim")
         lines.append(line)
     return lines
 
 
 def _chart_rows(snapshot: WorkspaceSnapshot) -> list[tuple[str, int]]:
     active = [repo for repo in snapshot.repos if repo.commits > 0]
-    rows = [(repo.name, repo.commits) for repo in active[:_TOP_REPOS]]
+    top = active[:_TOP_REPOS]
+    labels = [_label(repo) for repo in top]
+    rows = [
+        (
+            repo.github_full_name if labels.count(label) > 1 and repo.github_full_name else label,
+            repo.commits,
+        )
+        for repo, label in zip(top, labels, strict=True)
+    ]
     rest = sum(repo.commits for repo in active[_TOP_REPOS:])
     if rest:
         rows.append((_OTHERS_LABEL, rest))
     return rows
+
+
+def _label(repo: RepoActivity) -> str:
+    return repo.github_repo or repo.name
 
 
 __all__ = ["render_snapshot", "snapshot_text"]

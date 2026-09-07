@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
@@ -20,7 +21,12 @@ from integrations.github.repo_scope import detect_git_remote_repo_scope
 from integrations.github.tools.ci_analytics.collector import collect_runs
 from integrations.github.tools.ci_analytics.metrics import compute_report
 from integrations.github.tools.ci_analytics.models import CiAnalyticsReport, FailureKind
-from integrations.github.tools.ci_analytics.render import render_markdown
+from integrations.github.tools.ci_analytics.render import (
+    format_minutes,
+    headline,
+    render_markdown,
+    render_report,
+)
 
 TOOL_NAME = "analyze_github_ci_reliability"
 _SOURCE = "github"
@@ -48,6 +54,15 @@ def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
         if value:
             params[key] = value
     return params
+
+
+def _console(context: Any) -> Any:
+    if context is None:
+        return None
+    try:
+        return action_context_from_agent_context(context).console
+    except RuntimeError:
+        return None
 
 
 def _map_evidence(evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]) -> None:
@@ -120,10 +135,13 @@ def _payload(report: CiAnalyticsReport) -> dict[str, Any]:
         "reliability_failures": "Failures that passed later on the identical commit",
         "blocked_minutes": "Developer minutes blocked by CI-caused failures on merged PRs",
         "red_hours": "Hours the default branch had at least one red workflow",
-        "response_text": "The rendered report to show the user verbatim",
+        "headline": "One sentence naming the biggest cost, to repeat verbatim",
+        "response_text": "The rendered report, or a one-line summary when the shell painted it",
     },
     surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    parallel_safe=False,
+    accepts_runtime_context=True,
     input_schema={
         "type": "object",
         "properties": {
@@ -160,9 +178,15 @@ def analyze_github_ci_reliability(
     days: int | None = None,
     workspace: str | None = None,
     github_token: str | None = None,
+    context: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
-    """Compute and render CI reliability KPIs for one repository window."""
+    """Compute and render CI reliability KPIs for one repository window.
+
+    In the interactive shell the report is painted straight to the console so
+    every figure the user sees is the computed one; the returned
+    ``response_text`` then only summarizes. Other surfaces get the markdown.
+    """
     window = min(max(int(days or _DEFAULT_WINDOW_DAYS), _MIN_WINDOW_DAYS), _MAX_WINDOW_DAYS)
     repo_owner = (owner or "").strip()
     repo_name = (repo or "").strip().removesuffix(".git")
@@ -211,8 +235,12 @@ def analyze_github_ci_reliability(
         f"{repo_owner}/{repo_name}: {report.executions} runs in {window} days, "
         f"{report.pr_failures} of {report.pr_executions} PR runs failed, "
         f"{report.count(FailureKind.RELIABILITY)} CI-caused, "
-        f"{report.blocked_minutes:.0f} developer minutes blocked on merged PRs."
+        f"{format_minutes(report.blocked_minutes)} of developer time blocked on merged PRs."
     )
+    console = _console(context)
+    rendered = console is not None
+    if rendered:
+        render_report(console, report)
     return {
         "source": _SOURCE,
         "success": True,
@@ -222,7 +250,9 @@ def analyze_github_ci_reliability(
         "window_days": window,
         **_payload(report),
         "summary": summary,
-        "response_text": render_markdown(report),
+        "headline": headline(report),
+        "rendered_in_shell": rendered,
+        "response_text": summary if rendered else render_markdown(report),
     }
 
 

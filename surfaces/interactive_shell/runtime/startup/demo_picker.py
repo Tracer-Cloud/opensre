@@ -1,12 +1,16 @@
 """First-experience demo picker.
 
 On the first interactive launch the shell asks which demo to run before the
-prompt takes stdin. Picking one auto-submits a canned prompt as the first turn;
-the action agent then drives the matching bundled skill. A marker file records
-the choice so the picker shows once; ``/demo`` reopens it on demand.
+prompt takes stdin. A marker file records the choice so the picker shows once;
+``/demo`` reopens it on demand.
 
-Deterministic startup UI plus a canned prompt: routing stays with the action
-agent (no intent heuristics — see ``surfaces/interactive_shell/AGENTS.md``).
+The CI/CD analytics demo runs its discovery steps here, deterministically:
+the workspace scan paints the activity chart, a second picker asks which
+repository to analyze, and only then is a canned prompt auto-submitted for the
+analysis and the next-step offer. Mid-turn menus cannot open inside an
+auto-submitted turn, so every choice that needs a menu happens before the turn
+starts. Routing of the prompt itself stays with the action agent (no intent
+heuristics — see ``surfaces/interactive_shell/AGENTS.md``).
 """
 
 from __future__ import annotations
@@ -25,11 +29,14 @@ from infrastructure.analytics.capture import (
     capture_onboarding_demo_skipped,
 )
 from infrastructure.analytics.source import is_test_run
-from infrastructure.terminal.theme import DIM
+from infrastructure.terminal.theme import DIM, WARNING
+from integrations.github.client import resolve_github_token
 from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
     repl_tty_interactive,
 )
+from tools.system.workspace_git_scan.render import render_snapshot
+from tools.system.workspace_git_scan.scan import RepoActivity, WorkspaceSnapshot, scan_workspace
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -39,14 +46,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 MARKER_FILENAME = "onboarding_demo.json"
+EXAMPLE_REPOSITORY = "Tracer-Cloud/opensre"
 _MENU_TITLE = "Which demo would you like me to run? (Esc to skip)"
 _MENU_EXPLAINER = (
     "For a demo, I'd rather use something real from your machine than a toy example. "
-    "Each takes a couple of minutes and uses real GitHub repositories on your machine."
+    "Each takes a couple of minutes and I'll use real GitHub repositories on your machine."
 )
 _CUSTOM_LABEL = "Or type your own answer..."
 _CUSTOM_OPTION = "custom"
 _SKIPPED_OPTION = "skipped"
+_SNAPSHOT_LEAD = "Here's a live snapshot built from your machine:"
+_REPOSITORY_TITLE = "Which repository should I analyze?"
+_EXAMPLE_LABEL = f"Use the open-source example repository ({EXAMPLE_REPOSITORY})"
+_TOKEN_MISSING = (
+    "The CI/CD analysis reads GitHub Actions history, which needs a GitHub token. "
+    "Run `opensre integrations setup github`, then `/demo` to continue."
+)
+_MAX_OWN_REPOSITORIES = 3
+_SCAN_DAYS = 30
 
 OPTION_CI_ANALYTICS = "ci_analytics"
 OPTION_CI_AGENT = "ci_agent"
@@ -72,9 +89,9 @@ DEMO_SUGGESTIONS: tuple[DemoSuggestion, ...] = (
         option=OPTION_CI_ANALYTICS,
         label="Explore a repo and analyze its CI/CD performance (recommended)",
         prompt=(
-            "Run the CI/CD analytics demo: scan this machine for repositories, help me "
-            "pick a suitable one, show its CI/CD reliability KPIs and the developer time "
-            "blocked by unreliable CI, then offer what to do next."
+            "Analyze the CI/CD reliability of {repository} for the last 30 days as the "
+            "CI/CD analytics demo: show the KPIs and the developer time blocked by "
+            "unreliable CI, then offer what to do next."
         ),
     ),
     DemoSuggestion(
@@ -116,10 +133,10 @@ def should_offer_demo() -> bool:
 
 
 def offer_demo(session: Session, console: Console | None = None, *, force: bool = False) -> bool:
-    """Show the picker and queue the chosen demo as the next turn.
+    """Show the picker, run the chosen demo's discovery steps, and queue its prompt.
 
-    Returns True when a demo was queued. Never blocks startup: any unexpected
-    failure is logged and the REPL proceeds into the normal prompt.
+    Returns True when a demo prompt was queued. Never blocks startup: any
+    unexpected failure is logged and the REPL proceeds into the normal prompt.
     """
     try:
         if not force and not should_offer_demo():
@@ -145,11 +162,64 @@ def offer_demo(session: Session, console: Console | None = None, *, force: bool 
             return True
         capture_onboarding_demo_selected(option=suggestion.option, custom=False)
         _record(suggestion.option)
+        if suggestion.option == OPTION_CI_ANALYTICS:
+            return _start_ci_analytics_demo(session, console, suggestion)
         session.terminal.set_auto_command(suggestion.prompt)
         return True
     except Exception:
         logger.warning("Onboarding demo picker failed.", exc_info=True)
         return False
+
+
+def _start_ci_analytics_demo(
+    session: Session, console: Console | None, suggestion: DemoSuggestion
+) -> bool:
+    """Scan, let the user pick a repository, then queue the analysis prompt."""
+    snapshot = scan_workspace(Path.home(), days=_SCAN_DAYS)
+    if console is not None:
+        console.print()
+        console.print(_SNAPSHOT_LEAD)
+        console.print()
+        render_snapshot(console, snapshot)
+        console.print()
+    if not resolve_github_token(None):
+        if console is not None:
+            console.print(f"[{WARNING}]{_TOKEN_MISSING}[/]")
+        return False
+    repository = choose_repository(snapshot)
+    if repository is None:
+        return False
+    session.terminal.set_auto_command(suggestion.prompt.format(repository=repository))
+    return True
+
+
+def choose_repository(snapshot: WorkspaceSnapshot) -> str | None:
+    """Ask which repository to analyze; ``None`` when the user escapes."""
+    choices = [
+        (repo.github_full_name, _candidate_label(repo)) for repo in suitable_repositories(snapshot)
+    ]
+    choices.append((EXAMPLE_REPOSITORY, _EXAMPLE_LABEL))
+    selected = repl_choose_one(
+        title=_REPOSITORY_TITLE,
+        choices=choices,
+        custom_label=_CUSTOM_LABEL,
+        letter_keys=True,
+    )
+    return selected.strip() if selected else None
+
+
+def suitable_repositories(snapshot: WorkspaceSnapshot) -> list[RepoActivity]:
+    """Local GitHub checkouts with workflows, the user's own contributions first."""
+    candidates = [repo for repo in snapshot.repos if repo.github_full_name and repo.has_workflows]
+    candidates.sort(key=lambda repo: (-repo.own_commits, -repo.commits, repo.name.lower()))
+    return [repo for repo in candidates if repo.github_full_name != EXAMPLE_REPOSITORY][
+        :_MAX_OWN_REPOSITORIES
+    ]
+
+
+def _candidate_label(repo: RepoActivity) -> str:
+    yours = f", {repo.own_commits} by you" if repo.own_commits else ""
+    return f"{repo.github_full_name} ({repo.commits} commits{yours}, CI configured)"
 
 
 def _record(option: str) -> None:
@@ -167,13 +237,16 @@ def _record(option: str) -> None:
 
 __all__ = [
     "DEMO_SUGGESTIONS",
-    "DemoSuggestion",
+    "EXAMPLE_REPOSITORY",
     "MARKER_FILENAME",
     "OPTION_CI_AGENT",
     "OPTION_CI_ANALYTICS",
     "OPTION_SLACK",
+    "DemoSuggestion",
+    "choose_repository",
     "demo_already_offered",
     "marker_path",
     "offer_demo",
     "should_offer_demo",
+    "suitable_repositories",
 ]

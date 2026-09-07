@@ -25,8 +25,8 @@ how much developer time does flaky CI cost us
 
 ## What happens
 
-1. **Scan.** OpenSRE finds git repositories under your home directory, counts commits in the last 30 days and uncommitted files, notes which have GitHub Actions workflows, and draws the activity chart. Clones of the same repository are folded into one row.
-2. **Pick.** It offers the most active repositories that have CI configured, plus an open-source example, and asks which one to analyze.
+1. **Scan.** OpenSRE finds git repositories under your home directory, counts commits in the last 30 days (total and yours) and uncommitted files, notes which have GitHub Actions workflows, and draws the activity chart. Clones of the same repository are folded into one row.
+2. **Pick.** It offers up to three of your repositories that have CI configured, the ones you contributed to first, plus an open-source example, and asks which one to analyze. Without a GitHub token it stops here and shows the setup command.
 3. **Analyze.** It reads the last 30 days of workflow runs and reports the KPIs below.
 4. **Next step.** It offers to set up the CI reliability agent, connect Slack, or exit.
 

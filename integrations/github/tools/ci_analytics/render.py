@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
+
+from rich.console import Group
+from rich.table import Table
+from rich.text import Text
 
 from integrations.github.tools.ci_analytics.models import (
     CiAnalyticsReport,
@@ -19,9 +24,9 @@ def render_markdown(report: CiAnalyticsReport) -> str:
     lines = [
         f"**CI/CD reliability for {report.owner}/{report.repo}, last {report.window_days} days**",
         "",
-        f"- GitHub Actions executions: **{report.executions:,}**",
-        f"- PR-triggered workflow executions: **{report.pr_executions:,}**",
-        f"- PR-triggered failed workflows: **{report.pr_failures:,}**",
+        f"- GitHub Actions executions: **{report.executions}**",
+        f"- PR-triggered workflow executions: **{report.pr_executions}**",
+        f"- PR-triggered failed workflows: **{report.pr_failures}**",
         f"- Raw PR workflow failure rate: **{_rate(report.pr_failure_rate)}**",
     ]
     if report.pr_failures:
@@ -48,6 +53,138 @@ def render_markdown(report: CiAnalyticsReport) -> str:
     return "\n".join(lines)
 
 
+def render_report(console: Any, report: CiAnalyticsReport) -> None:
+    """Paint the report to a Rich console: headline KPIs, classification, blocked time, table."""
+    now = report.generated_at
+    parts: list[Any] = [
+        Text(
+            f"CI/CD reliability for {report.owner}/{report.repo}, last {report.window_days} days",
+            style="bold",
+        ),
+        Text(""),
+        _kpi_line("GitHub Actions executions", str(report.executions)),
+        _kpi_line("PR-triggered workflow executions", str(report.pr_executions)),
+        _kpi_line("PR-triggered failed workflows", str(report.pr_failures)),
+        _kpi_line("Raw PR workflow failure rate", _rate(report.pr_failure_rate)),
+    ]
+    if report.pr_failures:
+        parts.extend(
+            [
+                Text(""),
+                Text(f"Failure classification (all {report.pr_failures} classified)", style="bold"),
+                _kpi_line(
+                    "CI reliability failures, passed later on the same commit",
+                    str(report.count(FailureKind.RELIABILITY)),
+                ),
+                _kpi_line(
+                    "Source-code failures, passed only after a code change",
+                    str(report.count(FailureKind.SOURCE)),
+                ),
+                _kpi_line("Not recovered in the window", str(report.count(FailureKind.UNRESOLVED))),
+                Text(""),
+                Text(
+                    f"Developer time blocked by unreliable CI: {_minutes(report.blocked_minutes)} "
+                    f"across {report.merged_pr_branches} merged "
+                    f"{_plural(report.merged_pr_branches, 'PR')}",
+                    style="bold",
+                ),
+                Text(
+                    "Only PRs that were later merged count, so CI sat on the path to merge. "
+                    "Baseline: each workflow's median first-attempt passing duration.",
+                    style="dim",
+                ),
+            ]
+        )
+        if report.blocked_minutes_all > report.blocked_minutes:
+            parts.append(
+                _kpi_line("Including PRs not merged yet", _minutes(report.blocked_minutes_all))
+            )
+        if report.median_delay_minutes is not None:
+            parts.append(
+                _kpi_line(
+                    "Typical delay per CI-caused failure", _minutes(report.median_delay_minutes)
+                )
+            )
+        longest = report.longest_delay
+        if longest is not None and longest.delay_minutes > 0:
+            parts.append(_kpi_line("Longest single delay", _delay(longest)))
+    if report.branch_runs:
+        parts.extend(
+            [
+                Text(""),
+                Text(
+                    f"{report.default_branch} branch: {report.branch_failures} of "
+                    f"{report.branch_runs} push-triggered runs failed, red for "
+                    f"{_hours(report.red_hours)} across {len(report.outages)} "
+                    f"{_plural(len(report.outages), 'breakage')}",
+                    style="bold",
+                ),
+            ]
+        )
+        if report.mean_recovery_hours is not None:
+            parts.append(_kpi_line("Mean time to recovery", _hours(report.mean_recovery_hours)))
+        if report.longest_outage is not None:
+            parts.append(_kpi_line("Longest breakage", _outage(report.longest_outage, now=now)))
+        for outage in report.ongoing_outages:
+            parts.append(_kpi_line("Still red now", _outage(outage, now=now), style="bold red"))
+    if report.workflows:
+        table = Table(show_edge=False, pad_edge=False, box=None, header_style="dim")
+        for column, justify in (
+            ("Workflow", "left"),
+            ("Runs", "right"),
+            ("Failed", "right"),
+            ("CI-caused", "right"),
+            ("Normal duration", "right"),
+        ):
+            table.add_column(column, justify=justify)  # type: ignore[arg-type]
+        for summary in report.workflows[:_TOP_WORKFLOWS]:
+            normal = "n/a" if summary.normal_minutes is None else f"{summary.normal_minutes:.0f}m"
+            table.add_row(
+                summary.workflow,
+                str(summary.runs),
+                str(summary.failures),
+                str(summary.reliability_failures),
+                normal,
+            )
+        parts.extend([Text(""), table])
+    if not report.executions:
+        parts.append(Text("No completed workflow runs were found in this window.", style="dim"))
+    parts.extend(Text(notice, style="dim") for notice in report.coverage_notices)
+    console.print(Group(*parts))
+
+
+def headline(report: CiAnalyticsReport) -> str:
+    """One deterministic sentence naming the biggest cost, for the agent to repeat verbatim."""
+    if report.blocked_minutes > 0:
+        typical = report.median_delay_minutes or 0.0
+        longest = report.longest_delay
+        worst = f", the worst {_minutes(longest.delay_minutes)}" if longest else ""
+        return (
+            f"Unreliable CI blocked merged pull requests for {_minutes(report.blocked_minutes)} "
+            f"in the last {report.window_days} days; the typical CI-caused delay was "
+            f"{_minutes(typical)}{worst}."
+        )
+    if report.red_hours > 0:
+        return (
+            f"{report.default_branch} was red for {_hours(report.red_hours)} across "
+            f"{len(report.outages)} {_plural(len(report.outages), 'breakage')} in the last "
+            f"{report.window_days} days, with a mean recovery of "
+            f"{_hours(report.mean_recovery_hours or 0.0)}."
+        )
+    if report.pr_failures:
+        return (
+            f"{report.pr_failures} of {report.pr_executions} pull request runs failed in the "
+            f"last {report.window_days} days, none of them caused by CI itself."
+        )
+    return f"No CI failures were found in the last {report.window_days} days."
+
+
+def _kpi_line(label: str, value: str, *, style: str = "bold") -> Text:
+    line = Text(f"{label}: ", style="dim")
+    line.append(value, style=style)
+    return line
+
+
 def _classification(report: CiAnalyticsReport) -> list[str]:
     return [
         "",
@@ -71,6 +208,10 @@ def _blocked_time(report: CiAnalyticsReport) -> list[str]:
     ]
     if report.blocked_minutes_all > report.blocked_minutes:
         lines.append(f"- Including PRs not merged yet: {_minutes(report.blocked_minutes_all)}")
+    if report.median_delay_minutes is not None:
+        lines.append(
+            f"- Typical delay per CI-caused failure: {_minutes(report.median_delay_minutes)}"
+        )
     longest = report.longest_delay
     if longest is not None and longest.delay_minutes > 0:
         lines.append(f"- Longest single delay: {_delay(longest)}")
@@ -132,4 +273,6 @@ def _plural(count: int, noun: str) -> str:
     return noun if count == 1 else f"{noun}s"
 
 
-__all__ = ["render_markdown"]
+__all__ = ["format_minutes", "headline", "render_markdown", "render_report"]
+
+format_minutes = _minutes

@@ -43,6 +43,9 @@ class RepoActivity:
     github_owner: str
     github_repo: str
     commits: int
+    own_commits: int
+    """Commits in the window authored with the user's configured git email."""
+
     uncommitted: int
     has_workflows: bool
 
@@ -70,6 +73,10 @@ class WorkspaceSnapshot:
     def total_uncommitted(self) -> int:
         return sum(repo.uncommitted for repo in self.repos)
 
+    @property
+    def total_own_commits(self) -> int:
+        return sum(repo.own_commits for repo in self.repos)
+
 
 def scan_workspace(
     root: Path,
@@ -81,11 +88,12 @@ def scan_workspace(
     """Walk *root* for git checkouts and measure each one, most active first."""
     repos: list[RepoActivity] = []
     truncated = False
+    author = _git(root, "config", "--get", "user.email")
     for repo_dir in _git_dirs(root, max_depth=max_depth):
         if len(repos) >= max_repos:
             truncated = True
             break
-        repos.append(measure_repo(repo_dir, days=days))
+        repos.append(measure_repo(repo_dir, days=days, author=author))
     merged = _fold_clones(repos)
     merged.sort(key=lambda repo: (-repo.commits, repo.name.lower()))
     return WorkspaceSnapshot(root=str(root), days=days, repos=tuple(merged), truncated=truncated)
@@ -115,16 +123,23 @@ def _fold_clones(repos: list[RepoActivity]) -> list[RepoActivity]:
             github_owner=seen.github_owner,
             github_repo=seen.github_repo,
             commits=max(seen.commits, repo.commits),
+            own_commits=max(seen.own_commits, repo.own_commits),
             uncommitted=seen.uncommitted + repo.uncommitted,
             has_workflows=seen.has_workflows or repo.has_workflows,
         )
     return [*folded, *by_remote.values()]
 
 
-def measure_repo(repo_dir: Path, *, days: int) -> RepoActivity:
+def measure_repo(repo_dir: Path, *, days: int, author: str = "") -> RepoActivity:
     origin = _git(repo_dir, "remote", "get-url", "origin")
     owner, name = parse_github_remote(origin)
-    commits = _git(repo_dir, "rev-list", "--count", "--all", f"--since={days}.days")
+    since = f"--since={days}.days"
+    commits = _git(repo_dir, "rev-list", "--count", "--all", since)
+    own = (
+        _git(repo_dir, "rev-list", "--count", "--all", since, f"--author={author}")
+        if author
+        else ""
+    )
     status = _git(repo_dir, "status", "--porcelain", "--untracked-files=normal")
     return RepoActivity(
         name=repo_dir.name,
@@ -133,6 +148,7 @@ def measure_repo(repo_dir: Path, *, days: int) -> RepoActivity:
         github_owner=owner,
         github_repo=name,
         commits=int(commits) if commits.isdigit() else 0,
+        own_commits=int(own) if own.isdigit() else 0,
         uncommitted=sum(1 for line in status.splitlines() if line.strip()),
         has_workflows=_has_workflows(repo_dir),
     )

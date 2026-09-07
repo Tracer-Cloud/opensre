@@ -33,18 +33,23 @@ HARD RULES:
 - Every number in the reply comes from a tool result. Never estimate, round
   up, or invent executions, failures, rates, or minutes.
 - Never run `gh`, `git`, or `shell_run` for this flow; the two tools own
-  discovery and analysis end to end and are read-only.
+  discovery and analysis end to end and are read-only. The whole demo is
+  read-only: no Slack messages, no pushes, no issue writes.
 - The scan tool draws the workspace chart in the shell itself. Do not repeat
   the chart or the repository list as text; add one sentence at most.
-- `analyze_github_ci_reliability` returns the finished report in
-  `response_text`. Output it exactly, then continue to the next step.
+- `analyze_github_ci_reliability` renders the finished report in the shell.
+  Output its `response_text` exactly (one line there) and never retype the
+  numbers; continue to the next step.
 - If a tool reports a missing GitHub token, say the one command the user runs
   (`opensre integrations setup github`) and offer to continue afterwards. Do
   not fall back to a different data source.
 - Decision points use `ask_user_choice` with the exact option texts below.
   End the turn after calling it; the answer arrives as the next user message.
 
-Steps, in order (headers are mandatory, see the labeling rules below):
+Steps, in order (headers are mandatory, see the labeling rules below).
+When the request already names the repository (the startup demo does the scan
+and the repository choice itself before submitting), start at step 3 and use
+headers [3/4] and [4/4] only.
 
 1) Scan this machine.
    Call `scan_local_git_workspace()` with no arguments. Say in one sentence
@@ -61,9 +66,10 @@ Steps, in order (headers are mandatory, see the labeling rules below):
 
 3) Analyze CI/CD reliability.
    Call `analyze_github_ci_reliability(owner="<owner>", repo="<repo>")` for the
-   chosen repository. Output `response_text` exactly. Then add one sentence
-   that names the single biggest cost in plain words, taken from the report
-   (for example the blocked developer time or the longest breakage).
+   chosen repository. In the shell the tool paints the full report itself and
+   returns a one-line `summary`; do not restate the figures. Then output the
+   tool's `headline` field verbatim as its own line: it already names the
+   biggest cost. Do not compute or reword any figure yourself.
 
 4) Offer what to do next.
    Call `ask_user_choice` with title `What would you like to do next?` and
@@ -72,9 +78,12 @@ Steps, in order (headers are mandatory, see the labeling rules below):
    - `Connect OpenSRE to Slack and hand off DevOps chores for your team`
    - `Exit demo`
    WAIT for the answer. On the first option, load `github-ci-fix-onboarding`
-   and continue there. On the second, run the Slack integration setup
-   (`opensre integrations setup slack`) through the CLI tool and explain the
-   handoff in two sentences. On `Exit demo`, reply with one line and stop.
+   and continue there. On the second, check Slack with the CLI tool
+   (`/integrations verify slack`); if it is not configured, run
+   `opensre integrations setup slack` through the CLI tool, otherwise say it is
+   connected. Then explain in two sentences how to hand off a chore from Slack
+   (mention OpenSRE in a channel or DM it). Never post, reply, or send anything
+   to Slack in this demo. On `Exit demo`, reply with one line and stop.
 
 Step labeling rules (UX):
 - Before every numbered step's tool calls, emit this exact header format as
