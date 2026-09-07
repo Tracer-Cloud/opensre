@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from infrastructure.evidence.log_compaction import (
     _classify_error_type,
     _extract_components,
@@ -288,6 +290,49 @@ class TestClassifyErrorType:
 
     def test_import_error(self):
         assert _classify_error_type("ImportError: No module named 'pandas'") == "ImportError"
+
+
+class TestStatusCodesNeedToBeStatusCodes:
+    """A bare 401/403/404/429 must be the status code, not part of a number.
+
+    ``re.search`` has no boundary, so an ordinary latency or counter value was
+    bucketed as an auth, not-found or rate-limit error. build_error_taxonomy
+    is what the log tools hand the model as the error breakdown for an
+    incident, so this invented an error class that was never in the data and
+    inflated its count.
+    """
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Request completed in 1429ms",
+            "Processed 40412 records from the queue",
+            "worker pod-4013 restarted",
+            "Backfill wrote 8404 rows",
+            "checkpoint 24290 committed",
+            # A latency that happens to be the number itself, not a longer one.
+            "p99 latency 429ms exceeded",
+        ],
+    )
+    def test_a_benign_number_is_not_an_error(self, message: str) -> None:
+        assert _classify_error_type(message) == "Unknown"
+
+    @pytest.mark.parametrize(
+        ("message", "expected"),
+        [
+            ("HTTP 429 Too Many Requests from upstream", "RateLimited"),
+            ("GET /v1/items returned 404", "ResourceNotFound"),
+            ("auth failed: 401 Unauthorized", "AuthenticationError"),
+            ("403 Forbidden", "AuthenticationError"),
+            ("status=404, retrying", "ResourceNotFound"),
+            ("[429] upstream", "RateLimited"),
+            # A leading letter is allowed on purpose; only digits and a
+            # trailing unit are excluded.
+            ("HTTP404 from origin", "ResourceNotFound"),
+        ],
+    )
+    def test_a_real_status_code_still_classifies(self, message: str, expected: str) -> None:
+        assert _classify_error_type(message) == expected
 
 
 class TestExtractComponents:

@@ -141,6 +141,22 @@ def deduplicate_logs(
 # Phase 2 — Structured Error Taxonomy
 # ---------------------------------------------------------------------------
 
+
+def _STATUS(code: int) -> str:
+    """A bare HTTP status code that is not part of a longer number.
+
+    ``re.search("429", "1429ms")`` matches, so latency and counter values were
+    bucketed as rate-limit or auth errors and inflated the taxonomy the model
+    is handed.
+
+    Two exclusions, both about numbers rather than words: an adjacent digit
+    ("1429", "8404", "pod-4013") and a trailing unit letter ("429ms", which is
+    a latency, not a status). A leading letter is deliberately still allowed,
+    so "HTTP404" keeps classifying.
+    """
+    return rf"(?<!\d){code}(?!\d)(?![a-z])"
+
+
 # Broad error-type buckets derived from the message text
 _ERROR_TYPE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("ConnectionTimeout", re.compile(r"timeout|timed?\s*out", re.IGNORECASE)),
@@ -148,14 +164,21 @@ _ERROR_TYPE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("DNSResolution", re.compile(r"dns|name\s*resolution|resolve\s*host", re.IGNORECASE)),
     (
         "AuthenticationError",
-        re.compile(r"auth(entication|orization)?\s*(fail|error|denied)|401|403", re.IGNORECASE),
+        re.compile(
+            r"auth(entication|orization)?\s*(fail|error|denied)"
+            # A bare status code must not be a run of digits inside a larger
+            # number: 401 in "pod-4013" is not an auth failure. Digit-only
+            # guards rather than , so "401s" and "403 (retrying)" still match.
+            rf"|{_STATUS(401)}|{_STATUS(403)}",
+            re.IGNORECASE,
+        ),
     ),
     (
         "OutOfMemory",
         re.compile(r"(out\s*of\s*memory|oom\s*kill|memory\s*(error|exceed|limit))", re.IGNORECASE),
     ),
     ("DiskFull", re.compile(r"(no\s*space|disk\s*full|storage\s*(full|limit))", re.IGNORECASE)),
-    ("RateLimited", re.compile(r"rate\s*limit|throttl|429", re.IGNORECASE)),
+    ("RateLimited", re.compile(rf"rate\s*limit|throttl|{_STATUS(429)}", re.IGNORECASE)),
     (
         "SchemaValidation",
         re.compile(
@@ -174,7 +197,7 @@ _ERROR_TYPE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ),
     (
         "ResourceNotFound",
-        re.compile(r"(not\s*found|404|no\s*such\s*(file|key|bucket))", re.IGNORECASE),
+        re.compile(rf"(not\s*found|{_STATUS(404)}|no\s*such\s*(file|key|bucket))", re.IGNORECASE),
     ),
     (
         "SyntaxError",
