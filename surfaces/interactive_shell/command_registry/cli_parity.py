@@ -240,7 +240,7 @@ def _cmd_account(session: Session, console: Console, args: list[str]) -> bool:  
     subcommand = args[0].lower() if args else "status"
     if session_terminal(session) is None and subcommand == "login":
         message = (
-            "GitHub account login opens a browser and cannot run inside a chat.\n\n"
+            "OpenSRE account login opens a browser and cannot run inside a chat.\n\n"
             "Run on the server:\n  uv run opensre account login"
         )
         console.print()
@@ -328,7 +328,7 @@ def _cmd_debug(session: Session, console: Console, args: list[str]) -> bool:
 COMMANDS: list[SlashCommand] = [
     SlashCommand(
         "/account",
-        "Sign in to OpenSRE with GitHub and inspect the local account.",
+        "Sign in to OpenSRE and inspect the local account.",
         _cmd_account,
         usage=("/account", "/account login", "/account status", "/account logout"),
     ),

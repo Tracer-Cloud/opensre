@@ -80,7 +80,7 @@ Setup is interactive and needs a TTY. Do not try to fake the wizard. Run it and 
 opensre setup
 ```
 
-The browser flow creates or signs in to the user's OpenSRE account with GitHub. It also connects GitHub and activates the hosted model; do not ask the user for a separate LLM key during first-run setup.
+The browser opens the OpenSRE sign-up page. The user can create an account or sign in using email or another enabled provider. This activates the hosted model; do not ask the user for a separate LLM key during first-run setup.
 
 When setup finishes, it opens the interactive shell. Add tools later with `opensre integrations setup <service>` when the agent should query them.
 
@@ -121,7 +121,7 @@ That starts a TTY REPL. Ask the user to describe an incident or ask a question i
 ## Gotchas
 
 - **`opensre: command not found`** — new terminal, or add the bin directory the installer printed (often `~/.local/bin` on macOS/Linux).
-- **Setup blocks or looks hung** — it is waiting on webapp/GitHub browser approval. Show the user the URL and prompt; do not kill it.
+- **Setup blocks or looks hung** — it is waiting for webapp browser authentication. Show the user the URL and prompt; do not kill it.
 - **Installer started setup on its own** — that is expected without `OPENSRE_AUTO_LAUNCH=0`. Let the user finish it, then continue from Step 3.
 - **The shell keeps returning to sign-in** — run `opensre account status`; the account must be active before the shell or hosted model starts.
 - **Only connected tools are queried** — the agent cannot pull Datadog data if Datadog was never set up. Run `opensre integrations verify` before a production run.

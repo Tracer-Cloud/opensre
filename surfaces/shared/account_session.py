@@ -166,7 +166,7 @@ def account_status(*, app_url: str | None = None) -> AccountStatus:
     return AccountStatus(
         AccountSessionState.ACTIVE,
         refreshed_record,
-        f"Authenticated with GitHub; LLM provider: {provider}.",
+        f"Authenticated with OpenSRE; LLM provider: {provider}.",
     )
 
 

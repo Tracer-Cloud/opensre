@@ -61,7 +61,13 @@ Shorter overview: [Install OpenSRE](/install).
 opensre setup
 ```
 
-The browser flow creates or signs in to your OpenSRE account with GitHub, connects the GitHub integration, and activates the hosted model. Setup opens the shell only after the webapp validates that account session.
+The browser opens the OpenSRE sign-up page. Create an account or sign in using email or another enabled provider; a successful login activates the hosted model. Setup opens the shell only after the webapp validates that account session. GitHub remains an optional integration you can add later.
+
+When developing the webapp locally on port 3000, use:
+
+```bash
+opensre setup --dev
+```
 
 To remain signed out, cancel setup or choose **Exit and stay signed out** when `opensre` shows the account gate. Other CLI commands remain available; the interactive shell does not.
 
@@ -75,7 +81,7 @@ The shell revalidates the webapp account on every start. Expired, revoked, incom
 
 #### Where credentials are saved
 
-OpenSRE saves non-secret identity and hosted-model metadata in owner-only account metadata. The account token and GitHub credential use the local secret store; neither is written to `account.json`.
+OpenSRE saves non-secret identity and hosted-model metadata in owner-only account metadata. The account token uses the local secret store and is not written to `account.json`; integration credentials are stored separately.
 
 `OPENSRE_ACCOUNT_TOKEN` overrides the saved account token when set. Never commit it to `.env` or source control. Run `opensre account logout` to revoke the saved session; an environment override must be unset separately.
 

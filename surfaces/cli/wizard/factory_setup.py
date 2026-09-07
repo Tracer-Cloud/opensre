@@ -14,21 +14,25 @@ from surfaces.shared.account_session import account_status
 FACTORY_SETUP_TOTAL_STEPS = 2
 
 
-def _run_account_signup_step(*, step: int, total_steps: int) -> bool:
+def _run_account_signup_step(
+    *,
+    step: int,
+    total_steps: int,
+    app_url: str | None = None,
+) -> bool:
     """Establish a validated webapp account; return false when cancelled."""
     step_header(step, total_steps, "OpenSRE account")
-    current = account_status()
+    current = account_status(app_url=app_url)
     if current.authenticated and current.record is not None:
-        console.print(
-            f"[bold]{GLYPH_SUCCESS} Signed in as @{escape(current.record.github_username)}.[/]"
-        )
+        identity = current.record.email or current.record.user_id
+        console.print(f"[bold]{GLYPH_SUCCESS} Signed in as {escape(identity)}.[/]")
         console.print(f"Hosted model: [bold]{escape(current.record.llm_model)}[/]")
         return True
 
     presenter = AccountLoginPresenter(console)
     while True:
         try:
-            result = login_account(progress=presenter)
+            result = login_account(app_url=app_url, progress=presenter)
         except (EOFError, KeyboardInterrupt):
             console.print()
             console.print(f"[{ERROR}]  {GLYPH_ERROR}  Setup cancelled.[/]")
@@ -53,9 +57,17 @@ def _run_account_signup_step(*, step: int, total_steps: int) -> bool:
         return True
 
 
-def run_factory_setup(_argv: list[str] | None = None) -> int:
+def run_factory_setup(
+    _argv: list[str] | None = None,
+    *,
+    app_url: str | None = None,
+) -> int:
     """Sign in to the account; callers launch the shell only on success."""
     render_factory_setup_header()
-    if not _run_account_signup_step(step=1, total_steps=FACTORY_SETUP_TOTAL_STEPS):
+    if not _run_account_signup_step(
+        step=1,
+        total_steps=FACTORY_SETUP_TOTAL_STEPS,
+        app_url=app_url,
+    ):
         return 1
     return 0

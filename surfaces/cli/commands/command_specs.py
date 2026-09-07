@@ -29,7 +29,7 @@ class CommandSpec:
 COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec(
         "account",
-        "Sign in to OpenSRE with GitHub and inspect the local account.",
+        "Sign in to OpenSRE and inspect the local account.",
         "surfaces.cli.commands.account:account_command",
     ),
     CommandSpec(
@@ -39,7 +39,7 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "setup",
-        "Sign in with GitHub, activate the OpenSRE-hosted LLM, then open the shell.",
+        "Sign in to OpenSRE, activate the hosted LLM, then open the shell.",
         "surfaces.cli.commands.setup:setup_command",
     ),
     CommandSpec(

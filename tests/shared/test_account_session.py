@@ -17,7 +17,6 @@ def _record() -> AccountRecord:
     return AccountRecord(
         user_id="user_123",
         organization_id="org_123",
-        github_username="octocat",
         email=None,
         app_url="https://app.opensre.com",
         signed_in_at="2026-09-01T10:00:00+00:00",

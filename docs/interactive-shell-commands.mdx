@@ -114,7 +114,7 @@ These commands delegate to the same Click CLI you would run outside the REPL.
 
 | Command | What it does |
 | --- | --- |
-| `/account` | Sign in to OpenSRE with GitHub, inspect the local account, or sign out |
+| `/account` | Sign in to OpenSRE, inspect the local account, or sign out |
 | `/auth` | Log in to LLM providers, show provider auth status, or clear credentials |
 | `/login` | Shortcut for `/auth login` (`/login openai`, `/login anthropic`, `/login deepseek`) |
 | `/onboard` | Interactive onboarding wizard |
@@ -821,7 +821,7 @@ These spawn `opensre …` subprocesses. Output is captured into the REPL buffer 
 /account logout
 ```
 
-Sign in to a personal OpenSRE account with GitHub, inspect the local login, or sign out. Same as `opensre account`. The shell starts only for an `active` account state. `/account logout` revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
+Sign in to a personal OpenSRE account, inspect the local login, or sign out. Same as `opensre account`. The browser opens the OpenSRE sign-up page, where you can use email or any enabled sign-in provider. The shell starts only for an `active` account state. `/account logout` revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
 
 </Accordion>
 
@@ -829,9 +829,10 @@ Sign in to a personal OpenSRE account with GitHub, inspect the local login, or s
 
 ```text
 /setup
+/setup --dev
 ```
 
-Run the first-use webapp account flow. It creates or signs in to an OpenSRE account with GitHub and activates the account-hosted model. Setup requires exclusive stdin because browser authorization prompts on the real TTY.
+Run the first-use webapp account flow. It creates or signs in to an OpenSRE account using email or another enabled provider and activates the account-hosted model. Use `--dev` for a webapp running at `http://localhost:3000`. Setup requires exclusive stdin because browser authorization prompts on the real TTY.
 
 </Accordion>
 

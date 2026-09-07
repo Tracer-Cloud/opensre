@@ -151,7 +151,8 @@ def test_quickstart_setup_help(cli_sandbox: CliSandbox) -> None:
     result = _run_cli(cli_sandbox, "setup", "--help")
 
     assert result.exit_code == 0
-    assert "github" in result.stdout.lower() or "llm" in result.stdout.lower()
+    assert "--dev" in result.stdout
+    assert "localhost:3000" in result.stdout
 
 
 def test_quickstart_onboard_help(cli_sandbox: CliSandbox) -> None:

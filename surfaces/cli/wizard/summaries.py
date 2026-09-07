@@ -63,7 +63,7 @@ def render_factory_setup_header() -> None:
 
     steps = Text()
     steps.append("1  ", style=f"bold {BRAND}")
-    steps.append("Sign in with GitHub", style=f"bold {TEXT}")
+    steps.append("Sign in or create an account", style=f"bold {TEXT}")
     steps.append(" in the OpenSRE webapp.", style=SECONDARY)
     steps.append("\n")
     steps.append("2  ", style=f"bold {BRAND}")

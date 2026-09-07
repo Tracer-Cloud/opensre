@@ -39,14 +39,12 @@ class AccountRecord:
 
     user_id: str
     organization_id: str
-    github_username: str
     email: str | None
     app_url: str
     signed_in_at: str
     token_expires_at: str
     llm_provider: str = "openai"
     llm_model: str = "gpt-5.4-mini"
-    github_scopes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -119,7 +117,6 @@ def _parse_record(value: object) -> AccountRecord | None:
     required = (
         "user_id",
         "organization_id",
-        "github_username",
         "app_url",
         "signed_in_at",
         "token_expires_at",
@@ -129,9 +126,6 @@ def _parse_record(value: object) -> AccountRecord | None:
     email = value.get("email")
     if email is not None and not isinstance(email, str):
         return None
-    raw_scopes = value.get("github_scopes", [])
-    if not isinstance(raw_scopes, list) or not all(isinstance(scope, str) for scope in raw_scopes):
-        return None
     llm_provider = value.get("llm_provider", "openai")
     llm_model = value.get("llm_model", "gpt-5.4-mini")
     if llm_provider != "openai" or not isinstance(llm_model, str) or not llm_model.strip():
@@ -139,14 +133,12 @@ def _parse_record(value: object) -> AccountRecord | None:
     return AccountRecord(
         user_id=str(value["user_id"]),
         organization_id=str(value["organization_id"]),
-        github_username=str(value["github_username"]),
         email=email,
         app_url=str(value["app_url"]),
         signed_in_at=str(value["signed_in_at"]),
         token_expires_at=str(value["token_expires_at"]),
         llm_provider=llm_provider,
         llm_model=llm_model.strip(),
-        github_scopes=tuple(raw_scopes),
     )
 
 
