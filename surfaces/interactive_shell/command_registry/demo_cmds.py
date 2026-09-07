@@ -24,6 +24,8 @@ COMMANDS: list[SlashCommand] = [
         "Pick a guided demo that runs on real repositories from this machine.",
         _cmd_demo,
         usage=("/demo",),
+        # Opens read-only pickers; the queued demo turn is gated on its own.
+        mutating=False,
     ),
 ]
 
