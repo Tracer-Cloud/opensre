@@ -102,9 +102,7 @@ def render_report(console: Any, report: CiAnalyticsReport) -> None:
             )
         if report.median_delay_minutes is not None:
             parts.append(
-                _kpi_line(
-                    "Typical delay per CI-caused failure", _minutes(report.median_delay_minutes)
-                )
+                _kpi_line("Typical wait per blocked PR", _minutes(report.median_delay_minutes))
             )
         longest = report.longest_delay
         if longest is not None and longest.delay_minutes > 0:

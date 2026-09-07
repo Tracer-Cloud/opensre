@@ -226,6 +226,134 @@ def test_parallel_workflows_on_one_commit_count_the_wait_once() -> None:
     assert report.pr_delays[0].pr_number == _merged("feat/x")[0].number
 
 
+def test_stale_commit_rerun_after_next_push_waits_only_until_the_push() -> None:
+    # Arrange: commit "a" failed at 0 and its run was re-run to green a day later,
+    # but the developer had already pushed commit "b" at 30, which passed first time.
+    pr_runs = [
+        _run(
+            1,
+            sha="a",
+            conclusion="success",
+            start_minutes=24 * 60,
+            queued_minutes=24 * 60,
+            attempt=2,
+            earlier_failure_started_at=_T0,
+        ),
+        _run(3, sha="b", conclusion="success", start_minutes=30),
+    ]
+
+    # Act
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[],
+        pr_runs=pr_runs,
+        merged_prs=_merged("feat/x"),
+        now=_T0 + timedelta(days=2),
+    )
+
+    # Assert: expected green at 10, wait ends at the push at 30, not at the re-run.
+    assert report.count(FailureKind.RELIABILITY) == 1
+    assert report.blocked_minutes == 20.0
+
+
+def test_duplicate_pass_on_a_green_commit_does_not_extend_the_wait() -> None:
+    # Arrange: failure at 0, first pass at 50, and the workflow run again at 500.
+    pr_runs = [
+        _run(1, sha="m", conclusion="failure", start_minutes=0),
+        _run(2, sha="m", conclusion="success", start_minutes=50),
+        _run(3, sha="m", conclusion="success", start_minutes=500),
+    ]
+
+    # Act
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[],
+        pr_runs=pr_runs,
+        merged_prs=_merged("feat/x"),
+        now=_T0 + timedelta(days=1),
+    )
+
+    # Assert: green at 60 (first pass), expected at 10.
+    assert report.blocked_minutes == 50.0
+
+
+def test_missing_baseline_uses_the_passing_duration_not_the_failed_one() -> None:
+    # Arrange: the only pass is a re-run, so there is no first-attempt baseline.
+    # The failed attempt ran 120 minutes; the passing re-run took 10.
+    pr_runs = [
+        _run(
+            1,
+            sha="m",
+            conclusion="success",
+            start_minutes=200,
+            queued_minutes=200,
+            duration_minutes=10,
+            attempt=2,
+            earlier_failure_started_at=_T0,
+        ),
+    ]
+
+    # Act
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[],
+        pr_runs=pr_runs,
+        merged_prs=_merged("feat/x"),
+        now=_T0 + timedelta(days=1),
+    )
+
+    # Assert: expected green at 0 + 10, actual at 210.
+    assert report.blocked_minutes == 200.0
+
+
+def test_reused_branch_without_pr_numbers_splits_into_separate_prs() -> None:
+    # Arrange: branch "feat/x" was merged as PR 1 on day 1 and reused for PR 2,
+    # merged on day 3. Each life had one CI-caused failure; GitHub attached no numbers.
+    merged = (
+        MergedPullRequest(
+            number=1, branch="feat/x", head_repo="", merged_at=_T0 + timedelta(days=1)
+        ),
+        MergedPullRequest(
+            number=2, branch="feat/x", head_repo="", merged_at=_T0 + timedelta(days=3)
+        ),
+    )
+    day2 = 2 * 24 * 60
+    pr_runs = [
+        _run(1, sha="a", conclusion="failure", start_minutes=0),
+        _run(2, sha="a", conclusion="success", start_minutes=50),
+        _run(3, sha="b", conclusion="failure", start_minutes=day2),
+        _run(4, sha="b", conclusion="success", start_minutes=day2 + 30),
+    ]
+
+    # Act
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[],
+        pr_runs=pr_runs,
+        merged_prs=merged,
+        now=_T0 + timedelta(days=4),
+    )
+
+    # Assert: two PRs with their own waits, not one bucket of two commits.
+    assert [(d.pr_number, d.delay_minutes, d.commits) for d in report.pr_delays] == [
+        (1, 50.0, 1),
+        (2, 30.0, 1),
+    ]
+    assert report.merged_pr_branches == 2
+
+
 def test_source_code_failures_do_not_add_blocked_time() -> None:
     pr_runs = [
         _run(1, sha="old", conclusion="failure", start_minutes=0),

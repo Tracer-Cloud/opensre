@@ -44,9 +44,12 @@ how much developer time does flaky CI cost us
 
 Only PRs that were merged count toward blocked time, so the number reflects
 delays that sat on the path to a real merge. Workflows that fail and recover in
-parallel on the same commit count once, and a commit whose workflows never all
-passed is left out. The report also shows the total across all PRs when it
-differs, the typical wait per blocked PR, and the longest wait with its PR.
+parallel on the same commit count once, a commit's wait ends when the next
+commit of the same PR is pushed, and a commit whose workflows never all passed
+is left out. A run GitHub attached no PR number to belongs to the PR merged
+from its branch after the run, so a reused branch name does not merge two PRs.
+The report also shows the total across all PRs when it differs, the typical
+wait per blocked PR, and the longest wait with its PR.
 
 ## Limits
 
