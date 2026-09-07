@@ -468,3 +468,82 @@ class TestStoreSurvivesTornWrites:
         assert list(store_path.parent.glob(f"{store_path.name}.corrupt-*")) == []
         # The original (unreadable) store is untouched -- os.replace never happened.
         assert store_path.read_text(encoding="utf-8") == "not valid json"
+
+
+class TestLegacyTaskMigration:
+    @staticmethod
+    def _copy_fixture(store_path: Path) -> None:
+        fixture = Path(__file__).parents[1] / "fixtures" / "scheduler" / "pre_5981_tasks.json"
+        store_path.write_bytes(fixture.read_bytes())
+
+    def test_pre_5981_prompt_loop_is_migrated_without_losing_its_contract(
+        self, store_path: Path
+    ) -> None:
+        self._copy_fixture(store_path)
+
+        task = get_task("existing-loop", store_path)
+
+        assert task is not None
+        assert task.model_dump(mode="json") == {
+            "id": "existing-loop",
+            "name": "Overnight incidents",
+            "kind": "manual_loop",
+            "cron": "0 9 * * *",
+            "timezone": "Asia/Kolkata",
+            "provider": "interactive_shell",
+            "chat_id": "local-session",
+            "window_hours": 12,
+            "enabled": True,
+            "params": {
+                "loop_prompt": "Summarize overnight incidents",
+                "loop_channels": "interactive_shell",
+            },
+            "skill_name": "",
+            "skill_revision": "",
+            "skill_inputs": {},
+            "created_at": "2026-08-20T03:30:00+00:00",
+            "last_run": "2026-09-01T03:30:00+00:00",
+            "next_run": "2026-09-02T03:30:00+00:00",
+        }
+        persisted = store_path.read_text(encoding="utf-8")
+        assert '"kind": "manual_loop"' in persisted
+        assert '"kind": "custom_investigation"' not in persisted
+
+    @pytest.mark.parametrize(
+        "task_id,legacy_kind",
+        [
+            ("legacy-daily", "daily_summary"),
+            ("legacy-weekly", "weekly_audit"),
+            ("legacy-replay", "incident_window_replay"),
+            ("legacy-synthetic", "synthetic_run"),
+            ("legacy-promptless", "custom_investigation"),
+        ],
+    )
+    def test_retired_tasks_remain_visible_but_cannot_run_silently(
+        self, store_path: Path, task_id: str, legacy_kind: str
+    ) -> None:
+        self._copy_fixture(store_path)
+
+        task = get_task(task_id, store_path)
+
+        assert task is not None
+        assert task.kind is TaskKind.MANUAL_LOOP
+        assert task.enabled is False
+        assert task.params["opensre_legacy_task_kind"] == legacy_kind
+        notice = task.params["opensre_task_migration_notice"]
+        assert legacy_kind in notice
+        assert f"opensre cron remove {task_id}" in notice
+        assert "opensre cron add --kind manual_loop" in notice
+
+    def test_retired_task_notice_is_exposed_in_loop_status(self, store_path: Path) -> None:
+        from infrastructure.scheduling.scheduler.loops import list_loop_summaries
+
+        self._copy_fixture(store_path)
+
+        summary = next(
+            loop for loop in list_loop_summaries(store_path=store_path) if loop.id == "legacy-daily"
+        )
+
+        assert summary.enabled is False
+        assert "daily_summary" in summary.schedule_error
+        assert "opensre cron add --kind manual_loop" in summary.schedule_error

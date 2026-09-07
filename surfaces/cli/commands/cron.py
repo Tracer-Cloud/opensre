@@ -281,6 +281,11 @@ def cron_list() -> None:
         )
 
     _console.print(table)
+    for loop in loops:
+        if loop.schedule_error:
+            _console.print(
+                f"[yellow]Task {loop.id[:12]} requires action:[/yellow] {loop.schedule_error}"
+            )
 
 
 @cron_command.command(name="remove")
