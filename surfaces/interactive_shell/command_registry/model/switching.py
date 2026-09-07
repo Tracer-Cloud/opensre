@@ -216,8 +216,8 @@ def switch_llm_provider(
             f"[{DIM}]known reasoning models:[/] {escape(_format_supported_models(provider.models))}"
         )
         return False
-    if provider.value == "ollama" and selected_model:
-        from surfaces.interactive_shell.command_registry.model.ollama import (
+    if selected_model:
+        from surfaces.interactive_shell.command_registry.model.provider_models import (
             validate_model_available,
         )
 
@@ -351,13 +351,12 @@ def switch_reasoning_model(
             f"[{DIM}]known reasoning models:[/] {escape(_format_supported_models(provider.models))}"
         )
         return False
-    if provider.value == "ollama":
-        from surfaces.interactive_shell.command_registry.model.ollama import (
-            validate_model_available,
-        )
+    from surfaces.interactive_shell.command_registry.model.provider_models import (
+        validate_model_available,
+    )
 
-        if not validate_model_available(provider, new_model, console):
-            return False
+    if not validate_model_available(provider, new_model, console):
+        return False
 
     env_path = sync_reasoning_model_env(provider=provider, model=new_model)
     _reset_runtime_llm_caches()

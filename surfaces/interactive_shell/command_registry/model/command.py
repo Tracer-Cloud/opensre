@@ -129,16 +129,17 @@ def _interactive_set_provider(console: Console) -> bool | None:
 
         crumb_model = f"{crumb_set}{CRUMB_SEP}{provider_value}"
         while True:
-            if provider.value == "ollama":
-                from surfaces.interactive_shell.command_registry.model.ollama import (
-                    model_menu_choices,
-                )
+            from surfaces.interactive_shell.command_registry.model.provider_models import (
+                model_menu_choices,
+            )
 
-                reasoning_choices = model_menu_choices(provider, console)
-                if reasoning_choices is None:
-                    break
-            else:
-                reasoning_choices = _reasoning_model_menu_choices(provider)
+            reasoning_choices = model_menu_choices(
+                provider,
+                console,
+                fallback=_reasoning_model_menu_choices(provider),
+            )
+            if reasoning_choices is None:
+                break
             reasoning_choice = repl_choose_one(
                 title="reasoning model",
                 breadcrumb=crumb_model,
