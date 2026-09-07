@@ -1,8 +1,10 @@
 ---
 name: github-ci-health
 description: >-
-  Read-only GitHub CI health report for one repository, optionally narrowed to
-  a branch or pull request.
+  Read-only GitHub CI health report of the checks failing right now for one
+  repository, optionally narrowed to a branch or pull request. Not for CI/CD
+  performance, reliability KPIs, failure rates, or downtime over a period
+  (use cicd-analytics-demo).
 recurring: unattended
 ---
 

@@ -1,10 +1,14 @@
 ---
 name: cicd-analytics-demo
 description: >-
-  First-experience demo: scan the machine for git repositories, pick a suitable
-  real one, show CI/CD reliability KPIs and developer time blocked by unreliable
-  CI via analyze_github_ci_reliability, then offer next steps. Multi-step; load
-  before acting.
+  CI/CD performance and reliability analytics for one repository over the
+  last 30 days: executions, PR failure rate, CI-caused vs source failures,
+  developer time blocked, default-branch red time, via
+  analyze_github_ci_reliability; also the first-experience demo that scans the
+  machine and picks a repository first. Use for "analyze <repo> CI/CD
+  performance", "how reliable is our CI", "what does flaky CI cost us". Not for
+  listing currently failing checks (github-ci-health). Multi-step; load before
+  acting.
 ---
 ══════════════════════════════════════════════════════════
 CI/CD ANALYTICS DEMO SKILL — interactive-shell action agent:
