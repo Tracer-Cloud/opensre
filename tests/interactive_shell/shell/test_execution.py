@@ -15,6 +15,18 @@ from tools.interactive_shell.shell.execution import (
 from tools.interactive_shell.shell.parsing import parse_shell_command
 
 
+def _assert_pid_gone(pid: int, *, timeout_seconds: float = 2.0) -> None:
+    """Wait until *pid* is gone; a single ``kill(pid, 0)`` races a zombie."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return
+        time.sleep(0.05)
+    pytest.fail(f"process {pid} still alive after cancel")
+
+
 def test_execute_shell_command_reports_timeout_argv_mode() -> None:
     started = time.monotonic()
     result = execute_shell_command(
@@ -82,8 +94,7 @@ def test_execute_shell_command_stops_on_cancel_and_reaps_grandchild() -> None:
     assert elapsed < 4
     assert "GRAND:" in result.stdout
     grand_pid = int(result.stdout.strip().split("GRAND:", 1)[1].split()[0])
-    with pytest.raises(OSError):
-        os.kill(grand_pid, 0)
+    _assert_pid_gone(grand_pid)
 
 
 def test_execute_quoted_heredoc_through_shell() -> None:
