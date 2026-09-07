@@ -85,13 +85,11 @@ def pull_request_delays(
     this commit have been green?"); the actual green time is when the last
     of its workflows first passed. A commit whose workflows never all passed
     is left out. The wait on a commit ends when the developer pushes the next
-    commit of the PR, so a stale commit re-run days later adds nothing. The
+    commit of the PR or the PR merges, whichever comes first, so a stale
+    commit re-run later adds nothing. A next commit that triggered no PR
+    workflow is invisible here; the merge time still bounds the wait. The
     delay intervals of a PR's commits are unioned so overlapping workflows
     and re-runs are counted once.
-
-    A run GitHub attached no PR number to is assigned to the first PR merged
-    from its head repository and branch after the run was queued, so a reused
-    branch name does not fold two PRs into one.
     """
     identity = _PullRequestIdentity(merged_prs)
     affected: set[tuple[PullRequestKey, str]] = set()
@@ -111,7 +109,9 @@ def pull_request_delays(
     intervals: dict[PullRequestKey, list[tuple[datetime, datetime]]] = defaultdict(list)
     for key, sha in affected:
         interval = _commit_delay(
-            by_commit.get((key, sha), []), normal_minutes, until=next_push.get((key, sha))
+            by_commit.get((key, sha), []),
+            normal_minutes,
+            until=_earliest(next_push.get((key, sha)), identity.merged_at(key)),
         )
         if interval is not None:
             intervals[key].append(interval)
@@ -138,7 +138,12 @@ PullRequestKey = tuple[str, str, int]
 
 
 class _PullRequestIdentity:
-    """Resolve which pull request a run belongs to, using merges when GitHub attached none."""
+    """Resolve which pull request a run belongs to and when that PR merged.
+
+    Of several attached PR numbers the merged one wins; a run with none is
+    assigned to the first PR merged from its head repository and branch
+    after the run was queued.
+    """
 
     def __init__(self, merged: Sequence[MergedPullRequest]) -> None:
         by_branch: dict[tuple[str, str], list[MergedPullRequest]] = defaultdict(list)
@@ -147,13 +152,23 @@ class _PullRequestIdentity:
         for prs in by_branch.values():
             prs.sort(key=lambda pr: pr.merged_at)
         self._by_branch = by_branch
+        self._merged_at = {pr.number: pr.merged_at for pr in merged}
 
     def key(self, run: WorkflowRun) -> PullRequestKey:
         if run.pr_numbers:
-            return (run.head_repo, run.branch, run.pr_numbers[0])
+            number = next((n for n in run.pr_numbers if n in self._merged_at), run.pr_numbers[0])
+            return (run.head_repo, run.branch, number)
         candidates = self._by_branch.get((run.head_repo, run.branch), [])
         merged = next((pr for pr in candidates if pr.merged_at >= run.created_at), None)
         return (run.head_repo, run.branch, merged.number if merged else 0)
+
+    def merged_at(self, key: PullRequestKey) -> datetime | None:
+        return self._merged_at.get(key[2])
+
+
+def _earliest(*times: datetime | None) -> datetime | None:
+    known = [time for time in times if time is not None]
+    return min(known) if known else None
 
 
 def _next_push_times(

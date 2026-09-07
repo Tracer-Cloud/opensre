@@ -354,6 +354,61 @@ def test_reused_branch_without_pr_numbers_splits_into_separate_prs() -> None:
     assert report.merged_pr_branches == 2
 
 
+def test_run_attached_to_several_prs_belongs_to_the_merged_one() -> None:
+    # Arrange: GitHub lists PR 7 (never merged) before PR 1 (merged) on both runs.
+    pr_runs = [
+        _run(1, sha="m", conclusion="failure", start_minutes=0, pr_numbers=(7, 1)),
+        _run(2, sha="m", conclusion="success", start_minutes=50, pr_numbers=(7, 1)),
+    ]
+
+    # Act
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[],
+        pr_runs=pr_runs,
+        merged_prs=_merged("feat/x"),
+        now=_T0 + timedelta(days=1),
+    )
+
+    # Assert
+    assert [(d.pr_number, d.critical_path) for d in report.pr_delays] == [(1, True)]
+    assert report.blocked_minutes == 50.0
+
+
+def test_stale_rerun_after_the_merge_waits_only_until_the_merge() -> None:
+    # Arrange: the failed run was re-run two days after the PR merged at day 1,
+    # and no later commit of the PR triggered a workflow.
+    pr_runs = [
+        _run(
+            1,
+            sha="m",
+            conclusion="success",
+            start_minutes=3 * 24 * 60,
+            queued_minutes=3 * 24 * 60,
+            attempt=2,
+            earlier_failure_started_at=_T0,
+        ),
+    ]
+
+    # Act
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[],
+        pr_runs=pr_runs,
+        merged_prs=_merged("feat/x"),
+        now=_T0 + timedelta(days=4),
+    )
+
+    # Assert: expected green at 10 minutes, wait ends at the merge one day in.
+    assert report.blocked_minutes == 24 * 60 - 10
+
+
 def test_source_code_failures_do_not_add_blocked_time() -> None:
     pr_runs = [
         _run(1, sha="old", conclusion="failure", start_minutes=0),
