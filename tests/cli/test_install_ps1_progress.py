@@ -174,3 +174,50 @@ def test_install_ps1_dot_sources_when_powershell_available() -> None:
     assert "Unit progress step" in output
     assert "OK Unit progress step" in output
     assert "result-value" in output
+
+
+def test_install_ps1_strips_the_exe_suffix_without_eating_the_name() -> None:
+    """The Next steps block must say `opensre`, not `opensr`.
+
+    `$binaryName.TrimEnd(".exe")` reads as "drop the extension" and is not:
+    TrimEnd takes a *set of characters*, so it also removes the trailing "e"
+    of "opensre". The installer then told the user to run a command that does
+    not exist.
+    """
+    source = INSTALL_PS1.read_text()
+
+    assert '.TrimEnd(".exe")' not in source, (
+        "TrimEnd with a suffix-shaped argument is back; it strips characters, "
+        "not a suffix"
+    )
+    assert "[System.IO.Path]::GetFileNameWithoutExtension($binaryName)" in source
+
+
+def test_install_ps1_next_steps_name_survives_powershell() -> None:
+    """Measured in a real shell, because this bug is a PowerShell semantic."""
+    shell = _powershell()
+    if shell is None:
+        pytest.skip("PowerShell is not installed in this environment.")
+
+    script = textwrap.dedent(
+        """
+        $binaryName = 'opensre.exe'
+        Write-Output ("trimend=" + $binaryName.TrimEnd(".exe"))
+        Write-Output ("fixed=" + [System.IO.Path]::GetFileNameWithoutExtension($binaryName))
+        Write-Output ("bare=" + [System.IO.Path]::GetFileNameWithoutExtension('opensre'))
+        """
+    )
+
+    result = subprocess.run(
+        [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout
+    # The old expression really does produce the wrong name, on this shell.
+    assert "trimend=opensr\n" in output.replace("\r", "")
+    assert "fixed=opensre" in output
+    # And the replacement is a no-op when the archive ships no .exe suffix.
+    assert "bare=opensre" in output

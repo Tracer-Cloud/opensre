@@ -1187,7 +1187,10 @@ function Install-OpenSre {
 
     Ensure-OpenSreGithubCli
 
-    $exe = $binaryName.TrimEnd(".exe")
+    # Not TrimEnd(".exe"): TrimEnd takes a set of characters, not a suffix, so it
+    # strips the trailing "e" of "opensre" along with the extension and the
+    # Next steps block below tells the user to run "opensr".
+    $exe = [System.IO.Path]::GetFileNameWithoutExtension($binaryName)
     $sep = "────────────────────────────────────────────"
 
     Write-Host ""
