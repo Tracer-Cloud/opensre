@@ -148,14 +148,16 @@ _ERROR_TYPE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("DNSResolution", re.compile(r"dns|name\s*resolution|resolve\s*host", re.IGNORECASE)),
     (
         "AuthenticationError",
-        re.compile(r"auth(entication|orization)?\s*(fail|error|denied)|401|403", re.IGNORECASE),
+        re.compile(
+            r"auth(entication|orization)?\s*(fail|error|denied)|\b401\b|\b403\b", re.IGNORECASE
+        ),
     ),
     (
         "OutOfMemory",
         re.compile(r"(out\s*of\s*memory|oom\s*kill|memory\s*(error|exceed|limit))", re.IGNORECASE),
     ),
     ("DiskFull", re.compile(r"(no\s*space|disk\s*full|storage\s*(full|limit))", re.IGNORECASE)),
-    ("RateLimited", re.compile(r"rate\s*limit|throttl|429", re.IGNORECASE)),
+    ("RateLimited", re.compile(r"rate\s*limit|throttl|\b429\b", re.IGNORECASE)),
     (
         "SchemaValidation",
         re.compile(
@@ -174,7 +176,7 @@ _ERROR_TYPE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ),
     (
         "ResourceNotFound",
-        re.compile(r"(not\s*found|404|no\s*such\s*(file|key|bucket))", re.IGNORECASE),
+        re.compile(r"(not\s*found|\b404\b|no\s*such\s*(file|key|bucket))", re.IGNORECASE),
     ),
     (
         "SyntaxError",

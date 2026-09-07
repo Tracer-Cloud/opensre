@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from infrastructure.evidence.log_compaction import (
     _classify_error_type,
     _extract_components,
@@ -279,6 +281,40 @@ class TestClassifyErrorType:
 
     def test_unknown(self):
         assert _classify_error_type("Something completely unexpected") == "Unknown"
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Request completed in 1429ms",
+            "Processed 40412 records from the queue",
+            "worker pod-4013 restarted",
+            "Backfill wrote 8404 rows",
+            "checkpoint 24290 committed",
+        ],
+    )
+    def test_status_codes_inside_larger_numbers_are_not_errors(self, message):
+        # The status-code alternatives were unanchored, so `re.search` found
+        # 429 inside 1429 and bucketed an ordinary latency as RateLimited.
+        # build_error_taxonomy feeds the model's error breakdown, so this
+        # invented an error class that was never in the data.
+        assert _classify_error_type(message) == "Unknown"
+
+    @pytest.mark.parametrize(
+        ("message", "expected"),
+        [
+            ("HTTP 429 Too Many Requests", "RateLimited"),
+            ("returned 429.", "RateLimited"),
+            ("got 401 unauthorized", "AuthenticationError"),
+            ("HTTP/1.1 403 Forbidden", "AuthenticationError"),
+            ("code: 401,", "AuthenticationError"),
+            ("status=404 not found", "ResourceNotFound"),
+            ("[404] missing", "ResourceNotFound"),
+        ],
+    )
+    def test_standalone_status_codes_still_classify(self, message, expected):
+        # The boundaries must not cost us the real ones: a code delimited by a
+        # space, punctuation, a slash or a bracket still has to be recognised.
+        assert _classify_error_type(message) == expected
 
     def test_rate_limit(self):
         assert _classify_error_type("429 Too Many Requests") == "RateLimited"
