@@ -13,7 +13,7 @@ import shutil
 import sys
 from collections.abc import Callable
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, Literal, cast
 
 from rich import box
 from rich.console import Console
@@ -95,11 +95,17 @@ def _write_repl_tty_buffered(
 ) -> None:
     """Render Rich output to a buffer and write it in one TTY-safe stdout call."""
     buf = io.StringIO()
+    # Inherit the caller's color depth so theme colours are not down-converted
+    # on a truecolor terminal (Rich would otherwise re-detect from the env).
     buf_console = Console(
         file=buf,
         force_terminal=True,
         highlight=False,
         width=width,
+        color_system=cast(
+            Literal["auto", "standard", "256", "truecolor", "windows"],
+            console.color_system or "auto",
+        ),
     )
     render_to_buffer(buf_console)
     styled = buf.getvalue()

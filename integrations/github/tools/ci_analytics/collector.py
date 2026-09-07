@@ -98,6 +98,16 @@ def collect_runs(
     )
 
 
+@dataclass(frozen=True)
+class _Slice:
+    """One time slice of a listing and whether GitHub reported more than the ceiling."""
+
+    start: datetime
+    end: datetime
+    rows: list[dict[str, Any]]
+    over_ceiling: bool
+
+
 def _runs(
     client: GitHubRestClient,
     root: str,
@@ -110,29 +120,30 @@ def _runs(
 ) -> list[WorkflowRun]:
     """Completed runs created in ``[since, until]``, complete despite the listing ceiling.
 
-    A slice that returns the ceiling is split in half and refetched; a slice
-    at the minimum width that still hits it is reported as a coverage gap.
+    A slice GitHub reports as larger than the ceiling is split in half and
+    refetched; a slice at the minimum width that is still over it is kept as
+    far as it goes and reported as a coverage gap.
     """
     rows: list[dict[str, Any]] = []
-    truncated: list[tuple[datetime, datetime]] = []
+    truncated = 0
     pending = [(since, until)]
     with ThreadPoolExecutor(max_workers=_SLICE_WORKERS) as pool:
         while pending:
-            fetched = list(pool.map(lambda s: _slice(client, root, params, s), pending))
+            fetched = list(pool.map(lambda w: _fetch_slice(client, root, params, w), pending))
             pending = []
-            for (start, end), slice_rows in fetched:
-                if len(slice_rows) < _LIST_CEILING:
-                    rows.extend(slice_rows)
-                elif end - start <= _MIN_SLICE:
-                    rows.extend(slice_rows)
-                    truncated.append((start, end))
+            for piece in fetched:
+                if not piece.over_ceiling:
+                    rows.extend(piece.rows)
+                elif piece.end - piece.start <= _MIN_SLICE:
+                    rows.extend(piece.rows)
+                    truncated += 1
                 else:
-                    middle = start + (end - start) / 2
-                    pending.extend([(start, middle), (middle, end)])
+                    middle = piece.start + (piece.end - piece.start) / 2
+                    pending.extend([(piece.start, middle), (middle, piece.end)])
     if truncated:
         notices.append(
             f"Coverage notice: {scope} exceeded GitHub's listing ceiling in "
-            f"{len(truncated)} one-hour {'slice' if len(truncated) == 1 else 'slices'}; "
+            f"{truncated} one-hour {'slice' if truncated == 1 else 'slices'}; "
             "those hours are partially counted."
         )
     seen: set[int] = set()
@@ -146,16 +157,17 @@ def _runs(
     return parsed
 
 
-def _slice(
+def _fetch_slice(
     client: GitHubRestClient,
     root: str,
     params: dict[str, Any],
     window: tuple[datetime, datetime],
-) -> tuple[tuple[datetime, datetime], list[dict[str, Any]]]:
-    """Rows for one time slice, or a ceiling-sized marker when it must be split.
+) -> _Slice:
+    """Fetch one slice; a slice over the ceiling costs one request unless it is the minimum width.
 
-    The first page carries GitHub's ``total_count``; a slice over the ceiling
-    is reported without paging the rest, so splitting costs one request.
+    The first page carries GitHub's ``total_count``. Exactly the ceiling is a
+    complete listing; only a larger total is over it. Without a total the row
+    count is the fallback signal.
     """
     start, end = window
     query = {
@@ -168,14 +180,19 @@ def _slice(
     first = client.request("GET", path, params=query)
     total = first.get("total_count") if isinstance(first, dict) else None
     first_rows = first.get("workflow_runs") if isinstance(first, dict) else None
-    if isinstance(total, int) and total > _LIST_CEILING and end - start > _MIN_SLICE:
-        return window, [{}] * _LIST_CEILING
+    over = total > _LIST_CEILING if isinstance(total, int) else None
+    if over and end - start > _MIN_SLICE:
+        return _Slice(start, end, [], over_ceiling=True)
     if isinstance(total, int) and total <= _PER_PAGE and isinstance(first_rows, list):
-        return window, [row for row in first_rows if isinstance(row, dict)]
+        return _Slice(
+            start, end, [r for r in first_rows if isinstance(r, dict)], over_ceiling=False
+        )
     rows = client.paginate(
         path, params=query, collection_key="workflow_runs", max_pages=_MAX_RUN_PAGES_PER_SLICE
     )
-    return window, rows
+    if over is None:
+        over = len(rows) >= _LIST_CEILING
+    return _Slice(start, end, rows, over_ceiling=over)
 
 
 def _merged_prs(
@@ -299,10 +316,11 @@ def _annotate_reruns(
 ) -> list[WorkflowRun]:
     """Attach earlier-failure times so a later attempt is not assumed to hide a flake.
 
-    Re-runs on merged PRs are checked first because they drive blocked time.
-    A re-run whose history could not be read, or fell outside the lookup
-    budget, stays a plain success and is reported in a coverage notice rather
-    than silently shrinking the failure counts.
+    Re-runs on merged PRs are checked as a first phase, so the shared lookup
+    budget is spent on them before any other re-run competes for it; they are
+    the ones that feed blocked time. A re-run whose history could not be read,
+    or fell outside the budget, stays a plain success and is reported in a
+    coverage notice rather than silently shrinking the failure counts.
     """
     reruns = [run for run in runs if run.succeeded and run.attempt > 1]
     if not reruns:
@@ -315,13 +333,19 @@ def _annotate_reruns(
             return any(number in merged_numbers for number in run.pr_numbers)
         return (run.head_repo, run.branch) in merged_branches
 
-    ordered = sorted(reruns, key=lambda run: (not on_merged_pr(run), run.created_at))
     lookups = _AttemptLookups(_MAX_ATTEMPT_LOOKUPS)
-    with ThreadPoolExecutor(max_workers=min(_MAX_RERUN_WORKERS, len(ordered))) as pool:
-        results = list(
-            pool.map(lambda run: _with_earlier_failure(client, root, run, lookups), ordered)
-        )
-    checked = {run.run_id: result for run, result in zip(ordered, results, strict=True)}
+    checked: dict[int, WorkflowRun] = {}
+    for phase in (
+        [run for run in reruns if on_merged_pr(run)],
+        [run for run in reruns if not on_merged_pr(run)],
+    ):
+        if not phase:
+            continue
+        with ThreadPoolExecutor(max_workers=min(_MAX_RERUN_WORKERS, len(phase))) as pool:
+            results = list(
+                pool.map(lambda run: _with_earlier_failure(client, root, run, lookups), phase)
+            )
+        checked.update({run.run_id: result for run, result in zip(phase, results, strict=True)})
     annotated = [checked.get(run.run_id, run) for run in runs]
     if lookups.unavailable:
         notices.append(

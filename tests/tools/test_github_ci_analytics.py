@@ -433,6 +433,56 @@ def test_collect_runs_splits_the_window_past_the_listing_ceiling() -> None:
     assert all(".." in q.get("created", "") for q in client.run_queries)
 
 
+def test_collect_runs_treats_exactly_the_ceiling_as_complete() -> None:
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    rows = [
+        _payload(index, created_at=_iso(now - timedelta(minutes=40 * index)))
+        for index in range(1, 1001)
+    ]
+    client = _FakeGitHub(repository={"default_branch": "main"}, runs=rows)
+
+    collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    assert len(collected.pr_runs) == 1000
+    assert collected.coverage_notices == []
+    # One listing sufficed: the whole-window query was not split.
+    assert sum(1 for q in client.run_queries if q.get("event") == "pull_request") <= 2
+
+
+def test_rerun_budget_is_spent_on_merged_prs_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    from integrations.github.tools.ci_analytics import collector
+
+    monkeypatch.setattr(collector, "_MAX_ATTEMPT_LOOKUPS", 1)
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    # The unmerged re-run is older, so plain ordering would check it first.
+    unmerged = _payload(5, created_at="2026-09-01T09:00:00Z", attempt=2, branch="feat/other")
+    merged = _payload(6, created_at="2026-09-02T09:00:00Z", attempt=2, branch="feat/x")
+    attempts = {
+        (5, 1): _payload(5, created_at=unmerged["created_at"], conclusion="failure", attempt=1),
+        (6, 1): _payload(6, created_at=merged["created_at"], conclusion="failure", attempt=1),
+    }
+    pulls = [
+        {
+            "number": 42,
+            "merged_at": "2026-09-03T09:00:00Z",
+            "updated_at": "2026-09-03T09:00:00Z",
+            "head": {"ref": "feat/x", "repo": {"full_name": "o/r"}},
+        }
+    ]
+    client = _FakeGitHub(
+        repository={"default_branch": "main"},
+        runs=[unmerged, merged],
+        attempts=attempts,
+        pulls=pulls,
+    )
+
+    collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    by_id = {run.run_id: run for run in collected.pr_runs}
+    assert by_id[6].retried_to_green is True
+    assert by_id[5].retried_to_green is False
+
+
 def test_collect_runs_reports_an_hour_that_still_exceeds_the_ceiling() -> None:
     now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
     burst = now - timedelta(days=3)
@@ -494,12 +544,13 @@ def _payload(
     conclusion: str = "success",
     attempt: int = 1,
     event: str = "pull_request",
+    branch: str = "feat/x",
 ) -> dict[str, Any]:
     return {
         "id": run_id,
         "name": "CI",
         "workflow_id": 1,
-        "head_branch": "feat/x",
+        "head_branch": branch,
         "head_sha": "abc",
         "event": event,
         "conclusion": conclusion,
