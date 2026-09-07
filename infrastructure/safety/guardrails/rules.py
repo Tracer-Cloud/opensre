@@ -61,8 +61,19 @@ def load_rules(path: Path | None = None) -> list[GuardrailRule]:
         logger.warning("Guardrails config missing 'rules' key at %s", rules_path)
         return []
 
+    entries = raw["rules"]
+    if entries is None:
+        # A `rules:` key with nothing under it parses as None. Commenting out
+        # every rule is the natural way to disable guardrails for a moment, and
+        # the documented contract for a malformed config is an empty list, so
+        # this loads no rules rather than raising.
+        return []
+    if not isinstance(entries, list):
+        logger.warning("Guardrails config 'rules' is not a list at %s", rules_path)
+        return []
+
     rules: list[GuardrailRule] = []
-    for entry in raw["rules"]:
+    for entry in entries:
         if not isinstance(entry, dict):
             continue
         parsed = _parse_rule(entry)

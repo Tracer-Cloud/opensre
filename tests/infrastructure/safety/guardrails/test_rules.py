@@ -157,6 +157,17 @@ class TestLoadRules:
         assert rules[0].description == "Credit cards"
         assert rules[0].replacement == "[CC_REDACTED]"
 
+    def test_returns_empty_when_rules_key_is_empty(self, tmp_path: Path) -> None:
+        """A `rules:` key with nothing under it parses as None, not a list.
+
+        Commenting out every rule is the natural way to disable guardrails, and
+        it used to raise TypeError out of load_rules, which broke the
+        guardrail evaluator singleton and `opensre health`.
+        """
+        path = tmp_path / "guardrails.yml"
+        path.write_text("rules:", encoding="utf-8")
+        assert load_rules(path) == []
+
     def test_multiple_rules(self, tmp_path: Path) -> None:
         path = _write_config(
             tmp_path,
