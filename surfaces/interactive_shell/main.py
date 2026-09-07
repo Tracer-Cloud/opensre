@@ -21,6 +21,7 @@ from surfaces.interactive_shell.runtime.startup.account_gate import (
     pass_sign_in_gate,
     should_paint_launch_banner,
 )
+from surfaces.interactive_shell.runtime.startup.demo_picker import offer_demo
 from surfaces.interactive_shell.runtime.startup.initial_input import run_initial_input
 from surfaces.interactive_shell.runtime.startup.loop_suggestions import offer_loop_suggestions
 from surfaces.interactive_shell.ui.terminal_ui import render_terminal_ui
@@ -104,9 +105,11 @@ async def run_repl_async(
             ):
                 return 1
         else:
-            # Fresh interactive start with no scheduled loops: offer the
-            # suggested-loops picker before the prompt loop takes stdin.
-            offer_loop_suggestions(session, out)
+            # First interactive start: offer the demo picker; otherwise, with
+            # no scheduled loops, offer the suggested-loops picker before the
+            # prompt loop takes stdin.
+            if not offer_demo(session, out):
+                offer_loop_suggestions(session, out)
 
         await InteractiveShellController(
             runtime_context,

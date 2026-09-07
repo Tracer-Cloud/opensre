@@ -178,6 +178,21 @@ def capture_loop_suggestion_skipped() -> None:
     _capture(Event.LOOP_SUGGESTION_SKIPPED)
 
 
+def capture_onboarding_demo_prompted() -> None:
+    """Exposure event: the onboarding demo picker was rendered."""
+    _capture(Event.ONBOARDING_DEMO_PROMPTED)
+
+
+def capture_onboarding_demo_selected(*, option: str, custom: bool) -> None:
+    """User picked a demo; ``custom`` marks a typed answer instead of a listed option."""
+    _capture(Event.ONBOARDING_DEMO_SELECTED, {"option": option, "custom": custom})
+
+
+def capture_onboarding_demo_skipped() -> None:
+    """User dismissed the onboarding demo picker without choosing."""
+    _capture(Event.ONBOARDING_DEMO_SKIPPED)
+
+
 def capture_terminal_actions_planned(*, planned_count: int, has_unhandled_clause: bool) -> None:
     _capture(
         Event.TERMINAL_ACTIONS_PLANNED,

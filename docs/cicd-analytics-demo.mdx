@@ -1,0 +1,61 @@
+---
+title: "CI/CD analytics demo"
+description: "See how reliable your CI is and how much developer time it costs, using real repositories on your machine."
+---
+
+## Overview
+
+On its first interactive launch OpenSRE asks which demo to run. The recommended
+one analyzes a real repository from your machine and reports CI/CD reliability
+KPIs, including the developer time lost to unreliable CI. It is read-only and
+takes a couple of minutes.
+
+Run it again at any time with `/demo`, or by asking:
+
+```text
+run the CI/CD analytics demo
+analyze Tracer-Cloud/opensre CI/CD performance
+how much developer time does flaky CI cost us
+```
+
+## Prerequisites
+
+- `git` on `PATH`
+- A GitHub token that can read Actions history (`opensre integrations setup github`, or `GITHUB_TOKEN`)
+
+## What happens
+
+1. **Scan.** OpenSRE finds git repositories under your home directory, counts commits in the last 30 days and uncommitted files, notes which have GitHub Actions workflows, and draws the activity chart. Clones of the same repository are folded into one row.
+2. **Pick.** It offers the most active repositories that have CI configured, plus an open-source example, and asks which one to analyze.
+3. **Analyze.** It reads the last 30 days of workflow runs and reports the KPIs below.
+4. **Next step.** It offers to set up the CI reliability agent, connect Slack, or exit.
+
+## The KPIs
+
+| KPI | Meaning |
+| --- | --- |
+| GitHub Actions executions | Completed runs on the default branch and on pull requests in the window |
+| PR-triggered failed workflows and failure rate | Pull request runs that failed, including runs that only passed after a re-run |
+| CI reliability failures | Failures where the identical commit passed later, by re-run or a fresh run. CI, not the code, was at fault |
+| Source-code failures | Failures that passed only after the branch moved to a new commit |
+| Developer time blocked by unreliable CI | For CI reliability failures on PRs that were later merged: wall-clock time from the first queued attempt to the eventual pass, minus the workflow's normal duration |
+| Normal duration | Per workflow, the median duration of first-attempt passing runs |
+| Default-branch red time | Hours during which at least one push-triggered workflow on the default branch stayed red, overlaps counted once, with mean time to recovery |
+
+Only PRs that were merged count toward blocked time, so the number reflects
+delays that sat on the path to a real merge. The report also shows the total
+across all PRs when it differs.
+
+## Limits
+
+- Windows up to 90 days. Each scope reads at most 2,000 runs; the report says so when a cap was hit.
+- Merged PR detection covers the 500 most recently updated closed PRs.
+- Scheduled and manually dispatched workflows count toward executions but not toward default-branch red time.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **"GitHub token is required"** | Run `opensre integrations setup github` and rerun the demo |
+| **No repositories offered** | None of the checkouts under your home directory has a GitHub origin and a `.github/workflows` folder; pick the example repository |
+| **The picker did not appear** | It shows once per machine. Use `/demo` to open it again |

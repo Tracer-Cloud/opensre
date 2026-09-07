@@ -1,0 +1,181 @@
+"""Typed shapes for the GitHub CI reliability analytics report."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import StrEnum
+
+FAILED_CONCLUSIONS = frozenset({"failure", "timed_out", "startup_failure", "action_required"})
+SUCCESS_CONCLUSION = "success"
+
+
+class FailureKind(StrEnum):
+    """Why a failed PR run eventually went green, judged by what changed in between."""
+
+    RELIABILITY = "reliability"
+    """The identical commit passed later, by re-run or a fresh run: CI, not the code, was at fault."""
+
+    SOURCE = "source"
+    """A later run passed only after the branch moved to a new commit."""
+
+    UNRESOLVED = "unresolved"
+    """No later passing run in the window."""
+
+
+@dataclass(frozen=True)
+class WorkflowRun:
+    """One completed GitHub Actions run, reduced to what the metrics need."""
+
+    run_id: int
+    workflow: str
+    branch: str
+    head_sha: str
+    event: str
+    conclusion: str
+    created_at: datetime
+    """When the run was first queued; earlier attempts of a re-run started here."""
+
+    started_at: datetime
+    """Start of the latest attempt."""
+
+    completed_at: datetime
+    attempt: int
+    url: str
+
+    @property
+    def retried_to_green(self) -> bool:
+        """A re-run on the same commit passed after an earlier attempt failed."""
+        return self.succeeded and self.attempt > 1
+
+    @property
+    def failed(self) -> bool:
+        return self.conclusion in FAILED_CONCLUSIONS
+
+    @property
+    def succeeded(self) -> bool:
+        return self.conclusion == SUCCESS_CONCLUSION
+
+    @property
+    def minutes(self) -> float:
+        return max(0.0, (self.completed_at - self.started_at).total_seconds() / 60)
+
+
+@dataclass(frozen=True)
+class ClassifiedFailure:
+    """A failed PR run paired with the run that recovered it, if any."""
+
+    failure: WorkflowRun
+    """The failed run, or the re-run itself when only its earlier attempt failed."""
+
+    recovery: WorkflowRun | None
+    kind: FailureKind
+    delay_minutes: float
+    """Extra wall-clock minutes beyond the workflow's normal duration until recovery."""
+
+    critical_path: bool
+    """True when the PR branch was merged later, so the delay held up a real merge."""
+
+
+@dataclass(frozen=True)
+class Outage:
+    """A period during which one workflow stayed red on the default branch."""
+
+    workflow: str
+    started_at: datetime
+    ended_at: datetime | None
+    first_failure_url: str
+
+    def duration_hours(self, *, now: datetime) -> float:
+        end = self.ended_at or now
+        return max(0.0, (end - self.started_at).total_seconds() / 3600)
+
+    @property
+    def ongoing(self) -> bool:
+        return self.ended_at is None
+
+
+@dataclass(frozen=True)
+class WorkflowSummary:
+    """Per-workflow failure counts across both scopes, worst first."""
+
+    workflow: str
+    runs: int
+    failures: int
+    reliability_failures: int
+    normal_minutes: float | None
+
+
+@dataclass(frozen=True)
+class CiAnalyticsReport:
+    """Computed CI reliability KPIs for one repository window."""
+
+    owner: str
+    repo: str
+    default_branch: str
+    window_days: int
+    generated_at: datetime
+    executions: int
+    pr_executions: int
+    pr_failures: int
+    classified: tuple[ClassifiedFailure, ...]
+    merged_pr_branches: int
+    blocked_minutes: float
+    """Developer minutes blocked by unreliable CI on PRs that were later merged."""
+
+    blocked_minutes_all: float
+    """Same delay summed over every PR branch, merged or not."""
+
+    branch_runs: int
+    """Push-triggered runs on the default branch, the ones that define red time."""
+
+    branch_failures: int
+    red_hours: float
+    outages: tuple[Outage, ...]
+    mean_recovery_hours: float | None
+    workflows: tuple[WorkflowSummary, ...] = field(default_factory=tuple)
+    coverage_notices: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def pr_failure_rate(self) -> float | None:
+        return self.pr_failures / self.pr_executions if self.pr_executions else None
+
+    def count(self, kind: FailureKind) -> int:
+        return sum(1 for item in self.classified if item.kind is kind)
+
+    @property
+    def critical_path_delays(self) -> tuple[ClassifiedFailure, ...]:
+        return tuple(
+            item
+            for item in self.classified
+            if item.critical_path and item.kind is FailureKind.RELIABILITY
+        )
+
+    @property
+    def longest_delay(self) -> ClassifiedFailure | None:
+        delays = [item for item in self.classified if item.kind is FailureKind.RELIABILITY]
+        if not delays:
+            return None
+        return max(delays, key=lambda item: item.delay_minutes)
+
+    @property
+    def longest_outage(self) -> Outage | None:
+        if not self.outages:
+            return None
+        return max(self.outages, key=lambda o: o.duration_hours(now=self.generated_at))
+
+    @property
+    def ongoing_outages(self) -> tuple[Outage, ...]:
+        return tuple(o for o in self.outages if o.ongoing)
+
+
+__all__ = [
+    "FAILED_CONCLUSIONS",
+    "SUCCESS_CONCLUSION",
+    "CiAnalyticsReport",
+    "ClassifiedFailure",
+    "FailureKind",
+    "Outage",
+    "WorkflowRun",
+    "WorkflowSummary",
+]

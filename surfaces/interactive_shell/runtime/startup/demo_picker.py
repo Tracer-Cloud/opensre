@@ -1,0 +1,179 @@
+"""First-experience demo picker.
+
+On the first interactive launch the shell asks which demo to run before the
+prompt takes stdin. Picking one auto-submits a canned prompt as the first turn;
+the action agent then drives the matching bundled skill. A marker file records
+the choice so the picker shows once; ``/demo`` reopens it on demand.
+
+Deterministic startup UI plus a canned prompt: routing stays with the action
+agent (no intent heuristics — see ``surfaces/interactive_shell/AGENTS.md``).
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from config.constants.paths import OPENSRE_HOME_DIR
+from infrastructure.analytics.capture import (
+    capture_onboarding_demo_prompted,
+    capture_onboarding_demo_selected,
+    capture_onboarding_demo_skipped,
+)
+from infrastructure.analytics.source import is_test_run
+from infrastructure.terminal.theme import DIM
+from surfaces.shared.terminal.components.choice_menu import (
+    repl_choose_one,
+    repl_tty_interactive,
+)
+
+if TYPE_CHECKING:
+    from rich.console import Console
+
+    from surfaces.interactive_shell.session import Session
+
+logger = logging.getLogger(__name__)
+
+MARKER_FILENAME = "onboarding_demo.json"
+_MENU_TITLE = "Which demo would you like me to run? (Esc to skip)"
+_MENU_EXPLAINER = (
+    "For a demo, I'd rather use something real from your machine than a toy example. "
+    "Each takes a couple of minutes and uses real GitHub repositories on your machine."
+)
+_CUSTOM_LABEL = "Or type your own answer..."
+_CUSTOM_OPTION = "custom"
+_SKIPPED_OPTION = "skipped"
+
+OPTION_CI_ANALYTICS = "ci_analytics"
+OPTION_CI_AGENT = "ci_agent"
+OPTION_SLACK = "slack"
+
+
+@dataclass(frozen=True, slots=True)
+class DemoSuggestion:
+    """One demo shown in the first-experience picker."""
+
+    option: str
+    """Stable analytics identifier for this demo."""
+
+    label: str
+    """Menu row shown to the user."""
+
+    prompt: str
+    """Canned prompt auto-submitted as the first turn when selected."""
+
+
+DEMO_SUGGESTIONS: tuple[DemoSuggestion, ...] = (
+    DemoSuggestion(
+        option=OPTION_CI_ANALYTICS,
+        label="Explore a repo and analyze its CI/CD performance (recommended)",
+        prompt=(
+            "Run the CI/CD analytics demo: scan this machine for repositories, help me "
+            "pick a suitable one, show its CI/CD reliability KPIs and the developer time "
+            "blocked by unreliable CI, then offer what to do next."
+        ),
+    ),
+    DemoSuggestion(
+        option=OPTION_CI_AGENT,
+        label="Set up an agent that improves CI/CD reliability over time",
+        prompt=(
+            "Onboard me on the CI/CD fixing flow for the current repository, then set up "
+            "a read-only recurring weekday CI health check at 8:00 AM."
+        ),
+    ),
+    DemoSuggestion(
+        option=OPTION_SLACK,
+        label="Connect OpenSRE to Slack and hand off DevOps chores for your team",
+        prompt=(
+            "Set up the Slack integration and show me how to hand off DevOps chores to "
+            "OpenSRE from Slack."
+        ),
+    ),
+)
+
+_SUGGESTIONS_BY_OPTION = {suggestion.option: suggestion for suggestion in DEMO_SUGGESTIONS}
+
+
+def marker_path() -> Path:
+    return OPENSRE_HOME_DIR / MARKER_FILENAME
+
+
+def demo_already_offered() -> bool:
+    return marker_path().is_file()
+
+
+def should_offer_demo() -> bool:
+    """True on the first interactive launch that has not seen the picker yet."""
+    if is_test_run():
+        return False
+    if not repl_tty_interactive():
+        return False
+    return not demo_already_offered()
+
+
+def offer_demo(session: Session, console: Console | None = None, *, force: bool = False) -> bool:
+    """Show the picker and queue the chosen demo as the next turn.
+
+    Returns True when a demo was queued. Never blocks startup: any unexpected
+    failure is logged and the REPL proceeds into the normal prompt.
+    """
+    try:
+        if not force and not should_offer_demo():
+            return False
+        capture_onboarding_demo_prompted()
+        if console is not None:
+            console.print(f"[{DIM}]{_MENU_EXPLAINER}[/]")
+        selected = repl_choose_one(
+            title=_MENU_TITLE,
+            choices=[(suggestion.option, suggestion.label) for suggestion in DEMO_SUGGESTIONS],
+            custom_label=_CUSTOM_LABEL,
+            letter_keys=True,
+        )
+        if selected is None:
+            capture_onboarding_demo_skipped()
+            _record(_SKIPPED_OPTION)
+            return False
+        suggestion = _SUGGESTIONS_BY_OPTION.get(selected)
+        if suggestion is None:
+            capture_onboarding_demo_selected(option=_CUSTOM_OPTION, custom=True)
+            _record(_CUSTOM_OPTION)
+            session.terminal.set_auto_command(selected)
+            return True
+        capture_onboarding_demo_selected(option=suggestion.option, custom=False)
+        _record(suggestion.option)
+        session.terminal.set_auto_command(suggestion.prompt)
+        return True
+    except Exception:
+        logger.warning("Onboarding demo picker failed.", exc_info=True)
+        return False
+
+
+def _record(option: str) -> None:
+    """Persist the choice so the picker shows once per machine."""
+    try:
+        path = marker_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"option": option, "chosen_at": datetime.now(UTC).isoformat()}),
+            encoding="utf-8",
+        )
+    except OSError:
+        logger.warning("Could not record the onboarding demo choice.", exc_info=True)
+
+
+__all__ = [
+    "DEMO_SUGGESTIONS",
+    "DemoSuggestion",
+    "MARKER_FILENAME",
+    "OPTION_CI_AGENT",
+    "OPTION_CI_ANALYTICS",
+    "OPTION_SLACK",
+    "demo_already_offered",
+    "marker_path",
+    "offer_demo",
+    "should_offer_demo",
+]

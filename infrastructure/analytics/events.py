@@ -57,3 +57,8 @@ class Event(StrEnum):
     LOOP_SUGGESTION_PROMPTED = "loop_suggestion_prompted"
     LOOP_SUGGESTION_SELECTED = "loop_suggestion_selected"
     LOOP_SUGGESTION_SKIPPED = "loop_suggestion_skipped"
+
+    # Onboarding demo picker (interactive-shell startup, first experience)
+    ONBOARDING_DEMO_PROMPTED = "onboarding_demo_prompted"
+    ONBOARDING_DEMO_SELECTED = "onboarding_demo_selected"
+    ONBOARDING_DEMO_SKIPPED = "onboarding_demo_skipped"

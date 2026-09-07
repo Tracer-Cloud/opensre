@@ -161,6 +161,14 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks to change reasoning effort or depth for the active model",
         anti_examples=("User asks to switch provider or model name (use /model)",),
     ),
+    "/demo": _mcp(
+        "Open the guided demo picker that runs on real repositories from this machine "
+        "(CI/CD analytics, CI reliability agent, Slack handoff).",
+        "User asks to run a demo, see what OpenSRE can do, or replay the first-run demo menu",
+        anti_examples=(
+            "User names a specific repository to analyze (call the analytics tool directly)",
+        ),
+    ),
     "/exit": _mcp(
         "Exit the interactive shell and return to the parent terminal.",
         "User asks to exit, quit, or leave the REPL",
