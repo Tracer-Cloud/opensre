@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -15,6 +16,9 @@ _PER_PAGE = 100
 _MAX_RUN_PAGES_PER_SCOPE = 20
 _MAX_PR_PAGES = 5
 _MAX_RERUN_WORKERS = 8
+# Each passing re-run costs up to attempt-1 extra requests; bound the total so
+# a very flaky repository cannot turn the demo into minutes of API calls.
+_MAX_ATTEMPT_LOOKUPS = 200
 _DEFAULT_BRANCH_EVENTS = ("push", "schedule", "workflow_dispatch")
 _PR_EVENT = "pull_request"
 
@@ -77,7 +81,7 @@ def collect_runs(
         branch_runs = [run for future in branch_futures for run in future.result()]
         # Only PR reruns affect failure rate and blocked time; skip extra
         # attempt fetches on default-branch listings.
-        pr_runs = _annotate_reruns(client, root, pr_future.result())
+        pr_runs = _annotate_reruns(client, root, pr_future.result(), notices=notices)
         merged = merged_future.result()
     return CollectedRuns(
         default_branch=default_branch,
@@ -186,33 +190,88 @@ def parse_run(row: dict[str, Any]) -> WorkflowRun | None:
     )
 
 
+class _AttemptLookups:
+    """Thread-safe budget and tally for the per-attempt history requests."""
+
+    def __init__(self, budget: int) -> None:
+        self._lock = threading.Lock()
+        self._remaining = budget
+        self.unchecked = 0
+        self.unavailable = 0
+
+    def take(self) -> bool:
+        with self._lock:
+            if self._remaining <= 0:
+                return False
+            self._remaining -= 1
+            return True
+
+    def skipped(self) -> None:
+        with self._lock:
+            self.unchecked += 1
+
+    def failed(self) -> None:
+        with self._lock:
+            self.unavailable += 1
+
+
 def _annotate_reruns(
-    client: GitHubRestClient, root: str, runs: list[WorkflowRun]
+    client: GitHubRestClient,
+    root: str,
+    runs: list[WorkflowRun],
+    *,
+    notices: list[str],
 ) -> list[WorkflowRun]:
-    """Attach earlier-failure times so a later attempt is not assumed to hide a flake."""
-    if not any(run.succeeded and run.attempt > 1 for run in runs):
+    """Attach earlier-failure times so a later attempt is not assumed to hide a flake.
+
+    A re-run whose history could not be read, or fell outside the lookup
+    budget, stays a plain success and is reported in a coverage notice rather
+    than silently shrinking the failure counts.
+    """
+    rerun_count = sum(1 for run in runs if run.succeeded and run.attempt > 1)
+    if not rerun_count:
         return runs
-    workers = min(_MAX_RERUN_WORKERS, sum(1 for run in runs if run.succeeded and run.attempt > 1))
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        return list(pool.map(lambda run: _with_earlier_failure(client, root, run), runs))
+    lookups = _AttemptLookups(_MAX_ATTEMPT_LOOKUPS)
+    with ThreadPoolExecutor(max_workers=min(_MAX_RERUN_WORKERS, rerun_count)) as pool:
+        annotated = list(
+            pool.map(lambda run: _with_earlier_failure(client, root, run, lookups), runs)
+        )
+    if lookups.unavailable:
+        notices.append(
+            f"Coverage notice: attempt history was unavailable for {lookups.unavailable} "
+            f"re-run{'s' if lookups.unavailable != 1 else ''}; they count as plain successes."
+        )
+    if lookups.unchecked:
+        notices.append(
+            f"Coverage notice: attempt history was checked for the first "
+            f"{_MAX_ATTEMPT_LOOKUPS} requests only; {lookups.unchecked} re-run"
+            f"{'s' if lookups.unchecked != 1 else ''} count as plain successes."
+        )
+    return annotated
 
 
-def _with_earlier_failure(client: GitHubRestClient, root: str, run: WorkflowRun) -> WorkflowRun:
+def _with_earlier_failure(
+    client: GitHubRestClient, root: str, run: WorkflowRun, lookups: _AttemptLookups
+) -> WorkflowRun:
     if not run.succeeded or run.attempt <= 1:
         return run
-    started = _earlier_failure_started_at(client, root, run)
+    started = _earlier_failure_started_at(client, root, run, lookups)
     if started is None:
         return run
     return replace(run, earlier_failure_started_at=started)
 
 
 def _earlier_failure_started_at(
-    client: GitHubRestClient, root: str, run: WorkflowRun
+    client: GitHubRestClient, root: str, run: WorkflowRun, lookups: _AttemptLookups
 ) -> datetime | None:
     for attempt in range(1, run.attempt):
+        if not lookups.take():
+            lookups.skipped()
+            return None
         try:
             row = client.request("GET", f"{root}/actions/runs/{run.run_id}/attempts/{attempt}")
         except GitHubApiError:
+            lookups.failed()
             return None
         if not isinstance(row, dict):
             continue

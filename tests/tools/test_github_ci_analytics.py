@@ -411,6 +411,40 @@ def test_collect_runs_does_not_treat_a_cancelled_rerun_as_a_flake() -> None:
     assert collected.pr_runs[0].retried_to_green is False
 
 
+def test_collect_runs_reports_unavailable_attempt_history_instead_of_hiding_it() -> None:
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    row = _payload(5, created_at="2026-09-01T09:00:00Z", conclusion="success", attempt=2)
+    client = _FakeGitHub(repository={"default_branch": "main"}, runs=[row], attempts={})
+
+    collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    assert collected.pr_runs[0].retried_to_green is False
+    assert any(
+        "attempt history was unavailable for 1 re-run" in n for n in collected.coverage_notices
+    )
+
+
+def test_collect_runs_caps_attempt_lookups_and_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
+    from integrations.github.tools.ci_analytics import collector
+
+    monkeypatch.setattr(collector, "_MAX_ATTEMPT_LOOKUPS", 1)
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    rows = [
+        _payload(5, created_at="2026-09-01T09:00:00Z", conclusion="success", attempt=2),
+        _payload(6, created_at="2026-09-02T09:00:00Z", conclusion="success", attempt=2),
+    ]
+    attempts = {
+        (5, 1): _payload(5, created_at=rows[0]["created_at"], conclusion="failure", attempt=1),
+        (6, 1): _payload(6, created_at=rows[1]["created_at"], conclusion="failure", attempt=1),
+    }
+    client = _FakeGitHub(repository={"default_branch": "main"}, runs=rows, attempts=attempts)
+
+    collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    assert sum(run.retried_to_green for run in collected.pr_runs) == 1
+    assert any("1 re-run count as plain successes" in n for n in collected.coverage_notices)
+
+
 def _iso(value: datetime) -> str:
     return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -462,7 +496,10 @@ class _FakeGitHub:
         if marker in path and "/attempts/" in path:
             rest = path.split(marker, 1)[1]
             run_id, _, attempt = rest.partition("/attempts/")
-            return self._attempts[(int(run_id), int(attempt))]
+            try:
+                return self._attempts[(int(run_id), int(attempt))]
+            except KeyError as exc:
+                raise GitHubApiError("attempt not found", status_code=404) from exc
         raise AssertionError(f"unexpected {method} {path}")
 
     def paginate(self, path: str, *, params: dict[str, Any] | None = None, **_kwargs: Any) -> list:
