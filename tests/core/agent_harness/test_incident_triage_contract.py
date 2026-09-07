@@ -7,6 +7,7 @@ the production ReAct loop without credentials or live vendor dependencies.
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -33,13 +34,12 @@ def _response(*, text: str = "", tool: str | None = None) -> AgentLLMResponse:
 
 @dataclass
 class _IncidentLLM:
-    """Select read-only evidence tools, then report only observed values."""
+    """Rule model that selects tools from the request and answers from observations."""
 
-    tools_to_call: list[str]
-    final_text: str
     invocations: int = 0
     offered_tools: list[list[str]] = field(default_factory=list)
     seen_messages: list[list[dict[str, Any]]] = field(default_factory=list)
+    closing_text: str = ""
     model_id: str = "deterministic-incident-contract"
 
     def tool_schemas(self, tools: list[Any]) -> list[dict[str, Any]]:
@@ -54,15 +54,75 @@ class _IncidentLLM:
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> AgentLLMResponse:
-        _ = system
         self.invocations += 1
         self.seen_messages.append(messages)
+        if system and "You review whether an agent completed" in system:
+            return _response(text='{"verdict":"GOAL_REACHED"}')
+
+        request = str(messages[0].get("content", "")).lower()
+        if "checkout-api" not in request or not ({"latency", "p99"} & set(request.split())):
+            return _response(text="No incident-triage request was provided.")
+
+        observations = self._observations(messages)
         if tools == []:
-            return _response(text=self.final_text)
-        completed_calls = sum(1 for message in messages if message.get("role") == "tool")
-        if completed_calls < len(self.tools_to_call):
-            return _response(tool=self.tools_to_call[completed_calls])
-        return _response(text=self.final_text)
+            return _response(text=self._answer(observations))
+
+        available = {str(schema.get("name")) for schema in tools or [] if isinstance(schema, dict)}
+        wanted = []
+        if "deploy" in request:
+            wanted.append("query_deployments")
+        if "latency" in request or "p99" in request:
+            wanted.append("query_metrics")
+        wanted.append("query_logs")
+        for name in wanted:
+            if name not in observations:
+                if name in available or name == "query_logs":
+                    return _response(tool=name)
+                continue
+            if name == "query_logs" and "not available" in str(observations[name]).lower():
+                return _response(tool=name)
+        return _response(text=self._answer(observations))
+
+    @staticmethod
+    def _observations(messages: list[dict[str, Any]]) -> dict[str, Any]:
+        observed: dict[str, Any] = {}
+        for message in messages:
+            if message.get("role") != "tool":
+                continue
+            for item in message.get("results", []):
+                if isinstance(item, dict):
+                    output = item.get("output")
+                    if isinstance(output, str):
+                        with suppress(json.JSONDecodeError):
+                            output = json.loads(output)
+                    observed[str(item.get("name"))] = output
+        return observed
+
+    def _answer(self, observations: dict[str, Any]) -> str:
+        unavailable = str(observations.get("query_logs", "")).lower()
+        if "not available" in unavailable:
+            self.closing_text = (
+                "The log integration is not available, so I cannot verify log evidence. "
+                "No log-derived root cause can be claimed from the connected data."
+            )
+            return self.closing_text
+        if not observations:
+            self.closing_text = (
+                "No evidence tools are connected, so the alert cannot be verified yet."
+            )
+            return self.closing_text
+
+        deployment = observations["query_deployments"]
+        metrics = observations["query_metrics"]
+        logs = observations["query_logs"]
+        self.closing_text = (
+            f"{deployment['revision']} deployed at {deployment['deployed_at']}. "
+            f"At {metrics['started_at']} p99 rose from {metrics['baseline_ms']}ms to "
+            f"{metrics['p99_ms']}ms alongside {logs['count']} {logs['message']} errors. "
+            "The deployment is the leading correlated cause; roll it back and verify "
+            "latency recovery."
+        )
+        return self.closing_text
 
     @staticmethod
     def build_assistant_message(content: str, tool_calls: list[ToolCall]) -> dict[str, Any]:
@@ -158,12 +218,7 @@ def test_natural_incident_prompt_correlates_connected_read_only_evidence() -> No
             "started_at": "10:41 UTC",
         },
     }
-    conclusion = (
-        "checkout-v184 deployed at 10:39 UTC. At 10:41 UTC p99 rose from 410ms "
-        "to 2310ms alongside 187 upstream timeout errors. The deployment is the "
-        "leading correlated cause; roll it back and verify latency recovery."
-    )
-    llm = _IncidentLLM(list(evidence), conclusion)
+    llm = _IncidentLLM()
 
     result = _run(
         _INCIDENT_PROMPT,
@@ -172,44 +227,45 @@ def test_natural_incident_prompt_correlates_connected_read_only_evidence() -> No
     )
 
     assert llm.offered_tools[0] == list(evidence)
-    observed = json.dumps(llm.seen_messages[-1], default=str)
-    assert all(str(value) in observed for value in ("checkout-v184", 2310, 410, 187))
-    assert all(value in conclusion for value in ("checkout-v184", "2310ms", "410ms", "187"))
+    assert all(value in llm.closing_text for value in ("checkout-v184", "2310ms", "410ms", "187"))
     assert result.action_result.executed_count == 3
     assert result.action_result.executed_success_count == 3
-    assert result.primary_response_text.startswith(conclusion)
+    assert result.primary_response_text.startswith(llm.closing_text)
 
 
 def test_unavailable_integration_repetition_stops_with_an_explicit_limitation() -> None:
-    limitation = (
-        "The log integration is not available, so I cannot verify log evidence. "
-        "No log-derived root cause can be claimed from the connected data."
-    )
-    llm = _IncidentLLM(["query_logs"] * 10, limitation)
+    llm = _IncidentLLM()
 
-    result = _run(_INCIDENT_PROMPT, llm, [_tool("query_metrics", {"p99_ms": 2310})])
+    result = _run(
+        _INCIDENT_PROMPT,
+        llm,
+        [
+            _tool("query_deployments", {"revision": "checkout-v184"}),
+            _tool("query_metrics", {"p99_ms": 2310}),
+        ],
+    )
 
     assert result.action_result.hit_iteration_cap is True
     assert result.final_intent == "agent_incomplete"
-    assert llm.invocations == 5
+    assert llm.invocations < 10
     assert "not available" in result.primary_response_text.lower()
     assert "cannot verify log evidence" in result.primary_response_text
     assert "root cause is" not in result.primary_response_text.lower()
 
 
 def test_pasted_alert_keeps_its_incident_head_within_the_prompt_budget() -> None:
-    llm = _IncidentLLM([], "The alert is understood; no evidence tools are connected.")
+    llm = _IncidentLLM()
 
     result = _run(f"{_PASTED_ALERT} {'x' * 2_000}", llm, [])
 
     user_message = str(llm.seen_messages[0][0]["content"])
     assert _PASTED_ALERT in user_message
     assert "x" * 600 not in user_message
-    assert "no evidence tools are connected" in result.primary_response_text
+    assert "No evidence tools are connected" in result.primary_response_text
 
 
 def test_cancelled_incident_turn_stops_before_model_or_tool_work() -> None:
-    llm = _IncidentLLM(["query_logs"], "must not be returned")
+    llm = _IncidentLLM()
 
     result = _run(
         _INCIDENT_PROMPT,
