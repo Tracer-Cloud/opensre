@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterable
 
-from core.agent_harness.tools.action_tools import registered_single_turn_tool_names
+from core.agent_harness.tools import registered_single_turn_tool_names
 from core.tool import (
     BeforeToolCallResult,
     RuntimeTool,
