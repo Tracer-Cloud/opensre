@@ -18,6 +18,9 @@ from filelock import FileLock
 from config.constants import OPENSRE_HOME_DIR
 from infrastructure.scheduling.scheduler import reload_signal
 from infrastructure.scheduling.scheduler.storage.database import run_database_path
+from infrastructure.scheduling.scheduler.storage.legacy_task_migration import (
+    migrate_legacy_task_entries,
+)
 from infrastructure.scheduling.scheduler.storage.run_store import delete_runs
 from infrastructure.scheduling.scheduler.types import ScheduledTask
 
@@ -159,6 +162,16 @@ def list_tasks(store_path: Path | None = None) -> list[ScheduledTask]:
     lock = FileLock(_lock_path(path))
     with lock:
         raw = _load_raw(path)
+        if migrate_legacy_task_entries(raw):
+            try:
+                _save_raw(path, raw)
+            except OSError:
+                logger.warning(
+                    "Could not persist migrated legacy scheduler tasks at %s; "
+                    "using the migrated definitions for this process",
+                    path,
+                    exc_info=True,
+                )
     tasks: list[ScheduledTask] = []
     for entry in raw:
         try:

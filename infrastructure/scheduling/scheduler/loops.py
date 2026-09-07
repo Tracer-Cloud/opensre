@@ -21,6 +21,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_CREATED_BY_PARAM,
     LOOP_DESCRIPTION_PARAM,
     LOOP_GROUP_ID_PARAM,
+    LOOP_MIGRATION_NOTICE_PARAM,
     LOOP_PROMPT_PARAM,
     LOOP_SLACK_CHAT_ID_PARAM,
     LOOP_SLUG_PARAM,
@@ -591,7 +592,11 @@ def _summarize_group(
 ) -> LoopSummary:
     representative = sorted(tasks, key=lambda task: (task.created_at, task.id))[0]
     next_runs: list[str] = []
-    schedule_errors: list[str] = []
+    schedule_errors = [
+        notice
+        for task in tasks
+        if (notice := task.params.get(LOOP_MIGRATION_NOTICE_PARAM, "").strip())
+    ]
     for task in tasks:
         try:
             computed_next_run = compute_next_run(task, now)

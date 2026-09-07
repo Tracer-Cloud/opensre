@@ -29,6 +29,42 @@ def test_cron_add_kind_choices_exclude_sentry_kinds() -> None:
     }
 
 
+def test_cron_list_surfaces_legacy_task_migration_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from infrastructure.scheduling.scheduler.loops import LoopSummary
+
+    notice = "daily_summary retired; recreate with opensre cron add --kind manual_loop"
+    summary = LoopSummary(
+        id="legacy-daily",
+        task_ids=("legacy-daily",),
+        name="Daily reliability",
+        description="",
+        prompt="",
+        kind=TaskKind.MANUAL_LOOP,
+        cron="0 8 * * 1-5",
+        timezone="UTC",
+        provider=Provider.SLACK,
+        chat_id="C123",
+        channels=("slack",),
+        enabled=False,
+        window_hours=24,
+        last_run=None,
+        next_run=None,
+        schedule_error=notice,
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.loops.list_loop_summaries", lambda: [summary]
+    )
+
+    result = CliRunner().invoke(cron_command, ["list"])
+
+    assert result.exit_code == 0
+    output = " ".join(result.output.split())
+    assert "daily_summary retired" in output
+    assert "opensre cron add --kind" in output
+
+
 def test_cron_add_manual_loop_requires_prompt() -> None:
     result = CliRunner().invoke(
         cron_command,
