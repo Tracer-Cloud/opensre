@@ -40,12 +40,12 @@ from infrastructure.analytics.source import is_test_run
 from infrastructure.scheduling.scheduler.local_delivery import get_loop_messages
 from infrastructure.scheduling.scheduler.loops import parse_loop_time
 from infrastructure.terminal.theme import DIM, WARNING
-from integrations.github import resolve_github_token
-from integrations.github.tools.ci_analytics.loop import (
+from integrations.github import (
     DEFAULT_LOOP_TIME,
     local_timezone,
     loop_card,
     report_looks_complete,
+    resolve_github_token,
     schedule_ci_reliability_loop,
 )
 from surfaces.interactive_shell.runtime.loop_scheduler import reload_loop_scheduler, run_loop_now
