@@ -39,7 +39,7 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "setup",
-        "Sign in with GitHub, configure your LLM, then open the interactive shell.",
+        "Sign in with GitHub, activate the OpenSRE-hosted LLM, then open the shell.",
         "surfaces.cli.commands.setup:setup_command",
     ),
     CommandSpec(

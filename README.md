@@ -126,13 +126,13 @@ pipx install opensre
 
 Contributors: start at [`main.py`](main.py) for the process entrypoint map.
 
-Configure once, then pick how you want to run the agent:
+Create or sign in to your OpenSRE account once. Setup activates the hosted model:
 
 ```bash
 opensre setup
 ```
 
-**Interactive shell** — with no subcommand, `opensre` starts a REPL (TTY required). Describe incidents in plain language, watch the agent work, and use slash commands for session control (`/help`, `/status`, `/cost`, `/sessions`, `/resume`, `/compact`, `/new`, `/exit`), integrations (`/integrations list`, `/integrations verify`), local agent fleet monitoring (`/agents`), and reasoning depth (`/effort` for **OpenAI** and **Codex** — `low` through `max`). Ctrl+C cancels an in-flight turn without losing session state. See **[interactive shell commands](https://www.opensre.com/docs/interactive-shell-commands)** for the full reference.
+**Interactive shell** — with no subcommand, `opensre` validates your account and starts a REPL (TTY required). You can exit and stay signed out, but the shell only opens for an active account. Describe incidents in plain language, watch the agent work, and use slash commands for session control (`/help`, `/status`, `/cost`, `/sessions`, `/resume`, `/compact`, `/new`, `/exit`), integrations (`/integrations list`, `/integrations verify`), and local agent fleet monitoring (`/agents`). Ctrl+C cancels an in-flight turn without losing session state. See **[interactive shell commands](https://www.opensre.com/docs/interactive-shell-commands)** for the full reference.
 
 ```bash
 opensre

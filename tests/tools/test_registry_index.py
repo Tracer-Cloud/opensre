@@ -137,7 +137,6 @@ def test_baked_index_round_trips_and_serves_frozen_builds(
     ``test_release_smoke_asserts_onedir_contains_the_baked_index``).
     """
     from tools import registry_index as ri
-    from tools.registry import _load_surface_snapshot, clear_tool_registry_cache
 
     # Arrange: bake the index from source into a fake bundle root.
     reference = ri.build_descriptor_index()
@@ -149,15 +148,15 @@ def test_baked_index_round_trips_and_serves_frozen_builds(
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
     ri.clear_descriptor_index_cache()
-    clear_tool_registry_cache()
+    registry_module.clear_tool_registry_cache()
     try:
         # Assert: the baked file is what the index serves, and the frozen
         # surface load stays scoped (not the every-vendor fallback).
         assert ri.baked_index_available()
         assert ri.build_descriptor_index() == reference
-        action = _load_surface_snapshot(ToolSurface.ACTION)
+        action = registry_module._load_surface_snapshot(ToolSurface.ACTION)
         assert 0 < len(action) < len(reference)
         assert all(ToolSurface.ACTION in tool.surfaces for tool in action)
     finally:
         ri.clear_descriptor_index_cache()
-        clear_tool_registry_cache()
+        registry_module.clear_tool_registry_cache()

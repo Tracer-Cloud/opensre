@@ -19,7 +19,7 @@ from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Protocol
-from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
 
@@ -28,15 +28,15 @@ from config.account import (
     delete_account_record,
     delete_account_token,
     load_account_record,
-    resolve_account_token,
+    normalize_account_app_url,
     save_account_record,
     save_account_token,
     stored_account_token,
 )
 from config.constants.account import (
+    OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
+    OPENSRE_ACCOUNT_SESSION_PATH,
     OPENSRE_ACCOUNT_TOKEN_ENV,
-    OPENSRE_APP_URL_DEFAULT,
-    OPENSRE_APP_URL_ENV,
 )
 from config.constants.github import GITHUB_CLI_REQUIRED_SCOPES
 from integrations.github import (
@@ -48,9 +48,7 @@ from integrations.github import (
 
 _LOGIN_PATH = "/cli/auth/github"
 _EXCHANGE_PATH = "/api/auth/github/cli/exchange"
-_SESSION_PATH = "/api/auth/github/cli/session"
 _SUCCESS_PATH = "/cli/auth/github/success"
-_HTTP_TIMEOUT_SECONDS = 15.0
 
 
 class AccountAuthError(RuntimeError):
@@ -90,15 +88,6 @@ class AccountLoginResult:
 
 
 @dataclass(frozen=True)
-class AccountStatus:
-    """Local and remote state for the current personal account."""
-
-    authenticated: bool
-    record: AccountRecord | None
-    detail: str
-
-
-@dataclass(frozen=True)
 class AccountLogoutResult:
     """Result of clearing remote and local personal-account credentials."""
 
@@ -128,21 +117,10 @@ class _ExchangeResult:
 
 def normalize_app_url(value: str | None = None) -> str:
     """Resolve and validate the webapp origin used for account authentication."""
-    raw = (value or os.getenv(OPENSRE_APP_URL_ENV) or OPENSRE_APP_URL_DEFAULT).strip()
-    parsed = urlsplit(raw)
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.hostname
-        or parsed.username
-        or parsed.password
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise AccountAuthError(
-            f"Invalid OpenSRE app URL. Set {OPENSRE_APP_URL_ENV} to an http(s) origin."
-        )
-    path = parsed.path.rstrip("/")
-    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+    try:
+        return normalize_account_app_url(value)
+    except ValueError as exc:
+        raise AccountAuthError(str(exc)) from exc
 
 
 def _app_endpoint(app_url: str, path: str) -> str:
@@ -280,30 +258,13 @@ def _decode_exchange(payload: object) -> _ExchangeResult:
     )
 
 
-def _configure_hosted_openai(model: str) -> None:
-    """Select the account-backed OpenAI route for every local LLM role."""
-    from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
-    from surfaces.shared.llm_setup.env_sync import sync_provider_env
-
-    provider = PROVIDER_BY_VALUE["openai"]
-    extra_env = (
-        {provider.classification_model_env: model} if provider.classification_model_env else None
-    )
-    sync_provider_env(
-        provider=provider,
-        model=model,
-        toolcall_model=model,
-        extra_env=extra_env,
-    )
-
-
 def _exchange_code(app_url: str, code: str, verifier: str) -> _ExchangeResult:
     try:
         response = httpx.post(
             _app_endpoint(app_url, _EXCHANGE_PATH),
             json={"code": code, "code_verifier": verifier},
             headers={"Accept": "application/json"},
-            timeout=_HTTP_TIMEOUT_SECONDS,
+            timeout=OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
         return _decode_exchange(response.json())
@@ -314,9 +275,9 @@ def _exchange_code(app_url: str, code: str, verifier: str) -> _ExchangeResult:
 def _revoke_remote(app_url: str, token: str) -> bool:
     try:
         response = httpx.delete(
-            _app_endpoint(app_url, _SESSION_PATH),
+            _app_endpoint(app_url, OPENSRE_ACCOUNT_SESSION_PATH),
             headers={"Authorization": f"Bearer {token}"},
-            timeout=_HTTP_TIMEOUT_SECONDS,
+            timeout=OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
         )
         return response.status_code in {HTTPStatus.NO_CONTENT, HTTPStatus.UNAUTHORIZED}
     except httpx.HTTPError:
@@ -419,7 +380,6 @@ def login_account(
     try:
         save_account_token(exchange.access_token)
         save_account_record(record)
-        _configure_hosted_openai(exchange.llm_model)
     except Exception as exc:
         _cleanup_failed_login(
             resolved_app_url,
@@ -429,6 +389,9 @@ def login_account(
             github_snapshot=github_snapshot,
         )
         raise AccountAuthError("OpenSRE could not safely persist the login.") from exc
+    from core.llm.factory import reset_llm_clients
+
+    reset_llm_clients()
     reporter.setup_complete()
     if previous_token and previous_token != exchange.access_token:
         previous_app_url = previous_record.app_url if previous_record else resolved_app_url
@@ -441,37 +404,6 @@ def login_account(
             "overriding the token just saved. Unset it so this login is used."
         )
     return AccountLoginResult(record=record, warning=warning)
-
-
-def account_status(*, app_url: str | None = None) -> AccountStatus:
-    """Validate the stored account token and return user-safe status detail."""
-    record = load_account_record()
-    token = resolve_account_token()
-    if not token:
-        return AccountStatus(False, record, "No OpenSRE account token is stored.")
-    resolved_app_url = (
-        normalize_app_url(app_url)
-        if app_url
-        else (record.app_url if record else normalize_app_url())
-    )
-    try:
-        response = httpx.get(
-            _app_endpoint(resolved_app_url, _SESSION_PATH),
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-    except httpx.HTTPError:
-        return AccountStatus(
-            False,
-            record,
-            "The local login exists, but the OpenSRE app could not be reached.",
-        )
-    if response.status_code == HTTPStatus.UNAUTHORIZED:
-        return AccountStatus(False, record, "The stored OpenSRE login has expired or was revoked.")
-    if response.status_code != HTTPStatus.OK:
-        return AccountStatus(False, record, "The OpenSRE app could not validate this login.")
-    provider = f"{record.llm_provider} ({record.llm_model})" if record else "openai"
-    return AccountStatus(True, record, f"Authenticated with GitHub; LLM provider: {provider}.")
 
 
 def logout_account() -> AccountLogoutResult:
@@ -488,6 +420,10 @@ def logout_account() -> AccountLogoutResult:
         delete_account_record()
     except Exception as exc:
         raise AccountAuthError("OpenSRE could not clear all local account data.") from exc
+
+    from core.llm.factory import reset_llm_clients
+
+    reset_llm_clients()
 
     if os.getenv(OPENSRE_ACCOUNT_TOKEN_ENV, "").strip():
         return AccountLogoutResult(
@@ -506,9 +442,7 @@ __all__ = [
     "AccountAuthError",
     "AccountLoginResult",
     "AccountLogoutResult",
-    "AccountStatus",
     "LoginProgress",
-    "account_status",
     "login_account",
     "logout_account",
     "normalize_app_url",

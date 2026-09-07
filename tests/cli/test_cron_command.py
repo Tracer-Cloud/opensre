@@ -406,7 +406,7 @@ def _patch_cron_run_deps(
         return True
 
     monkeypatch.setattr("bootstrap.process.configure_process", lambda _profile: None)
-    monkeypatch.setattr("bootstrap.adapters.scheduler_runners", lambda: object())
+    monkeypatch.setattr("bootstrap.adapters.scheduler_runners", object)
     monkeypatch.setattr("infrastructure.scheduling.scheduler.storage.get_task", lambda _tid: task)
     monkeypatch.setattr(
         "infrastructure.scheduling.scheduler.runner.run_task_now", _fake_run_task_now

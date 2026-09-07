@@ -81,7 +81,7 @@ When you first launch the shell with no scheduled loops, a picker offers three s
 | `/verify` | Verify integration connectivity (all or one service) |
 | `/integrations` | List, verify, show, setup, or remove integrations |
 | `/mcp` | List, connect, or disconnect MCP servers |
-| `/model` | Show or switch LLM provider and models |
+| `/model` | Show the account-managed hosted model |
 | `/tools` | List registered chat and action tools |
 
 ### Privacy and history
@@ -562,7 +562,7 @@ MCP-capable integrations only (subset of the full integration catalog).
 
 <Accordion title="/model">
 
-Show or change LLM provider and models. Updates project `.env` (default: repository root `.env`, override with `OPENSRE_PROJECT_ENV_PATH`), `~/.opensre/opensre.json`, and resets in-process LLM caches.
+Show the active hosted model. An authenticated interactive shell is account-managed, so local provider/model changes are locked until sign-out; signing out closes the shell.
 
 ```text
 /model show
@@ -577,17 +577,15 @@ Show or change LLM provider and models. Updates project `.env` (default: reposit
 
 | Subcommand | Behavior |
 | --- | --- |
-| `show` (default) | Provider, reasoning model env var, toolcall model env var |
-| `set &lt;provider&gt; [model] [--toolcall-model &lt;m&gt;]` | Switch provider; optional per-slot models |
-| `set &lt;model&gt;` (no provider) | Update reasoning model for **current** provider only |
-| `restore [provider]` | Reset to provider's default reasoning model |
-| `toolcall set &lt;model&gt;` | Set the tool-call model for the active provider |
+| `show` (default) | Show provider and reasoning/toolcall model slots |
+| `set &lt;provider&gt; [model] [--toolcall-model &lt;m&gt;]` | Refuse the local change while the account route is active |
+| `set &lt;model&gt;` (no provider) | Refuse the local change while the account route is active |
+| `restore [provider]` | Refuse the local change while the account route is active |
+| `toolcall set &lt;model&gt;` | Refuse the local change while the account route is active |
 
-**Credential guard:** Switching to a provider without prompt-safe auth status fails fast with setup instructions. Run `/auth login &lt;provider&gt;` or export the provider API key before switching. If status is stale, run `/auth verify &lt;provider&gt;`.
+**Account lock:** `set`, `restore`, and `toolcall set` explain that the model is managed by the OpenSRE account and make no change. The account route overrides local provider variables for every model role while the session is signed in.
 
 **Reasoning vs toolcall model:** Reasoning model drives chat and planning; toolcall model drives tool invocation when the provider exposes a separate slot (common on Anthropic/OpenAI).
-
-Interactive `/model` menu flow: pick provider → reasoning model (or default) → optional toolcall model (`keep`, `match-reasoning`, or explicit).
 
 See [LLM providers](/llm-providers).
 
@@ -823,7 +821,17 @@ These spawn `opensre …` subprocesses. Output is captured into the REPL buffer 
 /account logout
 ```
 
-Sign in to a personal OpenSRE account with GitHub, inspect the local login, or sign out. Same as `opensre account`. Interactive login opens a browser and prompts on the real TTY. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
+Sign in to a personal OpenSRE account with GitHub, inspect the local login, or sign out. Same as `opensre account`. The shell starts only for an `active` account state. `/account logout` revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
+
+</Accordion>
+
+<Accordion title="/setup">
+
+```text
+/setup
+```
+
+Run the first-use webapp account flow. It creates or signs in to an OpenSRE account with GitHub and activates the account-hosted model. Setup requires exclusive stdin because browser authorization prompts on the real TTY.
 
 </Accordion>
 
@@ -861,7 +869,7 @@ Shortcut for `/auth login`. Same provider flows as `opensre auth login`.
 /onboard local_llm
 ```
 
-First-run setup: LLM keys, integrations, Telegram, alert listener. A blank LLM key defers provider setup instead of blocking the wizard. Requires exclusive stdin — the REPL tears down prompt_toolkit before the wizard runs.
+Optional local LLM-provider onboarding. The account-hosted route remains authoritative while signed in, so this does not switch the model used by the interactive shell.
 
 </Accordion>
 
@@ -1118,7 +1126,7 @@ You do not need to memorize every slash command. Examples:
 | "what's my token usage?" | `/cost` |
 | "verify datadog" | `/verify datadog` |
 | "show datadog config" | `/integrations show datadog` |
-| "switch to openai gpt-4.1" | `/model set openai gpt-4.1` |
+| "show the active model" | `/model show` |
 | "list my past sessions" | `/sessions` |
 | "check health then list integrations" | `/health` then `/integrations list` |
 | "how do I configure Datadog?" | Doc-grounded answer (no mutating command) |
@@ -1146,13 +1154,13 @@ Compound requests ("health then integrations") execute as an ordered sequence of
 ### First-time setup
 
 ```text
-/onboard
+/account status
 /health
 /verify
 /model show
 ```
 
-If you skip onboarding's LLM key, later turns that need a model point you at `/auth login` instead of a raw provider error. On first launch with no scheduled loops, the shell offers three starter loops — Escape skips. See [Scheduled deliveries](/cron).
+`opensre setup` must establish the account before this workflow is reachable. On first launch with no scheduled loops, the shell offers three starter loops — Escape skips. See [Scheduled deliveries](/cron).
 
 ### Incident triage (local)
 
@@ -1177,11 +1185,11 @@ Continue chatting, then optionally:
 /new
 ```
 
-### Switch model mid-session
+### Inspect account and model state
 
 ```text
-/model set anthropic claude-sonnet-4-20250514
-/effort high
+/account status
+/model show
 /cost
 ```
 
@@ -1204,7 +1212,7 @@ Continue chatting, then optionally:
 | `/cost` shows zero | No LLM turns yet this session; chat once and retry |
 | `/resume` not found | Run `/sessions`; use longer ID prefix |
 | `/resume` ambiguous prefix | Add more characters from Session ID column |
-| `/model set` missing credential | `/auth login &lt;provider&gt;` or export `ANTHROPIC_API_KEY` / etc.; use `/auth verify &lt;provider&gt;` for stale metadata |
+| `/model set` reports an account lock | The hosted model is working as designed; `/account logout` closes the shell rather than switching it to a local provider |
 | `/integrations show` not found | Run `/integrations list` for exact service slug |
 | History pause not working | Requires redacting backend — see `/privacy` |
 | Garbage in next prompt after table | Known TTY issue — upgrade OpenSRE; report if persistent |

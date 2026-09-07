@@ -124,13 +124,13 @@ def test_install_sh_styles_details_gray_and_get_started_yellow() -> None:
         COLOR_YELLOW=$'\\033[33m'
         BIN_NAME="opensre"
         muted "Checksum verification passed"
-        log "${COLOR_YELLOW}Run '${BIN_NAME}' to get started!${COLOR_RESET}"
+        log "${COLOR_YELLOW}Run '${BIN_NAME}' to sign in and get started.${COLOR_RESET}"
         """
     )
 
     assert result.returncode == 0, result.stderr
     assert "\x1b[90mChecksum verification passed\x1b[0m" in result.stdout
-    assert "\x1b[33mRun 'opensre' to get started!\x1b[0m" in result.stdout
+    assert "\x1b[33mRun 'opensre' to sign in and get started.\x1b[0m" in result.stdout
 
 
 def test_install_sh_prints_concise_install_confirmation() -> None:
@@ -148,11 +148,14 @@ def test_install_sh_prints_concise_install_confirmation() -> None:
     assert output == "OpenSRE v2026.4.1 installed successfully to /tmp/bin/opensre\n"
 
 
-def test_install_sh_does_not_auto_launch_onboarding() -> None:
+def test_install_sh_auto_launches_account_setup_only_on_a_tty() -> None:
     source = INSTALL_SH.read_text()
 
-    assert "launch_onboarding_after_install" not in source
-    assert "Launching ${BIN_NAME} onboard" not in source
+    assert "auto_setup_enabled()" in source
+    assert "launch_setup_after_install()" in source
+    assert "OPENSRE_AUTO_LAUNCH" in source
+    assert "[ ! -t 0 ] || [ ! -t 1 ]" in source
+    assert '"$binary_path" setup' in source
 
 
 def test_install_sh_defaults_to_main_build_channel() -> None:

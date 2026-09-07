@@ -9,6 +9,10 @@ import pytest
 from infrastructure.database import sqlite_connection, sqlite_transaction
 
 
+def _raise_runtime_error() -> None:
+    raise RuntimeError("stop")
+
+
 def test_connection_applies_configuration_and_creates_parent(tmp_path: Path) -> None:
     db_path = tmp_path / "nested" / "state.db"
 
@@ -39,7 +43,7 @@ def test_transaction_commits_success_and_rolls_back_failure(tmp_path: Path) -> N
 
         with pytest.raises(RuntimeError, match="stop"), sqlite_transaction(conn):
             conn.execute("INSERT INTO entries VALUES (?)", ("rolled back",))
-            raise RuntimeError("stop")
+            _raise_runtime_error()
 
         rows = conn.execute("SELECT value FROM entries").fetchall()
 

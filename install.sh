@@ -1143,11 +1143,35 @@ print_install_confirmation() {
   fi
 }
 
+auto_setup_enabled() {
+  case "${OPENSRE_AUTO_LAUNCH:-}" in
+    0|false|FALSE|no|NO|off|OFF)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+launch_setup_after_install() {
+  local binary_path="${INSTALL_DIR}/${BIN_NAME}"
+
+  if ! auto_setup_enabled || [ ! -t 0 ] || [ ! -t 1 ]; then
+    return 0
+  fi
+  log "Launching ${BIN_NAME} setup..."
+  if ! "$binary_path" setup; then
+    warn "Setup exited before completion. Run '${BIN_NAME} setup' to retry."
+  fi
+}
+
 finish_install() {
   print_install_confirmation
   ensure_on_path
   ensure_github_cli
   log "${COLOR_YELLOW:-}Run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
+  launch_setup_after_install
 }
 
 main() {

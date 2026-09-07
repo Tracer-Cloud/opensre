@@ -80,30 +80,9 @@ Setup is interactive and needs a TTY. Do not try to fake the wizard. Run it and 
 opensre setup
 ```
 
-The wizard asks for:
-
-1. **GitHub sign-in** — browser device authorization (required).
-2. **An LLM** — OpenAI, Anthropic, a local model (Ollama), or another provider they already use. They need an API key, or they can leave the key blank and add it later with `opensre auth login <provider>`.
+The browser flow creates or signs in to the user's OpenSRE account with GitHub. It also connects GitHub and activates the hosted model; do not ask the user for a separate LLM key during first-run setup.
 
 When setup finishes, it opens the interactive shell. Add tools later with `opensre integrations setup <service>` when the agent should query them.
-
-Zero-config local LLM (Ollama, no API key):
-
-```bash
-opensre onboard local_llm
-```
-
-To change only the LLM later (without GitHub again):
-
-```bash
-opensre onboard
-```
-
-Or:
-
-```bash
-opensre auth login
-```
 
 To connect one tool later:
 
@@ -113,7 +92,7 @@ opensre integrations setup <service>
 
 Replace `<service>` with a slug such as `datadog`, `grafana`, or `slack`.
 
-If setup cannot reach the LLM provider (firewall, proxy, offline), tell the user they can **Save anyway without validating** and continue. If it cannot persist the key, they can **Continue without saving (this session only)** and re-enter it next time.
+If setup cannot validate the webapp account, run `opensre account status`. The interactive shell intentionally stays closed while the session is expired, revoked, incomplete, or unreachable.
 
 ## Step 3: Verify
 
@@ -142,9 +121,9 @@ That starts a TTY REPL. Ask the user to describe an incident or ask a question i
 ## Gotchas
 
 - **`opensre: command not found`** — new terminal, or add the bin directory the installer printed (often `~/.local/bin` on macOS/Linux).
-- **Setup blocks or looks hung** — it is waiting on the user (GitHub browser approval or LLM key). Show them the prompt; do not kill it.
+- **Setup blocks or looks hung** — it is waiting on webapp/GitHub browser approval. Show the user the URL and prompt; do not kill it.
 - **Installer started setup on its own** — that is expected without `OPENSRE_AUTO_LAUNCH=0`. Let the user finish it, then continue from Step 3.
-- **The agent needs a configured LLM** — the shell cannot answer without `LLM_PROVIDER` and a matching key. Finish `opensre setup` / `opensre onboard` or `opensre auth login <provider>` first.
+- **The shell keeps returning to sign-in** — run `opensre account status`; the account must be active before the shell or hosted model starts.
 - **Only connected tools are queried** — the agent cannot pull Datadog data if Datadog was never set up. Run `opensre integrations verify` before a production run.
 
 Human docs: https://opensre.com/docs/install and https://opensre.com/docs/quickstart

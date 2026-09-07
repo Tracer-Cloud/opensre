@@ -83,7 +83,25 @@ def test_account_login_uses_a_distinct_client_cache_key(monkeypatch: pytest.Monk
     )
 
     assert current_llm_client_cache_key() != local_key
-    assert current_llm_client_cache_key() == ("sdk", "account:openai")
+    assert current_llm_client_cache_key() == (
+        "sdk",
+        "account:openai:https://app.opensre.com/api/llm/v1:gpt-5.4-mini",
+    )
+
+
+def test_account_model_change_invalidates_the_client_cache_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    route = SimpleNamespace(
+        base_url="https://app.opensre.com/api/llm/v1",
+        model="gpt-5.4-mini",
+    )
+    monkeypatch.setattr("config.account.account_llm_route", lambda: route)
+    first = current_llm_client_cache_key()
+
+    route.model = "gpt-5.5-mini"
+
+    assert current_llm_client_cache_key() != first
 
 
 def test_get_llm_routes_agent_and_non_agent_roles(monkeypatch: pytest.MonkeyPatch):

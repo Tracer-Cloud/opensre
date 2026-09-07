@@ -18,10 +18,16 @@ if TYPE_CHECKING:
         OPENSRE_ACCOUNT_FILENAME as OPENSRE_ACCOUNT_FILENAME,
     )
     from config.constants.account import (
+        OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS as OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
+    )
+    from config.constants.account import (
         OPENSRE_ACCOUNT_LLM_BASE_PATH as OPENSRE_ACCOUNT_LLM_BASE_PATH,
     )
     from config.constants.account import (
         OPENSRE_ACCOUNT_METADATA_PATH_ENV as OPENSRE_ACCOUNT_METADATA_PATH_ENV,
+    )
+    from config.constants.account import (
+        OPENSRE_ACCOUNT_SESSION_PATH as OPENSRE_ACCOUNT_SESSION_PATH,
     )
     from config.constants.account import (
         OPENSRE_ACCOUNT_TOKEN_ENV as OPENSRE_ACCOUNT_TOKEN_ENV,
@@ -687,7 +693,7 @@ if TYPE_CHECKING:
         POSTHOG_MCP_URL_ENV as POSTHOG_MCP_URL_ENV,
     )
     from config.constants.product import (
-        FORCE_SIGN_IN_ENV as FORCE_SIGN_IN_ENV,
+        OPENSRE_PARENT_INTERACTIVE_SHELL_ENV as OPENSRE_PARENT_INTERACTIVE_SHELL_ENV,
     )
     from config.constants.product import (
         PRODUCT_DISPLAY_NAME as PRODUCT_DISPLAY_NAME,

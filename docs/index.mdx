@@ -36,8 +36,8 @@ description: "An agentic SRE for production systems."
   <Card title="Install OpenSRE" icon="download" href="/install">
     One command on macOS or Linux, then a quick setup wizard.
   </Card>
-  <Card title="Run onboarding" icon="wand-magic-sparkles" href="/quickstart">
-    Pick the LLM provider OpenSRE should use — `opensre onboard` walks you through it.
+  <Card title="Create your account" icon="wand-magic-sparkles" href="/quickstart">
+    `opensre setup` signs you in and activates the hosted model.
   </Card>
   <Card title="Connect your tools" icon="plug" href="/integrations-overview">
     Datadog, Grafana, PagerDuty, Slack, Kubernetes, and more.
@@ -59,7 +59,7 @@ OpenSRE is an open-source agent that answers production questions for you. When 
 - You can run it locally, in your terminal, or hook it into a hosted setup for your whole team
 - It's open source, so you can see exactly what it's doing and change it if you need to
 
-**What do you need to get going?** An API key for an LLM (or a local model), access to a couple of your tools, and about five minutes. The [Quickstart](/quickstart) walks through it.
+**What do you need to get going?** An OpenSRE account, access to the tools you want to connect, and about five minutes. The [Quickstart](/quickstart) walks through it.
 
 ## What you can do with it
 
@@ -89,10 +89,10 @@ OpenSRE is an open-source agent that answers production questions for you. When 
     ```
   </Step>
   <Step title="Set things up">
-    This launches a short wizard. Pick an LLM provider, paste in a key or confirm a CLI login, and OpenSRE tests it on the spot. Add tools later with `opensre integrations setup <service>` when you want it to query Datadog, Grafana, Slack, or another system.
+    This opens the webapp account flow. Sign in or create an account with GitHub; OpenSRE then activates the hosted model. Add tools later with `opensre integrations setup <service>` when you want it to query Datadog, Grafana, Slack, or another system.
 
     ```bash
-    opensre onboard
+    opensre setup
     ```
   </Step>
   <Step title="Give it something to look at">
@@ -105,7 +105,7 @@ OpenSRE is an open-source agent that answers production questions for you. When 
 </Steps>
 
 <Tip>
-  Something not working? [Quickstart troubleshooting](/quickstart#troubleshooting) covers the usual suspects — Docker not running, `make` missing, LLM not configured.
+  Something not working? [Quickstart troubleshooting](/quickstart#troubleshooting) covers account validation and install issues.
 </Tip>
 
 ## How a turn runs

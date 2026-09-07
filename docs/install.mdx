@@ -10,8 +10,8 @@ This page gets the `opensre` command onto your laptop or server, then walks you 
 After install, you have:
 
 - The `opensre` CLI on your PATH
-- An interactive shell when you run `opensre` with no arguments
-- A short setup that signs you into GitHub and configures your LLM
+- An account-gated interactive shell when you run `opensre` with no arguments
+- A short webapp sign-in that also activates the OpenSRE-hosted model
 
 No sudo required on macOS/Linux in the usual case — the installer puts the binary somewhere writable (often `~/.local/bin`) and tells you if you need a PATH tweak.
 
@@ -54,11 +54,7 @@ If setup didn't start automatically, run it yourself:
 opensre setup
 ```
 
-The wizard asks for:
-
-1. **GitHub sign-in** — browser device authorization (required)
-2. **An LLM provider** — Claude Code, OpenAI, OpenRouter, or another supported provider
-3. **A model and credential** — an API key, CLI login, or local endpoint depending on the provider
+The browser flow creates or signs in to your OpenSRE account with GitHub. A successful login connects GitHub and activates the hosted model; no separate LLM key is required.
 
 When that finishes, OpenSRE opens the interactive shell. Add tools later, when you need them:
 
@@ -66,10 +62,17 @@ When that finishes, OpenSRE opens the interactive shell. Add tools later, when y
 opensre integrations setup <service>
 ```
 
-To change only the LLM later (without GitHub again):
+For the guided integration and optional local-model wizard, run:
 
 ```bash
 opensre onboard
+```
+
+To inspect or end the account session later:
+
+```bash
+opensre account status
+opensre account logout
 ```
 
 Then check that the tools you connected work:
@@ -102,7 +105,7 @@ Full walkthrough with GIFs: [Quickstart](/quickstart).
 ## Stuck?
 
 - **Command not found** — open a new terminal, or add the bin directory the installer printed to your PATH
-- **Onboard can't reach your LLM** — check the key and network; you can save and retry later
+- **The shell keeps asking you to sign in** — run `opensre account status`; expired, revoked, incomplete, or unreachable sessions do not open the shell
 - **Docker / `make` missing** — see [Quickstart troubleshooting](/quickstart#troubleshooting)
 
 Need deploy options beyond a laptop binary? See [Deployment](/deployment).
